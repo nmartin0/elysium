@@ -30,7 +30,7 @@
 
 import { useEffect, useState } from 'react'
 
-import { aggregateObjects } from '@elysium/shell-api/api'
+import { aggregateObjects, MAX_SCAN_LABEL, type AggregateResult } from '@elysium/shell-api/api'
 import Action from '@elysium/shell-api/components/Action'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
 
@@ -70,6 +70,16 @@ export default function Facets({
 }) {
   const [buckets, setBuckets] = useState<Bucket[] | null>(null)
   const [failed, setFailed] = useState(false)
+  // THE DISTRIBUTION WAS CUT OFF BEFORE IT WAS COUNTED, which makes
+  // every count below a FLOOR. Per facet rather than per panel,
+  // because each facet is its own request over its own condition set:
+  // `conditionsExcluding` deliberately drops this field's own filter,
+  // so a facet aggregates a BROADER set than the table beside it and
+  // can hit the ceiling on a page where the table did not. That is
+  // the dangerous case -- a complete-looking table with short counts
+  // next to it -- and a panel-wide flag taken from the search would
+  // have missed exactly it.
+  const [truncated, setTruncated] = useState(false)
   const key = JSON.stringify(filters)
 
   useEffect(() => {
@@ -101,8 +111,9 @@ export default function Facets({
         // unavailable", one as a single row called "results" with a
         // count of NaN -- which is why a screenshot caught what a
         // passing typecheck did not.
-        const { results } = rows as { results: Record<string, number> }
-        const counts = results
+        const { results, scan_truncated } = rows as AggregateResult
+        setTruncated(scan_truncated === true)
+        const counts = results as Record<string, number>
         setBuckets(
           Object.entries(counts)
             .map(([value, count]) => ({ value, count: Number(count) }))
@@ -132,6 +143,16 @@ export default function Facets({
    * four customers is the result list again. Both have four buckets,
    * which is why the ceiling alone let NAME and EMAIL through and a
    * rendered pane showed them with every count at 1.
+   *
+   * BOTH RULES ARE DECIDED ON WHATEVER CAME BACK, truncated or not,
+   * and that is a judgement rather than an oversight. A cut-off
+   * distribution could hold more values past the ceiling than
+   * MAX_FACET_VALUES admits, so the decision is made on partial
+   * evidence -- but suppressing a facet BECAUSE it was truncated
+   * would remove the one control that could narrow the set below the
+   * ceiling, which is precisely what the person needs. So it is shown
+   * and labelled instead. Guessing at the unseen tail would be
+   * inventing a number; saying the counts are floors is not.
    */
   const total = (buckets ?? []).reduce((sum, bucket) => sum + bucket.count, 0)
   const visible =
@@ -177,6 +198,25 @@ export default function Facets({
           )
         })}
       </ul>
+      {truncated && (
+        /* AT LEAST, NOT EXACTLY. "We stopped counting", never "there
+           are more for you" -- past the ceiling the rows might all
+           have been outside this caller's boundary anyway, so the
+           only honest claim is about what was read.
+
+           A LINE RATHER THAN A Notice, and the pane's own comment
+           settles why: a Callout in a filter sidebar is an
+           interruption, and this is continuous reading beside a
+           control the person is already using.
+
+           AND ONE LINE RATHER THAN THREE. This appears once per
+           truncated facet, and in a sidebar four repetitions of a
+           three-line paragraph drown the counts they annotate --
+           seen in a browser before it was shortened. "Narrow the
+           set" is advice the search's own notice gives once, under
+           the results, where it only has to be read once. */
+        <p className="facets__partial">At least — counting stopped at {MAX_SCAN_LABEL} rows.</p>
+      )}
     </>
   )
 }

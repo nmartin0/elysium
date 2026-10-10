@@ -551,7 +551,10 @@ describe('countObjects', () => {
   it('posts the query and returns the count', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ count: 47 }))
 
-    await expect(countObjects('Customer', { criteria: { region: 'us-west' } })).resolves.toBe(47)
+    await expect(countObjects('Customer', { criteria: { region: 'us-west' } })).resolves.toEqual({
+      count: 47,
+      scan_truncated: false,
+    })
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toContain('/objects/Customer/count')
@@ -565,7 +568,7 @@ describe('countObjects', () => {
     // error, and the default the graph will use on a first expansion.
     fetchMock.mockResolvedValue(jsonResponse({ count: 4 }))
 
-    await expect(countObjects('Customer')).resolves.toBe(4)
+    await expect(countObjects('Customer')).resolves.toEqual({ count: 4, scan_truncated: false })
     expect(JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string)).toEqual({})
   })
 
@@ -574,7 +577,29 @@ describe('countObjects', () => {
     // straight into a caller that adds it up and renders NaN.
     fetchMock.mockResolvedValue(jsonResponse({ count: 'lots' }))
 
-    await expect(countObjects('Customer')).resolves.toBe(0)
+    await expect(countObjects('Customer')).resolves.toEqual({ count: 0, scan_truncated: false })
+  })
+
+  it('reports that the count is a FLOOR when the scan was cut off', async () => {
+    // A COUNT BUILT ON A SEARCH INHERITS ITS CEILING. count_objects
+    // calls search_object, which stops at MAX_SEARCH_SCAN rows, and on
+    // a `via_field` type that budget is spent on candidates from every
+    // compartment -- so the caller's own rows can be cut off with the
+    // rest. This returned a bare `number` until the flag was threaded
+    // through: the type itself had nowhere to say "and this may be
+    // short".
+    fetchMock.mockResolvedValue(jsonResponse({ count: 10000, scan_truncated: true }))
+
+    await expect(countObjects('Customer')).resolves.toEqual({ count: 10000, scan_truncated: true })
+  })
+
+  it('treats a missing flag as not truncated rather than undefined', async () => {
+    // THE CONTROL FOR THE TEST ABOVE, and a real shape: an older
+    // server, or any response that omits the key, must read as
+    // complete rather than as a mystery a caller renders as "maybe".
+    fetchMock.mockResolvedValue(jsonResponse({ count: 3 }))
+
+    await expect(countObjects('Customer')).resolves.toEqual({ count: 3, scan_truncated: false })
   })
 })
 

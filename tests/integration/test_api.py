@@ -1829,7 +1829,11 @@ def test_count_returns_what_the_caller_can_see(client):
     response = _post(client, "/api/objects/Customer/count", {"criteria": {}})
 
     assert response.status_code == 200
-    assert response.json() == {"count": 2}
+    # EXACT, so a new key has to be considered rather than slipping in.
+    # scan_truncated is the whole response's second fact: a count built
+    # on search_object inherits its ceiling, so "2" and "at least 2"
+    # are different answers and the caller has to be able to tell.
+    assert response.json() == {"count": 2, "scan_truncated": False}
 
 
 def test_count_applies_criteria(client):
@@ -1875,6 +1879,58 @@ def test_aggregate_groups_and_sums(client):
     results = response.json()["results"]
     assert results["hardware"] == 199.0
     assert results["refund"] == -20.0
+
+
+# FROM fixtures/schema.sql, by customer and therefore by compartment.
+# cust_001 and cust_002 are us-west; cust_003 is us-east; cust_004 is
+# eu and belongs to neither sum below. Both compartments hold a
+# `subscription` and a `hardware` row, which is what makes a crossed
+# boundary visible rather than merely possible.
+_WEST_SUMS_BY_CATEGORY = {"subscription": 99.98, "hardware": 199.0, "refund": -20.0}
+_EAST_SUMS_BY_CATEGORY = {"subscription": 49.99, "hardware": 349.0}
+
+
+def test_two_users_in_different_compartments_aggregate_different_sets(client):
+    """THE security property for aggregates, over HTTP.
+
+    `tests/unit/test_aggregation.py` proves it on the mediator, which
+    is where it is enforced -- but a route is free to pass the wrong
+    user, or no user, and a unit test cannot see that. `AUDIT_CHECKLIST`
+    R39 named this gap by name: "no integration test aggregating as two
+    users in different compartments over HTTP".
+
+    TRANSACTION, NOT CUSTOMER, deliberately. Customer declares
+    `security: field: region`, which is pushed into SQL -- the easy
+    case. Transaction declares `security: via_field: customer_id`,
+    where the compartment is reached through a link and MAC runs per
+    object in Python afterwards. That is the path a pushed-down GROUP
+    BY would have broken, and the only one worth asserting here.
+
+    SUMS, NOT COUNTS. Two different counts could come from two
+    different row totals; two different SUMS over `amount` mean the
+    VALUES themselves were partitioned, which is the inference this
+    boundary exists to prevent.
+    """
+    client.app.state.user_directory.create_user("west", "correct-pw", "us-west", "customer_service")
+    client.app.state.user_directory.create_user("east", "correct-pw", "us-east", "customer_service")
+    body = {"criteria": {}, "aggregate": "sum", "field": "amount", "group_by": "category"}
+
+    _login(client, "west", "correct-pw")
+    west = _post(client, "/api/objects/Transaction/aggregate", body).json()["results"]
+    # A fresh login through the same client -- the new session cookie
+    # replaces the old one.
+    _login(client, "east", "correct-pw")
+    east = _post(client, "/api/objects/Transaction/aggregate", body).json()["results"]
+
+    assert west and east, "both compartments must hold transactions, or this proves nothing"
+    assert west != east, "two callers in different compartments must not aggregate the same rows"
+    # PINNED TO THE FIXTURE, not merely asserted unequal. An inequality
+    # passes if ONE row leaks; exact sums only hold if NEITHER caller
+    # saw a row from the other's compartment, which is the actual
+    # claim. The numbers come from schema.sql and are the same ones
+    # test_aggregate_groups_and_sums already fixes for us-west.
+    assert west == _WEST_SUMS_BY_CATEGORY
+    assert east == _EAST_SUMS_BY_CATEGORY
 
 
 def test_aggregate_with_no_group_by_returns_one_result_under_an_empty_key(client):

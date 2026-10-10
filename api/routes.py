@@ -593,6 +593,13 @@ class SearchAroundRequest(ObjectSetQueryRequest):
 
 class CountResponse(BaseModel):
     count: int
+    # THE COUNT IS A FLOOR, NOT A TOTAL, when this is set. count_objects
+    # is built on search_object, so it inherits the MAX_SEARCH_SCAN
+    # ceiling: on a `via_field` type the scan budget is spent on
+    # candidates from every compartment, and the caller's own rows can
+    # be cut off with the rest. See SearchResponse for the wording rule
+    # -- "we stopped counting", never "there are more for you".
+    scan_truncated: bool = False
 
 
 class AggregateResponse(BaseModel):
@@ -601,6 +608,11 @@ class AggregateResponse(BaseModel):
     # rather than being dropped -- a caller asking for one aggregate
     # over the whole set must get a result back, not an empty object.
     results: dict[str, Any]
+    # SEE CountResponse. It matters more here: a truncated search shows
+    # a short LIST, which looks short, while a truncated aggregate
+    # shows a confident NUMBER -- nothing about a bar labelled 3,000
+    # says it should have said 4,000.
+    scan_truncated: bool = False
 
 
 class SearchAroundResponse(BaseModel):
@@ -4536,20 +4548,31 @@ def count_objects_route(object_type: str, body: ObjectSetQueryRequest, request: 
     # count ignoring MAC would leak the existence of rows outside the
     # caller's boundary.
     mediator = _generation(request).mediator
+    # AND WHETHER IT IS THE WHOLE COUNT. Without an outcome to write
+    # into, search_object records the ceiling only in a server log, so a
+    # short count arrived indistinguishable from a complete one -- a
+    # wrong number reported as a right one.
+    search_outcome = SearchOutcome()
     try:
-        return {"count": mediator.count_objects(current_user, object_type, body.as_conditions())}
+        count = mediator.count_objects(
+            current_user, object_type, body.as_conditions(), outcome=search_outcome)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"count": count, "scan_truncated": search_outcome.scan_truncated}
 
 
 @router.post("/objects/{object_type}/aggregate", response_model=AggregateResponse)
 def aggregate_objects_route(object_type: str, body: AggregateRequest, request: Request,
                              current_user: UserRecord = Depends(get_current_user)) -> dict:
     mediator = _generation(request).mediator
+    # SEE count_objects_route. A chart is the surface where a silently
+    # short number does the most damage, because a bar reads as a fact.
+    search_outcome = SearchOutcome()
     try:
         results = mediator.aggregate_by_field(
             current_user, object_type, body.as_conditions(),
             group_by=body.group_by, aggregate=body.aggregate, field_name=body.field,
+            outcome=search_outcome,
         )
     except ValueError as e:
         # An unknown aggregate name or a missing field is a caller
@@ -4559,7 +4582,8 @@ def aggregate_objects_route(object_type: str, body: AggregateRequest, request: R
     # Group values become strings for JSON object keys. None -- meaning
     # "no grouping requested" -- becomes "" rather than being dropped.
     return {"results": {("" if group is None else str(group)): metric
-                        for group, metric in results.items()}}
+                        for group, metric in results.items()},
+            "scan_truncated": search_outcome.scan_truncated}
 
 
 @router.post("/objects/{object_type}/search-around", response_model=SearchAroundResponse)

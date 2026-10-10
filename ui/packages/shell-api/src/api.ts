@@ -1247,6 +1247,33 @@ export interface AggregateBody {
   group_by?: string
 }
 
+/**
+ * HOW MANY ROWS ONE REQUEST MAY READ, as the server's own
+ * MAX_SEARCH_SCAN has it.
+ *
+ * SAID IN ONE PLACE because three screens now have to say it: the
+ * table, the facets and the charts all inherit the same ceiling, and
+ * three copies of a number is three chances for one of them to go
+ * stale after the server's changes.
+ *
+ * A LABEL RATHER THAN A NUMBER, deliberately -- it is only ever
+ * interpolated into a sentence, and `10000` read to a person as a
+ * row count is worse than `10,000`.
+ */
+export const MAX_SCAN_LABEL = '10,000'
+
+/** What an aggregate came back as. */
+export interface AggregateResult {
+  /** {group: metric}, the group key stringified. "" is the ungrouped
+   *  single statistic, not a group called nothing. */
+  results: Record<string, unknown>
+  /** THE NUMBERS ARE FLOORS, NOT TOTALS. The set was cut off at the
+   *  scan ceiling before anything was aggregated, so every metric
+   *  here is at-least. It does NOT mean there is more for this caller
+   *  to see -- see searchObjects' own note on the same flag. */
+  scan_truncated: boolean
+}
+
 export async function aggregateObjects(objectType: string, body: AggregateBody): Promise<unknown> {
   const response = await apiFetchOrThrow(`/objects/${objectType}/aggregate`, {
     method: 'POST',
@@ -1279,17 +1306,36 @@ export interface ObjectSetQuery {
  * ignoring MAC would leak the existence of rows outside the caller's
  * boundary -- so it cannot disagree with the expansion that follows.
  */
-export async function countObjects(objectType: string, query: ObjectSetQuery = {}): Promise<number> {
+export interface CountResult {
+  count: number
+  /** THE COUNT IS A FLOOR. The scan ceiling was reached before the
+   *  per-object authorization that decides the answer, so the real
+   *  number is at least this. It does NOT mean there is more for this
+   *  caller to see -- see searchObjects' note on the same flag. */
+  scan_truncated: boolean
+}
+
+export async function countObjects(objectType: string, query: ObjectSetQuery = {}): Promise<CountResult> {
   const response = await apiFetchOrThrow(`/objects/${objectType}/count`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(query),
   })
-  const body = (await response.json()) as { count?: unknown }
+  const body = (await response.json()) as { count?: unknown; scan_truncated?: unknown }
   // NARROWED, not asserted: the same unchecked-body problem F-32 fixed
   // in apiFetchOrThrow. A non-number here would otherwise flow into
   // arithmetic and render as NaN.
-  return typeof body.count === 'number' ? body.count : 0
+  //
+  // A RESULT RATHER THAN A BARE NUMBER, which this returned until the
+  // ceiling was threaded through. `Promise<number>` has nowhere to put
+  // "and this may be short", so every caller got a number that could
+  // be wrong with no way to find out -- the type itself made the bug
+  // unreportable. Changing it cost three lines in one test and no UI
+  // callers, which is the cheapest this fix will ever be.
+  return {
+    count: typeof body.count === 'number' ? body.count : 0,
+    scan_truncated: body.scan_truncated === true,
+  }
 }
 
 export interface SearchAroundResult {

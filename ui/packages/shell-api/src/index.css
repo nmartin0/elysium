@@ -1934,7 +1934,14 @@
     text-align: left;
   }
 
-  .facets__failed {
+  /* "Counts unavailable", and "these counts are floors". Both are a
+   * quiet aside under a control somebody is reading, not an
+   * interruption -- which is why neither is a Callout and why they
+   * share the dense scale (9.2's smallest step) and the secondary
+   * colour: the FACET is the thing to look at, and a note about it
+   * that shouted would compete with the counts it is annotating. */
+  .facets__failed,
+  .facets__partial {
     margin: 0;
     font-size: var(--type-dense-size);
     line-height: var(--type-dense-line);

@@ -174,6 +174,58 @@ def test_aggregation_excludes_objects_the_caller_cannot_see(mediator):
     )
 
 
+def test_grouping_by_a_field_NAMED_BUT_WITHHELD_returns_nothing(mediator):
+    """A FIELD THAT EXISTS AND IS NOT READABLE GROUPS NOTHING.
+
+    `AUDIT_CHECKLIST` R39 named this gap: "no test that group_by on a
+    real-but-ungranted field returns {}". The enforcement is real --
+    `_read_fields_for_ids` filters its field list by `read:` grants and
+    returns {} when none survive -- and had no test, so a refactor
+    that read the column first and authorized second would have been
+    green.
+
+    THE MIDDLE RUNG OF THE GRANT LADDER, which is what makes this the
+    interesting case rather than a duplicate. `customer_service_sees_
+    email_exists` holds `discover:Customer.email` and NOT `read:`, so
+    email IS in that caller's visible schema -- the link guard passes,
+    the field is genuinely there, and only the per-field read check
+    stands between the caller and a distribution of email addresses. A
+    role that could not discover the field either would never have got
+    that far, so it would prove the wrong thing.
+
+    UNIFORM DENIAL, so {} and "no objects matched" are the same
+    answer. A caller must not be able to tell a withheld field from an
+    empty set -- the same rule notes, traces and search follow.
+    """
+    sees_it_exists = UserRecord(
+        user_id="u3", security_value="us-west", role_name="customer_service_sees_email_exists")
+
+    withheld = mediator.aggregate_by_field(
+        sees_it_exists, "Customer", as_equality_conditions({}), group_by="email", aggregate="count")
+
+    assert withheld == {}
+    # THE CONTROL, IN THE SAME TEST. This caller CAN read name, and
+    # grouping by it returns something -- so {} above is the grant
+    # being enforced, not the fixture being empty or the call being
+    # broken. Without this line the assertion passes on any failure.
+    granted = mediator.aggregate_by_field(
+        sees_it_exists, "Customer", as_equality_conditions({}), group_by="name", aggregate="count")
+    assert granted, "the control must see something, or the denial above proves nothing"
+
+
+def test_grouping_by_a_field_THAT_DOES_NOT_EXIST_LOOKS_THE_SAME(mediator):
+    """AND A MADE-UP FIELD IS INDISTINGUISHABLE FROM A WITHHELD ONE,
+    which is the other half of uniform denial. If a nonexistent field
+    raised and a withheld one returned {}, the error itself would
+    confirm which fields a deployment has."""
+    sees_it_exists = UserRecord(
+        user_id="u3", security_value="us-west", role_name="customer_service_sees_email_exists")
+
+    assert mediator.aggregate_by_field(
+        sees_it_exists, "Customer", as_equality_conditions({}),
+        group_by="no_such_field", aggregate="count") == {}
+
+
 def test_an_empty_result_set_aggregates_to_nothing(mediator):
     result = mediator.aggregate_by_field(
         CUSTOMER_SERVICE, "Transaction", as_equality_conditions({"category": "nonexistent"}),

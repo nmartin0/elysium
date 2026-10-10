@@ -26,7 +26,13 @@ import Notice from '@elysium/shell-api/components/Notice'
 import Chart from '@elysium/shell-api/components/Chart'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
-import { aggregateObjects, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
+import {
+  aggregateObjects,
+  getErrorMessage,
+  handleIfSessionExpired,
+  MAX_SCAN_LABEL,
+  type AggregateResult,
+} from '@elysium/shell-api/api'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
 import {
@@ -56,6 +62,12 @@ interface FieldChart {
   field: string
   label: string
   results: AggregateResults
+  /** The set was cut off at the scan ceiling before these were
+   *  counted, so every value is a floor. Carried per chart rather
+   *  than per panel: each field is its own request over its own
+   *  condition set (`conditionsExcluding` drops that field's own
+   *  filter), so one can truncate while the next does not. */
+  truncated: boolean
 }
 
 export function chartableFields(
@@ -109,6 +121,13 @@ export default function ChartsPanel({
   // WHAT is missing from it -- "one chart failed" does not tell them
   // whether to trust what they are looking at.
   const [failedFields, setFailedFields] = useState<string[]>([])
+  // WHICH CHARTS ARE DRAWN FROM A CUT-OFF SET, named for the same
+  // reason the failures are. A failed chart is absent, which a reader
+  // can see; a TRUNCATED one is present, confident and short -- every
+  // bar a floor rather than a count, with nothing on the canvas
+  // saying so. That is the worse of the two and was the unreported
+  // one.
+  const [partialFields, setPartialFields] = useState<string[]>([])
 
   const fields = chartableFields(objectType, visibleSchema)
   // Serialised so the effect depends on the CONTENT of the filter
@@ -121,6 +140,7 @@ export default function ChartsPanel({
     setCharts(null)
     setError(null)
     setFailedFields([])
+    setPartialFields([])
 
     // ALL-SETTLED, NOT ALL. One field failing used to reject the whole
     // batch, so a single unaggregatable column replaced every chart
@@ -140,8 +160,13 @@ export default function ChartsPanel({
           conditions: conditionsExcluding(JSON.parse(filterKey) as ChartFilter[], field),
           aggregate: 'count',
           group_by: field,
-        })) as { results: AggregateResults }
-        return { field, label, results: body.results }
+        })) as AggregateResult
+        return {
+          field,
+          label,
+          results: body.results as AggregateResults,
+          truncated: body.scan_truncated === true,
+        }
       }),
     )
       .then((settled) => {
@@ -166,6 +191,10 @@ export default function ChartsPanel({
         }
 
         setFailedFields(fields.filter((_, index) => settled[index]?.status === 'rejected').map(({ label }) => label))
+        // NAMED FROM THE LOADED CHARTS, not by index into `fields`:
+        // only a fulfilled request carries a flag at all, and the two
+        // lists diverge the moment one field fails.
+        setPartialFields(loaded.filter((chart) => chart.truncated).map(({ label }) => label))
         // A field where every object shares one value tells you
         // nothing -- one bar is not a distribution. Dropped rather
         // than drawn, so the tab shows only charts worth looking at.
@@ -200,6 +229,19 @@ export default function ChartsPanel({
         // are still worth looking at; what makes them safe to look at
         // is knowing the sixth is missing.
         <ErrorState title="Some charts could not be drawn">{failedFields.join(', ')}</ErrorState>
+      )}
+      {partialFields.length > 0 && (
+        // PENDING, NOT ERROR. Nothing failed -- the numbers are real,
+        // they are simply floors, and colouring that as a failure
+        // would teach people to ignore the colour that means one.
+        //
+        // NAMED, like the failures beside it, because "a chart is
+        // partial" does not tell a reader WHICH bar they should not
+        // quote.
+        <Notice state="pending" className="charts-panel__partial">
+          Counted only the first {MAX_SCAN_LABEL} rows for {partialFields.join(', ')}, so those bars are at least what
+          they say rather than exactly. Narrow the set to chart all of it.
+        </Notice>
       )}
       <AsyncPanel error={error} data={charts}>
         {(charts) =>

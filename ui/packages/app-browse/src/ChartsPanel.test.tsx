@@ -166,6 +166,63 @@ describe('ChartsPanel', () => {
     expect(await screen.findByText(/aggregate unavailable/)).toBeInTheDocument()
   })
 
+  it('says the bars are FLOORS when the set was cut off', async () => {
+    // A TRUNCATED AGGREGATE IS THE WORST SHAPE A LIMIT TAKES. A
+    // truncated search returns a short LIST, and a short list looks
+    // short; this returns a confident bar. Nothing about a bar
+    // labelled 3 says it should have read 4,000.
+    //
+    // THE SERVER SENT THIS FLAG AND NOTHING READ IT, because
+    // count_objects and aggregate_by_field called search_object
+    // without an outcome -- so the ceiling was recorded in a server
+    // log and in no response at all.
+    aggregateObjects.mockResolvedValue({
+      results: { 'us-west': 3, 'us-east': 1 },
+      scan_truncated: true,
+    })
+
+    render(
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText=""
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
+    )
+
+    // NAMED, like the failures beside it: "a chart is partial" does
+    // not tell a reader WHICH bar they should not quote.
+    expect(await screen.findByText(/10,000 rows/)).toBeInTheDocument()
+    // THE FIELD IS NAMED IN THE NOTICE ITSELF, not merely somewhere on
+    // the page -- `Region` is also the chart's own heading, so a
+    // query over the whole document would pass on a notice that named
+    // nothing.
+    expect(screen.getByText(/rows for Region/)).toBeInTheDocument()
+    // AND THE CHART IS STILL DRAWN. A floor is useful; nothing is not.
+    expect(screen.getByText('Region distribution')).toBeInTheDocument()
+  })
+
+  it('says nothing about floors on an ordinary aggregate', async () => {
+    // THE CONTROL FOR THE TEST ABOVE. A notice rendered
+    // unconditionally would pass that one and fail this one, which is
+    // the only reason either is worth having.
+    render(
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText=""
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
+    )
+    await waitFor(() => expect(screen.getByText('Region distribution')).toBeInTheDocument())
+
+    expect(screen.queryByText(/10,000 rows/)).not.toBeInTheDocument()
+  })
+
   it('does not refetch when the parent re-renders with an equal filter', async () => {
     // The filter arrives as a new array on every parent render.
     // Depending on its identity would refetch every chart on every

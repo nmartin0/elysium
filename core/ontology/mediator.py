@@ -2052,7 +2052,8 @@ class DataMediator:
         ]
         return entries, self.write_log.edit_history_count(object_type, object_id)
 
-    def count_objects(self, user_record: UserRecord, object_type: str, conditions: list) -> int:
+    def count_objects(self, user_record: UserRecord, object_type: str, conditions: list,
+                       outcome: "SearchOutcome | None" = None) -> int:
         """How many objects of this type the CALLER can see, matching
         criteria.
 
@@ -2069,11 +2070,31 @@ class DataMediator:
         engine-side COUNT would count rows the caller cannot see. That
         is the same constraint Foundry's own Object Set Service works
         under, and the reason it is a service rather than exposed SQL.
+
+        AND BECAUSE IT IS BUILT ON search_object(), IT INHERITS THE
+        CEILING -- which is why `outcome` exists here. search_object()
+        stops at MAX_SEARCH_SCAN rows, so a count over a `via_field`
+        type whose candidates span every compartment can come back
+        SHORT: the scan budget is spent on rows that are then filtered
+        away, and the caller's own set is cut off with them. Without an
+        outcome to write into, that is a wrong number reported as a
+        right one.
+
+        A SHORT COUNT CANNOT BE A LEAK -- every id still passes
+        check_access() individually, so the error is always downward,
+        never a row from another compartment. It is a correctness and
+        trust defect rather than a confidentiality one, which is the
+        reason it survived this long and not a reason to leave it.
+
+        "WE STOPPED COUNTING", NEVER "THERE ARE MORE FOR YOU", the same
+        reading SearchOutcome's own comment insists on: beyond the
+        ceiling the rows might all have been invisible anyway.
         """
-        return len(self.search_object(user_record, object_type, conditions))
+        return len(self.search_object(user_record, object_type, conditions, outcome=outcome))
 
     def aggregate_by_field(self, user_record: UserRecord, object_type: str, conditions: list,
-                            group_by: str | None, aggregate: str, field_name: str | None = None) -> dict:
+                            group_by: str | None, aggregate: str, field_name: str | None = None,
+                            outcome: "SearchOutcome | None" = None) -> dict:
         """Aggregates a field over the objects the caller can see.
 
         `aggregate` is one of count/sum/avg/min/max -- the same set
@@ -2090,6 +2111,15 @@ class DataMediator:
         id -- cost 16,045 SQL queries to aggregate 2,004 objects,
         measured directly. Authorization is still resolved per object,
         because it must be, but the DATA is read once.
+
+        `outcome` REPORTS THAT THE SET WAS CUT OFF, and matters more
+        here than almost anywhere. A truncated search shows a short
+        LIST, which looks short; a truncated aggregate shows a
+        confident NUMBER on a chart, and nothing about a bar labelled
+        3,000 says it should have said 4,000. See count_objects() above
+        for why the ceiling can bite on a set the caller could
+        otherwise see in full, and SearchOutcome for why the flag is an
+        out-parameter rather than a return shape.
         """
         if aggregate not in _AGGREGATES:
             raise ValueError(f"Unknown aggregate {aggregate!r} -- expected one of {sorted(_AGGREGATES)}")
@@ -2124,7 +2154,7 @@ class DataMediator:
                     f"aggregate over the objects on the far side."
                 )
 
-        visible_ids = set(self.search_object(user_record, object_type, conditions))
+        visible_ids = set(self.search_object(user_record, object_type, conditions, outcome=outcome))
         if not visible_ids:
             return {}
 

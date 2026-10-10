@@ -7,12 +7,12 @@ import { Fragment, useEffect, useState } from 'react'
 import Notice from '@elysium/shell-api/components/Notice'
 import { Button, Card, CardList, Checkbox, HTMLSelect, NonIdealState } from '@blueprintjs/core'
 
-// THE SERVER'S OWN CEILING, spelled for a reader rather than imported.
-// The number lives in core/ontology/mediator.py and the UI cannot see
-// it; naming it here risks the two drifting, and saying "10,000 rows"
-// when the server stopped at 10,000 is worth that risk against saying
-// nothing useful at all.
-const MAX_SCAN_LABEL = '10,000'
+// MOVED TO shell-api, now that three screens say it. The ceiling lives
+// in core/ontology/mediator.py and the UI cannot read it, so a spelled
+// label is still a copy that could drift -- but ONE copy, rather than
+// one per screen that inherits the same limit. The table was first;
+// the facets and the charts followed when count and aggregate started
+// reporting truncation too.
 
 /**
  * The window a late publication missed, in words.
@@ -44,6 +44,7 @@ import {
   getVisibleActionTypesCached,
   handleIfSessionExpired,
   matchingIds,
+  MAX_SCAN_LABEL,
   searchObjects,
   type DataFreshness,
   type TypeFreshness,
