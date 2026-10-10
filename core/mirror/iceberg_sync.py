@@ -527,9 +527,18 @@ class IcebergMirrorSync(MirrorSync):
         # to replace.
         present = adapter.columns_present(table_name)
         missing = [column for column in columns if column not in present]
+        # WHAT ARRIVED, which is the only evidence a rename leaves. No
+        # source records that `tier` became `tier_name`; one column
+        # gone and one column present, in the same table in the same
+        # run, is all anybody gets -- and this is the one place that
+        # holds both halves. The undeclared-column warning further down
+        # also names the arrival, but separately and for a different
+        # reason (the lake holds data nobody granted), so a reader saw
+        # a loss and an unrelated gain and had to join them.
+        appeared = tuple(sorted(set(present) - set(columns)))
         if missing:
             verdict = self._verdict_for_missing(
-                silo_name, table_name, missing, fields_by_column or {},
+                silo_name, table_name, missing, fields_by_column or {}, appeared,
             )
             if not verdict.absorbed:
                 raise ValueError(verdict.detail)
@@ -1042,18 +1051,27 @@ class IcebergMirrorSync(MirrorSync):
             pass
 
     def _verdict_for_missing(self, silo_name: str, table_name: str, missing: list[str],
-                              fields_by_column: dict[str, str]):
+                              fields_by_column: dict[str, str],
+                              appeared: tuple[str, ...] = ()):
         """One verdict for several missing columns, decided by the worst.
 
         A REFUSAL WINS OVER AN ABSORPTION. If three columns vanished and
         one of them has pending writes, the sync must stop -- absorbing
         the other two while refusing the third would leave the mirror
         half-migrated to a shape nobody approved.
+
+        `appeared` IS PASSED TO EVERY VERDICT, NOT MATCHED UP. Three
+        columns gone and three arrived could be three renames, one
+        rename and two unrelated changes, or a table rebuilt from
+        scratch. Guessing which new name belongs to which old one from
+        string similarity would be a fabricated fact rendered as a
+        finding; naming all the candidates beside each loss is true.
         """
         verdicts = [
             verdict_for_removed_column(
                 silo_name, table_name, column, fields_by_column.get(column),
                 self._edits_for(table_name, fields_by_column.get(column)),
+                appeared,
             )
             for column in missing
         ]

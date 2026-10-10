@@ -646,6 +646,41 @@ CONTROLS = [
         tests=["tests/integration/test_expired_session_is_refused.py::test_a_session_that_has_expired_is_refused",
                "tests/integration/test_expired_session_is_refused.py::test_the_refusal_is_the_same_uniform_401_as_no_session_at_all"],
     ),
+    # ------------------------------------------------------------
+    # THE DRIFT VERDICTS HAD NO NEGATIVE CONTROL, which the R19 sweep
+    # found: drift_policy.py is the module whose whole purpose is that
+    # "storage behaviour must not become policy by default", and
+    # nothing here broke either verdict to check the tests noticed.
+    # ------------------------------------------------------------
+    Control(
+        describes="a vanished column with writes against it REFUSES the sync",
+        path="core/mirror/drift_policy.py",
+        old="    if applied == 0 and pending == 0:",
+        new="    if True:",
+        tests=["tests/unit/test_drift_policy.py::TestRemovedColumn::test_refuses_when_a_pending_write_depends_on_it",
+               "tests/unit/test_drift_policy.py::TestRemovedColumn::test_refuses_when_applied_history_depends_on_it"],
+    ),
+    Control(
+        describes="a type that stopped matching is refused even with no writes",
+        path="core/mirror/drift_policy.py",
+        old="        absorbed=False,\n        shape=DriftShape.TYPE_CHANGED,",
+        new="        absorbed=True,\n        shape=DriftShape.TYPE_CHANGED,",
+        tests=["tests/unit/test_drift_policy.py::TestTypeChange::test_is_always_refused_even_with_no_writes"],
+    ),
+    Control(
+        describes="a rename is reported as a rename, not as a bare removal",
+        path="core/mirror/iceberg_sync.py",
+        old="        appeared = tuple(sorted(set(present) - set(columns)))",
+        new="        appeared = ()",
+        tests=["tests/unit/test_a_source_changes_and_what_a_reader_sees.py::TestARenamedColumn::test_and_the_operator_is_told_the_remedy_that_does_not_LOSE_A_FIELD"],
+    ),
+    Control(
+        describes="a bare removal is NOT reported as a possible rename",
+        path="core/mirror/drift_policy.py",
+        old="        if appeared:",
+        new="        if True:",
+        tests=["tests/unit/test_a_source_changes_and_what_a_reader_sees.py::TestARenamedColumn::test_an_ordinary_DROP_is_not_described_as_a_possible_rename"],
+    ),
     Control(
         describes="a partial source read does not overwrite the mirror",
         path="core/mirror/iceberg_sync.py",

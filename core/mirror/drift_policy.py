@@ -45,6 +45,24 @@ class DriftShape(Enum):
 
     COLUMN_REMOVED = "column_removed"
     TYPE_CHANGED = "type_changed"
+    # A REMOVAL WITH A SUSPECT STANDING NEXT TO IT. A rename reaches
+    # this module as two unrelated facts -- one declared column gone,
+    # one undeclared column present -- because that is all a source
+    # can tell us: no database records "this used to be called tier".
+    #
+    # A SEPARATE SHAPE RATHER THAN A FOOTNOTE, because what the
+    # operator should DO differs. A dropped column wants the field
+    # removed from the ontology; a renamed one wants the field
+    # REPOINTED, and following the first instruction for the second
+    # case throws away a field whose values are still there. Those are
+    # different enough to be different shapes.
+    #
+    # NOT A DIFFERENT VERDICT, though. See
+    # verdict_for_removed_column: absorbing or refusing still turns on
+    # the write log, because freezing a whole table on a name
+    # coincidence would be worse than the warning this shape exists to
+    # improve.
+    COLUMN_RENAMED = "column_renamed"
 
 
 @dataclass(frozen=True)
@@ -61,7 +79,8 @@ class DriftVerdict:
 
 
 def verdict_for_removed_column(silo: str, table: str, column: str, field: str | None,
-                                edits: dict | None) -> DriftVerdict:
+                                edits: dict | None,
+                                appeared: "tuple[str, ...]" = ()) -> DriftVerdict:
     """A column the ontology declares has gone from the source.
 
     BREAKING ONLY IF SOMETHING WROTE TO IT -- Foundry's line, not an
@@ -72,13 +91,35 @@ def verdict_for_removed_column(silo: str, table: str, column: str, field: str | 
     happen is the silent substitution this whole module exists to
     prevent: the answer would look identical to "nothing was written",
     and it is not the same claim.
+
+    `appeared` NAMES THE COLUMNS THE SAME SYNC FOUND AND THE ONTOLOGY
+    DOES NOT DECLARE, which is the only evidence a rename leaves. No
+    source records that `tier` became `tier_name`; a sync sees one
+    column gone and one column arrived, in the same table, in the same
+    run, and that is all anybody gets.
+
+    WHY IT CHANGES THE MESSAGE AND NOT THE VERDICT. Found by running
+    the source-mutation matrix (R19) against a real rename: the sync
+    absorbed it, the mirror began serving NULL for a field whose values
+    were still in the source under the new name, and the log said
+    "remove it from ontology_schema.yaml when convenient" -- advice
+    that, followed, deletes a live field. Refusing instead would freeze
+    a whole table on a name coincidence, which the module docstring
+    already argues against. So the disposition stands and the sentence
+    is corrected.
+
+    IT DOES NOT CLAIM A RENAME HAPPENED. It names the candidates and
+    puts the costly mistake first, because `tier` really might have
+    been dropped in the same release that added an unrelated column.
     """
     described = f"field {field!r}" if field else "no declared field"
+    shape = DriftShape.COLUMN_RENAMED if appeared else DriftShape.COLUMN_REMOVED
+    suspects = ", ".join(repr(name) for name in appeared)
 
     if edits is None:
         return DriftVerdict(
             absorbed=False,
-            shape=DriftShape.COLUMN_REMOVED,
+            shape=shape,
             detail=(
                 f"{silo}.{table}: source column {column!r} backing {described} is "
                 f"gone, and no write log was available to check what depends on "
@@ -91,9 +132,29 @@ def verdict_for_removed_column(silo: str, table: str, column: str, field: str | 
     pending = edits.get("pending", 0)
 
     if applied == 0 and pending == 0:
+        if appeared:
+            # THE REMEDY THAT LOSES SOMETHING COMES SECOND. Removing the
+            # field is irreversible from the ontology's side and wrong
+            # if this was a rename; repointing it is cheap and wrong
+            # only in that it fails loudly on the next sync.
+            return DriftVerdict(
+                absorbed=True,
+                shape=shape,
+                detail=(
+                    f"{silo}.{table}: source column {column!r} backing {described} "
+                    f"is gone, and no write has ever touched it. The same sync "
+                    f"found {len(appeared)} column(s) the ontology does not "
+                    f"declare: {suspects}. If {column!r} was RENAMED, repoint the "
+                    f"field's `column:` at the new name in ontology_schema.yaml -- "
+                    f"the values are still in the source and the mirror is now "
+                    f"serving null for them. If it was genuinely dropped, remove "
+                    f"{field or column!r} from ontology_schema.yaml when "
+                    f"convenient."
+                ),
+            )
         return DriftVerdict(
             absorbed=True,
-            shape=DriftShape.COLUMN_REMOVED,
+            shape=shape,
             detail=(
                 f"{silo}.{table}: source column {column!r} backing {described} is "
                 f"gone, and no write has ever touched it. Syncing the remaining "
@@ -107,9 +168,14 @@ def verdict_for_removed_column(silo: str, table: str, column: str, field: str | 
     # unmake it. A pending write is an OBLIGATION: proposed, undecided,
     # and targeting a field that no longer exists, so it can never be
     # applied and would sit in the queue forever.
+    # THE CANDIDATE, NAMED IN OPTION 2 RATHER THAN LEFT ABSTRACT. This
+    # branch already said "if it was renamed rather than dropped" and
+    # left the operator to find the new name themselves -- which the
+    # sync knows.
+    renamed_to = f" The same sync found: {suspects}." if appeared else ""
     return DriftVerdict(
         absorbed=False,
-        shape=DriftShape.COLUMN_REMOVED,
+        shape=shape,
         detail=(
             f"{silo}.{table}: source column {column!r} backing {described} is gone, "
             f"and {pending} pending and {applied} applied write(s) reference it. "
@@ -117,7 +183,7 @@ def verdict_for_removed_column(silo: str, table: str, column: str, field: str | 
             f"Options, in the order most deployments want them:\n"
             f"  1. Restore the column upstream, if its removal was unintended.\n"
             f"  2. Repoint the field at its new column in ontology_schema.yaml, "
-            f"if it was renamed rather than dropped.\n"
+            f"if it was renamed rather than dropped.{renamed_to}\n"
             f"  3. Remove the field from ontology_schema.yaml, accepting that "
             f"{pending} pending write(s) can never be applied and {applied} "
             f"applied write(s) stay in the log as history.\n"
