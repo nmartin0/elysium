@@ -29,6 +29,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
+import { asChartFilters, asConditions, type ChartFilter } from './aggregateCharts'
 import WatchDialog from './WatchDialog'
 
 interface SavedViewsProps {
@@ -46,7 +47,26 @@ function urlFor(view: ServerSavedView): string {
   const params = new URLSearchParams()
   if (view.object_type) params.set('type', view.object_type)
   if (view.query_text) params.set('q', view.query_text)
-  if (view.conditions.length > 0) params.set('filters', JSON.stringify(view.conditions))
+  /* CONDITIONS BACK INTO CHART FILTERS, which this did not do.
+     The URL's `filters` key speaks ChartFilter and the API speaks
+     conditions; writing the API's shape straight into the URL gave
+     ObjectSearchPanel a filter list it could not read. */
+  const filters = asChartFilters(view.conditions)
+  if (filters.length > 0) params.set('filters', JSON.stringify(filters))
+  /* HOW THE PERSON GOT HERE, which this dropped. A view saved from
+     "Ada Okafor's transactions" came back as transactions filtered by
+     customer_id -- the same ROWS and a different thing to read: the
+     filter survived and the reason for it did not.
+
+     AFTER `filters` AND DEPENDENT ON IT. The trail renders only while
+     a filter naming that exact id is present, and the server sends
+     back the RE-AUTHORISED conditions -- so a caller who may no longer
+     run the link filter gets neither it nor a sentence describing rows
+     they are not seeing. Nothing here has to check that; putting the
+     origin in the URL beside the filters is enough. */
+  if (view.origin && Object.keys(view.origin).length > 0) {
+    params.set('from', JSON.stringify(view.origin))
+  }
   for (const key of PRESENTATION_KEYS) {
     const value = view.presentation[key]
     if (typeof value === 'string' && value !== '') params.set(key, value)
@@ -156,7 +176,25 @@ export default function SavedViews({ username, onSessionExpired }: SavedViewsPro
     let conditions: Array<Record<string, unknown>> = []
     try {
       const raw = params.get('filters')
-      if (raw !== null) conditions = JSON.parse(raw)
+      /* TRANSLATED, NOT COPIED, and this was the bug. The URL's
+         `filters` key holds ChartFilters -- `{field, values, mode}` --
+         and the API's conditions are `{field, operator, value}`.
+         Storing the URL's shape verbatim meant `parse_filters` threw
+         on every saved view that had a filter, and the route's
+         FilterError branch answers with runnable=[] AND disabled=[]:
+         so the view came back matching EVERY object of its type, with
+         nothing on screen saying a filter had been lost.
+
+         That is precisely the failure `disabled_conditions` was built
+         to prevent -- "the user sees more rows than the search
+         promised and concludes their data changed" -- reached by the
+         one path that bypasses it.
+
+         `asConditions` already existed for the search request. The
+         save path simply never used it. */
+      if (raw !== null) {
+        conditions = asConditions(JSON.parse(raw) as ChartFilter[]) as Array<Record<string, unknown>>
+      }
     } catch {
       // A FILTER THAT WILL NOT PARSE saves as no filter rather than
       // refusing the save -- the URL is editable by hand, and the
@@ -171,12 +209,28 @@ export default function SavedViews({ username, onSessionExpired }: SavedViewsPro
     }
 
     try {
+      // AND THE TRAIL, read from the URL like everything else here.
+      // Absent for a search somebody typed, present for one they
+      // arrived at by following a link.
+      let origin: Record<string, unknown> = {}
+      try {
+        const raw = params.get('from')
+        if (raw !== null) {
+          const parsed: unknown = JSON.parse(raw)
+          if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            origin = parsed as Record<string, unknown>
+          }
+        }
+      } catch {
+        origin = {}
+      }
       await saveSavedView({
         name: trimmed,
         object_type: objectType,
         query_text: params.get('q') ?? '',
         conditions,
         presentation,
+        origin,
       })
       await load()
       setOpen(false)

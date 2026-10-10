@@ -175,7 +175,10 @@ def load_declared_triggers(raw, object_types, action_types,
                 object_type=object_type,
                 query_text=entry.get("query_text") or "",
                 conditions=list(entry.get("conditions") or []),
-                presentation={}, created_at="",
+                presentation={},
+                # NO TRAIL: a declared trigger's view is written in
+                # YAML, so nobody followed a link to reach it.
+                origin={}, created_at="",
             ),
             # EXPLICIT rather than **{given[0]: threshold}, which hid
             # which field was set from the type checker -- and from a

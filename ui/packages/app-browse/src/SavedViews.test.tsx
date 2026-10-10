@@ -51,6 +51,11 @@ function Where() {
   return <span data-testid="where">{`${location.pathname}${location.search}`}</span>
 }
 
+/** What the router is pointing at now, via the Where probe above. */
+function currentUrl(): string {
+  return screen.getByTestId('where').textContent ?? ''
+}
+
 function renderAt(url: string) {
   return render(
     <MemoryRouter initialEntries={[url]}>
@@ -316,5 +321,190 @@ describe('a view whose filters are no longer all authorised', () => {
 
     await screen.findByText('High value')
     expect(screen.queryByText(/filter/)).toBeNull()
+  })
+})
+
+describe('how you got here, which a save used to drop', () => {
+  /**
+   * DEV_UI.md 11.2 names the traversal chain as the third part of what
+   * a set IS -- "object type + conditions + the traversal chain that
+   * produced it". The first two were saved and this was not, so "Ada
+   * Okafor's transactions" came back as transactions filtered by
+   * customer_id: the same ROWS, and a different thing to read.
+   */
+  const TRAIL = { type: 'Customer', id: 'cust_001', field: 'customer_id' }
+  const FILTER = [{ field: 'customer_id', values: ['cust_001'], mode: 'keep' }]
+
+  const arrivedByLink =
+    `/browse?type=Transaction&filters=${encodeURIComponent(JSON.stringify(FILTER))}` +
+    `&from=${encodeURIComponent(JSON.stringify(TRAIL))}`
+
+  async function saveAs(name: string, url: string) {
+    renderAt(url)
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+    fireEvent.change(screen.getByPlaceholderText(/name this view/i), { target: { value: name } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  }
+
+  it('sends the trail with the search it describes', async () => {
+    await saveAs("Ada's transactions", arrivedByLink)
+
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledWith(expect.objectContaining({ origin: TRAIL })))
+  })
+
+  it('sends nothing for a search somebody typed', async () => {
+    // Most searches are typed, and an origin invented for one would
+    // put a sentence on screen that no link produced.
+    await saveAs('Refunds', '/browse?type=Transaction&q=refund')
+
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledWith(expect.objectContaining({ origin: {} })))
+  })
+
+  it('treats a malformed trail as none rather than failing the save', async () => {
+    // A view that refused to save because one URL key was corrupt
+    // would lose the whole search to protect a breadcrumb.
+    await saveAs('Odd', '/browse?type=Transaction&from=not-json')
+
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledWith(expect.objectContaining({ origin: {} })))
+  })
+
+  it('refuses a trail that is not an object', async () => {
+    await saveAs('Odd', `/browse?type=Transaction&from=${encodeURIComponent('[1,2]')}`)
+
+    await waitFor(() => expect(mockedSave).toHaveBeenCalledWith(expect.objectContaining({ origin: {} })))
+  })
+
+  it('puts the trail back in the URL when the view is opened', async () => {
+    mockedList.mockResolvedValue([aView({ name: "Ada's transactions", conditions: FILTER, origin: TRAIL })] as never)
+    renderAt('/browse')
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+    fireEvent.click(await screen.findByText("Ada's transactions"))
+
+    await waitFor(() => expect(currentUrl()).toContain('from='))
+    expect(decodeURIComponent(currentUrl())).toContain('"id":"cust_001"')
+  })
+
+  /**
+   * THE TRAIL CANNOT OUTLIVE ITS FILTER, and nothing in this component
+   * enforces that. The server returns the RE-AUTHORISED conditions, so
+   * a caller who may no longer run the link filter gets a view whose
+   * `conditions` no longer name it -- and `activeTrail` renders
+   * nothing without a filter naming that exact id.
+   */
+  it('still carries the trail when the filter it describes was disabled', async () => {
+    mockedList.mockResolvedValue([
+      aView({
+        name: "Ada's transactions",
+        conditions: [],
+        disabled_conditions: ['customer_id'],
+        origin: TRAIL,
+      }),
+    ] as never)
+    renderAt('/browse')
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+    fireEvent.click(await screen.findByText("Ada's transactions"))
+
+    // The URL carries it; the panel will not show it, because
+    // activeTrail has no matching filter to agree with.
+    await waitFor(() => expect(currentUrl()).toContain('from='))
+    expect(currentUrl()).not.toContain('filters=')
+  })
+
+  it('omits the key entirely for a view with no trail', async () => {
+    mockedList.mockResolvedValue([aView({ name: 'Refunds', query_text: 'refund', origin: {} })] as never)
+    renderAt('/browse')
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+    fireEvent.click(await screen.findByText('Refunds'))
+
+    await waitFor(() => expect(currentUrl()).toContain('q=refund'))
+    expect(currentUrl()).not.toContain('from=')
+  })
+})
+
+describe('the filter vocabulary, which a save used to get wrong', () => {
+  /**
+   * THE BUG. The URL's `filters` key holds ChartFilters --
+   * `{field, values, mode}` -- and the API's conditions are
+   * `{field, operator, value}`. The save path wrote the URL's shape
+   * straight through, so `parse_filters` threw on every saved view
+   * that had a filter, and the route's FilterError branch answered
+   * with runnable=[] and disabled=[].
+   *
+   * The view therefore came back matching EVERY object of its type,
+   * with nothing on screen saying a filter had been lost -- which is
+   * exactly what `disabled_conditions` was built to prevent.
+   *
+   * FOUND IN A BROWSER, not here: saving a view reached by following
+   * a link and reopening it produced no filter and no trail.
+   */
+  const CHART_FILTER = [{ field: 'customer_id', values: ['cust_001'], mode: 'keep' }]
+
+  it('saves a filter in the API vocabulary, not the URL one', async () => {
+    renderAt(`/browse?type=Transaction&filters=${encodeURIComponent(JSON.stringify(CHART_FILTER))}`)
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+    fireEvent.change(screen.getByPlaceholderText(/name this view/i), { target: { value: 'Ada' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(mockedSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conditions: [{ field: 'customer_id', operator: 'in', value: ['cust_001'] }],
+        }),
+      ),
+    )
+  })
+
+  it('saves an exclusion as not_in', async () => {
+    const excluded = [{ field: 'category', values: ['refund'], mode: 'exclude' }]
+    renderAt(`/browse?type=Transaction&filters=${encodeURIComponent(JSON.stringify(excluded))}`)
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+    fireEvent.change(screen.getByPlaceholderText(/name this view/i), { target: { value: 'No refunds' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(mockedSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conditions: [{ field: 'category', operator: 'not_in', value: ['refund'] }],
+        }),
+      ),
+    )
+  })
+
+  it('puts the filter back in the URL vocabulary when the view is opened', async () => {
+    mockedList.mockResolvedValue([
+      aView({
+        name: 'Ada',
+        conditions: [{ field: 'customer_id', operator: 'in', value: ['cust_001'] }],
+      }),
+    ] as never)
+    renderAt('/browse')
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+    fireEvent.click(await screen.findByText('Ada'))
+
+    await waitFor(() => expect(currentUrl()).toContain('filters='))
+    const url = decodeURIComponent(currentUrl())
+    expect(url).toContain('"mode":"keep"')
+    expect(url).toContain('"values":["cust_001"]')
+    expect(url).not.toContain('operator')
+  })
+
+  /**
+   * A condition the chart vocabulary cannot express -- `range`, which
+   * the API has and a ChartFilter does not. Inventing one would put a
+   * filter on screen that narrows differently from the one saved.
+   */
+  it('drops a condition it cannot express rather than inventing one', async () => {
+    mockedList.mockResolvedValue([
+      aView({
+        name: 'Big ones',
+        conditions: [{ field: 'amount', operator: 'range', value: { min: 100 } }],
+      }),
+    ] as never)
+    renderAt('/browse')
+    fireEvent.click(await screen.findByRole('button', { name: /saved views/i }))
+    fireEvent.click(await screen.findByText('Big ones'))
+
+    await waitFor(() => expect(currentUrl()).toContain('type=Transaction'))
+    expect(currentUrl()).not.toContain('filters=')
   })
 })

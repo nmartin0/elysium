@@ -10,6 +10,7 @@ import {
   pieOption,
   suitsAPie,
   valueCountsOption,
+  asChartFilters,
 } from './aggregateCharts'
 
 /**
@@ -178,5 +179,69 @@ describe('chart selections as conditions', () => {
     const filters: ChartFilter[] = [{ field: 'region', values: ['east'], mode: 'exclude' }]
 
     expect(selectionFor(filters, 'region')).toEqual({ selected: [], excluded: ['east'] })
+  })
+})
+
+describe('asChartFilters -- conditions back into the URL vocabulary', () => {
+  /**
+   * The URL's `filters` key speaks ChartFilter and the API speaks
+   * conditions. A saved view stores conditions, so rebuilding its URL
+   * means translating back — and getting this wrong in the other
+   * direction is what made every saved view with a filter come back
+   * matching everything.
+   */
+  it('turns in back into keep', () => {
+    expect(asChartFilters([{ field: 'region', operator: 'in', value: ['us-west'] }])).toEqual([
+      { field: 'region', values: ['us-west'], mode: 'keep' },
+    ])
+  })
+
+  it('turns not_in back into exclude', () => {
+    expect(asChartFilters([{ field: 'category', operator: 'not_in', value: ['refund'] }])).toEqual([
+      { field: 'category', values: ['refund'], mode: 'exclude' },
+    ])
+  })
+
+  it('round-trips with asConditions, which is the only guarantee that matters', () => {
+    const filters: ChartFilter[] = [
+      { field: 'region', values: ['us-west', 'us-east'], mode: 'keep' },
+      { field: 'category', values: ['refund'], mode: 'exclude' },
+    ]
+
+    expect(asChartFilters(asConditions(filters))).toEqual(filters)
+  })
+
+  /**
+   * AN OPERATOR THE CHART VOCABULARY CANNOT EXPRESS is dropped, not
+   * guessed at. Inventing a ChartFilter for `range` would put a filter
+   * on screen that narrows differently from the one saved.
+   */
+  it('drops an operator it cannot express, even with a list value', () => {
+    // A LIST VALUE DELIBERATELY. A first version of this case used
+    // `range` with `{min: 100}`, which the array check rejects anyway
+    // -- so deleting the operator check left the test passing and
+    // proved nothing.
+    expect(asChartFilters([{ field: 'name', operator: 'starts_with', value: ['Ada'] }])).toEqual([])
+  })
+
+  it('drops a condition whose value is not a list', () => {
+    expect(asChartFilters([{ field: 'amount', operator: 'range', value: { min: 100 } }])).toEqual([])
+  })
+
+  it('keeps the good ones beside a bad one', () => {
+    expect(
+      asChartFilters([
+        { field: 'amount', operator: 'range', value: { min: 100 } },
+        { field: 'region', operator: 'in', value: ['us-west'] },
+      ]),
+    ).toEqual([{ field: 'region', values: ['us-west'], mode: 'keep' }])
+  })
+
+  it('survives anything that is not a condition at all', () => {
+    expect(asChartFilters([null, 'nonsense', 42, {}, { field: 7 }])).toEqual([])
+  })
+
+  it('renders values as strings, since a URL has no other type', () => {
+    expect(asChartFilters([{ field: 'n', operator: 'in', value: [1, 2] }])[0]?.values).toEqual(['1', '2'])
   })
 })

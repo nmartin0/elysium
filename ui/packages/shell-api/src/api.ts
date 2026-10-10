@@ -853,6 +853,15 @@ export interface ServerSavedView {
   query_text: string
   conditions: Array<Record<string, unknown>>
   presentation: Record<string, unknown>
+  /** How the person got here: {type, id, field}, the one link they
+   *  followed to arrive at this search.
+   *
+   *  DEV_UI.md 11.2 names it the third part of what a set IS --
+   *  "object type + conditions + the traversal chain that produced
+   *  it" -- and it was the part a save dropped. Optional because a
+   *  view saved before the column existed has none, and most views
+   *  were never reached by following a link. */
+  origin?: Record<string, unknown>
   created_at: string
   /**
    * Conditions this view carries that the viewer may NO LONGER run.
@@ -947,6 +956,7 @@ export async function saveSavedView(body: {
   query_text?: string
   conditions?: Array<Record<string, unknown>>
   presentation?: Record<string, unknown>
+  origin?: Record<string, unknown>
 }): Promise<string> {
   const response = await apiFetchOrThrow('/saved-views', {
     method: 'POST',

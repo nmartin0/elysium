@@ -28,7 +28,7 @@ them.
 import json
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -57,6 +57,22 @@ CREATE TABLE IF NOT EXISTS saved_views (
     -- which is what "separate" is for: the query stays clean without
     -- the presentation being thrown away.
     presentation TEXT NOT NULL DEFAULT '{}',
+    -- HOW THE PERSON GOT HERE: {type, id, field}, the one link they
+    -- followed to arrive at this search. DEV_UI.md 11.2 names it as
+    -- the third part of what a set IS -- "object type + conditions +
+    -- the traversal chain that produced it" -- and it was the part
+    -- this table dropped.
+    --
+    -- "Ada Okafor's transactions" saved and reopened came back as
+    -- transactions filtered by customer_id, which is the same ROWS
+    -- and a different thing to a reader: the filter survived and the
+    -- reason for it did not.
+    --
+    -- NO NEW EXPOSURE. The origin's id is already in this table, as a
+    -- value inside `conditions` -- the trail only shows while a filter
+    -- naming that exact id is present, which is what makes it a
+    -- description of the current filter rather than history.
+    origin TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL
 );
 -- Every read is "mine, by name". One index on the pair.
@@ -74,6 +90,11 @@ class SavedView:
     conditions: list
     presentation: dict
     created_at: str
+    # LAST, AND DEFAULTED, so that every existing caller constructing
+    # one positionally keeps working. Two test fixtures and a declared
+    # trigger build these by position, and a required field in the
+    # middle broke all three at once -- for a value none of them has.
+    origin: dict = field(default_factory=dict)
 
 
 class SavedViewStore:
@@ -92,12 +113,20 @@ class SavedViewStore:
                 add_column_if_missing(
                     "saved_views", "presentation", "TEXT NOT NULL DEFAULT '{}'",
                 ),
+                # AND THE SAME FOR `origin`, for the same reason. The
+                # comment above is a record of what happens without
+                # one: a database created before the column existed
+                # returned no views at all.
+                add_column_if_missing(
+                    "saved_views", "origin", "TEXT NOT NULL DEFAULT '{}'",
+                ),
             ),
         )
 
     def save(self, owner_user_id: str, name: str, object_type: str,
              query_text: str = "", conditions: list | None = None,
-             presentation: dict | None = None) -> str | None:
+             presentation: dict | None = None,
+             origin: dict | None = None) -> str | None:
         """Stores one view. Replaces an existing one of the same name.
 
         BY NAME, NOT BY ID, because that is how a person thinks about
@@ -115,10 +144,11 @@ class SavedViewStore:
                 conn.execute(
                     "INSERT INTO saved_views (view_id, owner_user_id, name, "
                     "object_type, query_text, conditions, presentation, "
-                    "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "origin, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (view_id, owner_user_id, name, object_type, query_text,
                      json.dumps(conditions or []),
                      json.dumps(presentation or {}),
+                     json.dumps(origin or {}),
                      datetime.now(UTC).isoformat()),
                 )
                 conn.commit()
@@ -138,7 +168,7 @@ class SavedViewStore:
             with self._connection() as conn:
                 rows = conn.execute(
                     "SELECT view_id, name, object_type, query_text, "
-                    "conditions, presentation, created_at FROM saved_views "
+                    "conditions, presentation, origin, created_at FROM saved_views "
                     "WHERE owner_user_id = ? ORDER BY created_at DESC",
                     (owner_user_id,),
                 ).fetchall()
@@ -162,7 +192,7 @@ class SavedViewStore:
             with self._connection() as conn:
                 row = conn.execute(
                     "SELECT view_id, name, object_type, query_text, "
-                    "conditions, presentation, created_at FROM saved_views "
+                    "conditions, presentation, origin, created_at FROM saved_views "
                     "WHERE view_id = ?",
                     (view_id,),
                 ).fetchone()
@@ -206,7 +236,25 @@ class SavedViewStore:
             presentation = json.loads(row["presentation"])
         except (TypeError, json.JSONDecodeError):
             presentation = {}
+        try:
+            origin = json.loads(row["origin"])
+        except (TypeError, json.JSONDecodeError, IndexError, KeyError):
+            # THE SAME BARGAIN THE FILTERS GET, and one more exception
+            # than they need: a row from before the migration ran has
+            # no such column at all, and a view that vanished would be
+            # blamed on the product where a missing trail will not be.
+            origin = {}
+        # BY KEYWORD, not by position. The positional form is what
+        # made adding a field a breaking change for every caller, and
+        # this one has to agree with the SELECT's column order as
+        # well -- two orderings to keep in step instead of none.
         return SavedView(
-            row["view_id"], row["name"], row["object_type"],
-            row["query_text"], conditions, presentation, row["created_at"],
+            view_id=row["view_id"],
+            name=row["name"],
+            object_type=row["object_type"],
+            query_text=row["query_text"],
+            conditions=conditions,
+            presentation=presentation,
+            created_at=row["created_at"],
+            origin=origin if isinstance(origin, dict) else {},
         )

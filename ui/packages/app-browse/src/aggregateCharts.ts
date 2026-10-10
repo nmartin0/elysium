@@ -163,6 +163,39 @@ export function asConditions(filters: ChartFilter[]): unknown[] {
     }))
 }
 
+/**
+ * Conditions back as chart filters -- `asConditions` reversed.
+ *
+ * WHY THE REVERSE EXISTS AT ALL. The URL's `filters` key speaks
+ * ChartFilter (`{field, values, mode}`) and the API speaks conditions
+ * (`{field, operator, value}`). A saved view stores conditions, so
+ * rebuilding its URL means translating back.
+ *
+ * ONLY `in` AND `not_in` SURVIVE, and that is the honest limit rather
+ * than an oversight. Those are the only two `asConditions` produces,
+ * so they are the only two a view saved from a URL can contain; a
+ * `range` condition written by some other route has no ChartFilter
+ * that means the same thing, and inventing one would put a filter on
+ * screen that narrows differently from the one that was saved.
+ * Anything else is dropped here and the caller decides what to say.
+ */
+export function asChartFilters(conditions: unknown[]): ChartFilter[] {
+  const filters: ChartFilter[] = []
+  for (const condition of conditions) {
+    if (condition === null || typeof condition !== 'object') continue
+    const { field, operator, value } = condition as Record<string, unknown>
+    if (typeof field !== 'string') continue
+    if (operator !== 'in' && operator !== 'not_in') continue
+    if (!Array.isArray(value)) continue
+    filters.push({
+      field,
+      values: value.map((each) => String(each)),
+      mode: operator === 'not_in' ? 'exclude' : 'keep',
+    })
+  }
+  return filters
+}
+
 /** The values selected on one field's chart, for dimming the rest. */
 export function selectionFor(
   filters: ChartFilter[],

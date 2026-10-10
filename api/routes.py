@@ -2024,6 +2024,18 @@ class SavedViewResponse(BaseModel):
     #: client would never have seen it.
     disabled_conditions: list[str] = []
     presentation: dict[str, Any]
+    #: HOW THE PERSON GOT HERE: {type, id, field}, the one link they
+    #: followed to arrive at this search. DEV_UI.md 11.2 names it as
+    #: the third part of what a set IS -- "object type + conditions +
+    #: the traversal chain that produced it".
+    #:
+    #: IT CANNOT OUTLIVE ITS FILTER, and nothing here has to enforce
+    #: that. The trail renders only while a filter naming that exact
+    #: id is present, and `conditions` above is the RE-AUTHORISED
+    #: list -- so a caller who may no longer run the link filter gets
+    #: a view with neither the filter nor the trail, rather than a
+    #: sentence describing rows they are not seeing.
+    origin: dict[str, Any] = {}
     created_at: str
 
 
@@ -2037,6 +2049,7 @@ class SaveViewRequest(BaseModel):
     query_text: str = ""
     conditions: list[dict[str, Any]] = []
     presentation: dict[str, Any] = {}
+    origin: dict[str, Any] = {}
 
 
 def _saved_view_store(request: Request):
@@ -2080,7 +2093,33 @@ def _reauthorized(request: Request, current_user: UserRecord, view):
         # "nothing runnable" is the same answer as "you may not run
         # it", which is what the caller needs; raising would make one
         # bad saved view break the whole list.
-        return ReauthorizedConditions(runnable=[], disabled=[])
+        #
+        # BUT IT MUST STILL BE NAMED, and this returned runnable=[]
+        # AND disabled=[] -- so the view came back matching EVERY
+        # object of its type with nothing on screen saying a filter
+        # had been lost. That is exactly the failure
+        # `disabled_conditions` exists to prevent: "the user sees more
+        # rows than the search promised and concludes their data
+        # changed", reached by the one branch that bypassed it.
+        #
+        # SEEN FOR REAL, not imagined: the save path stored the URL's
+        # ChartFilter shape rather than a condition, so parse_filters
+        # threw on every saved view that had a filter. That is fixed
+        # at its source, and this stays because an operator removed in
+        # a later version would land here again.
+        #
+        # BEST EFFORT ON THE NAMES. The list did not parse, so there
+        # are no fields to report except whatever `field` keys can be
+        # read off the raw dicts. A name that is merely probable beats
+        # silence, because silence reads as "no filter was ever here".
+        return ReauthorizedConditions(
+            runnable=[],
+            disabled=sorted({
+                str(condition["field"])
+                for condition in (view.conditions or [])
+                if isinstance(condition, dict) and "field" in condition
+            }),
+        )
     checked = mediator.reauthorize_conditions(
         current_user, view.object_type, conditions)
     # BACK TO THE STORED SHAPE. `runnable` holds FieldFilters; the
@@ -2146,6 +2185,7 @@ def saved_views_route(
             # search promised and concludes their data changed".
             "disabled_conditions": checked.disabled,
             "presentation": view.presentation,
+            "origin": view.origin,
             "created_at": view.created_at,
         })
     return {"views": views}
@@ -2174,6 +2214,7 @@ def save_view_route(
     view_id = _saved_view_store(request).save(
         current_user.user_id, body.name, body.object_type,
         body.query_text, body.conditions, body.presentation,
+        body.origin,
     )
     if view_id is None:
         raise HTTPException(status_code=500, detail="Could not save that view")
