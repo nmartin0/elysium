@@ -6,6 +6,7 @@ import LoadingState from '@elysium/shell-api/components/LoadingState'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
+import AskAboutObject from './AskAboutObject'
 import ObjectHistory from './ObjectHistory'
 import Provenance from './Provenance'
 import PublishedHistory from './PublishedHistory'
@@ -266,7 +267,15 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
   return (
     <div className="object-detail">
       <p className="object-detail__type">{objectType}</p>
-      <h2 className="object-detail__title">{titleValue as React.ReactNode}</h2>
+      {/* THE AGENT WHERE THE SUBJECT IS, which is the same placement
+          `SetName` uses in Browse: beside the thing being asked about,
+          not in a toolbar. DEV_UI.md 5.4 wants it "seeded with what is
+          on screen", and on this page the heading IS what is on
+          screen. */}
+      <div className="object-detail__heading">
+        <h2 className="object-detail__title">{titleValue as React.ReactNode}</h2>
+        <AskAboutObject objectType={objectType} objectId={objectId} />
+      </div>
       {titleValue !== objectId && <p className="object-detail__subtitle">{objectId}</p>}
       <dl className="object-detail__fields">
         {/* THE SCHEMA, NOT THE RESPONSE, and this is the fourth state

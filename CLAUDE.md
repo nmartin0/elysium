@@ -438,8 +438,23 @@ deadline) and 29 (measure the loop) would fix that, and **item 33
 blocks both**: `LLMAdapter.chat()` has nowhere to put a timeout and
 discards the token counts every provider returns.
 
-**Vertex-lite is not entirely frontend**, despite what an earlier
-roadmap entry said. `search_around`'s `total` is the count of what it
-already fetched, and `count_objects` has no HTTP route — so
-count-before-expand has nothing to count with. That endpoint comes
-first. `BLOCKING.md` has what survived of the rest.
+**Vertex-lite IS now entirely frontend, and the paragraph that used to
+sit here was an example of the failure mode two sections above.** It
+said `count_objects` had no HTTP route, so "that endpoint comes
+first". It has one: `POST /api/objects/{object_type}/count`, added by
+`f042337` with a `CountResponse` model, a typed client at
+`api.ts:1129`, and tests at both levels. Verified rather than
+remembered — `app.openapi()` carries the path, and the running server
+answers 403 rather than 404.
+
+What remains true is the other half: `search_around`'s `total` is
+`len(ids)`, the count of what it already fetched, so count-before-
+expand must call `/count` separately rather than read `total`. The
+clients for both are built and tested and have **zero UI callers** —
+`searchAround` and `countObjects` are referenced nowhere outside
+`api.ts` and its own test. `BLOCKING.md` has what survived of the
+rest.
+
+**And the lesson is the one already written above: READ BEFORE
+ASSUMING SOMETHING IS MISSING.** This file said an endpoint was the
+next thing to build for roughly forty patches after it was built.

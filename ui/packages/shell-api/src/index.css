@@ -1767,12 +1767,27 @@
 
   /* The agent's way in, beside the subject rather than in a toolbar.
    * A link, not a button: it goes somewhere, and the destination is a
-   * URL somebody can send. */
-  .ask-about-set {
+   * URL somebody can send.
+   *
+   * ONE RULE FOR BOTH PLACES IT APPEARS -- the set's name in Browse
+   * and the object page's heading. Both sit it at the end of a row
+   * whose other end is the subject, so `margin-left: auto` does the
+   * same job in each, and a second rule would be the same rule under
+   * another name. */
+  .ask-the-agent {
     margin-left: auto;
     font-size: var(--type-dense-size);
     line-height: var(--type-dense-line);
     font-weight: var(--type-dense-weight);
+  }
+
+  /* The object's title and the way into the agent, on one line. The
+   * title keeps its own type step; this only puts something beside
+   * it, which is why the rule sets no font. */
+  .object-detail__heading {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-normal);
   }
 
   .set-name__type {

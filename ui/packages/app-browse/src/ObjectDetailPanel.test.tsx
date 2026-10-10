@@ -594,3 +594,49 @@ describe('three kinds of nothing, which must not look alike', () => {
     expect(await screen.findByText('Account id')).toBeInTheDocument()
   })
 })
+
+describe('the agent, reachable from the object', () => {
+  /**
+   * DEV_UI.md section 5 item 4, "THE AGENT EVERYWHERE". `AskAboutObject`
+   * has its own tests for what it puts in the link; what is tested here
+   * is the half that makes the claim true -- that the link is on this
+   * page at all, beside the subject rather than somewhere a person has
+   * to look for it.
+   */
+  it('offers a way into the agent from the object page', async () => {
+    mockedGetObjectDetail.mockResolvedValue({ fields: { name: 'Ada Okafor' } } as never)
+    renderPanel('Customer', 'c1')
+
+    expect(await screen.findByRole('link', { name: 'Ask about this object' })).toBeInTheDocument()
+  })
+
+  it('puts it beside the title, which is the subject of the page', async () => {
+    mockedGetObjectDetail.mockResolvedValue({ fields: { name: 'Ada Okafor' } } as never)
+    renderPanel('Customer', 'c1')
+
+    const link = await screen.findByRole('link', { name: 'Ask about this object' })
+    const heading = link.closest('.object-detail__heading')
+
+    expect(heading?.querySelector('.object-detail__title')?.textContent).toBe('Ada Okafor')
+  })
+
+  /**
+   * THE TITLE IS ON SCREEN AND MUST NOT BE IN THE LINK. Asserted here
+   * as well as in AskAboutObject's own file, because this is the page
+   * that HAS the title -- the component is only safe for as long as
+   * nobody passes it one, and this is where someone would.
+   */
+  it('does not carry the object title into the URL', async () => {
+    mockedGetObjectDetail.mockResolvedValue({ fields: { name: 'Ada Okafor' } } as never)
+    renderPanel('Customer', 'c1')
+
+    const link = await screen.findByRole('link', { name: 'Ask about this object' })
+    const href = decodeURIComponent(link.getAttribute('href') ?? '')
+
+    // Twice on screen -- as the heading and as the `name` field -- and
+    // in neither case in the link. Asserting it IS rendered is what
+    // stops this passing vacuously on a page that failed to load.
+    expect(screen.getAllByText('Ada Okafor').length).toBeGreaterThan(0)
+    expect(href).not.toContain('Ada')
+  })
+})
