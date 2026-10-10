@@ -58,6 +58,8 @@ from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
 from core.llm.interface import LLMAdapter
 from core.llm.retrying_adapter import RetryingLLMAdapter
 from core.mirror.catalog import open_mirror_catalog
+from core.mirror.freshness import FreshnessTarget
+from core.mirror.freshness import targets_for as freshness_targets_for
 from core.mirror.mirror_adapter import MirrorReadAdapter
 from core.ontology.action_types import validate_action_types
 from core.ontology.bindings import TYPE_BINDING_KEYS, merge_bindings
@@ -247,6 +249,11 @@ class DeploymentConfig:
     # block, validated at load. LAST AND DEFAULTED because every field
     # above is required, and a deployment without the block is the
     # ordinary case. See core/declared_triggers.py.
+    # {object type: how current it is expected to be}, from
+    # config.yaml's freshness block and each type's own override.
+    # Every declared type has an entry; one that declares nothing gets
+    # the deployment default.
+    freshness_targets: Mapping[str, "FreshnessTarget"] = MappingProxyType({})
     declared_triggers: tuple = ()
 
 
@@ -624,6 +631,21 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
                 "pending_write_ttl_minutes", 240,
             ),
             schema=deep_freeze(schema_raw["object_types"]),
+            # HOW CURRENT EACH TYPE IS EXPECTED TO BE (DEV_UI.md 16.6).
+            #
+            # RESOLVED HERE RATHER THAN VALIDATED SEPARATELY, because
+            # the resolution IS the validation: a target tighter than
+            # the sync interval cannot be turned into a window, so the
+            # function that builds one is the function that refuses.
+            # Two passes would mean two places that must agree about
+            # what a legal declaration is.
+            #
+            # AND ONCE PER LOAD, NOT PER REQUEST. The route serving
+            # this answers on every page; re-reading YAML to decide
+            # what 26 hours means would be work done thousands of
+            # times to get the same number.
+            freshness_targets=MappingProxyType(
+                freshness_targets_for(config, schema_raw["object_types"])),
             users=deep_freeze(policy_raw["users"]),
             roles=deep_freeze(_freeze_roles(policy_raw["roles"])),
             security_attribute=policy_raw["security_attribute"],
@@ -708,6 +730,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # module docstring for the full reasoning, including what's
     # DELIBERATELY still deferred).
     validate_object_types(schema_raw["object_types"])
+
 
     # Every role's own grants, checked against what they actually
     # reference -- see core/intermediate_layer/policy_validation.py's

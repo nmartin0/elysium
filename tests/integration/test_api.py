@@ -419,11 +419,79 @@ def test_data_freshness_reports_gold_and_its_publication(client):
     response = client.get("/api/data-freshness")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "source": "gold",
-        "last_synced_at": "2026-01-15T09:00:00+00:00",
-        "published_at": {"Customer": "2026-01-15T09:05:00+00:00"},
-    }
+    body = response.json()
+    assert body["source"] == "gold"
+    assert body["last_synced_at"] == "2026-01-15T09:00:00+00:00"
+    assert body["published_at"] == {"Customer": "2026-01-15T09:05:00+00:00"}
+    # THE KEY SET IS STILL FROZEN, which is what the exact-body
+    # comparison here was for -- a field added to this response should
+    # be a decision somebody makes, not something that appears. The
+    # per-type verdicts are checked below rather than inline, because
+    # their values depend on the clock.
+    assert set(body) == {"source", "last_synced_at", "published_at", "freshness"}
+
+
+def test_data_freshness_says_whether_each_type_is_as_current_as_it_should_be(client):
+    # DEV_UI.md 16.6 point 7: "SHOWN, NOT ONLY ALERTED ON." The
+    # publication time alone is trivia -- a reader told "published 30
+    # hours ago" cannot tell whether that is normal, and one told
+    # "expected within 26" can.
+    import dataclasses
+    from datetime import UTC, datetime, timedelta
+
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west",
+                                                 "customer_service")
+    _login(client, "alice", "correct-pw")
+    long_ago = (datetime.now(UTC) - timedelta(hours=60)).isoformat()
+    client.app.state.generation = dataclasses.replace(
+        client.app.state.generation,
+        gold_published_at={"Customer": long_ago},
+    )
+
+    body = client.get("/api/data-freshness").json()
+
+    customer = body["freshness"]["Customer"]
+    assert customer["state"] == "fail", "60 hours is past the nightly default of 50"
+    assert customer["warn_after_hours"] == 26.4
+    assert customer["fail_after_hours"] == 50.4
+
+
+def test_data_freshness_reports_a_type_that_has_NEVER_published(client):
+    # The one a reader most needs told about: its reads fail outright.
+    # Reporting only what published would be a page of reassuring green
+    # that omits the failure.
+    import dataclasses
+
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west",
+                                                 "customer_service")
+    _login(client, "alice", "correct-pw")
+    client.app.state.generation = dataclasses.replace(
+        client.app.state.generation, gold_published_at={},
+    )
+
+    body = client.get("/api/data-freshness").json()
+
+    assert body["freshness"]
+    assert {each["state"] for each in body["freshness"].values()} == {"never"}
+
+
+def test_data_freshness_judges_a_recent_publication_fresh(client):
+    # THE CONTROL. A verdict that said "fail" whatever the timestamp
+    # would pass every test above it.
+    import dataclasses
+    from datetime import UTC, datetime
+
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west",
+                                                 "customer_service")
+    _login(client, "alice", "correct-pw")
+    client.app.state.generation = dataclasses.replace(
+        client.app.state.generation,
+        gold_published_at={"Customer": datetime.now(UTC).isoformat()},
+    )
+
+    body = client.get("/api/data-freshness").json()
+
+    assert body["freshness"]["Customer"]["state"] == "fresh"
 
 
 def test_data_freshness_reports_the_publication_it_is_serving(client):

@@ -434,6 +434,14 @@ quarantine_last_detected_at
 # reason vulture cannot see them: set by name in the route's dict,
 # read in TypeScript.
 expectation_warnings
+# TypeFreshnessResponse's window (DEV_UI.md 16.6). Same reason: set by
+# name in the route's dict, read in TypeScript.
+warn_after_hours
+fail_after_hours
+# DeploymentConfigResponse's declared cadence -- the number every
+# freshness window derives from. Set by name in the config route's
+# dict, read in TypeScript.
+sync_interval_hours
 
 
 # tests/unit/test_snapshot_expiry.py -- an autouse fixture, called by

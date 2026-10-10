@@ -60,6 +60,9 @@ interface DeploymentConfigBody {
   write_targets?: string[] | null
   trusted_proxies?: string[]
   on_type_mismatch?: string | null
+  /** How often this deployment expects to sync, in hours. Every
+   *  freshness threshold a reader is judged against derives from it. */
+  sync_interval_hours?: number | null
   ingest_undeclared_columns?: boolean | null
   enabled_tools: string[]
   silo_names: string[]
@@ -275,6 +278,18 @@ export default function DeploymentConfig({ onSessionExpired }: { onSessionExpire
                   : config.trusted_proxies.join(', ') || 'none (TCP peer)',
               ],
               ['On type mismatch', config.on_type_mismatch ?? 'not reported'],
+              [
+                // WHERE THE FRESHNESS WINDOWS COME FROM. Browse now
+                // tells a reader "Overdue -- this deployment expects
+                // one every 26 hours", and 26 is this number times a
+                // constant. Without it on this panel, the only honest
+                // answer to "where did 26 come from" is to read the
+                // source.
+                'Expected sync interval',
+                config.sync_interval_hours === undefined || config.sync_interval_hours === null
+                  ? 'not reported'
+                  : `every ${config.sync_interval_hours} hours`,
+              ],
               [
                 'Ingest undeclared columns',
                 config.ingest_undeclared_columns === undefined || config.ingest_undeclared_columns === null

@@ -285,3 +285,29 @@ describe('the four operational toggles', () => {
     expect(screen.getAllByText('not reported').length).toBeGreaterThanOrEqual(3)
   })
 })
+
+describe('where the freshness windows come from', () => {
+  /**
+   * Browse now tells a reader "Overdue -- this deployment expects one
+   * every 26 hours". 26 is the declared interval times a constant, and
+   * without it on this panel the only honest answer to "where did 26
+   * come from" is to read the source.
+   */
+  it('shows the expected sync interval', async () => {
+    getDeploymentConfig.mockResolvedValue({ ...BODY, sync_interval_hours: 24 })
+    render(<DeploymentConfig onSessionExpired={() => {}} />)
+
+    expect(await screen.findByText('Expected sync interval')).toBeInTheDocument()
+    expect(screen.getByText('every 24 hours')).toBeInTheDocument()
+  })
+
+  it('says so rather than guessing when the server did not report one', async () => {
+    // An older server. "not reported" is the panel's standing word for
+    // a setting it cannot see, and inventing 24 would make a
+    // deployment look configured when it is only defaulted.
+    render(<DeploymentConfig onSessionExpired={() => {}} />)
+
+    expect(await screen.findByText('Expected sync interval')).toBeInTheDocument()
+    expect(screen.queryByText(/every \d+ hours/)).toBeNull()
+  })
+})

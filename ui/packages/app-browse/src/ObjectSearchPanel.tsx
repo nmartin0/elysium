@@ -11,16 +11,40 @@ import { Button, Card, CardList, Checkbox, HTMLSelect, NonIdealState } from '@bl
 // when the server stopped at 10,000 is worth that risk against saying
 // nothing useful at all.
 const MAX_SCAN_LABEL = '10,000'
+
+/**
+ * The window a late publication missed, in words.
+ *
+ * THE WARN THRESHOLD, NOT THE FAIL ONE, whichever state is showing.
+ * It is the promise the deployment made -- "a publication every 26
+ * hours" -- and the fail threshold is only how long it is given to
+ * recover from breaking it. Telling a reader the later number would
+ * describe a looser promise than the one that was made.
+ *
+ * ROUNDED TO WHOLE HOURS, because 26.4 is a derived number nobody
+ * declared: the operator wrote 24 and the multiple produced the rest,
+ * and a decimal invites somebody to go looking for where they typed
+ * it.
+ */
+function expectedWithin(staleness: TypeFreshness): string {
+  const hours = staleness.warn_after_hours
+  if (hours === null || hours === undefined) return 'publication'
+  const whole = Math.round(hours)
+  return whole === 1 ? 'hour' : `${whole} hours`
+}
+import StatusTag from '@elysium/shell-api/components/StatusTag'
 import { Link } from 'react-router-dom'
 import {
   getDataFreshness,
   publicationTime,
+  worstFreshness,
   getErrorMessage,
   getVisibleActionTypesCached,
   handleIfSessionExpired,
   matchingIds,
   searchObjects,
   type DataFreshness,
+  type TypeFreshness,
 } from '@elysium/shell-api/api'
 import FilterBar, { type FieldFilter } from '@elysium/shell-api/components/FilterBar'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
@@ -266,6 +290,11 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   const neverSynced = neverPublished && !freshness?.last_synced_at
   // The clock this reader actually experiences, for the type on screen.
   const publishedAt = publicationTime(freshness, selectedType ? [selectedType] : [])
+  // WHETHER THAT PUBLICATION IS LATE, against the window this
+  // deployment declared for this type. Null when nothing is known and
+  // for an exempt type -- which is not the same as fresh and must not
+  // be reported as it.
+  const staleness = worstFreshness(freshness, selectedType ? [selectedType] : [])
   useEffect(() => {
     getDataFreshness()
       .then(setFreshness)
@@ -766,7 +795,30 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           so a deployment reading gold showed no freshness at all --
           checked in a browser, zero of these on screen. */}
       {publishedAt !== null ? (
-        <p className="object-search__freshness">Showing data published {formatTimestamp(publishedAt)}.</p>
+        /* AND WHETHER THAT IS LATE, which the timestamp alone cannot
+           say. DEV_UI.md 16.6: "a freshness number without a threshold
+           is trivia" -- a reader told "published 30 hours ago" has no
+           way to know whether that is normal for this deployment, and
+           one told the window does.
+
+           ONLY WHEN THERE IS SOMETHING TO SAY. A fresh type renders
+           exactly what it rendered before: a deployment working
+           correctly must not read as one in trouble, which is how a
+           warning becomes something people stop seeing. */
+        <p className="object-search__freshness">
+          Showing data published {formatTimestamp(publishedAt)}.
+          {staleness && staleness.state !== 'fresh' && (
+            <>
+              {' '}
+              <StatusTag state={staleness.state === 'fail' ? 'refused' : 'pending'}>
+                {staleness.state === 'fail' ? 'Overdue' : 'Later than expected'}
+              </StatusTag>{' '}
+              <span className="object-search__window">
+                This deployment expects one every {expectedWithin(staleness)}.
+              </span>
+            </>
+          )}
+        </p>
       ) : (
         neverPublished && (
           <p className="object-search__freshness">Showing mirrored data, which has not been published yet.</p>

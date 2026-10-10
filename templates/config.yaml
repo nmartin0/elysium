@@ -140,3 +140,32 @@ tools:
 #
 # mirror:
 #   retain_publications: 30
+
+
+# HOW OFTEN THIS DEPLOYMENT EXPECTS TO SYNC, in hours.
+#
+# ONE NUMBER, AND EVERY FRESHNESS THRESHOLD DERIVES FROM IT. Change
+# this when your schedule changes and every threshold follows -- which
+# is the point. A threshold written as an absolute would quietly stop
+# meaning anything the moment the schedule moved.
+#
+#     warn at 1.1 x interval   (26 hours on a nightly deployment)
+#     fail at 2.1 x interval   (50 hours)
+#
+# WARN IS ONE LATE RUN; FAIL IS TWO CONSECUTIVE MISSES. A run that
+# slips by an hour is not an incident, and a channel that says it is
+# becomes a channel nobody reads.
+#
+# MEASURED FROM THE PUBLICATION, per object type -- the clock a reader
+# actually experiences. A source read hourly but published daily is a
+# day stale to the person looking at it.
+#
+# 24 IS THE DEFAULT, because INSTALL.md leaves scheduling to you and
+# nightly is what an unattended deployment does.
+#
+# A TYPE MAY DECLARE ITS OWN PAIR in ontology_schema.yaml, or declare
+# itself exempt. A target TIGHTER than this interval is refused at
+# load, naming both numbers: a type asking for two hours on a nightly
+# deployment is not ambitious, it is guaranteed to alert forever.
+# freshness:
+#   sync_interval_hours: 24

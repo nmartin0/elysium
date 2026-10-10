@@ -1804,3 +1804,99 @@ describe('the results list is one tab stop', () => {
     expect(screen.getByRole('grid').getAttribute('aria-rowcount')).toBe('2')
   })
 })
+
+describe('whether the publication is late', () => {
+  /**
+   * DEV_UI.md 16.6 point 7: "SHOWN, NOT ONLY ALERTED ON. Every object
+   * view carries 'published 14:22', so staleness is visible before it
+   * becomes an alert."
+   *
+   * And 16.6's opening rule for why the timestamp alone is not enough:
+   * "a freshness number without a threshold is trivia". A reader told
+   * "published 30 hours ago" has no way to know whether that is normal
+   * for this deployment.
+   */
+  function withVerdict(state: string, warn = 26.4) {
+    mockedGetDataFreshness.mockResolvedValue({
+      source: 'gold',
+      last_synced_at: null,
+      published_at: { Customer: new Date(Date.now() - 30 * 60 * 60_000).toISOString() },
+      freshness: {
+        Customer: { state, published_at: null, warn_after_hours: warn, fail_after_hours: 50.4 },
+      },
+    } as never)
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    renderPanel(CUSTOMER_SCHEMA)
+  }
+
+  it('says so when a publication is later than expected', async () => {
+    withVerdict('warn')
+
+    expect(await screen.findByText('Later than expected')).toBeInTheDocument()
+  })
+
+  it('says so more firmly when it is overdue', async () => {
+    withVerdict('fail')
+
+    expect(await screen.findByText('Overdue')).toBeInTheDocument()
+  })
+
+  it('names the window the deployment promised', async () => {
+    // The number is what turns the timestamp from trivia into
+    // something a reader can act on.
+    withVerdict('warn')
+
+    expect(await screen.findByText(/expects one every 26 hours/)).toBeInTheDocument()
+  })
+
+  /**
+   * THE WARN THRESHOLD, NOT THE FAIL ONE, whichever state is showing.
+   * It is the promise the deployment made; the fail threshold is only
+   * how long it is given to recover from breaking it, and quoting the
+   * later number would describe a looser promise than was made.
+   */
+  it('names the warn window even when the state is overdue', async () => {
+    withVerdict('fail')
+
+    expect(await screen.findByText(/expects one every 26 hours/)).toBeInTheDocument()
+  })
+
+  /**
+   * THE CONTROL, and the one that matters most here. A deployment
+   * working correctly must not read as one in trouble -- that is how a
+   * warning becomes something people stop seeing.
+   */
+  it('says nothing at all when the publication is on time', async () => {
+    withVerdict('fresh')
+
+    await screen.findByText(/published/)
+    expect(screen.queryByText('Later than expected')).toBeNull()
+    expect(screen.queryByText('Overdue')).toBeNull()
+    expect(screen.queryByText(/expects one every/)).toBeNull()
+  })
+
+  it('says nothing about a type that is exempt from judgement', async () => {
+    // Not fresh -- unjudged. Reporting it as fresh would be a verdict
+    // nobody made.
+    withVerdict('exempt')
+
+    await screen.findByText(/published/)
+    expect(screen.queryByText(/expects one every/)).toBeNull()
+  })
+
+  it('still reports the publication time when the server sent no verdict', async () => {
+    // An older server, or one that failed to compute them. The
+    // timestamp was useful before this existed and must not disappear
+    // because the extra half is missing.
+    mockedGetDataFreshness.mockResolvedValue({
+      source: 'gold',
+      last_synced_at: null,
+      published_at: { Customer: new Date(Date.now() - 2 * 60 * 60_000).toISOString() },
+    })
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    renderPanel(CUSTOMER_SCHEMA)
+
+    expect(await screen.findByText(/2 hours ago/)).toBeInTheDocument()
+    expect(screen.queryByText(/expects one every/)).toBeNull()
+  })
+})

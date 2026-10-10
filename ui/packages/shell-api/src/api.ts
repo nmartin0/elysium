@@ -509,6 +509,53 @@ export interface DataFreshness {
    *  source read hourly but published daily is a day stale to the
    *  person looking at it. */
   published_at?: Record<string, string> | null
+  /** Whether each type is as current as the deployment said it should
+   *  be, against its own declared window.
+   *
+   *  A TIMESTAMP WITHOUT A THRESHOLD IS TRIVIA. "Published 30 hours
+   *  ago" tells a reader nothing on its own; whether 30 hours is late
+   *  is a question only the deployment's declared sync interval can
+   *  answer. */
+  freshness?: Record<string, TypeFreshness> | null
+}
+
+/** One type's state, and the window it was judged against. */
+export interface TypeFreshness {
+  /** FIVE STATES, not three. `never` and `exempt` are not points on
+   *  the same scale as the other three: a type that has never
+   *  published is not stale but ABSENT, and its reads fail outright;
+   *  an exempt type is not fresh but UNJUDGED. */
+  state: 'fresh' | 'warn' | 'fail' | 'never' | 'exempt'
+  published_at?: string | null
+  /** Null for an exempt type, which has a window only as a formality. */
+  warn_after_hours?: number | null
+  fail_after_hours?: number | null
+}
+
+/**
+ * The worst state among the types on screen, or null if nothing is
+ * known about them.
+ *
+ * THE WORST, matching `publicationTime`'s rule for the same reason:
+ * somebody comparing two objects is only as current as the staler of
+ * them, and reporting the better state would be a reassurance no
+ * single screen is entitled to give.
+ *
+ * `exempt` IS NOT A RANK. A type nobody is judging cannot make a
+ * screen look worse or better, so it is skipped rather than ordered --
+ * and a screen showing only exempt types has no verdict at all, which
+ * is the honest answer rather than "fresh".
+ */
+const SEVERITY: Record<string, number> = { fresh: 0, warn: 1, never: 2, fail: 3 }
+
+export function worstFreshness(freshness: DataFreshness | null, objectTypes: string[]): TypeFreshness | null {
+  const states = freshness?.freshness
+  if (!states) return null
+  const judged = objectTypes
+    .map((type) => states[type])
+    .filter((each): each is TypeFreshness => each !== undefined && each.state !== 'exempt')
+  if (judged.length === 0) return null
+  return judged.reduce((worst, each) => ((SEVERITY[each.state] ?? 0) > (SEVERITY[worst.state] ?? 0) ? each : worst))
 }
 
 /**

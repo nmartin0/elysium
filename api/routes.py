@@ -250,6 +250,26 @@ class ProfileResponse(BaseModel):
     must_change_password: bool = False
 
 
+class TypeFreshnessResponse(BaseModel):
+    """Whether one object type is as current as it is meant to be.
+
+    THE VERDICT AND THE WINDOW IT WAS JUDGED AGAINST, together.
+    DEV_UI.md 16.6: "a freshness number without a threshold is
+    trivia" -- a reader told "published 30 hours ago" cannot tell
+    whether that is normal, and one told "expected within 26" can.
+
+    FIVE STATES, not three. `never` and `exempt` are not points on the
+    same scale as the other three: a type that has never published is
+    not stale but ABSENT, and its reads fail outright; a type that is
+    exempt is not fresh but UNJUDGED.
+    """
+
+    state: str
+    published_at: str | None = None
+    warn_after_hours: float | None = None
+    fail_after_hours: float | None = None
+
+
 class DataFreshnessResponse(BaseModel):
     source: str
     last_synced_at: str | None
@@ -260,6 +280,13 @@ class DataFreshnessResponse(BaseModel):
     # read hourly but published daily is a day stale to the person
     # looking at it.
     published_at: dict[str, str] | None = None
+    # PER TYPE, AGAINST ITS OWN DECLARED WINDOW (DEV_UI.md 16.6).
+    # `published_at` above says WHEN; this says whether that is late,
+    # which is a question only the deployment's declared sync interval
+    # can answer. Point 7 of that decision: "shown, not only alerted
+    # on" -- the window is what makes the timestamp mean something
+    # before anything fires.
+    freshness: dict[str, TypeFreshnessResponse] | None = None
 
 
 class VisibleAppResponse(BaseModel):
@@ -1188,6 +1215,20 @@ def list_users_route(request: Request, current_user: UserRecord = Depends(get_cu
     return request.app.state.user_directory.list_users()
 
 
+def _declared_sync_interval(config) -> float | None:
+    """The interval every freshness window was derived from."""
+    from core.mirror.freshness import WARN_MULTIPLE
+
+    for target in config.freshness_targets.values():
+        if target.exempt:
+            # AN EXEMPT TYPE CARRIES THE DEFAULT AS A FORMALITY, not as
+            # a window derived from the declared interval, so it cannot
+            # be read backwards. Another type will carry the real one.
+            continue
+        return round(target.warn_after.total_seconds() / 3600 / WARN_MULTIPLE, 4)
+    return None
+
+
 class DeploymentConfigResponse(BaseModel):
     """What this deployment is actually running.
 
@@ -1216,6 +1257,19 @@ class DeploymentConfigResponse(BaseModel):
     trusted_proxies: "tuple[str, ...]" = ()
     on_type_mismatch: "str | None" = None
     ingest_undeclared_columns: "bool | None" = None
+    # HOW OFTEN THIS DEPLOYMENT EXPECTS TO SYNC, and therefore every
+    # freshness threshold a reader is judged against (DEV_UI.md 16.6).
+    #
+    # THE DECLARED NUMBER, NOT THE DERIVED WINDOWS. `freshness_targets`
+    # on the config is a mapping per object type, computed from this
+    # one number and each type's own override; showing the map here
+    # would put the ontology in a settings panel. This is the figure
+    # somebody wrote down, and the one they would change.
+    #
+    # IT ANSWERS A QUESTION BROWSE NOW RAISES. A reader who sees
+    # "Overdue -- this deployment expects one every 26 hours" should be
+    # able to find out where 26 came from, and this is where.
+    sync_interval_hours: "float | None" = None
     # WHICH configuration this is, not just what it says. Answers a
     # question the rest of this response cannot: two deployments with
     # identical settings below may still be different loads of
@@ -2544,6 +2598,11 @@ def deployment_config_route(request: Request,
         "trusted_proxies": config.trusted_proxies,
         "on_type_mismatch": config.on_type_mismatch,
         "ingest_undeclared_columns": config.ingest_undeclared_columns,
+        # THE DECLARED CADENCE, read back off a resolved target rather
+        # than re-parsing the YAML: every type's window derives from
+        # the same interval, so any one of them carries it. An empty
+        # ontology has no target and therefore nothing to report.
+        "sync_interval_hours": _declared_sync_interval(config),
         "max_consecutive_invalid_steps": config.max_consecutive_invalid_steps,
         "max_concurrent_requests": config.max_concurrent_requests,
         "security_attribute": config.security_attribute,
@@ -3224,8 +3283,40 @@ def data_freshness_route(request: Request,
         # conflating the two would silently widen or narrow that
         # window -- the exact bug patch 335 closed.
         return {"source": "gold", "last_synced_at": mediator.mirror_synced_at,
-                "published_at": published}
-    return {"source": "mirror", "last_synced_at": mediator.mirror_synced_at}
+                "published_at": published,
+                "freshness": _freshness_verdicts(request, published)}
+    return {"source": "mirror", "last_synced_at": mediator.mirror_synced_at,
+            "freshness": _freshness_verdicts(request, {})}
+
+
+def _freshness_verdicts(request: Request, published: dict) -> dict:
+    """Each declared type's state against its own window.
+
+    EVERY DECLARED TYPE, not only the published ones. A type absent
+    from `published_at` is the one a reader most needs told about --
+    its reads fail -- and reporting only what published would be a
+    page of reassuring green that omits the failure, which is the
+    mistake the Silos panel already avoids.
+    """
+    from core.mirror.freshness import verdict
+
+    targets = _generation(request).config.freshness_targets
+    return {
+        object_type: {
+            "state": verdict(published.get(object_type), target),
+            "published_at": published.get(object_type),
+            # THE WINDOW IS WITHHELD FOR AN EXEMPT TYPE, because it
+            # has one only as a formality -- the resolver gives it the
+            # deployment default so the dataclass is total, and
+            # reporting that number would invite somebody to read a
+            # judgement that is not being made.
+            "warn_after_hours": None if target.exempt
+            else target.warn_after.total_seconds() / 3600,
+            "fail_after_hours": None if target.exempt
+            else target.fail_after.total_seconds() / 3600,
+        }
+        for object_type, target in targets.items()
+    }
 
 
 @router.get("/me/visible-apps", dependencies=[Depends(_no_store)], response_model=list[VisibleAppResponse])

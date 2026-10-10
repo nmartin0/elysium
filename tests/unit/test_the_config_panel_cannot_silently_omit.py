@@ -58,6 +58,12 @@ WITHHELD_FROM_CONFIG_RESPONSE = {
     "retain_publications": "a mirror-retention setting",
     "security_attribute": "shown -- see the response model",
     "read_from_mirror": "shown -- see the response model",
+    "freshness_targets": "the DERIVED per-type windows; the number an "
+                          "operator actually declared is shown as "
+                          "`sync_interval_hours`. Showing the map would "
+                          "put the ontology in a settings panel, and "
+                          "every entry in it is that one number times a "
+                          "constant",
 }
 
 

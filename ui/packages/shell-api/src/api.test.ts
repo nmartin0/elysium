@@ -24,6 +24,9 @@ import {
   getVisibleActionTypes,
   proposeAction,
   handleIfSessionExpired,
+  worstFreshness,
+  type TypeFreshness,
+  type DataFreshness,
 } from './api'
 
 // A partial, Response-SHAPED fake, not a real Response -- confirmed
@@ -620,5 +623,71 @@ describe('searchAround', () => {
       total: 0,
       scan_truncated: false,
     })
+  })
+})
+
+describe('worstFreshness', () => {
+  /**
+   * DEV_UI.md 16.6 point 7, "shown, not only alerted on". A screen
+   * shows several types; this is the one rule for which verdict it
+   * reports.
+   */
+  const state = (s: string, warn = 26.4): TypeFreshness =>
+    ({ state: s, warn_after_hours: warn, fail_after_hours: 50.4 }) as TypeFreshness
+
+  const given = (types: Record<string, TypeFreshness>): DataFreshness => ({
+    source: 'gold',
+    last_synced_at: null,
+    freshness: types,
+  })
+
+  it('reports the WORST of the types on screen', () => {
+    /** Someone comparing two objects is only as current as the staler
+     *  of them. Reporting the better state would be a reassurance no
+     *  single screen is entitled to give. */
+    const answer = worstFreshness(given({ Customer: state('fresh'), Transaction: state('fail') }), [
+      'Customer',
+      'Transaction',
+    ])
+
+    expect(answer?.state).toBe('fail')
+  })
+
+  it('ranks never-published above a warning and below a failure', () => {
+    expect(worstFreshness(given({ A: state('warn'), B: state('never') }), ['A', 'B'])?.state).toBe('never')
+    expect(worstFreshness(given({ A: state('never'), B: state('fail') }), ['A', 'B'])?.state).toBe('fail')
+  })
+
+  it('only looks at the types it was asked about', () => {
+    const answer = worstFreshness(given({ Customer: state('fresh'), Elsewhere: state('fail') }), ['Customer'])
+
+    expect(answer?.state).toBe('fresh')
+  })
+
+  /**
+   * EXEMPT IS NOT A RANK. A type nobody is judging cannot make a
+   * screen look worse OR better, so it is skipped rather than ordered.
+   */
+  it('ignores an exempt type when something else is judged', () => {
+    const answer = worstFreshness(given({ Reference: state('exempt'), Customer: state('warn') }), [
+      'Reference',
+      'Customer',
+    ])
+
+    expect(answer?.state).toBe('warn')
+  })
+
+  it('reports nothing at all for a screen of only exempt types', () => {
+    /** Rather than "fresh", which would be a verdict nobody made. */
+    expect(worstFreshness(given({ Reference: state('exempt') }), ['Reference'])).toBeNull()
+  })
+
+  it('reports nothing when the server sent no verdicts', () => {
+    expect(worstFreshness({ source: 'gold', last_synced_at: null }, ['Customer'])).toBeNull()
+    expect(worstFreshness(null, ['Customer'])).toBeNull()
+  })
+
+  it('reports nothing for a type the server said nothing about', () => {
+    expect(worstFreshness(given({ Customer: state('fail') }), ['Unknown'])).toBeNull()
   })
 })
