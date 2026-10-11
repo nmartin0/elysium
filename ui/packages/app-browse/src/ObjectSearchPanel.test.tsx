@@ -23,6 +23,12 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
     // The panel reports whether it is reading mirrored data. Unmocked,
     // every test here would hit a real fetch for it.
     getDataFreshness: vi.fn(),
+    // Select-all, and the frozen-set popover and notice. Mocked so the
+    // tests that use them assert on what was SENT, and the rest never
+    // reach a real fetch.
+    matchingIds: vi.fn(),
+    getFrozenSets: vi.fn(),
+    getFrozenSet: vi.fn(),
   }
 })
 
@@ -30,6 +36,9 @@ import {
   ApiError,
   aggregateObjects,
   getDataFreshness,
+  getFrozenSet,
+  getFrozenSets,
+  matchingIds,
   getVisibleActionTypesCached,
   searchObjects,
   getObjectDetail,
@@ -98,6 +107,8 @@ beforeEach(() => {
   // test deliberately asks for it.
   mockedGetDataFreshness.mockResolvedValue({ source: 'gold', last_synced_at: null, published_at: null })
   vi.clearAllMocks()
+  vi.mocked(getFrozenSets).mockResolvedValue([])
+  vi.mocked(matchingIds).mockResolvedValue(['c1', 'c2', 'c3'])
 })
 
 /**
@@ -1898,5 +1909,97 @@ describe('whether the publication is late', () => {
 
     expect(await screen.findByText(/2 hours ago/)).toBeInTheDocument()
     expect(screen.queryByText(/expects one every/)).toBeNull()
+  })
+})
+
+describe('ONE SET, everywhere it is used', () => {
+  /**
+   * The search ANDed the chart filters with the filter bar. Select-all,
+   * export, the charts and the facets used the chart filters alone --
+   * and select-all sent them in the URL's shape, not the server's.
+   */
+  it("select-all sends the chart filters in the SERVER's shape", async () => {
+    // THE DEFECT, AS A TEST. The URL holds {field, values, mode}; the
+    // route takes {field, operator, value}. Sent unconverted, every
+    // "select all matching" made with a facet or chart filter active
+    // failed as a 500 -- reproduced against the real route before this
+    // was fixed.
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor', region: 'us-west' } }], 3),
+    )
+    const filters = encodeURIComponent(JSON.stringify([{ field: 'region', values: ['us-west'], mode: 'keep' }]))
+    renderPanel(CUSTOMER_SCHEMA, vi.fn(), `/browse?type=Customer&filters=${filters}`)
+
+    fireEvent.click(await screen.findByRole('button', { name: /select all 3/i }))
+
+    await waitFor(() =>
+      expect(vi.mocked(matchingIds)).toHaveBeenCalledWith(
+        'Customer',
+        '',
+        [{ field: 'region', operator: 'in', value: ['us-west'] }],
+        undefined,
+      ),
+    )
+  })
+
+  it('a frozen set in the URL narrows the search, by reference', async () => {
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor', region: 'us-west' } }]),
+    )
+    vi.mocked(getFrozenSet).mockResolvedValue({
+      set_id: 'set-1',
+      name: 'Escalations',
+      object_type: 'Customer',
+      size: 1,
+      frozen_at: '2026-10-11T10:00:00+00:00',
+      origin: {},
+      not_shown: 0,
+    })
+    renderPanel(CUSTOMER_SCHEMA, vi.fn(), '/browse?type=Customer&frozen=set-1')
+
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', '', expect.objectContaining({ frozenSet: 'set-1' })),
+    )
+  })
+
+  it('says FROZEN on its face when the set is frozen', async () => {
+    // DEV_UI 11.3: "Whichever a person is looking at must say so on its
+    // face." The subject line said Live unconditionally.
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor', region: 'us-west' } }]),
+    )
+    vi.mocked(getFrozenSet).mockResolvedValue({
+      set_id: 'set-1',
+      name: 'Escalations',
+      object_type: 'Customer',
+      size: 1,
+      frozen_at: '2026-10-11T10:00:00+00:00',
+      origin: {},
+      not_shown: 0,
+    })
+    renderPanel(CUSTOMER_SCHEMA, vi.fn(), '/browse?type=Customer&frozen=set-1')
+
+    expect(await screen.findByText('Frozen')).toBeInTheDocument()
+    expect(screen.queryByText('Live')).not.toBeInTheDocument()
+  })
+
+  it('and LIVE when it is not', async () => {
+    // THE CONTROL: a tag that always said Frozen would pass the test
+    // above.
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor', region: 'us-west' } }]),
+    )
+    renderPanel(CUSTOMER_SCHEMA, vi.fn(), '/browse?type=Customer')
+
+    expect(await screen.findByText('Live')).toBeInTheDocument()
+    // AFTER THE DEBOUNCE, not at first paint: the tag renders before the
+    // search fires, and asserting the call then raced it.
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        '',
+        expect.objectContaining({ frozenSet: undefined }),
+      ),
+    )
   })
 })

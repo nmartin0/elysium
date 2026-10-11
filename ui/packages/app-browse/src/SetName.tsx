@@ -40,12 +40,17 @@ import AskAboutSet from './AskAboutSet'
 
 export default function SetName({
   objectType,
+  frozen = null,
   filterCount,
   total,
   loading,
   actions,
 }: {
   objectType: string | null
+  /** The frozen set's name when the set on screen is frozen. DEV_UI
+   *  11.3: "Whichever a person is looking at must say so on its
+   *  face" -- this tag said Live unconditionally. */
+  frozen?: string | null
   filterCount: number
   /** How many objects match. */
   total: number
@@ -81,7 +86,13 @@ export default function SetName({
           <span className="set-name__total">{total.toLocaleString()}</span>
         </>
       )}
-      <StatusTag state="active">Live</StatusTag>
+      {frozen ? (
+        <StatusTag state="pending" icon="snowflake">
+          Frozen
+        </StatusTag>
+      ) : (
+        <StatusTag state="active">Live</StatusTag>
+      )}
       {/* The agent, where the subject is. DEV_UI.md 5.4 wants it "inside
           Browse, seeded with what is on screen" rather than in its own
           app -- and the set's name is exactly what is on screen. */}

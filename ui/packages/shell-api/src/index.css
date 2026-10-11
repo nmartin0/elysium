@@ -2550,6 +2550,46 @@
     min-inline-size: 0;
   }
 
+  /* ---- FROZEN SETS ---------------------------------------------------
+   *
+   * The saved view's sibling, laid out the same way so the two read as
+   * the two kinds DEV_UI 11.3 asks for -- live and frozen -- rather
+   * than as two unrelated features.
+   */
+  .frozen-sets__menu {
+    min-width: 20rem;
+  }
+
+  .frozen-sets__freeze {
+    display: flex;
+    gap: var(--space-tight);
+    align-items: center;
+    padding: var(--space-tight);
+  }
+
+  .frozen-sets__freeze .bp6-input-group {
+    flex: 1;
+    min-inline-size: 0;
+  }
+
+  /* THE SERVER'S OWN WORDS when it refuses -- they say what to do. */
+  .frozen-sets__problem {
+    margin: 0 var(--space-tight) var(--space-tight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    color: var(--text-secondary);
+  }
+
+  .frozen-notice__line {
+    margin: 0 0 var(--space-hair);
+  }
+
+  .frozen-notice__actions {
+    display: flex;
+    gap: var(--space-tight);
+    margin-top: var(--space-tight);
+  }
+
   /* The shared loading treatment -- see components/LoadingState.tsx for
  * why a spinner alone was not enough. */
   .loading-state {

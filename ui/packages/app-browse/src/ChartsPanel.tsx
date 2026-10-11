@@ -47,6 +47,12 @@ import {
 
 interface ChartsPanelProps {
   objectType: string
+  /** The rest of the set's definition -- the filter bar's conditions.
+   *  See Facets: without them the charts described a bigger set than
+   *  the table beside them. */
+  extraConditions?: unknown[]
+  /** A frozen set the charts are drawn within. */
+  frozenSet?: string
   visibleSchema: VisibleSchema | null
   /** Free-text query, so charts describe the same object set the table
    *  does. */
@@ -113,6 +119,8 @@ export default function ChartsPanel({
   filters,
   onSelect,
   onSessionExpired,
+  extraConditions = [],
+  frozenSet,
 }: ChartsPanelProps) {
   const [charts, setCharts] = useState<FieldChart[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -134,6 +142,9 @@ export default function ChartsPanel({
   // rather than the array's identity, which is new on every render of
   // the parent.
   const filterKey = JSON.stringify(filters)
+  // SERIALISED for the same reason as the filters above: the array is new
+  // on every parent render, and depending on its identity refetched.
+  const extraKey = JSON.stringify(extraConditions)
 
   useEffect(() => {
     let cancelled = false
@@ -157,7 +168,11 @@ export default function ChartsPanel({
           // Every OTHER chart's selection, not this one's -- a chart
           // that filtered itself would drop to a single bar the moment
           // you clicked it.
-          conditions: conditionsExcluding(JSON.parse(filterKey) as ChartFilter[], field),
+          conditions: [
+            ...conditionsExcluding(JSON.parse(filterKey) as ChartFilter[], field),
+            ...(JSON.parse(extraKey) as unknown[]),
+          ],
+          ...(frozenSet ? { frozen_set: frozenSet } : {}),
           aggregate: 'count',
           group_by: field,
         })) as AggregateResult
@@ -220,7 +235,7 @@ export default function ChartsPanel({
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [objectType, filterKey, queryText])
+  }, [objectType, filterKey, queryText, extraKey, frozenSet])
 
   return (
     <>

@@ -688,6 +688,9 @@ export interface SearchOptions {
   /** "field" or "field:desc". The server validates the field against
    *  what this caller may read. */
   orderBy?: string
+  /** A frozen set to narrow to, BY REFERENCE -- a thousand ids do not
+   *  fit in this GET's query string. ANDed with everything else. */
+  frozenSet?: string
   /** Structured filters, ANDed with the text query. Two contexts
    *  combined: the text decides what MATCHES, these decide what is
    *  ELIGIBLE. It is what lets a chart click and a search box narrow
@@ -713,11 +716,16 @@ export interface SearchOptions {
  * lifetime of the document, so a person exporting a dozen sets in an
  * afternoon would hold a dozen files they can no longer reach.
  */
-export async function exportObjects(objectType: string, queryText: string, conditions: unknown[] = []): Promise<void> {
+export async function exportObjects(
+  objectType: string,
+  queryText: string,
+  conditions: unknown[] = [],
+  frozenSet?: string,
+): Promise<void> {
   const params = queryText ? `?q=${encodeURIComponent(queryText)}` : ''
   const response = await apiFetchOrThrow(`/objects/${encodeURIComponent(objectType)}/export${params}`, {
     method: 'POST',
-    body: JSON.stringify({ conditions }),
+    body: JSON.stringify(frozenSet ? { conditions, frozen_set: frozenSet } : { conditions }),
   })
   const blob = await response.blob()
   const url = URL.createObjectURL(blob)
@@ -756,6 +764,7 @@ export async function searchObjects(
   if (options.pageToken) params.set('page_token', options.pageToken)
   if (options.pageSize) params.set('page_size', String(options.pageSize))
   if (options.orderBy) params.set('order_by', options.orderBy)
+  if (options.frozenSet) params.set('frozen_set', options.frozenSet)
   if (options.conditions?.length) {
     params.set('conditions', JSON.stringify(options.conditions))
   }
@@ -776,9 +785,15 @@ export async function searchObjects(
  * so a caller never receives a selection that silently omits part of
  * what it asked for.
  */
-export async function matchingIds(objectType: string, queryText: string, conditions?: unknown[]): Promise<string[]> {
+export async function matchingIds(
+  objectType: string,
+  queryText: string,
+  conditions?: unknown[],
+  frozenSet?: string,
+): Promise<string[]> {
   const params = new URLSearchParams({ q: queryText })
   if (conditions?.length) params.set('conditions', JSON.stringify(conditions))
+  if (frozenSet) params.set('frozen_set', frozenSet)
   const response = await apiFetchOrThrow(`/objects/${objectType}/matching-ids?${params}`)
   const body = (await response.json()) as { object_ids: string[] }
   return body.object_ids
@@ -1004,6 +1019,66 @@ export async function decideMergeProposal(
     method: 'POST',
     body: JSON.stringify({ decision, note }),
   })
+}
+
+/**
+ * A frozen set: membership fixed at an instant (DEV_UI 11.3).
+ *
+ * KEYS, NOT A SNAPSHOT OF VALUES -- Foundry's static object sets are
+ * "saved as a list of primary keys". Values are read live, with the
+ * reader's authority, by passing the set's id to the routes that
+ * already take a set. The ids themselves are never sent here.
+ */
+export interface FrozenSet {
+  set_id: string
+  name: string
+  object_type: string
+  size: number
+  frozen_at: string
+  published_at?: string | null
+  /** Whether gold still holds the publication it was frozen from.
+   *  Null when nothing was recorded. Reported, never required. */
+  publication_retained?: boolean | null
+  /** The criteria it was frozen from, so it can be handed back to
+   *  them. Empty for a hand-picked selection. */
+  origin: { q?: string; conditions?: unknown[] }
+}
+
+export interface FrozenSetDetail extends FrozenSet {
+  /** Members the reader cannot see now -- deleted, or outside their
+   *  compartment, deliberately not distinguished. */
+  not_shown: number
+}
+
+export interface FreezeRequest {
+  name: string
+  object_type: string
+  /** A hand-picked selection. Send this OR q/conditions. */
+  ids?: string[]
+  q?: string
+  conditions?: unknown[]
+}
+
+export async function freezeSet(request: FreezeRequest): Promise<FrozenSet> {
+  const response = await apiFetchOrThrow('/frozen-sets', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  })
+  return (await response.json()) as FrozenSet
+}
+
+export async function getFrozenSets(): Promise<FrozenSet[]> {
+  const response = await apiFetchOrThrow('/frozen-sets')
+  return (await response.json()) as FrozenSet[]
+}
+
+export async function getFrozenSet(setId: string): Promise<FrozenSetDetail> {
+  const response = await apiFetchOrThrow(`/frozen-sets/${encodeURIComponent(setId)}`)
+  return (await response.json()) as FrozenSetDetail
+}
+
+export async function deleteFrozenSet(setId: string): Promise<void> {
+  await apiFetchOrThrow(`/frozen-sets/${encodeURIComponent(setId)}`, { method: 'DELETE' })
 }
 
 export async function getSavedViews(): Promise<ServerSavedView[]> {
@@ -1257,6 +1332,8 @@ export interface AggregateBody {
   /** Bucket by this field. Omitted for a single statistic over the
    *  whole set. */
   group_by?: string
+  /** A frozen set to aggregate within. See SearchOptions.frozenSet. */
+  frozen_set?: string
 }
 
 /**

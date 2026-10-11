@@ -58,6 +58,8 @@ export default function Facets({
   label,
   filters,
   onFilter,
+  extraConditions = [],
+  frozenSet,
 }: {
   objectType: string
   field: string
@@ -67,6 +69,12 @@ export default function Facets({
   label: string
   filters: ChartFilter[]
   onFilter: (filter: ChartFilter) => void
+  /** The rest of the set's definition -- the filter bar's conditions,
+   *  in the server's shape. Without them a facet counted a bigger set
+   *  than the table beside it. */
+  extraConditions?: unknown[]
+  /** A frozen set the facet counts within. */
+  frozenSet?: string
 }) {
   const [buckets, setBuckets] = useState<Bucket[] | null>(null)
   const [failed, setFailed] = useState(false)
@@ -81,6 +89,9 @@ export default function Facets({
   // have missed exactly it.
   const [truncated, setTruncated] = useState(false)
   const key = JSON.stringify(filters)
+  // SERIALISED for the same reason as the filters above: the array is new
+  // on every parent render, and depending on its identity refetched.
+  const extraKey = JSON.stringify(extraConditions)
 
   useEffect(() => {
     let cancelled = false
@@ -91,7 +102,11 @@ export default function Facets({
     // instead, where it is a response to the fetch rather than a
     // second render triggered by the effect itself.
     aggregateObjects(objectType, {
-      conditions: conditionsExcluding(JSON.parse(key) as ChartFilter[], field),
+      conditions: [
+        ...conditionsExcluding(JSON.parse(key) as ChartFilter[], field),
+        ...(JSON.parse(extraKey) as unknown[]),
+      ],
+      ...(frozenSet ? { frozen_set: frozenSet } : {}),
       aggregate: 'count',
       group_by: field,
     })
@@ -129,7 +144,7 @@ export default function Facets({
     return () => {
       cancelled = true
     }
-  }, [objectType, field, key])
+  }, [objectType, field, key, extraKey, frozenSet])
 
   /**
    * WHETHER THIS FACET HAS ANYTHING WORTH SHOWING, decided once and

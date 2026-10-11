@@ -283,6 +283,9 @@ layers = [
     "notifications",
     # saved_views imports only sqlite_connection, like notifications.
     "saved_views",
+    # frozen_sets imports only sqlite_connection, like saved_views --
+    # its sibling, the frozen kind of saved set.
+    "frozen_sets",
     # triggers imports only sqlite_connection, like saved_views.
     "triggers",
     # role_store imports only sqlite_connection, like the other stores.

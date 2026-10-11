@@ -76,6 +76,9 @@ OWNED_DATABASES = (
     # Small by construction -- counts per rule per run, and nothing at
     # all written for a clean run.
     "mirror/expectation_warnings.db",
+    # Frozen sets: who was in a set at an instant. Not derivable from
+    # anything else -- the membership is the record.
+    "frozen_sets.db",
     # The approvals queue -- database-authoritative since patch 276,
     # so there is no other copy of a waiting decision.
     "pending_writes.db",

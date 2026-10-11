@@ -33,10 +33,13 @@ export default function ExportSet({
   queryText,
   conditions,
   onSessionExpired,
+  frozenSet,
 }: {
   objectType: string | null
   queryText: string
   conditions: unknown[]
+  /** A frozen set to export within. */
+  frozenSet?: string
   onSessionExpired: () => void
 }) {
   // WHAT THE LAST PRESS DID, or null. Not a boolean "exporting": the
@@ -51,7 +54,7 @@ export default function ExportSet({
     setProblem(null)
     setBusy(true)
     try {
-      await exportObjects(objectType as string, queryText, conditions)
+      await exportObjects(objectType as string, queryText, conditions, frozenSet)
     } catch (error) {
       if (handleIfSessionExpired(error, onSessionExpired)) return
       // THE SERVER'S OWN WORDS. It knows the real count and the

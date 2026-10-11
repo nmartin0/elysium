@@ -575,13 +575,29 @@ than beside them.
 list that competes with documentation rather than extending the
 product.
 
-## 17. Saved SELECTIONS
+## 17. Saved SELECTIONS -- BUILT, as frozen sets
 
-A set of chosen OBJECTS rather than a saved question, and what bulk
-actions would operate on. `BACKLOG.md` is explicit that the UI must
-not conflate it with saved explorations.
+**Unblocked by precedent rather than by a decision.** Foundry's static
+object sets are "saved as a list of primary keys" and "will stay the
+same regardless of any changes to the input data"; dynamic ones are "a
+representation of the filters". DEV_UI 11.3 had already settled the
+naming and the two-kinds rule from HubSpot, Amplitude and Foundry. What
+it left open -- what a frozen set pins to, and what happens when that
+publication is forgotten -- dissolves once membership is KEYS: values
+are read live, the publication is recorded as metadata ("frozen 14:22 ·
+from the publication of 13:05") and reported as forgotten when it is,
+and nothing depends on it.
 
-**Blocked on:** product design.
+Built: `core/frozen_sets.py`, `/api/frozen-sets`, a `frozen_set`
+reference accepted by every route that already takes a set (search,
+matching-ids, count, aggregate, export, search-around), and Browse's
+Frozen sets popover beside Saved views, with the subject line saying
+Frozen or Live on its face.
+
+**What is still open** is 11.5's write-path question -- one approval
+covering 200 changes, or 200 rows -- which is about bulk ACTION over a
+set, not about the set. Frozen sets give it a stable thing to act on;
+they do not answer it.
 
 ---
 

@@ -46,7 +46,19 @@ describe('exporting the set', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /export/i }))
 
-    await waitFor(() => expect(mocked).toHaveBeenCalledWith('Customer', 'ada', conditions))
+    // THE FOURTH ARGUMENT IS THE FROZEN SET, absent for a live one.
+    await waitFor(() => expect(mocked).toHaveBeenCalledWith('Customer', 'ada', conditions, undefined))
+  })
+
+  it('exports within a frozen set when one is on screen', async () => {
+    // By reference: the server expands it and ANDs it with the rest,
+    // so the file holds exactly the members the table shows.
+    const conditions = [{ field: 'region', operator: 'in', value: ['us-west'] }]
+    show({ queryText: '', conditions, frozenSet: 'set-1' })
+
+    fireEvent.click(screen.getByRole('button', { name: /export/i }))
+
+    await waitFor(() => expect(mocked).toHaveBeenCalledWith('Customer', '', conditions, 'set-1'))
   })
 
   it('shows the server s own words when it refuses', async () => {

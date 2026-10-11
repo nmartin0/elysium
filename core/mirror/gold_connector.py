@@ -117,6 +117,38 @@ class GoldConnector:
         """
         return self._reader._catalog
 
+    def snapshot_for(self, table_name: str) -> "int | None":
+        """Which snapshot of this gold table a reader is being served.
+
+        THE PINNED ONE, when the generation pinned one, because that is
+        the publication a person was actually looking at. A frozen set
+        records it so "frozen 14:22 -- publication 7" names what was on
+        their screen, not whatever was published a second later. The
+        current snapshot otherwise; None if the table has none.
+        """
+        pinned = self._reader._snapshot_ids.get(table_name)
+        if pinned is not None:
+            return int(pinned)
+        try:
+            snapshot = self._reader._catalog.load_table(
+                f"{GOLD_NAMESPACE}.{table_name}").current_snapshot()
+        except Exception:  # noqa: BLE001 - no table is no snapshot, not a fault
+            return None
+        return None if snapshot is None else int(snapshot.snapshot_id)
+
+    def snapshot_is_retained(self, table_name: str, snapshot_id: int) -> bool:
+        """Whether gold still holds this publication.
+
+        `retain_publications` forgets old ones by design. A frozen set
+        does not DEPEND on its publication -- membership is keys, values
+        are live -- so this is reported, never enforced.
+        """
+        try:
+            table = self._reader._catalog.load_table(f"{GOLD_NAMESPACE}.{table_name}")
+        except Exception:  # noqa: BLE001
+            return False
+        return table.snapshot_by_id(int(snapshot_id)) is not None
+
     # -- the reads the mediator makes ------------------------------
 
     def find_ids(self, object_type: str, conditions: list, type_config: dict,

@@ -57,6 +57,19 @@ class Scripted:
                         f'"object_id": "{fact.object_id}", '
                         f'"field_name": "{fact.field_name}"}}'
                     )
+            # AND EVERY EXPECTED AGGREGATE, as the one step a correct
+            # model would take. This is also the proof that the case is
+            # REACHABLE: the step goes through the real loop's own
+            # validation, so a case asking for an aggregate the loop
+            # would refuse fails here rather than on somebody's GPU.
+            for expected in case.expected_aggregates:
+                if '"step": "aggregate_object"' not in user_message:
+                    return (
+                        f'{{"step": "aggregate_object", '
+                        f'"object_type": "{expected.object_type}", '
+                        f'"aggregate": "{expected.aggregate}", '
+                        f'"filter": {{"customer_id": "{expected.filter_mentions}"}}}}'
+                    )
             return '{"step": "finish"}'
         return '{"step": "finish"}'
 

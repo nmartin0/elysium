@@ -1,6 +1,8 @@
 import { chartableFields } from './ChartsPanel'
 import Facets from './Facets'
 import ExportSet from './ExportSet'
+import FrozenNotice from './FrozenNotice'
+import FrozenSets from './FrozenSets'
 import ObjectGraph from './ObjectGraph'
 import SetName from './SetName'
 import { Fragment, useEffect, useState } from 'react'
@@ -35,7 +37,7 @@ function expectedWithin(staleness: TypeFreshness): string {
   return whole === 1 ? 'hour' : `${whole} hours`
 }
 import StatusTag from '@elysium/shell-api/components/StatusTag'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   getDataFreshness,
   publicationTime,
@@ -272,6 +274,15 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // WHERE THIS VIEW CAME FROM, when it came by a link -- see linkTrail.ts.
   // Read as unknown and validated there: the URL is editable by hand.
   const [linkOrigin] = useUrlJson<unknown>('from', null)
+  /**
+   * THE FROZEN SET ON SCREEN, if one is (DEV_UI 11.3). By reference: the
+   * server expands it into `id in [...]` and ANDs it with everything
+   * else, so every view below works on it without knowing it is
+   * frozen. Empty when the set on screen is live.
+   */
+  const [frozenSet] = useUrlValue('frozen', '')
+  const navigate = useNavigate()
+  const [frozenName, setFrozenName] = useState<string | null>(null)
 
   // Whether the user narrowed anything, which is what separates "your
   // filters matched nothing" from "there is nothing here". Text search
@@ -328,6 +339,18 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
    * would be editing the other's state.
    */
   const [barFilters, setBarFilters] = useState<FieldFilter[]>([])
+  /**
+   * THE SET ON SCREEN, DEFINED ONCE. The search always ANDed the
+   * cross-filter with the filter bar; export, "select all matching",
+   * the charts and the facets used the cross-filter ALONE -- so with a
+   * filter-bar condition in force the export held more rows than the
+   * table showed and the charts described a bigger set than the one
+   * beside them. DEV_UI's own rule, broken in four places: "charts over
+   * a different set than the table beside them would be actively
+   * misleading." Found while wiring the frozen set through the same
+   * five consumers.
+   */
+  const setConditions = [...asConditions(crossFilter), ...barFilters]
   // WHICH TAB, because a link to a chart should open the chart. It is
   // part of what someone means by "look at this".
   const [view, setView] = useUrlValue('view', 'table')
@@ -411,6 +434,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           // combine everywhere else: narrowing by a chart click and by
           // a typed filter narrows twice.
           conditions: [...asConditions(crossFilter), ...barFilters],
+          frozenSet: frozenSet || undefined,
         })) as {
           results: SearchResult[]
           total_matches: number
@@ -434,7 +458,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     return () => clearTimeout(timeoutId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedType, queryText, pageToken, orderBy, JSON.stringify(crossFilter), JSON.stringify(barFilters)])
+  }, [selectedType, queryText, pageToken, orderBy, JSON.stringify(crossFilter), JSON.stringify(barFilters), frozenSet])
 
   // Changing WHAT is searched resets WHERE you are in it. A token from
   // the old result set means nothing against the new one -- the server
@@ -443,7 +467,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     setPageToken(null)
     setPreviousTokens([])
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedType, queryText, orderBy, JSON.stringify(crossFilter), JSON.stringify(barFilters)])
+  }, [selectedType, queryText, orderBy, JSON.stringify(crossFilter), JSON.stringify(barFilters), frozenSet])
 
   if (objectTypes === null) {
     return (
@@ -510,7 +534,16 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
               id="object-type"
               aria-label="Object type"
               value={currentType}
-              onChange={(event) => setSelectedType(event.target.value)}
+              onChange={(event) =>
+                // A FROZEN SET BELONGS TO ONE TYPE; ids only mean
+                // anything within it. Switching type leaves the set,
+                // in the same clear that drops the old type's filters.
+                // ONE NAVIGATION: a clear followed by a set is two, and
+                // the second discards the first.
+                frozenSet
+                  ? navigate({ search: `?${new URLSearchParams({ type: event.target.value }).toString()}` })
+                  : setSelectedType(event.target.value)
+              }
             >
               {/* selectedType itself still starts as null -- the effect
               below sets it to a real value once objectTypes is known,
@@ -576,6 +609,8 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                 <Facets
                   key={field}
                   objectType={currentType}
+                  extraConditions={barFilters}
+                  frozenSet={frozenSet || undefined}
                   field={field}
                   label={label}
                   filters={crossFilter}
@@ -650,18 +685,38 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           somehow, right is about one member." */}
       <SetName
         objectType={selectedType}
+        frozen={frozenSet ? (frozenName ?? 'Frozen set') : null}
         filterCount={crossFilter.length}
         total={totalMatches}
         loading={loading}
         actions={
-          <ExportSet
-            objectType={selectedType}
-            queryText={queryText}
-            conditions={asConditions(crossFilter)}
-            onSessionExpired={onSessionExpired}
-          />
+          <>
+            <ExportSet
+              objectType={selectedType}
+              queryText={queryText}
+              conditions={setConditions}
+              frozenSet={frozenSet || undefined}
+              onSessionExpired={onSessionExpired}
+            />
+            <FrozenSets
+              objectType={selectedType}
+              queryText={queryText}
+              conditions={setConditions}
+              selectedIds={[...selectedIds]}
+              activeSetId={frozenSet}
+              onSessionExpired={onSessionExpired}
+            />
+          </>
         }
       />
+      {frozenSet && (
+        <FrozenNotice
+          setId={frozenSet}
+          objectType={currentType}
+          onSessionExpired={onSessionExpired}
+          onLoaded={(found) => setFrozenName(found?.name ?? null)}
+        />
+      )}
       {error && <ErrorState>{error}</ErrorState>}
       {/* Two views of ONE object set. The filter is shared, so
           switching does not change what is being described -- only
@@ -677,6 +732,8 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           objectType={selectedType}
           visibleSchema={visibleSchema}
           queryText={queryText}
+          extraConditions={barFilters}
+          frozenSet={frozenSet || undefined}
           filters={crossFilter}
           onSelect={toggleChartValue}
           onSessionExpired={onSessionExpired}
@@ -719,7 +776,15 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                   // a filter that outlived the selection would let an
                   // approval of 500 quietly become 520 overnight.
                   setSelectingAll(true)
-                  void matchingIds(currentType, queryText, crossFilter)
+                  // asConditions, NOT crossFilter. The URL holds
+                  // ChartFilters -- {field, values, mode} -- and the
+                  // server takes conditions -- {field, operator,
+                  // value}. Sending the first as the second failed
+                  // every "select all matching" made while a facet or
+                  // chart filter was active, as a 500. The search
+                  // request beside this always converted; this call
+                  // never did.
+                  void matchingIds(currentType, queryText, setConditions, frozenSet || undefined)
                     .then((ids) => setSelectedIds(new Set(ids)))
                     .catch((err: unknown) => setError(getErrorMessage(err)))
                     .finally(() => setSelectingAll(false))

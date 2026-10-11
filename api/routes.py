@@ -137,7 +137,7 @@ from core.auth.auth_cookies import (
 from core.auth.limits import MAX_LOGIN_PASSWORD_LENGTH, MAX_USERNAME_LENGTH
 from core.deployment_loader import build_live_read_adapters
 from core.export import filename_for, to_csv
-from core.filters import FieldFilter, as_equality_conditions, parse_filters
+from core.filters import FieldFilter, FilterError, as_equality_conditions, parse_filters
 from core.identity_decisions import APPROVED, REJECTED, MergeDecisionStore
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.synthesis_prompt import synthesize_insight
@@ -564,6 +564,12 @@ class ObjectSetQueryRequest(BaseModel):
     # disagree about the same field, and inventing one silently is how
     # a filter ends up meaning something nobody asked for.
     conditions: list[dict[str, Any]] | None = None
+
+    # A FROZEN SET TO NARROW TO, by id. Expanded by the route, not
+    # here, because only the route knows who is asking and a frozen set
+    # belongs to its owner. ANDed with the conditions above -- filtering
+    # within a frozen set is the ordinary case, not an error.
+    frozen_set: str | None = None
 
     def as_conditions(self) -> list:
         """The filter this request asks for, however it was expressed.
@@ -2257,6 +2263,243 @@ def delete_saved_view_route(
     return {"deleted": True}
 
 
+# --- Frozen sets (BLOCKING 17, DEV_UI 11.3) ---------------------------
+#
+# A saved VIEW is the live kind -- its query, re-run. A FROZEN SET is
+# the other kind DEV_UI 11.3 asks for: "membership fixed at an
+# instant". Foundry's static object sets are the precedent: "saved as a
+# list of primary keys", staying "the same regardless of any changes to
+# the input data". Membership is keys; values are read live, with the
+# reader's own authority, through every route that already takes a set
+# -- which is why those routes take `frozen_set` rather than this
+# module growing a second read path.
+
+
+def _frozen_set_store(request: Request):
+    from core.frozen_sets import FrozenSetStore
+
+    return FrozenSetStore(request.app.state.runtime_paths.data_dir / "frozen_sets.db")
+
+
+def _gold_table_for(mediator, object_type: str) -> "str | None":
+    return ((mediator.schema.get(object_type) or {}).get("storage") or {}).get("table")
+
+
+def _gold_connector(mediator):
+    from core.mirror.gold_connector import GoldConnector
+
+    return next((adapter for adapter in mediator.adapters.values()
+                 if isinstance(adapter, GoldConnector)), None)
+
+
+def _frozen_set_condition(request: Request, user: UserRecord, object_type: str,
+                          set_id: "str | None") -> "list[FieldFilter]":
+    """The condition a frozen set contributes: its members, by id.
+
+    A CONDITION, NOT A SEPARATE READ PATH. Expanded into `id in [...]`
+    and ANDed with whatever else the request carries, a frozen set goes
+    through the same mediator search every live set does -- so MAC, the
+    caller's own field grants, the scan ceiling and its truncation flag
+    all apply without being restated. Table, charts, facets, graph,
+    count and export work on it because they already work on
+    conditions.
+
+    BY REFERENCE, because a thousand ids do not fit in the search GET's
+    query string, and because the members are the OWNER's: a caller
+    naming somebody else's set gets the answer "no such set".
+
+    404 FOR NOT YOURS AND FOR NONE, identically, and for a set of a
+    different type -- applying a Customer set to Transactions would
+    match ids that merely collide.
+    """
+    if not set_id:
+        return []
+    found = _frozen_set_store(request).get(user.user_id, set_id)
+    if found is None or found.object_type != object_type or not found.member_ids:
+        raise HTTPException(status_code=404, detail="No such frozen set")
+    id_field = (_generation(request).mediator.schema.get(object_type) or {}).get("id_field")
+    if not id_field:
+        raise HTTPException(status_code=404, detail="No such frozen set")
+    return [FieldFilter(field=id_field, operator="in", value=list(found.member_ids))]
+
+
+def _set_conditions(request: Request, user: UserRecord, object_type: str,
+                    body: "ObjectSetQueryRequest") -> list:
+    """The request's own conditions, narrowed to its frozen set if any."""
+    return body.as_conditions() + _frozen_set_condition(
+        request, user, object_type, body.frozen_set)
+
+
+class FreezeSetRequest(BaseModel):
+    """What to freeze: the live set as described, or hand-picked ids.
+
+    ONE OR THE OTHER. `ids` freezes a selection; `q`/`conditions`
+    freezes "everything matching", resolved HERE, the way
+    `/matching-ids` resolves it, so the frozen membership is exactly
+    what the owner could see at the instant they froze it.
+    """
+
+    name: str
+    object_type: str
+    ids: list[str] | None = None
+    q: str = ""
+    conditions: list[dict[str, Any]] | None = None
+
+
+class FrozenSetResponse(BaseModel):
+    set_id: str
+    name: str
+    object_type: str
+    #: How many ids were frozen. The ids themselves are not listed --
+    #: a frozen set is opened through the routes that take one, which
+    #: apply the reader's authority to every member.
+    size: int
+    frozen_at: str
+    published_at: str | None = None
+    #: Whether gold still holds the publication it was frozen from.
+    #: Reported, never required -- membership does not depend on it.
+    publication_retained: bool | None = None
+    #: Present when it was frozen from criteria, so it can be handed
+    #: back to them (DEV_UI 11.3, "conversion both ways"). Absent for a
+    #: hand-picked selection, which has no criteria.
+    origin: dict[str, Any] = {}
+
+
+class FrozenSetDetailResponse(FrozenSetResponse):
+    #: Members the caller cannot see now -- deleted, or outside their
+    #: compartment, and deliberately not distinguished. Counted, so the
+    #: set never silently looks smaller than it is.
+    not_shown: int
+
+
+def _describe_frozen(request: Request, found) -> dict:
+    mediator = _generation(request).mediator
+    connector = _gold_connector(mediator)
+    table = _gold_table_for(mediator, found.object_type)
+    retained = None
+    if found.gold_snapshot_id and connector is not None and table:
+        retained = connector.snapshot_is_retained(table, int(found.gold_snapshot_id))
+    return {
+        "set_id": found.set_id, "name": found.name, "object_type": found.object_type,
+        "size": len(found.member_ids), "frozen_at": found.frozen_at,
+        "published_at": found.published_at, "publication_retained": retained,
+        "origin": found.origin,
+    }
+
+
+@router.post("/frozen-sets", response_model=FrozenSetResponse, status_code=201)
+def freeze_set_route(body: FreezeSetRequest, request: Request,
+                     current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Freezes a set: its members now, by id, under a name.
+
+    RESOLVED AS THE OWNER. Hand-picked ids are filtered through the
+    mediator too, not stored as given -- otherwise a caller could freeze
+    ids they cannot see and use the set's `not_shown` count to learn
+    whether they exist.
+
+    REFUSED OVER THE BULK CEILING and refused when EMPTY, never
+    truncated: a frozen set silently missing a third of what was asked
+    for is the failure `/matching-ids` already refuses, and an empty one
+    would expand to an `in` the filter vocabulary rightly rejects.
+    """
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="A frozen set needs a name.")
+    if body.ids is not None and (body.q or body.conditions):
+        raise HTTPException(
+            status_code=400,
+            detail="Freeze either a selection of ids or a filter, not both.")
+    mediator = _generation(request).mediator
+    id_field = (mediator.schema.get(body.object_type) or {}).get("id_field")
+    if not id_field:
+        raise HTTPException(status_code=404, detail="No such object type")
+
+    try:
+        if body.ids is not None:
+            wanted = [str(member) for member in body.ids]
+            if not wanted:
+                raise HTTPException(status_code=400, detail="Nothing is selected.")
+            if len(wanted) > MAX_BULK_OBJECTS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{len(wanted)} objects are selected, and at most "
+                           f"{MAX_BULK_OBJECTS} can be frozen at once.")
+            visible = {str(found) for found in mediator.search_object(
+                current_user, body.object_type,
+                [FieldFilter(field=id_field, operator="in", value=wanted)])}
+            # IN THE ORDER THEY WERE PICKED, which is the order a person
+            # will expect to see them in again.
+            members = [member for member in wanted if member in visible]
+            origin: dict = {}
+        else:
+            parsed = parse_filters(body.conditions) if body.conditions else None
+            members = [str(found) for found in mediator.search_object_free_text(
+                current_user, body.object_type, body.q, conditions=parsed)]
+            origin = {"q": body.q, "conditions": body.conditions or []}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    if not members:
+        raise HTTPException(status_code=400, detail="Nothing matches, so there is nothing to freeze.")
+    if len(members) > MAX_BULK_OBJECTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{len(members)} objects match, and at most {MAX_BULK_OBJECTS} "
+                   f"can be frozen at once. Narrow the filter.")
+
+    connector = _gold_connector(mediator)
+    table = _gold_table_for(mediator, body.object_type)
+    snapshot = connector.snapshot_for(table) if connector is not None and table else None
+    set_id = _frozen_set_store(request).freeze(
+        current_user.user_id, name, body.object_type, members, origin=origin,
+        gold_snapshot_id=None if snapshot is None else str(snapshot),
+        published_at=_generation(request).gold_published_at.get(body.object_type),
+    )
+    if set_id is None:
+        raise HTTPException(status_code=500, detail="The set could not be saved.")
+    found = _frozen_set_store(request).get(current_user.user_id, set_id)
+    return _describe_frozen(request, found)
+
+
+@router.get("/frozen-sets", response_model=list[FrozenSetResponse],
+            dependencies=[Depends(_no_store)])
+def list_frozen_sets_route(request: Request,
+                           current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    """The caller's own frozen sets, newest first."""
+    return [_describe_frozen(request, found)
+            for found in _frozen_set_store(request).for_owner(current_user.user_id)]
+
+
+@router.get("/frozen-sets/{set_id}", response_model=FrozenSetDetailResponse,
+            dependencies=[Depends(_no_store)])
+def frozen_set_route(set_id: str, request: Request,
+                     current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """One set, with how many of its members the caller can see now."""
+    found = _frozen_set_store(request).get(current_user.user_id, set_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="No such frozen set")
+    condition = _frozen_set_condition(request, current_user, found.object_type, set_id)
+    try:
+        shown = _generation(request).mediator.count_objects(
+            current_user, found.object_type, condition)
+    except ValueError:
+        # THE ID FIELD IS NO LONGER READABLE BY THE OWNER, so nothing
+        # can be matched by it. Every member is then not shown, which is
+        # what the reader actually gets.
+        shown = 0
+    return {**_describe_frozen(request, found), "not_shown": len(found.member_ids) - shown}
+
+
+@router.delete("/frozen-sets/{set_id}", dependencies=[Depends(_no_store)])
+def delete_frozen_set_route(set_id: str, request: Request,
+                            current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Deletes one, if it belongs to the caller. 404 otherwise, for the
+    reason the saved-view route gives."""
+    if not _frozen_set_store(request).delete(current_user.user_id, set_id):
+        raise HTTPException(status_code=404, detail="No such frozen set")
+    return {"deleted": True}
+
+
 class NotificationResponse(BaseModel):
     notification_id: str
     created_at: str
@@ -3911,6 +4154,7 @@ def decide_merge_route(proposal_id: str, body: MergeDecisionRequest,
          response_model=MatchingIdsResponse, response_model_exclude_none=True)
 def matching_ids_route(object_type: str, request: Request, q: str = "",
                         conditions: str | None = None,
+                        frozen_set: str | None = None,
                         current_user: UserRecord = Depends(get_current_user)) -> dict:
     """Every id the current filter matches, for "select all matching".
 
@@ -3941,6 +4185,17 @@ def matching_ids_route(object_type: str, request: Request, q: str = "",
         parsed = parse_filters(json.loads(conditions)) if conditions else None
     except (json.JSONDecodeError, TypeError) as e:
         raise HTTPException(status_code=400, detail="conditions must be a JSON list") from e
+    except FilterError as e:
+        # A MALFORMED CONDITION IS THE CALLER'S MISTAKE, AND SAYS WHICH.
+        # Uncaught, it surfaced as a 500 -- found when Browse's "select
+        # all matching" sent its chart filters in the wrong shape and
+        # got "Request failed (500)" for any filter at all.
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    # "SELECT ALL MATCHING" WITHIN A FROZEN SET selects within it, which
+    # is what bulk action over a frozen set needs.
+    narrowed = _frozen_set_condition(request, current_user, object_type, frozen_set)
+    if narrowed:
+        parsed = (parsed or []) + narrowed
 
     try:
         matching_ids = mediator.search_object_free_text(
@@ -4013,7 +4268,8 @@ def export_objects_route(object_type: str, body: ObjectSetQueryRequest, request:
 
     try:
         matching_ids = mediator.search_object_free_text(
-            current_user, object_type, q, conditions=body.as_conditions(),
+            current_user, object_type, q,
+            conditions=_set_conditions(request, current_user, object_type, body),
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -4079,6 +4335,11 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
                           # a POST body to avoid encoding would cost
                           # that.
                           conditions: str | None = None,
+                          # A FROZEN SET, BY REFERENCE: a thousand ids
+                          # will not fit in this GET's query string, and
+                          # the set's id is what makes a frozen set's URL
+                          # shareable with its owner's other tabs.
+                          frozen_set: str | None = None,
                           current_user: UserRecord = Depends(get_current_user)) -> dict:
     # The human-facing browse/search endpoint -- DataMediator.search_
     # object_free_text() underneath, a forgiving CONTAINS match across
@@ -4102,6 +4363,15 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
         parsed = parse_filters(json.loads(conditions)) if conditions else None
     except (json.JSONDecodeError, TypeError) as e:
         raise HTTPException(status_code=400, detail="conditions must be a JSON list") from e
+    except FilterError as e:
+        # A MALFORMED CONDITION IS THE CALLER'S MISTAKE, AND SAYS WHICH.
+        # Uncaught, it surfaced as a 500 -- found when Browse's "select
+        # all matching" sent its chart filters in the wrong shape and
+        # got "Request failed (500)" for any filter at all.
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    narrowed = _frozen_set_condition(request, current_user, object_type, frozen_set)
+    if narrowed:
+        parsed = (parsed or []) + narrowed
 
     # ONE CONTEXT FOR THE WHOLE REQUEST, created before the first read
     # so the search and every per-object read that follows share an id.
@@ -4752,7 +5022,8 @@ def count_objects_route(object_type: str, body: ObjectSetQueryRequest, request: 
     search_outcome = SearchOutcome()
     try:
         count = mediator.count_objects(
-            current_user, object_type, body.as_conditions(), outcome=search_outcome)
+            current_user, object_type, _set_conditions(request, current_user, object_type, body),
+            outcome=search_outcome)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return {"count": count, "scan_truncated": search_outcome.scan_truncated}
@@ -4767,7 +5038,8 @@ def aggregate_objects_route(object_type: str, body: AggregateRequest, request: R
     search_outcome = SearchOutcome()
     try:
         results = mediator.aggregate_by_field(
-            current_user, object_type, body.as_conditions(),
+            current_user, object_type,
+            _set_conditions(request, current_user, object_type, body),
             group_by=body.group_by, aggregate=body.aggregate, field_name=body.field,
             outcome=search_outcome,
         )
@@ -4794,7 +5066,8 @@ def search_around_route(object_type: str, body: SearchAroundRequest, request: Re
     mediator = _generation(request).mediator
     search_outcome = SearchOutcome()
     ids = mediator.search_around(
-        current_user, object_type, body.as_conditions(), body.link_field,
+        current_user, object_type, _set_conditions(request, current_user, object_type, body),
+        body.link_field,
         outcome=search_outcome,
     )
     return {
