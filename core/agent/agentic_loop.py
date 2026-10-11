@@ -84,7 +84,7 @@ from core.llm.plan import MAX_PLAN_FANOUT, PlanError, resolve_step
 from core.llm.tracing import EXECUTE_TOOL, INVOKE_AGENT, span
 from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE, coerce
 from core.ontology.mediator import DataMediator, security_cache_scope
-from core.ontology.schema import get_title_field
+from core.ontology.schema import get_link_target, get_title_field
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
 from core.ontology.write_mediator import PendingWrite, WriteMediator
 from core.request_context import RequestContext
@@ -361,6 +361,81 @@ def _step_signature(step: dict):
     return None
 
 
+#: Field names a model invents when it wants an aggregate. Matched only
+#: against names the type does NOT have, so a real field called "total"
+#: is read as a field.
+_AGGREGATE_WORDS = frozenset({
+    "count", "total", "number", "num", "sum", "average", "avg", "min", "max",
+    "minimum", "maximum", "how_many", "quantity",
+})
+
+
+def _reject_ids_of_another_type(object_type: str, object_ids: list,
+                                gathered: list[dict], visible_schema: dict) -> None:
+    """Refuses an id this run only ever saw as a DIFFERENT type's.
+
+    MEASURED: asked for "the amounts of all of Ada Okafor's
+    transactions", the bench's model found customer cust_001 and then
+    asked for Transaction cust_001's amount -- three trials of three. A
+    Transaction with that id does not exist, get_object returned None,
+    and the model asked again until the duplicate guard stopped it.
+
+    BUILT ONLY FROM WHAT THIS RUN ALREADY HOLDS: the ids in `gathered`
+    and the caller's own visible schema. It never asks the mediator
+    whether an id exists, so it reveals nothing a None did not.
+
+    CONSERVATIVE BY CONSTRUCTION. An id that arrived in a LINK result
+    may belong to any type, and an id already used with this type is
+    this type's; either keeps the step. Only an id seen exclusively as
+    another type's -- a search result, or an object read as that type --
+    is refused.
+    """
+    this_type: set[str] = set()
+    any_type: set[str] = set()
+    other_type: dict[str, str] = {}
+    for item in gathered:
+        kind, item_type = item.get("step"), item.get("object_type")
+        result = item.get("result")
+        found = [str(i) for i in result] if isinstance(result, list) else []
+        if kind == "search_object":
+            if item_type == object_type:
+                this_type.update(found)
+            else:
+                other_type.update(dict.fromkeys(found, str(item_type)))
+        else:
+            # A LINK, A SEARCH-AROUND, ANYTHING ELSE THAT LISTS IDS: their
+            # type is the far side's, which this does not try to work out.
+            any_type.update(found)
+        if kind in ("get_field", "get_object"):
+            named = [str(i) for i in _object_ids_in(item)]
+            if item_type == object_type:
+                this_type.update(named)
+            else:
+                other_type.update(dict.fromkeys(named, str(item_type)))
+
+    for object_id in (str(i) for i in object_ids):
+        owner = other_type.get(object_id)
+        if owner is None or object_id in this_type or object_id in any_type:
+            continue
+        owner_fields = (visible_schema.get(owner) or {}).get("fields") or {}
+        link = next((name for name, info in owner_fields.items()
+                     if info.get("type") == "link"
+                     and get_link_target(info) == object_type), None)
+        own_fields = (visible_schema.get(object_type) or {}).get("fields") or {}
+        back = next((name for name, info in own_fields.items()
+                     if info.get("type") == "link" and get_link_target(info) == owner), None)
+        message = f"{object_id!r} is a {owner} id, not a {object_type} id."
+        if link:
+            message += (f' To reach {owner} {object_id}\'s {object_type} objects, read its link: '
+                        f'{{"step": "get_field", "object_type": "{owner}", '
+                        f'"object_id": "{object_id}", "field_name": "{link}"}}.')
+        if back:
+            message += (f' To count or total them instead: {{"step": "aggregate_object", '
+                        f'"object_type": "{object_type}", "filter": {{"{back}": "{object_id}"}}, '
+                        f'"aggregate": "count"}}.')
+        raise ValueError(message)
+
+
 def _detect_asymmetry(gathered: list[dict]) -> str | None:
     # Looks for uneven data gathered across sibling objects of the same
     # type (e.g. two transactions where one has 3 fields fetched and the
@@ -383,8 +458,39 @@ def _detect_asymmetry(gathered: list[dict]) -> str | None:
         field_sets = [frozenset(f) for f in id_map.values()]
         if len(set(field_sets)) > 1:
             details = ", ".join(f"{oid}: {sorted(fields)}" for oid, fields in id_map.items())
-            return f"Uneven data gathered across {object_type} objects -- {details}."
+            return (f"Uneven data gathered across {object_type} objects -- {details}. "
+                    f"{_what_is_missing(object_type, id_map)}")
     return None
+
+
+def _what_is_missing(object_type: str, id_map: dict) -> str:
+    """The gap as the ONE step that fills it.
+
+    MEASURED, NOT IMAGINED. The nudge used to list only what each
+    object HAD -- "1: ['category'], 2: ['amount', 'category']" -- and
+    the bench's dependent_choice case, three trials of three, answered
+    it by re-reading amount and category for object 2, the one that was
+    complete, until the duplicate guard stopped it. Working out which
+    object lacks which field from that list is the inference the model
+    did not make. So this makes it: the missing pairs, and a step that
+    reads exactly them -- grouped, so objects missing the same fields
+    cost one step rather than one each.
+    """
+    wanted = set().union(*id_map.values())
+    by_gap: dict[frozenset, list] = {}
+    for object_id, fields in id_map.items():
+        gap = frozenset(wanted - fields)
+        if gap:
+            by_gap.setdefault(gap, []).append(object_id)
+    steps = [
+        json.dumps({"step": "get_object", "object_type": object_type,
+                    "object_ids": ids, "field_names": sorted(gap)})
+        for gap, ids in by_gap.items()
+    ]
+    missing = "; ".join(f"{', '.join(str(i) for i in ids)} lacks {', '.join(sorted(gap))}"
+                        for gap, ids in by_gap.items())
+    return (f"Missing: {missing}. Everything else is already gathered -- do not read it "
+            f"again. To fill the gap: {' then '.join(steps)}")
 
 
 def _handle_recoverable_mistake(gathered: list[dict], count: int, cap: int, detail: str,
@@ -706,6 +812,16 @@ class AgentLoop:
     def _step_get_field(self, step: dict, user_record: UserRecord,
                         visible_schema: dict, gathered: list[dict],
                         context: RequestContext | None = None) -> Any:
+        # THE SAME TWO GUARDS AS get_object. The bench's count case asked
+        # get_object for a field "count", was refused, and asked get_field
+        # for it instead -- which returned None, silently, twice, until the
+        # duplicate guard stopped it. A guard on one of two equivalent
+        # verbs is a guard the model walks around.
+        self._reject_unknown_fields(
+            {"object_type": step.get("object_type"), "field_names": [step.get("field_name")]},
+            visible_schema)
+        _reject_ids_of_another_type(step["object_type"], [step["object_id"]],
+                                    gathered, visible_schema)
         return self.mediator.get_field(
             user_record, step["object_type"], step["object_id"], step["field_name"],
             context=context,
@@ -803,11 +919,21 @@ class AgentLoop:
         if not unknown:
             return
 
+        # A COUNT IS NOT A FIELD, and the bench showed a model that
+        # believed it was: asked "how many transactions", it requested a
+        # field named "count" three trials of three. Naming the step that
+        # does count, with its shape, answers the belief behind the
+        # mistake rather than only the mistake.
+        hint = ""
+        if any(str(name).lower() in _AGGREGATE_WORDS for name in unknown):
+            hint = (f' To count or total {object_type} objects, use one aggregate_object '
+                    f'step, e.g. {{"step": "aggregate_object", "object_type": "{object_type}", '
+                    f'"filter": {{"<field>": "<value>"}}, "aggregate": "count"}}.')
         raise ValueError(
             f"get_object: {object_type} has no field(s) "
             f"{', '.join(repr(name) for name in unknown)}. "
             f"There is no wildcard -- name the fields you want from: "
-            f"{', '.join(sorted(known))}."
+            f"{', '.join(sorted(known))}.{hint}"
         )
 
     def _step_get_object(self, step: dict, user_record: UserRecord,
@@ -860,6 +986,7 @@ class AgentLoop:
         """
         self._reject_unknown_fields(step, visible_schema)
         object_ids = self._object_ids_for(step)
+        _reject_ids_of_another_type(step["object_type"], object_ids, gathered, visible_schema)
         for object_id in object_ids:
             field_values = self.mediator.get_object(
                 user_record, step["object_type"], object_id, step["field_names"]

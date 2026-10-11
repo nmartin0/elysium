@@ -1,4 +1,4 @@
-"""The three worked examples stay, and this records why.
+"""The worked examples stay, and this records why.
 
 I proposed removing them. They are 1,148 characters, about 119 seconds
 of a cold call at the VM's measured 0.104 s/char, and the literature
@@ -54,14 +54,21 @@ def test_the_examples_are_in_the_plan_prompt_too():
     assert "Example: to answer" in plan_prompt
 
 
-def test_all_three_examples_are_present():
+def test_all_four_examples_are_present():
     """Each shows a different shape -- one field, several fields on one
-    object, several objects. Losing any one loses a shape."""
+    object, several objects, a count. Losing any one loses a shape.
+
+    THE FOURTH WAS ADDED BY MEASUREMENT, the same way the first three
+    were kept. The bench's count case failed three trials of three by
+    asking for a field named "count": aggregate_object was described in
+    prose and shown in no example, and the finding above is that this
+    model does not infer a shape from prose."""
     prompt = _build_system_prompt(SCHEMA, [], False, {})
 
-    assert prompt.count("Example: to answer") == 3
+    assert prompt.count("Example: to answer") == 4
     assert '"step": "get_object"' in prompt
     assert '"field_names": ["f_a", "f_b"]' in prompt
+    assert '"step": "aggregate_object", "object_type": "RelatedType"' in prompt
 
 
 def test_the_important_note_stands_on_its_own():

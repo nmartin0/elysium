@@ -868,6 +868,49 @@ CONTROLS = [
                "test_an_empty_part_is_refused_not_saved"],
     ),
 
+    Control(
+        describes="bench: get_object refuses another type's id",
+        path="core/agent/agentic_loop.py",
+        old='        _reject_ids_of_another_type(step["object_type"], object_ids, gathered, visible_schema)\n',
+        new='',
+        tests=["tests/unit/test_bench_failures_are_answered.py::TestAnotherTypesId::test_the_bench_s_wrong_step_is_refused_with_the_link_to_follow"],
+    ),
+    Control(
+        describes="bench: get_field refuses an unknown field",
+        path="core/agent/agentic_loop.py",
+        old='            {"object_type": step.get("object_type"), "field_names": [step.get("field_name")]},',
+        new='            {"object_type": step.get("object_type"), "field_names": []},',
+        tests=["tests/unit/test_bench_failures_are_answered.py::TestACountIsNotAField::test_get_field_is_refused_too_rather_than_answering_none"],
+    ),
+    Control(
+        describes="bench: a count-shaped field name gets the aggregate step",
+        path="core/agent/agentic_loop.py",
+        old="        if any(str(name).lower() in _AGGREGATE_WORDS for name in unknown):",
+        new="        if False:",
+        tests=["tests/unit/test_bench_failures_are_answered.py::TestACountIsNotAField::test_get_object_names_the_step_that_counts"],
+    ),
+    Control(
+        describes="bench: the asymmetry nudge names what is missing",
+        path="core/agent/agentic_loop.py",
+        old='                    f"{_what_is_missing(object_type, id_map)}")',
+        new='                    "")',
+        tests=["tests/unit/test_bench_failures_are_answered.py::TestTheNudgeSaysWhatIsMissing::test_it_names_the_object_and_the_field"],
+    ),
+    Control(
+        describes="bench: an id from a link result is never refused",
+        path="core/agent/agentic_loop.py",
+        old="        if owner is None or object_id in this_type or object_id in any_type:",
+        new="        if owner is None or object_id in this_type:",
+        tests=["tests/unit/test_bench_failures_are_answered.py::TestTheIdGuardIsConservative::test_an_id_also_seen_in_a_link_result_is_allowed"],
+    ),
+    Control(
+        describes="bench: an id read as this type is never refused",
+        path="core/agent/agentic_loop.py",
+        old="        if owner is None or object_id in this_type or object_id in any_type:",
+        new="        if owner is None or object_id in any_type:",
+        tests=["tests/unit/test_bench_failures_are_answered.py::TestTheIdGuardIsConservative::test_an_id_already_read_as_this_type_is_allowed"],
+    ),
+
 ]
 
 

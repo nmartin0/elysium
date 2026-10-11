@@ -949,6 +949,11 @@ BOTH ids in ONE step:
   then {"step": "finish"} -- NOT one get_field per id, and NOT another
   get_field on "related_items".
 
+Example: to answer "How many RelatedType does ex_001 have", count them
+in ONE step -- there is no "count" field to read:
+  {"step": "aggregate_object", "object_type": "RelatedType", "filter": {"example_ref": "ex_001"}, "aggregate": "count"}
+  then {"step": "finish"}.
+
 """
 
 

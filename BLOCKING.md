@@ -484,8 +484,41 @@ ITERATE rather than hand-writing three prompts and picking. It has
 been unblocked since `aggregate_object` became reachable; what it
 lacks is the machine.
 
-**Blocked on:** a machine with a capable model, and about an hour of
-someone's time on it.
+**MEASURED 2026-10-11, on the deployment's own CPU model**, with
+`scripts.llm_bench` (step mode, three trials each; plan mode, one):
+
+| case | step | plan | how it failed |
+| --- | --- | --- | --- |
+| one_field, one_field_other_customer, typed_field, two_constraints | 3/3 | 1/1 | -- |
+| link_fanout | 0/3 | 0/1 | step: asked for Transaction `cust_001` -- a Customer id -- until stopped. plan: list in a filter, then a wrapped handle |
+| dependent_choice | 0/3 | 0/1 | step: the asymmetry nudge listed what each object HAD; the model re-read the complete one. plan: 26 steps against max_hops 8 |
+| count_by_aggregate | 0/3 | 0/1 | step: asked for a FIELD named `count`, refused by get_object, then asked get_field, which silently returned None |
+
+- **Are aggregates chosen? No, 0 of 4.** `aggregate_object` was
+  described in prose and shown in no example -- and this file already
+  records that this model does not infer a shape from prose.
+- **Every failure was identical across trials** (temperature 0), so
+  `--trials 3` buys nothing here; one trial per case is the measurement.
+- **Prefix reuse works (AR-1's engine half).** Warm, the per-call time
+  follows the call's POSITION, not its length: call 3 (6,818 chars) ran
+  36 s against call 2's 56 s (6,684 chars), every trial. Seconds track
+  what the model writes, not what it re-reads. The 383-1,210 s first
+  calls are model loads, not prompts.
+- One plan-mode call took 934 s, over the 600 s deadline -- a query a
+  user would have seen fail.
+
+**WHAT CHANGED IN RESPONSE**, each from one failure above, each in
+`tests/unit/test_bench_failures_are_answered.py` replaying the bench's
+own trajectory: a fourth worked example (a count); an id seen only as
+another type's is refused with the link to follow and the aggregate
+that counts; get_field refuses an unknown field as get_object does,
+naming `aggregate_object` when the field looks like a count; the
+asymmetry nudge names the missing (object, field) pairs and the one
+step that fills them.
+
+**Blocked on:** re-running the bench on that machine with those
+changes (`python -m scripts.llm_bench`, one trial, ~35 minutes). Plan
+mode's two failures are untouched and are the next question.
 
 ## 14. Context rot, and a 10,000-id search behind it
 

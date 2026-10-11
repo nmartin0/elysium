@@ -62,12 +62,20 @@ class TestTheGuardsAreCalledWhereTheyShouldBe:
         of it would be a guard that runs on nothing."""
         assert _enclosing_function(ACTION_TYPES, guard) == "validate_action_types"
 
-    def test_the_get_object_step_rejects_unknown_fields(self):
+    def test_both_read_steps_reject_unknown_fields(self):
         """`_step_get_object`, NOT `_step_search_around` -- my sweep
         script reported the wrong enclosing function and this test
-        caught it before the claim reached a commit message."""
-        assert _enclosing_function(
-            AGENTIC_LOOP, "_reject_unknown_fields") == "_step_get_object"
+        caught it before the claim reached a commit message.
+
+        AND `_step_get_field`, since the bench showed a model refused a
+        "count" field by get_object asking get_field for it instead."""
+        callers = set()
+        for call in re.finditer(r"^\s+(?:self\.)?_reject_unknown_fields\(", AGENTIC_LOOP, re.M):
+            enclosing = None
+            for match in re.finditer(r"^(?:    )?def (\w+)", AGENTIC_LOOP[:call.start()], re.M):
+                enclosing = match.group(1)
+            callers.add(enclosing)
+        assert callers == {"_step_get_field", "_step_get_object"}
 
 
 class TestEachIsCalledExactlyOnce:
