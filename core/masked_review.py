@@ -48,10 +48,37 @@ ONE_SIDE_MISSING = "one side missing"
 UNCOMPARED = "not compared"
 
 
-def _verdict(agreement: "bool | None", left_present: bool,
-             right_present: bool) -> str:
-    """What may be said about a pair without saying the values."""
-    if not left_present or not right_present:
+def _verdict(agreement: "bool | None", left_has_value: bool,
+             right_has_value: bool, readable: bool = True) -> str:
+    """What may be said about a pair without saying the values.
+
+    THREE THINGS THAT MUST NOT LOOK ALIKE, which is this project's own
+    rule stated in DEV_UI.md 9.7: "'Not permitted', 'restricted' and a
+    real NULL must look like three different things." A field the
+    reviewer MAY NOT READ, a field one record genuinely LACKS, and a
+    field the matcher COULD NOT COMPARE are three different facts, and
+    only one of them is evidence about whether these are the same
+    person.
+
+    READABILITY IS PASSED IN BECAUSE IT IS NOT DERIVABLE FROM THE
+    ROWS, and assuming it was is what broke this. The caller fetches
+    only readable fields, so an unreadable one is absent from both
+    rows -- indistinguishable, from here, from a value that is really
+    not there. Asked the wrong question, this returned ONE SIDE
+    MISSING for every withheld field: a claim about the data, made
+    about data the reviewer was not allowed to see, and the only
+    verdict the old presence test could ever produce.
+
+    WHAT AN UNREADABLE FIELD GETS IS THE MATCHER'S VERDICT, which is
+    the module's whole premise -- "a reviewer can be told two emails
+    AGREE without being shown either". Nothing new is disclosed: the
+    verdict was always going to be shown, and now it is the right one.
+    """
+    # NOT A KEY CHECK, A VALUE CHECK. `get_object` returns a key for
+    # every field it is ASKED for, so key presence only ever recorded
+    # whether the route requested the field -- never whether a record
+    # held it. The fact this verdict names is the value.
+    if readable and not (left_has_value and right_has_value):
         return ONE_SIDE_MISSING
     if agreement is None:
         return UNCOMPARED
@@ -81,17 +108,37 @@ def masked_comparison(agreement: dict, left_row: dict, right_row: dict,
     readable = set(readable_fields or ())
     entries = []
     for field_name, agreed in (agreement or {}).items():
-        left_present = field_name in (left_row or {})
-        right_present = field_name in (right_row or {})
+        may_read = field_name in readable
+        left_value = (left_row or {}).get(field_name)
+        right_value = (right_row or {}).get(field_name)
         entry = {
             "field": field_name,
-            "verdict": _verdict(agreed, left_present, right_present),
+            "verdict": _verdict(agreed, left_value is not None,
+                                right_value is not None, may_read),
+            # WHETHER THE VALUE WAS WITHHELD, SAID RATHER THAN INFERRED
+            # FROM ITS ABSENCE. `withheld_fields` used to read the
+            # absence of `left`/`right` as "the reviewer could not see
+            # this", which also catches a readable field that is simply
+            # null on both sides -- telling a reviewer they judged
+            # without seeing something they saw perfectly well, and
+            # which was empty.
+            #
+            # A FLAG IS NOT A VALUE. It says that a value exists and is
+            # not being shown, which the reviewer is entitled to know
+            # and which the literature requires be recorded; it carries
+            # nothing of the value itself.
+            "readable": may_read,
         }
-        if field_name in readable:
-            if left_present:
-                entry["left"] = left_row[field_name]
-            if right_present:
-                entry["right"] = right_row[field_name]
+        if may_read:
+            # ABSENT WHEN NULL, TOO, not just when withheld. The
+            # response must never carry `"left": null` -- a None has
+            # been serialised into this process and sits in anything
+            # that cached it -- and the verdict above already says
+            # which side was empty.
+            if left_value is not None:
+                entry["left"] = left_value
+            if right_value is not None:
+                entry["right"] = right_value
         entries.append(entry)
     return entries
 
@@ -116,6 +163,12 @@ def withheld_fields(entries: list) -> list[str]:
     made while three of five deciding fields were masked is a weaker
     artifact than one made with all five visible, and whoever reads
     the decision later should be able to tell which they are holding.
+
+    KEYED ON PERMISSION, NOT ON ABSENCE. Reading the absence of
+    `left`/`right` as "withheld" also catches a readable field that is
+    null on both sides, which tells a reviewer they judged without
+    seeing something they saw and which was empty -- and it silently
+    stopped meaning anything at all while `_readable_fields` was
+    returning nothing, when it named every field of every proposal.
     """
-    return [entry["field"] for entry in entries
-            if "left" not in entry and "right" not in entry]
+    return [entry["field"] for entry in entries if not entry.get("readable", True)]

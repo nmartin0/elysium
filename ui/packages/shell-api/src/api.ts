@@ -942,9 +942,21 @@ export interface ServerSavedView {
  */
 export interface MergeField {
   field: string
+  /** agree, differ, one side missing, or not compared. FOUR, and the
+   *  last two are not interchangeable: "one record lacks this" is
+   *  evidence against a match and "the matcher could not compare
+   *  these" is not evidence at all. */
   verdict: string
+  /** Absent when the reviewer may not read the field AND when the
+   *  value is genuinely null -- the response never carries a null, so
+   *  `readable` is what tells the two apart. */
   left?: string
   right?: string
+  /** Whether the value was withheld rather than empty. Absence alone
+   *  conflates them, and a reviewer told they judged a field blind
+   *  when they saw it and it was empty is being told something
+   *  untrue. Carries no part of the value. */
+  readable: boolean
 }
 
 export interface MergeProposal {

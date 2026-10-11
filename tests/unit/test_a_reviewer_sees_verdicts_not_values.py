@@ -68,11 +68,60 @@ class TestTheVerdictIsAlwaysGiven:
 
     def test_a_missing_side_is_its_own_verdict(self):
         """"Differ" would be a lie: nothing disagreed, one record had
-        nothing to say."""
+        nothing to say.
+
+        READABLE, WHICH THIS DID NOT SAY AND HAD TO. It passed `[]` for
+        the readable fields, so the field under test was WITHHELD --
+        and "the reviewer may not see this" is a different fact from
+        "one record lacks it". The old verdict could not tell them
+        apart, which is exactly the defect; asserting the right answer
+        from the wrong setup is how that survived.
+        """
         entries = masked_comparison({"email": False}, {"email": "a@x.com"},
-                                     {}, [])
+                                     {}, ["email"])
 
         assert entries[0]["verdict"] == ONE_SIDE_MISSING
+
+    def test_A_WITHHELD_FIELD_IS_NOT_CALLED_MISSING(self):
+        """THE DEFECT, AS A TEST. The route fetches only readable
+        fields, so an unreadable one is absent from both rows -- and a
+        verdict reading key presence called that "one side missing".
+        A reviewer deciding whether two records are the same person
+        was told one of them lacked a field that it has, about data
+        they were not cleared to see.
+
+        WHAT THEY GET INSTEAD is the matcher's own verdict, which is
+        this module's whole premise: a reviewer can be told two emails
+        agree without being shown either. Nothing further is
+        disclosed -- the verdict was always going to be shown.
+        """
+        # THE ROWS DO NOT HOLD THE FIELD, which is what the route
+        # actually produces: it fetches `readable & agreement`, so an
+        # unreadable field is never requested and never arrives. A
+        # first version of this test handed the rows values anyway and
+        # passed with the fix REVERTED -- the presence check was
+        # satisfied for a reason the real caller never supplies.
+        entries = masked_comparison({"email": False}, {}, {}, [])
+
+        assert entries[0]["verdict"] == DIFFER
+        assert entries[0]["readable"] is False
+        assert "left" not in entries[0] and "right" not in entries[0]
+
+    def test_and_a_readable_field_that_is_NULL_ON_BOTH_SIDES_is_missing(self):
+        """THE THIRD OF THE THREE, and the one the old key check could
+        never reach: `get_object` returns a key for every field it is
+        ASKED for, so a requested field's key was always present and
+        this verdict never fired for a readable field at all. It fires
+        on the VALUE now, which is the fact it names."""
+        entries = masked_comparison({"email": True}, {"email": None},
+                                     {"email": None}, ["email"])
+
+        assert entries[0]["verdict"] == ONE_SIDE_MISSING
+        assert entries[0]["readable"] is True
+        # AND NO NULL ON THE WIRE. The verdict already says the side
+        # was empty; a serialised None would sit in anything that
+        # cached the response.
+        assert "left" not in entries[0] and "right" not in entries[0]
 
 
 class TestWhatIsWithheldIsABSENT:
@@ -85,7 +134,12 @@ class TestWhatIsWithheldIsABSENT:
 
         assert "left" not in email
         assert "right" not in email
-        assert set(email) == {"field", "verdict"}
+        # `readable` SAYS WHY THE VALUE IS ABSENT and carries no part
+        # of it. Absence alone cannot distinguish "withheld" from
+        # "null on both sides", and `withheld_fields` was reading it
+        # as the first.
+        assert set(email) == {"field", "verdict", "readable"}
+        assert email["readable"] is False
 
     def test_a_readable_field_carries_both_values(self):
         entries = masked_comparison(AGREEMENT, LEFT, RIGHT, ["name"])
@@ -97,7 +151,8 @@ class TestWhatIsWithheldIsABSENT:
     def test_no_readable_fields_means_verdicts_only(self):
         entries = masked_comparison(AGREEMENT, LEFT, RIGHT, [])
 
-        assert all(set(e) == {"field", "verdict"} for e in entries)
+        assert all(set(e) == {"field", "verdict", "readable"} for e in entries)
+        assert all(e["readable"] is False for e in entries)
 
     def test_the_withheld_value_is_nowhere_in_the_output(self):
         """The strongest form of the check: the string itself does not

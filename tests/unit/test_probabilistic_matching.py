@@ -26,6 +26,7 @@ from core.mirror.matching import (
     Candidate,
     CandidateMatcher,
     SplinkMatcher,
+    _agreed,
     settings_for,
 )
 
@@ -192,3 +193,63 @@ class TestScoring:
 
     def test_no_rows_means_no_candidates(self):
         assert SplinkMatcher().candidates(TYPE, {None: [], "crm": []}) == []
+
+
+class TestANullIsNotADISAGREEMENT:
+    """Splink's gamma is THREE-VALUED and was being read as two.
+
+    NEGATIVE means the comparison could not be made because a value
+    was null. ZERO means it was made and nothing matched. POSITIVE
+    names which match level fired. `bool(gamma > 0)` folded the first
+    two together, so "one of these records has no email" was recorded
+    as "these two emails differ" -- and that went to a human being
+    asked whether the records are the same person.
+
+    IT BIASES IN ONE DIRECTION, which is why it is worth a class. A
+    null is not evidence against a match; presented as a
+    disagreement, it argues against one. `masked_review` already had
+    the word for this -- UNCOMPARED, "not compared" -- and no way to
+    reach it.
+    """
+
+    def test_a_null_comparison_is_not_compared(self):
+        assert _agreed(-1) is None
+
+    def test_a_real_disagreement_is_still_a_disagreement(self):
+        """THE CONTROL. Returning None for everything would satisfy
+        the test above and lose every verdict the matcher found."""
+        assert _agreed(0) is False
+
+    @pytest.mark.parametrize("gamma", [1, 2, 3])
+    def test_any_match_level_is_agreement(self, gamma):
+        """Splink's levels are ordered -- exact, then progressively
+        looser -- and all of them are a match. A rule reading only
+        gamma == 1 would call a fuzzy match a disagreement."""
+        assert _agreed(gamma) is True
+
+    def test_a_field_the_backend_said_nothing_about_is_not_compared(self):
+        """Missing entirely is not False either. Inventing a
+        disagreement from an absent key is the same error with a
+        different cause."""
+        assert _agreed(None) is None
+
+    @pytest.mark.parametrize("gamma", ["2", "-1", "0"])
+    def test_it_reads_what_a_dataframe_actually_yields(self, gamma):
+        """pandas hands back numpy scalars and, through some paths,
+        strings. A comparison written against `int` would silently
+        take the wrong branch rather than raise."""
+        assert _agreed(gamma) is {"2": True, "-1": None, "0": False}[gamma]
+
+    def test_a_value_it_cannot_read_is_not_compared_rather_than_differ(self):
+        """REFUSES DOWNWARD. An unparseable gamma means the backend
+        said something this code does not understand, and the safe
+        reading of that is "no verdict", not "they disagree"."""
+        assert _agreed("unexpected") is None
+
+    def test_the_candidate_carries_the_three_values_through(self):
+        """The dataclass widened with it; a dict[str, bool] would
+        coerce the third state away at the first type check."""
+        candidate = Candidate(left_id="a", right_id="b", score=0.9,
+                               agreement={"name": True, "email": None, "postcode": False})
+
+        assert candidate.agreement["email"] is None

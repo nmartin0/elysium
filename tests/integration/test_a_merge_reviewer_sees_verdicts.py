@@ -96,14 +96,121 @@ class TestTheReviewerSeesVerdictsNotValues:
     def test_every_compared_field_still_carries_a_verdict(self, client):
         """Withholding the value must not withhold the judgement. "These
         two emails agree" tells a reviewer what they need and tells them
-        nothing about either address."""
+        nothing about either address.
+
+        THIS ASSERTED TRUTHINESS AND THAT IS WHY IT SAW NOTHING. Every
+        field carried the verdict "one side missing" for months --
+        truthy, uniform, and a fabricated claim about the data. A
+        verdict test has to name the verdicts.
+        """
         _login(client)
         _propose(client)
 
         fields = client.get("/api/merge-proposals").json()[0]["fields"]
 
         assert len(fields) == 3
-        assert all(entry["verdict"] for entry in fields)
+        assert {entry["field"]: entry["verdict"] for entry in fields} == {
+            "name": "agree", "region": "agree", "email": "differ",
+        }
+
+    def test_THE_VERDICT_IS_THE_ONE_THE_MATCHER_RECORDED(self, client):
+        """THE BUG THIS FILE COULD NOT SEE.
+
+        `_readable_fields` looked up `visible_schema()["object_types"]`,
+        a key that function has never produced, so it returned the empty
+        set for every caller. Its one consumer fetches
+        `readable & agreement` fields, both rows came back `{}`, and
+        `masked_review._verdict` tests presence BEFORE agreement -- so
+        every field of every proposal read "one side missing" while the
+        real verdict sat unread in `agreement`.
+
+        A REVIEWER IS THE WORST AUDIENCE FOR A FABRICATED FACT. They
+        are being asked whether two records are the same person, and
+        "one side is missing this field" is evidence that points one
+        way.
+
+        ASSERTED FROM THE OTHER DIRECTION TOO -- not merely that the
+        verdicts are right, but that this specific wrong answer is
+        absent -- because the bug produced a uniform, plausible-looking
+        result that a positive assertion alone could coexist with if
+        only some fields were affected.
+        """
+        _login(client)
+        _propose(client, {"name": True, "region": False, "email": True})
+
+        row = client.get("/api/merge-proposals").json()[0]
+
+        assert row["pattern"] == "name: agree, region: differ, email: agree"
+        assert "one side missing" not in row["pattern"]
+
+    def test_a_field_the_reviewer_CAN_read_carries_its_values(self, client):
+        """The other half of the same bug. `wanted` was empty, so the
+        route fetched nothing and every field looked withheld -- which
+        made the masking appear to be working perfectly while it was
+        doing nothing at all."""
+        _login(client)
+        _propose(client)
+
+        fields = {entry["field"]: entry for entry in
+                  client.get("/api/merge-proposals").json()[0]["fields"]}
+
+        assert fields["name"]["left"] == "Ada Okafor"
+        assert fields["name"]["right"] == "Bram Feldman"
+
+    def test_and_NOTHING_is_withheld_when_everything_is_readable(self, client):
+        """`withheld` named every field, every time, which is the
+        reading that made the defect look like correct behaviour: a
+        reviewer told "you judged this without seeing any of it" has no
+        reason to doubt the screen."""
+        _login(client)
+        _propose(client)
+
+        assert client.get("/api/merge-proposals").json()[0]["withheld"] == []
+
+    def test_A_FIELD_THE_REVIEWER_MAY_NOT_READ_IS_STILL_WITHHELD(self, client):
+        """THE SECURITY HALF, AND IT WAS PASSING VACUOUSLY.
+
+        Every masking test in this class ran as `editor`, who can read
+        name, region and email -- so with `_readable_fields` broken,
+        every field came back withheld and every assertion about
+        withholding held for the wrong reason. The masking was never
+        exercised at all; what was being tested was a bug that looked
+        like it.
+
+        SO THIS USES THE MIDDLE RUNG OF THE GRANT LADDER.
+        `customer_service_sees_email_exists` holds
+        `discover:Customer.email` and NOT `read:` -- the field IS in
+        their visible schema, marked `readable: false`, which is the
+        only shape that distinguishes "withheld" from "does not
+        exist". A role that could not discover it either would prove
+        the wrong thing: email would never be a candidate.
+        """
+        _login(client, "masked", role="customer_service_sees_email_exists")
+        _propose(client)
+
+        row = client.get("/api/merge-proposals").json()[0]
+        fields = {entry["field"]: entry for entry in row["fields"]}
+
+        # THE VERDICT SURVIVES THE MASKING, which is the whole design:
+        # "these two emails differ" is safe and the addresses are not.
+        assert fields["email"]["verdict"] == "differ"
+        assert "left" not in fields["email"] and "right" not in fields["email"]
+        assert row["withheld"] == ["email"]
+        # AND THE READABLE ONES ARE NOT SWEPT UP WITH IT.
+        assert fields["name"]["left"] == "Ada Okafor"
+
+    def test_and_the_masked_value_is_nowhere_in_the_body(self, client):
+        """ABSENT, not omitted from one view of it. The literature's
+        requirement is that the reviewing facility never holds the
+        plaintext, so the assertion is against the raw response text
+        rather than against the parsed structure."""
+        _login(client, "masked2", role="customer_service_sees_email_exists")
+        _propose(client)
+
+        body = client.get("/api/merge-proposals").text
+
+        assert "ada.okafor@example.com" not in body
+        assert "bram.feldman@example.com" not in body
 
     def test_the_withheld_fields_are_named(self, client):
         """So a reviewer knows the comparison was wider than what they

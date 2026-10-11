@@ -458,6 +458,11 @@ class MergeFieldResponse(BaseModel):
     verdict: str
     left: str | None = None
     right: str | None = None
+    # WHETHER THE VALUE WAS WITHHELD, which absence alone cannot say:
+    # a readable field that is null on both sides is also absent, and
+    # a reviewer told they judged it blind would be told something
+    # untrue. Carries no part of the value.
+    readable: bool = True
 
 
 class MergeProposalResponse(BaseModel):
@@ -3584,9 +3589,29 @@ def _readable_fields(request: Request, user: UserRecord, object_type: str) -> se
     because that is already "what can this user see" computed once and
     correctly -- including the mandatory-access half, which a grant
     check alone would miss.
+
+    IT RETURNED THE EMPTY SET, ALWAYS, AND HAD SINCE IT WAS WRITTEN.
+    `visible_schema` returns `{object_type: {...}}` -- it is built only
+    as `visible[object_type] = {...}` and the string "object_types"
+    appears nowhere in it -- so the extra `.get("object_types", {})`
+    here found nothing, every time, for every caller. Every other call
+    site in this file reaches the type directly; this one did not.
+
+    WHAT THAT COST IS NOT AN EMPTY LIST. Its one caller fetches
+    `readable & set(agreement)` fields, so BOTH rows came back `{}`,
+    and `masked_review._verdict` checks presence before agreement --
+    so a merge reviewer was told "one side missing" about every field
+    of every proposal, including fields both records hold, while the
+    true agree/differ verdict sat unread in `agreement`. A fabricated
+    claim about the data, shown to the person being asked to judge it,
+    with `withheld` listing every field so the masking looked as
+    though it were working.
+
+    Found by the R52 sweep for imputation -- looking for a value
+    substituted for a missing one, which is what this is, one level up.
     """
     schema = _generation(request).mediator.visible_schema(user)
-    type_def = (schema or {}).get("object_types", {}).get(object_type) or {}
+    type_def = (schema or {}).get(object_type) or {}
     return {
         name for name, field in (type_def.get("fields") or {}).items()
         if field.get("readable", True)

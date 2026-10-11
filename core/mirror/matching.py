@@ -52,6 +52,36 @@ DEFAULT_AUTO_PROPOSE_ABOVE = 0.95
 DEFAULT_REVIEW_ABOVE = 0.80
 
 
+def _agreed(gamma: Any) -> "bool | None":
+    """What one of Splink's gamma values says about a field pair.
+
+    SPLINK'S OWN CONVENTION, which is three-valued and was being read
+    as two: a NEGATIVE gamma (-1) means the comparison could not be
+    made because a value was null; ZERO means it was made and nothing
+    matched; a POSITIVE value names which match level fired.
+
+    `bool(gamma > 0)` collapses the first two, so "one of these
+    records has no email" was recorded as "these two emails differ"
+    and shown to a human being asked to decide whether the records are
+    the same person. A null is not evidence against a match, and
+    presenting it as evidence biases the decision in exactly one
+    direction.
+
+    MISSING ENTIRELY IS ALSO None, not False. A field Splink did not
+    report on was not compared either, and inventing a disagreement
+    from an absent key is the same error with a different cause.
+    """
+    if gamma is None:
+        return None
+    try:
+        value = int(gamma)
+    except (TypeError, ValueError):
+        return None
+    if value < 0:
+        return None
+    return value > 0
+
+
 @dataclass(frozen=True)
 class Candidate:
     """Two rows that might be one object, and why it was thought so."""
@@ -62,7 +92,15 @@ class Candidate:
     # field -> whether the two agreed, which is the explanation a
     # reviewer reads. Splink calls these gamma values; the word is
     # avoided here because a reviewer is not reading Splink.
-    agreement: dict[str, bool] = field(default_factory=dict)
+    #
+    # NONE IS A THIRD ANSWER AND NOT A MISSING ONE. Splink reports
+    # gamma -1 for a pair it could not compare -- one side null -- and
+    # that is neither agreement nor disagreement. It was being folded
+    # into False, so a reviewer judging a merge was told two records
+    # DIFFER on a field where one of them simply had nothing.
+    # `masked_review` already has the word for it, UNCOMPARED, and had
+    # no way to reach it.
+    agreement: "dict[str, bool | None]" = field(default_factory=dict)
 
     @property
     def disposition(self) -> str:
@@ -223,7 +261,7 @@ class SplinkMatcher:
                 right_id=str(row["unique_id_r"]),
                 score=float(row["match_probability"]),
                 agreement={
-                    name: bool(row.get(f"gamma_{name}", 0) > 0)
+                    name: _agreed(row.get(f"gamma_{name}"))
                     for name in settings.compare
                 },
             )

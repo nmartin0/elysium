@@ -647,6 +647,35 @@ CONTROLS = [
                "tests/integration/test_expired_session_is_refused.py::test_the_refusal_is_the_same_uniform_401_as_no_session_at_all"],
     ),
     # ------------------------------------------------------------
+    # THE MERGE REVIEWER'S SURFACE, which had no control either and
+    # spent months telling a reviewer "one side missing" about every
+    # field of every proposal. Found by the R52 sweep. A feature with
+    # a typed client and no screen: nobody would ever have seen it.
+    # ------------------------------------------------------------
+    Control(
+        describes="the reviewer's readable fields are actually looked up",
+        path="api/routes.py",
+        old="    type_def = (schema or {}).get(object_type) or {}",
+        new='    type_def = (schema or {}).get("object_types", {}).get(object_type) or {}',
+        tests=["tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestTheReviewerSeesVerdictsNotValues::test_a_field_the_reviewer_CAN_read_carries_its_values",
+               "tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestTheReviewerSeesVerdictsNotValues::test_and_NOTHING_is_withheld_when_everything_is_readable"],
+    ),
+    Control(
+        describes="a WITHHELD field is not reported as a missing one",
+        path="core/masked_review.py",
+        old="    if readable and not (left_has_value and right_has_value):",
+        new="    if not (left_has_value and right_has_value):",
+        tests=["tests/unit/test_a_reviewer_sees_verdicts_not_values.py::TestTheVerdictIsAlwaysGiven::test_A_WITHHELD_FIELD_IS_NOT_CALLED_MISSING",
+               "tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestTheReviewerSeesVerdictsNotValues::test_A_FIELD_THE_REVIEWER_MAY_NOT_READ_IS_STILL_WITHHELD"],
+    ),
+    Control(
+        describes="a null comparison is not reported as a disagreement",
+        path="core/mirror/matching.py",
+        old="    if value < 0:\n        return None",
+        new="    if False:\n        return None",
+        tests=["tests/unit/test_probabilistic_matching.py::TestANullIsNotADISAGREEMENT::test_a_null_comparison_is_not_compared"],
+    ),
+    # ------------------------------------------------------------
     # THE DRIFT VERDICTS HAD NO NEGATIVE CONTROL, which the R19 sweep
     # found: drift_policy.py is the module whose whole purpose is that
     # "storage behaviour must not become policy by default", and
