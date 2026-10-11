@@ -78,6 +78,7 @@ sys.path.insert(0, str(REPO))
 from core.agent.evaluation import (  # noqa: E402
     DEFAULT_K,
     EvalCase,
+    ExpectedAggregate,
     ExpectedFact,
     aggregate,
     grade,
@@ -187,6 +188,20 @@ CASES = (
         user_id=USER_ID,
         expected_facts=(
             ExpectedFact("Transaction", "2", "category", "hardware"),
+        ),
+    ),
+    # BLOCKING 13's observed question, verbatim. It took FIVE model
+    # calls and fetched `transaction_date` twice; one aggregate step
+    # answers it. Passes ONLY if the model chose `aggregate_object` --
+    # counting ids from a search is the behaviour under test, not an
+    # acceptable alternative. Read the hop count beside the verdict.
+    EvalCase(
+        name="count_by_aggregate",
+        query="How many transactions does Ada Okafor have?",
+        user_id=USER_ID,
+        expected_facts=(),
+        expected_aggregates=(
+            ExpectedAggregate("Transaction", "count", "2", filter_mentions="cust_001"),
         ),
     ),
 )

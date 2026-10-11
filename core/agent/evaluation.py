@@ -64,6 +64,7 @@ it. Those need a judge model and belong to a later pass, if ever.
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -89,11 +90,38 @@ class ExpectedFact:
 
 
 @dataclass(frozen=True)
+class ExpectedAggregate:
+    """One aggregate a correct run must have computed.
+
+    WHY A SECOND KIND OF FACT. BLOCKING 13 asks "are aggregates chosen
+    when they should be?", from an observed run: "how many transactions
+    does Ada Okafor have?" took SIX gathered entries across FIVE model
+    calls, two of them fetching `transaction_date`, which says nothing
+    about how many transactions exist. A grader that reads only
+    `get_field` steps cannot tell that run from a one-hop count -- it
+    cannot score the question at all.
+
+    `filter_mentions` PINS WHOSE COUNT IT WAS. A count of 2 over the
+    wrong customer is a wrong answer that happens to match; requiring
+    the id to appear in the step's filter closes that without making a
+    case file restate the loop's filter syntax.
+    """
+
+    object_type: str
+    aggregate: str
+    value: str
+    filter_mentions: str | None = None
+
+
+@dataclass(frozen=True)
 class EvalCase:
     name: str
     query: str
     user_id: str
     expected_facts: tuple[ExpectedFact, ...]
+    # Graded from `aggregate_object` steps. Empty for every case written
+    # before aggregates could be scored, which keeps their meaning.
+    expected_aggregates: tuple[ExpectedAggregate, ...] = ()
     # A run that stopped for any reason other than a deliberate finish
     # is a failure even if it happened to gather the right facts: the
     # caller was told the answer might be partial, so it is not the
@@ -105,7 +133,7 @@ class EvalCase:
 class TrialResult:
     case_name: str
     passed: bool
-    missing: tuple[ExpectedFact, ...] = ()
+    missing: tuple[ExpectedFact | ExpectedAggregate, ...] = ()
     stop_reason: str = ""
     hops: int = 0
     # The gathered payload, kept so a failure can be read rather than
@@ -161,10 +189,36 @@ def grade(case: EvalCase, result: AgentLoopResult) -> TrialResult:
         read.add((str(object_type), str(object_id), str(field_name),
                   _rendered(entry.get("result"))))
 
-    missing = tuple(
+    missing: tuple = tuple(
         expected for expected in case.expected_facts
         if (expected.object_type, expected.object_id,
             expected.field_name, expected.value) not in read
+    )
+
+    # AGGREGATES, from the step that computes one. A count reached by
+    # searching and counting ids in prose is NOT credited: the question
+    # these cases exist to answer is whether the model CHOSE the
+    # aggregate, and crediting the long way round would hide exactly
+    # the behaviour BLOCKING 13 observed.
+    computed = []
+    for entry in gathered:
+        if not isinstance(entry, dict) or entry.get("step") != "aggregate_object":
+            continue
+        computed.append((
+            str(entry.get("object_type")),
+            str(entry.get("aggregate")),
+            _rendered(entry.get("result")),
+            json.dumps(entry.get("filter") or {}, sort_keys=True, default=str),
+        ))
+    missing += tuple(
+        expected for expected in case.expected_aggregates
+        if not any(
+            object_type == expected.object_type
+            and aggregate == expected.aggregate
+            and value == expected.value
+            and (expected.filter_mentions is None or expected.filter_mentions in filters)
+            for object_type, aggregate, value, filters in computed
+        )
     )
 
     complete = stop_reason == StopReason.FINISHED

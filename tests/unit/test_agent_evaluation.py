@@ -17,6 +17,7 @@ from core.agent.agentic_loop import StopReason
 from core.agent.evaluation import (
     CaseReport,
     EvalCase,
+    ExpectedAggregate,
     ExpectedFact,
     TrialResult,
     grade,
@@ -380,3 +381,77 @@ def test_grade_carries_the_fabricated_finishes_through():
                                  fabricated=("malformed_step",)))
 
     assert graded.fabricated_finishes == ("malformed_step",)
+
+
+# ---------------------------------------------------------- aggregates
+
+
+COUNT_CASE = EvalCase(
+    name="count_by_aggregate",
+    query="How many transactions does Ada Okafor have?",
+    user_id="user_alice",
+    expected_facts=(),
+    expected_aggregates=(
+        ExpectedAggregate("Transaction", "count", "2", filter_mentions="cust_001"),
+    ),
+)
+
+
+def _count_step(value=2, customer="cust_001", step="aggregate_object"):
+    return {"step": step, "object_type": "Transaction", "aggregate": "count",
+            "filter": {"customer_id": customer}, "result": value}
+
+
+class TestAnAggregateIsScored:
+    """BLOCKING 13: "are aggregates chosen when they should be?" -- from
+    a run where counting Ada's transactions took five model calls. A
+    grader reading only get_field steps could not score that question
+    at all; these cases are what it can now tell apart."""
+
+    def test_a_count_by_aggregate_passes(self):
+        assert grade(COUNT_CASE, _result([_count_step()], StopReason.FINISHED)).passed
+
+    def test_the_wrong_number_fails(self):
+        """THE CONTROL. A grader that credited any aggregate step would
+        pass this."""
+        assert not grade(COUNT_CASE, _result([_count_step(value=3)], StopReason.FINISHED)).passed
+
+    def test_the_right_number_for_the_WRONG_CUSTOMER_fails(self):
+        """A count of 2 over somebody else is a wrong answer that
+        happens to match."""
+        graded = grade(COUNT_CASE, _result([_count_step(customer="cust_002")],
+                                           StopReason.FINISHED))
+
+        assert not graded.passed
+
+    def test_counting_by_SEARCH_is_not_credited(self):
+        """THE BEHAVIOUR UNDER TEST. Finding two ids and saying "two"
+        reaches the right number the long way round, which is exactly
+        what BLOCKING 13 observed and wants to stop. Crediting it would
+        make the case unable to report the thing it was written for."""
+        search = {"step": "search_object", "object_type": "Transaction",
+                  "filter": {"customer_id": "cust_001"}, "result": ["1", "2"]}
+
+        graded = grade(COUNT_CASE, _result([search], StopReason.FINISHED))
+
+        assert not graded.passed
+        assert graded.missing == COUNT_CASE.expected_aggregates
+
+    def test_a_case_with_no_aggregates_is_graded_as_before(self):
+        """Every case written before aggregates could be scored keeps
+        its meaning."""
+        gathered = [{"step": "get_field", "object_type": "Customer",
+                     "object_id": "cust_001", "field_name": "email",
+                     "result": "ada.okafor@example.com"}]
+
+        assert grade(CASE, _result(gathered, StopReason.FINISHED)).passed
+
+    def test_only_an_AGGREGATE_STEP_is_read_as_an_aggregate(self):
+        """THE CONTROL THE SEARCH TEST COULD NOT BE. A search entry has
+        no `aggregate` key, so it fails for a reason unrelated to which
+        step produced it -- a control that removed the step check left
+        that test green. This one matches on everything EXCEPT the step
+        name, so only the step check can fail it."""
+        imposter = _count_step(step="search_object")
+
+        assert not grade(COUNT_CASE, _result([imposter], StopReason.FINISHED)).passed
