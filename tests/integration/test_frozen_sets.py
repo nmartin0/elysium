@@ -143,6 +143,21 @@ class TestWhoseItIs:
         assert response.status_code == 404
 
 
+class TestFreezingInsideAFrozenSet:
+    def test_everything_matching_means_matching_WITHIN_it(self, client):
+        """Seen in the browser's own logic: the panel froze its filter
+        over the whole type, so a set frozen inside a set of one came
+        out holding two."""
+        _login(client, "nest1")
+        one = _freeze(client, name="One", ids=["cust_001"]).json()["set_id"]
+
+        nested = _freeze(client, name="Nested", frozen_set=one, conditions=[
+            {"field": "region", "operator": "equals", "value": "us-west"}]).json()
+
+        assert nested["size"] == 1
+        assert nested["origin"] == {"within": one}
+
+
 class TestOpeningIt:
     def test_filtering_WITHIN_a_frozen_set_narrows_it(self, client):
         """The ordinary case, not an error: the set's condition is

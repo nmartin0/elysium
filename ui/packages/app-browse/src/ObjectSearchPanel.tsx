@@ -2,6 +2,7 @@ import { chartableFields } from './ChartsPanel'
 import Facets from './Facets'
 import ExportSet from './ExportSet'
 import FrozenNotice from './FrozenNotice'
+import CompareSets from './CompareSets'
 import FrozenSets from './FrozenSets'
 import ObjectGraph from './ObjectGraph'
 import SetName from './SetName'
@@ -704,6 +705,13 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
               queryText={queryText}
               conditions={setConditions}
               selectedIds={[...selectedIds]}
+              activeSetId={frozenSet}
+              onSessionExpired={onSessionExpired}
+            />
+            <CompareSets
+              objectType={selectedType}
+              queryText={queryText}
+              conditions={setConditions}
               activeSetId={frozenSet}
               onSessionExpired={onSessionExpired}
             />

@@ -2359,6 +2359,11 @@ class FreezeSetRequest(BaseModel):
     ids: list[str] | None = None
     q: str = ""
     conditions: list[dict[str, Any]] | None = None
+    #: Freezing "everything matching" INSIDE a frozen set narrows within
+    #: it, as every other set route does. Without this the criteria were
+    #: run over the whole type and the result was larger than the set on
+    #: screen.
+    frozen_set: str | None = None
 
 
 class FrozenSetResponse(BaseModel):
@@ -2447,10 +2452,16 @@ def freeze_set_route(body: FreezeSetRequest, request: Request,
             members = [member for member in wanted if member in visible]
             origin: dict = {}
         else:
-            parsed = parse_filters(body.conditions) if body.conditions else None
+            parsed = parse_filters(body.conditions) if body.conditions else []
+            parsed += _frozen_set_condition(
+                request, current_user, body.object_type, body.frozen_set)
             members = [str(found) for found in mediator.search_object_free_text(
-                current_user, body.object_type, body.q, conditions=parsed)]
-            origin = {"q": body.q, "conditions": body.conditions or []}
+                current_user, body.object_type, body.q, conditions=parsed or None)]
+            # NARROWED FROM A FROZEN SET, it has no live criteria of its
+            # own to hand back to -- returning to the filter alone would
+            # widen it to the whole type.
+            origin = ({"within": body.frozen_set} if body.frozen_set
+                      else {"q": body.q, "conditions": body.conditions or []})
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -2513,6 +2524,183 @@ def delete_frozen_set_route(set_id: str, request: Request,
     if not _frozen_set_store(request).delete(current_user.user_id, set_id):
         raise HTTPException(status_code=404, detail="No such frozen set")
     return {"deleted": True}
+
+
+# --- Comparing two sets --------------------------------------------------------------------------
+#
+# FOUNDRY'S OBJECT SET SERVICE is the precedent: two sets combine by
+# `union`, `intersect` and `subtract`, and each result is a new set.
+# Comparing is those three read at once -- left minus right, left and
+# right, right minus left -- which is the Venn shape Amplitude's cohort
+# comparison and HubSpot's list overlap both show. A REGION IS THEN
+# KEPT AS A FROZEN SET, because "the customers in last quarter's
+# escalations who are not in this quarter's" is membership at an
+# instant, which is what a frozen set is.
+
+
+class SetReference(BaseModel):
+    """One side of a comparison: criteria, a frozen set, both (criteria
+    WITHIN a frozen set, as every set route takes them), or a saved
+    view ALONE -- a saved view with extra filters is a different set
+    from the saved view, and merging the two silently is how a
+    comparison ends up describing something nobody named."""
+
+    q: str = ""
+    conditions: list[dict[str, Any]] | None = None
+    frozen_set: str | None = None
+    saved_view: str | None = None
+
+
+class CompareSetsRequest(BaseModel):
+    object_type: str
+    left: SetReference
+    right: SetReference
+
+
+class CompareSetsResponse(BaseModel):
+    left_only: int
+    both: int
+    right_only: int
+    #: Either side read the scan ceiling and stopped. The counts are
+    #: then of what was read, and the UI says so -- as everywhere else.
+    scan_truncated: bool = False
+
+
+class CombineSetsRequest(CompareSetsRequest):
+    name: str
+    #: Which part to keep. `either` is the union.
+    region: str
+
+
+_REGIONS = ("left_only", "both", "right_only", "either")
+
+
+def _members_of(request: Request, user: UserRecord, object_type: str,
+                reference: SetReference, outcome: SearchOutcome) -> list[str]:
+    """The ids one side names, resolved AS THE CALLER, in their order.
+
+    THROUGH THE MEDIATOR, like every other set. A frozen set expands to
+    its id condition; a saved view runs its query with its conditions
+    re-authorized -- and is REFUSED, not silently widened, if any of
+    them can no longer be run, because comparing against a view that
+    lost a filter compares against a set its owner never saved.
+    """
+    narrowed = bool(reference.q.strip() or reference.conditions or reference.frozen_set)
+    if reference.saved_view and narrowed:
+        raise HTTPException(
+            status_code=400,
+            detail="A saved view is compared as it was saved, without further filters.")
+    mediator = _generation(request).mediator
+    query_text = reference.q
+    if reference.saved_view:
+        view = next((view for view in _saved_view_store(request).for_owner(user.user_id)
+                     if view.view_id == reference.saved_view), None)
+        if view is None or view.object_type != object_type:
+            raise HTTPException(status_code=404, detail="No such saved view")
+        checked = _reauthorized(request, user, view)
+        if checked.disabled:
+            raise HTTPException(
+                status_code=400,
+                detail=f"“{view.name}” filters on fields you can no longer read "
+                       f"({', '.join(checked.disabled)}), so it cannot be compared.")
+        conditions = parse_filters(checked.runnable) if checked.runnable else []
+        query_text = view.query_text
+    else:
+        conditions = (parse_filters(reference.conditions) if reference.conditions else [])
+        conditions += _frozen_set_condition(request, user, object_type, reference.frozen_set)
+    found = mediator.search_object_free_text(
+        user, object_type, query_text, conditions=conditions or None, outcome=outcome)
+    return [str(member) for member in found]
+
+
+def _compare(request: Request, user: UserRecord, body: CompareSetsRequest):
+    if not (_generation(request).mediator.schema.get(body.object_type) or {}).get("id_field"):
+        raise HTTPException(status_code=404, detail="No such object type")
+    outcome = SearchOutcome()
+    try:
+        left = _members_of(request, user, body.object_type, body.left, outcome)
+        right = _members_of(request, user, body.object_type, body.right, outcome)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return left, right, outcome.scan_truncated
+
+
+@router.post("/sets/compare", response_model=CompareSetsResponse,
+             dependencies=[Depends(_no_store)])
+def compare_sets_route(body: CompareSetsRequest, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """How two sets of one type overlap: counts only.
+
+    COUNTS, NOT IDS. The regions are opened by keeping one as a frozen
+    set, which applies the reader's authority to every member on the
+    way back out -- the same reason a frozen set's own response lists
+    no ids.
+    """
+    left, right, truncated = _compare(request, current_user, body)
+    left_set, right_set = set(left), set(right)
+    return {
+        "left_only": len(left_set - right_set),
+        "both": len(left_set & right_set),
+        "right_only": len(right_set - left_set),
+        "scan_truncated": truncated,
+    }
+
+
+@router.post("/sets/combine", response_model=FrozenSetResponse, status_code=201)
+def combine_sets_route(body: CombineSetsRequest, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Keeps one region of a comparison as a frozen set.
+
+    REFUSED, NOT TRUNCATED, over the bulk ceiling and when empty, for
+    the reasons `/frozen-sets` gives. And refused when either side was
+    truncated: a region computed from half a set is not the region, and
+    keeping it would freeze the error.
+    """
+    if body.region not in _REGIONS:
+        raise HTTPException(status_code=400, detail=f"region must be one of {', '.join(_REGIONS)}")
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="A frozen set needs a name.")
+    left, right, truncated = _compare(request, current_user, body)
+    if truncated:
+        raise HTTPException(
+            status_code=400,
+            detail="One of the sets is larger than a search reads, so its parts "
+                   "cannot be kept exactly. Narrow it first.")
+    left_set, right_set = set(left), set(right)
+    keep = {
+        "left_only": lambda member: member not in right_set,
+        "both": lambda member: member in left_set and member in right_set,
+        "right_only": lambda member: member not in left_set,
+        "either": lambda _member: True,
+    }[body.region]
+    # LEFT'S ORDER, THEN RIGHT'S, so a kept region reads in the order
+    # its sets did.
+    ordered = left + [member for member in right if member not in left_set]
+    members = [member for member in ordered if keep(member)]
+    if not members:
+        raise HTTPException(status_code=400, detail="That part is empty, so there is nothing to keep.")
+    if len(members) > MAX_BULK_OBJECTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{len(members)} objects are in that part, and at most "
+                   f"{MAX_BULK_OBJECTS} can be frozen at once.")
+
+    mediator = _generation(request).mediator
+    connector = _gold_connector(mediator)
+    table = _gold_table_for(mediator, body.object_type)
+    snapshot = connector.snapshot_for(table) if connector is not None and table else None
+    origin = {"compare": {"left": body.left.model_dump(exclude_defaults=True),
+                          "right": body.right.model_dump(exclude_defaults=True),
+                          "region": body.region}}
+    set_id = _frozen_set_store(request).freeze(
+        current_user.user_id, name, body.object_type, members, origin=origin,
+        gold_snapshot_id=None if snapshot is None else str(snapshot),
+        published_at=_generation(request).gold_published_at.get(body.object_type),
+    )
+    if set_id is None:
+        raise HTTPException(status_code=500, detail="The set could not be saved.")
+    return _describe_frozen(request, _frozen_set_store(request).get(current_user.user_id, set_id))
 
 
 class NotificationResponse(BaseModel):

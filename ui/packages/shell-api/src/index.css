@@ -2590,6 +2590,48 @@
     margin-top: var(--space-tight);
   }
 
+  /* Comparing two sets: the three regions and their union, each keepable. */
+  .compare-sets {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-tight);
+    min-width: 20rem;
+    max-width: 28rem;
+    padding: var(--space-tight);
+  }
+
+  .compare-sets__pick {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-hair);
+    font-size: var(--type-dense-size);
+    color: var(--text-secondary);
+  }
+
+  .compare-sets__problem {
+    margin: 0;
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    color: var(--text-secondary);
+  }
+
+  .compare-sets__regions {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .compare-sets__regions th {
+    font-weight: normal;
+    text-align: start;
+    overflow-wrap: anywhere;
+  }
+
+  .compare-sets__count {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    padding-inline: var(--space-tight);
+  }
+
   /* The shared loading treatment -- see components/LoadingState.tsx for
  * why a spinner alone was not enough. */
   .loading-state {

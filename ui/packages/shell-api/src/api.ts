@@ -1039,9 +1039,11 @@ export interface FrozenSet {
   /** Whether gold still holds the publication it was frozen from.
    *  Null when nothing was recorded. Reported, never required. */
   publication_retained?: boolean | null
-  /** The criteria it was frozen from, so it can be handed back to
-   *  them. Empty for a hand-picked selection. */
-  origin: { q?: string; conditions?: unknown[] }
+  /** Where it came from. `q`/`conditions`: the criteria it was frozen
+   *  from, so it can be handed back to them. `compare`: a part of a
+   *  comparison. `within`: narrowed inside another frozen set. Empty
+   *  for a hand-picked selection. Only the first can be returned to. */
+  origin: { q?: string; conditions?: unknown[]; compare?: { region: SetRegion }; within?: string }
 }
 
 export interface FrozenSetDetail extends FrozenSet {
@@ -1057,6 +1059,8 @@ export interface FreezeRequest {
   ids?: string[]
   q?: string
   conditions?: unknown[]
+  /** Narrow "everything matching" to this frozen set. */
+  frozen_set?: string
 }
 
 export async function freezeSet(request: FreezeRequest): Promise<FrozenSet> {
@@ -1079,6 +1083,47 @@ export async function getFrozenSet(setId: string): Promise<FrozenSetDetail> {
 
 export async function deleteFrozenSet(setId: string): Promise<void> {
   await apiFetchOrThrow(`/frozen-sets/${encodeURIComponent(setId)}`, { method: 'DELETE' })
+}
+
+/** One side of a comparison: criteria, a frozen set, or a saved view
+ *  -- exactly one kind. An empty reference is every object of the type. */
+export interface SetReference {
+  q?: string
+  conditions?: unknown[]
+  frozen_set?: string
+  saved_view?: string
+}
+
+export interface SetComparison {
+  left_only: number
+  both: number
+  right_only: number
+  scan_truncated: boolean
+}
+
+export type SetRegion = 'left_only' | 'both' | 'right_only' | 'either'
+
+export async function compareSets(objectType: string, left: SetReference, right: SetReference): Promise<SetComparison> {
+  const response = await apiFetchOrThrow('/sets/compare', {
+    method: 'POST',
+    body: JSON.stringify({ object_type: objectType, left, right }),
+  })
+  return (await response.json()) as SetComparison
+}
+
+/** Keeps one region of a comparison as a frozen set. */
+export async function combineSets(
+  objectType: string,
+  left: SetReference,
+  right: SetReference,
+  region: SetRegion,
+  name: string,
+): Promise<FrozenSet> {
+  const response = await apiFetchOrThrow('/sets/combine', {
+    method: 'POST',
+    body: JSON.stringify({ object_type: objectType, left, right, region, name }),
+  })
+  return (await response.json()) as FrozenSet
 }
 
 export async function getSavedViews(): Promise<ServerSavedView[]> {

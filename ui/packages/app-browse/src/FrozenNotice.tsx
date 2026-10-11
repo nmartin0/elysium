@@ -107,7 +107,11 @@ export default function FrozenNotice({
   if (set === null) return null
 
   const criteria = set.origin?.conditions ?? []
-  const fromCriteria = Object.keys(set.origin ?? {}).length > 0
+  // CRITERIA ONLY. A part of a comparison, or a set narrowed inside
+  // another, has no live criteria of its own: "returning" to an empty
+  // filter would widen it to every object of the type.
+  const origin = set.origin ?? {}
+  const fromCriteria = 'q' in origin || 'conditions' in origin
 
   return (
     <Notice state="neutral" className="frozen-notice" title={`Frozen set · ${set.name}`}>
@@ -116,6 +120,7 @@ export default function FrozenNotice({
         {set.published_at ? ` from the publication of ${formatTimestamp(set.published_at)}` : ''}
         {'. Values shown are current; membership is not.'}
       </p>
+      {origin.compare && <p className="frozen-notice__line">Kept from a comparison of two sets.</p>}
       {set.not_shown > 0 && (
         <p className="frozen-notice__line">
           {`${set.not_shown.toLocaleString()} of ${set.size.toLocaleString()} cannot be shown -- deleted since, or not visible to you.`}

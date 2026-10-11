@@ -806,6 +806,67 @@ CONTROLS = [
         tests=["tests/unit/test_bronze_and_silver_expire_too.py::"
                "TestBothLayersCallIt::test_silver_does"],
     ),
+    Control(
+        describes="compare: the overlap is an intersection",
+        path="api/routes.py",
+        old='        "both": len(left_set & right_set),',
+        new='        "both": len(left_set | right_set),',
+        tests=["tests/integration/test_compare_sets.py::TestComparing::"
+               "test_it_counts_the_three_regions"],
+    ),
+    Control(
+        describes="compare: a saved view runs with its own conditions",
+        path="api/routes.py",
+        old="        conditions = parse_filters(checked.runnable) if checked.runnable else []",
+        new="        conditions = []",
+        tests=["tests/integration/test_compare_sets.py::TestComparing::"
+               "test_a_saved_view_is_run_as_its_owner_saved_it"],
+    ),
+    Control(
+        describes="compare: a saved view is compared as saved",
+        path="api/routes.py",
+        old="    if reference.saved_view and narrowed:",
+        new="    if False:",
+        tests=["tests/integration/test_compare_sets.py::TestWhatCannotBeCompared::"
+               "test_a_saved_view_with_more_filters_is_refused"],
+    ),
+    Control(
+        describes="compare: a saved view is looked up among the caller's own",
+        path="api/routes.py",
+        old="        if view is None or view.object_type != object_type:\n"
+            "            raise HTTPException(status_code=404, detail=\"No such saved view\")",
+        new="        if view is None:\n"
+            "            from core.saved_views import SavedViewStore as _S\n"
+            "            view = _S(request.app.state.runtime_paths.data_dir / \"saved_views.db\")"
+            ".get(reference.saved_view)",
+        tests=["tests/integration/test_compare_sets.py::TestWhatCannotBeCompared::"
+               "test_somebody_elses_saved_view_is_no_view"],
+    ),
+    Control(
+        describes="combine: the right-hand region excludes the left",
+        path="api/routes.py",
+        old='        "right_only": lambda member: member not in left_set,',
+        new='        "right_only": lambda member: member in right_set,',
+        tests=["tests/integration/test_compare_sets.py::TestKeepingAPart::"
+               "test_the_right_hand_part_is_the_right_hand_part"],
+    ),
+    Control(
+        describes="combine: both is in both, not merely in the right",
+        path="api/routes.py",
+        old='        "both": lambda member: member in left_set and member in right_set,',
+        new='        "both": lambda member: member in right_set,',
+        tests=["tests/integration/test_compare_sets.py::TestKeepingAPart::"
+               "test_both_means_both_when_each_side_has_its_own"],
+    ),
+    Control(
+        describes="combine: an empty region is refused",
+        path="api/routes.py",
+        old='        raise HTTPException(status_code=400, detail="That part is empty, '
+            'so there is nothing to keep.")',
+        new="        pass",
+        tests=["tests/integration/test_compare_sets.py::TestKeepingAPart::"
+               "test_an_empty_part_is_refused_not_saved"],
+    ),
 
 ]
 

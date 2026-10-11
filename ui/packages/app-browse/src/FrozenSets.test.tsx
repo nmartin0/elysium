@@ -101,6 +101,15 @@ describe('freezing', () => {
     )
   })
 
+  it('freezes WITHIN the frozen set on screen', async () => {
+    popover({ activeSetId: 'set-0' })
+
+    fireEvent.change(await screen.findByLabelText(/name for the frozen set/i), { target: { value: 'Inner' } })
+    fireEvent.click(screen.getByRole('button', { name: /freeze everything matching/i }))
+
+    await waitFor(() => expect(freezeSet).toHaveBeenCalledWith(expect.objectContaining({ frozen_set: 'set-0' })))
+  })
+
   it('opens the set it just froze', async () => {
     popover()
 
@@ -198,6 +207,22 @@ describe('the notice on a frozen set', () => {
 
   it('offers no return for a hand-picked selection, which has no criteria', async () => {
     notice({ origin: {} })
+
+    await screen.findByText(/membership is not/)
+    expect(screen.queryByRole('button', { name: /return to its live criteria/i })).not.toBeInTheDocument()
+  })
+
+  it('offers no return for a part of a comparison, and says what it is', async () => {
+    // "Return to its live criteria" on a set with none navigated to the
+    // whole type -- a wider set than anything compared.
+    notice({ origin: { compare: { region: 'both' } } })
+
+    expect(await screen.findByText(/Kept from a comparison/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /return to its live criteria/i })).not.toBeInTheDocument()
+  })
+
+  it('offers no return for a set narrowed inside another', async () => {
+    notice({ origin: { within: 'set-0' } })
 
     await screen.findByText(/membership is not/)
     expect(screen.queryByRole('button', { name: /return to its live criteria/i })).not.toBeInTheDocument()

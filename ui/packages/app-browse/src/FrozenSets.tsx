@@ -35,7 +35,7 @@ import { useNavigate } from 'react-router-dom'
 /** Where a frozen set opens: its type, narrowed to it, and nothing
  *  else -- a frozen set is a different subject from whatever search
  *  was on screen, so the old text and filters do not follow it. */
-function urlForFrozen(set: Pick<FrozenSet, 'object_type' | 'set_id'>): string {
+export function urlForFrozen(set: Pick<FrozenSet, 'object_type' | 'set_id'>): string {
   const params = new URLSearchParams({ type: set.object_type, frozen: set.set_id })
   return `/browse?${params.toString()}`
 }
@@ -100,7 +100,16 @@ export default function FrozenSets({
       const frozen = await freezeSet(
         selectedIds.length > 0
           ? { name: trimmed, object_type: objectType, ids: selectedIds }
-          : { name: trimmed, object_type: objectType, q: queryText, conditions },
+          : {
+              name: trimmed,
+              object_type: objectType,
+              q: queryText,
+              conditions,
+              // INSIDE A FROZEN SET, "everything matching" is matching
+              // within it; without this the server ran the filter over
+              // the whole type.
+              ...(activeSetId ? { frozen_set: activeSetId } : {}),
+            },
       )
       setOpen(false)
       setName('')
