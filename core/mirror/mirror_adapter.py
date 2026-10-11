@@ -69,6 +69,11 @@ class MirrorReadAdapter(ExternalReadAdapter):
     # concurrently, no per-backend limit to declare.
     max_concurrent_reads = None
 
+    @property
+    def catalog(self) -> "SqlCatalog":
+        """The lake this adapter reads. See GoldConnector.catalog."""
+        return self._catalog
+
     def __init__(self, catalog: SqlCatalog, silo_name: str,
                  snapshot_ids: "Mapping[str, int] | None" = None):
         # Takes an already-built catalog rather than building its own:
@@ -78,6 +83,9 @@ class MirrorReadAdapter(ExternalReadAdapter):
         # layout core/mirror/iceberg_sync.py writes.
         self._catalog = catalog
         self.silo_name = silo_name
+        # See GoldConnector.catalog: the two adapters that hold one now
+        # expose it the same way, so a caller does not have to know
+        # which it has.
         # WHICH SNAPSHOT this adapter reads, per table. None means
         # "whatever is current", which is what every read did before
         # generations existed.

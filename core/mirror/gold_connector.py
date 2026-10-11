@@ -96,6 +96,27 @@ class GoldConnector:
         # a decision rather than inherited by luck (D3's second half).
         self._reader = IcebergNamespaceReader(catalog, GOLD_NAMESPACE, snapshot_ids)
 
+    @property
+    def catalog(self) -> SqlCatalog:
+        """The lake this connector reads.
+
+        PUBLIC, BECAUSE THREE ROUTES NEEDED IT AND COULD NOT FIND IT.
+        Provenance, published history and the conflicts reader all ask
+        the mediator's adapters for the deployment's catalog, and all
+        three looked for a `_catalog` attribute -- which MirrorReadAdapter
+        has and this does not, because this one holds its catalog inside
+        the reader it delegates to. Since GOLD-9 made reads gold-only,
+        `mediator.adapters` is `{"gold": GoldConnector}` and nothing
+        else, so all three found None on every real deployment and
+        answered "nothing recorded".
+
+        AN ACCESSOR RATHER THAN A ROUTE REACHING THROUGH `_reader`.
+        Two private hops from a route is how the next adapter to store
+        its catalog somewhere else breaks this again silently; one
+        declared property is a thing a new adapter has to provide.
+        """
+        return self._reader._catalog
+
     # -- the reads the mediator makes ------------------------------
 
     def find_ids(self, object_type: str, conditions: list, type_config: dict,

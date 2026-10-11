@@ -2,10 +2,15 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 
 const getObjectProvenance = vi.fn()
+const getObjectConflicts = vi.fn()
 
 vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@elysium/shell-api/api')>()
-  return { ...actual, getObjectProvenance: () => getObjectProvenance() }
+  return {
+    ...actual,
+    getObjectProvenance: () => getObjectProvenance(),
+    getObjectConflicts: () => getObjectConflicts(),
+  }
 })
 
 const { default: Provenance } = await import('./Provenance')
@@ -21,9 +26,23 @@ const LINEAGE = {
   bronze_snapshot_id: 'snap-42',
 }
 
-const show = (answer: unknown) => {
+const show = (answer: unknown, conflicts: unknown = []) => {
   getObjectProvenance.mockResolvedValue(answer)
+  getObjectConflicts.mockResolvedValue(conflicts)
   return render(<Provenance objectType="Customer" objectId="c1" />)
+}
+
+/** As the route serves it: the field, both sources, and the values
+ *  only when the caller may read the field. */
+const NAME_CONFLICT = {
+  kind: 'property',
+  field: 'name',
+  chosen: 'Ada Okafor',
+  chosen_source: 'crm',
+  losing: 'Ada',
+  losing_source: 'primary',
+  recorded_at: '2026-10-11T00:00:00+00:00',
+  readable: true,
 }
 
 describe('where a row came from', () => {
@@ -93,5 +112,114 @@ describe('a reader who may not ask', () => {
     await waitFor(() => expect(getObjectProvenance).toHaveBeenCalled())
 
     expect(container.innerHTML).toBe('')
+  })
+})
+
+describe('where the sources disagreed', () => {
+  /**
+   * `core/mirror/survivorship.py` states the promise: "deleting losing
+   * values destroys trust. A person asking why the golden record says
+   * Leeds needs to see that the CRM said Hull and was outranked --
+   * otherwise the answer is an assertion." The losing values have been
+   * written since GOLD-6 and nothing could read them back.
+   */
+  it('shows the value that won and the one it outranked', async () => {
+    show(LINEAGE, [NAME_CONFLICT])
+
+    expect(await screen.findByText(/where the sources disagreed/i)).toBeInTheDocument()
+    expect(screen.getByText('Ada Okafor')).toBeInTheDocument()
+    expect(screen.getByText('Ada')).toBeInTheDocument()
+  })
+
+  it('names which source each value came from', async () => {
+    // THE PER-FIELD HALF, which nothing else in the system has: the
+    // lineage above says one silo for the whole object however many
+    // it was fused from.
+    show(LINEAGE, [NAME_CONFLICT])
+
+    expect(await screen.findByText('from crm')).toBeInTheDocument()
+    expect(screen.getByText('from primary')).toBeInTheDocument()
+  })
+
+  it('says nothing at all when nothing disagreed', async () => {
+    // THE CONTROL, and the reason there is no empty state: most
+    // deployments declare no identity resolution and would otherwise
+    // carry a reassurance on every object page about the absence of a
+    // feature they do not use.
+    show(LINEAGE, [])
+
+    await screen.findByText(/where this came from/i)
+    expect(screen.queryByText(/where the sources disagreed/i)).not.toBeInTheDocument()
+  })
+
+  it('shows a contested COMPARTMENT differently from a contested field', async () => {
+    // A security conflict names no field, because what is contested is
+    // the whole object -- which compartment it belongs to, and
+    // therefore who may see it.
+    show(LINEAGE, [{ ...NAME_CONFLICT, kind: 'security', field: null, chosen: 'us-west', losing: 'us-east' }])
+
+    expect(await screen.findByText('Which compartment')).toBeInTheDocument()
+  })
+
+  it('withholds the values of a field the reader may not read', async () => {
+    // THE VERDICT IS SAFE AND THE VALUES ARE NOT -- the rule
+    // masked_comparison follows for a merge candidate. A reader can be
+    // told two sources disagreed about an email without being shown
+    // either address.
+    show(LINEAGE, [
+      // THE VALUES ARE IN THE FIXTURE ON PURPOSE, and the route would
+      // never send them beside `readable: false`. A first version left
+      // them out, which made this test unable to fail: with nothing to
+      // leak, a component ignoring the flag entirely rendered the same
+      // thing, and a control confirmed it. The component holds its own
+      // half of the rule rather than trusting the server to have held
+      // its half.
+      {
+        kind: 'property',
+        field: 'email',
+        chosen: 'ada@crm.example',
+        chosen_source: 'crm',
+        losing: 'ada@billing.example',
+        losing_source: 'primary',
+        recorded_at: '2026-10-11T00:00:00+00:00',
+        readable: false,
+      },
+    ])
+
+    expect(await screen.findByText('email')).toBeInTheDocument()
+    expect(screen.getByText('from crm')).toBeInTheDocument()
+    expect(screen.getByText(/may not read those fields/)).toBeInTheDocument()
+    expect(screen.queryByText('ada@crm.example')).not.toBeInTheDocument()
+    expect(screen.queryByText('ada@billing.example')).not.toBeInTheDocument()
+  })
+
+  it('does not say that when every value is readable', async () => {
+    // THE CONTROL FOR THE TEST ABOVE. A note rendered unconditionally
+    // would tell every reader that something was kept from them.
+    show(LINEAGE, [NAME_CONFLICT])
+
+    await screen.findByText('Ada Okafor')
+    expect(screen.queryByText(/may not read those fields/)).not.toBeInTheDocument()
+  })
+
+  it('still shows them when there is no lineage to show', async () => {
+    // Two tables, two questions. A live-read deployment has no lineage
+    // at all, and making one conditional on the other would hide the
+    // half that exists.
+    show(null, [NAME_CONFLICT])
+
+    expect(await screen.findByText('Ada Okafor')).toBeInTheDocument()
+  })
+
+  it('renders nothing when the route refuses', async () => {
+    // Refused and unreachable are the same nothing, for the reason
+    // the lineage fetch gives: distinguishing them would tell a reader
+    // without the grant that the grant exists.
+    getObjectProvenance.mockResolvedValue(LINEAGE)
+    getObjectConflicts.mockRejectedValue(new Error('403'))
+    render(<Provenance objectType="Customer" objectId="c1" />)
+
+    await screen.findByText(/where this came from/i)
+    expect(screen.queryByText(/where the sources disagreed/i)).not.toBeInTheDocument()
   })
 })

@@ -647,6 +647,44 @@ CONTROLS = [
                "tests/integration/test_expired_session_is_refused.py::test_the_refusal_is_the_same_uniform_401_as_no_session_at_all"],
     ),
     # ------------------------------------------------------------
+    # THE LINEAGE ROUTES, which answered "nothing recorded" on every
+    # real deployment because they looked for a `_catalog` attribute
+    # GoldConnector does not have -- and since GOLD-9 made reads
+    # gold-only, GoldConnector is the only adapter there is. Their
+    # tests guarded their assertions with `if body is not None`.
+    # ------------------------------------------------------------
+    Control(
+        describes="the lineage routes can actually find the deployment's catalog",
+        path="api/routes.py",
+        old='        (adapter.catalog for adapter in mediator.adapters.values()\n'
+            '         if getattr(adapter, "catalog", None) is not None),',
+        new='        (getattr(adapter, "_catalog", None) for adapter in mediator.adapters.values()\n'
+            '         if getattr(adapter, "_catalog", None) is not None),',
+        tests=["tests/integration/test_the_provenance_route.py::TestWhatItAnswers::test_IT_ACTUALLY_ANSWERS_SOMETHING",
+               "tests/integration/test_the_conflicts_route.py::TestTheLosingValueComesBack::test_it_says_what_the_other_source_held_and_where_each_came_from"],
+    ),
+    Control(
+        describes="a conflict about another compartment's object is not served",
+        path="api/routes.py",
+        # ANCHORED ON THE LINE AFTER IT, because _may_read_object
+        # guards the notes route too and the bare call matches twice --
+        # which this script refuses, correctly: a break matching
+        # several places could silently change the wrong one.
+        old=("    if not _may_read_object(mediator, current_user, object_type, "
+             "object_id):\n        return []\n\n"
+             "    catalog = _deployment_catalog(mediator)"),
+        new=("    if not True:\n        return []\n\n"
+             "    catalog = _deployment_catalog(mediator)"),
+        tests=["tests/integration/test_the_conflicts_route.py::TestMACSTILLAPPLIES::test_an_administrator_in_another_compartment_gets_nothing"],
+    ),
+    Control(
+        describes="a conflict's values are withheld when the field is not readable",
+        path="api/routes.py",
+        old="        may_read = field_name is None or field_name in readable",
+        new="        may_read = True",
+        tests=["tests/integration/test_the_conflicts_route.py::TestAFieldTheyMayNotRead::test_and_neither_value_is_anywhere_in_the_body"],
+    ),
+    # ------------------------------------------------------------
     # THE MERGE REVIEWER'S SURFACE, which had no control either and
     # spent months telling a reviewer "one side missing" about every
     # field of every proposal. Found by the R52 sweep. A feature with

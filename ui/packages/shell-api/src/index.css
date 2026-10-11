@@ -1757,6 +1757,69 @@
     user-select: all;
   }
 
+  /* ---- WHERE THE SOURCES DISAGREED ----------------------------------
+   *
+   * The second half of the same question. "Where did this row come
+   * from" is one silo for the whole object; "why does this FIELD say
+   * this" is per field, and is the only per-field source attribution
+   * the system has. Same heading treatment, because they read as two
+   * parts of one panel rather than two panels.
+   */
+  .object-detail__conflicts {
+    margin-top: var(--space-section);
+  }
+
+  .object-detail__conflicts h3 {
+    margin: 0 0 var(--space-tight);
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-label-weight);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .conflicts {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .conflicts th {
+    text-align: left;
+    padding: var(--space-hair) var(--space-tight) var(--space-hair) 0;
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
+    color: var(--text-secondary);
+  }
+
+  .conflicts td {
+    padding: var(--space-hair) var(--space-tight) var(--space-hair) 0;
+    vertical-align: top;
+  }
+
+  /* THE VALUE IS THE THING TO READ and the source is the annotation,
+   * so they are weighted apart rather than run together -- a reader
+   * comparing two columns is comparing the values, and the source
+   * names repeat down the table. */
+  .conflicts__value {
+    font-family: var(--font-mono);
+    font-size: var(--type-dense-size);
+    user-select: all;
+  }
+
+  .conflicts__source,
+  .conflicts__withheld {
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
+    color: var(--text-secondary);
+  }
+
+  .conflicts__withheld {
+    margin: var(--space-tight) 0 0;
+  }
+
   /* ---- THE SET'S NAME -----------------------------------------------
    *
    * DEV_UI.md 11.1: "everything on screen IS a set, named by how it was

@@ -52,6 +52,12 @@ hints_for
 describe_hint
 published_history_route
 object_provenance_route
+# Beside them because it answers the other half of the same question:
+# "where did this ROW come from" versus "why does this FIELD say this".
+object_conflicts_route
+losing_source
+chosen_source
+recorded_at
 # The response model's fields: pydantic reads them by reflection, so
 # every one of them looks unreferenced from here, the same way every
 # route above looks uncalled.

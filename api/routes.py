@@ -2846,6 +2846,41 @@ class ObjectProvenanceResponse(BaseModel):
     bronze_snapshot_id: str | None = None
 
 
+class ValueConflictResponse(BaseModel):
+    """One disagreement two sources had about this object.
+
+    THE ONLY PER-FIELD, PER-SOURCE RECORD THIS SYSTEM HOLDS. Everything
+    else the lake records about origin is per ROW -- `_silo` names one
+    source for a whole object, and `_fused_from` names every storage
+    that contributed without saying which contributed what. These rows
+    say which source won a particular field, and what the other one
+    said.
+
+    VALUES ARE WITHHELD BY ABSENCE, exactly as MergeFieldResponse does
+    it and for the same reason: `chosen` and `losing` are real customer
+    data, not metadata, and a reader who may not read the field may
+    still be told that its sources disagreed. `response_model_exclude_
+    none` would make withheld and genuinely-null look identical on the
+    wire, which is why `readable` is a field rather than an inference.
+    """
+
+    #: "property" when two sources held different values for one field,
+    #: "security" when they disagreed about the object's compartment --
+    #: which has no field at all, and is the more serious of the two.
+    kind: str
+    #: None for a security conflict, which is about the whole object.
+    field: str | None = None
+    chosen_source: str | None = None
+    losing_source: str | None = None
+    recorded_at: str | None = None
+    #: Present only when the caller may read the field. See the model
+    #: docstring; absence here is not the same as a null value.
+    chosen: str | None = None
+    losing: str | None = None
+    #: Whether the values above were withheld rather than empty.
+    readable: bool = True
+
+
 @router.get("/objects/{object_type}/{object_id}/provenance",
             response_model=ObjectProvenanceResponse | None)
 def object_provenance_route(
@@ -2892,17 +2927,7 @@ def object_provenance_route(
     if id_field is None:
         return None
 
-    # THE CATALOG COMES FROM AN ADAPTER THAT ALREADY HOLDS ONE, the same
-    # way published-history finds it: every MirrorReadAdapter is handed
-    # the same catalog at construction, so asking one is asking the
-    # deployment's. A live-read deployment has none, and has published
-    # nothing to have provenance for.
-    catalog = next(
-        (getattr(adapter, "_catalog", None)
-         for adapter in mediator.adapters.values()
-         if getattr(adapter, "_catalog", None) is not None),
-        None,
-    )
+    catalog = _deployment_catalog(mediator)
     if catalog is None:
         return None
 
@@ -2912,6 +2937,102 @@ def object_provenance_route(
         # Nothing published for this type yet. An absent answer, not a
         # fault: the same shape a deployment that reads live gives.
         return None
+
+
+
+@router.get("/objects/{object_type}/{object_id}/conflicts",
+            response_model=list[ValueConflictResponse])
+def object_conflicts_route(
+    object_type: str, object_id: str, request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> list[dict]:
+    """Why the golden record says what it says, where two sources
+    disagreed.
+
+    `core/mirror/survivorship.py` states the promise this serves, and
+    had no way to keep it: "deleting losing values destroys trust. A
+    person asking why the golden record says Leeds needs to see that
+    the CRM said Hull and was outranked -- otherwise the answer is an
+    assertion." The losing values have been written to an append-only
+    table since GOLD-6 and nothing could read them back.
+
+    GATED ON manage:users, FOLLOWING /provenance RATHER THAN DECIDING
+    AFRESH. `chosen_source` and `losing_source` name the customer's own
+    systems, which is the same disclosure `/silos` and `/provenance`
+    already treat as admin-only; serving them more widely here would
+    widen that through a side door. The cost is the one `/provenance`
+    already records -- the analyst who most wants to know why a value
+    says what it says is the one who cannot see this -- and the remedy
+    is the same policy change, a grant that says "may see lineage"
+    without "may administer". Making that decision inside a patch about
+    reading an existing table would be deciding it quietly.
+
+    AND MAC STILL APPLIES ON TOP, which the grant does not supply.
+    manage:users is not permission to read every object: an
+    administrator in one compartment must not learn that an object in
+    another exists, let alone what two systems said about it. An
+    invisible object yields an empty list, identical to an object with
+    no conflicts and to an id that was never real.
+
+    AND PER-FIELD READ GRANTS ON TOP OF THAT. The verdict -- that two
+    sources disagreed about `email` -- is safe to state and is the
+    thing the reader came for; the two email addresses are not, and are
+    withheld by absence the way masked_comparison withholds a merge
+    candidate's values. An administrator who cannot read a field does
+    not acquire it by asking this question.
+    """
+    from core.mirror.gold_conflicts import ConflictsNotRecorded, read_conflicts
+
+    _require_manage_users(request, current_user)
+    mediator = _generation(request).mediator
+
+    # UNIFORM DENIAL, and the reason it is first: every answer below
+    # this line says something about an object, so "you may not see
+    # this object" has to be settled before any of them is computed.
+    if not _may_read_object(mediator, current_user, object_type, object_id):
+        return []
+
+    catalog = _deployment_catalog(mediator)
+    if catalog is None:
+        return []
+
+    try:
+        rows = read_conflicts(catalog, object_type, object_id)
+    except ConflictsNotRecorded:
+        # No conflicts table for this type: a deployment that declares
+        # no identity resolution never creates one. An absent answer,
+        # not a fault.
+        return []
+
+    readable = _readable_fields(request, current_user, object_type)
+    out = []
+    for row in rows:
+        field_name = row.get("field")
+        # A SECURITY CONFLICT HAS NO FIELD, so no field grant can admit
+        # it. It is served because an administrator deciding whether to
+        # trust a golden record has to know its compartment was
+        # contested -- and its values are security labels, which the
+        # Users screen already shows this same grant holder.
+        may_read = field_name is None or field_name in readable
+        entry = {
+            "kind": row.get("kind"),
+            "field": field_name,
+            "chosen_source": row.get("chosen_source"),
+            "losing_source": row.get("losing_source"),
+            "recorded_at": row.get("recorded_at"),
+            "readable": may_read,
+        }
+        if may_read:
+            # ABSENT WHEN NULL TOO, not only when withheld: a
+            # serialised None has been through this process and sits in
+            # anything that cached the response, and `readable` above
+            # already says which case this is.
+            if row.get("chosen") is not None:
+                entry["chosen"] = row["chosen"]
+            if row.get("losing") is not None:
+                entry["losing"] = row["losing"]
+        out.append(entry)
+    return out
 
 
 @router.get("/objects/{object_type}/{object_id}/published-history",
@@ -2949,12 +3070,7 @@ def published_history_route(
     # MirrorReadAdapter is handed the same catalog at construction, so
     # asking one is asking the deployment's. A live-read deployment has
     # none, and has published nothing either.
-    catalog = next(
-        (getattr(adapter, "_catalog", None)
-         for adapter in mediator.adapters.values()
-         if getattr(adapter, "_catalog", None) is not None),
-        None,
-    )
+    catalog = _deployment_catalog(mediator)
     if catalog is None:
         return []
 
@@ -3580,6 +3696,40 @@ def _sorted_by_field(mediator, user_record, object_type: str, object_ids: list,
 def _merge_store(request: Request) -> MergeDecisionStore:
     return MergeDecisionStore(
         request.app.state.runtime_paths.data_dir / "identity_decisions.db")
+
+
+
+def _deployment_catalog(mediator):
+    """The Iceberg catalog this deployment reads, or None.
+
+    THREE ROUTES ASKED FOR THIS AND ALL THREE GOT None. Each looked for
+    a `_catalog` attribute on one of the mediator's adapters.
+    MirrorReadAdapter has one; GoldConnector does not, because it holds
+    its catalog inside the IcebergNamespaceReader it delegates to. And
+    GOLD-9 made reads gold-only -- `read_from_mirror` has been
+    always-true since, and deployment_loader REFUSES a config that asks
+    otherwise -- so `mediator.adapters` is `{"gold": GoldConnector}` on
+    every real deployment.
+
+    SO /provenance AND /published-history HAVE ANSWERED "NOTHING" SINCE
+    GOLD-9, and their tests did not notice because both guard their
+    assertions with `if body is not None`. Found while adding a third
+    route that copied the same lookup.
+
+    A PUBLIC `catalog` ON BOTH ADAPTERS, asked for here, rather than
+    this function reaching through `_reader._catalog`. Two private hops
+    from a route is how the next adapter to store its catalog elsewhere
+    breaks this again, silently and in three places at once.
+
+    None IS A REAL ANSWER: a deployment whose adapters hold no catalog
+    has published nothing to have lineage for, and every caller treats
+    that as an absent answer rather than a fault.
+    """
+    return next(
+        (adapter.catalog for adapter in mediator.adapters.values()
+         if getattr(adapter, "catalog", None) is not None),
+        None,
+    )
 
 
 def _readable_fields(request: Request, user: UserRecord, object_type: str) -> set[str]:

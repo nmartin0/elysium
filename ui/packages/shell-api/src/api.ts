@@ -1518,6 +1518,40 @@ export async function getObjectProvenance(objectType: string, objectId: string):
   return (await response.json()) as ObjectProvenance | null
 }
 
+/**
+ * One disagreement two sources had about this object.
+ *
+ * THE ONLY PER-FIELD, PER-SOURCE RECORD THE SYSTEM HOLDS. Everything
+ * else the lake records about origin is per ROW: `silo` above names
+ * one source for a whole object, however many it was fused from.
+ *
+ * SAME GRANT AS PROVENANCE, so most callers are refused and the screen
+ * has to be fine with that.
+ */
+export interface ValueConflict {
+  /** "property" when two sources held different values for one field,
+   *  "security" when they disagreed about the object's compartment --
+   *  which names no field and is the more serious of the two. */
+  kind: string
+  field?: string | null
+  chosen_source?: string | null
+  losing_source?: string | null
+  recorded_at?: string | null
+  /** Absent when the caller may not read the field, and absent when
+   *  the value is genuinely null. `readable` is what tells them
+   *  apart. */
+  chosen?: string | null
+  losing?: string | null
+  readable: boolean
+}
+
+export async function getObjectConflicts(objectType: string, objectId: string): Promise<ValueConflict[]> {
+  const response = await apiFetchOrThrow(
+    `/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectId)}` + '/conflicts',
+  )
+  return (await response.json()) as ValueConflict[]
+}
+
 export async function getPublishedHistory(objectType: string, objectId: string): Promise<PublishedChange[]> {
   const response = await apiFetchOrThrow(
     `/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectId)}` + '/published-history',

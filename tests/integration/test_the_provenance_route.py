@@ -67,6 +67,35 @@ class TestWhatItAnswers:
         assert response.status_code == 200
         assert response.json() is None
 
+    def test_IT_ACTUALLY_ANSWERS_SOMETHING(self, client):
+        """THE TEST THAT WAS MISSING, AND THE HOLE IT LEFT.
+
+        This route answered `null` on every gold-reading deployment --
+        which is every deployment, since GOLD-9 removed live reads and
+        deployment_loader refuses a config asking for them. It looked
+        for a `_catalog` attribute on one of the mediator's adapters;
+        MirrorReadAdapter has one, GoldConnector does not (it holds its
+        catalog inside the reader it delegates to), and
+        `mediator.adapters` is `{"gold": GoldConnector}` and nothing
+        else.
+
+        EVERY EXISTING TEST HERE PASSED THROUGHOUT. One asserted a 200,
+        two asserted `is None` for cases that SHOULD be None, and the
+        one that looked at a real object's body guarded itself with
+        `if body is not None`. A route that always returns null
+        satisfies all four.
+
+        Found while adding a third route that copied the same lookup.
+        """
+        _login(client, "root5", "admin")
+
+        body = client.get("/api/objects/Customer/cust_001/provenance").json()
+
+        assert body is not None, "the route found no catalog and said nothing"
+        assert body["silo"], "a published row must name the silo it came from"
+        assert body["source_table"]
+        assert body["row_hash"]
+
     def test_it_never_returns_the_object_s_own_values(self, client):
         """Provenance is about WHERE a row came from. A route that also
         handed back the row would be a second read path for object data,
@@ -75,7 +104,9 @@ class TestWhatItAnswers:
 
         body = client.get("/api/objects/Customer/cust_001/provenance").json()
 
-        if body is not None:
-            assert set(body) <= {
-                "silo", "source_table", "row_hash", "bronze_snapshot_id",
-            }
+        # NO LONGER GUARDED ON `is not None`. That guard is how a route
+        # answering null for every object passed this test for months --
+        # see the test above.
+        assert set(body) <= {
+            "silo", "source_table", "row_hash", "bronze_snapshot_id",
+        }
