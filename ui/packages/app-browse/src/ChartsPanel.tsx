@@ -173,6 +173,12 @@ export default function ChartsPanel({
             ...(JSON.parse(extraKey) as unknown[]),
           ],
           ...(frozenSet ? { frozen_set: frozenSet } : {}),
+          // THE TEXT, which this panel received as a prop "so charts
+          // describe the same object set the table does" and never
+          // sent. queryText was in the effect's dependencies -- so the
+          // charts REFETCHED on every keystroke and drew the same
+          // unfiltered set each time.
+          ...(queryText.trim() ? { q: queryText } : {}),
           aggregate: 'count',
           group_by: field,
         })) as AggregateResult

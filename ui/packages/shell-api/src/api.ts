@@ -1334,6 +1334,10 @@ export interface AggregateBody {
   group_by?: string
   /** A frozen set to aggregate within. See SearchOptions.frozenSet. */
   frozen_set?: string
+  /** The search box's text, so a chart describes the same set the
+   *  table does. Without it a donut beside "Transaction · 81" drew all
+   *  five categories of all 404. */
+  q?: string
 }
 
 /**

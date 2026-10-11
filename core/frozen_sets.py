@@ -1,4 +1,4 @@
-"""Frozen sets: membership fixed at an instant (BLOCKING 17).
+"""Frozen sets: membership fixed at an instant (formerly BLOCKING 17, saved selections).
 
 DEV_UI.md 11.3 decided the shape and left one question open. "Live by
 default, frozen deliberately -- and both are named": HubSpot's active

@@ -60,6 +60,7 @@ export default function Facets({
   onFilter,
   extraConditions = [],
   frozenSet,
+  queryText = '',
 }: {
   objectType: string
   field: string
@@ -75,6 +76,10 @@ export default function Facets({
   extraConditions?: unknown[]
   /** A frozen set the facet counts within. */
   frozenSet?: string
+  /** The search box's text. A facet counting "us-west · 404" under a
+   *  search that matched 81 is counting a different set from the one
+   *  it would narrow. */
+  queryText?: string
 }) {
   const [buckets, setBuckets] = useState<Bucket[] | null>(null)
   const [failed, setFailed] = useState(false)
@@ -107,6 +112,7 @@ export default function Facets({
         ...(JSON.parse(extraKey) as unknown[]),
       ],
       ...(frozenSet ? { frozen_set: frozenSet } : {}),
+      ...(queryText.trim() ? { q: queryText } : {}),
       aggregate: 'count',
       group_by: field,
     })
@@ -144,7 +150,7 @@ export default function Facets({
     return () => {
       cancelled = true
     }
-  }, [objectType, field, key, extraKey, frozenSet])
+  }, [objectType, field, key, extraKey, frozenSet, queryText])
 
   /**
    * WHETHER THIS FACET HAS ANYTHING WORTH SHOWING, decided once and

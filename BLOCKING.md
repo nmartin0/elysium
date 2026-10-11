@@ -72,9 +72,10 @@ which was whether the layout holds.
 | `IDEAS.md` | investigations. Most are SHIPPED or ANSWERED; what is open needs a capable model, and is item 14 |
 | `UI_ROADMAP.md` | 2,143 lines of front-end plan. Its one backend finding -- an unbounded search filling the model's context -- is item 15, with the code evidence |
 | `BACKLOG.md` | its sections are absorbed: 0c, 0d4 and 0d5 were worked in patches 475-480; section 1 is item 14, section 2's one open piece is item 16, section 5 pointed here already |---
-| `ROADMAP.md` | its numbered backend list is done or explicitly NOT DOING; pagination shipped as `page_token`. Its one unbuilt track, external writeback, is item 17 |
+| `ROADMAP.md` | its numbered backend list is done or explicitly NOT DOING; pagination shipped as `page_token`. Its one unbuilt track, external writeback, was decided and built -- see the `write_targets` row |
 | `UNIFIED_ROADMAP.md` | the file that started this method: on 21 September it read every plan against the CODE and found seven built things described as open. Its remaining entries are items 32-35; its one correction to me is in item 15 |# Blocked on a decision
 | `gold_history` (was item 1) | DECIDED and BUILT, patches 507-509: the owner wanted both a reader and a route. It leaves this file by its own rule -- the decision survives in the code, the `NEW-7` checklist row and the commits |
+| saved selections (was item 17) | BUILT as frozen sets: `core/frozen_sets.py`, `/api/frozen-sets`, a `frozen_set` reference on every route that takes a set, and Browse's Frozen sets popover. Unblocked by precedent -- Foundry's static object sets are "a list of primary keys" -- which made "what happens when the publication is forgotten" dissolve: membership is keys, the publication is metadata. DEV_UI 11.5's write-path question about bulk ACTION is unchanged and lives with item 8 |
 | `write_targets` (was item 17) | DECIDED and BUILT: off by default, a separate block, existing deployments warned rather than broken |
 | `check_controls` in CI (was item 4) | the 70 controls now run as their own CI job. Inert until Actions is enabled, which only the owner can do -- but the mechanism exists rather than being a suggestion |
 | `AUDIT_CHECKLIST.csv`'s SEC rows (was item 3) | all 25 inherited findings closed. Three real and fixed (SEC-09, SEC-19, SEC-22), three were guards whose call sites nothing held (SEC-14, SEC-27, and the one behind SEC-04), the rest covered, moot or unactionable |
@@ -292,10 +293,13 @@ gone:** the plan opens with "our filter is equality only ... so
 clicking two bars on a chart cannot be expressed either." `core/filters.py`
 now has `in` and `not_in`, so it is.
 
-What remains is frontend: the table, the charts, and saving and acting
-on a selection. The last of those is the same thing as item 18.
+The table, the charts, and saving a selection are now built -- the last
+as frozen sets. What remains is ACTING on a selection at scale, which is
+DEV_UI 11.5's write-path question: one approval covering 200 changes, or
+200 rows in the approvals queue. Frozen sets give it a stable thing to
+act on; they do not answer it.
 
-**Blocked on:** product design, and there is no front-end agent.
+**Blocked on:** that write-path decision.
 
 ## 9. A plugin API, and the reason module federation is not it
 
@@ -575,38 +579,14 @@ than beside them.
 list that competes with documentation rather than extending the
 product.
 
-## 17. Saved SELECTIONS -- BUILT, as frozen sets
-
-**Unblocked by precedent rather than by a decision.** Foundry's static
-object sets are "saved as a list of primary keys" and "will stay the
-same regardless of any changes to the input data"; dynamic ones are "a
-representation of the filters". DEV_UI 11.3 had already settled the
-naming and the two-kinds rule from HubSpot, Amplitude and Foundry. What
-it left open -- what a frozen set pins to, and what happens when that
-publication is forgotten -- dissolves once membership is KEYS: values
-are read live, the publication is recorded as metadata ("frozen 14:22 ·
-from the publication of 13:05") and reported as forgotten when it is,
-and nothing depends on it.
-
-Built: `core/frozen_sets.py`, `/api/frozen-sets`, a `frozen_set`
-reference accepted by every route that already takes a set (search,
-matching-ids, count, aggregate, export, search-around), and Browse's
-Frozen sets popover beside Saved views, with the subject line saying
-Frozen or Live on its face.
-
-**What is still open** is 11.5's write-path question -- one approval
-covering 200 changes, or 200 rows -- which is about bulk ACTION over a
-set, not about the set. Frozen sets give it a stable thing to act on;
-they do not answer it.
-
 ---
 
 # Not blocked, and not here
 
-Six infrastructure recommendations are open and buildable: `R4` (one
+Four infrastructure recommendations are open and buildable: `R4` (one
 consistent read per silo per run), `R5` (bounded-memory batched sync),
-`R10` (SCD2 changelog), `R19` (a source-mutation matrix in CI), `R20`
-(Iceberg branches for previews). They are days each rather than hours,
+`R10` (SCD2 changelog), `R20` (Iceberg branches for previews). `R19`,
+the source-mutation matrix, is built -- see its row in the CSV. They are days each rather than hours,
 and `R4` and `R5` conflict enough that the order matters -- but they
 need no decision, so they stay out of this file until one of them
 does.
@@ -650,7 +630,7 @@ files reference the SQLite adapter, most of them tests using it as the
 cheap real database, and the write path is where a mistake reaches a
 customer's database. Days, not hours -- but no decision, so not here.
 
-## 18. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
+## 17. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
 
 **Blocked on:** the owner, and on money and calendar time rather than
 engineering.
@@ -700,7 +680,7 @@ an audit is ever bought:
 
 Months, not a patch.
 
-## 19. Owning the UI kit, and when to start
+## 18. Owning the UI kit, and when to start
 
 **Blocked on:** nothing. This is a DECISION ALREADY TAKEN, recorded
 here so the next person does not reopen it from scratch.

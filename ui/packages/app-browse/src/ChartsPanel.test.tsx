@@ -489,3 +489,44 @@ describe('a field has to have a distribution worth drawing', () => {
     expect(await screen.findByText('Name')).toBeInTheDocument()
   })
 })
+
+describe('the charts describe the SEARCHED set', () => {
+  it('sends the search box text with every aggregate', async () => {
+    // SEEN IN A BROWSER: "Transaction · 81" for the search "refund",
+    // beside a donut of all five categories. This panel took the text
+    // as a prop "so charts describe the same object set the table does"
+    // and never sent it.
+    render(
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText="ada"
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
+    )
+
+    await waitFor(() =>
+      expect(aggregateObjects).toHaveBeenCalledWith('Customer', expect.objectContaining({ q: 'ada' })),
+    )
+  })
+
+  it('sends no text when the box is empty', async () => {
+    // THE CONTROL. An empty string sent as a query would be the server's
+    // problem to interpret; absent is unambiguous.
+    render(
+      <ChartsPanel
+        objectType="Customer"
+        visibleSchema={SCHEMA}
+        queryText="  "
+        filters={[]}
+        onSelect={noop2}
+        onSessionExpired={noop}
+      />,
+    )
+
+    await waitFor(() => expect(aggregateObjects).toHaveBeenCalled())
+    expect(aggregateObjects.mock.calls[0]![1]).not.toHaveProperty('q')
+  })
+})

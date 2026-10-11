@@ -55,7 +55,7 @@ object_provenance_route
 # Beside them because it answers the other half of the same question:
 # "where did this ROW come from" versus "why does this FIELD say this".
 object_conflicts_route
-# Frozen sets (BLOCKING 17): routes FastAPI calls and response fields
+# Frozen sets (formerly BLOCKING 17, saved selections): routes FastAPI calls and response fields
 # pydantic reads by reflection, the same reason everything above is here.
 freeze_set_route
 list_frozen_sets_route

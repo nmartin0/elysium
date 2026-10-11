@@ -611,6 +611,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                   objectType={currentType}
                   extraConditions={barFilters}
                   frozenSet={frozenSet || undefined}
+                  queryText={queryText}
                   field={field}
                   label={label}
                   filters={crossFilter}

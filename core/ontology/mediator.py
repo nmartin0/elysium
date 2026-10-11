@@ -2053,7 +2053,8 @@ class DataMediator:
         return entries, self.write_log.edit_history_count(object_type, object_id)
 
     def count_objects(self, user_record: UserRecord, object_type: str, conditions: list,
-                       outcome: "SearchOutcome | None" = None) -> int:
+                       outcome: "SearchOutcome | None" = None,
+                       query_text: str = "") -> int:
         """How many objects of this type the CALLER can see, matching
         criteria.
 
@@ -2090,11 +2091,32 @@ class DataMediator:
         reading SearchOutcome's own comment insists on: beyond the
         ceiling the rows might all have been invisible anyway.
         """
-        return len(self.search_object(user_record, object_type, conditions, outcome=outcome))
+        return len(self._set_members(user_record, object_type, conditions, outcome, query_text))
+
+    def _set_members(self, user_record: UserRecord, object_type: str, conditions: list,
+                     outcome: "SearchOutcome | None", query_text: str) -> list:
+        """The ids of the set a count or an aggregate describes.
+
+        WITH THE TEXT QUERY WHEN THERE IS ONE, which is the half that
+        was missing. Browse's table runs search_object_free_text --
+        whose own docstring says it "is what makes charts and a table
+        describe ONE object set" -- and its charts and facets ran
+        search_object, which has no text at all. So "Transaction · 81"
+        for the search "refund" sat beside a donut of all five
+        categories and facets counting 404, seen in a browser.
+
+        The same two searches the rest of this class uses, chosen here
+        once, so a count and an aggregate cannot pick differently.
+        """
+        if query_text and query_text.strip():
+            return self.search_object_free_text(
+                user_record, object_type, query_text, conditions=conditions, outcome=outcome)
+        return self.search_object(user_record, object_type, conditions, outcome=outcome)
 
     def aggregate_by_field(self, user_record: UserRecord, object_type: str, conditions: list,
                             group_by: str | None, aggregate: str, field_name: str | None = None,
-                            outcome: "SearchOutcome | None" = None) -> dict:
+                            outcome: "SearchOutcome | None" = None,
+                            query_text: str = "") -> dict:
         """Aggregates a field over the objects the caller can see.
 
         `aggregate` is one of count/sum/avg/min/max -- the same set
@@ -2154,7 +2176,7 @@ class DataMediator:
                     f"aggregate over the objects on the far side."
                 )
 
-        visible_ids = set(self.search_object(user_record, object_type, conditions, outcome=outcome))
+        visible_ids = set(self._set_members(user_record, object_type, conditions, outcome, query_text))
         if not visible_ids:
             return {}
 

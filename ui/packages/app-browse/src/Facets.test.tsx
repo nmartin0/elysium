@@ -127,3 +127,15 @@ describe('an ordinary facet', () => {
     expect(screen.queryByText('Region')).not.toBeInTheDocument()
   })
 })
+
+describe('a facet counts the SEARCHED set', () => {
+  it('sends the search box text', async () => {
+    // A facet counting "us-west · 404" under a search that matched 81
+    // is counting a different set from the one it would narrow.
+    render(<Facets objectType="Customer" field="region" label="Region" filters={[]} onFilter={noop} queryText="ada" />)
+
+    await waitFor(() =>
+      expect(aggregateObjects).toHaveBeenCalledWith('Customer', expect.objectContaining({ q: 'ada' })),
+    )
+  })
+})

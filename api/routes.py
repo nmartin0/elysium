@@ -589,7 +589,22 @@ class ObjectSetQueryRequest(BaseModel):
         return as_equality_conditions(self.criteria)
 
 
-class AggregateRequest(ObjectSetQueryRequest):
+class TextSetQueryRequest(ObjectSetQueryRequest):
+    """A set described the way Browse describes it: text AND conditions.
+
+    THE TEXT WAS MISSING FROM EVERY COUNT AND AGGREGATE. The table runs
+    the search box through search_object_free_text; the charts and
+    facets sent conditions only, so "Transaction · 81" for the search
+    "refund" sat beside a donut of all five categories. A subclass
+    rather than a field on ObjectSetQueryRequest, because the export
+    already takes its text as a query parameter and two places to put
+    one query would need a rule for when they disagree.
+    """
+
+    q: str = ""
+
+
+class AggregateRequest(TextSetQueryRequest):
     # Named to match Foundry's own vocabulary: an aggregation with an
     # optional groupBy. `field` is required for every aggregate except
     # count, which aggregates the set itself rather than a property.
@@ -2263,7 +2278,7 @@ def delete_saved_view_route(
     return {"deleted": True}
 
 
-# --- Frozen sets (BLOCKING 17, DEV_UI 11.3) ---------------------------
+# --- Frozen sets (formerly BLOCKING 17, saved selections, DEV_UI 11.3) ---------------------------
 #
 # A saved VIEW is the live kind -- its query, re-run. A FROZEN SET is
 # the other kind DEV_UI 11.3 asks for: "membership fixed at an
@@ -5008,7 +5023,7 @@ async def _decide_reserved_write(request: Request, write_id: str, pending, appro
 
 
 @router.post("/objects/{object_type}/count", response_model=CountResponse)
-def count_objects_route(object_type: str, body: ObjectSetQueryRequest, request: Request,
+def count_objects_route(object_type: str, body: TextSetQueryRequest, request: Request,
                          current_user: UserRecord = Depends(get_current_user)) -> dict:
     # The count is of objects THIS CALLER can see, never the raw row
     # count -- two users legitimately get different answers, and a
@@ -5023,7 +5038,7 @@ def count_objects_route(object_type: str, body: ObjectSetQueryRequest, request: 
     try:
         count = mediator.count_objects(
             current_user, object_type, _set_conditions(request, current_user, object_type, body),
-            outcome=search_outcome)
+            outcome=search_outcome, query_text=body.q)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return {"count": count, "scan_truncated": search_outcome.scan_truncated}
@@ -5041,7 +5056,7 @@ def aggregate_objects_route(object_type: str, body: AggregateRequest, request: R
             current_user, object_type,
             _set_conditions(request, current_user, object_type, body),
             group_by=body.group_by, aggregate=body.aggregate, field_name=body.field,
-            outcome=search_outcome,
+            outcome=search_outcome, query_text=body.q,
         )
     except ValueError as e:
         # An unknown aggregate name or a missing field is a caller
