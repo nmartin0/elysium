@@ -28,7 +28,9 @@ from core.mirror.changelog import (
     INSERT,
     MAX_DELETED_FRACTION,
     UPDATE,
+    UPDATE_BEFORE,
     diff_snapshots,
+    scd2_versions,
 )
 
 
@@ -250,9 +252,11 @@ class TestWiredIntoTheSync:
         connection.close()
         self._run(sync)
 
+        # THE BEFORE-IMAGE BESIDE THE AFTER (R10): where the row came
+        # from, as well as where it went.
         recorded = self._changelog(sync)
-        assert recorded["_change"] == [UPDATE]
-        assert recorded["a"] == ["CHANGED"]
+        assert sorted(zip(recorded["_change"], recorded["a"], strict=True)) == [
+            (UPDATE, "CHANGED"), (UPDATE_BEFORE, "x")]
 
     def test_it_appends_rather_than_replacing(self, tmp_path):
         """THE ONE TABLE IN THE MIRROR THAT ONLY GROWS.
@@ -277,7 +281,9 @@ class TestWiredIntoTheSync:
         # SORTED, because Iceberg does not promise scan order and an
         # ordering difference is not a missing entry. What matters is
         # that BOTH survived -- an overwrite would have left one.
-        assert sorted(self._changelog(sync)["a"]) == ["first", "second"]
+        recorded = self._changelog(sync)
+        afters = [a for a, change in zip(recorded["a"], recorded["_change"], strict=True) if change == UPDATE]
+        assert sorted(afters) == ["first", "second"]
 
     def test_an_unchanged_sync_adds_nothing(self, tmp_path):
         # The sync skips the write entirely when nothing changed, so
@@ -341,4 +347,56 @@ class TestWiredIntoTheSync:
         connection.close()
         sync.sync_table("s", "t", "id", ["id", "amount"], types)
 
-        assert len(self._changelog(sync)["_change"]) == 1
+        # ONE UPDATE (and its before-image), not three.
+        assert self._changelog(sync)["_change"].count(UPDATE) == 1
+
+
+class TestBeforeImages:
+    """R10: the old row beside every update, on request."""
+
+    def test_an_update_carries_where_the_row_came_from(self):
+        changes = diff_snapshots(_rows(("1", "x")), _rows(("1", "y")), "id", before_images=True)
+
+        assert [(row["_change"], row["a"]) for row in changes.rows] == [
+            (UPDATE_BEFORE, "x"), (UPDATE, "y")]
+
+    def test_without_asking_there_is_one_row_per_change(self):
+        """THE CONTROL, and what gold's history still relies on."""
+        changes = diff_snapshots(_rows(("1", "x")), _rows(("1", "y")), "id")
+
+        assert [row["_change"] for row in changes.rows] == [UPDATE]
+
+
+def _entry(change, at, a, key="1"):
+    return {"id": key, "a": a, "_change": change, "_recorded_at": at}
+
+
+class TestTheChangelogAsSCD2:
+    """Kimball Type 2: a row per version, with when it began and ended."""
+
+    def test_each_version_is_closed_by_the_next(self):
+        versions = scd2_versions([
+            _entry(INSERT, "t1", "x"),
+            _entry(UPDATE_BEFORE, "t2", "x"), _entry(UPDATE, "t2", "y"),
+            _entry(DELETE, "t3", "y"),
+        ], "id")
+
+        assert [(v["a"], v["_valid_from"], v["_valid_to"], v["_current"]) for v in versions] == [
+            ("x", "t1", "t2", False), ("y", "t2", "t3", False)]
+
+    def test_a_row_older_than_the_changelog_has_an_unknown_start(self):
+        """THE CASE BEFORE-IMAGES EXIST FOR: the changelog never saw
+        "x" begin, and says so rather than inventing a date."""
+        versions = scd2_versions([
+            _entry(UPDATE_BEFORE, "t2", "x"), _entry(UPDATE, "t2", "y"),
+        ], "id")
+
+        assert [(v["a"], v["_valid_from"], v["_valid_to"], v["_current"]) for v in versions] == [
+            ("x", None, "t2", False), ("y", "t2", None, True)]
+
+    def test_order_on_disk_does_not_matter(self):
+        """Iceberg does not promise scan order."""
+        entries = [_entry(UPDATE, "t2", "y"), _entry(INSERT, "t1", "x"),
+                   _entry(UPDATE_BEFORE, "t2", "x")]
+
+        assert [v["a"] for v in scd2_versions(entries, "id")] == ["x", "y"]

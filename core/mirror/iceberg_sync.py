@@ -1526,7 +1526,11 @@ class IcebergMirrorSync(MirrorSync):
             readable = tuple(column for column in columns if column in stored)
             previous = bronze_table.scan(selected_fields=readable).to_arrow().to_pylist()
             changes = diff_snapshots(previous, current_rows, id_column,
-                                      accept_deletions=self._accept_deletions)
+                                      accept_deletions=self._accept_deletions,
+                                      # BEFORE-IMAGES (R10): the old row
+                                      # beside every update, so the
+                                      # changelog reads as SCD2.
+                                      before_images=True)
 
             if changes.suspected_partial_read and not self._accept_deletions:
                 logger.warning(

@@ -217,8 +217,10 @@ class TestWhatSurvivesInPlace:
         changelog = _catalog_for(mirror_dir).load_table(
             "changelog_s.t").scan().to_arrow().to_pydict()
 
-        assert changelog["_change"] == ["UPDATE"]
-        assert changelog["a"] == ["CHANGED"]
+        # WITH ITS BEFORE-IMAGE (R10): what the value used to be is the
+        # half a re-sync could least recover.
+        assert sorted(zip(changelog["_change"], changelog["a"], strict=True)) == [
+            ("UPDATE", "CHANGED"), ("UPDATE_BEFORE", "x")]
 
     def test_the_provenance_travels_with_the_table(self, lived_in_deployment):
         # Which silo and table each row came from, stamped on the table

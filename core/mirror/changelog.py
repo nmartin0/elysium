@@ -45,6 +45,12 @@ from dataclasses import dataclass
 INSERT = "INSERT"
 UPDATE = "UPDATE"
 DELETE = "DELETE"
+# THE ROW AS IT STOOD BEFORE AN UPDATE (R10). Iceberg's changelog view
+# calls the pair UPDATE_BEFORE / UPDATE_AFTER and Foundry's identifier
+# mode promises "update-before and update-after records"; the AFTER
+# half keeps the name UPDATE it has always had here, so every changelog
+# row written before this change still means what it said.
+UPDATE_BEFORE = "UPDATE_BEFORE"
 
 # HOW MUCH OF A TABLE MAY VANISH before we refuse to call it deleted.
 #
@@ -106,14 +112,22 @@ def _as_strings(row: dict) -> dict:
 
 
 def diff_snapshots(previous: list[dict], current: list[dict], id_column: str,
-                    accept_deletions: bool = False) -> ChangeSet:
+                    accept_deletions: bool = False,
+                    before_images: bool = False) -> ChangeSet:
     """What changed between two reads of one table.
 
     ROWS COMPARED WHOLE, not field by field. A row whose every value
-    matches is unchanged; anything else is an UPDATE. Recording WHICH
-    field moved would be finer, and is deliberately not done: it
-    doubles the row count for a question nobody has asked yet, and the
-    before-row is recoverable from the previous changelog entry.
+    matches is unchanged; anything else is an UPDATE.
+
+    BEFORE-IMAGES ON REQUEST (R10). This used to say the before-row
+    "is recoverable from the previous changelog entry" -- true only for
+    a row whose previous state the changelog had seen. A row inserted
+    before the changelog began, then updated, had no previous entry, so
+    its first update recorded where it went and never where it came
+    from. With `before_images`, each UPDATE is preceded by an
+    UPDATE_BEFORE row holding the old values, which is what an SCD2
+    view needs to close the old version. The source changelog asks for
+    them; gold's history keeps one row per change, as it always has.
 
     AN EMPTY PREVIOUS IS NOT A TABLE FULL OF INSERTS. The first sync
     after a changelog is enabled has no prior snapshot, and recording
@@ -130,6 +144,8 @@ def diff_snapshots(previous: list[dict], current: list[dict], id_column: str,
         if was is None:
             rows.append({**row, "_change": INSERT})
         elif was != row:
+            if before_images:
+                rows.append({**was, "_change": UPDATE_BEFORE})
             rows.append({**row, "_change": UPDATE})
 
     missing = [key for key in old if key not in new]
@@ -145,3 +161,49 @@ def diff_snapshots(previous: list[dict], current: list[dict], id_column: str,
         rows.append({**old[key], "_change": DELETE})
 
     return ChangeSet(rows=rows, suspected_partial_read=False)
+
+
+def scd2_versions(entries: list[dict], id_column: str) -> list[dict]:
+    """The changelog read as SCD Type 2: every version of every row,
+    with when it became current and when it stopped.
+
+    Kimball's Type 2: "add a new row" per change, with "effective and
+    expiration dates" and a current-row flag. Built FROM the changelog
+    rather than stored beside it -- the changelog is the record and
+    this is a reading of it, so the two can never disagree.
+
+    `_valid_from` and `_valid_to` are when the SYNC NOTICED, which is
+    the only clock a snapshot diff has (see `_recorded_at`). A version
+    the changelog never saw begin -- the before-image of a row older
+    than the changelog -- has `_valid_from` None: it existed, and when
+    it started is not known. Said as None, never guessed.
+    """
+    ordered = sorted(entries, key=lambda entry: (entry.get("_recorded_at") or "",
+                                                 entry.get("_change") != UPDATE_BEFORE))
+    open_versions: dict[str, dict] = {}
+    versions: list[dict] = []
+
+    def close(key: str, at: "str | None") -> None:
+        version = open_versions.pop(key, None)
+        if version is not None:
+            version["_valid_to"] = at
+            version["_current"] = False
+
+    for entry in ordered:
+        key = str(entry.get(id_column))
+        change, at = entry.get("_change"), entry.get("_recorded_at")
+        values = {k: v for k, v in entry.items() if not k.startswith("_")}
+        if change == UPDATE_BEFORE:
+            # The old version, if the changelog never opened it.
+            if key not in open_versions:
+                version = {**values, "_valid_from": None, "_valid_to": at, "_current": False}
+                versions.append(version)
+            else:
+                close(key, at)
+            continue
+        close(key, at)
+        if change in (INSERT, UPDATE):
+            version = {**values, "_valid_from": at, "_valid_to": None, "_current": True}
+            versions.append(version)
+            open_versions[key] = version
+    return versions

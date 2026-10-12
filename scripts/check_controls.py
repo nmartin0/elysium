@@ -1181,6 +1181,30 @@ CONTROLS = [
         tests=["tests/unit/test_orphan_files_are_reclaimed.py::test_nothing_is_touched_while_a_sync_holds_the_lock"],
     ),
 
+    Control(
+        describes="R10: an update carries its before-image",
+        path="core/mirror/changelog.py",
+        old="            if before_images:\n                rows.append({**was, \"_change\": UPDATE_BEFORE})",
+        new="            if False:\n                rows.append({**was, \"_change\": UPDATE_BEFORE})",
+        tests=["tests/unit/test_changelog.py::TestBeforeImages::test_an_update_carries_where_the_row_came_from"],
+    ),
+    Control(
+        describes="R10: the sync asks for before-images",
+        path="core/mirror/iceberg_sync.py",
+        old="                                      before_images=True)",
+        new="                                      before_images=False)",
+        tests=["tests/unit/test_history_of_a_source_row.py::"
+               "test_a_renamed_customer_has_two_versions_and_one_is_current"],
+    ),
+    Control(
+        describes="R10: an unseen start is unknown, not invented",
+        path="core/mirror/changelog.py",
+        old='                version = {**values, "_valid_from": None, "_valid_to": at, "_current": False}',
+        new='                version = {**values, "_valid_from": at, "_valid_to": at, "_current": False}',
+        tests=["tests/unit/test_changelog.py::TestTheChangelogAsSCD2::"
+               "test_a_row_older_than_the_changelog_has_an_unknown_start"],
+    ),
+
 ]
 
 
