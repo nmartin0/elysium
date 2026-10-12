@@ -43,6 +43,7 @@ paragraph.
 """
 
 import unicodedata
+from collections.abc import Mapping
 from typing import Any
 
 # Applied to strings unless the field declares standardise: false.
@@ -66,7 +67,14 @@ def rules_for(field_config: dict) -> dict[str, Any] | None:
     declared = field_config.get("standardise", {})
     if declared is False:
         return None
-    if not isinstance(declared, dict):
+    # A MAPPING, NOT ONLY A dict. The deployment's schema is DEEP-FROZEN
+    # at load (MappingProxyType), and checking for `dict` refused every
+    # declared rule a real deployment had: "standardise must be a
+    # mapping of rules or false, got mappingproxy({...})". Every test
+    # built its schema from plain dicts, so none saw it; the ontology
+    # preview (R20), the first thing to run a declared rule through the
+    # real loader, did.
+    if not isinstance(declared, Mapping):
         raise ValueError(
             f"standardise must be a mapping of rules or false, got {declared!r}."
         )

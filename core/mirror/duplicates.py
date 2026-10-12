@@ -30,6 +30,7 @@ THE ALTERNATIVES ARE DECLARED, per table:
                         every copy is quarantined.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -52,7 +53,9 @@ def policy_for_storage(storage: dict) -> DuplicatePolicy:
     declared = storage.get("duplicate_keys", QUARANTINE)
     if declared in (QUARANTINE, FAIL):
         return DuplicatePolicy(action=declared)
-    if isinstance(declared, dict) and set(declared) == {KEEP_LAST_BY}:
+    # A Mapping, not only a dict: the live schema is deep-frozen (see
+    # standardise.rules_for, which had the same defect).
+    if isinstance(declared, Mapping) and set(declared) == {KEEP_LAST_BY}:
         column = declared[KEEP_LAST_BY]
         if not isinstance(column, str) or not column:
             raise ValueError(f"duplicate_keys.{KEEP_LAST_BY} must name a column, got {column!r}.")

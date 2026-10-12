@@ -1268,6 +1268,23 @@ CONTROLS = [
                "test_an_approved_write_still_being_applied_is_pending"],
     ),
 
+    Control(
+        describes="a declared standardisation resolves on the frozen schema",
+        path="core/mirror/standardise.py",
+        old="    if not isinstance(declared, Mapping):",
+        new="    if not isinstance(declared, dict):",
+        tests=["tests/unit/test_declared_rules_survive_the_frozen_schema.py::"
+               "test_a_declared_standardisation_resolves_on_a_frozen_schema"],
+    ),
+    Control(
+        describes="R20: the preview reports values that would change",
+        path="scripts/preview_ontology.py",
+        old="                if differing:\n",
+        new="                if False:\n",
+        tests=["tests/unit/test_preview_an_ontology_change.py::"
+               "test_a_change_to_values_is_reported_and_nothing_live_changes"],
+    ),
+
 ]
 
 

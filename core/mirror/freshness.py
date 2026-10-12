@@ -46,6 +46,7 @@ whatever the sync did, so this governs only changes made in the
 SOURCE systems by other people or other software.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -161,7 +162,7 @@ def verdict(published_at: str | None, target: FreshnessTarget,
 def _declared_target(object_type: str, declared,
                      interval: timedelta) -> FreshnessTarget:
     where = f"Object type {object_type!r}: freshness"
-    if not isinstance(declared, dict):
+    if not isinstance(declared, Mapping):
         raise ValueError(f"{where} must be a block of settings, not {declared!r}.")
 
     unknown = sorted(set(declared) - _KEYS)
