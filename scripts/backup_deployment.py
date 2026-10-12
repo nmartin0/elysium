@@ -76,6 +76,10 @@ OWNED_DATABASES = (
     # Small by construction -- counts per rule per run, and nothing at
     # all written for a clean run.
     "mirror/expectation_warnings.db",
+    # COLUMN PROFILES, one per publication (R7). The series IS the
+    # check: a restore that emptied it would make the next publication
+    # the first, and drift would go unmeasured until the one after.
+    "mirror/column_profiles.db",
     # Frozen sets: who was in a set at an instant. Not derivable from
     # anything else -- the membership is the record.
     "frozen_sets.db",

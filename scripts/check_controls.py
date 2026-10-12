@@ -1136,6 +1136,51 @@ CONTROLS = [
                "test_a_fill_from_a_less_preferred_source_is_recorded"],
     ),
 
+    Control(
+        describes="R7: a column going empty is drift",
+        path="core/mirror/profiles.py",
+        old="        if null_now - null_then > NULL_RISE:",
+        new="        if False:",
+        tests=["tests/unit/test_column_drift.py::TestTheRules::test_a_column_going_empty_is_drift"],
+    ),
+    Control(
+        describes="R7: a collapse in distinct values is drift",
+        path="core/mirror/profiles.py",
+        old="            if abs(ratio - 1) > DISTINCT_CHANGE:",
+        new="            if False:",
+        tests=["tests/unit/test_column_drift.py::TestTheRules::test_a_collapse_in_distinct_values_is_drift",
+               "tests/unit/test_column_drift.py::TestARealSync::test_a_column_that_collapsed_is_reported"],
+    ),
+    Control(
+        describes="R7: a shifted average is drift",
+        path="core/mirror/profiles.py",
+        old="            if sigmas > MEAN_SIGMAS:",
+        new="            if False:",
+        tests=["tests/unit/test_column_drift.py::TestTheRules::test_a_shifted_average_is_drift"],
+    ),
+
+    Control(
+        describes="R11: a young orphan is spared",
+        path="core/mirror/integrity.py",
+        old="                    if path.name not in live and path.stat().st_mtime < cutoff]",
+        new="                    if path.name not in live]",
+        tests=["tests/unit/test_orphan_files_are_reclaimed.py::test_a_young_orphan_is_left_alone"],
+    ),
+    Control(
+        describes="R11: a dry run deletes nothing",
+        path="scripts/remove_orphan_files.py",
+        old="            if write:\n",
+        new="            if True:\n",
+        tests=["tests/unit/test_orphan_files_are_reclaimed.py::test_a_dry_run_reports_and_deletes_nothing"],
+    ),
+    Control(
+        describes="R11: nothing is swept during a sync",
+        path="scripts/remove_orphan_files.py",
+        old="        if not acquired:\n",
+        new="        if False:\n",
+        tests=["tests/unit/test_orphan_files_are_reclaimed.py::test_nothing_is_touched_while_a_sync_holds_the_lock"],
+    ),
+
 ]
 
 

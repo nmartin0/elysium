@@ -635,3 +635,53 @@ def _check_catalog_covers_warehouse(catalog, warehouse_dir: Path,
                 f"{identifier}: data is on disk but the catalog does not list it, "
                 f"so nothing can read it"
             )
+
+
+# --- Reclaiming them (R11) --------------------------------------------
+#
+# THE PRECEDENT IS ICEBERG'S OWN: Java's `remove_orphan_files` procedure,
+# which pyiceberg lacks (#3361). Its two safeguards are taken whole:
+#
+#   OLDER THAN A MARGIN, default three days. "Deleting files that are
+#   still being written can corrupt the table" -- a file a running write
+#   has produced and not yet committed is unreferenced too, and only
+#   its age tells it from a true orphan.
+#
+#   AGAINST EVERY SNAPSHOT IN THE HISTORY, not just the current one, so
+#   time travel to any retained snapshot -- and every `published-N` tag
+#   gold readers pin -- keeps its files.
+#
+# AND ONE OF THIS PROJECT'S: the sync lock, held for the sweep, so no
+# write is in flight while it decides; and a DRY RUN by default, the
+# repair_catalog shape the report above said a deletion needs.
+
+ORPHAN_MARGIN_HOURS = 72
+
+
+def orphaned_data_files(catalog, warehouse_dir: Path, tables: set[str],
+                        older_than_hours: float = ORPHAN_MARGIN_HOURS,
+                        now: "float | None" = None) -> dict[str, list[Path]]:
+    """{table: [data files no snapshot references, older than the margin]}.
+
+    A TABLE WHOSE HISTORY CANNOT BE READ IS SKIPPED, never swept: not
+    knowing what is referenced is not the same as nothing being.
+    """
+    import time
+
+    now = time.time() if now is None else now
+    cutoff = now - older_than_hours * 3600
+    found: dict[str, list[Path]] = {}
+    for identifier in sorted(tables):
+        namespace, table = identifier.split(".", 1)
+        directory = warehouse_dir / namespace / table / "data"
+        if not directory.is_dir():
+            continue
+        try:
+            live = _files_a_snapshot_references(catalog, identifier)
+        except Exception:  # noqa: BLE001 - see the docstring
+            continue
+        orphaned = [path for path in sorted(directory.rglob("*.parquet"))
+                    if path.name not in live and path.stat().st_mtime < cutoff]
+        if orphaned:
+            found[identifier] = orphaned
+    return found

@@ -65,6 +65,7 @@ from core.mirror.expectation_warnings import ExpectationWarnings
 from core.mirror.gold import build_gold, published_ids
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.manifest import publish_manifest
+from core.mirror.profiles import ProfileStore, profile_publications
 from core.mirror.sync_attempts import SyncAttempts
 from core.mirror.sync_lock import single_writer
 from core.mirror.sync_targets import resolve_sync_targets
@@ -187,7 +188,8 @@ def _evaluate_user_triggers(runtime_paths, config, mediator) -> None:
         print(f"could not evaluate triggers: {e}", file=sys.stderr)
 
 
-def _notify_mirror_health(runtime_paths, config, attempts, targets) -> None:
+def _notify_mirror_health(runtime_paths, config, attempts, targets,
+                          drifts: "list | None" = None) -> None:
     """Tells whoever can fix the mirror that it needs fixing.
 
     NEVER RAISES INTO THE SYNC. The sync has already done its work and
@@ -236,13 +238,14 @@ def _notify_mirror_health(runtime_paths, config, attempts, targets) -> None:
                 config.roles, RECIPIENT_GRANT,
             )
         ]
-        told = notify_mirror_health(
-            states, recipients, NotificationStore(
-                runtime_paths.data_dir / "notifications.db",
-            ),
-        )
+        store = NotificationStore(runtime_paths.data_dir / "notifications.db")
+        told = notify_mirror_health(states, recipients, store)
         if told:
             print(f"notified {told} administrator(s) about mirror health")
+        # COLUMN DRIFT (R7), to the same people by the same grant.
+        from core.mirror.health_condition import notify_column_drift
+        if notify_column_drift(drifts or [], recipients, store):
+            print("notified administrator(s) about column drift")
     except Exception as e:  # noqa: BLE001 - see the docstring
         # PRINTED, NOT LOGGED: this script has no logger, and a
         # message nobody sees is the failure mode this whole
@@ -782,7 +785,18 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
         # a different moment is worse than a late one.
         publish_manifest(sync, config)
 
-        _notify_mirror_health(runtime_paths, config, attempts, targets)
+        # COLUMN PROFILES OF EACH NEW PUBLICATION, and what moved (R7).
+        try:
+            drifts = profile_publications(
+                sync._catalog, config.schema,
+                ProfileStore(runtime_paths.data_dir / "mirror" / "column_profiles.db"))
+        except Exception as exc:  # noqa: BLE001 - a profile is never the sync's verdict
+            print(f"WARNING columns not profiled: {exc}", file=sys.stderr)
+            drifts = []
+        for drift in drifts:
+            print(f"DRIFT   {drift}")
+
+        _notify_mirror_health(runtime_paths, config, attempts, targets, drifts)
         _evaluate_user_triggers(runtime_paths, config, mediator)
 
         return failures

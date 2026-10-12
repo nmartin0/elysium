@@ -209,3 +209,36 @@ def notify_sync_overdue(last_attempts: list, user_id: str, store,
         return False
     store.record_notified(_OVERDUE_KEY, user_id, summary)
     return True
+
+
+# --- Column drift between publications (R7) -------------------------
+
+_DRIFT_KEY = "column_drift"
+
+
+def notify_column_drift(drifts: list, recipients: list[str], store) -> int:
+    """Tells whoever can fix it that a column moved. Returns how many.
+
+    ONE NOTICE FOR THE RUN, like the health summary: five drifted
+    columns are usually one source change. Repeats of the same findings
+    are suppressed per recipient; different findings are news.
+    """
+    if not drifts:
+        return 0
+    lines = [str(drift) for drift in drifts]
+    summary = (f"{len(lines)} column(s) changed shape in the latest publication: "
+               f"{'; '.join(lines[:3])}" + (" and others" if len(lines) > 3 else "") + ".")
+    told = 0
+    for user_id in recipients:
+        if store.already_notified(_DRIFT_KEY, user_id, summary):
+            continue
+        if store.notify(
+            user_id, "mirror_health", summary,
+            detail=("Every value passed its checks; the column as a whole moved -- an "
+                    "emptier field, fewer distinct values, a shifted average. Usually a "
+                    "source that changed what it sends. Compare with the source before "
+                    "trusting reports built on it."),
+        ):
+            store.record_notified(_DRIFT_KEY, user_id, summary)
+            told += 1
+    return told
