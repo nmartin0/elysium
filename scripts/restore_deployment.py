@@ -150,7 +150,32 @@ def restore(backup_dir: Path, data_dir: Path, *, force: bool = False) -> dict:
     if warehouse.is_dir():
         shutil.copytree(warehouse, data_dir / WAREHOUSE)
 
+    report["erasures_reapplied"] = _keep_every_erasure(data_dir, Path(report["replaced_into"]))
     return report
+
+
+def _keep_every_erasure(data_dir: Path, aside: Path) -> int:
+    """Erasures survive a restore, and are applied again (R13).
+
+    THE ONE STORE A RESTORE MUST NOT ROLL BACK. The register only ever
+    grows, so the copy that was in place is a superset of any backup's:
+    restoring last month's register would forget this month's erasures,
+    and the restored lake -- older still -- would serve those people
+    again. So the register that was moved aside comes back, and every
+    erasure in it is marked unpurged: the next sync rewrites the
+    restored lake before anything is read from it, which is the
+    restore-time practice the owner chose for backups (2026-10-12).
+    """
+    from core.mirror.erasure import ErasureRegister
+
+    kept = aside / "erasures.db"
+    if kept.exists():
+        for suffix in ("", *_SIDECARS):
+            if (aside / f"erasures.db{suffix}").exists():
+                shutil.copy2(aside / f"erasures.db{suffix}", data_dir / f"erasures.db{suffix}")
+    if not (data_dir / "erasures.db").exists():
+        return 0
+    return ErasureRegister(data_dir / "erasures.db").mark_restored()
 
 
 # SQLite's companions to a database in WAL mode. Moved with it, or they
@@ -243,6 +268,10 @@ def main() -> int:
     # SAID OUT LOUD, because "nothing is deleted" helps only somebody
     # who knows where to look.
     print(f"What it replaced was moved, not deleted: {restored['replaced_into']}")
+    if restored.get("erasures_reapplied"):
+        print(f"{restored['erasures_reapplied']} erased key(s) will be erased from the restored "
+              f"lake again by the next sync. RUN python -m scripts.run_sync BEFORE STARTING "
+              f"THE SERVER.")
     print("THE DATA SILOS ARE NOT IN THIS BACKUP. Point the deployment at "
           "them before starting it.")
     return 0

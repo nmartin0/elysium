@@ -83,6 +83,11 @@ OWNED_DATABASES = (
     # Frozen sets: who was in a set at an instant. Not derivable from
     # anything else -- the membership is the record.
     "frozen_sets.db",
+    # THE ERASURE REGISTER (R13): salted hashes of who was forgotten,
+    # never their ids. Backed up so a restore onto a fresh machine still
+    # knows; and a restore over a live deployment keeps the NEWER copy
+    # (restore_deployment._keep_every_erasure), since it only grows.
+    "erasures.db",
     # The approvals queue -- database-authoritative since patch 276,
     # so there is no other copy of a waiting decision.
     "pending_writes.db",

@@ -403,6 +403,12 @@ class IcebergMirrorSync(MirrorSync):
         # warns -- see _resolve_undeclared_columns.
         self._ingest_undeclared_columns = ingest_undeclared_columns
         self._run_id = run_id
+        # ERASURE (R13): {(silo, table): (key columns, hasher, hashes)},
+        # set by run_sync from the register. Empty means nobody has
+        # been erased, and every read passes through untouched.
+        self.suppression: dict = {}
+        self.erased_still_in_source: set = set()
+        self._current_silo: str | None = None
         # adapters are the REAL, read-only ExternalReadAdapter instances
         # (Phase 1 -- structurally incapable of writing to the
         # customer's own data; see adapters/sqlite_adapter.py's own
@@ -508,6 +514,7 @@ class IcebergMirrorSync(MirrorSync):
         # by OBJECT TYPE (PA001-A1). Per-call rather than per-instance
         # because one IcebergMirrorSync syncs every table in turn.
         self._object_types = frozenset(object_types or ())
+        self._current_silo = silo_name
         self._accept_deletions = accept_deletions
         # Tables the operator has asked to rebuild ("silo.table"), for
         # a declared type change Iceberg cannot apply in place.
@@ -1195,7 +1202,19 @@ class IcebergMirrorSync(MirrorSync):
         # that backend, rather than this module reaching around the
         # interface into raw SQL.
         type_config = {"storage": {"table": table_name, "id_column": id_column}}
-        return adapter.read_all_rows(table_name, columns, type_config)
+        rows = adapter.read_all_rows(table_name, columns, type_config)
+        # ERASED PEOPLE STAY OUT (R13), dropped here -- before bronze,
+        # silver, the changelog or gold can hold them -- for as long as
+        # the source keeps returning them. Which erased keys it still
+        # returned is kept, so the register can say "erased here, still
+        # in the source".
+        suppression = self.suppression.get((self._current_silo, table_name))
+        if suppression is not None:
+            from core.mirror.erasure import suppress_rows
+
+            rows, seen = suppress_rows(rows, *suppression)
+            self.erased_still_in_source |= seen
+        return rows
 
     def _write_bronze(self, adapter, silo_name: str, table_name: str,
                        id_column: str, declared: list[str]) -> tuple[list[dict], bool]:

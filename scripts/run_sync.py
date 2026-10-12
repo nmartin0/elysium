@@ -61,6 +61,7 @@ from core.deployment_loader import (
     resolve_runtime_paths,
 )
 from core.mirror.classifications import record_classifications
+from core.mirror.erasure import ErasureRegister, apply_erasures, suppression_for
 from core.mirror.expectation_warnings import ExpectationWarnings
 from core.mirror.gold import build_gold, published_ids
 from core.mirror.iceberg_sync import IcebergMirrorSync
@@ -665,6 +666,10 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
             ingest_undeclared_columns=config.ingest_undeclared_columns,
         )
 
+        # ERASURES (R13): the register decides what every read drops.
+        erasures = ErasureRegister(runtime_paths.data_dir / "erasures.db")
+        sync.suppression = suppression_for(config.schema, erasures)
+
         failures = 0
         # WHICH TABLES DID NOT SYNC, so gold can skip exactly the
         # types that depend on them rather than all of them.
@@ -753,6 +758,20 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
         # sat unused, and nothing in the output said so.
         failures += _build_gold(sync, config, runtime_paths.data_dir,
                                  unsynced=unsynced, run_id=run_id, accepted=accepted)
+
+        # ERASURES NOT YET APPLIED TO THE LAKE -- a new request, or a
+        # restore that brought an older lake back -- are applied before
+        # anything else reads it, and the files removed outright.
+        if sync.suppression:
+            erasures.mark_source_cleared(sync.erased_still_in_source)
+            if sync.erased_still_in_source:
+                print(f"ERASURE  {len(sync.erased_still_in_source)} erased key(s) are still "
+                      f"returned by a source; suppressed, and still to be erased there")
+        if erasures.unpurged():
+            removed = apply_erasures(sync._catalog, config.schema, erasures,
+                                     runtime_paths.data_dir / "mirror")
+            print(f"ERASURE  applied: {sum(removed.values())} row(s) removed from "
+                  f"{len(removed)} table(s), older snapshots and their files deleted")
 
         # CLASSIFICATIONS, CARRIED TO EVERY COPY (R12) -- after gold, so
         # a table created by this run is labelled by this run, and never

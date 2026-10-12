@@ -311,6 +311,21 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     if runtime_paths is None:
         runtime_paths = resolve_runtime_paths()
 
+    # AN ERASURE NOT YET APPLIED STOPS THE SERVER (R13). After a restore
+    # every erasure is marked unpurged and the lake on disk may hold the
+    # people who asked to be forgotten; serving it, even once, would show
+    # them. The sync applies them -- so it must run first, and this says
+    # exactly that rather than serving and hoping.
+    erasures_db = runtime_paths.data_dir / "erasures.db"
+    if erasures_db.exists():
+        from core.mirror.erasure import ErasureRegister
+
+        if ErasureRegister(erasures_db).unpurged():
+            raise RuntimeError(
+                "Erasures are recorded that the mirror has not applied (usually after a "
+                "restore). Run `python -m scripts.run_sync` first; it applies them, and "
+                "this server will then start.")
+
     # ONE construction path. Everything derived from the configuration
     # files is built together, as an immutable DeploymentGeneration,
     # and the individual names below are VIEWS onto it rather than

@@ -1205,6 +1205,52 @@ CONTROLS = [
                "test_a_row_older_than_the_changelog_has_an_unknown_start"],
     ),
 
+    Control(
+        describes="R13: the unreferenced files are deleted",
+        path="core/mirror/erasure.py",
+        old="        for path in files:\n            path.unlink()\n    return removed",
+        new="        pass\n    return removed",
+        tests=["tests/unit/test_erasure.py::TestErasing::test_nothing_on_disk_holds_them_afterwards"],
+    ),
+    Control(
+        describes="R13: older snapshots and tags are dropped",
+        path="core/mirror/erasure.py",
+        old="            _forget_every_other_snapshot(catalog.load_table(identifier))",
+        new="            pass",
+        tests=["tests/unit/test_erasure.py::TestErasing::test_nothing_on_disk_holds_them_afterwards"],
+    ),
+    Control(
+        describes="R13: a sync drops erased rows on the way in",
+        path="core/mirror/iceberg_sync.py",
+        old="        if suppression is not None:\n            from core.mirror.erasure import suppress_rows",
+        new="        if False:\n            from core.mirror.erasure import suppress_rows",
+        tests=["tests/unit/test_erasure.py::TestErasing::test_while_the_source_still_returns_them_every_sync_drops_them"],
+    ),
+    Control(
+        describes="R13: a restore keeps the newer register",
+        path="scripts/restore_deployment.py",
+        old="    kept = aside / \"erasures.db\"\n    if kept.exists():",
+        new="    kept = aside / \"erasures.db\"\n    if False:",
+        tests=["tests/unit/test_erasure.py::TestARestore::test_the_register_is_the_newer_one",
+               "tests/unit/test_erasure.py::TestARestore::test_an_older_backup_does_not_bring_them_back"],
+    ),
+    Control(
+        describes="R13: the cascade reaches what links to the person",
+        path="core/mirror/erasure.py",
+        old="        frontier = found - erased",
+        new="        frontier = set()",
+        tests=["tests/unit/test_erasure.py::TestErasing::test_a_dry_run_counts_and_changes_nothing",
+               "tests/unit/test_erasure.py::TestErasing::test_nothing_on_disk_holds_them_afterwards"],
+    ),
+
+    Control(
+        describes="R13: the server refuses a lake with unapplied erasures",
+        path="api/app.py",
+        old="        if ErasureRegister(erasures_db).unpurged():",
+        new="        if False:",
+        tests=["tests/unit/test_erasure.py::test_the_server_will_not_serve_a_lake_with_unapplied_erasures"],
+    ),
+
 ]
 
 
