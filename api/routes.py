@@ -1300,6 +1300,8 @@ class DeploymentConfigResponse(BaseModel):
     #: AR-5: whether step replies are constrained to the step schema.
     #: Defaulted so an older client reading this still parses.
     constrain_steps: bool = False
+    #: Formerly BLOCKING 6: classification labels decide field access.
+    label_enforcement: bool = False
     # THE FOUR OPERATIONAL TOGGLES ADDED IN OCTOBER, and the reason
     # `F-06` matters rather than a tidiness complaint: each was added to
     # DeploymentConfig and NOT here, so the panel that answers "why is
@@ -3151,6 +3153,7 @@ def deployment_config_route(request: Request,
         "sync_interval_hours": _declared_sync_interval(config),
         "max_consecutive_invalid_steps": config.max_consecutive_invalid_steps,
         "constrain_steps": config.constrain_steps,
+        "label_enforcement": config.label_enforcement,
         "max_concurrent_requests": config.max_concurrent_requests,
         "security_attribute": config.security_attribute,
         "read_from_mirror": config.read_from_mirror,

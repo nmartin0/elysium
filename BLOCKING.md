@@ -63,19 +63,19 @@ which was whether the layout holds.
 | `THIRD_PARTY_EXTENSIONS.md` | a design, unbuilt. Its finding about module federation kept below, because it is the kind of thing a later reader would otherwise rediscover the hard way |# Blocked on a decision
 | `TRIAGE.md` | fully absorbed: its 45 ids are CSV rows, its mutation sweep is the 70 declared controls in `scripts/check_controls.py`, its reachability sweep is the `WIRED-` rows |
 | `LIVE_UPDATES_AND_PIPELINE_BUILDER.md` | nothing built; its security decision kept below because it is the reason the design is shaped as it is |
-| `TRIGGERS_AND_PLUGINS.md` | part one built (patches 264-280), including the automation refusal; part two superseded by its own successor, now item 9. Its three unanswered risks are item 11 |## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
+| `TRIGGERS_AND_PLUGINS.md` | part one built (patches 264-280), including the automation refusal; part two superseded by its own successor, now item 8. Its three unanswered risks are item 10 |## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
 | `MEDALLION_PIPELINE.md` | the pipeline is built and all five owner decisions (D1-D5) were answered in September. Its rule S1 now lives in `standardise.py`, and the test that READ this file at runtime is behavioural instead |
-| `FUSION_AND_IDENTITY.md` | the backend is built -- `matching.py`, `identity.py`, `identity_decisions.py` with a `merge_decisions` table, and inference OFF by default. The reviewer screen is not, and its MAC problem is item 12 |**The sharpest one, and it outranks the rest.** Reproduced: the policy
+| `FUSION_AND_IDENTITY.md` | the backend is built -- `matching.py`, `identity.py`, `identity_decisions.py` with a `merge_decisions` table, and inference OFF by default. The reviewer screen is not, and its MAC problem is item 11 |**The sharpest one, and it outranks the rest.** Reproduced: the policy
 | `ELT_ROADMAP.md` | every phase it defines (0, 0b, 1) is DONE. What remains is a dependency chain, not a plan, and it is below with the measurement that corrected it |validator rejects every `write:` grant, while the write path demands
 | `HOT_RELOAD_PLAN.md` | built. Its six rules are named in the 26 places that cited step numbers; its most fragile assumption is now a test; and one of its open questions (`DeploymentConfig` not frozen) has since been answered |one per field. So no valid policy can authorise a cross-type action at
 | `DEV_UI.md` | **RESTORED, AND THE ROW ABOVE WAS WRONG TWICE.** It claimed 1,271 lines of interface design were "none of it buildable without a front-end agent" and pointed at an item that renumbering had long since made something else. Both halves were disproved by building from it: the measured palette, the type scale, the density ladder and the spine are being built straight out of the file. It is NOT consumed, it is not deleted, and it should not be again -- a measured fact in a deleted file is a measured fact lost, and this one cost a whole type scale reinvented wrong at every step |
-| `IDEAS.md` | investigations. Most are SHIPPED or ANSWERED; what is open needs a capable model, and is item 14 |
-| `UI_ROADMAP.md` | 2,143 lines of front-end plan. Its one backend finding -- an unbounded search filling the model's context -- is item 15, with the code evidence |
-| `BACKLOG.md` | its sections are absorbed: 0c, 0d4 and 0d5 were worked in patches 475-480; section 1 is item 14, section 2's one open piece is item 16, section 5 pointed here already |---
+| `IDEAS.md` | investigations. Most are SHIPPED or ANSWERED; what is open needs a capable model, and is item 13 |
+| `UI_ROADMAP.md` | 2,143 lines of front-end plan. Its one backend finding -- an unbounded search filling the model's context -- is item 14, with the code evidence |
+| `BACKLOG.md` | its sections are absorbed: 0c, 0d4 and 0d5 were worked in patches 475-480; section 1 is item 13, section 2's one open piece is item 15, section 5 pointed here already |---
 | `ROADMAP.md` | its numbered backend list is done or explicitly NOT DOING; pagination shipped as `page_token`. Its one unbuilt track, external writeback, was decided and built -- see the `write_targets` row |
-| `UNIFIED_ROADMAP.md` | the file that started this method: on 21 September it read every plan against the CODE and found seven built things described as open. Its remaining entries are items 32-35; its one correction to me is in item 15 |# Blocked on a decision
+| `UNIFIED_ROADMAP.md` | the file that started this method: on 21 September it read every plan against the CODE and found seven built things described as open. Its remaining entries are items 32-35; its one correction to me is in item 14 |# Blocked on a decision
 | `gold_history` (was item 1) | DECIDED and BUILT, patches 507-509: the owner wanted both a reader and a route. It leaves this file by its own rule -- the decision survives in the code, the `NEW-7` checklist row and the commits |
-| saved selections (was item 17) | BUILT as frozen sets: `core/frozen_sets.py`, `/api/frozen-sets`, a `frozen_set` reference on every route that takes a set, and Browse's Frozen sets popover. Unblocked by precedent -- Foundry's static object sets are "a list of primary keys" -- which made "what happens when the publication is forgotten" dissolve: membership is keys, the publication is metadata. DEV_UI 11.5's write-path question about bulk ACTION is unchanged and lives with item 8 |
+| saved selections (was item 17) | BUILT as frozen sets: `core/frozen_sets.py`, `/api/frozen-sets`, a `frozen_set` reference on every route that takes a set, and Browse's Frozen sets popover. Unblocked by precedent -- Foundry's static object sets are "a list of primary keys" -- which made "what happens when the publication is forgotten" dissolve: membership is keys, the publication is metadata. DEV_UI 11.5's write-path question about bulk ACTION is unchanged and lives with item 7 |
 | `write_targets` (was item 17) | DECIDED and BUILT: off by default, a separate block, existing deployments warned rather than broken |
 | `check_controls` in CI (was item 4) | the 70 controls now run as their own CI job. Inert until Actions is enabled, which only the owner can do -- but the mechanism exists rather than being a suggestion |
 | `AUDIT_CHECKLIST.csv`'s SEC rows (was item 3) | all 25 inherited findings closed. Three real and fixed (SEC-09, SEC-19, SEC-22), three were guards whose call sites nothing held (SEC-14, SEC-27, and the one behind SEC-04), the rest covered, moot or unactionable |
@@ -90,6 +90,7 @@ which was whether the layout holds.
 | `LLM3-3` (was item 1) | DECIDED and BUILT, a third option the entry did not contain: the value is COPIED into `_security` at sync and MAC reads that, so no later stage can change who sees what by touching the data. Proven by overwriting every `region` in gold and watching MAC partition unchanged. NOT the side table -- four stages had to be told to carry the column, which is the cost a side table would not have |
 | `manifest` bootstrap (was item 6) | CLOSED PERMANENTLY: the lake's manifest is read-only input and must never become configuration. The reason now lives in `read_manifests`' own docstring, where somebody would reach for it, because planning documents get consumed and a reason in a deleted list is rediscovered the hard way |
 | `A6` (was item 1) | RESOLVED, not deferred: leave it. Cross-table snapshot consistency is a CATALOG feature and a REST catalog is a service to run, back up and secure for a property no wrong answer has been observed from. THE TRIGGER, recorded so it is not re-argued: when a SECOND process writes to the lake |
+| `read:label:` grants (was item 6) | DECIDED and BUILT, 12 October: a classification label both GRANTS and RESTRICTS -- `read:label:pii` reads every pii field of a type the role can read, and a pii field is unreadable without it whatever was granted by name (demoted to `discover:`). A label never opens a type. Opt-in per deployment (`access: label_enforcement`), compiled into ordinary grants at load; `scripts/label_access_diff.py` says who gains and loses what before the switch is flipped |
 ---
 
 # Blocked on a decision
@@ -103,7 +104,7 @@ mine to answer.
 round trip because it needs `ruamel.yaml`. THAT IS FALSE. `DEP-4` is
 phonenumbers, holidays, email-validator and ftfy; `ruamel` is not a
 `DEP` item at all. I invented the link in an earlier patch and it has
-sat here since, making this item look like a blocker for item 7 when
+sat here since, making this item look like a blocker for item 6 when
 it is not.
 
 **ALL SIX ALREADY CARRY VERDICTS** in the checklist -- ADOPT, ADOPT,
@@ -224,54 +225,7 @@ generation answered this" much harder to state).
 
 **Blocked on:** product design, and there is no front-end agent now.
 
-## 6. Grant by TAG rather than by field name
-
-From `ACCESS_CONTROL_PROPOSAL.md`. Declare a vocabulary -- `pii`,
-`financial`, `internal`, `restricted` -- tag FIELDS with it, and let a
-role grant `read:tag:pii` instead of enumerating every field.
-
-**The burden it answers was counted rather than asserted**, which is
-why the proposal is worth keeping whole:
-
-        10 types x 15 fields   ->    160 grant strings PER ROLE
-        50 types x 20 fields   ->  1,050 grant strings PER ROLE
-       120 types x 25 fields   ->  3,120 grant strings PER ROLE
-
-Every one hand-written, per role, per deployment. Add a property to a
-type and every role that should see it needs editing.
-
-The shape has a real safety property: a new property is UNREADABLE
-until tagged, which is the deny-by-default behaviour already in place,
-now at field level. It also proposes inheriting tags from the type and
-declaring only exceptions.
-
-**TWO THINGS I SAID ABOUT THIS WERE WRONG, corrected 5 October.**
-
-I warned of a FAIL-OPEN HAZARD, citing ABAC precedent that "any
-mismatch between principal and resource tags creates either silent
-access denials or silent grants". THAT DOES NOT APPLY TO THIS DESIGN.
-The proposal above grants BY tag, so an untagged field is covered by
-no grant and is unreadable -- which the entry already said and I did
-not read carefully enough. It fails closed, and the AWS hazard is
-about a different shape: matching resource tags against principal tags,
-where a broad policy can sweep in something nobody tagged.
-
-I also proposed HIERARCHICAL ROLES as a simpler substitute, on the
-precedent that "the best practice is to aim for reduced, manageable
-roles and permissions, or the use of a hierarchy in roles for
-inheritance, rather than a large number of roles". That is a real
-pattern and a real answer -- to a DIFFERENT burden. Inheritance stops
-one role repeating another's grants. It does nothing about the 160
-grant strings a single role needs, which is what the count above
-measures. The two are complementary, not alternatives.
-
-**Blocked on:** this changes what a grant MEANS, and every existing
-`policy.yaml` with it. Nothing of it is built -- no tags anywhere in
-`core/` or `api/` -- so it is a decision before it is work. The
-trigger stands: a deployment whose per-field grants are large enough
-that nobody reads them before editing.
-
-## 7. Writing configuration from the UI
+## 6. Writing configuration from the UI
 
 From `CONFIG_ROUND_TRIP_AND_UI_KIT.md`. Its own finding is why it is
 hard: **the configuration files are mostly COMMENTS**, so a naive
@@ -285,7 +239,7 @@ answers before it is even possible.
 **Blocked on:** that dependency call, and on whether configuration
 should be editable from the UI at all.
 
-## 8. Object Explorer phases 3 to 5
+## 7. Object Explorer phases 3 to 5
 
 Phases 1 and 2 are built. **The blocker they existed to remove is
 gone:** the plan opens with "our filter is equality only ... so
@@ -301,7 +255,7 @@ act on; they do not answer it.
 
 **Blocked on:** that write-path decision.
 
-## 9. A plugin API, and the reason module federation is not it
+## 8. A plugin API, and the reason module federation is not it
 
 `THIRD_PARTY_EXTENSIONS.md` designs third-party extensions. None of it
 is built, and whether Elysium should have them at all is a product
@@ -325,7 +279,7 @@ code.
 **Blocked on:** whether to have an extension story at all. Everything
 downstream of that is design work that cannot start first.
 
-## 10. Live updates, and the decision that shapes them
+## 9. Live updates, and the decision that shapes them
 
 Nothing is built -- no SSE, no `EventSource`, no streaming response
 anywhere in `api/`. What makes the design worth keeping is its
@@ -379,7 +333,7 @@ at all. IF DECLINED, DELETE `core/change_hints.py` -- it has no other
 purpose and should not sit there looking load-bearing. The vulture
 whitelist says so too.
 
-## 11. Three questions triggers raise and nobody has answered
+## 10. Three questions triggers raise and nobody has answered
 
 Triggers are built. `TRIGGERS_AND_PLUGINS.md` names three risks that
 are "about volume rather than authority", and none of them is a code
@@ -409,7 +363,7 @@ second is a product decision about how much friction an automation
 should carry, and the third is a design choice with cost on both
 sides.
 
-## 12. What the interface should be
+## 11. What the interface should be
 
 `DEV_UI.md`, written after the owner said the interface is BOTH
 unfinished and disjointed. **Its diagnosis is the part worth keeping**,
@@ -444,7 +398,7 @@ contrast is not a target.
 **Blocked on:** a front-end agent, and the owner's appetite for a
 redesign rather than more features.
 
-## 13. Agent-loop efficiency, which needs a machine with a model
+## 12. Agent-loop efficiency, which needs a machine with a model
 
 `IDEAS.md`'s open investigations all need traces from a real model on
 real hardware. The measurements already taken are kept because
@@ -621,7 +575,7 @@ measured.
 would reopen plan mode and constrained decoding -- both trade compute
 the CPU does not have.
 
-## 14. Context rot, and a 10,000-id search behind it
+## 13. Context rot, and a 10,000-id search behind it
 
 `UI_ROADMAP.md` calls this "a risk to what already exists, not a
 feature", and it is the only part of that file that is not front-end
@@ -659,7 +613,7 @@ capped and the output side is not.
 
 **Two things are wanted, and only one is mine to do.** Item 17 is
 measurement -- task completion rate against context size at the
-midpoint of a task, which needs a capable model and is item 15's
+midpoint of a task, which needs a capable model and is item 14's
 blocker too. Item 18 is the cap itself.
 
 **Blocked on:** a model to validate the cap against, and the
@@ -669,7 +623,7 @@ that matters: told its limit was 20 when given 32 ids, a real model
 one object at a time until the duplicate guard stopped it". A cap
 chosen without measuring is how that happens again.
 
-## 15. PostgreSQL row-level security for MAC
+## 14. PostgreSQL row-level security for MAC
 
 Held with a trigger named, alongside column `GRANT` with `SET ROLE`.
 Elysium enforces MAC in the mediator today; pushing it into the
@@ -685,7 +639,7 @@ Databricks' SecureView barrier forces full scans for the same reason.
 it is not. `pgserver` has no wheel for Python 3.13 (item 3), so the
 real-PostgreSQL tests cannot run on the machine that gates patches.
 
-## 16. The help assistant
+## 15. The help assistant
 
 A larger design, written and unbuilt. It would be an agent explaining
 Elysium itself rather than a customer's data.
@@ -764,7 +718,7 @@ files reference the SQLite adapter, most of them tests using it as the
 cheap real database, and the write path is where a mistake reaches a
 customer's database. Days, not hours -- but no decision, so not here.
 
-## 17. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
+## 16. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
 
 **Blocked on:** the owner, and on money and calendar time rather than
 engineering.
@@ -814,7 +768,7 @@ an audit is ever bought:
 
 Months, not a patch.
 
-## 18. Owning the UI kit, and when to start
+## 17. Owning the UI kit, and when to start
 
 **Blocked on:** nothing. This is a DECISION ALREADY TAKEN, recorded
 here so the next person does not reopen it from scratch.

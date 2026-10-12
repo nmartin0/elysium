@@ -39,6 +39,15 @@ llm:
   # reverted for repeating its first step (see git history).
   model: "phi4-mini"
 
+# CLASSIFICATION LABELS DECIDE FIELD ACCESS (formerly BLOCKING 6). With this on,
+# a field labelled `pii` (ontology_schema.yaml, `classification:`) is
+# readable only by roles holding `read:label:pii` -- and that one grant
+# reads every pii field in the types the role can read. Off by default;
+# run `python -m scripts.label_access_diff` first to see who would gain
+# and lose what.
+# access:
+#   label_enforcement: true
+
 agent:
   max_hops: 8
   # How long one query may spend gathering before it answers from what it

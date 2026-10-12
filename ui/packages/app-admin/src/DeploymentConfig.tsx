@@ -47,6 +47,8 @@ interface DeploymentConfigBody {
   max_consecutive_invalid_steps: number
   /** AR-5: step replies constrained to the step schema. */
   constrain_steps?: boolean
+  /** Formerly BLOCKING 6: classification labels decide field access. */
+  label_enforcement?: boolean
   max_concurrent_requests: number
   security_attribute: string
   read_from_mirror: boolean
@@ -249,6 +251,7 @@ export default function DeploymentConfig({ onSessionExpired }: { onSessionExpire
               ['Object types', config.object_type_count],
               ['Action types', config.action_type_count],
               ['Security attribute', config.security_attribute],
+              ['Classification labels decide field access', config.label_enforcement ? 'yes' : 'no'],
               ['Reading from mirror', config.read_from_mirror ? 'yes' : 'no'],
             ],
           ],

@@ -33,8 +33,9 @@ evolution -- every time a label changed; a property is one metadata
 commit, readable by anything that reads the catalog, and does not touch
 a snapshot.
 
-LABELS ONLY. Nothing here decides who may read anything; see
-core/ontology/classifications.py and BLOCKING 6.
+LABELS ONLY. Nothing here decides who may read anything; where a
+deployment lets labels decide that, the rule is
+core/ontology/classifications.compile_label_access.
 """
 
 import json

@@ -1285,6 +1285,37 @@ CONTROLS = [
                "test_a_change_to_values_is_reported_and_nothing_live_changes"],
     ),
 
+    Control(
+        describes="B6: a labelled field needs its label",
+        path="core/ontology/classifications.py",
+        old="                elif field_grant in grants:\n                    grants.discard(field_grant)",
+        new="                elif False:\n                    grants.discard(field_grant)",
+        tests=["tests/unit/test_labels_decide_field_access.py::TestTheRule::test_a_labelled_field_needs_its_label_whatever_was_granted_by_name",
+               "tests/unit/test_labels_decide_field_access.py::TestThroughTheRealMediator::test_on_a_labelled_field_is_withheld_without_its_label"],
+    ),
+    Control(
+        describes="B6: a label never opens a type",
+        path="core/ontology/classifications.py",
+        old=("            if f\"read:{object_type}\" not in grants:\n"
+             "                continue\n            for field_name, info"),
+        new="            if False:\n                continue\n            for field_name, info",
+        tests=["tests/unit/test_labels_decide_field_access.py::TestTheRule::test_a_label_never_opens_a_type"],
+    ),
+    Control(
+        describes="B6: the mediators decide with the compiled roles",
+        path="core/deployment_loader.py",
+        old="    if not config.label_enforcement:\n        return config.roles",
+        new="    if True:\n        return config.roles",
+        tests=["tests/unit/test_labels_decide_field_access.py::TestThroughTheRealMediator::test_on_a_labelled_field_is_withheld_without_its_label"],
+    ),
+    Control(
+        describes="B6: a label grant must name a label in use",
+        path="core/intermediate_layer/policy_validation.py",
+        old="        if label not in declared:",
+        new="        if False:",
+        tests=["tests/unit/test_labels_decide_field_access.py::TestTheGrantItself::test_a_label_nothing_carries_is_refused"],
+    ),
+
 ]
 
 

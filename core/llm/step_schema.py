@@ -8,7 +8,7 @@ synthesis is prose. So the step call is constrained and synthesis is
 not, which is the split this module exists to make possible.
 
 WHAT IT CONSTRAINS IS WHAT THE BENCH MEASURED GOING WRONG. On the
-deployment's own model, 2026-10-11 (BLOCKING 13), every step-mode
+deployment's own model, 2026-10-11 (BLOCKING 12), every step-mode
 failure began with a value the schema below cannot express: a field
 named "count", the id field `transaction_id`, a wildcard "*", a list
 inside a one-value filter, an invented step name. Each is now outside

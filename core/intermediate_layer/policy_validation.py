@@ -147,6 +147,28 @@ def _validate_field_grants_have_their_type(role_name: str, granted: set) -> None
         )
 
 
+#: A grant on every field carrying one classification label (formerly BLOCKING 6).
+LABEL_GRANT_PREFIX = "read:label:"
+
+
+def labels_in(object_types: dict) -> set[str]:
+    """Every classification label any field declares.
+
+    READ HERE RATHER THAN THROUGH core.ontology.classifications, which
+    this layer sits below: the key and its two shapes -- one label, or a
+    list -- are all this needs, and the ontology validates them at load.
+    """
+    found: set[str] = set()
+    for type_schema in object_types.values():
+        for info in (type_schema.get("fields") or {}).values():
+            declared = info.get("classification")
+            if isinstance(declared, str):
+                found.add(declared)
+            elif declared:
+                found.update(str(label) for label in declared)
+    return found
+
+
 # THE GRANTS THAT ARE EXACT LITERALS, in the order an editor lists them.
 EXACT_GRANTS = (
     "manage:users",
@@ -170,6 +192,7 @@ def grantable(object_types: dict, action_types: dict, enabled_tools: list[str]) 
     role that cannot be saved.
     """
     grants = list(EXACT_GRANTS)
+    grants += [f"{LABEL_GRANT_PREFIX}{label}" for label in sorted(labels_in(object_types))]
     grants += [f"execute:{name}" for name in sorted(action_types)]
     grants += [f"tool:{name}" for name in sorted(enabled_tools)]
     for type_name in sorted(object_types):
@@ -272,6 +295,23 @@ def _validate_one_grant(role_name: str, grant: str, object_types: dict, action_t
                 f"Role {role_name!r}: grant {grant!r} names "
                 f"{target!r}, which is not a declared object type. "
                 f"Declared: {sorted(object_types)}"
+            )
+        return
+    if grant.startswith(LABEL_GRANT_PREFIX):
+        # READ BY CLASSIFICATION (formerly BLOCKING 6): every field carrying this
+        # label, within the types the role can read. CHECKED BEFORE the
+        # plain `read:` branch, which would take "label" for a type.
+        #
+        # THE LABEL MUST EXIST on some field, for the reason every grant
+        # here must name something real: `read:label:PII` against fields
+        # labelled `pii` would validate, permit nothing, and read as a
+        # permission.
+        label = grant.removeprefix(LABEL_GRANT_PREFIX)
+        declared = labels_in(object_types)
+        if label not in declared:
+            raise ValueError(
+                f"Role {role_name!r}: grant {grant!r} names label {label!r}, which no field "
+                f"carries. Labels in use: {sorted(declared) or 'none'}."
             )
         return
     if grant.startswith("read:"):

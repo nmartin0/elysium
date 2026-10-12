@@ -259,6 +259,12 @@ class DeploymentConfig:
     # OFF until the bench on the deployment's own model says it helps --
     # see core/llm/step_schema.py.
     constrain_steps: bool = False
+    # CLASSIFICATION LABELS DECIDE FIELD ACCESS (formerly BLOCKING 6): a labelled
+    # field needs read:label:<each label>, and read:label:<L> grants every
+    # L field in the types a role can read. OFF until a deployment turns
+    # it on -- applying the code changes nobody's access -- and
+    # scripts/label_access_diff.py says who would gain and lose what.
+    label_enforcement: bool = False
 
 
 logger = logging.getLogger(__name__)
@@ -626,6 +632,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             max_consecutive_duplicates=config["agent"]["max_consecutive_duplicates"],
             max_consecutive_invalid_steps=config["agent"]["max_consecutive_invalid_steps"],
             constrain_steps=bool(config["agent"].get("constrain_steps", False)),
+            label_enforcement=bool((config.get("access") or {}).get("label_enforcement", False)),
             max_concurrent_requests=_default_concurrency(config),
             # FOUR HOURS by default, not fifteen minutes. Long enough
             # that a reviewer can be in a meeting; short enough that a
@@ -1510,7 +1517,7 @@ def build_generation(
         if isinstance(example, dict) and example.get("display")
     )
     write_mediator = WriteMediator(
-        mediator, write_adapters, config.roles, config.action_types, config.generation,
+        mediator, write_adapters, access_roles(config), config.action_types, config.generation,
         # WRITES DESCRIBE THE SOURCE (D3), whatever reads are bound to.
         source_schema=config.schema,
         source_silo_for_type=_build_silo_for_type(config.schema),
@@ -1549,6 +1556,22 @@ def _with_shared_generation(config: DeploymentConfig, data_dir: Path) -> Deploym
         config,
         generation=ConfigHistory(data_dir / "config_history.db").allocate_generation(),
     )
+
+
+def access_roles(config: DeploymentConfig) -> dict:
+    """The roles the MEDIATORS decide reads with (formerly BLOCKING 6).
+
+    The declared roles, unless the deployment has turned label
+    enforcement on -- then the same roles with every classification
+    label compiled into ordinary field grants. config.roles stays as
+    declared: it is what the role editor shows and saves, and a compiled
+    grant saved back would become a declared one nobody wrote.
+    """
+    if not config.label_enforcement:
+        return config.roles
+    from core.ontology.classifications import compile_label_access
+
+    return deep_freeze(compile_label_access(config.roles, config.schema))
 
 
 def _with_effective_roles(config: DeploymentConfig, data_dir: Path) -> DeploymentConfig:
@@ -1715,7 +1738,7 @@ def load_deployment_bundle(
     read_schema, adapters, silo_for_type = _bind_reads_to_gold(
         config, adapters, silo_for_type, data_dir, serving=serving,
     )
-    mediator = DataMediator(read_schema, adapters, silo_for_type, config.roles,
+    mediator = DataMediator(read_schema, adapters, silo_for_type, access_roles(config),
                              write_log=write_log, audit_log=audit_log,
                              mirror_synced_at=mirror_synced_at,
                              # The SOURCE binding travels with it, for the
