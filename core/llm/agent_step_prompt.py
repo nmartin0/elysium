@@ -39,6 +39,7 @@ from core.llm.interface import LLMAdapter, LLMUnavailable, TokenUsage
 from core.llm.plan import PlanError, validate_plan
 from core.llm.plan import is_handle as _is_handle
 from core.llm.prompt_values import dumps_gathered
+from core.llm.step_schema import plan_schema, step_schema
 from core.llm.tracing import CHAT, span
 from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE
 from core.ontology.schema import is_searchable_field
@@ -685,7 +686,7 @@ def _build_user_message(query_text: str, gathered_so_far: list[dict],
 def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
               gathered_so_far: list[dict], tools: list[Function], writes_enabled: bool,
               visible_action_types: dict, *, deadline: float | None = None,
-              usage: TokenUsage | None = None) -> dict:
+              usage: TokenUsage | None = None, constrain: bool = False) -> dict:
     # Asks the model for exactly one next step, and validates that the
     # JSON response has the right KEYS for its step type -- NOT that
     # object_type/field_name are real entries in the ontology schema
@@ -711,7 +712,15 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
                     visible_schema, tools, writes_enabled, visible_action_types
                 ),
                 user_message,
-                json_mode=True, temperature=0, deadline=deadline, usage=usage,
+                # A SCHEMA WHERE `True` WAS (AR-5), not a new parameter:
+                # every adapter already treats a truthy json_mode as "JSON
+                # please", so one that knows nothing of schemas still asks
+                # for JSON, and every test double that takes json_mode
+                # keeps working unchanged.
+                json_mode=(step_schema(visible_schema, tools, writes_enabled,
+                                       visible_action_types)
+                           if constrain else True),
+                temperature=0, deadline=deadline, usage=usage,
             )
         # Logs the model's raw response BEFORE any parsing/validation --
         # silent by default (DEBUG), but genuinely valuable when a step's
@@ -983,7 +992,8 @@ def next_plan(client: LLMAdapter, query_text: str, visible_schema: dict,
               tools: list[Function], writes_enabled: bool,
               visible_action_types: dict, *, previous_failure: str | None = None,
               deadline: float | None = None,
-              usage: TokenUsage | None = None) -> list[dict]:
+              usage: TokenUsage | None = None, constrain: bool = False,
+              max_steps: int = 8) -> list[dict]:
     """The whole plan, in one model call (AL-4).
 
     THE PLANNER IS NEVER SHOWN A VALUE. There is no `gathered` here --
@@ -1037,7 +1047,13 @@ def next_plan(client: LLMAdapter, query_text: str, visible_schema: dict,
         with span(CHAT, "plan"):
             raw_content = client.chat(
                 system_prompt, user_message,
-                json_mode=True, temperature=0, deadline=deadline, usage=usage,
+                # AR-5, as next_step() does it -- with the plan's own
+                # shape, which bounds its length by max_hops.
+                json_mode=(plan_schema(visible_schema, tools, writes_enabled,
+                                       visible_action_types, max_steps)
+                           if constrain
+                           else True),
+                temperature=0, deadline=deadline, usage=usage,
             )
     except LLMUnavailable:
         # NOT CAUGHT HERE. Unlike next_step(), there is no gathered

@@ -117,7 +117,7 @@ class OllamaAdapter:
         )
 
     def chat(self, system_prompt: str, user_message: str,
-              json_mode: bool = False, temperature: float | None = None, *,
+              json_mode: "bool | dict" = False, temperature: float | None = None, *,
               deadline: float | None = None, usage: TokenUsage | None = None) -> str:
         # Raises requests.RequestException on network/timeout failure --
         # callers decide what "failure" should mean for them (e.g. the
@@ -144,7 +144,10 @@ class OllamaAdapter:
         }
         self._warn_if_context_is_tight(system_prompt, user_message)
         if json_mode:
-            payload["format"] = "json"
+            # A SCHEMA WHEN ONE IS GIVEN (AR-5): Ollama's structured
+            # outputs take a JSON Schema in the same key, and llama.cpp
+            # turns it into a grammar no reply can leave.
+            payload["format"] = json_mode if isinstance(json_mode, dict) else "json"
         if self.keep_alive is not None:
             payload["keep_alive"] = self.keep_alive
         # THE CALLER'S TEMPERATURE WINS over a configured one,

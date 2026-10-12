@@ -928,6 +928,65 @@ CONTROLS = [
                "test_asking_for_the_id_field_says_the_ids_are_already_in_hand"],
     ),
 
+    Control(
+        describes="bench: a postponed finish is granted when its gap closes",
+        path="core/agent/agentic_loop.py",
+        old="            if finish_postponed and _detect_asymmetry(gathered) is None:",
+        new="            if False:",
+        tests=["tests/unit/test_bench_failures_are_answered.py::TestThePostponedFinish::test_the_finish_it_asked_for_is_granted_once_the_gap_is_closed"],
+    ),
+    Control(
+        describes="bench: only a genuine finish is resumed",
+        path="core/agent/agentic_loop.py",
+        old="                finish_postponed = not already_nudged and fallback is None",
+        new="                finish_postponed = not already_nudged",
+        tests=["tests/unit/test_bench_failures_are_answered.py::TestThePostponedFinish::test_a_finish_fabricated_from_an_unusable_reply_is_not_resumed"],
+    ),
+
+    Control(
+        describes="AR-5: Ollama receives the step schema",
+        path="adapters/ollama_adapter.py",
+        old='            payload["format"] = json_mode if isinstance(json_mode, dict) else "json"',
+        new='            payload["format"] = "json"',
+        tests=["tests/unit/test_step_schema.py::TestItReachesTheServer::test_ollama_sends_the_schema_as_format"],
+    ),
+    Control(
+        describes="AR-5: a filter value is one scalar",
+        path="core/llm/step_schema.py",
+        old='_SCALAR = {"type": ["string", "number", "integer", "boolean"]}',
+        new='_SCALAR = {"type": ["string", "number", "integer", "boolean", "array"]}',
+        tests=["tests/unit/test_step_schema.py::TestWhatTheBenchsModelSentCannotBeSent::test_refused_by_the_grammar[list-filter]"],
+    ),
+    Control(
+        describes="AR-5: each type's fields belong to that type",
+        path="core/llm/step_schema.py",
+        old='    this_type = {"const": object_type}',
+        new='    this_type = {"type": "string"}',
+        tests=["tests/unit/test_step_schema.py::TestWhatTheBenchsModelSentCannotBeSent::test_a_field_of_another_type_is_refused"],
+    ),
+    Control(
+        describes="AR-5: next_step sends the schema when constrained",
+        path="core/llm/agent_step_prompt.py",
+        old="                           if constrain else True),",
+        new="                           if False else True),",
+        tests=["tests/unit/test_step_schema.py::TestItReachesTheServer::test_next_step_passes_a_schema_only_when_constrained"],
+    ),
+
+    Control(
+        describes="AR-5: a plan is no longer than the hop limit",
+        path="core/llm/step_schema.py",
+        old='                                "minItems": 1, "maxItems": max_steps}},',
+        new='                                "minItems": 1}},',
+        tests=["tests/unit/test_step_schema.py::TestThePlanSchema::test_a_plan_longer_than_the_hop_limit_is_refused"],
+    ),
+    Control(
+        describes="AR-5: a handle inside a list is refused",
+        path="core/llm/step_schema.py",
+        old='                                                                 "items": _PLAN_ID,',
+        new='                                                                 "items": _ID,',
+        tests=["tests/unit/test_step_schema.py::TestThePlanSchema::test_a_wrapped_handle_is_refused"],
+    ),
+
 ]
 
 

@@ -39,7 +39,7 @@ class ConcurrencyLimitedLLMAdapter:
     # a keyword misspelled here -- `deadlin=` -- would have reached the
     # adapter unchecked.
     def chat(self, system_prompt: str, user_message: str,
-              json_mode: bool = False, temperature: float | None = None, *,
+              json_mode: "bool | dict" = False, temperature: float | None = None, *,
               deadline: float | None = None, usage: TokenUsage | None = None) -> str:
         with self._limiter.limit():
             return self._wrapped.chat(system_prompt, user_message, json_mode, temperature,

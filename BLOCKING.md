@@ -532,10 +532,39 @@ Two still fail, differently:
   step had claimed it -- which one, the bench's summary could not say.
   `--show-steps` now prints every step and note per trial.
 
-**Blocked on:** `python -m scripts.llm_bench --cases
-dependent_choice,count_by_aggregate --show-steps` on that machine
-(~15 minutes), to see dependent_choice's trajectory. Plan mode's two
-failures are untouched.
+**THIRD RUN, with `--show-steps`: count_by_aggregate PASSES** -- refused
+`transaction_id`, it read the hint and chose `aggregate_object`.
+dependent_choice's trajectory showed the cause: nudged "1 lacks
+amount", it read exactly that, then read it AGAIN and ran out of hops
+holding a complete answer -- the nudge stayed in `Gathered so far` as
+an instruction, and nothing said it was done. A genuine finish the
+nudge postponed is now granted the moment its gap closes, and the note
+is rewritten to say so.
+
+Still visible in that trajectory and NOT addressed: the model read the
+same two ids twice (the link, then a search), and read three fields in
+three get_field calls where one get_object would do. Eight hops for a
+three-hop question.
+
+**AR-5 IS BUILT AND OFF** (`agent.constrain_steps`): every step reply,
+and every plan, can be constrained to a JSON Schema generated from the
+caller's visible schema. Every refused step above -- `count`,
+`transaction_id`, `*`, a list in a filter, a wrapped handle, an
+invented step name, a 26-step plan -- is outside it. Whether a 4B model
+answers BETTER inside a grammar is the question; "Let Me Speak Freely?"
+(Tam et al., 2024) found format restrictions hurt reasoning and not
+structure, and a step is structure.
+
+**Blocked on:** four bench runs on that machine, about two hours in
+all, run in this order, because each answers a different question:
+
+    python -m scripts.llm_bench                         # step, free: 7/7 now?
+    python -m scripts.llm_bench --constrain             # step, constrained
+    python -m scripts.llm_bench --mode plan             # plan, free
+    python -m scripts.llm_bench --mode plan --constrain # plan, constrained
+
+A constrained arm that errors at once means the Ollama there is older
+than 0.5 (structured outputs); `ollama --version` says.
 
 ## 14. Context rot, and a 10,000-id search behind it
 

@@ -71,7 +71,7 @@ class VLLMAdapter:
         return self.model
 
     def chat(self, system_prompt: str, user_message: str,
-             json_mode: bool = False, temperature: float | None = None, *,
+             json_mode: "bool | dict" = False, temperature: float | None = None, *,
              deadline: float | None = None, usage: TokenUsage | None = None) -> str:
         payload: dict[str, Any] = {
             "model": self.model,
@@ -87,7 +87,12 @@ class VLLMAdapter:
             # rather than assumed: a model that ignores it still
             # answers, and the caller already handles an answer it
             # cannot parse (F-15).
-            payload["response_format"] = {"type": "json_object"}
+            payload["response_format"] = (
+                # A SCHEMA WHEN ONE IS GIVEN (AR-5), in the OpenAI shape
+                # vLLM implements with guided decoding.
+                {"type": "json_schema",
+                 "json_schema": {"name": "step", "schema": json_mode}}
+                if isinstance(json_mode, dict) else {"type": "json_object"})
 
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         # NO LONGER THAN THE REQUEST HAS LEFT (E-11), the same rule the

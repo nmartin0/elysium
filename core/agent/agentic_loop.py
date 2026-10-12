@@ -545,7 +545,7 @@ class AgentLoop:
     def __init__(self, client: LLMAdapter, mediator: DataMediator, tools: list[Function] | None = None,
                  write_mediator: WriteMediator | None = None,
                  max_hops: int = 8, max_consecutive_duplicates: int = 2,
-                 max_consecutive_invalid_steps: int = 2):
+                 max_consecutive_invalid_steps: int = 2, constrain_steps: bool = False):
         # These stay fixed across every query this loop instance ever
         # runs -- constructed once per deployment, then run() called
         # once per actual user question. tools defaults to None, not []
@@ -568,6 +568,8 @@ class AgentLoop:
         self.max_hops = max_hops
         self.max_consecutive_duplicates = max_consecutive_duplicates
         self.max_consecutive_invalid_steps = max_consecutive_invalid_steps
+        # AR-5: each step reply constrained to the caller's step schema.
+        self.constrain_steps = constrain_steps
 
     @classmethod
     def from_deployment(cls, deployment, mediator: DataMediator,
@@ -585,6 +587,7 @@ class AgentLoop:
             max_hops=deployment.max_hops,
             max_consecutive_duplicates=deployment.max_consecutive_duplicates,
             max_consecutive_invalid_steps=deployment.max_consecutive_invalid_steps,
+            constrain_steps=deployment.constrain_steps,
         )
 
     @staticmethod
@@ -1435,6 +1438,7 @@ class AgentLoop:
                     previous_failure=failure,
                     deadline=context.deadline if context else None,
                     usage=context.token_usage if context else None,
+                    constrain=self.constrain_steps, max_steps=self.max_hops,
                 )
             except PlanError as e:
                 # AN UNUSABLE PLAN GETS THE SAME ONE REVISION AN
@@ -1615,6 +1619,9 @@ class AgentLoop:
         consecutive_invalid = 0
         consecutive_business_rule = 0
         asymmetry_nudged = False
+        # A GENUINE finish the nudge postponed. Granted as soon as the gap
+        # it named is closed -- see where it is read.
+        finish_postponed = False
         writes_enabled = self.write_mediator is not None
 
         # Computed ONCE per run(), not per hop -- same as visible_schema.
@@ -1682,6 +1689,7 @@ class AgentLoop:
                 step = next_step(
                     self.client, query_text, visible_schema, gathered, self.tools, writes_enabled,
                     visible_action_types, deadline=deadline, usage=usage,
+                    constrain=self.constrain_steps,
                 )
             except LLMUnavailable:
                 # MID-CALL: the adapter waited only what the deadline left.
@@ -1707,10 +1715,12 @@ class AgentLoop:
                     # genuine finish must not erase the fact that an
                     # unusable reply was produced on the way.
                     fabricated_finishes.append(fallback)
+                already_nudged = asymmetry_nudged
                 should_stop, asymmetry_nudged = self._handle_finish_attempt(gathered, asymmetry_nudged)
                 if should_stop:
                     stop_reason = fallback or StopReason.FINISHED
                     break
+                finish_postponed = not already_nudged and fallback is None
                 if fallback is not None:
                     logger.warning(f"fabricated finish ({fallback}), nudged for another hop")
                 continue
@@ -1798,6 +1808,28 @@ class AgentLoop:
                                        hops_used=hops_used)
             if step_stop_reason is not None:
                 stop_reason = step_stop_reason
+                break
+            # THE POSTPONED FINISH, GRANTED ONCE THE GAP IS CLOSED.
+            #
+            # MEASURED: the bench's dependent_choice tried to finish, was
+            # nudged "1 lacks amount", read exactly that -- and then read
+            # it AGAIN, was refused as a duplicate, and ran out of hops
+            # holding a complete answer. The nudge was still sitting in
+            # `Gathered so far`, an instruction to read 1's amount, and
+            # nothing said it had been done.
+            #
+            # The model had already chosen to finish; the nudge said "fill
+            # it in, otherwise finish is fine". With the gap filled there
+            # is nothing left between it and the finish it asked for, so
+            # the loop grants it rather than spending a model call -- a
+            # minute on that hardware -- to be asked again. Only a GENUINE
+            # finish is resumed: one fabricated from an unusable reply
+            # was never the model's decision.
+            if finish_postponed and _detect_asymmetry(gathered) is None:
+                for item in gathered:
+                    if item.get("step") == "completeness_check":
+                        item["note"] = "Gap filled; everything is gathered."
+                stop_reason = StopReason.FINISHED
                 break
         else:
             # The for loop exhausted every hop without ever break-ing --

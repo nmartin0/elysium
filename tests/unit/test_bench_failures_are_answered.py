@@ -292,3 +292,42 @@ class TestTheBenchCanShowItsSteps:
             "rejected_duplicate: You already have this",
             "get_field Transaction 1 amount -> 49.99",
         ]
+
+
+class TestThePostponedFinish:
+    """THE THIRD BENCH RUN, with --show-steps: dependent_choice tried to
+    finish, was nudged "1 lacks amount", read exactly that -- then read
+    it AGAIN, was refused as a duplicate, and ran out of hops holding a
+    complete answer. Replayed from its printed steps."""
+
+    BENCH = (
+        '{"step": "search_object", "object_type": "Customer", "filter": {"customer_id": "cust_001"}}',
+        '{"step": "get_field", "object_type": "Customer", "object_id": "cust_001", "field_name": "transactions"}',
+        '{"step": "get_field", "object_type": "Transaction", "object_id": 1, "field_name": "category"}',
+        '{"step": "get_field", "object_type": "Transaction", "object_id": 2, "field_name": "category"}',
+        '{"step": "get_field", "object_type": "Transaction", "object_id": 2, "field_name": "amount"}',
+        '{"step": "finish"}',
+        '{"step": "get_field", "object_type": "Transaction", "object_id": 1, "field_name": "amount"}',
+        # What the model sent next. It must never be asked for it.
+        '{"step": "get_field", "object_type": "Transaction", "object_id": 1, "field_name": "amount"}',
+    )
+
+    def test_the_finish_it_asked_for_is_granted_once_the_gap_is_closed(self, loop_and_user):
+        loop, user = loop_and_user
+        result, script = _run(loop, user, "What category was Ada Okafor's largest transaction?",
+                              *self.BENCH)
+
+        assert result.stop_reason == "finished"
+        assert len(script.shown) == 7
+        notes = [item["note"] for item in result.gathered if item.get("step") == "completeness_check"]
+        assert notes == ["Gap filled; everything is gathered."]
+
+    def test_a_finish_fabricated_from_an_unusable_reply_is_not_resumed(self, loop_and_user):
+        """THE CONTROL: the model never decided to finish, so closing
+        the gap does not decide it for it."""
+        loop, user = loop_and_user
+        replies = list(self.BENCH[:5]) + ['{"step": "teleport_object"}', self.BENCH[6]]
+        _, script = _run(loop, user, "What category was Ada Okafor's largest transaction?",
+                         *replies)
+
+        assert len(script.shown) > 7

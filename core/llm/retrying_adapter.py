@@ -67,7 +67,7 @@ class RetryingLLMAdapter:
     # Protocol's types at a layer every call passes through, and a
     # keyword misspelled here would reach the adapter unchecked.
     def chat(self, system_prompt: str, user_message: str,
-             json_mode: bool = False, temperature: float | None = None, *,
+             json_mode: "bool | dict" = False, temperature: float | None = None, *,
              deadline: float | None = None, usage: TokenUsage | None = None) -> str:
         for attempt in range(1, self._attempts + 1):
             try:

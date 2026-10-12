@@ -42,6 +42,7 @@ def _loop(mediator, steps):
     loop.max_hops = 6
     loop.max_consecutive_duplicates = 2
     loop.max_consecutive_invalid_steps = 2
+    loop.constrain_steps = False
     return loop
 
 

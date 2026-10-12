@@ -92,7 +92,7 @@ class ClaudeAgentSDKAdapter:
             environment.pop(name, None)
         return environment
 
-    def _command(self, system_prompt: str, json_mode: bool) -> list[str]:
+    def _command(self, system_prompt: str, json_mode: "bool | dict") -> list[str]:
         command = [
             self.executable,
             "-p",
@@ -119,7 +119,7 @@ class ClaudeAgentSDKAdapter:
         return command
 
     def chat(self, system_prompt: str, user_message: str,
-              json_mode: bool = False, temperature: float | None = None, *,
+              json_mode: "bool | dict" = False, temperature: float | None = None, *,
               deadline: float | None = None, usage: TokenUsage | None = None) -> str:
         # TEMPERATURE IS NOT SUPPORTED, and that is a real behavioural
         # difference rather than a detail. Both of Elysium's callers ask

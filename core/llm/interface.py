@@ -77,7 +77,7 @@ class LLMAdapter(Protocol):
     max_concurrent_requests: int | None
 
     def chat(self, system_prompt: str, user_message: str,
-              json_mode: bool = False, temperature: float | None = None, *,
+              json_mode: "bool | dict" = False, temperature: float | None = None, *,
               deadline: float | None = None, usage: TokenUsage | None = None) -> str:
         # Sends one message, returns raw response text, raises on
         # failure. No JSON parsing, no step validation -- callers

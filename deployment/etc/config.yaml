@@ -43,6 +43,11 @@ agent:
   # query_deadline_seconds: 300
   max_consecutive_duplicates: 2
   max_consecutive_invalid_steps: 2
+  # Constrain each step reply to the step vocabulary as a JSON Schema
+  # (AR-5): the model cannot name a field, type or step that does not
+  # exist. Needs Ollama 0.5+ or vLLM. Off until the bench says it helps:
+  #   python -m scripts.llm_bench --constrain
+  # constrain_steps: false
 
 # Tools the LLM may call, by name -- entirely optional; omitting this
 # section (or listing none) is completely valid, unlike llm:, which

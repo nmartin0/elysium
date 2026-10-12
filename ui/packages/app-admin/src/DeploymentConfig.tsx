@@ -45,6 +45,8 @@ interface DeploymentConfigBody {
   max_hops: number
   max_consecutive_duplicates: number
   max_consecutive_invalid_steps: number
+  /** AR-5: step replies constrained to the step schema. */
+  constrain_steps?: boolean
   max_concurrent_requests: number
   security_attribute: string
   read_from_mirror: boolean
@@ -237,6 +239,7 @@ export default function DeploymentConfig({ onSessionExpired }: { onSessionExpire
               ['Max hops', config.max_hops],
               ['Max consecutive duplicates', config.max_consecutive_duplicates],
               ['Max consecutive invalid steps', config.max_consecutive_invalid_steps],
+              ['Steps constrained to the schema', config.constrain_steps ? 'yes' : 'no'],
               ['Max concurrent requests', config.max_concurrent_requests],
             ],
           ],

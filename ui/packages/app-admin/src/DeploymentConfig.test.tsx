@@ -53,6 +53,15 @@ describe('DeploymentConfig', () => {
     expect(screen.getByText('8')).toBeInTheDocument()
   })
 
+  it('says whether step replies are constrained (AR-5)', async () => {
+    // A query that behaves differently once the grammar is on has to be
+    // explainable from this screen, not from config.yaml.
+    render(<DeploymentConfig onSessionExpired={() => {}} />)
+
+    const label = await screen.findByText('Steps constrained to the schema')
+    expect(label.parentElement).toHaveTextContent(/no$/)
+  })
+
   it('names silos and roles without describing them', async () => {
     /**
      * The endpoint deliberately sends NAMES only -- no silo connection

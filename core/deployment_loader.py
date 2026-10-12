@@ -255,6 +255,10 @@ class DeploymentConfig:
     # the deployment default.
     freshness_targets: Mapping[str, "FreshnessTarget"] = MappingProxyType({})
     declared_triggers: tuple = ()
+    # Whether each step's reply is constrained to the step schema (AR-5).
+    # OFF until the bench on the deployment's own model says it helps --
+    # see core/llm/step_schema.py.
+    constrain_steps: bool = False
 
 
 logger = logging.getLogger(__name__)
@@ -621,6 +625,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             query_deadline_seconds=config["agent"].get("query_deadline_seconds", 300),
             max_consecutive_duplicates=config["agent"]["max_consecutive_duplicates"],
             max_consecutive_invalid_steps=config["agent"]["max_consecutive_invalid_steps"],
+            constrain_steps=bool(config["agent"].get("constrain_steps", False)),
             max_concurrent_requests=_default_concurrency(config),
             # FOUR HOURS by default, not fifteen minutes. Long enough
             # that a reviewer can be in a meeting; short enough that a

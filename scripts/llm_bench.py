@@ -284,10 +284,14 @@ def describe_gathered(gathered: list[dict]) -> list[str]:
 
 
 def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
-        mode: str = "step", show_plan: bool = False, show_steps: bool = False) -> int:
+        mode: str = "step", show_plan: bool = False, show_steps: bool = False,
+        constrain: bool = False) -> int:
     if show_plan:
         _show_plans()
     generation = build_generation(paths.config_dir, paths.data_dir, paths.log_dir)
+    if constrain:
+        generation.loop.constrain_steps = True
+    print(f"steps {'CONSTRAINED to the step schema' if generation.loop.constrain_steps else 'free JSON'}")
     user = resolve_user_record(
         generation.config.users, USER_ID, generation.config.security_attribute
     )
@@ -544,6 +548,11 @@ def main() -> int:
                         help="print every step a trial took, with each "
                              "refusal and nudge where it happened. What a "
                              "failure needs to be diagnosed, not just named.")
+    parser.add_argument("--constrain", action="store_true",
+                        help="constrain each step reply to the step schema "
+                             "(AR-5), whatever config.yaml says. Run once "
+                             "with and once without; the difference is the "
+                             "finding.")
     parser.add_argument("--mode", choices=("step", "plan"), default="step",
                         help="step: one model call per hop (today's loop). "
                              "plan: the whole plan in one call (AL-4). Run "
@@ -587,7 +596,8 @@ def main() -> int:
             print(f"Known: {[c.name for c in CASES]}")
             return 2
     print(f"mode {args.mode}")
-    return run(paths, args.trials, cases, args.mode, args.show_plan, args.show_steps)
+    return run(paths, args.trials, cases, args.mode, args.show_plan, args.show_steps,
+               args.constrain)
 
 
 if __name__ == "__main__":
