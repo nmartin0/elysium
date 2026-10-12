@@ -532,6 +532,11 @@ class SearchResponse(BaseModel):
 class ObjectDetailResponse(BaseModel):
     id: str
     fields: dict[str, Any]
+    #: Fields whose value comes from an approved write the copy has not
+    #: caught up with: "pending" (still being applied to the source) or
+    #: "unsynced" (applied, not yet mirrored). Absent is the ordinary
+    #: case. See DataMediator.overlaid_fields (R67b).
+    overlaid: dict[str, str] = {}
     # See SearchResponse: the trace is recorded either way, and this is
     # what lets a caller ask for it.
     request_id: str | None = None
@@ -4746,7 +4751,15 @@ def get_object_detail_route(object_type: str, object_id: str, request: Request,
         current_user, object_type, object_id, field_names,
         context=request_context,
     )
-    return {"id": object_id, "fields": fields, "request_id": request_context.request_id}
+    # ONLY FIELDS THE CALLER WAS GIVEN A VALUE FOR. A field withheld, or
+    # an object outside their compartment (every field None), is never
+    # described -- "an approved write touched this" would otherwise say
+    # something about an object the read did not show.
+    overlaid = mediator.overlaid_fields(
+        object_type, object_id,
+        [name for name, value in fields.items() if value is not None])
+    return {"id": object_id, "fields": fields, "overlaid": overlaid,
+            "request_id": request_context.request_id}
 
 
 class ProposeActionRequest(BaseModel):

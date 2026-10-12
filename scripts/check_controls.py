@@ -1251,6 +1251,23 @@ CONTROLS = [
         tests=["tests/unit/test_erasure.py::test_the_server_will_not_serve_a_lake_with_unapplied_erasures"],
     ),
 
+    Control(
+        describes="R67b: only fields the caller was shown are described",
+        path="api/routes.py",
+        old="        [name for name, value in fields.items() if value is not None])",
+        new="        list(fields))",
+        tests=["tests/integration/test_the_object_page_says_what_is_overlaid.py::"
+               "test_an_object_outside_the_compartment_says_nothing"],
+    ),
+    Control(
+        describes="R67b: a pending approved write is named",
+        path="core/ontology/mediator.py",
+        old='            if field_name in pending:\n                found[field_name] = "pending"',
+        new='            if False:\n                found[field_name] = "pending"',
+        tests=["tests/unit/test_an_overlaid_value_says_so.py::"
+               "test_an_approved_write_still_being_applied_is_pending"],
+    ),
+
 ]
 
 

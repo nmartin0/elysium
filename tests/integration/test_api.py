@@ -965,7 +965,7 @@ def test_object_detail_unknown_type_returns_200_with_empty_fields(client):
     # request_id IS None HERE, deliberately: this returns before any
     # read happens, so there is no trace to ask for. An id promising an
     # empty trace is worse than no id.
-    assert response.json() == {"id": "whatever", "fields": {}, "request_id": None}
+    assert response.json() == {"id": "whatever", "fields": {}, "overlaid": {}, "request_id": None}
 
 
 def test_object_detail_and_search_routes_do_not_collide(client):

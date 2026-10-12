@@ -104,6 +104,28 @@ beforeEach(() => {
   mockedGetVisibleActionTypes.mockResolvedValue({})
 })
 
+describe('ObjectDetailPanel -- a value from an approved change (R67b)', () => {
+  it('says which field came from an approved change the copy has not caught up with', async () => {
+    mockedGetObjectDetail.mockResolvedValue({
+      fields: { name: 'Ada O.', account_id: null },
+      overlaid: { name: 'unsynced' },
+    })
+    renderPanel('Customer', 'cust_001')
+
+    const marker = await screen.findByText(/approved change, not yet in the synced copy/)
+    expect(marker.closest('.object-detail__field')).toHaveTextContent('Name')
+  })
+
+  it('says nothing when every value came from the copy', async () => {
+    // THE CONTROL: the ordinary case carries no marker.
+    mockedGetObjectDetail.mockResolvedValue({ fields: { name: 'Ada Okafor', account_id: null } })
+    renderPanel('Customer', 'cust_001')
+
+    await screen.findByText('Account id')
+    expect(screen.queryByText(/approved change/)).not.toBeInTheDocument()
+  })
+})
+
 describe('ObjectDetailPanel -- loading and basic rendering', () => {
   it('shows "Loading…" before the real fetch resolves', async () => {
     mockedGetObjectDetail.mockReturnValue(new Promise(() => {}))

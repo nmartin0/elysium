@@ -1011,6 +1011,40 @@ class DataMediator:
             }
         return visible
 
+    def overlaid_fields(self, object_type: str, object_id: Any,
+                        field_names: list[str]) -> dict[str, str]:
+        """Which of these fields a read answers from the WRITE LOG rather
+        than the copy it would otherwise read (R67b, R38).
+
+        THE OVERLAY IS RIGHT AND WAS SILENT. An approved write's value is
+        served over the mirror's older one -- read-your-writes -- and it
+        flows into every read, chart and export. Nothing on the ordinary
+        read path said so; only the approvals diff did. So a person
+        comparing the screen with the source system found two answers
+        and nothing explaining which was which.
+
+        TWO KINDS, the two questions the overlay answers in
+        _read_field_with_log_check: "pending" -- approved, still being
+        applied to the source; "unsynced" -- applied to the source, not
+        yet in the mirror's copy. Same precedence: a pending value wins.
+
+        THE CALLER PASSES ONLY FIELDS IT MAY READ AND DID READ, and this
+        says nothing about the value -- only where it came from -- so it
+        discloses nothing the read did not.
+        """
+        if self.write_log is None or self.write_log.is_deleted(object_type, object_id):
+            return {}
+        pending = self.write_log.get_pending_changes(object_type, object_id) or {}
+        applied = self.write_log.get_applied_changes_since(
+            object_type, object_id, self.mirror_synced_at) or {}
+        found = {}
+        for field_name in field_names:
+            if field_name in pending:
+                found[field_name] = "pending"
+            elif field_name in applied:
+                found[field_name] = "unsynced"
+        return found
+
     def _read_field_with_log_check(self, object_type: str, object_id: Any, field_name: str,
                                     adapter: ExternalReadAdapter, resolved_type_config: dict) -> Any:
         # THE shared "check the write log first, else the real adapter"

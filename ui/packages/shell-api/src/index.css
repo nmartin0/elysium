@@ -2590,6 +2590,13 @@
     margin-top: var(--space-tight);
   }
 
+  /* A value from an approved change the copy has not caught up with (R67b). */
+  .object-detail__overlaid {
+    font-size: var(--type-dense-size);
+    color: var(--text-secondary);
+    font-style: italic;
+  }
+
   /* Comparing two sets: the three regions and their union, each keepable. */
   .compare-sets {
     display: flex;

@@ -73,6 +73,8 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
   const objectType = params.objectType!
   const objectId = params.objectId!
   const [fields, setFields] = useState<Record<string, unknown> | null>(null)
+  // Fields served from an approved write not yet in the copy (R67b).
+  const [overlaid, setOverlaid] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [visibleActionTypes, setVisibleActionTypes] = useState<Record<string, ActionDef> | null>(null)
@@ -104,9 +106,13 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
       // own header comment on why) -- asserted to the real, known
       // success shape here, matching api/routes.py's own documented
       // contract for get_object_detail_route.
-      const response = (await getObjectDetail(objectType, objectId)) as { fields: Record<string, unknown> }
+      const response = (await getObjectDetail(objectType, objectId)) as {
+        fields: Record<string, unknown>
+        overlaid?: Record<string, string>
+      }
       if (isStale(thisRequestId)) return
       setFields(response.fields)
+      setOverlaid(response.overlaid ?? {})
     } catch (err) {
       if (isStale(thisRequestId)) return
       if (handleIfSessionExpired(err, onSessionExpired)) return
@@ -311,6 +317,18 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
                   <span className="object-detail__withheld">Not permitted</span>
                 ) : (
                   renderFieldValue(fieldName, fields[fieldName])
+                )}
+                {/* WHERE THIS VALUE CAME FROM, when it is not the copy
+                    every other field came from (R67b): an approved
+                    change the source or the mirror has not caught up
+                    with. Without it the screen and the source system
+                    disagree and nothing says why. */}
+                {overlaid[fieldName] && (
+                  <span className="object-detail__overlaid">
+                    {overlaid[fieldName] === 'pending'
+                      ? ' approved change, still being applied'
+                      : ' approved change, not yet in the synced copy'}
+                  </span>
                 )}
               </dd>
             </div>
