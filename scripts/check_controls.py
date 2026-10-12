@@ -987,6 +987,21 @@ CONTROLS = [
         tests=["tests/unit/test_step_schema.py::TestThePlanSchema::test_a_wrapped_handle_is_refused"],
     ),
 
+    Control(
+        describes="AR-5: a date filter is ISO-8601",
+        path="core/llm/step_schema.py",
+        old="    return _TEMPORAL if data_type in _TEMPORAL_TYPES else _SCALAR",
+        new="    return _SCALAR",
+        tests=["tests/unit/test_step_schema.py::TestWhatTheBenchsModelSentCannotBeSent::test_a_date_that_is_not_iso_is_refused"],
+    ),
+    Control(
+        describes="AR-5: group_by is a data field",
+        path="core/llm/step_schema.py",
+        old='        aggregate["group_by"] = _enum(data)',
+        new='        aggregate["group_by"] = _enum(list(fields))',
+        tests=["tests/unit/test_step_schema.py::TestWhatTheBenchsModelSentCannotBeSent::test_a_link_is_not_something_to_group_by"],
+    ),
+
 ]
 
 

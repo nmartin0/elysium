@@ -555,16 +555,33 @@ answers BETTER inside a grammar is the question; "Let Me Speak Freely?"
 (Tam et al., 2024) found format restrictions hurt reasoning and not
 structure, and a step is structure.
 
-**Blocked on:** four bench runs on that machine, about two hours in
-all, run in this order, because each answers a different question:
+**FOURTH RUN, 2026-10-12: STEP MODE 7 OF 7, FREE AND CONSTRAINED.**
 
-    python -m scripts.llm_bench                         # step, free: 7/7 now?
-    python -m scripts.llm_bench --constrain             # step, constrained
-    python -m scripts.llm_bench --mode plan             # plan, free
-    python -m scripts.llm_bench --mode plan --constrain # plan, constrained
+| arm | passed | wall clock | hops spent on refused steps |
+| --- | --- | --- | --- |
+| step, free JSON | 7/7 | 20.0 min | 2 (cust_001 as a Transaction id; `transaction_id`) |
+| step, constrained (AR-5) | 7/7 | 32.7 min | 3 (cust_001; a date "2"; group_by a link) |
 
-A constrained arm that errors at once means the Ollama there is older
-than 0.5 (structured outputs); `ollama --version` says.
+**AR-5 STAYS OFF, on that measurement.** Constraining did not pass
+anything the free arm failed, and cost 60% more wall clock --
+count_by_aggregate alone took 10 minutes against 3.4. The refusal
+messages had already taught the model what the grammar would have
+forbidden. Its two new refused steps were ones the schema ADMITTED and
+the executor refused (a non-ISO date, a link as group_by); the schema
+now forbids both, so a later run would be measuring a slightly better
+grammar. The time cost is the finding to re-test, not the pass rate:
+llama.cpp checks the grammar per token, on a CPU.
+
+**PLAN MODE WAS NOT MEASURED.** Both plan arms timed out warming their
+prefix -- three attempts of 1,800 s each -- straight after the step
+runs; the plan prompt differs from the step prompt, so it is a cold
+prefill, and the last one that completed took 1,210 s.
+
+**Blocked on:** plan mode alone, on a freshly started Ollama
+(`sudo systemctl restart ollama`, then):
+
+    python -m scripts.llm_bench --mode plan
+    python -m scripts.llm_bench --mode plan --constrain
 
 ## 14. Context rot, and a 10,000-id search behind it
 

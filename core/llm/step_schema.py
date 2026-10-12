@@ -59,10 +59,25 @@ def _enum(names) -> dict:
     return {"enum": sorted(names)}
 
 
-def _filter(searchable: list[str]) -> dict:
+#: A date or time written the one way the executor reads it.
+#: MEASURED: the constrained bench run sent {"transaction_date": "2"},
+#: which the grammar admitted and the executor refused as not ISO-8601
+#: -- a hop spent on a value the schema could have ruled out. A handle
+#: is admitted too, so a plan can still pass one along.
+_TEMPORAL = {"type": "string",
+             "pattern": "^([0-9]{4}-[0-9]{2}-[0-9]{2}.*|\\$[A-Za-z_][A-Za-z0-9_]*)$"}
+_TEMPORAL_TYPES = frozenset({"date", "timestamp", "timestamptz"})
+
+
+def _value_for(info: dict) -> dict:
+    data_type = str(info.get("data_type") or "").partition("@")[0]
+    return _TEMPORAL if data_type in _TEMPORAL_TYPES else _SCALAR
+
+
+def _filter(fields: dict, searchable: list[str]) -> dict:
     return {
         "type": "object",
-        "properties": {name: _SCALAR for name in sorted(searchable)},
+        "properties": {name: _value_for(fields[name]) for name in sorted(searchable)},
         "additionalProperties": False,
     }
 
@@ -105,18 +120,20 @@ def _steps_for_type(object_type: str, definition: dict, in_plan: bool = False) -
     ]
     if searchable:
         steps.append(_step("search_object", {"object_type": this_type,
-                                             "filter": _filter(searchable)},
+                                             "filter": _filter(fields, searchable)},
                            ["object_type", "filter"]))
-    aggregate = {"object_type": this_type, "filter": _filter(searchable),
+    aggregate = {"object_type": this_type, "filter": _filter(fields, searchable),
                  "aggregate": _enum(AGGREGATES)}
     if data:
+        # DATA ONLY, BOTH. A link is not aggregatable -- the mediator
+        # refuses it -- and the constrained bench run spent a hop on
+        # group_by "customer_id" because this once admitted it.
         aggregate["field_name"] = _enum(data)
-    if searchable:
-        aggregate["group_by"] = _enum(searchable)
+        aggregate["group_by"] = _enum(data)
     steps.append(_step("aggregate_object", aggregate, ["object_type", "aggregate"]))
     if links:
         steps.append(_step("search_around", {"object_type": this_type,
-                                             "filter": _filter(searchable),
+                                             "filter": _filter(fields, searchable),
                                              "link_field": _enum(links)},
                            ["object_type", "link_field"]))
     return steps

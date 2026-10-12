@@ -33,6 +33,7 @@ SCHEMA = {
         "fields": {
             "amount": {"type": "data", "data_type": "number"},
             "category": {"type": "data"},
+            "transaction_date": {"type": "data", "data_type": "date"},
             "customer_id": {"type": "link", "target": "Customer", "cardinality": "one"},
         },
     },
@@ -73,6 +74,18 @@ class TestWhatTheBenchsModelSentCannotBeSent:
     def test_refused_by_the_grammar(self, step):
         assert not _admits(step)
 
+    def test_a_date_that_is_not_iso_is_refused(self):
+        """The CONSTRAINED bench run's own step: the grammar admitted
+        it, and the executor refused it a hop later."""
+        assert not _admits({"step": "search_object", "object_type": "Transaction",
+                            "filter": {"transaction_date": "2"}})
+
+    def test_a_link_is_not_something_to_group_by(self):
+        """The constrained run's other admitted-then-refused step."""
+        assert not _admits({"step": "aggregate_object", "object_type": "Transaction",
+                            "aggregate": "count", "filter": {}, "field_name": "transaction_date",
+                            "group_by": "customer_id"})
+
     def test_a_field_of_another_type_is_refused(self):
         """Customer's `name` asked of a Transaction -- valid alone,
         wrong in combination, which is why each type is its own branch."""
@@ -101,7 +114,9 @@ class TestWhatTheBenchsPassingRunsSentIsAdmitted:
         {"step": "aggregate_object", "object_type": "Transaction",
          "filter": {"customer_id": "cust_001"}, "aggregate": "count"},
         {"step": "aggregate_object", "object_type": "Transaction", "filter": {},
-         "aggregate": "max", "field_name": "amount", "group_by": "customer_id"},
+         "aggregate": "max", "field_name": "amount", "group_by": "category"},
+        {"step": "search_object", "object_type": "Transaction",
+         "filter": {"transaction_date": "2026-05-14"}},
         {"step": "search_around", "object_type": "Customer", "filter": {"region": "us-west"},
          "link_field": "transactions"},
         {"step": "finish"},
