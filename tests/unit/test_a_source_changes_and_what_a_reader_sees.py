@@ -160,7 +160,10 @@ class Deployment:
             "p", "customers", "id", COLUMNS, COLUMN_TYPES, FIELDS_BY_COLUMN, **kwargs
         )
         silver = self.sync.catalog.load_table("p.customers").scan().to_arrow().to_pylist()
-        gold = build_gold(self.sync.catalog, "Customer", SCHEMA["Customer"], silver)
+        # THE SAME FLAG REACHES GOLD, as run_sync now carries it (R66):
+        # the one table here is Customer's primary storage.
+        gold = build_gold(self.sync.catalog, "Customer", SCHEMA["Customer"], silver,
+                          accept_deletions=kwargs.get("accept_deletions", False))
         return result, gold
 
     def sync_and_publish_cleanly(self, **kwargs):
@@ -301,40 +304,42 @@ class TestAChangeTheMirrorRefuses:
 
         assert result.row_count == 1, "the flag did not reach silver"
 
-    def test_BUT_GOLD_REFUSES_IT_TOO_AND_THE_READER_NEVER_MOVES(self, deployment):
-        """THE SECOND THING THIS MATRIX FOUND, and it is the one an
-        operator meets at a bad hour.
+    def test_AND_GOLD_TOO_SO_THE_READER_SEES_IT(self, deployment):
+        """R66, FOUND BY THIS MATRIX AND NOW CLOSED.
 
-        `accept_deletions` reaches the SYNC and nothing else.
-        `build_gold` has no such parameter: its own 50%-of-the-last-
-        publication guard is unconditional. So the documented remedy --
-        `--accept-deletions silo.table`, which `iceberg_sync.py:1161`
-        tells the operator to re-run with -- updates silver, leaves
-        gold refusing, and leaves every reader on the old rows. The
-        run reports the refusal, so it is not silent; what it is, is
-        incomplete, with no documented next step.
+        `accept_deletions` used to reach the SYNC and nothing else:
+        build_gold's own 50%-of-the-last-publication guard was
+        unconditional, so the documented remedy moved silver, left gold
+        refusing, and left every reader on the pre-deletion rows. This
+        test pinned that, and recorded why it was not fixed in passing:
+        the flag names `silo.table` and gold is keyed by object type.
 
-        PINNED RATHER THAN FIXED, and the reason is in the units. The
-        flag names `silo.table`; gold is keyed by OBJECT TYPE, and one
-        type can span several tables, so carrying the escape across
-        needs a decision about what the operator names and whether one
-        accepted table should license publishing a type built from
-        three. Changing the last guard in front of readers on the way
-        past is not something to do inside a patch about something
-        else. Recorded as R66.
-
-        NOT A BUG IN THE GUARD. Two independent layers refusing the
-        same dangerous change is the design working; the gap is that
-        only one of them has a door.
+        THE RULE CHOSEN (scripts/run_sync.deletions_accepted_for): a
+        type's guard yields when every table deciding WHICH OBJECTS IT
+        HAS was accepted -- its primary storage, and for an identity-
+        resolved type every storage. Here that is `p.customers`, the
+        one table.
         """
         deployment.execute("DELETE FROM customers WHERE id IN ('c2', 'c3')")
 
         _, gold = deployment.sync_and_publish(accept_deletions=True)
 
+        assert gold.published, gold.problems
+        assert deployment.what_a_reader_sees()["ids"] == ["c1"]
+
+    def test_gold_s_guard_still_holds_without_the_flag(self, deployment):
+        """THE CONTROL: silver is let through, gold is asked WITHOUT the
+        flag, and refuses -- the door opens only for the operator who
+        typed it, at each layer."""
+        deployment.execute("DELETE FROM customers WHERE id IN ('c2', 'c3')")
+        deployment.sync.sync_table("p", "customers", "id", COLUMNS, COLUMN_TYPES,
+                                   FIELDS_BY_COLUMN, accept_deletions=True)
+        silver = deployment.sync.catalog.load_table("p.customers").scan().to_arrow().to_pylist()
+
+        gold = build_gold(deployment.sync.catalog, "Customer", SCHEMA["Customer"], silver)
+
         assert not gold.published
         assert any("of the last publication is gone" in problem for problem in gold.problems)
-        # AND THE HALF THAT MATTERS: silver moved, gold did not, and
-        # the reader is still on the data from before the deletion.
         assert deployment.what_a_reader_sees() == INTACT
 
 
@@ -446,3 +451,32 @@ class TestARenamedColumn:
         assert "is gone" in drift, "the removal itself must still be reported"
         assert "RENAMED" not in drift
         assert "repoint" not in drift.lower()
+
+
+class TestWhichTablesLicenseAType:
+    """R66's rule, as a function: the tables deciding which objects a
+    type HAS must all be accepted."""
+
+    def _accepted(self, type_def, accepted):
+        from scripts.run_sync import deletions_accepted_for
+
+        return deletions_accepted_for(type_def, set(accepted))
+
+    PLAIN = {"storage": {"silo": "p", "table": "customers"}}
+    JOINED = {"storage": {"silo": "p", "table": "customers"},
+              "additional_storage": {"risk": {"silo": "r", "table": "risk"}}}
+    RESOLVED = {**JOINED, "identity": {"match_on": ["email"]}}
+
+    def test_a_plain_type_follows_its_table(self):
+        assert self._accepted(self.PLAIN, ["p.customers"])
+        assert not self._accepted(self.PLAIN, [])
+
+    def test_a_joined_type_follows_its_primary_only(self):
+        """An additional storage adds fields to rows the primary has; it
+        cannot shrink the type, so accepting it alone licenses nothing."""
+        assert self._accepted(self.JOINED, ["p.customers"])
+        assert not self._accepted(self.JOINED, ["r.risk"])
+
+    def test_an_identity_resolved_type_needs_every_source(self):
+        assert not self._accepted(self.RESOLVED, ["p.customers"])
+        assert self._accepted(self.RESOLVED, ["p.customers", "r.risk"])

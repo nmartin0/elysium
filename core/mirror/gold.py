@@ -353,7 +353,8 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
                additional_rows: "dict[str, list[dict]] | None" = None,
                approved_pairs: "list[tuple[str, str]] | None" = None,
                retain_publications: int = DEFAULT_RETAINED_PUBLICATIONS,
-               run_id: "str | None" = None) -> GoldResult:
+               run_id: "str | None" = None,
+               accept_deletions: bool = False) -> GoldResult:
     """Conform, audit and -- only if it passes -- publish one type.
 
     A TABLE THAT ALREADY HAS A PUBLICATION is written on a branch, so
@@ -486,7 +487,12 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
         # publication twice would let them disagree if a build landed
         # between (GOLD-4).
         published_now = table.scan().to_arrow().to_pylist()
-        previous_count = len(published_now)
+        # THE OPERATOR'S --accept-deletions, reaching gold (R66). It
+        # used to stop at silver, so a genuine mass deletion moved
+        # silver and left gold refusing, every reader on the old rows.
+        # Without a previous count the "more than half is gone" check
+        # has nothing to compare with; every other audit still runs.
+        previous_count = None if accept_deletions else len(published_now)
         previous_rows = published_now
 
     if first_build:

@@ -403,8 +403,32 @@ def _outcome_for(result) -> str:
     return "unchanged" if getattr(result, "unchanged", False) else "synced"
 
 
+def deletions_accepted_for(type_def: dict, accepted: set) -> bool:
+    """Whether the operator's --accept-deletions covers this TYPE (R66).
+
+    THE FLAG NAMES TABLES; GOLD IS KEYED BY TYPE. The rule: a type's
+    deletion guard yields when the operator accepted deletions in every
+    table that decides WHICH OBJECTS IT HAS.
+
+    For an ordinary type, and one with additional storage, that is the
+    PRIMARY table alone: an additional storage contributes fields to
+    rows the primary already has (a join, GOLD-5), so its rows vanishing
+    cannot shrink the type. Accepting it alone does not lift the guard.
+
+    For a type resolving identity across sources (GOLD-6) every storage
+    contributes objects, so EVERY storage must be accepted. One accepted
+    table never licenses publishing a type another unaccepted source
+    could also have emptied.
+    """
+    storages = [type_def.get("storage") or {}]
+    if type_def.get("identity"):
+        storages += list((type_def.get("additional_storage") or {}).values())
+    return all(f"{storage.get('silo')}.{storage.get('table')}" in accepted
+               for storage in storages)
+
+
 def _build_gold(sync, config, data_dir, unsynced: set | None = None,
-                 run_id: "str | None" = None) -> int:
+                 run_id: "str | None" = None, accepted: set | None = None) -> int:
     """One gold table per object type, audited before it is published.
     Returns how many were refused.
 
@@ -497,7 +521,9 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
                                  additional_rows=additional,
                                  approved_pairs=decisions.approved_pairs(object_type),
                                  retain_publications=config.retain_publications,
-                                 run_id=run_id)
+                                 run_id=run_id,
+                                 accept_deletions=deletions_accepted_for(
+                                     type_def, accepted or set()))
         except Exception as exc:  # noqa: BLE001 - per type, like a sync
             # PER TYPE, LIKE EVERY OTHER FAILURE IN THIS LOOP
             # (PA001-G5). Reading silver was already guarded a few
@@ -723,7 +749,7 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
         # type kept serving its PREVIOUS publication while fresh silver
         # sat unused, and nothing in the output said so.
         failures += _build_gold(sync, config, runtime_paths.data_dir,
-                                 unsynced=unsynced, run_id=run_id)
+                                 unsynced=unsynced, run_id=run_id, accepted=accepted)
 
         # CLASSIFICATIONS, CARRIED TO EVERY COPY (R12) -- after gold, so
         # a table created by this run is labelled by this run, and never

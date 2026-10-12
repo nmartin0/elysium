@@ -1039,6 +1039,52 @@ CONTROLS = [
         tests=["tests/unit/test_ollama_adapter.py::TestAJsonReplyIsCapped::test_a_json_call_is_capped"],
     ),
 
+    Control(
+        describes="R8: declared standardisation is told apart from a fault",
+        path="core/mirror/reconcile.py",
+        old="            if as_standardised == gold_comparable:",
+        new="            if False:",
+        tests=["tests/unit/test_reconcile_against_the_source.py::TestTheComparison::test_declared_standardisation_is_expected_not_a_fault"],
+    ),
+    Control(
+        describes="R8: a row only in gold is found",
+        path="core/mirror/reconcile.py",
+        old="    result.only_in_gold = sorted(set(gold_by_id) - set(source_by_id))",
+        new="    result.only_in_gold = []",
+        tests=["tests/unit/test_reconcile_against_the_source.py::TestAgainstARealSourceAndARealSync::test_changes_behind_the_mirror_are_found_exactly"],
+    ),
+    Control(
+        describes="R8: a difference fails the run",
+        path="scripts/reconcile.py",
+        old="    return 0 if all(result.clean or result.skipped for result in results) else 1",
+        new="    return 0",
+        tests=["tests/unit/test_reconcile_against_the_source.py::TestAgainstARealSourceAndARealSync::test_changes_behind_the_mirror_are_found_exactly"],
+    ),
+
+    Control(
+        describes="R66: run_sync carries --accept-deletions to gold",
+        path="scripts/run_sync.py",
+        old="                                 unsynced=unsynced, run_id=run_id, accepted=accepted)",
+        new="                                 unsynced=unsynced, run_id=run_id)",
+        tests=["tests/unit/test_accept_deletions_reaches_gold.py::test_the_accepted_deletion_reaches_the_reader"],
+    ),
+    Control(
+        describes="R66: gold honours an accepted deletion",
+        path="core/mirror/gold.py",
+        old="        previous_count = None if accept_deletions else len(published_now)",
+        new="        previous_count = len(published_now)",
+        tests=["tests/unit/test_a_source_changes_and_what_a_reader_sees.py::"
+               "TestAChangeTheMirrorRefuses::test_AND_GOLD_TOO_SO_THE_READER_SEES_IT"],
+    ),
+    Control(
+        describes="R66: an identity-resolved type needs every source accepted",
+        path="scripts/run_sync.py",
+        old="    if type_def.get(\"identity\"):",
+        new="    if False:",
+        tests=["tests/unit/test_a_source_changes_and_what_a_reader_sees.py::"
+               "TestWhichTablesLicenseAType::test_an_identity_resolved_type_needs_every_source"],
+    ),
+
 ]
 
 
