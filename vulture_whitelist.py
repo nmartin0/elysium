@@ -65,6 +65,8 @@ publication_retained
 not_shown
 # Comparing two sets: routes and response fields, the same reason.
 compare_sets_route
+# R12: pydantic calls the validator by reflection.
+_one_label_is_a_list
 combine_sets_route
 left_only
 right_only

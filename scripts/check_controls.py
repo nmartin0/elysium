@@ -1002,6 +1002,35 @@ CONTROLS = [
         tests=["tests/unit/test_step_schema.py::TestWhatTheBenchsModelSentCannotBeSent::test_a_link_is_not_something_to_group_by"],
     ),
 
+    Control(
+        describes="R12: a removed label comes off the table",
+        path="core/mirror/classifications.py",
+        old="                        tx.remove_properties(CLASSIFICATIONS_PROPERTY)",
+        new="                        pass",
+        tests=["tests/unit/test_classifications_propagate.py::TestTheRealSyncRecordsThem::test_a_label_removed_from_the_ontology_comes_off_every_table"],
+    ),
+    Control(
+        describes="R12: the sync records the labels",
+        path="scripts/run_sync.py",
+        old="        relabelled = record_classifications(sync._catalog, config.schema)",
+        new="        relabelled = []",
+        tests=["tests/unit/test_classifications_propagate.py::TestTheRealSyncRecordsThem::test_the_shipped_labels_reach_bronze_silver_and_gold"],
+    ),
+    Control(
+        describes="R12: a many-field column carries the union",
+        path="core/mirror/classifications.py",
+        old='        _merge(by_table.setdefault(f"{_GOLD_HISTORY}.{object_type}", {}), "values", everything)',
+        new='        pass',
+        tests=["tests/unit/test_classifications_propagate.py::TestWhereTheLabelsGo::test_a_column_holding_any_field_s_values_carries_every_label"],
+    ),
+    Control(
+        describes="R12: a bad label stops the ontology loading",
+        path="core/ontology/object_type_validation.py",
+        old="            validate_field_classification(object_type_name, field_name, field_info)",
+        new="            pass",
+        tests=["tests/unit/test_classifications_propagate.py::TestWhatALabelMayBe::test_a_bad_label_stops_the_ontology_loading"],
+    ),
+
 ]
 
 

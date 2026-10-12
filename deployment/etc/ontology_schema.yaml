@@ -48,6 +48,10 @@ object_types:
         type: data
       email:
         type: data
+        # WHAT THE VALUES ARE, carried to every table that copies them
+        # (R12) -- bronze, silver, the changelog, gold and its history.
+        # A label, not a grant: who may read it is still policy.yaml's.
+        classification: pii
       transactions:
         type: link
         target: Transaction
@@ -80,6 +84,7 @@ object_types:
     fields:
       amount:
         type: data
+        classification: financial
         # Money, so two places -- and the ontology is the only thing
         # that knows that. A UI cannot infer it: the same `number` type
         # carries a coordinate, a count and a ratio, each wanting a

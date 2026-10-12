@@ -91,6 +91,9 @@ export interface FieldSchema {
   data_type?: string
   visibility?: string
   status?: string
+  /** What the field's VALUES are -- `pii`, `financial` (R12). A label
+   *  carried to every table holding the values; never a grant. */
+  classification?: string[]
 }
 
 export interface TypeSchema {

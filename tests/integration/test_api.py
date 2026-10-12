@@ -579,6 +579,12 @@ def test_visible_schema_never_leaks_per_field_internals(client):
                 # -- it says nothing about where the data lives or how
                 # it is secured, which is what this guard keeps out.
                 "decimal_places",
+                # What the VALUES are -- `pii`, `financial` (R12). Said
+                # about a field the caller can already see, and the
+                # label a person needs before deciding what to do with
+                # what they read. Not where the data lives, not who may
+                # read it: those stay out.
+                "classification",
             }
             assert not leaked, f"{type_name}.{field_name} leaked {sorted(leaked)}"
 

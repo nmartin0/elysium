@@ -378,7 +378,9 @@ layers = [
     # core.functions sits below core.ontology in the layering above and
     # needs it too, so a vocabulary living inside ontology could not be
     # reached from there.
-    "field_types | link_types",
+    # classifications is a leaf too: object_type_validation checks a
+    # label's shape with it, and core/mirror reads labels through it.
+    "field_types | link_types | classifications",
 ]
 containers = ["core.ontology"]
 exhaustive = true

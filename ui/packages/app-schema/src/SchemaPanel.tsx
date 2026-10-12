@@ -151,6 +151,16 @@ function FieldTable({
                   <StatusTag state={statusState(field.status)}>{field.status}</StatusTag>
                 </>
               )}
+              {/* WHAT THE VALUES ARE (R12), beside what kind of field
+                  it is. Labels the author declared; the lake carries
+                  them to every copy. Not an access rule, so not styled
+                  as a warning. */}
+              {(field.classification ?? []).map((label) => (
+                <span key={label}>
+                  {' '}
+                  <StatusTag className="schema-panel__classification">{label}</StatusTag>
+                </span>
+              ))}
             </td>
             <td>{field.description ?? ''}</td>
           </tr>

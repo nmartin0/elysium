@@ -79,6 +79,7 @@ place.
 
 import zoneinfo
 
+from core.ontology.classifications import validate_field_classification
 from core.ontology.field_types import FIELD_DATA_TYPES
 from core.ontology.link_types import is_reverse_link
 
@@ -122,6 +123,8 @@ def validate_object_types(object_types: dict, only: str | None = None) -> None:
         _validate_id_types(object_type_name, type_def)
         _validate_display_metadata(object_type_name, type_def)
         _validate_ui_metadata(object_type_name, type_def)
+        for field_name, field_info in (type_def.get("fields") or {}).items():
+            validate_field_classification(object_type_name, field_name, field_info)
 
 
 VISIBILITIES = ("prominent", "normal", "hidden")

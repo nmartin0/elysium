@@ -119,7 +119,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from api.apps import visible_apps_for
 from api.auth_dependency import get_current_user
@@ -371,6 +371,15 @@ class SchemaFieldResponse(BaseModel):
     # reading it -- field-level RBAC is the only thing that does.
     visibility: str = "normal"
     status: str = "active"
+    #: What the field's VALUES are -- `pii`, `financial` (R12). Labels,
+    #: never grants; always a list here, though the ontology may write
+    #: one label bare.
+    classification: list[str] = []
+
+    @field_validator("classification", mode="before")
+    @classmethod
+    def _one_label_is_a_list(cls, value):
+        return [value] if isinstance(value, str) else (value or [])
 
 
 class VisibleObjectTypeResponse(BaseModel):

@@ -30,7 +30,13 @@ const CUSTOMER = {
   title_field: 'name',
   fields: {
     name: { type: 'data', display_name: 'Name', visibility: 'prominent', status: 'active' },
-    email: { type: 'data', display_name: 'Email', visibility: 'normal', status: 'active' },
+    email: {
+      type: 'data',
+      display_name: 'Email',
+      visibility: 'normal',
+      status: 'active',
+      classification: ['pii'],
+    },
     internal: { type: 'data', display_name: 'Internal', visibility: 'hidden', status: 'active' },
     transactions: {
       type: 'link',
@@ -52,6 +58,16 @@ describe('SchemaPanel', () => {
 
     expect(screen.getByText('Customer')).toBeInTheDocument()
     expect(screen.getByText('Someone the business serves.')).toBeInTheDocument()
+  })
+
+  it('labels a field with what its values are (R12), and only that field', () => {
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    const emailRow = screen.getByText('Email').closest('tr') as HTMLElement
+    const nameRow = screen.getAllByText('Name')[0]?.closest('tr') as HTMLElement
+    expect(emailRow).toHaveTextContent('pii')
+    expect(nameRow).not.toHaveTextContent('pii')
   })
 
   it('spotlights prominent fields separately from normal ones', () => {

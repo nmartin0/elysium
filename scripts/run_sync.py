@@ -60,6 +60,7 @@ from core.deployment_loader import (
     load_deployment_bundle,
     resolve_runtime_paths,
 )
+from core.mirror.classifications import record_classifications
 from core.mirror.expectation_warnings import ExpectationWarnings
 from core.mirror.gold import build_gold, published_ids
 from core.mirror.iceberg_sync import IcebergMirrorSync
@@ -723,6 +724,19 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
         # sat unused, and nothing in the output said so.
         failures += _build_gold(sync, config, runtime_paths.data_dir,
                                  unsynced=unsynced, run_id=run_id)
+
+        # CLASSIFICATIONS, CARRIED TO EVERY COPY (R12) -- after gold, so
+        # a table created by this run is labelled by this run, and never
+        # a failure: labels are metadata, and a published gold must not
+        # be reported as failed over them.
+        try:
+            relabelled = record_classifications(sync._catalog, config.schema)
+        except Exception as exc:  # noqa: BLE001 - metadata, never the sync's verdict
+            print(f"WARNING classifications not recorded: {exc}", file=sys.stderr)
+            relabelled = []
+        if relabelled:
+            print(f"classifications recorded on {len(relabelled)} table(s): "
+                  f"{', '.join(relabelled)}")
 
         # THE CONDITION IS CHECKED AFTER THE SYNC, which is the only
         # moment the facts are current. A separate scheduler would need
