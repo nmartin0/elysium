@@ -577,11 +577,49 @@ prefix -- three attempts of 1,800 s each -- straight after the step
 runs; the plan prompt differs from the step prompt, so it is a cold
 prefill, and the last one that completed took 1,210 s.
 
-**Blocked on:** plan mode alone, on a freshly started Ollama
-(`sudo systemctl restart ollama`, then):
+**FIFTH RUN, 2026-10-12: PLAN MODE MEASURED AT LAST**, once the cause of
+every plan timeout was found -- not prefill but a RUNAWAY: uncapped,
+the model wrote JSON until the 4,096-token window was full (1,210 s at
+~1.5 tokens/s). JSON replies are now capped at 768 tokens and the
+warm-up forced to `{}`: plan warm-up 8 s, against 30+ minutes.
 
-    python -m scripts.llm_bench --mode plan
-    python -m scripts.llm_bench --mode plan --constrain
+| arm | passed | wall clock |
+| --- | --- | --- |
+| step, free JSON | 7/7 | 20.0 min |
+| step, constrained | 7/7 | 32.7 min |
+| plan, free JSON | 4/7 | 22.8 min |
+| plan, constrained | 2/7 | 27.5 min |
+
+**STEP MODE IS THE ANSWER ON THIS MODEL AND HARDWARE.** Plan mode was
+meant to trade adaptivity for fewer, cheaper calls; here it made fewer
+calls and was no faster (a plan call median 108 s against a step's
+38 s, writing more per call), and lost three cases -- link_fanout and
+dependent_choice on plan FORMAT (a list in a filter, a wrapped handle,
+an invented step `linear_regression`), count_by_aggregate by finishing
+without an aggregate. ReWOO's authors name exactly this: plan-then-
+execute "may not be the best choice for tasks requiring high
+adaptability".
+
+**THE CONSTRAINED PLAN ARM IS NOT TRUSTWORTHY AS A MEASUREMENT.** It
+still produced "a list of values in 'filter'" twice -- which the plan
+schema cannot express, by test. So that schema did not reach the
+sampler intact: Ollama most likely dropped what its grammar converter
+could not compile (the `pattern`s on handles and plan ids are the
+likeliest) without saying so. A grammar that is silently half-applied
+is worse than none, which is one more reason AR-5 stays off. If plan
+mode is ever pursued, the first step is `--mode plan --constrain
+--show-plan --cases link_fanout` to see what the server enforced.
+
+**CLOSED AS FAR AS THIS HARDWARE GOES.** The four questions above have
+answers: the agent no longer over-fetches into failure (7/7); aggregates
+are chosen when the hint says so; prefix reuse works (AR-1, verified);
+and constraining replies does not pay on a CPU. Pre-flight action
+verdicts and running without the schema in the prompt were not
+measured.
+
+**Blocked on:** nothing on this hardware. A GPU, or a larger model,
+would reopen plan mode and constrained decoding -- both trade compute
+the CPU does not have.
 
 ## 14. Context rot, and a 10,000-id search behind it
 
