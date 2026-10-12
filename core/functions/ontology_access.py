@@ -36,6 +36,34 @@ from typing import Any
 from core.filters import as_equality_conditions
 
 
+class _Outcome:
+    """The out-parameter the mediator's SearchOutcome is, by shape.
+
+    NOT IMPORTED: core.functions sits BELOW core.ontology in the layer
+    contract, so it may not name the mediator's class. The mediator only
+    ever sets `scan_truncated` on what it is handed, so an object with
+    that attribute is all the contract is.
+    """
+
+    scan_truncated = False
+
+
+def _refuse_if_truncated(outcome, what: str) -> None:
+    """A FUNCTION GETS NO NUMBER RATHER THAN A SHORT ONE (R64).
+
+    The agent's own aggregate step can say "at least N", because the
+    model reads text. A function computes with what it is given -- an
+    average of a short count, a ratio of two -- and its signature
+    promises an int or a dict, so there is nowhere to put the caveat.
+    So it is refused, by name, as the agent's sum is.
+    """
+    if outcome.scan_truncated:
+        raise ValueError(
+            f"Could not {what}: the search stopped at its row limit before reading every "
+            f"row, so the answer would be short. Narrow the criteria."
+        )
+
+
 class OntologyAccess:
     """Read-only ontology access, scoped to one caller and one
     function's declared object types."""
@@ -70,15 +98,22 @@ class OntologyAccess:
 
     def count(self, object_type: str, criteria: dict | None = None) -> int:
         self._check(object_type)
-        return self._mediator.count_objects(self._user_record, object_type, as_equality_conditions(criteria))
+        outcome = _Outcome()
+        counted = self._mediator.count_objects(self._user_record, object_type,
+                                               as_equality_conditions(criteria), outcome=outcome)
+        _refuse_if_truncated(outcome, f"count {object_type}")
+        return counted
 
     def aggregate(self, object_type: str, aggregate: str, field: str | None = None,
                    group_by: str | None = None, criteria: dict | None = None) -> dict:
         self._check(object_type)
-        return self._mediator.aggregate_by_field(
+        outcome = _Outcome()
+        result = self._mediator.aggregate_by_field(
             self._user_record, object_type, as_equality_conditions(criteria),
-            group_by=group_by, aggregate=aggregate, field_name=field,
+            group_by=group_by, aggregate=aggregate, field_name=field, outcome=outcome,
         )
+        _refuse_if_truncated(outcome, f"{aggregate} {object_type}")
+        return result
 
     def search_around(self, object_type: str, link_field: str,
                        criteria: dict | None = None) -> list:

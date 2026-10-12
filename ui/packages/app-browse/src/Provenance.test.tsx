@@ -152,6 +152,16 @@ describe('where the sources disagreed', () => {
     expect(screen.queryByText(/where the sources disagreed/i)).not.toBeInTheDocument()
   })
 
+  it('shows a FILL as a fill, not a disagreement (R67a)', async () => {
+    // The CRM was preferred and held nothing in `name`; billing's value
+    // was served. Nothing was disputed, so the heading must not say so.
+    show(LINEAGE, [{ ...NAME_CONFLICT, kind: 'filled', chosen_source: 'primary', losing: null, losing_source: 'crm' }])
+
+    expect(await screen.findByText(/where a value came from another source/i)).toBeInTheDocument()
+    expect(screen.getByText('empty in crm')).toBeInTheDocument()
+    expect(screen.queryByText(/where the sources disagreed/i)).not.toBeInTheDocument()
+  })
+
   it('shows a contested COMPARTMENT differently from a contested field', async () => {
     // A security conflict names no field, because what is contested is
     // the whole object -- which compartment it belongs to, and

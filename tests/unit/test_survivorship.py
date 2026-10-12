@@ -25,7 +25,7 @@ from adapters.sqlite_adapter import SQLiteReadAdapter
 from core.mirror.gold import build_gold
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.identity import resolve
-from core.mirror.survivorship import PROPERTY_CONFLICT, SECURITY_CONFLICT, fuse_entities
+from core.mirror.survivorship import FILLED, PROPERTY_CONFLICT, SECURITY_CONFLICT, fuse_entities
 
 TYPE = {
     "id_field": "customer_id",
@@ -94,6 +94,30 @@ class TestChoosingAValue:
                          "name": None}])
 
         assert fused.rows[0]["name"] == "Ada"
+
+    def test_a_fill_from_a_less_preferred_source_is_recorded(self):
+        """R67a. The CRM is preferred and held this customer with no
+        name; billing's name was served. Nothing disagreed, but a reader
+        asking where the name came from must not be told "the CRM"."""
+        type_def = {**TYPE, "survivorship": {"prefer": ["crm"]}}
+
+        fused = _fuse(type_def,
+                       [{"cust_pk": "c1", "email": "a@x", "region": "us-west", "name": "Ada"}],
+                       [{"contact_id": "9f2a", "email": "a@x", "region": "us-west",
+                         "name": None}])
+
+        fills = [c for c in fused.conflicts if c.kind == FILLED]
+        assert [(c.field_name, c.chosen, c.chosen_source, c.losing, c.losing_source)
+                for c in fills] == [("name", "Ada", "primary", None, "crm")]
+
+    def test_no_fill_is_recorded_when_the_preferred_source_had_the_value(self):
+        """THE CONTROL: the ordinary case writes nothing new."""
+        fused = _fuse(TYPE,
+                       [{"cust_pk": "c1", "email": "a@x", "region": "us-west", "name": "Ada"}],
+                       [{"contact_id": "9f2a", "email": "a@x", "region": "us-west",
+                         "name": None}])
+
+        assert not [c for c in fused.conflicts if c.kind == FILLED]
 
     def test_an_unmerged_entity_keeps_its_own_values(self):
         fused = _fuse(TYPE,

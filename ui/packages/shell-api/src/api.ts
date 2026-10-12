@@ -1657,7 +1657,9 @@ export async function getObjectProvenance(objectType: string, objectId: string):
 export interface ValueConflict {
   /** "property" when two sources held different values for one field,
    *  "security" when they disagreed about the object's compartment --
-   *  which names no field and is the more serious of the two. */
+   *  which names no field and is the more serious of the two -- and
+   *  "filled" when the preferred source held the object with nothing in
+   *  the field and a later source supplied the value (R67a). */
   kind: string
   field?: string | null
   chosen_source?: string | null

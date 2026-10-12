@@ -1085,6 +1085,57 @@ CONTROLS = [
                "TestWhichTablesLicenseAType::test_an_identity_resolved_type_needs_every_source"],
     ),
 
+    Control(
+        describes="R64: the agent's aggregate hears the scan was cut",
+        path="core/agent/agentic_loop.py",
+        old=("        if outcome.scan_truncated:\n"
+             "            grouped = _what_a_truncated_aggregate_may_say(step, grouped)"),
+        new="        pass",
+        tests=["tests/unit/test_a_short_count_never_reaches_the_model.py::"
+               "TestTheAgent::test_a_short_count_is_a_lower_bound",
+               "tests/unit/test_a_short_count_never_reaches_the_model.py::"
+               "TestTheAgent::test_a_short_sum_is_refused_with_what_to_do"],
+    ),
+    Control(
+        describes="R64: a function gets no short number",
+        path="core/functions/ontology_access.py",
+        old="    if outcome.scan_truncated:\n        raise ValueError(",
+        new="    if False:\n        raise ValueError(",
+        tests=["tests/unit/test_a_short_count_never_reaches_the_model.py::"
+               "TestAFunction::test_a_short_count_is_refused"],
+    ),
+
+    Control(
+        describes="R65: the notifications read checks the sync is running",
+        path="api/routes.py",
+        old="    _check_the_sync_is_running(request, current_user, store)\n",
+        new="",
+        tests=["tests/integration/test_the_sync_is_watched.py::test_an_administrator_is_told_when_the_sync_stopped"],
+    ),
+    Control(
+        describes="R65: once per lapse",
+        path="core/mirror/health_condition.py",
+        old="    if summary is None or store.already_notified(_OVERDUE_KEY, user_id, summary):",
+        new="    if summary is None:",
+        tests=["tests/integration/test_the_sync_is_watched.py::test_once_per_lapse_however_often_the_client_polls"],
+    ),
+    Control(
+        describes="R65: only somebody who can fix it is told",
+        path="api/routes.py",
+        old="    if not authorize(user, config.roles, RECIPIENT_GRANT):\n        return",
+        new="    if False:\n        return",
+        tests=["tests/integration/test_the_sync_is_watched.py::test_somebody_who_cannot_fix_it_is_not_told"],
+    ),
+
+    Control(
+        describes="R67a: a fill from a less-preferred source is recorded",
+        path="core/mirror/survivorship.py",
+        old="                    if passed_over is not None:\n                        fused.conflicts.append(",
+        new="                    if False:\n                        fused.conflicts.append(",
+        tests=["tests/unit/test_survivorship.py::TestChoosingAValue::"
+               "test_a_fill_from_a_less_preferred_source_is_recorded"],
+    ),
+
 ]
 
 

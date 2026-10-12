@@ -83,7 +83,7 @@ from core.llm.interface import LLMAdapter, LLMUnavailable
 from core.llm.plan import MAX_PLAN_FANOUT, PlanError, resolve_step
 from core.llm.tracing import EXECUTE_TOOL, INVOKE_AGENT, span
 from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE, coerce
-from core.ontology.mediator import DataMediator, security_cache_scope
+from core.ontology.mediator import MAX_SEARCH_SCAN, DataMediator, SearchOutcome, security_cache_scope
 from core.ontology.schema import get_link_target, get_title_field
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
 from core.ontology.write_mediator import PendingWrite, WriteMediator
@@ -434,6 +434,38 @@ def _reject_ids_of_another_type(object_type: str, object_ids: list,
                         f'"object_type": "{object_type}", "filter": {{"{back}": "{object_id}"}}, '
                         f'"aggregate": "count"}}.')
         raise ValueError(message)
+
+
+def _what_a_truncated_aggregate_may_say(step: dict, grouped):
+    """An aggregate over a set the search stopped reading (R64).
+
+    THE GAP: the HTTP path learned in R39 to say when a set was cut at
+    the scan ceiling, and the agent did not -- a truncated count reached
+    the model as a bare number, which it then stated as fact. A wrong
+    number inside a sentence is harder to caveat than a bar on a chart,
+    so what the model is TOLD has to carry the limit itself.
+
+    A COUNT IS A LOWER BOUND, and says so: every object counted is
+    real, so "at least 9,876" is true where "9,876" is not. Per group
+    as well.
+
+    EVERYTHING ELSE IS REFUSED. A sum, average, minimum or maximum over
+    part of a set is not a bound on the whole -- the missing rows could
+    move it either way -- so there is no true sentence to hand over.
+    Palantir's ObjectsExceededLimit is the precedent, already followed
+    for get_object's id cap: a named refusal, never a short answer.
+    The refusal says what to do, which is narrow the filter.
+    """
+    if step["aggregate"] != "count":
+        raise ValueError(
+            f"The {step['aggregate']} of {step['object_type']} could not be computed: the "
+            f"search stopped after reading {MAX_SEARCH_SCAN:,} rows, so the rest are unknown "
+            f"and could move the {step['aggregate']} either way. Add a filter that narrows "
+            f"the set, then ask again."
+        )
+    if isinstance(grouped, dict):
+        return {key: f"at least {value}" for key, value in grouped.items()}
+    return f"at least {grouped}"
 
 
 def _detect_asymmetry(gathered: list[dict]) -> str | None:
@@ -835,12 +867,16 @@ class AgentLoop:
                                context: RequestContext | None = None) -> Any:
         self._check_filter_types(step["object_type"], step.get("filter") or {},
                                  visible_schema)
+        outcome = SearchOutcome()
         grouped = self.mediator.aggregate_by_field(
             user_record, step["object_type"], as_equality_conditions(step.get("filter") or {}),
             group_by=step.get("group_by"),
             aggregate=step["aggregate"],
             field_name=step.get("field_name"),
+            outcome=outcome,
         )
+        if outcome.scan_truncated:
+            grouped = _what_a_truncated_aggregate_may_say(step, grouped)
         # AN UNGROUPED AGGREGATE IS ONE NUMBER, AND NOW LOOKS LIKE ONE.
         #
         # aggregate_by_field() always returns a mapping of group to

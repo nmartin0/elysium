@@ -2737,6 +2737,29 @@ def _notification_store(request: Request):
     )
 
 
+def _check_the_sync_is_running(request: Request, user: UserRecord, store) -> None:
+    """R65: the dead man's switch, evaluated when an administrator looks.
+
+    ONLY FOR SOMEBODY WHO CAN FIX IT -- the grant that starts a sync, as
+    the sync's own health notice uses. NEVER FAILS THE REQUEST: a
+    notification list that could not be checked for one more entry is
+    still the caller's notifications.
+    """
+    from core.mirror.health_condition import RECIPIENT_GRANT, notify_sync_overdue
+
+    config = _generation(request).config
+    if not authorize(user, config.roles, RECIPIENT_GRANT):
+        return
+    try:
+        attempts = SyncAttempts(request.app.state.runtime_paths.data_dir / "mirror"
+                                / "sync_attempts.db")
+        last = [getattr(attempts.last_for(target.silo_name, target.table_name), "at", None)
+                for target in resolve_sync_targets({"object_types": config.schema})]
+        notify_sync_overdue(last, user.user_id, store)
+    except Exception as e:  # noqa: BLE001 - see the docstring
+        logger.warning(f"could not check whether the sync is running: {e}")
+
+
 @router.get("/notifications", dependencies=[Depends(_no_store)],
             response_model=NotificationsResponse)
 def notifications_route(
@@ -2751,6 +2774,7 @@ def notifications_route(
     no privileged view for a bug to leak from.
     """
     store = _notification_store(request)
+    _check_the_sync_is_running(request, current_user, store)
     return {
         "notifications": [
             {

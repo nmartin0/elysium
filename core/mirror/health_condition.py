@@ -141,3 +141,71 @@ def notify_mirror_health(states: list[dict], recipients: list[str],
             store.record_notified(_CONDITION_KEY, user_id, summary)
             told += 1
     return told
+
+
+# --- The one failure the sync cannot report: the sync not running (R65)
+#
+# Everything above is evaluated BY THE SYNC, at its end -- so it can
+# describe every way a sync goes wrong except not happening. A cron
+# entry deleted, a timer that failed to start, a host rebooted without
+# it: the silence is identical to a healthy mirror.
+#
+# THE PATTERN IS THE DEAD MAN'S SWITCH (Healthchecks.io, Cronitor): a
+# job checks in, and something ELSE notices when it stops. The sync
+# already checks in -- every attempt is a row in sync_attempts. What
+# was missing is the something else.
+#
+# WHERE IT RUNS, which is the decision R65 asked for: ON READ, when an
+# administrator's client asks for its notifications. Not a scheduler
+# in the API process, which this project has refused twice
+# (api/reload.py, api/app.py's metrics sweep) as a standing concurrency
+# surface for rare work. And the limit that choice carries is no limit
+# at all here: a notification is only ever SEEN in the app, so the only
+# moment it can matter is the moment somebody who can act is asking.
+
+_OVERDUE_KEY = "sync_overdue"
+
+
+def summarise_overdue(last_attempts: list, now: datetime | None = None,
+                      after: timedelta = STALE_AFTER) -> str | None:
+    """"No sync has run for N hours", or None.
+
+    NEVER-SYNCED IS NOT OVERDUE, for _stale_tables' reason: a fresh
+    install is not a fault. THE NEWEST ATTEMPT, of any outcome, is the
+    check-in -- a refused sync still ran; refusals are the other
+    condition's business.
+    """
+    now = now or datetime.now(UTC)
+    attempts = [when if when.tzinfo else when.replace(tzinfo=UTC)
+                for when in last_attempts if when is not None]
+    if not attempts:
+        return None
+    latest = max(attempts)
+    if now - latest <= after:
+        return None
+    hours = int((now - latest).total_seconds() // 3600)
+    return (f"No sync has run for {hours} hours -- the last was at "
+            f"{latest.isoformat(timespec='minutes')}. Reads are still served, from data "
+            f"that old.")
+
+
+def notify_sync_overdue(last_attempts: list, user_id: str, store,
+                        now: datetime | None = None) -> bool:
+    """Tells ONE administrator, once per lapse. Returns whether it did.
+
+    ONCE PER LAPSE: the summary names the last sync's time, so the same
+    lapse is suppressed however often the client polls, and the next
+    lapse -- after a sync that ran and then stopped again -- is news.
+    """
+    summary = summarise_overdue(last_attempts, now)
+    if summary is None or store.already_notified(_OVERDUE_KEY, user_id, summary):
+        return False
+    if not store.notify(
+        user_id, "mirror_health", summary,
+        detail=("Whatever starts the sync -- cron, a systemd timer -- has stopped. "
+                "Admin -> Mirror shows when each table last synced, and Sync now "
+                "starts one by hand."),
+    ):
+        return False
+    store.record_notified(_OVERDUE_KEY, user_id, summary)
+    return True

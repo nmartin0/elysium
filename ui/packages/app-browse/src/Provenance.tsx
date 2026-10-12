@@ -57,9 +57,16 @@ import {
 function Disagreements({ conflicts }: { conflicts: ValueConflict[] }) {
   if (conflicts.length === 0) return null
 
+  // A FILL IS NOT A DISAGREEMENT (R67a): the preferred source held the
+  // object and nothing in this field, so a later one supplied it.
+  // Shown, because "why does this field say this" otherwise names the
+  // preferred source for a value it never held -- but not headed as a
+  // dispute when nothing was disputed.
+  const disputed = conflicts.some((conflict) => conflict.kind !== 'filled')
+
   return (
     <section className="object-detail__conflicts">
-      <h3>Where the sources disagreed</h3>
+      <h3>{disputed ? 'Where the sources disagreed' : 'Where a value came from another source'}</h3>
       <table className="conflicts">
         <thead>
           <tr>
@@ -95,7 +102,9 @@ function Disagreements({ conflicts }: { conflicts: ValueConflict[] }) {
                 )}
               </td>
               <td>
-                {conflict.readable ? (
+                {conflict.kind === 'filled' ? (
+                  <span className="conflicts__source">empty in {conflict.losing_source}</span>
+                ) : conflict.readable ? (
                   <>
                     <span className="conflicts__value">{conflict.losing ?? '—'}</span>{' '}
                     <span className="conflicts__source">from {conflict.losing_source}</span>

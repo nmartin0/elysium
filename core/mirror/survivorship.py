@@ -46,6 +46,13 @@ from core.mirror.identity import Resolution
 # disagreed, plus one per merge refused by D2.
 PROPERTY_CONFLICT = "property"
 SECURITY_CONFLICT = "security"
+# A PREFERRED SOURCE HELD THE ENTITY BUT NOT THE VALUE, and a later one
+# supplied it (R67a). Not a disagreement -- nothing contradicted the
+# value served -- but a substitution, and one a reader could not see:
+# "first non-null in preference order" is right, and without this row
+# the golden record's answer to "why does this field say this" was the
+# preferred source's name on a value it never held.
+FILLED = "filled"
 
 
 @dataclass
@@ -117,6 +124,9 @@ def fuse_entities(type_def: dict, resolution: Resolution) -> FusedEntities:
             if field_name == id_field:
                 continue
             chosen_value, chosen_source = None, None
+            # The first source in preference order that HELD this entity
+            # and this field, but empty -- passed over for a later one.
+            passed_over = None
             for storage_key in _order_for(type_def, field_name):
                 source_row = members.get(storage_key)
                 if source_row is None:
@@ -126,9 +136,19 @@ def fuse_entities(type_def: dict, resolution: Resolution) -> FusedEntities:
                     continue
                 value = source_row.get(column)
                 if value is None:
+                    # HELD AND EMPTY, not absent: a row without the
+                    # column at all said nothing, and is not passed over.
+                    if chosen_value is None and passed_over is None and column in source_row:
+                        passed_over = _source_name(storage_key)
                     continue
                 if chosen_value is None:
                     chosen_value, chosen_source = value, _source_name(storage_key)
+                    if passed_over is not None:
+                        fused.conflicts.append(Conflict(
+                            entity_id=entity_id, kind=FILLED, field_name=field_name,
+                            chosen=chosen_value, chosen_source=chosen_source,
+                            losing=None, losing_source=passed_over,
+                        ))
                 elif str(value) != str(chosen_value):
                     # KEPT, NOT DISCARDED: a person asking why the
                     # golden record says one thing must be able to see

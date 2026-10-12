@@ -177,20 +177,16 @@ class TestTheArgumentHasAHistory:
 
 
 class TestWhatItDoesNotRecord:
-    def test_A_NULL_FILLED_FROM_ANOTHER_SOURCE_LEAVES_NO_TRACE(self, published, tmp_path):
-        """THE GAP, PINNED RATHER THAN HIDDEN.
+    def test_A_NULL_FILLED_FROM_ANOTHER_SOURCE_NOW_SAYS_SO(self, published, tmp_path):
+        """R67(a), PINNED HERE AS A GAP AND NOW CLOSED.
 
-        survivorship.py appends a Conflict only where two sources both
-        had something to say and said different things. Where the
-        preferred source is SILENT and a lower one supplies the value,
-        the fill happens and nothing is written -- so afterwards "the
-        CRM held this" and "the CRM was empty and billing supplied it"
-        are indistinguishable.
-
-        That is `AUDIT_CHECKLIST.csv` R67(a), and it is not this
-        reader's to close: there is no row to read. Asserted here so
-        that whoever closes it has a test that changes when they do,
-        rather than discovering the shape by reading the writer.
+        This test used to assert that NO conflicts table existed after
+        a fill -- the preferred source silent, a lower one supplying the
+        value, nothing written -- so "the CRM held this" and "the CRM
+        was empty and billing supplied it" read the same. It was written
+        so that whoever closed the gap would have a test that changed
+        when they did. It changed: the fill is a row of kind `filled`,
+        naming the source served and the source passed over.
         """
         conn = sqlite3.connect(tmp_path / "crm.db")
         conn.execute("UPDATE contacts SET name = NULL WHERE contact_id = '9f2a'")
@@ -202,14 +198,9 @@ class TestWhatItDoesNotRecord:
 
         _build(published)
 
-        # NOT MERELY "NO NAME CONFLICT" -- no conflicts table at all.
-        # The fill is the only thing that happened and it wrote
-        # nothing, so the type has never recorded a disagreement. That
-        # is a stronger statement of the gap than I expected to be
-        # able to make, and it is the first thing a reader of R67(a)
-        # should know.
-        with pytest.raises(ConflictsNotRecorded):
-            read_conflicts(published._catalog, "Customer", "c1")
+        rows = read_conflicts(published._catalog, "Customer", "c1")
+        assert [(row["kind"], row["field"], row["losing_source"]) for row in rows] == [
+            ("filled", "name", "crm")]
 
     def test_a_contested_COMPARTMENT_is_recorded_as_its_own_kind(self, published, tmp_path):
         """Not every conflict is about a field. Two sources disagreeing
