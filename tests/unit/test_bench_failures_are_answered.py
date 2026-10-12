@@ -238,3 +238,57 @@ class TestTheIdGuardIsConservative:
     def test_an_id_never_seen_at_all_is_left_to_the_mediator(self):
         """Not this guard's business: it knows only what the run holds."""
         self._check([])
+
+
+class TestARefusedStepIsNotAlreadyHad:
+    """THE SECOND BENCH RUN: refused `transaction_id` (no such field), the
+    model sent the same step twice more and was told both times "You
+    already have this" -- false; a refused step gathered nothing."""
+
+    ASK_FOR_THE_ID = ('{"step": "get_object", "object_type": "Transaction", "object_ids": [1, 2], '
+                      '"field_names": ["transaction_id"]}')
+
+    def test_the_repeat_is_refused_with_its_reason_not_called_a_duplicate(self, loop_and_user):
+        loop, user = loop_and_user
+        result, script = _run(loop, user, "How many transactions does Ada Okafor have?",
+                              self.ASK_FOR_THE_ID, self.ASK_FOR_THE_ID)
+
+        assert "You already have this" not in "".join(script.shown)
+        assert result.stop_reason == "invalid_steps"
+
+    def test_a_step_that_DID_gather_is_still_a_duplicate(self, loop_and_user):
+        """THE CONTROL: only refusals are forgotten."""
+        loop, user = loop_and_user
+        read = ('{"step": "get_field", "object_type": "Transaction", "object_id": 1, '
+                '"field_name": "amount"}')
+        _, script = _run(loop, user, "What is transaction 1's amount?", read, read)
+
+        assert "You already have this" in script.shown[2]
+
+    def test_asking_for_the_id_field_says_the_ids_are_already_in_hand(self, loop_and_user):
+        loop, user = loop_and_user
+        _, script = _run(loop, user, "How many transactions does Ada Okafor have?",
+                         self.ASK_FOR_THE_ID)
+
+        told = script.shown[1].replace('\\"', '"')
+        assert "'transaction_id' is the id itself" in told
+        assert '"aggregate": "count"' in told
+
+
+class TestTheBenchCanShowItsSteps:
+    def test_each_entry_is_one_line_with_notes_where_they_happened(self):
+        from scripts.llm_bench import describe_gathered
+
+        lines = describe_gathered([
+            {"step": "search_object", "object_type": "Customer",
+             "filter": {"name": "Ada"}, "result": ["cust_001"]},
+            {"step": "rejected_duplicate", "note": "You already have this"},
+            {"step": "get_field", "object_type": "Transaction", "object_id": 1,
+             "field_name": "amount", "result": 49.99},
+        ])
+
+        assert lines == [
+            "search_object Customer {'name': 'Ada'} -> ['cust_001']",
+            "rejected_duplicate: You already have this",
+            "get_field Transaction 1 amount -> 49.99",
+        ]

@@ -256,8 +256,35 @@ def _show_plans() -> None:
     plan_logger.setLevel(logging.DEBUG)
 
 
+def describe_gathered(gathered: list[dict]) -> list[str]:
+    """What a trial did, one line per gathered entry, in order.
+
+    WITHOUT THIS A FAILURE CANNOT BE DIAGNOSED, only named. The second
+    bench run's dependent_choice was told "1 lacks amount", asked for
+    exactly that, and was stopped as a DUPLICATE -- so some earlier step
+    had claimed it. Which step, the summary line could not say. Every
+    refusal and nudge is in `gathered` as a note; this prints them where
+    they happened.
+    """
+    lines = []
+    for item in gathered:
+        step = item.get("step", "?")
+        if "note" in item:
+            lines.append(f"{step}: {str(item['note'])[:220]}")
+            continue
+        target = (item.get("object_ids") or item.get("object_id")
+                  or item.get("filter") or "")
+        what = " ".join(str(part) for part in (
+            item.get("object_type", ""), target,
+            item.get("field_name") or item.get("field_names") or "",
+            item.get("aggregate") or "",
+        ) if part != "")
+        lines.append(f"{step} {what} -> {repr(item.get('result'))[:100]}")
+    return lines
+
+
 def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
-        mode: str = "step", show_plan: bool = False) -> int:
+        mode: str = "step", show_plan: bool = False, show_steps: bool = False) -> int:
     if show_plan:
         _show_plans()
     generation = build_generation(paths.config_dir, paths.data_dir, paths.log_dir)
@@ -414,6 +441,9 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
                   f"calls={len(timer.calls) - before} "
                   f"unusable={len(graded.fabricated_finishes)} "
                   f"[{elapsed / 60:.1f}m]")
+            if show_steps:
+                for number, line in enumerate(describe_gathered(outcome.gathered), 1):
+                    print(f"      {number:>2}. {line}")
             if done == 1 and planned > 1:
                 # A PROJECTION AFTER THE FIRST TRIAL, because on this
                 # hardware the difference between "twenty minutes" and
@@ -510,6 +540,10 @@ def main() -> int:
                         help="print the plan the model wrote. Use it: a fast "
                              "correct answer proves nothing about AL-4 unless "
                              "the plan used a handle rather than naming an id.")
+    parser.add_argument("--show-steps", action="store_true",
+                        help="print every step a trial took, with each "
+                             "refusal and nudge where it happened. What a "
+                             "failure needs to be diagnosed, not just named.")
     parser.add_argument("--mode", choices=("step", "plan"), default="step",
                         help="step: one model call per hop (today's loop). "
                              "plan: the whole plan in one call (AL-4). Run "
@@ -553,7 +587,7 @@ def main() -> int:
             print(f"Known: {[c.name for c in CASES]}")
             return 2
     print(f"mode {args.mode}")
-    return run(paths, args.trials, cases, args.mode, args.show_plan)
+    return run(paths, args.trials, cases, args.mode, args.show_plan, args.show_steps)
 
 
 if __name__ == "__main__":

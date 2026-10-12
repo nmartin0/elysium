@@ -925,8 +925,17 @@ class AgentLoop:
         # does count, with its shape, answers the belief behind the
         # mistake rather than only the mistake.
         hint = ""
-        if any(str(name).lower() in _AGGREGATE_WORDS for name in unknown):
-            hint = (f' To count or total {object_type} objects, use one aggregate_object '
+        id_field = type_def.get("id_field")
+        if id_field and id_field in unknown:
+            # THE BENCH'S NEXT MOVE, once "count" was refused: it asked
+            # for `transaction_id` on objects it had named BY transaction
+            # id, three times. The id is not a field because it is
+            # already in hand -- and wanting every id is, in the case
+            # measured, wanting to count them.
+            hint += (f" {id_field!r} is the id itself, not a field to read: the ids "
+                     f"you named ARE its values.")
+        if id_field in unknown or any(str(name).lower() in _AGGREGATE_WORDS for name in unknown):
+            hint += (f' To count or total {object_type} objects, use one aggregate_object '
                     f'step, e.g. {{"step": "aggregate_object", "object_type": "{object_type}", '
                     f'"filter": {{"<field>": "<value>"}}, "aggregate": "count"}}.')
         raise ValueError(
@@ -1741,7 +1750,11 @@ class AgentLoop:
                 continue
 
             consecutive_duplicates = 0
+            # WHAT THIS STEP ADDS TO `seen_signatures`, so that a step
+            # the loop then REFUSES can be taken back out -- see below.
+            remembered: set = set()
             if signature is not None:
+                remembered.add(signature)
                 seen_signatures.add(signature)
                 if step["step"] == "get_object":
                     # ALSO records each individual field's own get_
@@ -1759,13 +1772,25 @@ class AgentLoop:
                     # same field among others) this does NOT close.
                     for object_id in _object_ids_in(step):
                         for field_name in step["field_names"]:
-                            seen_signatures.add(
-                                ("get_field", step["object_type"], object_id, field_name))
+                            per_field = ("get_field", step["object_type"], object_id, field_name)
+                            remembered.add(per_field)
+                            seen_signatures.add(per_field)
 
+            gathered_before = len(gathered)
             consecutive_invalid, consecutive_business_rule, step_stop_reason, pending_write = self._execute_step(
                 step, user_record, visible_schema, gathered, consecutive_invalid,
                 consecutive_business_rule, context
             )
+            # A REFUSED STEP GATHERED NOTHING, so it is not "already had".
+            # Left in `seen_signatures`, its repeat was answered "You
+            # already have this" -- false, and the bench showed the model
+            # believing it: refused a field that does not exist, it sent
+            # the same step twice more and was told twice it had the data.
+            # Taken out, a repeat is refused again WITH ITS REASON, and
+            # counts toward the invalid-step limit, which is what it is.
+            if any(item.get("step") in ("rejected_invalid_step", "rejected_business_rule")
+                   for item in gathered[gathered_before:]):
+                seen_signatures.difference_update(remembered)
             if pending_write is not None:
                 return AgentLoopResult(gathered=gathered, pending_write=pending_write,
                                        stop_reason=StopReason.PROPOSED_WRITE,

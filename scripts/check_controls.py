@@ -885,8 +885,8 @@ CONTROLS = [
     Control(
         describes="bench: a count-shaped field name gets the aggregate step",
         path="core/agent/agentic_loop.py",
-        old="        if any(str(name).lower() in _AGGREGATE_WORDS for name in unknown):",
-        new="        if False:",
+        old="        if id_field in unknown or any(str(name).lower() in _AGGREGATE_WORDS for name in unknown):",
+        new="        if id_field in unknown:",
         tests=["tests/unit/test_bench_failures_are_answered.py::TestACountIsNotAField::test_get_object_names_the_step_that_counts"],
     ),
     Control(
@@ -909,6 +909,23 @@ CONTROLS = [
         old="        if owner is None or object_id in this_type or object_id in any_type:",
         new="        if owner is None or object_id in any_type:",
         tests=["tests/unit/test_bench_failures_are_answered.py::TestTheIdGuardIsConservative::test_an_id_already_read_as_this_type_is_allowed"],
+    ),
+
+    Control(
+        describes="bench: a refused step is not 'already had'",
+        path="core/agent/agentic_loop.py",
+        old="                seen_signatures.difference_update(remembered)",
+        new="                pass",
+        tests=["tests/unit/test_bench_failures_are_answered.py::TestARefusedStepIsNotAlreadyHad::"
+               "test_the_repeat_is_refused_with_its_reason_not_called_a_duplicate"],
+    ),
+    Control(
+        describes="bench: asking for the id field is explained",
+        path="core/agent/agentic_loop.py",
+        old="        if id_field and id_field in unknown:",
+        new="        if False:",
+        tests=["tests/unit/test_bench_failures_are_answered.py::TestARefusedStepIsNotAlreadyHad::"
+               "test_asking_for_the_id_field_says_the_ids_are_already_in_hand"],
     ),
 
 ]

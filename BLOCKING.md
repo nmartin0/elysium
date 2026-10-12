@@ -516,9 +516,26 @@ naming `aggregate_object` when the field looks like a count; the
 asymmetry nudge names the missing (object, field) pairs and the one
 step that fills them.
 
-**Blocked on:** re-running the bench on that machine with those
-changes (`python -m scripts.llm_bench`, one trial, ~35 minutes). Plan
-mode's two failures are untouched and are the next question.
+**RE-RUN THE SAME DAY with those changes, step mode: 5 of 7.**
+link_fanout now PASSES -- the model took the link the refusal named.
+Two still fail, differently:
+
+- count_by_aggregate: refused "count", it asked for `transaction_id`
+  -- the id field -- and was refused; it sent that step twice more and
+  was told both times "You already have this". FALSE: a refused step
+  gathered nothing, but its signature stayed in the duplicate guard.
+  Fixed (a refused step's signature is forgotten, so a repeat is
+  refused with its reason), and asking for the id field now says the
+  ids are already in hand and names the aggregate.
+- dependent_choice: the nudge said "1 lacks amount" and gave the step;
+  the model sent it, and it was stopped as a DUPLICATE. Some earlier
+  step had claimed it -- which one, the bench's summary could not say.
+  `--show-steps` now prints every step and note per trial.
+
+**Blocked on:** `python -m scripts.llm_bench --cases
+dependent_choice,count_by_aggregate --show-steps` on that machine
+(~15 minutes), to see dependent_choice's trajectory. Plan mode's two
+failures are untouched.
 
 ## 14. Context rot, and a 10,000-id search behind it
 
