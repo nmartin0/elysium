@@ -160,3 +160,29 @@ def test_other_options_are_unaffected():
 
     assert payload["think"] is False
     assert payload["options"] == {"num_ctx": 2048, "num_thread": 2}
+
+
+class TestAJsonReplyIsCapped:
+    """THE PLAN-MODE TIMEOUTS: a plan call ran 934 s and warm-ups
+    1,210 s and three times past 1,800 s -- at ~1.5 tokens/s, about the
+    context window minus the prompt. Unlimited num_predict let a JSON
+    reply run until the window was full."""
+
+    def test_a_json_call_is_capped(self):
+        assert _sent(BASE, json_mode=True)["options"]["num_predict"] == 768
+
+    def test_a_schema_call_is_capped_too(self):
+        assert _sent(BASE, json_mode={"anyOf": []})["options"]["num_predict"] == 768
+
+    def test_prose_is_not(self):
+        """THE CONTROL: synthesis answers a person and may be long."""
+        assert "options" not in _sent(BASE)
+
+    def test_the_deployment_can_set_the_cap(self):
+        assert _sent({**BASE, "json_num_predict": 300},
+                     json_mode=True)["options"]["num_predict"] == 300
+
+    def test_a_deployment_s_own_num_predict_wins(self):
+        payload = _sent({**BASE, "options": {"num_predict": 64}}, json_mode=True)
+
+        assert payload["options"]["num_predict"] == 64

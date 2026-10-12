@@ -38,6 +38,11 @@ CONTEXT_WARNING_FRACTION = 0.8
 _CHARS_PER_TOKEN = 4
 
 
+#: Tokens a JSON (step or plan) reply may run to before it is cut off.
+#: An eight-step plan is a few hundred; see OllamaAdapter.chat().
+DEFAULT_JSON_NUM_PREDICT = 768
+
+
 class OllamaAdapter:
     def __init__(self, model: str, connection: dict):
         self.model = model
@@ -73,6 +78,10 @@ class OllamaAdapter:
         # once per query or worse, so this is worth a deployment being
         # able to set.
         self.keep_alive = connection.get("keep_alive")
+        # HOW MANY TOKENS A JSON REPLY MAY RUN TO. A step is under a
+        # hundred; an eight-step plan a few hundred. See chat() for why
+        # this exists at all.
+        self.json_num_predict = connection.get("json_num_predict", DEFAULT_JSON_NUM_PREDICT)
 
     def _warn_if_context_is_tight(self, system_prompt: str,
                                   user_message: str) -> None:
@@ -193,6 +202,25 @@ class OllamaAdapter:
             # payload rather than the options block.
             payload["think"] = self.options["think"]
             options.pop("think", None)
+
+        # A JSON REPLY IS CAPPED; PROSE IS NOT.
+        #
+        # MEASURED, AND THE CAUSE OF EVERY PLAN-MODE TIMEOUT: a plan call
+        # ran 934 s, a plan warm-up 1,210 s, and later ones past 1,800 s
+        # three times running. At this hardware's ~1.5 tokens/s, 1,210 s
+        # is about the 4,096-token window MINUS the prompt -- the model
+        # was writing until the context was full. Ollama's num_predict
+        # defaults to unlimited, and a small model in JSON mode is known
+        # to pad with whitespace a grammar never forbids. A step or plan
+        # that long is not an answer; it is a runaway.
+        #
+        # Capped, a runaway ends in minutes as truncated JSON, which the
+        # step and plan parsers already refuse VISIBLY (a fabricated
+        # finish, a PlanError) instead of a half-hour silence. Prose --
+        # synthesis -- is left alone: an answer to a person may be long.
+        # A deployment's own num_predict, if it set one, wins.
+        if json_mode and "num_predict" not in options and self.json_num_predict:
+            options["num_predict"] = self.json_num_predict
 
         if options:
             payload["options"] = options

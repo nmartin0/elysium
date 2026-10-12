@@ -16,6 +16,9 @@ llm:
                                     # prompt-eval rate measured here is ~4
                                     # minutes BEFORE the model writes anything.
                                     # 240 timed out on the first hop.
+    # json_num_predict: 768        # tokens a step or plan reply may run to.
+                                    # Unlimited, a plan ran until the context
+                                    # was full -- 20+ minutes. Prose is uncapped.
     keep_alive: -1                 # keep the model resident between calls. The
                                     # default evicts after five minutes, and the
                                     # agent loop can idle longer than that

@@ -1031,6 +1031,14 @@ CONTROLS = [
         tests=["tests/unit/test_classifications_propagate.py::TestWhatALabelMayBe::test_a_bad_label_stops_the_ontology_loading"],
     ),
 
+    Control(
+        describes="a JSON reply is capped",
+        path="adapters/ollama_adapter.py",
+        old="        if json_mode and \"num_predict\" not in options and self.json_num_predict:",
+        new="        if False:",
+        tests=["tests/unit/test_ollama_adapter.py::TestAJsonReplyIsCapped::test_a_json_call_is_capped"],
+    ),
+
 ]
 
 

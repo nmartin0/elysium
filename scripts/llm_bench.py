@@ -385,7 +385,14 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
         if real_timeout is not None:
             adapter.timeout_seconds = WARM_UP_TIMEOUT_SECONDS
         generation.loop.client.chat(
-            warm_system, "Reply with {}", json_mode=True, temperature=0,
+            warm_system, "Reply with {}",
+            # AN EMPTY OBJECT AND NOTHING ELSE, enforced by the server.
+            # The warm-up exists to load the PREFIX; what the model
+            # writes is thrown away. Asked politely, the plan prompt's
+            # model wrote a whole plan instead -- and, uncapped, kept
+            # writing for half an hour, three times.
+            json_mode={"type": "object", "properties": {}, "additionalProperties": False},
+            temperature=0,
         )
     except LLMUnavailable as e:
         print(f"  model unreachable during warm-up: {e}")

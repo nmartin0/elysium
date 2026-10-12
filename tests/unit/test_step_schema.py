@@ -141,36 +141,23 @@ class TestItOffersOnlyWhatThePromptOffers:
 
 
 class TestItReachesTheServer:
-    def test_ollama_sends_the_schema_as_format(self, monkeypatch):
-        from adapters import ollama_adapter
+    def test_ollama_sends_the_schema_as_format(self):
+        """Built the way the deployment builds it, and nothing swallowed:
+        a first version constructed the adapter by hand inside a try/
+        except, and went on passing only until the adapter grew an
+        attribute it lacked."""
+        from unittest.mock import Mock, patch
 
-        sent = {}
+        from adapters.ollama_adapter import OllamaAdapter
 
-        class Reply:
-            status_code = 200
-
-            def raise_for_status(self):
-                pass
-
-            def json(self):
-                return {"message": {"content": "{}"}, "prompt_eval_count": 0, "eval_count": 0}
-
-        def post(url, json=None, **kwargs):
-            sent.update(json)
-            return Reply()
-
-        monkeypatch.setattr(ollama_adapter.requests, "post", post)
-        adapter = ollama_adapter.OllamaAdapter.__new__(ollama_adapter.OllamaAdapter)
-        adapter.__dict__.update(model="m", base_url="http://x", keep_alive=None,
-                                timeout_seconds=5, options={}, think=False, num_ctx=None)
+        response = Mock()
+        response.json.return_value = {"message": {"content": "{}"}}
+        response.raise_for_status.return_value = None
         schema = {"anyOf": [{"type": "object"}]}
+        with patch("adapters.ollama_adapter.requests.post", return_value=response) as post:
+            OllamaAdapter("m", {"base_url": "http://x"}).chat("s", "u", json_mode=schema)
 
-        try:
-            adapter.chat("s", "u", json_mode=schema)
-        except Exception:  # noqa: BLE001 - only the payload is under test
-            pass
-
-        assert sent.get("format") == schema
+        assert post.call_args.kwargs["json"]["format"] == schema
 
     def test_next_step_passes_a_schema_only_when_constrained(self):
         from core.llm.agent_step_prompt import next_step
