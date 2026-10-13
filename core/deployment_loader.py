@@ -69,7 +69,7 @@ from core.ontology.derived_fields import (
     refuse_rules_over_derived,
     validate_derived_fields,
 )
-from core.ontology.field_rules import validate_field_rules
+from core.ontology.field_rules import validate_dependencies, validate_field_rules
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.link_types import expand_link_types, validate_link_types
 from core.ontology.mediator import DataMediator
@@ -617,6 +617,8 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     validate_constraints(object_types_raw)
     # Rules between two fields (R29), checked at load like the rest.
     validate_field_rules(object_types_raw)
+    # ...and across rows: functional dependencies (R29), silver only.
+    validate_dependencies(object_types_raw)
     # Fields computed from other fields (R37): checked, then typed by
     # what their formula yields, before anything reads the schema.
     validate_derived_fields(object_types_raw)

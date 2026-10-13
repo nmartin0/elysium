@@ -146,6 +146,8 @@ def check_row(row: dict, expectations: dict[str, dict]) -> list[Violation]:
     """Every rule this row fails, in column order."""
     found = []
     for column, expected in expectations.items():
+        if "dependency" in expected:
+            continue  # across rows: apply_expectations runs these on the table
         if "rule" in expected:
             # A RULE BETWEEN TWO FIELDS (R29), read by its columns.
             from core.ontology.field_rules import rule_violation
@@ -204,7 +206,35 @@ def apply_expectations(rows: list[dict], expectations: dict[str, dict]) -> Expec
             continue
         result.warned.extend(v for v in violations if v.policy == WARN)
         result.kept.append(row)
+    _apply_dependencies(result, expectations)
     return result
+
+
+def _apply_dependencies(result: ExpectationResult, expectations: dict[str, dict]) -> None:
+    """The functional dependencies (R29), over the rows the per-row rules
+    kept -- a row already held back is not also counted here. Same
+    policies: fail stops the build, quarantine holds, warn reports."""
+    from core.ontology.field_rules import dependency_violations
+
+    for expected in expectations.values():
+        if "dependency" not in expected:
+            continue
+        dependency = expected["dependency"]
+        column = expected["columns"][dependency.dependent]
+        found = dependency_violations(dependency, result.kept, expected["columns"])
+        if not found:
+            continue
+        violations = {index: Violation(column, dependency.name, reason,
+                                       result.kept[index].get(column), expected["policy"])
+                      for index, reason in found.items()}
+        if expected["policy"] == FAIL:
+            raise ExpectationFailed(violations[min(violations)])
+        if expected["policy"] == QUARANTINE:
+            result.quarantined.extend((result.kept[index], violations[index])
+                                      for index in sorted(violations))
+            result.kept = [row for index, row in enumerate(result.kept) if index not in violations]
+        else:
+            result.warned.extend(violations[index] for index in sorted(violations))
 
 
 class ExpectationFailed(Exception):

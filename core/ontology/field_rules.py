@@ -33,10 +33,34 @@ A NULL ON EITHER SIDE IS NOT A VIOLATION, the rule constraints.py
 states: an absent end date is not an end before the start. Whether a
 field may be empty is `required`'s question.
 
-WHAT THIS IS NOT, said so the next reader does not assume it: functional
-dependencies (zip code determines city) and general denial constraints
-span ROWS, not fields of one row, and need a pass over the table rather
-than a check per row. R29 names them; they are not built.
+RULES ACROSS ROWS -- FUNCTIONAL DEPENDENCIES -- were added on 13 October:
+
+    object_types:
+      Customer:
+        dependencies:
+          city_follows_zip:
+            determinant: [zip]          # one field or several
+            dependent: city
+            on_violation: quarantine    # warn (default) | quarantine | fail
+
+"Rows that agree on the zip agree on the city." The precedent is the
+data-cleaning literature's own starting point: a functional dependency
+is the simplest DENIAL CONSTRAINT, and HoloClean and its predecessors
+detect violations of exactly this form before anything subtler.
+Checked in SILVER ONLY, over the whole table after the per-row rules:
+a write would need a scan of every other row to check, and the source
+is where the conflicting row lives.
+
+WHICH ROWS A QUARANTINE HOLDS. A violating group has no row that is
+known wrong. When one dependent value holds a STRICT MAJORITY of the
+group, the rows disagreeing with it are held and the reason names the
+majority; with no majority, every row of the group is held. The first
+is what a person would do; the second refuses to guess.
+
+GENERAL DENIAL CONSTRAINTS ARE NOT BUILT, deliberately: "no two rows
+where A < A' and B > B'" needs an expression language over pairs of
+rows, the free-form route the owner declined for derived fields (R37).
+A functional dependency is the case asked for by name.
 
 BOTH FIELDS IN ONE STORAGE, refused at load otherwise: silver checks a
 source row, and a rule spanning two sources has no single row to check.
@@ -139,3 +163,110 @@ def rule_violation(rule: FieldRule, type_def, values) -> "str | None":
     if OPERATORS[rule.op](a, b):
         return None
     return f"breaks rule {rule.name!r}: {rule.describe()} ({left!r} against {right!r})"
+
+
+# -- functional dependencies (R29, across rows) -----------------------------
+
+_DEPENDENCY_KEYS = frozenset({"determinant", "dependent", "on_violation"})
+
+
+@dataclass(frozen=True)
+class FieldDependency:
+    name: str
+    determinant: tuple
+    dependent: str
+    policy: str = "warn"
+
+    def describe(self) -> str:
+        return f"{', '.join(self.determinant)} determines {self.dependent}"
+
+
+def dependencies_for(type_def) -> list[FieldDependency]:
+    """A type's declared functional dependencies. Unvalidated: load
+    calls validate_dependencies first."""
+    found = []
+    for name, declared in (type_def.get("dependencies") or {}).items():
+        determinant = declared["determinant"]
+        if isinstance(determinant, str):
+            determinant = [determinant]
+        found.append(FieldDependency(name, tuple(determinant), declared["dependent"],
+                                     declared.get("on_violation", "warn")))
+    return found
+
+
+def validate_dependencies(object_types) -> None:
+    """Refuses, at load, a dependency that could never be checked."""
+    for type_name, type_def in object_types.items():
+        declared = type_def.get("dependencies")
+        if declared is None:
+            continue
+        if not hasattr(declared, "items"):
+            raise ValueError(f"{type_name}: `dependencies` must be a mapping of named rules.")
+        fields = type_def.get("fields") or {}
+        for name, rule in declared.items():
+            where = f"{type_name} dependency {name!r}"
+            if not hasattr(rule, "get"):
+                raise ValueError(f"{where} must be a mapping with determinant and dependent.")
+            unknown = sorted(set(rule) - _DEPENDENCY_KEYS)
+            if unknown:
+                raise ValueError(f"{where}: unknown key(s) {unknown}; known: "
+                                 f"{sorted(_DEPENDENCY_KEYS)}.")
+            determinant = rule.get("determinant")
+            if isinstance(determinant, str):
+                determinant = [determinant]
+            if not determinant or not isinstance(determinant, (list, tuple)):
+                raise ValueError(f"{where}: `determinant` must name one field or a list.")
+            named = [*determinant, rule.get("dependent")]
+            for field_name in named:
+                if field_name not in fields:
+                    raise ValueError(f"{where} names {field_name!r}, which {type_name} "
+                                     f"does not have.")
+                if fields[field_name].get("type") == "link" or "derived" in fields[field_name]:
+                    raise ValueError(f"{where}: {field_name!r} is not a stored value; a "
+                                     f"dependency is checked on source rows.")
+            if rule["dependent"] in determinant:
+                raise ValueError(f"{where}: {rule['dependent']!r} cannot determine itself.")
+            if len({fields[field_name].get("storage") for field_name in named}) != 1:
+                raise ValueError(f"{where}: its fields live in different storages, so no "
+                                 f"single source table holds them all.")
+            if rule.get("on_violation", "warn") not in _POLICIES:
+                raise ValueError(f"{where}: `on_violation` must be one of {list(_POLICIES)}.")
+
+
+def dependency_violations(dependency: FieldDependency, rows, columns) -> "dict[int, str]":
+    """{row index: why it breaks the dependency}. `columns` maps field
+    names to the row's column names. Rows with an empty determinant are
+    not grouped -- an unknown zip agrees with nothing -- and an empty
+    dependent is not a disagreement: whether it may be empty is
+    `required`'s question, as for every rule here."""
+    groups: dict[tuple, list[int]] = {}
+    for index, row in enumerate(rows):
+        key = tuple(row.get(columns[name]) for name in dependency.determinant)
+        if any(part is None for part in key):
+            continue
+        if row.get(columns[dependency.dependent]) is None:
+            continue
+        groups.setdefault(key, []).append(index)
+    found: dict[int, str] = {}
+    for key, members in groups.items():
+        counts: dict = {}
+        for index in members:
+            value = rows[index].get(columns[dependency.dependent])
+            counts[value] = counts.get(value, 0) + 1
+        if len(counts) < 2:
+            continue
+        shown = ", ".join(repr(part) for part in key)
+        values = ", ".join(repr(value) for value in sorted(counts, key=repr))
+        majority = max(counts, key=lambda value: counts[value])
+        if counts[majority] * 2 > len(members):
+            for index in members:
+                value = rows[index].get(columns[dependency.dependent])
+                if value != majority:
+                    found[index] = (f"breaks {dependency.name!r}: {dependency.describe()}, and "
+                                    f"{shown} has {dependency.dependent} {majority!r} in "
+                                    f"{counts[majority]} of {len(members)} rows, not {value!r}")
+        else:
+            for index in members:
+                found[index] = (f"breaks {dependency.name!r}: {dependency.describe()}, and "
+                                f"{shown} has no single {dependency.dependent} ({values})")
+    return found

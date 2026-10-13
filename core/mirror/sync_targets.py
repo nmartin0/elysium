@@ -57,6 +57,7 @@ from dataclasses import dataclass, field
 from core.mirror.duplicates import DuplicatePolicy, policy_for_storage
 from core.mirror.expectations import expectations_for
 from core.mirror.standardise import rules_for
+from core.ontology.field_rules import dependencies_for
 from core.ontology.field_rules import rules_for as field_rules_for
 
 
@@ -441,6 +442,21 @@ def _targets_for_type(type_def: dict):
             "field_name": rule.name,
             "columns": {name: fields[name].get("column", name)
                         for name in (rule.field, rule.other)},
+        }
+
+    # FUNCTIONAL DEPENDENCIES (R29, across rows), keyed apart like the
+    # rules ("dependency:<name>"). check_row skips them; apply_expectations
+    # runs them over the whole table once the per-row rules are done.
+    for dependency in dependencies_for(type_def):
+        fields = type_def.get("fields") or {}
+        storage_key = fields[dependency.dependent].get("storage")
+        if storage_key not in expectations_by_storage:
+            continue
+        expectations_by_storage[storage_key][f"dependency:{dependency.name}"] = {
+            "dependency": dependency, "policy": dependency.policy,
+            "field_name": dependency.name,
+            "columns": {name: fields[name].get("column", name)
+                        for name in (*dependency.determinant, dependency.dependent)},
         }
 
     # The MAC security field, when it names a real field on this type

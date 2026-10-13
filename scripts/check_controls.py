@@ -2001,6 +2001,35 @@ CONTROLS = [
         new="    for partner in sorted(set()):",
         tests=["tests/unit/test_gold_builds_targets_first.py::TestALinkCycle::test_a_partner_that_is_refused_is_named"],
     ),
+    Control(
+        describes="R29: silver checks functional dependencies across rows",
+        path="core/mirror/expectations.py",
+        old="    _apply_dependencies(result, expectations)\n    return result",
+        new="    return result",
+        tests=["tests/unit/test_dependencies_across_rows.py::TestThroughARealSync::test_quarantine_holds_the_disagreeing_row_and_names_the_majority",
+               "tests/unit/test_dependencies_across_rows.py::TestThroughARealSync::test_fail_stops_the_build"],
+    ),
+    Control(
+        describes="R29: a strict majority holds only the rows that disagree with it",
+        path="core/ontology/field_rules.py",
+        old="        if counts[majority] * 2 > len(members):",
+        new="        if False:",
+        tests=["tests/unit/test_dependencies_across_rows.py::TestTheCheck::test_the_minority_against_a_strict_majority_is_named"],
+    ),
+    Control(
+        describes="R29: an empty determinant agrees with nothing",
+        path="core/ontology/field_rules.py",
+        old="        if any(part is None for part in key):\n            continue",
+        new="        if False:\n            continue",
+        tests=["tests/unit/test_dependencies_across_rows.py::TestTheCheck::test_an_empty_determinant_or_dependent_is_not_a_disagreement"],
+    ),
+    Control(
+        describes="R29: a dependency over a link is refused at load",
+        path="core/ontology/field_rules.py",
+        old="                if fields[field_name].get(\"type\") == \"link\" or \"derived\" in fields[field_name]:",
+        new="                if False:",
+        tests=["tests/unit/test_dependencies_across_rows.py::TestRefusedAtLoad::test_a_dependency_that_could_never_be_checked"],
+    ),
 ]
 
 
