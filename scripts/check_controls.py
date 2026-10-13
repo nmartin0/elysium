@@ -2116,6 +2116,28 @@ CONTROLS = [
         new="                    tx.set_properties({\n                        **_read_properties(read_started_at, self._run_id)})",
         tests=["tests/unit/test_reference_data_is_versioned.py::test_a_changed_version_is_warned_about_even_when_the_data_did_not_change"],
     ),
+    Control(
+        describes="R46: an as-of read returns the version valid at that time",
+        path="core/mirror/changelog.py",
+        old="            if (start is None or start <= when) and (end is None or when < end):",
+        new="            if end is None:",
+        tests=["tests/unit/test_as_of_joins.py::TestAVersionAtATime::test_before_and_after_a_change",
+               "tests/unit/test_as_of_joins.py::test_the_history_script_answers_as_of_a_time"],
+    ),
+    Control(
+        describes="R46: an object inserted later did not exist then",
+        path="core/mirror/changelog.py",
+        old="        if not known:\n            return self._current.get(str(object_id))",
+        new="        if True:\n            return self._current.get(str(object_id))",
+        tests=["tests/unit/test_as_of_joins.py::TestAVersionAtATime::test_an_object_inserted_later_did_not_exist_then"],
+    ),
+    Control(
+        describes="R46: the boundary of a change belongs to the new version",
+        path="core/mirror/changelog.py",
+        old="(end is None or when < end):",
+        new="(end is None or when <= end):",
+        tests=["tests/unit/test_as_of_joins.py::TestAVersionAtATime::test_the_boundary_belongs_to_the_new_version"],
+    ),
 ]
 
 

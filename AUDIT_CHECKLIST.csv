@@ -232,7 +232,7 @@ R42,R,PR001 III,P1*,guard LLM enrichment inputs and outputs,new,-,unverified
 R43,R,PR001 III,P3,entity linking via the W3C Reconciliation API,new,-,unverified
 R44,R,PR001 III,P3,"external data: waterfall, licence metadata, TTL expiry",new,-,unverified
 R45,R,PR001 III,P3,embeddings as versioned classified gold derivatives,new,-,unverified
-R46,R,PR001 III,P2,as-of joins for time-correct enrichment,new,-,unverified
+R46,R,PR001 III,P2,as-of joins for time-correct enrichment,"core/mirror/changelog.py, scripts/history_of.py","tests/unit/test_as_of_joins.py, scripts/check_controls.py","BUILT 2026-10-13: AsOf reads each object's version at a time from the changelog's SCD2 versions (R10) and silver's current rows -- a row never seen changing is as it is now; a row whose recorded insert came later did not exist (None). as_of_join puts each fact beside the referenced object's version at the fact's own time. `history_of <table> --as-of <time>` answers it from the command line. The clock is when the sync noticed, exact only to the sync interval, and said so."
 R47,R,PR001 III,P2,inference review for special categories,new,-,"VERIFIED 2026-10-13, OWNER: nothing implements inference review for special categories; the only part of D5 still undecided. Listed in BLOCKING.md's owner questions || was: owner decision D5"
 R48,R,PR001 III,P3,model predictions as inferred properties,new,-,unverified
 R49,R,PR001 III,P3,human enrichment: notes and annotations as data,ui roadmap,-,unverified

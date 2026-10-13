@@ -2,6 +2,8 @@
 
     python -m scripts.history_of primary_sql.customers            # all rows
     python -m scripts.history_of primary_sql.customers cust_001   # one
+    python -m scripts.history_of primary_sql.customers --as-of 2026-05-01
+                                       # each row as it was then (R46)
 
 Reads the changelog the sync keeps for a source table and prints each
 version of each row with when it became current and when it stopped --
@@ -15,11 +17,12 @@ import sys
 
 from core.deployment_loader import load_deployment, resolve_runtime_paths
 from core.mirror.catalog import open_mirror_catalog
-from core.mirror.changelog import scd2_versions
+from core.mirror.changelog import AsOf, scd2_versions
 from core.mirror.sync_targets import resolve_sync_targets
 
 
-def run(table: str, object_id: "str | None" = None, paths=None, out=sys.stdout) -> int:
+def run(table: str, object_id: "str | None" = None, paths=None, out=sys.stdout,
+        as_of: "str | None" = None) -> int:
     paths = paths or resolve_runtime_paths()
     config = load_deployment(paths.config_dir)
     silo, _, table_name = table.partition(".")
@@ -36,6 +39,21 @@ def run(table: str, object_id: "str | None" = None, paths=None, out=sys.stdout) 
               file=sys.stderr)
         return 1
     versions = scd2_versions(entries, target.id_column)
+    if as_of is not None:
+        # EACH ROW AS IT WAS THEN (R46): its version valid at that time,
+        # or its current row if it never changed while watched. A row
+        # that did not exist yet is left out.
+        current = catalog.load_table(f"{silo}.{table_name}").scan().to_arrow().to_pylist()
+        reader = AsOf(versions, current, target.id_column)
+        ids = sorted({str(row.get(target.id_column)) for row in current}
+                     | {str(version.get(target.id_column)) for version in versions})
+        rows = [found for found in (reader.version_at(key, as_of) for key in ids
+                                    if object_id is None or key == object_id)
+                if found is not None]
+        writer = csv.DictWriter(out, fieldnames=target.columns, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+        return 0
     if object_id is not None:
         versions = [v for v in versions if str(v.get(target.id_column)) == object_id]
     columns = [*target.columns, "_valid_from", "_valid_to", "_current"]
@@ -46,7 +64,16 @@ def run(table: str, object_id: "str | None" = None, paths=None, out=sys.stdout) 
 
 
 if __name__ == "__main__":
-    if len(sys.argv) not in (2, 3):
+    arguments = sys.argv[1:]
+    when = None
+    if "--as-of" in arguments:
+        at = arguments.index("--as-of")
+        if at + 1 >= len(arguments):
+            print(__doc__, file=sys.stderr)
+            sys.exit(2)
+        when = arguments[at + 1]
+        del arguments[at:at + 2]
+    if len(arguments) not in (1, 2):
         print(__doc__, file=sys.stderr)
         sys.exit(2)
-    sys.exit(run(sys.argv[1], sys.argv[2] if len(sys.argv) == 3 else None))
+    sys.exit(run(arguments[0], arguments[1] if len(arguments) == 2 else None, as_of=when))

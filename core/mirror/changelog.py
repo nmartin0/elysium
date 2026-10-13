@@ -40,6 +40,7 @@ is large enough to change it.
 """
 
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
 
 # CHANGE TYPES, named as Iceberg's own changelog does.
 INSERT = "INSERT"
@@ -302,3 +303,70 @@ def diff_snapshot_tables(previous, current, id_column: str,
     for key in missing:
         rows.append({**old_dicts[old_index[key]], "_change": DELETE})
     return ChangeSet(rows=rows, suspected_partial_read=False)
+
+
+# -- as-of reads and joins (R46) ---------------------------------------------
+
+def _instant(value) -> "datetime | None":
+    """A comparable UTC instant from a timestamp, an ISO string or a date
+    (a date is its first moment, UTC)."""
+
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value) if "T" in value or " " in value \
+            else date.fromisoformat(value)
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day, tzinfo=UTC)
+    raise ValueError(f"{value!r} is not a time.")
+
+
+class AsOf:
+    """Each object's version AT A GIVEN TIME, from the changelog's SCD2
+    versions and silver's current rows (R46).
+
+    AN OBJECT THE CHANGELOG NEVER SAW CHANGE has no versions: it has
+    been as it is now for as long as the mirror has watched, so its
+    current row answers. An object whose recorded INSERT came after the
+    time asked about did not exist then, and the answer is None -- as it
+    is for a time before the changelog's first sight of an object it
+    has versions for. Unknown is said as None, never guessed.
+
+    THE CLOCK IS WHEN THE SYNC NOTICED (see `_recorded_at`), so "as of
+    3 May" means "as the mirror knew it on 3 May": a change made on 2
+    May and synced on 4 May is after. Exact only to the sync interval,
+    and said so.
+    """
+
+    def __init__(self, versions: list[dict], current_rows: list[dict], id_column: str):
+        self._by_id: dict[str, list[dict]] = {}
+        for version in versions:
+            self._by_id.setdefault(str(version.get(id_column)), []).append(version)
+        self._current = {str(row.get(id_column)): row for row in current_rows}
+
+    def version_at(self, object_id, at) -> "dict | None":
+        when = _instant(at)
+        known = self._by_id.get(str(object_id))
+        if not known:
+            return self._current.get(str(object_id))
+        for version in known:
+            start, end = _instant(version.get("_valid_from")), _instant(version.get("_valid_to"))
+            if (start is None or start <= when) and (end is None or when < end):
+                return {key: value for key, value in version.items() if not key.startswith("_")}
+        return None
+
+
+def as_of_join(facts: list[dict], at_key: str, reference_key: str, as_of: AsOf) -> list[dict]:
+    """Each fact beside the referenced object AS IT WAS at the fact's own
+    time -- a transaction with its customer's region on the day of the
+    transaction, not today's. The joined version is under `_as_of`, None
+    when it is not known; a fact without a time or a reference joins
+    nothing."""
+    joined = []
+    for fact in facts:
+        at, reference = fact.get(at_key), fact.get(reference_key)
+        version = None if at is None or reference is None else as_of.version_at(reference, at)
+        joined.append({**fact, "_as_of": version})
+    return joined
