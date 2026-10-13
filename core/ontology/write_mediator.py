@@ -1190,11 +1190,10 @@ class WriteMediator:
 
         AND NOTHING ELSE CATCHES IT. `_authorize_sub_write` skips MAC
         for a create, correctly, because there is no row yet to consult.
-        `_refuse_cross_compartment` excludes creates from its write set
-        for the same reason. Both exclusions are right on their own and
-        together they leave the create path with no compartment check
-        at all, which is why this belongs here rather than in either of
-        them.
+        `_refuse_cross_compartment` now labels a create by the value it
+        SETS (SEC-28), which a parameter could choose freely -- so the
+        caller's choice has to be refused here, before that value
+        exists.
 
         A LITERAL IS ALLOWED, AND I FIRST REFUSED IT. I wrote that a
         literal "hardcodes one tenant's compartment into a schema every
@@ -1208,14 +1207,11 @@ class WriteMediator:
         CALLER's value, not the author's, and conflating the two was my
         mistake.
 
-        WHAT A LITERAL DOES STILL LEAVE OPEN is a separate matter and
-        is recorded rather than fixed here: a create is excluded from
-        `_refuse_cross_compartment`'s write set, so an action reading
-        an object in one compartment and creating one in another --
-        by literal -- is not detected as a crossing the way an UPDATE
-        is. Closing that means deriving a create's label from its
-        resolved changes, which is a change to that function and not
-        to this one.
+        WHAT A LITERAL USED TO LEAVE OPEN is closed in
+        `_refuse_cross_compartment` (SEC-28): a create's label is now
+        derived from its resolved changes (`_label_written`), so reading
+        an object in one compartment and creating one in another -- by
+        literal -- is a crossing exactly as an UPDATE is.
 
         AT PROPOSAL, BEFORE RESOLUTION. A write that cannot legally
         happen should not reach an approval queue looking like a
@@ -1278,12 +1274,8 @@ class WriteMediator:
                 )
 
         write_labels = {
-            (sub.object_type, sub.object_id):
-                self._adapter_mediator.security_value_of(
-                    sub.object_type, sub.object_id,
-                )
+            (sub.object_type, sub.object_id): self._label_written(sub)
             for sub in sub_writes
-            if sub.operation != "create"
         }
 
         crossings = _compartment_crossings(read_labels, write_labels)
@@ -1313,6 +1305,35 @@ class WriteMediator:
             f"{write_label}). Data may not cross a security compartment, "
             f"even when you can see both sides. Nothing has been written."
         )
+
+    def _label_written(self, sub_write: SubWrite) -> Any:
+        """The compartment a sub-write puts data into.
+
+        AN EXISTING OBJECT'S is its own, read from the source.
+
+        A CREATE'S IS THE ONE IT SETS (SEC-28). There is no row to read
+        yet, which is why creates used to be left out of the write set
+        altogether -- and so reading an object in one compartment and
+        creating one in another was never seen as a crossing, though it
+        carries data exactly as an update does. The label is already in
+        the resolved changes: a literal the author chose, or the
+        proposer's own value through `user.security_value`; a parameter
+        is refused earlier by _refuse_a_chosen_compartment.
+
+        A create that sets no security value gets None, which
+        _compartment_crossings treats as unlabelled -- and an unlabelled
+        object is visible to nobody (_security_allowed requires a value),
+        so nothing written into it can leak.
+        """
+        if sub_write.operation != "create":
+            return self._adapter_mediator.security_value_of(
+                sub_write.object_type, sub_write.object_id)
+        try:
+            declared = self._adapter_mediator._type_schema(sub_write.object_type) or {}
+        except (KeyError, ValueError):
+            return None
+        field_name = (declared.get("security") or {}).get("field")
+        return sub_write.changes.get(field_name) if field_name else None
 
     def propose_action(self, user_record: UserRecord, action_type_name: str, parameters: dict,
                        origin: Origin) -> PendingWrite:

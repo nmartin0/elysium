@@ -2241,6 +2241,14 @@ CONTROLS = [
         tests=["tests/unit/test_proposer_is_reread_at_confirm.py::TestTheRouteLooksThemUp::"
                "test_a_disabled_account_is_none"],
     ),
+    Control(
+        describes="SEC-28: a create counts as a write into the compartment it sets",
+        path="core/ontology/write_mediator.py",
+        old="        return sub_write.changes.get(field_name) if field_name else None\n",
+        new="        return None\n",
+        tests=["tests/unit/test_cross_compartment_write.py::TestACreateIsAWriteToo::"
+               "test_reading_one_compartment_and_creating_in_another_is_refused"],
+    ),
 ]
 
 

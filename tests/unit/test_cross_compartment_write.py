@@ -27,7 +27,12 @@ topsecret}`.
 """
 
 
+import pytest
+
+from core.intermediate_layer.auth import UserRecord
 from core.ontology.write_mediator import _compartment_crossings
+
+EAST = UserRecord(user_id="e", security_value="us-east", role_name="agent")
 
 
 class TestItFindsTheCrossing:
@@ -116,3 +121,74 @@ class TestTheRefusalType:
 
         assert issubclass(CrossCompartmentWrite, ValueError)
         assert not issubclass(CrossCompartmentWrite, PermissionError)
+
+
+class TestACreateIsAWriteToo:
+    """SEC-28: a create carries data into a compartment exactly as an
+    update does. It was left out of the write set because it has no row
+    to read a label from; its label is the one it SETS."""
+
+    @pytest.fixture
+    def propose(self, tmp_path):
+        import sqlite3
+
+        from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
+        from core.ontology.mediator import DataMediator
+        from core.ontology.write_log import WriteLogWriter
+        from core.ontology.write_mediator import WriteMediator
+
+        schema = {"Ticket": {
+            "id_field": "id", "security": {"field": "region"},
+            "storage": {"silo": "p", "table": "t", "id_column": "id"},
+            "fields": {"id": {"type": "data"}, "status": {"type": "data"},
+                       "region": {"type": "data"}},
+        }}
+        source = tmp_path / "s.db"
+        conn = sqlite3.connect(source)
+        conn.execute("CREATE TABLE t (id TEXT PRIMARY KEY, status TEXT, region TEXT)")
+        conn.execute("INSERT INTO t VALUES ('t-east','open','us-east')")
+        conn.commit()
+        conn.close()
+
+        def build(region_value):
+            mutations = [{"set": {"property": "id", "value": "parameter.new_id"}},
+                         {"set": {"property": "status", "value": "open"}}]
+            if region_value is not None:
+                mutations.append({"set": {"property": "region", "value": region_value}})
+            actions = {"follow_up": {
+                "display_name": "Follow up", "description": "d",
+                "affected_object_types": ["Ticket"],
+                "parameters": {
+                    "ticket": {"type": "object_reference", "object_type": "Ticket"},
+                    "new_id": {"type": "string"}},
+                "sub_writes": [{"operation": "create", "object_type": "Ticket",
+                                 "object_id": "parameter.new_id", "mutations": mutations}],
+            }}
+            roles = {"agent": {"allowed_actions": frozenset(
+                ["execute:follow_up", "read:Ticket", "read:Ticket.status",
+                 "read:Ticket.region", "read:Ticket.id"])}}
+            mediator = DataMediator(schema, {"p": SQLiteReadAdapter({"path": source})},
+                                     {"Ticket": "p"}, roles,
+                                     write_log=WriteLogWriter(tmp_path / "wl.db"))
+            writer = WriteMediator(mediator, {"p": SQLiteWriteAdapter({"path": source})},
+                                    roles, actions, 1)
+            return writer.propose_action(EAST, "follow_up",
+                                         {"ticket": "t-east", "new_id": "t-new"},
+                                         origin="human")
+        return build
+
+    def test_reading_one_compartment_and_creating_in_another_is_refused(self, propose):
+        from core.ontology.write_mediator import CrossCompartmentWrite
+
+        with pytest.raises(CrossCompartmentWrite, match="t-east.*us-east.*t-new.*us-west"):
+            propose("us-west")
+
+    def test_creating_in_the_compartment_it_read_is_allowed(self, propose):
+        assert propose("us-east").sub_writes[0].changes["region"] == "us-east"
+
+    def test_the_proposers_own_compartment_is_allowed(self, propose):
+        assert propose("user.security_value").sub_writes[0].changes["region"] == "us-east"
+
+    def test_a_create_that_sets_no_compartment_carries_nothing_out(self, propose):
+        """Unlabelled: visible to nobody, so nothing written leaks."""
+        assert "region" not in propose(None).sub_writes[0].changes
