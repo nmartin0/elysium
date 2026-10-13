@@ -690,17 +690,24 @@ class IcebergMirrorSync(MirrorSync):
             # table where an operator can see them, which is the whole
             # reason this is an acceptable default at all.
             mismatched = set(transformed.mismatched_row_indices)
-            held_back = [
-                (row, Violation(
-                    column=transformed.drift[0].column,
-                    field_name=transformed.drift[0].column,
-                    reason=("does not match the declared type "
-                            f"{transformed.drift[0].declared_type}"),
-                    value=row.get(transformed.drift[0].column),
-                    policy=QUARANTINE))
-                for index, row in enumerate(transformed.rows)
-                if index in mismatched
-            ]
+            # THE CELL THAT FAILED, PER ROW. This named the table's FIRST
+            # drifted column for every held row, so a row whose only bad
+            # cell was `date` was filed under `amount`, with the good
+            # amount as its "value" -- an operator reading the quarantine
+            # table would go and fix the wrong column.
+            held_back = []
+            for index, row in enumerate(transformed.rows):
+                if index not in mismatched:
+                    continue
+                failed = transformed.mismatched_cells.get(index) or [
+                    (transformed.drift[0].column, transformed.drift[0].declared_type)]
+                column, declared = failed[0]
+                also = (f"; also {', '.join(name for name, _ in failed[1:])}"
+                        if len(failed) > 1 else "")
+                held_back.append((row, Violation(
+                    column=column, field_name=column,
+                    reason=f"does not match the declared type {declared}{also}",
+                    value=row.get(column), policy=QUARANTINE)))
             if held_back:
                 self._write_quarantine(silo_name, table_name, id_column,
                                        held_back)
@@ -726,9 +733,16 @@ class IcebergMirrorSync(MirrorSync):
                 silo_name, table_name, transformed.drift[0].column,
                 also_affected=len(transformed.drift) - 1,
             )
+            # AND THE WAY OUT, BY NAME (ZOO-11). Reaching here means the
+            # deployment did not ask for rows to be set aside -- usually
+            # because the key is absent, which nobody chose -- and a
+            # refusal that never mentions the setting leaves the one
+            # person who could change it no way to find it.
             raise ValueError(
                 f"{verdict.detail}\n\n"
-                f"{describe_drift(silo_name, table_name, transformed.drift)}"
+                f"{describe_drift(silo_name, table_name, transformed.drift)}\n\n"
+                f"To set the offending rows aside and sync the rest instead, add "
+                f"`on_type_mismatch: quarantine` to config.yaml."
             )
 
         # THE EXPECTATIONS, on coerced values (GOLD-1). warn keeps the

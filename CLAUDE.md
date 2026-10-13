@@ -428,15 +428,16 @@ they drift.
 
 ## Where the work stands
 
-Build order and per-feature designs were in the UI roadmap, now
-consumed into `BLOCKING.md` items 22 and 29. Two
-things worth carrying that are not features:
+`BLOCKING.md` is where the work stands; its item numbers move as
+items are consumed, so name an item by its TITLE when writing about
+it anywhere else. Two things worth carrying that are not features:
 
-**Query is too slow to use**, which means Agent audit — built, tested,
-complete — cannot be verified by hand. Items 27 (a wall-clock
-deadline) and 29 (measure the loop) would fix that, and **item 33
-blocks both**: `LLMAdapter.chat()` has nowhere to put a timeout and
-discards the token counts every provider returns.
+**Query is slow on this hardware**, and the agent-loop work that
+measured it is BLOCKING.md's "Agent-loop efficiency" item. What this
+paragraph used to say blocked it -- `LLMAdapter.chat()` having nowhere
+to put a timeout and discarding token counts -- is no longer true:
+`chat()` takes `deadline=` and `usage=` (core/llm/interface.py), and
+`scripts/llm_bench.py` is the measurement.
 
 **Vertex-lite IS now entirely frontend, and the paragraph that used to
 sit here was an example of the failure mode two sections above.** It

@@ -403,7 +403,7 @@ def _count_step(value=2, customer="cust_001", step="aggregate_object"):
 
 
 class TestAnAggregateIsScored:
-    """BLOCKING 12: "are aggregates chosen when they should be?" -- from
+    """BLOCKING 11: "are aggregates chosen when they should be?" -- from
     a run where counting Ada's transactions took five model calls. A
     grader reading only get_field steps could not score that question
     at all; these cases are what it can now tell apart."""
@@ -427,7 +427,7 @@ class TestAnAggregateIsScored:
     def test_counting_by_SEARCH_is_not_credited(self):
         """THE BEHAVIOUR UNDER TEST. Finding two ids and saying "two"
         reaches the right number the long way round, which is exactly
-        what BLOCKING 12 observed and wants to stop. Crediting it would
+        what BLOCKING 11 observed and wants to stop. Crediting it would
         make the case unable to report the thing it was written for."""
         search = {"step": "search_object", "object_type": "Transaction",
                   "filter": {"customer_id": "cust_001"}, "result": ["1", "2"]}

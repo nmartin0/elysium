@@ -24,7 +24,9 @@ class MemoryEntry:
     object_type: str
     object_id: Any
     value: Any
-    captured_security_value: str   # audit/debugging ONLY -- see module docstring
+    # audit/debugging ONLY -- see module docstring. None when the object
+    # had no security value at capture: not "" (F-09).
+    captured_security_value: str | None
 
 
 class MemoryStore(Protocol):

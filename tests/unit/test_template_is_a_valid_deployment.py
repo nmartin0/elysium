@@ -164,3 +164,19 @@ def test_the_debug_script_refuses_without_the_flag(monkeypatch, tmp_path):
     said = (result.stdout + result.stderr).lower()
     assert "development" in said, (
         "the refusal does not tell the operator what to do instead")
+
+
+def test_a_new_deployment_starts_on_the_new_installation_defaults():
+    """ZOO-11, and two more of the same shape. Each of these keys, when
+    ABSENT, keeps the behaviour from before it existed -- deliberately,
+    so an upgrade breaks nobody. The template omitted all three, so
+    every NEW deployment copied from it started on the old behaviour:
+    one bad cell refused a whole table, every undeclared source column
+    landed in bronze, and confirmed writes reached every silo."""
+    from core.deployment_loader import load_deployment
+
+    config = load_deployment(TEMPLATES)
+
+    assert config.on_type_mismatch == "quarantine"
+    assert config.ingest_undeclared_columns is False
+    assert tuple(config.write_targets) == ()

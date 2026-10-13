@@ -190,7 +190,7 @@ CASES = (
             ExpectedFact("Transaction", "2", "category", "hardware"),
         ),
     ),
-    # BLOCKING 12's observed question, verbatim. It took FIVE model
+    # BLOCKING 11's observed question, verbatim. It took FIVE model
     # calls and fetched `transaction_date` twice; one aggregate step
     # answers it. Passes ONLY if the model chose `aggregate_object` --
     # counting ids from a search is the behaviour under test, not an

@@ -39,8 +39,12 @@ class MemoryGuard:
         self.roles = roles
 
     def put(self, key: str, object_type: str, object_id: Any, value: Any, user_id: str) -> None:
-        security_value = self.mediator._get_security_value(object_type, object_id)
-        entry = MemoryEntry(object_type, object_id, value, security_value or "")
+        # F-09: the public accessor, and None kept as None. Flattening it
+        # to "" made "this object has no security value" read, in the
+        # audit snapshot this field exists for, as "its value is empty".
+        security_value = self.mediator.security_value_of(object_type, object_id)
+        entry = MemoryEntry(object_type, object_id, value,
+                            None if security_value is None else str(security_value))
         self.store.put(key, entry)
 
     def get(self, key: str, user_record: UserRecord) -> Any | None:

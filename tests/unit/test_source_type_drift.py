@@ -22,8 +22,6 @@ import json
 import logging
 import sqlite3
 
-import pytest
-
 from core.mirror.iceberg_sync import (
     SOURCE_TYPES_PROPERTY,
     _report_type_drift,
@@ -161,25 +159,24 @@ class TestWhatEachAdapterCanSay:
         """A REAL DATABASE ANSWERS PROPERLY, through Core's Inspector,
         uniformly across every dialect -- and a customer's data lives
         there while SQLite is the embedded fixture case."""
-        pytest.importorskip("pgserver")
-        import tempfile
-
-        import pgserver
         import psycopg
 
         from adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
+        from tests.postgres_server import real_postgres
 
-        server = pgserver.get_server(tempfile.mkdtemp())
-        with psycopg.connect(server.get_uri()) as conn, conn.cursor() as cur:
-            cur.execute("CREATE TABLE t (amount numeric(12,2))")
-            conn.commit()
+        uri, stop = real_postgres()
+        try:
+            with psycopg.connect(uri) as conn, conn.cursor() as cur:
+                cur.execute("CREATE TABLE t (amount numeric(12,2))")
+                conn.commit()
 
-        adapter = SQLAlchemyReadAdapter({
-            "url": server.get_uri().replace(
-                "postgresql://", "postgresql+psycopg://"),
-        })
+            adapter = SQLAlchemyReadAdapter({
+                "url": uri.replace("postgresql://", "postgresql+psycopg://"),
+            })
 
-        assert adapter.source_column_types("t") == {"amount": "NUMERIC(12, 2)"}
+            assert adapter.source_column_types("t") == {"amount": "NUMERIC(12, 2)"}
+        finally:
+            stop()
 
 
 def test_the_property_lives_on_bronze():

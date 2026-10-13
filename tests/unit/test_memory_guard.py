@@ -77,3 +77,19 @@ def test_get_denies_when_access_since_revoked(guard):
         assert guard.get("k1", _record("alice")) is None  # a FRESH resolution must now be denied
     finally:
         TEST_USERS["alice"]["role"] = "reader"  # restore for other tests
+
+
+def test_an_object_with_no_security_value_is_captured_as_none_not_empty(guard):
+    """F-09. The snapshot is audit-only, but an audit that reads "" for
+    "this object has no security value" is wrong about the one thing it
+    records. An id that does not exist resolves to no value at all."""
+    guard.put("k", "Author", "no_such_author", "v", "alice")
+
+    assert guard.store.get("k").captured_security_value is None
+
+
+def test_a_real_security_value_is_captured_as_it_is(guard):
+    """THE CONTROL: the fix must not turn every capture into None."""
+    guard.put("k", "Author", "auth_001", "v", "alice")
+
+    assert guard.store.get("k").captured_security_value == "org-a"

@@ -102,6 +102,12 @@ class TransformResult:
     #: mismatch is rescued rather than failed. An `N/A` in an integer
     #: column is a type mismatch.
     mismatched_row_indices: list[int] = field(default_factory=list)
+    #: {row index: [(column, declared type), ...]} -- WHICH CELLS failed,
+    #: in column order. The quarantine record names the cell that put
+    #: the row there; it used to name the table's FIRST drifted column
+    #: for every row, so a row whose `date` failed was filed as an
+    #: `amount` problem and shown its perfectly good amount.
+    mismatched_cells: dict[int, list[tuple[str, str]]] = field(default_factory=dict)
 
     @property
     def has_drift(self) -> bool:
@@ -119,9 +125,11 @@ def transform_rows(rows: list[dict], columns: list[str],
     same default the ontology itself applies, so a schema predating
     field types behaves exactly as before.
 
-    Drift is collected per COLUMN, not per row: one source column that
-    changed type produces one report naming a real example, rather than
-    thousands of identical failures.
+    The drift REPORT is per COLUMN: one source column that changed type
+    produces one report naming a real example, rather than thousands of
+    identical failures. Which ROWS failed, and in which cells, is
+    recorded beside it (`mismatched_row_indices`, `mismatched_cells`)
+    for the quarantine path, which acts per row.
     """
     column_types = column_types or {}
     resolved = {column: column_types.get(column, DEFAULT_FIELD_DATA_TYPE) for column in columns}
@@ -129,6 +137,7 @@ def transform_rows(rows: list[dict], columns: list[str],
     drift: list[DriftedColumn] = []
     drifted_columns: set[str] = set()
     mismatched: set[int] = set()
+    cells: dict[int, list[tuple[str, str]]] = {}
     cleaned: list[dict] = []
 
     for index, row in enumerate(rows):
@@ -176,6 +185,7 @@ def transform_rows(rows: list[dict], columns: list[str],
                         )
                     )
                 mismatched.add(index)
+                cells.setdefault(index, []).append((column, declared))
                 # The raw value is kept rather than dropped or defaulted:
                 # the caller decides what to do about a drifted table,
                 # and silently substituting would destroy the evidence.
@@ -183,7 +193,8 @@ def transform_rows(rows: list[dict], columns: list[str],
         cleaned.append(cleaned_row)
 
     return TransformResult(rows=cleaned, drift=drift,
-                           mismatched_row_indices=sorted(mismatched))
+                           mismatched_row_indices=sorted(mismatched),
+                           mismatched_cells=cells)
 
 
 def describe_drift(silo_name: str, table_name: str, drift: list[DriftedColumn]) -> str:

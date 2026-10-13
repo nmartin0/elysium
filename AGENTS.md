@@ -545,9 +545,8 @@ transform stage is for drift detection, not join performance), and
 functions (their authors cannot see the calling user either).
 
 If the research contradicts a decision already committed, say so and
-reverse it. `the roadmap (consumed)` records several such reversals; that is
-the
-intended use.
+reverse it. The commit history records several such reversals; that
+is the intended use.
 
 ## Do not add speculative code
 

@@ -19,7 +19,6 @@ the stdlib module. Two mechanisms, divided on a real line: embedded
 fixture storage against a customer's real database.
 """
 
-import tempfile
 
 import pytest
 
@@ -27,17 +26,19 @@ from adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
 from core.filters import FieldFilter
 from core.ontology.interface import StorageUnavailable
 
-pytest.importorskip("pgserver")
-pytest.importorskip("psycopg")
-
 
 @pytest.fixture(scope="module")
 def postgres_url():
-    """One server for the module. Starting it is the slow part."""
-    import pgserver
+    """One server for the module. Starting it is the slow part.
 
-    server = pgserver.get_server(tempfile.mkdtemp())
-    return server.get_uri().replace("postgresql://", "postgresql+psycopg://")
+    NO importorskip: with neither pgserver nor a system PostgreSQL this
+    FAILS, naming what to install (tests/postgres_server.py says why).
+    """
+    from tests.postgres_server import real_postgres
+
+    uri, stop = real_postgres()
+    yield uri.replace("postgresql://", "postgresql+psycopg://")
+    stop()
 
 
 @pytest.fixture(scope="module")

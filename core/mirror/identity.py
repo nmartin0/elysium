@@ -18,6 +18,17 @@ WHAT A RULE SAYS:
     identity:
       match_on: [email]        # the declared key, compared exactly
       primary: primary_sql     # whose id the entity keeps
+      casefold: [email]        # optional: these key fields compare
+                               # case-insensitively (ZOO-24)
+
+CASEFOLD IS ON THE KEY, NEVER THE VALUE. standardise.py refuses case
+folding on values -- "case, punctuation and diacritics can carry
+meaning" -- and says the aggressive normalisations "belong to gold's
+MATCH KEYS". This is that: `Ada@Example.com` and `ada@example.com` can
+be declared the same key while the golden record keeps whichever
+spelling survivorship chose. DECLARED, per field, because case carries
+meaning in some keys (a case-sensitive account code) and only the
+deployment knows which.
 
 MATCHED EXACTLY, ON STANDARDISED VALUES. Silver has already trimmed,
 collapsed and NFC-normalised the MATCH FIELDS (GOLD-1), so "exactly"
@@ -65,6 +76,8 @@ class IdentityRule:
 
     match_on: tuple[str, ...]
     primary: Any = None          # the storage key whose id the entity keeps
+    #: Key fields compared case-insensitively (ZOO-24). Empty: exact.
+    casefold: frozenset = frozenset()
 
 
 @dataclass
@@ -113,10 +126,21 @@ def rule_for(type_def: dict) -> IdentityRule | None:
     # validated there -- named here only so this validator does not
     # reject a type that declares both halves, which is the normal
     # case for a deployment using inference at all.
-    unknown_keys = set(declared) - {"match_on", "primary", "probabilistic"}
+    unknown_keys = set(declared) - {"match_on", "primary", "probabilistic", "casefold"}
     if unknown_keys:
         raise ValueError(f"unknown identity key(s) {sorted(unknown_keys)}.")
-    return IdentityRule(match_on=tuple(match_on), primary=declared.get("primary"))
+    casefold = declared.get("casefold") or ()
+    if isinstance(casefold, str) or not isinstance(casefold, Sequence):
+        raise ValueError("identity.casefold must be a list of match_on field names.")
+    # ONLY KEY FIELDS. A casefold on a field the key does not use would
+    # do nothing, and a rule that silently does nothing is a rule its
+    # author believes is working.
+    stray = [name for name in casefold if name not in match_on]
+    if stray:
+        raise ValueError(
+            f"identity.casefold names field(s) that are not in match_on: {stray}.")
+    return IdentityRule(match_on=tuple(match_on), primary=declared.get("primary"),
+                        casefold=frozenset(casefold))
 
 
 def _value_of(row: dict, field_name: str, type_def: dict, storage_key: Any) -> Any:
@@ -140,7 +164,7 @@ def _match_key(row: dict, rule: IdentityRule, type_def: dict, storage_key: Any):
         value = _value_of(row, field_name, type_def, storage_key)
         if value is None or (isinstance(value, str) and not value.strip()):
             return None
-        values.append(str(value))
+        values.append(str(value).casefold() if field_name in rule.casefold else str(value))
     return tuple(values)
 
 

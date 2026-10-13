@@ -1252,14 +1252,14 @@ class WriteMediator:
                 referenced if isinstance(referenced, list) else [referenced]
             ):
                 read_labels[(object_type, object_id)] = (
-                    self._adapter_mediator._get_security_value(
+                    self._adapter_mediator.security_value_of(
                         object_type, object_id,
                     )
                 )
 
         write_labels = {
             (sub.object_type, sub.object_id):
-                self._adapter_mediator._get_security_value(
+                self._adapter_mediator.security_value_of(
                     sub.object_type, sub.object_id,
                 )
             for sub in sub_writes
@@ -1913,7 +1913,7 @@ class WriteMediator:
             #
             # The narrow claim is the true one: a write is refused when
             # the object has MOVED OUT of the proposer's reach.
-            current = self._adapter_mediator._get_security_value(object_type, object_id)
+            current = self._adapter_mediator.security_value_of(object_type, object_id)
             if current is None or current == proposer.security_value:
                 continue
             self.audit_log.log_access(

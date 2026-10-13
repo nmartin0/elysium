@@ -133,7 +133,11 @@ class TestCrossReferencesPointSomewhere:
     def test_every_referenced_item_exists(self):
         numbers = {number for number, _ in _numbered()}
         body = TEXT.split("# Blocked on a decision", 1)[1]
-        referenced = {int(m) for m in re.findall(r"item (\d+)", body)}
+        # "(was item N)" IS HISTORY, naming a number that has since been
+        # reused or retired; it is not a reference. It passed only while
+        # N still happened to exist, and failed the day the last item
+        # number went away.
+        referenced = {int(m) for m in re.findall(r"(?<!was )item (\d+)", body)}
         missing = sorted(referenced - numbers)
 
         assert missing == [], f"references to items that do not exist: {missing}"

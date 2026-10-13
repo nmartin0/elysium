@@ -58,6 +58,12 @@ logger = logging.getLogger(__name__)
 DISALLOWED_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
 
 
+#: Linux's MAX_ARG_STRLEN (32 pages of 4 KiB): the most one argv string
+#: may hold. macOS's limit is on the whole argv and larger; this is the
+#: binding one.
+MAX_ARGUMENT_BYTES = 131_072
+
+
 class ClaudeAgentSDKAdapter:
     """Talks to Claude through the local `claude` CLI in print mode."""
 
@@ -93,6 +99,22 @@ class ClaudeAgentSDKAdapter:
         return environment
 
     def _command(self, system_prompt: str, json_mode: "bool | dict") -> list[str]:
+        # ONE ARGUMENT MAY NOT EXCEED 128 KiB ON LINUX (MAX_ARG_STRLEN),
+        # and the system prompt travels as one (F-24). Past it the spawn
+        # fails with OSError "Argument list too long" -- not an
+        # LLMUnavailable, so it escaped every caller's handling and
+        # named nothing an operator could act on. Refused here instead,
+        # with the size: the prompt is mostly the visible schema, so a
+        # deployment large enough to hit this needs a backend that takes
+        # the prompt in the request body (Ollama, vLLM).
+        size = len(system_prompt.encode("utf-8"))
+        if size >= MAX_ARGUMENT_BYTES:
+            raise LLMUnavailable(
+                f"The system prompt is {size:,} bytes; the {self.executable!r} command "
+                f"takes it as one command-line argument, which this operating system "
+                f"limits to {MAX_ARGUMENT_BYTES:,}. Use a backend that sends the prompt "
+                f"in the request (ollama or vllm), or narrow what the role can see."
+            )
         command = [
             self.executable,
             "-p",

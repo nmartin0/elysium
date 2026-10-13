@@ -545,6 +545,18 @@ class DataMediator:
         synthetic_type_config = {**type_schema, "storage": storage_block}
         return adapter, synthetic_type_config
 
+    def security_value_of(self, object_type: str, object_id: Any) -> Any:
+        """The object's CURRENT security value, or None when it has none
+        or cannot be resolved -- the public name for what the access
+        check, the write path and the memory guard all need (F-09).
+
+        NONE STAYS NONE. "No security value" and "an empty-string
+        security value" are different facts, and a caller that flattens
+        one into the other can no longer tell an unresolvable object
+        from one that genuinely carries "".
+        """
+        return self._get_security_value(object_type, object_id)
+
     def _get_security_value(self, object_type: str, object_id: Any) -> Any:
         # Cache first, populated by _prefetch_security_values() when a
         # caller is resolving many objects. A MISS falls through to the

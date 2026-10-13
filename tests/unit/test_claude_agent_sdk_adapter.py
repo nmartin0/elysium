@@ -250,3 +250,39 @@ def test_it_registers_as_a_deployment_provider():
     from core.deployment_loader import _LLM_ADAPTER_REGISTRY
 
     assert _LLM_ADAPTER_REGISTRY["claude_agent_sdk"] is ClaudeAgentSDKAdapter
+
+
+# --- F-24: the system prompt is one argv string -------------------------
+
+
+def test_a_prompt_past_the_argument_limit_is_refused_by_name(fake_claude):
+    """MEASURED: without the guard this spawn fails with OSError
+    "Argument list too long", which no caller handles. Refused as
+    LLMUnavailable instead, naming the size and the way out."""
+    from adapters.claude_agent_sdk_adapter import MAX_ARGUMENT_BYTES
+
+    with pytest.raises(LLMUnavailable, match="ollama or vllm"):
+        ClaudeAgentSDKAdapter("m", {}).chat("x" * MAX_ARGUMENT_BYTES, "q")
+
+    assert not fake_claude.exists(), "the CLI must not have been started"
+
+
+@pytest.mark.skipif(not __import__("sys").platform.startswith("linux"),
+                    reason="MAX_ARG_STRLEN is Linux's; macOS limits the whole argv instead")
+def test_the_limit_is_the_real_one():
+    """THE CONTROL, against the operating system rather than a constant:
+    a prompt one byte under the limit spawns; at the limit it fails."""
+    import subprocess
+
+    from adapters.claude_agent_sdk_adapter import MAX_ARGUMENT_BYTES
+
+    subprocess.run(["true", "x" * (MAX_ARGUMENT_BYTES - 1)], check=True)
+    with pytest.raises(OSError):
+        subprocess.run(["true", "x" * MAX_ARGUMENT_BYTES], check=True)
+
+
+def test_a_prompt_under_the_limit_still_reaches_the_cli(fake_claude):
+    ClaudeAgentSDKAdapter("m", {}).chat("x" * 100_000, "q")
+
+    argv = _invocation(fake_claude)["argv"]
+    assert len(argv[argv.index("--system-prompt") + 1]) == 100_000

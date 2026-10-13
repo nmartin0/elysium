@@ -169,3 +169,23 @@ tools:
 # deployment is not ambitious, it is guaranteed to alert forever.
 # freshness:
 #   sync_interval_hours: 24
+
+# THE NEW-INSTALLATION DEFAULTS. Each of these keys, when ABSENT, means
+# "a deployment written before this setting existed" and keeps that
+# older behaviour -- so a template that omitted them started every new
+# deployment on the old behaviour too, which is the opposite of what
+# each one was added for. deployment/etc/config.yaml explains each at
+# length; in one line each:
+#
+# Which silos a confirmed write may reach. [] refuses all external
+# writes until you name one.
+write_targets: []
+#
+# What one value that will not coerce costs: `quarantine` sets the ROW
+# aside (readable in quarantine_<silo>.<table>) and syncs the rest;
+# `refuse` stops the whole table.
+on_type_mismatch: quarantine
+#
+# Whether bronze keeps source columns the ontology never declared.
+# false keeps only declared columns, so an undeclared SSN never lands.
+ingest_undeclared_columns: false

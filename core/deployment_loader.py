@@ -15,8 +15,8 @@ deployment/var/lib, deployment/var/log) already mirror the exact same
 structure a real install uses (/etc/elysium, /var/lib/elysium,
 /var/log/elysium) -- see that function's own docstring.
 
-Two registries live here -- _ADAPTER_REGISTRY (data silos) and
-_LLM_ADAPTER_REGISTRY (LLM backends) -- both hardcoded dicts today,
+Three registries live here -- _READ_ADAPTER_REGISTRY and
+_WRITE_ADAPTER_REGISTRY (data silos) and _LLM_ADAPTER_REGISTRY (LLM backends) -- both hardcoded dicts today,
 both exactly the place a future entry-points-based third-party
 discovery mechanism would replace, without changing anything else in
 this file, DataMediator, or AgentLoop.
@@ -1001,9 +1001,10 @@ def _resolve_undeclared_columns(config: dict) -> "bool | None":
 def _resolve_type_mismatch_policy(config: dict) -> "str | None":
     """What one uncoercible value costs: the row, or the table.
 
-    TODAY IT COSTS THE TABLE. An `N/A` in an integer column stops the
-    whole sync, which is the behaviour seven ZOO findings collapse
-    into.
+    AN ABSENT KEY STILL COSTS THE TABLE: an `N/A` in an integer column
+    stops that table's sync, the behaviour seven ZOO findings collapse
+    into. `quarantine` costs the row, and is what the shipped config and
+    the template set.
 
     THE PRECEDENT SEPARATES TWO THINGS this does not. Databricks'
     parsers treat a MALFORMED RECORD and a TYPE MISMATCH differently --

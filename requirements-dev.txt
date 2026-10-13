@@ -66,9 +66,10 @@ flask-cors
 # did, on a real machine, immediately after this line was added
 # without the marker.
 #
-# THE ADAPTER'S TESTS SKIP WITHOUT IT, via importorskip. So a 3.13
-# developer gets a working install and 19 fewer tests, rather than no
-# install at all. That is the right way round: a dependency that
-# cannot be satisfied must not block the ones that can.
+# WITHOUT IT THE TESTS USE THE MACHINE'S OWN POSTGRESQL (initdb and
+# pg_ctl, tests/postgres_server.py), and FAIL if there is none. They
+# used to SKIP, via importorskip -- and when the machine gating every
+# patch moved to 3.13, 32 tests of the production read path skipped,
+# green, until somebody looked. So on 3.13: install PostgreSQL.
 pgserver<1.0; python_version < "3.13"
 

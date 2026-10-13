@@ -149,7 +149,71 @@ class TestItIsActuallyWired:
 
         source = Path("core/mirror/iceberg_sync.py").read_text()
         i = source.index('self._on_type_mismatch == "quarantine"')
-        branch = source[i:i + 1400]
+        # TO THE NEXT BLOCK, not a fixed number of characters: a fixed
+        # window broke the day the branch grew to name each row's cell.
+        branch = source[i:source.index("\n        if transformed.has_drift:", i)]
 
         assert "_write_quarantine(" in branch
         assert "raise" not in branch
+
+
+class TestTheQuarantineRecordNamesTheCellThatFailed:
+    """THE RECORD NAMED THE WRONG COLUMN. Every held row was filed under
+    the table's FIRST drifted column, with that column's value -- so a
+    row whose only bad cell was `seen` was reported as an `amount`
+    problem, showing a perfectly good amount. Through a real sync."""
+
+    def test_each_row_names_its_own_failing_column(self, tmp_path):
+        import sqlite3
+
+        from adapters.sqlite_adapter import SQLiteReadAdapter
+        from core.mirror.iceberg_sync import IcebergMirrorSync
+
+        source = tmp_path / "s.db"
+        conn = sqlite3.connect(source)
+        conn.execute("CREATE TABLE t (id TEXT PRIMARY KEY, amount TEXT, seen TEXT)")
+        conn.executemany("INSERT INTO t VALUES (?, ?, ?)", [
+            ("1", "N/A", "2026-01-01"),     # amount fails
+            ("2", "20", "not a date"),      # ONLY seen fails
+            ("3", "30", "2026-01-03"),
+        ])
+        conn.commit()
+        conn.close()
+
+        sync = IcebergMirrorSync(tmp_path / "mirror", {"s": SQLiteReadAdapter({"path": source})},
+                                 on_type_mismatch="quarantine")
+        sync.sync_table("s", "t", "id", ["id", "amount", "seen"],
+                        {"id": "string", "amount": "integer", "seen": "date"})
+
+        held = {row["object_id"]: row for row in
+                sync._catalog.load_table("quarantine_s.t").scan().to_arrow().to_pylist()}
+        assert held["1"]["column"] == "amount" and held["1"]["value"] == "N/A"
+        assert held["2"]["column"] == "seen" and held["2"]["value"] == "not a date"
+        assert "date" in held["2"]["reason"]
+
+    def test_a_row_failing_twice_says_so(self):
+        rows = [{"id": "x", "n": "bad"}]
+
+        result = transform_rows(rows, ["id", "n"], {"id": "integer", "n": "integer"}, {})
+
+        assert [column for column, _ in result.mismatched_cells[0]] == ["id", "n"]
+
+
+def test_a_refusal_names_the_setting_that_would_have_saved_the_table(tmp_path):
+    """ZOO-11's other half: with the key absent the table is still
+    refused -- by design -- but the message now says how to stop that."""
+    import sqlite3
+
+    from adapters.sqlite_adapter import SQLiteReadAdapter
+    from core.mirror.iceberg_sync import IcebergMirrorSync
+
+    source = tmp_path / "s.db"
+    conn = sqlite3.connect(source)
+    conn.execute("CREATE TABLE t (id TEXT PRIMARY KEY, n TEXT)")
+    conn.execute("INSERT INTO t VALUES ('1', 'N/A')")
+    conn.commit()
+    conn.close()
+    sync = IcebergMirrorSync(tmp_path / "mirror", {"s": SQLiteReadAdapter({"path": source})})
+
+    with pytest.raises(ValueError, match="on_type_mismatch: quarantine"):
+        sync.sync_table("s", "t", "id", ["id", "n"], {"id": "string", "n": "integer"})

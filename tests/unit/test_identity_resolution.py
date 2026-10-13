@@ -187,3 +187,36 @@ class TestDecisionD2:
         ))
 
         assert resolution.refused == [] and resolution.merged_count == 1
+
+
+class TestADeclaredCasefold:
+    """ZOO-24: `Ada@Example.com` in billing and `ada@example.com` in the
+    CRM are one person, and an exact key said they were two. Folded on
+    the KEY only, and only where declared."""
+
+    BILLING = [{"cust_pk": "c1", "email": "Ada@Example.com", "region": "us-west"}]
+    CRM = [{"contact_id": "9f2a", "email": "ada@example.com", "region": "us-west"}]
+
+    def test_declared_the_two_spellings_are_one_entity(self):
+        folded = {**TYPE, "identity": {"match_on": ["email"], "casefold": ["email"]}}
+
+        resolution = resolve(folded, _rows(self.BILLING, self.CRM))
+
+        assert resolution.merged_count == 1
+
+    def test_undeclared_the_key_is_still_exact(self):
+        """THE CONTROL, and the upgrade path: nothing changes for a
+        deployment that did not ask."""
+        assert resolve(TYPE, _rows(self.BILLING, self.CRM)).merged_count == 0
+
+    def test_the_values_themselves_are_not_folded(self):
+        folded = {**TYPE, "identity": {"match_on": ["email"], "casefold": ["email"]}}
+
+        resolution = resolve(folded, _rows(self.BILLING, self.CRM))
+
+        assert resolution.entities["c1"][None]["email"] == "Ada@Example.com"
+
+    def test_a_casefold_outside_the_key_is_refused(self):
+        """It would do nothing, and its author would believe otherwise."""
+        with pytest.raises(ValueError, match="not in match_on"):
+            rule_for({**TYPE, "identity": {"match_on": ["email"], "casefold": ["name"]}})

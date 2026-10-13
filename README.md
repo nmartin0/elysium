@@ -69,7 +69,9 @@ api/             The HTTP layer -- session-based auth, user
 deployment/      YOUR organization's configuration and data, for local
                  development -- laid out to mirror a real install
                  exactly:
-                   deployment/etc/       config.yaml, ontology_schema.yaml,
+                   deployment/etc/       config.yaml, data_silos.yaml,
+                                         source_bindings.yaml,
+                                         ontology_schema.yaml,
                                          policy.yaml, example_queries.yaml
                    deployment/var/lib/   credentials.db, dev_fixtures/
                    deployment/var/log/   audit.log
@@ -77,7 +79,7 @@ deployment/      YOUR organization's configuration and data, for local
                  /var/lib/elysium, /var/log/elysium instead -- the SAME
                  three-location model, not a different one. See
                  core/deployment_loader.py's resolve_runtime_paths().
-templates/       Copy-and-edit starting points for the four deployment/
+templates/       Copy-and-edit starting points for the five deployment/
                  YAML files, using a realistic Employee/ExpenseReport
                  example -- genuinely runnable, not just illustrative
                  prose. See section 3.
@@ -109,6 +111,10 @@ ui/              The React + TypeScript frontend -- Query (ask a
                                          disable/enable/delete users,
                                          inspect a user's own visible
                                          schema.
+                   ui/packages/app-schema/, app-approvals/,
+                   app-identity/, app-notifications/  -- the
+                                         other four screens; section 8
+                                         lists all eight packages.
 scripts/         Runnable entry points.
 install/         install.sh (fresh-install script) and elysium.service
                  (systemd unit) for a real, running install.
@@ -495,13 +501,13 @@ minutes) if never confirmed.
 
 | To add... | Implement | Register in |
 |---|---|---|
-| A new database technology | `core/ontology/interface.py`'s `DataSiloAdapter` | `core/deployment_loader.py`'s `_ADAPTER_REGISTRY` |
+| A new database technology | `core/ontology/interface.py`'s `ExternalReadAdapter` (and `ExternalWriteAdapter` to accept writes) | `core/deployment_loader.py`'s `_READ_ADAPTER_REGISTRY` (and `_WRITE_ADAPTER_REGISTRY`) |
 | A new LLM backend | `core/llm/interface.py`'s `LLMAdapter` | `core/deployment_loader.py`'s `_LLM_ADAPTER_REGISTRY` |
 | A new tool | `core/functions/interface.py`'s `Function` | `core/functions/registry.py`'s registry |
 
 For a whole new sub-app (a new top-level screen in `ui/`, not a new
-backend extension point), see `the roadmap (consumed)`'s own prioritized list
-first — there's a real chance it's already there.
+backend extension point), check `BLOCKING.md` and `DEV_UI.md` first —
+there's a real chance it is already designed, or already decided against.
 
 ---
 
@@ -558,7 +564,7 @@ you find another, it is a bug in this file.
 
 ## 8. The front end
 
-Seven packages under `ui/packages/`, 45 components, each with its own
+Eight packages under `ui/packages/` -- seven screens and `shell-api`, 45 components, each with its own
 test file:
 
 | package | what it is |

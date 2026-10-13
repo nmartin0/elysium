@@ -1402,6 +1402,54 @@ CONTROLS = [
         new="                if True}",
         tests=["tests/integration/test_the_provenance_route.py::TestWhichSourceSuppliedEachValue::test_a_field_the_caller_cannot_read_is_not_named"],
     ),
+    Control(
+        describes="B3: no PostgreSQL fails the suite, never skips it",
+        path="tests/postgres_server.py",
+        old="        pytest.fail(NONE_AVAILABLE, pytrace=False)",
+        new="        pytest.skip(NONE_AVAILABLE)",
+        tests=["tests/unit/test_postgres_is_never_silently_skipped.py::"
+               "test_with_no_postgresql_at_all_it_fails_and_says_what_to_install"],
+    ),
+    Control(
+        describes="ZOO-11: a quarantined row names the cell that failed, not the table's first",
+        path="core/mirror/iceberg_sync.py",
+        old="                failed = transformed.mismatched_cells.get(index) or [",
+        new="                failed = [",
+        tests=["tests/unit/test_one_bad_cell_does_not_stop_a_table.py::"
+               "TestTheQuarantineRecordNamesTheCellThatFailed::test_each_row_names_its_own_failing_column"],
+    ),
+    Control(
+        describes="ZOO-24: a declared casefold folds the identity key",
+        path="core/mirror/identity.py",
+        old="        values.append(str(value).casefold() if field_name in rule.casefold else str(value))",
+        new="        values.append(str(value))",
+        tests=["tests/unit/test_identity_resolution.py::TestADeclaredCasefold::"
+               "test_declared_the_two_spellings_are_one_entity"],
+    ),
+    Control(
+        describes="F-09: no security value is captured as None, not an empty string",
+        path="core/memory/guard.py",
+        old="                            None if security_value is None else str(security_value))",
+        new="                            str(security_value or \"\"))",
+        tests=["tests/unit/test_memory_guard.py::"
+               "test_an_object_with_no_security_value_is_captured_as_none_not_empty"],
+    ),
+    Control(
+        describes="F-24: an over-long system prompt is refused before the CLI starts",
+        path="adapters/claude_agent_sdk_adapter.py",
+        old="        if size >= MAX_ARGUMENT_BYTES:",
+        new="        if False:",
+        tests=["tests/unit/test_claude_agent_sdk_adapter.py::"
+               "test_a_prompt_past_the_argument_limit_is_refused_by_name"],
+    ),
+    Control(
+        describes="ZOO-11: a new deployment from the template quarantines rows",
+        path="templates/config.yaml",
+        old="on_type_mismatch: quarantine",
+        new="# on_type_mismatch: quarantine",
+        tests=["tests/unit/test_template_is_a_valid_deployment.py::"
+               "test_a_new_deployment_starts_on_the_new_installation_defaults"],
+    ),
 ]
 
 
