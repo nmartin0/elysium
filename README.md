@@ -593,9 +593,9 @@ left behind.
 
 | suite | how to run | size |
 | --- | --- | --- |
-| unit | `pytest tests/unit` | 351 files |
-| integration | `pytest tests/integration` | 46 files |
-| controls | declared in CI | 70 |
+| unit | `pytest tests/unit` | 379 files |
+| integration | `pytest tests/integration` | 58 files |
+| controls | declared in CI | 175 |
 | front end | `cd ui && npm run test` | vitest |
 | site | `bash site/check.sh` | ruff + pytest, some in a real browser |
 

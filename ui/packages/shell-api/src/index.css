@@ -1716,6 +1716,42 @@
    * AT THE SOURCE beside it, because it is the same kind of thing: a
    * block within the object page rather than a division of it.
    */
+  /* ---- THE HELP ASSISTANT ----------------------------------------- */
+  .help-panel__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-tight);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* THE READER'S FONT, not Blueprint's monospace default for a text
+   * area: this is a question in words, not code. */
+  .help-panel textarea {
+    font-family: inherit;
+  }
+
+  .help-panel__intro {
+    margin: 0;
+    color: var(--text-secondary);
+  }
+
+  .help-panel__body > .bp6-button {
+    align-self: flex-start;
+  }
+
+  /* A MODEL'S REPLY IS TEXT, and its line breaks are its structure --
+   * a list of steps arrives as lines, not markup. */
+  .help-panel__answer {
+    white-space: pre-wrap;
+    line-height: 1.5;
+  }
+
+  .help-panel__error {
+    margin: 0;
+    color: var(--red-500);
+  }
+
   /* WHICH SOURCE SUPPLIED EACH VALUE (R38) is part of the same panel,
    * so it takes the same treatment -- found in the browser, where the
    * first version rendered it as a full-size heading under a label. */

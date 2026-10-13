@@ -487,3 +487,5 @@ lineage_namespace
 data_contract_route
 # R38: a response field pydantic reads by reflection.
 field_sources
+# The help assistant: a route FastAPI calls and its request model.
+help_route

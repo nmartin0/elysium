@@ -1510,6 +1510,34 @@ CONTROLS = [
         new="        record_generation(app.state.config_history, new)\n        current.mediator",
         tests=["tests/integration/test_live_updates.py::test_a_new_publication_is_served_without_a_restart"],
     ),
+    Control(
+        describes="Help: the assistant is told the caller's visible schema, not the whole ontology",
+        path="api/routes.py",
+        old="    context = build_context(screens, visible, grants, screen)",
+        new="    context = build_context(screens, generation.mediator.schema, grants, screen)",
+        tests=["tests/integration/test_help_assistant.py::test_it_is_told_only_what_the_caller_may_know"],
+    ),
+    Control(
+        describes="Help: a screen the caller cannot open is not passed on",
+        path="api/routes.py",
+        old="    screen = body.screen if body.screen in {app[\"name\"] for app in screens} else None",
+        new="    screen = body.screen",
+        tests=["tests/integration/test_help_assistant.py::test_a_screen_the_caller_cannot_open_is_not_named_as_theirs"],
+    ),
+    Control(
+        describes="Help: a field known but unreadable is described as hidden",
+        path="core/agent/help_assistant.py",
+        old="            hidden = \"\" if field.get(\"readable\", True) else \", value hidden\"",
+        new="            hidden = \"\"",
+        tests=["tests/integration/test_help_assistant.py::test_a_field_known_but_unreadable_says_so"],
+    ),
+    Control(
+        describes="Help: an unreachable model never shows its address",
+        path="api/routes.py",
+        old="            detail=\"The help assistant cannot reach its model right now. Try again later, \"",
+        new="            detail=str(e) + \"The help assistant cannot reach its model right now. Try again later, \"",
+        tests=["tests/integration/test_help_assistant.py::test_an_unreachable_model_is_a_503_that_says_so"],
+    ),
 ]
 
 

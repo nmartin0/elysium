@@ -46,6 +46,14 @@ afterEach(() => {
 })
 
 describe('Shell', () => {
+  it('opens the help assistant from the header', async () => {
+    renderShell([{ name: 'Query', path: '/query' }])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Help' }))
+
+    expect(await screen.findByLabelText('Your question')).toBeInTheDocument()
+  })
+
   it('renders nav links exactly matching the visibleApps it was given', () => {
     renderShell([
       { name: 'Query', path: '/query' },

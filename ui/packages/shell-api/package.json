@@ -16,6 +16,7 @@
     "./components/ErrorState": "./src/components/ErrorState.tsx",
     "./components/FilterBar": "./src/components/FilterBar.tsx",
     "./components/FilterBox": "./src/components/FilterBox.tsx",
+    "./components/HelpPanel": "./src/components/HelpPanel.tsx",
     "./components/LoadingState": "./src/components/LoadingState.tsx",
     "./components/LoginForm": "./src/components/LoginForm.tsx",
     "./components/Notice": "./src/components/Notice.tsx",

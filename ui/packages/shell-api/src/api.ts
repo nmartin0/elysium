@@ -575,6 +575,20 @@ export function publicationTime(freshness: DataFreshness | null, objectTypes: st
   return times.reduce((oldest, at) => (at < oldest ? at : oldest))
 }
 
+/**
+ * The help assistant (POST /api/help): how to use Elysium, answered from
+ * what this caller can see -- never their data. `screen` is the rail's
+ * name for where they are, so "how do I filter this" has a referent.
+ */
+export async function askHelp(question: string, screen: string | null): Promise<string> {
+  const response = await apiFetchOrThrow('/help', {
+    method: 'POST',
+    body: JSON.stringify({ question, screen }),
+  })
+  const body = (await response.json()) as { answer: string }
+  return body.answer
+}
+
 export async function getDataFreshness(): Promise<DataFreshness> {
   const response = await apiFetchOrThrow('/data-freshness')
   return response.json() as Promise<DataFreshness>

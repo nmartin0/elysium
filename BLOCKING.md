@@ -63,17 +63,17 @@ which was whether the layout holds.
 | `THIRD_PARTY_EXTENSIONS.md` | a design, unbuilt. Its finding about module federation kept below, because it is the kind of thing a later reader would otherwise rediscover the hard way |# Blocked on a decision
 | `TRIAGE.md` | fully absorbed: its 45 ids are CSV rows, its mutation sweep is the 70 declared controls in `scripts/check_controls.py`, its reachability sweep is the `WIRED-` rows |
 | `LIVE_UPDATES_AND_PIPELINE_BUILDER.md` | nothing built; its security decision kept below because it is the reason the design is shaped as it is |
-| `TRIGGERS_AND_PLUGINS.md` | part one built (patches 264-280), including the automation refusal; part two superseded by its own successor, now item 7. Its three unanswered risks are item 9 |## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
+| `TRIGGERS_AND_PLUGINS.md` | part one built (patches 264-280), including the automation refusal; part two superseded by its own successor, now item 7. Its three unanswered risks are item 8 |## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
 | `MEDALLION_PIPELINE.md` | the pipeline is built and all five owner decisions (D1-D5) were answered in September. Its rule S1 now lives in `standardise.py`, and the test that READ this file at runtime is behavioural instead |
-| `FUSION_AND_IDENTITY.md` | the backend is built -- `matching.py`, `identity.py`, `identity_decisions.py` with a `merge_decisions` table, and inference OFF by default. The reviewer screen is not, and its MAC problem is item 10 |**The sharpest one, and it outranks the rest.** Reproduced: the policy
+| `FUSION_AND_IDENTITY.md` | the backend is built -- `matching.py`, `identity.py`, `identity_decisions.py` with a `merge_decisions` table, and inference OFF by default. The reviewer screen is not, and its MAC problem is item 9 |**The sharpest one, and it outranks the rest.** Reproduced: the policy
 | `ELT_ROADMAP.md` | every phase it defines (0, 0b, 1) is DONE. What remains is a dependency chain, not a plan, and it is below with the measurement that corrected it |validator rejects every `write:` grant, while the write path demands
 | `HOT_RELOAD_PLAN.md` | built. Its six rules are named in the 26 places that cited step numbers; its most fragile assumption is now a test; and one of its open questions (`DeploymentConfig` not frozen) has since been answered |one per field. So no valid policy can authorise a cross-type action at
 | `DEV_UI.md` | **RESTORED, AND THE ROW ABOVE WAS WRONG TWICE.** It claimed 1,271 lines of interface design were "none of it buildable without a front-end agent" and pointed at an item that renumbering had long since made something else. Both halves were disproved by building from it: the measured palette, the type scale, the density ladder and the spine are being built straight out of the file. It is NOT consumed, it is not deleted, and it should not be again -- a measured fact in a deleted file is a measured fact lost, and this one cost a whole type scale reinvented wrong at every step |
-| `IDEAS.md` | investigations. Most are SHIPPED or ANSWERED; what is open needs a capable model, and is item 12 |
-| `UI_ROADMAP.md` | 2,143 lines of front-end plan. Its one backend finding -- an unbounded search filling the model's context -- is item 13, with the code evidence |
-| `BACKLOG.md` | its sections are absorbed: 0c, 0d4 and 0d5 were worked in patches 475-480; section 1 is item 12, section 2's one open piece is item 14, section 5 pointed here already |---
+| `IDEAS.md` | investigations. Most are SHIPPED or ANSWERED; what is open needs a capable model, and is item 11 |
+| `UI_ROADMAP.md` | 2,143 lines of front-end plan. Its one backend finding -- an unbounded search filling the model's context -- is item 12, with the code evidence |
+| `BACKLOG.md` | its sections are absorbed: 0c, 0d4 and 0d5 were worked in patches 475-480; section 1 is item 11, section 2's one open piece is item 14, section 5 pointed here already |---
 | `ROADMAP.md` | its numbered backend list is done or explicitly NOT DOING; pagination shipped as `page_token`. Its one unbuilt track, external writeback, was decided and built -- see the `write_targets` row |
-| `UNIFIED_ROADMAP.md` | the file that started this method: on 21 September it read every plan against the CODE and found seven built things described as open. Its remaining entries are items 32-35; its one correction to me is in item 13 |# Blocked on a decision
+| `UNIFIED_ROADMAP.md` | the file that started this method: on 21 September it read every plan against the CODE and found seven built things described as open. Its remaining entries are items 30-35; its one correction to me is in item 12 |# Blocked on a decision
 | `gold_history` (was item 1) | DECIDED and BUILT, patches 507-509: the owner wanted both a reader and a route. It leaves this file by its own rule -- the decision survives in the code, the `NEW-7` checklist row and the commits |
 | saved selections (was item 17) | BUILT as frozen sets: `core/frozen_sets.py`, `/api/frozen-sets`, a `frozen_set` reference on every route that takes a set, and Browse's Frozen sets popover. Unblocked by precedent -- Foundry's static object sets are "a list of primary keys" -- which made "what happens when the publication is forgotten" dissolve: membership is keys, the publication is metadata. DEV_UI 11.5's write-path question about bulk ACTION is unchanged and lives with item 6 |
 | `write_targets` (was item 17) | DECIDED and BUILT: off by default, a separate block, existing deployments warned rather than broken |
@@ -92,6 +92,8 @@ which was whether the layout holds.
 | `A6` (was item 1) | RESOLVED, not deferred: leave it. Cross-table snapshot consistency is a CATALOG feature and a REST catalog is a service to run, back up and secure for a property no wrong answer has been observed from. THE TRIGGER, recorded so it is not re-argued: when a SECOND process writes to the lake |
 | `read:label:` grants (was item 6) | DECIDED and BUILT, 12 October: a classification label both GRANTS and RESTRICTS -- `read:label:pii` reads every pii field of a type the role can read, and a pii field is unreadable without it whatever was granted by name (demoted to `discover:`). A label never opens a type. Opt-in per deployment (`access: label_enforcement`), compiled into ordinary grants at load; `scripts/label_access_diff.py` says who gains and loses what before the switch is flipped |
 | `pgserver` on Python 3.13 (was item 3) | DECIDED and BUILT, 12 October: the real-PostgreSQL tests fall back to the machine's own `initdb`/`pg_ctl` when `pgserver` has no wheel, on a unix socket only, and FAIL rather than skip when neither exists. Found because it had already happened: the gating machine is now 3.13 and 32 tests of the production read path were skipping, green. With the fallback, the same 32 pass against PostgreSQL 16 |
+| `/api/events` live updates (was item 8) | DECIDED and BUILT, 12 October: GET /api/events, server-sent events carrying a type and a verb and nothing else, filtered per caller by `core/change_hints.py` (built first, while this waited). Building it found that a running server never served a new publication; `api/reload.follow_publications` now moves it, from the running configuration's own bytes. Mail delivery stays out of scope |
+| `/api/help` help assistant (was item 14) | DECIDED and BUILT, 12 October, in the shape decided 5 October: `POST /api/help` answers from the caller's screens, visible schema (names and types, never a value) and own grants -- nothing they may not already know. `core/agent/help_assistant.py`; a Help drawer in the header |
 ---
 
 # Blocked on a decision
@@ -259,61 +261,7 @@ code.
 **Blocked on:** whether to have an extension story at all. Everything
 downstream of that is design work that cannot start first.
 
-## 8. Live updates, and the decision that shapes them
-
-Nothing is built -- no SSE, no `EventSource`, no streaming response
-anywhere in `api/`. What makes the design worth keeping is its
-security decision, which is quoted rather than summarised:
-
-> **EVENTS CARRY NO DATA.** An event says "something of this kind
-> changed", never what changed. The client then refetches through the
-> SAME authorised endpoints it already uses, so MAC, roles and every
-> permission check apply exactly as they do now.
->
-> The alternative -- pushing the changed object down the stream --
-> would put a second, parallel read path beside the mediator, and
-> every security rule would have to be re-implemented on it
-> correctly, forever. That is how leaks happen. A hint plus a refetch
-> cannot leak: the refetch is the existing, tested path.
-
-It also notes that a hint's SCOPE needs care: "a Customer changed"
-tells a user that SOME customer changed, so hints name a TYPE and a
-kind of change and nothing more.
-
-**And a measured answer to a question the owner asked:** whether an
-alert could arrive as MAIL. SSE cannot do that -- it pushes to an open
-browser -- and Elysium has NO SMTP SUPPORT OF ANY KIND today. Mail is
-a separate delivery channel, not a variation on this.
-
-**THE SECURITY HALF IS BUILT**, `core/change_hints.py`, because it has
-to be right before the transport exists rather than invented under
-deadline after it. `hints_for` filters changed types by the caller's
-own `visible_schema` -- deferring to the rule that already decides
-which types a caller may know exist, rather than asking `discover:`
-a second time -- and `describe_hint` refuses any payload beyond a type
-and a verb. A count is the tempting one: "4 Customers changed" looks
-harmless and maps the size and rhythm of a compartment somebody
-cannot see.
-
-**THE PRECEDENT VALIDATES THE DECISION rather than merely permitting
-it.** "Rich payloads bypass authorization -- data in events is
-accessible to all subscribers regardless of permission levels", while
-"notification events preserve security". For regulated data the
-guidance is "never in events, API with authorization only"; for
-consumers with different authorization levels, "notification + API
-required". Elysium authorises per field and per row.
-
-The usual criticism of thin events -- that a consumer receiving an id
-and immediately refetching "has not been decoupled from you" -- does
-not apply, because here the refetch IS where authorization happens.
-
-**Blocked on:** whether live updates are wanted enough to carry a
-streaming endpoint, and separately whether mail delivery is in scope
-at all. IF DECLINED, DELETE `core/change_hints.py` -- it has no other
-purpose and should not sit there looking load-bearing. The vulture
-whitelist says so too.
-
-## 9. Three questions triggers raise and nobody has answered
+## 8. Three questions triggers raise and nobody has answered
 
 Triggers are built. `TRIGGERS_AND_PLUGINS.md` names three risks that
 are "about volume rather than authority", and none of them is a code
@@ -343,7 +291,7 @@ second is a product decision about how much friction an automation
 should carry, and the third is a design choice with cost on both
 sides.
 
-## 10. What the interface should be
+## 9. What the interface should be
 
 `DEV_UI.md`, written after the owner said the interface is BOTH
 unfinished and disjointed. **Its diagnosis is the part worth keeping**,
@@ -378,7 +326,7 @@ contrast is not a target.
 **Blocked on:** a front-end agent, and the owner's appetite for a
 redesign rather than more features.
 
-## 11. Agent-loop efficiency, which needs a machine with a model
+## 10. Agent-loop efficiency, which needs a machine with a model
 
 `IDEAS.md`'s open investigations all need traces from a real model on
 real hardware. The measurements already taken are kept because
@@ -555,7 +503,7 @@ measured.
 would reopen plan mode and constrained decoding -- both trade compute
 the CPU does not have.
 
-## 12. Context rot, and a 10,000-id search behind it
+## 11. Context rot, and a 10,000-id search behind it
 
 `UI_ROADMAP.md` calls this "a risk to what already exists, not a
 feature", and it is the only part of that file that is not front-end
@@ -593,7 +541,7 @@ capped and the output side is not.
 
 **Two things are wanted, and only one is mine to do.** Item 17 is
 measurement -- task completion rate against context size at the
-midpoint of a task, which needs a capable model and is item 13's
+midpoint of a task, which needs a capable model and is item 12's
 blocker too. Item 18 is the cap itself.
 
 **Blocked on:** a model to validate the cap against, and the
@@ -603,7 +551,7 @@ that matters: told its limit was 20 when given 32 ids, a real model
 one object at a time until the duplicate guard stopped it". A cap
 chosen without measuring is how that happens again.
 
-## 13. PostgreSQL row-level security for MAC
+## 12. PostgreSQL row-level security for MAC
 
 Held with a trigger named, alongside column `GRANT` with `SET ROLE`.
 Elysium enforces MAC in the mediator today; pushing it into the
@@ -620,33 +568,6 @@ it is not. (The other half this used to name -- no real-PostgreSQL
 tests on Python 3.13 -- is gone: tests/postgres_server.py falls back to
 the machine's own PostgreSQL, and fails when there is none.)
 
-## 14. The help assistant
-
-A larger design, written and unbuilt. It would be an agent explaining
-Elysium itself rather than a customer's data.
-
-**THE SHAPE IS DECIDED, 5 October.** It answers from `visible_schema`
-and the caller's own grants -- not from the documentation, and not
-from `config`.
-
-Reading configuration directly would be the failure the precedent
-documents repeatedly: assistants that "tried (and failed) to mirror or
-enforce fine-grained enterprise permissions". Elysium already has the
-non-mirrored path, and `visible_schema` already answers "which types
-may this caller know exist".
-
-The warning that applies anyway: an assistant "doesn't bypass
-permissions", but "overly broad, inherited, or poorly reviewed
-permissions create the risk", because it "queries faster than any
-human user ever could manually". One documented incident surfaced
-"workplace investigation details when a user asked Copilot about a
-specific employee". So it amplifies whatever the grants already allow,
-which is an argument for building it ON the existing checks rather
-than beside them.
-
-**Blocked on:** whether it is wanted. It is the one feature on the
-list that competes with documentation rather than extending the
-product.
 
 ---
 
@@ -699,7 +620,7 @@ files reference the SQLite adapter, most of them tests using it as the
 cheap real database, and the write path is where a mistake reaches a
 customer's database. Days, not hours -- but no decision, so not here.
 
-## 15. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
+## 13. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
 
 **Blocked on:** the owner, and on money and calendar time rather than
 engineering.
@@ -749,7 +670,7 @@ an audit is ever bought:
 
 Months, not a patch.
 
-## 16. Owning the UI kit, and when to start
+## 14. Owning the UI kit, and when to start
 
 **Blocked on:** nothing. This is a DECISION ALREADY TAKEN, recorded
 here so the next person does not reopen it from scratch.

@@ -93,7 +93,7 @@ class ExpectedFact:
 class ExpectedAggregate:
     """One aggregate a correct run must have computed.
 
-    WHY A SECOND KIND OF FACT. BLOCKING 11 asks "are aggregates chosen
+    WHY A SECOND KIND OF FACT. BLOCKING 10 asks "are aggregates chosen
     when they should be?", from an observed run: "how many transactions
     does Ada Okafor have?" took SIX gathered entries across FIVE model
     calls, two of them fetching `transaction_date`, which says nothing
@@ -199,7 +199,7 @@ def grade(case: EvalCase, result: AgentLoopResult) -> TrialResult:
     # searching and counting ids in prose is NOT credited: the question
     # these cases exist to answer is whether the model CHOSE the
     # aggregate, and crediting the long way round would hide exactly
-    # the behaviour BLOCKING 11 observed.
+    # the behaviour BLOCKING 10 observed.
     computed = []
     for entry in gathered:
         if not isinstance(entry, dict) or entry.get("step") != "aggregate_object":

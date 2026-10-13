@@ -5173,6 +5173,61 @@ async def query(body: QueryRequest, request: Request,
     return QueryResponse(answer=insight, request_id=request_context.request_id)
 
 
+class HelpRequest(BaseModel):
+    question: str
+    #: Which screen the person is on, as the rail names it, if known.
+    screen: str | None = None
+
+
+class HelpResponse(BaseModel):
+    answer: str
+
+
+@router.post("/help", response_model=HelpResponse)
+async def help_route(body: HelpRequest, request: Request,
+                     current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The help assistant: how to use Elysium, for THIS caller.
+
+    Everything the model is told is already the caller's -- the screens
+    the rail shows them, their visible schema without a single value,
+    their own grants. core/agent/help_assistant.py says why that is the
+    whole security design. One call to the synthesis model, in the
+    request pool, under the deployment's query deadline.
+    """
+    import time
+
+    from core.agent.help_assistant import answer, build_context
+    from core.llm.interface import LLMUnavailable
+
+    generation = _generation(request)
+    roles = generation.config.roles
+    screens = visible_apps_for(current_user, roles)
+    visible = await asyncio.to_thread(generation.mediator.visible_schema, current_user)
+    grants = (roles.get(current_user.role_name) or {}).get("allowed_actions") or ()
+    screen = body.screen if body.screen in {app["name"] for app in screens} else None
+    context = build_context(screens, visible, grants, screen)
+    deadline = time.monotonic() + generation.config.query_deadline_seconds
+    try:
+        reply = await asyncio.get_running_loop().run_in_executor(
+            request.app.state.executor,
+            functools.partial(answer, generation.synthesis_client, body.question, context,
+                              deadline=deadline))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except LLMUnavailable as e:
+        # THE KIND, NOT THE MESSAGE. The adapter's message names the
+        # model's host and port -- connection details /config withholds
+        # from every caller. Found in a browser, where the first version
+        # showed "http://localhost:11434" to an ordinary user. Logged in
+        # full for the operator.
+        logger.warning("help assistant: model unavailable: %s", e)
+        raise HTTPException(
+            status_code=503,
+            detail="The help assistant cannot reach its model right now. Try again later, "
+                   "or ask an administrator.") from e
+    return {"answer": reply}
+
+
 #: A sub-write's operation, as core/change_hints.py's vocabulary says it.
 _CHANGE_VERB = {"create": "created", "update": "updated", "delete": "deleted"}
 

@@ -125,16 +125,17 @@ class TestWhatAHintMayCarry:
             describe_hint("Customer", "counted")
 
 
-class TestWhatIsHonestlyNotBuilt:
-    def test_there_is_still_no_streaming_endpoint(self):
-        """This module is the security half of a feature whose
-        transport is not built and may never be. If live updates are
-        declined, DELETE IT rather than leave it looking load-bearing
-        -- the whitelist entry says so too."""
+class TestTheTransportUsesThisModule:
+    def test_the_stream_sends_nothing_this_module_did_not_shape(self):
+        """THIS WAS `test_there_is_still_no_streaming_endpoint`, true
+        until the owner wanted live updates (2026-10-12). What must hold
+        now is the reverse: the stream exists, and every hint it sends is
+        made by describe_hint and filtered by hints_for -- so the rule
+        above cannot be bypassed by the code that transports it."""
         from pathlib import Path
 
-        api = "\n".join(path.read_text()
-                        for path in Path("api").rglob("*.py"))
+        source = Path("api/live_updates.py").read_text()
 
-        assert "EventSource" not in api
-        assert "text/event-stream" not in api
+        assert "from core.change_hints import describe_hint, hints_for" in source
+        assert "hints_for(visible_schema, [object_type])" in source
+        assert "describe_hint(allowed, change)" in source

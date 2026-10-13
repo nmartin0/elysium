@@ -6,6 +6,7 @@ import { Button, Classes, Menu, MenuItem } from '@blueprintjs/core'
 import { iconForApp } from '@elysium/shell-api/appIcons'
 import { readPreference, writePreference } from '@elysium/shell-api/browserPreferences'
 import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMenu'
+import HelpPanel from '@elysium/shell-api/components/HelpPanel'
 
 // Shell.tsx  (the actual chrome -- a collapsible left sidebar, and
 // the route tree's own mount point)
@@ -241,6 +242,10 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
   // separate useEffect (for the live subscription).
   const isMobile = useSyncExternalStore(subscribeToMobileBreakpoint, getIsMobileSnapshot)
   const location = useLocation()
+  // THE HELP ASSISTANT, and which screen it is being asked from -- the
+  // rail's own name for it, so "how do I filter this" has a referent.
+  const [helpOpen, setHelpOpen] = useState(false)
+  const currentScreen = visibleApps.find((app) => location.pathname.startsWith(app.path))?.name ?? null
   const navigate = useNavigate()
 
   /**
@@ -672,6 +677,7 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
     <header className={`app__header ${Classes.DARK}`}>
       <h1 className="app__header-title">Elysium</h1>
       <div className="app__header-actions">
+        <Button minimal icon="help" aria-label="Help" onClick={() => setHelpOpen(true)} />
         <Button
           minimal
           icon={dark ? 'flash' : 'moon'}
@@ -686,6 +692,7 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
   return (
     <div className={collapsed ? 'app-frame app-frame--sidebar-collapsed' : 'app-frame'}>
       {header}
+      <HelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} screen={currentScreen} />
       <CommandPalette commands={commands} isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <div className="app">
         {/* NO Drawer branch any more, and the rail is why.
