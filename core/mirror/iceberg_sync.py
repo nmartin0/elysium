@@ -182,6 +182,8 @@ CLEANING_SCHEMA = pa.schema([
 
 
 SOURCE_READ_PROPERTY = "elysium.source_read_started_at"
+#: {library: version} of the reference data silver was checked with (R40).
+REFERENCE_DATA_PROPERTY = "elysium.reference_data"
 
 # WHICH RUN LAST WROTE THIS TABLE (PR001-R9). A property rather than a
 # column: it describes the WRITE, not the rows, and a column would
@@ -1041,8 +1043,10 @@ class IcebergMirrorSync(MirrorSync):
                 # this records the read without inventing a version of
                 # data that did not change.
                 with table.transaction() as tx:
-                    tx.set_properties(_read_properties(read_started_at,
-                                                        self._run_id))
+                    tx.set_properties({
+                        **_read_properties(read_started_at, self._run_id),
+                        **self._reference_data(table, silo_name, table_name,
+                                               standardisation, expectations)})
             else:
                 table.overwrite(arrow_table)
                 # AFTER THE DATA COMMIT, never before (001's F-29): a
@@ -1058,6 +1062,8 @@ class IcebergMirrorSync(MirrorSync):
                         # run, so a property rather than a column.
                         **({BRONZE_SNAPSHOT_PROPERTY: str(bronze_snapshot)}
                            if bronze_snapshot is not None else {}),
+                        **self._reference_data(table, silo_name, table_name,
+                                               standardisation, expectations),
                     })
 
                 # SILVER EXPIRES TOO (the backlog (consumed) 0d4). Only the
@@ -1159,6 +1165,36 @@ class IcebergMirrorSync(MirrorSync):
         except (NoSuchTableError, NoSuchNamespaceError):
             table = self._catalog.create_table(identifier, schema=QUARANTINE_SCHEMA)
         table.append(arrow_table)
+
+    def _reference_data(self, table, silo_name: str, table_name: str,
+                         standardisation, expectations) -> dict:
+        """The reference-data versions this silver was checked and
+        tidied with (R40), as a table property -- and a WARNING when one
+        changed since the last sync.
+
+        WHY IT MATTERS. A phone number valid under one release of
+        Google's metadata can be invalid under the next; a country adds
+        a public holiday. The same source row can then be quarantined
+        this sync that passed the last, with nothing in the data or the
+        configuration having changed. Recording the versions makes that
+        explainable, and the warning says it happened.
+        """
+        from core.ontology.value_checks import reference_data_used
+
+        used = reference_data_used(
+            standardisation,
+            [expected.get("field_def") for expected in (expectations or {}).values()])
+        if not used:
+            return {}
+        before = json.loads(table.properties.get(REFERENCE_DATA_PROPERTY) or "{}")
+        changed = {name: (before[name], now) for name, now in used.items()
+                   if name in before and before[name] != now}
+        if changed:
+            logger.warning(
+                "%s.%s: reference data changed since the last sync -- %s. Values checked "
+                "or tidied with it may be judged differently this run.", silo_name, table_name,
+                ", ".join(f"{name} {old} -> {new}" for name, (old, new) in sorted(changed.items())))
+        return {REFERENCE_DATA_PROPERTY: json.dumps(used, sort_keys=True)}
 
     def _write_cleaning(self, silo_name: str, table_name: str, id_column: str,
                          transformed) -> None:

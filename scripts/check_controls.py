@@ -2102,6 +2102,20 @@ CONTROLS = [
         new="    if namespace.startswith((\"quarantine_\",)):",
         tests=["tests/unit/test_cleaning_is_recorded_per_cell.py::test_an_erased_person_s_cells_go_with_them"],
     ),
+    Control(
+        describes="R40: silver records the reference-data versions it was judged with",
+        path="core/mirror/iceberg_sync.py",
+        old="        return {REFERENCE_DATA_PROPERTY: json.dumps(used, sort_keys=True)}",
+        new="        return {}",
+        tests=["tests/unit/test_reference_data_is_versioned.py::test_the_versions_used_are_recorded"],
+    ),
+    Control(
+        describes="R40: a changed reference-data version is warned about on an unchanged table",
+        path="core/mirror/iceberg_sync.py",
+        old="                    tx.set_properties({\n                        **_read_properties(read_started_at, self._run_id),\n                        **self._reference_data(table, silo_name, table_name,\n                                               standardisation, expectations)})",
+        new="                    tx.set_properties({\n                        **_read_properties(read_started_at, self._run_id)})",
+        tests=["tests/unit/test_reference_data_is_versioned.py::test_a_changed_version_is_warned_about_even_when_the_data_did_not_change"],
+    ),
 ]
 
 

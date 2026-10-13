@@ -146,3 +146,33 @@ def holiday_problem(value, setting: str) -> "str | None":
     if name is None:
         return None
     return f"{value!r} falls on {name}, a public holiday in {setting.upper()}."
+
+
+# -- which reference data a field uses, and at which version (R40) ----------
+
+#: The library behind each rule that reads reference data.
+_LIBRARY_FOR = {"phone": "phonenumbers", "email": "email-validator",
+                "fix_text": "ftfy", "not_on_holiday": "holidays"}
+
+
+def reference_data_used(standardisation, field_defs) -> dict[str, str]:
+    """{library: installed version} for every reference-data library the
+    given columns' rules use (R40). `standardisation` is {column: rules},
+    `field_defs` the declared fields whose constraints are checked."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    names = set()
+    for rules in (standardisation or {}).values():
+        names.update(_LIBRARY_FOR[key] for key in ("phone", "email", "fix_text")
+                     if rules and rules.get(key))
+    for field_def in field_defs:
+        constraints = (field_def or {}).get("constraints") or {}
+        names.update(_LIBRARY_FOR[key] for key in ("phone", "email", "not_on_holiday")
+                     if constraints.get(key))
+    found = {}
+    for name in sorted(names):
+        try:
+            found[name] = version(name)
+        except PackageNotFoundError:
+            found[name] = "not installed"
+    return found
