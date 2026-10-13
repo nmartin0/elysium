@@ -25,8 +25,9 @@ CHECKED AGAINST THE APPROVER. They are the person deciding now, their
 record is live, and Foundry's rule for applying an action is that the
 submitter must be able to see the objects it edits. Re-resolving the
 PROPOSER from a stored user id would be a different authority question
-with its own answer, and would need a directory lookup this layer does
-not have.
+with its own answer -- since answered (NEW-3): the approve route re-reads
+the proposer and the checks below use who they are now; see
+test_proposer_is_reread_at_confirm.py.
 
 NO APPROVER MEANS NO CHECK, because there is nothing to check against:
 an auto-executing action confirms inside the request that proposed it,
@@ -71,6 +72,11 @@ EAST = UserRecord(user_id="e", security_value="us-east", role_name="agent")
 
 @pytest.fixture
 def deployment(tmp_path):
+    return build_deployment(tmp_path)
+
+
+def build_deployment(tmp_path):
+    """The fixture's body, callable from other modules' fixtures."""
     source = tmp_path / "s.db"
     conn = sqlite3.connect(source)
     conn.execute("CREATE TABLE t (id TEXT PRIMARY KEY, status TEXT, region TEXT)")

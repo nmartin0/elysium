@@ -5331,6 +5331,16 @@ async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request:
         )
 
 
+def _proposer_as_they_are_now(request: Request, user_id: str) -> UserRecord | None:
+    """The proposer's CURRENT record, or None if the account is gone or
+    disabled (NEW-3). The pending write holds a snapshot taken at
+    proposal; the authority a write runs on is the proposer's today."""
+    directory = request.app.state.user_directory
+    if not directory.user_exists(user_id) or directory.is_user_disabled(user_id):
+        return None
+    return directory.get_user_record(user_id)
+
+
 async def _decide_reserved_write(request: Request, write_id: str, pending, approved: bool,
                                  current_user: UserRecord):
     if pending is None:
@@ -5408,6 +5418,7 @@ async def _decide_reserved_write(request: Request, write_id: str, pending, appro
             functools.partial(
                 write_mediator.confirm_and_execute, pending, approved,
                 approver=current_user,
+                proposer_now=_proposer_as_they_are_now(request, pending.user_id),
             ),
         )
     except (SubmissionCriteriaViolation, ValueError) as e:

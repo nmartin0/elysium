@@ -120,19 +120,27 @@ class TestWhatMustStillGetThrough:
         _check(_mediator(roles, generation=2), _pending(proposed_under=1))
 
 
-def test_a_disabled_proposer_is_NOT_caught_here():
-    """THE KNOWN GAP, pinned so it is visible rather than implied.
-
-    `pending.proposer` is a snapshot taken at proposal. A proposer
-    disabled or deleted since still carries a role_name that grants the
-    action, so this check passes them. Catching that needs the user
-    directory, which this mediator does not hold and which is wired in
-    api/routes.py.
-
-    If a later change threads the directory through, this test should
-    FAIL and be replaced -- that is the point of writing it down.
+def test_the_snapshot_alone_cannot_see_a_disabled_proposer():
+    """WHY THE DIRECTORY IS NEEDED, pinned. Given only the snapshot, a
+    proposer disabled since proposal still carries a role that grants
+    the action, so this check passes them. That gap was NEW-3, and it
+    is closed one level up: the approve route re-reads the proposer and
+    confirm_and_execute refuses a gone one before this runs --
+    tests/unit/test_proposer_is_reread_at_confirm.py.
     """
     _check(_mediator(GRANTED, generation=2), _pending(proposed_under=1))
+
+
+def test_a_role_reassigned_in_the_directory_is_rechecked_in_the_same_generation():
+    """A role change for ONE USER is a directory edit and does not bump
+    the generation, so the 'nothing changed' shortcut must look at the
+    role the proposer holds now, not only at the generation."""
+    mediator = _mediator({**GRANTED, "viewer": {"allowed_actions": []}}, generation=1)
+    pending = _pending(proposed_under=1)
+    now = UserRecord(pending.proposer.user_id, pending.proposer.security_value, "viewer")
+
+    with pytest.raises(ValueError, match="no longer holds"):
+        mediator._refuse_if_the_proposer_lost_the_grant(pending, now)
 
 
 class TestTheRecheckIsActuallyCalled:

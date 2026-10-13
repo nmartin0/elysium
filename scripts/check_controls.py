@@ -2201,6 +2201,46 @@ CONTROLS = [
         tests=["tests/unit/test_reference_data_is_versioned.py::"
                "test_a_table_whose_rules_stop_using_it_keeps_no_stale_record"],
     ),
+    Control(
+        describes="NEW-3: a proposer whose account is gone cannot have their write applied",
+        path="core/ontology/write_mediator.py",
+        old="            if proposer_now is None:\n                self.audit_log.log_access(",
+        new="            if False:\n                self.audit_log.log_access(",
+        tests=["tests/unit/test_proposer_is_reread_at_confirm.py::TestTheProposerIsWhoTheyAreNow::"
+               "test_a_proposer_whose_account_is_gone_is_refused"],
+    ),
+    Control(
+        describes="NEW-3: the checks use the proposer as they are now, not the snapshot",
+        path="core/ontology/write_mediator.py",
+        old="            proposer = proposer_now\n",
+        new="            pass\n",
+        tests=["tests/unit/test_proposer_is_reread_at_confirm.py::TestTheProposerIsWhoTheyAreNow::"
+               "test_a_proposer_moved_to_another_compartment_is_refused"],
+    ),
+    Control(
+        describes="NEW-3: a role reassigned without a reload is still rechecked",
+        path="core/ontology/write_mediator.py",
+        old="                and proposer.role_name == getattr(pending.proposer, \"role_name\", None)):",
+        new="                and True):",
+        tests=["tests/unit/test_proposer_is_reread_at_confirm.py::TestTheProposerIsWhoTheyAreNow::"
+               "test_a_proposer_moved_to_a_role_without_the_grant_is_refused"],
+    ),
+    Control(
+        describes="NEW-3: the approve route re-reads the proposer",
+        path="api/routes.py",
+        old="                proposer_now=_proposer_as_they_are_now(request, pending.user_id),\n",
+        new="",
+        tests=["tests/unit/test_proposer_is_reread_at_confirm.py::"
+               "test_every_confirm_under_api_says_which_proposer_it_found"],
+    ),
+    Control(
+        describes="NEW-3: a disabled account reads as gone",
+        path="api/routes.py",
+        old="    if not directory.user_exists(user_id) or directory.is_user_disabled(user_id):\n        return None",
+        new="    if not directory.user_exists(user_id):\n        return None",
+        tests=["tests/unit/test_proposer_is_reread_at_confirm.py::TestTheRouteLooksThemUp::"
+               "test_a_disabled_account_is_none"],
+    ),
 ]
 
 

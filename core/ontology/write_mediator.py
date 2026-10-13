@@ -347,6 +347,19 @@ def _compartment_crossings(read_labels: dict, write_labels: dict) -> list[tuple]
     return crossings
 
 
+class _NotLookedUp:
+    """The caller had no user directory to re-read the proposer from."""
+
+    def __repr__(self) -> str:
+        return "NOT_LOOKED_UP"
+
+
+#: Passed as confirm_and_execute's `proposer_now` by a caller with no
+#: user directory. Explicit, so forgetting the argument is refused
+#: rather than read as "nothing to check".
+NOT_LOOKED_UP = _NotLookedUp()
+
+
 class WriteMediator:
     def __init__(
         self, mediator: DataMediator, write_adapters: dict[str, ExternalWriteAdapter], roles: dict,
@@ -1716,7 +1729,21 @@ class WriteMediator:
             )
 
     def confirm_and_execute(self, pending: PendingWrite, approved: bool,
-                             approver: UserRecord | None = None) -> dict | None:
+                             approver: UserRecord | None = None,
+                             proposer_now: "UserRecord | None | _NotLookedUp" = NOT_LOOKED_UP,
+                             ) -> dict | None:
+        """`proposer_now` is the PROPOSER AS THE USER DIRECTORY HAS
+        THEM NOW (NEW-3): their current record, or None when the account
+        has been deleted or disabled since they proposed. A caller with
+        no directory -- a script, the agent confirming its own user's
+        write -- passes NOT_LOOKED_UP, and the snapshot taken at
+        proposal is all there is to check against.
+
+        THE DEFAULT IS NOT_LOOKED_UP, and a guard holds the routes to
+        it: tests/unit/test_proposer_is_reread_at_confirm.py fails if
+        any confirm_and_execute call under api/ omits `proposer_now`,
+        because api/ always has the directory and so has no excuse.
+        """
         # ALWAYS goes through _apply_batch() below, one sub_write or
         # many -- see this file's own AI-notes at the bottom, and
         # write_log.py's own MULTI-OBJECT BATCHES docstring section,
@@ -1753,12 +1780,32 @@ class WriteMediator:
             # cannot act on either way.
             self._check_approver_criteria(pending, approver)
 
+        proposer = pending.proposer
+        if approved and not isinstance(proposer_now, _NotLookedUp):
+            # THE PROPOSER, RE-READ (NEW-3). The write runs on their
+            # authority, so an account deleted or disabled since the
+            # proposal has no authority left to run it on. disable_user()
+            # already ends their sessions; this ends their queued writes
+            # too, which a colleague could otherwise still approve.
+            if proposer_now is None:
+                self.audit_log.log_access(
+                    pending.user_id, pending.sub_writes[0].object_type,
+                    pending.sub_writes[0].object_id,
+                    f"write:{pending.action_type_name}", False, False,
+                )
+                raise ValueError(
+                    f"This write can no longer be applied: {pending.user_id!r}, who "
+                    f"proposed it, no longer has an active account. Nothing has been "
+                    f"written; someone who still holds the grant can re-propose it."
+                )
+            proposer = proposer_now
+
         if approved:
             # AGAIN AT CONFIRM, against the CURRENT schema. A proposal
             # made before a constraint existed must not slip through by
             # being approved after it -- re-evaluated at the point of use.
             self._refuse_constraint_violations(pending.sub_writes)
-            self._refuse_if_the_proposer_lost_the_grant(pending)
+            self._refuse_if_the_proposer_lost_the_grant(pending, proposer)
             unapplyable = self._fields_no_longer_declared(pending)
             if unapplyable:
                 self.audit_log.log_write_unapplyable(
@@ -1789,7 +1836,7 @@ class WriteMediator:
             # has a better, more specific refusal waiting above --
             # three existing tests found this order by failing with a
             # KeyError when it was the other way round.
-            self._refuse_writes_outside_current_mac(pending, approver)
+            self._refuse_writes_outside_current_mac(pending, proposer)
 
         request_id = str(uuid.uuid4())
         self.audit_log.log_pre(
@@ -1868,7 +1915,7 @@ class WriteMediator:
         return self._fields_no_longer_declared(pending)
 
     def _refuse_writes_outside_current_mac(self, pending: PendingWrite,
-                                            approver: UserRecord | None) -> None:
+                                            proposer: UserRecord | None) -> None:
         """Every object this write touches is still reachable NOW.
 
         CHECKED AGAINST THE PROPOSER, not the approver, and that
@@ -1891,18 +1938,16 @@ class WriteMediator:
         an object moving out of reach between propose and confirm --
         and leaves four-eyes exactly as it was.
 
-        AND ITS LIMIT, stated because the next reader will ask: this
-        uses the proposer's record as captured at propose time, so it
-        catches the OBJECT moving, not the PROPOSER's own clearance
-        being revoked. Catching that needs a user-directory lookup
-        this layer does not have. Recorded as such rather than implied
-        by a reassuring name.
+        AND THE PROPOSER AS THEY ARE NOW (NEW-3). `proposer` is the
+        directory's current record when the caller looked one up, so a
+        proposer moved to another compartment since proposing is
+        checked in the compartment they are in. Only a caller with no
+        directory falls back to the snapshot taken at proposal.
 
         CREATES ARE SKIPPED for the same reason propose skips them:
         the object does not exist yet, so it has no security value to
         be outside of.
         """
-        proposer = pending.proposer
         if proposer is None or proposer.security_value is None:
             return
         for sub_write in pending.sub_writes:
@@ -1996,7 +2041,8 @@ class WriteMediator:
                 problems.append(f"{sub_write.object_type}: {reason}")
         return problems
 
-    def _refuse_if_the_proposer_lost_the_grant(self, pending: PendingWrite) -> None:
+    def _refuse_if_the_proposer_lost_the_grant(self, pending: PendingWrite,
+                                               proposer: UserRecord | None = None) -> None:
         """Refuses a write whose proposer may no longer run this action.
 
         THE INVARIANT THIS WAS MISSING. SECURITY_ARCHITECTURE.md:
@@ -2020,22 +2066,26 @@ class WriteMediator:
         proposal would re-store exactly the authority this refuses to
         store.
 
-        WHAT THIS DOES NOT CATCH, said plainly rather than left to be
-        discovered. `pending.proposer` is a snapshot, so a proposer who
-        has since been DISABLED, DELETED, or MOVED TO ANOTHER ROLE is
-        not detected here -- that needs the user directory, which this
-        mediator does not hold and which is wired in api/routes.py.
-        Filed with the security agent; see AUDIT_CHECKLIST.csv. Note that disable_user() and
-        delete_user() already delete the account's SESSIONS in the same
-        transaction, so a disabled proposer cannot themselves act; what
-        survives is the queued write somebody else may approve.
+        AND AGAINST THE PROPOSER AS THEY ARE NOW (NEW-3). `proposer` is
+        the directory's current record when the caller looked one up,
+        so a proposer MOVED TO ANOTHER ROLE is judged by the role they
+        hold now. A disabled or deleted proposer never reaches here:
+        confirm_and_execute refuses them first. Only a caller with no
+        directory passes the snapshot taken at proposal.
 
         A ValueError, matching _fields_no_longer_declared, so the route
         answers 409 -- the request is no longer applicable, rather than
         the approver being forbidden.
         """
-        if pending.proposed_under_generation == self.generation:
+        if proposer is None:
+            proposer = pending.proposer
+        if (pending.proposed_under_generation == self.generation
+                and proposer.role_name == getattr(pending.proposer, "role_name", None)):
             # NOTHING HAS CHANGED, so there is nothing to re-evaluate.
+            # Neither the roles (same generation) nor the role the
+            # proposer holds (same name) -- a role REASSIGNED in the
+            # user directory does not bump the generation, which is why
+            # the second half is there.
             # The grant was checked at propose_action() against these
             # very roles; asking again would be the same question to
             # the same data.
@@ -2050,10 +2100,10 @@ class WriteMediator:
             return
 
         execute_action_id = f"execute:{pending.action_type_name}"
-        if authorize(pending.proposer, self.roles, execute_action_id):
+        if authorize(proposer, self.roles, execute_action_id):
             return
         raise ValueError(
-            f"This write can no longer be applied: {pending.proposer.user_id!r} no "
+            f"This write can no longer be applied: {proposer.user_id!r} no "
             f"longer holds {execute_action_id!r} under configuration generation "
             f"{self.generation}. It was proposed under generation "
             f"{pending.proposed_under_generation}. Re-propose it if it is still wanted."
