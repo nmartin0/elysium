@@ -80,3 +80,47 @@ class TestTheTwoTravelTogether:
         data_type, _ = split_declared_type("timestamptz@Europe/London")
 
         assert arrow_type_for(data_type) is not None
+
+
+class TestTheZoneReachesTheSync:
+    """THE ZONE WAS DROPPED for any field without `constraints` or
+    `required`: it was carried inside the expectations branch, so every
+    naive value in such a field was refused with a message telling the
+    operator to declare the timezone they had already declared."""
+
+    SCHEMA = {"E": {
+        "id_field": "id",
+        "storage": {"silo": "s", "table": "e", "id_column": "id"},
+        "fields": {"id": {"type": "data"},
+                   "at": {"type": "data", "data_type": "timestamptz",
+                          "timezone": "America/New_York"}},
+    }}
+
+    def test_a_field_with_no_other_rules_keeps_its_zone(self):
+        from core.mirror.sync_targets import resolve_sync_targets
+
+        (target,) = resolve_sync_targets({"object_types": self.SCHEMA})
+
+        assert target.column_types["at"] == "timestamptz@America/New_York"
+
+    def test_through_a_real_sync_the_naive_value_is_read_in_its_zone(self, tmp_path):
+        import datetime
+        import sqlite3
+
+        from adapters.sqlite_adapter import SQLiteReadAdapter
+        from core.mirror.iceberg_sync import IcebergMirrorSync
+        from core.mirror.sync_targets import resolve_sync_targets
+
+        source = tmp_path / "s.db"
+        conn = sqlite3.connect(source)
+        conn.execute("CREATE TABLE e (id TEXT PRIMARY KEY, at TEXT)")
+        conn.execute("INSERT INTO e VALUES ('1', '2024-01-02 09:00:00')")
+        conn.commit()
+        conn.close()
+        (target,) = resolve_sync_targets({"object_types": self.SCHEMA})
+        sync = IcebergMirrorSync(tmp_path / "mirror", {"s": SQLiteReadAdapter({"path": source})})
+
+        sync.sync_table("s", "e", "id", target.columns, target.column_types)
+
+        (row,) = sync._catalog.load_table("s.e").scan().to_arrow().to_pylist()
+        assert row["at"] == datetime.datetime(2024, 1, 2, 14, 0, tzinfo=datetime.UTC)

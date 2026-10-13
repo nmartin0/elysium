@@ -368,6 +368,9 @@ type = "layers"
 layers = [
     "write_mediator",
     "mediator",
+    # Rules between two fields (R29) compare through constraints, so
+    # they sit above it; the write mediator and silver read them.
+    "field_rules",
     "interface | schema | write_log | submission_criteria | action_types | object_type_validation | constraints | gold_view | bindings",
     # Real leaves, below everything. object_type_validation imports
     # field_types (to reject an unknown declared data_type at load

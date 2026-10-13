@@ -1560,6 +1560,35 @@ CONTROLS = [
         tests=["tests/unit/test_a_question_has_a_token_budget.py::"
                "test_the_budget_stops_the_next_call_once_spent"],
     ),
+    Control(
+        describes="R29: a write breaking a rule between two fields is refused",
+        path="core/ontology/write_mediator.py",
+        old="            problems.extend(self._rule_violations(sub_write, declared))",
+        new="            pass",
+        tests=["tests/unit/test_rules_between_two_fields.py::TestOnAWrite::test_a_change_that_breaks_it_against_the_current_value_is_refused"],
+    ),
+    Control(
+        describes="R29: an update is judged with the untouched side's current value",
+        path="core/ontology/write_mediator.py",
+        old="            if untouched and sub_write.operation == \"update\":",
+        new="            if False:",
+        tests=["tests/unit/test_rules_between_two_fields.py::TestOnAWrite::test_a_change_that_breaks_it_against_the_current_value_is_refused"],
+    ),
+    Control(
+        describes="R29: silver applies the rule's declared policy",
+        path="core/mirror/expectations.py",
+        old="            reason = rule_violation(rule, expected[\"type_def\"], values)",
+        new="            reason = None",
+        tests=["tests/unit/test_rules_between_two_fields.py::TestInSilver::test_quarantine_holds_the_row_and_names_the_rule"],
+    ),
+    Control(
+        describes="A field's declared timezone reaches the sync without other rules",
+        path="core/mirror/sync_targets.py",
+        old="        timezone_name = field_config.get(\"timezone\")",
+        new="        timezone_name = None",
+        tests=["tests/unit/test_declared_timezone.py::TestTheZoneReachesTheSync::"
+               "test_a_field_with_no_other_rules_keeps_its_zone"],
+    ),
 ]
 
 

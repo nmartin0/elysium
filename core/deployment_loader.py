@@ -64,6 +64,7 @@ from core.mirror.mirror_adapter import MirrorReadAdapter
 from core.mirror.openlineage import validate_lineage_block
 from core.ontology.action_types import validate_action_types
 from core.ontology.bindings import TYPE_BINDING_KEYS, merge_bindings
+from core.ontology.field_rules import validate_field_rules
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.link_types import expand_link_types, validate_link_types
 from core.ontology.mediator import DataMediator
@@ -605,6 +606,8 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # A MALFORMED CONSTRAINT STOPS THE LOAD: one that silently never
     # fires, or fires on everything, is worse than none.
     validate_constraints(object_types_raw)
+    # Rules between two fields (R29), checked at load like the rest.
+    validate_field_rules(object_types_raw)
     schema_raw["object_types"] = expand_link_types(link_types_raw, object_types_raw)
 
     validate_function_declarations(enabled_tools, schema_raw["object_types"])

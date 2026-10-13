@@ -1954,8 +1954,40 @@ class WriteMediator:
                 reason = violation(fields[field_name], value)
                 if reason is not None:
                     problems.append(f"{sub_write.object_type}.{field_name}: {reason}")
+            problems.extend(self._rule_violations(sub_write, declared))
         if problems:
             raise ConstraintViolation("; ".join(problems))
+
+    def _rule_violations(self, sub_write, declared) -> list[str]:
+        """R29: rules between two fields, on the object AS IT WOULD BE.
+
+        A create is judged on its own values. An UPDATE that touches one
+        side of a rule is judged with the other side's CURRENT value --
+        moving a start date past an end date nobody touched is exactly the
+        violation, and the change alone does not show it. A rule neither
+        side of which changes is not re-judged here: the write did not
+        make it any truer or falser.
+        """
+        from core.ontology.field_rules import rule_violation, rules_for
+
+        if sub_write.operation == "delete":
+            return []
+        problems = []
+        for rule in rules_for(declared):
+            touched = {rule.field, rule.other} & set(sub_write.changes)
+            if not touched:
+                continue
+            values = dict(sub_write.changes)
+            untouched = [name for name in (rule.field, rule.other) if name not in values]
+            if untouched and sub_write.operation == "update":
+                for adapter, config, group in self._group_changes_by_storage(
+                        sub_write.object_type, dict.fromkeys(untouched)):
+                    values.update(self._read_group_fields(
+                        sub_write.object_type, sub_write.object_id, adapter, config, group))
+            reason = rule_violation(rule, declared, values)
+            if reason is not None:
+                problems.append(f"{sub_write.object_type}: {reason}")
+        return problems
 
     def _refuse_if_the_proposer_lost_the_grant(self, pending: PendingWrite) -> None:
         """Refuses a write whose proposer may no longer run this action.

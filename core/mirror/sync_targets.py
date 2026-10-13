@@ -57,6 +57,7 @@ from dataclasses import dataclass, field
 from core.mirror.duplicates import DuplicatePolicy, policy_for_storage
 from core.mirror.expectations import expectations_for
 from core.mirror.standardise import rules_for
+from core.ontology.field_rules import rules_for as field_rules_for
 
 
 @dataclass(frozen=True)
@@ -403,15 +404,39 @@ def _targets_for_type(type_def: dict):
             raise ValueError(f"Field {field_name!r}: {e}") from None
         if expected is not None:
             expectations_by_storage[storage_key][column] = {**expected, "field_name": field_name}
-            # THE SOURCE ZONE TRAVELS WITH THE TYPE, because it is part
-            # of what the type means: a `timestamptz` whose source is
-            # naive cannot be read without it. Carried on the same
-            # `data_type` string rather than a second dict, so nothing
-            # downstream can have one without the other -- validation
-            # has already established it appears only on timestamptz.
-            timezone_name = field_config.get("timezone")
-            if timezone_name is not None:
-                types_by_storage[storage_key][column] = f"{declared}@{timezone_name}"
+        # THE SOURCE ZONE TRAVELS WITH THE TYPE, because it is part
+        # of what the type means: a `timestamptz` whose source is
+        # naive cannot be read without it. Carried on the same
+        # `data_type` string rather than a second dict, so nothing
+        # downstream can have one without the other -- validation
+        # has already established it appears only on timestamptz.
+        #
+        # FOR EVERY FIELD, NOT ONLY THOSE WITH EXPECTATIONS. This sat
+        # inside the `if expected is not None:` above from the day it
+        # was written (0dc47fb, 18 September), so a `timezone:` on a
+        # field with no `constraints` or `required` was DROPPED -- and
+        # every naive value in it was refused with a message telling
+        # the operator to declare the timezone they had declared. Found
+        # while adding cross-field rules beside this loop.
+        timezone_name = field_config.get("timezone")
+        if timezone_name is not None:
+            types_by_storage[storage_key][column] = f"{declared}@{timezone_name}"
+
+    # RULES BETWEEN TWO FIELDS (R29), checked on the source row where
+    # both columns live -- one storage, which load has already required.
+    # Keyed apart from the columns ("rule:<name>") so nothing reading
+    # this dict as columns mistakes a rule for one.
+    for rule in field_rules_for(type_def):
+        fields = type_def.get("fields") or {}
+        storage_key = fields[rule.field].get("storage")
+        if storage_key not in expectations_by_storage:
+            continue
+        expectations_by_storage[storage_key][f"rule:{rule.name}"] = {
+            "rule": rule, "type_def": type_def, "policy": rule.policy,
+            "field_name": rule.name,
+            "columns": {name: fields[name].get("column", name)
+                        for name in (rule.field, rule.other)},
+        }
 
     # The MAC security field, when it names a real field on this type
     # rather than a chain through a link. Always required -- see this

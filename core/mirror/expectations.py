@@ -146,6 +146,17 @@ def check_row(row: dict, expectations: dict[str, dict]) -> list[Violation]:
     """Every rule this row fails, in column order."""
     found = []
     for column, expected in expectations.items():
+        if "rule" in expected:
+            # A RULE BETWEEN TWO FIELDS (R29), read by its columns.
+            from core.ontology.field_rules import rule_violation
+
+            rule = expected["rule"]
+            values = {name: row.get(col) for name, col in expected["columns"].items()}
+            reason = rule_violation(rule, expected["type_def"], values)
+            if reason is not None:
+                found.append(Violation(expected["columns"][rule.field], rule.name, reason,
+                                       values[rule.field], expected["policy"]))
+            continue
         value = row.get(column)
         field_name = expected.get("field_name", column)
         if value is None:
