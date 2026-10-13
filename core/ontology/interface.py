@@ -75,6 +75,11 @@ from typing import Any
 from core.adapter_roles import ReadAdapter, WriteAdapter
 
 
+class IncrementalUnsupported(NotImplementedError):
+    """This adapter cannot read only the rows that changed (R2). Not a
+    failure: the sync reads the whole table instead and says so."""
+
+
 class StorageUnavailable(RuntimeError):
     """A source could not answer, for a reason the operator can act on.
 
@@ -256,6 +261,21 @@ class ExternalReadAdapter(ReadAdapter):
         rows = self.read_all_rows(table_name, columns, type_config)
         for start in range(0, len(rows), batch_size):
             yield rows[start:start + batch_size]
+
+    def iter_rows_since(self, table_name: str, columns: list[str], cursor_column: str,
+                        since, batch_size: int = 50_000):
+        """The rows whose `cursor_column` is at or after `since` (R2), in
+        batches like iter_all_rows. INCLUSIVE, deliberately: a row
+        sharing the last mark is read again rather than missed.
+
+        THE DEFAULT REFUSES rather than filtering read_all_rows in
+        Python, which would read the whole table to return part of it
+        -- the cost R2 exists to remove, hidden behind a method that
+        looks like it removed it. The sync reads in full instead, and
+        says why.
+        """
+        raise IncrementalUnsupported(
+            f"{type(self).__name__} cannot read changed rows only")
 
     def source_column_types(self, table_name: str) -> dict[str, str]:
         """What the SOURCE says its columns are, verbatim.

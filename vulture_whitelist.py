@@ -489,3 +489,5 @@ data_contract_route
 field_sources
 # The help assistant: a route FastAPI calls and its request model.
 help_route
+# R2: a config-response field pydantic reads by reflection.
+incremental_tables

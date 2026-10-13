@@ -74,6 +74,10 @@ class SyncResult:
     # a quarantined finding is written to the lake, a warned one had
     # nowhere to go.
     warnings: list = dataclass_field(default_factory=list)
+    # HOW THE SOURCE WAS READ (R2): "full", "full (<why>)" for a table
+    # declared incremental that read everything this time, or the
+    # changed-rows read's own description. Printed by run_sync.
+    read: str = "full"
 
 
 class MirrorSync(ABC):

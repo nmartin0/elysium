@@ -261,3 +261,27 @@ class TestItStreamsTheTable:
     def test_a_missing_table_is_unavailable(self, adapter):
         with pytest.raises(StorageUnavailable):
             list(adapter.iter_all_rows("nope", ["id"], {}, batch_size=2))
+
+
+class TestItReadsOnlyWhatChanged:
+    """iter_rows_since (R2) against a real timestamptz: the mark goes
+    back as the datetime it came out as, bound, never interpolated."""
+
+    def test_rows_at_or_after_the_mark(self, adapter):
+        from datetime import UTC, datetime
+
+        mark = datetime(2026, 3, 13, 9, 0, tzinfo=UTC)
+        rows = [r for batch in adapter.iter_rows_since("txns", ["tid", "seen"], "seen", mark,
+                                                        batch_size=1) for r in batch]
+
+        assert sorted(r["tid"] for r in rows) == ["t2", "t3"], "t2 sits ON the mark: inclusive"
+
+    def test_the_mark_read_back_is_the_mark_sent(self, adapter):
+        from core.mirror.incremental import decode_mark, encode_mark
+
+        newest = max(r["seen"] for batch in adapter.iter_all_rows("txns", ["seen"], {})
+                     for r in batch)
+        again = [r for batch in adapter.iter_rows_since(
+            "txns", ["tid"], "seen", decode_mark(encode_mark(newest))) for r in batch]
+
+        assert [r["tid"] for r in again] == ["t3"]

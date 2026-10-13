@@ -54,6 +54,8 @@ WITHHELD_FROM_CONFIG_RESPONSE = {
     "lineage": "summarised as `lineage_service` and `lineage_namespace`; the URL "
                "can carry credentials",
     "mirror_storage": "warehouse paths and credentials",
+    "incremental": "summarised as `incremental_tables`: each table's cursor column and "
+                   "schedule, as text",
     "identity_inference": "a mirror-build setting, not a runtime one",
     "pending_write_ttl_minutes": "not yet surfaced; no panel field",
     "query_deadline_seconds": "not yet surfaced; no panel field",

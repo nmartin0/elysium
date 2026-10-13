@@ -1614,8 +1614,8 @@ CONTROLS = [
     Control(
         describes="R5: the bronze write streams the source rather than gathering it",
         path="core/mirror/iceberg_sync.py",
-        old="            for rows in self._read_source_batches(adapter, table_name, id_column, columns):",
-        new="            for rows in list(self._read_source_batches(adapter, table_name, id_column, columns)):",
+        old="            for rows in itertools.chain(_drain(pending), batches):",
+        new="            for rows in list(itertools.chain(_drain(pending), batches)):",
         tests=["tests/unit/test_sync_reads_in_batches.py::test_the_source_rows_are_not_kept_while_the_next_batch_is_read"],
     ),
     Control(
@@ -1678,6 +1678,89 @@ CONTROLS = [
         new=("        return dict(zip(indices, (_as_strings(row) for row in "
              "table.take(pa.array(indices[:1])).to_pylist()),"),
         tests=["tests/unit/test_changelog_diff_in_arrow.py::test_randomised_snapshots_give_the_same_changes"],
+    ),
+    Control(
+        describes="R2: a declared table reads only the rows at or after its mark",
+        path="core/mirror/iceberg_sync.py",
+        old=("            if reason is None and policy is not None:\n"
+             "                changed_since = (policy.cursor, read_from("),
+        new="            if False:\n                changed_since = (policy.cursor, read_from(",
+        tests=["tests/unit/test_incremental_sync.py::TestTheNextSyncReadsOnlyWhatChanged::"
+               "test_a_change_and_an_insert_arrive_and_nothing_else_is_read"],
+    ),
+    Control(
+        describes="R2: the boundary is inclusive",
+        path="adapters/sqlite_adapter.py",
+        old="WHERE {_q(cursor_column)} >= ?",
+        new="WHERE {_q(cursor_column)} > ?",
+        tests=["tests/unit/test_incremental_sync.py::TestTheNextSyncReadsOnlyWhatChanged::test_the_boundary_is_inclusive"],
+    ),
+    Control(
+        describes="R2: changed rows are merged onto what bronze held",
+        path="core/mirror/iceberg_sync.py",
+        old="    return pa.concat_tables([kept, changed])",
+        new="    return changed",
+        tests=["tests/unit/test_incremental_sync.py::TestTheNextSyncReadsOnlyWhatChanged::"
+               "test_a_change_and_an_insert_arrive_and_nothing_else_is_read"],
+    ),
+    Control(
+        describes="R2: a changed row replaces bronze's row under its id",
+        path="core/mirror/iceberg_sync.py",
+        old="        previous = previous.filter(pc.invert(pc.fill_null(replaced, False)))",
+        new="        pass",
+        tests=["tests/unit/test_incremental_sync.py::TestTheNextSyncReadsOnlyWhatChanged::"
+               "test_a_change_and_an_insert_arrive_and_nothing_else_is_read"],
+    ),
+    Control(
+        describes="R2: the scheduled full read happens, and sees deletions",
+        path="core/mirror/incremental.py",
+        old="    if now - last_full >= policy.full_read_every:",
+        new="    if False:",
+        tests=["tests/unit/test_incremental_sync.py::TestADeletionWaitsForTheFullRead::test_the_scheduled_full_read_sees_it"],
+    ),
+    Control(
+        describes="R2: a full read is recorded as one",
+        path="core/mirror/iceberg_sync.py",
+        old="    if was_full:\n        properties[FULL_READ_PROPERTY] = started.isoformat()",
+        new="    if False:\n        properties[FULL_READ_PROPERTY] = started.isoformat()",
+        tests=["tests/unit/test_incremental_sync.py::TestTheFirstSyncIsFull::test_it_reads_everything_and_records_the_mark"],
+    ),
+    Control(
+        describes="R2: --full reads everything",
+        path="core/mirror/incremental.py",
+        old="    if force:\n        return \"a full read was asked for\"",
+        new="    if False:\n        return \"a full read was asked for\"",
+        tests=["tests/unit/test_incremental_sync.py::TestADeletionWaitsForTheFullRead::test_asking_for_a_full_read_sees_it"],
+    ),
+    Control(
+        describes="R2: a changed cursor column forces a full read",
+        path="core/mirror/incremental.py",
+        old="    if properties.get(CURSOR_PROPERTY) != policy.cursor:",
+        new="    if False:",
+        tests=["tests/unit/test_incremental_sync.py::TestWhenAChangedRowsReadWouldBeWrong::test_a_new_cursor_column_reads_in_full"],
+    ),
+    Control(
+        describes="R2: which columns arrived as text is carried across reads",
+        path="core/mirror/iceberg_sync.py",
+        old="                text_columns |= set(json.loads(",
+        new="                text_columns |= set() & set(json.loads(",
+        tests=["tests/unit/test_incremental_sync.py::TestWhatIsCarriedForward::test_a_locale_still_applies_to_rows_that_were_not_re_read"],
+    ),
+    Control(
+        describes="R2: the mark keeps its type",
+        path="core/mirror/incremental.py",
+        old="        \"datetime\": datetime.fromisoformat, \"date\": date.fromisoformat, \"int\": int,",
+        new="        \"datetime\": str, \"date\": date.fromisoformat, \"int\": int,",
+        tests=["tests/unit/test_incremental_sync.py::TestTheMarkKeepsItsType::test_it_round_trips",
+               "tests/unit/test_sqlalchemy_adapter.py::TestItReadsOnlyWhatChanged::"
+               "test_the_mark_read_back_is_the_mark_sent"],
+    ),
+    Control(
+        describes="R2: a join table cannot be declared incremental",
+        path="core/deployment_loader.py",
+        old="                if not target.link_pair}",
+        new="                }",
+        tests=["tests/unit/test_incremental_sync.py::TestTheDeclaration::test_a_join_table_cannot_be_declared"],
     ),
 ]
 

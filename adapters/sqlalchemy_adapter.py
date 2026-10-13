@@ -348,12 +348,23 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
         holds the whole table. Inside a consistent read (R4) it streams
         from the held snapshot, in a savepoint like every other read."""
         table = self._table(table_name, sorted(columns))
+        yield from self._stream(select(*(table.c[name] for name in sorted(columns))), batch_size)
+
+    def iter_rows_since(self, table_name: str, columns: list[str], cursor_column: str,
+                        since, batch_size: int = 50_000):
+        """iter_all_rows WHERE cursor >= since (R2), the mark bound as a
+        parameter of the type it was read as -- never interpolated."""
+        table = self._table(table_name, sorted(set(columns) | {cursor_column}))
+        statement = select(*(table.c[name] for name in sorted(columns))).where(
+            table.c[cursor_column] >= since)
+        yield from self._stream(statement, batch_size)
+
+    def _stream(self, statement, batch_size: int):
         # ON THE STATEMENT, NOT THE CONNECTION: Connection.execution_options
         # changes the connection IN PLACE, and on the held snapshot that
         # put the savepoint's own RELEASE through a server-side cursor --
         # "syntax error at or near RELEASE", caught by the test.
-        statement = select(*(table.c[name] for name in sorted(columns))).execution_options(
-            stream_results=True)
+        statement = statement.execution_options(stream_results=True)
         pinned = getattr(self._pinned, "conn", None)
         try:
             if pinned is not None:

@@ -65,3 +65,26 @@ data_silos:
 # version control -- it is not a secret store, and does not claim to
 # be.
 
+
+# READING ONLY WHAT CHANGED (R2), per table, for a source that moves a
+# column on every change -- an `updated_at`, a row version. Absent, every
+# table is read in full every sync, which is right until a table is big.
+#
+#  warehouse_pg:
+#    ...
+#    incremental:
+#      orders:
+#        cursor: updated_at       # rows at or after the last mark are read
+#        full_read_every: 7d      # default 7d -- see below
+#        lookback: 5m             # default 0; timestamp cursors only
+#
+# A CURSOR CANNOT SEE A DELETED ROW: it simply stops appearing. So the
+# table is still read IN FULL on the schedule above, and that read is
+# the one that notices deletions. A row whose cursor is empty, or a
+# change that did not move it, is likewise refreshed by full reads only.
+# `python -m scripts.run_sync --full` reads everything now.
+#
+# `lookback` is for PostgreSQL's now(), which is a transaction's START
+# time: a long transaction can commit after a later one was read, with
+# an earlier cursor value. Re-reading a few minutes before the mark
+# catches it; reading a row twice is harmless.

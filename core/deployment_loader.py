@@ -279,6 +279,10 @@ class DeploymentConfig:
     # declaring `excel_dates: true` in data_silos.yaml. Declared, never
     # inferred -- a bare number in a date column is ambiguous.
     excel_date_silos: frozenset = frozenset()
+    # TABLES READ BY CHANGED ROWS (R2): {(silo, table): IncrementalPolicy},
+    # from each silo's `incremental:` in data_silos.yaml. Empty means
+    # every table is read in full every sync, as before this existed.
+    incremental: Mapping = MappingProxyType({})
     # AL-10: the most tokens one query may spend, as providers report
     # them. None: no budget. `agent: max_tokens_per_query:` in config.yaml.
     max_tokens_per_query: "int | None" = None
@@ -656,6 +660,8 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             source_locales=MappingProxyType(
                 _source_locales(config, data_silos_raw["data_silos"])),
             excel_date_silos=_excel_date_silos(data_silos_raw["data_silos"]),
+            incremental=MappingProxyType(
+                _incremental_policies(data_silos_raw["data_silos"], schema_raw["object_types"])),
             max_tokens_per_query=_token_budget(config["agent"].get("max_tokens_per_query")),
             max_concurrent_requests=_default_concurrency(config),
             # FOUR HOURS by default, not fifteen minutes. Long enough
@@ -962,6 +968,22 @@ def _token_budget(declared) -> "int | None":
             f"config.yaml agent.max_tokens_per_query must be a positive whole number of "
             f"tokens, got {declared!r}.")
     return declared
+
+
+def _incremental_policies(silos: dict, object_types: dict) -> dict:
+    """R2's declarations, checked against the tables the sync actually
+    reads. JOIN TABLES ARE LEFT OUT of what may be declared: a join row
+    has no id of its own to merge a changed row by, and what changes in
+    one is mostly DELETION, which a cursor read cannot see anyway."""
+    from core.mirror.incremental import incremental_policies
+    from core.mirror.sync_targets import resolve_sync_targets
+
+    if not any((silo or {}).get("incremental") is not None for silo in (silos or {}).values()):
+        return {}
+    readable = {(target.silo_name, target.table_name)
+                for target in resolve_sync_targets({"object_types": object_types})
+                if not target.link_pair}
+    return incremental_policies(silos, readable)
 
 
 def _excel_date_silos(silos: dict) -> frozenset:

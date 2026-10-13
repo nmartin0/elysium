@@ -41,6 +41,7 @@ columns Elysium has no business copying at all.
 Used by: scripts/run_sync.py
 """
 
+import itertools
 import json
 import logging
 import warnings
@@ -67,6 +68,19 @@ from core.mirror.drift_policy import (
 from core.mirror.duplicates import DuplicatePolicy, split_duplicates
 from core.mirror.durability import force_table_metadata_to_disk
 from core.mirror.expectations import QUARANTINE, Violation, apply_expectations
+from core.mirror.incremental import (
+    CURSOR_PROPERTY,
+    FULL_READ_PROPERTY,
+    MARK_PROPERTY,
+    TEXT_COLUMNS_PROPERTY,
+    decode_mark,
+    describe_span,
+    encode_mark,
+    full_read_reason,
+    higher,
+    now_utc,
+    read_from,
+)
 from core.mirror.integrity import describe_disagreement, unreadable_tables
 from core.mirror.interface import MirrorSync, SyncResult
 from core.mirror.lake_permissions import make_private
@@ -78,7 +92,7 @@ from core.ontology.field_types import (
     arrow_type_for,
     split_declared_type,
 )
-from core.ontology.interface import ExternalReadAdapter
+from core.ontology.interface import ExternalReadAdapter, IncrementalUnsupported
 
 logger = logging.getLogger(__name__)
 
@@ -404,6 +418,46 @@ class SourceRead:
     text_columns: frozenset
     row_count: int
     rows: "list[dict] | None" = None
+    #: How the source was read, for the operator (R2): "full" or
+    #: "changes since ...", with the reason a declared table read in full.
+    read: str = "full"
+
+
+def _merge_changes(previous: "pa.Table", changed: "pa.Table", id_column: str,
+                   schema: "pa.Schema") -> "pa.Table":
+    """Bronze after a changed-rows read (R2): every row bronze held
+    whose id did not change, then the changed rows. Columns follow THIS
+    read: one the source dropped is dropped, one it added is null for
+    the rows that were not re-read, exactly as a full read would leave
+    a row whose value is NULL."""
+    import pyarrow.compute as pc
+
+    if id_column in previous.column_names and changed.num_rows:
+        replaced = pc.is_in(previous.column(id_column), value_set=changed.column(id_column))
+        previous = previous.filter(pc.invert(pc.fill_null(replaced, False)))
+    kept = pa.table({
+        name: (previous.column(name).cast(pa.string()) if name in previous.column_names
+               else pa.nulls(previous.num_rows, pa.string()))
+        for name in schema.names
+    }, schema=schema)
+    return pa.concat_tables([kept, changed])
+
+
+def _drain(pending: list):
+    while pending:
+        yield pending.pop()
+
+
+def _incremental_properties(policy, mark, was_full: bool, started, existing) -> dict:
+    properties = {CURSOR_PROPERTY: policy.cursor}
+    encoded = encode_mark(mark)
+    if encoded is not None:
+        properties[MARK_PROPERTY] = encoded
+    if was_full:
+        properties[FULL_READ_PROPERTY] = started.isoformat()
+    elif existing is not None and existing.properties.get(FULL_READ_PROPERTY):
+        properties[FULL_READ_PROPERTY] = existing.properties[FULL_READ_PROPERTY]
+    return properties
 
 
 class IcebergMirrorSync(MirrorSync):
@@ -436,6 +490,12 @@ class IcebergMirrorSync(MirrorSync):
         self.locales: dict = {}
         # SILOS THAT DECLARE EXCEL DATE SERIALS (ZOO-22), set by run_sync.
         self.excel_date_silos: frozenset = frozenset()
+        # INCREMENTAL TABLES (R2): {(silo, table): IncrementalPolicy}, set
+        # by run_sync from data_silos.yaml. Empty means every table is
+        # read in full, which is every deployment that has not declared.
+        self.incremental: dict = {}
+        # `run_sync --full`: every declared table reads in full this run.
+        self.force_full_read = False
         self._current_silo: str | None = None
         # adapters are the REAL, read-only ExternalReadAdapter instances
         # (Phase 1 -- structurally incapable of writing to the
@@ -1028,6 +1088,7 @@ class IcebergMirrorSync(MirrorSync):
             violations=checked.counts,
             warnings=checked.warnings,
             unchanged=unchanged,
+            read=source.read,
         )
 
     def _bronze_snapshot_id(self, silo_name: str, table_name: str):
@@ -1249,13 +1310,21 @@ class IcebergMirrorSync(MirrorSync):
         return frozenset({table_name})
 
     def _read_source_batches(self, adapter: ExternalReadAdapter, table_name: str,
-                             id_column: str, columns: list[str]):
+                             id_column: str, columns: list[str], changed_since=None):
         """The source's rows a batch at a time (R5), erased people
-        already dropped (R13) -- the streaming twin of _read_source_rows."""
+        already dropped (R13) -- the streaming twin of _read_source_rows.
+        With `changed_since` ((cursor, mark)), only the rows at or after
+        the mark (R2)."""
         type_config = {"storage": {"table": table_name, "id_column": id_column}}
         suppression = self.suppression.get((self._current_silo, table_name))
-        for rows in adapter.iter_all_rows(table_name, columns, type_config,
-                                          batch_size=SYNC_BATCH_ROWS):
+        if changed_since is None:
+            source = adapter.iter_all_rows(table_name, columns, type_config,
+                                           batch_size=SYNC_BATCH_ROWS)
+        else:
+            cursor, mark = changed_since
+            source = adapter.iter_rows_since(table_name, columns, cursor, mark,
+                                             batch_size=SYNC_BATCH_ROWS)
+        for rows in source:
             if suppression is not None:
                 from core.mirror.erasure import suppress_rows
 
@@ -1378,13 +1447,53 @@ class IcebergMirrorSync(MirrorSync):
             # What later stages need from the raw rows is noted on the
             # way past: how many there were, and which columns arrived
             # as TEXT (DEP-1's locale reads only those).
+            # CHANGED ROWS ONLY, WHEN DECLARED AND SAFE (R2). Decided
+            # before reading: incremental.full_read_reason names every
+            # case where a changed-rows read would be WRONG -- first sync,
+            # a new cursor column, the scheduled full read that notices
+            # deletions -- and the answer is printed either way.
+            policy = self.incremental.get((silo_name, table_name))
+            try:
+                existing = self._catalog.load_table(identifier)
+            except (NoSuchTableError, NoSuchNamespaceError):
+                existing = None
+            started = now_utc()
+            reason = full_read_reason(
+                policy, existing.properties if existing is not None else None, started,
+                columns, force=self.force_full_read)
+            changed_since = None
+            if reason is None and policy is not None:
+                changed_since = (policy.cursor, read_from(
+                    decode_mark(existing.properties.get(MARK_PROPERTY)), policy.lookback))
+            try:
+                batches = self._read_source_batches(adapter, table_name, id_column, columns,
+                                                    changed_since)
+                first = next(batches, None)
+            except IncrementalUnsupported as unsupported:
+                reason, changed_since = str(unsupported), None
+                batches = self._read_source_batches(adapter, table_name, id_column, columns)
+                first = next(batches, None)
+
             record_batches, row_count = [], 0
             text_columns: set[str] = set()
-            for rows in self._read_source_batches(adapter, table_name, id_column, columns):
+            mark, null_cursors = None, 0
+            # THE FIRST BATCH IS HANDED ON, NOT HELD: a name bound to it
+            # for the whole loop kept 50,000 rows alive beside every later
+            # batch -- the R5 memory test caught exactly that.
+            pending = [first] if first is not None else []
+            del first
+            for rows in itertools.chain(_drain(pending), batches):
                 row_count += len(rows)
                 text_columns.update(
                     column for column in columns if column not in text_columns
                     and any(isinstance(row.get(column), str) for row in rows))
+                if policy is not None:
+                    for row in rows:
+                        value = row.get(policy.cursor)
+                        if value is None:
+                            null_cursors += 1
+                        else:
+                            mark = higher(mark, value)
                 record_batches.append(pa.record_batch({
                     column: pa.array(
                         # CANONICAL TEXT, NOT repr (PA001-S2). `str()` on a
@@ -1395,9 +1504,35 @@ class IcebergMirrorSync(MirrorSync):
                     )
                     for column in columns
                 }))
-            arrow_table = pa.Table.from_batches(
-                record_batches, schema=pa.schema([(column, pa.string()) for column in columns]))
+            schema = pa.schema([(column, pa.string()) for column in columns])
+            arrow_table = pa.Table.from_batches(record_batches, schema=schema)
             del record_batches
+            if changed_since is not None and policy is not None:
+                # "AT OR AFTER", not "changed": the boundary is inclusive,
+                # so the rows sharing the last mark are read every time.
+                read = (f"{row_count} row(s) at or after {policy.cursor} {changed_since[1]} "
+                        f"(full read every {describe_span(policy.full_read_every)})")
+                # ONTO EVERYTHING BRONZE ALREADY HELD, by id: a changed
+                # row replaces every row bronze had under its id, and a
+                # row bronze never had is added. Nothing is removed --
+                # a cursor read cannot see a deletion, which is what the
+                # scheduled full read is for.
+                arrow_table = _merge_changes(existing.scan().to_arrow(), arrow_table,
+                                             id_column, schema)
+                row_count = arrow_table.num_rows
+                # WHAT ARRIVED AS TEXT, across every read bronze holds:
+                # the unchanged rows were not re-read to ask.
+                text_columns |= set(json.loads(
+                    existing.properties.get(TEXT_COLUMNS_PROPERTY) or "[]")) & set(columns)
+                if mark is None:
+                    mark = decode_mark(existing.properties.get(MARK_PROPERTY))
+            else:
+                read = "full" if policy is None else f"full ({reason})"
+                if policy is not None and null_cursors:
+                    logger.warning(
+                        "%s.%s: %d row(s) have no %s, so changed-rows reads cannot see "
+                        "them; they are refreshed by full reads only.",
+                        silo_name, table_name, null_cursors, policy.cursor)
             # BEFORE ANY LAYER IS WRITTEN (PA001-F4). Checking after
             # bronze had already been overwritten would leave the raw
             # record destroyed by the very read we decided not to
@@ -1481,6 +1616,13 @@ class IcebergMirrorSync(MirrorSync):
 
                     **({SOURCE_TYPES_PROPERTY: current_types}
                        if current_types else {}),
+                    TEXT_COLUMNS_PROPERTY: json.dumps(sorted(text_columns)),
+                    # THE MARK (R2), written only after bronze holds the
+                    # rows it covers. A failure above leaves the old mark,
+                    # so the next read starts where this one did.
+                    **(_incremental_properties(policy, mark, changed_since is None,
+                                               started, existing)
+                       if policy is not None else {}),
                     **BRONZE_RETENTION,
                 })
 
@@ -1542,7 +1684,8 @@ class IcebergMirrorSync(MirrorSync):
                                        if any(isinstance(row.get(column), str) for row in rows)),
                 row_count=len(rows), rows=rows), False
 
-        return SourceRead(text_columns=frozenset(text_columns), row_count=row_count), True
+        return SourceRead(text_columns=frozenset(text_columns), row_count=row_count,
+                          read=read), True
 
     def _force_metadata_to_disk(self, identifier: str) -> None:
         """Makes this table's metadata durable, or stops the sync.

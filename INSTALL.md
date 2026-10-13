@@ -220,6 +220,26 @@ now" escape hatch; there is no separate mechanism for it.
 list you maintain. Add a field or an object type, and the next sync
 picks it up. There is nothing to keep in step by hand.
 
+**A big table can be read by its changes.** Declare the column your
+source moves on every change, per table, in `data_silos.yaml`:
+
+```yaml
+data_silos:
+  warehouse_pg:
+    ...
+    incremental:
+      orders:
+        cursor: updated_at
+        full_read_every: 7d     # the default
+```
+
+Each sync then reads only the rows at or after the last value it saw.
+A deleted row is invisible to that kind of read, so the table is still
+read in full on the schedule you set, and that full read is what
+removes deleted rows from the mirror. `python3 -m scripts.run_sync
+--full` does a full read of everything now. The sync prints how it
+read each table, and Admin → Configuration lists the declared tables.
+
 **It cannot write to your data.** The sync reads through the same
 structurally read-only connection described in the next section.
 

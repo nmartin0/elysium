@@ -58,6 +58,7 @@ interface DeploymentConfigBody {
   source_locales?: Record<string, string | null>
   /** ZOO-22: silos whose date columns may hold Excel serials. */
   excel_date_silos?: string[]
+  incremental_tables?: Record<string, string>
   max_concurrent_requests: number
   security_attribute: string
   read_from_mirror: boolean
@@ -316,6 +317,17 @@ export default function DeploymentConfig({ onSessionExpired }: { onSessionExpire
                           (config.excel_date_silos?.includes(silo) ? ' and Excel date serials' : ''),
                       )
                       .join(', ') || 'none',
+              ],
+              [
+                // WHICH TABLES READ ONLY WHAT CHANGED (R2). The place to
+                // look when a deletion took days to reach the mirror:
+                // only the scheduled full read can see one.
+                'Tables read by changed rows',
+                config.incremental_tables === undefined
+                  ? 'not reported'
+                  : Object.entries(config.incremental_tables)
+                      .map(([table, how]) => `${table} by ${how}`)
+                      .join(', ') || 'none (every table is read in full)',
               ],
               [
                 // THE FILE IS ALWAYS WRITTEN, so the only question is

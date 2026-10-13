@@ -112,11 +112,11 @@ def _run_query_one(conn: sqlite3.Connection, sql: str, params: tuple = (),
 
 
 def _run_query_in_batches(conn: sqlite3.Connection, sql: str, batch_size: int,
-                          db_path: str = "(unknown database)"):
+                          db_path: str = "(unknown database)", params: tuple = ()):
     """_run_query, a batch at a time (R5): ONE query, fetched in pieces.
     Beside its siblings so that whatever counts queries counts this."""
     try:
-        cursor = conn.execute(sql)
+        cursor = conn.execute(sql, params)
         while batch := cursor.fetchmany(batch_size):
             yield [dict(row) for row in batch]
     except sqlite3.OperationalError as error:
@@ -504,6 +504,21 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         with self._connection() as conn:
             yield from _run_query_in_batches(conn, f"SELECT {column_list} FROM {_q(table_name)}",
                                              batch_size, db_path=str(self.db_path))
+
+    def iter_rows_since(self, table_name: str, columns: list[str], cursor_column: str,
+                        since, batch_size: int = 50_000):
+        """iter_all_rows WHERE cursor >= since (R2). SQLite compares
+        what it stores, so a text timestamp is compared as text --
+        correct when the source writes one format, which is the
+        source's promise to keep, and the full read repairs it when it
+        does not."""
+        if not columns:
+            return
+        column_list = ", ".join(_q(name) for name in columns)
+        with self._connection() as conn:
+            yield from _run_query_in_batches(
+                conn, f"SELECT {column_list} FROM {_q(table_name)} WHERE {_q(cursor_column)} >= ?",
+                batch_size, db_path=str(self.db_path), params=(since,))
 
     def source_column_types(self, table_name: str) -> dict[str, str]:
         """NOTHING, and the reason is worth stating.

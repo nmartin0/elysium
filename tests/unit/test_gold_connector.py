@@ -202,6 +202,7 @@ class TestItIsNotAnAdapter:
         # iter_all_rows likewise: the sync streaming a source table
         # into bronze (R5). The mediator reads objects, never tables.
         asked.discard("iter_all_rows")
+        asked.discard("iter_rows_since")  # R2, the sync's too
 
         missing = {name for name in asked if not hasattr(GoldConnector, name)}
 

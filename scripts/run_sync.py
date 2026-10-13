@@ -632,7 +632,7 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
 
 
 def run_sync(runtime_paths=None, accept_deletions: set | None = None,
-              rebuild: set | None = None) -> int:
+              rebuild: set | None = None, full: bool = False) -> int:
     """Syncs every ontology-referenced table. Returns the number of
     tables that FAILED -- 0 meaning a fully successful run, so a
     caller (and __main__ below) can use it directly as an exit code.
@@ -736,6 +736,10 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
         # HOW EACH SILO WRITES NUMBERS AND DATES (DEP-1).
         sync.locales = dict(config.source_locales)
         sync.excel_date_silos = config.excel_date_silos
+        # CHANGED ROWS ONLY where data_silos.yaml declares a cursor (R2),
+        # unless this run was asked to read everything (`--full`).
+        sync.incremental = dict(config.incremental)
+        sync.force_full_read = full
 
         # LINEAGE (R15): to lineage.jsonl always, and to a service when
         # config.yaml names one. Never the sync's verdict.
@@ -831,7 +835,8 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
                     # never got that far. Writes nothing when no rule warned.
                     warned.record(target.silo_name, target.table_name,
                                   result.warnings, run_id=run_id)
-                    print(f"synced  {label}: {result.row_count} rows at {result.synced_at.isoformat()}")
+                    print(f"synced  {label}: {result.row_count} rows at {result.synced_at.isoformat()}"
+                          + ("" if result.read == "full" else f" -- read {result.read}"))
 
         print(f"\n{len(targets) - failures}/{len(targets)} tables synced successfully.")
 
@@ -934,10 +939,16 @@ if __name__ == "__main__":
              "because a partially failed read looks exactly like a mass "
              "deletion. Repeatable.",
     )
+    _parser.add_argument(
+        "--full", action="store_true",
+        help="read every table in full this run, including tables data_silos.yaml "
+             "declares `incremental:`. A full read is the only kind that notices "
+             "rows deleted at the source.",
+    )
     _args = _parser.parse_args()
     try:
         sys.exit(run_sync(accept_deletions=set(_args.accept_deletions),
-                           rebuild=set(_args.rebuild)))
+                           rebuild=set(_args.rebuild), full=_args.full))
     except MirrorCatalogStranded as stranded:
         # A REFUSAL, NOT A CRASH. The message already names the table,
         # what is wrong and the command that repairs it; a traceback

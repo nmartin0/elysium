@@ -1314,6 +1314,9 @@ class DeploymentConfigResponse(BaseModel):
     source_locales: dict[str, str | None] = {}
     #: ZOO-22: silos whose date columns may hold Excel serials.
     excel_date_silos: list[str] = []
+    #: R2: tables read by changed rows -- "silo.table" -> its cursor
+    #: column and schedule. Column names, never a mark's value.
+    incremental_tables: dict[str, str] = {}
     # THE FOUR OPERATIONAL TOGGLES ADDED IN OCTOBER, and the reason
     # `F-06` matters rather than a tidiness complaint: each was added to
     # DeploymentConfig and NOT here, so the panel that answers "why is
@@ -3146,6 +3149,16 @@ def data_contract_route(object_type: str, request: Request,
         headers={"Content-Disposition": f'attachment; filename="{object_type}.odcs.yaml"'})
 
 
+def _describe_incremental(policy) -> str:
+    """"updated_at; full read every 7 days" -- how one R2 table is read."""
+    from core.mirror.incremental import describe_span
+
+    text = f"{policy.cursor}; full read every {describe_span(policy.full_read_every)}"
+    if policy.lookback:
+        text += f"; re-reads {describe_span(policy.lookback)} before the mark"
+    return text
+
+
 @router.get("/config", response_model=DeploymentConfigResponse)
 def deployment_config_route(request: Request,
                              current_user: UserRecord = Depends(get_current_user)) -> dict:
@@ -3200,6 +3213,9 @@ def deployment_config_route(request: Request,
         "lineage_namespace": config.lineage.get("namespace") or "elysium",
         "source_locales": dict(config.source_locales),
         "excel_date_silos": sorted(config.excel_date_silos),
+        "incremental_tables": {
+            f"{silo}.{table}": _describe_incremental(policy)
+            for (silo, table), policy in sorted(config.incremental.items())},
         "max_concurrent_requests": config.max_concurrent_requests,
         "security_attribute": config.security_attribute,
         "read_from_mirror": config.read_from_mirror,

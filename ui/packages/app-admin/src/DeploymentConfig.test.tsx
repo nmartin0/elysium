@@ -370,6 +370,25 @@ describe('where the freshness windows come from', () => {
     expect(label.parentElement).toHaveTextContent('primary_sql: machine formats only and Excel date serials')
   })
 
+  it('says which tables are read by changed rows (R2)', async () => {
+    getDeploymentConfig.mockResolvedValue({
+      ...BODY,
+      incremental_tables: { 'primary_sql.transactions': 'updated_at; full read every 7 days' },
+    })
+    render(<DeploymentConfig onSessionExpired={() => {}} />)
+
+    const label = await screen.findByText('Tables read by changed rows')
+    expect(label.parentElement).toHaveTextContent('primary_sql.transactions by updated_at; full read every 7 days')
+  })
+
+  it('says every table is read in full when none is declared (R2)', async () => {
+    getDeploymentConfig.mockResolvedValue({ ...BODY, incremental_tables: {} })
+    render(<DeploymentConfig onSessionExpired={() => {}} />)
+
+    const label = await screen.findByText('Tables read by changed rows')
+    expect(label.parentElement).toHaveTextContent('none (every table is read in full)')
+  })
+
   it('says the file alone when no service is named', async () => {
     getDeploymentConfig.mockResolvedValue({ ...BODY, lineage_service: false })
     render(<DeploymentConfig onSessionExpired={() => {}} />)
