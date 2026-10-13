@@ -72,3 +72,8 @@ cookies.txt
 .vscode/
 .idea/
 .coverage
+
+# DEP-2: hypothesis's example database, and mutmut's working copy if it
+# is ever run in place rather than through scripts/mutation_test.py.
+.hypothesis/
+mutants/

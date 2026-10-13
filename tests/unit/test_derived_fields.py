@@ -369,3 +369,92 @@ def test_the_data_contract_says_how_it_is_computed_and_stays_valid_odcs(deployme
 
     assert with_fee["transformLogic"] == "multiply(amount, 1.1)"
     _valid(contract)
+
+
+class TestWhatMutationTestingFound:
+    """Each was a SURVIVING MUTANT in mutmut's first run over
+    core/ontology/derived_fields.py (DEP-2): a change every test above
+    still passed. The equivalent ones -- Python's default decimal
+    rounding IS half-even, so dropping `rounding=` changes nothing -- are
+    not chased."""
+
+    def test_a_separator_shows_in_the_description_of_concat_only(self):
+        assert derivation_of({"derived": {"concat": ["first", "last"], "separator": " "}}) \
+            .describe() == "concat(first, last; separator ' ')"
+        assert derivation_of({"derived": {"concat": ["first", "last"]}}).describe() == \
+            "concat(first, last)"
+
+    def test_concat_without_a_separator_joins_directly(self):
+        assert _derive({"concat": ["first", "last"]}, first="Ada", last="Okafor") == "AdaOkafor"
+
+    def test_days_between_yields_an_integer(self):
+        assert result_type(derivation_of({"derived": {"days_between": ["opened", "closed"]}}),
+                           FIELDS) == "integer"
+
+    def test_a_refusal_names_the_type_and_field(self):
+        with pytest.raises(ValueError, match=r"^Line\.bad: multiply takes 2 input"):
+            validate_derived_fields(_type_with(bad={"multiply": ["quantity"]}))
+        with pytest.raises(ValueError, match=r"^Line\.bad: .*it names none"):
+            validate_derived_fields(_type_with(bad={"sum": ["quantity"]}))
+
+    @pytest.mark.parametrize("formula, says", [
+        ({"concat": []}, "needs its inputs as a list"),
+        ({"years_since": ["born", "opened"]}, "takes 1 input"),
+        ({"days_between": ["opened", "closed", "born"]}, "takes 2 input"),
+        ({"coalesce": ["first"]}, "at least two"),
+        ({"add": ["quantity", True]}, "neither a field name nor a number"),
+        ({"add": [2, "nope"]}, "does not have"),
+        ({"days_between": ["opened", "first"]}, "needs dates"),
+        ({"multiply": ["quantity", 2], "separator": " "}, r"unknown key\(s\) \['separator'\]"),
+    ])
+    def test_more_formulas_that_could_never_be_computed(self, formula, says):
+        with pytest.raises(ValueError, match=says):
+            validate_derived_fields(_type_with(bad=formula))
+
+    def test_a_derived_link_is_refused(self):
+        schema = _type_with()
+        schema["Line"]["fields"]["bad"] = {"type": "link", "derived": {"multiply": ["quantity", 2]}}
+        with pytest.raises(ValueError, match="a derived field is a value, not a link"):
+            validate_derived_fields(schema)
+
+    def test_coalesce_of_nothing_is_empty(self):
+        assert _derive({"coalesce": ["nickname", "first"]}, nickname=None, first=None) is None
+
+    def test_years_since_defaults_to_today(self):
+        derivation = derivation_of({"derived": {"years_since": "born"}})
+        assert compute(derivation, {"born": date(1990, 1, 1)}) >= 35
+
+    def test_days_between_with_one_end_missing_is_empty(self):
+        assert _derive({"days_between": ["opened", "closed"]}, opened=date(2026, 1, 1),
+                       closed=None) is None
+
+    def test_the_result_has_the_type_its_inputs_imply(self):
+        assert type(_derive({"add": ["quantity", 2]}, quantity=3)) is int
+        assert type(_derive({"multiply": ["quantity", 1.5]}, quantity=2)) is float
+        assert type(_derive({"divide": ["quantity", 2]}, quantity=4)) is float
+
+    def test_a_derived_field_is_given_type_data(self):
+        schema = _type_with(total={"multiply": ["quantity", "price"]})
+        del schema["Line"]["fields"]["total"]["type"]
+        fill_result_types(schema)
+        assert schema["Line"]["fields"]["total"]["type"] == "data"
+
+    def test_a_rule_naming_a_derived_field_as_its_other_side(self):
+        schema = _type_with(total={"multiply": ["quantity", "price"]})
+        schema["Line"]["rules"] = {"r": {"field": "price", "op": "<=", "other": "total"}}
+        with pytest.raises(ValueError, match="compares 'total'"):
+            refuse_rules_over_derived(schema)
+
+    def test_a_rule_over_stored_fields_is_left_alone(self):
+        schema = _type_with(total={"multiply": ["quantity", "price"]})
+        schema["Line"]["rules"] = {"r": {"field": "opened", "op": "<=", "other": "closed"}}
+        refuse_rules_over_derived(schema)
+
+    def test_roles_that_need_no_change_are_returned_as_they_were(self):
+        """The same OBJECT, so access_roles keeps the deployment's frozen
+        roles rather than refreezing a copy -- even when the schema does
+        declare derived fields."""
+        roles = {"buyer": {"allowed_actions": frozenset({
+            "read:Line.quantity", "read:Line.price", "read:Line.total"})}}
+        assert gate_derived_grants(roles, _type_with(total={"multiply": ["quantity", "price"]})) \
+            is roles

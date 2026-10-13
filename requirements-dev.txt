@@ -35,6 +35,13 @@ open-data-contract-standard  # test-only -- the ODCS JSON schema the data contra
                 # are validated against; its own Bitol release, so the test checks the
                 # standard and not my reading of it
 pytest          # test suite (tests/unit -- fast; tests/integration -- slow, needs Ollama)
+hypothesis      # DEP-2: property tests (tests/unit/test_properties.py) -- a rule
+                # stated once and searched for a counter-example, shrunk to the
+                # smallest one. MPL-2.0, file-level copyleft; a dev tool, never
+                # installed on a deployment
+mutmut          # DEP-2: mutation testing, one module at a time through
+                # scripts/mutation_test.py. BSD-3. Its first run found a gap
+                # the hand-written controls had not (see that script)
 httpx2          # test-only -- Starlette's TestClient imports it (as httpx) for
                 # tests/integration/test_api.py. Not a typosquat despite the name:
                 # starlette 1.x does `import httpx2 as httpx` internally.

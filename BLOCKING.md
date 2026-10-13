@@ -63,15 +63,15 @@ which was whether the layout holds.
 | `THIRD_PARTY_EXTENSIONS.md` | a design, unbuilt. Its finding about module federation kept below, because it is the kind of thing a later reader would otherwise rediscover the hard way |# Blocked on a decision
 | `TRIAGE.md` | fully absorbed: its 45 ids are CSV rows, its mutation sweep is the 70 declared controls in `scripts/check_controls.py`, its reachability sweep is the `WIRED-` rows |
 | `LIVE_UPDATES_AND_PIPELINE_BUILDER.md` | nothing built; its security decision kept below because it is the reason the design is shaped as it is |
-| `TRIGGERS_AND_PLUGINS.md` | part one built (patches 264-280), including the automation refusal; part two superseded by its own successor, now item 7. Its three unanswered risks are item 8 |## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
+| `TRIGGERS_AND_PLUGINS.md` | part one built (patches 264-280), including the automation refusal; part two superseded by its own successor, now the plugin-API item. Its three unanswered risks are the triggers item |## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
 | `MEDALLION_PIPELINE.md` | the pipeline is built and all five owner decisions (D1-D5) were answered in September. Its rule S1 now lives in `standardise.py`, and the test that READ this file at runtime is behavioural instead |
-| `FUSION_AND_IDENTITY.md` | the backend is built -- `matching.py`, `identity.py`, `identity_decisions.py` with a `merge_decisions` table, and inference OFF by default. The reviewer screen is not, and its MAC problem is item 9 |**The sharpest one, and it outranks the rest.** Reproduced: the policy
+| `FUSION_AND_IDENTITY.md` | the backend is built -- `matching.py`, `identity.py`, `identity_decisions.py` with a `merge_decisions` table, and inference OFF by default. The reviewer screen has since been built (Identity), showing which fields agree rather than their values -- its answer to the MAC problem the old item named |**The sharpest one, and it outranks the rest.** Reproduced: the policy
 | `ELT_ROADMAP.md` | every phase it defines (0, 0b, 1) is DONE. What remains is a dependency chain, not a plan, and it is below with the measurement that corrected it |validator rejects every `write:` grant, while the write path demands
 | `HOT_RELOAD_PLAN.md` | built. Its six rules are named in the 26 places that cited step numbers; its most fragile assumption is now a test; and one of its open questions (`DeploymentConfig` not frozen) has since been answered |one per field. So no valid policy can authorise a cross-type action at
 | `DEV_UI.md` | **RESTORED, AND THE ROW ABOVE WAS WRONG TWICE.** It claimed 1,271 lines of interface design were "none of it buildable without a front-end agent" and pointed at an item that renumbering had long since made something else. Both halves were disproved by building from it: the measured palette, the type scale, the density ladder and the spine are being built straight out of the file. It is NOT consumed, it is not deleted, and it should not be again -- a measured fact in a deleted file is a measured fact lost, and this one cost a whole type scale reinvented wrong at every step |
-| `IDEAS.md` | investigations. Most are SHIPPED or ANSWERED; what is open needs a capable model, and is item 11 |
-| `UI_ROADMAP.md` | 2,143 lines of front-end plan. Its one backend finding -- an unbounded search filling the model's context -- is item 12, with the code evidence |
-| `BACKLOG.md` | its sections are absorbed: 0c, 0d4 and 0d5 were worked in patches 475-480; section 1 is item 11, section 2's one open piece is item 14, section 5 pointed here already |---
+| `IDEAS.md` | investigations. Most are SHIPPED or ANSWERED; what is open needs a capable model, and is the agent-loop efficiency item |
+| `UI_ROADMAP.md` | 2,143 lines of front-end plan. Its one backend finding -- an unbounded search filling the model's context -- is the context-rot item, with the code evidence |
+| `BACKLOG.md` | its sections are absorbed: 0c, 0d4 and 0d5 were worked in patches 475-480; section 1 is the agent-loop efficiency item; section 2's one open piece (the keyboard model's roving-focus half) has since left this file; section 5 pointed here already |---
 | `ROADMAP.md` | its numbered backend list is done or explicitly NOT DOING; pagination shipped as `page_token`. Its one unbuilt track, external writeback, was decided and built -- see the `write_targets` row |
 | `UNIFIED_ROADMAP.md` | the file that started this method: on 21 September it read every plan against the CODE and found seven built things described as open. Its remaining entries are items 30-35; its one correction to me is in item 12 |# Blocked on a decision
 | `gold_history` (was item 1) | DECIDED and BUILT, patches 507-509: the owner wanted both a reader and a route. It leaves this file by its own rule -- the decision survives in the code, the `NEW-7` checklist row and the commits |
@@ -94,55 +94,24 @@ which was whether the layout holds.
 | `pgserver` on Python 3.13 (was item 3) | DECIDED and BUILT, 12 October: the real-PostgreSQL tests fall back to the machine's own `initdb`/`pg_ctl` when `pgserver` has no wheel, on a unix socket only, and FAIL rather than skip when neither exists. Found because it had already happened: the gating machine is now 3.13 and 32 tests of the production read path were skipping, green. With the fallback, the same 32 pass against PostgreSQL 16 |
 | `/api/events` live updates (was item 8) | DECIDED and BUILT, 12 October: GET /api/events, server-sent events carrying a type and a verb and nothing else, filtered per caller by `core/change_hints.py` (built first, while this waited). Building it found that a running server never served a new publication; `api/reload.follow_publications` now moves it, from the running configuration's own bytes. Mail delivery stays out of scope |
 | `/api/help` help assistant (was item 14) | DECIDED and BUILT, 12 October, in the shape decided 5 October: `POST /api/help` answers from the caller's screens, visible schema (names and types, never a value) and own grants -- nothing they may not already know. `core/agent/help_assistant.py`; a Help drawer in the header |
+| `DEP-1` to `DEP-6` (was item 1) | ALL DECIDED, 12-13 October. DEP-1 babel, built 12 October. DEP-2 hypothesis and mutmut, adopted with `tests/unit/test_properties.py` and `scripts/mutation_test.py`, whose first runs found a sync mark that could have moved backwards. DEP-3 splink was already the `identity` extra; scikit-learn approved and NOT added until something imports it. DEP-4 all four adopted, each used only where a field declares it. DEP-5 answered itself (permissive replacements), DEP-6 rejections. See their CSV rows |
 ---
 
 # Blocked on a decision
 
-## 1. `DEP-1` to `DEP-6` -- five dependency adoptions
-
-Each is a yes or no about a named library. Cheap to answer, and not
-mine to answer.
-
-**CORRECTED 4 OCTOBER.** This said `DEP-4` gates the configuration
-round trip because it needs `ruamel.yaml`. THAT IS FALSE. `DEP-4` is
-phonenumbers, holidays, email-validator and ftfy; `ruamel` is not a
-`DEP` item at all. I invented the link in an earlier patch and it has
-sat here since, making this item look like a blocker for item 5 when
-it is not.
-
-**ALL SIX ALREADY CARRY VERDICTS** in the checklist -- ADOPT, ADOPT,
-ADOPT, CONDITIONAL, AVOID, REJECT. The analysis was done; what is
-missing is a decision to act on it.
-
-**`DEP-5` IS RESOLVED WITHOUT COUNSEL.** It reads "AVOID: pycountry
-(LGPL); python-stdnum pending counsel". pycountry is LGPL-2.1-only on
-PyPI, listed as LGPL-3.0 by one aggregator, and described as "a
-permissive MIT-style license" by a third-party site that is simply
-wrong -- a dependency whose licence is misreported in public is one
-that must be re-explained at every audit. Permissive replacements
-cover the same standards: `pycountries` (MIT, ISO 3166/4217/639),
-`py-country-codes` (MIT, zero dependencies), `countrywrangler` (MIT).
-Nothing imports any of them today, so this is a dependency under
-consideration rather than one in use.
-
-**`DEP-1` IS DECIDED AND BUILT, 12 October** -- babel only; dateparser
-declined because it guesses. See its checklist row.
-
-**Blocked on:** three yes-or-nos (`DEP-2`, `DEP-3`, `DEP-4`), `DEP-5`
-having answered itself and `DEP-6` being rejections.
-
----
+Nothing is waiting on a yes-or-no today. The last were the `DEP`
+adoptions, all answered on 13 October -- see their row in the table.
 
 # Blocked on a machine or a person running something
 
-## 2. `--workers` for real
+## 1. `--workers` for real
 
 Patches 292-295 fixed all four blockers. It has only ever run as two
 apps inside one test process.
 
 **Blocked on:** somebody running it.
 
-## 13a. Twenty-five inherited security findings
+## 12a. Twenty-five inherited security findings
 
 The security agent kept its own register because it was not allowed to
 edit `AUDIT_CHECKLIST.csv`, and said so:
@@ -167,7 +136,7 @@ clarified, only reproduced or dropped.
 
 # Blocked because it is product direction
 
-## 3. Thirty-odd recommendations that are not engineering questions
+## 2. Thirty-odd recommendations that are not engineering questions
 
 `R41`, `R42`, `R45`, `R48`, `R51`, `R53`, `R56` to `R62` and their
 neighbours are LLM enrichment, embeddings, model predictions,
@@ -179,7 +148,7 @@ and they should not be picked off a list by whoever is next.
 is buildable -- but on whether this is the product at all, which is
 why picking one off would be the wrong move rather than a slow one.
 
-## 4. What the Query screen should contain
+## 3. What the Query screen should contain
 
 Four features, none built, from `QUERY_PLAN.md`. They are product
 direction rather than engineering: what a question box should offer
@@ -207,7 +176,7 @@ generation answered this" much harder to state).
 
 **Blocked on:** product design, and there is no front-end agent now.
 
-## 5. Writing configuration from the UI
+## 4. Writing configuration from the UI
 
 From `CONFIG_ROUND_TRIP_AND_UI_KIT.md`. Its own finding is why it is
 hard: **the configuration files are mostly COMMENTS**, so a naive
@@ -215,13 +184,13 @@ load-and-dump destroys the thing that makes them readable. Its design
 keeps YAML as the source of truth and round-trips through
 `ruamel.yaml`, which preserves comments.
 
-`ruamel` is not a dependency today, so this needs one of the `DEP`
-answers before it is even possible.
+`ruamel` is not a dependency today, and it was never one of the `DEP`
+items -- adopting it is its own decision, to be made with this one.
 
 **Blocked on:** that dependency call, and on whether configuration
 should be editable from the UI at all.
 
-## 6. Object Explorer phases 3 to 5
+## 5. Object Explorer phases 3 to 5
 
 Phases 1 and 2 are built. **The blocker they existed to remove is
 gone:** the plan opens with "our filter is equality only ... so
@@ -237,7 +206,7 @@ act on; they do not answer it.
 
 **Blocked on:** that write-path decision.
 
-## 7. A plugin API, and the reason module federation is not it
+## 6. A plugin API, and the reason module federation is not it
 
 `THIRD_PARTY_EXTENSIONS.md` designs third-party extensions. None of it
 is built, and whether Elysium should have them at all is a product
@@ -261,7 +230,7 @@ code.
 **Blocked on:** whether to have an extension story at all. Everything
 downstream of that is design work that cannot start first.
 
-## 8. Three questions triggers raise and nobody has answered
+## 7. Three questions triggers raise and nobody has answered
 
 Triggers are built. `TRIGGERS_AND_PLUGINS.md` names three risks that
 are "about volume rather than authority", and none of them is a code
@@ -291,7 +260,7 @@ second is a product decision about how much friction an automation
 should carry, and the third is a design choice with cost on both
 sides.
 
-## 9. What the interface should be
+## 8. What the interface should be
 
 `DEV_UI.md`, written after the owner said the interface is BOTH
 unfinished and disjointed. **Its diagnosis is the part worth keeping**,
@@ -326,7 +295,7 @@ contrast is not a target.
 **Blocked on:** a front-end agent, and the owner's appetite for a
 redesign rather than more features.
 
-## 10. Agent-loop efficiency, which needs a machine with a model
+## 9. Agent-loop efficiency, which needs a machine with a model
 
 `IDEAS.md`'s open investigations all need traces from a real model on
 real hardware. The measurements already taken are kept because
@@ -503,7 +472,7 @@ measured.
 would reopen plan mode and constrained decoding -- both trade compute
 the CPU does not have.
 
-## 11. Context rot, and a 10,000-id search behind it
+## 10. Context rot, and a 10,000-id search behind it
 
 `UI_ROADMAP.md` calls this "a risk to what already exists, not a
 feature", and it is the only part of that file that is not front-end
@@ -541,8 +510,8 @@ capped and the output side is not.
 
 **Two things are wanted, and only one is mine to do.** Item 17 is
 measurement -- task completion rate against context size at the
-midpoint of a task, which needs a capable model and is item 12's
-blocker too. Item 18 is the cap itself.
+midpoint of a task, which needs a capable model and is the agent-loop
+efficiency item's blocker too. Item 18 is the cap itself.
 
 **Blocked on:** a model to validate the cap against, and the
 `agentic_loop.py` comment beside `MAX_OBJECT_IDS` says exactly why
@@ -551,7 +520,7 @@ that matters: told its limit was 20 when given 32 ids, a real model
 one object at a time until the duplicate guard stopped it". A cap
 chosen without measuring is how that happens again.
 
-## 12. PostgreSQL row-level security for MAC
+## 11. PostgreSQL row-level security for MAC
 
 Held with a trigger named, alongside column `GRANT` with `SET ROLE`.
 Elysium enforces MAC in the mediator today; pushing it into the
@@ -617,7 +586,7 @@ files reference the SQLite adapter, most of them tests using it as the
 cheap real database, and the write path is where a mistake reaches a
 customer's database. Days, not hours -- but no decision, so not here.
 
-## 13. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
+## 12. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
 
 **Blocked on:** the owner, and on money and calendar time rather than
 engineering.
@@ -667,7 +636,7 @@ an audit is ever bought:
 
 Months, not a patch.
 
-## 14. Owning the UI kit, and when to start
+## 13. Owning the UI kit, and when to start
 
 **Blocked on:** nothing. This is a DECISION ALREADY TAKEN, recorded
 here so the next person does not reopen it from scratch.

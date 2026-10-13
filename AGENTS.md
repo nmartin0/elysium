@@ -50,6 +50,23 @@ oxlint runs with `--deny-warnings` there for the same reason. **A bare
 `npx oxlint` exits 0 on warnings**, so if you run it directly rather
 than through `npm run lint`, read the count, not the exit code.
 
+**Mutation testing, one module at a time** (DEP-2), when a module's
+tests matter enough to check that they would notice it breaking:
+
+```bash
+python -m scripts.mutation_test core/mirror/incremental.py \
+    tests/unit/test_incremental_sync.py
+```
+
+It lists every small change to the code that no selected test caught.
+A survivor is a question, not a verdict -- some mean the same thing
+either way -- so read each, then write the test or let it go. Its first
+two runs found a sync mark that could have moved backwards and 40-odd
+untested refusals in the derived-field loader. `scripts/check_controls.py`
+remains where a deliberate break is RECORDED; this is where one is
+looked for. Property tests (hypothesis) live in
+`tests/unit/test_properties.py`.
+
 Integration tests marked `test_real_model_*` need a live Ollama. They
 fail in sandboxes without one. That is environmental, not a regression.
 

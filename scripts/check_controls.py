@@ -1900,6 +1900,36 @@ CONTROLS = [
         new="    if False:",
         tests=["tests/unit/test_reference_data_checks.py::TestRefusedAtLoad::test_a_check_that_could_never_work"],
     ),
+    Control(
+        describes="DEP-2: hypothesis finds the two changelog diffs disagreeing",
+        path="core/mirror/changelog.py",
+        old="            equal = pc.fill_null(pc.equal(x, y), False)",
+        new="            equal = pc.fill_null(pc.equal(x, y), True)",
+        tests=["tests/unit/test_properties.py::test_the_arrow_diff_is_the_dict_diff"],
+    ),
+    Control(
+        describes="DEP-2: hypothesis finds a mark that is not the largest value",
+        path="core/mirror/incremental.py",
+        old="        return candidate if candidate > current else current",
+        new="        return candidate",
+        tests=["tests/unit/test_properties.py::test_the_mark_is_the_largest_value_whatever_the_order",
+               "tests/unit/test_incremental_sync.py::TestWhatMutationTestingFound::"
+               "test_the_mark_is_the_highest_value_not_the_last_read"],
+    ),
+    Control(
+        describes="DEP-2: hypothesis finds a mark that changes type when stored",
+        path="core/mirror/incremental.py",
+        old="    if isinstance(value, int):\n        return json.dumps({\"type\": \"int\", \"value\": value})",
+        new="    if isinstance(value, int):\n        return json.dumps({\"type\": \"float\", \"value\": value})",
+        tests=["tests/unit/test_properties.py::test_a_mark_comes_back_as_the_value_and_type_it_went_in_as"],
+    ),
+    Control(
+        describes="DEP-2: hypothesis finds an age off by a birthday",
+        path="core/ontology/derived_fields.py",
+        old="        return today.year - born.year - ((today.month, today.day) < (born.month, born.day))",
+        new="        return today.year - born.year - ((today.month, today.day) <= (born.month, born.day))",
+        tests=["tests/unit/test_properties.py::test_years_since_agrees_with_counting_birthdays"],
+    ),
 ]
 
 

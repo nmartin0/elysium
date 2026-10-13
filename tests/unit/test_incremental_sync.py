@@ -392,3 +392,61 @@ def test_run_sync_reads_a_declared_table_by_its_changes(synced_deployment):
     assert "read full (first read since it was declared incremental)" in printed()
     assert "row(s) at or after transaction_date" in printed()
     assert "read full (a full read was asked for)" in printed(full=True)
+
+
+class TestWhatMutationTestingFound:
+    """Each of these was a SURVIVING MUTANT in mutmut's first run over
+    core/mirror/incremental.py (DEP-2): a change to the code that every
+    test above still passed."""
+
+    def test_the_mark_is_the_highest_value_not_the_last_read(self, tmp_path):
+        """Rows arrive in whatever order the source returns them. A mark
+        taken from the LAST row would move backwards, and the next read
+        would re-read everything after it -- or worse, with `>`, miss
+        nothing it should and re-read forever."""
+        source = tmp_path / "o.db"
+        _db(source, [("1", "a", "2026-10-09"), ("2", "b", "2026-10-01"), ("3", "c", "2026-10-05")])
+        sync = IcebergMirrorSync(tmp_path / "om", {"s": SQLiteReadAdapter({"path": source})})
+        sync.incremental = {("s", "t"): POLICY}
+
+        _sync(sync)
+
+        assert decode_mark(_bronze_properties(sync)[MARK_PROPERTY]) == "2026-10-09"
+
+    def test_higher_ignores_empty_and_boolean_candidates(self):
+        from core.mirror.incremental import higher
+
+        assert higher("b", None) == "b"
+        assert higher(None, None) is None
+        assert higher(None, True) is None
+        assert higher("b", "a") == "b" and higher("a", "b") == "b"
+
+    def test_a_silo_without_a_declaration_does_not_end_the_search(self):
+        policies = incremental_policies({
+            "first": {"adapter": "sqlite"},
+            "second": {"incremental": {"t": {"cursor": "v"}}}})
+        assert ("second", "t") in policies
+
+    def test_a_full_read_may_be_more_often_than_daily(self):
+        policy = incremental_policies(
+            {"p": {"incremental": {"t": {"cursor": "v", "full_read_every": "12h"}}}})[("p", "t")]
+        assert policy.full_read_every == timedelta(hours=12)
+
+    @pytest.mark.parametrize("silo, says", [
+        ({"incremental": ["t"]}, r"data_silos.yaml p.incremental must map table names"),
+        ({"incremental": {"t": "updated_at"}}, r"p.incremental.t must be a mapping"),
+        ({"incremental": {"t": {"cursor": "v", "lookback": "soon"}}}, r"p.incremental.t.lookback must"),
+        ({"incremental": {"t": {"cursor": "v", "full_read_every": "x"}}},
+         r"p.incremental.t.full_read_every must"),
+    ])
+    def test_a_refusal_names_where_the_mistake_is(self, silo, says):
+        with pytest.raises(ValueError, match=says):
+            incremental_policies({"p": silo})
+
+    def test_a_mark_of_an_unknown_kind_reads_as_none(self):
+        assert decode_mark('{"type": "blob", "value": 1}') is None
+
+    def test_no_recorded_full_read_means_a_full_read(self):
+        properties = {CURSOR_PROPERTY: "updated_at", MARK_PROPERTY: encode_mark("x")}
+        assert full_read_reason(POLICY, properties, datetime.now(UTC), COLUMNS) == \
+            "no full read recorded yet"
