@@ -2030,6 +2030,28 @@ CONTROLS = [
         new="                if False:",
         tests=["tests/unit/test_dependencies_across_rows.py::TestRefusedAtLoad::test_a_dependency_that_could_never_be_checked"],
     ),
+    Control(
+        describes="R30: silver flags unusual values",
+        path="core/mirror/expectations.py",
+        old="    _flag_outliers(result, expectations)\n    return result",
+        new="    return result",
+        tests=["tests/unit/test_unusual_values_are_flagged.py::test_a_flagged_row_still_lands"],
+    ),
+
+    Control(
+        describes="R30: Tukey's fences are k times the interquartile range",
+        path="core/mirror/outliers.py",
+        old="    low, high = q1 - k * (q3 - q1), q3 + k * (q3 - q1)",
+        new="    low, high = q1 - k, q3 + k",
+        tests=["tests/unit/test_unusual_values_are_flagged.py::TestTheMethods::test_tukey_far_out_fences"],
+    ),
+    Control(
+        describes="R30: free text has no usual shape to deviate from",
+        path="core/mirror/outliers.py",
+        old="        if held < DOMINANT_SHARE * len(present):\n            return {}",
+        new="        if False:\n            return {}",
+        tests=["tests/unit/test_unusual_values_are_flagged.py::TestTheMethods::test_free_text_has_no_usual_shape"],
+    ),
 ]
 
 

@@ -619,6 +619,10 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     validate_field_rules(object_types_raw)
     # ...and across rows: functional dependencies (R29), silver only.
     validate_dependencies(object_types_raw)
+    # Unusual-value flags (R30), declared per field, warn only.
+    from core.mirror.outliers import validate_outliers
+
+    validate_outliers(object_types_raw)
     # Fields computed from other fields (R37): checked, then typed by
     # what their formula yields, before anything reads the schema.
     validate_derived_fields(object_types_raw)

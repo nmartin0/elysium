@@ -459,6 +459,20 @@ def _targets_for_type(type_def: dict):
                         for name in (*dependency.determinant, dependency.dependent)},
         }
 
+    # UNUSUAL VALUES (R30), flagged per column over the whole table and
+    # WARN ONLY -- see core/mirror/outliers.py for why never more.
+    from core.mirror.outliers import outlier_settings
+
+    for field_name, field_config in (type_def.get("fields") or {}).items():
+        settings = outlier_settings(field_config)
+        storage_key = field_config.get("storage")
+        if settings is None or storage_key not in expectations_by_storage:
+            continue
+        column = field_config.get("column", field_name)
+        expectations_by_storage[storage_key][f"outliers:{column}"] = {
+            "outliers": settings, "column": column, "field_name": field_name, "policy": "warn",
+        }
+
     # The MAC security field, when it names a real field on this type
     # rather than a chain through a link. Always required -- see this
     # module's docstring.

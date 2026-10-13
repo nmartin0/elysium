@@ -146,7 +146,7 @@ def check_row(row: dict, expectations: dict[str, dict]) -> list[Violation]:
     """Every rule this row fails, in column order."""
     found = []
     for column, expected in expectations.items():
-        if "dependency" in expected:
+        if "dependency" in expected or "outliers" in expected:
             continue  # across rows: apply_expectations runs these on the table
         if "rule" in expected:
             # A RULE BETWEEN TWO FIELDS (R29), read by its columns.
@@ -207,7 +207,23 @@ def apply_expectations(rows: list[dict], expectations: dict[str, dict]) -> Expec
         result.warned.extend(v for v in violations if v.policy == WARN)
         result.kept.append(row)
     _apply_dependencies(result, expectations)
+    _flag_outliers(result, expectations)
     return result
+
+
+def _flag_outliers(result: ExpectationResult, expectations: dict[str, dict]) -> None:
+    """Unusual values (R30) among the rows that landed, as WARNINGS only:
+    a rare value is not a wrong one. core/mirror/outliers.py."""
+    from core.mirror.outliers import unusual
+
+    for expected in expectations.values():
+        if "outliers" not in expected:
+            continue
+        column = expected["column"]
+        values = [row.get(column) for row in result.kept]
+        for index, reason in sorted(unusual(values, expected["outliers"]).items()):
+            result.warned.append(Violation(column, expected["field_name"], reason,
+                                           values[index], WARN))
 
 
 def _apply_dependencies(result: ExpectationResult, expectations: dict[str, dict]) -> None:
