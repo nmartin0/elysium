@@ -1849,6 +1849,57 @@ CONTROLS = [
         tests=["tests/unit/test_derived_fields.py::TestTheFormulas::"
                "test_float_arithmetic_is_exact_to_what_was_typed"],
     ),
+    Control(
+        describes="DEP-4: a phone number is checked against its region",
+        path="core/ontology/value_checks.py",
+        old="    return number if phonenumbers.is_valid_number(number) else None",
+        new="    return number",
+        tests=["tests/unit/test_reference_data_checks.py::TestPhoneNumbers::test_a_number_that_cannot_exist_is_refused_naming_the_region"],
+    ),
+    Control(
+        describes="DEP-4: an email address is never checked by asking DNS",
+        path="core/ontology/value_checks.py",
+        old="        validate_email(str(value), check_deliverability=False)",
+        new="        validate_email(str(value), check_deliverability=True)",
+        tests=["tests/unit/test_reference_data_checks.py::TestEmailAddresses::test_never_by_asking_dns"],
+    ),
+    Control(
+        describes="DEP-4: a holiday calendar includes the declared subdivision",
+        path="core/ontology/value_checks.py",
+        old="    return holidays.country_holidays(country, subdiv=subdivision or None)",
+        new="    return holidays.country_holidays(country)",
+        tests=["tests/unit/test_reference_data_checks.py::TestPublicHolidays::test_a_subdivision_has_its_own"],
+    ),
+    Control(
+        describes="DEP-4: mojibake is repaired when declared",
+        path="core/mirror/standardise.py",
+        old="        value = fixed_text(value)",
+        new="        value = value",
+        tests=["tests/unit/test_reference_data_checks.py::TestStandardisation::test_mojibake_is_repaired_before_anything_else"],
+    ),
+    Control(
+        describes="DEP-4: a valid phone number takes its E.164 form in silver",
+        path="core/ontology/value_checks.py",
+        old="    return phonenumbers.format_number(number, phonenumbers.PhoneNumberFormat.E164)",
+        new="    return value",
+        tests=["tests/unit/test_reference_data_checks.py::TestStandardisation::test_a_valid_phone_number_takes_its_one_international_form",
+               "tests/unit/test_reference_data_checks.py::test_silver_tidies_and_holds_back_through_a_real_sync"],
+    ),
+    Control(
+        describes="DEP-4: a declared email constraint holds a row back in silver",
+        path="core/ontology/constraints.py",
+        old="    if constraints.get(\"email\"):",
+        new="    if False:",
+        tests=["tests/unit/test_reference_data_checks.py::test_silver_tidies_and_holds_back_through_a_real_sync",
+               "tests/unit/test_reference_data_checks.py::TestEmailAddresses::test_syntax_is_checked"],
+    ),
+    Control(
+        describes="DEP-4: a holiday setting the library does not know is refused at load",
+        path="core/ontology/value_checks.py",
+        old="    if country not in supported:",
+        new="    if False:",
+        tests=["tests/unit/test_reference_data_checks.py::TestRefusedAtLoad::test_a_check_that_could_never_work"],
+    ),
 ]
 
 

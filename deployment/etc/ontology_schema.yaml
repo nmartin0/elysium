@@ -53,6 +53,17 @@ object_types:
         # A label, not a grant -- unless config.yaml turns on
         # access.label_enforcement, when reading it needs read:label:pii.
         classification: pii
+        # CHECKS THAT NEED REFERENCE DATA (DEP-4), declared like any
+        # constraint and enforced the same way -- a write is refused,
+        # silver applies on_violation to what a source holds:
+        #
+        # constraints: {email: true}   # RFC syntax; never a DNS lookup
+        #
+        # Also `phone: US` (or `true` for +international form only) and,
+        # on a date, `not_on_holiday: US-CA`. Silver can TIDY too, under
+        # `standardise:` -- `fix_text: true` repairs mojibake ("cafÃ©"),
+        # `phone: US` writes a valid number as +14155550123, and
+        # `email: true` normalises the domain.
       transactions:
         type: link
         target: Transaction

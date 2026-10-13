@@ -40,6 +40,16 @@ MEMOISING = {"lru_cache", "cache", "cached_property", "memoize", "cached"}
 #: Where a stale value would be an authorization decision.
 GOVERNED = ("core", "api", "adapters")
 
+#: Caches allowed BY NAME, each keyed on something no reload changes.
+ALLOWED = {
+    # DEP-4: a country's public holidays, keyed by country code. The
+    # holidays library's reference data -- no configuration reload
+    # changes when Christmas is, and building a calendar is the slow
+    # part of checking a date against it.
+    ("core/ontology/value_checks.py", "_calendar"):
+        "public-holiday calendars by country code; reference data, not configuration",
+}
+
 
 def _decorated_with_memoisation():
     """Every function in the governed packages that memoises."""
@@ -72,7 +82,8 @@ class TestNothingMemoisesAcrossAReload:
     def test_the_governed_packages_are_free_of_memoisation(self):
         """THE REGRESSION TEST. An `@lru_cache` keyed on `user_id`
         would survive a reload and serve stale authorization."""
-        found = _decorated_with_memoisation()
+        found = [entry for entry in _decorated_with_memoisation()
+                 if (entry[0], entry[1]) not in ALLOWED]
 
         assert found == [], (
             "memoisation found in a package where a stale value is an "

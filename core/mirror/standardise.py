@@ -52,6 +52,16 @@ DEFAULTS: dict[str, Any] = {
     "trim": True,
     "collapse_whitespace": True,
     "null_if": (),
+    # DECLARED ONLY (DEP-4, core/ontology/value_checks.py), off by
+    # default. Each REPAIRS or CANONICALISES without changing what a
+    # value means: mojibake back to the text that was meant, a valid
+    # phone number to its one international form, a valid email
+    # address with its domain normalised. A value the library cannot
+    # read is left exactly as it was -- the field's constraint, if it
+    # declares one, is what reports it.
+    "fix_text": False,
+    "phone": None,
+    "email": False,
 }
 
 KNOWN_RULES = frozenset(DEFAULTS)
@@ -91,6 +101,13 @@ def rules_for(field_config: dict) -> dict[str, Any] | None:
         )
     if not isinstance(rules["null_if"], (list, tuple)):
         raise ValueError(f"standardise.null_if must be a list, got {rules['null_if']!r}.")
+    for flag in ("fix_text", "email"):
+        if not isinstance(rules[flag], bool):
+            raise ValueError(f"standardise.{flag} must be true or false, got {rules[flag]!r}.")
+    if rules["phone"] is not None:
+        from core.ontology.value_checks import check_phone_setting
+
+        check_phone_setting(rules["phone"], "standardise.phone")
     rules["null_if"] = tuple(rules["null_if"])
     return rules
 
@@ -143,6 +160,11 @@ def standardise(value, rules: dict[str, Any] | None):
     number has no whitespace, and a real NULL is not a sentinel."""
     if rules is None or not isinstance(value, str):
         return value
+    if rules.get("fix_text"):
+        # FIRST: NFC over mojibake normalises the wrong characters.
+        from core.ontology.value_checks import fixed_text
+
+        value = fixed_text(value)
     if rules["unicode"] is not False:
         value = unicodedata.normalize(rules["unicode"], value)
     if rules["collapse_whitespace"]:
@@ -154,4 +176,14 @@ def standardise(value, rules: dict[str, Any] | None):
     # "null" the surname Null disappear.
     if value in rules["null_if"]:
         return None
+    # LAST, on the cleaned value: " +1 415 555 0123 " parses either way,
+    # but a sentinel must have become None before anything formats it.
+    if rules.get("phone") is not None:
+        from core.ontology.value_checks import phone_e164
+
+        value = phone_e164(value, rules["phone"])
+    if rules.get("email"):
+        from core.ontology.value_checks import email_normalised
+
+        value = email_normalised(value)
     return value

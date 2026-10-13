@@ -66,6 +66,17 @@ pyiceberg[sql-sqlite,pyarrow]<1.0
 # as the US does, strictly and never guessed. BSD-3. Its data is the
 # same CLDR the operating systems and browsers use.
 babel>=2.12,<3.0
+# DEP-4: reference data a regular expression gets wrong, each used only
+# where a field declares it (core/ontology/value_checks.py), each
+# imported only then. phonenumbers (Apache-2.0) -- Google's
+# libphonenumber metadata, validity by country and E.164; email-validator
+# (Unlicense) -- RFC syntax only, its DNS check never used; ftfy
+# (Apache-2.0) -- repairs mojibake; holidays (MIT) -- public holidays by
+# country and subdivision.
+phonenumbers>=9.0,<10
+email-validator>=2.2,<3
+ftfy>=6.3,<7
+holidays>=0.106,<1
 sqlalchemy<3.0
 # The PostgreSQL driver SQLAlchemy dials through. psycopg 3, not 2:
 # it returns Decimal, aware datetime, date and UUID objects natively,

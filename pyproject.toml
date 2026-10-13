@@ -385,7 +385,9 @@ layers = [
     # reached from there.
     # classifications is a leaf too: object_type_validation checks a
     # label's shape with it, and core/mirror reads labels through it.
-    "field_types | link_types | classifications",
+    # value_checks is a leaf too (DEP-4): constraints and silver's
+    # standardisation call it, and it imports nothing from here.
+    "field_types | link_types | classifications | value_checks",
     # Below field_types, which reads locale-written text through it
     # (DEP-1). It imports nothing from this package.
     "localised_values",

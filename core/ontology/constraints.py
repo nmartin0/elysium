@@ -51,6 +51,13 @@ _KEYS = {
     # HTML entity somebody forgot to decode.
     "no_misleading_text": _TEXT,
     "one_of": None,  # any scalar type
+    # REFERENCE DATA, NOT PATTERNS (DEP-4; core/ontology/value_checks.py).
+    # A phone number valid in its country, an address valid by the RFCs
+    # (syntax only -- never a DNS lookup), and a date that is not a
+    # public holiday.
+    "email": _TEXT,
+    "phone": _TEXT,
+    "not_on_holiday": {"date", "timestamp", "timestamptz"},
 }
 
 
@@ -126,6 +133,16 @@ def validate_constraints(object_types: dict) -> None:
                 except (re.error, TypeError) as e:
                     raise ValueError(f"{where}: `pattern` does not compile: {e}") from e
 
+            if "email" in constraints and constraints["email"] is not True:
+                raise ValueError(f"{where}: `email` must be true.")
+            if "phone" in constraints:
+                from core.ontology.value_checks import check_phone_setting
+
+                check_phone_setting(constraints["phone"], f"{where}: `phone`")
+            if "not_on_holiday" in constraints:
+                from core.ontology.value_checks import check_holiday_setting
+
+                check_holiday_setting(constraints["not_on_holiday"], f"{where}: `not_on_holiday`")
             if "one_of" in constraints:
                 options = constraints["one_of"]
                 if not isinstance(options, list) or not options:
@@ -207,4 +224,22 @@ def violation(field_def: dict, value) -> str | None:
         _comparable(option, data_type) for option in constraints["one_of"]
     }:
         return f"{value!r} is not one of {constraints['one_of']!r}."
+    if constraints.get("email"):
+        from core.ontology.value_checks import email_problem
+
+        problem = email_problem(value)
+        if problem is not None:
+            return problem
+    if "phone" in constraints:
+        from core.ontology.value_checks import phone_problem
+
+        problem = phone_problem(value, constraints["phone"])
+        if problem is not None:
+            return problem
+    if "not_on_holiday" in constraints:
+        from core.ontology.value_checks import holiday_problem
+
+        problem = holiday_problem(comparable, constraints["not_on_holiday"])
+        if problem is not None:
+            return problem
     return None
