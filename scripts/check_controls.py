@@ -1987,6 +1987,20 @@ CONTROLS = [
         new="        return value",
         tests=["tests/unit/test_properties.py::test_bronze_text_decodes_to_the_value_it_was_given"],
     ),
+    Control(
+        describes="R18: a type in a link cycle may link to what its partner publishes this run",
+        path="scripts/run_sync.py",
+        old="                known[partner] = set(known.get(partner) or ()) | upcoming[partner]",
+        new="                pass",
+        tests=["tests/unit/test_gold_builds_targets_first.py::TestALinkCycle::test_a_new_pair_pointing_at_each_other_publishes_together"],
+    ),
+    Control(
+        describes="R18: a cycle partner that did not publish is named",
+        path="scripts/run_sync.py",
+        old="    for partner in sorted(not_published & set(leaned_on)):",
+        new="    for partner in sorted(set()):",
+        tests=["tests/unit/test_gold_builds_targets_first.py::TestALinkCycle::test_a_partner_that_is_refused_is_named"],
+    ),
 ]
 
 

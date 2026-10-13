@@ -365,9 +365,9 @@ def _targets_before_referrers(schema: dict) -> list:
 
     A CYCLE CANNOT BE ORDERED, and the audit says so: "mutually-linked
     types cannot both be ordered first". Those keep their declaration
-    order, which is no worse than before, and the deeper fix for them
-    is PR001-R18 (dependency-aware builds) or auditing after every
-    type is built.
+    order -- and _build_gold lets a type in a cycle link to the ids its
+    partner is about to publish this run (R18), saying so if the
+    partner is then refused.
 
     DECLARATION ORDER IS THE TIE-BREAK, so a schema with no links
     builds in exactly the order it did before and nothing moves
@@ -375,14 +375,7 @@ def _targets_before_referrers(schema: dict) -> list:
     """
     order = list(schema)
     position = {name: index for index, name in enumerate(order)}
-    targets_of = {
-        name: {
-            (field.get("target") or field.get("object_type"))
-            for field in (type_def.get("fields") or {}).values()
-            if field.get("type") == "link"
-        } & set(order) - {name}
-        for name, type_def in schema.items()
-    }
+    targets_of = _link_targets(schema)
 
     built: list = []
     done: set = set()
@@ -400,6 +393,76 @@ def _targets_before_referrers(schema: dict) -> list:
             done.add(name)
             remaining.remove(name)
     return [(name, schema[name]) for name in built]
+
+
+def _link_targets(schema: dict) -> dict[str, set]:
+    """{type: the other types it links to}."""
+    return {
+        name: {
+            (field.get("target") or field.get("object_type"))
+            for field in (type_def.get("fields") or {}).values()
+            if field.get("type") == "link"
+        } & set(schema) - {name}
+        for name, type_def in schema.items()
+    }
+
+
+def _cycles(schema: dict) -> dict[str, frozenset]:
+    """{type: the other types it shares a link cycle with} -- each
+    strongly connected component of two or more types (Tarjan's
+    algorithm). Types in no cycle are absent."""
+    targets = _link_targets(schema)
+    index: dict[str, int] = {}
+    low: dict[str, int] = {}
+    stack: list[str] = []
+    on_stack: set = set()
+    found: dict[str, frozenset] = {}
+    counter = [0]
+
+    def visit(name: str) -> None:
+        index[name] = low[name] = counter[0]
+        counter[0] += 1
+        stack.append(name)
+        on_stack.add(name)
+        for target in sorted(targets[name]):
+            if target not in index:
+                visit(target)
+                low[name] = min(low[name], low[target])
+            elif target in on_stack:
+                low[name] = min(low[name], index[target])
+        if low[name] == index[name]:
+            component = []
+            while True:
+                member = stack.pop()
+                on_stack.discard(member)
+                component.append(member)
+                if member == name:
+                    break
+            if len(component) > 1:
+                for member in component:
+                    found[member] = frozenset(component) - {member}
+
+    for name in schema:
+        if name not in index:
+            visit(name)
+    return found
+
+
+def _ids_about_to_publish(sync, type_def: dict) -> "set | None":
+    """The ids a type's silver holds -- what its gold will hold if its
+    build passes. None for a type whose gold ids are not its silver ids:
+    identity resolution merges rows, so they are decided by the build."""
+    if type_def.get("identity"):
+        return None
+    storage = type_def.get("storage") or {}
+    try:
+        table = sync._catalog.load_table(f"{storage.get('silo')}.{storage.get('table')}")
+        column = storage.get("id_column")
+        return {str(value) for value in
+                table.scan(selected_fields=(column,)).to_arrow().column(column).to_pylist()
+                if value is not None}
+    except Exception:  # noqa: BLE001 - unknown is an answer: fall back to the publication
+        return None
 
 
 def _by_silo(targets) -> list[tuple[str, list]]:
@@ -507,6 +570,23 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
     # rather than something derived from a source.
     decisions = MergeDecisionStore(data_dir / "identity_decisions.db")
     refused = 0
+    # LINK CYCLES (R18). Ordering puts a target before its referrer, but
+    # in a cycle one side must go first, and it was audited against its
+    # partner's PREVIOUS publication: a new customer and a new account
+    # that point at each other, arriving in one sync, refused whichever
+    # was built first. Nothing was wrong with the data.
+    #
+    # SO A TYPE IN A CYCLE MAY LINK TO WHAT ITS PARTNER IS ABOUT TO
+    # PUBLISH -- the ids in the partner's silver this run. If the
+    # partner is then refused, those links point at nothing published,
+    # and the run SAYS SO, naming both, below. That is the honest form
+    # of "audit after every type is built" without holding every
+    # publication until the last one passes.
+    cycles = _cycles(config.schema or {})
+    upcoming = {name: _ids_about_to_publish(sync, (config.schema or {})[name])
+                for name in cycles}
+    leaned_on: dict[str, set] = {}
+    not_published: set = set()
     for object_type, type_def in _targets_before_referrers(config.schema or {}):
         storage = type_def.get("storage") or {}
         identifier = f"{storage.get('silo')}.{storage.get('table')}"
@@ -574,6 +654,10 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
             )
             if ids is not None
         }
+        for partner in cycles.get(object_type, ()):
+            if upcoming.get(partner) is not None:
+                known[partner] = set(known.get(partner) or ()) | upcoming[partner]
+                leaned_on.setdefault(partner, set()).add(object_type)
         try:
             result = build_gold(sync._catalog, object_type, type_def, silver, known,
                                  additional_rows=additional,
@@ -604,6 +688,7 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
                 lineage.emit(FAIL, f"gold.{object_type}", gold_inputs, gold_output,
                              error=str(exc))
             refused += 1
+            not_published.add(object_type)
             continue
         # THE MATCHER NEEDS ROWS, and only runs when a type declares
         # inference -- so the table is materialised here rather than
@@ -620,6 +705,7 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
             print(f"published gold.{object_type}: {result.rows} rows")
         else:
             refused += 1
+            not_published.add(object_type)
             print(f"REFUSED gold.{object_type}: " + "; ".join(result.problems), file=sys.stderr)
         if lineage:
             # A REFUSED PUBLICATION IS A FAILED RUN of this job: gold
@@ -628,6 +714,13 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
             lineage.emit(FAIL if failed else COMPLETE, f"gold.{object_type}",
                          gold_inputs, gold_output,
                          error="; ".join(result.problems) if failed else None)
+    for partner in sorted(not_published & set(leaned_on)):
+        # THE CYCLE'S OTHER HALF DID NOT PUBLISH. A type built earlier
+        # was let link to its new rows, which are not in gold after all.
+        print(f"WARNING gold.{partner} was not published this run, but "
+              f"{', '.join(sorted(leaned_on[partner]))} linked to ids it was about to "
+              f"publish; those links point at {partner}'s previous publication until "
+              f"it publishes again.", file=sys.stderr)
     return refused
 
 

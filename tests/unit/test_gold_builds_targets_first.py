@@ -195,3 +195,95 @@ class TestThroughARealBuild:
         refused = run_sync._build_gold(sync, sync.config, data_dir, unsynced=set())
 
         assert refused == 1
+
+
+class TestALinkCycle:
+    """R18. In a cycle one side must be built first, and it was audited
+    against its partner's PREVIOUS publication -- so a new customer and
+    a new account pointing at each other, in one sync, refused whichever
+    went first. A type in a cycle may now link to the ids its partner is
+    about to publish this run, and the run says so if the partner is
+    then refused."""
+
+    def test_the_cycles_are_found(self):
+        from scripts.run_sync import _cycles
+
+        schema = {"A": {"fields": {"b": _link("B")}}, "B": {"fields": {"a": _link("A")}},
+                  "C": {"fields": {"a": _link("A")}}, "D": {"fields": {"d": _link("D")}}}
+
+        assert _cycles(schema) == {"A": frozenset({"B"}), "B": frozenset({"A"})}
+
+    @pytest.fixture
+    def cycle(self, tmp_path):
+        source = tmp_path / "c.db"
+        conn = sqlite3.connect(source)
+        conn.execute("CREATE TABLE customers (id TEXT PRIMARY KEY, account_id TEXT, region TEXT)")
+        conn.execute("CREATE TABLE accounts (id TEXT PRIMARY KEY, owner_id TEXT, region TEXT)")
+        conn.execute("INSERT INTO customers VALUES ('c1','a1','us-west')")
+        conn.execute("INSERT INTO accounts VALUES ('a1','c1','us-west')")
+        conn.commit()
+        conn.close()
+        schema = {
+            "Customer": {"id_field": "id", "security": {"field": "region"},
+                         "storage": {"silo": "p", "table": "customers", "id_column": "id"},
+                         "fields": {"id": {"type": "data"}, "region": {"type": "data"},
+                                    "account": {"type": "link", "target": "Account",
+                                                "column": "account_id"}}},
+            "Account": {"id_field": "id", "security": {"field": "region"},
+                        "storage": {"silo": "p", "table": "accounts", "id_column": "id"},
+                        "fields": {"id": {"type": "data"}, "region": {"type": "data"},
+                                   "owner": {"type": "link", "target": "Customer",
+                                             "column": "owner_id"}}},
+        }
+        sync = IcebergMirrorSync(tmp_path / "cm", {"p": SQLiteReadAdapter({"path": source})})
+        columns = {"customers": ["id", "account_id", "region"],
+                   "accounts": ["id", "owner_id", "region"]}
+
+        def resync():
+            for table, cols in columns.items():
+                sync.sync_table("p", table, "id", cols, {})
+
+        def write(*statements):
+            conn = sqlite3.connect(source)
+            for statement in statements:
+                conn.execute(statement)
+            conn.commit()
+            conn.close()
+            resync()
+
+        resync()
+        sync.config = SimpleNamespace(schema=schema, identity_inference=False,
+                                      retain_publications=30, mirror_storage={})
+        run_sync._build_gold(sync, sync.config, tmp_path, unsynced=set())
+        return sync, tmp_path, write
+
+    def test_a_new_pair_pointing_at_each_other_publishes_together(self, cycle):
+        sync, data_dir, write = cycle
+        write("INSERT INTO customers VALUES ('c2','a2','us-west')",
+              "INSERT INTO accounts VALUES ('a2','c2','us-west')")
+
+        assert run_sync._build_gold(sync, sync.config, data_dir, unsynced=set()) == 0
+        for object_type in ("Customer", "Account"):
+            assert sync.catalog.load_table(f"gold.{object_type}").scan().to_arrow().num_rows == 2
+
+    def test_a_dangling_link_inside_a_cycle_is_still_refused(self, cycle):
+        sync, data_dir, write = cycle
+        write("INSERT INTO customers VALUES ('c3','nosuchaccount','us-west')")
+
+        assert run_sync._build_gold(sync, sync.config, data_dir, unsynced=set()) == 1
+
+    def test_a_partner_that_is_refused_is_named(self, cycle, capsys):
+        """Customer is built first and may link to account a2, which is in
+        Account's silver; Account is then refused for a dangling owner of
+        its own. The run must say Customer leaned on ids that did not
+        publish."""
+        sync, data_dir, write = cycle
+        write("INSERT INTO customers VALUES ('c2','a2','us-west')",
+              "INSERT INTO accounts VALUES ('a2','c2','us-west')",
+              "INSERT INTO accounts VALUES ('a9','nosuchcustomer','us-west')")
+
+        run_sync._build_gold(sync, sync.config, data_dir, unsynced=set())
+
+        err = capsys.readouterr().err
+        assert "REFUSED gold.Account" in err
+        assert "WARNING gold.Account was not published this run, but Customer linked" in err
