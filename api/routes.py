@@ -148,6 +148,7 @@ from core.mirror.integrity import _row_count, check_mirror
 from core.mirror.quarantine_report import quarantine_for
 from core.mirror.sync_attempts import SyncAttempts
 from core.mirror.sync_targets import resolve_sync_targets
+from core.ontology.decimal_text import exact_decimals
 from core.ontology.mediator import SearchOutcome
 from core.ontology.schema import get_field_column, sort_key
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
@@ -4660,6 +4661,12 @@ def export_objects_route(object_type: str, body: ObjectSetQueryRequest, request:
         },
     )
 
+def _declared_fields(mediator, object_type: str) -> dict:
+    """The ontology's field declarations for a type -- where a
+    decimal's `decimal_places` lives (PA001-G12)."""
+    return ((mediator.schema or {}).get(object_type) or {}).get("fields") or {}
+
+
 @router.get("/objects/{object_type}/search", response_model=SearchResponse)
 def search_objects_route(object_type: str, request: Request, q: str = "",
                           page_size: int | None = None, page_token: str | None = None,
@@ -4766,10 +4773,10 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
     results = [
         {
             "id": str(object_id),
-            "fields": mediator.get_object(
+            "fields": exact_decimals(mediator.get_object(
                 current_user, object_type, object_id, summary_fields,
                 context=request_context,
-            ),
+            ), _declared_fields(mediator, object_type)),
         }
         for object_id in page_ids
     ]
@@ -4848,8 +4855,9 @@ def get_object_detail_route(object_type: str, object_id: str, request: Request,
     overlaid = mediator.overlaid_fields(
         object_type, object_id,
         [name for name, value in fields.items() if value is not None])
-    return {"id": object_id, "fields": fields, "overlaid": overlaid,
-            "request_id": request_context.request_id}
+    return {"id": object_id,
+            "fields": exact_decimals(fields, _declared_fields(mediator, object_type)),
+            "overlaid": overlaid, "request_id": request_context.request_id}
 
 
 class ProposeActionRequest(BaseModel):

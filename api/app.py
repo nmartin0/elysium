@@ -80,6 +80,7 @@ still runs correctly as a pure API backend; only a real install
 """
 
 import asyncio
+import decimal
 import logging
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
@@ -87,6 +88,7 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 
+import fastapi.encoders
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -114,6 +116,7 @@ from core.deployment_loader import (
     resolve_runtime_paths,
 )
 from core.mirror.lake_permissions import warn_if_world_readable
+from core.ontology.decimal_text import decimal_text
 from core.ontology.mediator import security_cache_scope
 from core.ontology.write_log import WriteLogWriter
 from core.pending_write_persistence import PendingWritePersistence
@@ -125,6 +128,16 @@ from core.sqlite_connection import (
     require_json_each,
 )
 from core.user_directory import UserDirectory
+
+# A DECIMAL IS SENT EXACTLY, AS A STRING (PA001-G12). FastAPI's own
+# decimal_encoder turns Decimal("10.500000000") into the float 10.5, and
+# every route without a response model goes through it -- so money read
+# through those routes arrived as a binary float, a different number in
+# general. Replaced at its source, once, for this process: a route added
+# later cannot forget it. Routes WITH a response model are serialised by
+# pydantic, which already keeps decimals exact; the search and detail
+# routes also pad to the declared scale (core/ontology/decimal_text.py).
+fastapi.encoders.ENCODERS_BY_TYPE[decimal.Decimal] = decimal_text
 
 logger = logging.getLogger(__name__)
 

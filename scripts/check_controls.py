@@ -2249,6 +2249,34 @@ CONTROLS = [
         tests=["tests/unit/test_cross_compartment_write.py::TestACreateIsAWriteToo::"
                "test_reading_one_compartment_and_creating_in_another_is_refused"],
     ),
+    Control(
+        describes="PA001-G12: a route without a response model sends a decimal as a string",
+        path="api/app.py",
+        old="fastapi.encoders.ENCODERS_BY_TYPE[decimal.Decimal] = decimal_text\n",
+        new="",
+        tests=["tests/unit/test_decimals_leave_the_api_exactly.py::TestTheApi::test_a_route_without_a_response_model_sends_a_string"],
+    ),
+    Control(
+        describes="PA001-G12: the detail route answers at the declared scale",
+        path="api/routes.py",
+        old="            \"fields\": exact_decimals(fields, _declared_fields(mediator, object_type)),\n",
+        new="            \"fields\": fields,\n",
+        tests=["tests/unit/test_decimals_leave_the_api_exactly.py::test_the_detail_route_answers_at_the_declared_scale"],
+    ),
+    Control(
+        describes="PA001-G12: a decimal is padded to its declared places",
+        path="core/ontology/decimal_text.py",
+        old="        if wanted is not None and isinstance(exponent, int) and exponent > wanted:",
+        new="        if False:",
+        tests=["tests/unit/test_decimals_leave_the_api_exactly.py::TestTheText::test_padded_to_the_declared_scale_in_plain_notation"],
+    ),
+    Control(
+        describes="PA001-G12: a 38-digit decimal is not rounded by the default context",
+        path="core/ontology/decimal_text.py",
+        old="    exact = value.normalize(_EXACT)\n",
+        new="    exact = value.normalize()\n",
+        tests=["tests/unit/test_decimals_leave_the_api_exactly.py::TestTheText::test_a_38_digit_value_survives"],
+    ),
 ]
 
 
