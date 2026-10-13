@@ -282,7 +282,15 @@ are "about volume rather than authority", and none of them is a code
 gap -- each is a decision that has to be made before the first
 automation runs at scale.
 
-**Queue flooding.** `MAX_SUB_WRITES` is 20 and `DEFAULT_TTL` is 15
+**Queue flooding, and the feedback loop under it (R50).** An approved
+automation write changes the data, and the next sync can trip the same
+condition and propose again -- every sync. Checked on 13 October: the
+path is real (`core/count_condition.py`, `origin="automation"`). The
+guard is one of: refuse while a proposal from the same automation is
+pending; a cooldown per object; or an automation never reacting to its
+own effect. Each is a few lines once chosen.
+
+`MAX_SUB_WRITES` is 20 and `DEFAULT_TTL` is 15
 minutes. An automation firing across a thousand objects either exceeds
 the sub-write cap or creates fifty pending writes that expire before
 anyone reads them. Foundry has an "execute once for all objects"
