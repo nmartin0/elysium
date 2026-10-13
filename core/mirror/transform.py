@@ -117,7 +117,9 @@ class TransformResult:
 def transform_rows(rows: list[dict], columns: list[str],
                     column_types: dict[str, str] | None = None,
                     standardisation: dict[str, dict] | None = None,
-                    security_column: "str | None" = None) -> TransformResult:
+                    security_column: "str | None" = None,
+                    locale: "str | None" = None,
+                    localised_columns: "frozenset | set | None" = None) -> TransformResult:
     """Casts every column to its ontology-declared type, reporting any
     column whose real data does not fit.
 
@@ -139,6 +141,13 @@ def transform_rows(rows: list[dict], columns: list[str],
     mismatched: set[int] = set()
     cells: dict[int, list[tuple[str, str]]] = {}
     cleaned: list[dict] = []
+
+    # WHICH COLUMNS ARE READ THROUGH THE SILO'S LOCALE (DEP-1): only
+    # the ones the source sent as TEXT. The caller decides, from the
+    # rows before bronze stringified them -- a number the database
+    # typed is already unambiguous, and reading its "1234.5" as pt_BR
+    # would refuse it.
+    localised = frozenset(localised_columns or ()) if locale else frozenset()
 
     for index, row in enumerate(rows):
         cleaned_row = {}
@@ -169,7 +178,8 @@ def transform_rows(rows: list[dict], columns: list[str],
             else:
                 value = standardise(row[column], (standardisation or {}).get(column))
             try:
-                cleaned_row[column] = coerce(value, declared, source_timezone)
+                cleaned_row[column] = coerce(value, declared, source_timezone,
+                                             locale if column in localised else None)
             except (ValueError, TypeError):
                 # The FIRST offending value for this column is the one
                 # reported -- later ones are almost always the same

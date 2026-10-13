@@ -52,6 +52,8 @@ interface DeploymentConfigBody {
   /** R15: whether lineage events also go to a service (never its URL). */
   lineage_service?: boolean
   lineage_namespace?: string
+  /** DEP-1: each silo's number and date locale; null = machine formats. */
+  source_locales?: Record<string, string | null>
   max_concurrent_requests: number
   security_attribute: string
   read_from_mirror: boolean
@@ -287,6 +289,18 @@ export default function DeploymentConfig({ onSessionExpired }: { onSessionExpire
                   : config.trusted_proxies.join(', ') || 'none (TCP peer)',
               ],
               ['On type mismatch', config.on_type_mismatch ?? 'not reported'],
+              [
+                // HOW EACH SOURCE WRITES NUMBERS AND DATES. The first
+                // place to look when a silo's rows are being set aside
+                // as type mismatches: `1.234,56` read as en_US is not
+                // a number.
+                'Source number and date formats',
+                config.source_locales === undefined
+                  ? 'not reported'
+                  : Object.entries(config.source_locales)
+                      .map(([silo, locale]) => `${silo}: ${locale ?? 'machine formats only'}`)
+                      .join(', ') || 'none',
+              ],
               [
                 // THE FILE IS ALWAYS WRITTEN, so the only question is
                 // whether a service receives them too.

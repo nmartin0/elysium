@@ -262,9 +262,15 @@ def _whole_number(value):
     return int(value)
 
 
-def coerce(value, data_type: str, source_timezone: str | None = None):
+def coerce(value, data_type: str, source_timezone: str | None = None,
+           locale: str | None = None):
     """A raw source value, converted to what its declared type says it
     is. None stays None -- a real NULL is not a type error.
+
+    `locale` (DEP-1): text written by a declared locale's rules --
+    `1.234,56`, `02/01/2024` -- is first rewritten to the machine form
+    every check below already reads. Only TEXT, only when declared; see
+    core/ontology/localised_values.py.
 
     Deliberately raises on a genuine mismatch (e.g. a field declared
     `integer` whose source value is "abc") rather than silently
@@ -277,6 +283,10 @@ def coerce(value, data_type: str, source_timezone: str | None = None):
         return None
     if data_type == "string":
         return str(value)
+    if locale is not None and isinstance(value, str):
+        from core.ontology.localised_values import to_canonical
+
+        value = to_canonical(value, data_type, locale)
     if data_type == "integer":
         return _whole_number(value)
     if data_type == "number":

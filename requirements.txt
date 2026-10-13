@@ -61,6 +61,11 @@ pyiceberg[sql-sqlite,pyarrow]<1.0
 #
 # Airflow's own dialect layer is the precedent: SQLAlchemy underneath,
 # with per-database overrides where they matter.
+# babel -- the Unicode CLDR's number and date conventions per locale
+# (DEP-1), so a source declared pt_BR is read as Brazil writes and en_US
+# as the US does, strictly and never guessed. BSD-3. Its data is the
+# same CLDR the operating systems and browsers use.
+babel>=2.12,<3.0
 sqlalchemy<3.0
 # The PostgreSQL driver SQLAlchemy dials through. psycopg 3, not 2:
 # it returns Decimal, aware datetime, date and UUID objects natively,

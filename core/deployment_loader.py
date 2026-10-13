@@ -269,6 +269,11 @@ class DeploymentConfig:
     # WHERE LINEAGE EVENTS GO (R15): always lineage.jsonl in the log
     # directory; also `url` when set. Empty means file only.
     lineage: Mapping[str, Any] = MappingProxyType({})
+    # HOW SOURCES WRITE NUMBERS AND DATES (DEP-1): {silo: "pt_BR" | None},
+    # from config.yaml's source_locale and each silo's own `locale:`.
+    # None for a silo means machine formats only -- the behaviour before
+    # this existed, and what an absent declaration still means.
+    source_locales: Mapping[str, "str | None"] = MappingProxyType({})
 
 
 logger = logging.getLogger(__name__)
@@ -638,6 +643,8 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             constrain_steps=bool(config["agent"].get("constrain_steps", False)),
             label_enforcement=bool((config.get("access") or {}).get("label_enforcement", False)),
             lineage=deep_freeze(validate_lineage_block(config.get("lineage"))),
+            source_locales=MappingProxyType(
+                _source_locales(config, data_silos_raw["data_silos"])),
             max_concurrent_requests=_default_concurrency(config),
             # FOUR HOURS by default, not fifteen minutes. Long enough
             # that a reviewer can be in a meeting; short enough that a
@@ -910,6 +917,28 @@ def _default_concurrency(config: dict) -> int:
         return int(declared)
     provider = (config.get("llm") or {}).get("provider")
     return 16 if provider == "vllm" else 4
+
+
+def _source_locales(config: dict, silos: dict) -> dict:
+    """{silo: locale or None}: each silo's own `locale:`, else the
+    deployment's `source_locale:`, else None.
+
+    THE LOCALE IS THE SOURCE'S, NOT THE SERVER'S. A deployment in Sao
+    Paulo reading a US SaaS export needs en_US for that one silo, which
+    is why the deployment default can be overridden per silo -- and why
+    nothing here looks at the machine's own locale settings.
+    """
+    from core.ontology.localised_values import normalise_locale
+
+    default = normalise_locale(config.get("source_locale"), "config.yaml source_locale")
+    resolved = {}
+    for silo_name, silo in (silos or {}).items():
+        if "locale" in (silo or {}):
+            resolved[silo_name] = normalise_locale(
+                silo["locale"], f"data_silos.yaml {silo_name}.locale")
+        else:
+            resolved[silo_name] = default
+    return resolved
 
 
 def _retain_publications(config: dict) -> int:

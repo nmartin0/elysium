@@ -698,6 +698,8 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
         # ERASURES (R13): the register decides what every read drops.
         erasures = ErasureRegister(runtime_paths.data_dir / "erasures.db")
         sync.suppression = suppression_for(config.schema, erasures)
+        # HOW EACH SILO WRITES NUMBERS AND DATES (DEP-1).
+        sync.locales = dict(config.source_locales)
 
         # LINEAGE (R15): to lineage.jsonl always, and to a service when
         # config.yaml names one. Never the sync's verdict.

@@ -336,6 +336,17 @@ describe('where the freshness windows come from', () => {
     expect(label.parentElement).toHaveTextContent('lineage.jsonl and a lineage service (namespace acme)')
   })
 
+  it('says how each silo writes numbers and dates (DEP-1)', async () => {
+    getDeploymentConfig.mockResolvedValue({
+      ...BODY,
+      source_locales: { primary_sql: 'pt_BR', support_crm: null },
+    })
+    render(<DeploymentConfig onSessionExpired={() => {}} />)
+
+    const label = await screen.findByText('Source number and date formats')
+    expect(label.parentElement).toHaveTextContent('primary_sql: pt_BR, support_crm: machine formats only')
+  })
+
   it('says the file alone when no service is named', async () => {
     getDeploymentConfig.mockResolvedValue({ ...BODY, lineage_service: false })
     render(<DeploymentConfig onSessionExpired={() => {}} />)

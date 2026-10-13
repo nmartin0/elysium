@@ -381,6 +381,9 @@ layers = [
     # classifications is a leaf too: object_type_validation checks a
     # label's shape with it, and core/mirror reads labels through it.
     "field_types | link_types | classifications",
+    # Below field_types, which reads locale-written text through it
+    # (DEP-1). It imports nothing from this package.
+    "localised_values",
 ]
 containers = ["core.ontology"]
 exhaustive = true

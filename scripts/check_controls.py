@@ -1450,6 +1450,34 @@ CONTROLS = [
         tests=["tests/unit/test_template_is_a_valid_deployment.py::"
                "test_a_new_deployment_starts_on_the_new_installation_defaults"],
     ),
+    Control(
+        describes="DEP-1: a number the database typed is never read through the locale",
+        path="core/mirror/iceberg_sync.py",
+        old="             if any(isinstance(row.get(column), str) for row in raw_rows)}",
+        new="             if True}",
+        tests=["tests/unit/test_numbers_and_dates_as_sources_write_them.py::TestThroughARealSync::test_a_number_the_database_typed_is_never_read_through_the_locale"],
+    ),
+    Control(
+        describes="DEP-1: grouping is strict, so 1.5 under pt_BR is refused, not fifteen",
+        path="core/ontology/localised_values.py",
+        old="        return parse_decimal(stripped, locale=locale, strict=True)",
+        new="        return parse_decimal(stripped, locale=locale, strict=False)",
+        tests=["tests/unit/test_numbers_and_dates_as_sources_write_them.py::TestTheRules::test_what_is_refused_rather_than_guessed"],
+    ),
+    Control(
+        describes="DEP-1: a two-digit year is refused",
+        path="core/ontology/localised_values.py",
+        old="    if len(by_letter[\"Y\"]) != 4:",
+        new="    if False:",
+        tests=["tests/unit/test_numbers_and_dates_as_sources_write_them.py::TestTheRules::test_what_is_refused_rather_than_guessed"],
+    ),
+    Control(
+        describes="DEP-1: a silo's own locale overrides the deployment's",
+        path="core/deployment_loader.py",
+        old="        if \"locale\" in (silo or {}):",
+        new="        if False:",
+        tests=["tests/unit/test_numbers_and_dates_as_sources_write_them.py::TestTheDeclaration::test_a_silo_overrides_the_deployment"],
+    ),
 ]
 
 

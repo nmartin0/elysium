@@ -408,6 +408,11 @@ class IcebergMirrorSync(MirrorSync):
         # been erased, and every read passes through untouched.
         self.suppression: dict = {}
         self.erased_still_in_source: set = set()
+        # SOURCE LOCALES (DEP-1): {silo: "pt_BR" | None}, set by run_sync
+        # from config.yaml's source_locale and each silo's own locale.
+        # Empty means machine formats only, which is every deployment
+        # that has not declared one.
+        self.locales: dict = {}
         self._current_silo: str | None = None
         # adapters are the REAL, read-only ExternalReadAdapter instances
         # (Phase 1 -- structurally incapable of writing to the
@@ -677,8 +682,19 @@ class IcebergMirrorSync(MirrorSync):
             ]
             columns = [*columns, LINK_ID_COLUMN]
 
+        # TEXT COLUMNS, judged from the rows AS THE SOURCE SENT THEM --
+        # raw_rows, not bronze's, where every value is already a string
+        # and a number the database typed would be indistinguishable
+        # from one somebody typed. Only these are read through the
+        # silo's locale (DEP-1).
+        locale = self.locales.get(silo_name)
+        text_columns = (
+            {column for column in columns
+             if any(isinstance(row.get(column), str) for row in raw_rows)}
+            if locale else set())
         transformed = transform_rows(source_rows, columns, column_types, standardisation,
-                                     security_column=security_column)
+                                     security_column=security_column,
+                                     locale=locale, localised_columns=text_columns)
         if transformed.has_drift and self._on_type_mismatch == "quarantine":
             # THE ROW, NOT THE TABLE. Databricks separates a MALFORMED
             # RECORD from a TYPE MISMATCH -- "only incomplete and

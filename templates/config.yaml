@@ -189,3 +189,9 @@ on_type_mismatch: quarantine
 # Whether bronze keeps source columns the ontology never declared.
 # false keeps only declared columns, so an undeclared SSN never lands.
 ingest_undeclared_columns: false
+#
+# How your sources write numbers and dates: en_US (1,234.56, month
+# first), pt_BR (1.234,56, day first), es_AR, es_CL, es_PE... -- a
+# country, because South America is not one format. Absent means
+# machine formats only. deployment/etc/config.yaml has the table.
+# source_locale: en_US

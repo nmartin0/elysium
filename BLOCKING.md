@@ -123,7 +123,11 @@ cover the same standards: `pycountries` (MIT, ISO 3166/4217/639),
 Nothing imports any of them today, so this is a dependency under
 consideration rather than one in use.
 
-**Blocked on:** five yes-or-nos, `DEP-5` having answered itself.
+**`DEP-1` IS DECIDED AND BUILT, 12 October** -- babel only; dateparser
+declined because it guesses. See its checklist row.
+
+**Blocked on:** three yes-or-nos (`DEP-2`, `DEP-3`, `DEP-4`), `DEP-5`
+having answered itself and `DEP-6` being rejections.
 
 ---
 

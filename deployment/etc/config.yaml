@@ -48,6 +48,25 @@ llm:
 # access:
 #   label_enforcement: true
 
+# HOW YOUR SOURCES WRITE NUMBERS AND DATES, as a locale (language and
+# country). Absent means machine formats only -- `1234.56`, `2024-01-02`
+# -- and anything else is set aside as a type mismatch.
+#
+#   en_US   1,234.56   month first: 01/02/2024 is 2 January
+#   pt_BR   1.234,56   day first:   01/02/2024 is 1 February
+#
+# Read the second column carefully: that ambiguity is the reason this
+# is declared rather than guessed. Spanish-speaking South America
+# mostly writes as pt_BR does, but NOT ALL OF IT: Peru (es_PE), like
+# Mexico, writes numbers as en_US does and dates day first, and Chile
+# (es_CL) separates dates with dashes. Name the country.
+#
+# A SILO WHOSE PEOPLE WRITE DIFFERENTLY sets its own `locale:` in
+# data_silos.yaml (or `locale: none` for machine formats only).
+# Columns the source DATABASE typed as numbers or dates are never
+# affected; this is for text. Two-digit years are always refused.
+# source_locale: pt_BR
+
 # LINEAGE AS OPENLINEAGE EVENTS. Every sync writes them to lineage.jsonl
 # in the log directory, whatever this says. Name a service to ALSO
 # post them there -- Marquez, DataHub, OpenMetadata and their peers
