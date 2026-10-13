@@ -56,6 +56,8 @@ interface DeploymentConfigBody {
   lineage_namespace?: string
   /** DEP-1: each silo's number and date locale; null = machine formats. */
   source_locales?: Record<string, string | null>
+  /** ZOO-22: silos whose date columns may hold Excel serials. */
+  excel_date_silos?: string[]
   max_concurrent_requests: number
   security_attribute: string
   read_from_mirror: boolean
@@ -308,7 +310,11 @@ export default function DeploymentConfig({ onSessionExpired }: { onSessionExpire
                 config.source_locales === undefined
                   ? 'not reported'
                   : Object.entries(config.source_locales)
-                      .map(([silo, locale]) => `${silo}: ${locale ?? 'machine formats only'}`)
+                      .map(
+                        ([silo, locale]) =>
+                          `${silo}: ${locale ?? 'machine formats only'}` +
+                          (config.excel_date_silos?.includes(silo) ? ' and Excel date serials' : ''),
+                      )
                       .join(', ') || 'none',
               ],
               [

@@ -1312,6 +1312,8 @@ class DeploymentConfigResponse(BaseModel):
     #: DEP-1: how each silo's people write numbers and dates, as a CLDR
     #: locale; None means machine formats only. Locale codes, not data.
     source_locales: dict[str, str | None] = {}
+    #: ZOO-22: silos whose date columns may hold Excel serials.
+    excel_date_silos: list[str] = []
     # THE FOUR OPERATIONAL TOGGLES ADDED IN OCTOBER, and the reason
     # `F-06` matters rather than a tidiness complaint: each was added to
     # DeploymentConfig and NOT here, so the panel that answers "why is
@@ -3197,6 +3199,7 @@ def deployment_config_route(request: Request,
         "lineage_service": bool(config.lineage.get("url")),
         "lineage_namespace": config.lineage.get("namespace") or "elysium",
         "source_locales": dict(config.source_locales),
+        "excel_date_silos": sorted(config.excel_date_silos),
         "max_concurrent_requests": config.max_concurrent_requests,
         "security_attribute": config.security_attribute,
         "read_from_mirror": config.read_from_mirror,

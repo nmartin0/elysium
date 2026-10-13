@@ -42,6 +42,7 @@ NOT_GRANTS = {
     "classification",  # data_contracts.py's ODCS tag: f"classification:{label}" (R16)
     "urn",  # data_contracts.py's contract id: f"urn:{namespace}:contract:{type}" (R16)
     "elysium",  # openlineage.py's uuid5 seed: f"elysium:{run_id}:{job}" (R15)
+    "rule",  # sync_targets.py's expectation key for a two-field rule: f"rule:{name}" (R29)
 }
 
 # Every verb followed by a colon is a grant prefix. Kept as a set

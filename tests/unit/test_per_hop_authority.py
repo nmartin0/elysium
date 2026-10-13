@@ -43,6 +43,7 @@ def _loop(mediator, steps):
     loop.max_consecutive_duplicates = 2
     loop.max_consecutive_invalid_steps = 2
     loop.constrain_steps = False
+    loop.max_tokens_per_query = None  # AL-10: no budget, as before
     return loop
 
 
