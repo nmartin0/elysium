@@ -40,7 +40,7 @@ from core.carried_columns import (  # noqa: E402
     SOURCE_TABLE_COLUMN,
 )
 
-SYSTEM_COLUMNS = (*CARRIED_COLUMNS, "_fused_from", "_link_id")
+SYSTEM_COLUMNS = (*CARRIED_COLUMNS, "_fused_from", "_field_sources", "_link_id")
 
 
 def collides_with_a_system_column(names) -> list[str]:

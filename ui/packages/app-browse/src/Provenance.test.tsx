@@ -233,3 +233,28 @@ describe('where the sources disagreed', () => {
     expect(screen.queryByText(/where the sources disagreed/i)).not.toBeInTheDocument()
   })
 })
+
+describe('which source supplied each value (R38)', () => {
+  it('names the source of every field of a fused object', async () => {
+    show({ ...LINEAGE, field_sources: { name: 'primary', risk_score: 'risk_db' } })
+
+    const heading = await screen.findByText('Which source supplied each value')
+    const section = heading.closest('section') as HTMLElement
+    expect(section).toHaveTextContent('risk_scorerisk_db')
+    expect(section).toHaveTextContent('nameprimary')
+  })
+
+  it('calls the silo the PRIMARY one when fields came from several', async () => {
+    show({ ...LINEAGE, field_sources: { risk_score: 'risk_db' } })
+
+    expect(await screen.findByText('Primary silo')).toBeInTheDocument()
+    expect(screen.queryByText('Silo')).not.toBeInTheDocument()
+  })
+
+  it('shows no list for a single-source object, where the silo is the answer', async () => {
+    show({ ...LINEAGE, field_sources: null })
+
+    expect(await screen.findByText('Silo')).toBeInTheDocument()
+    expect(screen.queryByText('Which source supplied each value')).not.toBeInTheDocument()
+  })
+})

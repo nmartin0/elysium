@@ -48,6 +48,16 @@ llm:
 # access:
 #   label_enforcement: true
 
+# LINEAGE AS OPENLINEAGE EVENTS. Every sync writes them to lineage.jsonl
+# in the log directory, whatever this says. Name a service to ALSO
+# post them there -- Marquez, DataHub, OpenMetadata and their peers
+# accept them at /api/v1/lineage. A key, if the service needs one, is
+# read from the environment variable named here, never from this file.
+# lineage:
+#   url: http://marquez:5000/api/v1/lineage
+#   namespace: elysium
+#   api_key_env: LINEAGE_API_KEY
+
 agent:
   max_hops: 8
   # How long one query may spend gathering before it answers from what it

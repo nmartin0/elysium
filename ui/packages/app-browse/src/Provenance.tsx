@@ -126,6 +126,35 @@ function Disagreements({ conflicts }: { conflicts: ValueConflict[] }) {
   )
 }
 
+/**
+ * Which source supplied each value (R38).
+ *
+ * THE OTHER HALF OF THE DISAGREEMENTS TABLE. That one says who LOST
+ * where two sources disagreed; this says who supplied each value
+ * whether or not anyone disagreed -- which is the question a fused
+ * object otherwise answers wrongly, with one silo for every field.
+ *
+ * Rendered only for a fused type. A single-source type sends null, and
+ * the silo above is already the answer for every field.
+ */
+function FieldSources({ sources }: { sources: Record<string, string> }) {
+  const fields = Object.keys(sources).sort()
+  if (fields.length === 0) return null
+  return (
+    <section className="object-detail__field-sources">
+      <h3>Which source supplied each value</h3>
+      <dl className="provenance">
+        {fields.map((field) => (
+          <div key={field} className="provenance__row">
+            <dt>{field}</dt>
+            <dd className="provenance__value">{sources[field]}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  )
+}
+
 export default function Provenance({ objectType, objectId }: { objectType: string; objectId: string }) {
   const [lineage, setLineage] = useState<ObjectProvenance | null>(null)
   const [conflicts, setConflicts] = useState<ValueConflict[]>([])
@@ -177,8 +206,12 @@ export default function Provenance({ objectType, objectId }: { objectType: strin
   // A LIVE-READ DEPLOYMENT HAS NO LINEAGE AT ALL and the route answers
   // with every field absent rather than an error. Nothing to show is
   // nothing to show.
+  // ON A FUSED TYPE THE SILO IS THE PRIMARY STORAGE'S, not every
+  // field's -- the per-field list below is the answer for those -- so
+  // the label says which it is.
+  const fused = lineage.field_sources != null
   const rows = [
-    ['Silo', lineage.silo],
+    [fused ? 'Primary silo' : 'Silo', lineage.silo],
     ['Source table', lineage.source_table],
     ['Bronze snapshot', lineage.bronze_snapshot_id],
     ['Row hash', lineage.row_hash],
@@ -203,6 +236,7 @@ export default function Provenance({ objectType, objectId }: { objectType: strin
           ))}
         </dl>
       </section>
+      {lineage.field_sources && <FieldSources sources={lineage.field_sources} />}
       <Disagreements conflicts={conflicts} />
     </>
   )

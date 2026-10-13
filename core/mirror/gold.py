@@ -44,7 +44,7 @@ import pyarrow as pa
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
 from core.mirror.changelog import MAX_DELETED_FRACTION
-from core.mirror.fusion import FUSED_FROM_COLUMN, fuse
+from core.mirror.fusion import FIELD_SOURCES_COLUMN, FUSED_FROM_COLUMN, fuse
 from core.mirror.gold_arrow import audit_arrow, conform_arrow
 from core.mirror.gold_stream import StreamingAudit, conformed_batches
 from core.mirror.identity import resolve, rule_for
@@ -210,9 +210,11 @@ def _arrow(rows: list[dict], type_def: dict) -> pa.Table:
     # contributed to each row (GOLD-5).
     if type_def.get("additional_storage") or type_def.get("identity"):
         names.append(FUSED_FROM_COLUMN)
+        # ...and which of them supplied each value (R38).
+        names.append(FIELD_SOURCES_COLUMN)
 
     def _type_for(name: str) -> pa.DataType:
-        if name in CARRIED_COLUMNS or name == FUSED_FROM_COLUMN:
+        if name in CARRIED_COLUMNS or name in (FUSED_FROM_COLUMN, FIELD_SOURCES_COLUMN):
             return pa.string()
         field_config = declared.get(name) or {}
         # A LINK IS A KEY, and a key is whatever the target's id is --

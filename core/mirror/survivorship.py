@@ -40,6 +40,7 @@ from a row's sync time would answer "when did we READ it" rather than
 from dataclasses import dataclass, field
 from typing import Any
 
+from core.mirror.fusion import FIELD_SOURCES_COLUMN, FUSED_FROM_COLUMN, field_sources_json
 from core.mirror.identity import Resolution
 
 # What a conflict row records. One per property where sources
@@ -119,6 +120,10 @@ def fuse_entities(type_def: dict, resolution: Resolution) -> FusedEntities:
     for entity_id in sorted(resolution.entities):
         members = resolution.entities[entity_id]
         row: dict = {id_field: entity_id}
+        # WHO SUPPLIED EACH VALUE (R38), recorded for every field and not
+        # only where sources disagreed -- the conflicts table answers
+        # "who lost"; this answers "who won" when nobody else spoke.
+        field_sources: dict[str, str] = {}
         contributing = sorted(_source_name(key) for key in members)
         for field_name in property_names:
             if field_name == id_field:
@@ -159,7 +164,10 @@ def fuse_entities(type_def: dict, resolution: Resolution) -> FusedEntities:
                         losing=value, losing_source=_source_name(storage_key),
                     ))
             row[field_name] = chosen_value
-        row["_fused_from"] = ",".join(contributing)
+            if chosen_source is not None:
+                field_sources[field_name] = chosen_source
+        row[FUSED_FROM_COLUMN] = ",".join(contributing)
+        row[FIELD_SOURCES_COLUMN] = field_sources_json(field_sources)
         # Lineage from whichever member carried it, in winning order.
         for storage_key in _order_for(type_def, None):
             source_row = members.get(storage_key)

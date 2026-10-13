@@ -319,4 +319,28 @@ describe('where the freshness windows come from', () => {
     expect(await screen.findByText('Expected sync interval')).toBeInTheDocument()
     expect(screen.queryByText(/every \d+ hours/)).toBeNull()
   })
+
+  it('says whether classification labels decide field access', async () => {
+    getDeploymentConfig.mockResolvedValue({ ...BODY, label_enforcement: true })
+    render(<DeploymentConfig onSessionExpired={() => {}} />)
+
+    const label = await screen.findByText('Classification labels decide field access')
+    expect(label.parentElement).toHaveTextContent(/yes$/)
+  })
+
+  it('says where lineage events go, and never the service URL (R15)', async () => {
+    getDeploymentConfig.mockResolvedValue({ ...BODY, lineage_service: true, lineage_namespace: 'acme' })
+    render(<DeploymentConfig onSessionExpired={() => {}} />)
+
+    const label = await screen.findByText('Lineage events')
+    expect(label.parentElement).toHaveTextContent('lineage.jsonl and a lineage service (namespace acme)')
+  })
+
+  it('says the file alone when no service is named', async () => {
+    getDeploymentConfig.mockResolvedValue({ ...BODY, lineage_service: false })
+    render(<DeploymentConfig onSessionExpired={() => {}} />)
+
+    const label = await screen.findByText('Lineage events')
+    expect(label.parentElement).toHaveTextContent('lineage.jsonl only (namespace elysium)')
+  })
 })

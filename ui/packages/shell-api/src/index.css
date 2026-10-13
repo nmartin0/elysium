@@ -1716,11 +1716,16 @@
    * AT THE SOURCE beside it, because it is the same kind of thing: a
    * block within the object page rather than a division of it.
    */
-  .object-detail__provenance {
+  /* WHICH SOURCE SUPPLIED EACH VALUE (R38) is part of the same panel,
+   * so it takes the same treatment -- found in the browser, where the
+   * first version rendered it as a full-size heading under a label. */
+  .object-detail__provenance,
+  .object-detail__field-sources {
     margin-top: var(--space-section);
   }
 
-  .object-detail__provenance h3 {
+  .object-detail__provenance h3,
+  .object-detail__field-sources h3 {
     margin: 0 0 var(--space-tight);
     font-size: var(--type-label-size);
     line-height: var(--type-label-line);

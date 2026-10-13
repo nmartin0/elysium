@@ -1393,6 +1393,10 @@ networkx==3.7 \
     --hash=sha256:e3fd2c13a7814cee3746340d8d7f8598a67f16a58bf47fb7f8793fab6efca1b0 \
     --hash=sha256:fd77a511bd90f39f3d016351345b52cf5319b813bdca01de3f755d3cca62e96a
     # via cfn-lint
+open-data-contract-standard==3.2.0 \
+    --hash=sha256:37589b1e98ea519de51366e0efc2e02dbc87e1da68f07fd9385e49ab5df76763 \
+    --hash=sha256:a7e05dfc52b94a77b54f81a9033dd7a718133cf37bf66f3eb7d0eefd2fd33d4f
+    # via -r requirements-dev.txt
 openapi-schema-validator==0.9.0 \
     --hash=sha256:b72db64315b89d21834cd3ffef37e3e6893bc876327be2d366e8424b1029afd3 \
     --hash=sha256:faa3bbe7c3aa8ca2087ad83f709dc3b7d920283153a570c03e24ea182558aa25
@@ -1597,6 +1601,7 @@ pydantic==2.13.5 \
     # via
     #   -r requirements.txt
     #   fastapi
+    #   open-data-contract-standard
     #   openapi-schema-validator
     #   openapi-spec-validator
     #   pydantic-settings
@@ -1986,6 +1991,7 @@ pyyaml==6.0.3 \
     #   cfn-lint
     #   jsonschema-path
     #   moto
+    #   open-data-contract-standard
     #   responses
 referencing==0.37.0 \
     --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231 \

@@ -2910,6 +2910,45 @@ def test_config_route_never_discloses_connection_details(client):
     assert "allowed_actions" not in raw, "role grants reached the response"
 
 
+def test_a_data_contract_is_served_as_the_file(client):
+    """R16: the ODCS contract for one type, to save as-is."""
+    import yaml
+
+    _admin_user(client, "contractadmin")
+
+    response = client.get("/api/admin/contracts/Customer")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/yaml")
+    contract = yaml.safe_load(response.text)
+    assert contract["kind"] == "DataContract"
+    assert contract["schema"][0]["physicalName"] == "gold.Customer"
+
+
+def test_a_data_contract_names_no_source_and_no_grant(client):
+    """Names-not-contents, as /config: a contract describes gold, and a
+    source table or a grant would describe the customer's systems."""
+    _admin_user(client, "contractnoleak")
+
+    raw = client.get("/api/admin/contracts/Customer").text
+
+    assert "customers" not in raw, "a source table reached the contract"
+    assert "primary_sql" not in raw, "a silo reached the contract"
+    assert "read:" not in raw, "a grant reached the contract"
+
+
+def test_a_data_contract_requires_manage_users(client):
+    _filter_user(client, "contractdenied")
+
+    assert client.get("/api/admin/contracts/Customer").status_code == 403
+
+
+def test_a_data_contract_for_no_such_type_is_404(client):
+    _admin_user(client, "contractmissing")
+
+    assert client.get("/api/admin/contracts/Nope").status_code == 404
+
+
 def test_silos_route_requires_manage_users(client):
     _filter_user(client, "silodenied")
 

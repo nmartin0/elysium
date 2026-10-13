@@ -1635,6 +1635,13 @@ export interface ObjectProvenance {
   row_hash?: string | null
   /** Which bronze snapshot silver was derived from. */
   bronze_snapshot_id?: string | null
+  /**
+   * R38: which source supplied each value, `{field: source}`, on a type
+   * built from several storages; null on a single-source type, where
+   * `silo` already answers it for every field. Only fields the caller
+   * may read are named, and only for an object in their compartment.
+   */
+  field_sources?: Record<string, string> | null
 }
 
 export async function getObjectProvenance(objectType: string, objectId: string): Promise<ObjectProvenance | null> {

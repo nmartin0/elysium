@@ -30,6 +30,8 @@ anything exposing it to a user must filter per caller itself". The
 route above it does, and a test holds it to that.
 """
 
+import json
+
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
 from core.carried_columns import (
@@ -37,8 +39,23 @@ from core.carried_columns import (
     SILO_COLUMN,
     SOURCE_TABLE_COLUMN,
 )
+from core.mirror.fusion import FIELD_SOURCES_COLUMN
 from core.mirror.lineage import BRONZE_SNAPSHOT_PROPERTY
 from core.ontology.gold_view import GOLD_NAMESPACE
+
+
+def _field_sources(recorded) -> "dict | None":
+    """The recorded JSON, or None where nothing was recorded -- a
+    single-source type, or a fused one built before R38. An unreadable
+    record is None too: provenance that cannot be read is not provenance,
+    and guessing would be worse than saying nothing."""
+    if not recorded:
+        return None
+    try:
+        parsed = json.loads(recorded)
+    except ValueError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 class ProvenanceNotRecorded(LookupError):
@@ -83,5 +100,7 @@ def read_provenance(catalog, object_type: str, id_field: str,
             # halves together, and a reader should not have to go and
             # find the other one.
             "bronze_snapshot_id": table.properties.get(BRONZE_SNAPSHOT_PROPERTY),
+            # R38: which source supplied each value, on a fused type.
+            "field_sources": _field_sources(row.get(FIELD_SOURCES_COLUMN)),
         }
     return None

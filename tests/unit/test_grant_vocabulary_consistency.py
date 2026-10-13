@@ -39,6 +39,9 @@ ROOT = Path(__file__).resolve().parents[2]
 # widening of the probe.
 NOT_GRANTS = {
     "note",  # api/routes.py's note cache key: f"note:{type}:{id}"
+    "classification",  # data_contracts.py's ODCS tag: f"classification:{label}" (R16)
+    "urn",  # data_contracts.py's contract id: f"urn:{namespace}:contract:{type}" (R16)
+    "elysium",  # openlineage.py's uuid5 seed: f"elysium:{run_id}:{job}" (R15)
 }
 
 # Every verb followed by a colon is a grant prefix. Kept as a set

@@ -50,7 +50,8 @@ object_types:
         type: data
         # WHAT THE VALUES ARE, carried to every table that copies them
         # (R12) -- bronze, silver, the changelog, gold and its history.
-        # A label, not a grant: who may read it is still policy.yaml's.
+        # A label, not a grant -- unless config.yaml turns on
+        # access.label_enforcement, when reading it needs read:label:pii.
         classification: pii
       transactions:
         type: link

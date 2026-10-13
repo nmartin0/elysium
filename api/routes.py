@@ -1302,6 +1302,11 @@ class DeploymentConfigResponse(BaseModel):
     constrain_steps: bool = False
     #: Formerly BLOCKING 6: classification labels decide field access.
     label_enforcement: bool = False
+    #: R15: whether lineage events also go to a service. WHETHER, never
+    #: the URL -- a URL can carry credentials, and names-not-contents is
+    #: this endpoint's rule. The file is always written.
+    lineage_service: bool = False
+    lineage_namespace: str = "elysium"
     # THE FOUR OPERATIONAL TOGGLES ADDED IN OCTOBER, and the reason
     # `F-06` matters rather than a tidiness complaint: each was added to
     # DeploymentConfig and NOT here, so the panel that answers "why is
@@ -3105,6 +3110,35 @@ def config_diff_route(older: int, newer: int, request: Request,
     }
 
 
+@router.get("/admin/contracts/{object_type}", response_class=Response,
+            responses={200: {"content": {"application/yaml": {}}}})
+def data_contract_route(object_type: str, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> Response:
+    """One object type's gold table as an ODCS v3 data contract (R16).
+
+    GATED AS /config IS, on manage:users: a contract names every
+    column, its type and its classification -- deployment shape, which
+    /config is careful with for the same reason. It never names a
+    source table or a grant (core/mirror/data_contracts.py says why).
+
+    YAML, because that is what the standard's tools read; the response
+    is the file, to save as-is. `scripts/export_contracts.py` writes
+    every type's at once.
+    """
+    from core.mirror.data_contracts import contract_yaml, data_contract
+
+    _require_manage_users(request, current_user)
+    config = _generation(request).config
+    if object_type not in (config.schema or {}):
+        raise HTTPException(status_code=404, detail=f"No object type {object_type!r}")
+    contract = data_contract(object_type, config.schema,
+                             config.freshness_targets.get(object_type),
+                             namespace=config.lineage.get("namespace") or "elysium")
+    return Response(
+        content=contract_yaml(contract), media_type="application/yaml",
+        headers={"Content-Disposition": f'attachment; filename="{object_type}.odcs.yaml"'})
+
+
 @router.get("/config", response_model=DeploymentConfigResponse)
 def deployment_config_route(request: Request,
                              current_user: UserRecord = Depends(get_current_user)) -> dict:
@@ -3154,6 +3188,8 @@ def deployment_config_route(request: Request,
         "max_consecutive_invalid_steps": config.max_consecutive_invalid_steps,
         "constrain_steps": config.constrain_steps,
         "label_enforcement": config.label_enforcement,
+        "lineage_service": bool(config.lineage.get("url")),
+        "lineage_namespace": config.lineage.get("namespace") or "elysium",
         "max_concurrent_requests": config.max_concurrent_requests,
         "security_attribute": config.security_attribute,
         "read_from_mirror": config.read_from_mirror,
@@ -3335,6 +3371,11 @@ class ObjectProvenanceResponse(BaseModel):
     #: Which bronze snapshot silver was derived from, "so any row traces
     #: back to what the source said".
     bronze_snapshot_id: str | None = None
+    #: R38: WHICH SOURCE SUPPLIED EACH VALUE, {field: source}, on a type
+    #: built from several storages. None on a single-source type, where
+    #: `silo` above already answers it for every field. Only fields the
+    #: caller may read are named.
+    field_sources: dict[str, str] | None = None
 
 
 class ValueConflictResponse(BaseModel):
@@ -3413,6 +3454,7 @@ def object_provenance_route(
     # line and three tests said so.
     mediator = _generation(request).mediator
 
+
     type_def = (mediator.schema.get(object_type) or {})
     id_field = type_def.get("id_field")
     if id_field is None:
@@ -3423,11 +3465,27 @@ def object_provenance_route(
         return None
 
     try:
-        return read_provenance(catalog, object_type, id_field, object_id)
+        provenance = read_provenance(catalog, object_type, id_field, object_id)
     except ProvenanceNotRecorded:
         # Nothing published for this type yet. An absent answer, not a
         # fault: the same shape a deployment that reads live gives.
         return None
+    if provenance is not None and provenance.get("field_sources") is not None:
+        # PER-FIELD SOURCES ARE NOT OPAQUE, which is why they are gated
+        # as /conflicts is and the row's own identifiers are not. A field
+        # appears only when it holds a value, so the map says which of
+        # this object's fields are filled -- something about the data.
+        # So MAC first, as /conflicts does, and then only the fields the
+        # caller may read. The four identifiers above keep the decision
+        # /conflicts records: opaque, and served to manage:users as is.
+        if not _may_read_object(mediator, current_user, object_type, object_id):
+            provenance["field_sources"] = None
+        else:
+            readable = _readable_fields(request, current_user, object_type)
+            provenance["field_sources"] = {
+                name: source for name, source in provenance["field_sources"].items()
+                if name in readable}
+    return provenance
 
 
 

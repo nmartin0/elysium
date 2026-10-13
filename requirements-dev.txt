@@ -31,6 +31,9 @@ import-linter   # lint.sh -- architectural import-boundary enforcement (see pypr
 coverage        # AGENTS.md requires a coverage run on files you touch;
                 # a documented command that needs an undeclared tool
                 # is a rule nobody can follow
+open-data-contract-standard  # test-only -- the ODCS JSON schema the data contracts (R16)
+                # are validated against; its own Bitol release, so the test checks the
+                # standard and not my reading of it
 pytest          # test suite (tests/unit -- fast; tests/integration -- slow, needs Ollama)
 httpx2          # test-only -- Starlette's TestClient imports it (as httpx) for
                 # tests/integration/test_api.py. Not a typosquat despite the name:

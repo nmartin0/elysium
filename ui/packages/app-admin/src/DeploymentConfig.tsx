@@ -49,6 +49,9 @@ interface DeploymentConfigBody {
   constrain_steps?: boolean
   /** Formerly BLOCKING 6: classification labels decide field access. */
   label_enforcement?: boolean
+  /** R15: whether lineage events also go to a service (never its URL). */
+  lineage_service?: boolean
+  lineage_namespace?: string
   max_concurrent_requests: number
   security_attribute: string
   read_from_mirror: boolean
@@ -284,6 +287,15 @@ export default function DeploymentConfig({ onSessionExpired }: { onSessionExpire
                   : config.trusted_proxies.join(', ') || 'none (TCP peer)',
               ],
               ['On type mismatch', config.on_type_mismatch ?? 'not reported'],
+              [
+                // THE FILE IS ALWAYS WRITTEN, so the only question is
+                // whether a service receives them too.
+                'Lineage events',
+                config.lineage_service === undefined
+                  ? 'not reported'
+                  : `lineage.jsonl${config.lineage_service ? ' and a lineage service' : ' only'}` +
+                    ` (namespace ${config.lineage_namespace ?? 'elysium'})`,
+              ],
               [
                 // WHERE THE FRESHNESS WINDOWS COME FROM. Browse now
                 // tells a reader "Overdue -- this deployment expects

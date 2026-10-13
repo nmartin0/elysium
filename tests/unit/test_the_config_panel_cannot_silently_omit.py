@@ -51,6 +51,8 @@ WITHHELD_FROM_CONFIG_RESPONSE = {
     "source_text": "the raw configuration file, including anything "
                     "a deployment put in it",
     "base_path": "a filesystem path on the server",
+    "lineage": "summarised as `lineage_service` and `lineage_namespace`; the URL "
+               "can carry credentials",
     "mirror_storage": "warehouse paths and credentials",
     "identity_inference": "a mirror-build setting, not a runtime one",
     "pending_write_ttl_minutes": "not yet surfaced; no panel field",

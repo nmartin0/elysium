@@ -493,3 +493,10 @@ _bronze_fails
 do_GET
 log_message
 format
+# R15: config-response fields pydantic reads by reflection.
+lineage_service
+lineage_namespace
+# R16: a route FastAPI calls.
+data_contract_route
+# R38: a response field pydantic reads by reflection.
+field_sources

@@ -66,6 +66,17 @@ from core.mirror.expectation_warnings import ExpectationWarnings
 from core.mirror.gold import build_gold, published_ids
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.manifest import publish_manifest
+from core.mirror.openlineage import (
+    COMPLETE,
+    DEFAULT_NAMESPACE,
+    FAIL,
+    RUN_JOB,
+    START,
+    LineageEmitter,
+    gold_fields,
+    lake_dataset,
+    source_dataset,
+)
 from core.mirror.profiles import ProfileStore, profile_publications
 from core.mirror.sync_attempts import SyncAttempts
 from core.mirror.sync_lock import single_writer
@@ -432,7 +443,8 @@ def deletions_accepted_for(type_def: dict, accepted: set) -> bool:
 
 
 def _build_gold(sync, config, data_dir, unsynced: set | None = None,
-                 run_id: "str | None" = None, accepted: set | None = None) -> int:
+                 run_id: "str | None" = None, accepted: set | None = None,
+                 lineage: "LineageEmitter | None" = None) -> int:
     """One gold table per object type, audited before it is published.
     Returns how many were refused.
 
@@ -512,6 +524,13 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
             print(f"skipped gold.{object_type}: "
                   f"{', '.join(stale)} did not sync, so its silver is stale")
             continue
+        # LINEAGE (R15): what this type is built from, and into.
+        gold_inputs = [lake_dataset(lineage.namespace, "silver", table)
+                       for table in sorted(needed)] if lineage else []
+        gold_output = [lake_dataset(lineage.namespace, "gold", object_type,
+                                    gold_fields(object_type, config.schema))] if lineage else []
+        if lineage:
+            lineage.emit(START, f"gold.{object_type}", gold_inputs, gold_output)
         known = {
             target: ids
             for target, ids in (
@@ -546,6 +565,9 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
             # silver and their own audit; refusing them because a
             # neighbour failed discards work that was fine.
             print(f"FAILED  gold.{object_type}: {exc}", file=sys.stderr)
+            if lineage:
+                lineage.emit(FAIL, f"gold.{object_type}", gold_inputs, gold_output,
+                             error=str(exc))
             refused += 1
             continue
         # THE MATCHER NEEDS ROWS, and only runs when a type declares
@@ -564,6 +586,13 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
         else:
             refused += 1
             print(f"REFUSED gold.{object_type}: " + "; ".join(result.problems), file=sys.stderr)
+        if lineage:
+            # A REFUSED PUBLICATION IS A FAILED RUN of this job: gold
+            # was left as it was, which is what FAIL says.
+            failed = not result.skipped and not result.published
+            lineage.emit(FAIL if failed else COMPLETE, f"gold.{object_type}",
+                         gold_inputs, gold_output,
+                         error="; ".join(result.problems) if failed else None)
     return refused
 
 
@@ -670,6 +699,14 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
         erasures = ErasureRegister(runtime_paths.data_dir / "erasures.db")
         sync.suppression = suppression_for(config.schema, erasures)
 
+        # LINEAGE (R15): to lineage.jsonl always, and to a service when
+        # config.yaml names one. Never the sync's verdict.
+        lineage = LineageEmitter(
+            runtime_paths.log_dir, run_id,
+            namespace=config.lineage.get("namespace") or DEFAULT_NAMESPACE,
+            url=config.lineage.get("url"), api_key_env=config.lineage.get("api_key_env"))
+        lineage.emit(START, RUN_JOB)
+
         failures = 0
         # WHICH TABLES DID NOT SYNC, so gold can skip exactly the
         # types that depend on them rather than all of them.
@@ -691,6 +728,11 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
         warned.forget_older_than()
         for target in targets:
             label = f"{target.silo_name}.{target.table_name}"
+            table_job = f"sync.{label}"
+            table_io = ([source_dataset(target.silo_name, target.table_name)],
+                        [lake_dataset(lineage.namespace, "bronze", label),
+                         lake_dataset(lineage.namespace, "silver", label)])
+            lineage.emit(START, table_job, *table_io)
             try:
                 result = sync.sync_table(
                     target.silo_name, target.table_name, target.id_column,
@@ -724,7 +766,9 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
                     target.silo_name, target.table_name, "refused",
                     str(exc), run_id=run_id,
                 )
+                lineage.emit(FAIL, table_job, *table_io, error=str(exc))
                 continue
+            lineage.emit(COMPLETE, table_job, *table_io)
             # 'unchanged' IS ITS OWN OUTCOME (PA001-A17). The store has
             # supported three since it was written -- 'synced',
             # 'unchanged', 'refused' -- and this recorded 'synced' for
@@ -757,7 +801,8 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
         # type kept serving its PREVIOUS publication while fresh silver
         # sat unused, and nothing in the output said so.
         failures += _build_gold(sync, config, runtime_paths.data_dir,
-                                 unsynced=unsynced, run_id=run_id, accepted=accepted)
+                                 unsynced=unsynced, run_id=run_id, accepted=accepted,
+                                 lineage=lineage)
 
         # ERASURES NOT YET APPLIED TO THE LAKE -- a new request, or a
         # restore that brought an older lake back -- are applied before
@@ -818,6 +863,8 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
         _notify_mirror_health(runtime_paths, config, attempts, targets, drifts)
         _evaluate_user_triggers(runtime_paths, config, mediator)
 
+        lineage.emit(COMPLETE if failures == 0 else FAIL, RUN_JOB,
+                     error=f"{failures} table(s) or type(s) failed" if failures else None)
         return failures
 
 

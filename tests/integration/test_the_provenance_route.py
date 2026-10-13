@@ -108,5 +108,56 @@ class TestWhatItAnswers:
         # answering null for every object passed this test for months --
         # see the test above.
         assert set(body) <= {
-            "silo", "source_table", "row_hash", "bronze_snapshot_id",
+            "silo", "source_table", "row_hash", "bronze_snapshot_id", "field_sources",
         }
+
+
+#: manage:users and enough to read the fused Customer, risk_score included.
+SOURCES_ADMIN = {"allowed_actions": [
+    "manage:users", "read:Customer", "read:Customer.customer_id", "read:Customer.name",
+    "read:Customer.region", "read:Customer.email", "read:Customer.risk_score",
+]}
+SOURCES_ADMIN_NO_RISK = {"allowed_actions": [
+    a for a in SOURCES_ADMIN["allowed_actions"] if a != "read:Customer.risk_score"]}
+
+
+class TestWhichSourceSuppliedEachValue:
+    """R38. The fixture's Customer spans primary_sql and risk_sql, so its
+    risk_score is the one value `silo` misreports."""
+
+    def test_the_field_from_the_second_silo_says_so(self, client):
+        from tests.conftest import with_roles
+
+        with_roles(client.app, sources_admin=SOURCES_ADMIN)
+        _login(client, "src1", "sources_admin")  # us-east, as _login creates
+
+        body = client.get("/api/objects/Customer/cust_001/provenance").json()
+
+        # cust_001 is us-west: from us-east the identifiers are served,
+        # as /conflicts records, and the per-field map is not.
+        assert body["silo"]
+        assert body["field_sources"] is None
+
+    def test_from_its_own_compartment_every_readable_field_is_named(self, client):
+        from tests.conftest import with_roles
+
+        with_roles(client.app, sources_admin=SOURCES_ADMIN)
+        client.app.state.user_directory.create_user("src2", "pw", "us-west", "sources_admin")
+        client.post("/api/login", json={"username": "src2", "password": "pw"})
+
+        sources = client.get("/api/objects/Customer/cust_001/provenance").json()["field_sources"]
+
+        assert sources["risk_score"] == "risk_db"
+        assert sources["name"] == "primary"
+
+    def test_a_field_the_caller_cannot_read_is_not_named(self, client):
+        from tests.conftest import with_roles
+
+        with_roles(client.app, sources_admin=SOURCES_ADMIN_NO_RISK)
+        client.app.state.user_directory.create_user("src3", "pw", "us-west", "sources_admin")
+        client.post("/api/login", json={"username": "src3", "password": "pw"})
+
+        sources = client.get("/api/objects/Customer/cust_001/provenance").json()["field_sources"]
+
+        assert "risk_score" not in sources
+        assert sources["name"] == "primary"

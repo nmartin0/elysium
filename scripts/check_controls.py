@@ -1064,8 +1064,8 @@ CONTROLS = [
     Control(
         describes="R66: run_sync carries --accept-deletions to gold",
         path="scripts/run_sync.py",
-        old="                                 unsynced=unsynced, run_id=run_id, accepted=accepted)",
-        new="                                 unsynced=unsynced, run_id=run_id)",
+        old="                                 unsynced=unsynced, run_id=run_id, accepted=accepted,",
+        new="                                 unsynced=unsynced, run_id=run_id,",
         tests=["tests/unit/test_accept_deletions_reaches_gold.py::test_the_accepted_deletion_reaches_the_reader"],
     ),
     Control(
@@ -1316,6 +1316,92 @@ CONTROLS = [
         tests=["tests/unit/test_labels_decide_field_access.py::TestTheGrantItself::test_a_label_nothing_carries_is_refused"],
     ),
 
+    Control(
+        describes="R15: every child run names the sync run as its parent",
+        path="core/mirror/openlineage.py",
+        old="        if parent and job != RUN_JOB:",
+        new="        if False:",
+        tests=["tests/unit/test_openlineage_events.py::TestWhatASyncEmits::test_every_child_names_the_run_as_its_parent"],
+    ),
+    Control(
+        describes="R15: a gold type that started also finishes",
+        path="scripts/run_sync.py",
+        old="            lineage.emit(FAIL if failed else COMPLETE, f\"gold.{object_type}\",",
+        new="            lineage.emit(FAIL if failed else START, f\"gold.{object_type}\",",
+        tests=["tests/unit/test_openlineage_events.py::TestWhatASyncEmits::test_every_job_that_started_finished_with_the_same_run_id"],
+    ),
+    Control(
+        describes="R15: a failing service warns once, naming the kind not the message",
+        path="core/mirror/openlineage.py",
+        old="({type(exc).__name__})",
+        new="({exc})",
+        tests=["tests/unit/test_openlineage_events.py::TestTheEmitter::test_a_failing_service_warns_once_and_the_file_still_has_everything"],
+    ),
+    Control(
+        describes="R15: an unknown lineage key is refused",
+        path="core/mirror/openlineage.py",
+        old="    if unknown:\n        raise ValueError(f\"config.yaml lineage:",
+        new="    if False:\n        raise ValueError(f\"config.yaml lineage:",
+        tests=["tests/unit/test_openlineage_events.py::TestTheConfigBlock::test_a_mistake_is_refused_at_load"],
+    ),
+    Control(
+        describes="R16: a reverse link is not a column of the contract",
+        path="core/mirror/data_contracts.py",
+        old="        if info.get(\"type\") == \"link\" and is_reverse_link(info):\n            continue",
+        new="        if False:\n            continue",
+        tests=["tests/unit/test_data_contracts.py::TestTheMapping::test_a_reverse_link_is_not_a_column"],
+    ),
+    Control(
+        describes="R16: a decimal is promised at the scale gold writes",
+        path="core/mirror/data_contracts.py",
+        old="        physical = f\"decimal({DECIMAL_PRECISION}, {DECIMAL_SCALE})\"",
+        new="        physical = \"decimal(38, 2)\"",
+        tests=["tests/unit/test_data_contracts.py::TestTrueOfWhatGoldWrote::test_every_column_and_type_the_contract_promises_is_in_gold"],
+    ),
+    Control(
+        describes="R16: the contract version is a digest of the declaration",
+        path="core/mirror/data_contracts.py",
+        old="    canonical = json.dumps(_plain(type_def), sort_keys=True, default=str)",
+        new="    canonical = \"fixed\"",
+        tests=["tests/unit/test_data_contracts.py::TestTheMapping::test_the_version_changes_with_the_declaration_and_only_then"],
+    ),
+    Control(
+        describes="R16: a data contract requires manage:users",
+        path="api/routes.py",
+        old=("    _require_manage_users(request, current_user)\n    config = _generation(request).config\n"
+             "    if object_type not in"),
+        new="    config = _generation(request).config\n    if object_type not in",
+        tests=["tests/integration/test_api.py::test_a_data_contract_requires_manage_users"],
+    ),
+    Control(
+        describes="R38: survivorship records which source won each field",
+        path="core/mirror/survivorship.py",
+        old="            if chosen_source is not None:\n                field_sources[field_name] = chosen_source",
+        new="            if False:\n                field_sources[field_name] = chosen_source",
+        tests=["tests/unit/test_which_source_supplied_each_value.py::TestThroughARealBuild::test_every_value_names_the_source_that_supplied_it"],
+    ),
+    Control(
+        describes="R38: a null value names no source",
+        path="core/mirror/fusion.py",
+        old="                if fused_row[field_name] is not None:",
+        new="                if True:",
+        tests=["tests/unit/test_which_source_supplied_each_value.py::TestTheJoinPath::test_a_null_or_an_absent_storage_supplied_nothing"],
+    ),
+    Control(
+        describes="R38: per-field sources are withheld outside the caller's compartment",
+        path="api/routes.py",
+        old=("        if not _may_read_object(mediator, current_user, object_type, object_id):\n"
+             "            provenance[\"field_sources\"] = None"),
+        new="        if False:\n            provenance[\"field_sources\"] = None",
+        tests=["tests/integration/test_the_provenance_route.py::TestWhichSourceSuppliedEachValue::test_the_field_from_the_second_silo_says_so"],
+    ),
+    Control(
+        describes="R38: a field the caller cannot read is not named",
+        path="api/routes.py",
+        old="                if name in readable}",
+        new="                if True}",
+        tests=["tests/integration/test_the_provenance_route.py::TestWhichSourceSuppliedEachValue::test_a_field_the_caller_cannot_read_is_not_named"],
+    ),
 ]
 
 

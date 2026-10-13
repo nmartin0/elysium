@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
 from adapters.ollama_adapter import OllamaAdapter
@@ -61,6 +61,7 @@ from core.mirror.catalog import open_mirror_catalog
 from core.mirror.freshness import FreshnessTarget
 from core.mirror.freshness import targets_for as freshness_targets_for
 from core.mirror.mirror_adapter import MirrorReadAdapter
+from core.mirror.openlineage import validate_lineage_block
 from core.ontology.action_types import validate_action_types
 from core.ontology.bindings import TYPE_BINDING_KEYS, merge_bindings
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
@@ -265,6 +266,9 @@ class DeploymentConfig:
     # it on -- applying the code changes nobody's access -- and
     # scripts/label_access_diff.py says who would gain and lose what.
     label_enforcement: bool = False
+    # WHERE LINEAGE EVENTS GO (R15): always lineage.jsonl in the log
+    # directory; also `url` when set. Empty means file only.
+    lineage: Mapping[str, Any] = MappingProxyType({})
 
 
 logger = logging.getLogger(__name__)
@@ -368,7 +372,7 @@ def _refuse_system_column_names(schema_raw: dict) -> None:
     """A declared field may not be named after a system column.
 
     The pipeline writes `_silo`, `_source_table`, `_row_hash`,
-    `_fused_from` and `_link_id` itself. A DECLARED field of the same
+    `_fused_from`, `_field_sources` and `_link_id` itself. A DECLARED field of the same
     name makes gold's schema gain the column twice and the build
     raises "Column _silo does not exist in schema" -- opaque, at
     gold-build time, and (per PA001-G5) it used to take every later
@@ -633,6 +637,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             max_consecutive_invalid_steps=config["agent"]["max_consecutive_invalid_steps"],
             constrain_steps=bool(config["agent"].get("constrain_steps", False)),
             label_enforcement=bool((config.get("access") or {}).get("label_enforcement", False)),
+            lineage=deep_freeze(validate_lineage_block(config.get("lineage"))),
             max_concurrent_requests=_default_concurrency(config),
             # FOUR HOURS by default, not fifteen minutes. Long enough
             # that a reviewer can be in a meeting; short enough that a

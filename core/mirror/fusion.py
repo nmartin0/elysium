@@ -34,12 +34,26 @@ those is declared `required`, GOLD'S AUDIT REFUSES THE PUBLICATION.
 The check already exists; this just lets it see the case.
 """
 
+import json
 from typing import Any
 
 # Which storages contributed to a fused row. Lineage per PROPERTY is
 # what GOLD-6's review will need; this is the honest thing available
 # now -- per ROW, naming every storage that had something to say.
 FUSED_FROM_COLUMN = "_fused_from"
+
+# WHICH SOURCE SUPPLIED EACH VALUE (R38), per field, as a JSON object:
+# {"name": "primary", "risk_score": "risk_db"}. `_fused_from` answers
+# "who had something to say about this object"; this answers "who said
+# THIS". A field whose value is null is absent -- nobody supplied it.
+# Same source names as `_fused_from` and the conflicts table.
+FIELD_SOURCES_COLUMN = "_field_sources"
+
+
+def field_sources_json(sources: dict[str, str]) -> str:
+    """Compact and key-sorted, so the same attribution is the same text
+    and a row's hash does not move because a dict iterated differently."""
+    return json.dumps(sources, sort_keys=True, separators=(",", ":"))
 
 
 def _storages_of(type_def: dict) -> dict[Any, dict]:
@@ -105,6 +119,7 @@ def fuse(type_def: dict, rows_by_storage: dict[Any, list[dict]]) -> list[dict]:
     for object_id in order:
         fused_row: dict = {}
         contributed = []
+        sources: dict[str, str] = {}
         for key in storages:
             source_row = indexed[key].get(object_id)
             if source_row is None:
@@ -119,6 +134,8 @@ def fuse(type_def: dict, rows_by_storage: dict[Any, list[dict]]) -> list[dict]:
                 field_config = (type_def.get("fields") or {})[field_name]
                 column = field_config.get("column", field_name)
                 fused_row[field_name] = source_row.get(column)
+                if fused_row[field_name] is not None:
+                    sources[field_name] = "primary" if key is None else str(key)
             if key is None:
                 # Lineage travels from the primary storage's row, where
                 # silver put it.
@@ -127,5 +144,6 @@ def fuse(type_def: dict, rows_by_storage: dict[Any, list[dict]]) -> list[dict]:
                         fused_row[column] = value
         fused_row[id_field] = object_id
         fused_row[FUSED_FROM_COLUMN] = ",".join(sorted(contributed))
+        fused_row[FIELD_SOURCES_COLUMN] = field_sources_json(sources)
         fused.append(fused_row)
     return fused
