@@ -93,7 +93,34 @@ def conform_arrow(type_def: dict, silver: pa.Table) -> pa.Table:
         else:
             columns.append(pa.nulls(silver.num_rows, type=pa.string()))
         names.append(column)
-    return pa.Table.from_arrays(columns, names=names)
+    return with_derived(pa.Table.from_arrays(columns, names=names), type_def)
+
+
+def with_derived(table: pa.Table, type_def: dict) -> pa.Table:
+    """Gold's derived columns (R37), computed from the row's other
+    properties. ONE PLACE FOR ALL THREE GOLD PATHS -- the dict path's
+    _arrow, the Arrow path and the streamed batches all end here -- so
+    a derived value cannot depend on which path published it.
+
+    Per row in Python over the INPUT columns only, and only for a type
+    that declares one: the formulas are not Arrow kernels, and a type
+    without derived fields pays nothing."""
+    from core.ontology.derived_fields import compute, derived_fields, finished
+
+    fields = type_def.get("fields") or {}
+    for field_name, derivation in derived_fields(type_def).items():
+        if field_name not in table.column_names:
+            continue
+        inputs = {name: table.column(name).to_pylist()
+                  for name in derivation.inputs if name in table.column_names}
+        data_type = fields[field_name].get("data_type") or "string"
+        values = [finished(compute(derivation, {name: column[index]
+                                                for name, column in inputs.items()}), data_type)
+                  for index in range(table.num_rows)]
+        position = table.column_names.index(field_name)
+        table = table.set_column(position, field_name,
+                                 pa.array(values, type=table.schema.field(field_name).type))
+    return table
 
 
 def audit_arrow(type_def: dict, table: pa.Table, previous_count: int | None,

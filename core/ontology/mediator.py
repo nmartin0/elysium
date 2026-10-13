@@ -119,6 +119,7 @@ from core.filters import FieldFilter, row_matches, validate_filter
 from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import UserRecord, authorize
+from core.ontology.derived_fields import compute, derivation_of, finished
 from core.ontology.field_types import coerce
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.schema import (
@@ -933,6 +934,12 @@ class DataMediator:
                     # sensible default, which is the whole reason this
                     # is declared rather than guessed.
                     "decimal_places": field_info.get("decimal_places"),
+                    # HOW IT IS COMPUTED, as text, for a derived field
+                    # (R37) -- "multiply(quantity, unit_price)". Names of
+                    # fields the caller may already discover; no values.
+                    "derived": (derivation.describe()
+                                if (derivation := derivation_of(field_info)) is not None
+                                else None),
                     # NAMED BUT WITHHELD. False means the caller may
                     # know this field exists and not what it holds --
                     # the middle rung, and what the approvals diff
@@ -2390,6 +2397,19 @@ class DataMediator:
             # here, so the disclosure reached the model as well as the
             # API.
             return self._visible_link_ids(user_record, target_type, linked, context)
+
+        derivation = derivation_of(field_info)
+        if derivation is not None:
+            # COMPUTED FROM ITS INPUTS AS THEY ARE READ NOW (R37), each
+            # through this same method -- so each passes its own access
+            # check, and a change still waiting to sync is reflected in
+            # the total beside it. Gold's stored copy is for filters and
+            # counts. Grants already guarantee a caller who reached here
+            # may read every input (gate_derived_grants); None from an
+            # input therefore means empty, never refused.
+            values = {name: self.get_field(user_record, object_type, object_id, name, context)
+                      for name in derivation.inputs}
+            return finished(compute(derivation, values), field_info.get("data_type") or "string")
 
         # Checks core/ontology/write_log.py's own store FIRST, before
         # ever reaching the real adapter -- if an update touching this

@@ -64,6 +64,11 @@ from core.mirror.mirror_adapter import MirrorReadAdapter
 from core.mirror.openlineage import validate_lineage_block
 from core.ontology.action_types import validate_action_types
 from core.ontology.bindings import TYPE_BINDING_KEYS, merge_bindings
+from core.ontology.derived_fields import (
+    fill_result_types,
+    refuse_rules_over_derived,
+    validate_derived_fields,
+)
 from core.ontology.field_rules import validate_field_rules
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.link_types import expand_link_types, validate_link_types
@@ -612,6 +617,11 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     validate_constraints(object_types_raw)
     # Rules between two fields (R29), checked at load like the rest.
     validate_field_rules(object_types_raw)
+    # Fields computed from other fields (R37): checked, then typed by
+    # what their formula yields, before anything reads the schema.
+    validate_derived_fields(object_types_raw)
+    refuse_rules_over_derived(object_types_raw)
+    fill_result_types(object_types_raw)
     schema_raw["object_types"] = expand_link_types(link_types_raw, object_types_raw)
 
     validate_function_declarations(enabled_tools, schema_raw["object_types"])
@@ -1662,11 +1672,20 @@ def access_roles(config: DeploymentConfig) -> dict:
     declared: it is what the role editor shows and saves, and a compiled
     grant saved back would become a declared one nobody wrote.
     """
-    if not config.label_enforcement:
-        return config.roles
-    from core.ontology.classifications import compile_label_access
+    from core.ontology.derived_fields import gate_derived_grants
 
-    return deep_freeze(compile_label_access(config.roles, config.schema))
+    roles = config.roles
+    if config.label_enforcement:
+        from core.ontology.classifications import compile_label_access
+
+        roles = compile_label_access(roles, config.schema)
+    # AFTER THE LABELS, which can grant a read too: a derived field (R37)
+    # is readable only by a role that may read every field it is
+    # computed from, however that role came by its grants.
+    gated = gate_derived_grants(roles, config.schema)
+    if gated is config.roles:
+        return config.roles
+    return deep_freeze(gated)
 
 
 def _with_effective_roles(config: DeploymentConfig, data_dir: Path) -> DeploymentConfig:

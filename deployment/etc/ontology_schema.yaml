@@ -124,6 +124,16 @@ object_types:
         type: link
         target: Customer
         cardinality: one
+      # A FIELD WORKED OUT FROM OTHER FIELDS (R37). One of a fixed set
+      # of formulas -- concat (with `separator`), add, subtract,
+      # multiply, divide, days_between, years_since, coalesce -- checked
+      # when this file loads. No column, no source: gold computes it,
+      # and a read recomputes it from its inputs. Readable only by a
+      # role that may read every input; it cannot be written.
+      #
+      # amount_with_fee:
+      #   derived:
+      #     multiply: [amount, 1.1]
 
 # ------------------------------------------------------------------
 # Action types -- the ONLY way data in this deployment is ever

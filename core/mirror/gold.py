@@ -45,7 +45,7 @@ from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
 from core.mirror.changelog import MAX_DELETED_FRACTION
 from core.mirror.fusion import FIELD_SOURCES_COLUMN, FUSED_FROM_COLUMN, fuse
-from core.mirror.gold_arrow import audit_arrow, conform_arrow
+from core.mirror.gold_arrow import audit_arrow, conform_arrow, with_derived
 from core.mirror.gold_stream import StreamingAudit, conformed_batches
 from core.mirror.identity import resolve, rule_for
 from core.mirror.lineage import CARRIED_COLUMNS
@@ -252,10 +252,10 @@ def _arrow(rows: list[dict], type_def: dict) -> pa.Table:
         # everywhere else in this system.
         return str(value) if schema.field(name).type == pa.string() else value
 
-    return pa.Table.from_pylist(
+    return with_derived(pa.Table.from_pylist(
         [{name: _value(row, name) for name in names} for row in rows],
         schema=schema,
-    )
+    ), type_def)
 
 
 def published_ids(catalog, object_type: str, id_field: str) -> set | None:

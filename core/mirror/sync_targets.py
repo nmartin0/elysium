@@ -349,6 +349,11 @@ def _targets_for_type(type_def: dict):
             # A reverse link -- lives in the OTHER type's table, which is
             # already its own sync target. See this module's docstring.
             continue
+        if "derived" in field_config:
+            # COMPUTED FROM OTHER FIELDS (R37), in gold and on read; no
+            # source holds it, and asking for its column would read as a
+            # vanished one.
+            continue
 
         storage_key = field_config.get("storage")
         if storage_key not in columns_by_storage:

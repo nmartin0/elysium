@@ -48,6 +48,7 @@ import hashlib
 import json
 
 from core.ontology.classifications import field_classifications
+from core.ontology.derived_fields import derivation_of
 from core.ontology.field_types import DECIMAL_PRECISION, DECIMAL_SCALE
 from core.ontology.gold_view import GOLD_NAMESPACE
 from core.ontology.link_types import is_reverse_link
@@ -124,6 +125,11 @@ def _property(name: str, field_info, schema) -> dict:
         prop["logicalType"], prop["physicalType"] = _types(field_info)
         if field_info.get("description"):
             prop["description"] = str(field_info["description"])
+        derivation = derivation_of(field_info)
+        if derivation is not None:
+            # ODCS has no derivation field; `transformLogic` is its
+            # place for how a property is produced (R37).
+            prop["transformLogic"] = derivation.describe()
     if field_info.get("required"):
         prop["required"] = True
     labels = sorted(field_classifications(field_info))

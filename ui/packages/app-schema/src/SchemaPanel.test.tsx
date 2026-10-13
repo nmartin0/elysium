@@ -70,6 +70,30 @@ describe('SchemaPanel', () => {
     expect(nameRow).not.toHaveTextContent('pii')
   })
 
+  it('says how a derived field is computed (R37), and only for that field', () => {
+    const customer = {
+      ...CUSTOMER,
+      fields: {
+        ...CUSTOMER.fields,
+        full_name: {
+          type: 'data',
+          display_name: 'Full name',
+          visibility: 'normal',
+          status: 'active',
+          derived: 'concat(first_name, last_name)',
+        },
+      },
+    }
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: customer }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    const derivedRow = screen.getByText('Full name').closest('tr') as HTMLElement
+    const emailRow = screen.getByText('Email').closest('tr') as HTMLElement
+    expect(derivedRow).toHaveTextContent('derived')
+    expect(derivedRow).toHaveTextContent('concat(first_name, last_name)')
+    expect(emailRow).not.toHaveTextContent('derived')
+  })
+
   it('spotlights prominent fields separately from normal ones', () => {
     // The rendering rule taken from the reference implementation:
     // prominent properties get their own table, normal ones a regular

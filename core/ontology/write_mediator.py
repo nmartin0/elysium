@@ -500,6 +500,13 @@ class WriteMediator:
         # different resolved_type_config (a different table), which
         # grouping by adapter identity alone would incorrectly merge.
         groups: dict[int, tuple] = {}
+        fields = (self._adapter_mediator.schema.get(object_type) or {}).get("fields") or {}
+        derived = sorted(name for name in changes if "derived" in (fields.get(name) or {}))
+        if derived:
+            # COMPUTED, NOT STORED (R37). Refused at load for action
+            # types; this is every other way a change can arrive.
+            raise ValueError(f"{object_type}: {derived} derived from other fields and "
+                             f"cannot be written; change their inputs instead.")
         for field_name in changes:
             # cast(): this method's own adapter always genuinely comes
             # from self._adapter_mediator, this class's own internal,

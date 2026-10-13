@@ -585,6 +585,11 @@ def test_visible_schema_never_leaks_per_field_internals(client):
                 # what they read. Not where the data lives, not who may
                 # read it: those stay out.
                 "classification",
+                # How a DERIVED field is computed (R37), as text naming
+                # other fields of the same type -- "multiply(amount,
+                # 1.1)". Null on a stored field. Field names the caller
+                # can already discover; never a value, never a column.
+                "derived",
             }
             assert not leaked, f"{type_name}.{field_name} leaked {sorted(leaked)}"
 

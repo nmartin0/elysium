@@ -145,6 +145,15 @@ function FieldTable({
               ) : (
                 <StatusTag>{field.type}</StatusTag>
               )}
+              {/* COMPUTED, NOT STORED (R37): the formula, so a reader
+                  knows where the number comes from and why it cannot
+                  be edited. */}
+              {field.derived && (
+                <>
+                  {' '}
+                  <StatusTag>derived</StatusTag> <span className="schema-panel__derived">{field.derived}</span>
+                </>
+              )}
               {field.status && field.status !== 'active' && (
                 <>
                   {' '}

@@ -94,6 +94,10 @@ export interface FieldSchema {
   /** What the field's VALUES are -- `pii`, `financial` (R12). A label
    *  carried to every table holding the values; never a grant. */
   classification?: string[]
+  /** How a DERIVED field is computed from the object's other fields,
+   *  e.g. "multiply(quantity, unit_price)" (R37). Absent or null for a
+   *  stored field. Field names only, never values. */
+  derived?: string | null
 }
 
 export interface TypeSchema {

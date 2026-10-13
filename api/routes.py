@@ -347,6 +347,9 @@ class SchemaFieldResponse(BaseModel):
     # exactly how `readable` shipped broken.
     decimal_places: int | None = None
     data_type: str | None = None
+    #: R37: how a derived field is computed, e.g. "multiply(quantity,
+    #: unit_price)". None for a stored field.
+    derived: str | None = None
     target: str | None = None
     cardinality: str | None = None
     # The relationship this link field belongs to. Both ends of one
