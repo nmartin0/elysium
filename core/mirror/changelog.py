@@ -202,6 +202,14 @@ def scd2_versions(entries: list[dict], id_column: str) -> list[dict]:
             else:
                 close(key, at)
             continue
+        if change == DELETE and key not in open_versions:
+            # A ROW OLDER THAN THE CHANGELOG, DELETED. It never opened a
+            # version, so closing did nothing and the row vanished from
+            # history entirely: an as-of read before the deletion said it
+            # had never existed (found in review). The DELETE carries its
+            # last values; it existed until `at`, from a start unknown.
+            versions.append({**values, "_valid_from": None, "_valid_to": at, "_current": False})
+            continue
         close(key, at)
         if change in (INSERT, UPDATE):
             version = {**values, "_valid_from": at, "_valid_to": None, "_current": True}
@@ -338,6 +346,13 @@ class AsOf:
     3 May" means "as the mirror knew it on 3 May": a change made on 2
     May and synced on 4 May is after. Exact only to the sync interval,
     and said so.
+
+    ONE FORM OF VALUE: BRONZE'S TEXT. The changelog records the source's
+    text as bronze stored it, so `current_rows` must be BRONZE's rows
+    too -- silver's typed, cleaned values beside the changelog's raw
+    text made one customer's phone "(201) 555-0123" and another's
+    "+12015550123" in the same join (found in review). Decode with
+    bronze_text.decoded_rows when types are wanted.
     """
 
     def __init__(self, versions: list[dict], current_rows: list[dict], id_column: str):

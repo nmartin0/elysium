@@ -66,6 +66,13 @@ from core.ontology.field_types import (
     split_declared_type,
 )
 
+#: The most changed cells one table's cleaning record keeps (R33). A
+#: source that pads CHAR(n) columns has EVERY cell trimmed -- a million
+#: rows by ten columns is ten million records, several times the rows'
+#: own memory, on the path R5 bounded. Past this the cells are counted,
+#: and the record says how many it does not show.
+MAX_CLEANED_CELLS = 100_000
+
 
 @dataclass(frozen=True)
 class DriftedColumn:
@@ -114,6 +121,8 @@ class TransformResult:
     #: text, and by which rule, so "why does it say that" has an answer
     #: per cell rather than per table.
     cleaned_cells: list[tuple[int, str, Any, Any, tuple[str, ...]]] = field(default_factory=list)
+    #: Changed cells beyond MAX_CLEANED_CELLS, counted and not kept.
+    cleaned_cells_not_kept: int = 0
 
     @property
     def has_drift(self) -> bool:
@@ -149,6 +158,7 @@ def transform_rows(rows: list[dict], columns: list[str],
     cells: dict[int, list[tuple[str, str]]] = {}
     cleaned: list[dict] = []
     cleaned_cells: list = []
+    not_kept = 0
 
     # WHICH COLUMNS ARE READ THROUGH THE SILO'S LOCALE (DEP-1): only
     # the ones the source sent as TEXT. The caller decides, from the
@@ -187,7 +197,10 @@ def transform_rows(rows: list[dict], columns: list[str],
                 value, applied = standardise_explained(
                     row[column], (standardisation or {}).get(column))
                 if applied:
-                    cleaned_cells.append((index, column, row[column], value, applied))
+                    if len(cleaned_cells) < MAX_CLEANED_CELLS:
+                        cleaned_cells.append((index, column, row[column], value, applied))
+                    else:
+                        not_kept += 1
             try:
                 cleaned_row[column] = coerce(value, declared, source_timezone,
                                              locale if column in localised else None,
@@ -216,7 +229,8 @@ def transform_rows(rows: list[dict], columns: list[str],
 
     return TransformResult(rows=cleaned, drift=drift,
                            mismatched_row_indices=sorted(mismatched),
-                           mismatched_cells=cells, cleaned_cells=cleaned_cells)
+                           mismatched_cells=cells, cleaned_cells=cleaned_cells,
+                           cleaned_cells_not_kept=not_kept)
 
 
 def describe_drift(silo_name: str, table_name: str, drift: list[DriftedColumn]) -> str:
@@ -257,6 +271,7 @@ def transform_batches(batches, columns: list[str], column_types: dict[str, str] 
     mismatched: list[int] = []
     cells: dict[int, list[tuple[str, str]]] = {}
     cleaned_cells: list = []
+    not_kept = 0
     for batch in batches:
         result = transform_rows(batch, columns, column_types, standardisation, **options)
         offset = len(rows)
@@ -265,8 +280,12 @@ def transform_batches(batches, columns: list[str], column_types: dict[str, str] 
             drift.setdefault(item.column, item)
         mismatched.extend(offset + index for index in result.mismatched_row_indices)
         cells.update({offset + index: failed for index, failed in result.mismatched_cells.items()})
-        cleaned_cells.extend((offset + index, *rest) for index, *rest in result.cleaned_cells)
+        room = MAX_CLEANED_CELLS - len(cleaned_cells)
+        cleaned_cells.extend((offset + index, *rest)
+                             for index, *rest in result.cleaned_cells[:max(room, 0)])
+        not_kept += result.cleaned_cells_not_kept + max(len(result.cleaned_cells) - max(room, 0), 0)
     total = len(rows)
     merged = [replace(item, row_count_checked=total) for item in drift.values()]
     return TransformResult(rows=rows, drift=merged, mismatched_row_indices=mismatched,
-                           mismatched_cells=cells, cleaned_cells=cleaned_cells)
+                           mismatched_cells=cells, cleaned_cells=cleaned_cells,
+                           cleaned_cells_not_kept=not_kept)

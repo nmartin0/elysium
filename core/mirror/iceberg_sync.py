@@ -844,11 +844,22 @@ class IcebergMirrorSync(MirrorSync):
                 "Set on_type_mismatch: refuse to stop the table instead.",
                 silo_name, table_name, len(held_back),
                 len(transformed.rows) - len(held_back))
+            # THE CLEANING RECORD'S POSITIONS MOVE WITH THE ROWS (R33). It
+            # names cells by row index, and dropping the held rows shifts
+            # every later index: a review found Bob's text filed under the
+            # next person's id, or an IndexError that failed the table.
+            kept_position: dict[int, int] = {}
+            for index in range(len(transformed.rows)):
+                if index not in mismatched:
+                    kept_position[index] = len(kept_position)
             transformed = replace(
                 transformed,
                 rows=[row for index, row in enumerate(transformed.rows)
                       if index not in mismatched],
-                drift=[])
+                drift=[],
+                cleaned_cells=[(kept_position[index], *rest)
+                               for index, *rest in transformed.cleaned_cells
+                               if index in kept_position])
 
         if transformed.has_drift:
             # THROUGH THE POLICY, not straight to a raise. The outcome
@@ -1185,7 +1196,11 @@ class IcebergMirrorSync(MirrorSync):
             standardisation,
             [expected.get("field_def") for expected in (expectations or {}).values()])
         if not used:
-            return {}
+            # RULES THAT STOPPED USING REFERENCE DATA leave no stale record
+            # behind (found in review): an old version kept here would be
+            # compared, and warned about, the day a rule comes back.
+            return ({REFERENCE_DATA_PROPERTY: "{}"}
+                    if table.properties.get(REFERENCE_DATA_PROPERTY) else {})
         before = json.loads(table.properties.get(REFERENCE_DATA_PROPERTY) or "{}")
         changed = {name: (before[name], now) for name, now in used.items()
                    if name in before and before[name] != now}
@@ -1214,6 +1229,11 @@ class IcebergMirrorSync(MirrorSync):
         """
         namespace = f"cleaning_{silo_name}"
         identifier = f"{namespace}.{table_name}"
+        if transformed.cleaned_cells_not_kept:
+            logger.warning(
+                "%s.%s: cleaning changed %d more cell(s) than the record keeps (%d); "
+                "they are counted, not listed.", silo_name, table_name,
+                transformed.cleaned_cells_not_kept, len(transformed.cleaned_cells))
         records = sorted(
             ({"object_id": str(transformed.rows[index].get(id_column)), "column": column,
               "before": None if before is None else str(before),
@@ -1592,11 +1612,23 @@ class IcebergMirrorSync(MirrorSync):
             del first
             for rows in itertools.chain(_drain(pending), batches):
                 row_count += len(rows)
-                text_columns.update(
-                    column for column in columns if column not in text_columns
-                    and any(isinstance(row.get(column), str) for row in rows))
+                # EACH COLUMN FETCHED ONCE (measured in review: tracking
+                # types with a second Python pass per value made a
+                # 200,000-row re-sync ~20% slower). The types come from
+                # map(type, ...), which runs in C, and answer both what
+                # arrived as text (DEP-1) and how it decodes (R3).
+                arrays = {}
                 for column in columns:
-                    arrived[column].update(type(row.get(column)) for row in rows)
+                    values = [row.get(column) for row in rows]
+                    kinds = set(map(type, values))
+                    arrived[column] |= kinds
+                    if column not in text_columns and any(issubclass(kind, str) for kind in kinds):
+                        text_columns.add(column)
+                    # CANONICAL TEXT, NOT repr (PA001-S2). `str()` on a
+                    # memoryview is its ADDRESS; on bytes and on a JSON
+                    # column it is Python syntax nothing else parses.
+                    arrays[column] = pa.array([bronze_text(value) for value in values],
+                                              type=pa.string())
                 if policy is not None:
                     for row in rows:
                         value = row.get(policy.cursor)
@@ -1604,16 +1636,7 @@ class IcebergMirrorSync(MirrorSync):
                             null_cursors += 1
                         else:
                             mark = higher(mark, value)
-                record_batches.append(pa.record_batch({
-                    column: pa.array(
-                        # CANONICAL TEXT, NOT repr (PA001-S2). `str()` on a
-                        # memoryview is its ADDRESS; on bytes and on a JSON
-                        # column it is Python syntax nothing else parses.
-                        [bronze_text(row.get(column)) for row in rows],
-                        type=pa.string(),
-                    )
-                    for column in columns
-                }))
+                record_batches.append(pa.record_batch(arrays))
             schema = pa.schema([(column, pa.string()) for column in columns])
             arrow_table = pa.Table.from_batches(record_batches, schema=schema)
             del record_batches

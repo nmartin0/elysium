@@ -107,3 +107,68 @@ def test_a_silo_may_not_be_called_cleaning_something():
 
     assert "cleaning_" in RESERVED_SILO_PREFIXES
     assert json.dumps(RESERVED_SILO_PREFIXES)  # a tuple of strings, as the loader reads
+
+
+class TestWhatAReviewFound:
+    """The record named cells by ROW INDEX, and quarantining type
+    mismatches drops rows -- every later index then pointed at the next
+    person. Two rows crashed the sync with IndexError; three filed one
+    person's text under another's id, where erasing the first left it."""
+
+    SCHEMA = {"Person": {
+        "id_field": "id", "storage": {"silo": "s", "table": "people", "id_column": "id"},
+        "fields": {"id": {"type": "data"}, "name": {"type": "data"},
+                   "age": {"type": "data", "data_type": "integer"}}}}
+
+    def _sync(self, tmp_path, rows):
+        source = tmp_path / "t.db"
+        connection = sqlite3.connect(source)
+        connection.execute("CREATE TABLE people (id TEXT PRIMARY KEY, name TEXT, age TEXT)")
+        connection.executemany("INSERT INTO people VALUES (?, ?, ?)", rows)
+        connection.commit()
+        connection.close()
+        (target,) = resolve_sync_targets({"object_types": self.SCHEMA})
+        sync = IcebergMirrorSync(tmp_path / "tm", {"s": SQLiteReadAdapter({"path": source})},
+                                 on_type_mismatch="quarantine")
+        sync.sync_table("s", "people", "id", target.columns, target.column_types,
+                        target.fields_by_column, target.standardisation, target.expectations)
+        return sync
+
+    def test_two_rows_one_held_for_a_mismatch_does_not_crash(self, tmp_path):
+        sync = self._sync(tmp_path, [("p1", "Ann", "N/A"), ("p2", "  Bob  ", "40")])
+
+        (record,) = _cleaning(sync)
+        assert record["object_id"] == "p2" and record["before"] == "  Bob  "
+
+    def test_each_cell_stays_with_its_own_person(self, tmp_path):
+        sync = self._sync(tmp_path, [("p1", "Ann", "N/A"), ("p2", "  Bob  ", "40"),
+                                     ("p3", "Cy", "30")])
+
+        assert [(r["object_id"], r["before"]) for r in _cleaning(sync)] == [("p2", "  Bob  ")]
+
+
+def test_the_record_is_bounded_and_says_so(tmp_path, monkeypatch, caplog):
+    """A source padding CHAR(n) columns changes EVERY cell; unbounded,
+    the record would hold several times the rows' own memory."""
+    import logging
+
+    import core.mirror.transform as transform
+
+    monkeypatch.setattr(transform, "MAX_CLEANED_CELLS", 2)
+    with caplog.at_level(logging.WARNING):
+        sync = _sync(tmp_path, [(f"p{i}", f" n{i} ", None) for i in range(5)])
+
+    assert len(_cleaning(sync)) == 2
+    assert "changed 3 more cell(s) than the record keeps (2)" in caplog.text
+
+
+def test_one_batch_is_bounded_too(monkeypatch):
+    """The cap applies WITHIN a batch -- 50,000 rows of padded columns
+    are the memory this protects -- not only when batches merge."""
+    import core.mirror.transform as transform
+
+    monkeypatch.setattr(transform, "MAX_CLEANED_CELLS", 2)
+    result = transform.transform_rows([{"id": str(i), "n": f" n{i} "} for i in range(5)],
+                                      ["id", "n"], {}, {"n": rules_for({})})
+
+    assert len(result.cleaned_cells) == 2 and result.cleaned_cells_not_kept == 3

@@ -41,7 +41,6 @@ be unusual against, and a flag would be a coin toss.
 import re
 import statistics
 from collections import Counter
-from decimal import Decimal
 
 METHODS = ("iqr", "mad", "pattern")
 MIN_VALUES = 20
@@ -116,7 +115,7 @@ def unusual(values: list, settings: dict) -> "dict[int, str]":
                         f"{len(present)} values share; {held} are shaped {usual!r}")
                 for index, shape in shapes.items()
                 if counts[shape] < RARE_SHARE * len(present)}
-    numbers = [(index, float(value) if not isinstance(value, Decimal) else float(value))
+    numbers = [(index, float(value))
                for index, value in present]
     ordered = sorted(number for _, number in numbers)
     if settings["method"] == "mad":

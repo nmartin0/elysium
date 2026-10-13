@@ -70,3 +70,16 @@ def test_a_changed_version_is_warned_about_even_when_the_data_did_not_change(tmp
 
     assert "reference data changed since the last sync -- phonenumbers 8.0.0 ->" in caplog.text
     assert _recorded(sync)["phonenumbers"] != "8.0.0"
+
+
+def test_a_table_whose_rules_stop_using_it_keeps_no_stale_record(tmp_path):
+    """Found in review: the old versions stayed, to be compared -- and
+    warned about -- the day a rule came back."""
+    _sync(tmp_path)
+    plain = {"Person": {**SCHEMA["Person"], "fields": {
+        "id": {"type": "data"}, "phone": {"type": "data"}, "email": {"type": "data"},
+        "note": {"type": "data"}}}}
+
+    sync = _sync(tmp_path, plain)
+
+    assert _recorded(sync) == {}

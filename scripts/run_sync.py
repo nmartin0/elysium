@@ -465,6 +465,26 @@ def _ids_about_to_publish(sync, type_def: dict) -> "set | None":
         return None
 
 
+def _links_into(sync, type_def: dict, target: str, ids: set) -> int:
+    """How many of a type's rows link to one of `ids` of `target` --
+    read from its silver, the rows just published."""
+    if not ids:
+        return 0
+    storage = type_def.get("storage") or {}
+    columns = [field.get("column", name) for name, field in (type_def.get("fields") or {}).items()
+               if field.get("type") == "link" and field.get("target") == target
+               and not field.get("via_table") and not field.get("storage")]
+    if not columns:
+        return 0
+    try:
+        table = sync._catalog.load_table(f"{storage.get('silo')}.{storage.get('table')}")
+        rows = table.scan(selected_fields=tuple(columns)).to_arrow().to_pylist()
+    except Exception:  # noqa: BLE001 - unreadable: nothing can be said, so nothing is
+        return 0
+    return sum(1 for row in rows for column in columns
+               if row.get(column) is not None and str(row.get(column)) in ids)
+
+
 def _by_silo(targets) -> list[tuple[str, list]]:
     """Targets grouped by silo, in the order each silo first appears --
     the order the run already used, so nothing else about it moves."""
@@ -620,6 +640,7 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
             print(f"FAILED  gold.{object_type}: its silver table could not be read: {exc}",
                   file=sys.stderr)
             refused += 1
+            not_published.add(object_type)
             continue
         needed = {f"{(type_def.get('storage') or {}).get('silo')}."
                    f"{(type_def.get('storage') or {}).get('table')}"}
@@ -638,6 +659,7 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
             # caused it was already counted and named.
             print(f"skipped gold.{object_type}: "
                   f"{', '.join(stale)} did not sync, so its silver is stale")
+            not_published.add(object_type)
             continue
         # LINEAGE (R15): what this type is built from, and into.
         gold_inputs = [lake_dataset(lineage.namespace, "silver", table)
@@ -656,7 +678,10 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
         }
         for partner in cycles.get(object_type, ()):
             coming = upcoming.get(partner)
-            if coming is not None:
+            # NOT ON A PARTNER ALREADY KNOWN NOT TO PUBLISH (found in
+            # review): built after its partner was refused or skipped, a
+            # type would otherwise still link to ids that will not exist.
+            if coming is not None and partner not in not_published:
                 known[partner] = set(known.get(partner) or ()) | coming
                 leaned_on.setdefault(partner, set()).add(object_type)
         try:
@@ -716,12 +741,19 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
                          gold_inputs, gold_output,
                          error="; ".join(result.problems) if failed else None)
     for partner in sorted(not_published & set(leaned_on)):
-        # THE CYCLE'S OTHER HALF DID NOT PUBLISH. A type built earlier
-        # was let link to its new rows, which are not in gold after all.
-        print(f"WARNING gold.{partner} was not published this run, but "
-              f"{', '.join(sorted(leaned_on[partner]))} linked to ids it was about to "
-              f"publish; those links point at {partner}'s previous publication until "
-              f"it publishes again.", file=sys.stderr)
+        # THE CYCLE'S OTHER HALF DID NOT PUBLISH. A type built earlier was
+        # let link to its new rows, which are not in gold after all --
+        # named only when a row REALLY points at one (found in review:
+        # this once warned about links nobody had made).
+        unpublished = (upcoming.get(partner) or set()) - set(
+            published_ids(sync._catalog, partner,
+                          (config.schema or {})[partner].get("id_field", "")) or ())
+        for referrer in sorted(leaned_on[partner]):
+            dangling = _links_into(sync, (config.schema or {})[referrer], partner, unpublished)
+            if dangling:
+                print(f"WARNING gold.{partner} was not published this run, but "
+                      f"gold.{referrer} now has {dangling} link(s) to its new ids; they point "
+                      f"at nothing until {partner} publishes.", file=sys.stderr)
     return refused
 
 

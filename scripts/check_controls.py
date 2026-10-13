@@ -1453,8 +1453,8 @@ CONTROLS = [
     Control(
         describes="DEP-1: a number the database typed is never read through the locale",
         path="core/mirror/iceberg_sync.py",
-        old="                    and any(isinstance(row.get(column), str) for row in rows))",
-        new="                    )",
+        old="                    if column not in text_columns and any(issubclass(kind, str) for kind in kinds):",
+        new="                    if column not in text_columns:",
         tests=["tests/unit/test_numbers_and_dates_as_sources_write_them.py::TestThroughARealSync::test_a_number_the_database_typed_is_never_read_through_the_locale"],
     ),
     Control(
@@ -1962,7 +1962,7 @@ CONTROLS = [
     Control(
         describes="R3: bronze records how each column's text decodes",
         path="core/mirror/iceberg_sync.py",
-        old="                    arrived[column].update(type(row.get(column)) for row in rows)",
+        old="                    arrived[column] |= kinds",
         new="                    pass",
         tests=["tests/unit/test_bronze_round_trip.py::test_the_encodings_are_recorded_per_column"],
     ),
@@ -2145,6 +2145,61 @@ CONTROLS = [
         old="(end is None or when < end):",
         new="(end is None or when <= end):",
         tests=["tests/unit/test_as_of_joins.py::TestAVersionAtATime::test_the_boundary_belongs_to_the_new_version"],
+    ),
+    Control(
+        describes="Review: a cleaned cell stays with its own person when rows are held for a mismatch",
+        path="core/mirror/iceberg_sync.py",
+        old=("                cleaned_cells=[(kept_position[index], *rest)\n"
+             "                               for index, *rest in transformed.cleaned_cells\n"
+             "                               if index in kept_position])"),
+        new="                )",
+        tests=["tests/unit/test_cleaning_is_recorded_per_cell.py::TestWhatAReviewFound::"
+               "test_each_cell_stays_with_its_own_person"],
+    ),
+    Control(
+        describes="Review: the cleaning record is bounded",
+        path="core/mirror/transform.py",
+        old="                    if len(cleaned_cells) < MAX_CLEANED_CELLS:",
+        new="                    if True:",
+        tests=["tests/unit/test_cleaning_is_recorded_per_cell.py::test_one_batch_is_bounded_too"],
+    ),
+    Control(
+        describes="Review: an old row deleted later existed before its deletion",
+        path="core/mirror/changelog.py",
+        old="        if change == DELETE and key not in open_versions:",
+        new="        if False:",
+        tests=["tests/unit/test_as_of_joins.py::test_an_old_row_deleted_later_existed_before_its_deletion"],
+    ),
+    Control(
+        describes="Review: a cycle partner skipped as stale is not leaned on",
+        path="scripts/run_sync.py",
+        old="            if coming is not None and partner not in not_published:",
+        new="            if coming is not None:",
+        tests=["tests/unit/test_gold_builds_targets_first.py::TestALinkCycle::"
+               "test_a_partner_skipped_as_stale_is_not_leaned_on"],
+    ),
+    Control(
+        describes="Review: the cycle warning names only links that were really made",
+        path="scripts/run_sync.py",
+        old="            if dangling:",
+        new="            if True:",
+        tests=["tests/unit/test_gold_builds_targets_first.py::TestALinkCycle::"
+               "test_no_warning_when_no_row_points_at_a_new_id"],
+    ),
+    Control(
+        describes="Review: Decimal NaN and Infinity are refused as values, not crashes",
+        path="core/ontology/field_types.py",
+        old="        if not finite:\n            raise ValueError(f\"{value!r} is not a whole number.\")",
+        new="        if False:\n            raise ValueError(f\"{value!r} is not a whole number.\")",
+        tests=["tests/unit/test_whole_numbers_however_written.py::test_a_fraction_is_refused_not_truncated"],
+    ),
+    Control(
+        describes="Review: rules that stop using reference data leave no stale record",
+        path="core/mirror/iceberg_sync.py",
+        old="            return ({REFERENCE_DATA_PROPERTY: \"{}\"}",
+        new="            return ({}",
+        tests=["tests/unit/test_reference_data_is_versioned.py::"
+               "test_a_table_whose_rules_stop_using_it_keeps_no_stale_record"],
     ),
 ]
 

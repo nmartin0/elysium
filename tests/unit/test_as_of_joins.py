@@ -83,3 +83,17 @@ def test_the_history_script_answers_as_of_a_time(synced_deployment):
 
     assert names(before_rename) == [old]
     assert names(datetime.now(UTC).isoformat()) == ["Renamed"]
+
+
+def test_an_old_row_deleted_later_existed_before_its_deletion():
+    """Found in review: a row older than the changelog, never changed and
+    then deleted, opened no version -- so before its deletion it read as
+    never having existed."""
+    from core.mirror.changelog import DELETE, scd2_versions
+
+    versions = scd2_versions([{"id": "c9", "region": "us-west", "_change": DELETE,
+                               "_recorded_at": "2026-06-01T00:00:00+00:00"}], "id")
+    reader = AsOf(versions, [], "id")
+
+    assert reader.version_at("c9", "2026-05-01") == {"id": "c9", "region": "us-west"}
+    assert reader.version_at("c9", "2026-06-02") is None

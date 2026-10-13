@@ -43,7 +43,9 @@ def run(table: str, object_id: "str | None" = None, paths=None, out=sys.stdout,
         # EACH ROW AS IT WAS THEN (R46): its version valid at that time,
         # or its current row if it never changed while watched. A row
         # that did not exist yet is left out.
-        current = catalog.load_table(f"{silo}.{table_name}").scan().to_arrow().to_pylist()
+        # BRONZE, not silver: the changelog holds bronze's text, and an
+        # answer mixing the two forms is two answers (see AsOf).
+        current = catalog.load_table(f"bronze_{silo}.{table_name}").scan().to_arrow().to_pylist()
         reader = AsOf(versions, current, target.id_column)
         ids = sorted({str(row.get(target.id_column)) for row in current}
                      | {str(version.get(target.id_column)) for version in versions})

@@ -35,6 +35,14 @@ column the declaration forgot. A column whose values arrived as more
 than one type is recorded as MIXED, and decodes as the text it is:
 that is the honest answer, since "5" and 5 render identically.
 
+THE LIMIT, STATED (found in review): the round trip is exact for every
+TOP-LEVEL value, and for structures of JSON-native values. Inside a
+structure, JSON keeps only JSON's types: a Postgres numeric[] of
+Decimal('1.5') comes back as ['1.5'], a date[] as ISO strings, a dict's
+integer keys as strings, a frozenset as a set, a tuple as a list. The
+text is still exactly what was stored; only those inner types are not
+recovered.
+
 VALUES str() ALREADY RENDERS CANONICALLY are left alone -- Decimal,
 date, datetime, UUID, int, bool. Changing their form would rewrite
 every bronze table for no gain, and `str(Decimal("10.50"))` is exactly
@@ -163,7 +171,13 @@ def bronze_value(text: "str | None", encoding: "str | None") -> Any:
     if encoding == "json":
         return json.loads(text)
     if encoding == "json-set":
-        return set(json.loads(text))
+        items = json.loads(text)
+        try:
+            return set(items)
+        except TypeError:
+            # A set of tuples arrives as a list of lists, which a set
+            # cannot hold. The items, in order, rather than a crash.
+            return items
     if encoding == "decimal":
         return decimal.Decimal(text)
     if encoding == "datetime":

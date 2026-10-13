@@ -286,4 +286,33 @@ class TestALinkCycle:
 
         err = capsys.readouterr().err
         assert "REFUSED gold.Account" in err
-        assert "WARNING gold.Account was not published this run, but Customer linked" in err
+        assert ("WARNING gold.Account was not published this run, but gold.Customer now "
+                "has 1 link(s) to its new ids") in err
+
+    def test_no_warning_when_no_row_points_at_a_new_id(self, cycle, capsys):
+        """Found in review: the warning named Customer although its only
+        link pointed at an account published long before."""
+        sync, data_dir, write = cycle
+        write("INSERT INTO accounts VALUES ('a9','nosuchcustomer','us-west')")
+
+        run_sync._build_gold(sync, sync.config, data_dir, unsynced=set())
+
+        err = capsys.readouterr().err
+        assert "REFUSED gold.Account" in err and "WARNING" not in err
+
+    def test_a_partner_skipped_as_stale_is_not_leaned_on(self, cycle, capsys):
+        """Found in review: Account's silver held a2 but its table did not
+        sync this run, so Account was skipped -- and Customer, leaning on
+        that silver, published a link to an account that never reached
+        gold, with no warning at all. Leaning is only on a partner that
+        can still publish; and a skip is a way of not publishing."""
+        sync, data_dir, write = cycle
+        write("INSERT INTO customers VALUES ('c2','a2','us-west')",
+              "INSERT INTO accounts VALUES ('a2','c2','us-west')")
+        sync.config.schema = {"Account": sync.config.schema["Account"],
+                              "Customer": sync.config.schema["Customer"]}  # Account first
+
+        refused = run_sync._build_gold(sync, sync.config, data_dir, unsynced={"p.accounts"})
+
+        assert refused == 1, "Customer is refused rather than publishing a dangling link"
+        assert "skipped gold.Account" in capsys.readouterr().out

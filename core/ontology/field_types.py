@@ -54,6 +54,7 @@ Used by: core/ontology/object_type_validation.py (validating what's
 
 import datetime
 import decimal
+import math
 import re
 import zoneinfo
 
@@ -313,7 +314,12 @@ def _whole_number(value):
         # an integer field lost its fraction silently, found while
         # fixing the text case above. A float that is exactly whole is
         # still the integer it names.
-        if value != value or value in (float("inf"), float("-inf")):
+        # NaN AND INFINITY BEFORE ANY COMPARISON (found in review):
+        # Decimal('sNaN') raises InvalidOperation on comparison and
+        # int(Decimal('Infinity')) raises OverflowError -- neither a
+        # ValueError, so the row crashed the sync instead of being held.
+        finite = value.is_finite() if isinstance(value, decimal.Decimal) else math.isfinite(value)
+        if not finite:
             raise ValueError(f"{value!r} is not a whole number.")
         if value != int(value):
             raise ValueError(f"{value!r} is not a whole number.")

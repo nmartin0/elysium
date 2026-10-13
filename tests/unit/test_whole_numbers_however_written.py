@@ -22,8 +22,13 @@ def test_a_whole_number_is_read_however_it_is_written(value, expected):
     assert coerce(value, "integer") == expected
 
 
-@pytest.mark.parametrize("value", [5.5, "5.5", Decimal("5.5"), "0.001", float("nan")])
+@pytest.mark.parametrize("value", [5.5, "5.5", Decimal("5.5"), "0.001", float("nan"),
+                                   float("inf"), Decimal("NaN"), Decimal("sNaN"),
+                                   Decimal("Infinity")])
 def test_a_fraction_is_refused_not_truncated(value):
+    """And NaN or infinity, as a ValueError the sync holds the row for --
+    Decimal('sNaN') raised InvalidOperation and Decimal('Infinity')
+    OverflowError, which crashed the sync instead (found in review)."""
     with pytest.raises(ValueError, match="not a whole number"):
         coerce(value, "integer")
 
