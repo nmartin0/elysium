@@ -341,6 +341,35 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
         table = self._table(table_name, sorted(columns))
         return self._execute(select(*(table.c[name] for name in sorted(columns))))
 
+    def iter_all_rows(self, table_name: str, columns: list[str], type_config: dict,
+                      batch_size: int = 50_000):
+        """read_all_rows, a batch at a time (R5), through a SERVER-SIDE
+        cursor (`stream_results`), so neither this process nor the driver
+        holds the whole table. Inside a consistent read (R4) it streams
+        from the held snapshot, in a savepoint like every other read."""
+        table = self._table(table_name, sorted(columns))
+        # ON THE STATEMENT, NOT THE CONNECTION: Connection.execution_options
+        # changes the connection IN PLACE, and on the held snapshot that
+        # put the savepoint's own RELEASE through a server-side cursor --
+        # "syntax error at or near RELEASE", caught by the test.
+        statement = select(*(table.c[name] for name in sorted(columns))).execution_options(
+            stream_results=True)
+        pinned = getattr(self._pinned, "conn", None)
+        try:
+            if pinned is not None:
+                with pinned.begin_nested():
+                    result = pinned.execute(statement)
+                    for partition in result.mappings().partitions(batch_size):
+                        yield [dict(row) for row in partition]
+                return
+            with self._engine.connect() as conn:
+                result = conn.execute(statement)
+                for partition in result.mappings().partitions(batch_size):
+                    yield [dict(row) for row in partition]
+        except SQLAlchemyError as e:
+            raise StorageUnavailable(
+                f"{self._describe_source()}: {type(e).__name__}: {e}") from e
+
     def resolve_reverse_link(self, object_id: Any, field_config: dict,
                              target_id_column: str) -> list:
         return self.resolve_reverse_links_batch(

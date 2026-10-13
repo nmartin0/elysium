@@ -51,8 +51,19 @@ def mirror(tmp_path):
 
     def truncate_reads_to(count):
         adapter = sync.adapters["p"]
-        real = adapter.read_all_rows
-        adapter.read_all_rows = lambda *a, **k: real(*a, **k)[:count]
+        # iter_all_rows since R5: the stream the sync reads through,
+        # cut off after `count` rows as a dropped connection would.
+        real = adapter.iter_all_rows
+
+        def truncated(*a, **k):
+            left = count
+            for batch in real(*a, **k):
+                if left <= 0:
+                    return
+                yield batch[:left]
+                left -= len(batch)
+
+        adapter.iter_all_rows = truncated
 
     def rows(identifier="p.t"):
         return sync.catalog.load_table(identifier).scan().to_arrow().num_rows

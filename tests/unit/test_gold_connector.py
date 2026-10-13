@@ -199,6 +199,9 @@ class TestItIsNotAnAdapter:
         # the mediator never opens one, and gold is pinned per
         # generation, which is already one snapshot.
         asked.discard("consistent_read")
+        # iter_all_rows likewise: the sync streaming a source table
+        # into bronze (R5). The mediator reads objects, never tables.
+        asked.discard("iter_all_rows")
 
         missing = {name for name in asked if not hasattr(GoldConnector, name)}
 

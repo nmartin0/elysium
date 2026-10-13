@@ -135,14 +135,16 @@ def test_the_run_opens_one_snapshot_per_silo_around_its_tables(synced_deployment
         finally:
             inside["now"] = None
 
-    original = SQLiteReadAdapter.read_all_rows
+    # iter_all_rows since R5: the sync streams the table rather than
+    # asking for it whole.
+    original = SQLiteReadAdapter.iter_all_rows
 
-    def read(self, table_name, columns, type_config):
+    def read(self, table_name, columns, type_config, **kwargs):
         reads.append((self.db_path.name, inside["now"]))
-        return original(self, table_name, columns, type_config)
+        yield from original(self, table_name, columns, type_config, **kwargs)
 
     monkeypatch.setattr(SQLiteReadAdapter, "consistent_read", recording)
-    monkeypatch.setattr(SQLiteReadAdapter, "read_all_rows", read)
+    monkeypatch.setattr(SQLiteReadAdapter, "iter_all_rows", read)
     printed = io.StringIO()
     with contextlib.redirect_stdout(printed):
         run_sync(synced_deployment)

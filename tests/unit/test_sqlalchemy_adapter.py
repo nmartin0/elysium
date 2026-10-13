@@ -213,3 +213,51 @@ class TestWhenTheDatabaseIsUnreachable:
             adapter.health_check()
 
         assert "hunter2" not in str(caught.value)
+
+
+class TestItStreamsTheTable:
+    """iter_all_rows (R5): the table in batches, through a server-side
+    cursor. That the cursor IS server-side is SQLAlchemy's
+    `stream_results` contract and not observable from here without
+    timing a large table; what is checked is that the batches are the
+    table, bounded, and taken from the held snapshot when there is one."""
+
+    def test_the_batches_are_the_table(self, adapter):
+        config = {"storage": {"table": "customers", "id_column": "id"}}
+        batches = list(adapter.iter_all_rows("customers", ["id", "name"], config, batch_size=2))
+
+        assert [len(batch) for batch in batches] == [2, 1]
+        assert sorted((r["id"], r["name"]) for batch in batches for r in batch) == \
+            sorted((r["id"], r["name"]) for r in adapter.read_all_rows("customers", ["id", "name"], config))
+
+    def test_inside_a_consistent_read_it_streams_the_snapshot(self, seeded):
+        import psycopg
+
+        raw = seeded.replace("postgresql+psycopg://", "postgresql://")
+        with psycopg.connect(raw, autocommit=True) as conn:
+            conn.execute("CREATE TABLE streamed (id text primary key)")
+            conn.execute("INSERT INTO streamed VALUES ('s1'), ('s2')")
+        adapter = SQLAlchemyReadAdapter({"url": seeded})
+        try:
+            with adapter.consistent_read() as pinned:
+                assert pinned
+                # REPEATABLE READ takes its snapshot at the FIRST query,
+                # not at BEGIN -- the run's first table read does this.
+                adapter.read_all_rows("customers", ["id"], {})
+                with psycopg.connect(raw, autocommit=True) as conn:
+                    conn.execute("INSERT INTO streamed VALUES ('s3')")
+                rows = [r for batch in adapter.iter_all_rows("streamed", ["id"], {}, batch_size=1)
+                        for r in batch]
+                # And the snapshot is still usable afterwards: the
+                # stream ran in its own savepoint.
+                again = adapter.read_all_rows("streamed", ["id"], {})
+        finally:
+            with psycopg.connect(raw, autocommit=True) as conn:
+                conn.execute("DROP TABLE streamed")
+
+        assert sorted(r["id"] for r in rows) == ["s1", "s2"]
+        assert len(again) == 2
+
+    def test_a_missing_table_is_unavailable(self, adapter):
+        with pytest.raises(StorageUnavailable):
+            list(adapter.iter_all_rows("nope", ["id"], {}, batch_size=2))

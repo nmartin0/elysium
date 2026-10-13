@@ -291,9 +291,9 @@ class TestSilverDerivedFromBronze:
 
         source.rename(tmp_path / "gone.db")
 
-        rows = sync._read_bronze("s", "t", ["id", "a", "b"])
-        assert rows is not None
-        assert rows[0]["b"] == "y"
+        table = sync._read_bronze("s", "t", ["id", "a", "b"])
+        assert table is not None
+        assert table.to_pylist()[0]["b"] == "y"  # Arrow since R5
 
     def test_the_source_is_read_once_per_sync(self, tmp_path):
         """A CONTROL ON MY OWN REGRESSION.
@@ -312,15 +312,22 @@ class TestSilverDerivedFromBronze:
 
         adapter = SQLiteReadAdapter({"path": source})
         reads = []
+        # BOTH WAYS IN: the whole table, and the stream the sync has
+        # read through since R5. One read in total, whichever it is.
         original = type(adapter).read_all_rows
+        original_stream = type(adapter).iter_all_rows
         type(adapter).read_all_rows = lambda self, *a, **k: (
             reads.append(1) or original(self, *a, **k)
+        )
+        type(adapter).iter_all_rows = lambda self, *a, **k: (
+            reads.append(1) or original_stream(self, *a, **k)
         )
         try:
             sync = IcebergMirrorSync(tmp_path / "mirror", {"s": adapter})
             sync.sync_table("s", "t", "id", ["id", "a"], {"id": "string", "a": "string"})
         finally:
             type(adapter).read_all_rows = original
+            type(adapter).iter_all_rows = original_stream
 
         assert len(reads) == 1
 

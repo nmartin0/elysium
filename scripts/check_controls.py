@@ -751,7 +751,7 @@ CONTROLS = [
     Control(
         describes="a partial source read does not overwrite the mirror",
         path="core/mirror/iceberg_sync.py",
-        old=("        if not previous or len(rows) >= previous "
+        old=("        if not previous or row_count >= previous "
              "* (1 - MAX_DELETED_FRACTION):"),
         new="        if True:",
         tests=["tests/unit/test_a_partial_read_does_not_overwrite.py::TestTheMirrorIsLeftAlone::test_a_truncated_read_is_refused",
@@ -1453,8 +1453,8 @@ CONTROLS = [
     Control(
         describes="DEP-1: a number the database typed is never read through the locale",
         path="core/mirror/iceberg_sync.py",
-        old="             if any(isinstance(row.get(column), str) for row in raw_rows)}",
-        new="             if True}",
+        old="                    and any(isinstance(row.get(column), str) for row in rows))",
+        new="                    )",
         tests=["tests/unit/test_numbers_and_dates_as_sources_write_them.py::TestThroughARealSync::test_a_number_the_database_typed_is_never_read_through_the_locale"],
     ),
     Control(
@@ -1610,6 +1610,74 @@ CONTROLS = [
         old="            with _consistent_read(sync.adapters.get(silo_name)) as consistent:",
         new="            with _consistent_read(None) as consistent:",
         tests=["tests/unit/test_one_consistent_read_per_silo.py::test_the_run_opens_one_snapshot_per_silo_around_its_tables"],
+    ),
+    Control(
+        describes="R5: the bronze write streams the source rather than gathering it",
+        path="core/mirror/iceberg_sync.py",
+        old="            for rows in self._read_source_batches(adapter, table_name, id_column, columns):",
+        new="            for rows in list(self._read_source_batches(adapter, table_name, id_column, columns)):",
+        tests=["tests/unit/test_sync_reads_in_batches.py::test_the_source_rows_are_not_kept_while_the_next_batch_is_read"],
+    ),
+    Control(
+        describes="R5: bronze is cleaned a bounded batch at a time",
+        path="core/mirror/iceberg_sync.py",
+        old="                batch.to_pylist() for batch in bronze.to_batches(max_chunksize=SYNC_BATCH_ROWS))",
+        new="                batch.to_pylist() for batch in bronze.to_batches())",
+        tests=["tests/unit/test_sync_reads_in_batches.py::TestBatchingChangesNothingButTheCost::"
+               "test_no_batch_larger_than_the_bound_reaches_the_clean_step"],
+    ),
+    Control(
+        describes="R5: SQLite fetches the table in pieces",
+        path="adapters/sqlite_adapter.py",
+        old="        while batch := cursor.fetchmany(batch_size):",
+        new="        while batch := cursor.fetchall():",
+        tests=["tests/unit/test_sync_reads_in_batches.py::TestTheAdapterBatches::test_sqlite_yields_the_same_rows_in_bounded_pieces"],
+    ),
+    Control(
+        describes="R5: streaming inside the snapshot leaves the savepoint's RELEASE alone",
+        path="adapters/sqlalchemy_adapter.py",
+        old="                    result = pinned.execute(statement)",
+        new=("                    result = pinned.execution_options(stream_results=True)"
+             ".execute(statement)"),
+        tests=["tests/unit/test_sqlalchemy_adapter.py::TestItStreamsTheTable::"
+               "test_inside_a_consistent_read_it_streams_the_snapshot"],
+    ),
+    Control(
+        describes="R5: merged batches number their bad rows as one table",
+        path="core/mirror/transform.py",
+        old="        mismatched.extend(offset + index for index in result.mismatched_row_indices)",
+        new="        mismatched.extend(index for index in result.mismatched_row_indices)",
+        tests=["tests/unit/test_sync_reads_in_batches.py::TestTransformBatchesIsTransformRows::test_the_merged_result_is_the_unbatched_one"],
+    ),
+    Control(
+        describes="R5: merged batches report each column's FIRST bad value",
+        path="core/mirror/transform.py",
+        old="            drift.setdefault(item.column, item)",
+        new="            drift[item.column] = item",
+        tests=["tests/unit/test_sync_reads_in_batches.py::TestTransformBatchesIsTransformRows::test_the_merged_result_is_the_unbatched_one"],
+    ),
+    Control(
+        describes="R5: the Arrow diff treats a null beside a value as a change",
+        path="core/mirror/changelog.py",
+        old="            equal = pc.fill_null(pc.equal(x, y), False)",
+        new="            equal = pc.fill_null(pc.equal(x, y), True)",
+        tests=["tests/unit/test_changelog_diff_in_arrow.py::test_randomised_snapshots_give_the_same_changes"],
+    ),
+    Control(
+        describes="R5: the Arrow diff treats a changed set of columns as an update",
+        path="core/mirror/changelog.py",
+        old="    same_columns = set(previous.column_names) == set(current.column_names)",
+        new="    same_columns = True",
+        tests=["tests/unit/test_changelog_diff_in_arrow.py::test_randomised_snapshots_give_the_same_changes"],
+    ),
+    Control(
+        describes="R5: the changelog is diffed in Arrow, not as whole-table dicts",
+        path="core/mirror/changelog.py",
+        old=("        return dict(zip(indices, (_as_strings(row) for row in "
+             "table.take(pa.array(indices)).to_pylist()),"),
+        new=("        return dict(zip(indices, (_as_strings(row) for row in "
+             "table.take(pa.array(indices[:1])).to_pylist()),"),
+        tests=["tests/unit/test_changelog_diff_in_arrow.py::test_randomised_snapshots_give_the_same_changes"],
     ),
 ]
 

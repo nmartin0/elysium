@@ -56,7 +56,7 @@ Used by: core/mirror/iceberg_sync.py (the sync applies this stage
          between reading raw rows and writing them)
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from core.mirror.standardise import standardise
 from core.ontology.field_types import (
@@ -224,3 +224,37 @@ def describe_drift(silo_name: str, table_name: str, drift: list[DriftedColumn]) 
             f"(checked {item.row_count_checked} rows)"
         )
     return "\n".join(lines)
+
+
+def transform_batches(batches, columns: list[str], column_types: dict[str, str] | None = None,
+                      standardisation: dict[str, dict] | None = None, **options) -> TransformResult:
+    """transform_rows over an iterable of row batches, merged into one
+    result exactly as if the rows had arrived together (R5).
+
+    WHY BATCHES: the source rows arrive as compact Arrow and are turned
+    into Python dicts one batch at a time, so the sync never holds the
+    raw table as dicts -- the largest single cost measured (200 MB of a
+    650 MB peak for 200,000 rows). Only the CLEANED rows, declared
+    columns alone, accumulate.
+
+    THE SAME RESULT, NOT A SIMILAR ONE: row indices are offset into one
+    numbering, the drift report keeps each column's FIRST offending
+    value across all batches, and row_count_checked is the whole
+    table's, so nothing downstream can tell batching happened.
+    """
+    rows: list[dict] = []
+    drift: dict[str, DriftedColumn] = {}
+    mismatched: list[int] = []
+    cells: dict[int, list[tuple[str, str]]] = {}
+    for batch in batches:
+        result = transform_rows(batch, columns, column_types, standardisation, **options)
+        offset = len(rows)
+        rows.extend(result.rows)
+        for item in result.drift:
+            drift.setdefault(item.column, item)
+        mismatched.extend(offset + index for index in result.mismatched_row_indices)
+        cells.update({offset + index: failed for index, failed in result.mismatched_cells.items()})
+    total = len(rows)
+    merged = [replace(item, row_count_checked=total) for item in drift.values()]
+    return TransformResult(rows=rows, drift=merged, mismatched_row_indices=mismatched,
+                           mismatched_cells=cells)

@@ -243,6 +243,20 @@ class ExternalReadAdapter(ReadAdapter):
         ingest.
         """
 
+    def iter_all_rows(self, table_name: str, columns: list[str], type_config: dict,
+                      batch_size: int = 50_000):
+        """The same rows as read_all_rows, in batches of at most
+        `batch_size` -- so the sync never holds a whole table as Python
+        dicts at once (R5).
+
+        THE DEFAULT IS ONE BATCH, which is read_all_rows itself: correct
+        for any adapter, and no better on memory. An adapter whose
+        storage can stream overrides this; both shipped ones do.
+        """
+        rows = self.read_all_rows(table_name, columns, type_config)
+        for start in range(0, len(rows), batch_size):
+            yield rows[start:start + batch_size]
+
     def source_column_types(self, table_name: str) -> dict[str, str]:
         """What the SOURCE says its columns are, verbatim.
 

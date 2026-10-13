@@ -247,7 +247,12 @@ def test_a_sync_issues_one_bulk_query_not_one_per_field_per_row(tmp_path):
 
     real_run_query = sqlite_adapter_module._run_query
     real_run_query_one = sqlite_adapter_module._run_query_one
+    real_in_batches = sqlite_adapter_module._run_query_in_batches
     counted = {"n": 0}
+
+    def counting_in_batches(*args, **kwargs):
+        counted["n"] += 1
+        return real_in_batches(*args, **kwargs)
 
     def counting_run_query(*args, **kwargs):
         counted["n"] += 1
@@ -259,6 +264,7 @@ def test_a_sync_issues_one_bulk_query_not_one_per_field_per_row(tmp_path):
 
     sqlite_adapter_module._run_query = counting_run_query
     sqlite_adapter_module._run_query_one = counting_run_query_one
+    sqlite_adapter_module._run_query_in_batches = counting_in_batches
     try:
         sync = IcebergMirrorSync(tmp_path / "mirror", {"primary": SQLiteReadAdapter({"path": path})})
         result = sync.sync_table(
@@ -267,6 +273,7 @@ def test_a_sync_issues_one_bulk_query_not_one_per_field_per_row(tmp_path):
     finally:
         sqlite_adapter_module._run_query = real_run_query
         sqlite_adapter_module._run_query_one = real_run_query_one
+        sqlite_adapter_module._run_query_in_batches = real_in_batches
 
     assert result.row_count == 50
     # One bulk read. The old behaviour would have been 50 * 3 + 1 = 151.

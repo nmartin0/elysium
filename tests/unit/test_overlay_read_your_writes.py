@@ -90,6 +90,12 @@ class Slow:
         time.sleep(self._seconds)
         return self._inner.read_all_rows(*args, **kwargs)
 
+    def iter_all_rows(self, *args, **kwargs):
+        # The sync's way in since R5; the delay is before the first batch.
+        self.read_started_at = datetime.now(UTC)
+        time.sleep(self._seconds)
+        yield from self._inner.iter_all_rows(*args, **kwargs)
+
 
 @pytest.fixture
 def slow_sync(tmp_path):

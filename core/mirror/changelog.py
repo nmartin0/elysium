@@ -207,3 +207,98 @@ def scd2_versions(entries: list[dict], id_column: str) -> list[dict]:
             versions.append(version)
             open_versions[key] = version
     return versions
+
+
+def diff_snapshot_tables(previous, current, id_column: str,
+                         accept_deletions: bool = False,
+                         before_images: bool = False) -> ChangeSet:
+    """diff_snapshots over two Arrow tables, without turning either into
+    Python dicts -- except the rows that actually changed (R5).
+
+    WHY. diff_snapshots builds a dict per row for BOTH snapshots, and
+    the sync calls it whenever a table changed at all -- which a live
+    table does every run. Measured on 200,000 rows with ONE row changed:
+    the re-sync peaked at 880 MB, most of it those dicts. This compares
+    column by column in Arrow and builds dicts only for the changes.
+
+    THE SAME ANSWER, by construction and by test: rows are paired by
+    `str(id)`, the LAST row wins when an id repeats (a dict's rule), a
+    row is unchanged only when every value matches with None equal only
+    to None, a change in the SET of columns makes every common row an
+    update (two dicts with different keys are unequal), the output order
+    is the current table's then the deletions in the previous table's,
+    and the partial-read guard counts against the previous size.
+    tests/unit/test_changelog_diff_in_arrow.py checks it against
+    diff_snapshots on randomised tables.
+    """
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    def last_per_id(table):
+        keys = ["None" if value is None else str(value)
+                for value in table.column(id_column).to_pylist()]
+        last = {}
+        for index, key in enumerate(keys):
+            last.pop(key, None)  # re-inserted below, so order is last occurrence
+            last[key] = index
+        # Dict order is first-insertion; a repeated key must sit where a
+        # dict comprehension over the rows would leave it -- its FIRST
+        # position, holding its LAST row.
+        first_position = {}
+        for index, key in enumerate(keys):
+            first_position.setdefault(key, index)
+        ordered = sorted(last, key=first_position.__getitem__)
+        return ordered, [last[key] for key in ordered]
+
+    old_keys, old_rows = last_per_id(previous)
+    new_keys, new_rows = last_per_id(current)
+    old_index = dict(zip(old_keys, old_rows, strict=True))
+    new_set = set(new_keys)
+
+    missing = [key for key in old_keys if key not in new_set]
+    if old_keys and len(missing) / len(old_keys) > MAX_DELETED_FRACTION and not accept_deletions:
+        return ChangeSet(rows=[], suspected_partial_read=True)
+
+    paired_new = [row for key, row in zip(new_keys, new_rows, strict=True) if key in old_index]
+    paired_old = [old_index[key] for key in new_keys if key in old_index]
+    same_columns = set(previous.column_names) == set(current.column_names)
+    if same_columns and paired_new:
+        a = current.take(pa.array(paired_new))
+        b = previous.take(pa.array(paired_old))
+        unchanged = None
+        for name in current.column_names:
+            x, y = pc.cast(a.column(name), pa.string()), pc.cast(b.column(name), pa.string())
+            both_null = pc.and_(pc.is_null(x), pc.is_null(y))
+            equal = pc.fill_null(pc.equal(x, y), False)
+            column_same = pc.or_(both_null, equal)
+            unchanged = column_same if unchanged is None else pc.and_(unchanged, column_same)
+        # No columns at all: two empty rows are equal, as two {} are.
+        unchanged_flags = unchanged.to_pylist() if unchanged is not None else [True] * len(paired_new)
+    else:
+        unchanged_flags = [False] * len(paired_new)
+    changed_new = {row for row, same in zip(paired_new, unchanged_flags, strict=True) if not same}
+
+    def as_dicts(table, indices):
+        if not indices:
+            return {}
+        return dict(zip(indices, (_as_strings(row) for row in table.take(pa.array(indices)).to_pylist()),
+                        strict=True))
+
+    wanted_new = [row for key, row in zip(new_keys, new_rows, strict=True)
+                  if key not in old_index or row in changed_new]
+    new_dicts = as_dicts(current, wanted_new)
+    old_dicts = as_dicts(previous, [old_index[key] for key, row in zip(new_keys, new_rows, strict=True)
+                                    if row in changed_new and before_images]
+                         + [old_index[key] for key in missing])
+
+    rows: list[dict] = []
+    for key, row in zip(new_keys, new_rows, strict=True):
+        if key not in old_index:
+            rows.append({**new_dicts[row], "_change": INSERT})
+        elif row in changed_new:
+            if before_images:
+                rows.append({**old_dicts[old_index[key]], "_change": UPDATE_BEFORE})
+            rows.append({**new_dicts[row], "_change": UPDATE})
+    for key in missing:
+        rows.append({**old_dicts[old_index[key]], "_change": DELETE})
+    return ChangeSet(rows=rows, suspected_partial_read=False)

@@ -44,7 +44,8 @@ Used by: scripts/run_sync.py
 import json
 import logging
 import warnings
-from dataclasses import replace
+from collections.abc import Iterator
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -57,7 +58,7 @@ from pyiceberg.exceptions import (
 
 from core.mirror.bronze_text import bronze_text
 from core.mirror.catalog import open_mirror_catalog
-from core.mirror.changelog import MAX_DELETED_FRACTION, diff_snapshots
+from core.mirror.changelog import MAX_DELETED_FRACTION, diff_snapshot_tables
 from core.mirror.drift_policy import (
     DriftVerdict,
     verdict_for_removed_column,
@@ -71,7 +72,7 @@ from core.mirror.interface import MirrorSync, SyncResult
 from core.mirror.lake_permissions import make_private
 from core.mirror.lineage import BRONZE_SNAPSHOT_PROPERTY, LINEAGE_COLUMNS, SECURITY_COLUMN, with_lineage
 from core.mirror.sync_targets import LINK_ID_COLUMN
-from core.mirror.transform import describe_drift, transform_rows
+from core.mirror.transform import describe_drift, transform_batches
 from core.ontology.field_types import (
     DEFAULT_FIELD_DATA_TYPE,
     arrow_type_for,
@@ -385,6 +386,26 @@ class SuspectedPartialRead(ValueError):
     """
 
 
+#: Rows per batch when reading a source and transforming it (R5). Large
+#: enough that per-batch overhead vanishes, small enough that one batch
+#: of dicts is a few tens of megabytes even for wide tables.
+SYNC_BATCH_ROWS = 50_000
+
+
+@dataclass(frozen=True)
+class SourceRead:
+    """What _write_bronze learned from the source, without keeping it.
+
+    `rows` is present ONLY on the fallback path -- bronze could not be
+    written, so silver needs the rows themselves. Otherwise silver reads
+    bronze, and holding the raw rows too was the memory R5 removed.
+    """
+
+    text_columns: frozenset
+    row_count: int
+    rows: "list[dict] | None" = None
+
+
 class IcebergMirrorSync(MirrorSync):
     def __init__(self, mirror_dir: Path, adapters: dict[str, ExternalReadAdapter],
                  write_log=None, storage: dict | None = None,
@@ -588,7 +609,7 @@ class IcebergMirrorSync(MirrorSync):
         # read left a 2.08 s window. The read's START is the honest
         # answer: everything after it is still overlaid.
         read_started_at = datetime.now(UTC).isoformat()
-        raw_rows, bronze_is_current = self._write_bronze(
+        source, bronze_is_current = self._write_bronze(
             adapter, silo_name, table_name, id_column, columns)
         bronze_snapshot = self._bronze_snapshot_id(silo_name, table_name)
 
@@ -661,12 +682,20 @@ class IcebergMirrorSync(MirrorSync):
         # _write_bronze knows the difference. It says so now, and the
         # rows already in memory -- which ARE this run's source truth --
         # are used when it could not write them down.
-        if bronze_is_current:
-            source_rows = self._read_bronze(silo_name, table_name, columns)
+        # BRONZE AS ARROW, read back a batch at a time (R5): compact and
+        # columnar, so the table is never Python dicts all at once.
+        bronze = self._read_bronze(silo_name, table_name, columns) if bronze_is_current else None
+        if bronze is not None:
+            batches: Iterator[list[dict]] = (
+                batch.to_pylist() for batch in bronze.to_batches(max_chunksize=SYNC_BATCH_ROWS))
+        elif source.rows is not None:
+            batches = iter([source.rows])
         else:
-            source_rows = None
-        if source_rows is None:
-            source_rows = raw_rows
+            # BRONZE WAS WRITTEN BUT CANNOT SERVE THESE COLUMNS (it
+            # predates a declaration). The rows read for it were not kept
+            # (R5), so the source is read once more, declared columns
+            # only -- the rare path paying, rather than every sync.
+            batches = iter([self._read_source_rows(adapter, table_name, id_column, columns)])
 
         if link_pair:
             # A JOIN TABLE IS KEYED BY ITS PAIR (PA001-A2). Synthesised
@@ -676,28 +705,26 @@ class IcebergMirrorSync(MirrorSync):
             # check, the changelog diff and quarantine -- all of which
             # key by id, and all of which treated a customer's second
             # tag as a duplicate of the first.
-            source_rows = [
-                {**row, LINK_ID_COLUMN: "\x1f".join(
+            batches = (
+                [{**row, LINK_ID_COLUMN: "\x1f".join(
                     "" if row.get(column) is None else str(row.get(column))
                     for column in link_pair)}
-                for row in source_rows
-            ]
+                 for row in batch]
+                for batch in batches
+            )
             columns = [*columns, LINK_ID_COLUMN]
 
         # TEXT COLUMNS, judged from the rows AS THE SOURCE SENT THEM --
-        # raw_rows, not bronze's, where every value is already a string
-        # and a number the database typed would be indistinguishable
-        # from one somebody typed. Only these are read through the
-        # silo's locale (DEP-1).
+        # recorded while they streamed into bronze, where every value
+        # becomes a string and a number the database typed would be
+        # indistinguishable from one somebody typed. Only these are
+        # read through the silo's locale (DEP-1).
         locale = self.locales.get(silo_name)
-        text_columns = (
-            {column for column in columns
-             if any(isinstance(row.get(column), str) for row in raw_rows)}
-            if locale else set())
-        transformed = transform_rows(source_rows, columns, column_types, standardisation,
-                                     security_column=security_column,
-                                     locale=locale, localised_columns=text_columns,
-                                     excel_dates=silo_name in self.excel_date_silos)
+        text_columns = set(source.text_columns) if locale else set()
+        transformed = transform_batches(batches, columns, column_types, standardisation,
+                                        security_column=security_column,
+                                        locale=locale, localised_columns=text_columns,
+                                        excel_dates=silo_name in self.excel_date_silos)
         if transformed.has_drift and self._on_type_mismatch == "quarantine":
             # THE ROW, NOT THE TABLE. Databricks separates a MALFORMED
             # RECORD from a TYPE MISMATCH -- "only incomplete and
@@ -1154,7 +1181,7 @@ class IcebergMirrorSync(MirrorSync):
         return totals
 
     def _refuse_suspected_partial_read(self, silo_name: str, table_name: str,
-                                        rows: list[dict]) -> None:
+                                        row_count: int) -> None:
         """Stop before overwriting the mirror with half a table
         (PA001-F4).
 
@@ -1190,10 +1217,10 @@ class IcebergMirrorSync(MirrorSync):
                 f"{silo_name}.{table_name}").scan().to_arrow().num_rows
         except (NoSuchTableError, NoSuchNamespaceError):
             return
-        if not previous or len(rows) >= previous * (1 - MAX_DELETED_FRACTION):
+        if not previous or row_count >= previous * (1 - MAX_DELETED_FRACTION):
             return
         raise SuspectedPartialRead(
-            f"{silo_name}.{table_name}: the source returned {len(rows)} rows, "
+            f"{silo_name}.{table_name}: the source returned {row_count} rows, "
             f"down from {previous} -- more than "
             f"{int(MAX_DELETED_FRACTION * 100)}% of the table. A partially "
             f"failed read looks exactly like a mass deletion, so the mirror is "
@@ -1220,6 +1247,21 @@ class IcebergMirrorSync(MirrorSync):
         if self._object_types:
             return self._object_types
         return frozenset({table_name})
+
+    def _read_source_batches(self, adapter: ExternalReadAdapter, table_name: str,
+                             id_column: str, columns: list[str]):
+        """The source's rows a batch at a time (R5), erased people
+        already dropped (R13) -- the streaming twin of _read_source_rows."""
+        type_config = {"storage": {"table": table_name, "id_column": id_column}}
+        suppression = self.suppression.get((self._current_silo, table_name))
+        for rows in adapter.iter_all_rows(table_name, columns, type_config,
+                                          batch_size=SYNC_BATCH_ROWS):
+            if suppression is not None:
+                from core.mirror.erasure import suppress_rows
+
+                rows, seen = suppress_rows(rows, *suppression)
+                self.erased_still_in_source |= seen
+            yield rows
 
     def _read_source_rows(self, adapter: ExternalReadAdapter, table_name: str,
                            id_column: str, columns: list[str]) -> list[dict]:
@@ -1250,7 +1292,7 @@ class IcebergMirrorSync(MirrorSync):
         return rows
 
     def _write_bronze(self, adapter, silo_name: str, table_name: str,
-                       id_column: str, declared: list[str]) -> tuple[list[dict], bool]:
+                       id_column: str, declared: list[str]) -> "tuple[SourceRead, bool]":
         """Stores the source rows unaltered, with provenance in metadata.
 
         EVERY VALUE AS A STRING, deliberately. Bronze must not decide
@@ -1329,23 +1371,38 @@ class IcebergMirrorSync(MirrorSync):
                         "is intended.",
                         silo_name, table_name, len(undeclared),
                         ", ".join(sorted(undeclared)[:8]))
-            raw_rows = self._read_source_rows(adapter, table_name, id_column, columns)
+            # STREAMED STRAIGHT INTO ARROW (R5). The source arrives a
+            # batch at a time and each batch becomes bronze's strings at
+            # once, so the table is never held as Python dicts -- which
+            # cost 200 MB of a 650 MB peak for 200,000 rows, measured.
+            # What later stages need from the raw rows is noted on the
+            # way past: how many there were, and which columns arrived
+            # as TEXT (DEP-1's locale reads only those).
+            record_batches, row_count = [], 0
+            text_columns: set[str] = set()
+            for rows in self._read_source_batches(adapter, table_name, id_column, columns):
+                row_count += len(rows)
+                text_columns.update(
+                    column for column in columns if column not in text_columns
+                    and any(isinstance(row.get(column), str) for row in rows))
+                record_batches.append(pa.record_batch({
+                    column: pa.array(
+                        # CANONICAL TEXT, NOT repr (PA001-S2). `str()` on a
+                        # memoryview is its ADDRESS; on bytes and on a JSON
+                        # column it is Python syntax nothing else parses.
+                        [bronze_text(row.get(column)) for row in rows],
+                        type=pa.string(),
+                    )
+                    for column in columns
+                }))
+            arrow_table = pa.Table.from_batches(
+                record_batches, schema=pa.schema([(column, pa.string()) for column in columns]))
+            del record_batches
             # BEFORE ANY LAYER IS WRITTEN (PA001-F4). Checking after
             # bronze had already been overwritten would leave the raw
             # record destroyed by the very read we decided not to
             # trust -- a test caught exactly that.
-            self._refuse_suspected_partial_read(silo_name, table_name, raw_rows)
-
-            arrow_table = pa.table({
-                column: pa.array(
-                    # CANONICAL TEXT, NOT repr (PA001-S2). `str()` on a
-                    # memoryview is its ADDRESS; on bytes and on a JSON
-                    # column it is Python syntax nothing else parses.
-                    [bronze_text(row.get(column)) for row in raw_rows],
-                    type=pa.string(),
-                )
-                for column in columns
-            })
+            self._refuse_suspected_partial_read(silo_name, table_name, row_count)
 
             if not self._catalog.namespace_exists(f"bronze_{silo_name}"):
                 self._catalog.create_namespace(f"bronze_{silo_name}")
@@ -1367,7 +1424,7 @@ class IcebergMirrorSync(MirrorSync):
                 # both simpler and immune to a snapshot expiring
                 # between the two reads.
                 self._record_changes(
-                    silo_name, table_name, id_column, table, raw_rows, columns)
+                    silo_name, table_name, id_column, table, arrow_table, columns)
 
                 # BRONZE WIDENS, exactly as silver already did at :552
                 # (PA001-F1). Without this, a source that gained ANY
@@ -1479,9 +1536,13 @@ class IcebergMirrorSync(MirrorSync):
             # left over from the PREVIOUS sync answered, and silver was
             # rebuilt from stale rows while these fresh ones were
             # discarded. Saying so is the whole fix.
-            return self._read_source_rows(adapter, table_name, id_column, declared), False
+            rows = self._read_source_rows(adapter, table_name, id_column, declared)
+            return SourceRead(
+                text_columns=frozenset(column for column in declared
+                                       if any(isinstance(row.get(column), str) for row in rows)),
+                row_count=len(rows), rows=rows), False
 
-        return raw_rows, True
+        return SourceRead(text_columns=frozenset(text_columns), row_count=row_count), True
 
     def _force_metadata_to_disk(self, identifier: str) -> None:
         """Makes this table's metadata durable, or stops the sync.
@@ -1544,7 +1605,7 @@ class IcebergMirrorSync(MirrorSync):
             return False
 
     def _record_changes(self, silo_name: str, table_name: str, id_column: str,
-                         bronze_table, current_rows: list[dict], columns: list[str]) -> None:
+                         bronze_table, current: "pa.Table", columns: list[str]) -> None:
         """Appends what changed since the last sync, if anything.
 
         APPEND, NOT OVERWRITE, and this is the one table in the mirror
@@ -1576,8 +1637,11 @@ class IcebergMirrorSync(MirrorSync):
             # including ones to columns that had existed all along.
             stored = set(bronze_table.schema().column_names)
             readable = tuple(column for column in columns if column in stored)
-            previous = bronze_table.scan(selected_fields=readable).to_arrow().to_pylist()
-            changes = diff_snapshots(previous, current_rows, id_column,
+            previous = bronze_table.scan(selected_fields=readable).to_arrow()
+            # ARROW ON BOTH SIDES (R5): rows are paired and compared as
+            # columns, and only CHANGED rows ever become dicts -- a
+            # re-sync that changed one row of 200,000 builds one.
+            changes = diff_snapshot_tables(previous, current, id_column,
                                       accept_deletions=self._accept_deletions,
                                       # BEFORE-IMAGES (R10): the old row
                                       # beside every update, so the
@@ -1671,7 +1735,7 @@ class IcebergMirrorSync(MirrorSync):
         table.append(arrow_table)
 
     def _read_bronze(self, silo_name: str, table_name: str,
-                      columns: list[str]) -> "list[dict] | None":
+                      columns: list[str]) -> "pa.Table | None":
         """The raw rows as bronze recorded them, or None if it has none.
 
         None rather than an exception, because a missing bronze table is
@@ -1701,7 +1765,9 @@ class IcebergMirrorSync(MirrorSync):
             )
             return None
 
-        return table.scan(selected_fields=tuple(columns)).to_arrow().to_pylist()
+        # ARROW, NOT DICTS (R5): the caller turns it into rows a batch
+        # at a time.
+        return table.scan(selected_fields=tuple(columns)).to_arrow()
 
     def _to_arrow(self, rows: list[dict], columns: list[str],
                    column_types: dict[str, str] | None = None) -> pa.Table:

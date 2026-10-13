@@ -111,6 +111,18 @@ def _run_query_one(conn: sqlite3.Connection, sql: str, params: tuple = (),
     return dict(row) if row is not None else None
 
 
+def _run_query_in_batches(conn: sqlite3.Connection, sql: str, batch_size: int,
+                          db_path: str = "(unknown database)"):
+    """_run_query, a batch at a time (R5): ONE query, fetched in pieces.
+    Beside its siblings so that whatever counts queries counts this."""
+    try:
+        cursor = conn.execute(sql)
+        while batch := cursor.fetchmany(batch_size):
+            yield [dict(row) for row in batch]
+    except sqlite3.OperationalError as error:
+        raise StorageUnavailable(_describe_failure(error, db_path)) from error
+
+
 def _clause_for(condition, declared_type: str | None = None) -> tuple[str, list]:
     """One condition as a SQL fragment plus its bound values.
 
@@ -480,6 +492,18 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         column_list = ", ".join(_q(name) for name in columns)
         with self._connection() as conn:
             return _run_query(conn, f"SELECT {column_list} FROM {_q(table_name)}", db_path=str(self.db_path))
+
+    def iter_all_rows(self, table_name: str, columns: list[str], type_config: dict,
+                      batch_size: int = 50_000):
+        """read_all_rows, a batch at a time (R5): one query, fetched in
+        pieces, so the rows are never all Python dicts at once. The
+        connection's deadline still bounds the whole read, as it did."""
+        if not columns:
+            return
+        column_list = ", ".join(_q(name) for name in columns)
+        with self._connection() as conn:
+            yield from _run_query_in_batches(conn, f"SELECT {column_list} FROM {_q(table_name)}",
+                                             batch_size, db_path=str(self.db_path))
 
     def source_column_types(self, table_name: str) -> dict[str, str]:
         """NOTHING, and the reason is worth stating.

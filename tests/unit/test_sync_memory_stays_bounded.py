@@ -31,12 +31,13 @@ a dict of strs, not the number of copies of the payload. That matters
 because it tells you which fix works: batching (PR001-R5) or
 streaming, not "make fewer copies".
 
-WHY THIS IS A GUARD AND NOT A FIX. Bounding it properly means the sync
-reading and writing in batches rather than whole tables -- PR001-R5, a
-design change with its own consequences for the changelog diff and the
-partial-read guard, both of which currently compare WHOLE tables. That
-is not a patch. This test stops it getting quietly worse in the
-meantime.
+BATCHING HAS SINCE BEEN BUILT (PR001-R5, 13 October): the source is
+streamed into bronze, bronze is cleaned a batch at a time, and the
+changelog diff stays in Arrow -- 700 MB -> 463 MB peak on 200,000 rows,
+tests/unit/test_sync_reads_in_batches.py. It lowers the peak by a
+constant factor and does not bound it: silver is still written from
+the whole table's cleaned rows, in one transaction. This test stays as
+the guard against it getting quietly worse again.
 
 WHAT THIS TEST CAN AND CANNOT DETECT, measured rather than assumed,
 because the first version of this docstring claimed more than it
