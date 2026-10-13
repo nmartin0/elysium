@@ -57,7 +57,7 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
 )
 
-from core.mirror.bronze_text import bronze_text
+from core.mirror.bronze_text import ENCODINGS_PROPERTY, MIXED, bronze_text, column_encoding
 from core.mirror.catalog import open_mirror_catalog
 from core.mirror.changelog import MAX_DELETED_FRACTION, diff_snapshot_tables
 from core.mirror.drift_policy import (
@@ -441,6 +441,17 @@ def _merge_changes(previous: "pa.Table", changed: "pa.Table", id_column: str,
         for name in schema.names
     }, schema=schema)
     return pa.concat_tables([kept, changed])
+
+
+def _merged_encodings(current: dict, previous: dict) -> dict:
+    merged = {}
+    for column in set(current) | set(previous):
+        here, before = current.get(column), previous.get(column)
+        if here is None or before is None or here == before:
+            merged[column] = here or before
+        else:
+            merged[column] = MIXED
+    return merged
 
 
 def _drain(pending: list):
@@ -1477,6 +1488,9 @@ class IcebergMirrorSync(MirrorSync):
             record_batches, row_count = [], 0
             text_columns: set[str] = set()
             mark, null_cursors = None, 0
+            # WHICH TYPES EACH COLUMN ARRIVED AS (R3), so bronze can say
+            # how its text decodes. Types, not values: a set per column.
+            arrived: dict[str, set] = {column: set() for column in columns}
             # THE FIRST BATCH IS HANDED ON, NOT HELD: a name bound to it
             # for the whole loop kept 50,000 rows alive beside every later
             # batch -- the R5 memory test caught exactly that.
@@ -1487,6 +1501,8 @@ class IcebergMirrorSync(MirrorSync):
                 text_columns.update(
                     column for column in columns if column not in text_columns
                     and any(isinstance(row.get(column), str) for row in rows))
+                for column in columns:
+                    arrived[column].update(type(row.get(column)) for row in rows)
                 if policy is not None:
                     for row in rows:
                         value = row.get(policy.cursor)
@@ -1617,6 +1633,15 @@ class IcebergMirrorSync(MirrorSync):
                     **({SOURCE_TYPES_PROPERTY: current_types}
                        if current_types else {}),
                     TEXT_COLUMNS_PROPERTY: json.dumps(sorted(text_columns)),
+                    # HOW EACH COLUMN'S TEXT DECODES (R3). A changed-rows
+                    # read saw only a few rows, so what bronze already
+                    # recorded is merged in -- a column that arrived as
+                    # two types across reads is MIXED, as it would be
+                    # within one.
+                    ENCODINGS_PROPERTY: json.dumps(_merged_encodings(
+                        {column: column_encoding(kinds) for column, kinds in arrived.items()},
+                        json.loads(existing.properties.get(ENCODINGS_PROPERTY) or "{}")
+                        if changed_since is not None else {}), sort_keys=True),
                     # THE MARK (R2), written only after bronze holds the
                     # rows it covers. A failure above leaves the old mark,
                     # so the next read starts where this one did.

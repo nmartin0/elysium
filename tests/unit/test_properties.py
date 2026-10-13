@@ -128,3 +128,30 @@ def test_years_since_agrees_with_counting_birthdays(born, today):
 
     derivation = derivation_of({"derived": {"years_since": "born"}})
     assert compute(derivation, {"born": born}, today=today) == expected
+
+
+# -- bronze's text decodes to the value it was given (R3) -----------------
+
+_json_leaves = st.one_of(st.none(), st.booleans(), st.integers(), st.text(max_size=8),
+                         st.floats(allow_nan=False, allow_infinity=False))
+_source_values = st.one_of(
+    st.booleans(), st.integers(), st.floats(allow_nan=False), st.text(),
+    st.binary(), st.decimals(allow_nan=False, allow_infinity=False),
+    st.dates(), st.datetimes(timezones=st.one_of(st.none(), st.just(UTC))), st.times(),
+    st.timedeltas(min_value=timedelta(days=-9999), max_value=timedelta(days=9999)),
+    st.uuids(),
+    st.recursive(_json_leaves, lambda inner: st.one_of(
+        st.lists(inner, max_size=4), st.dictionaries(st.text(max_size=5), inner, max_size=4)),
+        max_leaves=8),
+    st.sets(st.integers(), max_size=5),
+)
+
+
+@given(_source_values)
+def test_bronze_text_decodes_to_the_value_it_was_given(value):
+    """THE ROUND TRIP R3 asked to be guaranteed: whatever a source sends,
+    bronze's text and its recorded encoding give it back."""
+    from core.mirror.bronze_text import bronze_encoding, bronze_text, bronze_value
+
+    decoded = bronze_value(bronze_text(value), bronze_encoding(value))
+    assert decoded == value and type(decoded) is type(value)

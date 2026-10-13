@@ -1959,6 +1959,34 @@ CONTROLS = [
         tests=["tests/unit/test_changelog_says_where_it_came_from.py::"
                "test_an_entry_names_its_bronze_snapshot_and_its_run"],
     ),
+    Control(
+        describes="R3: bronze records how each column's text decodes",
+        path="core/mirror/iceberg_sync.py",
+        old="                    arrived[column].update(type(row.get(column)) for row in rows)",
+        new="                    pass",
+        tests=["tests/unit/test_bronze_round_trip.py::test_the_encodings_are_recorded_per_column"],
+    ),
+    Control(
+        describes="R3: a column that arrived as two types decodes as its text, never a guess",
+        path="core/mirror/bronze_text.py",
+        old="    return next(iter(names)) if len(names) == 1 else MIXED",
+        new="    return sorted(names)[0]",
+        tests=["tests/unit/test_bronze_round_trip.py::test_the_encodings_are_recorded_per_column"],
+    ),
+    Control(
+        describes="R3: a changed-rows read keeps the encodings bronze already knew",
+        path="core/mirror/iceberg_sync.py",
+        old="                        if changed_since is not None else {}), sort_keys=True),",
+        new="                        if False else {}), sort_keys=True),",
+        tests=["tests/unit/test_bronze_round_trip.py::test_a_changed_rows_read_keeps_what_bronze_already_knew"],
+    ),
+    Control(
+        describes="R3: hypothesis finds a value bronze cannot give back",
+        path="core/mirror/bronze_text.py",
+        old="        return -value if match.group(1) else value",
+        new="        return value",
+        tests=["tests/unit/test_properties.py::test_bronze_text_decodes_to_the_value_it_was_given"],
+    ),
 ]
 
 

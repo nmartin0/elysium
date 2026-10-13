@@ -19,12 +19,21 @@ replaced by an address that differs on every run, so two syncs of an
 unchanged row produce different bronze -- and the changelog then
 records a change that did not happen.
 
-WHAT THIS DOES AND DOES NOT CLAIM. It gives each of those a form that
-can be read back: JSON for structures, base64 for bytes, ISO-8601 for
-durations. It is NOT the full declared-encoding design (PR001-R3),
-which would let a deployment say how each column should be rendered
-and guarantee a round trip. This is the narrower claim that no value
-is reduced to a memory address or to syntax no parser accepts.
+WHAT THIS DOES: each of those gets a form that can be read back --
+JSON for structures, base64 for bytes, ISO-8601 for durations -- AND
+(R3, 13 October) the round trip is guaranteed rather than hoped for.
+`bronze_encoding` names the encoding a value was written in; the sync
+records it per column on the bronze table (ENCODINGS_PROPERTY); and
+`bronze_value` reverses it. tests/unit/test_properties.py checks the
+round trip with hypothesis for every encoding.
+
+WHY RECORDED AND NOT DECLARED. The R3 design had the deployment declare
+each column's rendering. What a declaration was FOR is the round trip,
+and the sync already sees every value's type, so it can say what it
+did instead of being told -- no configuration to get wrong, and no
+column the declaration forgot. A column whose values arrived as more
+than one type is recorded as MIXED, and decodes as the text it is:
+that is the honest answer, since "5" and 5 render identically.
 
 VALUES str() ALREADY RENDERS CANONICALLY are left alone -- Decimal,
 date, datetime, UUID, int, bool. Changing their form would rewrite
@@ -34,8 +43,16 @@ what we want stored.
 
 import base64
 import datetime
+import decimal
 import json
+import re
+import uuid
 from typing import Any
+
+#: The bronze table property holding {column: encoding}, as JSON (R3).
+ENCODINGS_PROPERTY = "elysium.bronze.encodings"
+#: A column whose values arrived as more than one type.
+MIXED = "mixed"
 
 
 def bronze_text(value: Any) -> "str | None":
@@ -71,3 +88,101 @@ def bronze_text(value: Any) -> "str | None":
         # that, two syncs of the same row can disagree.
         return json.dumps(sorted(value, key=str), default=str)
     return str(value)
+
+
+# -- the round trip (R3) ----------------------------------------------------
+
+_BY_TYPE = (
+    (bool, "bool"),          # before int: bool IS an int
+    (str, "text"),
+    ((bytes, bytearray, memoryview), "base64"),
+    (datetime.timedelta, "iso8601-duration"),
+    ((dict, list, tuple), "json"),
+    ((set, frozenset), "json-set"),
+    (decimal.Decimal, "decimal"),
+    (datetime.datetime, "datetime"),  # before date: a datetime IS a date
+    (datetime.date, "date"),
+    (datetime.time, "time"),
+    (int, "int"),
+    (float, "float"),
+    (uuid.UUID, "uuid"),
+)
+
+
+def bronze_encoding(value: Any) -> "str | None":
+    """The encoding bronze_text writes this value in; None for None. A
+    type nothing here knows is "text": str() was its encoding, and its
+    text is all a reader can be promised."""
+    if value is None:
+        return None
+    for kinds, name in _BY_TYPE:
+        if isinstance(value, kinds):
+            return name
+    return "text"
+
+
+def encoding_of_type(kind: type) -> str:
+    """bronze_encoding for a TYPE -- what the sync tracks per column, a
+    set of types being far cheaper to keep than a check per value."""
+    for kinds, name in _BY_TYPE:
+        if issubclass(kind, kinds):
+            return name
+    return "text"
+
+
+def column_encoding(types: "set[type]") -> "str | None":
+    """One column's encoding from the types its values arrived as."""
+    names = {encoding_of_type(kind) for kind in types if kind is not type(None)}
+    if not names:
+        return None
+    return next(iter(names)) if len(names) == 1 else MIXED
+
+
+_DURATION = re.compile(r"^(-?)PT([0-9]+(?:\.[0-9]+)?)S$")
+
+
+def bronze_value(text: "str | None", encoding: "str | None") -> Any:
+    """The value bronze_text was given, from the text it wrote and the
+    encoding recorded for its column. An unknown or MIXED encoding
+    returns the text: never a guess."""
+    if text is None:
+        return None
+    if encoding == "bool":
+        return text == "True"
+    if encoding == "base64":
+        return base64.b64decode(text)
+    if encoding == "iso8601-duration":
+        match = _DURATION.match(text)
+        if match is None:
+            return text
+        seconds = decimal.Decimal(match.group(2))
+        whole, fraction = divmod(seconds, 1)
+        value = datetime.timedelta(seconds=int(whole),
+                                   microseconds=int((fraction * 1_000_000).to_integral_value()))
+        return -value if match.group(1) else value
+    if encoding == "json":
+        return json.loads(text)
+    if encoding == "json-set":
+        return set(json.loads(text))
+    if encoding == "decimal":
+        return decimal.Decimal(text)
+    if encoding == "datetime":
+        return datetime.datetime.fromisoformat(text)
+    if encoding == "date":
+        return datetime.date.fromisoformat(text)
+    if encoding == "time":
+        return datetime.time.fromisoformat(text)
+    if encoding == "int":
+        return int(text)
+    if encoding == "float":
+        return float(text)
+    if encoding == "uuid":
+        return uuid.UUID(text)
+    return text
+
+
+def decoded_rows(rows: "list[dict]", encodings: "dict[str, str | None]") -> "list[dict]":
+    """Bronze rows as the values the source sent, through the encodings
+    recorded on the bronze table (ENCODINGS_PROPERTY)."""
+    return [{column: bronze_value(text, encodings.get(column)) for column, text in row.items()}
+            for row in rows]
