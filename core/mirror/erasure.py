@@ -219,8 +219,11 @@ def table_key_columns(schema: dict, identifier: str) -> dict[str, set[str]]:
     for prefix in ("bronze_", "changelog_"):
         if namespace.startswith(prefix):
             return source_key_columns(schema).get((namespace[len(prefix):], table), {})
-    if namespace.startswith("quarantine_"):
-        silo = namespace[len("quarantine_"):]
+    if namespace.startswith(("quarantine_", "cleaning_")):
+        # Both record findings by OBJECT ID, not by the source's columns:
+        # the cleaning record (R33) holds a cell's before and after, so an
+        # erased person's text is there too, and goes with them.
+        silo = namespace.partition("_")[2]
         owners = source_key_columns(schema).get((silo, table), {})
         types = {object_type for object_type, type_def in schema.items()
                  if (type_def.get("storage") or {}).get("table") == table}

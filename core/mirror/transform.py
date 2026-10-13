@@ -57,8 +57,9 @@ Used by: core/mirror/iceberg_sync.py (the sync applies this stage
 """
 
 from dataclasses import dataclass, field, replace
+from typing import Any
 
-from core.mirror.standardise import standardise
+from core.mirror.standardise import standardise_explained
 from core.ontology.field_types import (
     DEFAULT_FIELD_DATA_TYPE,
     coerce,
@@ -108,6 +109,11 @@ class TransformResult:
     #: for every row, so a row whose `date` failed was filed as an
     #: `amount` problem and shown its perfectly good amount.
     mismatched_cells: dict[int, list[tuple[str, str]]] = field(default_factory=dict)
+    #: (row index, column, before, after, rules) for every cell the
+    #: cleaning rules CHANGED (R33) -- what silver did to the source's
+    #: text, and by which rule, so "why does it say that" has an answer
+    #: per cell rather than per table.
+    cleaned_cells: list[tuple[int, str, Any, Any, tuple[str, ...]]] = field(default_factory=list)
 
     @property
     def has_drift(self) -> bool:
@@ -142,6 +148,7 @@ def transform_rows(rows: list[dict], columns: list[str],
     mismatched: set[int] = set()
     cells: dict[int, list[tuple[str, str]]] = {}
     cleaned: list[dict] = []
+    cleaned_cells: list = []
 
     # WHICH COLUMNS ARE READ THROUGH THE SILO'S LOCALE (DEP-1): only
     # the ones the source sent as TEXT. The caller decides, from the
@@ -177,7 +184,10 @@ def transform_rows(rows: list[dict], columns: list[str],
             if column == security_column:
                 value = row[column]
             else:
-                value = standardise(row[column], (standardisation or {}).get(column))
+                value, applied = standardise_explained(
+                    row[column], (standardisation or {}).get(column))
+                if applied:
+                    cleaned_cells.append((index, column, row[column], value, applied))
             try:
                 cleaned_row[column] = coerce(value, declared, source_timezone,
                                              locale if column in localised else None,
@@ -206,7 +216,7 @@ def transform_rows(rows: list[dict], columns: list[str],
 
     return TransformResult(rows=cleaned, drift=drift,
                            mismatched_row_indices=sorted(mismatched),
-                           mismatched_cells=cells)
+                           mismatched_cells=cells, cleaned_cells=cleaned_cells)
 
 
 def describe_drift(silo_name: str, table_name: str, drift: list[DriftedColumn]) -> str:
@@ -246,6 +256,7 @@ def transform_batches(batches, columns: list[str], column_types: dict[str, str] 
     drift: dict[str, DriftedColumn] = {}
     mismatched: list[int] = []
     cells: dict[int, list[tuple[str, str]]] = {}
+    cleaned_cells: list = []
     for batch in batches:
         result = transform_rows(batch, columns, column_types, standardisation, **options)
         offset = len(rows)
@@ -254,7 +265,8 @@ def transform_batches(batches, columns: list[str], column_types: dict[str, str] 
             drift.setdefault(item.column, item)
         mismatched.extend(offset + index for index in result.mismatched_row_indices)
         cells.update({offset + index: failed for index, failed in result.mismatched_cells.items()})
+        cleaned_cells.extend((offset + index, *rest) for index, *rest in result.cleaned_cells)
     total = len(rows)
     merged = [replace(item, row_count_checked=total) for item in drift.values()]
     return TransformResult(rows=rows, drift=merged, mismatched_row_indices=mismatched,
-                           mismatched_cells=cells)
+                           mismatched_cells=cells, cleaned_cells=cleaned_cells)

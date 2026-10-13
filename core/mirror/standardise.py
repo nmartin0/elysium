@@ -158,32 +158,48 @@ def _collapse(value: str) -> str:
 def standardise(value, rules: dict[str, Any] | None):
     """A value, canonicalised. Non-strings and None pass through: a
     number has no whitespace, and a real NULL is not a sentinel."""
+    return standardise_explained(value, rules)[0]
+
+
+def standardise_explained(value, rules: dict[str, Any] | None) -> tuple[Any, tuple[str, ...]]:
+    """(the canonical value, the rules that changed it, in order) -- the
+    per-cell provenance silver records (R33). One implementation, so the
+    record cannot disagree with what was done."""
     if rules is None or not isinstance(value, str):
-        return value
+        return value, ()
+    applied: list[str] = []
+
+    def step(name: str, after):
+        nonlocal value
+        if after != value:
+            applied.append(name)
+        value = after
+
     if rules.get("fix_text"):
         # FIRST: NFC over mojibake normalises the wrong characters.
         from core.ontology.value_checks import fixed_text
 
-        value = fixed_text(value)
+        step("fix_text", fixed_text(value))
     if rules["unicode"] is not False:
-        value = unicodedata.normalize(rules["unicode"], value)
+        step(f"unicode {rules['unicode']}", unicodedata.normalize(rules["unicode"], value))
     if rules["collapse_whitespace"]:
-        value = _collapse(value)
+        step("collapse_whitespace", _collapse(value))
     elif rules["trim"]:
-        value = value.strip()
+        step("trim", value.strip())
     # AFTER the cleanups, so " N/A " counts as the sentinel it is, and
     # comparison is exact -- never case-insensitive, which would make
     # "null" the surname Null disappear.
     if value in rules["null_if"]:
-        return None
+        applied.append("null_if")
+        return None, tuple(applied)
     # LAST, on the cleaned value: " +1 415 555 0123 " parses either way,
     # but a sentinel must have become None before anything formats it.
     if rules.get("phone") is not None:
         from core.ontology.value_checks import phone_e164
 
-        value = phone_e164(value, rules["phone"])
+        step("phone", phone_e164(value, rules["phone"]))
     if rules.get("email"):
         from core.ontology.value_checks import email_normalised
 
-        value = email_normalised(value)
-    return value
+        step("email", email_normalised(value))
+    return value, tuple(applied)

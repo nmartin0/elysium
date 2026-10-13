@@ -171,6 +171,15 @@ QUARANTINE_SCHEMA = pa.schema([
     ("detected_at", pa.string()),
 ])
 
+#: What silver's cleaning rules changed, per cell (R33).
+CLEANING_SCHEMA = pa.schema([
+    ("object_id", pa.string()),
+    ("column", pa.string()),
+    ("before", pa.string()),
+    ("after", pa.string()),
+    ("rules", pa.string()),
+])
+
 
 SOURCE_READ_PROPERTY = "elysium.source_read_started_at"
 
@@ -868,6 +877,7 @@ class IcebergMirrorSync(MirrorSync):
         # holds what the source said; fail stops the build here, before
         # anything is written, so the mirror is unchanged.
         checked = apply_expectations(transformed.rows, expectations or {})
+        self._write_cleaning(silo_name, table_name, id_column, transformed)
         if checked.quarantined:
             self._write_quarantine(silo_name, table_name, id_column, checked.quarantined)
         for rule, count in checked.counts.items():
@@ -1149,6 +1159,54 @@ class IcebergMirrorSync(MirrorSync):
         except (NoSuchTableError, NoSuchNamespaceError):
             table = self._catalog.create_table(identifier, schema=QUARANTINE_SCHEMA)
         table.append(arrow_table)
+
+    def _write_cleaning(self, silo_name: str, table_name: str, id_column: str,
+                         transformed) -> None:
+        """Every cell silver's cleaning rules changed, with the source's
+        text, silver's, and the rules that did it (R33).
+
+        THE CURRENT STATE, OVERWRITTEN each sync rather than appended:
+        it answers "why does silver say this" for what silver says NOW.
+        The history is Iceberg's own -- each sync that changed it is a
+        snapshot -- and REPLAYABLE, because bronze holds every `before`
+        and the rules are the deployment's declared ones: re-deriving a
+        cell is running standardise_explained on bronze's text again.
+
+        Nothing changed and nothing recorded: no table, and no new
+        snapshot of an identical one. A failure here is WARNED and does
+        not fail the sync -- this explains silver, it is not silver.
+        """
+        namespace = f"cleaning_{silo_name}"
+        identifier = f"{namespace}.{table_name}"
+        records = sorted(
+            ({"object_id": str(transformed.rows[index].get(id_column)), "column": column,
+              "before": None if before is None else str(before),
+              "after": None if after is None else str(after), "rules": ", ".join(rules)}
+             for index, column, before, after, rules in transformed.cleaned_cells),
+            key=lambda record: (record["object_id"], record["column"]))
+        try:
+            try:
+                table = self._catalog.load_table(identifier)
+            except (NoSuchTableError, NoSuchNamespaceError):
+                if not records:
+                    return
+                try:
+                    self._catalog.create_namespace(namespace)
+                except NamespaceAlreadyExistsError:
+                    pass
+                table = self._catalog.create_table(identifier, schema=CLEANING_SCHEMA)
+            arrow_table = pa.Table.from_pylist(records, schema=CLEANING_SCHEMA)
+            if table.current_snapshot() is not None and \
+                    table.scan().to_arrow().sort_by([("object_id", "ascending"),
+                                                     ("column", "ascending")]).equals(arrow_table):
+                return
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore", message="Delete operation did not match any records")
+                table.overwrite(arrow_table)
+        except (OSError, ValueError, KeyError, pa.ArrowInvalid) as error:
+            logger.warning(f"cleaning record for {silo_name}.{table_name} not written "
+                           f"({error}); silver is unaffected.")
 
     def last_synced_at(self, silo_name: str, table_name: str) -> datetime | None:
         try:

@@ -237,7 +237,7 @@ def _partition_tables(catalog) -> tuple[set[str], set[str]]:
 
 # The namespaces the pipeline writes that are NOT a copy of a source
 # table (PA001-I1, PA001-F6.4).
-NON_SOURCE_NAMESPACES = ("changelog_", GOLD_NAMESPACE, GOLD_HISTORY_NAMESPACE,
+NON_SOURCE_NAMESPACES = ("changelog_", "cleaning_", GOLD_NAMESPACE, GOLD_HISTORY_NAMESPACE,
                           QUARANTINE_PREFIX)
 
 

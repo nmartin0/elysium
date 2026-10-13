@@ -2073,6 +2073,35 @@ CONTROLS = [
         new="        return email_normalised(text.strip())",
         tests=["tests/unit/test_value_types.py::TestTheCanonicalKey::test_an_address_keys_without_case"],
     ),
+    Control(
+        describes="R33: silver records each cell its cleaning rules changed",
+        path="core/mirror/iceberg_sync.py",
+        old="        self._write_cleaning(silo_name, table_name, id_column, transformed)",
+        new="        pass",
+        tests=["tests/unit/test_cleaning_is_recorded_per_cell.py::test_each_changed_cell_is_recorded_with_its_rules"],
+    ),
+    Control(
+        describes="R33: the record names the rule that changed the cell",
+        path="core/mirror/standardise.py",
+        old="        if after != value:\n            applied.append(name)",
+        new="        if after != value:\n            applied.append(\"cleaned\")",
+        tests=["tests/unit/test_cleaning_is_recorded_per_cell.py::test_each_changed_cell_is_recorded_with_its_rules",
+               "tests/unit/test_cleaning_is_recorded_per_cell.py::test_it_is_replayable_from_bronze_and_the_rules"],
+    ),
+    Control(
+        describes="R33: the record describes silver now rather than accumulating",
+        path="core/mirror/iceberg_sync.py",
+        old="                table.overwrite(arrow_table)\n        except (OSError, ValueError, KeyError, pa.ArrowInvalid) as error:\n            logger.warning(f\"cleaning record",
+        new="                table.append(arrow_table)\n        except (OSError, ValueError, KeyError, pa.ArrowInvalid) as error:\n            logger.warning(f\"cleaning record",
+        tests=["tests/unit/test_cleaning_is_recorded_per_cell.py::test_it_describes_silver_now_rather_than_accumulating"],
+    ),
+    Control(
+        describes="R33: an erased person's cleaned cells are erased with them",
+        path="core/mirror/erasure.py",
+        old="    if namespace.startswith((\"quarantine_\", \"cleaning_\")):",
+        new="    if namespace.startswith((\"quarantine_\",)):",
+        tests=["tests/unit/test_cleaning_is_recorded_per_cell.py::test_an_erased_person_s_cells_go_with_them"],
+    ),
 ]
 
 

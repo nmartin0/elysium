@@ -387,7 +387,7 @@ def _require_str(value, description: str) -> None:
 # Namespaces the pipeline writes for itself. A silo may not be called
 # one of these, nor anything that would produce one (PA001-G10).
 RESERVED_SILO_NAMES = ("gold", "gold_history")
-RESERVED_SILO_PREFIXES = ("bronze_", "changelog_", "quarantine_")
+RESERVED_SILO_PREFIXES = ("bronze_", "changelog_", "quarantine_", "cleaning_")
 
 
 def _refuse_system_column_names(schema_raw: dict) -> None:

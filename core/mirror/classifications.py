@@ -90,6 +90,12 @@ def classifications_by_table(object_types: dict) -> dict[str, dict[str, list[str
                     _merge(by_table.setdefault(identifier, {}), column, labels)
             _merge(by_table.setdefault(f"{_QUARANTINE.format(silo=silo)}.{table}", {}),
                    "value", set().union(*source_labels.values()))
+            # THE CLEANING RECORD (R33) holds a cell's text before and
+            # after, from any classified column -- so both carry every
+            # label this table's columns carry, as quarantine's value does.
+            for column in ("before", "after"):
+                _merge(by_table.setdefault(f"cleaning_{silo}.{table}", {}),
+                       column, set().union(*source_labels.values()))
 
         gold = by_table.setdefault(f"{GOLD_NAMESPACE}.{object_type}", {})
         for field_name, field_labels in labels_by_field.items():
