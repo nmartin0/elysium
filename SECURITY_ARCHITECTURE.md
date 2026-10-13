@@ -29,7 +29,15 @@ Everything below is a continuation of that, not a departure from it.
 
 ---
 
-## THE REAL HOLE: Elysium enforces half of MAC
+## CLOSED: Elysium used to enforce half of MAC
+
+**CLOSED (E-18).** What follows is kept because the reasoning is the
+design: the write-down check below was built as
+`WriteMediator._refuse_cross_compartment` (core/ontology/
+write_mediator.py), which compares the security values of the objects
+an action reads against those it writes, and refuses a write-down. It
+is pinned by tests/unit/test_cross_compartment_write.py. The section
+heading said THE REAL HOLE for months after the hole was closed.
 
 **EVERY MAC CHECK COMPARES AN OBJECT TO THE USER'S SECURITY VALUE.
 NOTHING EVER COMPARES TWO OBJECTS TO EACH OTHER.** Verified: six call
@@ -155,7 +163,10 @@ Would have shortened several real debugging sessions. It is also the
 foundation the diagnostic sweep and the per-hop agent metrics both
 need, so it pays for itself three times.
 
-### 2. Flow control on actions — the write-down check
+### 2. Flow control on actions — the write-down check (BUILT)
+
+Built as `WriteMediator._refuse_cross_compartment`; see the closed
+heading above.
 
 The concrete form of the object-to-object question. Compare the
 security values of objects an action READS against those it WRITES,

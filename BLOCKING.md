@@ -99,19 +99,64 @@ which was whether the layout holds.
 
 # Blocked on a decision
 
-Nothing is waiting on a yes-or-no today. The last were the `DEP`
-adoptions, all answered on 13 October -- see their row in the table.
+## 1. Owner questions the checklist still holds
+
+**FOUND ON 13 OCTOBER, when 59 checklist rows were checked against the
+code.** This file had said nothing was waiting on a decision. The CSV
+disagreed: these rows are decisions only the owner can take, each
+verified still open, each with its evidence in its own row. Grouped so
+they can be answered together.
+
+**The model and where it runs**
+- `D1` -- switch phi4-mini to Qwen3-4B-Instruct after the bench? The
+  shipped config is still phi4-mini.
+- `D2` -- stay on Ollama, or run llama-server? The OpenAI-compatible
+  adapter already reaches it; prompt caching (AR-3) and speculative
+  decoding (AR-8) need it.
+- `D3` and `AR-9` -- may a query leave the VM for a hosted model, and
+  if so on what policy? Today a deployment can swap the whole model,
+  never escalate one question.
+- `D6` and `AR-10` -- fine-tune a small model on Elysium's own traces?
+
+**Access, and what a person sees**
+- `NEW-1` -- a forward link returns the id of a target the caller cannot
+  see. Pinned by a test that says "decide it deliberately".
+- `NEW-2` -- confirming a write re-checks the PROPOSER's reach, not the
+  approver's. Should an approver have to be able to reach what they
+  approve?
+- `WIRED-2` / `AL-12` -- after an approval, should the asker's question
+  resume and finish? `AgentLoop.resume` is built and tested; nothing
+  calls it, because who receives that answer is the question.
+- `R47` -- review of inferred special-category data (health, religion
+  and so on). The one part of D5 not decided.
+
+**Smaller calls**
+- Three that are small but still the owner's:
+  `E-06` -- a source failure is reported as its exception class name;
+  the code names a closed vocabulary as the owner's replacement.
+  `E-14` -- MemoryGuard is built and tested and nothing uses it: wire it
+  or delete it. `ZOO-14` -- `007` in an integer field becomes 7; built
+  and pinned, never confirmed.
+- `E-21` -- the LICENSE says unpublished and proprietary; the
+  repository's visibility should match it.
+
+**Customers**
+- `Q1` -- which regulatory regimes apply (the compliance item below
+  waits on this). `Q4` -- which source databases come first
+  (PostgreSQL is not yet a supported production silo).
+
+**Blocked on:** answers. None blocks building anything else.
 
 # Blocked on a machine or a person running something
 
-## 1. `--workers` for real
+## 2. `--workers` for real
 
 Patches 292-295 fixed all four blockers. It has only ever run as two
 apps inside one test process.
 
 **Blocked on:** somebody running it.
 
-## 12a. Twenty-five inherited security findings
+## 13a. Twenty-five inherited security findings
 
 The security agent kept its own register because it was not allowed to
 edit `AUDIT_CHECKLIST.csv`, and said so:
@@ -136,7 +181,7 @@ clarified, only reproduced or dropped.
 
 # Blocked because it is product direction
 
-## 2. Thirty-odd recommendations that are not engineering questions
+## 3. Thirty-odd recommendations that are not engineering questions
 
 `R41`, `R42`, `R45`, `R48`, `R51`, `R53`, `R56` to `R62` and their
 neighbours are LLM enrichment, embeddings, model predictions,
@@ -148,7 +193,7 @@ and they should not be picked off a list by whoever is next.
 is buildable -- but on whether this is the product at all, which is
 why picking one off would be the wrong move rather than a slow one.
 
-## 3. What the Query screen should contain
+## 4. What the Query screen should contain
 
 Four features, none built, from `QUERY_PLAN.md`. They are product
 direction rather than engineering: what a question box should offer
@@ -176,7 +221,7 @@ generation answered this" much harder to state).
 
 **Blocked on:** product design, and there is no front-end agent now.
 
-## 4. Writing configuration from the UI
+## 5. Writing configuration from the UI
 
 From `CONFIG_ROUND_TRIP_AND_UI_KIT.md`. Its own finding is why it is
 hard: **the configuration files are mostly COMMENTS**, so a naive
@@ -190,7 +235,7 @@ items -- adopting it is its own decision, to be made with this one.
 **Blocked on:** that dependency call, and on whether configuration
 should be editable from the UI at all.
 
-## 5. Object Explorer phases 3 to 5
+## 6. Object Explorer phases 3 to 5
 
 Phases 1 and 2 are built. **The blocker they existed to remove is
 gone:** the plan opens with "our filter is equality only ... so
@@ -206,7 +251,7 @@ act on; they do not answer it.
 
 **Blocked on:** that write-path decision.
 
-## 6. A plugin API, and the reason module federation is not it
+## 7. A plugin API, and the reason module federation is not it
 
 `THIRD_PARTY_EXTENSIONS.md` designs third-party extensions. None of it
 is built, and whether Elysium should have them at all is a product
@@ -230,7 +275,7 @@ code.
 **Blocked on:** whether to have an extension story at all. Everything
 downstream of that is design work that cannot start first.
 
-## 7. Three questions triggers raise and nobody has answered
+## 8. Three questions triggers raise and nobody has answered
 
 Triggers are built. `TRIGGERS_AND_PLUGINS.md` names three risks that
 are "about volume rather than authority", and none of them is a code
@@ -260,7 +305,7 @@ second is a product decision about how much friction an automation
 should carry, and the third is a design choice with cost on both
 sides.
 
-## 8. What the interface should be
+## 9. What the interface should be
 
 `DEV_UI.md`, written after the owner said the interface is BOTH
 unfinished and disjointed. **Its diagnosis is the part worth keeping**,
@@ -295,7 +340,7 @@ contrast is not a target.
 **Blocked on:** a front-end agent, and the owner's appetite for a
 redesign rather than more features.
 
-## 9. Agent-loop efficiency, which needs a machine with a model
+## 10. Agent-loop efficiency, which needs a machine with a model
 
 `IDEAS.md`'s open investigations all need traces from a real model on
 real hardware. The measurements already taken are kept because
@@ -472,7 +517,7 @@ measured.
 would reopen plan mode and constrained decoding -- both trade compute
 the CPU does not have.
 
-## 10. Context rot, and a 10,000-id search behind it
+## 11. Context rot, and a 10,000-id search behind it
 
 `UI_ROADMAP.md` calls this "a risk to what already exists, not a
 feature", and it is the only part of that file that is not front-end
@@ -520,7 +565,7 @@ that matters: told its limit was 20 when given 32 ids, a real model
 one object at a time until the duplicate guard stopped it". A cap
 chosen without measuring is how that happens again.
 
-## 11. PostgreSQL row-level security for MAC
+## 12. PostgreSQL row-level security for MAC
 
 Held with a trigger named, alongside column `GRANT` with `SET ROLE`.
 Elysium enforces MAC in the mediator today; pushing it into the
@@ -586,7 +631,7 @@ files reference the SQLite adapter, most of them tests using it as the
 cheap real database, and the write path is where a mistake reaches a
 customer's database. Days, not hours -- but no decision, so not here.
 
-## 12. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
+## 13. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
 
 **Blocked on:** the owner, and on money and calendar time rather than
 engineering.
@@ -636,7 +681,7 @@ an audit is ever bought:
 
 Months, not a patch.
 
-## 13. Owning the UI kit, and when to start
+## 14. Owning the UI kit, and when to start
 
 **Blocked on:** nothing. This is a DECISION ALREADY TAKEN, recorded
 here so the next person does not reopen it from scratch.

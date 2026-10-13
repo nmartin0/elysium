@@ -1490,6 +1490,35 @@ def test_query_refuses_if_permissions_changed_during_processing(client):
     assert "answer" not in response.json()
 
 
+@pytest.mark.parametrize("stop_reason", ["repeated_itself", "invalid_steps",
+                                         "blocked_by_rules", "unrecognised_step"])
+def test_every_early_stop_reaches_synthesis_as_possibly_incomplete(client, stop_reason):
+    """LB-3. The route passed `hit_max_hops or ran_out_of_time or
+    hit_token_budget` -- three of the endings -- so a loop that stopped
+    because it repeated itself or produced invalid steps was answered as
+    though it had finished. It now asks the result."""
+    from core.agent.agentic_loop import AgentLoop, AgentLoopResult, StopReason
+
+    assert stop_reason in vars(StopReason).values()
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+    told = []
+
+    def fake_synthesis(_client, _query, _records, possibly_incomplete=False, **_kwargs):
+        told.append(possibly_incomplete)
+        return "an answer"
+
+    with (
+        patch.object(AgentLoop, "run", lambda *_a, **_k: AgentLoopResult(
+            gathered=[{"step": "search_object", "result": [{"id": 1}]}], stop_reason=stop_reason)),
+        patch("api.routes.synthesize_insight", fake_synthesis),
+    ):
+        response = client.post("/api/query", json={"query": "test"}, headers=_csrf_headers(client))
+
+    assert response.status_code == 200
+    assert told == [True]
+
+
 def _propose_action(client, session=None, new_name="Updated Name"):
     # Helper: a real query that proposes a real named-action invocation
     # against the fixture's own Customer schema (cust_001), returns the

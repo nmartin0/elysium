@@ -234,6 +234,8 @@ def _from_excel_serial(text: str, data_type: str) -> str:
 
 # ASCII digits with an exponent: `1e3`, `-2.5E+04`. Nothing else.
 _SCIENTIFIC = re.compile(r"^[+-]?[0-9]+(\.[0-9]+)?[eE][+-]?[0-9]+$")
+#: "5.0", "-12.000": a decimal point, ASCII digits on both sides (PA001-F3).
+_DECIMAL_POINT = re.compile(r"^[+-]?[0-9]+\.[0-9]+$")
 
 
 def _real_number(value):
@@ -296,6 +298,26 @@ def _whole_number(value):
         if exact != exact.to_integral_value():
             raise ValueError(f"{value!r} is not a whole number.")
         return int(exact)
+    if isinstance(value, str) and _DECIMAL_POINT.match(value.strip()):
+        # A WHOLE NUMBER WRITTEN WITH A POINT (PA001-F3). Bronze stores
+        # every value as text, so a source's float 5.0 arrives here as
+        # "5.0" -- and was refused, where the same 5.0 read directly
+        # was accepted. Exact through Decimal, like the exponent form;
+        # "5.5" is still refused, never rounded.
+        exact = decimal.Decimal(value.strip())
+        if exact != exact.to_integral_value():
+            raise ValueError(f"{value!r} is not a whole number.")
+        return int(exact)
+    if isinstance(value, (float, decimal.Decimal)) and not isinstance(value, bool):
+        # NEVER TRUNCATED. int(5.5) is 5: a fractional value read into
+        # an integer field lost its fraction silently, found while
+        # fixing the text case above. A float that is exactly whole is
+        # still the integer it names.
+        if value != value or value in (float("inf"), float("-inf")):
+            raise ValueError(f"{value!r} is not a whole number.")
+        if value != int(value):
+            raise ValueError(f"{value!r} is not a whole number.")
+        return int(value)
     if isinstance(value, str) and value.strip() and not (
             set(value.strip().lstrip("+-")) <= _ASCII_DIGITS):
         raise ValueError(

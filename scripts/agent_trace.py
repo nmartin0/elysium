@@ -263,7 +263,7 @@ def main(argv: list[str] | None = None) -> int:
         client = build_llm_adapter(deployment, deployment.synthesis_model)
         print()
         print("answer:")
-        print(f"  {synthesize_insight(client, args.query, result.gathered, deployment.step_model)}")
+        print(f"  {synthesize_insight(client, args.query, result.gathered, result.possibly_incomplete)}")
 
     return 0
 

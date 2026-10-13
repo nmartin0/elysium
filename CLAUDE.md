@@ -271,14 +271,12 @@ rather than assuming a script exists; one would have to be written.
 
 Pointing `ELYSIUM_DATA_DIR` somewhere under `$HOME` would end this.
 
-**Do not run uvicorn with `--reload` while testing writes.** The
-pending-write store is in-process memory, so a restart empties it —
-and `--reload` restarts on any watched file change, including the
-`policy.yaml` edit someone makes to exercise an approvals flow.
-Proposals then vanish between steps and look like a bug in the queue.
-Configuration needs no restart anyway: `POST /api/admin/reload`
-applies it and deliberately preserves pending writes.
-It has been suggested and not done; suggest it again if it bites.
+**Pending writes survive a restart now.** This paragraph used to warn
+against `uvicorn --reload` because the pending-write store was
+in-process memory and a restart emptied it. It is a database
+(`core/pending_write_store.py`: "THE DATABASE IS THE STORE"), so
+proposals no longer vanish between steps (E-16). Configuration still
+needs no restart at all: `POST /api/admin/reload` applies it.
 
 ## The loop, every change
 

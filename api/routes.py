@@ -5185,7 +5185,11 @@ async def query(body: QueryRequest, request: Request,
         executor,
         functools.partial(
             synthesize_insight, synthesis_client, body.query, real_data,
-            result.hit_max_hops or result.ran_out_of_time or result.hit_token_budget,
+            # EVERY EARLY STOP, not three of them (LB-3): repeating
+            # itself, invalid steps, blocked by rules and an unrecognised
+            # step ended as complete-sounding answers while the result
+            # knew better. The result decides; the route asks.
+            result.possibly_incomplete,
             usage=request_context.token_usage,
         ),
     )

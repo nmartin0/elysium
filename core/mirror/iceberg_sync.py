@@ -1813,7 +1813,8 @@ class IcebergMirrorSync(MirrorSync):
             if changes.is_empty:
                 return
 
-            self._append_changelog(silo_name, table_name, changes.rows, columns)
+            self._append_changelog(silo_name, table_name, changes.rows, columns,
+                                   compared_with=bronze_table.current_snapshot().snapshot_id)
         except (OSError, ValueError, KeyError, pa.ArrowInvalid) as e:
             logger.warning(
                 f"changelog for {silo_name}.{table_name} failed ({e}); the sync "
@@ -1822,12 +1823,21 @@ class IcebergMirrorSync(MirrorSync):
             )
 
     def _append_changelog(self, silo_name: str, table_name: str,
-                           rows: list[dict], columns: list[str]) -> None:
+                           rows: list[dict], columns: list[str],
+                           compared_with: "int | None" = None) -> None:
         """Writes the change rows, creating the table on first use.
 
         EVERY VALUE A STRING, as bronze does, and for the same reason:
         a changelog must not decide what a column means. `_change` and
         `_recorded_at` join them so one schema covers every table.
+
+        AND WHERE EACH CHANGE CAME FROM (PA001-A13): `_compared_with`, the
+        bronze snapshot this read was diffed against, and `_run_id`, the
+        sync run that noticed it. The bronze snapshot of the NEW read
+        does not exist yet -- the changelog is written first, so a
+        failed overwrite cannot lose the evidence -- so the before-side
+        is the honest id to name: with the run id it identifies both
+        ends of the comparison.
         """
         recorded_at = datetime.now(UTC).isoformat()
         namespace = f"changelog_{silo_name}"
@@ -1851,6 +1861,10 @@ class IcebergMirrorSync(MirrorSync):
             # not tell us the latter and inventing it would be worse
             # than admitting the difference.
             "_recorded_at": pa.array([recorded_at] * len(rows), type=pa.string()),
+            "_compared_with": pa.array(
+                [None if compared_with is None else str(compared_with)] * len(rows),
+                type=pa.string()),
+            "_run_id": pa.array([self._run_id] * len(rows), type=pa.string()),
         })
 
         if not self._catalog.namespace_exists(namespace):

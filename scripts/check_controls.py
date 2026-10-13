@@ -1930,6 +1930,35 @@ CONTROLS = [
         new="        return today.year - born.year - ((today.month, today.day) <= (born.month, born.day))",
         tests=["tests/unit/test_properties.py::test_years_since_agrees_with_counting_birthdays"],
     ),
+    Control(
+        describes="LB-3: every early stop reaches synthesis as possibly incomplete",
+        path="api/routes.py",
+        old="            result.possibly_incomplete,",
+        new="            result.hit_max_hops or result.ran_out_of_time or result.hit_token_budget,",
+        tests=["tests/integration/test_api.py::test_every_early_stop_reaches_synthesis_as_possibly_incomplete"],
+    ),
+    Control(
+        describes="PA001-F3: a whole number written with a point is read as an integer",
+        path="core/ontology/field_types.py",
+        old="    if isinstance(value, str) and _DECIMAL_POINT.match(value.strip()):",
+        new="    if False:",
+        tests=["tests/unit/test_whole_numbers_however_written.py::test_a_whole_number_is_read_however_it_is_written"],
+    ),
+    Control(
+        describes="PA001-F3: a fractional value is refused, never truncated",
+        path="core/ontology/field_types.py",
+        old="        if value != int(value):\n            raise ValueError(f\"{value!r} is not a whole number.\")",
+        new="        if False:\n            raise ValueError(f\"{value!r} is not a whole number.\")",
+        tests=["tests/unit/test_whole_numbers_however_written.py::test_a_fraction_is_refused_not_truncated"],
+    ),
+    Control(
+        describes="PA001-A13: a changelog entry names the bronze snapshot it was compared with",
+        path="core/mirror/iceberg_sync.py",
+        old="                                   compared_with=bronze_table.current_snapshot().snapshot_id)",
+        new="                                   compared_with=None)",
+        tests=["tests/unit/test_changelog_says_where_it_came_from.py::"
+               "test_an_entry_names_its_bronze_snapshot_and_its_run"],
+    ),
 ]
 
 
