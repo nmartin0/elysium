@@ -387,6 +387,8 @@ layers = [
     # label's shape with it, and core/mirror reads labels through it.
     # value_checks is a leaf too (DEP-4): constraints and silver's
     # standardisation call it, and it imports nothing from here.
+    # value_types expands into rules value_checks judges (R28).
+    "value_types",
     "field_types | link_types | classifications | value_checks",
     # Below field_types, which reads locale-written text through it
     # (DEP-1). It imports nothing from this package.

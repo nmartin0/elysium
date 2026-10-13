@@ -2052,6 +2052,27 @@ CONTROLS = [
         new="        if False:\n            return {}",
         tests=["tests/unit/test_unusual_values_are_flagged.py::TestTheMethods::test_free_text_has_no_usual_shape"],
     ),
+    Control(
+        describes="R28: the loader expands a value type into its rules",
+        path="core/deployment_loader.py",
+        old="    validate_and_expand_value_types(object_types_raw)",
+        new="    pass",
+        tests=["tests/unit/test_value_types.py::test_the_loader_expands_it"],
+    ),
+    Control(
+        describes="R28: identity matching keys a declared value type canonically",
+        path="core/mirror/identity.py",
+        old="        key = canonical_key(value, (type_def.get(\"fields\") or {}).get(field_name) or {})",
+        new="        key = str(value)",
+        tests=["tests/unit/test_value_types.py::test_identity_matches_two_spellings_of_one_address"],
+    ),
+    Control(
+        describes="R28: an address keys without case",
+        path="core/ontology/value_types.py",
+        old="        return email_normalised(text.strip()).casefold()",
+        new="        return email_normalised(text.strip())",
+        tests=["tests/unit/test_value_types.py::TestTheCanonicalKey::test_an_address_keys_without_case"],
+    ),
 ]
 
 

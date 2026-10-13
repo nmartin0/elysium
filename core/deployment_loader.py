@@ -612,6 +612,12 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     object_types_raw = schema_raw.get("object_types", {})
     link_types_raw = schema_raw.get("link_types", {})
     validate_link_types(link_types_raw, object_types_raw)
+    # VALUE TYPES FIRST (R28): each expands into the constraint and
+    # standardise rules it stands for, which the validators below then
+    # check like any written by hand.
+    from core.ontology.value_types import validate_and_expand_value_types
+
+    validate_and_expand_value_types(object_types_raw)
     # A MALFORMED CONSTRAINT STOPS THE LOAD: one that silently never
     # fires, or fires on everything, is worse than none.
     validate_constraints(object_types_raw)

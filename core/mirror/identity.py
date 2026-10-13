@@ -69,6 +69,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from core.ontology.value_types import canonical_key
+
 
 @dataclass(frozen=True)
 class IdentityRule:
@@ -164,7 +166,10 @@ def _match_key(row: dict, rule: IdentityRule, type_def: dict, storage_key: Any):
         value = _value_of(row, field_name, type_def, storage_key)
         if value is None or (isinstance(value, str) and not value.strip()):
             return None
-        values.append(str(value).casefold() if field_name in rule.casefold else str(value))
+        # A DECLARED VALUE TYPE KEYS CANONICALLY (R28): an address
+        # lower-cased whole, a phone number as E.164.
+        key = canonical_key(value, (type_def.get("fields") or {}).get(field_name) or {})
+        values.append(key.casefold() if field_name in rule.casefold else key)
     return tuple(values)
 
 
