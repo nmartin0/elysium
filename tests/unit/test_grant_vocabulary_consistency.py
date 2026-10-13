@@ -43,6 +43,8 @@ NOT_GRANTS = {
     "urn",  # data_contracts.py's contract id: f"urn:{namespace}:contract:{type}" (R16)
     "elysium",  # openlineage.py's uuid5 seed: f"elysium:{run_id}:{job}" (R15)
     "rule",  # sync_targets.py's expectation key for a two-field rule: f"rule:{name}" (R29)
+    "dependency",  # sync_targets.py's key for a functional dependency (R29, across rows)
+    "outliers",  # sync_targets.py's key for an unusual-value flag: f"outliers:{column}" (R30)
 }
 
 # Every verb followed by a colon is a grant prefix. Kept as a set

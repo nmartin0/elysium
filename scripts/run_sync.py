@@ -452,7 +452,7 @@ def _ids_about_to_publish(sync, type_def: dict) -> "set | None":
     """The ids a type's silver holds -- what its gold will hold if its
     build passes. None for a type whose gold ids are not its silver ids:
     identity resolution merges rows, so they are decided by the build."""
-    if type_def.get("identity"):
+    if type_def.get("identity") is not None:
         return None
     storage = type_def.get("storage") or {}
     try:
@@ -655,8 +655,9 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
             if ids is not None
         }
         for partner in cycles.get(object_type, ()):
-            if upcoming.get(partner) is not None:
-                known[partner] = set(known.get(partner) or ()) | upcoming[partner]
+            coming = upcoming.get(partner)
+            if coming is not None:
+                known[partner] = set(known.get(partner) or ()) | coming
                 leaned_on.setdefault(partner, set()).add(object_type)
         try:
             result = build_gold(sync._catalog, object_type, type_def, silver, known,

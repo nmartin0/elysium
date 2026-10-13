@@ -1421,8 +1421,8 @@ CONTROLS = [
     Control(
         describes="ZOO-24: a declared casefold folds the identity key",
         path="core/mirror/identity.py",
-        old="        values.append(str(value).casefold() if field_name in rule.casefold else str(value))",
-        new="        values.append(str(value))",
+        old="        values.append(key.casefold() if field_name in rule.casefold else key)",
+        new="        values.append(key)",
         tests=["tests/unit/test_identity_resolution.py::TestADeclaredCasefold::"
                "test_declared_the_two_spellings_are_one_entity"],
     ),
@@ -1873,8 +1873,8 @@ CONTROLS = [
     Control(
         describes="DEP-4: mojibake is repaired when declared",
         path="core/mirror/standardise.py",
-        old="        value = fixed_text(value)",
-        new="        value = value",
+        old="        step(\"fix_text\", fixed_text(value))",
+        new="        pass",
         tests=["tests/unit/test_reference_data_checks.py::TestStandardisation::test_mojibake_is_repaired_before_anything_else"],
     ),
     Control(
@@ -1990,7 +1990,7 @@ CONTROLS = [
     Control(
         describes="R18: a type in a link cycle may link to what its partner publishes this run",
         path="scripts/run_sync.py",
-        old="                known[partner] = set(known.get(partner) or ()) | upcoming[partner]",
+        old="                known[partner] = set(known.get(partner) or ()) | coming",
         new="                pass",
         tests=["tests/unit/test_gold_builds_targets_first.py::TestALinkCycle::test_a_new_pair_pointing_at_each_other_publishes_together"],
     ),
@@ -2004,8 +2004,8 @@ CONTROLS = [
     Control(
         describes="R29: silver checks functional dependencies across rows",
         path="core/mirror/expectations.py",
-        old="    _apply_dependencies(result, expectations)\n    return result",
-        new="    return result",
+        old="    _apply_dependencies(result, expectations)\n    _flag_outliers(result, expectations)",
+        new="    _flag_outliers(result, expectations)",
         tests=["tests/unit/test_dependencies_across_rows.py::TestThroughARealSync::test_quarantine_holds_the_disagreeing_row_and_names_the_majority",
                "tests/unit/test_dependencies_across_rows.py::TestThroughARealSync::test_fail_stops_the_build"],
     ),
@@ -2091,8 +2091,12 @@ CONTROLS = [
     Control(
         describes="R33: the record describes silver now rather than accumulating",
         path="core/mirror/iceberg_sync.py",
-        old="                table.overwrite(arrow_table)\n        except (OSError, ValueError, KeyError, pa.ArrowInvalid) as error:\n            logger.warning(f\"cleaning record",
-        new="                table.append(arrow_table)\n        except (OSError, ValueError, KeyError, pa.ArrowInvalid) as error:\n            logger.warning(f\"cleaning record",
+        old=("                table.overwrite(arrow_table)\n"
+             "        except (OSError, ValueError, KeyError, pa.ArrowInvalid) as error:\n"
+             "            logger.warning(f\"cleaning record"),
+        new=("                table.append(arrow_table)\n"
+             "        except (OSError, ValueError, KeyError, pa.ArrowInvalid) as error:\n"
+             "            logger.warning(f\"cleaning record"),
         tests=["tests/unit/test_cleaning_is_recorded_per_cell.py::test_it_describes_silver_now_rather_than_accumulating"],
     ),
     Control(
@@ -2112,8 +2116,12 @@ CONTROLS = [
     Control(
         describes="R40: a changed reference-data version is warned about on an unchanged table",
         path="core/mirror/iceberg_sync.py",
-        old="                    tx.set_properties({\n                        **_read_properties(read_started_at, self._run_id),\n                        **self._reference_data(table, silo_name, table_name,\n                                               standardisation, expectations)})",
-        new="                    tx.set_properties({\n                        **_read_properties(read_started_at, self._run_id)})",
+        old=("                    tx.set_properties({\n"
+             "                        **_read_properties(read_started_at, self._run_id),\n"
+             "                        **self._reference_data(table, silo_name, table_name,\n"
+             "                                               standardisation, expectations)})"),
+        new=("                    tx.set_properties({\n"
+             "                        **_read_properties(read_started_at, self._run_id)})"),
         tests=["tests/unit/test_reference_data_is_versioned.py::test_a_changed_version_is_warned_about_even_when_the_data_did_not_change"],
     ),
     Control(

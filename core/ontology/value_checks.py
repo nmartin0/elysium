@@ -161,7 +161,7 @@ def reference_data_used(standardisation, field_defs) -> dict[str, str]:
     `field_defs` the declared fields whose constraints are checked."""
     from importlib.metadata import PackageNotFoundError, version
 
-    names = set()
+    names: set[str] = set()
     for rules in (standardisation or {}).values():
         names.update(_LIBRARY_FOR[key] for key in ("phone", "email", "fix_text")
                      if rules and rules.get(key))

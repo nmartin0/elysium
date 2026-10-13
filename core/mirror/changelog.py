@@ -348,6 +348,8 @@ class AsOf:
 
     def version_at(self, object_id, at) -> "dict | None":
         when = _instant(at)
+        if when is None:
+            return None
         known = self._by_id.get(str(object_id))
         if not known:
             return self._current.get(str(object_id))

@@ -97,7 +97,10 @@ class TestBothLayersCallIt:
     def test_silver_does_NOT_on_the_unchanged_path(self):
         """That branch sets a property and adds no snapshot. Expiring
         there is a commit that can only cost."""
-        i = SOURCE.index("tx.set_properties(_read_properties(read_started_at,")
+        # The unchanged branch's property write -- it carries the R40
+        # reference-data versions since 13 October.
+        i = SOURCE.index("**_read_properties(read_started_at, self._run_id),\n"
+                         "                        **self._reference_data(table")
         before_else = SOURCE[i:SOURCE.index("else:", i)]
 
         assert "expire_unreferenced" not in before_else
