@@ -274,6 +274,13 @@ class DeploymentConfig:
     # None for a silo means machine formats only -- the behaviour before
     # this existed, and what an absent declaration still means.
     source_locales: Mapping[str, "str | None"] = MappingProxyType({})
+    # SILOS WHOSE DATE COLUMNS MAY HOLD EXCEL SERIALS (ZOO-22): those
+    # declaring `excel_dates: true` in data_silos.yaml. Declared, never
+    # inferred -- a bare number in a date column is ambiguous.
+    excel_date_silos: frozenset = frozenset()
+    # AL-10: the most tokens one query may spend, as providers report
+    # them. None: no budget. `agent: max_tokens_per_query:` in config.yaml.
+    max_tokens_per_query: "int | None" = None
 
 
 logger = logging.getLogger(__name__)
@@ -645,6 +652,8 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             lineage=deep_freeze(validate_lineage_block(config.get("lineage"))),
             source_locales=MappingProxyType(
                 _source_locales(config, data_silos_raw["data_silos"])),
+            excel_date_silos=_excel_date_silos(data_silos_raw["data_silos"]),
+            max_tokens_per_query=_token_budget(config["agent"].get("max_tokens_per_query")),
             max_concurrent_requests=_default_concurrency(config),
             # FOUR HOURS by default, not fifteen minutes. Long enough
             # that a reviewer can be in a meeting; short enough that a
@@ -939,6 +948,32 @@ def _source_locales(config: dict, silos: dict) -> dict:
         else:
             resolved[silo_name] = default
     return resolved
+
+
+def _token_budget(declared) -> "int | None":
+    """AL-10's budget: a positive whole number of tokens, or absent."""
+    if declared is None:
+        return None
+    if isinstance(declared, bool) or not isinstance(declared, int) or declared <= 0:
+        raise ValueError(
+            f"config.yaml agent.max_tokens_per_query must be a positive whole number of "
+            f"tokens, got {declared!r}.")
+    return declared
+
+
+def _excel_date_silos(silos: dict) -> frozenset:
+    """The silos declaring `excel_dates: true`. Anything but a boolean is
+    refused: `excel_dates: yes-please` silently read as false would leave
+    every serial set aside with nothing pointing at why."""
+    declared = set()
+    for silo_name, silo in (silos or {}).items():
+        value = (silo or {}).get("excel_dates", False)
+        if not isinstance(value, bool):
+            raise ValueError(
+                f"data_silos.yaml {silo_name}.excel_dates must be true or false, got {value!r}.")
+        if value:
+            declared.add(silo_name)
+    return frozenset(declared)
 
 
 def _retain_publications(config: dict) -> int:

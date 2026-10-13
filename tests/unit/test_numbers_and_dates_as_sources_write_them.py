@@ -149,3 +149,65 @@ class TestThroughARealSync:
     def test_with_no_locale_the_same_rows_are_set_aside(self, synced):
         """THE CONTROL: without the declaration, as before."""
         assert "1" not in synced(None)
+
+
+class TestExponentFormIntegers:
+    """ZOO-15: `1e3` is 1000, written unambiguously."""
+
+    @pytest.mark.parametrize("text, expected", [("1e3", 1000), ("1E+03", 1000),
+                                                ("-2.5E+04", -25000)])
+    def test_an_exactly_whole_one_loads(self, text, expected):
+        assert coerce(text, "integer") == expected
+
+    @pytest.mark.parametrize("text", ["1.5e0", "1e-1"])
+    def test_one_that_is_not_whole_is_refused_not_rounded(self, text):
+        with pytest.raises(ValueError):
+            coerce(text, "integer")
+
+
+class TestExcelDateSerials:
+    """ZOO-22: Excel's day count, only where a silo declares it."""
+
+    def test_declared_a_serial_is_the_day_excel_means(self):
+        assert coerce("45292", "date", excel_dates=True) == datetime.date(2024, 1, 1)
+        assert coerce(45292, "date", excel_dates=True) == datetime.date(2024, 1, 1)
+        assert coerce("45292.75", "timestamp", excel_dates=True) == \
+            datetime.datetime(2024, 1, 1, 18, 0)
+
+    def test_undeclared_a_serial_is_still_refused(self):
+        """THE CONTROL: a bare number in a date column is ambiguous."""
+        with pytest.raises(ValueError, match="ISO-8601"):
+            coerce("45292", "date")
+
+    @pytest.mark.parametrize("text, says", [
+        ("60", "real day"),            # Excel's phantom 29 February 1900
+        ("45292.5", "time of day"),    # a time, into a date field
+    ])
+    def test_what_is_refused(self, text, says):
+        with pytest.raises(ValueError, match=says):
+            coerce(text, "date", excel_dates=True)
+
+    def test_the_declaration_must_be_a_boolean(self):
+        from core.deployment_loader import _excel_date_silos
+
+        assert _excel_date_silos({"a": {"excel_dates": True}, "b": {}}) == frozenset({"a"})
+        with pytest.raises(ValueError, match="true or false"):
+            _excel_date_silos({"a": {"excel_dates": "yes"}})
+
+    def test_through_a_real_sync(self, tmp_path):
+        source = tmp_path / "x.db"
+        conn = sqlite3.connect(source)
+        conn.execute("CREATE TABLE t (id TEXT PRIMARY KEY, seen TEXT, typed REAL)")
+        conn.execute("INSERT INTO t VALUES ('1', '45292', 45293)")
+        conn.commit()
+        conn.close()
+        sync = IcebergMirrorSync(tmp_path / "mirror", {"x": SQLiteReadAdapter({"path": source})},
+                                 on_type_mismatch="quarantine")
+        sync.excel_date_silos = frozenset({"x"})
+
+        sync.sync_table("x", "t", "id", ["id", "seen", "typed"],
+                        {"id": "string", "seen": "date", "typed": "date"})
+
+        (row,) = sync._catalog.load_table("x.t").scan().to_arrow().to_pylist()
+        assert row["seen"] == datetime.date(2024, 1, 1)
+        assert row["typed"] == datetime.date(2024, 1, 2)

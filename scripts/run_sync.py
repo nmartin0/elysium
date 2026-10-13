@@ -700,6 +700,7 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
         sync.suppression = suppression_for(config.schema, erasures)
         # HOW EACH SILO WRITES NUMBERS AND DATES (DEP-1).
         sync.locales = dict(config.source_locales)
+        sync.excel_date_silos = config.excel_date_silos
 
         # LINEAGE (R15): to lineage.jsonl always, and to a service when
         # config.yaml names one. Never the sync's verdict.

@@ -413,6 +413,8 @@ class IcebergMirrorSync(MirrorSync):
         # Empty means machine formats only, which is every deployment
         # that has not declared one.
         self.locales: dict = {}
+        # SILOS THAT DECLARE EXCEL DATE SERIALS (ZOO-22), set by run_sync.
+        self.excel_date_silos: frozenset = frozenset()
         self._current_silo: str | None = None
         # adapters are the REAL, read-only ExternalReadAdapter instances
         # (Phase 1 -- structurally incapable of writing to the
@@ -694,7 +696,8 @@ class IcebergMirrorSync(MirrorSync):
             if locale else set())
         transformed = transform_rows(source_rows, columns, column_types, standardisation,
                                      security_column=security_column,
-                                     locale=locale, localised_columns=text_columns)
+                                     locale=locale, localised_columns=text_columns,
+                                     excel_dates=silo_name in self.excel_date_silos)
         if transformed.has_drift and self._on_type_mismatch == "quarantine":
             # THE ROW, NOT THE TABLE. Databricks separates a MALFORMED
             # RECORD from a TYPE MISMATCH -- "only incomplete and

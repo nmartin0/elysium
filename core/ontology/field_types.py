@@ -54,6 +54,7 @@ Used by: core/ontology/object_type_validation.py (validating what's
 
 import datetime
 import decimal
+import re
 import zoneinfo
 
 import pyarrow as pa
@@ -201,6 +202,38 @@ _FALSE_WORDS = frozenset({"false", "f", "no", "n", "off"})
 # mirror that quietly reads full-width digits as ASCII ones is
 # INFERRING, which this file's whole contract forbids.
 _ASCII_DIGITS = set("0123456789")
+# EXCEL'S DATE SERIALS (ZOO-22): a day count from 1899-12-30, a fraction
+# being the time of day. Only for a silo that DECLARES it (`excel_dates:
+# true` in data_silos.yaml) -- a bare number in a date column is just as
+# plausibly some other system's day count, and choosing for it is a guess.
+_EXCEL_SERIAL = re.compile(r"^[0-9]+(\.[0-9]+)?$")
+_TEMPORAL = frozenset({"date", "timestamp", "timestamptz"})
+_EXCEL_EPOCH = datetime.datetime(1899, 12, 30)
+# Excel's day 60 is 29 February 1900, a day that never existed (Lotus
+# 1-2-3's bug, kept for compatibility). Below 61 the count is off by one
+# or names that phantom day, so those are refused rather than adjusted.
+_EXCEL_FIRST_SAFE = 61
+_EXCEL_LAST = 2958465  # 9999-12-31
+
+
+def _from_excel_serial(text: str, data_type: str) -> str:
+    serial = decimal.Decimal(text)
+    if not _EXCEL_FIRST_SAFE <= serial <= _EXCEL_LAST:
+        raise ValueError(
+            f"{text!r} is outside the Excel date serials that name one real day "
+            f"({_EXCEL_FIRST_SAFE} to {_EXCEL_LAST}).")
+    moment = _EXCEL_EPOCH + datetime.timedelta(days=float(serial))
+    if data_type == "date":
+        if serial != serial.to_integral_value():
+            raise ValueError(f"{text!r} carries a time of day; the field is a date.")
+        return moment.date().isoformat()
+    # To the second: a serial's fraction is a binary float of a day, and
+    # 45292.5 meaning 12:00:00.000001 is noise, not a timestamp.
+    return (moment + datetime.timedelta(microseconds=500_000)).replace(microsecond=0).isoformat()
+
+
+# ASCII digits with an exponent: `1e3`, `-2.5E+04`. Nothing else.
+_SCIENTIFIC = re.compile(r"^[+-]?[0-9]+(\.[0-9]+)?[eE][+-]?[0-9]+$")
 
 
 def _real_number(value):
@@ -252,6 +285,17 @@ def _whole_number(value):
     working deployments to protect against a declaration mistake.
     Recorded as an owner decision (ZOO-14) rather than decided here.
     """
+    if isinstance(value, str) and _SCIENTIFIC.match(value.strip()):
+        # EXPONENT FORM, WHEN IT IS EXACTLY WHOLE (ZOO-15). Spreadsheets
+        # and some exporters write 1000 as `1e3` or `1E+03`; that is the
+        # same integer, written unambiguously, and refusing it set the
+        # row aside for nothing. Read through Decimal, never float, so
+        # `1e20` is exact -- and `1.5e0`, which is not whole, is still
+        # refused rather than rounded.
+        exact = decimal.Decimal(value.strip())
+        if exact != exact.to_integral_value():
+            raise ValueError(f"{value!r} is not a whole number.")
+        return int(exact)
     if isinstance(value, str) and value.strip() and not (
             set(value.strip().lstrip("+-")) <= _ASCII_DIGITS):
         raise ValueError(
@@ -263,7 +307,7 @@ def _whole_number(value):
 
 
 def coerce(value, data_type: str, source_timezone: str | None = None,
-           locale: str | None = None):
+           locale: str | None = None, excel_dates: bool = False):
     """A raw source value, converted to what its declared type says it
     is. None stays None -- a real NULL is not a type error.
 
@@ -283,7 +327,9 @@ def coerce(value, data_type: str, source_timezone: str | None = None,
         return None
     if data_type == "string":
         return str(value)
-    if locale is not None and isinstance(value, str):
+    if excel_dates and data_type in _TEMPORAL and _EXCEL_SERIAL.match(str(value).strip()):
+        value = _from_excel_serial(str(value).strip(), data_type)
+    elif locale is not None and isinstance(value, str):
         from core.ontology.localised_values import to_canonical
 
         value = to_canonical(value, data_type, locale)

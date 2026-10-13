@@ -146,6 +146,9 @@ class StopReason:
     CANCELLED = "cancelled"
     AUTHORITY_CHANGED = "authority_changed"
     RAN_OUT_OF_TIME = "ran_out_of_time"
+    # AL-10: the query's tokens, as the provider reported them, reached
+    # the deployment's budget.
+    TOKEN_BUDGET = "token_budget"
     PROPOSED_WRITE = "proposed_write"
     # The four that used to say nothing at all.
     REPEATED_ITSELF = "repeated_itself"
@@ -227,6 +230,12 @@ class AgentLoopResult:
         was gathered is kept, and synthesis is told it may be
         incomplete."""
         return self.stop_reason == StopReason.RAN_OUT_OF_TIME
+
+    @property
+    def hit_token_budget(self) -> bool:
+        """AL-10: the query spent its token budget. What was gathered is
+        kept and synthesis is told it may be incomplete, as for time."""
+        return self.stop_reason == StopReason.TOKEN_BUDGET
 
 
 def _object_ids_in(step: dict) -> list:
@@ -577,7 +586,8 @@ class AgentLoop:
     def __init__(self, client: LLMAdapter, mediator: DataMediator, tools: list[Function] | None = None,
                  write_mediator: WriteMediator | None = None,
                  max_hops: int = 8, max_consecutive_duplicates: int = 2,
-                 max_consecutive_invalid_steps: int = 2, constrain_steps: bool = False):
+                 max_consecutive_invalid_steps: int = 2, constrain_steps: bool = False,
+                 max_tokens_per_query: int | None = None):
         # These stay fixed across every query this loop instance ever
         # runs -- constructed once per deployment, then run() called
         # once per actual user question. tools defaults to None, not []
@@ -602,6 +612,12 @@ class AgentLoop:
         self.max_consecutive_invalid_steps = max_consecutive_invalid_steps
         # AR-5: each step reply constrained to the caller's step schema.
         self.constrain_steps = constrain_steps
+        # AL-10: a TOKEN budget beside the hop count and the deadline.
+        # Hops bound the number of calls, the deadline bounds wall time,
+        # and neither bounds what a call COSTS -- a hosted model billed
+        # per token can spend a great deal inside eight hops and five
+        # minutes. None is no budget, which is what every deployment had.
+        self.max_tokens_per_query = max_tokens_per_query
 
     @classmethod
     def from_deployment(cls, deployment, mediator: DataMediator,
@@ -620,6 +636,7 @@ class AgentLoop:
             max_consecutive_duplicates=deployment.max_consecutive_duplicates,
             max_consecutive_invalid_steps=deployment.max_consecutive_invalid_steps,
             constrain_steps=deployment.constrain_steps,
+            max_tokens_per_query=deployment.max_tokens_per_query,
         )
 
     @staticmethod
@@ -1687,6 +1704,17 @@ class AgentLoop:
             if deadline is not None and time.monotonic() >= deadline:
                 logger.warning("query deadline passed, answering from what was gathered")
                 return AgentLoopResult(gathered=gathered, stop_reason=StopReason.RAN_OUT_OF_TIME,
+                                       fabricated_finishes=tuple(fabricated_finishes),
+                                       hops_used=hops_used)
+            # AL-10, CHECKED BEFORE A CALL, like the deadline: a budget
+            # already spent stops the next call rather than being noticed
+            # after it. Only what providers REPORTED counts -- a provider
+            # that reports nothing cannot be held to a budget, and
+            # `usage.unreported` says when that happened.
+            if (self.max_tokens_per_query and usage is not None
+                    and usage.input_tokens + usage.output_tokens >= self.max_tokens_per_query):
+                logger.warning("query token budget spent, answering from what was gathered")
+                return AgentLoopResult(gathered=gathered, stop_reason=StopReason.TOKEN_BUDGET,
                                        fabricated_finishes=tuple(fabricated_finishes),
                                        hops_used=hops_used)
 

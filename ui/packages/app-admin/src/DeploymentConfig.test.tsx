@@ -336,6 +336,17 @@ describe('where the freshness windows come from', () => {
     expect(label.parentElement).toHaveTextContent('lineage.jsonl and a lineage service (namespace acme)')
   })
 
+  it('shows the per-question token budget, and none when unset (AL-10)', async () => {
+    getDeploymentConfig.mockResolvedValue({ ...BODY, max_tokens_per_query: 50000 })
+    const { unmount } = render(<DeploymentConfig onSessionExpired={() => {}} />)
+    expect((await screen.findByText('Token budget per question')).parentElement).toHaveTextContent('50,000 tokens')
+    unmount()
+
+    getDeploymentConfig.mockResolvedValue({ ...BODY, max_tokens_per_query: null })
+    render(<DeploymentConfig onSessionExpired={() => {}} />)
+    expect((await screen.findByText('Token budget per question')).parentElement).toHaveTextContent(/none$/)
+  })
+
   it('says how each silo writes numbers and dates (DEP-1)', async () => {
     getDeploymentConfig.mockResolvedValue({
       ...BODY,

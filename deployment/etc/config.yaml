@@ -82,6 +82,11 @@ agent:
   # How long one query may spend gathering before it answers from what it
   # has. The synthesis call after it keeps its own timeout. Default 300.
   # query_deadline_seconds: 300
+  # The most tokens one question may spend, as the provider reports them
+  # (AL-10). Absent means no budget. Worth setting for a hosted model
+  # billed per token; a provider that reports no counts cannot be held
+  # to it. Like running out of time, the answer says it may be partial.
+  # max_tokens_per_query: 50000
   max_consecutive_duplicates: 2
   max_consecutive_invalid_steps: 2
   # Constrain each step reply to the step vocabulary as a JSON Schema

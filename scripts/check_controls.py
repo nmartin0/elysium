@@ -1538,6 +1538,28 @@ CONTROLS = [
         new="            detail=str(e) + \"The help assistant cannot reach its model right now. Try again later, \"",
         tests=["tests/integration/test_help_assistant.py::test_an_unreachable_model_is_a_503_that_says_so"],
     ),
+    Control(
+        describes="ZOO-15: an exactly whole exponent-form value is an integer",
+        path="core/ontology/field_types.py",
+        old="    if isinstance(value, str) and _SCIENTIFIC.match(value.strip()):",
+        new="    if False:",
+        tests=["tests/unit/test_numbers_and_dates_as_sources_write_them.py::TestExponentFormIntegers::test_an_exactly_whole_one_loads"],
+    ),
+    Control(
+        describes="ZOO-22: a declared silo's Excel serials are dates",
+        path="core/ontology/field_types.py",
+        old="    if excel_dates and data_type in _TEMPORAL and _EXCEL_SERIAL.match(str(value).strip()):",
+        new="    if False:",
+        tests=["tests/unit/test_numbers_and_dates_as_sources_write_them.py::TestExcelDateSerials::test_through_a_real_sync"],
+    ),
+    Control(
+        describes="AL-10: a spent token budget stops the next model call",
+        path="core/agent/agentic_loop.py",
+        old="            if (self.max_tokens_per_query and usage is not None",
+        new="            if (False and usage is not None",
+        tests=["tests/unit/test_a_question_has_a_token_budget.py::"
+               "test_the_budget_stops_the_next_call_once_spent"],
+    ),
 ]
 
 

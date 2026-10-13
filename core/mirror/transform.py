@@ -119,7 +119,8 @@ def transform_rows(rows: list[dict], columns: list[str],
                     standardisation: dict[str, dict] | None = None,
                     security_column: "str | None" = None,
                     locale: "str | None" = None,
-                    localised_columns: "frozenset | set | None" = None) -> TransformResult:
+                    localised_columns: "frozenset | set | None" = None,
+                    excel_dates: bool = False) -> TransformResult:
     """Casts every column to its ontology-declared type, reporting any
     column whose real data does not fit.
 
@@ -179,7 +180,8 @@ def transform_rows(rows: list[dict], columns: list[str],
                 value = standardise(row[column], (standardisation or {}).get(column))
             try:
                 cleaned_row[column] = coerce(value, declared, source_timezone,
-                                             locale if column in localised else None)
+                                             locale if column in localised else None,
+                                             excel_dates=excel_dates)
             except (ValueError, TypeError):
                 # The FIRST offending value for this column is the one
                 # reported -- later ones are almost always the same

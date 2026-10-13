@@ -1300,6 +1300,8 @@ class DeploymentConfigResponse(BaseModel):
     #: AR-5: whether step replies are constrained to the step schema.
     #: Defaulted so an older client reading this still parses.
     constrain_steps: bool = False
+    #: AL-10: the per-query token budget; None for none.
+    max_tokens_per_query: int | None = None
     #: Formerly BLOCKING 6: classification labels decide field access.
     label_enforcement: bool = False
     #: R15: whether lineage events also go to a service. WHETHER, never
@@ -3190,6 +3192,7 @@ def deployment_config_route(request: Request,
         "sync_interval_hours": _declared_sync_interval(config),
         "max_consecutive_invalid_steps": config.max_consecutive_invalid_steps,
         "constrain_steps": config.constrain_steps,
+        "max_tokens_per_query": config.max_tokens_per_query,
         "label_enforcement": config.label_enforcement,
         "lineage_service": bool(config.lineage.get("url")),
         "lineage_namespace": config.lineage.get("namespace") or "elysium",
@@ -5160,7 +5163,7 @@ async def query(body: QueryRequest, request: Request,
         executor,
         functools.partial(
             synthesize_insight, synthesis_client, body.query, real_data,
-            result.hit_max_hops or result.ran_out_of_time,
+            result.hit_max_hops or result.ran_out_of_time or result.hit_token_budget,
             usage=request_context.token_usage,
         ),
     )
