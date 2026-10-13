@@ -1589,6 +1589,28 @@ CONTROLS = [
         tests=["tests/unit/test_declared_timezone.py::TestTheZoneReachesTheSync::"
                "test_a_field_with_no_other_rules_keeps_its_zone"],
     ),
+    Control(
+        describes="R4: a supported database is read as one snapshot",
+        path="adapters/sqlalchemy_adapter.py",
+        old="        isolation = SNAPSHOT_ISOLATION.get(self._engine.dialect.name)",
+        new="        isolation = None",
+        tests=["tests/unit/test_one_consistent_read_per_silo.py::test_a_write_between_two_reads_is_not_seen_inside_the_snapshot"],
+    ),
+    Control(
+        describes="R4: a failed read inside the snapshot costs only that read",
+        path="adapters/sqlalchemy_adapter.py",
+        old=("                with pinned.begin_nested():\n"
+             "                    return [dict(row) for row in pinned.execute(statement).mappings()]"),
+        new="                return [dict(row) for row in pinned.execute(statement).mappings()]",
+        tests=["tests/unit/test_one_consistent_read_per_silo.py::test_a_failed_read_does_not_poison_the_rest_of_the_snapshot"],
+    ),
+    Control(
+        describes="R4: the run reads each silo's tables inside its snapshot",
+        path="scripts/run_sync.py",
+        old="            with _consistent_read(sync.adapters.get(silo_name)) as consistent:",
+        new="            with _consistent_read(None) as consistent:",
+        tests=["tests/unit/test_one_consistent_read_per_silo.py::test_the_run_opens_one_snapshot_per_silo_around_its_tables"],
+    ),
 ]
 
 

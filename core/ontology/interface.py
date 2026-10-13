@@ -69,6 +69,7 @@ itself; core/ enforces based on what's declared, never assumes:
 """
 
 from abc import abstractmethod
+from contextlib import contextmanager
 from typing import Any
 
 from core.adapter_roles import ReadAdapter, WriteAdapter
@@ -113,6 +114,19 @@ class ExternalReadAdapter(ReadAdapter):
     #: possibility of a mismatch: the mediator splits, so only it
     #: decides, and it asks for nothing else.
     pushable_operators: frozenset[str]
+
+    @contextmanager
+    def consistent_read(self):
+        """Every read inside sees ONE snapshot of the source, if this
+        storage can give one without blocking its writers (R4). Yields
+        whether it did.
+
+        THE DEFAULT IS NO, said rather than pretended: reads go table by
+        table, as they always have. An adapter that can do better --
+        adapters/sqlalchemy_adapter.py, for PostgreSQL, MySQL and Oracle
+        -- overrides this.
+        """
+        yield False
 
     @abstractmethod
     def find_ids(self, object_type: str, conditions: list, type_config: dict,

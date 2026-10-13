@@ -36,6 +36,8 @@ goes through `Table`/`Column` objects, which the dialect quotes.
 """
 
 import logging
+import threading
+from contextlib import contextmanager
 from typing import Any
 
 from sqlalchemy import (
@@ -65,6 +67,36 @@ logger = logging.getLogger(__name__)
 # waiting, leaving the database still working on something nobody will
 # read.
 DEFAULT_QUERY_TIMEOUT_SECONDS = 30
+
+# ONE SNAPSHOT FOR A WHOLE SYNC OF A SILO (R4), by dialect: the isolation
+# level under which every read in one transaction sees the database as
+# of its first read -- WITHOUT blocking the source's own writers, which
+# is the condition for doing this to somebody else's production
+# database at all. pg_dump's guarantee, "consistent backups even if the
+# database is being used concurrently", is this mechanism.
+#
+#   postgresql   REPEATABLE READ   MVCC snapshot at the first statement
+#   mysql        REPEATABLE READ   InnoDB consistent read, ditto
+#   oracle       SERIALIZABLE      transaction-level read consistency
+#
+# THE COST, STATED: the transaction stays open while the silo's tables
+# are read and mirrored -- minutes, on a large source. PostgreSQL cannot
+# vacuum rows the snapshot might still see until it ends, the same cost
+# pg_dump imposes for the same guarantee. A sync is short and
+# periodic; a source that cannot afford it can be read by a role whose
+# default isolation is lower, and will be read table by table.
+#
+# ABSENT DIALECTS GET TABLE-BY-TABLE READS, said so per run. SQL Server's
+# non-blocking level (SNAPSHOT) needs a database option the source may
+# not have set, and SQLite holds a lock that BLOCKS the source's writers
+# for as long as the sync reads, unless the file is in WAL mode -- which
+# a read-only connection cannot check.
+SNAPSHOT_ISOLATION = {
+    "postgresql": "REPEATABLE READ",
+    "mysql": "REPEATABLE READ",
+    "mariadb": "REPEATABLE READ",
+    "oracle": "SERIALIZABLE",
+}
 
 class SQLAlchemyReadAdapter(ExternalReadAdapter):
     """Reads objects from a database SQLAlchemy has a dialect for."""
@@ -101,6 +133,44 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
             connect_args=self._connect_args(),
         )
         self._metadata = MetaData()
+        # THE CONNECTION A CONSISTENT READ IS HOLDING, per thread: the
+        # sync reads on one thread, and anything else that shares this
+        # adapter must never find itself inside the sync's transaction.
+        self._pinned = threading.local()
+
+    @contextmanager
+    def consistent_read(self):
+        """Every read inside this block sees ONE snapshot of the source
+        (R4). Yields True when the dialect provides one, False when reads
+        fall back to table by table -- the caller says which happened.
+
+        WITHOUT IT, a sync read each table at a different moment: an
+        order written between the customers read and the transactions
+        read arrived with a customer the mirror did not have. Inside it,
+        both reads see the same instant.
+
+        A FAILED READ DOES NOT POISON THE REST. PostgreSQL aborts a
+        whole transaction on any error, so each read inside runs in a
+        SAVEPOINT and only that read is rolled back -- the snapshot,
+        fixed at the first statement, is kept.
+        """
+        isolation = SNAPSHOT_ISOLATION.get(self._engine.dialect.name)
+        if isolation is None or getattr(self._pinned, "conn", None) is not None:
+            yield False
+            return
+        try:
+            conn = self._engine.connect().execution_options(isolation_level=isolation)
+        except SQLAlchemyError as e:
+            raise StorageUnavailable(f"{self._describe_source()}: {type(e).__name__}: {e}") from e
+        try:
+            with conn.begin():
+                self._pinned.conn = conn
+                try:
+                    yield True
+                finally:
+                    self._pinned.conn = None
+        finally:
+            conn.close()
 
     def _connect_args(self) -> dict:
         """Per-dialect connection settings, chiefly the timeout.
@@ -172,7 +242,13 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
 
     def _execute(self, statement) -> list[dict]:
         """Runs one statement, or says the storage is unavailable."""
+        pinned = getattr(self._pinned, "conn", None)
         try:
+            if pinned is not None:
+                # Inside a consistent read: the held snapshot, and a
+                # savepoint so a failure costs this read only.
+                with pinned.begin_nested():
+                    return [dict(row) for row in pinned.execute(statement).mappings()]
             with self._engine.connect() as conn:
                 return [dict(row) for row in conn.execute(statement).mappings()]
         except SQLAlchemyError as e:

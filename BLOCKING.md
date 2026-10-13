@@ -573,13 +573,13 @@ the machine's own PostgreSQL, and fails when there is none.)
 
 # Not blocked, and not here
 
-Four infrastructure recommendations are open and buildable: `R4` (one
-consistent read per silo per run), `R5` (bounded-memory batched sync),
-`R10` (SCD2 changelog), `R20` (Iceberg branches for previews). `R19`,
-the source-mutation matrix, is built -- see its row in the CSV. They are days each rather than hours,
-and `R4` and `R5` conflict enough that the order matters -- but they
-need no decision, so they stay out of this file until one of them
-does.
+One infrastructure recommendation is open and buildable: `R5`
+(bounded-memory batched sync). `R4` (one consistent read per silo per
+run) was built on 12 October; `R10` (the SCD2 changelog) and `R20`
+(ontology previews) were built before it -- see their rows in the CSV.
+R5 is days rather than hours, and it must keep R4's single snapshot
+open across every batch of a table -- but it needs no decision, so it
+stays out of this file until it does.
 
 **The ELT chain joins them too**, and its ORDER is the part worth
 keeping, because it was re-derived from the dependencies rather than

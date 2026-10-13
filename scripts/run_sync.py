@@ -402,6 +402,41 @@ def _targets_before_referrers(schema: dict) -> list:
     return [(name, schema[name]) for name in built]
 
 
+def _by_silo(targets) -> list[tuple[str, list]]:
+    """Targets grouped by silo, in the order each silo first appears --
+    the order the run already used, so nothing else about it moves."""
+    grouped: dict[str, list] = {}
+    for target in targets:
+        grouped.setdefault(target.silo_name, []).append(target)
+    return list(grouped.items())
+
+
+@contextlib.contextmanager
+def _consistent_read(adapter):
+    """The adapter's consistent read, or table-by-table reads when it has
+    none or cannot open one. Never the run's verdict: a silo whose
+    snapshot cannot be opened is read as it always was, and its tables
+    fail or succeed on their own."""
+    if adapter is None:
+        yield False
+        return
+    try:
+        scope = adapter.consistent_read()
+        consistent = scope.__enter__()
+    except Exception as exc:  # noqa: BLE001 - fall back, never fail the run here
+        print(f"WARNING could not open one snapshot of this silo ({type(exc).__name__}); "
+              f"reading table by table", file=sys.stderr)
+        yield False
+        return
+    try:
+        yield consistent
+    except BaseException:
+        if not scope.__exit__(*sys.exc_info()):
+            raise
+    else:
+        scope.__exit__(None, None, None)
+
+
 def _outcome_for(result) -> str:
     """Which of SyncAttempts' three outcomes this run was (PA001-A17).
 
@@ -729,63 +764,74 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
         warned = ExpectationWarnings(
             runtime_paths.data_dir / "mirror" / "expectation_warnings.db")
         warned.forget_older_than()
-        for target in targets:
-            label = f"{target.silo_name}.{target.table_name}"
-            table_job = f"sync.{label}"
-            table_io = ([source_dataset(target.silo_name, target.table_name)],
-                        [lake_dataset(lineage.namespace, "bronze", label),
-                         lake_dataset(lineage.namespace, "silver", label)])
-            lineage.emit(START, table_job, *table_io)
-            try:
-                result = sync.sync_table(
-                    target.silo_name, target.table_name, target.id_column,
-                    target.columns, target.column_types,
-                    target.fields_by_column, target.standardisation,
-                    target.expectations, target.duplicate_policy,
-                    target.object_types, target.link_pair,
-                    f"{target.silo_name}.{target.table_name}" in accepted,
-                    rebuilding,
-                    # THE COLUMN SILVER MUST NOT CANONICALISE -- LLM3-3.
-                    # Standardising a MAC value changes who may see the
-                    # row: measured, "N/A" becomes None and the object
-                    # belongs to no compartment at all.
-                    security_column=target.security_column,
-                )
-            except Exception as exc:
-                # Per-table, deliberately -- see this module's docstring.
-                # The exception itself is printed rather than swallowed
-                # into a generic message: this is an operator-facing
-                # tool, and the real cause is what an operator needs.
-                failures += 1
-                unsynced.add(f"{target.silo_name}.{target.table_name}")
-                print(f"FAILED  {label}: {exc}", file=sys.stderr)
-                # RECORDED BEFORE IT IS PRINTED, because stderr is
-                # the thing nobody sees. A refused sync leaves the
-                # previous snapshot in place, so from the mirror's
-                # own timestamps it is indistinguishable from a
-                # source that has not changed -- and the first is an
-                # incident while the second is Tuesday.
-                attempts.record(
-                    target.silo_name, target.table_name, "refused",
-                    str(exc), run_id=run_id,
-                )
-                lineage.emit(FAIL, table_job, *table_io, error=str(exc))
-                continue
-            lineage.emit(COMPLETE, table_job, *table_io)
-            # 'unchanged' IS ITS OWN OUTCOME (PA001-A17). The store has
-            # supported three since it was written -- 'synced',
-            # 'unchanged', 'refused' -- and this recorded 'synced' for
-            # both of the first two, so a quiet source and a busy one
-            # were indistinguishable in the history an operator reads
-            # to answer "when did this last actually move?".
-            attempts.record(target.silo_name, target.table_name,
-                            _outcome_for(result), run_id=run_id)
-            # AFTER THE ATTEMPT, because a warning is about rows that
-            # were read and an attempt may be recorded for a table that
-            # never got that far. Writes nothing when no rule warned.
-            warned.record(target.silo_name, target.table_name,
-                          result.warnings, run_id=run_id)
-            print(f"synced  {label}: {result.row_count} rows at {result.synced_at.isoformat()}")
+        # ONE CONSISTENT READ PER SILO (R4). Every table of one silo is
+        # read inside one snapshot where the source can give one without
+        # blocking its own writers -- so an order written between reading
+        # customers and reading orders cannot arrive with a customer the
+        # mirror lacks. adapters/sqlalchemy_adapter.py says which
+        # databases can; the rest read table by table, as before, and
+        # this says so.
+        for silo_name, silo_targets in _by_silo(targets):
+            with _consistent_read(sync.adapters.get(silo_name)) as consistent:
+                print(f"reading {silo_name} "
+                      + ("as one consistent snapshot" if consistent else "table by table"))
+                for target in silo_targets:
+                    label = f"{target.silo_name}.{target.table_name}"
+                    table_job = f"sync.{label}"
+                    table_io = ([source_dataset(target.silo_name, target.table_name)],
+                                [lake_dataset(lineage.namespace, "bronze", label),
+                                 lake_dataset(lineage.namespace, "silver", label)])
+                    lineage.emit(START, table_job, *table_io)
+                    try:
+                        result = sync.sync_table(
+                            target.silo_name, target.table_name, target.id_column,
+                            target.columns, target.column_types,
+                            target.fields_by_column, target.standardisation,
+                            target.expectations, target.duplicate_policy,
+                            target.object_types, target.link_pair,
+                            f"{target.silo_name}.{target.table_name}" in accepted,
+                            rebuilding,
+                            # THE COLUMN SILVER MUST NOT CANONICALISE -- LLM3-3.
+                            # Standardising a MAC value changes who may see the
+                            # row: measured, "N/A" becomes None and the object
+                            # belongs to no compartment at all.
+                            security_column=target.security_column,
+                        )
+                    except Exception as exc:
+                        # Per-table, deliberately -- see this module's docstring.
+                        # The exception itself is printed rather than swallowed
+                        # into a generic message: this is an operator-facing
+                        # tool, and the real cause is what an operator needs.
+                        failures += 1
+                        unsynced.add(f"{target.silo_name}.{target.table_name}")
+                        print(f"FAILED  {label}: {exc}", file=sys.stderr)
+                        # RECORDED BEFORE IT IS PRINTED, because stderr is
+                        # the thing nobody sees. A refused sync leaves the
+                        # previous snapshot in place, so from the mirror's
+                        # own timestamps it is indistinguishable from a
+                        # source that has not changed -- and the first is an
+                        # incident while the second is Tuesday.
+                        attempts.record(
+                            target.silo_name, target.table_name, "refused",
+                            str(exc), run_id=run_id,
+                        )
+                        lineage.emit(FAIL, table_job, *table_io, error=str(exc))
+                        continue
+                    lineage.emit(COMPLETE, table_job, *table_io)
+                    # 'unchanged' IS ITS OWN OUTCOME (PA001-A17). The store has
+                    # supported three since it was written -- 'synced',
+                    # 'unchanged', 'refused' -- and this recorded 'synced' for
+                    # both of the first two, so a quiet source and a busy one
+                    # were indistinguishable in the history an operator reads
+                    # to answer "when did this last actually move?".
+                    attempts.record(target.silo_name, target.table_name,
+                                    _outcome_for(result), run_id=run_id)
+                    # AFTER THE ATTEMPT, because a warning is about rows that
+                    # were read and an attempt may be recorded for a table that
+                    # never got that far. Writes nothing when no rule warned.
+                    warned.record(target.silo_name, target.table_name,
+                                  result.warnings, run_id=run_id)
+                    print(f"synced  {label}: {result.row_count} rows at {result.synced_at.isoformat()}")
 
         print(f"\n{len(targets) - failures}/{len(targets)} tables synced successfully.")
 

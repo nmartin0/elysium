@@ -195,6 +195,10 @@ class TestItIsNotAnAdapter:
         # have: its schema is generated from the declaration, so a
         # mismatch is a bug in us, not news about a source.
         asked.discard("source_column_types")
+        # consistent_read is the SYNC's, around reading a source (R4);
+        # the mediator never opens one, and gold is pinned per
+        # generation, which is already one snapshot.
+        asked.discard("consistent_read")
 
         missing = {name for name in asked if not hasattr(GoldConnector, name)}
 
