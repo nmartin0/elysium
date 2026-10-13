@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 
 // Partial mock via importOriginal, not a hand-duplicated module shape
@@ -2001,5 +2001,50 @@ describe('ONE SET, everywhere it is used', () => {
         expect.objectContaining({ frozenSet: undefined }),
       ),
     )
+  })
+})
+
+describe('ObjectSearchPanel -- live updates', () => {
+  /** jsdom has no EventSource; this one lets the test send a hint. */
+  class FakeEventSource {
+    static current: FakeEventSource | null = null
+    private handlers: ((event: MessageEvent<string>) => void)[] = []
+    constructor() {
+      FakeEventSource.current = this
+    }
+    addEventListener(_type: string, handler: (event: MessageEvent<string>) => void) {
+      this.handlers.push(handler)
+    }
+    close() {}
+    emit(objectType: string) {
+      const data = JSON.stringify({ object_type: objectType, change: 'updated' })
+      for (const handler of this.handlers) handler(new MessageEvent('change', { data }))
+    }
+  }
+
+  it('says the type changed, and refreshes only when asked', async () => {
+    vi.stubGlobal('EventSource', FakeEventSource)
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'c1', fields: { name: 'Ada' } }]))
+    renderPanel(CUSTOMER_SCHEMA)
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledTimes(1))
+
+    // A DIFFERENT type changing says nothing about these results.
+    FakeEventSource.current!.emit('Account')
+    // GIVEN TIME TO RENDER before asserting absence -- without the wait
+    // this assertion passed even when every type raised the flag.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(screen.queryByText(/has changed since these results were loaded/)).toBeNull()
+
+    FakeEventSource.current!.emit('Customer')
+    expect(await screen.findByText(/Customer data has changed since these results were loaded/)).toBeInTheDocument()
+    // NOT refetched by itself: results do not move under the reader.
+    expect(mockedSearchObjects).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledTimes(2))
+    expect(screen.queryByText(/has changed since these results were loaded/)).toBeNull()
+    vi.unstubAllGlobals()
   })
 })

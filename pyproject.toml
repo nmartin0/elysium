@@ -357,7 +357,7 @@ type = "layers"
 # and they are not.
 layers = [
     "app", "routes",
-    "apps | auth_dependency | generation_dependency | reload | csrf_middleware | request_size_limit_middleware | generation_header_middleware | request_metrics_middleware",
+    "apps | auth_dependency | generation_dependency | reload | csrf_middleware | request_size_limit_middleware | generation_header_middleware | request_metrics_middleware | live_updates",
 ]
 containers = ["api"]
 exhaustive = true

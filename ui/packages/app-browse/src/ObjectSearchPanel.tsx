@@ -58,6 +58,7 @@ import LoadingState from '@elysium/shell-api/components/LoadingState'
 import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/ViewSelector'
 import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Workspace'
 import { useClearUrlKeys, useUrlJson, useUrlValue } from '@elysium/shell-api/useUrlState'
+import { useChangedSince } from '@elysium/shell-api/liveUpdates'
 
 import { useRovingFocus } from './useRovingFocus'
 import ActiveFilters from './ActiveFilters'
@@ -316,11 +317,17 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // for an exempt type -- which is not the same as fresh and must not
   // be reported as it.
   const staleness = worstFreshness(freshness, selectedType ? [selectedType] : [])
+  // LIVE UPDATES: whether this type changed since these results were
+  // fetched -- a publication from the sync, or a write somebody
+  // applied. A hint carries no data; refreshing refetches through the
+  // same authorised routes. `refreshCount` is what a refresh bumps.
+  const { changed: typeChanged, acknowledge: acknowledgeChange } = useChangedSince(selectedType)
+  const [refreshCount, setRefreshCount] = useState(0)
   useEffect(() => {
     getDataFreshness()
       .then(setFreshness)
       .catch(() => setFreshness(null))
-  }, [])
+  }, [refreshCount])
 
   const clearAllFilters = () => {
     // ONE navigation, not two. Each URL setter navigates rather than
@@ -415,6 +422,10 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [objectTypes])
 
+  // THE FILTERS AS KEYS, so the dependency list below names variables
+  // a linter can check rather than expressions it cannot.
+  const crossFilterKey = JSON.stringify(crossFilter)
+  const barFiltersKey = JSON.stringify(barFilters)
   useEffect(() => {
     if (!selectedType) return
 
@@ -459,7 +470,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     return () => clearTimeout(timeoutId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedType, queryText, pageToken, orderBy, JSON.stringify(crossFilter), JSON.stringify(barFilters), frozenSet])
+  }, [selectedType, queryText, pageToken, orderBy, crossFilterKey, barFiltersKey, frozenSet, refreshCount])
 
   // Changing WHAT is searched resets WHERE you are in it. A token from
   // the old result set means nothing against the new one -- the server
@@ -899,6 +910,24 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           which the server stopped sending once anything was published,
           so a deployment reading gold showed no freshness at all --
           checked in a browser, zero of these on screen. */}
+      {typeChanged && selectedType && (
+        /* A FLAG AND A BUTTON, NOT AN AUTOMATIC REFETCH: results that
+           reorder under the reader's cursor are worse than results one
+           click from current. */
+        <Notice state="pending" className="object-search__changed">
+          {selectedType} data has changed since these results were loaded.{' '}
+          <Button
+            small
+            onClick={() => {
+              acknowledgeChange()
+              setRefreshCount((count) => count + 1)
+            }}
+          >
+            Refresh
+          </Button>
+        </Notice>
+      )}
+
       {publishedAt !== null ? (
         /* AND WHETHER THAT IS LATE, which the timestamp alone cannot
            say. DEV_UI.md 16.6: "a freshness number without a threshold

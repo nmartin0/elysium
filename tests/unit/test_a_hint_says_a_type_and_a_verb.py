@@ -2,11 +2,8 @@
 A change hint names a type and a verb, and only to someone who may
 already know that type exists.
 
-THE TRANSPORT IS NOT BUILT. There is no SSE, no `EventSource`, no
-streaming response anywhere in `api/`, and whether live updates are
-wanted enough to carry a streaming endpoint is the owner's decision --
-BLOCKING.md item 10. This is the half that has to be right BEFORE
-that, not invented under deadline after it.
+THE TRANSPORT IS api/live_updates.py, built 2026-10-12; this module
+was written first so it would be right before the transport existed.
 
 THE DESIGN DECISION, quoted because the wording is the point:
 

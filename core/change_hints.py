@@ -1,10 +1,10 @@
 """Which "something changed" hints a caller may be told about.
 
-THE TRANSPORT IS NOT BUILT and this is not it. There is no SSE, no
-`EventSource`, no streaming response anywhere in `api/`, and whether
-live updates are wanted enough to carry a streaming endpoint is the
-owner's call. This is the half that has to be right BEFORE that
-decision, not invented under deadline after it.
+THE TRANSPORT IS api/live_updates.py (GET /api/events), built when the
+owner asked for live updates on 2026-10-12. This module was written
+first, deliberately: the half that has to be right before a transport
+exists rather than invented under deadline after it. Every hint the
+stream sends is made by `describe_hint` and filtered by `hints_for`.
 
 THE DESIGN DECISION IT SERVES, quoted rather than summarised because
 the wording is the point:

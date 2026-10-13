@@ -181,6 +181,60 @@ def reload_generation(app, requested_by: str = "unknown",
         _reload_lock.release()
 
 
+def follow_publications(app) -> "DeploymentGeneration | None":
+    """Moves this worker onto the latest gold publications -- and
+    NOTHING ELSE. Returns the new generation, or None when it did not.
+
+    WHY IT EXISTS. A generation pins the gold snapshots it was built
+    against, so every read in a request sees one publication. The cost
+    of that pin, unnoticed until live updates made it visible: a sync
+    in another process published, and this server went on serving the
+    PREVIOUS publication until somebody reloaded or restarted it. Found
+    in a browser: the change banner appeared, Refresh was clicked, and
+    the old email came back.
+
+    WHY NOT reload_generation(). A reload re-reads the configuration
+    FILES, and "when an edit takes effect stays the operator's
+    decision" -- a half-finished YAML edit must not go live because a
+    sync happened to finish. So this rebuilds from the configuration
+    the running generation was built from (`config.source_text`, the
+    exact bytes, kept for config history), written to a scratch
+    directory. Same configuration, same digest; only the pins move.
+
+    NON-BLOCKING, like a reload: if one is already running, this does
+    nothing -- that reload pins the latest publications itself.
+    """
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    if not _reload_lock.acquire(blocking=False):
+        return None
+    scratch = Path(tempfile.mkdtemp(prefix="elysium-publication-"))
+    try:
+        current = app.state.generation
+        for name, text in current.config.source_text.items():
+            (scratch / name).write_text(text)
+        examples = app.state.runtime_paths.config_dir / "example_queries.yaml"
+        if examples.exists():
+            shutil.copy(examples, scratch / "example_queries.yaml")
+        try:
+            new = build_generation(scratch, app.state.runtime_paths.data_dir,
+                                   app.state.runtime_paths.log_dir)
+        except Exception as e:  # noqa: BLE001 - the running generation stands
+            logger.warning(f"could not move to the latest publication: {e}")
+            return None
+        app.state.generation = new
+        record_generation(app.state.config_history, new)
+        current.mediator.audit_log.log_reload(
+            "publication", "applied", current.generation, new.generation,
+            new.source_digest, detail="followed a new gold publication; configuration unchanged")
+        return new
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+        _reload_lock.release()
+
+
 # ONE FOLLOWER AT A TIME PER WORKER, and BLOCKING, unlike _reload_lock.
 # A request that finds its worker behind must not be served under the
 # old configuration while another request rebuilds it -- that would be

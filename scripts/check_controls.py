@@ -1478,6 +1478,38 @@ CONTROLS = [
         new="        if False:",
         tests=["tests/unit/test_numbers_and_dates_as_sources_write_them.py::TestTheDeclaration::test_a_silo_overrides_the_deployment"],
     ),
+    Control(
+        describes="Live: a hint reaches only a caller who may know the type exists",
+        path="api/live_updates.py",
+        old="            for allowed in hints_for(visible_schema, [object_type]):",
+        new="            for allowed in [object_type]:",
+        tests=["tests/integration/test_live_updates.py::test_a_type_the_caller_may_not_know_exists_is_never_mentioned"],
+    ),
+    Control(
+        describes="Live: only a write that was applied is announced",
+        path="api/routes.py",
+        old="    if outcome is not None and outcome.get(\"status\") == \"written\":",
+        new="    if True:",
+        tests=["tests/integration/test_live_updates.py::test_a_rejected_write_tells_nobody"],
+    ),
+    Control(
+        describes="Live: following a publication rebuilds from the running configuration, not disk",
+        path="api/reload.py",
+        old=("            new = build_generation(scratch, app.state.runtime_paths.data_dir,\n"
+             "                                   app.state.runtime_paths.log_dir)"),
+        new=("            new = build_generation(app.state.runtime_paths.config_dir,\n"
+             "                                   app.state.runtime_paths.data_dir,\n"
+             "                                   app.state.runtime_paths.log_dir)"),
+        tests=["tests/integration/test_live_updates.py::test_following_a_publication_never_applies_an_unreloaded_edit"],
+    ),
+    Control(
+        describes="Live: a new publication is served without a restart",
+        path="api/reload.py",
+        old=("        app.state.generation = new\n"
+             "        record_generation(app.state.config_history, new)\n        current.mediator"),
+        new="        record_generation(app.state.config_history, new)\n        current.mediator",
+        tests=["tests/integration/test_live_updates.py::test_a_new_publication_is_served_without_a_restart"],
+    ),
 ]
 
 

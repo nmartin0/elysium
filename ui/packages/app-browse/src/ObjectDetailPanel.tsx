@@ -21,6 +21,8 @@ import {
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
+import { useChangedSince } from '@elysium/shell-api/liveUpdates'
+import Notice from '@elysium/shell-api/components/Notice'
 import ActionForm, { type ActionDef } from './ActionForm'
 
 // The real shape of ONE object type's own entry within the backend's
@@ -126,6 +128,11 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
     loadDetail()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [objectType, objectId])
+
+  // LIVE UPDATES: some object of this TYPE changed -- which may or may
+  // not be this one; a hint never says which, by design. So it offers
+  // a refresh rather than claiming this object moved.
+  const { changed: typeChanged, acknowledge: acknowledgeChange } = useChangedSince(objectType)
 
   // Fetched ONCE per mount, not re-fetched on every object navigation
   // within this same route pattern -- which actions a user can invoke
@@ -283,6 +290,20 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
         <AskAboutObject objectType={objectType} objectId={objectId} />
       </div>
       {titleValue !== objectId && <p className="object-detail__subtitle">{objectId}</p>}
+      {typeChanged && (
+        <Notice state="pending" className="object-detail__changed">
+          {objectType} data has changed since this page was loaded, possibly this object.{' '}
+          <Button
+            small
+            onClick={() => {
+              acknowledgeChange()
+              loadDetail()
+            }}
+          >
+            Refresh
+          </Button>
+        </Notice>
+      )}
       <dl className="object-detail__fields">
         {/* THE SCHEMA, NOT THE RESPONSE, and this is the fourth state
               DEV_UI.md 9.7 calls ours alone: "'Not permitted',

@@ -27,6 +27,7 @@
     "./components/Workspace": "./src/components/Workspace.tsx",
     "./format": "./src/format.ts",
     "./index.css": "./src/index.css",
+    "./liveUpdates": "./src/liveUpdates.ts",
     "./tokens.css": "./src/tokens.css",
     "./types": "./src/types.ts",
     "./useDeferredValue": "./src/useDeferredValue.ts",

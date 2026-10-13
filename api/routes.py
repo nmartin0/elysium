@@ -5173,6 +5173,35 @@ async def query(body: QueryRequest, request: Request,
     return QueryResponse(answer=insight, request_id=request_context.request_id)
 
 
+#: A sub-write's operation, as core/change_hints.py's vocabulary says it.
+_CHANGE_VERB = {"create": "created", "update": "updated", "delete": "deleted"}
+
+
+@router.get("/events")
+async def change_events_route(request: Request,
+                              current_user: UserRecord = Depends(get_current_user)):
+    """Live updates: a stream of "a <Type> was <verb>", and nothing more.
+
+    See api/live_updates.py. EACH HINT IS FILTERED BY THIS CALLER'S OWN
+    visible schema, computed here at connect; the stream then ends after
+    a few minutes and the browser reconnects through this same
+    authentication, so a revoked grant stops the hints within that.
+    """
+    from fastapi.responses import StreamingResponse
+
+    from api.live_updates import event_stream
+
+    mediator = _generation(request).mediator
+    visible = await asyncio.to_thread(mediator.visible_schema, current_user)
+    return StreamingResponse(
+        event_stream(request.app.state.change_bus, visible, request.is_disconnected),
+        media_type="text/event-stream",
+        # NO CACHING AND NO BUFFERING: a proxy that buffers an event
+        # stream delivers every hint at once, when the stream ends.
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.post("/writes/{write_id}/confirm", response_model=ConfirmWriteResponse)
 async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request: Request,
                                current_user: UserRecord = Depends(get_current_user)) -> dict:
@@ -5309,6 +5338,16 @@ async def _decide_reserved_write(request: Request, write_id: str, pending, appro
         # an HTTPException is one. The write goes back in the queue for
         # somebody who can approve it.
         raise HTTPException(status_code=409, detail=str(e)) from e
+
+    if outcome is not None and outcome.get("status") == "written":
+        # LIVE UPDATES: each type this write touched, with its verb --
+        # never the ids, which is core/change_hints.py's whole rule.
+        # Every open screen whose caller may know the type exists is
+        # told to refetch through the routes that authorise.
+        bus = getattr(request.app.state, "change_bus", None)
+        if bus is not None:
+            for sub in pending.sub_writes:
+                bus.publish(sub.object_type, _CHANGE_VERB.get(sub.operation, "updated"))
 
     return outcome if outcome is not None else {"status": "rejected"}
 

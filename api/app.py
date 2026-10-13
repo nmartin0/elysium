@@ -79,6 +79,7 @@ still runs correctly as a pure API backend; only a real install
 (which does build the UI) gets it served automatically.
 """
 
+import asyncio
 import logging
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
@@ -94,7 +95,8 @@ from starlette.concurrency import run_in_threadpool
 
 from api.csrf_middleware import csrf_protect
 from api.generation_header_middleware import GenerationHeaderMiddleware
-from api.reload import follow_reload_epoch, install_sighup_handler
+from api.live_updates import ChangeBus, watch_publications
+from api.reload import follow_publications, follow_reload_epoch, install_sighup_handler
 from api.request_metrics_middleware import RequestMetricsMiddleware
 from api.request_size_limit_middleware import RequestSizeLimitMiddleware
 from core.artifact_store import ArtifactStore
@@ -132,6 +134,15 @@ UI_DIST_DIR = Path(__file__).resolve().parent.parent / "ui" / "dist"
 # The features denied by every response's Permissions-Policy (E-05); `()`
 # is the empty allowlist -- not even this origin.
 PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+
+
+
+def _publication_sources(app) -> tuple:
+    """(catalog, object types) of the generation serving right now."""
+    from api.routes import _deployment_catalog
+
+    mediator = app.state.generation.mediator
+    return _deployment_catalog(mediator), list(mediator.schema or {})
 
 
 def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
@@ -185,7 +196,18 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
         `wait=True` keeps the behaviour that was already happening by
         accident and makes it the application's own.
         """
+        # THE PUBLICATION WATCHER (live updates). Started here, where
+        # its loop is the server's, and cancelled on the way out. It
+        # reads nothing while nobody is listening.
+        watcher = None
+        bus = getattr(_app.state, "change_bus", None)
+        if bus is not None:
+            watcher = asyncio.create_task(watch_publications(
+                bus, lambda: _publication_sources(_app),
+                on_publication=lambda: follow_publications(_app)))
         yield
+        if watcher is not None:
+            watcher.cancel()
         executor = getattr(_app.state, "executor", None)
         if executor is not None:
             executor.shutdown(wait=True)
@@ -526,6 +548,10 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # that is unreloadable by NATURE rather than by oversight.
     # templates/config.yaml says so where a deployer will read it.
     app.state.executor = ThreadPoolExecutor(max_workers=config.max_concurrent_requests)
+    # LIVE UPDATES (api/live_updates.py): one bus for every open stream.
+    # Survives a reload, like the executor -- the streams outlive any
+    # one generation, and the watcher asks for the current one each poll.
+    app.state.change_bus = ChangeBus()
     # Shares the SAME AuditLog instance mediator itself holds -- not a
     # second, separately-constructed one that happens to point at the
     # same file, matching the "one shared instance" discipline this
