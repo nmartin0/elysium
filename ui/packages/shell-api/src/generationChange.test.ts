@@ -106,3 +106,44 @@ describe('a configuration reload reaches the client', () => {
     await expect(getCurrentUser()).resolves.toBeDefined()
   })
 })
+
+describe('behind several server processes', () => {
+  function respondFromWorker(generation: string, configuration: string) {
+    const headers = new Headers()
+    headers.set('x-elysium-generation', generation)
+    headers.set('x-elysium-configuration', configuration)
+    return Promise.resolve(new Response(JSON.stringify({}), { status: 200, headers }))
+  }
+
+  it('does not fire when two workers on one configuration answer in turn', async () => {
+    // MEASURED on two real workers: generation 9, 10, 9, 10 -- one
+    // configuration, two builds. The configuration header is the same.
+    const onChange = vi.fn()
+    setGenerationChangeHandler(onChange)
+
+    for (const generation of ['9', '10', '9', '10']) {
+      fetchMock.mockReturnValueOnce(respondFromWorker(generation, '3'))
+      await getCurrentUser()
+    }
+
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('fires once when the configuration really moves', async () => {
+    const onChange = vi.fn()
+    setGenerationChangeHandler(onChange)
+
+    const answers: Array<[string, string]> = [
+      ['9', '3'],
+      ['10', '3'],
+      ['11', '4'],
+      ['12', '4'],
+    ]
+    for (const [generation, configuration] of answers) {
+      fetchMock.mockReturnValueOnce(respondFromWorker(generation, configuration))
+      await getCurrentUser()
+    }
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+  })
+})

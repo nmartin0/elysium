@@ -3853,6 +3853,37 @@ def test_the_number_changes_when_the_configuration_does(client):
     assert after != before
 
 
+def test_the_configuration_header_moves_on_a_reload(client):
+    """The header the UI WATCHES (x-elysium-configuration): the shared
+    reload epoch, the same in every worker -- unlike the generation
+    number, which is unique per build and so differs between two workers
+    serving one configuration (measured running two real workers)."""
+    before = client.get("/api/health").headers["x-elysium-configuration"]
+
+    from api.reload import reload_generation
+
+    reload_generation(client.app, requested_by="test")
+
+    after = client.get("/api/health").headers["x-elysium-configuration"]
+    assert int(after) > int(before)
+
+
+def test_two_workers_on_one_configuration_send_the_same_configuration_header(client):
+    """THE BUG, in one process: a second worker is a second build of the
+    same files, which gets a NEW generation number and the SAME epoch.
+    Rebuilding without announcing is exactly what a following worker
+    does (api/reload.follow_reload_epoch)."""
+    before = client.get("/api/health")
+
+    from api.reload import reload_generation
+
+    reload_generation(client.app, requested_by="follow", announce=False)
+
+    after = client.get("/api/health")
+    assert after.headers["x-elysium-generation"] != before.headers["x-elysium-generation"]
+    assert after.headers["x-elysium-configuration"] == before.headers["x-elysium-configuration"]
+
+
 def test_an_unauthenticated_response_carries_it_too(client):
     # The header is not a secret -- it is an opaque counter, and it
     # says nothing about what the configuration CONTAINS. Withholding

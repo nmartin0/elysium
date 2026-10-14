@@ -35,6 +35,18 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 HEADER = b"x-elysium-generation"
 
+#: WHICH CONFIGURATION, as every worker agrees on it (found running two
+#: real workers, 14 Oct). Generation numbers are allocated per BUILD and
+#: unique across processes (tests/unit/test_generation_numbering.py), so
+#: two workers serving the same configuration carry different numbers --
+#: measured 9, 10, 9, 10 on consecutive requests -- and a client
+#: watching that header saw a reload on nearly every request. The shared
+#: reload epoch is the same in every worker: it rises only on an explicit
+#: reload, and each worker follows it before serving a request
+#: (api/reload.follow_reload_epoch). HEADER stays, for diagnosis: it says
+#: which build answered.
+CONFIGURATION_HEADER = b"x-elysium-configuration"
+
 
 class GenerationHeaderMiddleware:
     """Stamps the serving generation onto every HTTP response."""
@@ -59,6 +71,10 @@ class GenerationHeaderMiddleware:
                 if generation is not None:
                     headers = message.setdefault("headers", [])
                     headers.append((HEADER, str(generation).encode("latin-1")))
+                epoch = _reload_epoch(scope)
+                if epoch is not None:
+                    message.setdefault("headers", []).append(
+                        (CONFIGURATION_HEADER, str(epoch).encode("latin-1")))
             await send(message)
 
         await self.app(scope, receive, send_with_generation)
@@ -79,3 +95,11 @@ def _serving_generation(scope: Scope) -> "int | None":
     app = scope.get("app")
     generation = getattr(getattr(app, "state", None), "generation", None)
     return getattr(generation, "generation", None)
+
+
+def _reload_epoch(scope: Scope) -> "int | None":
+    """The shared reload epoch this worker is on; None before startup.
+    NEVER RAISES, for the same reason as _serving_generation."""
+    app = scope.get("app")
+    epoch = getattr(getattr(app, "state", None), "reload_epoch", None)
+    return epoch if isinstance(epoch, int) else None

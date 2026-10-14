@@ -196,7 +196,14 @@ function noticeGeneration(response: Response): void {
   // fine. Test doubles return objects without headers, and a fetch
   // that rejected mid-flight can too -- neither is a reason to break
   // the call it was attached to.
-  const current = response?.headers?.get?.('x-elysium-generation') ?? null
+  // THE CONFIGURATION HEADER FIRST: the shared reload epoch, the same in
+  // every server process. The generation number is unique per BUILD, so
+  // behind two workers it alternated 9, 10, 9, 10 on consecutive
+  // requests -- measured running two real workers -- and every
+  // alternation refetched the schema. It is kept only as a fallback for
+  // a server that does not send the configuration header.
+  const current =
+    response?.headers?.get?.('x-elysium-configuration') ?? response?.headers?.get?.('x-elysium-generation') ?? null
   // AN ABSENT HEADER IS NOT A CHANGE. A static file, or a response
   // from before this shipped, must not look like a reload -- that
   // would refetch the schema on every page load forever.
