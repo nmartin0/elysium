@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useState } from 'react'
-import { HTMLTable } from '@blueprintjs/core'
+import { Checkbox, HTMLTable } from '@blueprintjs/core'
 
 import { decideMergeProposal, handleIfSessionExpired, type MergeProposal } from '@elysium/shell-api/api'
 import Action from '@elysium/shell-api/components/Action'
@@ -32,10 +32,15 @@ function verdictState(verdict: string) {
 
 export default function ProposalCard({
   proposal,
+  selected = false,
+  onToggle,
   onDecided,
   onSessionExpired,
 }: {
   proposal: MergeProposal
+  /** Ticked for the queue's bulk approval (WIRED-3). */
+  selected?: boolean
+  onToggle?: () => void
   onDecided: () => void
   onSessionExpired: () => void
 }) {
@@ -73,10 +78,25 @@ export default function ProposalCard({
         <h3>
           {proposal.object_type} {proposal.left_id} and {proposal.right_id}
         </h3>
-        <StatusTag state={settled ? (proposal.decision === 'approved' ? 'granted' : 'refused') : 'pending'}>
-          {proposal.decision}
-        </StatusTag>
+        {/* ONE GROUP, so the header's space-between keeps both tags at
+            the right edge rather than floating the first mid-row --
+            seen in the browser. */}
+        <span className="identity__tags">
+          {!settled && proposal.high_confidence && <StatusTag state="granted">high confidence</StatusTag>}
+          <StatusTag state={settled ? (proposal.decision === 'approved' ? 'granted' : 'refused') : 'pending'}>
+            {proposal.decision}
+          </StatusTag>
+        </span>
       </header>
+
+      {!settled && onToggle && (
+        <Checkbox
+          className="identity__select"
+          checked={selected}
+          onChange={onToggle}
+          label="Include in bulk approval"
+        />
+      )}
 
       <p className="identity__pattern">
         Agreement pattern: <code className="mono">{proposal.pattern}</code>

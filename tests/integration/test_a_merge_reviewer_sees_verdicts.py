@@ -266,6 +266,18 @@ class TestTheReviewerSeesVerdictsNotValues:
         assert row["pattern"]
 
 
+class TestHighConfidence:
+    def test_every_proposal_says_whether_it_is_preselected(self, client):
+        """WIRED-3: a flag the screen ticks for bulk approval. The
+        fixture's Customer declares no inference, so it is False."""
+        _login(client)
+        _propose(client)
+
+        (proposal,) = client.get("/api/merge-proposals").json()
+        assert proposal["high_confidence"] is False
+        assert "score" not in proposal
+
+
 class TestDecidingIsAWrite:
     def test_approving_needs_write_on_the_type(self, client):
         """An approved inference "becomes STORED DATA, not edited

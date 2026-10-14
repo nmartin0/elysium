@@ -1011,6 +1011,9 @@ export interface MergeProposal {
   /** Named so a reviewer knows the comparison was wider than what they
    *  can see, rather than believing they saw all of it. */
   withheld: string[]
+  /** At or above the type's `auto_propose_above` (WIRED-3): ticked for
+   *  bulk approval. A flag, never the score. Absent from older servers. */
+  high_confidence?: boolean
 }
 
 /**

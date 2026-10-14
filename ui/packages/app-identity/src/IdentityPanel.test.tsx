@@ -176,3 +176,67 @@ describe('an empty queue', () => {
     expect(await screen.findByText('No proposed merges.')).toBeTruthy()
   })
 })
+
+describe('pre-selected for bulk approval (WIRED-3)', () => {
+  const second = { ...MASKED, proposal_id: 'p2', left_id: 'cust_003', right_id: 'cust_004' }
+
+  it('ticks a high-confidence proposal and leaves the others', async () => {
+    show([{ ...MASKED, high_confidence: true }, second])
+
+    const boxes = await screen.findAllByLabelText('Include in bulk approval')
+    expect((boxes[0] as HTMLInputElement).checked).toBe(true)
+    expect((boxes[1] as HTMLInputElement).checked).toBe(false)
+    expect(screen.getByText('high confidence')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve 1 selected' })).toBeInTheDocument()
+  })
+
+  it('approves exactly the ticked ones, after a person presses the button', async () => {
+    decideMergeProposal.mockClear()
+    show([{ ...MASKED, high_confidence: true }, second])
+
+    const boxes = await screen.findAllByLabelText('Include in bulk approval')
+    expect(decideMergeProposal).not.toHaveBeenCalled()
+    fireEvent.click(boxes[1]!)
+    fireEvent.click(screen.getByRole('button', { name: 'Approve 2 selected' }))
+
+    await waitFor(() => expect(decideMergeProposal).toHaveBeenCalledTimes(2))
+    expect(decideMergeProposal).toHaveBeenCalledWith('p1', 'approved', undefined)
+    expect(decideMergeProposal).toHaveBeenCalledWith('p2', 'approved', undefined)
+  })
+
+  it('unticking a pre-selected one keeps it out', async () => {
+    show([{ ...MASKED, high_confidence: true }])
+
+    const [box] = await screen.findAllByLabelText('Include in bulk approval')
+    fireEvent.click(box!)
+
+    expect(screen.getByRole('button', { name: 'Approve 0 selected' })).toBeDisabled()
+  })
+
+  it('says which could not be approved, and that the rest were', async () => {
+    getMergeProposals.mockResolvedValue([
+      { ...MASKED, high_confidence: true },
+      { ...second, high_confidence: true },
+    ])
+    decideMergeProposal.mockReset()
+    decideMergeProposal.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('needs write:Customer'))
+    render(<IdentityPanel onSessionExpired={vi.fn()} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve 2 selected' }))
+
+    expect(await screen.findByText(/1 of 2 could not be approved; the rest were/)).toBeInTheDocument()
+    expect(screen.getByText(/cust_003 and cust_004: needs write:Customer/)).toBeInTheDocument()
+  })
+
+  it('does not claim the rest were approved when none were', async () => {
+    getMergeProposals.mockResolvedValue([{ ...MASKED, high_confidence: true }])
+    decideMergeProposal.mockReset()
+    decideMergeProposal.mockRejectedValueOnce(new Error('needs write:Customer'))
+    render(<IdentityPanel onSessionExpired={vi.fn()} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve 1 selected' }))
+
+    expect(await screen.findByText('None of the 1 could be approved')).toBeInTheDocument()
+    expect(screen.queryByText(/the rest were/)).toBeNull()
+  })
+})

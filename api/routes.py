@@ -498,6 +498,11 @@ class MergeProposalResponse(BaseModel):
     #: Named so the reviewer knows the comparison was wider than what
     #: they can see, rather than believing they saw all of it.
     withheld: list[str]
+    #: AT OR ABOVE THE TYPE'S `auto_propose_above` (WIRED-3, decided by
+    #: the owner 14 Oct: pre-select it). A FLAG, NEVER THE SCORE, for the
+    #: reason `pattern` says: a number invites deference. The screen
+    #: ticks these for one bulk approval; a person still presses it.
+    high_confidence: bool = False
 
 
 class MergeDecisionRequest(BaseModel):
@@ -4453,8 +4458,23 @@ def merge_proposals_route(request: Request, object_type: str | None = None,
             pattern=agreement_pattern(entries),
             fields=[MergeFieldResponse(**entry) for entry in entries],
             withheld=withheld_fields(entries),
+            high_confidence=_is_high_confidence(generation.config.schema, proposal),
         ))
     return out
+
+
+def _is_high_confidence(schema: dict, proposal) -> bool:
+    """Whether a proposal clears its type's `auto_propose_above`
+    (WIRED-3). False when the type declares no inference or declares it
+    badly -- a malformed block is the loader's to report, not this
+    listing's to fail on."""
+    from core.mirror.matching import settings_for
+
+    try:
+        settings = settings_for((schema or {}).get(proposal.object_type) or {})
+    except ValueError:
+        return False
+    return settings is not None and float(proposal.score) >= settings.auto_propose_above
 
 
 @router.post("/merge-proposals/{proposal_id}/decide", status_code=204)

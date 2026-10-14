@@ -33,8 +33,15 @@
 
 import { useState } from 'react'
 
-import { getMergeProposals, type MergeProposal } from '@elysium/shell-api/api'
+import {
+  decideMergeProposal,
+  getMergeProposals,
+  handleIfSessionExpired,
+  type MergeProposal,
+} from '@elysium/shell-api/api'
+import Action from '@elysium/shell-api/components/Action'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
+import ErrorState from '@elysium/shell-api/components/ErrorState'
 import Notice from '@elysium/shell-api/components/Notice'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 
@@ -63,30 +70,123 @@ function IdentityQueue({ onSessionExpired, onDecided }: { onSessionExpired: () =
 
   return (
     <AsyncPanel error={error} data={proposals}>
-      {(proposals) => {
-        const pending = proposals.filter((proposal) => proposal.decision === 'pending')
-        return (
-          <>
-            <p className="identity__lede">
-              Pairs the matcher believes may be the same thing. Nothing here has changed any data: a decision is
-              recorded, and the next build consults it.
-            </p>
-            {proposals.length === 0 && <Notice state="neutral">No proposed merges.</Notice>}
-            {proposals.length > 0 && pending.length === 0 && (
-              <Notice state="granted">Every proposal has been decided.</Notice>
-            )}
-
-            {proposals.map((proposal) => (
-              <ProposalCard
-                key={proposal.proposal_id}
-                proposal={proposal}
-                onDecided={onDecided}
-                onSessionExpired={onSessionExpired}
-              />
-            ))}
-          </>
-        )
-      }}
+      {(proposals) => <ProposalList proposals={proposals} onDecided={onDecided} onSessionExpired={onSessionExpired} />}
     </AsyncPanel>
+  )
+}
+
+/**
+ * The queue, and the selection a bulk approval acts on (WIRED-3).
+ *
+ * PRE-SELECTED, NEVER APPLIED. A proposal at or above its type's
+ * `auto_propose_above` arrives ticked, the owner's decision of 14 Oct:
+ * the matcher may do the sorting, a person still does the approving.
+ * The selection starts from the server's flag once, when the list
+ * arrives, and is the reviewer's after that -- unticking one is final.
+ *
+ * ONE REQUEST PER PROPOSAL, in turn, rather than a bulk endpoint: each
+ * approval is its own `write:<Type>` decision on the server, and a
+ * refusal of one must not hide that the others went through.
+ */
+function ProposalList({
+  proposals,
+  onDecided,
+  onSessionExpired,
+}: {
+  proposals: MergeProposal[]
+  onDecided: () => void
+  onSessionExpired: () => void
+}) {
+  const pending = proposals.filter((proposal) => proposal.decision === 'pending')
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(pending.filter((proposal) => proposal.high_confidence).map((proposal) => proposal.proposal_id)),
+  )
+  const [busy, setBusy] = useState(false)
+  const [failures, setFailures] = useState<string[]>([])
+  const [attempted, setAttempted] = useState(0)
+
+  const toggle = (proposalId: string) =>
+    setSelected((current) => {
+      const next = new Set(current)
+      if (next.has(proposalId)) next.delete(proposalId)
+      else next.add(proposalId)
+      return next
+    })
+
+  const approveSelected = async () => {
+    setBusy(true)
+    const refused: string[] = []
+    for (const proposal of pending.filter((each) => selected.has(each.proposal_id))) {
+      try {
+        await decideMergeProposal(proposal.proposal_id, 'approved')
+      } catch (caught) {
+        if (handleIfSessionExpired(caught, onSessionExpired)) return
+        // NAMED BY THE PAIR, not the proposal's internal id -- the first
+        // version printed a UUID nobody could act on (seen in the browser).
+        refused.push(
+          `${proposal.left_id} and ${proposal.right_id}: ${caught instanceof Error ? caught.message : String(caught)}`,
+        )
+      }
+    }
+    setBusy(false)
+    setAttempted(selected.size)
+    if (refused.length > 0) setFailures(refused)
+    else onDecided()
+  }
+
+  const highConfidence = pending.filter((proposal) => proposal.high_confidence).length
+
+  return (
+    <>
+      <p className="identity__lede">
+        Pairs the matcher believes may be the same thing. Nothing here has changed any data: a decision is recorded, and
+        the next build consults it.
+      </p>
+      {proposals.length === 0 && <Notice state="neutral">No proposed merges.</Notice>}
+      {proposals.length > 0 && pending.length === 0 && (
+        <Notice state="granted">Every proposal has been decided.</Notice>
+      )}
+
+      {pending.length > 0 && (
+        <div className="identity__bulk">
+          <span>
+            {selected.size} of {pending.length} selected
+            {highConfidence > 0 && ` (${highConfidence} pre-selected as high confidence)`}
+          </span>
+          <Action
+            tone="primary"
+            text={`Approve ${selected.size} selected`}
+            disabled={busy || selected.size === 0}
+            onClick={() => void approveSelected()}
+          />
+        </div>
+      )}
+      {failures.length > 0 && (
+        <ErrorState
+          title={
+            failures.length === attempted
+              ? `None of the ${attempted} could be approved`
+              : `${failures.length} of ${attempted} could not be approved; the rest were`
+          }
+        >
+          <ul>
+            {failures.map((failure) => (
+              <li key={failure}>{failure}</li>
+            ))}
+          </ul>
+        </ErrorState>
+      )}
+
+      {proposals.map((proposal) => (
+        <ProposalCard
+          key={proposal.proposal_id}
+          proposal={proposal}
+          selected={selected.has(proposal.proposal_id)}
+          onToggle={() => toggle(proposal.proposal_id)}
+          onDecided={onDecided}
+          onSessionExpired={onSessionExpired}
+        />
+      ))}
+    </>
   )
 }

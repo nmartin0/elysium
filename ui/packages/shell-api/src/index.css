@@ -2250,6 +2250,25 @@
     margin: 0;
   }
 
+  /* THE BULK APPROVAL (WIRED-3): how many are ticked, and the one button
+   * that approves them. Above the list, because it acts on all of it. */
+  .identity__bulk {
+    display: flex;
+    align-items: center;
+    gap: var(--space-normal);
+    margin-bottom: var(--space-normal);
+    color: var(--text-secondary);
+  }
+
+  .identity__tags {
+    display: flex;
+    gap: 6px;
+  }
+
+  .identity__select {
+    margin: var(--space-snug) 0 0;
+  }
+
   /* The pattern is what the reviewer decides on, so it is given its own
    * line and set in mono -- it is read character by character. */
   .identity__pattern {

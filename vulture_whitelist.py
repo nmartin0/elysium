@@ -52,6 +52,8 @@ publication_retained
 not_shown
 # Comparing two sets: routes and response fields, the same reason.
 compare_sets_route
+# WIRED-3: a response field pydantic reads by reflection.
+high_confidence
 # R12: pydantic calls the validator by reflection.
 _one_label_is_a_list
 combine_sets_route

@@ -2449,6 +2449,14 @@ CONTROLS = [
         tests=["tests/unit/test_link_fields_respect_mac.py::TestAForwardLinkHidesItsTargetToo::"
                "test_a_foreign_key_to_a_hidden_object_is_withheld"],
     ),
+    Control(
+        describes="WIRED-3: a match at or above the type's auto_propose_above is flagged for pre-selection",
+        path="api/routes.py",
+        old="    return settings is not None and float(proposal.score) >= settings.auto_propose_above",
+        new="    return False",
+        tests=["tests/unit/test_high_confidence_matches_are_preselected.py::"
+               "test_at_or_above_the_declared_threshold_is_high_confidence"],
+    ),
 ]
 
 
