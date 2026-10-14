@@ -34,6 +34,8 @@ because a server that ignores the schema must still be safe.
 """
 
 from core.functions.interface import Function
+from core.llm.agent_features import OFF as OFF_FEATURES
+from core.llm.agent_features import AgentFeatures
 from core.ontology.schema import is_searchable_field
 
 AGGREGATES = ("count", "sum", "avg", "min", "max")
@@ -139,8 +141,55 @@ def _steps_for_type(object_type: str, definition: dict, in_plan: bool = False) -
     return steps
 
 
+#: A filter value written as a condition (agent_features.filter_operators):
+#: exactly the shapes core.filters.agent_conditions() reads.
+def _condition(value: dict) -> dict:
+    def one(properties: dict, required: list[str]) -> dict:
+        return {"type": "object", "properties": properties, "required": required,
+                "additionalProperties": False}
+    values = {"type": "array", "items": value, "minItems": 1}
+    number = {"type": "number"}
+    date = {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}.*$"}
+    return {"anyOf": [
+        one({"in": values}, ["in"]),
+        one({"not_in": values}, ["not_in"]),
+        {"type": "object", "properties": {"min": number, "max": number},
+         "minProperties": 1, "additionalProperties": False},
+        {"type": "object", "properties": {"start": date, "end": date},
+         "minProperties": 1, "additionalProperties": False},
+        one({"contains": {"type": "string", "minLength": 1}}, ["contains"]),
+    ]}
+
+
+def _with_conditions(variant: dict) -> dict:
+    """The same step, its filter values widened to admit a condition."""
+    filter_ = (variant["properties"].get("filter") or {}).get("properties")
+    if filter_:
+        for name, value in list(filter_.items()):
+            filter_[name] = {"anyOf": [value, _condition(value)]}
+    return variant
+
+
+def _feature_steps(object_type: str, definition: dict, features: AgentFeatures) -> list[dict]:
+    fields = definition.get("fields") or {}
+    if not fields:
+        return []
+    named = {"const": object_type}
+    steps = []
+    if features.free_text_search:
+        steps.append(_step("search_text", {"object_type": named,
+                                           "text": {"type": "string", "minLength": 1}},
+                           ["object_type", "text"]))
+    if features.remember_from_query:
+        steps.append(_step("remember", {"object_type": named, "object_id": _ID,
+                                        "text": {"type": "string", "minLength": 1}},
+                           ["object_type", "object_id", "text"]))
+    return steps
+
+
 def step_schema(visible_schema: dict, tools: list[Function], writes_enabled: bool,
-                visible_action_types: dict) -> dict:
+                visible_action_types: dict,
+                features: AgentFeatures = OFF_FEATURES) -> dict:
     """Every step this caller may take, as one JSON Schema.
 
     THE SAME ARGUMENTS AS THE SYSTEM PROMPT, so what the prompt offers
@@ -149,7 +198,11 @@ def step_schema(visible_schema: dict, tools: list[Function], writes_enabled: boo
     """
     variants: list[dict] = [_step("finish", {}, [])]
     for object_type, definition in visible_schema.items():
-        variants.extend(_steps_for_type(object_type, definition))
+        for_type = _steps_for_type(object_type, definition)
+        if features.filter_operators:
+            for_type = [_with_conditions(variant) for variant in for_type]
+        variants.extend(for_type)
+        variants.extend(_feature_steps(object_type, definition, features))
     if tools:
         variants.append(_step("use_tool", {"tool_name": _enum(tool.name for tool in tools),
                                            "args": {"type": "object"}},

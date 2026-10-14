@@ -25,15 +25,23 @@ tests cannot catch, because every side is individually correct.
 import re
 
 from core.agent.agentic_loop import AgentLoop
+from core.llm.agent_features import AgentFeatures
 from core.llm.agent_step_prompt import _build_system_prompt, next_step
 
+#: Every switch on (core/llm/agent_features.py). The vocabulary must
+#: agree with them off -- the tests below -- and with them on.
+ALL_ON = AgentFeatures(filter_operators=True, search_result_cap=1, free_text_search=True,
+                       remember_from_query=True)
 
-def _handler_steps() -> set[str]:
+
+def _handler_steps(features: AgentFeatures | None = None) -> set[str]:
     loop = AgentLoop.__new__(AgentLoop)
+    if features is not None:
+        loop.features = features
     return set(loop._step_handlers())
 
 
-def _parser_accepts(step_name: str) -> bool:
+def _parser_accepts(step_name: str, features: AgentFeatures | None = None) -> bool:
     """Whether next_step() has a real branch for this step type.
 
     Probed rather than introspected: the branches are inline `if`
@@ -47,9 +55,10 @@ def _parser_accepts(step_name: str) -> bool:
             # "finish", so a bare step name cannot distinguish "no
             # branch" from "bad step". Probing with a plausible shape
             # per type is what makes the distinction real.
-            return _PROBES[step_name]
+            return {**_PROBES, **_SWITCHED_PROBES}[step_name]
 
-    return next_step(_Says(), "q", {}, [], [], True, {}).get("step") == step_name
+    return next_step(_Says(), "q", {}, [], [], True, {},
+                     **({"features": features} if features else {})).get("step") == step_name
 
 
 _PROBES = {
@@ -60,6 +69,11 @@ _PROBES = {
     "search_around": '{"step": "search_around", "object_type": "T", "link_field": "l"}',
     "use_tool": '{"step": "use_tool", "tool_name": "t", "args": {}}',
     "propose_action": '{"step": "propose_action", "action_type": "A", "parameters": {}}',
+}
+#: The switched steps' probes, read only with the switches on.
+_SWITCHED_PROBES = {
+    "search_text": '{"step": "search_text", "object_type": "T", "text": "x"}',
+    "remember": '{"step": "remember", "object_type": "T", "object_id": 1, "text": "x"}',
 }
 
 
@@ -107,6 +121,24 @@ def test_the_prompt_teaches_every_step_that_has_a_handler():
         f"these handlers exist but the prompt never teaches them: "
         f"{sorted(unconditional - taught)}"
     )
+
+
+def test_with_every_switch_on_the_three_sides_still_agree():
+    handlers = _handler_steps(ALL_ON)
+    prompt = _build_system_prompt({}, [], True, {}, features=ALL_ON)
+    taught = set(re.findall(r'"step":\s*"([a-z_]+)"', prompt)) - {"finish"}
+
+    assert set(_PROBES) | set(_SWITCHED_PROBES) == handlers
+    assert taught <= handlers
+    assert handlers - {"use_tool", "propose_action"} <= taught
+    assert all(_parser_accepts(name, ALL_ON) for name in handlers)
+
+
+def test_with_them_off_the_switched_steps_are_refused_by_the_parser():
+    """THE CONTROL for the one above: the probes are real, and the
+    parser refuses them without the switch -- it does not accept every
+    shape it is shown."""
+    assert not any(_parser_accepts(name) for name in _SWITCHED_PROBES)
 
 
 # --- the two steps that were unreachable, exercised properly ---

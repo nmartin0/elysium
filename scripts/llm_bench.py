@@ -80,6 +80,7 @@ from core.agent.evaluation import (  # noqa: E402
     EvalCase,
     ExpectedAggregate,
     ExpectedFact,
+    ExpectedMemory,
     aggregate,
     grade,
 )
@@ -89,6 +90,7 @@ from core.deployment_loader import (  # noqa: E402
     resolve_runtime_paths,
 )
 from core.intermediate_layer.auth import resolve_user_record  # noqa: E402
+from core.llm.agent_features import AgentFeatures  # noqa: E402
 from core.llm.agent_step_prompt import (  # noqa: E402
     PLAN_INSTRUCTIONS,
     _build_system_prompt,
@@ -207,6 +209,77 @@ CASES = (
 )
 
 
+#: THE FOUR SWITCHES' CASES (core/llm/agent_features.py). Kept apart from
+#: CASES so a plain run measures what it always measured; --cases names
+#: them, and scripts/feature_bench.py runs them arm by arm. Each is
+#: answerable without its switch -- the baseline arm asks whether the
+#: switch is NEEDED, not only whether it works.
+FEATURE_CASES = (
+    EvalCase(
+        # filter_operators: two values of one field. Without it, two
+        # searches; with it, one {"in": [..]}.
+        name="operators_in",
+        query="What are the email addresses of Ada Okafor and Bram Feldman?",
+        user_id=USER_ID,
+        expected_facts=(
+            ExpectedFact("Customer", "cust_001", "email", "ada.okafor@example.com"),
+            ExpectedFact("Customer", "cust_002", "email", "bram.feldman@example.com"),
+        ),
+    ),
+    EvalCase(
+        # filter_operators: a range. Without it, the model reads every
+        # one of Bram's amounts and compares them itself.
+        name="operators_range",
+        query="What category is Bram Feldman's transaction with a negative amount?",
+        user_id=USER_ID,
+        expected_facts=(ExpectedFact("Transaction", "4", "category", "refund"),),
+    ),
+    EvalCase(
+        # free_text_search: part of a value. Without it, search_object
+        # needs the whole name, which the question does not give.
+        name="free_text_surname",
+        query="What is the email address of the customer whose surname is Feldman?",
+        user_id=USER_ID,
+        expected_facts=(
+            ExpectedFact("Customer", "cust_002", "email", "bram.feldman@example.com"),
+        ),
+    ),
+    EvalCase(
+        # remember_from_query. Graded on the object the memory was filed
+        # against and one word of it; the bench removes it afterwards.
+        name="remember_preference",
+        query="Remember that Ada Okafor prefers to be contacted by email.",
+        user_id=USER_ID,
+        expected_facts=(),
+        expected_memories=(ExpectedMemory("Customer", "cust_001", "email"),),
+    ),
+)
+ALL_CASES = CASES + FEATURE_CASES
+
+
+class _MemoryCleanup:
+    """Removes memories a trial wrote about a case's objects, after the
+    trial. A bench must not leave a person's deployment remembering
+    things nobody asked it to -- and trial 2 must not be shown trial 1's
+    memory, or it measures something else."""
+
+    def __init__(self, generation, case):
+        self._store = generation.memory.store if generation.memory else None
+        self._objects = [(m.object_type, m.object_id) for m in case.expected_memories]
+        self._before = self._ids()
+
+    def _ids(self) -> set:
+        if self._store is None:
+            return set()
+        return {m.memory_id for key in self._objects for m in self._store.about(*key)}
+
+    def __call__(self) -> int:
+        new = self._ids() - self._before
+        for memory_id in new:
+            self._store.remove(memory_id)
+        return len(new)
+
+
 class Timed:
     """Wraps the real adapter and records how long each call took.
 
@@ -286,13 +359,22 @@ def describe_gathered(gathered: list[dict]) -> list[str]:
 
 def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
         mode: str = "step", show_plan: bool = False, show_steps: bool = False,
-        constrain: bool = False) -> int:
+        constrain: bool = False, features: AgentFeatures | None = None,
+        collect: list | None = None) -> int:
+    """One bench session. `collect`, when given, receives every graded
+    trial as it completes -- scripts/feature_bench.py's way of reading
+    the results without parsing the report, as (TrialResult, seconds)."""
     if show_plan:
         _show_plans()
     generation = build_generation(paths.config_dir, paths.data_dir, paths.log_dir)
     if constrain:
         generation.loop.constrain_steps = True
+    if features is not None:
+        # THE ARM'S SWITCHES, WHATEVER config.yaml SAYS -- as --constrain
+        # does for AR-5. A bench comparing arms must set every one.
+        generation.loop.features = features
     print(f"steps {'CONSTRAINED to the step schema' if generation.loop.constrain_steps else 'free JSON'}")
+    print(f"features {', '.join(generation.loop.features.names_on) or 'all off'}")
     user = resolve_user_record(
         generation.config.users, USER_ID, generation.config.security_attribute
     )
@@ -333,6 +415,8 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
     warm_system = _build_system_prompt(
         visible_schema, generation.loop.tools, False, {},
         data_is_shown=(mode != "plan"),
+        # THE ARM'S PROMPT, or the warm-up caches a prefix no trial sends.
+        features=generation.loop.features if mode != "plan" else AgentFeatures(),
     )
     if mode == "plan":
         warm_system += PLAN_INSTRUCTIONS
@@ -413,6 +497,8 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
     for case in cases:
         for trial in range(trials):
             before = len(timer.calls)
+            cleanup = _MemoryCleanup(generation, case)
+            trial_started = time.monotonic()
             try:
                 # THE WHOLE REASON run_planned() IS A SIBLING ENTRY
                 # POINT rather than a config flag: AL-4 can be measured
@@ -443,7 +529,10 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
                 return _report(results, timer, partial=True,
                                        deployment_limit=real_timeout or 0)
             graded = grade(case, outcome)
+            removed = cleanup()
             results.append(graded)
+            if collect is not None:
+                collect.append((graded, time.monotonic() - trial_started))
             done += 1
             elapsed = time.monotonic() - started
             print(f"  {case.name:<26} trial {trial + 1}/{trials}  "
@@ -452,7 +541,8 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
                   f"hops={graded.hops} "
                   f"calls={len(timer.calls) - before} "
                   f"unusable={len(graded.fabricated_finishes)} "
-                  f"[{elapsed / 60:.1f}m]")
+                  f"[{elapsed / 60:.1f}m]"
+                  + (f"  (removed {removed} memory written by the trial)" if removed else ""))
             if show_steps:
                 for number, line in enumerate(describe_gathered(outcome.gathered), 1):
                     print(f"      {number:>2}. {line}")
@@ -566,7 +656,16 @@ def main() -> int:
                              "plan: the whole plan in one call (AL-4). Run "
                              "both and compare -- that is what this is for.")
     parser.add_argument("--cases", help="comma-separated case names; "
-                        "default all. Run one case first on slow hardware.")
+                        "default the original seven. Run one case first on slow "
+                        "hardware. The switches' cases are named here too: "
+                        + ", ".join(c.name for c in FEATURE_CASES))
+    parser.add_argument("--features", default="",
+                        help="comma-separated switches to turn on for this run, "
+                             "whatever config.yaml says: filter_operators, "
+                             "free_text_search, remember_from_query. 'none' "
+                             "turns every one off. Absent: config.yaml's.")
+    parser.add_argument("--search-cap", type=int, default=None,
+                        help="search_result_cap for this run (AL-3)")
     parser.add_argument("--config", help="overrides ELYSIUM_CONFIG_DIR")
     parser.add_argument("--data", help="overrides ELYSIUM_DATA_DIR")
     parser.add_argument("--log", help="overrides ELYSIUM_LOG_DIR")
@@ -596,16 +695,39 @@ def main() -> int:
           f"log {paths.log_dir}\n")
     cases = CASES
     if args.cases:
-        wanted = {name.strip() for name in args.cases.split(",")}
-        cases = tuple(c for c in CASES if c.name in wanted)
-        unknown = wanted - {c.name for c in CASES}
+        wanted = [name.strip() for name in args.cases.split(",")]
+        cases = tuple(c for name in wanted for c in ALL_CASES if c.name == name)
+        unknown = set(wanted) - {c.name for c in ALL_CASES}
         if unknown:
             print(f"Unknown case(s): {sorted(unknown)}")
-            print(f"Known: {[c.name for c in CASES]}")
+            print(f"Known: {[c.name for c in ALL_CASES]}")
             return 2
+    try:
+        features = parse_features(args.features, args.search_cap)
+    except ValueError as e:
+        print(e)
+        return 2
     print(f"mode {args.mode}")
     return run(paths, args.trials, cases, args.mode, args.show_plan, args.show_steps,
-               args.constrain)
+               args.constrain, features)
+
+
+SWITCHES = ("filter_operators", "free_text_search", "remember_from_query")
+
+
+def parse_features(names: str, search_cap: int | None) -> AgentFeatures | None:
+    """--features and --search-cap as one AgentFeatures, or None to keep
+    config.yaml's when neither was given."""
+    if not names and search_cap is None:
+        return None
+    wanted = set() if names in ("", "none") else {n.strip() for n in names.split(",")}
+    unknown = wanted - set(SWITCHES)
+    if unknown:
+        raise ValueError(f"Unknown switch(es): {sorted(unknown)}. Known: {list(SWITCHES)}")
+    if search_cap is not None and search_cap < 1:
+        raise ValueError("--search-cap must be at least 1")
+    return AgentFeatures(search_result_cap=search_cap,
+                         **{name: name in wanted for name in SWITCHES})
 
 
 if __name__ == "__main__":

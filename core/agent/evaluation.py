@@ -114,6 +114,24 @@ class ExpectedAggregate:
 
 
 @dataclass(frozen=True)
+class ExpectedMemory:
+    """One memory a correct run must have recorded (E-14, behind
+    agent_features.remember_from_query).
+
+    GRADED ON THE OBJECT, NOT THE SENTENCE. Which object a fact was
+    filed against is checkable; whether the model's sentence says it
+    well is the prose this module refuses to grade. `mentions`, when
+    set, is one word the sentence must contain (case ignored), so a
+    memory on the right customer saying something else entirely does
+    not pass.
+    """
+
+    object_type: str
+    object_id: str
+    mentions: str | None = None
+
+
+@dataclass(frozen=True)
 class EvalCase:
     name: str
     query: str
@@ -122,6 +140,8 @@ class EvalCase:
     # Graded from `aggregate_object` steps. Empty for every case written
     # before aggregates could be scored, which keeps their meaning.
     expected_aggregates: tuple[ExpectedAggregate, ...] = ()
+    # Graded from `remember` steps that succeeded.
+    expected_memories: tuple[ExpectedMemory, ...] = ()
     # A run that stopped for any reason other than a deliberate finish
     # is a failure even if it happened to gather the right facts: the
     # caller was told the answer might be partial, so it is not the
@@ -133,7 +153,7 @@ class EvalCase:
 class TrialResult:
     case_name: str
     passed: bool
-    missing: tuple[ExpectedFact | ExpectedAggregate, ...] = ()
+    missing: tuple[ExpectedFact | ExpectedAggregate | ExpectedMemory, ...] = ()
     stop_reason: str = ""
     hops: int = 0
     # The gathered payload, kept so a failure can be read rather than
@@ -218,6 +238,21 @@ def grade(case: EvalCase, result: AgentLoopResult) -> TrialResult:
             and value == expected.value
             and (expected.filter_mentions is None or expected.filter_mentions in filters)
             for object_type, aggregate, value, filters in computed
+        )
+    )
+
+    remembered = [
+        (str(entry.get("object_type")), str(entry.get("object_id")), str(entry.get("text", "")))
+        for entry in gathered
+        if isinstance(entry, dict) and entry.get("step") == "remember"
+        and str(entry.get("result", "")).startswith("remembered")
+    ]
+    missing += tuple(
+        expected for expected in case.expected_memories
+        if not any(
+            object_type == expected.object_type and object_id == expected.object_id
+            and (expected.mentions is None or expected.mentions.lower() in text.lower())
+            for object_type, object_id, text in remembered
         )
     )
 

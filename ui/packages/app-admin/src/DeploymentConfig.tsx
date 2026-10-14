@@ -47,6 +47,8 @@ interface DeploymentConfigBody {
   max_consecutive_invalid_steps: number
   /** AR-5: step replies constrained to the step schema. */
   constrain_steps?: boolean
+  /** The agent switches turned on (core/llm/agent_features.py). */
+  agent_features?: string[]
   /** AL-10: the per-query token budget; null for none. */
   max_tokens_per_query?: number | null
   /** Formerly BLOCKING 6: classification labels decide field access. */
@@ -252,6 +254,10 @@ export default function DeploymentConfig({ onSessionExpired }: { onSessionExpire
               ['Max consecutive duplicates', config.max_consecutive_duplicates],
               ['Max consecutive invalid steps', config.max_consecutive_invalid_steps],
               ['Steps constrained to the schema', config.constrain_steps ? 'yes' : 'no'],
+              [
+                'Agent switches on',
+                config.agent_features === undefined ? 'not reported' : config.agent_features.join(', ') || 'none',
+              ],
               [
                 'Token budget per question',
                 config.max_tokens_per_query === undefined

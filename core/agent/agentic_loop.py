@@ -65,6 +65,7 @@ Used by: scripts/run_deployment.py, api/routes.py, and directly by
 import decimal
 import json
 import logging
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -73,11 +74,13 @@ from typing import TYPE_CHECKING, Any
 
 from core.concurrency import ConcurrencyLimiter
 from core.deployment_loader import build_llm_adapter
-from core.filters import as_equality_conditions
+from core.filters import agent_conditions, as_equality_conditions
 from core.functions.interface import Function
 from core.functions.ontology_access import OntologyAccess
 from core.functions.registry import get_enabled_functions
 from core.intermediate_layer.auth import UserRecord, authorize
+from core.llm.agent_features import OFF as OFF_FEATURES
+from core.llm.agent_features import AgentFeatures
 from core.llm.agent_step_prompt import next_plan, next_step
 from core.llm.interface import LLMAdapter, LLMCancelled, LLMUnavailable
 from core.llm.plan import MAX_PLAN_FANOUT, PlanError, resolve_step
@@ -285,7 +288,7 @@ def _hashable(value):
 _SCALAR = (str, int, float, bool)
 
 
-def check_step_values(step: dict) -> None:
+def check_step_values(step: dict, features: AgentFeatures = OFF_FEATURES) -> None:
     """Refuse model-written values of the wrong SHAPE (AL-1).
 
     WHY THIS EXISTS SEPARATELY FROM next_step()'s key checks. Those ask
@@ -307,6 +310,11 @@ def check_step_values(step: dict) -> None:
     a list filter value is refused rather than read as "in". When the
     typed grammar reaches the agent, this is where the shape it accepts
     widens -- one place, stated.
+
+    AND IT DOES, behind `features.filter_operators`: a filter value may
+    then be a condition object, whose shape core.filters.agent_conditions()
+    checks. A bare list is still refused -- "in" is written {"in": [..]},
+    so a list never has to be guessed at.
     """
     def scalar(name, value):
         if not isinstance(value, _SCALAR) and value is not None:
@@ -320,7 +328,12 @@ def check_step_values(step: dict) -> None:
         for item in step.get(key) or []:
             scalar(f"each entry of {key}", item)
     for name, value in (step.get("filter") or {}).items():
+        if features.filter_operators and isinstance(value, dict):
+            continue
         scalar(f"filter[{name!r}]", value)
+    if step.get("step") in ("search_text", "remember"):
+        for key in ("object_type", "text"):
+            scalar(key, step.get(key))
 
 
 def _hashable_filter(step: dict) -> frozenset:
@@ -370,6 +383,8 @@ def _step_signature(step: dict):
     if step["step"] == "search_around":
         return ("search_around", step["object_type"], _hashable_filter(step),
                 _hashable(step["link_field"]))
+    if step["step"] == "search_text":
+        return ("search_text", step["object_type"], " ".join(str(step["text"]).lower().split()))
     return None
 
 
@@ -411,7 +426,7 @@ def _reject_ids_of_another_type(object_type: str, object_ids: list,
             continue
         result = item.get("result")
         found = [str(i) for i in result] if isinstance(result, list) else []
-        if kind == "search_object":
+        if kind in ("search_object", "search_text"):
             if item_type == object_type:
                 this_type.update(found)
             else:
@@ -592,13 +607,19 @@ class AgentLoop:
     #: step against, and not a plan step's value -- a later handle naming
     #: a get_object step gets the object, not the sentences beside it.
     CONTEXT_STEPS = frozenset({"memory"})
+    #: All off unless a deployment says otherwise. A CLASS default as well
+    #: as an __init__ argument, because tests build loops with __new__
+    #: and set only what they need; a loop that never heard of the
+    #: switches must behave as it did before they existed.
+    features: AgentFeatures = OFF_FEATURES
 
     def __init__(self, client: LLMAdapter, mediator: DataMediator, tools: list[Function] | None = None,
                  write_mediator: WriteMediator | None = None,
                  max_hops: int = 8, max_consecutive_duplicates: int = 2,
                  max_consecutive_invalid_steps: int = 2, constrain_steps: bool = False,
                  max_tokens_per_query: int | None = None,
-                 memory: "MemoryGuard | None" = None):
+                 memory: "MemoryGuard | None" = None,
+                 features: AgentFeatures = OFF_FEATURES):
         # These stay fixed across every query this loop instance ever
         # runs -- constructed once per deployment, then run() called
         # once per actual user question. tools defaults to None, not []
@@ -635,6 +656,9 @@ class AgentLoop:
         # per token can spend a great deal inside eight hops and five
         # minutes. None is no budget, which is what every deployment had.
         self.max_tokens_per_query = max_tokens_per_query
+        # THE FOUR MEASURED-BEFORE-ON SWITCHES (core/llm/agent_features.py).
+        # All off is the loop as it was, prompt byte for byte.
+        self.features = features
 
     @classmethod
     def from_deployment(cls, deployment, mediator: DataMediator,
@@ -656,6 +680,7 @@ class AgentLoop:
             constrain_steps=deployment.constrain_steps,
             max_tokens_per_query=deployment.max_tokens_per_query,
             memory=memory,
+            features=deployment.agent_features,
         )
 
     @staticmethod
@@ -783,7 +808,8 @@ class AgentLoop:
         return titles
 
     @staticmethod
-    def _check_filter_types(object_type: str, filter_: dict, visible_schema: dict) -> None:
+    def _check_filter_types(object_type: str, filter_: dict, visible_schema: dict,
+                            operators: bool = False) -> None:
         """Every filter value must fit the field's declared type.
 
         VALIDATED AT THE MODEL BOUNDARY, BEFORE THE QUERY, which is
@@ -833,6 +859,11 @@ class AgentLoop:
             # nobody can trust.
             if value is None:
                 continue          # a null filter is a different question
+            if operators and isinstance(value, dict):
+                # A CONDITION (features.filter_operators): the mediator's
+                # validate_filter() checks its shape against the declared
+                # type, as it does for the UI's, and says what was wrong.
+                continue
             try:
                 coerce(value, declared.get("data_type") or DEFAULT_FIELD_DATA_TYPE)
             except (ValueError, TypeError, decimal.DecimalException) as e:
@@ -846,16 +877,79 @@ class AgentLoop:
     def _step_search_object(self, step: dict, user_record: UserRecord,
                             visible_schema: dict, gathered: list[dict],
                             context: RequestContext | None = None) -> Any:
-        self._check_filter_types(step["object_type"], step["filter"], visible_schema)
+        self._check_filter_types(step["object_type"], step["filter"], visible_schema,
+                                 self.features.filter_operators)
         object_ids = self.mediator.search_object(
             user_record, step["object_type"],
-            as_equality_conditions(step["filter"]),
+            self._conditions(step["filter"]),
             visible_schema=visible_schema,
             context=context,
         )
         self._append_search_result(step, user_record, object_ids, visible_schema,
                                    gathered, context)
         return STEP_HANDLED
+
+    def _conditions(self, filter_: dict) -> list:
+        """The step's filter as conditions: equality only, or -- with
+        features.filter_operators -- the agent's condition objects too.
+        A malformed one raises FilterError, a ValueError, which the loop
+        hands back to the model as a mistake to correct."""
+        if self.features.filter_operators:
+            return agent_conditions(filter_)
+        return as_equality_conditions(filter_)
+
+    def _step_search_text(self, step: dict, user_record: UserRecord,
+                          visible_schema: dict, gathered: list[dict],
+                          context: RequestContext | None = None) -> Any:
+        """LB-8, behind features.free_text_search: the UI's free-text
+        search, for a model that knows part of a value rather than all of
+        it. The same method the UI calls, so the same fields, the same
+        RBAC/MAC filtering and the same audit."""
+        object_ids = self.mediator.search_object_free_text(
+            user_record, step["object_type"], step["text"],
+            visible_schema=visible_schema, context=context,
+        )
+        self._append_search_result(step, user_record, object_ids, visible_schema,
+                                   gathered, context)
+        return STEP_HANDLED
+
+    #: The words that make a question one asking for something to be kept.
+    #: E-14's rule is "written only when a person asks": the person's own
+    #: question must ask, whatever the model decides.
+    ASKS_TO_REMEMBER = re.compile(r"\b(remember|note that|make a note|keep in mind)\b",
+                                  re.IGNORECASE)
+
+    def _check_remember(self, step: dict, query_text: str, gathered: list[dict]) -> None:
+        """A remember step is refused unless the QUESTION asked for one,
+        and after the first. Checked here, where the question is known,
+        rather than in the handler, which sees only the step."""
+        if step.get("step") != "remember":
+            return
+        if not self.ASKS_TO_REMEMBER.search(query_text or ""):
+            raise ValueError("the question did not ask for anything to be remembered, "
+                             "so nothing may be recorded")
+        if any(entry.get("step") == "remember" for entry in gathered):
+            raise ValueError("one thing has already been remembered in this answer; "
+                             "finish instead")
+
+    def _step_remember(self, step: dict, user_record: UserRecord,
+                       visible_schema: dict, gathered: list[dict],
+                       context: RequestContext | None = None) -> Any:
+        """E-14's write half, behind features.remember_from_query. Through
+        the same MemoryGuard the Memories panel uses: the person must be
+        able to see the object, and the memory is theirs, fingerprinted
+        to the fields they can read."""
+        if self.memory is None:
+            raise ValueError("this deployment keeps no memories")
+        _reject_ids_of_another_type(step["object_type"], [step["object_id"]],
+                                    gathered, visible_schema)
+        memory = self.memory.remember(user_record, step["object_type"],
+                                      step["object_id"], step["text"])
+        if memory is None:
+            # UNIFORM DENIAL: absent and unreadable alike.
+            raise ValueError(f"no {step['object_type']} {step['object_id']!r} to remember "
+                             f"anything about")
+        return f"remembered: {memory.text}"
 
     def _append_search_result(self, step: dict, user_record: UserRecord,
                               object_ids: Any, visible_schema: dict,
@@ -872,6 +966,19 @@ class AgentLoop:
         understand.
         """
         entry = {**step, "result": object_ids}
+        cap = self.features.search_result_cap
+        if cap is not None and isinstance(object_ids, list) and len(object_ids) > cap:
+            # AL-3, behind features.search_result_cap: the whole list is
+            # context the model must read every later hop, and past a
+            # handful it reads it worse (context rot). The TOTAL stays
+            # exact, and the note says how to get an answer about all of
+            # them without reading each.
+            total = len(object_ids)
+            entry["result"] = object_ids = object_ids[:cap]
+            entry["total"] = total
+            entry["shown"] = (f"the first {cap} of {total} ids. To count or total all "
+                              f"of them use aggregate_object with this filter; to find "
+                              f"particular ones, narrow the filter.")
         titled_type = object_type or step["object_type"]
         if isinstance(object_ids, list) and titled_type:
             titles = self._titles_for(user_record, titled_type,
@@ -902,10 +1009,10 @@ class AgentLoop:
                                visible_schema: dict, gathered: list[dict],
                                context: RequestContext | None = None) -> Any:
         self._check_filter_types(step["object_type"], step.get("filter") or {},
-                                 visible_schema)
+                                 visible_schema, self.features.filter_operators)
         outcome = SearchOutcome()
         grouped = self.mediator.aggregate_by_field(
-            user_record, step["object_type"], as_equality_conditions(step.get("filter") or {}),
+            user_record, step["object_type"], self._conditions(step.get("filter") or {}),
             group_by=step.get("group_by"),
             aggregate=step["aggregate"],
             field_name=step.get("field_name"),
@@ -940,9 +1047,9 @@ class AgentLoop:
                             visible_schema: dict, gathered: list[dict],
                             context: RequestContext | None = None) -> Any:
         self._check_filter_types(step["object_type"], step.get("filter") or {},
-                                 visible_schema)
+                                 visible_schema, self.features.filter_operators)
         object_ids = self.mediator.search_around(
-            user_record, step["object_type"], as_equality_conditions(step.get("filter") or {}),
+            user_record, step["object_type"], self._conditions(step.get("filter") or {}),
             step["link_field"],
             context=context,
         )
@@ -1203,6 +1310,13 @@ class AgentLoop:
             "get_object": self._step_get_object,
             "use_tool": self._step_use_tool,
             "propose_action": self._step_propose_action,
+            # Switched on or not there at all: validated_step() refuses
+            # them when off, and this keeps a step that slipped past it
+            # an unrecognised one rather than a working one.
+            **({"search_text": self._step_search_text}
+               if self.features.free_text_search else {}),
+            **({"remember": self._step_remember}
+               if self.features.remember_from_query else {}),
         }
 
     def execute_plan(self, plan: list[dict], user_record: UserRecord,
@@ -1801,6 +1915,7 @@ class AgentLoop:
                     self.client, query_text, visible_schema, gathered, self.tools, writes_enabled,
                     visible_action_types, deadline=deadline, usage=usage,
                     constrain=self.constrain_steps, cancel=cancel_event,
+                    features=self.features,
                 )
             except LLMCancelled:
                 # MID-CALL (AL-11): the person left while the model was
@@ -1847,7 +1962,8 @@ class AgentLoop:
             try:
                 # BEFORE the signature, which is itself before the
                 # step's own error handling (AL-1).
-                check_step_values(step)
+                check_step_values(step, self.features)
+                self._check_remember(step, query_text, gathered)
             except ValueError as e:
                 consecutive_invalid, should_stop = _handle_recoverable_mistake(
                     gathered, consecutive_invalid, self.max_consecutive_invalid_steps,
@@ -1855,8 +1971,11 @@ class AgentLoop:
                     rejected_step_name="rejected_invalid_step",
                     attempt_label="invalid step",
                     stop_message="too many consecutive invalid steps, stopping",
-                    note=f"That step was not usable: {e}. Send one value per "
-                         f"field, and ask again for each id separately.",
+                    note=(f"That step was not usable: {e}. "
+                          + ("Write several values as a condition, {\"in\": [..]}."
+                             if self.features.filter_operators else
+                             "Send one value per field, and ask again for each id "
+                             "separately.")),
                 )
                 if should_stop:
                     stop_reason = StopReason.INVALID_STEPS

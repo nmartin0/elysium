@@ -94,6 +94,14 @@ agent:
   # exist. Needs Ollama 0.5+ or vLLM. Off until the bench says it helps:
   #   python -m scripts.llm_bench --constrain
   # constrain_steps: false
+  # Four more changes to what the model sees or may do, each built and
+  # off until one bench session on THIS model says which help:
+  #   python -m scripts.feature_bench
+  # (core/llm/agent_features.py says what each one does.)
+  # filter_operators: false     # {"in": [..]}, {"min": .., "max": ..}, ...
+  # search_result_cap: 20       # at most this many ids per search reach the model
+  # free_text_search: false     # a search_text step, as the UI's search box
+  # remember_from_query: false  # remember, only when the question asks to
 
 # Tools the LLM may call, by name -- entirely optional; omitting this
 # section (or listing none) is completely valid, unlike llm:, which

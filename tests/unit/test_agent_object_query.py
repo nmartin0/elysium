@@ -653,5 +653,11 @@ def test_every_declared_step_kind_has_a_handler(loop_and_mediator):
     offered = set(re.findall(r'"step": "([a-z_]+)"', prompt))
 
     # `finish` ends the loop rather than executing, so it is handled by
-    # run() and not by the dispatch table.
+    # run() and not by the dispatch table. The source offers the
+    # switched steps too (core/llm/agent_features.py), so the table is
+    # read with every switch on.
+    from core.llm.agent_features import AgentFeatures
+
+    loop.features = AgentFeatures(filter_operators=True, search_result_cap=1,
+                                  free_text_search=True, remember_from_query=True)
     assert offered - {"finish"} == set(loop._step_handlers())

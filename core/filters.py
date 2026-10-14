@@ -140,6 +140,58 @@ def as_equality_conditions(criteria: dict | None) -> list[FieldFilter]:
     ]
 
 
+
+#: The agent's way of writing each operator as a filter VALUE: the keys
+#: that name it. One key set per operator, so a value can only mean one.
+AGENT_OPERATOR_KEYS: dict[frozenset, str] = {
+    frozenset({"in"}): "in",
+    frozenset({"not_in"}): "not_in",
+    frozenset({"min"}): "range",
+    frozenset({"max"}): "range",
+    frozenset({"min", "max"}): "range",
+    frozenset({"start"}): "date_range",
+    frozenset({"end"}): "date_range",
+    frozenset({"start", "end"}): "date_range",
+    frozenset({"contains"}): "contains",
+}
+
+
+def agent_conditions(criteria: dict | None) -> list[FieldFilter]:
+    """The agent's {field: value} filter, where a value may be a condition.
+
+    F-18/LB-2, behind core/llm/agent_features.py's `filter_operators`.
+    A scalar stays equality, so every filter the agent wrote before means
+    what it meant. A dict names one operator by its keys:
+
+        {"in": [..]}  {"not_in": [..]}  {"min": n, "max": n}
+        {"start": "2026-01-01", "end": ".."}  {"contains": ".."}
+
+    THE SAME VOCABULARY THE UI SPEAKS, not a second one: each becomes the
+    FieldFilter parse_filters() would produce, and the mediator validates
+    it exactly as it validates the UI's. relative_date is left out on
+    purpose -- the model knows no "now" to count days from that the
+    server would agree with.
+
+    A dict naming no operator, or two, is refused with the shapes that
+    exist: the model is told what to write, not merely that it was wrong.
+    """
+    conditions = []
+    for field, value in (criteria or {}).items():
+        if not isinstance(value, dict):
+            conditions.append(FieldFilter(field=field, operator="equals", value=value))
+            continue
+        operator = AGENT_OPERATOR_KEYS.get(frozenset(value))
+        if operator is None:
+            raise FilterError(
+                f"filter {field!r}: {value!r} is not a condition. Write one of "
+                f'{{"in": [..]}}, {{"not_in": [..]}}, {{"min": .., "max": ..}}, '
+                f'{{"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}} or {{"contains": ".."}}.')
+        operand = (value[operator] if operator in ("in", "not_in", "contains")
+                   else dict(value))
+        conditions.append(FieldFilter(field=field, operator=operator, value=operand))
+    return conditions
+
+
 def parse_filters(raw: Any) -> list[FieldFilter]:
     """Turns the wire form -- a list of conditions -- into validated
     FieldFilters.

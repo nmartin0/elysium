@@ -62,6 +62,27 @@ describe('DeploymentConfig', () => {
     expect(label.parentElement).toHaveTextContent(/no$/)
   })
 
+  it('names the agent switches that are on', async () => {
+    // Four switches wait on a bench (core/llm/agent_features.py); which
+    // are on decides what the model may do, so it is shown here.
+    getDeploymentConfig.mockResolvedValue({
+      ...BODY,
+      agent_features: ['filter_operators', 'search_result_cap=20'],
+    })
+    render(<DeploymentConfig onSessionExpired={() => {}} />)
+
+    const label = await screen.findByText('Agent switches on')
+    expect(label.parentElement).toHaveTextContent(/filter_operators, search_result_cap=20$/)
+  })
+
+  it('says none when no agent switch is on', async () => {
+    getDeploymentConfig.mockResolvedValue({ ...BODY, agent_features: [] })
+    render(<DeploymentConfig onSessionExpired={() => {}} />)
+
+    const label = await screen.findByText('Agent switches on')
+    expect(label.parentElement).toHaveTextContent(/none$/)
+  })
+
   it('names silos and roles without describing them', async () => {
     /**
      * The endpoint deliberately sends NAMES only -- no silo connection

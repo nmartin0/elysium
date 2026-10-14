@@ -55,6 +55,8 @@ from core.functions.registry import validate_function_declarations
 from core.immutable import deep_freeze
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.policy_validation import validate_role_coherence, validate_roles
+from core.llm.agent_features import OFF as OFF_FEATURES
+from core.llm.agent_features import AgentFeatures, features_from_config
 from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
 from core.llm.interface import LLMAdapter
 from core.llm.retrying_adapter import RetryingLLMAdapter
@@ -267,6 +269,10 @@ class DeploymentConfig:
     # OFF until the bench on the deployment's own model says it helps --
     # see core/llm/step_schema.py.
     constrain_steps: bool = False
+    # FOUR AGENT CHANGES WAITING ON A MEASUREMENT, each off until the
+    # bench on the deployment's own model says otherwise -- see
+    # core/llm/agent_features.py. `agent:` in config.yaml.
+    agent_features: AgentFeatures = OFF_FEATURES
     # CLASSIFICATION LABELS DECIDE FIELD ACCESS (formerly BLOCKING 6): a labelled
     # field needs read:label:<each label>, and read:label:<L> grants every
     # L field in the types a role can read. OFF until a deployment turns
@@ -682,6 +688,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             max_consecutive_duplicates=config["agent"]["max_consecutive_duplicates"],
             max_consecutive_invalid_steps=config["agent"]["max_consecutive_invalid_steps"],
             constrain_steps=bool(config["agent"].get("constrain_steps", False)),
+            agent_features=features_from_config(config["agent"]),
             label_enforcement=bool((config.get("access") or {}).get("label_enforcement", False)),
             lineage=deep_freeze(validate_lineage_block(config.get("lineage"))),
             source_locales=MappingProxyType(

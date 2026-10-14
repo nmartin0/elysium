@@ -481,9 +481,22 @@ and constraining replies does not pay on a CPU. Pre-flight action
 verdicts and running without the schema in the prompt were not
 measured.
 
-**Blocked on:** nothing on this hardware. A GPU, or a larger model,
-would reopen plan mode and constrained decoding -- both trade compute
-the CPU does not have.
+**FOUR MORE ARE BUILT AND OFF, 2026-10-14** (`core/llm/agent_features.py`,
+each under `agent:` in config.yaml): filter operators (F-18/LB-2), a
+search-result cap (AL-3, item 9), a free-text `search_text` step
+(LB-8), and a `remember` step honoured only when the question itself
+asks (E-14). Off, the step prompt is byte for byte what it was --
+measured by its sha256 before and after. `scripts/feature_bench.py`
+runs one arm per switch plus a baseline of the new cases with all of
+them off (25 trials, about 75 minutes at one trial each) and prints a
+verdict per switch: ON only if no original case regressed and the
+switch's own case passed in no more hops than without it.
+
+**Blocked on:** one `python -m scripts.feature_bench` session on the
+deployment's own model, and its verdicts applied to config.yaml. Beyond
+that, nothing on this hardware: a GPU, or a larger model, would reopen
+plan mode and constrained decoding -- both trade compute the CPU does
+not have.
 
 ## 9. Context rot, and a 10,000-id search behind it
 
@@ -526,7 +539,15 @@ measurement -- task completion rate against context size at the
 midpoint of a task, which needs a capable model and is the agent-loop
 efficiency item's blocker too. Item 18 is the cap itself.
 
-**Blocked on:** a model to validate the cap against, and the
+**THE CAP IS BUILT AND OFF** (`agent.search_result_cap`): over it, the
+model is shown the first N ids, the exact total, and a note naming
+`aggregate_object` or a narrower filter -- the alternative the
+MAX_OBJECT_IDS story below says a bare limit fails to offer. The
+feature bench's `cap` arm runs the original seven under a cap of 1, the
+only cap that truncates anything on the fixture data.
+
+**Blocked on:** a model to validate the cap against (the feature
+bench's `cap` arm is the first half of that), and the
 `agentic_loop.py` comment beside `MAX_OBJECT_IDS` says exactly why
 that matters: told its limit was 20 when given 32 ids, a real model
 "came back asking for TWO, then spent the rest of its hops fetching

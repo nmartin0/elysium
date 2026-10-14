@@ -76,13 +76,23 @@ class TestWhatItClaimsIsMissing:
         assert "cross-silo" not in " ".join(active.split()).lower()
 
     def test_the_memory_limitation_is_still_true(self):
-        """Claimed: Query is given memories and never writes one. The
-        loop must reach the guard, and must never call remember()."""
+        """Claimed: Query is given memories and never writes one unless
+        remember_from_query is on -- which is off by default. Checked on
+        the code, not the source text: with the switch off the loop has
+        no remember handler at all."""
+        from unittest.mock import MagicMock
+
+        from core.agent.agentic_loop import AgentLoop
+        from core.llm.agent_features import OFF, AgentFeatures
+
         loop = (ROOT / "core/agent/agentic_loop.py").read_text(encoding="utf-8")
 
         assert "Agent memory is written by hand" in FLAT
+        assert "remember_from_query" in FLAT and "off by default" in FLAT
+        assert AgentFeatures() == OFF and not OFF.remember_from_query
         assert "self.memory.fresh(" in loop
-        assert ".remember(" not in loop, "the agent now writes memories; fix the README"
+        assert "remember" not in AgentLoop(MagicMock(), MagicMock())._step_handlers(), \
+            "the agent writes memories by default now; fix the README"
 
     def test_the_one_machine_limitation_is_still_true(self):
         """Claimed: several workers on one machine are checked, and the

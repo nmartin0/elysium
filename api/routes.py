@@ -1316,6 +1316,9 @@ class DeploymentConfigResponse(BaseModel):
     #: AR-5: whether step replies are constrained to the step schema.
     #: Defaulted so an older client reading this still parses.
     constrain_steps: bool = False
+    #: The agent switches that are ON (core/llm/agent_features.py), by
+    #: name -- empty while the bench has not said to turn any on.
+    agent_features: list[str] = []
     #: AL-10: the per-query token budget; None for none.
     max_tokens_per_query: int | None = None
     #: Decided 14 Oct: how many objects one bulk action may name.
@@ -3333,6 +3336,7 @@ def deployment_config_route(request: Request,
         "sync_interval_hours": _declared_sync_interval(config),
         "max_consecutive_invalid_steps": config.max_consecutive_invalid_steps,
         "constrain_steps": config.constrain_steps,
+        "agent_features": list(config.agent_features.names_on),
         "max_tokens_per_query": config.max_tokens_per_query,
         "bulk_action_limit": config.bulk_action_limit,
         "label_enforcement": config.label_enforcement,
