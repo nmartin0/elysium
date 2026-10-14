@@ -2706,6 +2706,20 @@ CONTROLS = [
         tests=["tests/unit/test_inference_wiring.py::TestWhatProducedIt::"
                "test_a_store_from_before_provenance_still_reads"],
     ),
+    Control(
+        describes="R54: a column already declared as a link is not suggested again",
+        path="core/mirror/link_discovery.py",
+        old="                if (fields.get(field_name) or {}).get(\"type\") == \"link\" or field_name == security:",
+        new="                if field_name == security:",
+        tests=["tests/unit/test_link_discovery.py::test_a_declared_link_is_not_suggested_again"],
+    ),
+    Control(
+        describes="R54: a column of a few values is not taken for a link",
+        path="core/mirror/link_discovery.py",
+        old="                if len(values) < MIN_DISTINCT:",
+        new="                if False:",
+        tests=["tests/unit/test_link_discovery.py::test_a_column_of_few_values_is_not_a_link"],
+    ),
 ]
 
 
