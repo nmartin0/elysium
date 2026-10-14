@@ -2354,6 +2354,25 @@
     color: var(--text-secondary);
   }
 
+  /* --- What produced a merge proposal (R62) ------------------------- */
+  .identity__provenance {
+    margin-top: var(--space-tight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    color: var(--text-secondary);
+  }
+
+  .identity__provenance dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--space-hair) var(--space-snug);
+    margin: var(--space-tight) 0 0;
+  }
+
+  .identity__provenance dd {
+    margin: 0;
+  }
+
   /* --- Cleaning suggestions (R31) ------------------------------------ */
   .rule-suggestions__explainer,
   .rule-suggestions__outcome,

@@ -40,7 +40,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from core.sqlite_connection import connection_with_schema
+from core.sqlite_connection import add_column_if_missing, connection_with_schema
 
 PENDING = "pending"
 APPROVED = "approved"
@@ -54,7 +54,10 @@ CREATE TABLE IF NOT EXISTS merge_proposals (
     right_id      TEXT NOT NULL,
     score         REAL NOT NULL,
     agreement     TEXT NOT NULL,
-    proposed_at   TEXT NOT NULL
+    proposed_at   TEXT NOT NULL,
+    -- WHAT PRODUCED IT (R62): the matcher, its version and the settings
+    -- in force, as JSON. Empty for a proposal from before it was kept.
+    provenance    TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS merge_proposals_type ON merge_proposals (object_type);
 
@@ -81,6 +84,12 @@ class Proposal:
     proposed_at: str
     decision: str = PENDING
     decided_by: str | None = None
+    #: JSON: what produced this proposal (R62). "" when not recorded.
+    provenance: str = ""
+
+
+#: R62's column, for a database made before it existed.
+_MIGRATIONS = (add_column_if_missing("merge_proposals", "provenance", "TEXT NOT NULL DEFAULT ''"),)
 
 
 class MergeDecisionStore:
@@ -113,11 +122,17 @@ class MergeDecisionStore:
         would have quietly stopped persisting anything, which is worse
         than the leak.
         """
-        return connection_with_schema(self._database, SCHEMA)
+        return connection_with_schema(self._database, SCHEMA, migrations=_MIGRATIONS)
 
     def propose(self, object_type: str, left_id: str, right_id: str, score: float,
-                agreement: str = "") -> str:
+                agreement: str = "", provenance: str = "") -> str:
         """Record a candidate as awaiting a person. Returns its id.
+
+        THE FIRST PROPOSAL'S PROVENANCE IS KEPT (R62). A pair proposed
+        again returns the existing proposal unchanged -- score, agreement
+        and provenance alike -- because those are what a reviewer was
+        shown, and an explanation that changed under a decision would no
+        longer explain it.
 
         THE PAIR IS ORDERED before storing, so the same two records
         proposed from either direction are one proposal rather than
@@ -136,9 +151,9 @@ class MergeDecisionStore:
             proposal_id = str(uuid.uuid4())
             conn.execute(
                 "INSERT INTO merge_proposals (proposal_id, object_type, left_id, right_id, "
-                "score, agreement, proposed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "score, agreement, proposed_at, provenance) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (proposal_id, object_type, left, right, float(score), agreement,
-                 datetime.now(UTC).isoformat()),
+                 datetime.now(UTC).isoformat(), provenance),
             )
             conn.commit()
             return proposal_id
@@ -192,6 +207,7 @@ class MergeDecisionStore:
                     agreement=row["agreement"], proposed_at=row["proposed_at"],
                     decision=standing,
                     decided_by=decided["decided_by"] if decided else None,
+                    provenance=row["provenance"] or "",
                 ))
             return found
 

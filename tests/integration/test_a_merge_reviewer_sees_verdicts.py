@@ -374,3 +374,24 @@ class TestAProposalAsTheMatcherWritesIt:
                                json={"decision": "approved"}, headers=_csrf(client))
 
         assert response.status_code == 404
+
+
+class TestWhatProducedIt:
+    """R62: the proposal says which matcher and settings produced it."""
+
+    def test_the_provenance_recorded_is_returned(self, client):
+        _login(client)
+        _store(client).propose("Customer", "cust_001", "cust_002", 0.91, "{}",
+                               provenance=json.dumps({"matcher": "splink", "version": "4.0.17"}))
+
+        (row,) = client.get("/api/merge-proposals").json()
+
+        assert row["provenance"] == {"matcher": "splink", "version": "4.0.17"}
+
+    def test_a_proposal_from_before_it_was_recorded_has_none(self, client):
+        _login(client)
+        _propose(client)
+
+        (row,) = client.get("/api/merge-proposals").json()
+
+        assert "provenance" not in row

@@ -12,7 +12,12 @@
 import { useCallback, useState } from 'react'
 import { Checkbox, HTMLTable } from '@blueprintjs/core'
 
-import { decideMergeProposal, handleIfSessionExpired, type MergeProposal } from '@elysium/shell-api/api'
+import {
+  decideMergeProposal,
+  handleIfSessionExpired,
+  type MatchProvenance,
+  type MergeProposal,
+} from '@elysium/shell-api/api'
 import Action from '@elysium/shell-api/components/Action'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import Notice from '@elysium/shell-api/components/Notice'
@@ -134,6 +139,8 @@ export default function ProposalCard({
         </Notice>
       )}
 
+      {proposal.provenance && <WhatProducedIt provenance={proposal.provenance} />}
+
       {error && <ErrorState>{error}</ErrorState>}
 
       {!settled && (
@@ -145,5 +152,46 @@ export default function ProposalCard({
 
       {settled && proposal.decided_by && <p className="identity__decided">Decided by {proposal.decided_by}.</p>}
     </section>
+  )
+}
+
+/**
+ * WHAT PRODUCED THIS PROPOSAL (R62), so a decision can still be explained
+ * after the settings change. Collapsed: it is the follow-up question, not
+ * the decision.
+ *
+ * NO NUMBERS ON THIS SCREEN, by the same rule that keeps the score off
+ * it: "the reviewer's decision is made on the agreement PATTERN, not the
+ * score", and a weight or a threshold beside a pair invites the same
+ * deference. They are recorded with the proposal and returned by the API
+ * for whoever audits a decision; the reviewer is told which matcher, what
+ * it compared, and what it required to agree.
+ */
+function WhatProducedIt({ provenance }: { provenance: MatchProvenance }) {
+  const matcher = [provenance.matcher, provenance.version].filter(Boolean).join(' ')
+  return (
+    <details className="identity__provenance">
+      <summary>What produced this proposal</summary>
+      <dl>
+        {matcher && (
+          <>
+            <dt>Matcher</dt>
+            <dd>{matcher}, with weights this deployment declared</dd>
+          </>
+        )}
+        {provenance.compare && (
+          <>
+            <dt>Compared</dt>
+            <dd>{provenance.compare.join(', ')}</dd>
+          </>
+        )}
+        {provenance.block_on && (
+          <>
+            <dt>Only pairs agreeing on</dt>
+            <dd>{provenance.block_on.join(', ')}</dd>
+          </>
+        )}
+      </dl>
+    </details>
   )
 }

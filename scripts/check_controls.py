@@ -2690,6 +2690,22 @@ CONTROLS = [
         new="            handled = False",
         tests=["tests/unit/test_rule_suggestions.py::TestTheScan::test_a_value_the_schema_already_nulls_is_declared"],
     ),
+    Control(
+        describes="R62: each merge proposal records what produced it",
+        path="scripts/run_sync.py",
+        old="                       provenance=provenance)",
+        new="                       provenance=\"\")",
+        tests=["tests/unit/test_inference_wiring.py::TestWhatProducedIt::"
+               "test_each_proposal_carries_its_provenance"],
+    ),
+    Control(
+        describes="R62: a merge store from before provenance still reads",
+        path="core/identity_decisions.py",
+        old="        return connection_with_schema(self._database, SCHEMA, migrations=_MIGRATIONS)",
+        new="        return connection_with_schema(self._database, SCHEMA)",
+        tests=["tests/unit/test_inference_wiring.py::TestWhatProducedIt::"
+               "test_a_store_from_before_provenance_still_reads"],
+    ),
 ]
 
 

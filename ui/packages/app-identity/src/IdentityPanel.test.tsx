@@ -128,6 +128,36 @@ describe('the score is never shown', () => {
     expect(container.textContent).not.toMatch(/0\.\d+/)
     expect(container.textContent?.toLowerCase()).not.toContain('score')
   })
+  it('not even inside what produced the proposal (R62)', async () => {
+    /** The weights and thresholds are recorded and sent, for an audit;
+     *  the reviewer sees the matcher and the fields, not the numbers. */
+    const { container } = show([
+      {
+        ...MASKED,
+        provenance: {
+          matcher: 'splink',
+          version: '4.0.17',
+          m_probability: 0.9,
+          u_probability: 0.01,
+          prior: 0.001,
+          compare: ['name', 'email'],
+          block_on: ['region'],
+          auto_propose_above: 0.95,
+          review_above: 0.8,
+        },
+      },
+    ])
+
+    expect(await screen.findByText('What produced this proposal')).toBeInTheDocument()
+    expect(screen.getByText('splink 4.0.17, with weights this deployment declared')).toBeInTheDocument()
+    expect(screen.getByText('name, email')).toBeInTheDocument()
+    // The version (4.0.17) is not a number about this pair; every one
+    // that is must be absent.
+    for (const number of ['0.9', '0.01', '0.001', '0.95', '0.8']) {
+      expect(container.textContent).not.toMatch(new RegExp(`(^|[^.\\d])${number.replace('.', '\\.')}($|[^\\d])`))
+    }
+    expect(container.textContent?.toLowerCase()).not.toContain('score')
+  })
 })
 
 describe('deciding', () => {

@@ -280,18 +280,23 @@ def _propose_merges(store, config, object_type: str, type_def: dict,
     from core.mirror.matching import SplinkMatcher, settings_for
     if not config.identity_inference or settings_for(type_def) is None:
         return 0
+    matcher = SplinkMatcher()
     try:
-        candidates = SplinkMatcher().candidates(type_def, rows_by_storage)
+        candidates = matcher.candidates(type_def, rows_by_storage)
     except Exception as exc:  # noqa: BLE001 - reported per type, like a sync
         print(f"WARNING gold.{object_type}: merges could not be proposed: {exc}",
               file=sys.stderr)
         return 0
+    # WHAT PRODUCED THEM (R62), recorded with each, so a decision made
+    # months later can still say which weights and which version scored it.
+    provenance = json.dumps(matcher.provenance(type_def), sort_keys=True)
     proposed = 0
     for candidate in candidates:
         before = len(store.proposals(object_type))
         store.propose(object_type, candidate.left_id, candidate.right_id,
                        candidate.score,
-                       agreement=json.dumps(candidate.agreement, sort_keys=True))
+                       agreement=json.dumps(candidate.agreement, sort_keys=True),
+                       provenance=provenance)
         proposed += len(store.proposals(object_type)) - before
     return proposed
 

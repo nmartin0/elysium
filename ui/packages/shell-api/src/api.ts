@@ -1014,6 +1014,21 @@ export interface MergeProposal {
   /** At or above the type's `auto_propose_above` (WIRED-3): ticked for
    *  bulk approval. A flag, never the score. Absent from older servers. */
   high_confidence?: boolean
+  /** What produced it (R62): matcher, version, declared weights and the
+   *  settings in force. Absent for a proposal from before it was kept. */
+  provenance?: MatchProvenance
+}
+
+export interface MatchProvenance {
+  matcher?: string
+  version?: string | null
+  m_probability?: number
+  u_probability?: number
+  prior?: number
+  compare?: string[]
+  block_on?: string[]
+  auto_propose_above?: number
+  review_above?: number
 }
 
 /**

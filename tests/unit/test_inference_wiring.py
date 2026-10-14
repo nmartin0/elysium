@@ -55,6 +55,9 @@ class _Matcher:
             raise self._raises
         return self._candidates
 
+    def provenance(self, type_def):
+        return {"matcher": "stand-in", "compare": ["name"]}
+
 
 @pytest.fixture
 def store(tmp_path):
@@ -210,3 +213,63 @@ class TestFrozenConfiguration:
 
         assert rule_for(frozen).match_on == ("email",)
         assert settings_for(frozen).compare == ("name",)
+
+
+class TestWhatProducedIt:
+    """R62: a proposal records the matcher and settings that produced it,
+    so a decision made months later can still be explained."""
+
+    def test_each_proposal_carries_its_provenance(self, store, matcher):
+        import json
+
+        matcher(_Matcher([Candidate("primary:c1", "primary:c2", 0.99)]))
+
+        _propose_merges(store, _Config(True), "Customer", TYPE, ROWS)
+
+        assert json.loads(store.proposals("Customer")[0].provenance) == {
+            "matcher": "stand-in", "compare": ["name"]}
+
+    def test_the_first_provenance_is_kept_when_proposed_again(self, store):
+        store.propose("Customer", "primary:c1", "primary:c2", 0.99, provenance='{"v": 1}')
+        store.propose("Customer", "primary:c1", "primary:c2", 0.99, provenance='{"v": 2}')
+
+        assert store.proposals("Customer")[0].provenance == '{"v": 1}'
+
+    def test_a_store_from_before_provenance_still_reads(self, tmp_path):
+        """THE MIGRATION. CREATE TABLE IF NOT EXISTS adds no column to an
+        existing table; without add_column_if_missing every read of an
+        old store would fail on the new column."""
+        import sqlite3
+
+        old = tmp_path / "old.db"
+        with sqlite3.connect(old) as conn:
+            conn.executescript(
+                "CREATE TABLE merge_proposals (proposal_id TEXT PRIMARY KEY, object_type TEXT "
+                "NOT NULL, left_id TEXT NOT NULL, right_id TEXT NOT NULL, score REAL NOT NULL, "
+                "agreement TEXT NOT NULL, proposed_at TEXT NOT NULL);"
+                "INSERT INTO merge_proposals VALUES ('p1', 'Customer', 'a', 'b', 0.9, '{}', "
+                "'2026-01-01');")
+
+        (proposal,) = MergeDecisionStore(old).proposals("Customer")
+
+        assert (proposal.proposal_id, proposal.provenance) == ("p1", "")
+
+    def test_splink_states_its_version_weights_and_blocking(self):
+        from core.mirror.matching import SplinkMatcher
+
+        found = SplinkMatcher().provenance(TYPE)
+
+        assert found["matcher"] == "splink"
+        assert (found["m_probability"], found["u_probability"], found["prior"]) == (0.9, 0.01, 0.001)
+        assert (found["compare"], found["block_on"]) == (["name"], ["region"])
+        assert (found["auto_propose_above"], found["review_above"]) == (0.95, 0.80)
+
+    def test_the_blocking_actually_used_is_recorded(self):
+        """With none declared, the first compared field blocks -- and that
+        is what decided which pairs were scored at all."""
+        from core.mirror.matching import SplinkMatcher
+
+        undeclared = {**TYPE, "identity": {"match_on": ["email"],
+                                           "probabilistic": {"compare": ["name", "email"]}}}
+
+        assert SplinkMatcher().provenance(undeclared)["block_on"] == ["name"]

@@ -506,6 +506,10 @@ class MergeProposalResponse(BaseModel):
     #: reason `pattern` says: a number invites deference. The screen
     #: ticks these for one bulk approval; a person still presses it.
     high_confidence: bool = False
+    #: WHAT PRODUCED IT (R62): matcher, version, declared weights and the
+    #: settings in force -- so a decision can still be explained after
+    #: the settings change. Never the score, for the reason above.
+    provenance: dict | None = None
 
 
 class MergeDecisionRequest(BaseModel):
@@ -4654,6 +4658,7 @@ def merge_proposals_route(request: Request, object_type: str | None = None,
             fields=[MergeFieldResponse(**entry) for entry in entries],
             withheld=withheld_fields(entries),
             high_confidence=_is_high_confidence(generation.config.schema, proposal),
+            provenance=_provenance_of(proposal),
         ))
     return out
 
@@ -4691,6 +4696,17 @@ def _proposal_sides(request: Request, user: UserRecord, proposal) -> "tuple[str,
                 for side in (left, right)]
     visible = any(readable) if proposal.decision == APPROVED else all(readable)
     return (left, right) if visible else None
+
+
+def _provenance_of(proposal) -> "dict | None":
+    """What produced a proposal (R62), or None for one from before it was
+    recorded. A row that does not parse is None too: an explanation that
+    cannot be read is not one."""
+    try:
+        found = json.loads(getattr(proposal, "provenance", "") or "null")
+    except (TypeError, ValueError):
+        return None
+    return found if isinstance(found, dict) and found else None
 
 
 def _is_high_confidence(schema: dict, proposal) -> bool:

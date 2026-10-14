@@ -127,6 +127,11 @@ class CandidateMatcher(Protocol):
                    ) -> list[Candidate]:
         ...
 
+    def provenance(self, type_def: dict) -> dict:
+        """What would produce this type's candidates: enough to explain a
+        decision after the settings change (R62)."""
+        ...
+
 
 @dataclass(frozen=True)
 class ProbabilisticSettings:
@@ -218,6 +223,38 @@ class SplinkMatcher:
         self._m = m_probability
         self._u = u_probability
         self._prior = prior
+
+    def provenance(self, type_def: dict) -> dict:
+        """What would produce this type's proposals, stated so a decision
+        can be explained later (R62): the matcher and its version, the
+        DECLARED weights, and the settings in force. Scoring is
+        deterministic -- declared weights, no training -- so these are
+        what it takes to reproduce a score.
+
+        THE BLOCKING ACTUALLY USED, including the fallback to the first
+        compared field when none is declared, since that is what decided
+        which pairs were scored at all.
+        """
+        settings = settings_for(type_def)
+        if settings is None:
+            return {}
+        try:
+            from importlib.metadata import version
+
+            backend_version = version("splink")
+        except Exception:  # noqa: BLE001 - not installed, or not as a distribution
+            backend_version = None
+        return {
+            "matcher": "splink",
+            "version": backend_version,
+            "m_probability": self._m,
+            "u_probability": self._u,
+            "prior": self._prior,
+            "compare": list(settings.compare),
+            "block_on": list(settings.block_on or settings.compare[:1]),
+            "auto_propose_above": settings.auto_propose_above,
+            "review_above": settings.review_above,
+        }
 
     def candidates(self, type_def: dict, rows_by_storage: dict[Any, list[dict]],
                    ) -> list[Candidate]:
