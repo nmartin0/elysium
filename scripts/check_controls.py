@@ -2960,6 +2960,14 @@ CONTROLS = [
         new="    @app.exception_handler(KeyboardInterrupt)",
         tests=["tests/integration/test_asking_about_a_set.py::test_a_model_that_cannot_be_reached_is_a_503_that_names_no_host"],
     ),
+    Control(
+        describes="E4: ordering by a field the caller may not read is ignored",
+        path="api/routes.py",
+        old='    if field_def is None or field_def.get("readable") is False:',
+        new="    if field_def is None:",
+        tests=["tests/integration/test_a_field_they_may_not_read.py::"
+               "test_sorting_by_it_is_ignored_and_reads_nothing_more"],
+    ),
 ]
 
 

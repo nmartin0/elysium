@@ -4634,7 +4634,13 @@ def _sorted_by_field(mediator, user_record, object_type: str, object_ids: list,
     descending = direction.strip().lower() == "desc"
 
     visible = mediator.visible_schema(user_record).get(object_type) or {}
-    if field_name not in (visible.get("fields") or {}):
+    field_def = (visible.get("fields") or {}).get(field_name)
+    # A DISCOVER-ONLY FIELD IS IN THE VISIBLE SCHEMA, marked unreadable.
+    # Sorting by it ordered every row by None -- the id order anyway --
+    # after a get_field per matching row, each one a DENIED read in the
+    # access log: a sort request that looked like hundreds of attempts
+    # to read a field the caller is not cleared for.
+    if field_def is None or field_def.get("readable") is False:
         return object_ids
 
     values = {

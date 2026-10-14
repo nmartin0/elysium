@@ -73,7 +73,8 @@ import { activeTrail } from './linkTrail'
 import SavedViews from './SavedViews'
 import SelectionBar from './SelectionBar'
 import { applyClick } from './rangeSelection'
-import { formatFieldName, formatTimestamp, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
+import { formatFieldName, formatTimestamp, getDisplayTitle } from '@elysium/shell-api/format'
+import FieldValue from '@elysium/shell-api/components/FieldValue'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
 import type { VisibleSchema } from '@elysium/shell-api/types'
@@ -415,15 +416,22 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     const chosen = chosenColumns[selectedType]
     if (chosen) return returned.filter((field) => chosen.includes(field))
     const schemaFields = visibleSchema?.[selectedType]?.fields ?? {}
-    const prominent = returned.filter((field) => schemaFields[field]?.visibility === 'prominent')
+    // NOT BY DEFAULT A COLUMN THE READER CANNOT READ, which is what the
+    // export does too (it drops the column). A whole column saying "Not
+    // permitted" is honest and useless; the column picker still offers
+    // it, and then each cell says so rather than showing a dash.
+    const readable = returned.filter((field) => schemaFields[field]?.readable !== false)
+    const prominent = readable.filter((field) => schemaFields[field]?.visibility === 'prominent')
     if (prominent.length > 0) return prominent
-    return returned.filter((field) => schemaFields[field]?.visibility !== 'hidden')
+    return readable.filter((field) => schemaFields[field]?.visibility !== 'hidden')
   }
 
   const sortableFields =
     selectedType && visibleSchema
       ? Object.entries(visibleSchema[selectedType]?.fields ?? {})
-          .filter(([, field]) => field.type !== 'link')
+          // Nor a field they may not read: every value would sort as
+          // null, an order that looks applied and means nothing.
+          .filter(([, field]) => field.type !== 'link' && field.readable !== false)
           .map(([name, field]) => ({ name, label: field.display_name ?? name }))
       : []
 
@@ -1158,13 +1166,16 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                   </td>
                   {tableColumns.map((field) => (
                     <td key={field} className={isNumericField(field) ? 'data-table__num' : undefined}>
-                      {field in result.fields
-                        ? formatValue(
-                            result.fields[field],
-                            typeSchemaFields?.[field]?.decimal_places,
-                            typeSchemaFields?.[field]?.data_type,
-                          )
-                        : null}
+                      {field in result.fields ? (
+                        // A WITHHELD VALUE ARRIVES AS NULL, so the schema's
+                        // `readable` is what tells it from an empty one (E4).
+                        <FieldValue
+                          value={result.fields[field]}
+                          readable={typeSchemaFields?.[field]?.readable}
+                          decimalPlaces={typeSchemaFields?.[field]?.decimal_places}
+                          dataType={typeSchemaFields?.[field]?.data_type}
+                        />
+                      ) : null}
                     </td>
                   ))}
                 </tr>

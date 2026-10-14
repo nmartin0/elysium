@@ -2047,3 +2047,51 @@ describe('sorting from the column header (DEV_UI 9.4)', () => {
     expect(screen.getByRole('columnheader', { name: /^Region/ }).getAttribute('aria-sort')).toBe('ascending')
   })
 })
+
+describe('a field the reader may not read (DEV_UI 9.7, E4)', () => {
+  // `email` is discover-only: named in the schema, `readable: false`,
+  // and NULL in every row -- which is what the server sends.
+  const WITH_WITHHELD: VisibleSchema = {
+    Customer: {
+      title_field: 'name',
+      fields: { name: { type: 'data' }, region: { type: 'data' }, email: { type: 'data', readable: false } },
+    },
+  }
+  const rows = () =>
+    searchResult([
+      { id: 'cust_001', fields: { name: 'Ada Okafor', region: 'us-west', email: null } },
+      { id: 'cust_002', fields: { name: 'Bram Feldman', region: null, email: null } },
+    ])
+
+  it('is not a column by default, as the export drops it', async () => {
+    mockedSearchObjects.mockResolvedValue(rows())
+    renderPanel(WITH_WITHHELD)
+    await screen.findByText('Ada Okafor', { selector: '.object-search__result-title' })
+
+    expect(screen.queryByRole('columnheader', { name: /^Email/ })).toBeNull()
+    expect(screen.getByRole('columnheader', { name: /^Region/ })).toBeInTheDocument()
+  })
+
+  it('once chosen, each cell says "Not permitted" -- not the dash a real null gets', async () => {
+    mockedSearchObjects.mockResolvedValue(rows())
+    renderPanel(WITH_WITHHELD)
+    await screen.findByText('Ada Okafor', { selector: '.object-search__result-title' })
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Email' }))
+
+    const table = document.querySelector('table.object-search__results') as HTMLElement
+    expect(within(table).getAllByText('Not permitted')).toHaveLength(2)
+    // Bram's region is a real null, and stays a dash.
+    expect(within(table).getAllByText('not set')).toHaveLength(1)
+  })
+
+  it('is not offered as a sort, since every value would sort as nothing', async () => {
+    mockedSearchObjects.mockResolvedValue(rows())
+    renderPanel(WITH_WITHHELD)
+    await screen.findByText('Ada Okafor', { selector: '.object-search__result-title' })
+
+    const options = Array.from(screen.getByRole('combobox', { name: 'Sort by' }).querySelectorAll('option'))
+    expect(options.map((option) => option.value)).not.toContain('email')
+    expect(options.map((option) => option.value)).toContain('region')
+  })
+})

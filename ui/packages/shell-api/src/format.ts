@@ -112,10 +112,12 @@ export function formatValue(value: unknown, decimalPlaces?: number | null, dataT
   // that was never fetched, a failed render, or -- the case
   // UI_ROADMAP.md raised -- something their permissions withheld.
   //
-  // The last of those turned out NOT to happen: a field the caller may
-  // not read is OMITTED from the response entirely rather than nulled,
-  // verified directly against the mediator. So it never reaches this
-  // function. The other three do.
+  // The last of those DOES reach here: a field the caller may discover
+  // and not read arrives as null (mediator.get_object keeps the key).
+  // This comment once said it was omitted, and Browse rendered such a
+  // column as dashes on the strength of it. A function given only the
+  // value cannot tell, so screens render through FieldValue, which is
+  // also given the schema's `readable` (DEV_UI 9.7, E4).
   //
   // AN EM DASH, not "(not set)". Four places already render an absent
   // value as a dash -- AdminPanel's mac_value, DeploymentConfig's silo

@@ -514,7 +514,7 @@ describe('a field on the middle rung of the grant ladder', () => {
     renderPanel('Customer', 'cust_001', { visibleSchema: schema })
 
     await waitFor(() => expect(screen.getByText('Ada Okafor')).toBeInTheDocument())
-    expect(screen.getByText('Hidden by your permissions')).toBeInTheDocument()
+    expect(screen.getByText('Not permitted')).toBeInTheDocument()
   })
 
   it('does not render it as absence', async () => {
@@ -529,7 +529,7 @@ describe('a field on the middle rung of the grant ladder', () => {
     mockedGetObjectDetail.mockResolvedValue({ fields: { name: 'Ada Okafor', ssn: null } })
     renderPanel('Customer', 'cust_001', { visibleSchema: schema })
 
-    await waitFor(() => expect(screen.getByText('Hidden by your permissions')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Not permitted')).toBeInTheDocument())
     expect(screen.queryByText('—')).toBeNull()
   })
 
@@ -542,7 +542,7 @@ describe('a field on the middle rung of the grant ladder', () => {
     mockedGetObjectDetail.mockResolvedValue({ fields: { orders: ['ord_1', 'ord_2'] } })
     renderPanel('Customer', 'cust_001', { visibleSchema: schema })
 
-    await waitFor(() => expect(screen.getByText('Hidden by your permissions')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Not permitted')).toBeInTheDocument())
     expect(screen.queryByRole('link', { name: 'ord_1' })).toBeNull()
   })
 
@@ -555,7 +555,7 @@ describe('a field on the middle rung of the grant ladder', () => {
     renderPanel('Customer', 'cust_001', { visibleSchema: schema })
 
     await waitFor(() => expect(screen.getByText('Ada Okafor')).toBeInTheDocument())
-    expect(screen.queryByText('Hidden by your permissions')).toBeNull()
+    expect(screen.queryByText('Not permitted')).toBeNull()
   })
 })
 

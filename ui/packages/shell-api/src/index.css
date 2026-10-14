@@ -1561,16 +1561,21 @@
     margin-top: 0;
   }
 
-  /* "Not permitted", in words.
+  /* FieldValue's two absences (DEV_UI 9.7, E4).
    *
-   * DEV_UI.md 9.7: "plain words chosen over a hatched chip: at 13px the
-   * hatching reads as a rendering fault." Italic and secondary so it
-   * reads as a note about the field rather than as its value -- a
-   * reader scanning the column must not take it for a string somebody
-   * stored.
+   * "Not permitted" in words: "plain words chosen over a hatched chip:
+   * at 13px the hatching reads as a rendering fault." Italic and
+   * secondary so it reads as a note about the field rather than as its
+   * value -- a reader scanning the column must not take it for a string
+   * somebody stored. The dash is secondary too, so a column of values
+   * with gaps reads as values first.
    */
-  .object-detail__withheld {
+  .field-value--withheld {
     font-style: italic;
+    color: var(--text-secondary);
+  }
+
+  .field-value--null {
     color: var(--text-secondary);
   }
 

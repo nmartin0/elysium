@@ -15,7 +15,7 @@
  */
 
 import Notice from '@elysium/shell-api/components/Notice'
-import StatusTag from '@elysium/shell-api/components/StatusTag'
+import FieldValue from '@elysium/shell-api/components/FieldValue'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -27,7 +27,6 @@ import {
 } from '@elysium/shell-api/api'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
-import { formatValue } from '@elysium/shell-api/format'
 import DataTable from '@elysium/shell-api/components/DataTable'
 
 interface WriteDetailProps {
@@ -114,15 +113,19 @@ export default function WriteDetail({ writeId, onSessionExpired }: WriteDetailPr
                   <td>{change.field_name}</td>
                   {change.readable ? (
                     <>
-                      <td>{formatValue(change.current_value)}</td>
-                      <td>{formatValue(change.proposed_value)}</td>
+                      <td>
+                        <FieldValue value={change.current_value} />
+                      </td>
+                      <td>
+                        <FieldValue value={change.proposed_value} />
+                      </td>
                     </>
                   ) : (
                     // ONE CELL SPANNING BOTH, not two empty ones.
                     // Empty cells read as "no value"; this reads as
                     // "withheld", which is a different fact.
                     <td colSpan={2}>
-                      <StatusTag state="pending">Hidden by your permissions</StatusTag>
+                      <FieldValue value={null} readable={false} />
                     </td>
                   )}
                 </tr>

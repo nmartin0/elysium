@@ -1,5 +1,6 @@
 import { Button } from '@blueprintjs/core'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
+import FieldValue from '@elysium/shell-api/components/FieldValue'
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
@@ -170,26 +171,17 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
   function renderFieldValue(fieldName: string, value: unknown): React.ReactNode {
     const fieldSchema = typeSchema?.fields?.[fieldName]
 
-    // WITHHELD, NOT ABSENT. The caller holds discover: and not read:
-    // on this field, so they may know it exists and not what it holds.
-    //
-    // Checked FIRST, before the link handling below: a link field the
-    // caller cannot read must not render its targets either, and a
-    // value that never arrived would otherwise fall through to the
-    // em dash and read as "not set" -- which is a different fact and a
-    // misleading one.
-    //
-    // The same treatment the approvals diff gives a redacted field,
-    // deliberately: two surfaces showing the same state differently is
-    // what the ladder exists to end.
-    if (fieldSchema?.readable === false) {
-      return <StatusTag state="pending">Hidden by your permissions</StatusTag>
-    }
+    // WITHHELD, NOT ABSENT, and checked FIRST, before the link
+    // handling below: a link field the caller cannot read must not
+    // render its targets either. FieldValue owns the wording, so this
+    // page, Browse and the approvals diff say the same thing (E4).
+    if (fieldSchema?.readable === false) return <FieldValue value={null} readable={false} />
 
     const isLink = fieldSchema?.type === 'link'
 
-    if (!isLink) return formatValue(value, fieldSchema?.decimal_places, fieldSchema?.data_type)
-    if (value === null || value === undefined) return formatValue(value)
+    if (!isLink)
+      return <FieldValue value={value} decimalPlaces={fieldSchema?.decimal_places} dataType={fieldSchema?.data_type} />
+    if (value === null || value === undefined) return <FieldValue value={value} />
 
     const targetType = fieldSchema.target
     // cardinality "many" -> an array of linked ids; "one" -> a single
@@ -340,7 +332,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
               <dt>{formatFieldName(fieldName)}</dt>
               <dd>
                 {withheld ? (
-                  <span className="object-detail__withheld">Not permitted</span>
+                  <FieldValue value={null} readable={false} />
                 ) : (
                   renderFieldValue(fieldName, fields[fieldName])
                 )}

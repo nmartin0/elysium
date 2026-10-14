@@ -310,14 +310,20 @@ one Inbox. Built so far, each checked in a real browser:
 - One Inbox with three tabs, a count in the header (15.3), and each
   object in a write under review a door to its page.
 - "Ask about this set" as a panel in Browse sending the set itself.
+- 15.3's approvals ergonomics: no approve without the diff open, sort
+  by consequence, a pending marker on the object and on the set.
+- Notification rows as doors to the objects they concern; sortable
+  DataTable headers.
+- The E4 partial state as one component (FieldValue): "Not permitted"
+  and a real null look different on every surface. "Restricted" -- a
+  readable field withheld for one object -- is deliberately NOT a third
+  state: MAC withholds whole objects, and a link to a hidden object
+  reads as null, because marking it would disclose that it exists.
 
-STILL TO BUILD, in this order: 15.3's approvals ergonomics (no approve
-without the diff open, sort by consequence, a pending marker on the
-object and the set); notification rows as doors; sort indicators on
-DataTable columns; the E4 partial state as a shared component; the
-command palette's contents beyond "go to" (types, views, actions); and
-section 14's ontology canvas (layered layout, positions kept apart from
-the declaration, actions on the node, subject areas).
+STILL TO BUILD, in this order: the command palette's contents beyond
+"go to" (types, views, actions); and section 14's ontology canvas
+(layered layout, positions kept apart from the declaration, actions on
+the node, subject areas).
 
 **Blocked on:** nothing -- the remaining list above is buildable.
 

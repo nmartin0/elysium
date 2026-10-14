@@ -94,7 +94,7 @@ describe('WriteDetail', () => {
     show()
 
     expect(await screen.findByText('amount')).toBeInTheDocument()
-    expect(screen.getByText(/Hidden by your permissions/)).toBeInTheDocument()
+    expect(screen.getByText(/Not permitted/)).toBeInTheDocument()
   })
 
   it('warns once, prominently, that the view is partial', async () => {
