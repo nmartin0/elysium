@@ -3029,7 +3029,7 @@ def test_silos_route_reports_the_failure_KIND_not_the_message(client, tmp_path):
 
     unreachable = next(s for s in body if s["name"] == "primary_sql")
     assert unreachable["reachable"] is False
-    assert unreachable["failure"] == "FileNotFoundError"
+    assert unreachable["failure"] == "not found"
     assert "gone.db" not in client.get("/api/silos").text, "a path reached the response"
 
 

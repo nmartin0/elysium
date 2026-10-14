@@ -457,12 +457,18 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # NOT a refusal to start: the mirror may still serve its last synced
     # contents, and an operator needs the service up to see the failure
     # in Admin. Logged, and to journald under systemd.
+    # THE KIND AND THE DETAIL, here only: this is the operator's log,
+    # where the class and message are what diagnoses it (E-06 keeps
+    # them out of every response).
+    details: dict[str, str] = {}
     for silo_name, failure in source_failures(
         generation.config.silo_configs,
         build_live_read_adapters(runtime_paths, generation.config),
+        details,
     ).items():
-        logger.warning("Source %r failed its startup check: %s. The service is starting "
-                       "anyway; reads needing it will fail until it answers.", silo_name, failure)
+        logger.warning("Source %r failed its startup check: %s (%s). The service is starting "
+                       "anyway; reads needing it will fail until it answers.", silo_name, failure,
+                       details.get(silo_name, "no detail"))
     config = generation.config
     # Kept alongside the three stores below for tests/integration/
     # test_api.py's own direct, HTTP-bypassing test-setup DB access --

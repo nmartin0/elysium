@@ -5,8 +5,9 @@
  * health_check() has existed per adapter since the beginning and
  * nothing showed it.
  *
- * REPORTS THE FAILURE KIND, NEVER THE MESSAGE -- FileNotFoundError
- * rather than the path it could not find. That distinguishes "the file
+ * REPORTS THE FAILURE KIND, NEVER THE MESSAGE -- "not found" rather
+ * than the path it could not find (a closed list since E-06; it was the
+ * exception's class name). That distinguishes "the file
  * is gone" from "the credentials are wrong" without putting a host or
  * a path on a screen that might end up in a screenshot or a bug
  * report.

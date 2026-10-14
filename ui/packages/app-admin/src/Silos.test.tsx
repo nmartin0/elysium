@@ -60,7 +60,7 @@ describe('Silos', () => {
   })
 
   it('names what is not answering', async () => {
-    getSilos.mockResolvedValue([HEALTHY[0], { ...HEALTHY[1], reachable: false, failure: 'FileNotFoundError' }])
+    getSilos.mockResolvedValue([HEALTHY[0], { ...HEALTHY[1], reachable: false, failure: 'not found' }])
 
     render(<Silos onSessionExpired={() => {}} />)
 
@@ -71,7 +71,7 @@ describe('Silos', () => {
     // unscoped query ambiguous rather than wrong -- it only ever had
     // one possible answer.
     expect(await screen.findByRole('heading', { name: 'Some silos are not answering' })).toBeInTheDocument()
-    expect(screen.getByText('FileNotFoundError')).toBeInTheDocument()
+    expect(screen.getByText('not found')).toBeInTheDocument()
   })
 
   it('shows which object types each silo backs', async () => {
@@ -298,7 +298,7 @@ describe('is THIS TYPE healthy -- R6, health indexed by object type', () => {
     // risk_score does not.
     getSilos.mockResolvedValue(
       WITH_EXTRA_STORAGE.map((silo) =>
-        silo.name === 'risk_sql' ? { ...silo, reachable: false, failure: 'FileNotFoundError' } : silo,
+        silo.name === 'risk_sql' ? { ...silo, reachable: false, failure: 'not found' } : silo,
       ),
     )
     render(<Silos onSessionExpired={vi.fn()} />)
@@ -314,7 +314,7 @@ describe('is THIS TYPE healthy -- R6, health indexed by object type', () => {
   it('says the whole type stopped when its PRIMARY storage is down', async () => {
     getSilos.mockResolvedValue(
       WITH_EXTRA_STORAGE.map((silo) =>
-        silo.name === 'primary_sql' ? { ...silo, reachable: false, failure: 'FileNotFoundError' } : silo,
+        silo.name === 'primary_sql' ? { ...silo, reachable: false, failure: 'not found' } : silo,
       ),
     )
     render(<Silos onSessionExpired={vi.fn()} />)
@@ -332,7 +332,7 @@ describe('is THIS TYPE healthy -- R6, health indexed by object type', () => {
     // breaks no query -- gold still answers every one of them -- so
     // "cannot be read" would send somebody hunting an outage their
     // users are not experiencing.
-    getSilos.mockResolvedValue([{ ...HEALTHY[0], reachable: false, failure: 'FileNotFoundError' }, HEALTHY[1]])
+    getSilos.mockResolvedValue([{ ...HEALTHY[0], reachable: false, failure: 'not found' }, HEALTHY[1]])
     render(<Silos onSessionExpired={vi.fn()} />)
 
     expect(await screen.findByText(/Reads are still being served, from the last sync/)).toBeInTheDocument()
@@ -352,7 +352,7 @@ describe('is THIS TYPE healthy -- R6, health indexed by object type', () => {
     // Both facts were already on this screen in different sections.
     // Apart, the first one's advice is "run a sync"; together that is
     // advice nobody can take.
-    getSilos.mockResolvedValue([HEALTHY[0], { ...HEALTHY[1], reachable: false, failure: 'FileNotFoundError' }])
+    getSilos.mockResolvedValue([HEALTHY[0], { ...HEALTHY[1], reachable: false, failure: 'not found' }])
     getDataFreshness.mockResolvedValue({
       source: 'gold',
       last_synced_at: null,

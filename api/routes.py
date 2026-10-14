@@ -3782,10 +3782,11 @@ def silos_route(request: Request,
     authenticated counterpart, gated on manage:users like the rest of
     Admin, and it can say more.
 
-    MORE, BUT NOT THE MESSAGE. It reports the exception TYPE --
-    FileNotFoundError, OperationalError, PermissionError -- which
-    distinguishes "the file is gone" from "the disk is full" from "the
-    credentials are wrong" without echoing the path back. That is the
+    MORE, BUT NOT THE MESSAGE. It reports a failure KIND from a closed
+    list (core/source_health.FAILURE_KINDS: "not found", "refused
+    credentials", "unreachable"...; E-06), which distinguishes "the file
+    is gone" from "the credentials are wrong" without echoing the path
+    back -- or naming the driver's exception class, which it used to. That is the
     same line /config draws: names and shapes answer "what is
     configured", contents answer "what could I attack".
 

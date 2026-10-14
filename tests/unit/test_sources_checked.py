@@ -51,7 +51,7 @@ class TestTheSiloStatus:
         client, paths = served
         _delete_source(paths)
 
-        assert self._failures(client) == {"primary_sql": "FileNotFoundError"}
+        assert self._failures(client) == {"primary_sql": "not found"}
 
 
 class TestTheHealthEndpoint:
@@ -126,7 +126,55 @@ class TestSourceFailures:
         assert source_failures(["a"], {"a": self.Healthy()}) == {}
 
     def test_a_failing_one_is_named_by_what_failed(self):
-        assert source_failures(["a"], {"a": self.Broken()}) == {"a": "ConnectionRefusedError"}
+        assert source_failures(["a"], {"a": self.Broken()}) == {"a": "unreachable"}
 
     def test_one_without_an_adapter_is_not_configured(self):
-        assert source_failures(["a"], {}) == {"a": "NotConfigured"}
+        assert source_failures(["a"], {}) == {"a": "not configured"}
+
+
+class TestAClosedVocabulary:
+    """E-06, decided by the owner 14 Oct: a failure is reported as one
+    word from a closed list, never a library's exception class."""
+
+    @staticmethod
+    def _kind(exc):
+        from core.source_health import failure_kind
+        return failure_kind(exc)
+
+    def test_each_kind(self):
+        from core.ontology.interface import StorageUnavailable
+
+        def wrapped(inner):
+            try:
+                raise StorageUnavailable("source x: failed") from inner
+            except StorageUnavailable as outer:
+                return outer
+
+        assert self._kind(FileNotFoundError("No database at /srv/x.db")) == "not found"
+        assert self._kind(RuntimeError("Database at /x exists but contains no tables")) == "empty"
+        assert self._kind(wrapped(Exception('FATAL: password authentication failed for user "e"'))) \
+            == "refused credentials"
+        assert self._kind(TimeoutError()) == "timed out"
+        assert self._kind(wrapped(Exception("could not connect to server: Connection refused"))) \
+            == "unreachable"
+        assert self._kind(ValueError("bad port")) == "misconfigured"
+        assert self._kind(Exception("something nobody foresaw")) == "other"
+
+    def test_every_answer_is_from_the_list(self):
+        from core.source_health import FAILURE_KINDS
+
+        for exc in (FileNotFoundError(), PermissionError(), OSError(), KeyError("k"),
+                    RuntimeError("x"), Exception()):
+            assert self._kind(exc) in FAILURE_KINDS
+
+    def test_the_detail_is_offered_to_the_log_and_never_returned(self):
+        class Gone:
+            def health_check(self):
+                raise FileNotFoundError("No database at /srv/secret/path.db")
+
+        details = {}
+        failures = source_failures(["a"], {"a": Gone()}, details)
+
+        assert failures == {"a": "not found"}
+        assert "/srv/secret/path.db" in details["a"]
+        assert "/srv" not in failures["a"]

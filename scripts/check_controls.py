@@ -2483,6 +2483,13 @@ CONTROLS = [
         tests=["tests/unit/test_a_paused_question_runs_as_the_asker_now.py::"
                "test_a_disabled_asker_gets_nothing_resumed"],
     ),
+    Control(
+        describes="E-06: a source failure is a word from a closed list, not the exception class",
+        path="core/source_health.py",
+        old="            failures[name] = failure_kind(exc)\n",
+        new="            failures[name] = type(exc).__name__\n",
+        tests=["tests/unit/test_sources_checked.py::TestSourceFailures::test_a_failing_one_is_named_by_what_failed"],
+    ),
 ]
 
 
