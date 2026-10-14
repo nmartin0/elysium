@@ -234,6 +234,23 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # /me/password echoed the caller's CURRENT one. `loc` and `msg` say
     # what was wrong and where; nothing in ui/ reads the other two
     # (checked). The owner's decision, September 21.
+    # A MODEL THAT CANNOT BE REACHED IS A 503 THAT SAYS SO, not a bare
+    # 500. /query let LLMUnavailable escape, so the screen read "Request
+    # failed (500)" -- found in a browser asking about a set with no
+    # model running. THE KIND, NOT THE MESSAGE: the adapter's message
+    # names the model's host and port, connection details /config
+    # withholds from every caller (the help route learned this first).
+    # Logged in full for the operator. Routes that handle it themselves
+    # -- help, the cancelled-query 499 -- never reach this.
+    from core.llm.interface import LLMUnavailable
+
+    @app.exception_handler(LLMUnavailable)
+    async def model_unavailable(request: Request, exc: LLMUnavailable):
+        logger.warning("model unavailable during %s: %s", request.url.path, exc)
+        return JSONResponse(status_code=503, content={
+            "detail": "The assistant cannot reach its model right now. Try again shortly, "
+                      "or ask an administrator to check it."})
+
     @app.exception_handler(RequestValidationError)
     async def validation_errors_without_values(request: Request, exc: RequestValidationError):
         errors = [

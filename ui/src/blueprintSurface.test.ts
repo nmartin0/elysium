@@ -92,6 +92,11 @@ const PINNED = [
   'Alert',
   'Checkbox',
   'Dialog',
+  // The Ask panel over Browse (DEV_UI 5.4): a side panel, so the set
+  // stays in view while a question is asked about it. An overlay the
+  // plan vendors, like Dialog beside it.
+  'Drawer',
+  'DrawerSize',
   'DialogBody',
   'DialogFooter',
   'Menu',

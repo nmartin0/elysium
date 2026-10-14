@@ -367,10 +367,19 @@ export async function logout(): Promise<void> {
 // pending write, 409 permissions changed, 401 session expired), and
 // the caller needs to branch on the status itself, not just get a
 // generic failure.
-export async function query(queryText: string): Promise<Response> {
+/** THE SET ON SCREEN, sent with a question asked from Browse (DEV_UI
+ *  5.4): the server says it to the agent in words, after checking the
+ *  asker could have built it. Conditions are the filter wire form. */
+export interface QueryAbout {
+  object_type: string
+  conditions: unknown[]
+  text: string
+}
+
+export async function query(queryText: string, about?: QueryAbout): Promise<Response> {
   return apiFetch('/query', {
     method: 'POST',
-    body: JSON.stringify({ query: queryText }),
+    body: JSON.stringify(about ? { query: queryText, about } : { query: queryText }),
   })
 }
 

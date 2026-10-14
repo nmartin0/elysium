@@ -296,8 +296,30 @@ One measured fact worth not relearning: white on pure black causes
 readers with astigmatism and worse the longer the session. 21:1
 contrast is not a target.
 
-**Blocked on:** a front-end agent, and the owner's appetite for a
-redesign rather than more features.
+**THE REDESIGN IS UNDERWAY, decided 14 October**: foundations first,
+then the shell; dark by default; the agent inside Browse AND in Query;
+one Inbox. Built so far, each checked in a real browser:
+
+- DEV_UI 8.3's navy palette and Blueprint retinted onto it, IBM Plex
+  self-hosted, 9.5's radii, elevation by step, a dot on every state.
+- One DataTable for every table -- hairlines, hover, sticky header,
+  right-aligned numbers, no zebra -- with the reader's row density
+  (9.3) in the user menu; Browse's results are a real table.
+- The four states: loading by expected wait (a skeleton after a second,
+  rows dimming under 1s), EmptyState requiring a reason.
+- One Inbox with three tabs, a count in the header (15.3), and each
+  object in a write under review a door to its page.
+- "Ask about this set" as a panel in Browse sending the set itself.
+
+STILL TO BUILD, in this order: 15.3's approvals ergonomics (no approve
+without the diff open, sort by consequence, a pending marker on the
+object and the set); notification rows as doors; sort indicators on
+DataTable columns; the E4 partial state as a shared component; the
+command palette's contents beyond "go to" (types, views, actions); and
+section 14's ontology canvas (layered layout, positions kept apart from
+the declaration, actions on the node, subject areas).
+
+**Blocked on:** nothing -- the remaining list above is buildable.
 
 ## 8. Agent-loop efficiency, which needs a machine with a model
 

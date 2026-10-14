@@ -426,6 +426,9 @@ __getattr__
 # validation_errors_without_values (api/app.py) -- registered by
 # @app.exception_handler.
 validation_errors_without_values
+# model_unavailable (api/app.py), registered the same way: the 503 an
+# unreachable model becomes.
+model_unavailable
 
 # should_exit (tests/integration/test_graceful_shutdown.py) -- read by
 # uvicorn.Server itself; setting it is what its SIGTERM handler does.

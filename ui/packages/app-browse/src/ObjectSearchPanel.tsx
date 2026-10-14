@@ -722,6 +722,9 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
         filterCount={crossFilter.length}
         total={totalMatches}
         loading={loading}
+        conditions={setConditions}
+        text={queryText}
+        onSessionExpired={onSessionExpired}
         actions={
           <>
             <ExportSet

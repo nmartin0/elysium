@@ -3165,4 +3165,39 @@
   .inbox .bp6-tab-list {
     margin-block-end: var(--space-loose);
   }
+
+  /* ASK ABOUT THIS SET (DEV_UI 5.4): a panel over Browse, so the set
+   * stays in view while the question is asked about it. */
+  .ask-panel__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-snug);
+    padding: var(--space-normal);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .ask-panel__subject,
+  .ask-panel__note {
+    margin: 0;
+    color: var(--text-secondary);
+  }
+
+  .ask-panel__actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-normal);
+  }
+
+  /* The reader's font, not Blueprint's monospace for a text area: a
+   * question is prose. */
+  .ask-panel__body textarea {
+    font-family: inherit;
+  }
+
+  .ask-panel__answer {
+    margin: 0;
+    white-space: pre-wrap;
+  }
 }

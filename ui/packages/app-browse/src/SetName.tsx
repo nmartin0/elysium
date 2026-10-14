@@ -45,6 +45,9 @@ export default function SetName({
   total,
   loading,
   actions,
+  conditions,
+  text,
+  onSessionExpired,
 }: {
   objectType: string | null
   /** The frozen set's name when the set on screen is frozen. DEV_UI
@@ -62,6 +65,10 @@ export default function SetName({
    *  component is the subject's name and should not grow a dependency
    *  on every verb somebody adds to it. */
   actions?: React.ReactNode
+  /** The set itself, for asking the agent about it (DEV_UI 5.4). */
+  conditions?: unknown[]
+  text?: string
+  onSessionExpired?: () => void
 }) {
   if (!objectType) return null
 
@@ -100,7 +107,17 @@ export default function SetName({
           comes first because it is the commoner verb; the agent link
           is the one somebody goes looking for. */}
       {!loading && actions}
-      {!loading && <AskAboutSet objectType={objectType} filterCount={filterCount} total={total} />}
+      {!loading && (
+        <AskAboutSet
+          objectType={objectType}
+          filterCount={filterCount}
+          total={total}
+          conditions={conditions}
+          text={text}
+          frozen={frozen}
+          onSessionExpired={onSessionExpired}
+        />
+      )}
     </p>
   )
 }

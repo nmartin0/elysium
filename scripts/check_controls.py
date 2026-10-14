@@ -2461,9 +2461,9 @@ CONTROLS = [
         describes="WIRED-2: a question that pauses for a write is kept",
         path="api/routes.py",
         old=("            _paused_queries(request.app).save(\n"
-             "                write_id, current_user.user_id, body.query,"),
+             "                write_id, current_user.user_id, question,"),
         new=("            (lambda *a, **k: None)(\n"
-             "                write_id, current_user.user_id, body.query,"),
+             "                write_id, current_user.user_id, question,"),
         tests=["tests/integration/test_a_question_is_answered_after_approval.py::"
                "test_after_approval_the_asker_is_sent_the_answer"],
     ),

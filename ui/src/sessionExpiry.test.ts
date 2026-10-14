@@ -58,6 +58,8 @@ function sourceFiles(): { file: string; source: string }[] {
 const HANDLED_ANOTHER_WAY: Record<string, string> = {
   'packages/app-query/src/QueryPanel.tsx':
     'query() returns a raw Response rather than throwing, so this reads response.status === 401 directly. Checked by status, which is the rule.',
+  'packages/app-browse/src/AskAboutSet.tsx':
+    'query() again, as in QueryPanel: a raw Response, read as response.status === 401 directly. Its one catch is a network failure, which has no status to read.',
   'packages/app-schema/src/SchemaPanel.tsx':
     'One .catch(() => {}) on a cache warm-up whose result is never displayed. A failure here has no user-visible effect and the real fetch that follows reports its own.',
 }

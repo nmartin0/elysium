@@ -201,8 +201,21 @@ class CreateUserRequest(BaseModel):
     role_name: str
 
 
+class QueryAbout(BaseModel):
+    """THE SET ON SCREEN (DEV_UI 5.4): what Browse was showing when the
+    question was asked -- the type, its conditions in the filter
+    vocabulary, and the text search. Said to the agent in words; see
+    core/agent/set_context.py."""
+
+    object_type: str
+    conditions: list[dict] = []
+    text: str = ""
+
+
 class QueryRequest(BaseModel):
     query: str
+    #: Asked from Browse about the set on screen, not typed into Query.
+    about: QueryAbout | None = None
 
 
 class QueryResponse(BaseModel):
@@ -5441,6 +5454,23 @@ async def query(body: QueryRequest, request: Request,
             detail="Too many queries -- please wait before asking again.",
         )
 
+    # THE QUESTION AS THE AGENT RECEIVES IT: the asker's words, then --
+    # when asked from Browse -- the set on screen in words, validated
+    # against what this asker may see. Used everywhere below, so the
+    # audit, a paused question and the answer all see what was asked.
+    question = body.query
+    if body.about is not None:
+        from core.agent.set_context import SetContextError, describe_set, question_about
+
+        try:
+            sentence = describe_set(
+                _generation(request).mediator.visible_schema(current_user, for_agent=True),
+                body.about.object_type, body.about.conditions, body.about.text)
+        except SetContextError as e:
+            raise HTTPException(status_code=400,
+                                detail=f"That set cannot be asked about: {e}") from e
+        question = question_about(body.query, sentence)
+
     loop: AgentLoop = _generation(request).loop
     synthesis_client = _generation(request).synthesis_client
     executor = request.app.state.executor
@@ -5481,7 +5511,7 @@ async def query(body: QueryRequest, request: Request,
         result = await event_loop.run_in_executor(
             executor,
             functools.partial(
-                loop.run, current_user, body.query, cancel_event, request_context,
+                loop.run, current_user, question, cancel_event, request_context,
                 refresh_user=refresh_user,
             ),
         )
@@ -5491,7 +5521,7 @@ async def query(body: QueryRequest, request: Request,
 
     if result.cancelled:
         _generation(request).mediator.audit_log.log_query_cancelled(
-            current_user.user_id, body.query, len(result.gathered)
+            current_user.user_id, question, len(result.gathered)
         )
         raise HTTPException(status_code=499, detail="Client disconnected")
 
@@ -5502,7 +5532,7 @@ async def query(body: QueryRequest, request: Request,
         # are one situation, differing only in how early it was
         # noticed.
         _generation(request).mediator.audit_log.log_query_cancelled(
-            current_user.user_id, body.query, len(result.gathered)
+            current_user.user_id, question, len(result.gathered)
         )
         raise HTTPException(
             status_code=409,
@@ -5538,7 +5568,7 @@ async def query(body: QueryRequest, request: Request,
         # effort -- a question that cannot be kept still gets its 202.
         try:
             _paused_queries(request.app).save(
-                write_id, current_user.user_id, body.query, result.gathered,
+                write_id, current_user.user_id, question, result.gathered,
                 result.hops_used, result.fabricated_finishes)
         except Exception:  # noqa: BLE001 - the proposal itself must still be returned
             logger.warning("could not keep the paused question for %s", write_id, exc_info=True)
@@ -5596,7 +5626,7 @@ async def query(body: QueryRequest, request: Request,
         insight = await event_loop.run_in_executor(
             executor,
             functools.partial(
-                synthesize_insight, synthesis_client, body.query, real_data,
+                synthesize_insight, synthesis_client, question, real_data,
                 # EVERY EARLY STOP, not three of them (LB-3): repeating
                 # itself, invalid steps, blocked by rules and an
                 # unrecognised step ended as complete-sounding answers
@@ -5613,7 +5643,7 @@ async def query(body: QueryRequest, request: Request,
         synthesis_watcher.cancel()
     if disconnected:
         _generation(request).mediator.audit_log.log_query_cancelled(
-            current_user.user_id, body.query, len(result.gathered)
+            current_user.user_id, question, len(result.gathered)
         )
         raise HTTPException(status_code=499, detail="Client disconnected")
     usage = request_context.token_usage
