@@ -62,8 +62,14 @@ def world(tmp_path, generation):
             "d", generation.write_mediator, queue,
         )
 
-    def cross():
-        notes.record_count(triggers.all_enabled()[0].condition_key, "debug", 0, "d")
+    def cross(as_news=False):
+        key = triggers.all_enabled()[0].condition_key
+        notes.record_count(key, "debug", 0, "d")
+        if as_news:
+            # The same crossing would otherwise read as a repeat the
+            # notification already sent, and fire nothing. A real loop
+            # crosses with a different count; this stands in for that.
+            notes.record_notified(key, "debug", "an earlier, different summary")
 
     return evaluate, cross, queue
 
@@ -111,6 +117,55 @@ class TestItProposesWhenItFires:
         evaluate()
 
         assert len(queue.awaiting(lambda p: True)) == 1
+
+
+class TestItDoesNotProposeWhatIsAlreadyWaiting:
+    """R50, decided 14 Oct. The loop was real: an automation fires, the
+    next sync trips it again, and it proposes the same change again --
+    every sync -- while the first still waits."""
+
+    def test_a_second_crossing_while_the_first_waits_proposes_nothing(self, world):
+        evaluate, cross, queue = world
+        evaluate()
+        cross()
+        evaluate()
+
+        cross(as_news=True)
+        evaluate()
+
+        assert len(queue.awaiting(lambda p: True)) == 1
+
+    def test_once_it_is_decided_the_next_crossing_proposes_again(self, world):
+        """THE CONTROL: the guard is "while waiting", not "ever"."""
+        evaluate, cross, queue = world
+        evaluate()
+        cross()
+        evaluate()
+        (write_id, _), = queue.awaiting(lambda p: True)
+        with queue.reserved(write_id, lambda p: True):
+            pass                                   # decided and consumed
+
+        cross(as_news=True)
+        evaluate()
+
+        assert len(queue.awaiting(lambda p: True)) == 1
+
+    def test_the_same_change_proposed_by_a_person_does_not_count(self, world, generation):
+        """Only the AUTOMATION's own waiting writes are left out: the
+        same change proposed by hand, even by the same account, is a
+        different proposal with its own reviewer."""
+        evaluate, cross, queue = world
+        ids = generation.mediator.search_object(OWNER, "Transaction", [])
+        person = OWNER                             # the same account, by hand
+        queue.store(generation.write_mediator.propose_action(
+            person, "RecategorizeTransactions",
+            {"transaction_ids": list(ids), "new_category": "reviewed"}, origin="human"))
+        evaluate()
+        cross()
+
+        evaluate()
+
+        assert len(queue.awaiting(lambda p: True)) == 2
 
 
 class TestActionValidation:

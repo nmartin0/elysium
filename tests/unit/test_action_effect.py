@@ -118,3 +118,31 @@ class TestItDoesNotExecute:
         assert generation.mediator.get_field(
             owner, "Transaction", "1", "category",
         ) == before
+
+
+class TestWhatIsAlreadyWaitingIsLeftOut:
+    """R50, decided 14 Oct: an object already in a waiting proposal from
+    this automation is not proposed again."""
+
+    def _ids(self, generation, owner):
+        return [str(i) for i in generation.mediator.search_object(owner, "Transaction", [])]
+
+    def test_objects_already_waiting_are_left_out(self, generation, owner):
+        everything = self._ids(generation, owner)
+        waiting = set(everything[:2])
+
+        pending = propose_action_effect(
+            generation.write_mediator, generation.mediator, _view(), owner,
+            "RecategorizeTransactions", "transaction_ids", {"new_category": "reviewed"},
+            already_waiting=waiting)
+
+        proposed = {str(i) for i in pending.parameters["transaction_ids"]}
+        assert proposed == set(everything) - waiting
+
+    def test_when_everything_is_waiting_nothing_is_proposed(self, generation, owner):
+        pending = propose_action_effect(
+            generation.write_mediator, generation.mediator, _view(), owner,
+            "RecategorizeTransactions", "transaction_ids", {"new_category": "reviewed"},
+            already_waiting=set(self._ids(generation, owner)))
+
+        assert pending is None

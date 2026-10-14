@@ -473,6 +473,40 @@ class PendingWriteStore:
                     )
                 conn.commit()
 
+    def objects_already_proposed(self, user_id: str, action_type_name: str,
+                                 parameter_name: str, origin: str) -> set[str]:
+        """Every object id this proposer already has waiting, under this
+        action's list parameter, from this origin (R50).
+
+        WHAT AN AUTOMATION ASKS BEFORE PROPOSING AGAIN. An approved
+        automation write changes the data, the next sync can trip the
+        same condition, and it proposes again -- every sync. The owner
+        decided (14 Oct): no new proposal from the same automation for
+        the same object while an earlier one is still waiting.
+
+        RESERVED WRITES COUNT. One being decided right now is still
+        waiting; proposing it again because a reviewer had it open would
+        be the duplicate this exists to stop.
+
+        AS TEXT, because ids reach a list parameter as whatever the
+        search returned and a stored payload reads them back as JSON.
+        """
+        with self._lock, self._connection() as conn:
+            self._expire_stale(conn)
+            rows = conn.execute("SELECT payload FROM pending_writes").fetchall()
+        found: set[str] = set()
+        for row in rows:
+            try:
+                pending = from_row(row["payload"])
+            except UnreadablePendingWrite:
+                continue
+            if (pending.user_id == user_id and pending.origin == origin
+                    and pending.action_type_name == action_type_name):
+                named = pending.parameters.get(parameter_name)
+                if isinstance(named, list):
+                    found.update(str(object_id) for object_id in named)
+        return found
+
     def duplicates_of(self, write_id: str) -> int:
         """How many OTHER pending writes propose the same change.
 

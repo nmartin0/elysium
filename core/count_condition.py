@@ -297,10 +297,20 @@ def _propose_for(trigger, view, owner, mediator, write_mediator,
     made -- costs this trigger its action and nothing else.
     """
     try:
+        # R50, decided 14 Oct: objects this automation already has
+        # waiting are left out, and if nothing is left, nothing is
+        # proposed. "This automation" is its owner proposing this
+        # action as an automation -- two triggers of one owner proposing
+        # one action on one object are the same change, and the second
+        # would be the duplicate a reviewer has to dismiss.
+        waiting = set()
+        if pending_store is not None:
+            waiting = pending_store.objects_already_proposed(
+                owner.user_id, trigger.action_type, trigger.action_parameter, "automation")
         pending = propose_action_effect(
             write_mediator, mediator, view, owner,
             trigger.action_type, trigger.action_parameter,
-            trigger.action_values,
+            trigger.action_values, already_waiting=waiting,
         )
         if pending is not None and pending_store is not None:
             pending_store.store(pending)
@@ -320,7 +330,8 @@ def describe_trigger(trigger) -> str:
 
 def propose_action_effect(write_mediator, mediator, view, owner_record,
                           action_type_name: str, parameter_name: str,
-                          extra_parameters: dict | None = None):
+                          extra_parameters: dict | None = None,
+                          already_waiting: "set[str] | None" = None):
     """Proposes an action on whatever the view matches NOW.
 
     AS THE OWNER, which is Foundry's split and the one this file
@@ -349,6 +360,10 @@ def propose_action_effect(write_mediator, mediator, view, owner_record,
     dismiss.
     """
     matched = _matches_for(mediator, view, owner_record)
+    if already_waiting:
+        # NOT PROPOSED TWICE (R50): an object already in a waiting
+        # proposal from this automation is somebody's decision already.
+        matched = [object_id for object_id in matched if str(object_id) not in already_waiting]
     if not matched:
         return None
 

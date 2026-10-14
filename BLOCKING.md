@@ -247,20 +247,17 @@ code.
 **Blocked on:** whether to have an extension story at all. Everything
 downstream of that is design work that cannot start first.
 
-## 7. Three questions triggers raise and nobody has answered
+## 7. Two questions triggers raise and nobody has answered
 
 Triggers are built. `TRIGGERS_AND_PLUGINS.md` names three risks that
 are "about volume rather than authority", and none of them is a code
 gap -- each is a decision that has to be made before the first
 automation runs at scale.
 
-**Queue flooding, and the feedback loop under it (R50).** An approved
-automation write changes the data, and the next sync can trip the same
-condition and propose again -- every sync. Checked on 13 October: the
-path is real (`core/count_condition.py`, `origin="automation"`). The
-guard is one of: refuse while a proposal from the same automation is
-pending; a cooldown per object; or an automation never reacting to its
-own effect. Each is a few lines once chosen.
+**Queue flooding, and the feedback loop under it (R50) -- DECIDED and
+BUILT, 14 October:** no new proposal from the same automation for the
+same object while an earlier one is still waiting
+(`PendingWriteStore.objects_already_proposed`). Two answers remain.
 
 `MAX_SUB_WRITES` is 20 and `DEFAULT_TTL` is 15
 minutes. An automation firing across a thousand objects either exceeds
@@ -280,10 +277,11 @@ deliberately rather than discovering."
 document argues for when the mirror changes rather than on a clock,
 but it is not settled.
 
-**Blocked on:** three answers. The first needs a cap policy, the
-second is a product decision about how much friction an automation
-should carry, and the third is a design choice with cost on both
-sides.
+**Blocked on:** two answers. The first is a product decision about
+how much friction an automation should carry, and the second is a
+design choice with cost on both sides. The cap that the paragraph on
+`MAX_SUB_WRITES` asks about is being answered by bulk actions (decided
+14 October: 256 by default, 1,024 at most).
 
 ## 8. What the interface should be
 

@@ -2560,6 +2560,22 @@ CONTROLS = [
         tests=["tests/unit/test_erasure.py::TestWhatPeopleWroteAboutThem::"
                "test_a_restore_does_not_bring_them_back"],
     ),
+    Control(
+        describes="R50: an automation does not propose an object it already has waiting",
+        path="core/count_condition.py",
+        old="    if already_waiting:",
+        new="    if False:",
+        tests=["tests/unit/test_trigger_actions.py::TestItDoesNotProposeWhatIsAlreadyWaiting::test_a_second_crossing_while_the_first_waits_proposes_nothing",
+               "tests/unit/test_action_effect.py::TestWhatIsAlreadyWaitingIsLeftOut::"
+               "test_when_everything_is_waiting_nothing_is_proposed"],
+    ),
+    Control(
+        describes="R50: only the automation's own waiting writes are left out",
+        path="core/pending_write_store.py",
+        old="            if (pending.user_id == user_id and pending.origin == origin",
+        new="            if (pending.origin == origin or True",
+        tests=["tests/unit/test_trigger_actions.py::TestItDoesNotProposeWhatIsAlreadyWaiting::test_the_same_change_proposed_by_a_person_does_not_count"],
+    ),
 ]
 
 
