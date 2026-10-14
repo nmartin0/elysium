@@ -20,13 +20,15 @@ written, and the condition that would have written it will be checked
 again on the next sync.
 """
 
+import json
 import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from core.sqlite_connection import connection_with_schema
+from core.erased_ids import any_erased
+from core.sqlite_connection import add_column_if_missing, connection_with_schema
 
 logger = logging.getLogger(__name__)
 
@@ -107,25 +109,34 @@ class NotificationStore:
         self._db_path = db_path
 
     def _connection(self):
-        return connection_with_schema(self._db_path, SCHEMA)
+        return connection_with_schema(self._db_path, SCHEMA, migrations=_MIGRATIONS)
 
     def notify(self, user_id: str, kind: str, summary: str,
-               detail: str | None = None) -> str | None:
+               detail: str | None = None,
+               subjects: "list[tuple[str, object]] | None" = None) -> str | None:
         """Writes one notification for one person.
 
         RETURNS THE ID, or None if it could not be written. Best-effort
         by design: a condition that fired is a fact about the
         deployment, and failing to record a notice about it should not
         stop whatever noticed.
+
+        `subjects` ARE THE OBJECTS ITS TEXT WAS BUILT FROM, as (type, id)
+        -- an answered question's gathered reads. Never shown; kept so an
+        erasure can find a notice whose prose talks about a person, which
+        no hash of an id could find in the prose itself (R13).
         """
         notification_id = str(uuid.uuid4())
         try:
             with self._connection() as conn:
                 conn.execute(
                     "INSERT INTO notifications (notification_id, user_id, "
-                    "created_at, kind, summary, detail) VALUES (?, ?, ?, ?, ?, ?)",
+                    "created_at, kind, summary, detail, subjects) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (notification_id, user_id, datetime.now(UTC).isoformat(),
-                     kind, summary, detail),
+                     kind, summary, detail,
+                     json.dumps(sorted({(str(t) if t is not None else None, str(i))
+                                        for t, i in subjects or ()},
+                                       key=lambda pair: (pair[0] or "", pair[1])))),
                 )
                 # EXPLICIT, because open_connection sets
                 # isolation_level='': an implicit transaction is ROLLED
@@ -317,3 +328,32 @@ class NotificationStore:
                 conn.commit()
         except Exception as e:  # noqa: BLE001
             logger.warning("could not record notification state: %s", e)
+
+    def forget_erased(self, key_hash, hashes_by_type: dict) -> int:
+        """Every notification built from an erased object's data, gone
+        (R13). Returns how many.
+
+        FOUND BY ITS SUBJECTS, not its text: an answer is prose, and
+        "Ada prefers email" holds no id to hash. A notification written
+        before subjects were recorded has none and cannot be found --
+        the one gap, and it closes as those age out.
+        """
+        if not hashes_by_type:
+            return 0
+        with self._connection() as conn:
+            rows = conn.execute("SELECT notification_id, subjects FROM notifications "
+                                "WHERE subjects != '[]'").fetchall()
+            doomed = []
+            for row in rows:
+                try:
+                    subjects = [tuple(pair) for pair in json.loads(row["subjects"])]
+                except (TypeError, ValueError):
+                    continue
+                if any_erased(key_hash, hashes_by_type, subjects):
+                    doomed.append((row["notification_id"],))
+            conn.executemany("DELETE FROM notifications WHERE notification_id = ?", doomed)
+            conn.commit()
+        return len(doomed)
+
+
+_MIGRATIONS = (add_column_if_missing("notifications", "subjects", "TEXT NOT NULL DEFAULT '[]'"),)

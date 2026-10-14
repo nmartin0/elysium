@@ -50,7 +50,7 @@ def _app(tmp_path, active):
 
 def test_a_disabled_asker_gets_nothing_resumed(tmp_path):
     app, loop = _app(tmp_path, active=False)
-    pending = SimpleNamespace(description="d", action_type_name="A")
+    pending = SimpleNamespace(description="d", action_type_name="A", sub_writes=())
 
     _finish_paused_query(app, app.generation, "w1", pending, {"status": "written", "object_ids": ["x"]})
 

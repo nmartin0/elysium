@@ -5813,17 +5813,23 @@ def _finish_paused_query(app, generation, write_id: str, pending, outcome: "dict
     was made under, as every route's work is.
     """
     from core.agent.agentic_loop import AgentLoopResult
+    from core.erased_ids import ids_in_gathered
     from core.notifications import NotificationStore
 
     paused = _paused_queries(app).take(write_id)
     if paused is None:
         return
     notes = NotificationStore(app.state.runtime_paths.data_dir / "notifications.db")
+    # WHAT EACH NOTICE BELOW WAS BUILT FROM, so an erasure can find it
+    # (R13): the question's reads and the write's targets.
+    subjects = [*ids_in_gathered(paused.gathered),
+                *((sub.object_type, sub.object_id) for sub in pending.sub_writes)]
     asked = paused.query_text if len(paused.query_text) <= 120 else paused.query_text[:117] + "..."
     if outcome is None or outcome.get("status") != "written":
         notes.notify(paused.user_id, QUERY_ANSWER_KIND,
                      f"The change your question proposed was declined: {asked}",
-                     detail=f"{pending.description}. Ask again if it is still wanted.")
+                     detail=f"{pending.description}. Ask again if it is still wanted.",
+                     subjects=subjects)
         return
 
     directory = app.state.user_directory
@@ -5849,13 +5855,14 @@ def _finish_paused_query(app, generation, write_id: str, pending, outcome: "dict
         logger.exception("resuming the question behind write %s failed", write_id)
         notes.notify(paused.user_id, QUERY_ANSWER_KIND,
                      f"The change was made, but your question could not be finished: {asked}",
-                     detail="Ask it again to get the answer.")
+                     detail="Ask it again to get the answer.", subjects=subjects)
         return
 
     if result.authority_changed:
         notes.notify(paused.user_id, QUERY_ANSWER_KIND,
                      f"The change was made, but your permissions changed before your question "
-                     f"was answered: {asked}", detail="Ask it again to get the answer.")
+                     f"was answered: {asked}", detail="Ask it again to get the answer.",
+                     subjects=subjects)
         return
     if result.pending_write is not None:
         next_id = app.state.pending_writes.store(result.pending_write)
@@ -5863,7 +5870,10 @@ def _finish_paused_query(app, generation, write_id: str, pending, outcome: "dict
                                   result.hops_used, result.fabricated_finishes)
         notes.notify(paused.user_id, QUERY_ANSWER_KIND,
                      f"Your question proposed another change, now awaiting approval: {asked}",
-                     detail=result.pending_write.description)
+                     detail=result.pending_write.description,
+                     subjects=[*subjects, *ids_in_gathered(result.gathered),
+                               *((sub.object_type, sub.object_id)
+                                 for sub in result.pending_write.sub_writes)])
         return
     # LB-3's rule for a resumed answer too: any early stop is told to
     # synthesis, so a cut-short answer does not read as complete.
@@ -5871,7 +5881,8 @@ def _finish_paused_query(app, generation, write_id: str, pending, outcome: "dict
     answer = synthesize_insight(generation.synthesis_client, paused.query_text,
                                 AgentLoop.filter_real_data(result.gathered),
                                 cut_short, usage=context.token_usage)
-    notes.notify(paused.user_id, QUERY_ANSWER_KIND, f"Answer to: {asked}", detail=answer)
+    notes.notify(paused.user_id, QUERY_ANSWER_KIND, f"Answer to: {asked}", detail=answer,
+                 subjects=[*subjects, *ids_in_gathered(result.gathered)])
 
 # --- Object Set operations: the analytical half of the read surface.
 # Foundry's own Object Set Service serves "searching, filtering,

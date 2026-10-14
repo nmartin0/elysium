@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from core.erased_ids import any_erased, ids_in_gathered
 from core.sqlite_connection import connection_with_schema
 
 logger = logging.getLogger(__name__)
@@ -97,3 +98,34 @@ class PausedQueryStore:
             return None
         return PausedQuery(write_id, row["user_id"], row["query_text"], json.loads(row["gathered"]),
                            row["hops_used"], tuple(json.loads(row["fabricated_finishes"])))
+
+    def forget_erased(self, key_hash, hashes_by_type: dict,
+                      withdrawn: "frozenset[str] | set[str]" = frozenset()) -> list[str]:
+        """Drops every paused question that read an erased object, or
+        whose write was withdrawn for one (R13). Returns, per question
+        dropped, the user who asked it -- so they can be told without
+        being told whom it concerned.
+
+        THE WHOLE QUESTION, NOT THE ENTRIES. What was read about one
+        person shaped every step after it, and the question text may
+        name them; a question with them cut out would be finished as if
+        they had never been asked about, which is an answer to a
+        different question.
+        """
+        if not hashes_by_type and not withdrawn:
+            return []
+        with self._connection() as conn:
+            rows = conn.execute("SELECT write_id, user_id, gathered FROM paused_queries").fetchall()
+            doomed = []
+            for row in rows:
+                try:
+                    gathered = json.loads(row["gathered"])
+                except (TypeError, json.JSONDecodeError):
+                    gathered = []
+                if row["write_id"] in withdrawn or any_erased(
+                        key_hash, hashes_by_type, ids_in_gathered(gathered)):
+                    doomed.append((row["write_id"], row["user_id"]))
+            conn.executemany("DELETE FROM paused_queries WHERE write_id = ?",
+                             [(write_id,) for write_id, _ in doomed])
+            conn.commit()
+        return [user_id for _, user_id in doomed]

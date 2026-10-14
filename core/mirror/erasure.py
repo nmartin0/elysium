@@ -420,3 +420,87 @@ def apply_erasures(catalog, schema: dict, register: ErasureRegister,
         for path in files:
             path.unlink()
     return removed
+
+
+#: What a person is told when an erasure took something of theirs away:
+#: a question waiting on an approval, or a change they proposed. Never
+#: whom it concerned -- that is what was erased.
+ERASED_NOTICE_KIND = "erasure"
+ERASED_QUESTION = ("A question of yours that was waiting on an approval was dropped: "
+                   "something it had read has been erased. Ask it again if it is still wanted.")
+ERASED_WRITE = ("A change you proposed was withdrawn before anyone decided on it: "
+                "it concerned something that has been erased.")
+
+
+def forget_beyond_the_mirror(data_dir: Path, register: "ErasureRegister",
+                             audit_log=None) -> dict[str, int]:
+    """Every erased id, forgotten by every store outside the lake (R13).
+
+    THE OWNER'S RULE (14 Oct): everything except the audit log forgets
+    -- memories and notes (E-14, decided earlier), frozen sets, the
+    write log, the approvals queue, paused questions and answer
+    notifications, and the merge proposals that name them. Matched by the register's salted hashes, so this is
+    the same call after an erasure and after a restore brings an older
+    copy of any of them back.
+
+    A STORE THAT DOES NOT EXIST YET IS SKIPPED, not created: a
+    deployment that never froze a set has nothing to forget there.
+
+    WHO LOST SOMETHING IS TOLD, without being told what: the asker of a
+    dropped question, the proposer of a withdrawn change. A question
+    that simply never came back would read as a fault.
+
+    `audit_log` records each withdrawn write. None leaves them to the
+    store's own default, which a restore -- offline, with its own
+    report -- accepts.
+    """
+    from core.artifact_store import ArtifactStore
+    from core.frozen_sets import FrozenSetStore
+    from core.identity_decisions import MergeDecisionStore
+    from core.memory.store import MemoryStore
+    from core.notifications import NotificationStore
+    from core.ontology.write_log import WriteLogWriter
+    from core.paused_queries import PausedQueryStore
+    from core.pending_write_persistence import PendingWritePersistence
+    from core.pending_write_store import PendingWriteStore
+
+    key_hash, hashes = register.hasher(), register.hashes_by_type()
+    counts: dict[str, int] = {}
+    if not hashes:
+        return counts
+
+    def present(name: str) -> "Path | None":
+        path = data_dir / name
+        return path if path.exists() else None
+
+    if path := present("memories.db"):
+        counts["memories"] = MemoryStore(path).forget_erased(key_hash, hashes)
+    if path := present("artifacts.db"):
+        counts["notes"] = ArtifactStore(path).forget_erased_notes(key_hash, hashes)
+    if path := present("identity_decisions.db"):
+        counts["merge_proposals"] = MergeDecisionStore(path).forget_erased(key_hash, hashes)
+    if path := present("frozen_sets.db"):
+        counts["frozen_set_members"] = FrozenSetStore(path).forget_erased(key_hash, hashes)
+    if path := present("write_log.db"):
+        counts["write_log_entries"] = WriteLogWriter(path).forget_erased(key_hash, hashes)
+    withdrawn: list[str] = []
+    proposers: list[str] = []
+    if path := present("pending_writes.db"):
+        store = PendingWriteStore(audit_log=audit_log,
+                                  persistence=PendingWritePersistence(path))
+        pairs = store.forget_erased(key_hash, hashes)
+        withdrawn = [write_id for write_id, _ in pairs]
+        proposers = [proposer for _, proposer in pairs]
+        counts["pending_writes"] = len(pairs)
+    askers: list[str] = []
+    if path := present("paused_queries.db"):
+        askers = PausedQueryStore(path).forget_erased(key_hash, hashes, set(withdrawn))
+        counts["paused_questions"] = len(askers)
+    notices = NotificationStore(data_dir / "notifications.db")
+    if present("notifications.db"):
+        counts["notifications"] = notices.forget_erased(key_hash, hashes)
+    for user_id in askers:
+        notices.notify(user_id, ERASED_NOTICE_KIND, ERASED_QUESTION)
+    for user_id in proposers:
+        notices.notify(user_id, ERASED_NOTICE_KIND, ERASED_WRITE)
+    return counts

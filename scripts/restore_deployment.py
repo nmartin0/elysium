@@ -183,20 +183,13 @@ def _keep_every_erasure(data_dir: Path, aside: Path) -> int:
     if not (data_dir / "erasures.db").exists():
         return 0
     register = ErasureRegister(data_dir / "erasures.db")
-    # MEMORIES ARE NOT REWRITTEN BY A SYNC, so they are cleared here: a
-    # restored memories.db may predate an erasure the kept register
-    # records (E-14).
-    if (data_dir / "memories.db").exists():
-        from core.memory.store import MemoryStore
+    # NOTHING OUTSIDE THE LAKE IS REWRITTEN BY A SYNC, so every other
+    # store is cleared here: a restored memories.db, write log or queue
+    # may predate an erasure the kept register records (E-14, R13). The
+    # same call scripts/erase.py makes.
+    from core.mirror.erasure import forget_beyond_the_mirror
 
-        MemoryStore(data_dir / "memories.db").forget_erased(register.hasher(),
-                                                            register.hashes_by_type())
-    # NOTES, FOR THE SAME REASON (decided 14 Oct).
-    if (data_dir / "artifacts.db").exists():
-        from core.artifact_store import ArtifactStore
-
-        ArtifactStore(data_dir / "artifacts.db").forget_erased_notes(register.hasher(),
-                                                                     register.hashes_by_type())
+    forget_beyond_the_mirror(data_dir, register)
     return register.mark_restored()
 
 

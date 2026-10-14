@@ -163,23 +163,16 @@ class ArtifactStore:
             )
             return cursor.rowcount > 0
 
-    def forget_notes_about(self, keys) -> int:
-        """Every note about these (object type, object id) pairs, gone --
-        what an erasure (R13) does to them, decided by the owner on 14
-        Oct: a note is about one object, and once the object is erased
-        it is a note about somebody Elysium was told to forget."""
-        kinds = [(note_kind(object_type, object_id),) for object_type, object_id in keys]
-        with self._connection() as conn, immediate_transaction(conn):
-            before = conn.total_changes
-            conn.executemany("DELETE FROM artifacts WHERE kind = ?", kinds)
-            return conn.total_changes - before
-
     def forget_erased_notes(self, key_hash, hashes_by_type: dict[str, set[str]]) -> int:
-        """The same, given an erasure register's salted hashes instead of
-        ids: what a restore needs, since a restored artifacts.db may
-        predate an erasure the kept register records. A scan of note
-        kinds only; core/mirror owns the register and sits above this
-        leaf, so it is handed the hasher rather than imported."""
+        """Every note about an erased object, gone (R13) -- decided by the
+        owner on 14 Oct: a note is about one object, and once the object
+        is erased it is a note about somebody Elysium was told to forget.
+
+        BY THE REGISTER'S SALTED HASHES, after an erasure and after a
+        restore alike, since a restored artifacts.db may predate an
+        erasure the kept register records. A scan of note kinds only;
+        core/mirror owns the register and sits above this leaf, so it is
+        handed the hasher rather than imported."""
         if not hashes_by_type:
             return 0
         with self._connection() as conn, immediate_transaction(conn):

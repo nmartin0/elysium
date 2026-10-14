@@ -59,6 +59,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from core.erased_ids import any_erased, is_erased_as_any_type
 from core.intermediate_layer.audit import AuditLog
 from core.ontology.write_mediator import PendingWrite
 from core.pending_write_persistence import PendingWritePersistence
@@ -507,6 +508,46 @@ class PendingWriteStore:
                     found.update(str(object_id) for object_id in named)
         return found
 
+    def forget_erased(self, key_hash, hashes_by_type: dict) -> list[tuple[str, str]]:
+        """Withdraws every waiting write about an erased object (R13).
+        Returns (write id, proposer) for each one withdrawn.
+
+        WITHDRAWN, NOT DECIDED. Approving one would write the person
+        back into a source Elysium was told to forget them from; leaving
+        it would keep them in the queue every reviewer reads. A write is
+        about them when a sub-write targets them, or when an action
+        parameter -- where ids go -- names one.
+
+        RESERVED ONES TOO. A reviewer holding one open would apply it
+        when they click; the claim fails afterwards, which is the right
+        outcome for a write that no longer exists.
+
+        AUDITED BY WRITE ID AND PROPOSER, never the description: it
+        would name whom the write was about, and the audit log keeps
+        that an erasure happened, not of whom.
+        """
+        if not hashes_by_type:
+            return []
+        withdrawn: list[tuple[str, str]] = []
+        with self._lock, self._connection() as conn:
+            rows = conn.execute(
+                "SELECT write_id, owner_user_id, payload FROM pending_writes").fetchall()
+            for row in rows:
+                try:
+                    pending = from_row(row["payload"])
+                except UnreadablePendingWrite:
+                    continue
+                if _about_erased(pending, key_hash, hashes_by_type):
+                    withdrawn.append((row["write_id"], row["owner_user_id"]))
+            for write_id, _ in withdrawn:
+                conn.execute("DELETE FROM pending_writes WHERE write_id = ?", (write_id,))
+                conn.execute("DELETE FROM pending_write_decisions WHERE write_id = ?",
+                             (write_id,))
+            conn.commit()
+        for write_id, owner in withdrawn:
+            self.audit_log.log_write_withdrawn_for_erasure(write_id, owner)
+        return withdrawn
+
     def duplicates_of(self, write_id: str) -> int:
         """How many OTHER pending writes propose the same change.
 
@@ -554,3 +595,18 @@ class PendingWriteStore:
         """
         with self.reserved(write_id, may_claim) as pending:
             return pending
+
+
+def _about_erased(pending: PendingWrite, key_hash, hashes_by_type: dict) -> bool:
+    """Whether a waiting write targets, or names as a parameter, an
+    erased object. Parameters are untyped here, so their ids are checked
+    against every erased type -- they are id positions, or lists of
+    them, by what an action parameter is."""
+    if any_erased(key_hash, hashes_by_type,
+                  ((sub.object_type, sub.object_id) for sub in pending.sub_writes)):
+        return True
+    for value in (pending.parameters or {}).values():
+        values = value if isinstance(value, list) else [value]
+        if any(is_erased_as_any_type(key_hash, hashes_by_type, item) for item in values):
+            return True
+    return False

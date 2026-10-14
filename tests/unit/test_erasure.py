@@ -178,7 +178,7 @@ class TestWhatPeopleWroteAboutThem:
 
         _code, printed = _erase(synced_deployment)
 
-        assert "2 note(s)" in printed
+        assert "2 notes" in printed
         assert about("Customer", ADA) == [] and about("Transaction", "1") == []
         assert about("Customer", "cust_002")                       # THE CONTROL
 
@@ -206,7 +206,7 @@ class TestWhatPeopleRemembered:
 
         _code, printed = _erase(synced_deployment)
 
-        assert "2 memory(ies)" in printed
+        assert "2 memories" in printed
         assert store.about("Customer", ADA) == [] and store.about("Transaction", "1") == []
         assert store.about("Customer", "cust_002")                  # THE CONTROL
 
@@ -223,6 +223,167 @@ class TestWhatPeopleRemembered:
         assert store.about("Customer", "cust_002")
 
 
+
+
+def _pending(object_type, object_id, *, user="asker", parameters=None):
+    from datetime import UTC, datetime
+
+    from core.intermediate_layer.auth import UserRecord
+    from core.ontology.write_mediator import PendingWrite, SubWrite
+
+    return PendingWrite(
+        sub_writes=(SubWrite(object_type, object_id, "update", {"category": "x"}),),
+        user_id=user, description=f"Recategorize {object_type} {object_id}",
+        action_type_name="Recategorize", origin="agent", proposed_at=datetime.now(UTC),
+        proposed_under_generation=1, parameters=parameters or {},
+        proposer=UserRecord(user_id=user, role_name="customer_service", security_value="us-west"))
+
+
+def _queue(paths):
+    from core.intermediate_layer.audit import AuditLog
+    from core.pending_write_persistence import PendingWritePersistence
+    from core.pending_write_store import PendingWriteStore
+
+    return PendingWriteStore(audit_log=AuditLog(paths.log_dir / "audit.log"),
+                             persistence=PendingWritePersistence(
+                                 paths.data_dir / "pending_writes.db"))
+
+
+class TestEverythingButTheAuditLog:
+    """Decided 14 Oct: frozen sets, the write log, waiting writes, paused
+    questions and answer notifications forget them too. The audit log
+    keeps that an erasure happened, and not of whom."""
+
+    def test_a_frozen_set_loses_them_and_the_criteria_that_found_them(self, synced_deployment):
+        from core.frozen_sets import FrozenSetStore
+
+        store = FrozenSetStore(synced_deployment.data_dir / "frozen_sets.db")
+        mixed = store.freeze("someone", "Ada and Bram", "Customer", [ADA, "cust_002"],
+                             origin={"filters": [{"field": "name", "operator": "in",
+                                                  "value": ["Ada Okafor", "Bram Feldman"]}]})
+        other = store.freeze("someone", "Chidi", "Customer", ["cust_003"],
+                             origin={"filters": [{"field": "region", "value": "us-east"}]})
+        named = store.freeze("someone", "Ada's", "Transaction", ["5"],
+                             origin={"filters": [{"field": "customer_id", "value": ADA}]})
+
+        _erase(synced_deployment)
+
+        assert store.get("someone", mixed).member_ids == ["cust_002"]
+        assert store.get("someone", mixed).origin == {}
+        assert store.get("someone", named).origin == {}        # an id in the criteria
+        assert store.get("someone", named).member_ids == ["5"]  # not Ada's transaction
+        assert store.get("someone", other).origin              # THE CONTROL
+
+    def test_the_write_log_forgets_their_edits_and_keeps_the_rest(self, synced_deployment):
+        from core.ontology.write_log import WriteLogWriter
+
+        log = WriteLogWriter(synced_deployment.data_dir / "write_log.db")
+        batch = log.log_pending_batch(
+            [{"object_type": "Transaction", "object_id": "1"},
+             {"object_type": "Transaction", "object_id": "5"}], "someone", "Ada's and Chidi's")
+        log.log_pending_update("Transaction", "1", {"category": "x"}, {}, "someone",
+                               "Ada's and Chidi's", batch_id=batch)
+        log.log_pending_update("Transaction", "5", {"category": "x"}, {}, "someone",
+                               "Ada's and Chidi's", batch_id=batch)
+        log.log_pending_update("Customer", ADA, {"email": "x"}, {}, "someone", "Ada's email")
+        log.log_pending_update("Customer", "cust_002", {"email": "y"}, {}, "someone", "Bram's")
+
+        _erase(synced_deployment)
+
+        assert log.get_pending_changes("Customer", ADA) is None
+        assert log.get_pending_changes("Transaction", "1") is None
+        assert log.get_pending_changes("Customer", "cust_002") == {"email": "y"}  # CONTROL
+        [kept] = [b for b in log.get_pending_batches() if b["id"] == batch]
+        assert [sub["object_id"] for sub in kept["sub_writes"]] == ["5"]
+        assert "Ada" not in kept["description"]
+
+    def test_a_waiting_write_about_them_is_withdrawn_and_audited_without_them(
+            self, synced_deployment):
+        queue = _queue(synced_deployment)
+        about_ada = queue.store(_pending("Transaction", "1"))
+        names_ada = queue.store(_pending("Transaction", "5", parameters={"customers": [ADA]}))
+        other = queue.store(_pending("Transaction", "5", user="other"))
+
+        _erase(synced_deployment)
+
+        waiting = {write_id for write_id, _ in queue.awaiting(lambda pending: True)}
+        assert waiting == {other}
+        log = (synced_deployment.log_dir / "audit.log").read_text()
+        assert about_ada in log and names_ada in log and '"write_withdrawn_erased"' in log
+        assert ADA not in log.split('"write_withdrawn_erased"', 1)[1]
+
+    def test_a_paused_question_that_read_them_is_dropped_and_its_asker_told(
+            self, synced_deployment):
+        from core.notifications import NotificationStore
+        from core.paused_queries import PausedQueryStore
+
+        questions = PausedQueryStore(synced_deployment.data_dir / "paused_queries.db")
+        questions.save("w1", "asker", "Ada's email, and recategorize 5?",
+                       [{"step": "search_object", "object_type": "Customer",
+                         "filter": {"name": "Ada Okafor"}, "result": [ADA]}], 2)
+        questions.save("w2", "other", "Chidi's region?",
+                       [{"step": "get_field", "object_type": "Customer",
+                         "object_id": "cust_003", "field_name": "region", "result": "us-east"}], 1)
+
+        _erase(synced_deployment)
+
+        assert questions.take("w1") is None
+        assert questions.take("w2") is not None                   # THE CONTROL
+        notices = NotificationStore(synced_deployment.data_dir / "notifications.db")
+        [told] = notices.for_user("asker")
+        assert "erased" in told.summary and "Ada" not in told.summary
+
+    def test_an_answer_built_from_them_is_forgotten(self, synced_deployment):
+        from core.notifications import NotificationStore
+
+        notices = NotificationStore(synced_deployment.data_dir / "notifications.db")
+        notices.notify("asker", "query_answer", "Answer to: Ada's email?",
+                       detail="ada.okafor@example.com", subjects=[("Customer", ADA)])
+        notices.notify("asker", "query_answer", "Answer to: Chidi?", detail="us-east",
+                       subjects=[("Customer", "cust_003")])
+
+        _erase(synced_deployment)
+
+        assert [n.summary for n in notices.for_user("asker")] == ["Answer to: Chidi?"]
+
+    def test_a_merge_proposal_naming_them_goes_with_its_decisions(self, synced_deployment):
+        from core.identity_decisions import APPROVED, MergeDecisionStore
+
+        store = MergeDecisionStore(synced_deployment.data_dir / "identity_decisions.db")
+        theirs = store.propose("Customer", f"primary:{ADA}", "crm:77", 0.9)
+        store.decide(theirs, APPROVED, "reviewer")
+        other = store.propose("Customer", "primary:cust_002", "crm:78", 0.9)
+
+        _erase(synced_deployment)
+
+        assert [p.proposal_id for p in store.proposals()] == [other]
+
+    def test_the_audit_log_says_an_erasure_happened_and_not_of_whom(self, synced_deployment):
+        import json
+
+        _code, printed = _erase(synced_deployment)
+
+        entries = [json.loads(line) for line in
+                   (synced_deployment.log_dir / "audit.log").read_text().splitlines()]
+        [erasure] = [e for e in entries if e.get("stage") == "erasure"]
+        assert erasure["requested_by"] == "tester"
+        assert erasure["object_types"] == {"Customer": 1, "Transaction": 2}
+        assert ADA not in json.dumps(erasure) and "Okafor" not in json.dumps(erasure)
+
+    def test_a_restore_forgets_them_in_every_store_again(self, synced_deployment, tmp_path):
+        from core.frozen_sets import FrozenSetStore
+
+        store = FrozenSetStore(synced_deployment.data_dir / "frozen_sets.db")
+        set_id = store.freeze("someone", "Ada and Bram", "Customer", [ADA, "cust_002"])
+        queue = _queue(synced_deployment)
+        queue.store(_pending("Transaction", "1"))
+        backup(synced_deployment.data_dir, tmp_path / "backup")
+        _erase(synced_deployment)
+
+        _quiet(restore, tmp_path / "backup", synced_deployment.data_dir, force=True)
+
+        assert store.get("someone", set_id).member_ids == ["cust_002"]
+        assert _queue(synced_deployment).awaiting(lambda pending: True) == []
 
 
 def test_the_server_will_not_serve_a_lake_with_unapplied_erasures(synced_deployment):

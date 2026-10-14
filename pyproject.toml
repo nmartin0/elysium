@@ -313,6 +313,12 @@ layers = [
     # needs the ontology and belongs to the route; this one only has
     # to be certain that no cell it is handed can execute.
     "export",
+    # Whether an id is one the erasure register says to forget (R13).
+    # A LEAF at the very bottom: it is handed the register's hasher and
+    # hashes and imports nothing from core, so every store -- frozen
+    # sets, notifications, paused questions, identity decisions, the
+    # write log -- can ask it the same question the same way.
+    "erased_ids",
 ]
 containers = ["core"]
 exhaustive = true

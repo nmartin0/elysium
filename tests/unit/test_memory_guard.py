@@ -171,14 +171,6 @@ class TestForgetting:
 
 
 class TestErasure:
-    def test_forget_objects_removes_every_memory_about_them(self, guard):
-        guard.remember(_user("alice"), "Author", "auth_001", "x")
-        guard.remember(_user("alice"), "Author", "auth_001", "y")
-        guard.remember(_user("bob"), "Author", "auth_002", "z")
-
-        assert guard.store.forget_objects([("Author", "auth_001")]) == 2
-        assert [m.text for m in guard.store.about("Author", "auth_002")] == ["z"]
-
     def test_forget_erased_matches_by_salted_hash(self, guard, tmp_path):
         from core.mirror.erasure import ErasureRegister
 

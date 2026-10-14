@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from core.erased_ids import is_erased, is_erased_as_any_type
 from core.sqlite_connection import connection_with_schema
 
 logger = logging.getLogger(__name__)
@@ -160,6 +161,39 @@ class FrozenSetStore:
             logger.warning("could not delete frozen set %s: %s", set_id, e)
             return False
 
+    def forget_erased(self, key_hash, hashes_by_type: dict) -> int:
+        """Erased members leave every set that held them (R13). Returns
+        how many memberships went.
+
+        THE SET STAYS, smaller: it is its owner's, and the other members
+        were not erased. Its ORIGIN -- the live criteria it was taken
+        from -- goes when the set lost a member or names an erased id,
+        because criteria that selected a person may describe them by
+        more than their id ("name = ..."), and only the id can be
+        matched. The set is then hand-picked from here on, which is what
+        an origin-less set already means.
+        """
+        if not hashes_by_type:
+            return 0
+        removed = 0
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT set_id, object_type, member_ids, origin FROM frozen_sets").fetchall()
+            for row in rows:
+                set_ = self._row({**dict(row), "name": "", "frozen_at": "",
+                                  "gold_snapshot_id": None, "published_at": None})
+                kept = [member for member in set_.member_ids
+                        if not is_erased(key_hash, hashes_by_type, row["object_type"], member)]
+                origin_names_one = any(is_erased_as_any_type(key_hash, hashes_by_type, value)
+                                       for value in _scalars(set_.origin))
+                if len(kept) == len(set_.member_ids) and not origin_names_one:
+                    continue
+                removed += len(set_.member_ids) - len(kept)
+                conn.execute("UPDATE frozen_sets SET member_ids = ?, origin = '{}' "
+                             "WHERE set_id = ?", (json.dumps(kept), row["set_id"]))
+            conn.commit()
+        return removed
+
     def _select(self, where: str, params: tuple) -> list[FrozenSet]:
         try:
             with self._connection() as conn:
@@ -191,3 +225,15 @@ class FrozenSetStore:
             origin=origin if isinstance(origin, dict) else {},
             gold_snapshot_id=row["gold_snapshot_id"], published_at=row["published_at"],
         )
+
+
+def _scalars(value):
+    """Every scalar inside an origin, however it is nested."""
+    if isinstance(value, dict):
+        for item in value.values():
+            yield from _scalars(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _scalars(item)
+    else:
+        yield value

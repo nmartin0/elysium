@@ -614,6 +614,35 @@ class AuditLog:
             "description": description,
         })
 
+    def log_write_withdrawn_for_erasure(self, write_id: str, user_id: str) -> None:
+        """A waiting write was withdrawn because its subject was erased (R13).
+
+        NO DESCRIPTION, unlike every other write entry: a description
+        names what the write was about, and here that is a person who
+        has been forgotten. The write id still joins this to the entry
+        that recorded its proposal.
+        """
+        self._write({
+            "stage": "write_withdrawn_erased",
+            "write_id": write_id,
+            "user_id": user_id,
+        })
+
+    def log_erasure(self, erasure_id: str, requested_by: str, object_types: dict,
+                    forgotten: dict) -> None:
+        """An erasure was applied (R13): its id, who asked, HOW MANY of
+        each type, and how much each store forgot. Never an id -- the
+        register beside it holds salted hashes for the same reason. The
+        record that an erasure happened is kept; the record of whom is
+        not."""
+        self._write({
+            "stage": "erasure",
+            "erasure_id": erasure_id,
+            "requested_by": requested_by,
+            "object_types": dict(object_types),
+            "forgotten": dict(forgotten),
+        })
+
     def log_echoed_value_not_written(self, user_id: str, object_type: str, object_id,
                                       field_name: str) -> None:
         # WriteMediator dropped ONE field from an update because the

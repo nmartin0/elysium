@@ -211,6 +211,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from core.erased_ids import is_erased
 from core.internal_storage import InternalReadAdapter, InternalWriteAdapter
 from core.sqlite_connection import connection_with_schema
 
@@ -1178,3 +1179,62 @@ class WriteLogWriter(WriteLogReader, InternalWriteAdapter):
         with self._connection() as conn:
             conn.execute("UPDATE write_log_batches SET status = 'applied' WHERE id = ?", (batch_id,))
             conn.commit()
+
+    #: What a description becomes when the change it describes concerned
+    #: an erased object: the description is prose built from the action
+    #: and its targets, and may name them.
+    ERASED_DESCRIPTION = "(description removed: this change concerned an erased object)"
+
+    def forget_erased(self, key_hash, hashes_by_type: dict) -> int:
+        """Every edit to an erased object, gone from the log (R13).
+        Returns how many log entries went.
+
+        THE LOG IS NOT THE AUDIT LOG. It is the overlay Elysium applies
+        to what it serves, and the record a crash recovery replays --
+        so an entry left behind would be served, or written back to a
+        source the person was erased from. The audit log keeps that the
+        edits happened.
+
+        A BATCH THAT TOUCHED THEM AND OTHERS KEEPS THE OTHERS: their
+        sub-writes are rewritten without the erased ones, and every
+        description in the batch is replaced, since it was written about
+        the whole batch. A batch left with nothing goes.
+
+        THE DELETED-OBJECT INDEX IS REBUILT AFTERWARDS. It is derived
+        from the log, and an erased object marked deleted would still be
+        a fact about them.
+        """
+        if not hashes_by_type:
+            return 0
+
+        def erased(object_type, object_id) -> bool:
+            return is_erased(key_hash, hashes_by_type, object_type, object_id)
+
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT id, object_type, object_id, batch_id FROM write_log").fetchall()
+            doomed = [row for row in rows if erased(row["object_type"], row["object_id"])]
+            touched = {row["batch_id"] for row in doomed if row["batch_id"]}
+            conn.executemany("DELETE FROM write_log WHERE id = ?", [(row["id"],) for row in doomed])
+            for batch in conn.execute("SELECT id, sub_writes FROM write_log_batches").fetchall():
+                try:
+                    sub_writes = json.loads(batch["sub_writes"])
+                except (TypeError, ValueError):
+                    continue
+                kept = [sub for sub in sub_writes if not (
+                    isinstance(sub, dict) and erased(sub.get("object_type"), sub.get("object_id")))]
+                if len(kept) == len(sub_writes) and batch["id"] not in touched:
+                    continue
+                touched.add(batch["id"])
+                if kept:
+                    conn.execute("UPDATE write_log_batches SET sub_writes = ?, description = ? "
+                                 "WHERE id = ?",
+                                 (json.dumps(kept), self.ERASED_DESCRIPTION, batch["id"]))
+                else:
+                    conn.execute("DELETE FROM write_log_batches WHERE id = ?", (batch["id"],))
+            conn.executemany("UPDATE write_log SET description = ? WHERE batch_id = ?",
+                             [(self.ERASED_DESCRIPTION, batch_id) for batch_id in touched])
+            conn.commit()
+        if doomed:
+            self.rebuild_deleted_index()
+        return len(doomed)

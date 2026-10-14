@@ -12,7 +12,11 @@ that links to it, counted per type -- and changes nothing. With it:
      and publication tag holding them is dropped, and the files are
      deleted outright -- time travel included;
   3. every later sync drops them on the way in for as long as the
-     source still returns them, and says so.
+     source still returns them, and says so;
+  4. every store outside the lake forgets them too -- memories, notes,
+     frozen sets, the write log, waiting writes, paused questions and
+     the notifications answers were built from -- and the audit log
+     records that an erasure happened, by type and count, never whom.
 
 Elysium cannot erase the SOURCE -- it only reads it. The report names
 what the source still returns after each sync, for the source's owner.
@@ -27,11 +31,15 @@ import getpass
 import sys
 from collections import Counter
 
-from core.artifact_store import ArtifactStore
 from core.deployment_loader import load_deployment, resolve_runtime_paths
-from core.memory.store import MemoryStore
+from core.intermediate_layer.audit import AuditLog
 from core.mirror.catalog import open_mirror_catalog
-from core.mirror.erasure import ErasureRegister, apply_erasures, cascade
+from core.mirror.erasure import (
+    ErasureRegister,
+    apply_erasures,
+    cascade,
+    forget_beyond_the_mirror,
+)
 from core.mirror.sync_lock import single_writer
 
 
@@ -61,18 +69,20 @@ def run(object_type: str, object_id: str, reason: str, write: bool = False,
             print("Dry run: nothing was erased. --write to erase.")
             return 0
         register = ErasureRegister(paths.data_dir / "erasures.db")
-        erasure_id = register.record(keys, requested_by or getpass.getuser(), reason)
+        who = requested_by or getpass.getuser()
+        erasure_id = register.record(keys, who, reason)
         removed = apply_erasures(catalog, config.schema, register, mirror_dir)
-        # WHAT PEOPLE WROTE ABOUT THEM GOES TOO (E-14). A memory is a
-        # sentence about one object; once the object is erased it is a
-        # sentence about a person Elysium has been told to forget.
-        forgotten = MemoryStore(paths.data_dir / "memories.db").forget_objects(keys)
-        # AND WHAT THEY WROTE AS NOTES (decided 14 Oct): a note is about
-        # one object, the same as a memory.
-        notes = ArtifactStore(paths.data_dir / "artifacts.db").forget_notes_about(keys)
+        # AND EVERYWHERE ELSE (decided 14 Oct): every store but the audit
+        # log, matched by the register's hashes -- the same call a
+        # restore makes, so the two cannot forget differently.
+        audit = AuditLog(paths.log_dir / "audit.log", generation=config.generation)
+        forgotten = forget_beyond_the_mirror(paths.data_dir, register, audit)
+        audit.log_erasure(erasure_id, who, dict(counts), forgotten)
+    elsewhere = ", ".join(f"{count} {name.replace('_', ' ')}"
+                          for name, count in sorted(forgotten.items()) if count)
     print(f"Erased ({erasure_id}): {sum(removed.values())} row(s) from {len(removed)} table(s), "
-          f"{forgotten} memory(ies), {notes} note(s), older snapshots and their files deleted. "
-          f"Restart or reload the server.")
+          f"older snapshots and their files deleted"
+          f"{'; and ' + elsewhere if elsewhere else ''}. Restart or reload the server.")
     return 0
 
 

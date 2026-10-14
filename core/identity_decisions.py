@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from core.erased_ids import is_erased
 from core.sqlite_connection import add_column_if_missing, connection_with_schema
 
 PENDING = "pending"
@@ -222,3 +223,33 @@ class MergeDecisionStore:
             (proposal.left_id, proposal.right_id)
             for proposal in self.proposals(object_type, decision=APPROVED)
         ]
+
+    def forget_erased(self, key_hash, hashes_by_type: dict) -> int:
+        """Every proposal naming an erased record, and its decisions,
+        gone (R13). Returns how many proposals.
+
+        THE ONE EXCEPTION TO APPEND-ONLY. Decisions are kept so "why is
+        this merged?" can be answered a year later; for an erased person
+        the answer must not exist. A side is named `<source>:<id>`, so
+        both the whole name and the id after the source are checked
+        against the proposal's type.
+        """
+        if not hashes_by_type:
+            return 0
+
+        def erased(object_type: str, name: str) -> bool:
+            bare = str(name).partition(":")[2]
+            return (is_erased(key_hash, hashes_by_type, object_type, name)
+                    or bool(bare) and is_erased(key_hash, hashes_by_type, object_type, bare))
+
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT proposal_id, object_type, left_id, right_id FROM merge_proposals"
+            ).fetchall()
+            doomed = [(row["proposal_id"],) for row in rows
+                      if erased(row["object_type"], row["left_id"])
+                      or erased(row["object_type"], row["right_id"])]
+            conn.executemany("DELETE FROM merge_decisions WHERE proposal_id = ?", doomed)
+            conn.executemany("DELETE FROM merge_proposals WHERE proposal_id = ?", doomed)
+            conn.commit()
+        return len(doomed)

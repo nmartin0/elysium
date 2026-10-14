@@ -114,18 +114,6 @@ class MemoryStore:
             conn.execute("DELETE FROM memories WHERE memory_id = ?", (memory_id,))
             conn.commit()
 
-    def forget_objects(self, keys) -> int:
-        """Every memory about these (object type, object id) pairs, gone --
-        what an erasure (R13) does to them. Returns how many."""
-        removed = 0
-        with self._connection() as conn:
-            for object_type, object_id in keys:
-                removed += conn.execute(
-                    "DELETE FROM memories WHERE object_type = ? AND object_id = ?",
-                    (object_type, str(object_id))).rowcount
-            conn.commit()
-        return removed
-
     def forget_erased(self, key_hash, hashes_by_type: dict[str, set[str]]) -> int:
         """Every memory about an object in an erasure register, gone (R13).
 
@@ -134,9 +122,10 @@ class MemoryStore:
         scan, since the register holds only salted hashes and no id can
         be looked up from one; memories are few, written by hand.
 
-        WHY BESIDE forget_objects: a restore brings back an older
-        memories.db with the register that outlived it, and only hashes
-        say which of the restored memories were about erased people.
+        THE ONLY WAY, after an erasure and after a restore alike: a
+        restore brings back an older memories.db with the register that
+        outlived it, and only hashes say which restored memories were
+        about erased people. One path means the two cannot differ.
         """
         if not hashes_by_type:
             return 0
