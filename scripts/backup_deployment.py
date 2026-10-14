@@ -111,6 +111,9 @@ OWNED_DATABASES = (
     # WHAT PEOPLE ASKED TO HAVE REMEMBERED about objects (E-14). Written
     # by hand, one sentence at a time; there is no other copy.
     "memories.db",
+    # A PERSON'S JUDGEMENT ON EACH CLEANING SUGGESTION (R31). Losing it
+    # would raise every dismissed "N/A" again.
+    "rule_suggestions.db",
     # THE JUDGEMENTS A PERSON MADE ABOUT WHO IS WHO (GOLD-6). Nothing
     # upstream remembers them: gold is rebuilt from silver on every
     # sync, and the merges it applies exist ONLY here. Losing this file

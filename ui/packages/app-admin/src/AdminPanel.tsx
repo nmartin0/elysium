@@ -24,6 +24,7 @@ import MetricsPanel from './MetricsPanel'
 import MirrorPanel from './MirrorPanel'
 import ResetPasswordDialog from './ResetPasswordDialog'
 import RolesPanel from './RolesPanel'
+import RuleSuggestions from './RuleSuggestions'
 import Silos from './Silos'
 
 export interface User {
@@ -52,6 +53,7 @@ const ADMIN_VIEWS: readonly ViewOption[] = [
   { id: 'metrics', label: 'Metrics', icon: 'timeline-line-chart' },
   { id: 'mirror', label: 'Mirror', icon: 'database' },
   { id: 'roles', label: 'Roles', icon: 'key' },
+  { id: 'cleaning', label: 'Cleaning', icon: 'clean' },
 ]
 
 export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
@@ -187,6 +189,7 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
       {view === 'metrics' && <MetricsPanel onSessionExpired={onSessionExpired} />}
       {view === 'mirror' && <MirrorPanel onSessionExpired={onSessionExpired} />}
       {view === 'roles' && <RolesPanel onSessionExpired={onSessionExpired} />}
+      {view === 'cleaning' && <RuleSuggestions onSessionExpired={onSessionExpired} />}
 
       {view === 'users' &&
         (users === null ? (

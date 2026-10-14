@@ -1495,6 +1495,111 @@ def _mirror_catalog_for(request):
         mirror_dir, dict(_generation(request).config.mirror_storage or {}))
 
 
+class RuleSuggestionResponse(BaseModel):
+    """One cleaning-rule suggestion and what a person made of it (R31)."""
+
+    id: str
+    object_type: str
+    field: str
+    kind: str
+    value: str
+    seen: int
+    why: str
+    examples: list[str]
+    state: str
+    decided_by: str | None = None
+    decided_at: str | None = None
+    last_seen: str
+    #: The exact lines to add to ontology_schema.yaml. Shown for every
+    #: state but dismissed, so an accepted one says what to paste.
+    yaml: str | None = None
+
+
+class RuleSuggestionDecision(BaseModel):
+    decision: str
+
+
+def _rule_suggestions(request: Request):
+    from core.rule_suggestions import RuleSuggestionStore
+
+    return RuleSuggestionStore(request.app.state.runtime_paths.data_dir / "rule_suggestions.db")
+
+
+def _require_manage_deployment(request: Request, current_user: UserRecord) -> None:
+    if not authorize(current_user, _generation(request).config.roles, "manage:deployment"):
+        raise HTTPException(status_code=403, detail="Needs manage:deployment")
+
+
+def _suggestions_visible_to(request: Request, user: UserRecord) -> list:
+    """Suggestions on fields this caller may READ, and no others.
+
+    A suggestion carries values from the field it is about -- "N/A", or
+    a date of birth in the year 201 -- and the field may be one this
+    administrator is not cleared to read. manage:deployment says they
+    may judge cleaning rules; it does not say they may see a pii column.
+    A field they cannot read is a suggestion they are not shown, as an
+    object they cannot read is absent rather than refused.
+    """
+    roles = _generation(request).config.roles
+    return [item for item in _rule_suggestions(request).all()
+            if authorize(user, roles, f"read:{item.object_type}.{item.field}")]
+
+
+@router.get("/admin/rule-suggestions", response_model=list[RuleSuggestionResponse],
+            dependencies=[Depends(_no_store)])
+def rule_suggestions_route(request: Request,
+                           current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    """The cleaning-rule review queue (R31, decided 14 Oct: the YAML stays
+    the only source of rules; this keeps the judgement)."""
+    from core.mirror.rule_suggestion_scan import yaml_for
+    from core.rule_suggestions import DISMISSED
+
+    _require_manage_deployment(request, current_user)
+    return [{"id": item.suggestion_id, "object_type": item.object_type, "field": item.field,
+             "kind": item.kind, "value": item.value, "seen": item.seen, "why": item.why,
+             "examples": list(item.examples), "state": item.state,
+             "decided_by": item.decided_by, "decided_at": item.decided_at,
+             "last_seen": item.last_seen,
+             "yaml": None if item.state == DISMISSED else yaml_for(
+                 item.object_type, item.field, item.kind, [item.value])}
+            for item in _suggestions_visible_to(request, current_user)]
+
+
+@router.post("/admin/rule-suggestions/scan", dependencies=[Depends(_no_store)])
+async def scan_rule_suggestions_route(request: Request,
+                                      current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Read bronze for values that announce themselves as absences, and
+    merge them into the queue. Reads, never writes data or config; a
+    dismissed suggestion is not raised again."""
+    from core.mirror.rule_suggestion_scan import refresh
+
+    _require_manage_deployment(request, current_user)
+    generation = _generation(request)
+    catalog = _mirror_catalog_for(request)
+    store = _rule_suggestions(request)
+    return await asyncio.get_running_loop().run_in_executor(
+        request.app.state.executor,
+        functools.partial(refresh, catalog, generation.config.schema, store))
+
+
+@router.post("/admin/rule-suggestions/{suggestion_id}/decide", status_code=204)
+def decide_rule_suggestion_route(suggestion_id: str, body: RuleSuggestionDecision,
+                                 request: Request,
+                                 current_user: UserRecord = Depends(get_current_user)) -> Response:
+    """Accept or dismiss one. A suggestion this caller cannot see, or one
+    the schema has already settled, is a 404 -- uniform with unknown."""
+    from core.rule_suggestions import DECISIONS
+
+    _require_manage_deployment(request, current_user)
+    if body.decision not in DECISIONS:
+        raise HTTPException(status_code=422, detail=f"decision must be one of {list(DECISIONS)}")
+    visible = {item.suggestion_id for item in _suggestions_visible_to(request, current_user)}
+    if suggestion_id not in visible or not _rule_suggestions(request).decide(
+            suggestion_id, body.decision, current_user.user_id):
+        raise HTTPException(status_code=404, detail="Not found")
+    return Response(status_code=204)
+
+
 def _recent_snapshots(catalog, identifier: str, limit: int = 5) -> list[dict]:
     """The newest snapshots of one table, newest first.
 

@@ -59,6 +59,10 @@ high_confidence
 ConnectionCls
 pool_classes_by_scheme
 do_POST
+# R31: routes FastAPI calls.
+rule_suggestions_route
+scan_rule_suggestions_route
+decide_rule_suggestion_route
 # BULK-1: a response field pydantic reads by reflection.
 max_objects
 # E-14, agent memory: routes FastAPI calls.

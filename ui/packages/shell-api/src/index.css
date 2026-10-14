@@ -2354,6 +2354,30 @@
     color: var(--text-secondary);
   }
 
+  /* --- Cleaning suggestions (R31) ------------------------------------ */
+  .rule-suggestions__explainer,
+  .rule-suggestions__outcome,
+  .rule-suggestions__empty {
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    color: var(--text-secondary);
+  }
+
+  .rule-suggestions__table {
+    width: 100%;
+    margin-top: var(--space-snug);
+  }
+
+  .rule-suggestions__actions {
+    white-space: nowrap;
+  }
+
+  .rule-suggestions__yaml {
+    margin: 0;
+    font-size: var(--type-dense-size);
+    white-space: pre;
+  }
+
   /* --- What people asked to have remembered (E-14) ------------------ */
   .object-memories__memory {
     padding: var(--space-tight) 0;

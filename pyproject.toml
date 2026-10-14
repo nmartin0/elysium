@@ -300,6 +300,9 @@ layers = [
     # it and `cryptography`.
     "storage_encryption",
     "encrypted_archive",
+    # rule_suggestions imports only sqlite_connection (R31): it keeps a
+    # person's judgement on a suggestion, not the rule.
+    "rule_suggestions",
     # source_health imports nothing from core: it is handed the
     # adapters it checks (E-13).
     "source_health",

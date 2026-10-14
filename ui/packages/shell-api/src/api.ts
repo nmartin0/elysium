@@ -1772,6 +1772,43 @@ export async function getObjectHistory(objectType: string, objectId: string): Pr
   return response.json()
 }
 
+/** One cleaning-rule suggestion and what a person made of it (R31). */
+export interface RuleSuggestion {
+  id: string
+  object_type: string
+  field: string
+  kind: 'absence' | 'range'
+  value: string
+  seen: number
+  why: string
+  examples: string[]
+  state: 'pending' | 'accepted' | 'dismissed' | 'declared'
+  decided_by?: string | null
+  decided_at?: string | null
+  last_seen: string
+  /** The lines to add to ontology_schema.yaml; absent once dismissed. */
+  yaml?: string | null
+}
+
+export async function getRuleSuggestions(): Promise<RuleSuggestion[]> {
+  const response = await apiFetchOrThrow('/admin/rule-suggestions')
+  const body = (await response.json()) as unknown
+  return Array.isArray(body) ? (body as RuleSuggestion[]) : []
+}
+
+export async function scanRuleSuggestions(): Promise<Record<string, number>> {
+  const response = await apiFetchOrThrow('/admin/rule-suggestions/scan', { method: 'POST' })
+  return (await response.json()) as Record<string, number>
+}
+
+export async function decideRuleSuggestion(id: string, decision: 'accepted' | 'dismissed'): Promise<void> {
+  await apiFetchOrThrow(`/admin/rule-suggestions/${encodeURIComponent(id)}/decide`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ decision }),
+  })
+}
+
 export async function getSilos(): Promise<unknown> {
   const response = await apiFetchOrThrow('/silos')
   return response.json()

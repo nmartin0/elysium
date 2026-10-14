@@ -2668,6 +2668,28 @@ CONTROLS = [
         new="                if False:\n                    raise WaitAbandoned()",
         tests=["tests/unit/test_cancel_stops_the_model_call.py::TestWaitingForASlot::test_a_waiter_gives_up_when_cancelled"],
     ),
+    Control(
+        describes="R31: a dismissed suggestion stays dismissed when the next scan finds it again",
+        path="core/rule_suggestions.py",
+        old="                if row[\"state\"] == DISMISSED:",
+        new="                if False:",
+        tests=["tests/unit/test_rule_suggestions.py::TestTheQueue::test_a_dismissal_survives_the_next_scan"],
+    ),
+    Control(
+        describes="R31: a suggestion on a field the caller cannot read is neither shown nor decidable",
+        path="api/routes.py",
+        old="            if authorize(user, roles, f\"read:{item.object_type}.{item.field}\")]",
+        new="            if True]",
+        tests=["tests/integration/test_rule_suggestions_api.py::"
+               "test_a_field_the_caller_cannot_read_is_not_shown_nor_decidable"],
+    ),
+    Control(
+        describes="R31: a value the schema already nulls reads as declared",
+        path="core/mirror/rule_suggestion_scan.py",
+        old="            handled = item[\"value\"] in ((field.get(\"standardise\") or {}).get(\"null_if\") or ())",
+        new="            handled = False",
+        tests=["tests/unit/test_rule_suggestions.py::TestTheScan::test_a_value_the_schema_already_nulls_is_declared"],
+    ),
 ]
 
 
