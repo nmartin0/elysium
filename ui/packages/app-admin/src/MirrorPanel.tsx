@@ -190,6 +190,23 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
           </Notice>
         ))}
 
+      {/* DEGRADED (PA001-A17): the sync ran and silver is current, but
+          its raw copy in bronze could not be written. Not a refusal --
+          readers see fresh data -- so a quieter notice, saying what is
+          behind and that the next good sync catches it up. */}
+      {state.tables
+        .filter((each) => each.last_attempt_outcome === 'degraded')
+        .map((each) => (
+          <Notice
+            state="pending"
+            key={`degraded-${each.silo}.${each.table}`}
+            title={`Last sync of ${each.silo}.${each.table} ran degraded`}
+          >
+            <pre className="mirror__refusal">{each.last_attempt_detail}</pre>
+            Readers see current data. The raw record catches up at the next sync that succeeds in full.
+          </Notice>
+        ))}
+
       {state.problems.length > 0 && (
         <Notice state="pending" title="Integrity check found problems">
           <ul>
@@ -262,9 +279,10 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
                     )}
                   </td>
                   <td>
-                    {table.last_attempt_outcome === 'refused' ? (
+                    {table.last_attempt_outcome === 'refused' || table.last_attempt_outcome === 'degraded' ? (
                       <Tag intent="warning" minimal>
-                        refused{table.last_attempt_at ? ` ${formatTimestamp(table.last_attempt_at)}` : ''}
+                        {table.last_attempt_outcome}
+                        {table.last_attempt_at ? ` ${formatTimestamp(table.last_attempt_at)}` : ''}
                       </Tag>
                     ) : table.last_attempt_at ? (
                       formatTimestamp(table.last_attempt_at)

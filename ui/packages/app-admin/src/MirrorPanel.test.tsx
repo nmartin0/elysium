@@ -206,6 +206,27 @@ describe('a refused sync', () => {
     expect(screen.getByText(/serving the snapshot from before it/)).toBeInTheDocument()
   })
 
+  it('says when the last sync ran degraded, and that it is not a refusal', async () => {
+    /** PA001-A17. Bronze failed, silver is current: the run used to be
+     *  recorded as 'synced', so this screen could not say so at all. */
+    mocked.mockResolvedValue({
+      reading_from_mirror: true,
+      tables: [
+        table({
+          last_attempt_outcome: 'degraded',
+          last_attempt_detail: 'the bronze copy failed (OSError): silver is current, bronze is behind',
+        }),
+      ],
+      problems: [],
+    })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/ran degraded/)).toBeInTheDocument()
+    expect(screen.getByText(/bronze copy failed \(OSError\)/)).toBeInTheDocument()
+    expect(screen.getByText(/^degraded/)).toBeInTheDocument()
+    expect(screen.queryByText(/was refused/)).toBeNull()
+  })
+
   it('says nothing about a refusal when the last attempt succeeded', async () => {
     // THE CONTROL. A warning banner on a healthy mirror is one nobody
     // reads by the time it matters.
