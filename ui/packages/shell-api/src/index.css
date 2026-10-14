@@ -3145,4 +3145,24 @@
       animation: none;
     }
   }
+
+  /* THE INBOX BADGE: the number of things waiting, in the header on
+   * every screen (DEV_UI 15.3). The accent, not the danger red -- a
+   * queue is work, not an alarm. */
+  .app__inbox-count {
+    min-width: 18px;
+    padding: 0 var(--space-hair);
+    border-radius: var(--radius-pill);
+    background: var(--accent-focus);
+    color: var(--surface-chrome);
+    font-size: var(--type-label-size);
+    line-height: 18px;
+    font-weight: var(--type-label-weight);
+    text-align: center;
+  }
+
+  /* The Inbox's tabs sit at the top of the page, the panel under them. */
+  .inbox .bp6-tab-list {
+    margin-block-end: var(--space-loose);
+  }
 }

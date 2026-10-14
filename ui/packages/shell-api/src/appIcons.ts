@@ -34,16 +34,10 @@ const BY_PATH: Record<string, IconName> = {
   // `inbox`, not `endorsed` or `tick`: the rail says where you are
   // going, not what you will do when you arrive. A tick would promise
   // approval and the page is equally a place to reject, or to watch
-  // something you proposed.
-  '/approvals': 'inbox',
-  // `merge-columns` rather than a person or a key: the screen is about
-  // deciding whether two records are ONE, which is what the glyph
-  // shows. A padlock would say "security" and mislead -- the masking
-  // is how this screen works, not what it is for.
-  '/identity': 'merge-columns',
-  // A BELL, not an envelope: this is what the deployment told you,
-  // not mail somebody sent.
-  '/notifications': 'notifications',
+  // something you proposed. ONE entry for the three queues it holds
+  // (14 Oct); their own glyphs -- a bell, merge-columns -- are on the
+  // Inbox's tabs.
+  '/inbox': 'inbox',
 }
 
 /**

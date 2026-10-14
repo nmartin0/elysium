@@ -62,9 +62,8 @@ const SchemaPanel = lazy(() => import('@elysium/app-schema/SchemaPanel'))
 const ObjectSearchPanel = lazy(() => import('@elysium/app-browse/ObjectSearchPanel'))
 const ObjectDetailPanel = lazy(() => import('@elysium/app-browse/ObjectDetailPanel'))
 const AdminPanel = lazy(() => import('@elysium/app-admin/AdminPanel'))
-const ApprovalsPanel = lazy(() => import('@elysium/app-approvals/ApprovalsPanel'))
-const IdentityPanel = lazy(() => import('@elysium/app-identity/IdentityPanel'))
-const NotificationsPanel = lazy(() => import('@elysium/app-notifications/NotificationsPanel'))
+// The three inbox panels are lazy-loaded by the Inbox itself, one per tab.
+const InboxPanel = lazy(() => import('./InboxPanel'))
 
 // mustChangePassword: logged in, after an administrator's reset, and not
 // yet allowed anything but choosing a password. A STATE OF ITS OWN, not
@@ -429,9 +428,12 @@ export default function App() {
             element={<ObjectDetailPanel visibleSchema={visibleSchema} onSessionExpired={handleSessionExpired} />}
           />
           <Route path="/admin" element={<AdminPanel onSessionExpired={handleSessionExpired} />} />
-          <Route path="/approvals" element={<ApprovalsPanel onSessionExpired={handleSessionExpired} />} />
-          <Route path="/identity" element={<IdentityPanel onSessionExpired={handleSessionExpired} />} />
-          <Route path="/notifications" element={<NotificationsPanel onSessionExpired={handleSessionExpired} />} />
+          <Route path="/inbox" element={<InboxPanel onSessionExpired={handleSessionExpired} />} />
+          {/* THE OLD PATHS LAND ON THEIR TAB, so a link anyone kept --
+              in a message, a bookmark, a notification -- still works. */}
+          <Route path="/approvals" element={<Navigate to="/inbox?tab=approvals" replace />} />
+          <Route path="/identity" element={<Navigate to="/inbox?tab=identity" replace />} />
+          <Route path="/notifications" element={<Navigate to="/inbox?tab=notifications" replace />} />
           <Route path="*" element={<Navigate to="/query" replace />} />
         </Route>
       </Routes>

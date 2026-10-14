@@ -37,6 +37,7 @@
     "./types": "./src/types.ts",
     "./useDeferredValue": "./src/useDeferredValue.ts",
     "./useFetchOnce": "./src/useFetchOnce.ts",
+    "./useInboxCounts": "./src/useInboxCounts.ts",
     "./useLatestRequestGuard": "./src/useLatestRequestGuard.ts",
     "./useUrlState": "./src/useUrlState.ts"
   },

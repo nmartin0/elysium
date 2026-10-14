@@ -8,8 +8,10 @@ from pathlib import Path
 from api.apps import VISIBLE_APPS
 from core.agent.help_assistant import SCREEN_GUIDE, build_context
 
-UI_SOURCE = "\n".join(path.read_text() for path in Path("ui/packages").rglob("*.tsx")
-                      if ".test." not in path.name)
+# The packages AND the shell's own screens: the Inbox's tab labels live
+# in ui/src/InboxPanel.tsx, since the Inbox is the shell's (14 Oct).
+UI_SOURCE = "\n".join(path.read_text() for root in ("ui/packages", "ui/src")
+                      for path in Path(root).rglob("*.tsx") if ".test." not in path.name)
 
 
 def test_every_quoted_label_is_on_screen_somewhere():

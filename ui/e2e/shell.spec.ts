@@ -127,3 +127,36 @@ test.describe('logout genuinely clears session state', () => {
     await expect(page.locator('.app__nav')).toHaveCount(0)
   })
 })
+
+test.describe('one Inbox, three tabs (decided 14 Oct)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/')
+    await page.getByLabel('Username').fill('plainuser')
+    await page.getByLabel('Password').fill('plainpass123')
+    await page.getByRole('button', { name: 'Log in' }).click()
+    await expect(page.locator('.app__nav')).toBeVisible()
+  })
+
+  test('the rail has one Inbox entry, not three', async ({ page }) => {
+    const nav = page.locator('.app__nav')
+
+    await expect(nav.getByRole('menuitem', { name: 'Inbox' })).toBeVisible()
+    await expect(nav.getByRole('menuitem', { name: 'Approvals' })).toHaveCount(0)
+    await expect(nav.getByRole('menuitem', { name: 'Notifications' })).toHaveCount(0)
+  })
+
+  test('an old link lands on its tab', async ({ page }) => {
+    // A bookmark or a message from before the Inbox still works.
+    await page.goto('/notifications')
+
+    await expect(page).toHaveURL(/\/inbox\?tab=notifications$/)
+    await expect(page.getByRole('tab', { name: /Notifications/ })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  test('the header button opens the Inbox from anywhere', async ({ page }) => {
+    await page.goto('/browse')
+    await page.getByRole('button', { name: /^Inbox/ }).click()
+
+    await expect(page).toHaveURL(/\/inbox$/)
+  })
+})

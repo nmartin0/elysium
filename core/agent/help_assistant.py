@@ -66,18 +66,17 @@ SCREEN_GUIDE: Mapping[str, str] = {
         "link to each other, and the actions defined on them, as a graph and as lists. "
         "Fields may carry classification labels such as pii."
     ),
-    "Approvals": (
-        "Proposed changes waiting for a decision. Each shows what would change; "
-        "approve or reject it. Some changes need more than one reviewer, and a "
-        "deployment may not let you approve a change you proposed."
-    ),
-    "Notifications": (
-        "Alerts: rules that fired on the data, and warnings about the data's "
-        "freshness and health."
-    ),
-    "Identity": (
-        "Proposed merges: two records that may be the same real thing, shown by "
-        "which fields agree rather than their values. Decide whether they are one."
+    "Inbox": (
+        "What arrived and is waiting for you, in three tabs; each tab and the inbox "
+        "button in the header say how many. 'Approvals': proposed changes waiting for "
+        "a decision -- each shows what would change; approve or reject it. Some "
+        "changes need more than one reviewer, and a deployment may not let you approve "
+        "a change you proposed. 'Notifications': rules that fired on the data, answers "
+        "to questions that waited on an approval, and warnings about the freshness "
+        "and health of the data. 'Identity': proposed merges -- two records that may be "
+        "the same real thing, shown by which fields agree rather than their values; "
+        "decide whether they are one. A merge that would also join records already "
+        "merged is approved as the whole group."
     ),
     "Admin": (
         "Users, roles and grants, and this deployment's configuration and data "

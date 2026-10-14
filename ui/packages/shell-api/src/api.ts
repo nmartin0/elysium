@@ -1314,6 +1314,20 @@ export interface Notification {
   seen: boolean
 }
 
+/** What is waiting for the caller, by kind -- the Inbox badge (DEV_UI
+ *  15.3). Each count uses its own queue's eligibility, so the badge
+ *  never promises a decision the queue will not show. */
+export interface InboxCounts {
+  approvals: number
+  notifications: number
+  identity: number
+}
+
+export async function getInboxCounts(): Promise<InboxCounts> {
+  const response = await apiFetchOrThrow('/me/inbox')
+  return (await response.json()) as InboxCounts
+}
+
 export async function getNotifications(): Promise<{
   notifications: Notification[]
   unseen: number

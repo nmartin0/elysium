@@ -19,7 +19,17 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
 
 import { getWriteDetail } from '@elysium/shell-api/api'
 
+import { MemoryRouter } from 'react-router-dom'
+
 import WriteDetail from './WriteDetail'
+
+// IN A ROUTER, because each object's id is now a link to it.
+const show = () =>
+  render(
+    <MemoryRouter>
+      <WriteDetail writeId="w1" onSessionExpired={vi.fn()} />
+    </MemoryRouter>,
+  )
 
 const mockedDetail = vi.mocked(getWriteDetail)
 
@@ -59,7 +69,7 @@ describe('WriteDetail', () => {
         },
       ]) as never,
     )
-    render(<WriteDetail writeId="w1" onSessionExpired={vi.fn()} />)
+    show()
 
     expect(await screen.findByText('subscription')).toBeInTheDocument()
     expect(screen.getByText('travel')).toBeInTheDocument()
@@ -81,7 +91,7 @@ describe('WriteDetail', () => {
         true,
       ) as never,
     )
-    render(<WriteDetail writeId="w1" onSessionExpired={vi.fn()} />)
+    show()
 
     expect(await screen.findByText('amount')).toBeInTheDocument()
     expect(screen.getByText(/Hidden by your permissions/)).toBeInTheDocument()
@@ -104,7 +114,7 @@ describe('WriteDetail', () => {
         true,
       ) as never,
     )
-    render(<WriteDetail writeId="w1" onSessionExpired={vi.fn()} />)
+    show()
 
     expect(await screen.findByText(/cannot see all of this change/i)).toBeInTheDocument()
   })
@@ -126,7 +136,7 @@ describe('WriteDetail', () => {
         false,
       ) as never,
     )
-    render(<WriteDetail writeId="w1" onSessionExpired={vi.fn()} />)
+    show()
 
     await screen.findByText('category')
     expect(screen.queryByText(/cannot see all of this change/i)).toBeNull()
@@ -146,7 +156,7 @@ describe('WriteDetail', () => {
         },
       ]) as never,
     )
-    render(<WriteDetail writeId="w1" onSessionExpired={vi.fn()} />)
+    show()
 
     expect(await screen.findByText('—')).toBeInTheDocument()
   })
@@ -162,8 +172,28 @@ describe('WriteDetail', () => {
         },
       ]) as never,
     )
-    render(<WriteDetail writeId="w1" onSessionExpired={vi.fn()} />)
+    show()
 
     expect(await screen.findByText('(empty)')).toBeInTheDocument()
+  })
+})
+
+describe('every object is a door into it (DEV_UI 12)', () => {
+  it('links an updated object to its own page', async () => {
+    mockedDetail.mockResolvedValue(detail([]) as never)
+    show()
+
+    const link = await screen.findByRole('link', { name: '1' })
+    expect(link.getAttribute('href')).toBe('/objects/Transaction/1')
+  })
+
+  it('does not link an object a create has not made yet', async () => {
+    const created = detail([])
+    created.objects[0]!.operation = 'create'
+    mockedDetail.mockResolvedValue(created as never)
+    show()
+
+    await screen.findByText(/create Transaction/)
+    expect(screen.queryByRole('link', { name: '1' })).toBeNull()
   })
 })

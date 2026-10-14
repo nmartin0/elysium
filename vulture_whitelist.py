@@ -52,6 +52,8 @@ publication_retained
 not_shown
 # Comparing two sets: routes and response fields, the same reason.
 compare_sets_route
+# The Inbox badge (DEV_UI 15.3): a route, reached by HTTP.
+my_inbox_counts_route
 # WIRED-3: a response field pydantic reads by reflection.
 high_confidence
 group_hidden  # R58: MergeProposalResponse, set through **_group_fields

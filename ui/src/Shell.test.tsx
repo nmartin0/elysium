@@ -537,6 +537,38 @@ describe('theme', () => {
   })
 })
 
+describe('the inbox badge (DEV_UI 15.3)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function answering(counts: { approvals: number; notifications: number; identity: number }) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        String(url).endsWith('/me/inbox')
+          ? new Response(JSON.stringify(counts), { status: 200 })
+          : new Response('{}', { status: 404 }),
+      ),
+    )
+  }
+
+  it('shows how much is waiting, on every screen', async () => {
+    answering({ approvals: 2, notifications: 1, identity: 1 })
+    renderShell([{ name: 'Query', path: '/query' }])
+
+    expect(await screen.findByLabelText('Inbox, 4 waiting')).toHaveTextContent('4')
+  })
+
+  it('says nothing when nothing is waiting -- no zero badge', async () => {
+    answering({ approvals: 0, notifications: 0, identity: 0 })
+    renderShell([{ name: 'Query', path: '/query' }])
+
+    const button = await screen.findByLabelText('Inbox')
+    expect(button).not.toHaveTextContent('0')
+  })
+})
+
 describe('row density (DEV_UI 9.3)', () => {
   it('is middle until somebody chooses', () => {
     localStorage.clear()

@@ -8,6 +8,7 @@ import { readPreference, writePreference } from '@elysium/shell-api/browserPrefe
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMenu'
 import { type Density, isDensity } from '@elysium/shell-api/density'
+import { totalWaiting, useInboxCounts } from '@elysium/shell-api/useInboxCounts'
 import HelpPanel from '@elysium/shell-api/components/HelpPanel'
 
 // Shell.tsx  (the actual chrome -- a collapsible left sidebar, and
@@ -715,10 +716,25 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
    * what makes the three columns below it align. Styled as chrome,
    * like the rail, because it is furniture rather than content.
    */
+  const inboxCounts = useInboxCounts(location.pathname + location.search)
+  const waiting = totalWaiting(inboxCounts)
+
   const header = (
     <header className={`app__header ${Classes.DARK}`}>
       <h1 className="app__header-title">Elysium</h1>
       <div className="app__header-actions">
+        {/* THE INBOX, PRESENT WITHOUT PROMPTING (DEV_UI 15.3): a number
+            on every screen and nothing that pops up. Decisions and
+            unread notices together; the Inbox's tabs say which. */}
+        <Button
+          minimal
+          icon="inbox"
+          className="app__inbox"
+          aria-label={waiting > 0 ? `Inbox, ${waiting} waiting` : 'Inbox'}
+          onClick={() => navigate('/inbox')}
+        >
+          {waiting > 0 && <span className="app__inbox-count">{waiting > 99 ? '99+' : waiting}</span>}
+        </Button>
         <Button minimal icon="help" aria-label="Help" onClick={() => setHelpOpen(true)} />
         <Button
           minimal

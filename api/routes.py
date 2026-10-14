@@ -4313,6 +4313,55 @@ def _freshness_verdicts(request: Request, published: dict) -> dict:
     }
 
 
+class InboxCountsResponse(BaseModel):
+    """What is waiting for the caller, by kind -- the Inbox badge."""
+
+    #: Writes this caller may decide on.
+    approvals: int
+    #: Their notifications not yet marked seen.
+    notifications: int
+    #: Merge proposals waiting on a decision this caller may make.
+    identity: int
+
+
+@router.get("/me/inbox", dependencies=[Depends(_no_store)], response_model=InboxCountsResponse)
+def my_inbox_counts_route(request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """How much is waiting, for the badge in the header (DEV_UI 15.3).
+
+    "Presence without prompting": the queue is visible from every screen
+    as a NUMBER, not a pop-up. Three counts rather than one so the Inbox's
+    tabs can say where the work is.
+
+    THE SAME ELIGIBILITY AS EACH QUEUE'S OWN LISTING, so the badge cannot
+    promise a decision the queue will not show:
+
+      approvals      execute:<Action> on the write -- what the confirm
+                     route and the awaiting listing both check;
+      notifications  the caller's own unseen ones -- scoped by user in
+                     the query, as the listing is;
+      identity       a waiting proposal whose BOTH sides this caller may
+                     read (the listing's rule, R61) and whose type they
+                     may write (the decide route's rule).
+
+    COUNTS ONLY. A count of proposals is a fact about the caller's own
+    queue, so it says nothing the queue does not.
+    """
+    from core.identity_decisions import PENDING
+
+    generation = _generation(request)
+    roles = generation.config.roles
+    approvals = len(request.app.state.pending_writes.awaiting(
+        lambda pending: authorize(current_user, roles, f"execute:{pending.action_type_name}")))
+    notifications = _notification_store(request).unseen_count(current_user.user_id)
+    identity = 0
+    for proposal in _merge_store(request).proposals(decision=PENDING):
+        if (authorize(current_user, roles, f"write:{proposal.object_type}")
+                and _proposal_sides(request, current_user, proposal) is not None):
+            identity += 1
+    return {"approvals": approvals, "notifications": notifications, "identity": identity}
+
+
 @router.get("/me/visible-apps", dependencies=[Depends(_no_store)], response_model=list[VisibleAppResponse])
 def my_visible_apps_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
     # The shell's own nav, made real: which apps exist for THIS

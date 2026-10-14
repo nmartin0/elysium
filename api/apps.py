@@ -47,8 +47,8 @@ from core.intermediate_layer.auth import UserRecord, authorize
 #:   PIPELINE   the process producing both. Not built.
 #:
 #:   INBOX      approvals, notifications, merge proposals: "EVENTS THAT
-#:              ARRIVED, not something being explored". Every row should
-#:              be a DOOR into a subject, which they are not yet.
+#:              ARRIVED, not something being explored". One entry with
+#:              a tab each, and every row a DOOR into its subject.
 #:   SETTINGS   "the system's own configuration, visited rarely, and
 #:              fine where it is."
 SUBJECTS: tuple[str, ...] = ("Objects", "Ontology", "Inbox", "Settings")
@@ -60,11 +60,12 @@ VISIBLE_APPS: list[dict[str, str | None]] = [
      "gating_permission": None},
     {"name": "Schema", "path": "/schema", "subject": "Ontology",
      "gating_permission": None},
-    {"name": "Approvals", "path": "/approvals", "subject": "Inbox",
-     "gating_permission": None},
-    {"name": "Notifications", "path": "/notifications", "subject": "Inbox",
-     "gating_permission": None},
-    {"name": "Identity", "path": "/identity", "subject": "Inbox",
+    # ONE INBOX, three tabs (decided 14 Oct): approvals, notifications and
+    # merge proposals are all "events that arrived", and three rail
+    # entries for one kind of thing is the by-feature decomposition 12
+    # names. /approvals, /notifications and /identity still resolve, to
+    # their tab, so a link anyone kept keeps working.
+    {"name": "Inbox", "path": "/inbox", "subject": "Inbox",
      "gating_permission": None},
     {"name": "Admin", "path": "/admin", "subject": "Settings",
      "gating_permission": "manage:users"},

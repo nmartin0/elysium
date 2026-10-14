@@ -133,12 +133,12 @@ def test_each_package_exports_what_the_shell_imports(name):
     manifest = json.loads((UI / "packages" / f"app-{name}" / "package.json").read_text())
     exported = set(manifest.get("exports", {}))
 
-    imported = set(re.findall(
-        rf"from '@elysium/app-{name}/([A-Za-z]+)'", (UI / "src" / "App.tsx").read_text(),
-    ))
-    imported |= set(re.findall(
-        rf"import\('@elysium/app-{name}/([A-Za-z]+)'\)", (UI / "src" / "App.tsx").read_text(),
-    ))
+    # App.tsx AND InboxPanel.tsx: the three inbox panels are lazy-loaded
+    # by the Inbox, one per tab (14 Oct), so reading App.tsx alone would
+    # check nothing about them.
+    shell = "\n".join((UI / "src" / name_).read_text() for name_ in ("App.tsx", "InboxPanel.tsx"))
+    imported = set(re.findall(rf"from '@elysium/app-{name}/([A-Za-z]+)'", shell))
+    imported |= set(re.findall(rf"import\('@elysium/app-{name}/([A-Za-z]+)'\)", shell))
 
     missing = {f"./{entry}" for entry in imported} - exported
 

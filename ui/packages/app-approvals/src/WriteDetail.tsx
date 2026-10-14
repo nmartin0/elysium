@@ -17,6 +17,7 @@
 import Notice from '@elysium/shell-api/components/Notice'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import {
   type WriteDetailResponse,
@@ -85,7 +86,19 @@ export default function WriteDetail({ writeId, onSessionExpired }: WriteDetailPr
       {detail.objects.map((object) => (
         <div key={`${object.object_type}:${object.object_id}`} className="write-detail__object">
           <p className="write-detail__object-title">
-            {object.operation} {object.object_type} {object.object_id}
+            {object.operation} {object.object_type}{' '}
+            {/* A DOOR INTO THE OBJECT (DEV_UI 12: "every row in them must
+                be a DOOR into subject 1"). Its history, notes and links
+                are what a reviewer weighs a change against, and they
+                were a hand-typed navigation away. Not for a create: the
+                object does not exist until the write is approved. */}
+            {object.operation === 'create' ? (
+              object.object_id
+            ) : (
+              <Link to={`/objects/${object.object_type}/${encodeURIComponent(object.object_id)}`}>
+                {object.object_id}
+              </Link>
+            )}
           </p>
           <DataTable className="write-detail__changes">
             <thead>
