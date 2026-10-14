@@ -35,3 +35,42 @@ type DataTableProps = Omit<HTMLTableProps, 'striped' | 'compact' | 'bordered'>
 export default function DataTable({ className, ...rest }: DataTableProps) {
   return <HTMLTable className={className ? `data-table ${className}` : 'data-table'} {...rest} />
 }
+
+export type SortDirection = 'asc' | 'desc' | null
+
+/**
+ * A sortable column's header (DEV_UI 9.4): "Sort indicator on the
+ * active column, subtle on the other sortable ones."
+ *
+ * A BUTTON INSIDE THE <th>, with aria-sort on the header itself -- the
+ * APG's sortable-table pattern, so a screen reader hears both that the
+ * column can be sorted and how it is sorted now. Clicking cycles
+ * ascending, descending, unsorted; the caller owns the order.
+ */
+export function SortableHeader({
+  label,
+  direction,
+  onSort,
+  numeric = false,
+}: {
+  label: string
+  direction: SortDirection
+  onSort: (next: SortDirection) => void
+  numeric?: boolean
+}) {
+  const next: SortDirection = direction === null ? 'asc' : direction === 'asc' ? 'desc' : null
+  const sort = direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'
+  return (
+    <th aria-sort={sort} className={numeric ? 'data-table__num' : undefined}>
+      <button type="button" className="data-table__sort" onClick={() => onSort(next)}>
+        {label}
+        <span
+          className={direction ? 'data-table__sort-mark data-table__sort-mark--active' : 'data-table__sort-mark'}
+          aria-hidden="true"
+        >
+          {direction === 'asc' ? '↑' : direction === 'desc' ? '↓' : '↕'}
+        </span>
+      </button>
+    </th>
+  )
+}

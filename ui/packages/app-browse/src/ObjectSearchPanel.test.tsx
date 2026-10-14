@@ -227,7 +227,8 @@ describe('ObjectSearchPanel -- results rendering', () => {
 
     await screen.findByText('Ada Okafor', { selector: '.object-search__result-title' })
     const table = document.querySelector('table.data-table.object-search__results')!
-    const headers = Array.from(table.querySelectorAll('thead th')).map((th) => th.textContent)
+    // The sort mark is part of a sortable header's text; the name is the rest.
+    const headers = Array.from(table.querySelectorAll('thead th')).map((th) => th.textContent?.replace(/[↑↓↕]/g, ''))
     const rows = Array.from(table.querySelectorAll('tbody tr.object-search__result'))
 
     expect(rows).toHaveLength(2)
@@ -2026,5 +2027,23 @@ describe('ObjectSearchPanel -- live updates', () => {
     await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalledTimes(2))
     expect(screen.queryByText(/has changed since these results were loaded/)).toBeNull()
     vi.unstubAllGlobals()
+  })
+})
+
+describe('sorting from the column header (DEV_UI 9.4)', () => {
+  it('a sortable column sorts the results, through the same sort the control uses', async () => {
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor', region: 'us-west' } }]),
+    )
+    renderPanel(CUSTOMER_SCHEMA)
+    await screen.findByText('Ada Okafor', { selector: '.object-search__result-title' })
+    mockedSearchObjects.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: /^Region/ }))
+
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith('Customer', '', expect.objectContaining({ orderBy: 'region' })),
+    )
+    expect(screen.getByRole('columnheader', { name: /^Region/ }).getAttribute('aria-sort')).toBe('ascending')
   })
 })

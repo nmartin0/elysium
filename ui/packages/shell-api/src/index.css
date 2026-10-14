@@ -3073,6 +3073,30 @@
     background: color-mix(in oklch, var(--accent-focus) 7%, transparent);
   }
 
+  /* A SORTABLE HEADER: the label is the control, and the mark is
+   * strong on the sorted column and faint on the others (9.4). */
+  .data-table__sort {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-hair);
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .data-table__sort-mark {
+    color: var(--text-secondary);
+    opacity: 0.5;
+  }
+
+  .data-table__sort-mark--active {
+    color: var(--accent-focus);
+    opacity: 1;
+  }
+
   /* RIGHT-ALIGN NUMBERS (9.4), header and body alike. */
   .data-table .data-table__num {
     text-align: right;

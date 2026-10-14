@@ -61,7 +61,7 @@ import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Worksp
 import { useClearUrlKeys, useUrlJson, useUrlValue } from '@elysium/shell-api/useUrlState'
 import { useChangedSince } from '@elysium/shell-api/liveUpdates'
 
-import DataTable from '@elysium/shell-api/components/DataTable'
+import DataTable, { SortableHeader } from '@elysium/shell-api/components/DataTable'
 import TableSkeleton from '@elysium/shell-api/components/TableSkeleton'
 import { PendingInSet, usePendingFor } from './PendingHere'
 import { useRovingFocus } from './useRovingFocus'
@@ -1091,11 +1091,24 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                 <span className="visually-hidden">Select</span>
               </th>
               <th>{currentType}</th>
-              {tableColumns.map((field) => (
-                <th key={field} className={isNumericField(field) ? 'data-table__num' : undefined}>
-                  {formatFieldName(field)}
-                </th>
-              ))}
+              {tableColumns.map((field) =>
+                // SORTABLE WHERE THE SERVER CAN SORT: the same fields the
+                // "Sort by" control offers, and the same `sort` in the URL,
+                // so the header and the control can never disagree.
+                sortableFields.some((sortable) => sortable.name === field) ? (
+                  <SortableHeader
+                    key={field}
+                    label={formatFieldName(field)}
+                    numeric={isNumericField(field)}
+                    direction={orderBy === field ? 'asc' : orderBy === `${field}:desc` ? 'desc' : null}
+                    onSort={(next) => setOrderBy(next === null ? '' : next === 'asc' ? field : `${field}:desc`)}
+                  />
+                ) : (
+                  <th key={field} className={isNumericField(field) ? 'data-table__num' : undefined}>
+                    {formatFieldName(field)}
+                  </th>
+                ),
+              )}
             </tr>
           </thead>
           <tbody>
