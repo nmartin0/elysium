@@ -44,6 +44,14 @@ measurements. Somebody with a working `npx playwright install` should
 still run the file itself; this closes the question the item asked,
 which was whether the layout holds.
 
+THE FILE ITSELF HAS NOW RUN (14 Oct): `npx playwright test`, all 16
+of layout.spec.ts and shell.spec.ts passing against the built bundle,
+using the Chromium already on disk through playwright.config.ts's
+existing `PLAYWRIGHT_CHROMIUM_PATH`. Two setup traps worth knowing: the
+layout tests log in as `debug` (scripts/create_debug_user.py), and a
+run made before that user exists LOCKS IT OUT for fifteen minutes,
+because failed logins count for usernames that do not exist yet.
+
 ## Consumed so far
 
 | document | outcome |
