@@ -560,6 +560,79 @@ def deletions_accepted_for(type_def: dict, accepted: set) -> bool:
                for storage in storages)
 
 
+def _plain(value):
+    """Frozen configuration as plain JSON-able data: the loader hands
+    mappingproxies and tuples, which json.dumps refuses."""
+    from collections.abc import Mapping
+
+    if isinstance(value, Mapping):
+        return {str(key): _plain(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        items = [_plain(item) for item in value]
+        return sorted(items, key=repr) if isinstance(value, (set, frozenset)) else items
+    return value
+
+
+def _gold_code_version() -> str:
+    """A digest of the code a gold build runs (PA001-G11): every module
+    under core/mirror and core/ontology. Any change to them rebuilds
+    gold, which is more often than needed and never less -- new code is
+    never mistaken for the code a publication was built by."""
+    import hashlib
+    from pathlib import Path
+
+    digest = hashlib.sha256()
+    root = Path(__file__).resolve().parents[1] / "core"
+    for path in sorted([*(root / "mirror").rglob("*.py"), *(root / "ontology").rglob("*.py")]):
+        digest.update(path.relative_to(root).as_posix().encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def _gold_inputs(sync, type_def: dict, needed: set, approved, known: dict) -> "str | None":
+    """Everything one type's gold is derived from, as one digest (PA001-G11).
+
+    THE SAME INPUTS GIVE THE SAME GOLD: the silver snapshots it reads,
+    what the ontology declares for the type, the merges a person
+    approved, the published ids its links are audited against, and the
+    code. When none of those moved since the last publication there is
+    nothing to build. Dagster's asset versioning marks an asset
+    "Unsynced" on the same three causes: its code version changed, its
+    dependencies changed, or "the data version of a parent asset has
+    changed due to a new materialization" (dagster.io/docs, asset
+    versioning and caching).
+
+    NONE ON ANY DOUBT, which always builds: a table with no snapshot, or
+    anything that cannot be read. A spurious build costs one
+    publication; a spurious skip serves stale gold.
+    """
+    import hashlib
+
+    try:
+        snapshots = {}
+        for name in sorted(needed):
+            snapshot = sync._catalog.load_table(name).current_snapshot()
+            if snapshot is None:
+                return None
+            snapshots[name] = snapshot.snapshot_id
+        targets = sorted({field.get("target") for field in (type_def.get("fields") or {}).values()
+                          if field.get("type") == "link" and field.get("target")})
+        links = {
+            target: hashlib.sha256("\n".join(sorted(map(str, known[target]))).encode()).hexdigest()
+            for target in targets if target in known
+        }
+        described = {
+            "silver": snapshots,
+            "type": _plain(type_def),
+            "approved": sorted(_plain(list(approved or ()))),
+            "links": links,
+            "code": _gold_code_version(),
+        }
+        return hashlib.sha256(json.dumps(described, sort_keys=True, default=str).encode()).hexdigest()
+    except Exception:  # noqa: BLE001 - see the docstring: doubt means build
+        return None
+
+
 def _build_gold(sync, config, data_dir, unsynced: set | None = None,
                  run_id: "str | None" = None, accepted: set | None = None,
                  lineage: "LineageEmitter | None" = None) -> int:
@@ -684,14 +757,16 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
             if coming is not None and partner not in not_published:
                 known[partner] = set(known.get(partner) or ()) | coming
                 leaned_on.setdefault(partner, set()).add(object_type)
+        approved = decisions.approved_pairs(object_type)
         try:
             result = build_gold(sync._catalog, object_type, type_def, silver, known,
                                  additional_rows=additional,
-                                 approved_pairs=decisions.approved_pairs(object_type),
+                                 approved_pairs=approved,
                                  retain_publications=config.retain_publications,
                                  run_id=run_id,
                                  accept_deletions=deletions_accepted_for(
-                                     type_def, accepted or set()))
+                                     type_def, accepted or set()),
+                                 inputs=_gold_inputs(sync, type_def, needed, approved, known))
         except Exception as exc:  # noqa: BLE001 - per type, like a sync
             # PER TYPE, LIKE EVERY OTHER FAILURE IN THIS LOOP
             # (PA001-G5). Reading silver was already guarded a few
@@ -727,6 +802,9 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
             print(f"proposed {proposed} merge(s) for {object_type}, awaiting a decision")
         if result.skipped:
             print(f"skipped gold.{object_type}: {result.skipped}")
+        elif result.unchanged:
+            print(f"unchanged gold.{object_type}: built from the same inputs as its "
+                  f"current publication, nothing written")
         elif result.published:
             print(f"published gold.{object_type}: {result.rows} rows")
         else:
@@ -736,7 +814,7 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
         if lineage:
             # A REFUSED PUBLICATION IS A FAILED RUN of this job: gold
             # was left as it was, which is what FAIL says.
-            failed = not result.skipped and not result.published
+            failed = not result.ok
             lineage.emit(FAIL if failed else COMPLETE, f"gold.{object_type}",
                          gold_inputs, gold_output,
                          error="; ".join(result.problems) if failed else None)

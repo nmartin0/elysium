@@ -90,10 +90,16 @@ class GoldResult:
     # How many changes this publication recorded (GOLD-4). Zero on a
     # first publication, which has no previous state to differ from.
     history_rows: int = 0
+    # NOTHING WAS WRITTEN because nothing gold is built from has changed
+    # since its last publication (PA001-G11). That publication is still
+    # exactly what this build would have produced, so the type is as
+    # good as published -- `ok`, not refused, and not "skipped", which
+    # means the type could not be built.
+    unchanged: bool = False
 
     @property
     def ok(self) -> bool:
-        return self.published or self.skipped is not None
+        return self.published or self.unchanged or self.skipped is not None
 
 
 def conform(type_def: dict, silver_rows: list[dict]) -> list[dict]:
@@ -344,9 +350,16 @@ def published_at(catalog, object_types) -> dict[str, str]:
             continue
         snapshot = table.current_snapshot()
         if snapshot is not None:
-            published[object_type] = datetime.fromtimestamp(
-                snapshot.timestamp_ms / 1000, tz=UTC,
-            ).isoformat()
+            made = datetime.fromtimestamp(snapshot.timestamp_ms / 1000, tz=UTC)
+            # OR LATER, when a build since found it still current
+            # (PA001-G11): what a reader sees was true as of then.
+            confirmed = table.properties.get(CURRENT_AT_PROPERTY)
+            if confirmed:
+                try:
+                    made = max(made, datetime.fromisoformat(confirmed))
+                except ValueError:
+                    pass
+            published[object_type] = made.isoformat()
     return published
 
 
@@ -356,8 +369,13 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
                approved_pairs: "list[tuple[str, str]] | None" = None,
                retain_publications: int = DEFAULT_RETAINED_PUBLICATIONS,
                run_id: "str | None" = None,
-               accept_deletions: bool = False) -> GoldResult:
+               accept_deletions: bool = False,
+               inputs: "str | None" = None) -> GoldResult:
     """Conform, audit and -- only if it passes -- publish one type.
+
+    `inputs` is the caller's fingerprint of everything this build is
+    derived from (PA001-G11): when the current publication was built from
+    the same fingerprint, nothing is read or written. None always builds.
 
     A TABLE THAT ALREADY HAS A PUBLICATION is written on a branch, so
     what readers see does not move until the audit passes. A FIRST
@@ -365,6 +383,10 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
     fails, the table is dropped, leaving no gold rather than unaudited
     gold.
     """
+    if inputs is not None and _published_from(catalog, object_type) == inputs:
+        _confirm_current(catalog, f"{GOLD_NAMESPACE}.{object_type}", run_id)
+        return GoldResult(object_type, unchanged=True)
+
     result = GoldResult(object_type)
     unresolved: list = []
     rows: list[dict] | None = None
@@ -514,6 +536,7 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
         table = catalog.load_table(identifier)
         _tag_publication(table)
         _record_run(catalog, identifier, run_id)
+        _record_inputs(catalog, identifier, inputs)
         result.forgotten_publications = _forget_old_publications(
             catalog.load_table(identifier), retain_publications)
         result.published = True
@@ -550,6 +573,7 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
     audited = table.snapshot_by_name(AUDIT_BRANCH).snapshot_id
     _publish(table, audited)
     _record_run(catalog, identifier, run_id)
+    _record_inputs(catalog, identifier, inputs)
     result.forgotten_publications = _forget_old_publications(
         catalog.load_table(identifier), retain_publications)
     result.published = True
@@ -835,6 +859,66 @@ def _record_run(catalog, identifier: str, run_id: "str | None") -> None:
         return
     with catalog.load_table(identifier).transaction() as tx:
         tx.set_properties({"elysium.run_id": run_id})
+
+
+#: The fingerprint of what the current publication was built from.
+INPUTS_PROPERTY = "elysium.gold_inputs"
+#: When a build last found the publication still current (PA001-G11).
+CURRENT_AT_PROPERTY = "elysium.current_at"
+
+
+def _record_inputs(catalog, identifier: str, inputs: "str | None") -> None:
+    """Stamps a publication with what it was built from (PA001-G11).
+
+    AFTER THE PUBLISH, like _record_run, and for the same reason: a
+    stamp on a refused build would let the next build skip a type whose
+    last publication was built from something else. A crash between
+    the two leaves the OLD stamp, which only means the next build does
+    the work again -- the safe direction.
+
+    REMOVED when there is no fingerprint, so a build that could not be
+    fingerprinted never leaves an older stamp claiming to describe it.
+    """
+    table = catalog.load_table(identifier)
+    if inputs is None:
+        # Removing a property that is not there raises in pyiceberg, and
+        # an empty commit would be a metadata file for nothing.
+        if INPUTS_PROPERTY in table.properties:
+            with table.transaction() as tx:
+                tx.remove_properties(INPUTS_PROPERTY)
+        return
+    with table.transaction() as tx:
+        tx.set_properties({INPUTS_PROPERTY: inputs})
+
+
+def _published_from(catalog, object_type: str) -> "str | None":
+    """The fingerprint the CURRENT publication was built from, or None.
+
+    ONLY WHEN THE CURRENT SNAPSHOT IS THE PUBLISHED ONE. A first build
+    interrupted between its append and its tag leaves a current
+    snapshot that was never published (PA001-G4); skipping on that would
+    leave it so for ever.
+    """
+    try:
+        table = catalog.load_table(f"{GOLD_NAMESPACE}.{object_type}")
+    except (NoSuchTableError, NoSuchNamespaceError, FileNotFoundError):
+        return None
+    current = table.current_snapshot()
+    if current is None or _latest_published_snapshot(table) != current.snapshot_id:
+        return None
+    return table.properties.get(INPUTS_PROPERTY)
+
+
+def _confirm_current(catalog, identifier: str, run_id: "str | None") -> None:
+    """An unchanged type still had a build look at it, and says when.
+
+    THE SAME LESSON AS SILVER'S PA001-A5: without this, published_at only
+    moves when the DATA moves, so a type nobody edits would read as
+    published weeks ago although every build since confirmed it.
+    """
+    with catalog.load_table(identifier).transaction() as tx:
+        tx.set_properties({CURRENT_AT_PROPERTY: datetime.now(UTC).isoformat()})
+    _record_run(catalog, identifier, run_id)
 
 
 def _tag_publication(table) -> None:

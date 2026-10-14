@@ -2285,6 +2285,43 @@ CONTROLS = [
         tests=["tests/unit/test_source_column_names_are_never_sql.py::TestTheMisspellingHazard::"
                "test_the_adapter_now_refuses_it_itself"],
     ),
+    Control(
+        describes="PA001-G11: gold built from the same inputs is not published again",
+        path="core/mirror/gold.py",
+        old="    if inputs is not None and _published_from(catalog, object_type) == inputs:",
+        new="    if False:",
+        tests=["tests/unit/test_unchanged_gold_is_not_republished.py::TestNothingChanged::test_a_second_build_publishes_nothing"],
+    ),
+    Control(
+        describes="PA001-G11: every publication restamps its inputs, not only the first",
+        path="core/mirror/gold.py",
+        old=("    _publish(table, audited)\n    _record_run(catalog, identifier, run_id)\n"
+             "    _record_inputs(catalog, identifier, inputs)\n"),
+        new="    _publish(table, audited)\n    _record_run(catalog, identifier, run_id)\n",
+        tests=["tests/unit/test_unchanged_gold_is_not_republished.py::TestSomethingChanged::"
+               "test_after_a_change_it_settles_again"],
+    ),
+    Control(
+        describes="PA001-G11: an unpublished current snapshot is never skipped",
+        path="core/mirror/gold.py",
+        old="    if current is None or _latest_published_snapshot(table) != current.snapshot_id:\n        return None",
+        new="    if current is None:\n        return None",
+        tests=["tests/unit/test_unchanged_gold_is_not_republished.py::TestNeverSkipWrongly::test_a_current_snapshot_that_was_never_published_is_not_skipped"],
+    ),
+    Control(
+        describes="PA001-G11: a link target's ids are part of the referrer's inputs",
+        path="scripts/run_sync.py",
+        old="            for target in targets if target in known\n",
+        new="            for target in targets if False\n",
+        tests=["tests/unit/test_unchanged_gold_is_not_republished.py::TestSomethingChanged::test_a_link_target_that_changed_rebuilds_the_referrer"],
+    ),
+    Control(
+        describes="PA001-G11: published_at moves when a build confirms gold current",
+        path="core/mirror/gold.py",
+        old="                    made = max(made, datetime.fromisoformat(confirmed))",
+        new="                    pass",
+        tests=["tests/unit/test_unchanged_gold_is_not_republished.py::TestNothingChanged::test_published_at_still_moves"],
+    ),
 ]
 
 

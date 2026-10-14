@@ -114,10 +114,12 @@ class TestEveryLayerIsWired:
 
     def test_both_gold_publish_paths_record_it(self):
         """gold has two: a first build, and every later build through
-        the audit branch."""
+        the audit branch. And a third call that is not a publication:
+        an unchanged type confirmed current (PA001-G11) records the run
+        that confirmed it."""
         source = Path("core/mirror/gold.py").read_text()
 
-        assert source.count("_record_run(catalog, identifier, run_id)") == 2
+        assert source.count("_record_run(catalog, identifier, run_id)") == 3
 
     def test_bronze_and_silver_both_record_it(self):
         source = Path("core/mirror/iceberg_sync.py").read_text()
