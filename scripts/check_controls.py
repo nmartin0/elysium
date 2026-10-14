@@ -2626,6 +2626,27 @@ CONTROLS = [
         new="    limit = MAX_BULK_OBJECTS",
         tests=["tests/integration/test_api.py::test_matching_ids_refuses_rather_than_truncating"],
     ),
+    Control(
+        describes="R61: a proposal's source-qualified ids are read as the entities they name",
+        path="api/routes.py",
+        old="    left = entity_id_of(type_def, proposal.left_id)",
+        new="    left = proposal.left_id",
+        tests=["tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestAProposalAsTheMatcherWritesIt::test_the_values_of_a_readable_pair_are_shown"],
+    ),
+    Control(
+        describes="R61: a merge proposal with a side MAC hides is not listed",
+        path="api/routes.py",
+        old="    visible = any(readable) if proposal.decision == APPROVED else all(readable)",
+        new="    visible = True",
+        tests=["tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestAProposalAsTheMatcherWritesIt::test_a_pair_with_a_side_this_reviewer_cannot_see_is_not_shown"],
+    ),
+    Control(
+        describes="R61: a merge proposal with a side MAC hides cannot be decided",
+        path="api/routes.py",
+        old="    if _proposal_sides(request, current_user, proposal) is None:",
+        new="    if False:",
+        tests=["tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestAProposalAsTheMatcherWritesIt::test_nor_may_they_decide_it"],
+    ),
 ]
 
 

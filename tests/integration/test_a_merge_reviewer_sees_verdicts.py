@@ -283,8 +283,11 @@ class TestDecidingIsAWrite:
         """An approved inference "becomes STORED DATA, not edited
         config" -- it changes what the ontology returns, so it needs the
         same grant any other change to that type needs."""
-        with_roles(client.app, viewer={"allowed_actions": ["read:Customer"]})
-        _login(client, "clerk", role="viewer")
+        # A SHIPPED ROLE that reads Customer and may not change it. Not a
+        # with_roles() one: the mediator keeps the roles it was built
+        # with, and since R61 a reviewer must be able to READ both
+        # records -- through the mediator -- before write is asked.
+        _login(client, "clerk", role="customer_service")
         proposal_id = _propose(client)
 
         response = client.post(f"/api/merge-proposals/{proposal_id}/decide",
@@ -294,9 +297,12 @@ class TestDecidingIsAWrite:
         assert "write:Customer" in response.text
 
     def test_a_reviewer_with_the_grant_may_decide(self, client):
-        with_roles(client.app,
-                   merger={"allowed_actions": ["read:Customer", "write:Customer"]})
-        _login(client, "carol", role="merger")
+        # editor reads Customer through the mediator; write is added
+        # where the route asks for it.
+        with_roles(client.app, editor={"allowed_actions": [
+            *client.app.state.generation.config.roles["editor"]["allowed_actions"],
+            "write:Customer"]})
+        _login(client, "carol", role="editor")
         proposal_id = _propose(client)
 
         response = client.post(f"/api/merge-proposals/{proposal_id}/decide",
@@ -322,6 +328,49 @@ class TestDecidingIsAWrite:
         _login(client, "carol", role="merger")
 
         response = client.post("/api/merge-proposals/nope/decide",
+                               json={"decision": "approved"}, headers=_csrf(client))
+
+        assert response.status_code == 404
+
+
+class TestAProposalAsTheMatcherWritesIt:
+    """R61, found 14 Oct by a checklist sweep. The matcher names rows
+    `<source>:<id>` -- `primary:cust_001` -- and every test above stored
+    bare ids, so none of them saw what production stores."""
+
+    def _propose_qualified(self, client, left, right, agreement=None):
+        return _store(client).propose(
+            "Customer", left, right, 0.91,
+            json.dumps(agreement or {"name": True, "region": True}))
+
+    def test_the_values_of_a_readable_pair_are_shown(self, client):
+        """Before: every readable field read "one side missing", because
+        `primary:cust_001` was read as if it were an entity id."""
+        _login(client)
+        self._propose_qualified(client, "primary:cust_001", "primary:cust_002")
+
+        (row,) = client.get("/api/merge-proposals").json()
+        name = next(entry for entry in row["fields"] if entry["field"] == "name")
+
+        assert (name["left"], name["right"]) == ("Ada Okafor", "Bram Feldman")
+        assert name["verdict"] == "agree"
+
+    def test_a_pair_with_a_side_this_reviewer_cannot_see_is_not_shown(self, client):
+        """cust_003 is us-east; the reviewer is us-west. Before, the
+        proposal was listed -- its id, and whether its fields agreed with
+        a record the reviewer CAN see."""
+        _login(client)
+        self._propose_qualified(client, "primary:cust_001", "primary:cust_003")
+
+        assert client.get("/api/merge-proposals").json() == []
+
+    def test_nor_may_they_decide_it(self, client):
+        _login(client)
+        proposal_id = self._propose_qualified(client, "primary:cust_001", "primary:cust_003")
+        with_roles(client.app, editor={"allowed_actions": [
+            "read:Customer", "read:Customer.name", "write:Customer"]})
+
+        response = client.post(f"/api/merge-proposals/{proposal_id}/decide",
                                json={"decision": "approved"}, headers=_csrf(client))
 
         assert response.status_code == 404

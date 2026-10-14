@@ -133,6 +133,11 @@ they can be answered together.
   and so on). The one part of D5 not decided.
 
 **Smaller calls**
+- `R58` -- approving two merges approves a third. Identity takes the
+  transitive closure of approved pairs, so approving A with B and B
+  with C merges A with C, a pair nobody was shown. Should the
+  reviewer see the resulting group before the second approval takes
+  effect?
 - `R13`, the rest of erasure -- erasing a person now removes the
   mirror, memories and notes. Other stores still hold their ids:
   frozen-set membership, the write log and pending writes, paused

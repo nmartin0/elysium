@@ -4507,6 +4507,10 @@ def merge_proposals_route(request: Request, object_type: str | None = None,
     for proposal in store.proposals(object_type=object_type, decision=decision):
         if not authorize(current_user, roles, f"read:{proposal.object_type}"):
             continue
+        sides = _proposal_sides(request, current_user, proposal)
+        if sides is None:
+            continue
+        left_entity, right_entity = sides
         readable = _readable_fields(request, current_user, proposal.object_type)
         try:
             agreement = json.loads(proposal.agreement or "{}")
@@ -4529,9 +4533,9 @@ def merge_proposals_route(request: Request, object_type: str | None = None,
         # that survives.
         wanted = sorted(readable & set(agreement))
         left = mediator.get_object(current_user, proposal.object_type,
-                                   proposal.left_id, wanted) or {}
+                                   left_entity, wanted) or {}
         right = mediator.get_object(current_user, proposal.object_type,
-                                    proposal.right_id, wanted) or {}
+                                    right_entity, wanted) or {}
         entries = masked_comparison(agreement, left, right, readable)
         out.append(MergeProposalResponse(
             proposal_id=proposal.proposal_id,
@@ -4547,6 +4551,41 @@ def merge_proposals_route(request: Request, object_type: str | None = None,
             high_confidence=_is_high_confidence(generation.config.schema, proposal),
         ))
     return out
+
+
+def _proposal_sides(request: Request, user: UserRecord, proposal) -> "tuple[str, str] | None":
+    """The two entities a proposal is about, or None if this caller may
+    not see it.
+
+    FOUND 14 OCT BY A CHECKLIST SWEEP (R61), two faults in one place:
+
+    THE NAMES. A proposal names rows as the matcher does --
+    `primary:cust_001` -- and they were handed to get_object as if they
+    were entity ids, so every readable field read "one side missing".
+    core/mirror/identity.entity_id_of turns them into what is served.
+
+    MAC. Only RBAC (`read:<Type>`) was checked, so a reviewer in one
+    region was shown a proposal pairing a record they can see with one
+    they cannot -- its id, and whether its email agreed with the
+    visible record's. That is a fact about an object MAC hides.
+
+    THE RULE: a waiting or rejected proposal needs BOTH sides readable.
+    An approved one needs either: once merged, the absorbed side's name
+    no longer exists, and D2 refuses any merge across security values,
+    so the surviving entity is readable exactly when the absorbed one
+    was. Absent and unreadable are answered alike, as everywhere.
+    """
+    from core.identity_decisions import APPROVED
+    from core.mirror.identity import entity_id_of
+
+    generation = _generation(request)
+    type_def = (generation.config.schema or {}).get(proposal.object_type) or {}
+    left = entity_id_of(type_def, proposal.left_id)
+    right = entity_id_of(type_def, proposal.right_id)
+    readable = [_may_read_object(generation.mediator, user, proposal.object_type, side)
+                for side in (left, right)]
+    visible = any(readable) if proposal.decision == APPROVED else all(readable)
+    return (left, right) if visible else None
 
 
 def _is_high_confidence(schema: dict, proposal) -> bool:
@@ -4584,6 +4623,10 @@ def decide_merge_route(proposal_id: str, body: MergeDecisionRequest,
     if not found:
         raise HTTPException(status_code=404, detail="Unknown proposal")
     proposal = found[0]
+    # A PROPOSAL THIS CALLER MAY NOT SEE IS ONE THEY MAY NOT DECIDE, and
+    # is answered as if it did not exist (R61, 14 Oct).
+    if _proposal_sides(request, current_user, proposal) is None:
+        raise HTTPException(status_code=404, detail="Unknown proposal")
 
     roles = _generation(request).config.roles
     if not authorize(current_user, roles, f"write:{proposal.object_type}"):

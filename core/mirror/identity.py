@@ -191,6 +191,33 @@ def _source_qualified(storage_key: Any, row: dict, storage: dict) -> str:
     return f"{prefix}:{row.get(storage['id_column'])}"
 
 
+def entity_id_of(type_def: dict, qualified: str) -> str:
+    """The entity id a source-qualified row name (`primary:cust_001`,
+    `crm:42`) is served under, so a reviewer's screen can read it.
+
+    THE INVERSE OF THE TWO NAMINGS ABOVE. A proposal names rows the way
+    the matcher does, `<source>:<id>`, because it must say which source
+    it means; the ontology serves entities under _entity_id's names,
+    where the rule's primary storage keeps the bare id. Reading a
+    proposal's side by its qualified name found nothing, so every field
+    on the review screen read "one side missing" -- found 14 Oct by a
+    checklist sweep; every test had stored bare ids.
+
+    For a pair not yet merged both sides are entities of their own, so
+    this names them. Once merged, one side's name no longer exists.
+    """
+    prefix, separator, object_id = str(qualified).partition(":")
+    if not separator:
+        return str(qualified)
+    storage_key = None if prefix == "primary" else prefix
+    try:
+        rule = rule_for(type_def)
+    except ValueError:
+        rule = None
+    primary = rule.primary if rule is not None else None
+    return _entity_id(storage_key, {"id": object_id}, {"id_column": "id"}, primary)
+
+
 def _union(groups: list[list], pairs: list[tuple[str, str]], name_of) -> list[list]:
     """Groups joined wherever an approved pair spans two of them.
 

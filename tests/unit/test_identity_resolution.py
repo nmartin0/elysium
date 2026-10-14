@@ -220,3 +220,32 @@ class TestADeclaredCasefold:
         """It would do nothing, and its author would believe otherwise."""
         with pytest.raises(ValueError, match="not in match_on"):
             rule_for({**TYPE, "identity": {"match_on": ["email"], "casefold": ["name"]}})
+
+
+class TestAProposalsNamesAreTheEntitiesServed:
+    """entity_id_of (R61, 14 Oct): the matcher names rows
+    `<source>:<id>`; the review screen must read what the ontology
+    serves, or every field reads "one side missing"."""
+
+    def test_names_round_trip_through_resolve(self):
+        """THE PROPERTY, checked against resolve itself rather than
+        restated: every unmatched row's qualified name maps to the
+        entity resolve() serves it as -- for the primary storage and an
+        additional one, under the default primary and a declared one."""
+        from core.mirror.identity import entity_id_of
+
+        billing = [{"cust_pk": "c1", "email": "a@x", "region": "us"}]
+        crm = [{"contact_id": "k9", "email": "b@x", "region": "us"}]
+        for declared_primary in (None, "crm"):
+            type_def = {**TYPE, "identity": {"match_on": ["email"],
+                                             **({"primary": declared_primary}
+                                                if declared_primary else {})}}
+            served = set(resolve(type_def, _rows(billing, crm)).entities)
+
+            assert {entity_id_of(type_def, "primary:c1"),
+                    entity_id_of(type_def, "crm:k9")} == served, declared_primary
+
+    def test_a_bare_id_is_left_alone(self):
+        from core.mirror.identity import entity_id_of
+
+        assert entity_id_of(TYPE, "cust_001") == "cust_001"
