@@ -43,6 +43,8 @@ const KIND_LABELS: Record<string, string> = {
   mirror_health: 'Mirror',
   count_condition: 'Watch',
   count_condition_watching: 'Watch',
+  // A question that waited for an approval, answered (WIRED-2).
+  query_answer: 'Question',
 }
 
 export default function NotificationsPanel({ onSessionExpired }: NotificationsPanelProps) {

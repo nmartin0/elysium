@@ -2457,6 +2457,32 @@ CONTROLS = [
         tests=["tests/unit/test_high_confidence_matches_are_preselected.py::"
                "test_at_or_above_the_declared_threshold_is_high_confidence"],
     ),
+    Control(
+        describes="WIRED-2: an approval finishes the asker's paused question",
+        path="api/routes.py",
+        old="functools.partial(_finish_paused_query, request.app, _generation(request),",
+        new="functools.partial(lambda *_: None, request.app, _generation(request),",
+        tests=["tests/integration/test_a_question_is_answered_after_approval.py::"
+               "test_after_approval_the_asker_is_sent_the_answer"],
+    ),
+    Control(
+        describes="WIRED-2: a question that pauses for a write is kept",
+        path="api/routes.py",
+        old=("            _paused_queries(request.app).save(\n"
+             "                write_id, current_user.user_id, body.query,"),
+        new=("            (lambda *a, **k: None)(\n"
+             "                write_id, current_user.user_id, body.query,"),
+        tests=["tests/integration/test_a_question_is_answered_after_approval.py::"
+               "test_after_approval_the_asker_is_sent_the_answer"],
+    ),
+    Control(
+        describes="WIRED-2: a gone or disabled asker gets nothing resumed",
+        path="api/routes.py",
+        old="    asker = asker_now()\n    if asker is None:\n        return\n",
+        new="    asker = asker_now() or directory.get_user_record(paused.user_id)\n",
+        tests=["tests/unit/test_a_paused_question_runs_as_the_asker_now.py::"
+               "test_a_disabled_asker_gets_nothing_resumed"],
+    ),
 ]
 
 

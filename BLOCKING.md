@@ -128,9 +128,6 @@ they can be answered together.
 - `D6` and `AR-10` -- fine-tune a small model on Elysium's own traces?
 
 **Access, and what a person sees**
-- `WIRED-2` / `AL-12` -- after an approval, should the asker's question
-  resume and finish? `AgentLoop.resume` is built and tested; nothing
-  calls it, because who receives that answer is the question.
 - `R47` -- review of inferred special-category data (health, religion
   and so on). The one part of D5 not decided.
 

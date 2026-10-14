@@ -5167,6 +5167,15 @@ async def query(body: QueryRequest, request: Request,
 
     if result.pending_write is not None:
         write_id = request.app.state.pending_writes.store(result.pending_write)
+        # KEPT SO IT CAN BE FINISHED (WIRED-2): when the write is decided,
+        # the question resumes and its answer goes to the asker. Best
+        # effort -- a question that cannot be kept still gets its 202.
+        try:
+            _paused_queries(request.app).save(
+                write_id, current_user.user_id, body.query, result.gathered,
+                result.hops_used, result.fabricated_finishes)
+        except Exception:  # noqa: BLE001 - the proposal itself must still be returned
+            logger.warning("could not keep the paused question for %s", write_id, exc_info=True)
         # ALWAYS a list of sub_writes now, one entry or many -- matches
         # confirm_and_execute()'s own object_ids response shape (see
         # its own docstring: uniform representation, not a shape that
@@ -5475,7 +5484,112 @@ async def _decide_reserved_write(request: Request, write_id: str, pending, appro
             for sub in pending.sub_writes:
                 bus.publish(sub.object_type, _CHANGE_VERB.get(sub.operation, "updated"))
 
+    # THE ASKER'S QUESTION, FINISHED IN THE BACKGROUND (WIRED-2). Not
+    # awaited: the approver's request is about the write, and the agent
+    # may take minutes on this hardware. A refused write ends its
+    # question too, with a notice saying so.
+    future = event_loop.run_in_executor(
+        executor, functools.partial(_finish_paused_query, request.app, _generation(request),
+                                    write_id, pending, outcome))
+    future.add_done_callback(_log_background_failure)
+
     return outcome if outcome is not None else {"status": "rejected"}
+
+
+def _paused_queries(app):
+    from core.paused_queries import PausedQueryStore
+
+    return PausedQueryStore(app.state.runtime_paths.data_dir / "paused_queries.db")
+
+
+def _log_background_failure(future) -> None:
+    if not future.cancelled() and future.exception() is not None:
+        logger.error("a paused question could not be finished", exc_info=future.exception())
+
+
+#: The notification kind an answered question arrives as.
+QUERY_ANSWER_KIND = "query_answer"
+
+
+def _finish_paused_query(app, generation, write_id: str, pending, outcome: "dict | None") -> None:
+    """Resumes the question that proposed this write, and tells the asker.
+
+    THE OWNER'S DECISION (WIRED-2 / AL-12, 14 Oct): after an approval the
+    agent finishes the question, and the answer goes to the ASKER as a
+    notification -- one row, theirs, like every notification here.
+
+    AS THE ASKER, RE-READ NOW. They are looked up in the user directory
+    before anything is read; gone or disabled ends it silently, and a
+    change of authority during the resume ends it with a notice
+    (AgentLoop.resume's rule). The approver's authority covers the
+    write, never the answer.
+
+    ANOTHER WRITE IS ANOTHER PAUSE: queued, kept, and the asker told.
+
+    THE DECIDING REQUEST'S GENERATION, passed in rather than read from
+    app.state: the answer is built under the configuration the approval
+    was made under, as every route's work is.
+    """
+    from core.agent.agentic_loop import AgentLoopResult
+    from core.notifications import NotificationStore
+
+    paused = _paused_queries(app).take(write_id)
+    if paused is None:
+        return
+    notes = NotificationStore(app.state.runtime_paths.data_dir / "notifications.db")
+    asked = paused.query_text if len(paused.query_text) <= 120 else paused.query_text[:117] + "..."
+    if outcome is None or outcome.get("status") != "written":
+        notes.notify(paused.user_id, QUERY_ANSWER_KIND,
+                     f"The change your question proposed was declined: {asked}",
+                     detail=f"{pending.description}. Ask again if it is still wanted.")
+        return
+
+    directory = app.state.user_directory
+
+    def asker_now():
+        if not directory.user_exists(paused.user_id) or directory.is_user_disabled(paused.user_id):
+            return None
+        return directory.get_user_record(paused.user_id)
+
+    asker = asker_now()
+    if asker is None:
+        return
+    context = RequestContext.new(deadline_seconds=generation.config.query_deadline_seconds)
+    previous = AgentLoopResult(gathered=paused.gathered, pending_write=pending,
+                               hops_used=paused.hops_used,
+                               fabricated_finishes=paused.fabricated_finishes)
+    try:
+        result = generation.loop.resume(
+            previous, asker, paused.query_text,
+            {"status": "approved", "object_ids": outcome.get("object_ids")},
+            context=context, refresh_user=asker_now)
+    except Exception:  # noqa: BLE001 - the asker is told, the operator gets the trace
+        logger.exception("resuming the question behind write %s failed", write_id)
+        notes.notify(paused.user_id, QUERY_ANSWER_KIND,
+                     f"The change was made, but your question could not be finished: {asked}",
+                     detail="Ask it again to get the answer.")
+        return
+
+    if result.authority_changed:
+        notes.notify(paused.user_id, QUERY_ANSWER_KIND,
+                     f"The change was made, but your permissions changed before your question "
+                     f"was answered: {asked}", detail="Ask it again to get the answer.")
+        return
+    if result.pending_write is not None:
+        next_id = app.state.pending_writes.store(result.pending_write)
+        _paused_queries(app).save(next_id, paused.user_id, paused.query_text, result.gathered,
+                                  result.hops_used, result.fabricated_finishes)
+        notes.notify(paused.user_id, QUERY_ANSWER_KIND,
+                     f"Your question proposed another change, now awaiting approval: {asked}",
+                     detail=result.pending_write.description)
+        return
+    # LB-3's rule for a resumed answer too: any early stop is told to
+    # synthesis, so a cut-short answer does not read as complete.
+    cut_short = result.possibly_incomplete
+    answer = synthesize_insight(generation.synthesis_client, paused.query_text,
+                                AgentLoop.filter_real_data(result.gathered),
+                                cut_short, usage=context.token_usage)
+    notes.notify(paused.user_id, QUERY_ANSWER_KIND, f"Answer to: {asked}", detail=answer)
 
 # --- Object Set operations: the analytical half of the read surface.
 # Foundry's own Object Set Service serves "searching, filtering,

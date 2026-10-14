@@ -91,6 +91,10 @@ OWNED_DATABASES = (
     # The approvals queue -- database-authoritative since patch 276,
     # so there is no other copy of a waiting decision.
     "pending_writes.db",
+    # THE QUESTIONS THOSE WRITES PAUSED (WIRED-2), kept beside them: a
+    # restore that brought back a waiting write without its question
+    # would approve it and never answer the person who asked.
+    "paused_queries.db",
     # THE JUDGEMENTS A PERSON MADE ABOUT WHO IS WHO (GOLD-6). Nothing
     # upstream remembers them: gold is rebuilt from silver on every
     # sync, and the merges it applies exist ONLY here. Losing this file
