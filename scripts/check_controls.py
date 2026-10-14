@@ -2330,6 +2330,19 @@ CONTROLS = [
         tests=["tests/unit/test_security_pushdown_guard.py::TestOnGoldStorageIsEnough::"
                "test_a_field_from_the_second_source_storage_pushes_on_gold"],
     ),
+    Control(
+        describes="FLAKE-1: a batched source read is one statement, so a write mid-read cannot tear it",
+        path="adapters/sqlite_adapter.py",
+        old=("        cursor = conn.execute(sql, params)\n"
+             "        while batch := cursor.fetchmany(batch_size):\n"
+             "            yield [dict(row) for row in batch]\n"),
+        new=("        done = 0\n"
+             "        while batch := conn.execute(sql, params).fetchall()[done:done + batch_size]:\n"
+             "            done += len(batch)\n"
+             "            yield [dict(row) for row in batch]\n"),
+        tests=["tests/unit/test_sync_snapshot_semantics.py::"
+               "test_the_sync_reads_a_consistent_snapshot_under_concurrent_source_writes"],
+    ),
 ]
 
 

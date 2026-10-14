@@ -231,61 +231,62 @@ def test_a_new_source_column_the_ontology_does_not_know_is_ignored(sync, source)
     assert _source_columns(_mirror(sync).column_names) == ["widget_id", "label"]
 
 
-def test_the_sync_reads_a_consistent_snapshot_under_concurrent_source_writes(tmp_path):
-    # The bulk read is ONE SQL statement, so a source write during the
-    # sync cannot tear the result across rows. This is the property the
-    # old per-field read could not offer, since thousands of separate
-    # queries genuinely could observe different states.
-    import threading
+def test_the_sync_reads_a_consistent_snapshot_under_concurrent_source_writes(tmp_path, monkeypatch):
+    """The bulk read is ONE SQL statement, fetched in batches, so a source
+    write landing mid-read cannot tear the result across rows. This is
+    the property the old per-field read could not offer.
+
+    DETERMINISTIC (FLAKE-1). This used to race a writer thread against
+    the sync and hope the interleaving happened; it failed once in a
+    full run and never again, which is the worst kind of test -- it
+    could not say whether the write had landed mid-read at all. Now the
+    write is made to land at a known point: after the first batch has
+    been handed over and before the rest is fetched. It touches a row
+    already read, a row not yet read, and adds one.
+
+    WAL, BECAUSE PRODUCTION RUNS WAL: a writer may commit while a reader
+    holds its snapshot, which is exactly the interleaving in question.
+    In rollback-journal mode the writer would be blocked instead and the
+    test would prove nothing (SEC-10's likely cause of the old flake).
+    """
+    import core.mirror.iceberg_sync as iceberg_sync
 
     path = tmp_path / "churn.db"
     conn = sqlite3.connect(path)
-    # WAL, BECAUSE PRODUCTION RUNS WAL AND FAILS LOUDLY IF IT CANNOT.
-    # `core/sqlite_connection.py` sets `PRAGMA journal_mode=WAL` on every
-    # connection it opens; a test source built with a bare connect()
-    # exercises ROLLBACK-JOURNAL mode, where a writer blocks readers
-    # outright rather than letting them read the last committed state.
-    #
-    # That is a fidelity gap on its own: this file's whole subject is
-    # what a reader sees while a writer is working, and it was asking
-    # that question of a configuration the product never runs.
-    #
-    # SEC-10 says this file "fails intermittently under full-tier load,
-    # passes 3/3 alone", and reader-blocking under contention is the
-    # obvious candidate -- but I could not reproduce the failure (6/6
-    # alone, and 12/12 under four busy cores), so this is NOT presented
-    # as a fix for it. It is a correctness change that happens to
-    # remove the most plausible cause.
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("CREATE TABLE widgets (widget_id TEXT PRIMARY KEY, v INTEGER)")
     conn.executemany(
-        "INSERT INTO widgets VALUES (?, ?)", [(f"w{i}", 0) for i in range(2000)]
+        "INSERT INTO widgets VALUES (?, ?)", [(f"w{i:04d}", 0) for i in range(2000)]
     )
     conn.commit()
     conn.close()
 
-    sync = IcebergMirrorSync(tmp_path / "mirror", {"primary": SQLiteReadAdapter({"path": path})})
-    stop = threading.Event()
+    landed = []
 
-    def churn():
-        writer = sqlite3.connect(path, timeout=10)
-        counter = 1
-        while not stop.is_set():
-            writer.execute("UPDATE widgets SET v = ? WHERE widget_id = 'w0'", (counter,))
-            writer.commit()
-            counter += 1
-        writer.close()
+    class WriteAfterTheFirstBatch(SQLiteReadAdapter):
+        def iter_all_rows(self, *args, **kwargs):
+            for number, batch in enumerate(super().iter_all_rows(*args, **kwargs)):
+                yield batch
+                if number == 0:
+                    writer = sqlite3.connect(path, timeout=10)
+                    writer.execute("UPDATE widgets SET v = 1")
+                    writer.execute("INSERT INTO widgets VALUES ('w9999', 1)")
+                    writer.commit()
+                    writer.close()
+                    landed.append(len(batch))
 
-    thread = threading.Thread(target=churn)
-    thread.start()
-    try:
-        result = sync.sync_table("primary", "widgets", "widget_id", ["widget_id", "v"])
-    finally:
-        stop.set()
-        thread.join()
+    monkeypatch.setattr(iceberg_sync, "SYNC_BATCH_ROWS", 100)
+    sync = IcebergMirrorSync(tmp_path / "mirror",
+                              {"primary": WriteAfterTheFirstBatch({"path": path})})
+    result = sync.sync_table("primary", "widgets", "widget_id", ["widget_id", "v"])
 
-    # Every row present, none lost or duplicated by the concurrent writer.
+    assert landed == [100], "the write must land after exactly one batch, or this tests nothing"
+    mirrored = _mirror(sync).to_pydict()
+    # The state BEFORE the write, whole: no row from after it, and no
+    # row half way between.
     assert result.row_count == 2000
+    assert set(mirrored["v"]) == {"0"}
+    assert "w9999" not in mirrored["widget_id"]
 
 
 def test_snapshot_history_lets_an_earlier_sync_still_be_read(sync, source):
