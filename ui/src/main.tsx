@@ -2,6 +2,18 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { OverlaysProvider } from '@blueprintjs/core'
 import App from './App'
+// IBM PLEX, SELF-HOSTED (DEV_UI 9.1). The tokens named it for weeks and
+// no font file existed, so every screen rendered in the system sans.
+// Bundled from @fontsource (SIL OFL 1.1, which permits bundling): no CDN,
+// because Elysium runs inside customer networks "sometimes with no
+// outbound internet". THREE WEIGHTS -- 400, 500, 600 -- "because each one
+// is bytes an operator waits for", and mono at 400 for identifiers. Each
+// file is split by unicode-range, so a browser fetches only the scripts
+// a page actually shows. The licence ships at /licenses/.
+import '@fontsource/ibm-plex-sans/400.css'
+import '@fontsource/ibm-plex-sans/500.css'
+import '@fontsource/ibm-plex-sans/600.css'
+import '@fontsource/ibm-plex-mono/400.css'
 
 // document.getElementById('root')! -- genuinely non-null by
 // construction, not assumed: index.html (this project's own, single

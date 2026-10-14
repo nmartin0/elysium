@@ -59,7 +59,9 @@ function declarations(css: string): string[] {
     .filter((line) => line.startsWith('--') || /^[a-z-]+:/.test(line))
 }
 
-const PRIMITIVE = /^--(grey|blue|red|white)/
+// The ramp families: DEV_UI 8.3's navy, slate and sky for dark, paper
+// and ink for light, the status hues, and Blueprint's source tint.
+const PRIMITIVE = /^--(navy|slate|sky|steel|paper|ink|green|amber|red|blue|white)-?/
 
 describe('token layers', () => {
   it('defines a ramp named by what the colours are', () => {
@@ -172,12 +174,29 @@ describe('token layers', () => {
     // DEV_UI 8.1 says the darks want. That looks like a mistake in the
     // ramp rather than an unused step, but it is a palette decision
     // and not this commit's business.
+    // BLUEPRINT'S OWN VARIABLES, set here to retint it to the palette,
+    // are read by Blueprint's stylesheet rather than ours -- checked
+    // in the next test against the names that stylesheet really reads.
     const unread = [...defined].filter(
       (token): token is string =>
-        token !== undefined && !PRIMITIVE.test(token) && !referenced.has(token) && !byName.has(token),
+        token !== undefined &&
+        !PRIMITIVE.test(token) &&
+        !token.startsWith('--bp-') &&
+        !referenced.has(token) &&
+        !byName.has(token),
     )
 
     expect(unread).toEqual([])
+  })
+
+  it('sets only Blueprint variables that Blueprint actually reads', () => {
+    // A misspelt --bp- name retints nothing and fails silently -- the
+    // widget keeps its grey and nobody is told why.
+    const blueprint = read('node_modules/@blueprintjs/core/lib/css/blueprint.css')
+    const ours = [...tokens.matchAll(/^\s*(--bp-[a-z0-9-]+)\s*:/gm)].map((match) => match[1] ?? '')
+
+    expect(ours.length).toBeGreaterThan(5)
+    expect(ours.filter((name) => !blueprint.includes(`var(${name})`))).toEqual([])
   })
 
   it('overrides only semantic tokens in the dark theme, never primitives', () => {

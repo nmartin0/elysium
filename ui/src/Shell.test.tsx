@@ -499,23 +499,41 @@ describe('theme', () => {
     // tokens.css's dark surfaces switch together.
     renderShell([{ name: 'Query', path: '/query' }])
 
-    fireEvent.click(screen.getByLabelText('Switch to dark theme'))
-    expect(document.body.classList.contains(Classes.DARK)).toBe(true)
-
     fireEvent.click(screen.getByLabelText('Switch to light theme'))
     expect(document.body.classList.contains(Classes.DARK)).toBe(false)
+
+    fireEvent.click(screen.getByLabelText('Switch to dark theme'))
+    expect(document.body.classList.contains(Classes.DARK)).toBe(true)
+  })
+
+  it('starts dark when nobody has chosen (DEV_UI 8.6.6)', () => {
+    localStorage.clear()
+    renderShell([{ name: 'Query', path: '/query' }])
+
+    expect(document.body.classList.contains(Classes.DARK)).toBe(true)
+    expect(screen.getByLabelText('Switch to light theme')).toBeInTheDocument()
   })
 
   it('remembers the choice', () => {
     // A theme is a preference. Re-choosing it every visit is the kind
     // of small friction that makes an app feel unfinished.
     const first = renderShell([{ name: 'Query', path: '/query' }])
-    fireEvent.click(screen.getByLabelText('Switch to dark theme'))
+    fireEvent.click(screen.getByLabelText('Switch to light theme'))
     first.unmount()
 
     renderShell([{ name: 'Query', path: '/query' }])
 
-    expect(screen.getByLabelText('Switch to light theme')).toBeInTheDocument()
+    expect(screen.getByLabelText('Switch to dark theme')).toBeInTheDocument()
+  })
+
+  it('a light theme stored by the old, always-written key is not a choice', () => {
+    // Every browser held `theme: light` without anyone choosing it; a
+    // default that could not reach them would not be a default.
+    localStorage.clear()
+    localStorage.setItem('elysium.pref.theme.', JSON.stringify('light'))
+    renderShell([{ name: 'Query', path: '/query' }])
+
+    expect(document.body.classList.contains(Classes.DARK)).toBe(true)
   })
 })
 

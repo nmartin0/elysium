@@ -746,7 +746,7 @@
   .pending-write {
     margin-top: 1.25rem;
     padding: 1rem;
-    border-radius: 8px;
+    border-radius: var(--radius-panel);
     background: var(--surface-content);
     border: 1px solid var(--border-subtle);
   }
@@ -853,7 +853,7 @@
     width: 100%;
     border-collapse: collapse;
     background: var(--surface-content);
-    border-radius: 8px;
+    border-radius: var(--radius-panel);
     overflow: hidden;
   }
 
@@ -1092,7 +1092,7 @@
   .object-detail__fields {
     margin: 0;
     padding: 1rem;
-    border-radius: 8px;
+    border-radius: var(--radius-panel);
     background: var(--surface-content);
     border: 1px solid var(--border-subtle);
   }
@@ -1135,7 +1135,7 @@
   .action-form {
     margin-top: 1rem;
     padding: 1rem;
-    border-radius: 8px;
+    border-radius: var(--radius-panel);
     background: var(--surface-content);
     border: 1px solid var(--border-subtle);
     display: flex;
@@ -1749,7 +1749,7 @@
 
   .help-panel__error {
     margin: 0;
-    color: var(--red-500);
+    color: var(--status-danger);
   }
 
   /* WHICH SOURCE SUPPLIED EACH VALUE (R38) is part of the same panel,
@@ -2234,7 +2234,7 @@
 
   .identity__proposal {
     border: 1px solid var(--border-subtle, rgb(0 0 0 / 15%));
-    border-radius: 4px;
+    border-radius: var(--radius-panel);
     padding: var(--space-normal);
     margin-bottom: var(--space-normal);
   }
@@ -3164,5 +3164,29 @@
   .command-palette__empty {
     margin: var(--space-snug) 0 0;
     color: var(--text-secondary);
+  }
+
+  /* THE STATE DOT (DEV_UI 8.6.1): colour never carries a state alone.
+   * currentColor, so it is the intent's own hue in either theme. */
+  .status-tag__dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-pill);
+    background: currentColor;
+  }
+
+  /* TABULAR NUMERALS EVERYWHERE (DEV_UI 9.2), "so columns of figures
+   * align without manual work" -- it was set seven times, locally. On
+   * the root, so every table, count and amount inherits it. */
+  #root {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A DIALOG IS A FLOATING LAYER, a step AND a shadow (DEV_UI 9.5).
+   * Blueprint's dark dialog is a literal #1c2127 -- the one surface its
+   * variables do not reach -- so it is put on the raised step here. */
+  .bp6-dark .bp6-dialog {
+    background: var(--surface-raised);
   }
 }

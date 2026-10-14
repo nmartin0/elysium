@@ -149,12 +149,16 @@ describe('theming', () => {
       return new RegExp(`\\${ref}: (#[0-9a-f]{6})`).exec(TOKENS)?.[1]
     }
 
+    // AGAINST THE CONTENT, which is what sits beside the sidebar. This
+    // compared chrome with --surface-sunken while sunken was the page;
+    // with DEV_UI's palette the page IS the canvas, chrome sits on it,
+    // and the surface that must differ is the content's.
     const chrome = resolve('surface-chrome')
-    const sunken = resolve('surface-sunken')
+    const content = resolve('surface-content')
 
     expect(chrome).toBeDefined()
-    expect(sunken).toBeDefined()
-    expect(chrome).not.toBe(sunken)
+    expect(content).toBeDefined()
+    expect(chrome).not.toBe(content)
   })
 
   it('every surface is redefined for dark mode', () => {

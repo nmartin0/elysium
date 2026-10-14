@@ -52,6 +52,23 @@ interface StatusTagProps extends Omit<TagProps, 'intent' | 'minimal'> {
   state?: TagState
 }
 
-export default function StatusTag({ state = 'neutral', ...rest }: StatusTagProps) {
-  return <Tag minimal intent={INTENT[state]} {...rest} />
+/**
+ * A DOT AND A WORD, NEVER THE HUE ALONE (DEV_UI 8.6.1). Success and
+ * danger collapse together under red-green colour blindness -- 8% of men
+ * -- and this is exactly where Elysium leans on colour hardest:
+ * approvals, quarantine, drift. Every state but neutral carries a dot,
+ * and the text was already a word. The dot is the tag's own colour, so
+ * it agrees with the intent by construction.
+ */
+export default function StatusTag({ state = 'neutral', className, ...rest }: StatusTagProps) {
+  return (
+    <Tag
+      minimal
+      round
+      intent={INTENT[state]}
+      icon={state === 'neutral' ? undefined : <span className="status-tag__dot" aria-hidden="true" />}
+      className={className ? `status-tag ${className}` : 'status-tag'}
+      {...rest}
+    />
+  )
 }

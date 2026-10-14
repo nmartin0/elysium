@@ -41,39 +41,54 @@
  * -- components use the semantic names below, which is what makes a
  * theme change touch this block instead of every rule in the app.
  *
- * Named by WHAT THEY ARE, not what they are for: --grey-700 says
- * nothing about whether it is a border or a label, which is the point.
- * A primitive that encodes its purpose is a semantic token wearing the
- * wrong name, and it stops being reusable the moment a second thing
- * wants the same colour.
+ * Named by WHAT THEY ARE, not what they are for: --navy-800 says
+ * nothing about whether it is a panel or a well, which is the point.
  *
- * Values are Blueprint's own palette, per the rule that Blueprint
- * always wins: these are the greys and blues its components already
- * render, so a surface built from them sits flush against a Blueprint
- * widget rather than a shade off it.
+ * DEV_UI.md 8.3, NOT BLUEPRINT'S GREYS ANY MORE. These were Blueprint's
+ * own palette "so a surface sits flush against a Blueprint widget" --
+ * and so the app looked like Blueprint, which is the "nothing looks
+ * decided" half of the diagnosis. The palette the owner chose on 22
+ * September is navy and off-white on ONE hue spine (255 in OKLCH), every
+ * pair measured with WCAG 2 AND APCA; Blueprint is retinted to match
+ * below rather than the reverse. The figures are DEV_UI's, so a later
+ * "correction" toward GitHub's greys has to argue with them there.
  */
   :root {
-    --grey-900: #111418;
-    --grey-800: #1c2127;
-    --grey-700: #252a31;
-    --grey-600: #2f343c;
-    --grey-500: #404854;
-    --grey-400: #5f6b7c;
-    --grey-300: #999999;
-    --grey-200: #abb3bf;
-    --grey-150: #d3d8de;
-    --grey-100: #edeff2;
-    --grey-50: #f6f7f9;
+    /* Dark, darkest first: canvas, surface, raised, border. */
+    --navy-900: #0c1723;
+    --navy-800: #182230;
+    --navy-700: #242f3d;
+    --navy-600: #384352;
+    /* Text on dark: Lc 98, 78, 63 -- and --slate-400, Lc 43, which is
+     * NOT a text colour (8.6.3): icons, borders, disabled. */
+    --slate-100: #eef2f7;
+    --slate-200: #c8d2de;
+    --slate-300: #adb9c8;
+    --slate-400: #8893a2;
+    --sky-400: #5fa1f3; /* accent on dark: buttons, chips, focus */
+    --sky-300: #77baff; /* inline link text on dark, Lc 62 */
+    --green-400: #66ba7a;
+    --amber-400: #c89e3a;
+    --red-400: #e88479;
+    --blue-400: #6da7f1;
+    /* Not a colour anyone sees: the source Blueprint derives its dark
+     * surfaces from, chosen so its card lands on --navy-700 --
+     * oklch(0.558 0.062 254.7), from #242f3d through Blueprint's own
+     * factors (0.54 of the lightness, 0.481 of the chroma). */
+    --steel-500: #5b7698;
+
+    /* Light: the same hues, lightness inverted. */
+    --paper-50: #f8fafd;
+    --paper-100: #edf0f4;
+    --paper-200: #cdd5e0;
+    --ink-900: #1d2a3a;
+    --ink-600: #525f6f;
+    --ink-500: #6b7787;
+    --sky-700: #1762b6;
+    --green-700: #1f7a3d;
+    --amber-700: #8a6100;
+    --red-700: #b23b2e;
     --white: #ffffff;
-
-    /* Blueprint's blue, for focus and selection. */
-    --blue-400: #2d72d2;
-    --blue-200: #8abbff;
-
-    /* Danger. Only the fill is needed today; the text that sits on it is
-   * --white above, because this red is dark enough for white either
-   * way and is NOT a theme surface. */
-    --red-500: #b3261e;
   }
 
   :root {
@@ -97,53 +112,44 @@
    * literal -- a literal here is a primitive that escaped.
    */
 
-    /* --- Surfaces, darkest to lightest -----------------------------
-   * Lightness IS the hierarchy. Chrome and configuration sit dark,
-   * content sits light, and a raised surface sits lightest.
+    /* --- Surfaces -------------------------------------------------
+   * Lightness IS the hierarchy (DEV_UI 9.5: "ELEVATION by LIGHTNESS
+   * STEP, not shadow"). Configuration sits a step below content, and a
+   * raised surface a step above it.
    */
-    --surface-chrome: var(--grey-800); /* sidebar, header: app furniture --
+    --surface-chrome: var(--navy-900); /* sidebar, header: app furniture --
                                      dark in BOTH themes, because it is
                                      furniture rather than content */
-    --surface-config: var(--grey-50); /* filter panels, toolbars */
-    --surface-content: var(--white); /* results, the thing being read */
-    --surface-sunken: var(--grey-100); /* wells, empty states */
+    --surface-config: var(--paper-100); /* filter panels, toolbars */
+    --surface-content: var(--paper-50); /* results, the thing being read */
+    --surface-raised: var(--white); /* a card or panel above the content */
+    --surface-sunken: var(--paper-100); /* wells, empty states, the page */
 
-    --border-subtle: var(--grey-150);
+    --border-subtle: var(--paper-200);
 
-    --text-primary: var(--grey-800);
-    --text-secondary: var(--grey-400);
-    --text-on-chrome: var(--grey-50);
-    --text-on-chrome-dim: var(--grey-200);
+    --text-primary: var(--ink-900);
+    --text-secondary: var(--ink-600);
+    --text-on-chrome: var(--slate-100);
+    --text-on-chrome-dim: var(--slate-300);
 
-    /* Blueprint's own focus blue, so our controls ring the same as its. */
-    --accent-focus: var(--blue-400);
+    /* THE ACCENT IS NOT THE LINK COLOUR (8.6.4). Links keep
+     * Blueprint's own colour until a rule here needs DEV_UI's --link
+     * (#77baff dark, #1762b6 light), which arrives with its user. */
+    --accent-focus: var(--sky-700);
 
-    /* NO DANGER FILL TOKEN, and no control-border token, deliberately
-   * -- 09-S2-02, and worth knowing before anyone adds them back.
-   *
-   * --fill-danger and --text-on-danger existed for a single rule,
-   * `button.danger`, whose markup had already gone: the one component
-   * that used it moved to Blueprint's own intent="danger", which is
-   * theme-aware where a fixed red was not. The tokens outlived the
-   * rule and the rule outlived its markup, so neither the dead-rule
-   * check nor the unread-token check could see the pair alone.
-   *
-   * --border-control described a secondary button's edge. Blueprint
-   * draws its own, and the standing rule is that Blueprint wins.
-   *
-   * A destructive control gets intent="danger" from the library. If
-   * something ever genuinely cannot, bring back a token AND its user
-   * in the same commit -- a token with no rule is a vocabulary word
-   * with no meaning, which is how these three got here. */
+    /* STATUS TEXT. Only danger is spoken outside a tag today; success,
+     * warning and info come back with their first user (DEV_UI 8.3 has
+     * the values), because a token with no rule is a word with no
+     * meaning. */
+    --status-danger: var(--red-700);
 
     /* --- Elevation --------------------------------------------------
-   * ONE level. An earlier version defined raised, overlay and inset;
-   * only raised was ever used, and three unused shadows look more
-   * considered than they are. Blueprint's own components bring their
-   * own elevation, so this exists only to lift content above the
-   * configuration beside it.
+   * A HAIRLINE, NOT A SHADOW (DEV_UI 9.5). "Shadows barely register on
+   * a dark canvas", so a raised surface is a lightness step with an
+   * edge; only genuinely floating layers -- menus, popovers, dialogs --
+   * keep a shadow, and those are Blueprint's own.
    */
-    --elevate-raised: 0 1px 3px rgba(17, 20, 24, 0.12), 0 0 0 1px rgba(17, 20, 24, 0.06);
+    --elevate-raised: 0 0 0 1px var(--border-subtle);
 
     /* --- Spacing ----------------------------------------------------
    * A 4px scale. Named by role rather than size, so "tight" stays
@@ -219,10 +225,14 @@
     --type-label-line: 16px;
     --type-label-weight: 600;
 
-    /* 2px, which is Blueprint's own $pt-border-radius. A 3px radius
-   * sits a pixel off every Blueprint surface next to it -- close
-   * enough to look like a mistake rather than a choice. */
-    --radius: 2px;
+    /* RADIUS, DEV_UI 9.5: 6px controls, 10px panels and cards, 999px
+     * tags and pills -- "small radii read as precise". This was 2px,
+     * Blueprint's own, chosen to sit flush beside its widgets; Blueprint
+     * now takes ours instead (--bp-surface-border-radius below), so the
+     * two still agree and the number is the design's. */
+    --radius: 6px;
+    --radius-panel: 10px;
+    --radius-pill: 999px;
     /* Multiples of 8, which is what the whole layout snaps to. The
    * collapsed sidebar has no token because it collapses to 0 -- it
    * hides rather than shrinking, and a token for a width nothing uses
@@ -243,25 +253,44 @@
     --target-min: 24px;
   }
 
-  /* Dark mode is Blueprint's own, applied at the root rather than
- * reimplemented. Its widgets each carry a dark variant, so this
- * inverts the app without a parallel stylesheet.
- *
- * bp6 only: that is what the installed Blueprint emits. A bp5
- * selector alongside it was dead CSS that read like insurance. */
+  /* BLUEPRINT, RETINTED TO THE PALETTE rather than the palette bent to
+   * Blueprint. Blueprint 6 derives its surfaces from these variables
+   * in OKLCH -- a dark card is `--bp-intent-default-rest` at 0.54 of its
+   * lightness and 0.481 of its chroma -- so setting the source puts
+   * every Blueprint widget on the navy spine without a rule per widget.
+   *
+   * FILLED INTENTS USE THE LIGHT-THEME STATUS COLOURS IN BOTH THEMES:
+   * a filled button carries white text, and the dark-theme status
+   * colours are tuned to be READ on navy, not to carry white. */
+  :root {
+    --bp-surface-border-radius: var(--radius);
+    --bp-intent-primary-rest: var(--sky-700);
+    --bp-intent-success-rest: var(--green-700);
+    --bp-intent-warning-rest: var(--amber-700);
+    --bp-intent-danger-rest: var(--red-700);
+    --bp-typography-color-default-rest: var(--text-primary);
+    --bp-typography-color-muted: var(--text-secondary);
+  }
+
+  /* DARK, which is the default (DEV_UI 8.6.6). Applied through
+   * Blueprint's own class at the root, so its widgets switch with us.
+   *
+   * bp6 only: that is what the installed Blueprint emits. */
   .bp6-dark {
-    /* Chrome must stay DARKER than the page behind it, or the sidebar
-     dissolves. In the first dark palette both were #1c2127, so the
-     sidebar vanished into the background and took its buttons with
-     it -- which is what "the logout button is not present" was. */
-    --surface-chrome: var(--grey-900);
-    --surface-config: var(--grey-700);
-    --surface-content: var(--grey-600);
-    --surface-sunken: var(--grey-800);
-    --border-subtle: var(--grey-500);
-    --text-primary: var(--grey-50);
-    --text-secondary: var(--grey-200);
-    --accent-focus: var(--blue-200);
-    --elevate-raised: 0 1px 3px rgba(17, 20, 24, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    /* Chrome must stay darker than the CONTENT beside it, or the
+     sidebar dissolves -- in the first dark palette both were #1c2127,
+     and "the logout button is not present" was the sidebar vanishing
+     into the page, taking its buttons with it. */
+    --surface-chrome: var(--navy-900);
+    --surface-config: var(--navy-900);
+    --surface-content: var(--navy-800);
+    --surface-raised: var(--navy-700);
+    --surface-sunken: var(--navy-900);
+    --border-subtle: var(--navy-600);
+    --text-primary: var(--slate-100);
+    --text-secondary: var(--slate-200);
+    --accent-focus: var(--sky-400);
+    --status-danger: var(--red-400);
+    --bp-intent-default-rest: var(--steel-500);
   }
 }

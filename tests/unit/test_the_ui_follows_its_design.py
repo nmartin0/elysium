@@ -90,6 +90,46 @@ class TestTheTypefaceMatchesSection91:
             assert "@import url(http" not in text, str(path)
 
 
+class TestThePaletteMatchesSection83:
+    """8.3: navy and off-white on one hue spine, every pair measured with
+    WCAG 2 and APCA. The tokens held Blueprint's greys until 14 Oct."""
+
+    @pytest.mark.parametrize("primitive, value", [
+        ("navy-900", "#0c1723"), ("navy-800", "#182230"), ("navy-700", "#242f3d"),
+        ("navy-600", "#384352"), ("slate-100", "#eef2f7"), ("slate-200", "#c8d2de"),
+        ("slate-300", "#adb9c8"), ("slate-400", "#8893a2"), ("sky-400", "#5fa1f3"),
+        ("paper-50", "#f8fafd"), ("paper-100", "#edf0f4"), ("paper-200", "#cdd5e0"),
+        ("ink-900", "#1d2a3a"), ("ink-600", "#525f6f"), ("sky-700", "#1762b6"),
+        ("red-400", "#e88479"), ("red-700", "#b23b2e"),
+    ])
+    def test_each_colour_is_the_documented_one(self, primitive, value):
+        assert value in DESIGN, f"DEV_UI.md 8.3 no longer lists {value}"
+        assert token(primitive) == value, (
+            f"--{primitive} is {token(primitive)}, DEV_UI.md 8.3 says {value}. "
+            f"One of them is wrong.")
+
+    def test_dark_is_the_default(self):
+        """8.6.6: "DARK IS THE DEFAULT"."""
+        shell = (ROOT / "ui/src/Shell.tsx").read_text(encoding="utf-8")
+
+        assert "readPreference<string>('theme-choice', username, 'dark')" in shell
+
+    def test_the_radii_are_the_documented_ones(self):
+        """9.5: 6px controls, 10px panels and cards, 999px pills."""
+        assert (token("radius"), token("radius-panel"), token("radius-pill")) == (
+            "6px", "10px", "999px")
+
+    def test_plex_is_bundled_not_merely_named(self):
+        """Named in the tokens for weeks with no font file anywhere, so
+        every screen rendered in the system sans."""
+        main = (ROOT / "ui/src/main.tsx").read_text(encoding="utf-8")
+
+        for weight in ("400", "500", "600"):
+            assert f"@fontsource/ibm-plex-sans/{weight}.css" in main
+        assert "@fontsource/ibm-plex-mono/400.css" in main
+        assert (ROOT / "ui/public/licenses/IBM-Plex-Sans-OFL.txt").exists()
+
+
 class TestTheSpacingScaleMatchesSection95:
     """9.5: "one 4px scale -- 4, 8, 12, 16, 24, 32, 48 -- used for
     padding, margin and gap alike. No value outside it; a 13px padding

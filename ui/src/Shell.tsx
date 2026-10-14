@@ -305,10 +305,31 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
    * Kept in browser storage per user, since a theme is a preference
    * and re-choosing it every visit is the kind of small friction that
    * makes an app feel unfinished.
+   *
+   * DARK BY DEFAULT (DEV_UI 8.6.6, confirmed by the owner 14 Oct), and
+   * a CHOICE is remembered only when somebody makes one. The old key,
+   * `theme`, was written on every render -- so every browser that ever
+   * opened Elysium held "light" without anyone choosing it, and a new
+   * default could never have reached them. `theme-choice` is written
+   * by the toggle alone; the old key is read by nothing.
    */
-  const [dark, setDark] = useState(
-    () => readPreference<string>('theme', currentUser?.username ?? '', 'light') === 'dark',
-  )
+  //
+  // READ EVERY RENDER, NOT ONCE. The shell can mount before the user is
+  // known -- a reload renders it while /me is still answering -- and a
+  // value read once at mount was read under nobody's name, so a choice
+  // of light came back dark on every reload (seen in a real browser).
+  // A localStorage read is microseconds; the state below only holds a
+  // choice made in this session, for the user who made it.
+  const username = currentUser?.username ?? ''
+  const [chosen, setChosen] = useState<{ username: string; dark: boolean } | null>(null)
+  const dark =
+    chosen !== null && chosen.username === username
+      ? chosen.dark
+      : readPreference<string>('theme-choice', username, 'dark') === 'dark'
+  const chooseTheme = (nextDark: boolean) => {
+    setChosen({ username, dark: nextDark })
+    writePreference('theme-choice', username, nextDark ? 'dark' : 'light')
+  }
 
   useEffect(() => {
     // Classes.DARK, not a literal. Blueprint 6 emits `bp6-dark` and
@@ -316,8 +337,7 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
     // on a major upgrade, and the test asserting the same literal
     // would keep passing -- which is exactly what happened here.
     document.body.classList.toggle(Classes.DARK, dark)
-    writePreference('theme', currentUser?.username ?? '', dark ? 'dark' : 'light')
-  }, [dark, currentUser?.username])
+  }, [dark])
 
   // setCollapsed plus a localStorage write, for a change that should
   // be REMEMBERED. The shared piece is persistCollapsedChoice() below
@@ -682,7 +702,7 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
           minimal
           icon={dark ? 'flash' : 'moon'}
           aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
-          onClick={() => setDark(!dark)}
+          onClick={() => chooseTheme(!dark)}
         />
         <UserMenu currentUser={currentUser} onLogout={onLogout} />
       </div>
