@@ -319,17 +319,25 @@ one Inbox. Built so far, each checked in a real browser:
   readable field withheld for one object -- is deliberately NOT a third
   state: MAC withholds whole objects, and a link to a hidden object
   reads as null, because marking it would disclose that it exists.
-
 - The command palette beyond "go to": object types, saved views, the
   actions on the object in front of you (greyed with the reason when
   your role may not run one), the shell's own settings, and a search
   of each type for whatever was typed. Scoped to where you are, as
   GitHub's palette is.
+- Section 14's ontology canvas: layered (dagre), orthogonal edges, a
+  moved type kept per person apart from the declaration, actions as a
+  count on the type, subject areas (the ontology's own groups offered
+  first), and security chains on a layer for manage:roles.
 
-STILL TO BUILD: section 14's ontology canvas (layered layout, positions
-kept apart from the declaration, actions on the node, subject areas).
+WHAT THE CANVAS DOES NOT DO YET, each buildable: edges are not routed
+AROUND other types, so two types dragged far apart can draw a line
+across a third ("Auto-layout" undoes it); a node shows no object COUNT
+or sync HEALTH (14.5 lists both -- a /count per type is the cost);
+properties do not appear at close zoom; and the layout is per person,
+with no deployment-wide default -- that belongs with editing
+configuration from the UI, which is next.
 
-**Blocked on:** nothing -- the remaining list above is buildable.
+**Blocked on:** nothing.
 
 ## 8. Agent-loop efficiency, which needs a machine with a model
 

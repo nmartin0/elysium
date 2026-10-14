@@ -1340,6 +1340,30 @@ export async function getInboxCounts(): Promise<InboxCounts> {
   return (await response.json()) as InboxCounts
 }
 
+/** Where this person put the ontology's types, and their subject areas
+ *  (DEV_UI 14). Presentation only, kept apart from the ontology itself. */
+export interface OntologyCanvasLayout {
+  /** Only types somebody MOVED; the rest follow the automatic layout. */
+  positions: Record<string, { x: number; y: number }>
+  areas: { name: string; types: string[] }[]
+  /** How each type gets its security value. Present only for someone
+   *  who may change roles; absent, not empty, for everyone else. */
+  security_chains?: { type: string; kind: 'via' | 'field'; field: string; target?: string }[]
+}
+
+export async function getOntologyCanvas(): Promise<OntologyCanvasLayout> {
+  const response = await apiFetchOrThrow('/me/ontology-canvas')
+  return (await response.json()) as OntologyCanvasLayout
+}
+
+/** Replaces the layout; answers with what was KEPT, which is what to draw. */
+export async function saveOntologyCanvas(
+  layout: Pick<OntologyCanvasLayout, 'positions' | 'areas'>,
+): Promise<OntologyCanvasLayout> {
+  const response = await apiFetchOrThrow('/me/ontology-canvas', { method: 'PUT', body: JSON.stringify(layout) })
+  return (await response.json()) as OntologyCanvasLayout
+}
+
 /** A write waiting for approval that touches an object (DEV_UI 15.3),
  *  as the object shows it: the action, and whose decision it is. Only
  *  writes the caller's own Inbox would show; never the values. */

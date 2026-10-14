@@ -74,6 +74,20 @@ describe('GraphPreview -- an object type', () => {
   })
 })
 
+describe('GraphPreview -- the actions on a type (DEV_UI 14.3)', () => {
+  it('lists them, since the canvas carries only their count, and opens one here', () => {
+    const onSelect = vi.fn()
+    render(<GraphPreview {...props} onSelect={onSelect} selection={{ kind: 'object', name: 'Customer' }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Update name' }))
+    expect(onSelect).toHaveBeenCalledWith({ kind: 'action', name: 'UpdateCustomerName' })
+  })
+
+  it('has no Actions heading for a read-only type', () => {
+    render(<GraphPreview {...props} actionTypes={{}} selection={{ kind: 'object', name: 'Customer' }} />)
+    expect(screen.queryByRole('heading', { name: 'Actions' })).toBeNull()
+  })
+})
+
 describe('GraphPreview -- an action type', () => {
   it('describes the action and what it touches', () => {
     render(<GraphPreview {...props} selection={{ kind: 'action', name: 'UpdateCustomerName' }} />)

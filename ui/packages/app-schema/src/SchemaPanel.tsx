@@ -33,7 +33,7 @@ import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/Vie
 import { getVisibleActionTypesCached } from '@elysium/shell-api/api'
 
 import GraphPreview, { toggleSelection, type GraphSelection } from './GraphPreview'
-import SchemaGraph from './SchemaGraph'
+import OntologyCanvas from './OntologyCanvas'
 import { useDeferredWrite } from '@elysium/shell-api/useDeferredValue'
 import Discover from './Discover'
 import { recordVisit } from './discoverStorage'
@@ -463,7 +463,12 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
       )}
       {selectedTab === 'overview' && (
         <div className="schema-overview">
-          <SchemaGraph schema={schema} onSelect={(next) => setSelection((current) => toggleSelection(current, next))} />
+          <OntologyCanvas
+            schema={schema}
+            selection={selection}
+            onSelect={(next) => setSelection((current) => toggleSelection(current, next))}
+            onSessionExpired={onSessionExpired}
+          />
           {/* The preview BESIDE the graph, not instead of it. Clicking
               used to navigate away, and returning re-laid the graph
               out -- so exploring cost you your place every time. */}
@@ -473,6 +478,9 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
               onClose={() => setSelection(null)}
               schema={schema}
               actionTypes={graphActionTypes}
+              // An action is listed on its type (DEV_UI 14.3) and opens
+              // here, in the same panel, rather than as a node.
+              onSelect={(next) => setSelection(next)}
               onOpenFull={(name, kind) => {
                 // Each kind opens its OWN catalogue. Routing by name
                 // alone once sent every click to Object types, where

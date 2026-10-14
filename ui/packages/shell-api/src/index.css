@@ -2320,6 +2320,225 @@
     position: relative;
   }
 
+  /* ---- THE ONTOLOGY CANVAS (DEV_UI 14) ---------------------------------
+   *
+   * Drawn in the content's own colours: a type is a raised surface with
+   * a hairline (9.5), an edge is secondary text, and the one accent is
+   * the selected type. The security layer takes the warning colour and
+   * a dash -- 14.5's "another visual language" -- so it survives a
+   * colour-blind reader and a greyscale print.
+   */
+  .ontology-canvas__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-hair);
+    margin-bottom: var(--space-tight);
+  }
+
+  .ontology-canvas__security-switch {
+    margin: 0 0 0 var(--space-tight);
+  }
+
+  .ontology-canvas__status {
+    margin-left: auto;
+    color: var(--text-secondary);
+  }
+
+  .ontology-canvas__body {
+    display: flex;
+    gap: var(--space-normal);
+    align-items: flex-start;
+  }
+
+  .ontology-canvas__areas {
+    flex: 0 0 180px;
+  }
+
+  .ontology-canvas__areas ul {
+    list-style: none;
+    margin: 0 0 var(--space-tight);
+    padding: 0;
+  }
+
+  .ontology-canvas__areas li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-hair);
+  }
+
+  .ontology-canvas__areas-title {
+    margin: 0 0 var(--space-hair);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .ontology-canvas__area {
+    flex: 1;
+    display: flex;
+    justify-content: space-between;
+    padding: var(--space-hair) var(--space-tight);
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--text-primary);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .ontology-canvas__area:hover {
+    background: var(--surface-raised);
+  }
+
+  .ontology-canvas__area--on {
+    background: var(--surface-raised);
+    box-shadow: inset 2px 0 0 var(--accent-focus);
+  }
+
+  .ontology-canvas__area-count,
+  .ontology-canvas__area-source {
+    color: var(--text-secondary);
+    font-size: 11px;
+  }
+
+  .ontology-canvas__frame {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ontology-canvas__svg {
+    display: block;
+    border-radius: 10px;
+    background: var(--surface-sunken);
+    box-shadow: var(--elevate-raised);
+    /* The canvas owns its drags: without this a touch drag scrolls the
+     * page instead of moving the type under the finger. */
+    touch-action: none;
+    cursor: grab;
+  }
+
+  .ontology-canvas__hint {
+    margin: var(--space-hair) 0 0;
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+
+  .ontology-canvas__node {
+    cursor: pointer;
+  }
+
+  .ontology-canvas__node:focus {
+    outline: none;
+  }
+
+  .ontology-canvas__box {
+    fill: var(--surface-raised);
+    stroke: var(--border-subtle);
+    stroke-width: 1;
+  }
+
+  .ontology-canvas__node:focus-visible .ontology-canvas__box,
+  .ontology-canvas__node--selected .ontology-canvas__box {
+    stroke: var(--accent-focus);
+    stroke-width: 2;
+  }
+
+  .ontology-canvas__node--moving {
+    cursor: grabbing;
+  }
+
+  .ontology-canvas__node--dimmed,
+  .ontology-canvas__edge--dimmed {
+    opacity: 0.25;
+  }
+
+  .ontology-canvas__name {
+    fill: var(--text-primary);
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  .ontology-canvas__meta,
+  .ontology-canvas__badge {
+    fill: var(--text-secondary);
+    font-size: 11px;
+  }
+
+  .ontology-canvas__badge {
+    font-weight: 600;
+  }
+
+  .ontology-canvas__badge--quiet {
+    font-weight: 400;
+    font-style: italic;
+  }
+
+  .ontology-canvas__badge--security {
+    fill: var(--status-warning);
+  }
+
+  .ontology-canvas__line {
+    fill: none;
+    stroke: var(--text-secondary);
+    stroke-width: 1.25;
+  }
+
+  .ontology-canvas__edge--selected .ontology-canvas__line {
+    stroke: var(--accent-focus);
+    stroke-width: 2;
+  }
+
+  .ontology-canvas__edge--security .ontology-canvas__line {
+    stroke: var(--status-warning);
+    stroke-dasharray: 6 4;
+  }
+
+  .ontology-canvas__arrow {
+    fill: var(--text-secondary);
+  }
+
+  .ontology-canvas__arrow--security {
+    fill: var(--status-warning);
+  }
+
+  /* The click target: wide and invisible, so a 1px line is hittable. */
+  .ontology-canvas__hit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 12;
+    cursor: pointer;
+  }
+
+  .ontology-canvas__edge-label {
+    fill: var(--text-secondary);
+    font-size: 11px;
+    /* A HALO in the canvas colour, so a label crossing a line reads. */
+    paint-order: stroke;
+    stroke: var(--surface-sunken);
+    stroke-width: 4px;
+  }
+
+  .ontology-canvas__dialog-label {
+    display: block;
+    margin-bottom: var(--space-hair);
+    font-weight: 600;
+  }
+
+  .ontology-canvas__dialog-problem {
+    margin: var(--space-hair) 0 0;
+    color: var(--status-danger);
+  }
+
+  .ontology-canvas__dialog-types {
+    margin: var(--space-normal) 0 0;
+    padding: 0;
+    border: 0;
+  }
+
   .graph-preview {
     position: absolute;
     top: 0;

@@ -70,9 +70,18 @@ interface GraphPreviewProps {
     }
   >
   onOpenFull: (name: string, kind: 'object' | 'action' | 'link') => void
+  /** Moving the panel to something it lists -- an action on this type. */
+  onSelect?: (selection: GraphSelection) => void
 }
 
-export default function GraphPreview({ selection, schema, actionTypes, onOpenFull, onClose }: GraphPreviewProps) {
+export default function GraphPreview({
+  selection,
+  schema,
+  actionTypes,
+  onOpenFull,
+  onClose,
+  onSelect,
+}: GraphPreviewProps) {
   // One control, rendered by every branch. A panel that opens and
   // cannot be closed leaves part of the graph covered with no way to
   // get it back.
@@ -159,6 +168,9 @@ export default function GraphPreview({ selection, schema, actionTypes, onOpenFul
   // picture legible.
   const dataFields = fields.filter(([, f]) => f.type !== 'link')
   const linkFields = fields.filter(([, f]) => f.type === 'link')
+  const actionsHere = Object.entries(actionTypes)
+    .filter(([, action]) => (action.affected_object_types ?? []).includes(selection.name))
+    .sort(([a], [b]) => a.localeCompare(b))
 
   return (
     <div className="graph-preview">
@@ -191,6 +203,28 @@ export default function GraphPreview({ selection, schema, actionTypes, onOpenFul
             {linkFields.map(([name, field]) => (
               <li key={name}>
                 {formatFieldName(name)} <span className="graph-preview__type">{field.target}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {/* ACTIONS ON THE TYPE, expanded here (DEV_UI 14.3): the canvas
+          carries only their count, which is what keeps it a structure
+          diagram rather than a process one. */}
+      {actionsHere.length > 0 && (
+        <>
+          <h4>Actions</h4>
+          <ul className="graph-preview__fields">
+            {actionsHere.map(([apiName, action]) => (
+              <li key={apiName}>
+                {onSelect ? (
+                  <Button minimal small onClick={() => onSelect({ kind: 'action', name: apiName })}>
+                    {action.display_name ?? apiName}
+                  </Button>
+                ) : (
+                  (action.display_name ?? apiName)
+                )}
               </li>
             ))}
           </ul>

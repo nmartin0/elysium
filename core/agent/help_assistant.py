@@ -64,8 +64,14 @@ SCREEN_GUIDE: Mapping[str, str] = {
     ),
     "Schema": (
         "What kinds of object exist that you may know about: their fields, how they "
-        "link to each other, and the actions defined on them, as a graph and as lists. "
-        "Fields may carry classification labels such as pii."
+        "link to each other, and the actions defined on them, as lists and as a canvas "
+        "under Overview. On the canvas each type shows its fields, links and how many "
+        "actions it has; click one to see its details. Drag a type, or focus it and use "
+        "the arrow keys, to move it -- it stays where you put it, and 'Auto-layout' puts "
+        "everything back. 'Subject areas' are named groups of types to navigate by; make "
+        "one with 'New subject area'. Someone who may change roles can switch on "
+        "'Security chains' to see which type borrows its security from which. Fields may "
+        "carry classification labels such as pii."
     ),
     "Inbox": (
         "What arrived and is waiting for you, in three tabs; each tab and the inbox "

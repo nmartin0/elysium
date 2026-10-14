@@ -349,3 +349,60 @@ function toRgb(colour: string): string {
     ? `rgb(${[1, 3, 5].map((i) => parseInt(canvas.slice(i, i + 2), 16)).join(', ')})`
     : canvas
 }
+
+test.describe('the ontology canvas (DEV_UI 14)', () => {
+  // WHAT ONLY A BROWSER KNOWS: that a pointer drag moves a type, that
+  // the move survives a reload, and that the automatic layout does not
+  // stack one type on another. jsdom has no pointer geometry at all.
+  test('a dragged type stays where it was put, across a reload', async ({ page }) => {
+    await login(page, DEV_USER)
+    await page.goto('/schema?tab=overview')
+    const tag = page.locator('[data-type="Tag"]')
+    await expect(tag).toBeVisible()
+
+    // A CLEAN START, so a previous run's arrangement cannot pass this.
+    const reset = page.getByRole('button', { name: 'Auto-layout' })
+    if (await reset.isEnabled()) {
+      await reset.click()
+      await expect(page.getByText('Arrangement saved')).toBeVisible()
+    }
+
+    const box = (await tag.boundingBox())!
+    await page.mouse.move(box.x + 40, box.y + 20)
+    await page.mouse.down()
+    await page.mouse.move(box.x + 40, box.y + 220, { steps: 10 })
+    await page.mouse.up()
+    await expect(page.getByText('Arrangement saved')).toBeVisible()
+    const moved = await tag.getAttribute('transform')
+
+    await page.reload()
+    await expect(page.locator('[data-type="Tag"]')).toHaveAttribute('transform', moved!)
+
+    // And put it back, so the next run -- and the person -- start clean.
+    await page.getByRole('button', { name: 'Auto-layout' }).click()
+    await expect(page.getByText('Arrangement saved')).toBeVisible()
+  })
+
+  test('the automatic layout puts no type on top of another', async ({ page }) => {
+    await login(page, DEV_USER)
+    await page.goto('/schema?tab=overview')
+    await expect(page.locator('[data-type]').first()).toBeVisible()
+    const reset = page.getByRole('button', { name: 'Auto-layout' })
+    if (await reset.isEnabled()) await reset.click()
+
+    const boxes = await page
+      .locator('[data-type] rect')
+      .evaluateAll((rects) =>
+        rects
+          .map((rect) => rect.getBoundingClientRect())
+          .map((r) => ({ l: r.left, r: r.right, t: r.top, b: r.bottom })),
+      )
+    expect(boxes.length).toBeGreaterThan(1)
+    for (const [i, a] of boxes.entries()) {
+      for (const b of boxes.slice(i + 1)) {
+        const overlap = a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b
+        expect(overlap).toBe(false)
+      }
+    }
+  })
+})
