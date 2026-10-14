@@ -2969,9 +2969,12 @@ def admin_mirror_route(request: Request,
     mirror_dir = request.app.state.runtime_paths.data_dir / "mirror"
     mirror_dir.mkdir(parents=True, exist_ok=True)
     from core.mirror.catalog import open_mirror_catalog
-    catalog = open_mirror_catalog(
-        mirror_dir, dict(_generation(request).config.mirror_storage or {}))
-    sync = IcebergMirrorSync(mirror_dir, {})
+    storage = dict(_generation(request).config.mirror_storage or {})
+    catalog = open_mirror_catalog(mirror_dir, storage)
+    # THE SAME STORAGE as the catalog beside it (PA001-F5): without it
+    # this read a local warehouse that an object-store deployment does
+    # not have.
+    sync = IcebergMirrorSync(mirror_dir, {}, storage=storage)
     attempts = SyncAttempts(mirror_dir / "sync_attempts.db")
     warnings = ExpectationWarnings(mirror_dir / "expectation_warnings.db")
     tables = []

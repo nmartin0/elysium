@@ -52,13 +52,15 @@ CREATE TABLE IF NOT EXISTS sync_attempts (
     at REAL NOT NULL,
     silo TEXT NOT NULL,
     table_name TEXT NOT NULL,
-    -- 'synced', 'unchanged' or 'refused'. Three outcomes rather than a
-    -- boolean, because "ran and did nothing" and "ran and was stopped"
-    -- are the two this store exists to separate.
+    -- 'synced', 'unchanged', 'degraded' or 'refused'. Outcomes rather
+    -- than a boolean, because "ran and did nothing" and "ran and was
+    -- stopped" are the two this store exists to separate -- and
+    -- 'degraded' (PA001-A17) is "ran, silver is current, but bronze
+    -- could not be written".
     outcome TEXT NOT NULL,
-    -- Why, when it was refused. Null otherwise. The full drift report,
-    -- because a reader who sees a refusal wants the column and the
-    -- value, not a category.
+    -- Why, when it was refused or degraded. Null otherwise. The full
+    -- drift report for a refusal, because a reader who sees one wants
+    -- the column and the value, not a category.
     detail TEXT,
     -- WHICH RUN THIS WAS (PR001-R9). One sync writes bronze, silver,
     -- gold, a changelog and a manifest, and the only thing connecting

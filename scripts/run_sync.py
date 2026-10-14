@@ -533,6 +533,11 @@ def _outcome_for(result) -> str:
     has touched for a month and one that changed this morning looked
     identical in the history an operator reads.
     """
+    if getattr(result, "degraded", None):
+        # BEFORE 'unchanged': a run whose bronze failed did not do
+        # everything, whatever silver found. The reason goes in the
+        # attempt's detail, beside it.
+        return "degraded"
     return "unchanged" if getattr(result, "unchanged", False) else "synced"
 
 
@@ -1033,7 +1038,11 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
                     # were indistinguishable in the history an operator reads
                     # to answer "when did this last actually move?".
                     attempts.record(target.silo_name, target.table_name,
-                                    _outcome_for(result), run_id=run_id)
+                                    _outcome_for(result),
+                                    detail=getattr(result, "degraded", None), run_id=run_id)
+                    if getattr(result, "degraded", None):
+                        print(f"WARNING {target.silo_name}.{target.table_name}: "
+                              f"{result.degraded}", file=sys.stderr)
                     # AFTER THE ATTEMPT, because a warning is about rows that
                     # were read and an attempt may be recorded for a table that
                     # never got that far. Writes nothing when no rule warned.
@@ -1123,6 +1132,10 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
 
         lineage.emit(COMPLETE if failures == 0 else FAIL, RUN_JOB,
                      error=f"{failures} table(s) or type(s) failed" if failures else None)
+        # THE ID AT BOTH ENDS (R9), so a log holding several runs can be
+        # cut at the right line, and the last line says how it went.
+        print(f"run {run_id} finished: "
+              + ("ok" if failures == 0 else f"{failures} table(s) or type(s) failed"))
         return failures
 
 

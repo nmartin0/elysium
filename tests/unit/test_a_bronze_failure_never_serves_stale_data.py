@@ -201,3 +201,33 @@ class TestTheHealthyPathIsUnchanged:
 
         assert result.row_count == 1
         assert mirror.served() == ["a"]
+
+
+class TestTheAttemptSaysDegraded:
+    """PA001-A17's other half: 'degraded recorded as synced'. A run
+    whose bronze copy failed did not do everything, and the attempt
+    history an operator reads must say so."""
+
+    def test_the_result_says_why(self, mirror, _bronze_fails):
+        mirror.run()
+        mirror.sql("UPDATE t SET name='NEW' WHERE id='1'")
+
+        result = mirror.run()
+
+        assert result.degraded and "OSError" in result.degraded
+        assert "disk full" not in result.degraded, "the kind, never the message"
+
+    def test_it_is_recorded_as_degraded_not_synced(self, mirror, _bronze_fails):
+        from scripts.run_sync import _outcome_for
+
+        mirror.run()
+        mirror.sql("UPDATE t SET name='NEW' WHERE id='1'")
+
+        assert _outcome_for(mirror.run()) == "degraded"
+
+    def test_a_good_run_is_not(self, mirror):
+        from scripts.run_sync import _outcome_for
+
+        result = mirror.run()
+        assert result.degraded is None
+        assert _outcome_for(result) == "synced"

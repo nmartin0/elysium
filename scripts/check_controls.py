@@ -2343,6 +2343,29 @@ CONTROLS = [
         tests=["tests/unit/test_sync_snapshot_semantics.py::"
                "test_the_sync_reads_a_consistent_snapshot_under_concurrent_source_writes"],
     ),
+    Control(
+        describes="PA001-F5: the loader reads an object-store mirror's sync times with its storage",
+        path="core/deployment_loader.py",
+        old=("    sync = IcebergMirrorSync(data_dir / \"mirror\", {},\n"
+             "                             storage=dict(config.mirror_storage or {}))\n"),
+        new="    sync = IcebergMirrorSync(data_dir / \"mirror\", {})\n",
+        tests=["tests/unit/test_object_storage_can_be_served.py::TestEverySyncObjectIsGivenTheStorage::test_the_loaders_last_synced_time_reads_an_object_store_mirror"],
+    ),
+    Control(
+        describes="PA001-F5: the mirror-status route opens the sync with the deployment's storage",
+        path="api/routes.py",
+        old="    sync = IcebergMirrorSync(mirror_dir, {}, storage=storage)\n",
+        new="    sync = IcebergMirrorSync(mirror_dir, {})\n",
+        tests=["tests/unit/test_object_storage_can_be_served.py::TestEverySyncObjectIsGivenTheStorage::test_no_construction_leaves_the_storage_out"],
+    ),
+    Control(
+        describes="PA001-A17: a sync whose bronze copy failed is recorded as degraded, not synced",
+        path="scripts/run_sync.py",
+        old="    if getattr(result, \"degraded\", None):\n        # BEFORE 'unchanged'",
+        new="    if False:\n        # BEFORE 'unchanged'",
+        tests=["tests/unit/test_a_bronze_failure_never_serves_stale_data.py::TestTheAttemptSaysDegraded::"
+               "test_it_is_recorded_as_degraded_not_synced"],
+    ),
 ]
 
 

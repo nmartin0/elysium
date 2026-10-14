@@ -133,6 +133,13 @@ class TestEveryLayerIsWired:
 
         assert 'print(f"run {run_id}")' in source
 
+    def test_and_says_when_it_finished(self):
+        """R9 said "printed at both ends"; the 14 Oct sweep found only
+        the start."""
+        source = Path("scripts/run_sync.py").read_text()
+
+        assert 'print(f"run {run_id} finished: "' in source
+
 
 class TestTheProperty:
     def test_it_is_absent_rather_than_empty_without_a_run(self):

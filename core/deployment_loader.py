@@ -858,7 +858,11 @@ def _mirror_last_synced_at(config: DeploymentConfig, data_dir: Path) -> str | No
     from core.mirror.iceberg_sync import IcebergMirrorSync
     from core.mirror.sync_targets import resolve_sync_targets
 
-    sync = IcebergMirrorSync(data_dir / "mirror", {})
+    # WITH THE DEPLOYMENT'S STORAGE (PA001-F5, found again in the 14 Oct
+    # sweep). Without it an object-store mirror is opened as a local one
+    # and the very first read raises -- so a generation could not build.
+    sync = IcebergMirrorSync(data_dir / "mirror", {},
+                             storage=dict(config.mirror_storage or {}))
     timestamps = []
     for target in resolve_sync_targets({"object_types": config.schema}):
         synced_at = sync.last_synced_at(target.silo_name, target.table_name)

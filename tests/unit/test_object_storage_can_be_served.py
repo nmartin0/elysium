@@ -203,3 +203,37 @@ class TestNobodyOpensTheCatalogTheirOwnWay:
             f"{offenders} construct SqlCatalog directly. Use "
             f"core.mirror.catalog.open_mirror_catalog, or an S3 deployment will "
             f"sync and then be unreadable (PA001-F5).")
+
+
+class TestEverySyncObjectIsGivenTheStorage:
+    """PA001-F5, AGAIN (COORD-4's sweep, 14 Oct). The tripwire above
+    catches SqlCatalog( outside the factory, but IcebergMirrorSync opens
+    its catalog THROUGH the factory -- with whatever storage it is given,
+    and two places gave it none. Reproduced against moto: the deployment
+    loader's last-synced lookup raised OSError on an S3 mirror, which is
+    exactly the "cannot build a generation" this item was about."""
+
+    def test_the_loaders_last_synced_time_reads_an_object_store_mirror(self, tmp_path, s3):
+        from core.deployment_loader import _mirror_last_synced_at
+
+        source = _source(tmp_path, "s")
+        sync = IcebergMirrorSync(tmp_path / "mirror",
+                                  {"p": SQLiteReadAdapter({"path": source})}, storage=s3)
+        sync.sync_table("p", "customers", "customer_id", ["customer_id", "name"], {})
+
+        config = SimpleNamespace(schema=SCHEMA, mirror_storage=s3)
+        assert _mirror_last_synced_at(config, tmp_path) is not None
+
+    def test_no_construction_leaves_the_storage_out(self):
+        import ast
+
+        root = Path(__file__).resolve().parent.parent.parent
+        missing = []
+        for directory in ("core", "api", "adapters", "scripts"):
+            for path in (root / directory).rglob("*.py"):
+                for node in ast.walk(ast.parse(path.read_text())):
+                    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                            and node.func.id == "IcebergMirrorSync"
+                            and not any(k.arg == "storage" for k in node.keywords)):
+                        missing.append(f"{path.relative_to(root)}:{node.lineno}")
+        assert not missing, f"IcebergMirrorSync built without storage= at {missing}"

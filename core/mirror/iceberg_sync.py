@@ -432,6 +432,9 @@ class SourceRead:
     #: How the source was read, for the operator (R2): "full" or
     #: "changes since ...", with the reason a declared table read in full.
     read: str = "full"
+    #: Why bronze could not be written, when it could not (PA001-A17):
+    #: the exception's KIND, never its message, which can carry a path.
+    bronze_failure: "str | None" = None
 
 
 def _merge_changes(previous: "pa.Table", changed: "pa.Table", id_column: str,
@@ -1127,6 +1130,9 @@ class IcebergMirrorSync(MirrorSync):
             warnings=checked.warnings,
             unchanged=unchanged,
             read=source.read,
+            degraded=(None if source.bronze_failure is None else
+                      f"the bronze copy failed ({source.bronze_failure}): silver is "
+                      f"current, bronze is behind and this read left no raw record"),
         )
 
     def _bronze_snapshot_id(self, silo_name: str, table_name: str):
@@ -1824,7 +1830,7 @@ class IcebergMirrorSync(MirrorSync):
             return SourceRead(
                 text_columns=frozenset(column for column in declared
                                        if any(isinstance(row.get(column), str) for row in rows)),
-                row_count=len(rows), rows=rows), False
+                row_count=len(rows), rows=rows, bronze_failure=type(e).__name__), False
 
         return SourceRead(text_columns=frozenset(text_columns), row_count=row_count,
                           read=read), True

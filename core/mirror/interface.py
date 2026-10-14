@@ -64,6 +64,11 @@ class SyncResult:
     # in the attempt history -- which is the history an operator reads
     # to answer "when did this last actually move?".
     unchanged: bool = False
+    # WHY THE RUN WAS ONLY PARTLY GOOD, when it was (PA001-A17's other
+    # half). Bronze failing is tolerated -- silver is built from the rows
+    # just read -- but recording that as plain "synced" hid that the raw
+    # layer had fallen behind. None for a run that did everything.
+    degraded: "str | None" = None
     violations: dict = dataclass_field(default_factory=dict)
     # THE WARN-POLICY FINDINGS ALONE, structured, as `RuleCount`s.
     #
