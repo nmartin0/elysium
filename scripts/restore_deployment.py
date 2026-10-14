@@ -184,6 +184,12 @@ def _keep_every_erasure(data_dir: Path, aside: Path) -> int:
 
         MemoryStore(data_dir / "memories.db").forget_erased(register.hasher(),
                                                             register.hashes_by_type())
+    # NOTES, FOR THE SAME REASON (decided 14 Oct).
+    if (data_dir / "artifacts.db").exists():
+        from core.artifact_store import ArtifactStore
+
+        ArtifactStore(data_dir / "artifacts.db").forget_erased_notes(register.hasher(),
+                                                                     register.hashes_by_type())
     return register.mark_restored()
 
 

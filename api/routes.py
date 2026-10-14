@@ -126,6 +126,7 @@ from api.auth_dependency import get_current_user
 from api.generation_dependency import get_generation, latest_generation
 from api.reload import ReloadInProgress, reload_generation
 from core.agent.agentic_loop import AgentLoop
+from core.artifact_store import note_kind
 from core.auth.auth_cookies import (
     clear_csrf_cookie,
     clear_session_cookie,
@@ -3362,13 +3363,9 @@ def _id_field_for(mediator, object_type: str) -> str:
 
 
 def _note_kind(object_type: str, object_id: str) -> str:
-    """One artifact kind per OBJECT, not one per note.
-
-    list_for() filters by kind, so encoding the object into the kind
-    makes "notes on this customer" a single indexed lookup rather than
-    a scan of every note in the deployment.
-    """
-    return f"note:{object_type}:{object_id}"
+    """One artifact kind per OBJECT, not one per note -- the format lives
+    in core/artifact_store.note_kind, where erasure finds notes too."""
+    return note_kind(object_type, object_id)
 
 
 class PublishedChangeResponse(BaseModel):

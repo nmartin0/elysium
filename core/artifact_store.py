@@ -81,6 +81,17 @@ class Artifact:
     expires_at: str | None
 
 
+#: Every note about one object shares this kind -- one artifact kind per
+#: OBJECT, not per note, so "notes on this customer" is one indexed
+#: lookup. Defined here rather than in the routes because erasure (R13)
+#: has to find them by object too, and two copies of a format drift.
+NOTE_KIND_PREFIX = "note:"
+
+
+def note_kind(object_type: str, object_id) -> str:
+    return f"{NOTE_KIND_PREFIX}{object_type}:{object_id}"
+
+
 class ArtifactStore:
     def __init__(self, db_path: Path):
         self._db_path = db_path
@@ -151,6 +162,38 @@ class ArtifactStore:
                 (artifact_id, user_id),
             )
             return cursor.rowcount > 0
+
+    def forget_notes_about(self, keys) -> int:
+        """Every note about these (object type, object id) pairs, gone --
+        what an erasure (R13) does to them, decided by the owner on 14
+        Oct: a note is about one object, and once the object is erased
+        it is a note about somebody Elysium was told to forget."""
+        kinds = [(note_kind(object_type, object_id),) for object_type, object_id in keys]
+        with self._connection() as conn, immediate_transaction(conn):
+            before = conn.total_changes
+            conn.executemany("DELETE FROM artifacts WHERE kind = ?", kinds)
+            return conn.total_changes - before
+
+    def forget_erased_notes(self, key_hash, hashes_by_type: dict[str, set[str]]) -> int:
+        """The same, given an erasure register's salted hashes instead of
+        ids: what a restore needs, since a restored artifacts.db may
+        predate an erasure the kept register records. A scan of note
+        kinds only; core/mirror owns the register and sits above this
+        leaf, so it is handed the hasher rather than imported."""
+        if not hashes_by_type:
+            return 0
+        with self._connection() as conn, immediate_transaction(conn):
+            kinds = [row["kind"] for row in conn.execute(
+                "SELECT DISTINCT kind FROM artifacts WHERE kind LIKE ?",
+                (NOTE_KIND_PREFIX + "%",))]
+            doomed = []
+            for kind in kinds:
+                object_type, _, object_id = kind[len(NOTE_KIND_PREFIX):].partition(":")
+                if key_hash(object_type, object_id) in hashes_by_type.get(object_type, ()):
+                    doomed.append((kind,))
+            before = conn.total_changes
+            conn.executemany("DELETE FROM artifacts WHERE kind = ?", doomed)
+            return conn.total_changes - before
 
     def _expire_stale(self) -> None:
         """Drops anything past its expiry.

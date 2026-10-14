@@ -152,6 +152,49 @@ def _memories(paths):
     return MemoryStore(paths.data_dir / "memories.db")
 
 
+def _notes(paths):
+    from core.artifact_store import ArtifactStore, note_kind
+
+    store = ArtifactStore(paths.data_dir / "artifacts.db")
+
+    def write(object_type, object_id, text):
+        store.save(note_kind(object_type, object_id), "note", "someone", {"text": text},
+                   shared_role="customer_service")
+
+    def about(object_type, object_id):
+        return store.list_for("someone", "customer_service", kind=note_kind(object_type, object_id))
+
+    return write, about
+
+
+class TestWhatPeopleWroteAboutThem:
+    """Decided 14 Oct: a note about an erased object goes with it."""
+
+    def test_an_erasure_deletes_every_note_about_them(self, synced_deployment):
+        write, about = _notes(synced_deployment)
+        write("Customer", ADA, "Fee waived after the flood.")
+        write("Transaction", "1", "Disputed.")
+        write("Customer", "cust_002", "Prefers email.")
+
+        _code, printed = _erase(synced_deployment)
+
+        assert "2 note(s)" in printed
+        assert about("Customer", ADA) == [] and about("Transaction", "1") == []
+        assert about("Customer", "cust_002")                       # THE CONTROL
+
+    def test_a_restore_does_not_bring_them_back(self, synced_deployment, tmp_path):
+        write, about = _notes(synced_deployment)
+        write("Customer", ADA, "Fee waived after the flood.")
+        write("Customer", "cust_002", "Prefers email.")
+        backup(synced_deployment.data_dir, tmp_path / "backup")
+        _erase(synced_deployment)
+
+        _quiet(restore, tmp_path / "backup", synced_deployment.data_dir, force=True)
+
+        assert about("Customer", ADA) == []
+        assert about("Customer", "cust_002")
+
+
 class TestWhatPeopleRemembered:
     """E-14: a memory is a sentence about one object, so it goes with it."""
 

@@ -27,6 +27,7 @@ import getpass
 import sys
 from collections import Counter
 
+from core.artifact_store import ArtifactStore
 from core.deployment_loader import load_deployment, resolve_runtime_paths
 from core.memory.store import MemoryStore
 from core.mirror.catalog import open_mirror_catalog
@@ -66,8 +67,11 @@ def run(object_type: str, object_id: str, reason: str, write: bool = False,
         # sentence about one object; once the object is erased it is a
         # sentence about a person Elysium has been told to forget.
         forgotten = MemoryStore(paths.data_dir / "memories.db").forget_objects(keys)
+        # AND WHAT THEY WROTE AS NOTES (decided 14 Oct): a note is about
+        # one object, the same as a memory.
+        notes = ArtifactStore(paths.data_dir / "artifacts.db").forget_notes_about(keys)
     print(f"Erased ({erasure_id}): {sum(removed.values())} row(s) from {len(removed)} table(s), "
-          f"{forgotten} memory(ies), older snapshots and their files deleted. "
+          f"{forgotten} memory(ies), {notes} note(s), older snapshots and their files deleted. "
           f"Restart or reload the server.")
     return 0
 

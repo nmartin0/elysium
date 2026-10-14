@@ -2544,6 +2544,22 @@ CONTROLS = [
         tests=["tests/unit/test_memory_guard.py::TestTheAgentReadsThem::"
                "test_reading_an_object_brings_its_fresh_memories_once"],
     ),
+    Control(
+        describes="R13: an erasure deletes the notes people wrote about them",
+        path="scripts/erase.py",
+        old="        notes = ArtifactStore(paths.data_dir / \"artifacts.db\").forget_notes_about(keys)",
+        new="        notes = 0",
+        tests=["tests/unit/test_erasure.py::TestWhatPeopleWroteAboutThem::"
+               "test_an_erasure_deletes_every_note_about_them"],
+    ),
+    Control(
+        describes="R13: a restore does not bring back a note about someone erased",
+        path="core/artifact_store.py",
+        old="                if key_hash(object_type, object_id) in hashes_by_type.get(object_type, ()):",
+        new="                if False:",
+        tests=["tests/unit/test_erasure.py::TestWhatPeopleWroteAboutThem::"
+               "test_a_restore_does_not_bring_them_back"],
+    ),
 ]
 
 

@@ -132,6 +132,12 @@ they can be answered together.
   and so on). The one part of D5 not decided.
 
 **Smaller calls**
+- `R13`, the rest of erasure -- erasing a person now removes the
+  mirror, memories and notes. Other stores still hold their ids:
+  frozen-set membership, the write log and pending writes, paused
+  questions and answer notifications, and the audit log. The audit log
+  is the hard one, because a tamper-evident record and an erasure pull
+  in opposite directions. Which of these should forget them?
 - `E-21` -- the LICENSE says unpublished and proprietary; the
   repository's visibility should match it.
 
