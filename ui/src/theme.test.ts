@@ -535,8 +535,10 @@ describe('every rule describes markup that exists', () => {
 
     expect(styled.size).toBeGreaterThan(100)
     expect(rendered.size).toBeGreaterThan(100)
-    expect([...styled.keys()]).toContain('object-search__result')
-    expect(rendered.has('object-search__result')).toBe(true)
+    // A class known to be on both sides. Was object-search__result,
+    // which stopped being styled when the results became a DataTable.
+    expect([...styled.keys()]).toContain('object-search__result-title')
+    expect(rendered.has('object-search__result-title')).toBe(true)
   })
 
   it('styles no class the app never renders', () => {

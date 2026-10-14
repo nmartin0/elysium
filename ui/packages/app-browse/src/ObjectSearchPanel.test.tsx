@@ -213,29 +213,29 @@ describe('ObjectSearchPanel -- results rendering', () => {
     expect(results().getByText('us-west')).toBeInTheDocument()
   })
 
-  it("each real Card is a DIRECT child of CardList -- a real, structural regression guard, not a stylistic preference: found and fixed as a genuine, hard-to-find live-browser-only CSS bug (Blueprint's own .bp6-card-list > .bp6-card selector applies display:flex, silently breaking this card's own multi-line layout unless the specificity-matching override in index.css keeps matching, which itself depends ENTIRELY on this exact DOM structure never changing -- jsdom cannot catch the visual bug itself, but this at least catches the structural change that would silently reintroduce it)", async () => {
+  it('results are a table: one row per result, one column per field, the same field all the way down', async () => {
+    // DEV_UI 9.3/9.4. They were Cards with "Name: value" pairs wrapped
+    // across each one, so a field sat in a different place on every
+    // result. A missing field is an EMPTY CELL, never a shifted row.
     mockedSearchObjects.mockResolvedValue(
-      searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor', region: 'us-west' } }]),
+      searchResult([
+        { id: 'cust_001', fields: { name: 'Ada Okafor', region: 'us-west' } },
+        { id: 'cust_002', fields: { name: 'Bram Feldman' } },
+      ]),
     )
     renderPanel(CUSTOMER_SCHEMA)
 
-    await waitFor(() =>
-      expect(screen.getByText('Ada Okafor', { selector: '.object-search__result-title' })).toBeInTheDocument(),
-    )
-    const cardList = document.querySelector('.bp6-card-list')!
-    // Element.children, not a descendant query -- genuinely checks
-    // DIRECT children only, the exact real relationship Blueprint's
-    // own CSS selector (and this project's own override) both key
-    // off.
-    const directCardChildren = Array.from(cardList.children).filter((el) => el.classList.contains('bp6-card'))
-    expect(directCardChildren).toHaveLength(1)
-    expect(directCardChildren[0]).toHaveClass('object-search__result')
-    // The real, visible <Link> (the stretched-link pattern's own real
-    // anchor) is somewhere inside that same Card -- confirms the two
-    // real pieces this whole pattern depends on are still actually
-    // nested correctly together, not just independently present
-    // somewhere on the page.
-    expect(directCardChildren[0]!.querySelector('a.object-search__link')).not.toBeNull()
+    await screen.findByText('Ada Okafor', { selector: '.object-search__result-title' })
+    const table = document.querySelector('table.data-table.object-search__results')!
+    const headers = Array.from(table.querySelectorAll('thead th')).map((th) => th.textContent)
+    const rows = Array.from(table.querySelectorAll('tbody tr.object-search__result'))
+
+    expect(rows).toHaveLength(2)
+    const regionColumn = headers.findIndex((header) => header === 'Region')
+    expect(regionColumn).toBeGreaterThan(1)
+    expect(rows[0]!.children[regionColumn]!.textContent).toBe('us-west')
+    expect(rows[1]!.children[regionColumn]!.textContent).toBe('')
+    expect(rows[0]!.querySelector('a.object-search__link')).not.toBeNull()
   })
 
   it('uses title_field as the title, and shows the raw id as a separate subtitle', async () => {
@@ -1393,45 +1393,25 @@ describe('acting on a selection', () => {
   })
 })
 
-describe('a result card lays its checkbox beside its content', () => {
+describe('a result row keeps its checkbox and its link in their own cells', () => {
   /**
-   * THE DEFECT. Every checkbox rendered ABOVE the row it belonged to.
-   * The card is `display: block` -- deliberately and load-bearingly,
-   * because Blueprint's CardList gives a direct child Card
-   * `display: flex; align-items: center`, which laid the card's
-   * multi-line content out side-by-side instead of stacked -- and a
-   * checkbox in a block container takes its own line.
-   *
-   * WHAT JSDOM CAN AND CANNOT SEE. It computes no layout, so nothing
-   * here proves the box LOOKS beside the title. What it does prove is
-   * the STRUCTURE the fix depends on: the checkbox and the link are
-   * siblings in a row element, rather than the checkbox being a direct
-   * child of the block card. Remove the wrapper and this fails;
-   * change the flex-direction and it does not.
+   * The card this replaced needed a wrapper row to stop its checkbox
+   * stacking above the title. A table row has no such failure: the
+   * checkbox and the link are cells of the same row by construction.
+   * What is still worth pinning is that they ARE separate cells -- the
+   * checkbox inside the link's cell is how a click on one reached the
+   * other, which cost three fixes the first time.
    */
-  it('puts the checkbox and the link in the same row', async () => {
+  it('the checkbox and the link are in the same row, in different cells', async () => {
     mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor' } }]))
     renderPanel(CUSTOMER_SCHEMA)
 
     const checkbox = await screen.findByLabelText('Select Ada Okafor')
-    const row = checkbox.closest('.object-search__row')
+    const row = checkbox.closest('tr')
+    const link = row!.querySelector('.object-search__link')
 
-    expect(row).not.toBeNull()
-    expect(row!.querySelector('.object-search__link')).not.toBeNull()
-  })
-
-  it('the checkbox is not a direct child of the card', async () => {
-    // THE CONTROL on the fix itself. A checkbox sitting directly in
-    // the block card is exactly the arrangement that stacked it above
-    // the row.
-    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor' } }]))
-    renderPanel(CUSTOMER_SCHEMA)
-
-    const checkbox = await screen.findByLabelText('Select Ada Okafor')
-    const card = checkbox.closest('.object-search__result')
-
-    expect(card).not.toBeNull()
-    expect(checkbox.parentElement).not.toBe(card)
+    expect(link).not.toBeNull()
+    expect(checkbox.closest('td')).not.toBe(link!.closest('td'))
   })
 })
 

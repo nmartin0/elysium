@@ -21,13 +21,13 @@
  * the entry the rule exists to preserve.
  */
 
-import { HTMLTable } from '@blueprintjs/core'
 import Notice from '@elysium/shell-api/components/Notice'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import { getObjectHistory } from '@elysium/shell-api/api'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 import { formatFieldName } from '@elysium/shell-api/format'
+import DataTable from '@elysium/shell-api/components/DataTable'
 
 interface HistoryEntry {
   id: string
@@ -77,7 +77,7 @@ export default function ObjectHistory({
           // deserves a sentence rather than an empty table.
           <Notice state="neutral">No recorded changes to this object.</Notice>
         ) : (
-          <HTMLTable compact striped className="object-history">
+          <DataTable className="object-history">
             <thead>
               <tr>
                 <th>When</th>
@@ -119,7 +119,7 @@ export default function ObjectHistory({
                 </tr>
               ))}
             </tbody>
-          </HTMLTable>
+          </DataTable>
         )
       }
     </AsyncPanel>

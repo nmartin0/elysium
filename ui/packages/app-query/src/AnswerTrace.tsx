@@ -13,11 +13,12 @@
 
 import { useState } from 'react'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
-import { Button, HTMLTable } from '@blueprintjs/core'
+import { Button } from '@blueprintjs/core'
 import { getErrorMessage, getRequestTrace, handleIfSessionExpired } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 
 import TraceSummary from './TraceSummary'
+import DataTable from '@elysium/shell-api/components/DataTable'
 
 interface TraceEntry {
   object_type: string
@@ -77,7 +78,7 @@ export default function AnswerTrace({
           // scan's window. Saying so beats an empty table.
           <p className="answer-trace__empty">No object reads were recorded for this answer.</p>
         ) : (
-          <HTMLTable compact striped className="answer-trace__table">
+          <DataTable className="answer-trace__table">
             <thead>
               <tr>
                 <th>Object type</th>
@@ -105,7 +106,7 @@ export default function AnswerTrace({
                 </tr>
               ))}
             </tbody>
-          </HTMLTable>
+          </DataTable>
         ))}
     </div>
   )

@@ -1,7 +1,7 @@
 import React from 'react'
 import Notice from '@elysium/shell-api/components/Notice'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
-import { Button, HTMLTable, Tag } from '@blueprintjs/core'
+import { Button, Tag } from '@blueprintjs/core'
 import {
   getErrorMessage,
   getMirrorState,
@@ -13,6 +13,7 @@ import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import { formatTimestamp } from '@elysium/shell-api/format'
 import { useEffect, useRef, useState } from 'react'
+import DataTable from '@elysium/shell-api/components/DataTable'
 
 /**
  * What the mirror holds, table by table.
@@ -224,7 +225,7 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
         {syncMessage && <span className="mirror__sync-message">{syncMessage}</span>}
       </div>
 
-      <HTMLTable compact striped>
+      <DataTable>
         <thead>
           <tr>
             <th>Table</th>
@@ -449,7 +450,7 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
             )
           })}
         </tbody>
-      </HTMLTable>
+      </DataTable>
 
       {state.tables.length === 0 && (
         <Notice state="active" title="Nothing synced yet">

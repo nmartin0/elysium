@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useState } from 'react'
-import { Button, HTMLTable } from '@blueprintjs/core'
+import { Button } from '@blueprintjs/core'
 import StatusTag, { type TagState } from '@elysium/shell-api/components/StatusTag'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
@@ -28,6 +28,7 @@ import {
 } from '@elysium/shell-api/api'
 import { formatTimestamp } from '@elysium/shell-api/format'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
+import DataTable from '@elysium/shell-api/components/DataTable'
 
 const STATE_TAG: Record<RuleSuggestion['state'], TagState> = {
   pending: 'pending',
@@ -116,7 +117,7 @@ export default function RuleSuggestions({ onSessionExpired }: { onSessionExpired
       ) : items.length === 0 ? (
         <p className="rule-suggestions__empty">No suggestions. Scan to look.</p>
       ) : (
-        <HTMLTable compact striped className="rule-suggestions__table">
+        <DataTable className="rule-suggestions__table">
           <thead>
             <tr>
               <th>Field</th>
@@ -161,7 +162,7 @@ export default function RuleSuggestions({ onSessionExpired }: { onSessionExpired
               </tr>
             ))}
           </tbody>
-        </HTMLTable>
+        </DataTable>
       )}
     </section>
   )

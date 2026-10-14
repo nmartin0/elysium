@@ -16,9 +16,10 @@
  * relationship with one known end rather than hidden entirely.
  */
 
-import { Button, HTMLTable } from '@blueprintjs/core'
+import { Button } from '@blueprintjs/core'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
 import type { VisibleSchema } from '@elysium/shell-api/types'
+import DataTable from '@elysium/shell-api/components/DataTable'
 
 // Not exported: used only within this file. Exporting a type nothing
 // imports is a second, unused public surface to keep correct.
@@ -78,7 +79,7 @@ export default function LinkTypes({ schema, filter, onOpenObjectType }: LinkType
   }
 
   return (
-    <HTMLTable compact striped className="schema-panel__fields">
+    <DataTable className="schema-panel__fields">
       <thead>
         <tr>
           <th>Link type</th>
@@ -107,6 +108,6 @@ export default function LinkTypes({ schema, filter, onOpenObjectType }: LinkType
           </tr>
         ))}
       </tbody>
-    </HTMLTable>
+    </DataTable>
   )
 }

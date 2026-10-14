@@ -29,6 +29,7 @@ import '@elysium/shell-api/tokens.css'
 // tokens BEFORE index.css: index.css consumes the variables, and a
 // consumer loaded first would resolve them to nothing.
 import '@elysium/shell-api/index.css'
+import LoadingState from '@elysium/shell-api/components/LoadingState'
 
 // Lazy-loaded, deliberately -- each sub-app's own code is no longer
 // part of the initial bundle at all; the browser only downloads
@@ -353,7 +354,7 @@ export default function App() {
           <h1>Elysium</h1>
         </header>
         <main>
-          <p>Loading…</p>
+          <LoadingState />
         </main>
       </div>
     )

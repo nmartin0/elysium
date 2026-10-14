@@ -14,7 +14,7 @@
  * request disagreeing with itself.
  */
 
-import { Button, HTMLTable, Tag } from '@blueprintjs/core'
+import { Button, Tag } from '@blueprintjs/core'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
 import {
   getConfigDiff,
@@ -28,6 +28,7 @@ import { formatTimestamp } from '@elysium/shell-api/format'
 import { useEffect, useRef, useState } from 'react'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
+import DataTable from '@elysium/shell-api/components/DataTable'
 
 interface DeploymentConfigBody {
   /** WHEN this configuration was loaded, and a digest over the four
@@ -152,7 +153,7 @@ function ConfigHistorySection({ onSessionExpired }: { onSessionExpired: () => vo
   return (
     <section className="deployment-config__history">
       <h3>Configuration history</h3>
-      <HTMLTable compact striped aria-label="Configurations this deployment has run">
+      <DataTable aria-label="Configurations this deployment has run">
         <thead>
           <tr>
             <th>Generation</th>
@@ -204,7 +205,7 @@ function ConfigHistorySection({ onSessionExpired }: { onSessionExpired: () => vo
             </tr>
           ))}
         </tbody>
-      </HTMLTable>
+      </DataTable>
     </section>
   )
 }
@@ -392,7 +393,7 @@ export default function DeploymentConfig({ onSessionExpired }: { onSessionExpire
             {groups.map(([heading, rows]) => (
               <section key={heading}>
                 <h3>{heading}</h3>
-                <HTMLTable compact striped className="deployment-config__table">
+                <DataTable className="deployment-config__table">
                   <tbody>
                     {rows.map(([label, value]) => (
                       <tr key={label}>
@@ -401,7 +402,7 @@ export default function DeploymentConfig({ onSessionExpired }: { onSessionExpire
                       </tr>
                     ))}
                   </tbody>
-                </HTMLTable>
+                </DataTable>
               </section>
             ))}
             <ConfigHistorySection onSessionExpired={onSessionExpired} />

@@ -23,7 +23,8 @@
  * reading.
  */
 
-import { Button, Card, CardList, NonIdealState, Tag } from '@blueprintjs/core'
+import { Button, Card, CardList, Tag } from '@blueprintjs/core'
+import EmptyState from '@elysium/shell-api/components/EmptyState'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -126,10 +127,10 @@ export default function ApprovalsPanel({ onSessionExpired }: SubAppProps) {
       <AsyncPanel data={writes} error={error}>
         {(loaded) =>
           loaded.length === 0 ? (
-            <NonIdealState
+            <EmptyState
               icon="inbox"
               title="Nothing waiting"
-              description="Proposals you can decide on, and ones you have made, appear here."
+              reason="Proposals you can decide on, and ones you have made, appear here."
             />
           ) : (
             <CardList className="approvals__list">

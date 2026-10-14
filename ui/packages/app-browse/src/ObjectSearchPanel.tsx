@@ -8,7 +8,7 @@ import ObjectGraph from './ObjectGraph'
 import SetName from './SetName'
 import { Fragment, useEffect, useState } from 'react'
 import Notice from '@elysium/shell-api/components/Notice'
-import { Button, Card, CardList, Checkbox, HTMLSelect, NonIdealState } from '@blueprintjs/core'
+import { Button, Checkbox, HTMLSelect } from '@blueprintjs/core'
 
 // MOVED TO shell-api, now that three screens say it. The ceiling lives
 // in core/ontology/mediator.py and the UI cannot read it, so a spelled
@@ -53,6 +53,7 @@ import {
   type TypeFreshness,
 } from '@elysium/shell-api/api'
 import FilterBar, { type FieldFilter } from '@elysium/shell-api/components/FilterBar'
+import EmptyState from '@elysium/shell-api/components/EmptyState'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/ViewSelector'
@@ -60,6 +61,8 @@ import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Worksp
 import { useClearUrlKeys, useUrlJson, useUrlValue } from '@elysium/shell-api/useUrlState'
 import { useChangedSince } from '@elysium/shell-api/liveUpdates'
 
+import DataTable from '@elysium/shell-api/components/DataTable'
+import TableSkeleton from '@elysium/shell-api/components/TableSkeleton'
 import { useRovingFocus } from './useRovingFocus'
 import ActiveFilters from './ActiveFilters'
 import BulkActionForm from './BulkActionForm'
@@ -527,6 +530,15 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // The current type's field metadata, for rendering hints the
   // ontology declares -- decimal places today.
   const typeSchemaFields = visibleSchema?.[currentType]?.fields
+  // THE TABLE'S COLUMNS: every field any result on this page returned,
+  // in first-seen order, filtered by the same rule the cards used. A
+  // union, because a column must mean one field all the way down -- a
+  // result missing one gets an empty cell, not a shifted row.
+  const tableColumns = visibleColumns([...new Set(results.flatMap((result) => Object.keys(result.fields)))])
+  // RIGHT-ALIGNED BY DECLARED TYPE (DEV_UI 9.4), never by sniffing a
+  // value: "0042" in a string column is an id, not a number.
+  const isNumericField = (field: string) =>
+    ['integer', 'number', 'decimal'].includes(String(typeSchemaFields?.[field]?.data_type ?? '').split('@')[0] ?? '')
   // ONLY WHILE THE FILTER IT DESCRIBES IS UNTOUCHED -- otherwise it
   // would be a claim about results that are no longer on screen.
   const trail = activeTrail(linkOrigin, crossFilter)
@@ -878,7 +890,19 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
         />
       )}
 
-      {loading && <p className="object-search__status">Searching…</p>}
+      {/* THE STATUS IS A POLITE LIVE REGION, and only that (DEV_UI 9.7):
+          a visible "Searching…" line appeared above the results on every
+          keystroke and pushed them down -- a layout change for a wait
+          that is usually a few hundred milliseconds. What the eye gets
+          instead is chosen by the wait: rows already shown dim after
+          100ms, and with nothing to show yet a skeleton in the table's
+          own shape appears after a second. */}
+      <p className="visually-hidden" role="status" aria-live="polite">
+        {loading ? 'Searching…' : ''}
+      </p>
+      {loading && results.length === 0 && view === 'table' && (
+        <TableSkeleton columns={Math.max(3, tableColumns.length + 2)} />
+      )}
 
       {/*
        * WHEN the data was current, stated rather than warned about.
@@ -995,20 +1019,20 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
          * first as the second is what this avoids.
          */
         (!searchable ? (
-          <NonIdealState
+          <EmptyState
             icon="lock"
             title="You cannot search this type"
-            description={
+            reason={
               `Your permissions let you know ${currentType} exists, and not what it ` +
               `holds. Nothing is hidden from the results below -- there are no ` +
               `results to hide.`
             }
           />
         ) : (
-          <NonIdealState
+          <EmptyState
             icon={hasFilters ? 'filter-remove' : neverSynced ? 'refresh' : 'search'}
             title={hasFilters ? 'No matches' : neverSynced ? 'Not synced yet' : 'Nothing here yet'}
-            description={
+            reason={
               hasFilters
                 ? `No ${currentType} matches the filters you have applied.`
                 : neverSynced
@@ -1034,108 +1058,94 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
         ))}
 
       {view === 'table' && (
-        <CardList className="object-search__results" {...roving.containerProps}>
-          {results.map((result, rowIndex) => {
-            const titleValue = getDisplayTitle(visibleSchema?.[currentType], result.fields, result.id)
-            return (
-              // interactive -- real hover feedback, matching every other
-              // clickable Card this migration has already used it for.
-              // The real "stretched link" pattern below (see index.css's
-              // own comment on .object-search__link::after) is what
-              // makes the WHOLE card clickable/keyboard-focusable, not
-              // just interactive's own hover styling on its own.
-              <Card key={result.id} interactive className="object-search__result" {...roving.rowProps(rowIndex)}>
-                {/* BESIDE THE LINK, not beneath an overlay. The card
-                    used to stretch its link across the whole surface,
-                    which is a good pattern for a card that is ONLY a
-                    link and a bad one for a card holding a checkbox:
-                    shift-clicking the box NAVIGATED, proved by a
-                    server log during a selection test. The overlay is
-                    gone and the title is the link. */}
-                <div
-                  className="object-search__row"
-                  // ON THE WRAPPER, because Blueprint hands extra props
-                  // to the <input> and not to the <label> that wraps it
-                  // -- verified by rendering one and firing at each.
-                  //
-                  // So a handler passed to Checkbox only fires when the
-                  // pointer lands on the input ITSELF. Clicking the
-                  // label anywhere else, which is most of the control's
-                  // visible area, produced no mousedown at all and the
-                  // modifier was never captured.
-                  //
-                  // mousedown here catches every path, because the
-                  // wrapper contains the label, which contains the
-                  // input. Capture-phase ordering is not needed:
-                  // mousedown bubbles here before the click that
-                  // produces the change.
-                >
-                  {/* A PLAIN INPUT, NOT Blueprint's Checkbox, and
-                      that is the fix rather than a simplification.
-
-                      Blueprint renders a Checkbox as a <label> wrapping
-                      a hidden input and a visible <span> indicator. Any
-                      click inside that label triggers label activation,
-                      which forwards a SECOND click to the input -- so
-                      one gesture produced two events and the selection
-                      toggled twice.
-
-                      Four commits tried to tell the two apart: by
-                      target, then by target plus a flag, then by a
-                      50ms window. The window is why clicks
-                      intermittently did nothing -- a real click landing
-                      inside it was mistaken for a forward. Timing
-                      cannot distinguish a fast user from a browser.
-
-                      A bare input has ONE click target. No label, no
-                      activation, no forward, nothing to disambiguate.
-                      The aria-label sits on the input itself, which is
-                      also where a screen reader expects it.
-
-                      onChange is safe here BECAUSE there is no label:
-                      Mozilla #559506 only suppresses the change event
-                      when a LABEL is shift-clicked. */}
-                  <input
-                    type="checkbox"
-                    className="object-search__select"
-                    // CELL 0 OF THIS ROW. `data-roving-cell` is what the hook moves
-                    // focus to; `tabIndex` is what keeps the list to ONE tab stop.
-                    data-roving-cell=""
-                    tabIndex={roving.isTabStop(rowIndex, 0) ? 0 : -1}
-                    checked={selectedIds.has(result.id)}
-                    aria-label={`Select ${String(titleValue)}`}
-                    onChange={(event) => toggleSelected(result.id, (event.nativeEvent as MouseEvent).shiftKey === true)}
-                  />
-                  <Link
-                    to={`/objects/${currentType}/${encodeURIComponent(result.id)}`}
-                    className="object-search__link"
-                    data-roving-cell=""
-                    tabIndex={roving.isTabStop(rowIndex, 1) ? 0 : -1}
-                  >
-                    <p className="object-search__result-title">{titleValue as React.ReactNode}</p>
-                  </Link>
-                  {titleValue !== result.id && <p className="object-search__result-subtitle">{result.id}</p>}
-                  <dl className="object-search__result-fields">
-                    {visibleColumns(Object.keys(result.fields))
-                      .map((field) => [field, result.fields[field]] as const)
-                      .map(([field, value]) => (
-                        <div key={field} className="object-search__result-field">
-                          <dt>{formatFieldName(field)}</dt>
-                          <dd>
-                            {formatValue(
-                              value,
-                              typeSchemaFields?.[field]?.decimal_places,
-                              typeSchemaFields?.[field]?.data_type,
-                            )}
-                          </dd>
-                        </div>
-                      ))}
-                  </dl>
-                </div>
-              </Card>
-            )
-          })}
-        </CardList>
+        // A TABLE, NOT A LIST OF CARDS (DEV_UI 9.3, 9.4). Each result was a
+        // Card holding a title, an id and its fields as "Name: value"
+        // pairs wrapped across the row -- so comparing one field down
+        // ten results meant reading ten differently-placed labels, and
+        // the same data looked three different ways across the app.
+        // Columns line up now; numbers are right-aligned; the header
+        // sticks; the row height is the reader's density.
+        //
+        // THE GRID CONTRACT IS UNCHANGED: the table is the `grid`, each
+        // result row a `row`, the checkbox and the title link its two
+        // roving cells -- one tab stop for the whole list.
+        <DataTable
+          className={loading ? 'object-search__results object-search__results--refreshing' : 'object-search__results'}
+          {...roving.containerProps}
+        >
+          <thead>
+            <tr>
+              <th className="object-search__select-cell">
+                <span className="visually-hidden">Select</span>
+              </th>
+              <th>{currentType}</th>
+              {tableColumns.map((field) => (
+                <th key={field} className={isNumericField(field) ? 'data-table__num' : undefined}>
+                  {formatFieldName(field)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {results.map((result, rowIndex) => {
+              const titleValue = getDisplayTitle(visibleSchema?.[currentType], result.fields, result.id)
+              return (
+                <tr key={result.id} className="object-search__result" {...roving.rowProps(rowIndex)}>
+                  <td className="object-search__select-cell">
+                    {/* A PLAIN INPUT, NOT Blueprint's Checkbox. Blueprint
+                        renders a Checkbox as a <label> wrapping a hidden
+                        input, and any click inside the label forwards a
+                        SECOND click to the input -- one gesture toggled
+                        the selection twice, and four commits tried to
+                        tell the two apart by timing. A bare input has
+                        one click target. onChange is safe because there
+                        is no label: Mozilla #559506 only suppresses the
+                        change event when a LABEL is shift-clicked. */}
+                    <input
+                      type="checkbox"
+                      className="object-search__select"
+                      // CELL 0 OF THIS ROW. `data-roving-cell` is what the hook moves
+                      // focus to; `tabIndex` is what keeps the list to ONE tab stop.
+                      data-roving-cell=""
+                      tabIndex={roving.isTabStop(rowIndex, 0) ? 0 : -1}
+                      checked={selectedIds.has(result.id)}
+                      aria-label={`Select ${String(titleValue)}`}
+                      onChange={(event) =>
+                        toggleSelected(result.id, (event.nativeEvent as MouseEvent).shiftKey === true)
+                      }
+                    />
+                  </td>
+                  <td className="object-search__title-cell">
+                    {/* THE TITLE IS THE LINK, and the row is not: a row
+                        that navigated on any click swallowed shift-clicks
+                        meant for the checkbox (proved by a server log
+                        during a selection test). */}
+                    <Link
+                      to={`/objects/${currentType}/${encodeURIComponent(result.id)}`}
+                      className="object-search__link"
+                      data-roving-cell=""
+                      tabIndex={roving.isTabStop(rowIndex, 1) ? 0 : -1}
+                    >
+                      <span className="object-search__result-title">{titleValue as React.ReactNode}</span>
+                    </Link>
+                    {titleValue !== result.id && <span className="object-search__result-subtitle">{result.id}</span>}
+                  </td>
+                  {tableColumns.map((field) => (
+                    <td key={field} className={isNumericField(field) ? 'data-table__num' : undefined}>
+                      {field in result.fields
+                        ? formatValue(
+                            result.fields[field],
+                            typeSchemaFields?.[field]?.decimal_places,
+                            typeSchemaFields?.[field]?.data_type,
+                          )
+                        : null}
+                    </td>
+                  ))}
+                </tr>
+              )
+            })}
+          </tbody>
+        </DataTable>
       )}
 
       {view === 'table' && (nextPageToken || previousTokens.length > 0) && (

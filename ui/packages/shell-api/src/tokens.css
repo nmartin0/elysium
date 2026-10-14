@@ -248,9 +248,33 @@
     --sidebar-rail: 56px;
     --config-width: 288px;
 
+    /* ROW DENSITY (DEV_UI 9.3): middle by default -- "38px is the
+     * height at which a row has air without halving what fits" -- and
+     * the reader's own choice, set as data-density on <body>. Every
+     * DataTable row takes these, so changing the preference changes
+     * every table at once. */
+    --row-height: 38px;
+    --row-type-size: var(--type-body-size);
+    --row-type-line: var(--type-dense-line);
+
     /* WCAG 2.2 SC 2.5.8 (AA) floor. 44px is the AAA figure and the
    * recommended aim for primary controls. */
     --target-min: 24px;
+  }
+
+  /* COMPACT ~30px for the person scanning two hundred rows a shift;
+   * ROOMY ~48px for touch. Middle is the :root default above. Even in
+   * compact a control keeps its 24px target (--target-min). */
+  body[data-density='compact'] {
+    --row-height: 30px;
+    --row-type-size: var(--type-dense-size);
+    --row-type-line: var(--type-dense-line);
+  }
+
+  body[data-density='roomy'] {
+    --row-height: 48px;
+    --row-type-size: var(--type-body-size);
+    --row-type-line: var(--type-body-line);
   }
 
   /* BLUEPRINT, RETINTED TO THE PALETTE rather than the palette bent to

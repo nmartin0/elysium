@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Alert, Button, FormGroup, HTMLTable, InputGroup } from '@blueprintjs/core'
+import { Alert, Button, FormGroup, InputGroup } from '@blueprintjs/core'
 import {
   listUsers,
   createUser,
@@ -26,6 +26,7 @@ import ResetPasswordDialog from './ResetPasswordDialog'
 import RolesPanel from './RolesPanel'
 import RuleSuggestions from './RuleSuggestions'
 import Silos from './Silos'
+import DataTable from '@elysium/shell-api/components/DataTable'
 
 export interface User {
   username: string
@@ -195,7 +196,7 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
         (users === null ? (
           <LoadingState />
         ) : (
-          // HTMLTable, not a bare <table> -- Blueprint's own styled
+          // DataTable (Blueprint's HTMLTable, wrapped), not a bare <table> -- Blueprint's own styled
           // wrapper around a real HTML table, confirmed directly against
           // its real type definition before using it: it only wraps the
           // outer <table> element itself (extends React's own real
@@ -203,13 +204,12 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
           // <tbody>, <tr>, <td>) stays exactly what it already was, not
           // rewritten into some other, different table abstraction.
           // interactive: real hover feedback on a genuinely scannable
-          // list of rows; striped: alternating row backgrounds, which
-          // matters here specifically since each user can also expand a
-          // second, full-width schema row directly beneath its own row
-          // (see the schemaByUsername block below) -- striping helps
-          // keep a user's own two rows visually paired at a glance.
+          // list of rows. NOT striped any more: DataTable has no zebra
+          // (DEV_UI 9.4). Striping was here to pair a user's row with
+          // the schema row it can expand beneath it; the hairline under
+          // each user's row and the expanded row's own inset do that.
           <>
-            <HTMLTable className="user-table" interactive striped>
+            <DataTable className="user-table" interactive>
               <thead>
                 <tr>
                   <th>Username</th>
@@ -276,7 +276,7 @@ export default function AdminPanel({ onSessionExpired }: AdminPanelProps) {
                   </Fragment>
                 ))}
               </tbody>
-            </HTMLTable>
+            </DataTable>
             <ResetPasswordDialog
               username={resetFor}
               onClose={() => setResetFor(null)}

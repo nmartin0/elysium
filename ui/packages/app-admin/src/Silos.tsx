@@ -16,7 +16,7 @@
 import { useState } from 'react'
 import Notice from '@elysium/shell-api/components/Notice'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
-import { Button, HTMLTable } from '@blueprintjs/core'
+import { Button } from '@blueprintjs/core'
 import { getSilos } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
@@ -25,6 +25,7 @@ import { getDataFreshness, type DataFreshness } from '@elysium/shell-api/api'
 import { formatTimestamp } from '@elysium/shell-api/format'
 
 import { type FrozenType, frozenTypes, unfixableTypes } from './typeHealth'
+import DataTable from '@elysium/shell-api/components/DataTable'
 
 interface SiloBackedField {
   object_type: string
@@ -137,12 +138,7 @@ function Publication({ silos, freshness }: { silos: SiloStatus[]; freshness: Dat
               } cannot read anything.`}
             </ErrorState>
           )}
-          <HTMLTable
-            compact
-            striped
-            className="silos__publication-table"
-            aria-label="Object types and when each was published"
-          >
+          <DataTable className="silos__publication-table" aria-label="Object types and when each was published">
             <thead>
               <tr>
                 <th>Object type</th>
@@ -185,7 +181,7 @@ function Publication({ silos, freshness }: { silos: SiloStatus[]; freshness: Dat
                 )
               })}
             </tbody>
-          </HTMLTable>
+          </DataTable>
         </>
       )}
     </section>
@@ -251,7 +247,7 @@ export default function Silos({ onSessionExpired }: { onSessionExpired: () => vo
 
             {freshness !== null && <Publication silos={silos} freshness={freshness} />}
 
-            <HTMLTable compact striped className="silos__table" aria-label="Silos and the object types they back">
+            <DataTable className="silos__table" aria-label="Silos and the object types they back">
               <thead>
                 <tr>
                   <th>Silo</th>
@@ -296,7 +292,7 @@ export default function Silos({ onSessionExpired }: { onSessionExpired: () => vo
                             {silo.fields.length === 0 ? (
                               <span className="silos__failure">No fields are backed by this silo.</span>
                             ) : (
-                              <HTMLTable compact className="silos__fields">
+                              <DataTable className="silos__fields">
                                 <thead>
                                   <tr>
                                     <th>Object type</th>
@@ -343,7 +339,7 @@ export default function Silos({ onSessionExpired }: { onSessionExpired: () => vo
                                     </tr>
                                   ))}
                                 </tbody>
-                              </HTMLTable>
+                              </DataTable>
                             )}
                           </td>
                         </tr>,
@@ -351,7 +347,7 @@ export default function Silos({ onSessionExpired }: { onSessionExpired: () => vo
                     : []),
                 ])}
               </tbody>
-            </HTMLTable>
+            </DataTable>
           </div>
         )
       }}

@@ -18,7 +18,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Notice from '@elysium/shell-api/components/Notice'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Button, HTMLTable, Icon } from '@blueprintjs/core'
+import { Button, Icon } from '@blueprintjs/core'
 import { IconNames, type IconName } from '@blueprintjs/icons'
 
 import LoadingState from '@elysium/shell-api/components/LoadingState'
@@ -39,6 +39,7 @@ import Discover from './Discover'
 import { recordVisit } from './discoverStorage'
 import LinkTypes from './LinkTypes'
 import './SchemaPanel.css'
+import DataTable from '@elysium/shell-api/components/DataTable'
 
 // The shared shape, widened where this panel needed more of it. Not
 // redeclared here: two definitions of one response is how they drift.
@@ -100,7 +101,7 @@ function FieldTable({
 }) {
   if (fields.length === 0) return null
   return (
-    <HTMLTable compact striped className="schema-panel__fields">
+    <DataTable className="schema-panel__fields">
       <thead>
         <tr>
           <th>Field</th>
@@ -175,7 +176,7 @@ function FieldTable({
           </tr>
         ))}
       </tbody>
-    </HTMLTable>
+    </DataTable>
   )
 }
 

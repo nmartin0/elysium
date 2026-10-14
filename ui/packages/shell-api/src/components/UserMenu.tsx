@@ -1,6 +1,7 @@
 import { Button, Dialog, DialogBody, DialogFooter, Menu, MenuItem, PopoverNext } from '@blueprintjs/core'
 import { useState } from 'react'
 
+import { DENSITIES, type Density } from '../density'
 import ChangePasswordForm from './ChangePasswordForm'
 
 // UserMenu.tsx  (#3 of the shell/launcher upgrade plan, rebuilt on
@@ -50,9 +51,13 @@ export interface CurrentUser {
 interface UserMenuProps {
   currentUser: CurrentUser | null
   onLogout: () => void
+  /** Row density (DEV_UI 9.3): "compact one click away", here. Absent,
+   *  the menu offers no choice. */
+  density?: Density
+  onDensity?: (density: Density) => void
 }
 
-export default function UserMenu({ currentUser, onLogout }: UserMenuProps) {
+export default function UserMenu({ currentUser, onLogout, density, onDensity }: UserMenuProps) {
   // CHANGING YOUR OWN PASSWORD, from the menu that already holds your
   // name. Two states: the form, then what happened -- how many OTHER
   // sessions were ended, because somebody securing their account wants
@@ -85,6 +90,19 @@ export default function UserMenu({ currentUser, onLogout }: UserMenuProps) {
             </div>
           )}
           <Menu>
+            {density && onDensity && (
+              <MenuItem text="Row density" icon="list">
+                {DENSITIES.map((choice) => (
+                  <MenuItem
+                    key={choice.value}
+                    text={choice.label}
+                    icon={choice.value === density ? 'tick' : 'blank'}
+                    aria-current={choice.value === density ? 'true' : undefined}
+                    onClick={() => onDensity(choice.value)}
+                  />
+                ))}
+              </MenuItem>
+            )}
             <MenuItem text="Change password" onClick={() => setChanging(true)} />
             <MenuItem text="Log out" onClick={onLogout} />
           </Menu>

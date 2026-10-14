@@ -17,11 +17,12 @@
  * browser should.
  */
 
-import { Button, HTMLTable } from '@blueprintjs/core'
+import { Button } from '@blueprintjs/core'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
 import { useEffect, useState } from 'react'
 import { getVisibleActionTypesCached, getErrorMessage, handleIfSessionExpired } from '@elysium/shell-api/api'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
+import DataTable from '@elysium/shell-api/components/DataTable'
 
 interface ActionParameter {
   type: string
@@ -98,7 +99,7 @@ export default function ActionTypes({ onSessionExpired, filter, onOpenObjectType
                     ))}
                   </div>
                 )}
-                <HTMLTable compact striped className="schema-panel__fields">
+                <DataTable className="schema-panel__fields">
                   <thead>
                     <tr>
                       <th>Parameter</th>
@@ -129,7 +130,7 @@ export default function ActionTypes({ onSessionExpired, filter, onOpenObjectType
                       </tr>
                     ))}
                   </tbody>
-                </HTMLTable>
+                </DataTable>
               </section>
             ))}
           </>

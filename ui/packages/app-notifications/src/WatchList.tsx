@@ -14,7 +14,7 @@
  * grant to check.
  */
 
-import { Button, Card, CardList, NonIdealState, Switch } from '@blueprintjs/core'
+import { Button, Card, CardList, Switch } from '@blueprintjs/core'
 import {
   deleteTrigger,
   getErrorMessage,
@@ -23,6 +23,7 @@ import {
   setTriggerEnabled,
   type Trigger,
 } from '@elysium/shell-api/api'
+import EmptyState from '@elysium/shell-api/components/EmptyState'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -116,10 +117,10 @@ export default function WatchList({ onSessionExpired }: WatchListProps) {
 
   if (triggers.length === 0) {
     return (
-      <NonIdealState
+      <EmptyState
         icon="eye-open"
         title="Not watching anything"
-        description="Save a search in Browse, then choose Watch to be told when it changes."
+        reason="Save a search in Browse, then choose Watch to be told when it changes."
       />
     )
   }

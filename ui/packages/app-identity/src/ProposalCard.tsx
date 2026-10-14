@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useState } from 'react'
-import { Checkbox, HTMLTable } from '@blueprintjs/core'
+import { Checkbox } from '@blueprintjs/core'
 
 import {
   decideMergeProposal,
@@ -22,6 +22,7 @@ import Action from '@elysium/shell-api/components/Action'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import Notice from '@elysium/shell-api/components/Notice'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
+import DataTable from '@elysium/shell-api/components/DataTable'
 
 /** The verdicts masked_comparison emits, as a tag state. */
 const VERDICT_STATE = {
@@ -114,7 +115,7 @@ export default function ProposalCard({
         Agreement pattern: <code className="mono">{proposal.pattern}</code>
       </p>
 
-      <HTMLTable compact striped className="identity__fields">
+      <DataTable className="identity__fields">
         <thead>
           <tr>
             <th scope="col">Field</th>
@@ -137,7 +138,7 @@ export default function ProposalCard({
             </tr>
           ))}
         </tbody>
-      </HTMLTable>
+      </DataTable>
 
       {proposal.withheld.length > 0 && (
         <Notice state="neutral">

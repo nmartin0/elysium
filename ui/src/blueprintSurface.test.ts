@@ -83,6 +83,11 @@ const PINNED = [
   'ButtonProps',
   'CalloutProps',
   'TagProps',
+  // DataTable's, for the same reason: `Omit<HTMLTableProps, 'striped' |
+  // 'compact' | 'bordered'>` is the zebra and the per-table density
+  // taken away (DEV_UI 9.3/9.4), and it replaced seventeen direct
+  // HTMLTable sites with one file.
+  'HTMLTableProps',
   // Behaviour -- the six the plan vendors rather than writes.
   'Alert',
   'Checkbox',

@@ -26,13 +26,12 @@
  * knows and does not guess which case it is in.
  */
 
-import { HTMLTable } from '@blueprintjs/core'
-
 import { getPublishedHistory, type PublishedChange } from '@elysium/shell-api/api'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import Notice from '@elysium/shell-api/components/Notice'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
+import DataTable from '@elysium/shell-api/components/DataTable'
 
 /** An insert, an update, a delete -- as a tag state. */
 const CHANGE_STATE = {
@@ -65,7 +64,7 @@ export default function PublishedHistory({
         changes.length === 0 ? (
           <Notice state="neutral">Nothing recorded since this object was last published.</Notice>
         ) : (
-          <HTMLTable compact striped className="published-history">
+          <DataTable className="published-history">
             <thead>
               <tr>
                 <th>When</th>
@@ -104,7 +103,7 @@ export default function PublishedHistory({
                 </tr>
               ))}
             </tbody>
-          </HTMLTable>
+          </DataTable>
         )
       }
     </AsyncPanel>

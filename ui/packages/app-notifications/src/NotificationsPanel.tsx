@@ -19,7 +19,7 @@ import StatusTag from '@elysium/shell-api/components/StatusTag'
  * glanced at the tab would lose the one thing it is for.
  */
 
-import { Button, Card, CardList, NonIdealState, Tab, Tabs } from '@blueprintjs/core'
+import { Button, Card, CardList, Tab, Tabs } from '@blueprintjs/core'
 import {
   getErrorMessage,
   getNotifications,
@@ -27,6 +27,7 @@ import {
   markNotificationSeen,
   type Notification,
 } from '@elysium/shell-api/api'
+import EmptyState from '@elysium/shell-api/components/EmptyState'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import { formatTimestamp } from '@elysium/shell-api/format'
@@ -123,10 +124,10 @@ export default function NotificationsPanel({ onSessionExpired }: NotificationsPa
 
   if (notifications.length === 0) {
     return withTabs(
-      <NonIdealState
+      <EmptyState
         icon="notifications"
         title="Nothing to report"
-        description="Conditions you are watching will appear here when they change."
+        reason="Conditions you are watching will appear here when they change."
       />,
     )
   }

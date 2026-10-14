@@ -14,7 +14,6 @@
  * permissions to view that item".
  */
 
-import { HTMLTable } from '@blueprintjs/core'
 import Notice from '@elysium/shell-api/components/Notice'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
 import { useEffect, useRef, useState } from 'react'
@@ -28,6 +27,7 @@ import {
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import { formatValue } from '@elysium/shell-api/format'
+import DataTable from '@elysium/shell-api/components/DataTable'
 
 interface WriteDetailProps {
   writeId: string
@@ -87,7 +87,7 @@ export default function WriteDetail({ writeId, onSessionExpired }: WriteDetailPr
           <p className="write-detail__object-title">
             {object.operation} {object.object_type} {object.object_id}
           </p>
-          <HTMLTable compact striped className="write-detail__changes">
+          <DataTable className="write-detail__changes">
             <thead>
               <tr>
                 <th>Field</th>
@@ -115,7 +115,7 @@ export default function WriteDetail({ writeId, onSessionExpired }: WriteDetailPr
                 </tr>
               ))}
             </tbody>
-          </HTMLTable>
+          </DataTable>
         </div>
       ))}
     </div>

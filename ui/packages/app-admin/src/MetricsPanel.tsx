@@ -23,12 +23,12 @@
  * complain about.
  */
 
-import { HTMLTable } from '@blueprintjs/core'
 import Notice from '@elysium/shell-api/components/Notice'
 import { getErrorMessage, getMetrics, handleIfSessionExpired } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import { useEffect, useRef, useState } from 'react'
+import DataTable from '@elysium/shell-api/components/DataTable'
 
 interface SlowRoute {
   route: string
@@ -131,27 +131,27 @@ export default function MetricsPanel({ onSessionExpired }: MetricsPanelProps) {
       {metrics.slowest_routes.length === 0 ? (
         <p className="metrics-panel__empty">No successful requests in this window, so there is nothing to rank.</p>
       ) : (
-        <HTMLTable className="metrics-table" striped>
+        <DataTable className="metrics-table">
           <thead>
             <tr>
               <th>Route</th>
               {/* THE COUNT BESIDE THE FIGURE, because a p99 over three
                   requests is not a p99 and a reader needs to know that
                   before acting on it. */}
-              <th>Requests</th>
-              <th>p99</th>
+              <th className="data-table__num">Requests</th>
+              <th className="data-table__num">p99</th>
             </tr>
           </thead>
           <tbody>
             {metrics.slowest_routes.map((route) => (
               <tr key={route.route}>
                 <td>{route.route}</td>
-                <td>{route.requests}</td>
-                <td>{duration(route.p99_ms)}</td>
+                <td className="data-table__num">{route.requests}</td>
+                <td className="data-table__num">{duration(route.p99_ms)}</td>
               </tr>
             ))}
           </tbody>
-        </HTMLTable>
+        </DataTable>
       )}
     </div>
   )

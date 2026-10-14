@@ -901,125 +901,36 @@
     font-weight: var(--type-dense-weight);
   }
 
-  .object-search__status,
+  /* THE RESULTS ARE A DataTable (DEV_UI 9.3, 9.4). They were Blueprint
+ * Cards in a CardList, and this block held three hundred lines about
+ * keeping a Card `display: block` against CardList's direct-child flex
+ * rule and about a stretched link that swallowed checkbox clicks. Both
+ * problems belonged to the card; a table row has neither. What stays
+ * true is written beside the markup: the title is the link, the row is
+ * not, and the checkbox is a bare input with one click target. */
+  .object-search__select-cell {
+    width: calc(var(--target-min) + var(--space-snug));
+  }
 
-/* CardList/Card, not a bare <ul>/<li> -- see ObjectSearchPanel.tsx's
-   own comment on why Card must be CardList's own DIRECT child
-   (confirmed directly against Blueprint's real, shipped CSS: its own
-   borders/hover states/rounded corners all key off a real
-   `.bp6-card-list > .bp6-card` direct-child selector, which a <Link>
-   wrapper in between would silently break). */
-.object-search__result {
-    /* position: relative -- what .object-search__link's own ::after
-     below resolves its inset: 0 against. Without this, the stretched
-     hitbox would expand to the nearest ANY positioned ancestor
-     instead (likely much larger than this one card), not the
-     intended, real element. */
-    position: relative;
-
-    /* Blueprint's CardList gives a direct-child Card
-     `display: flex; align-items: center` -- its single-line list row
-     default -- which lays this card's title, subtitle and fields
-     table out side by side. See the layer note above .app__nav. */
+  /* The title and the id, stacked in one cell: the name to read, the
+   * id to compare and copy. */
+  .object-search__title-cell .object-search__link,
+  .object-search__title-cell .object-search__result-subtitle {
     display: block;
   }
 
-  /* A real, second Blueprint-CSS-override lesson this migration, beyond
-   Shell.tsx's own sidebar one -- confirmed directly, not assumed: a
-   Card that's CardList's own direct child gets `display: flex;
-   align-items: center` from Blueprint's own real, shipped CSS (its
-   own deliberate "single-line list row" default), which silently laid
-   this card's own multi-line content (title, subtitle, a whole fields
-   table) out side-by-side instead of stacked -- confirmed directly by
-   inspecting the real, live card's own computed style before writing
-   this fix, not guessed at from the CSS source alone (a real, isolated
-   reproduction OUTSIDE a CardList wrapper initially, misleadingly,
-   worked fine, which is exactly what pointed at CardList's own direct-
-   child rule as the real, missing piece). Same specificity-matching
-   discipline already established for the sidebar's own overrides: two
-   real, genuinely-present classes together on each side of the child
-   combinator (0,4,0), reliably beating Blueprint's own 0,2,0 rule
-   regardless of source order. */
-  /* The real "stretched link" pattern (the same one Bootstrap's own
-   stretched-link utility uses) -- deliberately NOT the whole card's
-   own visible content wrapped in one <Link> (this file's own earlier,
-   pre-Blueprint version): only the title text itself is real,
-   visible <Link> content, kept in normal flow; the ::after pseudo-
-   element below is what actually expands the real, clickable/
-   keyboard-focusable hitbox to cover the entire card, working
-   correctly regardless of how the rest of the card's own content
-   (subtitle, fields) is laid out around it. */
   .object-search__link {
-    display: block;
     color: inherit;
     text-decoration: none;
   }
 
-  /* THE STRETCHED LINK IS GONE, and this records why rather than
- * leaving a reader to wonder where it went.
- *
- * `::after { inset: 0 }` made the whole card a link target, which is a
- * good pattern for a card that is ONLY a link. This card is not: it
- * holds a checkbox, and the two are fundamentally incompatible. An
- * overlay covering the card either swallows the control's clicks or
- * has to be out-stacked by it, and every interaction that is not a
- * plain left-click then has to be reasoned about separately.
- *
- * It cost three failed fixes. Shift-clicking a checkbox NAVIGATED --
- * proved by a server log showing GET /objects/Transaction/4 during a
- * selection test -- while plain clicks selected correctly, because
- * z-index resolved that case and only that case.
- *
- * So the title is the link and the card is not. Clicking the card body
- * no longer navigates, which is a real loss and a smaller one than a
- * selection control that works for some clicks and not others. */
-
-  /* The checkbox, beside the content rather than beneath an overlay.
- *
- * This block used to explain why it needed its own stacking
- * context to sit above a stretched link. That link is gone -- see
- * the comment above -- so the reasoning is gone with it rather
- * than left behind to mislead. */
-  /* THE CARD'S CONTENT, LAID OUT BESIDE ITS CHECKBOX.
- *
- * The card itself stays `display: block` -- that is deliberate and
- * load-bearing, because Blueprint's CardList gives a direct child Card
- * `display: flex; align-items: center`, which laid this card's
- * multi-line content (title, subtitle, a whole fields table) out
- * side-by-side instead of stacked.
- *
- * So the row goes INSIDE the card rather than being the card. A
- * checkbox in a block container takes its own line above everything,
- * which is what put every box above the row it belonged to.
- *
- * align-items: start, not center: the content is several lines tall
- * and a checkbox floating at its vertical middle reads as belonging to
- * whichever line it happens to land beside. */
-  .object-search__row {
-    display: flex;
-    align-items: start;
-    gap: var(--space-snug);
-  }
-
-  /* The content takes the rest, so long titles wrap rather than pushing
- * the checkbox off the edge. */
-  .object-search__row > .object-search__link,
-  .object-search__row > :not(.object-search__select) {
-    min-width: 0;
-  }
-
+  /* A HIT AREA NOT SMALLER THAN WCAG's 24px floor, whatever the density:
+   * a mis-click here navigates away and loses the selection. */
   .object-search__select {
-    /* NO z-index HERE ANY MORE. It existed to out-stack the stretched
-   * link, which is gone -- and keeping a stacking context that guards
-   * against nothing is how the next reader concludes it is load-
-   * bearing and works around it. */
-    /* Nudged down to sit on the title's own line rather than above its
-   * cap height -- Blueprint's checkbox has its own internal padding
-   * that a bare flex row does not account for. */
-    margin-block-start: 2px;
-    /* Enough room that the cursor does not have to be precise; a
-   * mis-click here navigates away and loses the selection. */
-    padding-inline-end: var(--space-normal);
+    min-width: 16px;
+    min-height: 16px;
+    margin: 0;
+    padding: 0;
   }
 
   /* The bar that says what is selected and offers to act on it. Above
@@ -1052,10 +963,6 @@
     flex-direction: column;
     gap: var(--space-normal);
     margin-block-end: var(--space-loose);
-  }
-
-  .object-search__result-field:last-child {
-    border-bottom: none;
   }
 
   .object-detail__type {
@@ -1158,59 +1065,16 @@
  * like blog posts, so ten results filled a screen and comparing two
  * meant scrolling between them.
  */
-  .object-search__results {
-    border: none;
-    box-shadow: none;
-  }
-
-  .object-search__results .bp6-card {
-    padding: var(--space-tight) var(--space-snug);
-    box-shadow: none;
-    border-bottom: 1px solid var(--border-subtle);
-    border-radius: 0;
-  }
-
   .object-search__result-title {
-    margin: 0;
     font-weight: 600;
   }
 
   .object-search__result-subtitle {
-    margin: 0;
+    font-family: var(--font-mono);
     font-size: var(--type-dense-size);
     line-height: var(--type-dense-line);
     font-weight: var(--type-dense-weight);
     color: var(--text-secondary);
-  }
-
-  /* Fields read ACROSS a row rather than down a list. A definition list
- * per result, stacked, is why ten rows filled the viewport. */
-  .object-search__result-fields {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-hair) var(--space-normal);
-    margin: var(--space-hair) 0 0;
-  }
-
-  .object-search__result-field {
-    display: flex;
-    gap: var(--space-hair);
-    font-size: var(--type-dense-size);
-    line-height: var(--type-dense-line);
-    font-weight: var(--type-dense-weight);
-  }
-
-  .object-search__result-field dt {
-    color: var(--text-secondary);
-  }
-
-  .object-search__result-field dt::after {
-    content: ':';
-  }
-
-  .object-search__result-field dd {
-    margin: 0;
-    color: var(--text-primary);
   }
 
   .object-search__pager {
@@ -1818,25 +1682,6 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--text-secondary);
-  }
-
-  .conflicts {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  .conflicts th {
-    text-align: left;
-    padding: var(--space-hair) var(--space-tight) var(--space-hair) 0;
-    font-size: var(--type-dense-size);
-    line-height: var(--type-dense-line);
-    font-weight: var(--type-dense-weight);
-    color: var(--text-secondary);
-  }
-
-  .conflicts td {
-    padding: var(--space-hair) var(--space-tight) var(--space-hair) 0;
-    vertical-align: top;
   }
 
   /* THE VALUE IS THE THING TO READ and the source is the annotation,
@@ -3188,5 +3033,116 @@
    * variables do not reach -- so it is put on the raised step here. */
   .bp6-dark .bp6-dialog {
     background: var(--surface-raised);
+  }
+
+  /* ---- DATATABLE: every table, one way (DEV_UI 9.3, 9.4) -------------
+   *
+   * HAIRLINES AND HOVER: a rule under each row at 45% of the border
+   * colour, and the accent at 7% under the pointer. No zebra. The row
+   * height and cell type come from the reader's density, set on <body>.
+   * The header is sticky, and sits on the content surface so rows do
+   * not show through it. */
+  .data-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .data-table th,
+  .data-table td {
+    height: var(--row-height);
+    padding: 0 var(--space-snug);
+    font-size: var(--row-type-size);
+    line-height: var(--row-type-line);
+    vertical-align: middle;
+    box-shadow: none;
+    border-bottom: 1px solid color-mix(in oklch, var(--border-subtle) 45%, transparent);
+  }
+
+  .data-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface-content);
+    color: var(--text-secondary);
+    font-weight: var(--type-heading-weight);
+    border-bottom-color: var(--border-subtle);
+  }
+
+  .data-table tbody tr:hover > * {
+    background: color-mix(in oklch, var(--accent-focus) 7%, transparent);
+  }
+
+  /* RIGHT-ALIGN NUMBERS (9.4), header and body alike. */
+  .data-table .data-table__num {
+    text-align: right;
+  }
+
+  /* NATIVE CONTROLS FOLLOW THE THEME. The plain checkboxes, selects and
+   * search inputs (bare on purpose -- see the result row's checkbox)
+   * and every scrollbar drew in light mode on a navy page, a patch of
+   * daylight in each. color-scheme tells the browser which to draw;
+   * accent-color puts a ticked box on the accent. */
+  body {
+    color-scheme: light;
+    accent-color: var(--accent-focus);
+  }
+
+  /* On Blueprint's class rather than `body.bp6-dark`: the dark header
+   * carries it too, and a bare element selector here is one the
+   * reviewed list would have to grow for. */
+  .bp6-dark {
+    color-scheme: dark;
+  }
+
+  /* ---- LOADING BY EXPECTED WAIT (DEV_UI 9.7, E1) -------------------
+   *
+   * Rows already on screen DIM after 100ms rather than vanish: the
+   * inline cue for a wait under a second, with no layout change. */
+  .object-search__results--refreshing tbody {
+    opacity: 0.6;
+    transition: opacity 200ms ease-out 100ms;
+  }
+
+  /* The skeleton waits a second before it shows (see TableSkeleton),
+   * then pulses gently -- and does not pulse at all for anyone who has
+   * asked for less motion. */
+  .table-skeleton {
+    opacity: 0;
+    animation: table-skeleton-appear 200ms ease-out 1000ms forwards;
+  }
+
+  .table-skeleton__row {
+    display: flex;
+    gap: var(--space-loose);
+    align-items: center;
+    height: var(--row-height);
+    border-bottom: 1px solid color-mix(in oklch, var(--border-subtle) 45%, transparent);
+  }
+
+  .table-skeleton__cell {
+    flex: 1;
+    height: var(--space-snug);
+    border-radius: var(--radius-pill);
+    background: var(--surface-raised);
+    animation: table-skeleton-pulse 1600ms ease-in-out infinite;
+  }
+
+  @keyframes table-skeleton-appear {
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes table-skeleton-pulse {
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .table-skeleton__cell {
+      animation: none;
+    }
   }
 }

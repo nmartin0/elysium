@@ -200,3 +200,23 @@ describe('UserMenu -- changing your own password', () => {
     expect(await screen.findByText(/1 other session was logged out/)).toBeInTheDocument()
   })
 })
+
+describe('UserMenu -- row density (DEV_UI 9.3)', () => {
+  it('offers the three densities, the current one ticked, and reports a choice', async () => {
+    const onDensity = vi.fn()
+    render(<UserMenu currentUser={REAL_USER} onLogout={vi.fn()} density="middle" onDensity={onDensity} />)
+    openMenu('alice')
+
+    fireEvent.mouseEnter(screen.getByText('Row density'))
+    fireEvent.click(await screen.findByText('Compact'))
+
+    expect(onDensity).toHaveBeenCalledWith('compact')
+  })
+
+  it('offers no density when the shell gives it none', () => {
+    render(<UserMenu currentUser={REAL_USER} onLogout={vi.fn()} />)
+    openMenu('alice')
+
+    expect(screen.queryByText('Row density')).toBeNull()
+  })
+})

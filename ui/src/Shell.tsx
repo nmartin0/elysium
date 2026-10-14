@@ -5,7 +5,9 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Button, Classes, Menu, MenuItem } from '@blueprintjs/core'
 import { iconForApp } from '@elysium/shell-api/appIcons'
 import { readPreference, writePreference } from '@elysium/shell-api/browserPreferences'
+import LoadingState from '@elysium/shell-api/components/LoadingState'
 import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMenu'
+import { type Density, isDensity } from '@elysium/shell-api/density'
 import HelpPanel from '@elysium/shell-api/components/HelpPanel'
 
 // Shell.tsx  (the actual chrome -- a collapsible left sidebar, and
@@ -330,6 +332,26 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
     setChosen({ username, dark: nextDark })
     writePreference('theme-choice', username, nextDark ? 'dark' : 'light')
   }
+
+  // ROW DENSITY (DEV_UI 9.3), the same shape as the theme: the reader's,
+  // remembered per user, middle until they choose. Applied as
+  // data-density on <body>, which every DataTable's row height reads.
+  const [chosenDensity, setChosenDensity] = useState<{ username: string; density: Density } | null>(null)
+  const storedDensity = readPreference<string>('density', username, 'middle')
+  const density: Density =
+    chosenDensity !== null && chosenDensity.username === username
+      ? chosenDensity.density
+      : isDensity(storedDensity)
+        ? storedDensity
+        : 'middle'
+  const chooseDensity = (next: Density) => {
+    setChosenDensity({ username, density: next })
+    writePreference('density', username, next)
+  }
+
+  useEffect(() => {
+    document.body.dataset.density = density
+  }, [density])
 
   useEffect(() => {
     // Classes.DARK, not a literal. Blueprint 6 emits `bp6-dark` and
@@ -704,7 +726,7 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
           aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
           onClick={() => chooseTheme(!dark)}
         />
-        <UserMenu currentUser={currentUser} onLogout={onLogout} />
+        <UserMenu currentUser={currentUser} onLogout={onLogout} density={density} onDensity={chooseDensity} />
       </div>
     </header>
   )
@@ -743,7 +765,7 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
 
         <div className="app__content">
           <main>
-            <Suspense fallback={<p>Loading…</p>}>
+            <Suspense fallback={<LoadingState />}>
               <Outlet />
             </Suspense>
           </main>

@@ -39,7 +39,11 @@ interface LoadingStateProps {
 
 export default function LoadingState({ label = 'Loading…', inline = false }: LoadingStateProps) {
   return (
-    <div className="loading-state" role="status">
+    // spinner-delayed: nothing for the first 200ms, so a fast answer
+    // never flashes an indicator (DEV_UI 9.7: "under 100ms, nothing.
+    // An indicator that flashes is worse than none"). AsyncPanel had the
+    // delay and this did not, so the same wait looked two ways.
+    <div className="loading-state spinner-delayed" role="status">
       <Spinner size={inline ? 20 : undefined} />
       {/* VISUALLY HIDDEN, NOT display:none. A screen reader skips
           anything display:none hides, so the label has to stay in the

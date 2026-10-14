@@ -23,7 +23,8 @@
  */
 
 import type { ReactNode } from 'react'
-import { Callout, Spinner } from '@blueprintjs/core'
+import { Callout } from '@blueprintjs/core'
+import LoadingState from './LoadingState'
 
 interface AsyncPanelProps<T> {
   /** A message, or null. Takes precedence over loading: a request that
@@ -77,11 +78,7 @@ export default function AsyncPanel<T>({ error, data, children }: AsyncPanelProps
    */
   if (error !== null) return <Callout intent="danger">{error}</Callout>
   if (data === null || data === undefined) {
-    return (
-      <div className="spinner-delayed">
-        <Spinner />
-      </div>
-    )
+    return <LoadingState />
   }
   return <>{children(data)}</>
 }

@@ -537,6 +537,31 @@ describe('theme', () => {
   })
 })
 
+describe('row density (DEV_UI 9.3)', () => {
+  it('is middle until somebody chooses', () => {
+    localStorage.clear()
+    renderShell([{ name: 'Query', path: '/query' }])
+
+    expect(document.body.dataset.density).toBe('middle')
+  })
+
+  it('a stored value that is not a density falls back to middle', () => {
+    localStorage.clear()
+    localStorage.setItem('elysium.pref.density.', JSON.stringify('spacious'))
+    renderShell([{ name: 'Query', path: '/query' }])
+
+    expect(document.body.dataset.density).toBe('middle')
+  })
+
+  it('a stored choice is applied', () => {
+    localStorage.clear()
+    localStorage.setItem('elysium.pref.density.', JSON.stringify('compact'))
+    renderShell([{ name: 'Query', path: '/query' }])
+
+    expect(document.body.dataset.density).toBe('compact')
+  })
+})
+
 describe('the app rail', () => {
   const APPS = [
     { name: 'Query', path: '/query' },

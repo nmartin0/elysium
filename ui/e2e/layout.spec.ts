@@ -317,18 +317,27 @@ test.describe('Blueprint defaults our own rules have to beat', () => {
     expect(toRgb(expected)).toBe(actual)
   })
 
-  test('a result card stacks its content rather than laying it in a row', async ({ page }) => {
-    // Blueprint's CardList gives a direct-child Card
-    // `display: flex; align-items: center` -- its single-line list row
-    // default. These cards hold a title, a subtitle and a fields
-    // table, which that lays out side by side.
+  test('the results table keeps its header in view while it scrolls', async ({ page }) => {
+    // DEV_UI 9.4: "Sticky header, always". COMPUTED, because the rule
+    // could be present and lose to Blueprint's own table styles --
+    // which is exactly what jsdom cannot tell.
     await page.goto('/browse?type=Customer')
-    const card = page.locator('.object-search__result').first()
-    await expect(card).toBeVisible()
+    const header = page.locator('.object-search__results thead th').first()
+    await expect(header).toBeVisible()
 
-    const display = await card.evaluate((element) => getComputedStyle(element).display)
+    expect(await header.evaluate((element) => getComputedStyle(element).position)).toBe('sticky')
+  })
 
-    expect(display).toBe('block')
+  test('a row is as tall as the reader density says', async ({ page }) => {
+    // Middle is 38px by default (DEV_UI 9.3); the cell, not the text,
+    // decides it. Blueprint's own table padding winning would show here.
+    await page.goto('/browse?type=Customer')
+    const row = page.locator('.object-search__result').first()
+    await expect(row).toBeVisible()
+
+    const height = (await row.boundingBox())!.height
+    expect(height).toBeGreaterThanOrEqual(37)
+    expect(height).toBeLessThanOrEqual(60)
   })
 })
 

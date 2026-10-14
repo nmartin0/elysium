@@ -26,6 +26,8 @@
 
 import { useEffect, useState } from 'react'
 
+import DataTable from '@elysium/shell-api/components/DataTable'
+
 import {
   getObjectConflicts,
   getObjectProvenance,
@@ -67,7 +69,7 @@ function Disagreements({ conflicts }: { conflicts: ValueConflict[] }) {
   return (
     <section className="object-detail__conflicts">
       <h3>{disputed ? 'Where the sources disagreed' : 'Where a value came from another source'}</h3>
-      <table className="conflicts">
+      <DataTable className="conflicts">
         <thead>
           <tr>
             <th>Field</th>
@@ -116,7 +118,7 @@ function Disagreements({ conflicts }: { conflicts: ValueConflict[] }) {
             </tr>
           ))}
         </tbody>
-      </table>
+      </DataTable>
       {conflicts.some((conflict) => !conflict.readable) && (
         <p className="conflicts__withheld">
           Some values are not shown because you may not read those fields. The disagreement itself is.
