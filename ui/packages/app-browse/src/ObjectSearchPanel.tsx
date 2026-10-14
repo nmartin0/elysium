@@ -63,6 +63,7 @@ import { useChangedSince } from '@elysium/shell-api/liveUpdates'
 
 import DataTable from '@elysium/shell-api/components/DataTable'
 import TableSkeleton from '@elysium/shell-api/components/TableSkeleton'
+import { PendingInSet, usePendingFor } from './PendingHere'
 import { useRovingFocus } from './useRovingFocus'
 import ActiveFilters from './ActiveFilters'
 import BulkActionForm from './BulkActionForm'
@@ -492,6 +493,13 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedType, queryText, orderBy, JSON.stringify(crossFilter), JSON.stringify(barFilters), frozenSet])
 
+  // CHANGES WAITING FOR APPROVAL, ON THE SET AND ON EACH ROW (DEV_UI
+  // 15.3): "3 of these 40 have pending changes". The page's ids, so the
+  // count is of what is on screen. Above the early returns: it is a hook.
+  const pendingOnPage = usePendingFor(
+    selectedType || null,
+    results.map((result) => result.id),
+  )
   if (objectTypes === null) {
     return (
       <div className="object-search">
@@ -994,6 +1002,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           <p className="object-search__freshness">Showing mirrored data, which has not been published yet.</p>
         )
       )}
+      <PendingInSet count={Object.keys(pendingOnPage).length} shown={results.length} />
 
       {view === 'table' &&
         !loading &&
@@ -1132,6 +1141,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                       <span className="object-search__result-title">{titleValue as React.ReactNode}</span>
                     </Link>
                     {titleValue !== result.id && <span className="object-search__result-subtitle">{result.id}</span>}
+                    {pendingOnPage[result.id] && <StatusTag state="pending">change waiting</StatusTag>}
                   </td>
                   {tableColumns.map((field) => (
                     <td key={field} className={isNumericField(field) ? 'data-table__num' : undefined}>

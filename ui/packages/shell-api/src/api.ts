@@ -1337,6 +1337,25 @@ export async function getInboxCounts(): Promise<InboxCounts> {
   return (await response.json()) as InboxCounts
 }
 
+/** A write waiting for approval that touches an object (DEV_UI 15.3),
+ *  as the object shows it: the action, and whose decision it is. Only
+ *  writes the caller's own Inbox would show; never the values. */
+export interface PendingFor {
+  write_id: string
+  action_type_name: string
+  awaiting_your_review: boolean
+  proposed_by_you: boolean
+}
+
+/** Which of these objects have a change waiting -- by id, only the ids
+ *  that do. */
+export async function getPendingFor(objectType: string, ids: string[]): Promise<Record<string, PendingFor[]>> {
+  if (ids.length === 0) return {}
+  const params = new URLSearchParams({ object_type: objectType, ids: ids.join(',') })
+  const response = await apiFetchOrThrow(`/writes/pending-for?${params}`)
+  return ((await response.json()) as { pending: Record<string, PendingFor[]> }).pending
+}
+
 export async function getNotifications(): Promise<{
   notifications: Notification[]
   unseen: number

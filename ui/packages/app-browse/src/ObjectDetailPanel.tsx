@@ -23,6 +23,7 @@ import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-ap
 import type { SubAppProps } from '@elysium/shell-api/types'
 import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
 import { useChangedSince } from '@elysium/shell-api/liveUpdates'
+import { PendingOnObject, usePendingFor } from './PendingHere'
 import Notice from '@elysium/shell-api/components/Notice'
 import ActionForm, { type ActionDef } from './ActionForm'
 
@@ -134,6 +135,8 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
   // not be this one; a hint never says which, by design. So it offers
   // a refresh rather than claiming this object moved.
   const { changed: typeChanged, acknowledge: acknowledgeChange } = useChangedSince(objectType)
+  // A CHANGE WAITING FOR APPROVAL, ON THE OBJECT IT WOULD CHANGE (15.3).
+  const pendingHere = usePendingFor(objectType, [objectId])
 
   // Fetched ONCE per mount, not re-fetched on every object navigation
   // within this same route pattern -- which actions a user can invoke
@@ -291,6 +294,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
         <AskAboutObject objectType={objectType} objectId={objectId} />
       </div>
       {titleValue !== objectId && <p className="object-detail__subtitle">{objectId}</p>}
+      <PendingOnObject pending={pendingHere[objectId] ?? []} />
       {typeChanged && (
         <Notice state="pending" className="object-detail__changed">
           {objectType} data has changed since this page was loaded, possibly this object.{' '}

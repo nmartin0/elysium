@@ -134,7 +134,7 @@ export default function ApprovalsPanel({ onSessionExpired }: SubAppProps) {
             />
           ) : (
             <CardList className="approvals__list">
-              {loaded.map((write) => (
+              {byConsequence(loaded).map((write) => (
                 <Card key={write.write_id} className="approvals__item">
                   <div className="approvals__summary">
                     <p className="approvals__description">{write.description}</p>
@@ -237,18 +237,25 @@ export default function ApprovalsPanel({ onSessionExpired }: SubAppProps) {
                         confirm_and_execute() would refuse it, and a
                         button whose only outcome is a refusal wastes
                         a reviewer's decision. Reject stays below. */}
-                    {write.awaiting_your_review && write.undeclared_fields.length === 0 && (
-                      <>
-                        <Button
-                          small
-                          intent="primary"
-                          loading={busyWriteId === write.write_id}
-                          onClick={() => void decide(write.write_id, true)}
-                        >
-                          Approve
-                        </Button>
-                      </>
-                    )}
+                    {/* NO APPROVE WITHOUT THE DIFF (DEV_UI 15.3). "Elysium's
+                        write path has NO undo ... Approving requires looking
+                        at the diff." So Approve appears once the changes are
+                        open, beside them, and not on the closed row -- the
+                        one-click approve that rubber-stamping is made of. */}
+                    {write.awaiting_your_review &&
+                      write.undeclared_fields.length === 0 &&
+                      openWriteId === write.write_id && (
+                        <>
+                          <Button
+                            small
+                            intent="primary"
+                            loading={busyWriteId === write.write_id}
+                            onClick={() => void decide(write.write_id, true)}
+                          >
+                            Approve
+                          </Button>
+                        </>
+                      )}
                     {/* REJECT STAYS even when a write cannot be
                         applied. A reviewer still needs to clear it out
                         of the queue, and a rejection is deliberately
@@ -277,5 +284,20 @@ export default function ApprovalsPanel({ onSessionExpired }: SubAppProps) {
         }
       </AsyncPanel>
     </Workspace>
+  )
+}
+
+/**
+ * SORTED BY CONSEQUENCE, NOT ARRIVAL (DEV_UI 15.3): "sort actions by
+ * reversibility and impact". Nothing here can be undone, so impact
+ * decides: what is yours to decide before what you are waiting on, then
+ * the change touching the most objects, then the oldest -- it expires
+ * first. A write that cannot be applied goes last: there is no decision
+ * left in it but clearing it away.
+ */
+export function byConsequence(writes: AwaitingWrite[]): AwaitingWrite[] {
+  const rank = (write: AwaitingWrite) => (write.undeclared_fields.length > 0 ? 2 : write.awaiting_your_review ? 0 : 1)
+  return [...writes].sort(
+    (a, b) => rank(a) - rank(b) || b.object_count - a.object_count || a.proposed_at.localeCompare(b.proposed_at),
   )
 }

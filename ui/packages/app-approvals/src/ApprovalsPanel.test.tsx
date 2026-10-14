@@ -89,8 +89,10 @@ describe('ApprovalsPanel', () => {
     // reason, and a generic failure would waste it.
     mockedList.mockResolvedValue([write()])
     mockedConfirm.mockRejectedValue(new Error('approved by someone other than its proposer'))
+    mockedDetail.mockResolvedValue(new Promise(() => {}) as never)
     render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
 
+    fireEvent.click(await screen.findByRole('button', { name: 'View changes' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Approve' }))
 
     await waitFor(() => expect(screen.getByText(/other than its proposer/)).toBeInTheDocument())
@@ -180,10 +182,51 @@ describe('a write the configuration has outrun', () => {
     // THE CONTROL. A panel that hid Approve unconditionally would pass
     // every test above while making the feature useless.
     mockedList.mockResolvedValue([write()])
+    mockedDetail.mockResolvedValue(new Promise(() => {}) as never)
     render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
 
+    fireEvent.click(await screen.findByRole('button', { name: 'View changes' }))
     expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument()
     expect(screen.queryByText('Cannot be applied')).toBeNull()
+  })
+})
+
+describe('no approve without the diff (DEV_UI 15.3)', () => {
+  /** "Elysium's write path has NO undo ... Approving requires looking at
+   *  the diff." The one-click approve on a closed row is what
+   *  rubber-stamping is made of. */
+  it('offers Approve only once the changes are open', async () => {
+    mockedList.mockResolvedValue([write()])
+    mockedDetail.mockResolvedValue(new Promise(() => {}) as never)
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    await screen.findByRole('button', { name: 'View changes' })
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'View changes' }))
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument()
+  })
+
+  it('Reject needs no diff -- clearing a proposal away changes nothing', async () => {
+    mockedList.mockResolvedValue([write()])
+    render(<ApprovalsPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByRole('button', { name: 'Reject' })).toBeInTheDocument()
+  })
+})
+
+describe('sorted by consequence, not arrival (DEV_UI 15.3)', () => {
+  it('yours to decide first, then the widest change, then the oldest; unappliable last', async () => {
+    const { byConsequence } = await import('./ApprovalsPanel')
+    const sorted = byConsequence([
+      write({ write_id: 'waiting-on-others', awaiting_your_review: false, object_count: 900 }),
+      write({ write_id: 'dead', undeclared_fields: ['Customer.x'], object_count: 5000 }),
+      write({ write_id: 'small-old', object_count: 1, proposed_at: '2026-10-01T00:00:00Z' }),
+      write({ write_id: 'wide', object_count: 40 }),
+      write({ write_id: 'small-new', object_count: 1, proposed_at: '2026-10-09T00:00:00Z' }),
+    ])
+
+    expect(sorted.map((each) => each.write_id)).toEqual(['wide', 'small-old', 'small-new', 'waiting-on-others', 'dead'])
   })
 })
 

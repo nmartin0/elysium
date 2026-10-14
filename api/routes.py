@@ -985,6 +985,75 @@ class AwaitingWriteResponse(BaseModel):
     duplicate_count: int
 
 
+class PendingForObjectResponse(BaseModel):
+    """One waiting write that touches an object, as the object shows it."""
+
+    write_id: str
+    action_type_name: str
+    awaiting_your_review: bool
+    proposed_by_you: bool
+
+
+class PendingForObjectsResponse(BaseModel):
+    #: By object id, only the ids with something waiting.
+    pending: dict[str, list[PendingForObjectResponse]]
+
+
+#: How many ids one request may ask about: a page of Browse, and then some.
+MAX_PENDING_IDS = 200
+
+
+@router.get("/writes/pending-for", dependencies=[Depends(_no_store)],
+            response_model=PendingForObjectsResponse)
+def pending_for_objects_route(object_type: str, ids: str, request: Request,
+                              current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Which of these objects have a change waiting, and which (DEV_UI 15.3).
+
+    "SHOW PENDING PROPOSALS IN CONTEXT, which is the part no inbox does
+    well. If an object has a pending change, that belongs ON THE OBJECT;
+    if a set does, it belongs on the set -- '3 of these 40 have pending
+    changes'." It is also "the antidote to context-free approving, since
+    the reviewer is already looking at the thing being changed".
+
+    THE INBOX'S OWN RULE FOR WHAT A CALLER SEES: a write they may decide
+    (execute:<Action>) or one they proposed -- the same `relevant` test
+    as /writes/awaiting, so the object never shows a write the Inbox
+    would hide. And only for objects they may read, checked through the
+    mediator: an id they cannot see is answered as one with nothing
+    waiting, as everywhere.
+
+    NO VALUES. An action name and whose decision it is; the change itself
+    is in the Inbox, where field-level reading rules apply to it.
+    """
+    wanted = [part for part in ids.split(",") if part][:MAX_PENDING_IDS]
+    if not wanted:
+        return {"pending": {}}
+    generation = _generation(request)
+    roles = generation.config.roles
+
+    def may_confirm(candidate) -> bool:
+        return authorize(current_user, roles, f"execute:{candidate.action_type_name}")
+
+    def relevant(candidate) -> bool:
+        return may_confirm(candidate) or candidate.user_id == current_user.user_id
+
+    store: PendingWriteStore = request.app.state.pending_writes
+    touching: dict[str, list[dict]] = {}
+    for write_id, pending in store.awaiting(relevant):
+        for sub in pending.sub_writes:
+            if sub.object_type != object_type or str(sub.object_id) not in wanted:
+                continue
+            touching.setdefault(str(sub.object_id), []).append({
+                "write_id": write_id,
+                "action_type_name": pending.action_type_name,
+                "awaiting_your_review": may_confirm(pending),
+                "proposed_by_you": pending.user_id == current_user.user_id,
+            })
+    readable = {object_id: entries for object_id, entries in touching.items()
+                if _may_read_object(generation.mediator, current_user, object_type, object_id)}
+    return {"pending": readable}
+
+
 @router.get("/writes/awaiting", dependencies=[Depends(_no_store)],
             response_model=list[AwaitingWriteResponse])
 def awaiting_writes_route(request: Request,
