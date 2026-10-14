@@ -51,6 +51,7 @@ from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 from pyiceberg.expressions import EqualTo, In
 
 from core.mirror.iceberg_reader import IcebergNamespaceReader
+from core.ontology.bindings import link_route
 from core.ontology.gold_view import GOLD_NAMESPACE
 from core.ontology.interface import StorageUnavailable
 
@@ -270,9 +271,8 @@ class GoldConnector:
         """
         if not object_ids:
             return {}
-        via_table = field_config["via_table"]
-        via_column = field_config["via_column"]
-        result_column = field_config.get("via_target_column", target_id_column)
+        route = link_route(field_config, target_id_column)
+        via_table, via_column, result_column = route.table, route.column, route.result_column
         arrow = self._reader._scan(via_table, selected_fields=(result_column, via_column))
         if arrow is None:
             return {}

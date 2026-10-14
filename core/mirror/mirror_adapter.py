@@ -61,6 +61,7 @@ from pyiceberg.expressions import (
 )
 
 from core.mirror.iceberg_reader import IcebergNamespaceReader
+from core.ontology.bindings import link_route
 from core.ontology.interface import ExternalReadAdapter
 
 
@@ -202,9 +203,8 @@ class MirrorReadAdapter(ExternalReadAdapter):
         if not object_ids:
             return {}
 
-        via_table = field_config["via_table"]
-        via_column = field_config["via_column"]
-        result_column = field_config.get("via_target_column", target_id_column)
+        route = link_route(field_config, target_id_column)
+        via_table, via_column, result_column = route.table, route.column, route.result_column
         arrow = self._reader._scan(via_table, selected_fields=(result_column, via_column))
         if arrow is None:
             return {}
@@ -274,17 +274,18 @@ class MirrorReadAdapter(ExternalReadAdapter):
         return {field.name for field in table.schema().fields}
 
     def resolve_reverse_link(self, object_id: Any, field_config: dict, target_id_column: str) -> list[Any]:
-        via_table = field_config["via_table"]
-        via_column = field_config["via_column"]
-
+        # THE SAME ROUTE AS THE BATCH READ ABOVE (F-07): this used the
+        # target's id column whatever the link declared, so a many-to-many
+        # link asked its join table for a column it does not have.
+        route = link_route(field_config, target_id_column)
         arrow = self._reader._scan(
-            via_table,
-            selected_fields=(target_id_column,),
-            row_filter=EqualTo(term=via_column, literal=str(object_id)),  # type: ignore[call-arg]
+            route.table,
+            selected_fields=(route.result_column,),
+            row_filter=EqualTo(term=route.column, literal=str(object_id)),  # type: ignore[call-arg]
         )
         if arrow is None:
             return []
-        return arrow.column(target_id_column).to_pylist()
+        return arrow.column(route.result_column).to_pylist()
 
 
 

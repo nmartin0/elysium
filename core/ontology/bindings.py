@@ -38,8 +38,38 @@ including `security` -- WHICH field carries a classification is a fact
 about the ontology, even though the column that field reads is not.
 """
 
+from dataclasses import dataclass
+
 TYPE_BINDING_KEYS = ("storage", "additional_storage")
 FIELD_BINDING_KEYS = ("column", "storage", "via_table", "via_column", "via_target_column")
+
+
+@dataclass(frozen=True)
+class LinkRoute:
+    """Where a link is stored: the table holding it, the column there
+    naming the SOURCE object, and the column there to return."""
+
+    table: str
+    column: str
+    result_column: str
+
+
+def link_route(field_config, target_id_column: str) -> LinkRoute:
+    """A link field's route, read in ONE place (F-07).
+
+    FIVE ADAPTER METHODS EACH READ `via_table`, `via_column` and
+    `via_target_column` themselves, and they had drifted: the mirror's
+    single reverse-link read ignored `via_target_column`, so a
+    many-to-many link -- whose join table holds the target's id under
+    its own column name, not the target type's id column -- asked the
+    join table for a column it does not have, while the batch read on
+    the same adapter honoured it.
+
+    `via_target_column` is that join-table column; a foreign-key link
+    declares none and returns the target's own id column.
+    """
+    return LinkRoute(field_config["via_table"], field_config["via_column"],
+                     field_config.get("via_target_column") or target_id_column)
 
 
 def split_bindings(schema: dict) -> tuple[dict, dict]:

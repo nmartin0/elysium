@@ -2742,6 +2742,13 @@ CONTROLS = [
         new="            command += []",
         tests=["tests/unit/test_claude_agent_sdk_adapter.py::test_a_schema_is_passed_to_the_cli_to_enforce"],
     ),
+    Control(
+        describes="F-07: the mirror's single reverse-link read follows a join table's target column",
+        path="core/mirror/mirror_adapter.py",
+        old="            selected_fields=(route.result_column,),",
+        new="            selected_fields=(target_id_column,),",
+        tests=["tests/unit/test_link_route.py::test_the_mirror_single_reverse_read_follows_the_join_table"],
+    ),
 ]
 
 

@@ -50,6 +50,7 @@ from typing import Any
 from sqlalchemy.dialects.sqlite import dialect as sqlite_dialect
 
 from core.filters import FilterError, UnsupportedFilter
+from core.ontology.bindings import link_route
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter, StorageUnavailable
 from core.sqlite_connection import open_connection as _connect
 
@@ -408,9 +409,8 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         if not object_ids:
             return {}
 
-        via_table = field_config["via_table"]
-        via_column = field_config["via_column"]
-        result_column = field_config.get("via_target_column", target_id_column)
+        route = link_route(field_config, target_id_column)
+        via_table, via_column, result_column = route.table, route.column, route.result_column
         placeholders = ", ".join("?" for _ in object_ids)
         with self._connection() as conn:
             rows = _run_query(
@@ -584,14 +584,13 @@ class SQLiteReadAdapter(ExternalReadAdapter):
             return set()
 
     def resolve_reverse_link(self, object_id: Any, field_config: dict, target_id_column: str) -> list[Any]:
-        via_table = field_config["via_table"]
-        via_column = field_config["via_column"]
         # For a MANY-TO-MANY link the row lives in a join table, so the
         # id to return is that table's own target column -- the join
         # table does not have the target type's id column at all. A
         # foreign-key link declares no via_target_column and reads the
-        # target's id column as before.
-        result_column = field_config.get("via_target_column", target_id_column)
+        # target's id column as before. core/ontology/bindings.link_route.
+        route = link_route(field_config, target_id_column)
+        via_table, via_column, result_column = route.table, route.column, route.result_column
         with self._connection() as conn:
             rows = _run_query(
                 conn, f"SELECT {_q(result_column)} FROM {_q(via_table)} WHERE {_q(via_column)} = ?", (object_id,),
