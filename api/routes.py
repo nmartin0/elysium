@@ -3757,6 +3757,89 @@ def create_note_route(object_type: str, object_id: str, body: CreateNoteRequest,
     }
 
 
+class MemoryResponse(BaseModel):
+    id: str
+    text: str
+    author: str
+    created_at: str
+    # A field it was written from has changed since. Shown, so a person
+    # can see what was believed and decide; never given to the agent.
+    stale: bool
+    # Its author, or someone who may change the object (MemoryGuard).
+    may_forget: bool
+
+
+class CreateMemoryRequest(BaseModel):
+    text: str
+
+
+def _memory_guard(request: Request):
+    guard = _generation(request).memory
+    if guard is None:
+        # A generation built without a data directory. Not a state a
+        # served deployment reaches; said plainly rather than as a 404.
+        raise HTTPException(status_code=503, detail="Memory is not available in this deployment")
+    return guard
+
+
+def _memory_response(guard, user, memory, stale: bool) -> dict:
+    return {"id": memory.memory_id, "text": memory.text, "author": memory.author,
+            "created_at": memory.created_at, "stale": stale,
+            "may_forget": guard.may_forget(user, memory)}
+
+
+@router.get("/objects/{object_type}/{object_id}/memories", response_model=list[MemoryResponse])
+def list_memories_route(object_type: str, object_id: str, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    """What people asked Elysium to remember about one object (E-14).
+
+    EVERY ONE THIS CALLER MAY SEE, stale ones included and marked: the
+    object page is where a person notices a fact has gone out of date
+    and forgets it. Which ones they may see is MemoryGuard's question --
+    the object AND every field the memory was written from -- and an
+    empty list answers absent, unreadable and none alike.
+    """
+    guard = _memory_guard(request)
+    return [_memory_response(guard, current_user, memory, stale)
+            for memory, stale in guard.visible(current_user, object_type, object_id)]
+
+
+@router.post("/objects/{object_type}/{object_id}/memories", status_code=201,
+             response_model=MemoryResponse)
+def create_memory_route(object_type: str, object_id: str, body: CreateMemoryRequest,
+                        request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Remember a fact about an object you can read.
+
+    THE ONLY WAY A MEMORY IS WRITTEN. The owner's rule (14 Oct): only
+    when a person asks. The agent reads memories and has no step that
+    writes one, so neither the model's judgement nor an instruction
+    planted in the data it reads can put anything here.
+    """
+    guard = _memory_guard(request)
+    try:
+        memory = guard.remember(current_user, object_type, object_id, body.text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if memory is None:
+        # Uniform denial, as for notes: absent and unreadable alike.
+        raise HTTPException(status_code=404, detail="Not found")
+    return _memory_response(guard, current_user, memory, stale=False)
+
+
+@router.delete("/memories/{memory_id}", status_code=204)
+def forget_memory_route(memory_id: str, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> Response:
+    """Forget one memory: its author, or anyone who may change its
+    object. 404 for a memory that does not exist, one this caller may
+    not see, and one they may see but not forget -- the last is
+    distinguishable from the list's may_forget anyway, so it says
+    nothing new, and one answer keeps the route from being a probe."""
+    if not _memory_guard(request).forget(current_user, memory_id):
+        raise HTTPException(status_code=404, detail="Not found")
+    return Response(status_code=204)
+
+
 def live_source_adapters(request: Request) -> dict:
     """The adapters that reach each SOURCE, for the generation serving
     this request -- built once per generation, not per request (/health

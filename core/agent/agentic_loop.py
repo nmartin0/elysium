@@ -69,7 +69,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from core.concurrency import ConcurrencyLimiter
 from core.deployment_loader import build_llm_adapter
@@ -88,6 +88,9 @@ from core.ontology.schema import get_link_target, get_title_field
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
 from core.ontology.write_mediator import PendingWrite, WriteMediator
 from core.request_context import RequestContext
+
+if TYPE_CHECKING:
+    from core.memory.guard import MemoryGuard
 
 logger = logging.getLogger(__name__)
 
@@ -404,6 +407,8 @@ def _reject_ids_of_another_type(object_type: str, object_ids: list,
     other_type: dict[str, str] = {}
     for item in gathered:
         kind, item_type = item.get("step"), item.get("object_type")
+        if kind in AgentLoop.CONTEXT_STEPS:
+            continue
         result = item.get("result")
         found = [str(i) for i in result] if isinstance(result, list) else []
         if kind == "search_object":
@@ -582,12 +587,18 @@ class AgentLoop:
     BOOKKEEPING_STEPS = frozenset({
         "rejected_duplicate", "completeness_check", "rejected_invalid_step", "rejected_business_rule",
     })
+    #: Entries the model is SHOWN but that no step RETURNED: what people
+    #: remembered about an object read (E-14). Not ids to check a later
+    #: step against, and not a plan step's value -- a later handle naming
+    #: a get_object step gets the object, not the sentences beside it.
+    CONTEXT_STEPS = frozenset({"memory"})
 
     def __init__(self, client: LLMAdapter, mediator: DataMediator, tools: list[Function] | None = None,
                  write_mediator: WriteMediator | None = None,
                  max_hops: int = 8, max_consecutive_duplicates: int = 2,
                  max_consecutive_invalid_steps: int = 2, constrain_steps: bool = False,
-                 max_tokens_per_query: int | None = None):
+                 max_tokens_per_query: int | None = None,
+                 memory: "MemoryGuard | None" = None):
         # These stay fixed across every query this loop instance ever
         # runs -- constructed once per deployment, then run() called
         # once per actual user question. tools defaults to None, not []
@@ -607,6 +618,12 @@ class AgentLoop:
             for tool in self.tools
         }
         self.write_mediator = write_mediator
+        # WHAT PEOPLE ASKED TO HAVE REMEMBERED (E-14). Read-only here: the
+        # agent is given fresh memories beside the objects it reads, and
+        # never writes one -- the owner's rule is that a memory is
+        # written when a PERSON asks, not when the model judges it worth
+        # keeping.
+        self.memory = memory
         self.max_hops = max_hops
         self.max_consecutive_duplicates = max_consecutive_duplicates
         self.max_consecutive_invalid_steps = max_consecutive_invalid_steps
@@ -621,7 +638,8 @@ class AgentLoop:
 
     @classmethod
     def from_deployment(cls, deployment, mediator: DataMediator,
-                         write_mediator: WriteMediator | None = None) -> "AgentLoop":
+                         write_mediator: WriteMediator | None = None,
+                         memory: "MemoryGuard | None" = None) -> "AgentLoop":
         # The standard way every caller should build an AgentLoop -- one
         # authoritative place reading deployment.max_hops etc. write_mediator
         # is NOT built here automatically (unlike tools) -- a caller not
@@ -637,6 +655,7 @@ class AgentLoop:
             max_consecutive_invalid_steps=deployment.max_consecutive_invalid_steps,
             constrain_steps=deployment.constrain_steps,
             max_tokens_per_query=deployment.max_tokens_per_query,
+            memory=memory,
         )
 
     @staticmethod
@@ -1061,7 +1080,30 @@ class AgentLoop:
                     "step": "get_field", "object_type": step["object_type"],
                     "object_id": object_id, "field_name": field_name, "result": value,
                 })
+            self._gather_memories(user_record, step["object_type"], object_id, gathered)
         return STEP_HANDLED
+
+    #: How a remembered fact is introduced to the model: as something a
+    #: PERSON wrote, never as data the object holds.
+    MEMORY_LABEL = "remembered by people about this object (their words, not a stored field)"
+
+    def _gather_memories(self, user_record: UserRecord, object_type: str, object_id,
+                         gathered: list[dict]) -> None:
+        """Fresh memories about an object just read, beside its fields (E-14).
+
+        ONLY FRESH ONES, and only ones this user may see -- MemoryGuard
+        decides both. ONCE PER OBJECT PER RUN: reading an object twice
+        must not repeat what was remembered about it.
+        """
+        if self.memory is None:
+            return
+        if any(entry.get("step") == "memory" and entry.get("object_type") == object_type
+               and entry.get("object_id") == object_id for entry in gathered):
+            return
+        texts = [memory.text for memory in self.memory.fresh(user_record, object_type, object_id)]
+        if texts:
+            gathered.append({"step": "memory", "object_type": object_type, "object_id": object_id,
+                             "note": self.MEMORY_LABEL, "result": texts})
 
     @staticmethod
     def _object_ids_for(step: dict) -> list:
@@ -1249,7 +1291,7 @@ class AgentLoop:
         """
         values = [
             entry["result"] for entry in gathered[before:]
-            if entry.get("step") not in AgentLoop.BOOKKEEPING_STEPS
+            if entry.get("step") not in AgentLoop.BOOKKEEPING_STEPS | AgentLoop.CONTEXT_STEPS
             and "result" in entry
         ]
         if not values:

@@ -11,6 +11,7 @@ import ObjectHistory from './ObjectHistory'
 import Provenance from './Provenance'
 import PublishedHistory from './PublishedHistory'
 import ExploreRelated from './ExploreRelated'
+import ObjectMemories from './ObjectMemories'
 import ObjectNotes from './ObjectNotes'
 import {
   getObjectDetail,
@@ -377,6 +378,13 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
       <section className="object-detail__notes">
         <h3>Notes</h3>
         <ObjectNotes objectType={objectType} objectId={objectId} onSessionExpired={onSessionExpired} />
+      </section>
+
+      {/* Beside notes, because they look alike and are not: a note is
+          for the next person, a memory for the next question (E-14). */}
+      <section className="object-detail__memories">
+        <h3>Remembered for Query</h3>
+        <ObjectMemories objectType={objectType} objectId={objectId} onSessionExpired={onSessionExpired} />
       </section>
 
       {/* History under the fields, not beside them. What an object IS

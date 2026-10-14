@@ -2317,11 +2317,13 @@
  * Before history: what people SAID is more often what someone came
  * for than what changed.
  */
-  .object-detail__notes {
+  .object-detail__notes,
+  .object-detail__memories {
     margin-top: var(--space-section);
   }
 
-  .object-detail__notes h3 {
+  .object-detail__notes h3,
+  .object-detail__memories h3 {
     margin: 0 0 var(--space-tight);
     font-size: var(--type-label-size);
     line-height: var(--type-label-line);
@@ -2350,6 +2352,42 @@
     line-height: var(--type-dense-line);
     font-weight: var(--type-dense-weight);
     color: var(--text-secondary);
+  }
+
+  /* --- What people asked to have remembered (E-14) ------------------ */
+  .object-memories__memory {
+    padding: var(--space-tight) 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .object-memories__line {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-tight);
+  }
+
+  .object-memories__text {
+    margin: 0;
+    white-space: pre-wrap;
+  }
+
+  /* Stale: still readable, visibly no longer in force. */
+  .object-memories__memory--stale .object-memories__text {
+    color: var(--text-secondary);
+  }
+
+  .object-memories__meta,
+  .object-memories__empty,
+  .object-memories__explainer {
+    margin: var(--space-hair) 0 0;
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
+    color: var(--text-secondary);
+  }
+
+  .object-memories__explainer {
+    margin-bottom: var(--space-tight);
   }
 
   /* --- How an answer was found --------------------------------------

@@ -95,6 +95,9 @@ OWNED_DATABASES = (
     # restore that brought back a waiting write without its question
     # would approve it and never answer the person who asked.
     "paused_queries.db",
+    # WHAT PEOPLE ASKED TO HAVE REMEMBERED about objects (E-14). Written
+    # by hand, one sentence at a time; there is no other copy.
+    "memories.db",
     # THE JUDGEMENTS A PERSON MADE ABOUT WHO IS WHO (GOLD-6). Nothing
     # upstream remembers them: gold is rebuilt from silver on every
     # sync, and the merges it applies exist ONLY here. Losing this file

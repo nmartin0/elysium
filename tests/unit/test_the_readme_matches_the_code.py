@@ -76,22 +76,20 @@ class TestWhatItClaimsIsMissing:
         assert "cross-silo" not in " ".join(active.split()).lower()
 
     def test_the_memory_limitation_is_still_true(self):
-        """It claims core/memory/ exists but is not consulted by the
-        agent loop. If the loop starts importing it, this line has to
-        go."""
+        """Claimed: Query is given memories and never writes one. The
+        loop must reach the guard, and must never call remember()."""
         loop = (ROOT / "core/agent/agentic_loop.py").read_text(encoding="utf-8")
-        imports_memory = any(
-            line.strip().startswith(("import core.memory", "from core.memory"))
-            for line in loop.splitlines())
 
-        if "isn't wired into the live query path" in FLAT:
-            assert not imports_memory, "the agent loop now uses core/memory; fix the README"
+        assert "Agent memory is written by hand" in FLAT
+        assert "self.memory.fresh(" in loop
+        assert ".remember(" not in loop, "the agent now writes memories; fix the README"
 
-    def test_the_single_process_limitation_is_still_true(self):
-        """Claimed: concurrency protections coordinate threads within
-        one process. A cross-process lock file would falsify it."""
-        assert (ROOT / "core/concurrency.py").exists()
-        assert "Single OS process" in FLAT
+    def test_the_one_machine_limitation_is_still_true(self):
+        """Claimed: several workers on one machine are checked, and the
+        coordination is file locks -- which is why it is ONE machine."""
+        assert (ROOT / "scripts/check_workers.py").exists()
+        assert "fcntl" in (ROOT / "core/ontology/write_mediator.py").read_text(encoding="utf-8")
+        assert "One machine." in FLAT
 
     def test_it_admits_the_pre_customer_status(self):
         """The site's trust centre says so; the README must agree, or

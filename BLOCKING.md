@@ -132,9 +132,6 @@ they can be answered together.
   and so on). The one part of D5 not decided.
 
 **Smaller calls**
-- `E-14` -- MemoryGuard is built and tested and nothing uses it. The
-  owner chose to BUILD agent memory (14 Oct); its shape is being agreed
-  before it is built.
 - `E-21` -- the LICENSE says unpublished and proprietary; the
   repository's visibility should match it.
 

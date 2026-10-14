@@ -32,6 +32,7 @@ def _run(step):
     mediator = _FakeMediator()
     loop = AgentLoop.__new__(AgentLoop)
     loop.mediator = mediator
+    loop.memory = None   # E-14: no memories here; test_memory_guard covers them
     gathered: list[dict] = []
     loop._step_get_object(step, "alice", {}, gathered)
     return mediator, gathered

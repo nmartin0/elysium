@@ -49,6 +49,7 @@ from core.secret_references import expand_secrets
 
 if TYPE_CHECKING:
     from core.agent.agentic_loop import AgentLoop
+    from core.memory.guard import MemoryGuard
     from core.ontology.write_mediator import WriteMediator
 from core.functions.registry import validate_function_declarations
 from core.immutable import deep_freeze
@@ -1528,6 +1529,10 @@ class DeploymentGeneration:
     # generation reads from gold. Empty when none are -- which is what
     # tells a caller which layer it is looking at (GOLD-3).
     gold_published_at: Mapping[str, str] = MappingProxyType({})
+    # WHAT PEOPLE ASKED TO HAVE REMEMBERED about objects (E-14): the one
+    # gate to core/memory. None for a generation built without a data
+    # directory (some scripts and tests), which simply has no memory.
+    memory: "MemoryGuard | None" = None
 
     #: Example questions a deployment chooses to SHOW in the query
     #: screen -- those marked `display: true`. They are kept here
@@ -1643,6 +1648,13 @@ def build_generation(
         source_schema=config.schema,
         source_silo_for_type=_build_silo_for_type(config.schema),
     )
+    memory = None
+    if data_dir is not None:
+        from core.memory.guard import MemoryGuard
+        from core.memory.store import MemoryStore
+
+        memory = MemoryGuard(MemoryStore(Path(data_dir) / "memories.db"), mediator,
+                             access_roles(config))
     return DeploymentGeneration(
         generation=config.generation,
         loaded_at=config.loaded_at,
@@ -1650,7 +1662,9 @@ def build_generation(
         config=config,
         mediator=mediator,
         write_mediator=write_mediator,
-        loop=AgentLoop.from_deployment(config, mediator, write_mediator=write_mediator),
+        loop=AgentLoop.from_deployment(config, mediator, write_mediator=write_mediator,
+                                       memory=memory),
+        memory=memory,
         synthesis_client=build_llm_adapter(config, config.synthesis_model),
         write_adapters=write_adapters,
         display_examples=display_examples,

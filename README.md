@@ -58,7 +58,7 @@ core/            Generic engine, built around the **ontology** --
                  any specific database technology, or any specific LLM
                  backend.
 adapters/        Concrete backends -- one file per real technology
-                 (SQLite, Ollama, an in-memory cache). core/ only ever
+                 (SQLite, SQLAlchemy, Ollama, vLLM, the Claude Agent SDK). core/ only ever
                  talks to these through a generic contract.
 tools/           Stateless computational capabilities the LLM may
                  invoke (e.g. linear regression) -- zero data access.
@@ -530,12 +530,16 @@ is explicit, fail-safe, and never inferred" section.
 
 ## 7. Known limitations, honestly
 
-- **Memory security infrastructure exists but isn't wired into the
-  live query path.** `core/memory/` is built and tested; the agent
-  loop does not yet consult it.
-- **Single OS process.** Concurrency protections coordinate threads
-  within one process. Running two workers against one deployment is
-  not supported and has not been tested.
+- **Agent memory is written by hand, from an object's page.** Query
+  is given what people asked it to remember about an object it reads,
+  and never writes a memory itself. A memory goes stale, and stops
+  being given, when ANY field it was written from changes -- so on an
+  object whose fields change daily, memories go stale daily.
+- **One machine.** Several workers on one machine are supported and
+  checked (`python -m scripts.check_workers`): they coordinate through
+  SQLite and file locks on a shared data directory. Several machines
+  sharing one data directory is not supported -- those locks are not
+  reliable over a network filesystem.
 - **`install.sh` is a fresh-install script, not an upgrade
   mechanism.**
 - **TLS termination is a deployment responsibility**, not this

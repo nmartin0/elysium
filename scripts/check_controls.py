@@ -1437,14 +1437,6 @@ CONTROLS = [
                "test_declared_the_two_spellings_are_one_entity"],
     ),
     Control(
-        describes="F-09: no security value is captured as None, not an empty string",
-        path="core/memory/guard.py",
-        old="                            None if security_value is None else str(security_value))",
-        new="                            str(security_value or \"\"))",
-        tests=["tests/unit/test_memory_guard.py::"
-               "test_an_object_with_no_security_value_is_captured_as_none_not_empty"],
-    ),
-    Control(
         describes="F-24: an over-long system prompt is refused before the CLI starts",
         path="adapters/claude_agent_sdk_adapter.py",
         old="        if size >= MAX_ARGUMENT_BYTES:",
@@ -2496,6 +2488,61 @@ CONTROLS = [
         old="                if declared == \"integer\" and _has_leading_zeros(value):",
         new="                if False:",
         tests=["tests/unit/test_leading_zeros_are_warned.py::test_a_real_sync_warns"],
+    ),
+    Control(
+        describes="E-14: a memory is hidden from a reader who cannot see a field it came from",
+        path="core/memory/guard.py",
+        old="        seen = [memory for memory in memories if set(memory.sources) <= readable]",
+        new="        seen = list(memories)",
+        tests=["tests/unit/test_memory_guard.py::TestWhoSees::test_a_reader_missing_a_source_field_does_not_see_it"],
+    ),
+    Control(
+        describes="E-14: a stale memory is never given to the agent",
+        path="core/memory/guard.py",
+        old="        return [memory for memory, stale in self.visible(user, object_type, object_id) if not stale]",
+        new="        return [memory for memory, stale in self.visible(user, object_type, object_id)]",
+        tests=["tests/unit/test_memory_guard.py::TestStaleness::"
+               "test_a_changed_source_marks_it_stale_and_keeps_it_from_the_agent",
+               "tests/unit/test_memory_guard.py::TestTheAgentReadsThem::test_a_stale_memory_is_not_given_to_the_agent"],
+    ),
+    Control(
+        describes="E-14: a memory cannot be pinned to an object that does not exist",
+        path="core/memory/guard.py",
+        old="                             value=object_id)]) > 0",
+        new="                             value=object_id)]) >= 0",
+        tests=["tests/unit/test_memory_guard.py::TestWriting::test_an_object_that_does_not_exist_cannot_be_written_about"],
+    ),
+    Control(
+        describes="E-14: only its author or someone who may change the object forgets a memory",
+        path="core/memory/guard.py",
+        old="        return memory.author == user.user_id or authorize(",
+        new="        return True or authorize(",
+        tests=["tests/unit/test_memory_guard.py::TestForgetting::test_another_reader_may_not",
+               "tests/integration/test_memories_api.py::test_only_the_author_forgets_it_here"],
+    ),
+    Control(
+        describes="E-14: an erasure forgets what people remembered about them",
+        path="scripts/erase.py",
+        old="        forgotten = MemoryStore(paths.data_dir / \"memories.db\").forget_objects(keys)",
+        new="        forgotten = 0",
+        tests=["tests/unit/test_erasure.py::TestWhatPeopleRemembered::"
+               "test_an_erasure_forgets_every_memory_about_them"],
+    ),
+    Control(
+        describes="E-14: a restore does not bring back a memory about someone erased",
+        path="scripts/restore_deployment.py",
+        old="    if (data_dir / \"memories.db\").exists():",
+        new="    if False:",
+        tests=["tests/unit/test_erasure.py::TestWhatPeopleRemembered::"
+               "test_a_restore_does_not_bring_them_back"],
+    ),
+    Control(
+        describes="E-14: the agent is given what people remembered about an object it read",
+        path="core/agent/agentic_loop.py",
+        old="            self._gather_memories(user_record, step[\"object_type\"], object_id, gathered)",
+        new="            pass",
+        tests=["tests/unit/test_memory_guard.py::TestTheAgentReadsThem::"
+               "test_reading_an_object_brings_its_fresh_memories_once"],
     ),
 ]
 

@@ -175,7 +175,16 @@ def _keep_every_erasure(data_dir: Path, aside: Path) -> int:
                 shutil.copy2(aside / f"erasures.db{suffix}", data_dir / f"erasures.db{suffix}")
     if not (data_dir / "erasures.db").exists():
         return 0
-    return ErasureRegister(data_dir / "erasures.db").mark_restored()
+    register = ErasureRegister(data_dir / "erasures.db")
+    # MEMORIES ARE NOT REWRITTEN BY A SYNC, so they are cleared here: a
+    # restored memories.db may predate an erasure the kept register
+    # records (E-14).
+    if (data_dir / "memories.db").exists():
+        from core.memory.store import MemoryStore
+
+        MemoryStore(data_dir / "memories.db").forget_erased(register.hasher(),
+                                                            register.hashes_by_type())
+    return register.mark_restored()
 
 
 # SQLite's companions to a database in WAL mode. Moved with it, or they

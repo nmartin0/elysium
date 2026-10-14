@@ -1622,6 +1622,55 @@ export async function createObjectNote(objectType: string, objectId: string, tex
 }
 
 /**
+ * A fact a person asked Elysium to remember about one object (E-14).
+ *
+ * STALE when a field it was written from has changed since: shown so a
+ * person can decide, never given to the agent. may_forget is the
+ * server's answer to "may this caller forget it" -- its author, or
+ * someone who may change the object.
+ */
+export interface ObjectMemory {
+  id: string
+  text: string
+  author: string
+  created_at: string
+  stale: boolean
+  may_forget: boolean
+}
+
+function toObjectMemory(raw: unknown): ObjectMemory {
+  const body = (raw ?? {}) as Record<string, unknown>
+  return {
+    id: String(body.id ?? ''),
+    text: String(body.text ?? ''),
+    author: String(body.author ?? ''),
+    created_at: String(body.created_at ?? ''),
+    stale: body.stale === true,
+    may_forget: body.may_forget === true,
+  }
+}
+
+export async function getObjectMemories(objectType: string, objectId: string): Promise<ObjectMemory[]> {
+  const response = await apiFetchOrThrow(
+    `/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectId)}/memories`,
+  )
+  const body = (await response.json()) as unknown
+  return Array.isArray(body) ? body.map(toObjectMemory) : []
+}
+
+export async function rememberAboutObject(objectType: string, objectId: string, text: string): Promise<ObjectMemory> {
+  const response = await apiFetchOrThrow(
+    `/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectId)}/memories`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) },
+  )
+  return toObjectMemory(await response.json())
+}
+
+export async function forgetMemory(memoryId: string): Promise<void> {
+  await apiFetchOrThrow(`/memories/${encodeURIComponent(memoryId)}`, { method: 'DELETE' })
+}
+
+/**
  * One change the MIRROR recorded about an object.
  *
  * DISTINCT FROM EDIT HISTORY, and both are wanted. Edit history answers

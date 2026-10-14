@@ -28,6 +28,7 @@ import sys
 from collections import Counter
 
 from core.deployment_loader import load_deployment, resolve_runtime_paths
+from core.memory.store import MemoryStore
 from core.mirror.catalog import open_mirror_catalog
 from core.mirror.erasure import ErasureRegister, apply_erasures, cascade
 from core.mirror.sync_lock import single_writer
@@ -61,8 +62,13 @@ def run(object_type: str, object_id: str, reason: str, write: bool = False,
         register = ErasureRegister(paths.data_dir / "erasures.db")
         erasure_id = register.record(keys, requested_by or getpass.getuser(), reason)
         removed = apply_erasures(catalog, config.schema, register, mirror_dir)
+        # WHAT PEOPLE WROTE ABOUT THEM GOES TOO (E-14). A memory is a
+        # sentence about one object; once the object is erased it is a
+        # sentence about a person Elysium has been told to forget.
+        forgotten = MemoryStore(paths.data_dir / "memories.db").forget_objects(keys)
     print(f"Erased ({erasure_id}): {sum(removed.values())} row(s) from {len(removed)} table(s), "
-          f"older snapshots and their files deleted. Restart or reload the server.")
+          f"{forgotten} memory(ies), older snapshots and their files deleted. "
+          f"Restart or reload the server.")
     return 0
 
 

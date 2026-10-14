@@ -146,6 +146,41 @@ class TestARestore:
 
 
 
+def _memories(paths):
+    from core.memory.store import MemoryStore
+
+    return MemoryStore(paths.data_dir / "memories.db")
+
+
+class TestWhatPeopleRemembered:
+    """E-14: a memory is a sentence about one object, so it goes with it."""
+
+    def test_an_erasure_forgets_every_memory_about_them(self, synced_deployment):
+        store = _memories(synced_deployment)
+        store.add("Customer", ADA, "Disputed two charges.", {}, "someone")
+        store.add("Transaction", "1", "Refunded.", {}, "someone")
+        store.add("Customer", "cust_002", "Prefers email.", {}, "someone")
+
+        _code, printed = _erase(synced_deployment)
+
+        assert "2 memory(ies)" in printed
+        assert store.about("Customer", ADA) == [] and store.about("Transaction", "1") == []
+        assert store.about("Customer", "cust_002")                  # THE CONTROL
+
+    def test_a_restore_does_not_bring_them_back(self, synced_deployment, tmp_path):
+        store = _memories(synced_deployment)
+        store.add("Customer", ADA, "Disputed two charges.", {}, "someone")
+        store.add("Customer", "cust_002", "Prefers email.", {}, "someone")
+        backup(synced_deployment.data_dir, tmp_path / "backup")
+        _erase(synced_deployment)
+
+        _quiet(restore, tmp_path / "backup", synced_deployment.data_dir, force=True)
+
+        assert store.about("Customer", ADA) == []
+        assert store.about("Customer", "cust_002")
+
+
+
 
 def test_the_server_will_not_serve_a_lake_with_unapplied_erasures(synced_deployment):
     """After a restore the lake may hold them until the next sync; the

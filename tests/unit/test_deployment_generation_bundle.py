@@ -130,4 +130,7 @@ def test_every_field_is_declared(generation):
         # core/display_safety.py refuses at load any that names an
         # identifier-shaped token.
         "display_examples",
+        # E-14: the one gate to what people asked to have remembered,
+        # shared by the loop and the memory routes.
+        "memory",
     }

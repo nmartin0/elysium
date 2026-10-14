@@ -4,8 +4,9 @@ access_control.py  (the single canonical enforcement point -- generic, org-agnos
 check_access() is the ONLY function in the whole project that decides
 "is this allowed" for an object that EXISTS. Every surface that touches
 protected data -- DataMediator's reads, WriteMediator's updates and
-deletes, MemoryGuard's memory reads -- calls THIS, never reimplements
-the combination itself.
+deletes -- calls THIS, never reimplements the combination itself.
+MemoryGuard (core/memory) asks the mediator instead, by counting: it
+needs "exists AND readable" as one answer, which this does not give.
 
 ONE STATED EXCEPTION, because an absolute claim here was false and
 being believed (001's 004-8). A CREATE has no row for MAC to consult,

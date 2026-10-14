@@ -54,6 +54,10 @@ not_shown
 compare_sets_route
 # WIRED-3: a response field pydantic reads by reflection.
 high_confidence
+# E-14, agent memory: routes FastAPI calls.
+list_memories_route
+create_memory_route
+forget_memory_route
 # R12: pydantic calls the validator by reflection.
 _one_label_is_a_list
 combine_sets_route
@@ -131,13 +135,6 @@ _.row_factory
 # this reasoning still holds if either is ever actually wired up.
 max_concurrent_reads
 supports_atomic_conditional_write
-
-# --- MemoryEntry.captured_security_value (core/memory/interface.py) --
-# explicitly, deliberately "audit/debugging ONLY" per its own
-# docstring -- MemoryGuard is documented to NEVER read it in real
-# authorization logic (always re-derives security live instead), so
-# it genuinely has no in-logic reader by design, not by omission.
-captured_security_value
 
 # Registered via @app.middleware("http") -- called by FastAPI's own
 # internal dispatch mechanism, the same reason every route handler in

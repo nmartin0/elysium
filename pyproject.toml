@@ -150,7 +150,7 @@ root_packages = ["core", "api", "adapters", "simulator"]
 # must never know which concrete backend it's actually talking to
 # (dependency inversion -- core defines the interfaces adapters/ own
 # files implement, e.g. core.ontology.interface, core.llm.interface,
-# core.functions.interface, core.memory.interface).
+# core.functions.interface).
 #
 # Confirmed directly against this project's REAL, current imports
 # before writing this (not assumed): api and adapters genuinely never
@@ -429,9 +429,9 @@ modules = [
 # comment on dependency inversion) -- never meant to depend on each
 # other at all.
 [[tool.importlinter.contracts]]
-name = "the three concrete adapters stay independent of each other"
+name = "the concrete adapters stay independent of each other"
 type = "independence"
-modules = ["adapters.inmemory_adapter", "adapters.ollama_adapter", "adapters.sqlite_adapter"]
+modules = ["adapters.ollama_adapter", "adapters.sqlite_adapter"]
 
 
 # ---------------------------------------------------------------
