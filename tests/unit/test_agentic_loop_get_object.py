@@ -19,11 +19,10 @@ alice: org-a, full read grants on Author (name, books) and Book
 own TEST_ROLES shape, not reinvented.
 """
 
-from adapters.sqlite_adapter import SQLiteWriteAdapter
 from core.agent.agentic_loop import AgentLoop
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
-from tests.conftest import scripted_llm_client
+from tests.conftest import author_book_mediator, scripted_llm_client
 
 TEST_USERS = {
     "alice": {"org_id": "org-a", "role": "reader"},
@@ -41,9 +40,7 @@ def _record(user_id):
 
 
 def _mediator(test_db_path, test_schema) -> DataMediator:
-    adapter = SQLiteWriteAdapter({"path": test_db_path})
-    silo_for_type = {object_type: type_def["storage"]["silo"] for object_type, type_def in test_schema.items()}
-    return DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES)
+    return author_book_mediator(test_db_path, test_schema, TEST_ROLES)
 
 
 def test_get_object_expands_into_one_gathered_entry_per_field(test_db_path, test_schema):

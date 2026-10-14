@@ -21,13 +21,12 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteWriteAdapter
 from core.agent.agentic_loop import AgentLoop
 from core.intermediate_layer.auth import resolve_user_record
 from core.memory.guard import MemoryGuard
 from core.memory.store import MAX_TEXT, MemoryStore
 from core.ontology.mediator import DataMediator
-from tests.conftest import scripted_llm_client
+from tests.conftest import author_book_mediator, scripted_llm_client
 
 FULL = ["read:Author", "read:Author.author_id", "read:Author.org_id", "read:Author.name"]
 TEST_ROLES = {
@@ -51,9 +50,7 @@ def _user(user_id):
 
 @pytest.fixture
 def mediator(test_db_path, test_schema) -> DataMediator:
-    adapter = SQLiteWriteAdapter({"path": test_db_path})
-    silo_for_type = {name: spec["storage"]["silo"] for name, spec in test_schema.items()}
-    return DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES)
+    return author_book_mediator(test_db_path, test_schema, TEST_ROLES)
 
 
 @pytest.fixture

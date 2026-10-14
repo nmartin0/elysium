@@ -12,10 +12,10 @@ project.
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteWriteAdapter
 from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.auth import resolve_user_record
 from core.ontology.mediator import DataMediator
+from tests.conftest import author_book_mediator
 
 TEST_USERS = {
     "alice": {"org_id": "org-a", "role": "reader"},
@@ -34,9 +34,7 @@ def _record(user_id):
 
 @pytest.fixture
 def mediator(test_db_path, test_schema) -> DataMediator:
-    adapter = SQLiteWriteAdapter({"path": test_db_path})
-    silo_for_type = {object_type: type_def["storage"]["silo"] for object_type, type_def in test_schema.items()}
-    return DataMediator(test_schema, {"test_silo": adapter}, silo_for_type, TEST_ROLES)
+    return author_book_mediator(test_db_path, test_schema, TEST_ROLES)
 
 
 def test_both_gates_pass(mediator):

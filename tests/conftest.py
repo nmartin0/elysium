@@ -254,3 +254,20 @@ def mediator_of(app):
     in rather than reinstating the attribute a route could then reach.
     """
     return app.state.generation.mediator
+
+
+def author_book_mediator(db_path, schema, roles, *, adapter=None, **mediator_kwargs):
+    """A DataMediator over the shared Author/Book fixture database (F-11).
+
+    THE SAME THREE LINES had been copied into a dozen test files -- an
+    adapter on test_db_path, a silo_for_type comprehension, the
+    constructor -- differing only in the roles and in an audit or write
+    log. Pass `adapter` when the test needs the same one for a
+    WriteMediator, and the logs as keywords.
+    """
+    from adapters.sqlite_adapter import SQLiteWriteAdapter
+    from core.ontology.mediator import DataMediator
+
+    adapter = adapter or SQLiteWriteAdapter({"path": db_path})
+    silo_for_type = {name: spec["storage"]["silo"] for name, spec in schema.items()}
+    return DataMediator(schema, {"test_silo": adapter}, silo_for_type, roles, **mediator_kwargs)
