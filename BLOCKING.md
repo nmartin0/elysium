@@ -31,6 +31,7 @@ numbers themselves.
 
 | was | what was observed |
 | --- | --- |
+| 2. `--workers` for real | RUN, 14 Oct, `uvicorn --workers 2` on a seeded deployment, with every request on a fresh connection and each worker's pid in the access log so a check that reached one worker fails. Sessions, lockouts, proposals confirmed on another worker, and a withdrawn grant refused by every worker after one reload: all held. TWO FAULTS FOUND AND FIXED: the generation header alternated between workers (9, 10, 9, 10), so the UI refetched its schema on almost every request -- it now watches `x-elysium-configuration`, the shared reload epoch; and a starting worker's crash recovery applied a write another worker was still applying (reproduced with two processes: IntegrityError, write done but reported failed) -- applying and resuming now share an flock. `python -m scripts.check_workers` repeats the run on any machine. |
 | 17. The watch layout check | RUN AND PASSES. The item said it was "not known to be broken ... known to be unobserved, which is a different thing -- a test nobody has watched run is not evidence". It has now been watched: the recipient control computes `flexDirection: row` and measures 21px tall, against the spec's limits of `row` and under 40. A screenshot confirms the checkbox and `customer_service` sit on one line with the label. |
 
 NOT BY THE COMMAND THE ITEM GAVE, and that is worth recording rather
@@ -152,14 +153,7 @@ they can be answered together.
 
 # Blocked on a machine or a person running something
 
-## 2. `--workers` for real
-
-Patches 292-295 fixed all four blockers. It has only ever run as two
-apps inside one test process.
-
-**Blocked on:** somebody running it.
-
-## 13a. Twenty-five inherited security findings
+## 12a. Twenty-five inherited security findings
 
 The security agent kept its own register because it was not allowed to
 edit `AUDIT_CHECKLIST.csv`, and said so:
@@ -184,7 +178,7 @@ clarified, only reproduced or dropped.
 
 # Blocked because it is product direction
 
-## 3. Thirty-odd recommendations that are not engineering questions
+## 2. Thirty-odd recommendations that are not engineering questions
 
 `R41`, `R42`, `R45`, `R48`, `R51`, `R53`, `R56` to `R62` and their
 neighbours are LLM enrichment, embeddings, model predictions,
@@ -196,7 +190,7 @@ and they should not be picked off a list by whoever is next.
 is buildable -- but on whether this is the product at all, which is
 why picking one off would be the wrong move rather than a slow one.
 
-## 4. What the Query screen should contain
+## 3. What the Query screen should contain
 
 Four features, none built, from `QUERY_PLAN.md`. They are product
 direction rather than engineering: what a question box should offer
@@ -224,7 +218,7 @@ generation answered this" much harder to state).
 
 **Blocked on:** product design, and there is no front-end agent now.
 
-## 5. Writing configuration from the UI
+## 4. Writing configuration from the UI
 
 From `CONFIG_ROUND_TRIP_AND_UI_KIT.md`. Its own finding is why it is
 hard: **the configuration files are mostly COMMENTS**, so a naive
@@ -238,7 +232,7 @@ items -- adopting it is its own decision, to be made with this one.
 **Blocked on:** that dependency call, and on whether configuration
 should be editable from the UI at all.
 
-## 6. Object Explorer phases 3 to 5
+## 5. Object Explorer phases 3 to 5
 
 Phases 1 and 2 are built. **The blocker they existed to remove is
 gone:** the plan opens with "our filter is equality only ... so
@@ -254,7 +248,7 @@ act on; they do not answer it.
 
 **Blocked on:** that write-path decision.
 
-## 7. A plugin API, and the reason module federation is not it
+## 6. A plugin API, and the reason module federation is not it
 
 `THIRD_PARTY_EXTENSIONS.md` designs third-party extensions. None of it
 is built, and whether Elysium should have them at all is a product
@@ -278,7 +272,7 @@ code.
 **Blocked on:** whether to have an extension story at all. Everything
 downstream of that is design work that cannot start first.
 
-## 8. Three questions triggers raise and nobody has answered
+## 7. Three questions triggers raise and nobody has answered
 
 Triggers are built. `TRIGGERS_AND_PLUGINS.md` names three risks that
 are "about volume rather than authority", and none of them is a code
@@ -316,7 +310,7 @@ second is a product decision about how much friction an automation
 should carry, and the third is a design choice with cost on both
 sides.
 
-## 9. What the interface should be
+## 8. What the interface should be
 
 `DEV_UI.md`, written after the owner said the interface is BOTH
 unfinished and disjointed. **Its diagnosis is the part worth keeping**,
@@ -351,7 +345,7 @@ contrast is not a target.
 **Blocked on:** a front-end agent, and the owner's appetite for a
 redesign rather than more features.
 
-## 10. Agent-loop efficiency, which needs a machine with a model
+## 9. Agent-loop efficiency, which needs a machine with a model
 
 `IDEAS.md`'s open investigations all need traces from a real model on
 real hardware. The measurements already taken are kept because
@@ -528,7 +522,7 @@ measured.
 would reopen plan mode and constrained decoding -- both trade compute
 the CPU does not have.
 
-## 11. Context rot, and a 10,000-id search behind it
+## 10. Context rot, and a 10,000-id search behind it
 
 `UI_ROADMAP.md` calls this "a risk to what already exists, not a
 feature", and it is the only part of that file that is not front-end
@@ -576,7 +570,7 @@ that matters: told its limit was 20 when given 32 ids, a real model
 one object at a time until the duplicate guard stopped it". A cap
 chosen without measuring is how that happens again.
 
-## 12. PostgreSQL row-level security for MAC
+## 11. PostgreSQL row-level security for MAC
 
 Held with a trigger named, alongside column `GRANT` with `SET ROLE`.
 Elysium enforces MAC in the mediator today; pushing it into the
@@ -645,7 +639,7 @@ files reference the SQLite adapter, most of them tests using it as the
 cheap real database, and the write path is where a mistake reaches a
 customer's database. Days, not hours -- but no decision, so not here.
 
-## 13. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
+## 12. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
 
 **Blocked on:** the owner, and on money and calendar time rather than
 engineering.
@@ -695,7 +689,7 @@ an audit is ever bought:
 
 Months, not a patch.
 
-## 14. Owning the UI kit, and when to start
+## 13. Owning the UI kit, and when to start
 
 **Blocked on:** nothing. This is a DECISION ALREADY TAKEN, recorded
 here so the next person does not reopen it from scratch.
