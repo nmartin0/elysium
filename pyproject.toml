@@ -292,6 +292,9 @@ layers = [
     "role_store",
     # role_changes imports only sqlite_connection, like role_store.
     "role_changes",
+    # paused_queries imports only sqlite_connection, like role_changes
+    # (WIRED-2). It holds no authority: resume re-reads the asker.
+    "paused_queries",
     # source_health imports nothing from core: it is handed the
     # adapters it checks (E-13).
     "source_health",
@@ -393,6 +396,9 @@ layers = [
     # Below field_types, which reads locale-written text through it
     # (DEP-1). It imports nothing from this package.
     "localised_values",
+    # How a Decimal leaves the API as exact text (PA001-G12). Imports
+    # only the standard library; api/ is its only caller.
+    "decimal_text",
 ]
 containers = ["core.ontology"]
 exhaustive = true
