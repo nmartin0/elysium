@@ -128,11 +128,6 @@ they can be answered together.
 - `D6` and `AR-10` -- fine-tune a small model on Elysium's own traces?
 
 **Access, and what a person sees**
-- `NEW-1` -- a forward link returns the id of a target the caller cannot
-  see. Pinned by a test that says "decide it deliberately".
-- `NEW-2` -- confirming a write re-checks the PROPOSER's reach, not the
-  approver's. Should an approver have to be able to reach what they
-  approve?
 - `WIRED-2` / `AL-12` -- after an approval, should the asker's question
   resume and finish? `AgentLoop.resume` is built and tested; nothing
   calls it, because who receives that answer is the question.

@@ -1993,8 +1993,10 @@ class WriteMediator:
         to that same object. Requiring the approver to reach the
         object would narrow who may approve -- a cross-org supervisor
         could no longer sign anything off -- and that is a policy
-        decision for the deployment's owner, not a bug fix. It is
-        recorded for them instead.
+        decision for the deployment's owner, not a bug fix. DECIDED
+        (NEW-2, 14 Oct): the proposer's reach only. An approver in
+        another region may sign off; what they may see is not widened by
+        approving, because confirm returns ids, never the objects.
 
         SO: the write is re-checked against the authority it was
         PROPOSED under. That closes what 004-7 actually reproduced --

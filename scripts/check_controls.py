@@ -2441,6 +2441,14 @@ CONTROLS = [
         tests=["tests/unit/test_system_columns_are_not_silently_taken.py::TestTheSyncRefusesTheCollision::"
                "test_a_source_security_column_is_refused_too"],
     ),
+    Control(
+        describes="NEW-1: a forward link to an object the caller may not see answers None",
+        path="core/ontology/mediator.py",
+        old="        if is_link_field(field_info) and value is not None:\n            # A FORWARD LINK",
+        new="        if False:\n            # A FORWARD LINK",
+        tests=["tests/unit/test_link_fields_respect_mac.py::TestAForwardLinkHidesItsTargetToo::"
+               "test_a_foreign_key_to_a_hidden_object_is_withheld"],
+    ),
 ]
 
 

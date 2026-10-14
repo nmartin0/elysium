@@ -2422,7 +2422,31 @@ class DataMediator:
         # search_object()'s own write-log reconciliation uses, see its
         # own docstring for the full reasoning.
         adapter, resolved_type_config = self._resolve_shared_storage(object_type, [field_name])
-        return self._read_field_with_log_check(object_type, object_id, field_name, adapter, resolved_type_config)
+        value = self._read_field_with_log_check(object_type, object_id, field_name, adapter,
+                                                resolved_type_config)
+        if is_link_field(field_info) and value is not None:
+            # A FORWARD LINK TO AN OBJECT THE CALLER MAY NOT SEE ANSWERS
+            # None (NEW-1, decided by the owner 14 Oct: hide it). The id is
+            # a foreign key on a row the caller may read, but it NAMES an
+            # object they may not -- and the many-valued links, search and
+            # link counts already withhold such ids. One rule for every
+            # way of following a link.
+            #
+            # check_access, not _visible_link_ids: that prefetches, and
+            # prefetching clears the security cache get_object warms for
+            # the object being read, so every later field would pay to
+            # resolve it again.
+            #
+            # A TARGET THE ONTOLOGY DOES NOT DECLARE has no security rule
+            # to enforce, and checking it would raise "Unknown object_type"
+            # out of a method that never raises (test_mdo's Agent link):
+            # the id is an opaque reference, returned as it always was.
+            target_type = get_link_target(field_info)
+            if target_type in self.schema and not check_access(
+                    self, user_record, self.roles, target_type, value,
+                    f"read:{target_type}", context):
+                return None
+        return value
 
     @_security_scoped
     def get_object(self, user_record: UserRecord, object_type: str, object_id: Any,

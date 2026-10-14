@@ -190,17 +190,15 @@ class TestItDoesNotCostAReadPerLink:
             f"prefetch is not being used")
 
 
-class TestTheOpenQuestion:
-    """A FORWARD SINGLE-VALUED LINK STILL RETURNS ITS TARGET'S ID, and
-    that is a decision nobody has made rather than a fix nobody wrote.
+class TestAForwardLinkHidesItsTargetToo:
+    """A FORWARD SINGLE-VALUED LINK TO A HIDDEN OBJECT ANSWERS None (NEW-1).
 
-    The id is a foreign-key COLUMN of a row the caller may read, so
-    withholding it would change what "read this object" means and could
-    break legitimate joins. The audit's X1 covers many-valued links
-    only. This pins today's behaviour so the question is visible in the
-    suite and cannot drift silently while it is decided."""
+    It returned the target's id: a foreign-key column of a row the caller
+    may read, naming an object they may not. Pinned as an open question
+    until the owner decided, on 14 Oct, to hide it -- the rule the
+    many-valued links, search and link counts already follow."""
 
-    def test_today_a_foreign_key_to_a_hidden_object_is_returned(self, tmp_path):
+    def _orders(self, tmp_path, order_region):
         object_types = {
             **OBJECT_TYPES,
             "Order": {
@@ -217,11 +215,27 @@ class TestTheOpenQuestion:
             object_types)
         mediator = _mediator(tmp_path, schema, [
             ("INSERT INTO customers VALUES (?,?,?)", [("cust_003", "Chidi", "us-east")]),
-            ("INSERT INTO orders VALUES (?,?,?)", [("o1", "cust_003", "us-west")]),
+            ("INSERT INTO orders VALUES (?,?,?)", [("o1", "cust_003", order_region)]),
         ])
 
-        linked = mediator.get_field(_user("us-west"), "Order", "o1", "customer")
+        return mediator
 
-        assert linked == "cust_003", "behaviour changed: decide it deliberately"
+    def test_a_foreign_key_to_a_hidden_object_is_withheld(self, tmp_path):
+        mediator = self._orders(tmp_path, "us-west")
+
+        assert mediator.get_field(_user("us-west"), "Order", "o1", "customer") is None
         assert mediator.get_object(_user("us-west"), "Customer", "cust_003",
                                     ["name"]) == {"name": None}
+
+    def test_through_get_object_too(self, tmp_path):
+        """What the API and the agent read through."""
+        mediator = self._orders(tmp_path, "us-west")
+
+        assert mediator.get_object(_user("us-west"), "Order", "o1",
+                                    ["customer", "region"]) == {"customer": None, "region": "us-west"}
+
+    def test_a_visible_target_is_still_returned(self, tmp_path):
+        """THE CONTROL: only hidden targets are withheld."""
+        mediator = self._orders(tmp_path, "us-east")
+
+        assert mediator.get_field(_user("us-east"), "Order", "o1", "customer") == "cust_003"
