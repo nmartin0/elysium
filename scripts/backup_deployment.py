@@ -1,7 +1,18 @@
 """Capture a running deployment's own state, consistently.
 
-    python -m scripts.backup_deployment /path/to/backup-dir
-    python -m scripts.backup_deployment /path/to/backup-dir --check
+    python -m scripts.backup_deployment /path/to/backup.elysium-backup
+    python -m scripts.backup_deployment --check
+    python -m scripts.backup_deployment --new-key /somewhere/else/backup.key
+    python -m scripts.backup_deployment --unencrypted /path/to/backup-dir
+
+ENCRYPTED BY DEFAULT (decided 14 Oct). A backup exists to be copied off
+the machine, which is exactly where volume encryption stops protecting
+it. So the backup is one file, sealed with AES-256-GCM under a fresh
+data key that is itself wrapped by the key in ELYSIUM_BACKUP_KEY_FILE
+(core/encrypted_archive.py). The key file must live outside both the
+data directory and the backup's destination -- a key kept with what it
+protects protects nothing -- and is refused otherwise. An unencrypted
+directory is still available, but only by saying --unencrypted.
 
 WHY A SCRIPT RATHER THAN `cp`. Copying a live SQLite file tears across
 a write: the copy can hold a half-applied transaction, and a torn
@@ -29,9 +40,11 @@ stop it does not need this.
 """
 
 import argparse
+import os
 import shutil
 import sqlite3
 import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -168,13 +181,47 @@ def backup(data_dir: Path, into: Path) -> dict:
     return {"captured": captured, "absent": absent, "warehouse_files": warehouse_files}
 
 
+KEY_VARIABLE = "ELYSIUM_BACKUP_KEY_FILE"
+
+
+def backup_encrypted(data_dir: Path, destination: Path, key_file: Path) -> dict:
+    """A backup as one sealed file. The plain snapshot is staged in a
+    private temporary directory on this machine -- whose volume is the
+    one that is meant to be encrypted -- and removed afterwards."""
+    from core.encrypted_archive import encrypt_directory, read_key_file
+
+    destination = Path(destination)
+    kek = read_key_file(key_file, must_not_be_under=(data_dir, destination.parent))
+    staging = Path(tempfile.mkdtemp(prefix="elysium-backup-"))
+    try:
+        result = backup(data_dir, staging)
+        sealed = encrypt_directory(staging, destination, kek)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    return {**result, **sealed, "file": str(destination)}
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("destination", type=Path,
-                        help="directory to write the backup into")
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("destination", type=Path, nargs="?",
+                        help="the backup file to write (a directory with --unencrypted)")
     parser.add_argument("--check", action="store_true",
                         help="report what WOULD be captured, and write nothing")
+    parser.add_argument("--unencrypted", action="store_true",
+                        help="write a plain directory instead of an encrypted file")
+    parser.add_argument("--new-key", type=Path, metavar="PATH",
+                        help="write a new random backup key to PATH (owner-only) and stop")
     args = parser.parse_args()
+
+    if args.new_key:
+        from core.encrypted_archive import write_key_file
+
+        write_key_file(args.new_key)
+        print(f"wrote a new backup key to {args.new_key}. Keep it OUTSIDE the data directory "
+              f"and away from the backups, and keep a copy somewhere safe: without it a "
+              f"backup cannot be restored.\nThen: export {KEY_VARIABLE}={args.new_key}")
+        return 0
 
     data_dir = Path(resolve_runtime_paths().data_dir)
 
@@ -189,9 +236,30 @@ def main() -> int:
         print("\nNOT INCLUDED: the data silos. Elysium does not own them.")
         return 0
 
-    result = backup(data_dir, args.destination)
+    if args.destination is None:
+        parser.error("a destination is required")
+    if args.unencrypted:
+        result = backup(data_dir, args.destination)
+        print("UNENCRYPTED, as asked: anyone who obtains this directory can read everything "
+              "the mirror holds.")
+    else:
+        key_file = os.environ.get(KEY_VARIABLE)
+        if not key_file:
+            print(f"Backups are encrypted, and {KEY_VARIABLE} names no key. Make one with\n"
+                  f"    python -m scripts.backup_deployment --new-key /somewhere/else/backup.key\n"
+                  f"or pass --unencrypted to write a plain directory.", file=sys.stderr)
+            return 1
+        from core.encrypted_archive import ArchiveKeyError
+
+        try:
+            result = backup_encrypted(data_dir, args.destination, Path(key_file))
+        except ArchiveKeyError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        print(f"encrypted with key {result['key_id']} into {result['file']} "
+              f"({result['bytes']:,} bytes)")
     print(f"captured {len(result['captured'])} database(s) and "
-          f"{result['warehouse_files']} warehouse file(s) into {args.destination}")
+          f"{result['warehouse_files']} warehouse file(s)")
     if result["absent"]:
         # NOT A FAILURE, and not silent either. A young deployment
         # genuinely lacks the lazily-created ones.

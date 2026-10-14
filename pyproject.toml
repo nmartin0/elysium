@@ -295,6 +295,11 @@ layers = [
     # paused_queries imports only sqlite_connection, like role_changes
     # (WIRED-2). It holds no authority: resume re-reads the asker.
     "paused_queries",
+    # Two leaves for encryption at rest (decided 14 Oct): the volume
+    # check imports only the standard library; the backup archive only
+    # it and `cryptography`.
+    "storage_encryption",
+    "encrypted_archive",
     # source_health imports nothing from core: it is handed the
     # adapters it checks (E-13).
     "source_health",

@@ -544,8 +544,9 @@ is explicit, fail-safe, and never inferred" section.
   mechanism.**
 - **TLS termination is a deployment responsibility**, not this
   application's own.
-- **No encryption at rest beyond what your storage provides.** Elysium
-  does not add a layer of its own.
+- **Encryption at rest is the volume's job.** Elysium checks for an
+  encrypted volume at startup and encrypts its own backups (AES-256-GCM,
+  key kept apart), but adds no field-level layer of its own.
 - **Pre-customer.** No production deployments, no SOC 2, no
   third-party penetration test, no certifications.
 
@@ -597,9 +598,9 @@ left behind.
 
 | suite | how to run | size |
 | --- | --- | --- |
-| unit | `pytest tests/unit` | 379 files |
-| integration | `pytest tests/integration` | 58 files |
-| controls | declared in CI | 175 |
+| unit | `pytest tests/unit` | 405 files |
+| integration | `pytest tests/integration` | 60 files |
+| controls | declared in CI | 315 |
 | front end | `cd ui && npm run test` | vitest |
 | site | `bash site/check.sh` | ruff + pytest, some in a real browser |
 

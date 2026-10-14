@@ -127,6 +127,7 @@ from core.sqlite_connection import (
     require_assertions_enabled,
     require_json_each,
 )
+from core.storage_encryption import report as report_storage_encryption
 from core.user_directory import UserDirectory
 
 # A DECIMAL IS SENT EXACTLY, AS A STRING (PA001-G12). FastAPI's own
@@ -450,6 +451,9 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # revoking that at startup would break a working deployment to
     # enforce a preference.
     warn_if_world_readable(runtime_paths.data_dir / "mirror", logger)
+    # AND WHETHER THE DISK UNDER IT IS ENCRYPTED (decided 14 Oct: the
+    # volume's job, Elysium's to check). Reported, never enforced.
+    report_storage_encryption(runtime_paths.data_dir, logger)
 
     # EVERY SOURCE CHECKED AT STARTUP, each failure reported BY NAME
     # (E-13). Nothing called health_check() before, so an unreachable

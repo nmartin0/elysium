@@ -2576,6 +2576,34 @@ CONTROLS = [
         new="            if (pending.origin == origin or True",
         tests=["tests/unit/test_trigger_actions.py::TestItDoesNotProposeWhatIsAlreadyWaiting::test_the_same_change_proposed_by_a_person_does_not_count"],
     ),
+    Control(
+        describes="Backups: a truncated archive is refused (the last-segment flag)",
+        path="core/encrypted_archive.py",
+        old="    return prefix + struct.pack(\">I\", index) + (b\"\\x01\" if last else b\"\\x00\")",
+        new="    return prefix + struct.pack(\">I\", index) + b\"\\x00\"",
+        tests=["tests/unit/test_encrypted_backups.py::TestTheArchive::test_a_truncation_at_a_segment_boundary_is_refused"],
+    ),
+    Control(
+        describes="Backups: a key file kept inside what it protects is refused",
+        path="core/encrypted_archive.py",
+        old="        if resolved == place or place in resolved.parents:",
+        new="        if False:",
+        tests=["tests/unit/test_encrypted_backups.py::TestTheKeyFile::test_a_key_inside_what_it_protects_is_refused"],
+    ),
+    Control(
+        describes="Backups: without a key the command refuses rather than writing plain",
+        path="scripts/backup_deployment.py",
+        old="        if not key_file:",
+        new="        if False:",
+        tests=["tests/unit/test_encrypted_backups.py::TestTheCommands::test_without_a_key_it_refuses_rather_than_writing_plain"],
+    ),
+    Control(
+        describes="Storage: only a CRYPT- device-mapper target counts as encrypted",
+        path="core/storage_encryption.py",
+        old="    if uuid.is_file() and uuid.read_text().startswith(\"CRYPT-\"):",
+        new="    if uuid.is_file():",
+        tests=["tests/unit/test_encrypted_backups.py::TestTheVolumeCheck::test_a_plain_device_is_unknown_and_warned"],
+    ),
 ]
 
 

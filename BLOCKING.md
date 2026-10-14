@@ -636,24 +636,22 @@ each time:
   compliant" means the Security Rule safeguards are implemented and
   the vendor will sign a BAA. The obligation attaches to the operator.
 
-**The fifth is real engineering and is not blocked:** encryption at
-rest. `core/mirror/lake_permissions.py` says it is out of scope today.
-`cryptography` is available; SQLCipher is not installed, which shapes
-the design.
-
-ONE DESIGN DECISION IS NEEDED BEFORE STARTING. SQLCipher encrypts the
-SQLite stores transparently but adds a C dependency and a build step.
-Application-level column encryption plus volume encryption for the
-rest has fewer dependencies, more code, and leaves file metadata
-visible. Also undecided: whether the mirror is in scope or only the
-control-plane databases.
+**The fifth was real engineering, and is DECIDED and BUILT (14
+October):** the volume encrypts and Elysium checks
+(`core/storage_encryption.py`, reported at startup); backups are
+AES-256-GCM envelope-encrypted files with the key kept apart
+(`core/encrypted_archive.py`). SQLCipher and field-level encryption
+were weighed and not taken: they guard against the same
+file-leaves-the-machine threat with more machinery, and neither can
+reach the mirror, which pyiceberg writes without table encryption.
+INSTALL.md's "Encryption at rest" has the reasoning and the sources.
 
 All four frameworks test an overlapping set of technical controls, and
 building them is worth doing on its own merits regardless of whether
 an audit is ever bought:
 
-    encryption at rest       Elysium's own stores, and the mirror
-    key management           where keys come from, rotation
+    encryption at rest       BUILT: volume check, encrypted backups
+    key management           the backup key is a file; a KMS is next
     session controls         idle timeout, absolute timeout, revocation
     password policy          enforced rather than advised
     access review            export who holds what grant, as of when

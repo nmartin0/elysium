@@ -428,10 +428,49 @@ It does not chmod it for you: you may have widened it deliberately for
 a backup user or a read-only mount, and a deployment that silently
 revokes that at boot is a deployment that breaks at 3am.
 
-**Encryption at rest is a separate question, and Elysium does not do
-it.** Volume or bucket encryption protects the stolen-disk case, not
-the logged-in-process case. If your threat model includes the second,
-file permissions are the control that matters, and they are yours.
+### Encryption at rest
+
+**The volume encrypts; Elysium checks, and encrypts its backups.**
+Decided 14 October, on the standards' own terms: SOC 2 auditors expect
+AES-256 at rest with keys in a KMS, HIPAA's safe harbor points at NIST
+SP 800-111, and SP 800-111 is plain that disk encryption protects a
+machine that is off and nothing once it is running.
+
+1. **Put the data directory on an encrypted volume.** LUKS
+   (`cryptsetup luksFormat`, AES-XTS) on your own hardware, or the
+   cloud provider's disk encryption with a KMS key. Elysium reports at
+   startup whether it can see one: dm-crypt is detected, including
+   under LVM. A cloud provider's encryption is invisible from inside
+   the machine, so declare it:
+
+       export ELYSIUM_STORAGE_ENCRYPTION=aws-ebs-kms   # any description
+
+   Without either, the service warns at startup. It does not refuse:
+   a development laptop on a plain disk is ordinary.
+
+2. **Backups are encrypted files** (`scripts/backup_deployment.py`),
+   because a backup exists to leave the volume, which is exactly where
+   volume encryption stops. AES-256-GCM under a fresh key per backup,
+   wrapped (AES-KW) by your backup key:
+
+       python -m scripts.backup_deployment --new-key /etc/elysium/backup.key
+       export ELYSIUM_BACKUP_KEY_FILE=/etc/elysium/backup.key
+       python -m scripts.backup_deployment /backups/2026-10-14.elysium-backup
+       python -m scripts.restore_deployment --check /backups/2026-10-14.elysium-backup
+
+   **Keep the key away from both the data and the backups** -- the
+   command refuses a key file inside either, or one other accounts can
+   read -- and keep a second copy somewhere safe: a backup without its
+   key cannot be restored by anyone, including you. `--unencrypted`
+   still writes a plain directory, and says so.
+
+**What none of this does:** protect against a compromised Elysium
+process or root on the running machine. File permissions (above) and
+the ontology's own access control are the controls there. Field-level
+encryption is not built: the mirror is written by pyiceberg, which has
+no table encryption today, and card numbers -- the one regime (PCI DSS
+3.5.1.2) where disk encryption alone is not enough -- should not be
+mirrored at all.
 
 ## 9. Data-access security: what Elysium guarantees, and what you must configure
 
@@ -487,11 +526,11 @@ late.
 
 ## A note for backups
 
-Internal databases under `deployment/var/lib/` run in SQLite WAL mode,
-which creates `-wal` and `-shm` files beside each `.db`. A backup that
-copies only the `.db` can miss committed transactions still in the WAL.
-Either copy all three files together, or use `sqlite3 <db> ".backup"`,
-which handles it.
+Use `python -m scripts.backup_deployment` (encrypted; see "Encryption
+at rest" above). Internal databases run in SQLite WAL mode, which
+creates `-wal` and `-shm` files beside each `.db`, and a copy of only
+the `.db` can miss committed transactions still in the WAL; the script
+takes SQLite's own consistent snapshot instead.
 
 WAL does not work over a network filesystem. Putting `data_dir` on NFS
 logs a warning at startup and falls back to rollback journal, which is

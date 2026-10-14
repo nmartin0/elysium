@@ -1,7 +1,14 @@
 """Check a backup, then put it back.
 
-    python -m scripts.restore_deployment --check /path/to/backup
-    python -m scripts.restore_deployment /path/to/backup
+    python -m scripts.restore_deployment --check /path/to/backup.elysium-backup
+    python -m scripts.restore_deployment /path/to/backup.elysium-backup
+
+AN ENCRYPTED BACKUP (the default since 14 Oct) is opened with the key
+in ELYSIUM_BACKUP_KEY_FILE into a private temporary directory, checked
+and restored from there, and the temporary copy removed. Every segment
+is authenticated before anything is unpacked, so a changed byte, a
+truncated file or the wrong key is refused before the restore touches
+the deployment. A plain directory from --unencrypted still works.
 
 WHY A SCRIPT WHEN `cp -a` WOULD COPY IT. The copying is the easy half
 and was never the problem. What `cp -a` cannot do is tell you the
@@ -238,7 +245,8 @@ def _move_aside(data_dir: Path) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("backup", type=Path, help="the backup directory")
+    parser.add_argument("backup", type=Path,
+                        help="the backup: an encrypted file, or a directory from --unencrypted")
     parser.add_argument("--check", action="store_true",
                         help="report whether this backup is usable, restore nothing")
     parser.add_argument("--into", type=Path, default=None,
@@ -247,6 +255,52 @@ def main() -> int:
                         help="restore despite problems")
     args = parser.parse_args()
 
+    from core.encrypted_archive import is_encrypted_archive
+
+    if is_encrypted_archive(args.backup):
+        import tempfile
+
+        opened = Path(tempfile.mkdtemp(prefix="elysium-restore-"))
+        try:
+            problem = _open_archive(args.backup, opened)
+            if problem:
+                print(problem, file=sys.stderr)
+                return 1
+            args.backup = opened
+            return _check_and_restore(args)
+        finally:
+            shutil.rmtree(opened, ignore_errors=True)
+    return _check_and_restore(args)
+
+
+def _open_archive(archive: Path, into: Path) -> "str | None":
+    """Decrypts an encrypted backup into `into`. Returns why not, or None."""
+    import os
+
+    from core.encrypted_archive import (
+        ArchiveKeyError,
+        CorruptArchive,
+        decrypt_to_directory,
+        read_header,
+        read_key_file,
+    )
+
+    key_file = os.environ.get("ELYSIUM_BACKUP_KEY_FILE")
+    if not key_file:
+        try:
+            needed = read_header(archive).get("key_id")
+        except CorruptArchive as exc:
+            return str(exc)
+        return (f"This backup is encrypted with key {needed}. Set ELYSIUM_BACKUP_KEY_FILE "
+                f"to the file holding it.")
+    try:
+        decrypt_to_directory(archive, into, read_key_file(Path(key_file)))
+    except (ArchiveKeyError, CorruptArchive) as exc:
+        return f"{exc} Nothing was restored."
+    return None
+
+
+def _check_and_restore(args) -> int:
     try:
         report = inspect_backup(args.backup)
     except UnusableBackup as e:
