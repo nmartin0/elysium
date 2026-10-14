@@ -2277,6 +2277,14 @@ CONTROLS = [
         new="    exact = value.normalize()\n",
         tests=["tests/unit/test_decimals_leave_the_api_exactly.py::TestTheText::test_a_38_digit_value_survives"],
     ),
+    Control(
+        describes="CONCERN-1: SQLite reads a misspelled double-quoted column as an error, not its name",
+        path="core/sqlite_connection.py",
+        old="    _refuse_double_quoted_strings(conn)\n",
+        new="",
+        tests=["tests/unit/test_source_column_names_are_never_sql.py::TestTheMisspellingHazard::"
+               "test_the_adapter_now_refuses_it_itself"],
+    ),
 ]
 
 

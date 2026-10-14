@@ -89,6 +89,7 @@ def open_connection(db_path: Path, read_only: bool = False,
                     timeout_seconds: float | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    _refuse_double_quoted_strings(conn)
 
     # A DEADLINE PER CONNECTION, enforced by SQLite itself.
     #
@@ -131,6 +132,33 @@ def open_connection(db_path: Path, read_only: bool = False,
         # read-only one for the same database is ever constructed).
         conn.set_authorizer(_deny_all_writes)
     return conn
+
+
+def _refuse_double_quoted_strings(conn: sqlite3.Connection) -> None:
+    """A double-quoted name that matches no column is an ERROR (CONCERN-1).
+
+    SQLITE'S LEGACY MISFEATURE: an unknown double-quoted identifier is
+    read as a STRING LITERAL, so `SELECT "typo_column" FROM t` returns
+    the text 'typo_column' in every row. Every identifier this project
+    builds goes through adapters/sqlite_adapter.py's _q, which quotes a
+    name that needs it -- a space, a capital, a reserved word -- so a
+    misspelled name of that kind read through the adapter would fill a
+    column with its own name -- and only the mirror's drift check, a layer up, used
+    to stop it reaching silver. SQLite's own documentation calls this
+    a misfeature and recommends turning it off.
+
+    OFF HERE, for every connection this project opens, so the adapter
+    no longer depends on a layer it does not know about: SQLite raises
+    "no such column" itself. Needs Python 3.12 (pyproject requires it)
+    and SQLite 3.29; on an older library the constant is missing and
+    the drift check remains the guard, as it was.
+    """
+    option = getattr(sqlite3, "SQLITE_DBCONFIG_DQS_DML", None)
+    if option is not None:
+        conn.setconfig(option, False)
+    option = getattr(sqlite3, "SQLITE_DBCONFIG_DQS_DDL", None)
+    if option is not None:
+        conn.setconfig(option, False)
 
 
 def _deny_all_writes(action_code: int, _arg1: str | None, _arg2: str | None,

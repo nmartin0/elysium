@@ -627,12 +627,15 @@ of its three because it adds NO new dependency. `sqlite_adapter.py`
 builds SQL by string interpolation at 50 sites while
 `sqlalchemy_adapter.py` uses the expression API for the same job.
 
-The risk it carries is identifier quoting: every f-string
-interpolating a table or column name is a place where a declared
-schema controls SQL text. That is configuration rather than user
-input, which is why it has not bitten -- but a library that quotes
-identifiers correctly answers a CLASS of bug rather than its
-instances.
+THE QUOTING RISK THIS PARAGRAPH USED TO NAME IS CLOSED, so the fold
+is consolidation now, not a fix. Every name goes through `_q`, which is
+SQLAlchemy's own IdentifierPreparer (tests/unit/test_identifier_
+quoting.py), and SQLite's double-quoted-string misfeature is off on
+every connection (CONCERN-1), so an unknown name raises rather than
+reading as text. The contract both adapters keep is written on
+ExternalReadAdapter (CONCERN-2). What remains is one adapter instead
+of two -- worth it when the SQLite adapter next needs real work, not
+before.
 
 Write-path first, with the existing tests as the parity check. 75
 files reference the SQLite adapter, most of them tests using it as the

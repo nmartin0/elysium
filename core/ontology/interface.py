@@ -102,6 +102,29 @@ class StorageUnavailable(RuntimeError):
 
 
 class ExternalReadAdapter(ReadAdapter):
+    """A customer's database, read.
+
+    IDENTIFIERS ARE NEVER INTERPOLATED UNQUOTED (CONCERN-2). Table and
+    column names come from the ontology, not from a caller, but they
+    still reach SQL text, and every adapter must make that safe by ONE
+    of two mechanisms -- the two that exist today:
+
+      adapters/sqlite_adapter.py      quotes every name through
+                                      SQLAlchemy's IdentifierPreparer (_q)
+      adapters/sqlalchemy_adapter.py  never builds SQL text: it binds
+                                      columns as table.c[name], so there
+                                      is nothing to interpolate
+
+    A new adapter picks one and says which. Values are always bound
+    parameters, never text. tests/unit/test_source_column_names_are_
+    never_sql.py is the check: a column named like an injection must
+    read as a column.
+
+    AND AN UNKNOWN NAME MUST BE AN ERROR, not a value. SQLite's legacy
+    double-quoted-string misfeature broke that; core/sqlite_connection
+    turns it off (CONCERN-1).
+    """
+
     max_concurrent_reads: int | None
 
     #: Operators this storage can express in its own query language.

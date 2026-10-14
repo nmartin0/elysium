@@ -146,16 +146,19 @@ class TestNothingIsExecuted:
 
 
 class TestTheMisspellingHazard:
-    """QUOTING IS WHAT MAKES THE CASES ABOVE SAFE, and it has a cost
-    worth writing down: SQLite reads an unknown double-quoted
-    identifier as a STRING LITERAL rather than raising.
+    """QUOTING IS WHAT MAKES THE CASES ABOVE SAFE, and it had a cost:
+    SQLite reads an unknown double-quoted identifier as a STRING LITERAL
+    rather than raising.
 
         SELECT "nosuchcolumn" FROM t  ->  ('nosuchcolumn',)
 
     So a misspelled column would quietly fill every row with its own
-    name. The adapter cannot tell the difference. The DRIFT CHECK one
-    layer up can, and does -- which means these two layers depend on
-    each other in a way neither states."""
+    name, and only the DRIFT CHECK one layer up stopped it -- two layers
+    depending on each other in a way neither stated (CONCERN-1).
+
+    NOW OFF AT THE SOURCE: core/sqlite_connection.open_connection turns
+    SQLite's double-quoted-string misfeature off, so the adapter raises
+    by itself. The drift check still refuses too, and stays tested."""
 
     def test_sqlite_really_does_this(self, source):
         conn = sqlite3.connect(source)
@@ -164,6 +167,18 @@ class TestTheMisspellingHazard:
                 "nosuchcolumn",)
         finally:
             conn.close()
+
+    def test_the_adapter_now_refuses_it_itself(self, source):
+        """A name that NEEDS quoting -- _q leaves a plain lowercase name
+        bare, and SQLite always rejects an unknown bare name. A space
+        or a capital is what made the misfeature reachable."""
+        from core.ontology.interface import StorageUnavailable
+
+        with pytest.raises(StorageUnavailable, match="declares column 'Typo Column'"):
+            SQLiteReadAdapter({"path": source}).read_all_rows("t", ["id", "Typo Column"], {})
+
+    def test_a_correct_name_still_reads(self, source):
+        assert SQLiteReadAdapter({"path": source}).read_all_rows("t", ["id"], {})
 
     def test_but_the_sync_refuses_before_it_can_matter(self, tmp_path, source):
         sync = IcebergMirrorSync(tmp_path / "typo",
