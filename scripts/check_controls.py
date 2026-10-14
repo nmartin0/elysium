@@ -2419,6 +2419,20 @@ CONTROLS = [
              "            table.append(silver)\n"),
         tests=["tests/unit/test_gold_serves_many_to_many_links.py::TestALinkTableIsNotRebuiltForNothing::test_a_changed_one_is_overwritten_in_place_not_recreated"],
     ),
+    Control(
+        describes="--workers: startup resume waits for every process's in-flight write",
+        path="core/ontology/write_mediator.py",
+        old="        with _applying(self.write_log.db_path, exclusive=True):\n",
+        new="        if True:\n",
+        tests=["tests/unit/test_resume_waits_for_live_writers.py::TestTwoRealWorkers::test_a_live_writers_batch_is_left_to_it"],
+    ),
+    Control(
+        describes="--workers: an apply is visible to other processes' resume",
+        path="core/ontology/write_mediator.py",
+        old="        with _applying(self.write_log.db_path, exclusive=False):\n",
+        new="        if True:\n",
+        tests=["tests/unit/test_resume_waits_for_live_writers.py::TestTwoRealWorkers::test_a_live_writers_batch_is_left_to_it"],
+    ),
 ]
 
 

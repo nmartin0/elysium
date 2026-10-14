@@ -32,9 +32,12 @@ Used by: core/agent/agentic_loop.py's AgentLoop (write_mediator +
          confirm_write callback, both None if writes are disabled)
 """
 
+import fcntl
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from core.intermediate_layer.access_control import check_access
@@ -347,6 +350,37 @@ def _compartment_crossings(read_labels: dict, write_labels: dict) -> list[tuple]
     return crossings
 
 
+@contextmanager
+def _applying(write_log_path, exclusive: bool):
+    """A lock every PROCESS sees, beside the write log: shared while a
+    write is applied, exclusive while startup resumes abandoned ones.
+
+    THE RACE, reproduced with two real processes (14 Oct, running
+    `--workers`). Worker A logged a batch and was applying it; worker B
+    started -- as uvicorn does when it replaces a worker -- and its
+    startup resume found the batch still pending and applied it. Then A
+    applied it too: IntegrityError, so the approver was told the write
+    failed while it had in fact been written, and the log kept a stray
+    pending row. The object locks could not stop it: they are
+    threading.Locks, one set per process.
+
+    SHARED FOR APPLYING, so workers' writes never wait on one another
+    here (the object locks and the write log's own checks still order
+    them). EXCLUSIVE FOR RESUMING, so a resume waits until no process is
+    mid-apply, and anything still pending after that has no living
+    writer. flock is released when its process dies, which is exactly
+    what makes a crashed worker's batch resumable and a live one's not.
+    """
+    lock_path = Path(str(write_log_path) + ".apply.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "a") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
+
+
 class _NotLookedUp:
     """The caller had no user directory to re-read the proposer from."""
 
@@ -620,6 +654,13 @@ class WriteMediator:
         # own module docstring for why periodic/continuous resume stays
         # a further, separately-scoped enhancement, not solved here.
         summary = {"resumed": 0, "already_applied": 0, "ambiguous": 0}
+        # EXCLUSIVE ACROSS PROCESSES (see _applying): waits for every
+        # worker's in-flight apply, so what is still pending afterwards
+        # was left by a process that is gone, not one that is busy.
+        with _applying(self.write_log.db_path, exclusive=True):
+            return self._resume_pending_batches(summary)
+
+    def _resume_pending_batches(self, summary: dict) -> dict:
         for batch in self.write_log.get_pending_batches():
             object_refs = [(sw["object_type"], sw["object_id"]) for sw in batch["sub_writes"]]
             with self._adapter_mediator._locks_for_objects(object_refs):
@@ -1919,7 +1960,8 @@ class WriteMediator:
         if not approved:
             return None
 
-        object_ids = self._apply_batch(pending)
+        with _applying(self.write_log.db_path, exclusive=False):
+            object_ids = self._apply_batch(pending)
         self.audit_log.log_post(request_id, "success", object_ids)
         return {"status": "written", "object_ids": object_ids}
 
