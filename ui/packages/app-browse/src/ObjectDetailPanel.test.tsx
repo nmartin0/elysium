@@ -662,3 +662,44 @@ describe('the agent, reachable from the object', () => {
     expect(href).not.toContain('Ada')
   })
 })
+
+describe('ObjectDetailPanel -- an action opened by link, as the palette does', () => {
+  function renderAt(url: string) {
+    return render(
+      <MemoryRouter initialEntries={[url]}>
+        <Routes>
+          <Route
+            path="/objects/:objectType/:objectId"
+            element={<ObjectDetailPanel visibleSchema={CUSTOMER_SCHEMA} onSessionExpired={vi.fn()} />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    )
+  }
+
+  beforeEach(() => {
+    mockedGetObjectDetail.mockResolvedValue({ fields: { name: 'Ada Okafor' } })
+    mockedGetVisibleActionTypes.mockResolvedValue({
+      UpdateCustomerName: { affected_object_types: ['Customer'], executable: true, parameters: {} },
+      CloseAccount: { affected_object_types: ['Customer'], executable: false, parameters: {} },
+      Transfer: { affected_object_types: ['Account'], executable: true, parameters: {} },
+    })
+  })
+
+  it("?action=<name> opens that action's form on arrival", async () => {
+    renderAt('/objects/Customer/cust_001?action=UpdateCustomerName')
+    expect(await screen.findByTestId('action-form')).toHaveTextContent('UpdateCustomerName')
+  })
+
+  it('opens nothing for an action this reader may see and not run', async () => {
+    renderAt('/objects/Customer/cust_001?action=CloseAccount')
+    await screen.findByRole('button', { name: 'UpdateCustomerName' })
+    expect(screen.queryByTestId('action-form')).toBeNull()
+  })
+
+  it('opens nothing for an action on a different type', async () => {
+    renderAt('/objects/Customer/cust_001?action=Transfer')
+    await screen.findByRole('button', { name: 'UpdateCustomerName' })
+    expect(screen.queryByTestId('action-form')).toBeNull()
+  })
+})

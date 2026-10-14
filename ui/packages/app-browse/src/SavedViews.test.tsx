@@ -144,6 +144,33 @@ describe('opening a saved view', () => {
   })
 })
 
+describe('a view by its id, as the command palette links to one', () => {
+  it("?saved=<id> becomes that view's search, replacing the link", async () => {
+    mockedList.mockResolvedValue([aView({ query_text: 'refund' })])
+    renderAt('/browse?saved=v1')
+
+    await waitFor(() => expect(currentUrl()).toBe('/browse?type=Transaction&q=refund'))
+  })
+
+  it("an id not in the reader's own list leaves a plain Browse, saying nothing about it", async () => {
+    mockedList.mockResolvedValue([aView()])
+    renderAt('/browse?saved=someone-elses')
+
+    await waitFor(() => expect(currentUrl()).toBe('/browse'))
+  })
+
+  it('waits for the list rather than treating "not loaded" as "not found"', async () => {
+    let answer: (views: ReturnType<typeof aView>[]) => void = () => {}
+    mockedList.mockReturnValue(new Promise((resolve) => (answer = resolve)))
+    renderAt('/browse?saved=v1')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(currentUrl()).toBe('/browse?saved=v1')
+
+    answer([aView({ query_text: 'refund' })])
+    await waitFor(() => expect(currentUrl()).toBe('/browse?type=Transaction&q=refund'))
+  })
+})
+
 describe('forgetting one', () => {
   it('deletes it without navigating there first', async () => {
     mockedList.mockResolvedValue([aView()])

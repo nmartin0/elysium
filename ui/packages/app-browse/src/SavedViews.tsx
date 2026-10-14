@@ -136,6 +136,11 @@ export default function SavedViews({ username, onSessionExpired }: SavedViewsPro
     latestSessionExpired.current = onSessionExpired
   })
 
+  // Whether the list has answered at least once -- `views` starts as
+  // [] and "not loaded" and "you have none" must not look alike to the
+  // `saved` link below.
+  const [loaded, setLoaded] = useState(false)
+
   const load = useCallback(async () => {
     try {
       setViews(await getSavedViews())
@@ -147,6 +152,7 @@ export default function SavedViews({ username, onSessionExpired }: SavedViewsPro
       // is working.
       setViews([])
     }
+    setLoaded(true)
   }, [])
 
   useEffect(() => {
@@ -163,6 +169,24 @@ export default function SavedViews({ username, onSessionExpired }: SavedViewsPro
     // eslint-disable-next-line react/set-state-in-effect
     void load()
   }, [load])
+
+  /* `?saved=<view_id>`: A VIEW BY ITS ID, resolved here because this is
+     the one place that knows how a view becomes a search (urlFor). The
+     command palette lives in the shell and opens views this way rather
+     than importing Browse's URL rules into every page's bundle.
+
+     REPLACED, not pushed: Back from the view should leave Browse, not
+     land on the redirect and bounce forward again. A view that is not
+     in the list -- deleted, or someone else's -- drops the parameter
+     and leaves an ordinary Browse, because the server lists only the
+     caller's own and a link must not say whether another person's
+     view exists. */
+  const savedId = params.get('saved')
+  useEffect(() => {
+    if (savedId === null || !loaded) return
+    const view = views.find((candidate) => candidate.view_id === savedId)
+    void navigate(view ? urlFor(view) : '/browse', { replace: true })
+  }, [savedId, loaded, views, navigate])
 
   // THE VIEW ALREADY SAVED AT THIS SEARCH, so re-opening the popover
   // on one you saved offers to update it rather than duplicate it.

@@ -216,3 +216,50 @@ describe('CommandPalette -- reopening', () => {
     expect(hits()).toHaveLength(3)
   })
 })
+
+describe('CommandPalette -- suggestions made from what was typed', () => {
+  const suggest = (query: string): Command[] =>
+    query.trim() === ''
+      ? []
+      : [{ id: 'search:x', label: `Search Customer for “${query}”`, group: 'Search', run: vi.fn() }]
+
+  it('lists them AFTER whatever matched', () => {
+    render(<CommandPalette commands={commands()} suggest={suggest} isOpen onClose={vi.fn()} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'br' } })
+    const labels = hits()
+    expect(labels[0]).toContain('Browse')
+    expect(labels[labels.length - 1]).toContain('Search Customer for “br”')
+  })
+
+  it('offers them even when no command matches, instead of "nothing matches"', () => {
+    render(<CommandPalette commands={commands()} suggest={suggest} isOpen onClose={vi.fn()} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'ada okafor' } })
+    expect(hits()).toEqual([expect.stringContaining('Search Customer for “ada okafor”')])
+    expect(screen.queryByText('Nothing matches that.')).toBeNull()
+  })
+})
+
+describe('CommandPalette -- a search beats a guess', () => {
+  it('puts a suggested search ABOVE a loose subsequence match, so Enter searches', () => {
+    // FOUND IN A BROWSER: "ada" matched "sAveD views · trAnsaction"
+    // loosely and Enter opened that view instead of searching.
+    const run = vi.fn()
+    const loose: Command = { id: 'view:v1', label: 'Customer 1', group: 'Saved views · Transaction', run }
+    const search: Command = { id: 'search:Customer', label: 'Search Customer for “ada”', group: 'Search', run: vi.fn() }
+    render(<CommandPalette commands={[loose]} suggest={() => [search]} isOpen onClose={vi.fn()} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'ada' } })
+
+    expect(hits()).toEqual([expect.stringContaining('Search Customer'), expect.stringContaining('Customer 1')])
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+    expect(search.run).toHaveBeenCalled()
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('still puts a command the reader NAMED above the search', () => {
+    const named: Command = { id: 'go:/admin', label: 'Admin', group: 'Settings', run: vi.fn() }
+    const search: Command = { id: 'search:x', label: 'Search Customer for “adm”', group: 'Search', run: vi.fn() }
+    render(<CommandPalette commands={[named]} suggest={() => [search]} isOpen onClose={vi.fn()} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'adm' } })
+    expect(hits()[0]).toContain('Admin')
+  })
+})

@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 from api.apps import VISIBLE_APPS
-from core.agent.help_assistant import SCREEN_GUIDE, build_context
+from core.agent.help_assistant import SCREEN_GUIDE, SHELL_GUIDE, SHELL_GUIDE_WITH_BROWSE, build_context
 
 # The packages AND the shell's own screens: the Inbox's tab labels live
 # in ui/src/InboxPanel.tsx, since the Inbox is the shell's (14 Oct).
@@ -15,7 +15,8 @@ UI_SOURCE = "\n".join(path.read_text() for root in ("ui/packages", "ui/src")
 
 
 def test_every_quoted_label_is_on_screen_somewhere():
-    labels = {label for text in SCREEN_GUIDE.values() for label in re.findall(r"'([^']+)'", text)}
+    guides = [*SCREEN_GUIDE.values(), SHELL_GUIDE, SHELL_GUIDE_WITH_BROWSE]
+    labels = {label for text in guides for label in re.findall(r"'([^']+)'", text)}
 
     assert labels, "the probe found no labels at all"
     assert sorted(label for label in labels if label not in UI_SOURCE) == []
@@ -35,3 +36,14 @@ def test_a_schema_too_large_is_summarised_by_type_not_cut_mid_field():
     assert "fields omitted, too many to list" in context
     assert "field_" not in context
     assert "Type19" in context
+
+
+def test_the_palette_is_described_by_what_this_user_has():
+    """The palette offers types, views and actions only to someone with
+    Browse; the guide must not tell anyone else to use them."""
+    with_browse = build_context([{"name": "Browse"}], {}, [], None)
+    without = build_context([{"name": "Query"}], {}, [], None)
+
+    assert "Ctrl-K" in with_browse and "Ctrl-K" in without
+    assert "saved view" in with_browse
+    assert "saved view" not in without

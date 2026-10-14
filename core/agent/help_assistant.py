@@ -85,6 +85,23 @@ SCREEN_GUIDE: Mapping[str, str] = {
     ),
 }
 
+#: What every screen shares -- the palette and how a withheld value
+#: looks. Same rule as SCREEN_GUIDE: quoted labels are checked against ui/.
+SHELL_GUIDE = (
+    "On any screen, Ctrl-K (Cmd-K on a Mac) opens a list of commands: go to a "
+    "screen, 'Help', switch the theme, change 'Row density', 'Log out'. A field "
+    "shown as 'Not permitted' exists, but this user's role may not read its value "
+    "-- an administrator controls that; a dash means the field is empty."
+)
+
+#: Added to SHELL_GUIDE only for someone who has Browse, because the
+#: palette only offers these to them -- the model must not suggest a
+#: command the user's palette does not have.
+SHELL_GUIDE_WITH_BROWSE = (
+    " The same list browses an object type, opens a saved view, runs an action "
+    "on the object being looked at, and searches a type for whatever was typed."
+)
+
 #: How much of the caller's world goes into the prompt. A schema bigger
 #: than this is summarised by type rather than cut mid-field.
 MAX_CONTEXT_CHARS = 16_000
@@ -127,6 +144,8 @@ def build_context(screens, visible_schema: Mapping, grants, current_screen: str 
     screen_names = [screen["name"] for screen in screens]
     sections = ["SCREENS THIS USER CAN OPEN:"]
     sections += [f"- {name}: {SCREEN_GUIDE.get(name, '')}" for name in screen_names]
+    sections.append("\nON EVERY SCREEN: " + SHELL_GUIDE
+                    + (SHELL_GUIDE_WITH_BROWSE if "Browse" in screen_names else ""))
     if current_screen:
         sections.append(f"\nTHE USER IS ON: {current_screen}")
     schema = _schema_lines(visible_schema)

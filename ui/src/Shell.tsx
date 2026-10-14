@@ -7,7 +7,19 @@ import { iconForApp } from '@elysium/shell-api/appIcons'
 import { readPreference, writePreference } from '@elysium/shell-api/browserPreferences'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMenu'
-import { type Density, isDensity } from '@elysium/shell-api/density'
+import { DENSITIES, type Density, isDensity } from '@elysium/shell-api/density'
+import { getSavedViews, getVisibleActionTypesCached } from '@elysium/shell-api/api'
+import type { Command } from '@elysium/shell-api/commands'
+import type { VisibleSchema } from '@elysium/shell-api/types'
+import {
+  actionCommands,
+  objectInScope,
+  type PaletteAction,
+  type PaletteView,
+  searchSuggestions,
+  typeCommands,
+  viewCommands,
+} from './paletteCommands'
 import { totalWaiting, useInboxCounts } from '@elysium/shell-api/useInboxCounts'
 import HelpPanel from '@elysium/shell-api/components/HelpPanel'
 
@@ -108,6 +120,9 @@ export interface VisibleApp {
 
 interface ShellProps {
   visibleApps: VisibleApp[]
+  /** For the palette's types and searches; null until it arrives, and
+   * the palette simply has fewer commands until then. */
+  visibleSchema?: VisibleSchema | null
   currentUser: CurrentUser | null
   onLogout: () => void
 }
@@ -236,7 +251,7 @@ function getIsMobileSnapshot(): boolean {
   return window.matchMedia(MOBILE_BREAKPOINT_QUERY).matches
 }
 
-export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps) {
+export default function Shell({ visibleApps, visibleSchema = null, currentUser, onLogout }: ShellProps) {
   const [collapsed, setCollapsed] = useState<boolean>(resolveCollapsedFromStorageOrViewport)
   // useSyncExternalStore, not useState+useEffect -- see
   // subscribeToMobileBreakpoint/getIsMobileSnapshot's own header
@@ -287,7 +302,7 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
    * that come next: an action on an object type, which a reader may see
    * and not be able to run.
    */
-  const commands = useMemo(
+  const navigationCommands = useMemo(
     () =>
       visibleApps.map((app) => ({
         id: `go:${app.path}`,
@@ -297,6 +312,44 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
       })),
     [visibleApps, navigate],
   )
+
+  /**
+   * WHAT THE PALETTE FETCHES, AND WHEN: the reader's saved views and the
+   * action types, each time it OPENS -- not per keystroke, and not on
+   * every page load for a palette most loads never open. The list it
+   * filters is in memory by the time anyone types (DEV_UI 10.1: "opens
+   * in under 100ms or it will not be used"); a view saved a minute ago
+   * is there next time it opens.
+   *
+   * A FAILURE IS FEWER COMMANDS, not an error in the palette: navigation
+   * and types still work, and a session that has expired is noticed by
+   * whatever the page itself asks next.
+   */
+  const [paletteViews, setPaletteViews] = useState<PaletteView[]>([])
+  const [paletteActions, setPaletteActions] = useState<Record<string, PaletteAction> | null>(null)
+  useEffect(() => {
+    if (!paletteOpen) return
+    void (async () => {
+      try {
+        setPaletteViews(await getSavedViews())
+      } catch {
+        setPaletteViews([])
+      }
+    })()
+    void (async () => {
+      try {
+        setPaletteActions((await getVisibleActionTypesCached()) as Record<string, PaletteAction>)
+      } catch {
+        setPaletteActions(null)
+      }
+    })()
+  }, [paletteOpen])
+
+  const canBrowse = visibleApps.some((app) => app.path === '/browse')
+  const scope = objectInScope(location.pathname)
+  const browsingType = location.pathname.startsWith('/browse')
+    ? new URLSearchParams(location.search).get('type')
+    : (scope?.type ?? null)
 
   /**
    * Dark mode, which Blueprint provides per widget and nothing turned
@@ -349,6 +402,42 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
     setChosenDensity({ username, density: next })
     writePreference('density', username, next)
   }
+
+  /**
+   * THE PALETTE'S WHOLE LIST, in the order a person reaches for it:
+   * actions on what is in front of them, then places, types and their
+   * own views, then the shell's own settings. Rebuilt per render -- a
+   * few dozen objects -- because half of it depends on the location.
+   *
+   * THE SAME LABELS AS THE BUTTONS (DEV_UI 10.4): "Help", "Log out",
+   * "Switch to light theme" -- somebody who learnt the button finds the
+   * command by the word they already know.
+   */
+  const go = (to: string) => void navigate(to)
+  const settingsCommands: Command[] = [
+    { id: 'shell:help', label: 'Help', group: 'Shell', run: () => setHelpOpen(true) },
+    {
+      id: 'shell:theme',
+      label: dark ? 'Switch to light theme' : 'Switch to dark theme',
+      group: 'Shell',
+      run: () => chooseTheme(!dark),
+    },
+    ...DENSITIES.filter((choice) => choice.value !== density).map((choice) => ({
+      id: `shell:density:${choice.value}`,
+      label: `Row density: ${choice.label}`,
+      group: 'Shell',
+      run: () => chooseDensity(choice.value),
+    })),
+    { id: 'shell:logout', label: 'Log out', group: 'Shell', run: onLogout },
+  ]
+  const commands: Command[] = [
+    ...actionCommands(scope, paletteActions, go),
+    ...navigationCommands,
+    ...(canBrowse ? typeCommands(visibleSchema, go) : []),
+    ...(canBrowse ? viewCommands(paletteViews, go) : []),
+    ...settingsCommands,
+  ]
+  const suggest = (query: string) => (canBrowse ? searchSuggestions(query, visibleSchema, browsingType, go) : [])
 
   useEffect(() => {
     document.body.dataset.density = density
@@ -751,7 +840,12 @@ export default function Shell({ visibleApps, currentUser, onLogout }: ShellProps
     <div className={collapsed ? 'app-frame app-frame--sidebar-collapsed' : 'app-frame'}>
       {header}
       <HelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} screen={currentScreen} />
-      <CommandPalette commands={commands} isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <CommandPalette
+        commands={commands}
+        suggest={suggest}
+        isOpen={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+      />
       <div className="app">
         {/* NO Drawer branch any more, and the rail is why.
           

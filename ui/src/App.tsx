@@ -401,7 +401,16 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route element={<Shell visibleApps={visibleApps} currentUser={currentUser} onLogout={handleLogout} />}>
+        <Route
+          element={
+            <Shell
+              visibleApps={visibleApps}
+              visibleSchema={visibleSchema}
+              currentUser={currentUser}
+              onLogout={handleLogout}
+            />
+          }
+        >
           <Route path="/query" element={<QueryPanel onSessionExpired={handleSessionExpired} />} />
           <Route
             path="/schema"

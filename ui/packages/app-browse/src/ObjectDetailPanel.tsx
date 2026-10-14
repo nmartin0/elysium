@@ -1,7 +1,7 @@
 import { Button } from '@blueprintjs/core'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
 import FieldValue from '@elysium/shell-api/components/FieldValue'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
@@ -23,6 +23,7 @@ import {
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
+import { useUrlValue } from '@elysium/shell-api/useUrlState'
 import { useChangedSince } from '@elysium/shell-api/liveUpdates'
 import { PendingOnObject, usePendingFor } from './PendingHere'
 import Notice from '@elysium/shell-api/components/Notice'
@@ -83,7 +84,23 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [visibleActionTypes, setVisibleActionTypes] = useState<Record<string, ActionDef> | null>(null)
-  const [activeAction, setActiveAction] = useState<string | null>(null)
+  // THE OPEN ACTION FORM IS IN THE URL (`?action=Name`), so the command
+  // palette can open one by linking to it rather than reaching into
+  // this component. Read through the list of actions actually
+  // available here (below), so a link naming an action this reader
+  // cannot run on this type opens nothing.
+  const [actionParam, setActionParam] = useUrlValue('action', '')
+  const setActiveAction = (name: string | null) => setActionParam(name ?? '')
+  // ABOVE EVERY EARLY RETURN, as any hook must be.
+  // THE FORM IS AT THE FOOT OF THE PAGE, beside the buttons that open
+  // it -- so a click from there needs nothing, but the palette opens it
+  // from wherever the reader is, and a form that opened out of sight
+  // looked like a command that did nothing (seen in a browser). A
+  // callback ref runs once, when the form mounts. No smooth scroll:
+  // motion is opt-in (DEV_UI 9.6, prefers-reduced-motion).
+  const bringIntoView = useCallback((node: HTMLDivElement | null) => {
+    node?.scrollIntoView?.({ block: 'nearest' })
+  }, [])
 
   // Same, real, shared stale-response guard as ObjectSearchPanel's own
   // live search -- extracted (see useLatestRequestGuard's own header
@@ -270,6 +287,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
   const availableActions = Object.entries(visibleActionTypes ?? {}).filter(
     ([, actionDef]) => actionDef.affected_object_types.includes(objectType) && actionDef.executable,
   )
+  const activeAction = availableActions.some(([name]) => name === actionParam) ? actionParam : null
 
   const titleValue = getDisplayTitle(typeSchema, fields, objectId)
 
@@ -431,26 +449,28 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
       )}
 
       {activeAction && (
-        <ActionForm
-          actionName={activeAction}
-          // visibleActionTypes![activeAction]! -- genuinely safe by
-          // construction, not assumed: activeAction only ever gets
-          // set (above) from availableActions' own entries, which are
-          // themselves derived from visibleActionTypes -- a non-empty
-          // availableActions therefore guarantees BOTH that
-          // visibleActionTypes is non-null AND that this specific key
-          // exists in it, even though these are separate state/
-          // derived values TypeScript can't itself connect.
-          actionDef={visibleActionTypes![activeAction]!}
-          objectType={objectType}
-          objectId={objectId}
-          onCancel={() => setActiveAction(null)}
-          onResolved={() => {
-            setActiveAction(null)
-            loadDetail()
-          }}
-          onSessionExpired={onSessionExpired}
-        />
+        <div ref={bringIntoView}>
+          <ActionForm
+            actionName={activeAction}
+            // visibleActionTypes![activeAction]! -- genuinely safe by
+            // construction, not assumed: activeAction only ever gets
+            // set (above) from availableActions' own entries, which are
+            // themselves derived from visibleActionTypes -- a non-empty
+            // availableActions therefore guarantees BOTH that
+            // visibleActionTypes is non-null AND that this specific key
+            // exists in it, even though these are separate state/
+            // derived values TypeScript can't itself connect.
+            actionDef={visibleActionTypes![activeAction]!}
+            objectType={objectType}
+            objectId={objectId}
+            onCancel={() => setActiveAction(null)}
+            onResolved={() => {
+              setActiveAction(null)
+              loadDetail()
+            }}
+            onSessionExpired={onSessionExpired}
+          />
+        </div>
       )}
     </div>
   )

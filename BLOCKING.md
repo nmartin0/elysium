@@ -320,10 +320,14 @@ one Inbox. Built so far, each checked in a real browser:
   state: MAC withholds whole objects, and a link to a hidden object
   reads as null, because marking it would disclose that it exists.
 
-STILL TO BUILD, in this order: the command palette's contents beyond
-"go to" (types, views, actions); and section 14's ontology canvas
-(layered layout, positions kept apart from the declaration, actions on
-the node, subject areas).
+- The command palette beyond "go to": object types, saved views, the
+  actions on the object in front of you (greyed with the reason when
+  your role may not run one), the shell's own settings, and a search
+  of each type for whatever was typed. Scoped to where you are, as
+  GitHub's palette is.
+
+STILL TO BUILD: section 14's ontology canvas (layered layout, positions
+kept apart from the declaration, actions on the node, subject areas).
 
 **Blocked on:** nothing -- the remaining list above is buildable.
 

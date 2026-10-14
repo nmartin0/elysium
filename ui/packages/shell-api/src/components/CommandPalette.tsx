@@ -29,14 +29,19 @@
 import { useMemo, useState } from 'react'
 import { Dialog, DialogBody } from '@blueprintjs/core'
 
-import { type Command, matching } from '../commands'
+import { type Command, matchingInTiers } from '../commands'
 
 export default function CommandPalette({
   commands,
+  suggest,
   isOpen,
   onClose,
 }: {
   commands: Command[]
+  /** Commands made FROM what was typed -- "Search Customer for 'ada'" --
+   * listed after everything that matched. They match by construction,
+   * so they bypass the matcher rather than being ranked by it. */
+  suggest?: (query: string) => Command[]
   isOpen: boolean
   onClose: () => void
 }) {
@@ -44,7 +49,7 @@ export default function CommandPalette({
     <Dialog
       isOpen={isOpen}
       onClose={onClose}
-      title="Go to"
+      title="Commands"
       className="command-palette"
       /* A PORTAL CLASS SO THE CONTAINER CAN BE REACHED. Blueprint
          centres a dialog with flex on `.bp6-dialog-container`, which
@@ -71,16 +76,29 @@ export default function CommandPalette({
           "update it from the event that caused the change". The event
           that causes a reset here is the open itself, and a mount IS
           that event. */}
-      <PaletteBody commands={commands} onClose={onClose} />
+      <PaletteBody commands={commands} suggest={suggest} onClose={onClose} />
     </Dialog>
   )
 }
 
-function PaletteBody({ commands, onClose }: { commands: Command[]; onClose: () => void }) {
+function PaletteBody({
+  commands,
+  suggest,
+  onClose,
+}: {
+  commands: Command[]
+  suggest?: (query: string) => Command[]
+  onClose: () => void
+}) {
   const [query, setQuery] = useState('')
   const [highlighted, setHighlighted] = useState(0)
 
-  const hits = useMemo(() => matching(commands, query), [commands, query])
+  // A COMMAND SOMEBODY NAMED, THEN A SEARCH FOR WHAT THEY TYPED, THEN
+  // THE MATCHER'S GUESSES (matchingInTiers says why, and what found it).
+  const hits = useMemo(() => {
+    const { strong, loose } = matchingInTiers(commands, query)
+    return [...strong, ...(suggest?.(query) ?? []), ...loose]
+  }, [commands, suggest, query])
 
   const choose = (command: Command) => {
     if (command.unavailable) return

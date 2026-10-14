@@ -1,10 +1,35 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { Classes } from '@blueprintjs/core'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { MemoryRouter, Routes, Route } from 'react-router-dom'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { lazy, type ComponentType } from 'react'
 import type { CurrentUser } from '@elysium/shell-api/components/UserMenu'
+import type { VisibleSchema } from '@elysium/shell-api/types'
+import { getVisibleActionTypesCached } from '@elysium/shell-api/api'
+
+/** Where the router is, for commands that navigate into Browse. */
+function BrowseProbe() {
+  const location = useLocation()
+  return <p data-testid="at">{`${location.pathname}${location.search}`}</p>
+}
 import Shell, { type VisibleApp } from './Shell'
+
+// THE PALETTE FETCHES ON OPENING -- saved views and action types -- so
+// the API those come from is stubbed, and a test that opens it lets
+// the answers land (openPalette below) rather than ending mid-flight.
+vi.mock('@elysium/shell-api/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@elysium/shell-api/api')>()),
+  getSavedViews: vi.fn().mockResolvedValue([]),
+  getVisibleActionTypesCached: vi.fn().mockResolvedValue({}),
+}))
+
+async function openPalette(
+  keys: { key: string; metaKey?: boolean; ctrlKey?: boolean },
+  target: Window | Element = window,
+) {
+  fireEvent.keyDown(target, keys)
+  await act(async () => {})
+}
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'elysium.sidebarCollapsed'
 
@@ -13,13 +38,25 @@ function renderShell(
   onLogout: () => void = vi.fn(),
   initialPath = '/query',
   currentUser: CurrentUser | null = null,
+  visibleSchema: VisibleSchema | null = null,
 ) {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <Routes>
-        <Route element={<Shell visibleApps={visibleApps} currentUser={currentUser} onLogout={onLogout} />}>
+        <Route
+          element={
+            <Shell
+              visibleApps={visibleApps}
+              visibleSchema={visibleSchema}
+              currentUser={currentUser}
+              onLogout={onLogout}
+            />
+          }
+        >
           <Route path="/query" element={<p>query screen</p>} />
           <Route path="/admin" element={<p>admin screen</p>} />
+          <Route path="/browse" element={<BrowseProbe />} />
+          <Route path="/objects/:type/:id" element={<BrowseProbe />} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -812,15 +849,15 @@ describe('Shell -- the command palette', () => {
     expect(screen.queryByLabelText('Search commands')).not.toBeInTheDocument()
   })
 
-  it('opens on Cmd-K', () => {
+  it('opens on Cmd-K', async () => {
     renderShell([{ name: 'Query', path: '/query' }])
-    fireEvent.keyDown(window, { key: 'k', metaKey: true })
+    await openPalette({ key: 'k', metaKey: true })
     expect(screen.getByLabelText('Search commands')).toBeInTheDocument()
   })
 
-  it('opens on Ctrl-K as well, so the binding does not depend on reading a user-agent string', () => {
+  it('opens on Ctrl-K as well, so the binding does not depend on reading a user-agent string', async () => {
     renderShell([{ name: 'Query', path: '/query' }])
-    fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+    await openPalette({ key: 'k', ctrlKey: true })
     expect(screen.getByLabelText('Search commands')).toBeInTheDocument()
   })
 
@@ -846,12 +883,12 @@ describe('Shell -- the command palette', () => {
    * for the unmodified case, waiting for the first binding it applies
    * to.
    */
-  it('opens from inside a text field, because a field is where people already are', () => {
+  it('opens from inside a text field, because a field is where people already are', async () => {
     renderShell([{ name: 'Query', path: '/query' }])
     const typing = document.createElement('input')
     document.body.appendChild(typing)
 
-    fireEvent.keyDown(typing, { key: 'k', metaKey: true })
+    await openPalette({ key: 'k', metaKey: true }, typing)
 
     expect(screen.getByLabelText('Search commands')).toBeInTheDocument()
     typing.remove()
@@ -868,27 +905,32 @@ describe('Shell -- the command palette', () => {
     typing.remove()
   })
 
-  it('offers the apps the server said this caller may see, and no others', () => {
+  it('offers the apps the server said this caller may see, and no others', async () => {
     renderShell([
       { name: 'Query', path: '/query' },
       { name: 'Admin', path: '/admin' },
     ])
-    fireEvent.keyDown(window, { key: 'k', metaKey: true })
+    await openPalette({ key: 'k', metaKey: true })
 
-    const labels = screen.getAllByRole('option').map((node) => node.textContent)
-    expect(labels).toHaveLength(2)
-    expect(labels.join(' ')).toContain('Query')
-    expect(labels.join(' ')).toContain('Admin')
+    // The SCREENS are exactly the rail's; the shell's own commands
+    // (help, theme, density, log out) are there for everybody.
+    const screens = screen
+      .getAllByRole('option')
+      .map((node) => node.textContent ?? '')
+      .filter((label) => !label.startsWith('Shell'))
+    expect(screens).toHaveLength(2)
+    expect(screens.join(' ')).toContain('Query')
+    expect(screens.join(' ')).toContain('Admin')
   })
 
-  it('groups each command under the subject its app belongs to', () => {
+  it('groups each command under the subject its app belongs to', async () => {
     // The rail is a SUBJECT switcher (DEV_UI.md 12), and the palette
     // should say the same words the rail does rather than inventing a
     // second vocabulary for the same screens.
     renderShell([{ name: 'Admin', path: '/admin', subject: 'Settings' }])
-    fireEvent.keyDown(window, { key: 'k', metaKey: true })
+    await openPalette({ key: 'k', metaKey: true })
 
-    expect(screen.getByRole('option').textContent).toContain('Settings')
+    expect(screen.getAllByRole('option')[0]!.textContent).toBe('SettingsAdmin')
   })
 
   it('navigates when a command is chosen, and closes behind itself', async () => {
@@ -900,12 +942,61 @@ describe('Shell -- the command palette', () => {
       vi.fn(),
       '/query',
     )
-    fireEvent.keyDown(window, { key: 'k', metaKey: true })
+    await openPalette({ key: 'k', metaKey: true })
 
     const admin = screen.getAllByRole('option').find((node) => node.textContent?.includes('Admin'))!
     fireEvent.click(admin)
 
     expect(await screen.findByText('admin screen')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByLabelText('Search commands')).not.toBeInTheDocument())
+  })
+})
+
+describe('Shell -- what the palette offers beyond the rail (DEV_UI 10.1)', () => {
+  const SCHEMA: VisibleSchema = { Customer: { fields: {} } }
+  const options = () => screen.getAllByRole('option').map((node) => node.textContent ?? '')
+
+  it('a type to browse, when Browse is a screen this reader has', async () => {
+    renderShell([{ name: 'Browse', path: '/browse' }], vi.fn(), '/query', null, SCHEMA)
+    await openPalette({ key: 'k', metaKey: true })
+
+    fireEvent.click(screen.getAllByRole('option').find((node) => node.textContent?.includes('Browse Customer'))!)
+    expect(await screen.findByTestId('at')).toHaveTextContent('/browse?type=Customer')
+  })
+
+  it('no types, and no searches, for a reader without Browse', async () => {
+    renderShell([{ name: 'Query', path: '/query' }], vi.fn(), '/query', null, SCHEMA)
+    await openPalette({ key: 'k', metaKey: true })
+    expect(options().join(' ')).not.toMatch(/Customer/)
+    fireEvent.change(screen.getByLabelText('Search commands'), { target: { value: 'ada' } })
+    expect(screen.queryAllByRole('option')).toHaveLength(0)
+  })
+
+  it('a search in the type, from whatever was typed', async () => {
+    renderShell([{ name: 'Browse', path: '/browse' }], vi.fn(), '/query', null, SCHEMA)
+    await openPalette({ key: 'k', metaKey: true })
+    fireEvent.change(screen.getByLabelText('Search commands'), { target: { value: 'ada' } })
+
+    fireEvent.click(screen.getAllByRole('option').find((node) => node.textContent?.includes('Search Customer'))!)
+    expect(await screen.findByTestId('at')).toHaveTextContent('/browse?type=Customer&q=ada')
+  })
+
+  it("the actions on the object in front of them, and only on that object's page", async () => {
+    vi.mocked(getVisibleActionTypesCached).mockResolvedValue({
+      Escalate: { affected_object_types: ['Customer'], executable: true },
+    })
+    renderShell([{ name: 'Browse', path: '/browse' }], vi.fn(), '/objects/Customer/c1', null, SCHEMA)
+    await openPalette({ key: 'k', metaKey: true })
+
+    expect(options()[0]).toBe('Actions · this CustomerEscalate')
+    fireEvent.click(screen.getAllByRole('option')[0]!)
+    expect(await screen.findByTestId('at')).toHaveTextContent('/objects/Customer/c1?action=Escalate')
+  })
+
+  it("the theme, by the toggle's own words", async () => {
+    renderShell([{ name: 'Query', path: '/query' }])
+    await openPalette({ key: 'k', metaKey: true })
+    fireEvent.click(screen.getAllByRole('option').find((node) => node.textContent === 'ShellSwitch to light theme')!)
+    await waitFor(() => expect(document.body.classList.contains(Classes.DARK)).toBe(false))
   })
 })

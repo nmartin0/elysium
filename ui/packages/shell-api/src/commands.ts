@@ -146,6 +146,31 @@ export function matching(commands: Command[], query: string): Command[] {
     .map((scored) => scored.command)
 }
 
+/**
+ * The matches split where a SUGGESTION belongs between them.
+ *
+ * A BROWSER FOUND THIS. Typing a person's name, "ada", and pressing
+ * Enter opened a SAVED VIEW: "sAveD views · trAnsaction" is a
+ * subsequence of group and label, so the loosest tier ranked above
+ * "Search Customer for 'ada'" -- which was obviously what was meant.
+ * A loose subsequence is a guess; a search for exactly what was typed
+ * is not.
+ *
+ * So the palette lists STRONG matches (the label starts with, contains,
+ * or abbreviates what was typed -- tiers 0-2 below), then the searches,
+ * then the loose ones. Nothing is dropped: a command you cannot find
+ * looks broken.
+ */
+export function matchingInTiers(commands: Command[], query: string): { strong: Command[]; loose: Command[] } {
+  const needle = query.trim().toLowerCase()
+  const all = matching(commands, query)
+  if (needle === '') return { strong: all, loose: [] }
+  return {
+    strong: all.filter((command) => rankOf(command, needle) <= LAST_STRONG_TIER),
+    loose: all.filter((command) => rankOf(command, needle) > LAST_STRONG_TIER),
+  }
+}
+
 function byUnavailableLast(a: Command, b: Command): number {
   return Number(Boolean(a.unavailable)) - Number(Boolean(b.unavailable))
 }
@@ -176,6 +201,8 @@ function byUnavailableLast(a: Command, b: Command): number {
  *      thing that still counts as a find
  */
 const NO_MATCH = 5
+/** Tiers 0-2 are a person naming the command; 3-4 are the matcher guessing. */
+const LAST_STRONG_TIER = 2
 
 function rankOf(command: Command, needle: string): number {
   const label = command.label.toLowerCase()
