@@ -94,12 +94,6 @@ class TestWhatADeploymentDeclares:
 
 
 class TestTheThresholds:
-    def test_a_high_score_becomes_a_proposal(self):
-        assert Candidate("a", "b", 0.99).disposition == "propose"
-
-    def test_a_middling_score_goes_to_review(self):
-        assert Candidate("a", "b", 0.89).disposition == "review"
-
     def test_the_default_ladder_is_the_documented_one(self):
         """1 field agreeing is nothing, 2 reaches review, 3 proposes --
         worked out from the weights rather than chosen by feel, after a
@@ -157,7 +151,6 @@ class TestScoring:
     def test_two_agreeing_fields_land_in_REVIEW_not_proposal(self):
         candidate = SplinkMatcher().candidates(TYPE, ROWS)[0]
 
-        assert candidate.disposition == "review"
         assert DEFAULT_REVIEW_ABOVE < candidate.score < DEFAULT_AUTO_PROPOSE_ABOVE
 
     def test_the_id_carries_its_source(self):

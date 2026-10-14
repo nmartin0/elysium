@@ -46,7 +46,7 @@ from typing import Any, Protocol, runtime_checkable
 # from the test fixtures changed no verdict, because the extra pairs
 # scored below the review threshold and were dropped. So tune it for
 # cost, and do not expect it to make a match appear or disappear.
-#       auto_propose_above: 0.95
+#       auto_propose_above: 0.95    # validated, not yet acted on (WIRED-3)
 #       review_above: 0.80
 DEFAULT_AUTO_PROPOSE_ABOVE = 0.95
 DEFAULT_REVIEW_ABOVE = 0.80
@@ -102,9 +102,12 @@ class Candidate:
     # no way to reach it.
     agreement: "dict[str, bool | None]" = field(default_factory=dict)
 
-    @property
-    def disposition(self) -> str:
-        return "propose" if self.score >= DEFAULT_AUTO_PROPOSE_ABOVE else "review"
+    # NO `disposition` (WIRED-3). There was one: "propose" above the
+    # DEFAULT auto_propose_above, "review" below. Nothing called it, and
+    # it ignored the threshold a type DECLARES, so it would have been
+    # wrong the day something did. Every candidate above review_above
+    # goes to the same inbox; what auto_propose_above should change
+    # about that is the owner's question (BLOCKING.md, item 1).
 
 
 @runtime_checkable

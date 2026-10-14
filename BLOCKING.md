@@ -135,7 +135,10 @@ they can be answered together.
   `E-06` -- a source failure is reported as its exception class name;
   the code names a closed vocabulary as the owner's replacement.
   `E-14` -- MemoryGuard is built and tested and nothing uses it: wire it
-  or delete it. `ZOO-14` -- `007` in an integer field becomes 7; built
+  or delete it. `WIRED-3` -- `identity.probabilistic.auto_propose_above`
+  is validated and does nothing: every candidate above `review_above`
+  lands in the same inbox. Should a match above it be pre-selected,
+  approved without a person, or should the key go? `ZOO-14` -- `007` in an integer field becomes 7; built
   and pinned, never confirmed.
 - `E-21` -- the LICENSE says unpublished and proprietary; the
   repository's visibility should match it.
