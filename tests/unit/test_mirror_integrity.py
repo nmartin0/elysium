@@ -153,6 +153,30 @@ def test_data_on_disk_the_catalog_forgot_is_reported(mirror):
     assert any("catalog does not list it" in problem for problem in report.problems)
 
 
+def test_gold_and_its_history_on_disk_are_not_reported_as_unknown(mirror):
+    """NEW-8, behaviourally. The warehouse check was handed silver and
+    bronze as the known set, so every gold and changelog table on disk
+    read as "the catalog does not list it" -- on a healthy deployment,
+    every run. Two publications, so gold has a changelog table too."""
+    from core.mirror.gold import build_gold
+
+    gold_type = {**SCHEMA["Thing"], "storage": {"silo": "s", "table": "t", "id_column": "id"}}
+    for _ in range(2):
+        silver = mirror._catalog.load_table("s.t").scan().to_arrow().to_pylist()
+        build_gold(mirror._catalog, "Thing", gold_type, silver)
+        connection = sqlite3.connect(mirror.adapters["s"].db_path)
+        connection.execute("UPDATE t SET a = a || '!'")
+        connection.commit()
+        connection.close()
+        mirror.sync_table("s", "t", "id", COLUMNS, TYPES)
+    namespaces = {".".join(n) for n in mirror._catalog.list_namespaces()}
+    assert "gold" in namespaces
+
+    report = check_mirror(mirror._catalog, warehouse_dir=mirror.mirror_path / "warehouse")
+
+    assert not [p for p in report.problems if "catalog does not list it" in p], report.problems
+
+
 def test_it_runs_without_an_ontology_at_all(mirror):
     """THE CASE THIS EXISTS FOR: a lake preserved through a teardown,
     inspected before a new Elysium is configured on top of it.

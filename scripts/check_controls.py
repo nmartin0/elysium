@@ -2366,6 +2366,33 @@ CONTROLS = [
         tests=["tests/unit/test_a_bronze_failure_never_serves_stale_data.py::TestTheAttemptSaysDegraded::"
                "test_it_is_recorded_as_degraded_not_synced"],
     ),
+    Control(
+        describes="NEW-8: the warehouse check knows every catalogued layer, not just silver and bronze",
+        path="core/mirror/integrity.py",
+        old="            catalog, warehouse_dir, _every_catalogued_table(catalog), report)",
+        new="            catalog, warehouse_dir, silver | bronze, report)",
+        tests=["tests/unit/test_mirror_integrity.py::"
+               "test_gold_and_its_history_on_disk_are_not_reported_as_unknown"],
+    ),
+    Control(
+        describes="PA001-G4: readers pin the newest published tag, not an unaudited current snapshot",
+        path="core/mirror/gold.py",
+        old="    if not numbered:\n        return None\n    return max(numbered)[1]\n",
+        new=("    if not numbered:\n"
+             "        current = table.current_snapshot()\n"
+             "        return current.snapshot_id if current else None\n"
+             "    return max(numbered)[1]\n"),
+        tests=["tests/unit/test_readers_pin_a_publication.py::TestACrashBeforeThePublication::"
+               "test_nothing_is_pinned"],
+    ),
+    Control(
+        describes="BACKLOG-3: an id in the history that silver lacks and was never deleted is reported",
+        path="core/mirror/integrity.py",
+        old="        unaccounted = sorted(named - live - deleted)\n",
+        new="        unaccounted = sorted(named - live - deleted - named)\n",
+        tests=["tests/unit/test_the_changelog_names_real_objects.py::TestWhatIsReported::"
+               "test_an_id_that_is_gone_with_no_deletion_recorded"],
+    ),
 ]
 
 
