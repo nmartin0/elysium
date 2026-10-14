@@ -169,3 +169,39 @@ def test_the_list_says_what_happened_without_an_id(synced_deployment):
 
     assert "test request" in printed and "tester" in printed and "Transaction" in printed
     assert ADA not in printed
+
+
+class TestBothReadPathsSuppress:
+    """THE SECOND READ PATH (found 14 Oct, by a control that never fired).
+    A sync reads the source in batches; when bronze cannot be written it
+    reads it again whole, through _read_source_rows. Erased keys are
+    dropped on both. The control for R13 was anchored on the fallback
+    and so broke a path no test took -- this is the test for it, and the
+    control now points at each path separately."""
+
+    def test_the_fallback_read_drops_erased_keys_too(self, tmp_path):
+        import sqlite3
+
+        from adapters.sqlite_adapter import SQLiteReadAdapter
+        from core.mirror.iceberg_sync import IcebergMirrorSync
+
+        source = tmp_path / "s.db"
+        with sqlite3.connect(source) as conn:
+            conn.execute("CREATE TABLE customers (customer_id TEXT PRIMARY KEY, name TEXT)")
+            conn.executemany("INSERT INTO customers VALUES (?, ?)",
+                             [("cust_001", "Ada"), ("cust_002", "Ben")])
+        adapter = SQLiteReadAdapter({"path": source})
+        sync = IcebergMirrorSync(tmp_path / "m", {"p": adapter})
+
+        def key_hash(object_type, value):
+            return f"{object_type}:{value}"
+
+        sync.suppression = {("p", "customers"): (
+            {"customer_id": {"Customer"}}, key_hash, {"Customer": {"Customer:cust_001"}})}
+        sync._current_silo = "p"
+
+        rows = sync._read_source_rows(adapter, "customers", "customer_id",
+                                      ["customer_id", "name"])
+
+        assert [row["customer_id"] for row in rows] == ["cust_002"]
+        assert sync.erased_still_in_source == {"Customer:cust_001"}

@@ -1220,11 +1220,21 @@ CONTROLS = [
         tests=["tests/unit/test_erasure.py::TestErasing::test_nothing_on_disk_holds_them_afterwards"],
     ),
     Control(
+        # THE BATCHED READ, which every normal sync takes. This control
+        # was anchored on the FALLBACK read below until 14 Oct and was
+        # silent: it broke a path the test never took.
         describes="R13: a sync drops erased rows on the way in",
+        path="core/mirror/iceberg_sync.py",
+        old="            if suppression is not None:\n                from core.mirror.erasure import suppress_rows",
+        new="            if False:\n                from core.mirror.erasure import suppress_rows",
+        tests=["tests/unit/test_erasure.py::TestErasing::test_while_the_source_still_returns_them_every_sync_drops_them"],
+    ),
+    Control(
+        describes="R13: the fallback read (bronze could not be written) drops erased rows too",
         path="core/mirror/iceberg_sync.py",
         old="        if suppression is not None:\n            from core.mirror.erasure import suppress_rows",
         new="        if False:\n            from core.mirror.erasure import suppress_rows",
-        tests=["tests/unit/test_erasure.py::TestErasing::test_while_the_source_still_returns_them_every_sync_drops_them"],
+        tests=["tests/unit/test_erasure.py::TestBothReadPathsSuppress::test_the_fallback_read_drops_erased_keys_too"],
     ),
     Control(
         describes="R13: a restore keeps the newer register",
