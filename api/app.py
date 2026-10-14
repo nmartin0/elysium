@@ -313,8 +313,17 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "same-origin"
+        # img-src ADDS data:, AND ONLY FOR IMAGES (found 14 Oct, in the
+        # browser). The check above looked for external scripts and
+        # stylesheets and found none -- but Blueprint draws its
+        # checkbox tick, radio dot and select caret as data: SVG
+        # backgrounds in its own CSS, which default-src 'self' blocks.
+        # Every ticked checkbox in the app rendered as a plain blue
+        # square. An image cannot run script, so data: here does not
+        # widen what can execute; script-src stays 'self' by default.
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+            "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; "
+            "frame-ancestors 'none'"
         )
         # POWERFUL FEATURES, DENIED OUTRIGHT (E-05): nothing here uses a
         # camera, microphone, location, payment or USB device, so no page

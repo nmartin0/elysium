@@ -282,8 +282,14 @@ def test_security_headers_are_present_on_every_response(client):
         # genuinely, fully self-contained before writing a policy this
         # strict -- see api/app.py's own comment for the full check.
         assert response.headers["content-security-policy"] == (
-            "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+            "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; "
+            "frame-ancestors 'none'"
         )
+        # data: ONLY FOR IMAGES. Blueprint's checkbox tick is a data: SVG
+        # background; a script must never be loadable that way.
+        directives = dict(part.strip().split(" ", 1) for part in
+                          response.headers["content-security-policy"].split(";"))
+        assert "data:" not in directives.get("script-src", directives["default-src"])
 
 
 def test_query_without_token_is_rejected(client):
