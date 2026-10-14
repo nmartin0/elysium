@@ -5,7 +5,9 @@ WHY THIS FILE EXISTS, AND WHY IT COMES FIRST. GOLD-3 re-keys
 _pushable_security_column, whose guard currently reads "same adapter
 AND same storage block". On gold every object type is one table in one
 namespace, so that comparison stops distinguishing anything -- and it
-does not fail loudly when it stops.
+does not fail loudly when it stops. (RISK-4, since answered: it never
+compared two TYPES, so it still distinguishes what it must. See
+TestOnGoldStorageIsEnough at the end.)
 
 WHAT IT ACTUALLY BREAKS, MEASURED RATHER THAN ASSUMED. The control for
 these tests (remove the guard, run them) showed the failure is NOT a
@@ -193,3 +195,46 @@ class TestTheRowsAreRightEitherWay:
         )
 
         assert found == []
+
+
+class TestOnGoldStorageIsEnough:
+    """RISK-4, ANSWERED: the guard compares two storages OF ONE TYPE --
+    where its security field lives, and where the searched fields live.
+    It never compares two types, so "every type is one table in one
+    namespace" does not blur it. On gold each type is rebound to its OWN
+    table (gold_view: `table: object_type`) and every per-field storage
+    pointer is dropped, because fusion already put every property in
+    one row. So on gold the two storages are always the same table, and
+    that table holds the security field under its own name. Pushdown is
+    then always correct, which is the point of moving reads to gold.
+
+    Pinned here so a change to gold_view that let a type keep a second
+    storage would show up as a refused pushdown, not as nothing."""
+
+    def _gold_mediator(self):
+        from core.ontology.gold_view import build_gold_view
+
+        view, excluded = build_gold_view(SCHEMA)
+        assert not excluded
+        adapter = object()
+        return DataMediator(view, {"gold": adapter}, {"Customer": "gold"}, ROLES), adapter
+
+    def test_a_field_from_the_second_source_storage_pushes_on_gold(self):
+        """On the SOURCE this is refused -- the case_ fields live in
+        support_cases, whose `region` means something else. On gold it is
+        one fused table, and region is the customer's."""
+        mediator, adapter = self._gold_mediator()
+        searched_adapter, searched = mediator._resolve_shared_storage("Customer", ["case_status"])
+
+        assert searched_adapter is adapter
+        assert mediator._pushable_security_column("Customer", searched_adapter, searched) == "region"
+
+    def test_every_type_is_its_own_table(self):
+        from core.ontology.gold_view import build_gold_view
+
+        two = {**SCHEMA, "Order": {**SCHEMA["Customer"], "additional_storage": {},
+                                   "fields": {"customer_id": {"type": "data"},
+                                              "region": {"type": "data"}}}}
+        view, _ = build_gold_view(two)
+        tables = [definition["storage"]["table"] for definition in view.values()]
+        assert sorted(tables) == ["Customer", "Order"]

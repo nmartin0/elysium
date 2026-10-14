@@ -2322,6 +2322,14 @@ CONTROLS = [
         new="                    pass",
         tests=["tests/unit/test_unchanged_gold_is_not_republished.py::TestNothingChanged::test_published_at_still_moves"],
     ),
+    Control(
+        describes="RISK-4: on gold a fused type is one table, so its security column always pushes",
+        path="core/ontology/gold_view.py",
+        old="        rebound.pop(\"storage\", None)\n",
+        new="",
+        tests=["tests/unit/test_security_pushdown_guard.py::TestOnGoldStorageIsEnough::"
+               "test_a_field_from_the_second_source_storage_pushes_on_gold"],
+    ),
 ]
 
 
