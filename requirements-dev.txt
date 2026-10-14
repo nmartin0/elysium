@@ -84,3 +84,9 @@ flask-cors
 # green, until somebody looked. So on 3.13: install PostgreSQL.
 pgserver<1.0; python_version < "3.13"
 
+
+# DECLARED, not inherited (14 Oct). tests/unit/test_step_schema.py
+# validates every generated step schema with it, and it reached this
+# lock only through altair and openapi-spec-validator -- so dropping
+# either would have broken a test of AR-5 with an ImportError.
+jsonschema>=4
