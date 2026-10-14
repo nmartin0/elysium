@@ -135,7 +135,6 @@ they can be answered together.
 - `E-14` -- MemoryGuard is built and tested and nothing uses it. The
   owner chose to BUILD agent memory (14 Oct); its shape is being agreed
   before it is built.
-- `ZOO-14` -- `007` in an integer field becomes 7. Owner: accept, but warn.
 - `E-21` -- the LICENSE says unpublished and proprietary; the
   repository's visibility should match it.
 

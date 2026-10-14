@@ -67,7 +67,7 @@ from core.mirror.drift_policy import (
 )
 from core.mirror.duplicates import DuplicatePolicy, split_duplicates
 from core.mirror.durability import force_table_metadata_to_disk
-from core.mirror.expectations import QUARANTINE, Violation, apply_expectations
+from core.mirror.expectations import QUARANTINE, RuleCount, Violation, apply_expectations
 from core.mirror.incremental import (
     CURSOR_PROPERTY,
     FULL_READ_PROPERTY,
@@ -182,6 +182,9 @@ CLEANING_SCHEMA = pa.schema([
 
 
 SOURCE_READ_PROPERTY = "elysium.source_read_started_at"
+#: What an integer read with its padding dropped is reported as (ZOO-14).
+LEADING_ZEROS_REASON = "leading zeros dropped: \"007\" was read as 7"
+
 #: {library: version} of the reference data silver was checked with (R40).
 REFERENCE_DATA_PROPERTY = "elysium.reference_data"
 
@@ -1127,7 +1130,14 @@ class IcebergMirrorSync(MirrorSync):
             synced_at=datetime.now(UTC),
             quarantined=len(checked.quarantined) + len(duplicated),
             violations=checked.counts,
-            warnings=checked.warnings,
+            # ZOO-14: integers read with their leading zeros dropped are
+            # accepted and warned about, beside the declared warn rules,
+            # through the same channel to the operator and the Mirror panel.
+            warnings=sorted(
+                [*checked.warnings,
+                 *(RuleCount(column=column, reason=LEADING_ZEROS_REASON, rows=count)
+                   for column, count in transformed.leading_zeros.items())],
+                key=lambda rule: (-rule.rows, rule.column, rule.reason)),
             unchanged=unchanged,
             read=source.read,
             degraded=(None if source.bronze_failure is None else

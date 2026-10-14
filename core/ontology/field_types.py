@@ -286,7 +286,9 @@ def _whole_number(value):
     the field was DECLARED an integer, and a zero-padded integer in a
     text source is ordinary and harmless. Refusing it would break
     working deployments to protect against a declaration mistake.
-    Recorded as an owner decision (ZOO-14) rather than decided here.
+    DECIDED by the owner (ZOO-14, 14 Oct): accepted, AND WARNED -- the
+    sync counts them per column (core/mirror/transform.py) and reports
+    them beside the declared warn rules.
     """
     if isinstance(value, str) and _SCIENTIFIC.match(value.strip()):
         # EXPONENT FORM, WHEN IT IS EXACTLY WHOLE (ZOO-15). Spreadsheets

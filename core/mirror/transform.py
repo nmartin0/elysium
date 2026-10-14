@@ -123,6 +123,11 @@ class TransformResult:
     cleaned_cells: list[tuple[int, str, Any, Any, tuple[str, ...]]] = field(default_factory=list)
     #: Changed cells beyond MAX_CLEANED_CELLS, counted and not kept.
     cleaned_cells_not_kept: int = 0
+    #: {column: how many values} read as an integer with leading zeros
+    #: dropped -- "007" became 7 (ZOO-14). ACCEPTED, as the owner decided
+    #: on 14 Oct, and WARNED about: an id-like code declared `integer`
+    #: loses its padding, and a count is how somebody notices.
+    leading_zeros: dict[str, int] = field(default_factory=dict)
 
     @property
     def has_drift(self) -> bool:
@@ -159,6 +164,7 @@ def transform_rows(rows: list[dict], columns: list[str],
     cleaned: list[dict] = []
     cleaned_cells: list = []
     not_kept = 0
+    leading_zeros: dict[str, int] = {}
 
     # WHICH COLUMNS ARE READ THROUGH THE SILO'S LOCALE (DEP-1): only
     # the ones the source sent as TEXT. The caller decides, from the
@@ -205,6 +211,8 @@ def transform_rows(rows: list[dict], columns: list[str],
                 cleaned_row[column] = coerce(value, declared, source_timezone,
                                              locale if column in localised else None,
                                              excel_dates=excel_dates)
+                if declared == "integer" and _has_leading_zeros(value):
+                    leading_zeros[column] = leading_zeros.get(column, 0) + 1
             except (ValueError, TypeError):
                 # The FIRST offending value for this column is the one
                 # reported -- later ones are almost always the same
@@ -230,7 +238,16 @@ def transform_rows(rows: list[dict], columns: list[str],
     return TransformResult(rows=cleaned, drift=drift,
                            mismatched_row_indices=sorted(mismatched),
                            mismatched_cells=cells, cleaned_cells=cleaned_cells,
-                           cleaned_cells_not_kept=not_kept)
+                           cleaned_cells_not_kept=not_kept, leading_zeros=leading_zeros)
+
+
+def _has_leading_zeros(value) -> bool:
+    """Text that is a whole number written with padding: "007", "-0042".
+    "0" alone is not padding."""
+    if not isinstance(value, str):
+        return False
+    digits = value.strip().lstrip("+-")
+    return len(digits) > 1 and digits.isdigit() and digits.startswith("0")
 
 
 def describe_drift(silo_name: str, table_name: str, drift: list[DriftedColumn]) -> str:
@@ -272,8 +289,11 @@ def transform_batches(batches, columns: list[str], column_types: dict[str, str] 
     cells: dict[int, list[tuple[str, str]]] = {}
     cleaned_cells: list = []
     not_kept = 0
+    leading_zeros: dict[str, int] = {}
     for batch in batches:
         result = transform_rows(batch, columns, column_types, standardisation, **options)
+        for column, count in result.leading_zeros.items():
+            leading_zeros[column] = leading_zeros.get(column, 0) + count
         offset = len(rows)
         rows.extend(result.rows)
         for item in result.drift:
@@ -288,4 +308,4 @@ def transform_batches(batches, columns: list[str], column_types: dict[str, str] 
     merged = [replace(item, row_count_checked=total) for item in drift.values()]
     return TransformResult(rows=rows, drift=merged, mismatched_row_indices=mismatched,
                            mismatched_cells=cells, cleaned_cells=cleaned_cells,
-                           cleaned_cells_not_kept=not_kept)
+                           cleaned_cells_not_kept=not_kept, leading_zeros=leading_zeros)

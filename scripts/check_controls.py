@@ -2490,6 +2490,13 @@ CONTROLS = [
         new="            failures[name] = type(exc).__name__\n",
         tests=["tests/unit/test_sources_checked.py::TestSourceFailures::test_a_failing_one_is_named_by_what_failed"],
     ),
+    Control(
+        describes="ZOO-14: an integer read with leading zeros dropped is counted for a warning",
+        path="core/mirror/transform.py",
+        old="                if declared == \"integer\" and _has_leading_zeros(value):",
+        new="                if False:",
+        tests=["tests/unit/test_leading_zeros_are_warned.py::test_a_real_sync_warns"],
+    ),
 ]
 
 
