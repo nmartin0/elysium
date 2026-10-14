@@ -34,6 +34,10 @@ coverage        # AGENTS.md requires a coverage run on files you touch;
 open-data-contract-standard  # test-only -- the ODCS JSON schema the data contracts (R16)
                 # are validated against; its own Bitol release, so the test checks the
                 # standard and not my reading of it
+splink>=4.0,<5  # COORD-3: the `identity` extra, here so CI's lock installs it. Without it
+                # the eight GOLD-6 inference tests skip in every environment that gates
+                # a merge -- untested, not broken. Kept out of requirements.txt because
+                # production installs it only through the extra.
 pytest          # test suite (tests/unit -- fast; tests/integration -- slow, needs Ollama)
 hypothesis      # DEP-2: property tests (tests/unit/test_properties.py) -- a rule
                 # stated once and searched for a counter-example, shrunk to the

@@ -20,10 +20,17 @@ generated and carry exact versions with hashes. After changing either
 requirements file, regenerate:
 
 ```bash
-uv pip compile requirements.txt --generate-hashes -o requirements.lock
+uv pip compile requirements.txt --generate-hashes --universal \
+  --python-version 3.12 -o requirements.lock
 uv pip compile requirements.txt requirements-dev.txt --generate-hashes \
-  -o requirements-dev.lock
+  --universal --python-version 3.12 -o requirements-dev.lock
 ```
+
+`--universal --python-version 3.12` both matter: the first keeps
+environment markers, the second stops uv taking the generating
+machine's Python as the floor (on 3.13 it silently dropped every
+`python_version < "3.13"` package). Each lock file's preamble says why
+at more length, and uv overwrites it -- put it back after regenerating.
 
 `./lint.sh` fails if they have drifted.
 
