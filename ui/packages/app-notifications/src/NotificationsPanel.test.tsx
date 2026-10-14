@@ -107,3 +107,35 @@ describe('when the request fails', () => {
     expect(await screen.findByText(/unreachable/)).toBeInTheDocument()
   })
 })
+
+describe('every row a door (DEV_UI 12)', () => {
+  it('an answer links to the objects it was built from', async () => {
+    const { MemoryRouter } = await import('react-router-dom')
+    mockedList.mockResolvedValue({
+      notifications: [
+        notification({
+          kind: 'query_answer',
+          summary: 'Answer to: Ada?',
+          subjects: [{ object_type: 'Customer', object_id: 'cust_001' }],
+        }),
+      ],
+      unseen: 1,
+    })
+    render(
+      <MemoryRouter>
+        <NotificationsPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    const link = await screen.findByRole('link', { name: 'Customer cust_001' })
+    expect(link.getAttribute('href')).toBe('/objects/Customer/cust_001')
+  })
+
+  it('a notice about nothing in particular links nowhere', async () => {
+    mockedList.mockResolvedValue({ notifications: [notification()], unseen: 1 })
+    render(<NotificationsPanel onSessionExpired={vi.fn()} />)
+
+    await screen.findByText('A sync was refused')
+    expect(screen.queryByRole('link')).toBeNull()
+  })
+})

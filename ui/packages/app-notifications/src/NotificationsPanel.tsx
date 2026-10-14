@@ -31,6 +31,7 @@ import EmptyState from '@elysium/shell-api/components/EmptyState'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import { formatTimestamp } from '@elysium/shell-api/format'
+import { Link } from 'react-router-dom'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import WatchList from './WatchList'
@@ -150,6 +151,24 @@ export default function NotificationsPanel({ onSessionExpired }: NotificationsPa
             </div>
             <p className="notifications__summary">{notification.summary}</p>
             {notification.detail !== null && <Notice className="notifications__detail">{notification.detail}</Notice>}
+            {/* A DOOR INTO WHAT IT IS ABOUT (DEV_UI 12: "every row in them
+                must be a DOOR into subject 1 or 3, landing on the object
+                ... Today they are terminal"). An answer links to the
+                objects it was built from, those the reader may still
+                read. */}
+            {(notification.subjects ?? []).length > 0 && (
+              <p className="notifications__doors">
+                About{' '}
+                {(notification.subjects ?? []).map((subject, index) => (
+                  <span key={`${subject.object_type}:${subject.object_id}`}>
+                    {index > 0 && ', '}
+                    <Link to={`/objects/${subject.object_type}/${encodeURIComponent(subject.object_id)}`}>
+                      {subject.object_type} {subject.object_id}
+                    </Link>
+                  </span>
+                ))}
+              </p>
+            )}
           </Card>
         ))}
       </CardList>

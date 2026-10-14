@@ -138,3 +138,26 @@ class TestTheApprovalsCount:
         _as(client, "dana", role="approver")
 
         assert client.get("/api/me/inbox").json()["approvals"] == 0
+
+
+class TestNotificationDoors:
+    """DEV_UI 12: every inbox row a door. An answer carries the objects it
+    was built from -- only those the reader may still read."""
+
+    def test_an_answer_names_the_objects_it_read(self, client):
+        _notes(client).notify("alice", "query_answer", "Answer to: Ada?",
+                              subjects=[("Customer", "cust_001")])
+        _as(client, "alice")
+
+        (row,) = client.get("/api/notifications").json()["notifications"]
+        assert row["subjects"] == [{"object_type": "Customer", "object_id": "cust_001"}]
+
+    def test_one_they_can_no_longer_read_is_not_named(self, client):
+        """cust_003 is us-east: read once, say, before a region moved --
+        a link to it now would say it exists."""
+        _notes(client).notify("alice", "query_answer", "Answer to: two?",
+                              subjects=[("Customer", "cust_001"), ("Customer", "cust_003")])
+        _as(client, "alice")
+
+        (row,) = client.get("/api/notifications").json()["notifications"]
+        assert [door["object_id"] for door in row["subjects"]] == ["cust_001"]

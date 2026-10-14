@@ -100,6 +100,8 @@ class Notification:
     summary: str
     detail: str | None
     seen: bool
+    #: The objects its text was built from, as (type, id) -- see notify().
+    subjects: tuple = ()
 
 
 class NotificationStore:
@@ -160,7 +162,7 @@ class NotificationStore:
             with self._connection() as conn:
                 rows = conn.execute(
                     "SELECT notification_id, created_at, kind, summary, "
-                    "detail, seen FROM notifications WHERE user_id = ? "
+                    "detail, seen, subjects FROM notifications WHERE user_id = ? "
                     "ORDER BY created_at DESC LIMIT ?",
                     (user_id, limit),
                 ).fetchall()
@@ -171,6 +173,7 @@ class NotificationStore:
             Notification(
                 row["notification_id"], row["created_at"], row["kind"],
                 row["summary"], row["detail"], bool(row["seen"]),
+                _subjects(row["subjects"]),
             )
             for row in rows
         ]
@@ -354,6 +357,16 @@ class NotificationStore:
             conn.executemany("DELETE FROM notifications WHERE notification_id = ?", doomed)
             conn.commit()
         return len(doomed)
+
+
+def _subjects(raw) -> tuple:
+    """The stored subjects, typed ones only; an unreadable column is none."""
+    try:
+        pairs = json.loads(raw or "[]")
+    except (TypeError, ValueError):
+        return ()
+    return tuple((str(pair[0]), str(pair[1])) for pair in pairs
+                 if isinstance(pair, list) and len(pair) == 2 and pair[0] is not None)
 
 
 _MIGRATIONS = (add_column_if_missing("notifications", "subjects", "TEXT NOT NULL DEFAULT '[]'"),)

@@ -2956,6 +2956,11 @@ def combine_sets_route(body: CombineSetsRequest, request: Request,
     return _describe_frozen(request, _frozen_set_store(request).get(current_user.user_id, set_id))
 
 
+class NotificationSubjectResponse(BaseModel):
+    object_type: str
+    object_id: str
+
+
 class NotificationResponse(BaseModel):
     notification_id: str
     created_at: str
@@ -2963,6 +2968,15 @@ class NotificationResponse(BaseModel):
     summary: str
     detail: str | None
     seen: bool
+    #: DOORS (DEV_UI 12: every inbox row "a DOOR into subject 1"): the
+    #: objects an answer was built from, those the caller may STILL read,
+    #: at most MAX_NOTIFICATION_DOORS.
+    subjects: list[NotificationSubjectResponse] = []
+
+
+#: How many objects one notification links to. An answer that read
+#: fifty objects is better opened in Query than listed in a notice.
+MAX_NOTIFICATION_DOORS = 5
 
 
 class NotificationsResponse(BaseModel):
@@ -3025,11 +3039,26 @@ def notifications_route(
                 "summary": n.summary,
                 "detail": n.detail,
                 "seen": n.seen,
+                "subjects": _doors(request, current_user, n.subjects),
             }
             for n in store.for_user(current_user.user_id)
         ],
         "unseen": store.unseen_count(current_user.user_id),
     }
+
+
+def _doors(request: Request, user: UserRecord, subjects) -> list[dict]:
+    """The objects a notification may link to: ones the caller may read
+    NOW, checked through the mediator -- read once is not readable still,
+    and a link to an object they may no longer see would say it exists."""
+    mediator = _generation(request).mediator
+    doors: list[dict] = []
+    for object_type, object_id in subjects:
+        if len(doors) >= MAX_NOTIFICATION_DOORS:
+            break
+        if _may_read_object(mediator, user, object_type, object_id):
+            doors.append({"object_type": object_type, "object_id": object_id})
+    return doors
 
 
 @router.post("/notifications/{notification_id}/seen",

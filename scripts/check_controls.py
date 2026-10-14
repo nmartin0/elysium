@@ -2910,6 +2910,56 @@ CONTROLS = [
         new="             or True or _may_read_object(generation.mediator, user, proposal.object_type,",
         tests=["tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestAChainIsApprovedAsAGroup::test_the_card_says_what_else_it_would_join"],
     ),
+    Control(
+        describes="INBOX: a merge counts only for someone who may write its type",
+        path="api/routes.py",
+        old="        if (authorize(current_user, roles, f\"write:{proposal.object_type}\")",
+        new="        if (True",
+        tests=["tests/integration/test_inbox_app.py::TestTheCounts::test_a_merge_counts_only_for_someone_who_may_decide_it"],
+    ),
+    Control(
+        describes="INBOX: a merge whose side the caller cannot see is not counted",
+        path="api/routes.py",
+        old="                and _proposal_sides(request, current_user, proposal) is not None):",
+        new="                and True):",
+        tests=["tests/integration/test_inbox_app.py::TestTheCounts::test_a_merge_whose_side_they_cannot_see_is_not_counted"],
+    ),
+    Control(
+        describes="PENDING-IN-CONTEXT: an object shows only writes the Inbox would show the caller",
+        path="api/routes.py",
+        old=("        return may_confirm(candidate) or candidate.user_id == current_user.user_id\n\n"
+             "    store: PendingWriteStore = request.app.state.pending_writes\n    touching"),
+        new="        return True\n\n    store: PendingWriteStore = request.app.state.pending_writes\n    touching",
+        tests=["tests/integration/test_pending_in_context.py::test_someone_who_may_not_decide_it_and_did_not_propose_it_sees_nothing"],
+    ),
+    Control(
+        describes="PENDING-IN-CONTEXT: an unreadable object answers as nothing waiting",
+        path="api/routes.py",
+        old="                if _may_read_object(generation.mediator, current_user, object_type, object_id)}",
+        new="                if True}",
+        tests=["tests/integration/test_pending_in_context.py::test_an_object_they_cannot_read_is_answered_as_nothing_waiting"],
+    ),
+    Control(
+        describes="ASK-ABOUT-SET: a field the asker cannot read is refused",
+        path="core/agent/set_context.py",
+        old="        if condition.field not in fields:",
+        new="        if False:",
+        tests=["tests/unit/test_set_context.py::TestRefused::test_a_field_the_asker_cannot_read_reads_as_unknown"],
+    ),
+    Control(
+        describes="NOTIFICATION-DOORS: an object the reader may no longer read is not linked",
+        path="api/routes.py",
+        old="        if _may_read_object(mediator, user, object_type, object_id):\n            doors.append",
+        new="        if True:\n            doors.append",
+        tests=["tests/integration/test_inbox_app.py::TestNotificationDoors::test_one_they_can_no_longer_read_is_not_named"],
+    ),
+    Control(
+        describes="MODEL-503: an unreachable model is a 503 naming no host",
+        path="api/app.py",
+        old="    @app.exception_handler(LLMUnavailable)",
+        new="    @app.exception_handler(KeyboardInterrupt)",
+        tests=["tests/integration/test_asking_about_a_set.py::test_a_model_that_cannot_be_reached_is_a_503_that_names_no_host"],
+    ),
 ]
 
 

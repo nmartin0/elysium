@@ -1321,6 +1321,9 @@ export interface Notification {
   summary: string
   detail: string | null
   seen: boolean
+  /** DOORS (DEV_UI 12): the objects an answer was built from that the
+   *  caller may still read, at most five. Absent from older servers. */
+  subjects?: { object_type: string; object_id: string }[]
 }
 
 /** What is waiting for the caller, by kind -- the Inbox badge (DEV_UI
