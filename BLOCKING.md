@@ -64,25 +64,25 @@ because failed logins count for usernames that do not exist yet.
 | the nine agent files | `HANDOVER_*`, `REQUESTS_*`, `STATUS_*` -- 8,662 lines from three agents that no longer exist. 25 SEC findings rescued into the CSV first; every other id verified already tracked |
 | `000COORDINATION.md` | the protocol for four agents that no longer exist, and all four branches are merged. Its ownership table was already wrong -- `SEC-06` measured it matching 89 of 145 source files. Consuming it surfaced a real conversion that had been unblocked for forty patches |
 | `LIBRARY_AUDIT.md` | 1.1 superseded by its own Part 4.6; 1.2 MEASURED AND REJECTED, with the numbers now in `request_metrics.py` and eight tests enforcing it; 1.3 is available work, below. Parts 2-4 are reasoning about when to take a dependency, kept in `PRINCIPLES.md`'s territory |
-| `OPEN_RISKS.md` | all five resolved or measured: 1, 2 and 5 fixed by earlier patches, 3 built and wired, 4's premise shown out of date in patch 490. Its 24 code citations now name what each risk WAS |---
+| `OPEN_RISKS.md` | all five resolved or measured: 1, 2 and 5 fixed by earlier patches, 3 built and wired, 4's premise shown out of date in patch 490. Its 24 code citations now name what each risk WAS |
 | `GOLD_MIGRATION_SURVEY.md` | every file it named was reworked; its proposed shape IS `build_gold_view`. Its parity test exists and passes (42) |
 | `ACCESS_CONTROL_PROPOSAL.md` | not built, and a change to what a grant MEANS. Below |
 | `CONFIG_ROUND_TRIP_AND_UI_KIT.md` | not built; needs a dependency decision and product direction. Below |
 | `OBJECT_EXPLORER_PLAN.md` | phases 1 and 2 (backend) built, and the blocker they existed to remove is gone -- `in` and `not_in` are in the filter vocabulary. Phases 3-5 are frontend; below |
-| `THIRD_PARTY_EXTENSIONS.md` | a design, unbuilt. Its finding about module federation kept below, because it is the kind of thing a later reader would otherwise rediscover the hard way |# Blocked on a decision
+| `THIRD_PARTY_EXTENSIONS.md` | a design, unbuilt. Its finding about module federation kept below, because it is the kind of thing a later reader would otherwise rediscover the hard way |
 | `TRIAGE.md` | fully absorbed: its 45 ids are CSV rows, its mutation sweep is the 70 declared controls in `scripts/check_controls.py`, its reachability sweep is the `WIRED-` rows |
 | `LIVE_UPDATES_AND_PIPELINE_BUILDER.md` | nothing built; its security decision kept below because it is the reason the design is shaped as it is |
-| `TRIGGERS_AND_PLUGINS.md` | part one built (patches 264-280), including the automation refusal; part two superseded by its own successor, now the plugin-API item. Its three unanswered risks are the triggers item |## 1. `F-02` with `F-03` -- no valid policy can authorise a cross-type action
+| `TRIGGERS_AND_PLUGINS.md` | part one built (patches 264-280), including the automation refusal; part two superseded by its own successor, now the plugin-API item. Its three unanswered risks are the triggers item |
 | `MEDALLION_PIPELINE.md` | the pipeline is built and all five owner decisions (D1-D5) were answered in September. Its rule S1 now lives in `standardise.py`, and the test that READ this file at runtime is behavioural instead |
-| `FUSION_AND_IDENTITY.md` | the backend is built -- `matching.py`, `identity.py`, `identity_decisions.py` with a `merge_decisions` table, and inference OFF by default. The reviewer screen has since been built (Identity), showing which fields agree rather than their values -- its answer to the MAC problem the old item named |**The sharpest one, and it outranks the rest.** Reproduced: the policy
-| `ELT_ROADMAP.md` | every phase it defines (0, 0b, 1) is DONE. What remains is a dependency chain, not a plan, and it is below with the measurement that corrected it |validator rejects every `write:` grant, while the write path demands
-| `HOT_RELOAD_PLAN.md` | built. Its six rules are named in the 26 places that cited step numbers; its most fragile assumption is now a test; and one of its open questions (`DeploymentConfig` not frozen) has since been answered |one per field. So no valid policy can authorise a cross-type action at
+| `FUSION_AND_IDENTITY.md` | the backend is built -- `matching.py`, `identity.py`, `identity_decisions.py` with a `merge_decisions` table, and inference OFF by default. The reviewer screen has since been built (Identity), showing which fields agree rather than their values -- its answer to the MAC problem the old item named |
+| `ELT_ROADMAP.md` | every phase it defines (0, 0b, 1) is DONE. What remains is a dependency chain, not a plan, and it is below with the measurement that corrected it |
+| `HOT_RELOAD_PLAN.md` | built. Its six rules are named in the 26 places that cited step numbers; its most fragile assumption is now a test; and one of its open questions (`DeploymentConfig` not frozen) has since been answered |
 | `DEV_UI.md` | **RESTORED, AND THE ROW ABOVE WAS WRONG TWICE.** It claimed 1,271 lines of interface design were "none of it buildable without a front-end agent" and pointed at an item that renumbering had long since made something else. Both halves were disproved by building from it: the measured palette, the type scale, the density ladder and the spine are being built straight out of the file. It is NOT consumed, it is not deleted, and it should not be again -- a measured fact in a deleted file is a measured fact lost, and this one cost a whole type scale reinvented wrong at every step |
 | `IDEAS.md` | investigations. Most are SHIPPED or ANSWERED; what is open needs a capable model, and is the agent-loop efficiency item |
 | `UI_ROADMAP.md` | 2,143 lines of front-end plan. Its one backend finding -- an unbounded search filling the model's context -- is the context-rot item, with the code evidence |
-| `BACKLOG.md` | its sections are absorbed: 0c, 0d4 and 0d5 were worked in patches 475-480; section 1 is the agent-loop efficiency item; section 2's one open piece (the keyboard model's roving-focus half) has since left this file; section 5 pointed here already |---
+| `BACKLOG.md` | its sections are absorbed: 0c, 0d4 and 0d5 were worked in patches 475-480; section 1 is the agent-loop efficiency item; section 2's one open piece (the keyboard model's roving-focus half) has since left this file; section 5 pointed here already |
 | `ROADMAP.md` | its numbered backend list is done or explicitly NOT DOING; pagination shipped as `page_token`. Its one unbuilt track, external writeback, was decided and built -- see the `write_targets` row |
-| `UNIFIED_ROADMAP.md` | the file that started this method: on 21 September it read every plan against the CODE and found seven built things described as open. Its remaining entries are items 30-35; its one correction to me is in item 12 |# Blocked on a decision
+| `UNIFIED_ROADMAP.md` | the file that started this method: on 21 September it read every plan against the CODE and found seven built things described as open. Its remaining entries are items 30-35; its one correction to me is in item 12 |
 | `gold_history` (was item 1) | DECIDED and BUILT, patches 507-509: the owner wanted both a reader and a route. It leaves this file by its own rule -- the decision survives in the code, the `NEW-7` checklist row and the commits |
 | saved selections (was item 17) | BUILT as frozen sets: `core/frozen_sets.py`, `/api/frozen-sets`, a `frozen_set` reference on every route that takes a set, and Browse's Frozen sets popover. Unblocked by precedent -- Foundry's static object sets are "a list of primary keys" -- which made "what happens when the publication is forgotten" dissolve: membership is keys, the publication is metadata. DEV_UI 11.5's write-path question about bulk ACTION is unchanged and lives with item 6 |
 | `write_targets` (was item 17) | DECIDED and BUILT: off by default, a separate block, existing deployments warned rather than broken |
@@ -144,28 +144,11 @@ they can be answered together.
 
 # Blocked on a machine or a person running something
 
-## 12a. Twenty-five inherited security findings
-
-The security agent kept its own register because it was not allowed to
-edit `AUDIT_CHECKLIST.csv`, and said so:
-
-> ONE ASK OF BACKEND: fold these into `AUDIT_CHECKLIST.csv` and this
-> file can go. It exists because I may not edit that one, not because
-> two registers are a good idea -- and two lists is the exact failure
-> this project keeps finding.
-
-**That ask was never honoured while they existed.** Patch 487 did it:
-all 27 `SEC-` ids are now rows. Six map onto work already done under
-my numbering (`SEC-01` is `LLM3-1`, `SEC-02`/`SEC-03` are `LLM3-2`,
-`SEC-05` is `PA001-A11`, `SEC-17` was rebuilt in patch 465). One was
-withdrawn by its own author as overstated. The rest are open and
-INHERITED -- raised by somebody who can no longer be asked what they
-meant.
-
-**Blocked on:** nothing, for the tractable ones -- they are ordinary
-work now that they are on the list. Named here only because their
-provenance matters: a finding whose author is gone cannot be
-clarified, only reproduced or dropped.
+Three of the numbered items below wait on a machine as much as on a
+decision: agent-loop efficiency and context rot need a capable model
+on real hardware, and row-level security needs a production
+PostgreSQL silo. They are filed by what decides whether that machine
+is worth having.
 
 # Blocked because it is product direction
 
@@ -183,22 +166,17 @@ why picking one off would be the wrong move rather than a slow one.
 
 ## 3. What the Query screen should contain
 
-Four features, none built, from `QUERY_PLAN.md`. They are product
-direction rather than engineering: what a question box should offer
-somebody who has never used it.
+From `QUERY_PLAN.md`. Two of its four features are BUILT and this item
+said otherwise until 14 October: example questions from the deployment
+(`display: true` entries in `example_queries.yaml`, refused at load if
+they name an identifier-shaped token) and the history of what this
+person asked (`app-query/src/AskedBefore.tsx`, in memory for the
+session, questions only -- an answer can outlive the grant it was
+given under). Two remain, and both are product direction rather than
+engineering:
 
-1. **Example questions from the deployment.** A deployment states what
-   its data is good for; nobody else can. NOT by reusing
-   `example_queries.yaml` as it stands -- its entries are user-paired
-   for the runner. Either a separate `ui_examples:` key or a
-   `for_display: true` marker on entries that qualify; the second is
-   smaller and keeps one list.
-2. **The question, read back** -- what the system understood.
-3. **Follow-on questions** after an answer.
-4. **History** of what this person has asked.
-
-Its own order: 1 and the cheap half of 3 need nothing and would help
-immediately.
+1. **The question, read back** -- what the system understood.
+2. **Follow-on questions** after an answer.
 
 **Explicitly not to be built**, and the reasoning is worth keeping:
 clarifying questions before answering (an extra model call on a system
@@ -207,7 +185,7 @@ reported) and a conversation thread (Elysium answers questions about
 an ontology; it is not a chat assistant, and threading makes "which
 generation answered this" much harder to state).
 
-**Blocked on:** product design, and there is no front-end agent now.
+**Blocked on:** product design.
 
 ## 4. Writing configuration from the UI
 
