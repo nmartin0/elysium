@@ -128,7 +128,23 @@ class ClaudeAgentSDKAdapter:
             # ontology declares.
             "--allowed-tools", "",
         ]
-        if json_mode:
+        if isinstance(json_mode, dict):
+            # A SCHEMA (AR-5's constrain_steps): ENFORCED, not asked for.
+            # The CLI validates the model's output against --json-schema
+            # and returns it in the envelope's `structured_output` field
+            # (code.claude.com/docs/en/headless, "Get structured
+            # output"). Before, this branch only appended "respond with
+            # JSON", so constrain_steps on this backend constrained
+            # nothing -- found by the 14 Oct checklist sweep.
+            schema = json.dumps(json_mode, separators=(",", ":"))
+            if len(schema.encode("utf-8")) >= MAX_ARGUMENT_BYTES:
+                raise LLMUnavailable(
+                    f"The step schema is {len(schema.encode('utf-8')):,} bytes and the "
+                    f"{self.executable!r} command takes it as one argument, which this "
+                    f"operating system limits to {MAX_ARGUMENT_BYTES:,}. Turn constrain_steps "
+                    f"off, or use a backend that takes it in the request.")
+            command += ["--json-schema", schema]
+        elif json_mode:
             # The CLI's --output-format json describes its own envelope,
             # not the model's answer, so the instruction to emit JSON
             # has to reach the model itself. Appended rather than
@@ -266,6 +282,13 @@ class ClaudeAgentSDKAdapter:
             return stdout.strip()
 
         if isinstance(envelope, dict):
+            # A SCHEMA-CONSTRAINED ANSWER arrives as an object, already
+            # validated, under `structured_output`. Callers read text, so
+            # it is handed back as JSON text -- the same thing a free
+            # JSON answer would be.
+            structured = envelope.get("structured_output")
+            if isinstance(structured, (dict, list)):
+                return json.dumps(structured)
             for key in ("result", "text", "content"):
                 value = envelope.get(key)
                 if isinstance(value, str):

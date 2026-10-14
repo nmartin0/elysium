@@ -2735,6 +2735,13 @@ CONTROLS = [
         new="                if False:",
         tests=["tests/unit/test_binding_suggestions.py::test_a_link_field_is_not_offered"],
     ),
+    Control(
+        describes="AR-5: on the Claude CLI a step schema is enforced with --json-schema",
+        path="adapters/claude_agent_sdk_adapter.py",
+        old="            command += [\"--json-schema\", schema]",
+        new="            command += []",
+        tests=["tests/unit/test_claude_agent_sdk_adapter.py::test_a_schema_is_passed_to_the_cli_to_enforce"],
+    ),
 ]
 
 

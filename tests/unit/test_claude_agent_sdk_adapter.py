@@ -286,3 +286,39 @@ def test_a_prompt_under_the_limit_still_reaches_the_cli(fake_claude):
 
     argv = _invocation(fake_claude)["argv"]
     assert len(argv[argv.index("--system-prompt") + 1]) == 100_000
+
+
+# --- A schema is enforced, not only asked for (AR-5 on this backend) -----
+
+
+STEP_SCHEMA = {"type": "object", "properties": {"step": {"type": "string"}},
+               "required": ["step"]}
+
+
+def test_a_schema_is_passed_to_the_cli_to_enforce(fake_claude):
+    """Before 14 Oct a schema was treated like json_mode=True: a sentence
+    asking for JSON, and nothing enforcing the shape."""
+    ClaudeAgentSDKAdapter("claude-sonnet-4-6", {}).chat("sys", "hi", json_mode=STEP_SCHEMA)
+
+    argv = _invocation(fake_claude)["argv"]
+    assert json.loads(argv[argv.index("--json-schema") + 1]) == STEP_SCHEMA
+
+
+def test_plain_json_mode_does_not_pass_a_schema(fake_claude):
+    """THE CONTROL: True still means 'JSON, any shape'."""
+    ClaudeAgentSDKAdapter("claude-sonnet-4-6", {}).chat("sys", "hi", json_mode=True)
+
+    assert "--json-schema" not in _invocation(fake_claude)["argv"]
+
+
+def test_the_structured_output_is_what_comes_back():
+    envelope = json.dumps({"result": "", "structured_output": {"step": "finish"}})
+
+    assert json.loads(ClaudeAgentSDKAdapter._extract_text(envelope)) == {"step": "finish"}
+
+
+def test_an_oversized_schema_is_refused_by_name(fake_claude):
+    huge = {"type": "object", "description": "x" * 200_000}
+
+    with pytest.raises(LLMUnavailable, match="step schema"):
+        ClaudeAgentSDKAdapter("claude-sonnet-4-6", {}).chat("sys", "hi", json_mode=huge)
