@@ -2720,6 +2720,21 @@ CONTROLS = [
         new="                if False:",
         tests=["tests/unit/test_link_discovery.py::test_a_column_of_few_values_is_not_a_link"],
     ),
+    Control(
+        describes="R55: a column is matched to a field by its values, not only its name",
+        path="core/mirror/binding_suggestions.py",
+        old="                if score >= NAME_BAR or (value_share or 0) >= VALUE_BAR:",
+        new="                if score >= NAME_BAR:",
+        tests=["tests/unit/test_binding_suggestions.py::"
+               "test_values_find_a_field_whatever_the_column_is_called"],
+    ),
+    Control(
+        describes="R55: a link field is not offered as a column's match",
+        path="core/mirror/binding_suggestions.py",
+        old="                if config.get(\"type\", \"data\") != \"data\":",
+        new="                if False:",
+        tests=["tests/unit/test_binding_suggestions.py::test_a_link_field_is_not_offered"],
+    ),
 ]
 
 
