@@ -36,6 +36,7 @@ user into a queue for everyone.
 """
 
 import logging
+import threading
 import time
 
 from core.llm.interface import LLMAdapter, LLMUnavailable, TokenUsage
@@ -68,11 +69,13 @@ class RetryingLLMAdapter:
     # keyword misspelled here would reach the adapter unchecked.
     def chat(self, system_prompt: str, user_message: str,
              json_mode: "bool | dict" = False, temperature: float | None = None, *,
-             deadline: float | None = None, usage: TokenUsage | None = None) -> str:
+             deadline: float | None = None, usage: TokenUsage | None = None,
+             cancel: "threading.Event | None" = None) -> str:
         for attempt in range(1, self._attempts + 1):
             try:
                 return self._wrapped.chat(system_prompt, user_message, json_mode,
-                                          temperature, deadline=deadline, usage=usage)
+                                          temperature, deadline=deadline, usage=usage,
+                                          cancel=cancel)
             except LLMUnavailable as e:
                 last = attempt == self._attempts
                 if not e.retryable or last:

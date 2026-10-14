@@ -34,7 +34,7 @@ def test_serve_dispatches_multiple_users_concurrently_without_crashing(tmp_path)
         response.raise_for_status.return_value = None
         return response
 
-    with patch("adapters.ollama_adapter.requests.post", side_effect=fake_post):
+    with patch("adapters.http_transport.post", side_effect=fake_post):
         # A DEPLOYMENT OF ITS OWN (E-08c). Called without paths, serve()
         # falls back to the developer's and wrote config_history.db,
         # write_log.db and a mirror there -- the last integration test to.

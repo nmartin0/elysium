@@ -34,10 +34,12 @@ HTTPError, because that is a fact about the library this file happens
 to use.
 """
 
+import threading
 from typing import Any
 
 import requests
 
+from adapters import http_transport
 from core.llm.interface import LLMUnavailable, TokenUsage, call_timeout
 
 DEFAULT_TIMEOUT_SECONDS = 180
@@ -72,7 +74,8 @@ class VLLMAdapter:
 
     def chat(self, system_prompt: str, user_message: str,
              json_mode: "bool | dict" = False, temperature: float | None = None, *,
-             deadline: float | None = None, usage: TokenUsage | None = None) -> str:
+             deadline: float | None = None, usage: TokenUsage | None = None,
+             cancel: "threading.Event | None" = None) -> str:
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": [
@@ -99,8 +102,8 @@ class VLLMAdapter:
         # Ollama adapter follows.
         timeout = call_timeout(deadline, self.timeout_seconds)
         try:
-            response = requests.post(self.base_url, json=payload, headers=headers,
-                                      timeout=timeout)
+            response = http_transport.post(self.base_url, json=payload, headers=headers,
+                                           timeout=timeout, cancel=cancel)
         except requests.RequestException as e:
             raise LLMUnavailable(
                 f"Could not reach the model at {self.base_url}: {e}",

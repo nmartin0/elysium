@@ -7,8 +7,10 @@ build_llm_adapter() in core/deployment_loader.py always wraps whatever
 it constructs in this, so callers never need to know it exists.
 """
 
-from core.concurrency import ConcurrencyLimiter
-from core.llm.interface import LLMAdapter, TokenUsage
+import threading
+
+from core.concurrency import ConcurrencyLimiter, WaitAbandoned
+from core.llm.interface import LLMAdapter, LLMCancelled, TokenUsage
 
 
 class ConcurrencyLimitedLLMAdapter:
@@ -40,7 +42,15 @@ class ConcurrencyLimitedLLMAdapter:
     # adapter unchecked.
     def chat(self, system_prompt: str, user_message: str,
               json_mode: "bool | dict" = False, temperature: float | None = None, *,
-              deadline: float | None = None, usage: TokenUsage | None = None) -> str:
-        with self._limiter.limit():
-            return self._wrapped.chat(system_prompt, user_message, json_mode, temperature,
-                                      deadline=deadline, usage=usage)
+              deadline: float | None = None, usage: TokenUsage | None = None,
+              cancel: "threading.Event | None" = None) -> str:
+        try:
+            with self._limiter.limit(abandon=cancel):
+                return self._wrapped.chat(system_prompt, user_message, json_mode, temperature,
+                                          deadline=deadline, usage=usage, cancel=cancel)
+        except WaitAbandoned as e:
+            # QUEUED BEHIND ANOTHER QUESTION, and the person left. Waiting
+            # on for a slot only to throw the answer away would hold up
+            # whoever queued next (AL-11). Only the wait raises this; the
+            # call itself, once started, stops through `cancel`.
+            raise LLMCancelled("The request was cancelled while waiting for the model.") from e

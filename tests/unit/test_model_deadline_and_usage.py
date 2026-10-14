@@ -202,7 +202,7 @@ class TestTheLimiter:
             max_concurrent_requests = 1
 
             def chat(self, system_prompt, user_message, json_mode=False, temperature=None, *,
-                     deadline=None, usage=None):
+                     deadline=None, usage=None, cancel=None):
                 seen.update(deadline=deadline, usage=usage)
                 return "ok"
         usage, deadline = TokenUsage(), time.monotonic() + 5

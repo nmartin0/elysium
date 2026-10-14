@@ -50,8 +50,9 @@ import logging
 import os
 import shutil
 import subprocess
+import threading
 
-from core.llm.interface import LLMUnavailable, TokenUsage, call_timeout
+from core.llm.interface import LLMCancelled, LLMUnavailable, TokenUsage, call_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -140,9 +141,35 @@ class ClaudeAgentSDKAdapter:
             ]
         return command
 
+    def _run_until_cancelled(self, command: list, user_message: str, timeout: float,
+                             cancel) -> subprocess.CompletedProcess:
+        """subprocess.run, except that setting `cancel` kills the CLI
+        (AL-11) -- the process is the request, so ending it is what stops
+        the work, the way closing the socket does for an HTTP model."""
+        import time
+
+        process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, env=self._environment())
+        holder: dict = {}
+        reader = threading.Thread(
+            target=lambda: holder.update(out=process.communicate(user_message)), daemon=True)
+        reader.start()
+        ends_at = time.monotonic() + timeout
+        while reader.is_alive():
+            reader.join(0.1)
+            if cancel.is_set() or time.monotonic() >= ends_at:
+                process.kill()
+                reader.join()
+                if cancel.is_set():
+                    raise LLMCancelled("The request was cancelled while the model was answering.")
+                raise subprocess.TimeoutExpired(command, timeout)
+        stdout, stderr = holder["out"]
+        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
     def chat(self, system_prompt: str, user_message: str,
               json_mode: "bool | dict" = False, temperature: float | None = None, *,
-              deadline: float | None = None, usage: TokenUsage | None = None) -> str:
+              deadline: float | None = None, usage: TokenUsage | None = None,
+              cancel: "threading.Event | None" = None) -> str:
         # TEMPERATURE IS NOT SUPPORTED, and that is a real behavioural
         # difference rather than a detail. Both of Elysium's callers ask
         # for temperature=0 because they want deterministic output --
@@ -175,16 +202,22 @@ class ClaudeAgentSDKAdapter:
         # NO LONGER THAN THE REQUEST HAS LEFT (E-11); subprocess.run's
         # timeout bounds the whole run, and kills the process at it.
         timeout = call_timeout(deadline, self.timeout_seconds)
+        if cancel is not None and cancel.is_set():
+            raise LLMCancelled("The request was cancelled before the model was called.")
         try:
-            completed = subprocess.run(
-                self._command(system_prompt, json_mode),
-                input=user_message,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                env=self._environment(),
-                check=False,
-            )
+            if cancel is None:
+                completed = subprocess.run(
+                    self._command(system_prompt, json_mode),
+                    input=user_message,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    env=self._environment(),
+                    check=False,
+                )
+            else:
+                completed = self._run_until_cancelled(
+                    self._command(system_prompt, json_mode), user_message, timeout, cancel)
         except subprocess.TimeoutExpired as e:
             raise LLMUnavailable(
                 f"The {self.executable!r} command did not respond within "

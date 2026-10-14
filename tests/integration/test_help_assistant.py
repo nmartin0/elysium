@@ -16,7 +16,7 @@ class _Recorder:
         self.reply, self.fail, self.calls = reply, fail, []
 
     def chat(self, system_prompt, user_message, json_mode=False, temperature=None, *,
-             deadline=None, usage=None):
+             deadline=None, usage=None, cancel=None):
         self.calls.append((system_prompt, user_message))
         if self.fail:
             raise self.fail

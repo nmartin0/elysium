@@ -22,7 +22,9 @@ class _FakeClient:
     def __init__(self, scripted_answer: str):
         self.scripted_answer = scripted_answer
 
-    def chat(self, system_prompt, user_message, json_mode=False, temperature=None, *, deadline=None, usage=None):
+    def chat(self, system_prompt, user_message, json_mode=False, temperature=None, *,
+
+             deadline=None, usage=None, cancel=None):
         return self.scripted_answer
 
 
@@ -30,7 +32,9 @@ class _FailingClient:
     """A minimal LLMAdapter that always raises, matching a real network failure."""
     max_concurrent_requests = None
 
-    def chat(self, system_prompt, user_message, json_mode=False, temperature=None, *, deadline=None, usage=None):
+    def chat(self, system_prompt, user_message, json_mode=False, temperature=None, *,
+
+             deadline=None, usage=None, cancel=None):
         # LLMUnavailable, WHICH IS WHAT AN ADAPTER RAISES (F-23).
         # This raised requests.ConnectionError, because synthesis used
         # to catch that -- one adapter's library exception. Once every
@@ -155,7 +159,9 @@ def test_possibly_incomplete_appends_the_note_to_the_system_prompt():
     class _CapturingClient:
         max_concurrent_requests = None
 
-        def chat(self, system_prompt, user_message, json_mode=False, temperature=None, *, deadline=None, usage=None):
+        def chat(self, system_prompt, user_message, json_mode=False, temperature=None, *,
+
+                 deadline=None, usage=None, cancel=None):
             captured["system_prompt"] = system_prompt
             return "Ada works in engineering [R1]."
 
@@ -169,7 +175,9 @@ def test_possibly_incomplete_false_leaves_the_system_prompt_unchanged():
     class _CapturingClient:
         max_concurrent_requests = None
 
-        def chat(self, system_prompt, user_message, json_mode=False, temperature=None, *, deadline=None, usage=None):
+        def chat(self, system_prompt, user_message, json_mode=False, temperature=None, *,
+
+                 deadline=None, usage=None, cancel=None):
             captured["system_prompt"] = system_prompt
             return "Ada works in engineering [R1]."
 
@@ -185,7 +193,9 @@ def test_possibly_incomplete_default_matches_false():
     class _CapturingClient:
         max_concurrent_requests = None
 
-        def chat(self, system_prompt, user_message, json_mode=False, temperature=None, *, deadline=None, usage=None):
+        def chat(self, system_prompt, user_message, json_mode=False, temperature=None, *,
+
+                 deadline=None, usage=None, cancel=None):
             captured["system_prompt"] = system_prompt
             return "Ada works in engineering [R1]."
 

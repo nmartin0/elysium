@@ -39,7 +39,7 @@ class Scripted:
         self._steps = list(steps)
 
     def chat(self, system_prompt, user_message, json_mode=False,
-             temperature=None, *, deadline=None, usage=None):
+             temperature=None, *, deadline=None, usage=None, cancel=None):
         return self._steps.pop(0) if self._steps else '{"step": "finish"}'
 
 

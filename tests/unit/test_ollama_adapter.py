@@ -29,7 +29,7 @@ def _sent(connection: dict, **chat_kwargs) -> dict:
     response = Mock()
     response.json.return_value = {"message": {"content": "ok"}}
     response.raise_for_status.return_value = None
-    with patch("adapters.ollama_adapter.requests.post", return_value=response) as post:
+    with patch("adapters.http_transport.post", return_value=response) as post:
         adapter.chat("system", "user", **chat_kwargs)
     return post.call_args.kwargs["json"]
 

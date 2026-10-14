@@ -61,7 +61,7 @@ class Recorder:
         self.user_message = None
 
     def chat(self, system_prompt, user_message, json_mode=False,
-             temperature=None, *, deadline=None, usage=None):
+             temperature=None, *, deadline=None, usage=None, cancel=None):
         self.user_message = user_message
         return self.answer
 

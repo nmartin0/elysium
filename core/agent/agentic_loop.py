@@ -79,7 +79,7 @@ from core.functions.ontology_access import OntologyAccess
 from core.functions.registry import get_enabled_functions
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.llm.agent_step_prompt import next_plan, next_step
-from core.llm.interface import LLMAdapter, LLMUnavailable
+from core.llm.interface import LLMAdapter, LLMCancelled, LLMUnavailable
 from core.llm.plan import MAX_PLAN_FANOUT, PlanError, resolve_step
 from core.llm.tracing import EXECUTE_TOOL, INVOKE_AGENT, span
 from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE, coerce
@@ -1534,7 +1534,12 @@ class AgentLoop:
                     deadline=context.deadline if context else None,
                     usage=context.token_usage if context else None,
                     constrain=self.constrain_steps, max_steps=self.max_hops,
+                    cancel=cancel_event,
                 )
+            except LLMCancelled:
+                return AgentLoopResult(gathered=gathered,
+                                       stop_reason=StopReason.CANCELLED,
+                                       hops_used=steps_run)
             except PlanError as e:
                 # AN UNUSABLE PLAN GETS THE SAME ONE REVISION AN
                 # EXECUTION FAILURE GETS, and the first VM run is why.
@@ -1795,8 +1800,16 @@ class AgentLoop:
                 step = next_step(
                     self.client, query_text, visible_schema, gathered, self.tools, writes_enabled,
                     visible_action_types, deadline=deadline, usage=usage,
-                    constrain=self.constrain_steps,
+                    constrain=self.constrain_steps, cancel=cancel_event,
                 )
+            except LLMCancelled:
+                # MID-CALL (AL-11): the person left while the model was
+                # answering. The call was abandoned -- connection and all,
+                # so the server stopped too -- and this is the same
+                # ending as noticing between hops.
+                return AgentLoopResult(gathered=gathered, stop_reason=StopReason.CANCELLED,
+                                       fabricated_finishes=tuple(fabricated_finishes),
+                                       hops_used=hops_used)
             except LLMUnavailable:
                 # MID-CALL: the adapter waited only what the deadline left.
                 # Out of time, that is the same ending as between hops; any

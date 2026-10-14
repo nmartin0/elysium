@@ -36,7 +36,7 @@ class Scripted:
         self.seen = 0
 
     def chat(self, system_prompt, user_message, json_mode=False,
-             temperature=None, *, deadline=None, usage=None):
+             temperature=None, *, deadline=None, usage=None, cancel=None):
         self.seen += 1
         if self._unusable > 0:
             self._unusable -= 1
@@ -189,7 +189,7 @@ def test_the_timer_passes_every_argument_through(generation_and_user):
         max_concurrent_requests = 3
 
         def chat(self, system_prompt, user_message, json_mode=False,
-                 temperature=None, *, deadline=None, usage=None):
+                 temperature=None, *, deadline=None, usage=None, cancel=None):
             seen.update(json_mode=json_mode, temperature=temperature,
                         deadline=deadline, usage=usage)
             return '{"step": "finish"}'

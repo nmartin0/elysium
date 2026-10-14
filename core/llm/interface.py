@@ -7,6 +7,7 @@ concurrency fields) -- core/llm/concurrency_limited_adapter.py enforces
 it, adapters don't self-protect.
 """
 
+import threading
 import time
 from typing import Protocol
 
@@ -53,6 +54,16 @@ class LLMUnavailable(Exception):
         self.retryable = retryable
 
 
+class LLMCancelled(LLMUnavailable):
+    """The person stopped waiting, and the call was abandoned (AL-11).
+
+    A SUBCLASS so every handler written for "the model did not answer"
+    still catches it -- nothing upstream can mistake it for an answer --
+    while the agent loop, which can tell, reports a cancellation rather
+    than an outage. Never retryable: the person who asked has gone.
+    """
+
+
 # TokenUsage lives in core/request_context.py -- the context carries one,
 # and sits BELOW this layer -- and is imported here for adapters to use.
 
@@ -78,7 +89,12 @@ class LLMAdapter(Protocol):
 
     def chat(self, system_prompt: str, user_message: str,
               json_mode: "bool | dict" = False, temperature: float | None = None, *,
-              deadline: float | None = None, usage: TokenUsage | None = None) -> str:
+              deadline: float | None = None, usage: TokenUsage | None = None,
+              cancel: "threading.Event | None" = None) -> str:
+        # `cancel` (AL-11): once set, the call is abandoned -- connection
+        # included, so the backend stops too -- and LLMCancelled raised.
+        # An adapter that cannot stop mid-call checks it before starting.
+        #
         # Sends one message, returns raw response text, raises on
         # failure. No JSON parsing, no step validation -- callers
         # (agent_step_prompt.py, synthesis_prompt.py) differ too much

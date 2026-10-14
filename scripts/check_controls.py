@@ -2647,6 +2647,27 @@ CONTROLS = [
         new="    if False:",
         tests=["tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestAProposalAsTheMatcherWritesIt::test_nor_may_they_decide_it"],
     ),
+    Control(
+        describes="AL-11: cancelling a model call closes its connection, so the server stops",
+        path="adapters/http_transport.py",
+        old="                opened.shut_down()",
+        new="                pass",
+        tests=["tests/unit/test_cancel_stops_the_model_call.py::TestTheTransport::test_cancelling_closes_the_connection_and_the_server_sees_it"],
+    ),
+    Control(
+        describes="AL-11: the agent loop hands its cancel event to the model call",
+        path="core/agent/agentic_loop.py",
+        old="                    constrain=self.constrain_steps, cancel=cancel_event,",
+        new="                    constrain=self.constrain_steps, cancel=None,",
+        tests=["tests/unit/test_cancel_stops_the_model_call.py::TestTheLoop::test_a_cancelled_call_ends_the_run_as_cancelled"],
+    ),
+    Control(
+        describes="AL-11: a question queued for the model slot gives up when its asker leaves",
+        path="core/concurrency.py",
+        old="                if abandon.is_set():\n                    raise WaitAbandoned()",
+        new="                if False:\n                    raise WaitAbandoned()",
+        tests=["tests/unit/test_cancel_stops_the_model_call.py::TestWaitingForASlot::test_a_waiter_gives_up_when_cancelled"],
+    ),
 ]
 
 

@@ -63,6 +63,7 @@ Called by: scripts/run_deployment.py, and directly by
 import json
 import logging
 import re
+import threading
 
 from core.llm.interface import LLMAdapter, LLMUnavailable, TokenUsage
 from core.llm.prompt_values import render_gathered
@@ -230,7 +231,8 @@ def _has_only_verified_emails(answer: str, records: list[dict]) -> bool:
 
 def synthesize_insight(client: LLMAdapter, original_query: str, records: list[dict],
                         possibly_incomplete: bool = False, *,
-                        usage: TokenUsage | None = None) -> str:
+                        usage: TokenUsage | None = None,
+                        cancel: "threading.Event | None" = None) -> str:
     # NO DEADLINE, deliberately (E-11): the query's deadline bounds the
     # gathering. A query that spent it gathering must still be able to
     # answer from what it has -- its own timeout bounds this one call.
@@ -263,7 +265,8 @@ def synthesize_insight(client: LLMAdapter, original_query: str, records: list[di
     try:
         with span(CHAT, "synthesis"):
             answer = client.chat(
-                system_prompt, user_message, json_mode=False, temperature=0, usage=usage
+                system_prompt, user_message, json_mode=False, temperature=0, usage=usage,
+                cancel=cancel,
             )
     except LLMUnavailable as e:
         # LLMUnavailable, NOT requests.RequestException (F-23). This

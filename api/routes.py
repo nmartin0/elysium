@@ -5361,18 +5361,35 @@ async def query(body: QueryRequest, request: Request,
         )
 
     real_data = AgentLoop.filter_real_data(result.gathered)
-    insight = await event_loop.run_in_executor(
-        executor,
-        functools.partial(
-            synthesize_insight, synthesis_client, body.query, real_data,
-            # EVERY EARLY STOP, not three of them (LB-3): repeating
-            # itself, invalid steps, blocked by rules and an unrecognised
-            # step ended as complete-sounding answers while the result
-            # knew better. The result decides; the route asks.
-            result.possibly_incomplete,
-            usage=request_context.token_usage,
-        ),
-    )
+    # SYNTHESIS IS WATCHED TOO (AL-11). It is a model call like any
+    # other, often the longest, and the loop's event was set on the way
+    # out of the loop -- so it gets its own, and its own watcher.
+    synthesis_cancel = threading.Event()
+    synthesis_watcher = asyncio.create_task(_watch_for_disconnect(request, synthesis_cancel))
+    try:
+        insight = await event_loop.run_in_executor(
+            executor,
+            functools.partial(
+                synthesize_insight, synthesis_client, body.query, real_data,
+                # EVERY EARLY STOP, not three of them (LB-3): repeating
+                # itself, invalid steps, blocked by rules and an
+                # unrecognised step ended as complete-sounding answers
+                # while the result knew better. The result decides; the
+                # route asks.
+                result.possibly_incomplete,
+                usage=request_context.token_usage,
+                cancel=synthesis_cancel,
+            ),
+        )
+    finally:
+        disconnected = synthesis_cancel.is_set()
+        synthesis_cancel.set()
+        synthesis_watcher.cancel()
+    if disconnected:
+        _generation(request).mediator.audit_log.log_query_cancelled(
+            current_user.user_id, body.query, len(result.gathered)
+        )
+        raise HTTPException(status_code=499, detail="Client disconnected")
     usage = request_context.token_usage
     if usage is not None:
         # E-11: the counts providers sent back, no longer dropped.

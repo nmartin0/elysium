@@ -11,10 +11,12 @@ Used by: core/deployment_loader.py's build_llm_adapter() factory
 """
 
 import logging
+import threading
 from typing import Any
 
 import requests
 
+from adapters import http_transport
 from core.llm.interface import LLMUnavailable, TokenUsage, call_timeout
 
 logger = logging.getLogger(__name__)
@@ -127,7 +129,8 @@ class OllamaAdapter:
 
     def chat(self, system_prompt: str, user_message: str,
               json_mode: "bool | dict" = False, temperature: float | None = None, *,
-              deadline: float | None = None, usage: TokenUsage | None = None) -> str:
+              deadline: float | None = None, usage: TokenUsage | None = None,
+              cancel: "threading.Event | None" = None) -> str:
         # Raises requests.RequestException on network/timeout failure --
         # callers decide what "failure" should mean for them (e.g. the
         # agent loop fails closed to "finish"; synthesis returns an
@@ -231,7 +234,8 @@ class OllamaAdapter:
         # the case that matters, is cut off at it.
         timeout = call_timeout(deadline, self.timeout_seconds)
         try:
-            response = requests.post(self.base_url, json=payload, timeout=timeout)
+            response = http_transport.post(self.base_url, json=payload, timeout=timeout,
+                                           cancel=cancel)
         except requests.RequestException as e:
             # Translated at the boundary so callers never need to know
             # this adapter uses `requests` -- see LLMUnavailable.

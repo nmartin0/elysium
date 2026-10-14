@@ -67,7 +67,7 @@ def _answers(client, wait=10.0):
 
 def _ask_and_decide(client, approved):
     _login(client, "alice", "correct-pw", "editor")
-    with patch("adapters.ollama_adapter.requests.post",
+    with patch("adapters.http_transport.post",
                side_effect=_model([PROPOSE, {"step": "finish"}])):
         asked = client.post("/api/query", json={"query": "rename Bram, then tell me his name"},
                             headers=_csrf(client))

@@ -66,7 +66,7 @@ class AlwaysSays:
         self.reply = reply
 
     def chat(self, system_prompt, user_message, json_mode=False,
-             temperature=None, *, deadline=None, usage=None):
+             temperature=None, *, deadline=None, usage=None, cancel=None):
         return self.reply
 
 

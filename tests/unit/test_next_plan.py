@@ -53,7 +53,7 @@ class Fixed:
         self.user_message = None
 
     def chat(self, system_prompt, user_message, json_mode=False,
-             temperature=None, *, deadline=None, usage=None):
+             temperature=None, *, deadline=None, usage=None, cancel=None):
         self.system_prompt = system_prompt
         self.user_message = user_message
         return self.reply

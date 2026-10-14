@@ -220,11 +220,12 @@ class Timed:
         self.calls: list[tuple[int, float]] = []
 
     def chat(self, system_prompt, user_message, json_mode=False,
-             temperature=None, *, deadline=None, usage=None):
+             temperature=None, *, deadline=None, usage=None, cancel=None):
         started = time.monotonic()
         try:
             return self._wrapped.chat(system_prompt, user_message, json_mode,
-                                      temperature, deadline=deadline, usage=usage)
+                                      temperature, deadline=deadline, usage=usage,
+                                      cancel=cancel)
         finally:
             self.calls.append(
                 (len(system_prompt) + len(user_message), time.monotonic() - started)

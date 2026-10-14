@@ -54,6 +54,11 @@ not_shown
 compare_sets_route
 # WIRED-3: a response field pydantic reads by reflection.
 high_confidence
+# AL-11: urllib3 reads ConnectionCls and pool_classes_by_scheme; the
+# test server's do_POST is called by http.server.
+ConnectionCls
+pool_classes_by_scheme
+do_POST
 # BULK-1: a response field pydantic reads by reflection.
 max_objects
 # E-14, agent memory: routes FastAPI calls.

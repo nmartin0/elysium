@@ -19,7 +19,7 @@ class _Model:
         self.calls = 0
 
     def chat(self, system_prompt, user_message, json_mode=False, temperature=None, *,
-             deadline=None, usage=None):
+             deadline=None, usage=None, cancel=None):
         self.calls += 1
         if usage is not None:
             usage.add(800, 200)

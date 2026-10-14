@@ -33,6 +33,7 @@ Called by: core/agent/agentic_loop.py
 
 import json
 import logging
+import threading
 
 from core.functions.interface import Function
 from core.llm.interface import LLMAdapter, LLMUnavailable, TokenUsage
@@ -686,7 +687,8 @@ def _build_user_message(query_text: str, gathered_so_far: list[dict],
 def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
               gathered_so_far: list[dict], tools: list[Function], writes_enabled: bool,
               visible_action_types: dict, *, deadline: float | None = None,
-              usage: TokenUsage | None = None, constrain: bool = False) -> dict:
+              usage: TokenUsage | None = None, constrain: bool = False,
+              cancel: "threading.Event | None" = None) -> dict:
     # Asks the model for exactly one next step, and validates that the
     # JSON response has the right KEYS for its step type -- NOT that
     # object_type/field_name are real entries in the ontology schema
@@ -720,7 +722,7 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
                 json_mode=(step_schema(visible_schema, tools, writes_enabled,
                                        visible_action_types)
                            if constrain else True),
-                temperature=0, deadline=deadline, usage=usage,
+                temperature=0, deadline=deadline, usage=usage, cancel=cancel,
             )
         # Logs the model's raw response BEFORE any parsing/validation --
         # silent by default (DEBUG), but genuinely valuable when a step's
@@ -993,6 +995,7 @@ def next_plan(client: LLMAdapter, query_text: str, visible_schema: dict,
               visible_action_types: dict, *, previous_failure: str | None = None,
               deadline: float | None = None,
               usage: TokenUsage | None = None, constrain: bool = False,
+              cancel: "threading.Event | None" = None,
               max_steps: int = 8) -> list[dict]:
     """The whole plan, in one model call (AL-4).
 
@@ -1053,7 +1056,7 @@ def next_plan(client: LLMAdapter, query_text: str, visible_schema: dict,
                                        visible_action_types, max_steps)
                            if constrain
                            else True),
-                temperature=0, deadline=deadline, usage=usage,
+                temperature=0, deadline=deadline, usage=usage, cancel=cancel,
             )
     except LLMUnavailable:
         # NOT CAUGHT HERE. Unlike next_step(), there is no gathered

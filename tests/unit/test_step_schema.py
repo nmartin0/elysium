@@ -154,7 +154,7 @@ class TestItReachesTheServer:
         response.json.return_value = {"message": {"content": "{}"}}
         response.raise_for_status.return_value = None
         schema = {"anyOf": [{"type": "object"}]}
-        with patch("adapters.ollama_adapter.requests.post", return_value=response) as post:
+        with patch("adapters.http_transport.post", return_value=response) as post:
             OllamaAdapter("m", {"base_url": "http://x"}).chat("s", "u", json_mode=schema)
 
         assert post.call_args.kwargs["json"]["format"] == schema
@@ -168,7 +168,7 @@ class TestItReachesTheServer:
             max_concurrent_requests = 1
 
             def chat(self, system_prompt, user_message, json_mode=False, temperature=None,
-                     *, deadline=None, usage=None):
+                     *, deadline=None, usage=None, cancel=None):
                 seen.append(json_mode)
                 return '{"step": "finish"}'
 

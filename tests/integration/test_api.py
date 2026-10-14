@@ -1402,7 +1402,7 @@ def test_query_end_to_end_with_mocked_llm(client):
         call_count["n"] += 1
         return response
 
-    with patch("adapters.ollama_adapter.requests.post", side_effect=fake_post):
+    with patch("adapters.http_transport.post", side_effect=fake_post):
         response = client.post("/api/query", json={"query": "test"}, headers=_csrf_headers(client))
 
     assert response.status_code == 200
@@ -1487,7 +1487,7 @@ def test_query_refuses_if_permissions_changed_during_processing(client):
     changed_record = UserRecord(user_id="alice", security_value="us-west", role_name=None)
 
     with (
-        patch("adapters.ollama_adapter.requests.post", side_effect=fake_post),
+        patch("adapters.http_transport.post", side_effect=fake_post),
         patch("core.user_directory.UserDirectory.get_user_record", side_effect=[real_record, changed_record]),
     ):
         response = client.post("/api/query", json={"query": "test"}, headers=_csrf_headers(client))
@@ -1560,7 +1560,7 @@ def _propose_action(client, session=None, new_name="Updated Name"):
         _use_session(client, session)
     headers = _csrf_header_for(session) if session else _csrf_headers(client)
 
-    with patch("adapters.ollama_adapter.requests.post", side_effect=fake_post):
+    with patch("adapters.http_transport.post", side_effect=fake_post):
         return client.post("/api/query", json={"query": "update the name"}, headers=headers)
 
 

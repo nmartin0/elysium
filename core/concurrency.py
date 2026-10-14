@@ -43,6 +43,13 @@ from pathlib import Path
 # exactly as before.
 _shared_under: Path | None = None
 
+#: How often a waiter that may be abandoned looks up (AL-11).
+_ABANDON_POLL = 0.1
+
+
+class WaitAbandoned(Exception):
+    """A caller stopped waiting for a slot because `abandon` was set."""
+
 # NAMED CAPS SHARE ONE SEMAPHORE PER PROCESS. The step and synthesis
 # models each wrapped their LLM adapter with its OWN semaphore, so one
 # Ollama server capped at 1 took two requests at once even in a single
@@ -63,7 +70,7 @@ def _semaphore_for(name: str, max_concurrent: int) -> threading.Semaphore:
 
 
 @contextmanager
-def _shared_slot(directory: Path, name: str, slots: int):
+def _shared_slot(directory: Path, name: str, slots: int, abandon=None):
     """Holds one of `slots` cross-process slots for `name`.
 
     BLOCKING, like the semaphore it extends: a caller over the cap waits
@@ -92,6 +99,8 @@ def _shared_slot(directory: Path, name: str, slots: int):
                 fcntl.flock(handle, fcntl.LOCK_UN)
                 handle.close()
             return
+        if abandon is not None and abandon.is_set():
+            raise WaitAbandoned()
         time.sleep(pause)
         pause = min(pause * 2, 0.2)
 
@@ -113,11 +122,22 @@ class ConcurrencyLimiter:
             self._semaphore = threading.Semaphore(max_concurrent)
 
     @contextmanager
-    def limit(self):
+    def limit(self, abandon: "threading.Event | None" = None):
+        """Holds a slot for the body. With `abandon`, a caller still
+        WAITING for one gives up when it is set, raising WaitAbandoned
+        (AL-11): a queued question whose asker has left should not take
+        the slot from the one behind it. Once held, a slot is held until
+        the body ends; stopping the body is the caller's business."""
         if self._semaphore is None:
             yield
             return
-        with self._semaphore:
+        if abandon is None:
+            self._semaphore.acquire()
+        else:
+            while not self._semaphore.acquire(timeout=_ABANDON_POLL):
+                if abandon.is_set():
+                    raise WaitAbandoned()
+        try:
             # READ AT USE, not construction: limiters are built inside a
             # generation, and the setting only has to be made before the
             # first request, not before every build.
@@ -125,8 +145,10 @@ class ConcurrencyLimiter:
             if shared is None or self._name is None or self._max is None:
                 yield
                 return
-            with _shared_slot(shared, self._name, self._max):
+            with _shared_slot(shared, self._name, self._max, abandon):
                 yield
+        finally:
+            self._semaphore.release()
 
 
 class KeyedLockManager:

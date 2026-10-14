@@ -51,7 +51,7 @@ class Replies:
         self.messages: list[str] = []
 
     def chat(self, system_prompt, user_message, json_mode=False,
-             temperature=None, *, deadline=None, usage=None):
+             temperature=None, *, deadline=None, usage=None, cancel=None):
         self.messages.append(user_message)
         return self._replies.pop(0) if self._replies else GOOD_PLAN
 
