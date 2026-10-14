@@ -2429,6 +2429,90 @@ def _reauthorized(request: Request, current_user: UserRecord, view):
                                   disabled=checked.disabled)
 
 
+class CanvasPosition(BaseModel):
+    x: float
+    y: float
+
+
+class SubjectArea(BaseModel):
+    name: str
+    types: list[str]
+
+
+class SecurityChainResponse(BaseModel):
+    type: str
+    # "via": borrowed through `field` from `target`; "field": its own.
+    kind: str
+    field: str
+    target: str | None = None
+
+
+class OntologyCanvasResponse(BaseModel):
+    positions: dict[str, CanvasPosition]
+    areas: list[SubjectArea]
+    # ABSENT, not empty, for a caller who may not see the permission
+    # model: an empty list would read as "nothing here is secured".
+    security_chains: list[SecurityChainResponse] | None = None
+
+
+def _canvas_store(request: Request):
+    from core.canvas_layout import CanvasLayoutStore
+
+    return CanvasLayoutStore(request.app.state.runtime_paths.data_dir / "canvas_layouts.db")
+
+
+def _canvas_response(request: Request, current_user: UserRecord, document: dict) -> dict:
+    from core.canvas_layout import clean_layout, security_chains
+
+    generation = _generation(request)
+    visible = generation.mediator.visible_schema(current_user)
+    try:
+        layout = clean_layout(document, visible)
+    except ValueError:
+        # A STORED LAYOUT THAT NO LONGER VALIDATES is a convenience lost,
+        # not an error to show: the canvas lays itself out without one.
+        layout = {"positions": {}, "areas": []}
+    if authorize(current_user, generation.config.roles, "manage:roles"):
+        layout["security_chains"] = security_chains(generation.config.schema, visible)
+    return layout
+
+
+@router.get("/me/ontology-canvas", dependencies=[Depends(_no_store)],
+            response_model=OntologyCanvasResponse, response_model_exclude_none=True)
+def my_ontology_canvas_route(
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Where this person put the types, and their subject areas (DEV_UI 14).
+
+    NO GRANT REQUIRED beyond being signed in: it is their own
+    arrangement of the types they may already see, cleaned against that
+    on every read so a withdrawn grant is not named back to them.
+    """
+    return _canvas_response(request, current_user, _canvas_store(request).get(current_user.user_id))
+
+
+@router.put("/me/ontology-canvas", dependencies=[Depends(_no_store)],
+            response_model=OntologyCanvasResponse, response_model_exclude_none=True)
+def save_my_ontology_canvas_route(
+    body: dict,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Replaces this person's layout. Answers with what was KEPT -- a type
+    they may not see is dropped, not refused (uniform denial) -- so the
+    client draws what is stored rather than what it sent."""
+    from core.canvas_layout import CanvasLayoutError, clean_layout
+
+    visible = _generation(request).mediator.visible_schema(current_user)
+    try:
+        cleaned = clean_layout(body, visible)
+    except CanvasLayoutError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    _canvas_store(request).put(current_user.user_id, cleaned)
+    return _canvas_response(request, current_user, cleaned)
+
+
 @router.get("/saved-views", dependencies=[Depends(_no_store)],
             response_model=SavedViewsResponse)
 def saved_views_route(

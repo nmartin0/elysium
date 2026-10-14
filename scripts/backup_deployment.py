@@ -123,6 +123,11 @@ OWNED_DATABASES = (
     # appeared, which is what that guard is for.
     "identity_decisions.db",
     "saved_views.db",
+    # WHERE EACH PERSON PUT THE TYPES, AND THEIR SUBJECT AREAS (DEV_UI
+    # 14). Presentation, but their own work: an arrangement built by
+    # dragging forty types is an afternoon nobody wants to repeat. The
+    # backup guard caught it the moment the store appeared.
+    "canvas_layouts.db",
     "triggers.db",
     "notifications.db",
     # ONCE SOMEBODY EDITS A ROLE, THE ONLY COPY OF THE GRANTS. Losing it

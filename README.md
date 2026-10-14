@@ -602,7 +602,7 @@ left behind.
 | --- | --- | --- |
 | unit | `pytest tests/unit` | 405 files |
 | integration | `pytest tests/integration` | 60 files |
-| controls | declared in CI | 366 |
+| controls | declared in CI | 369 |
 | front end | `cd ui && npm run test` | vitest |
 | site | `bash site/check.sh` | ruff + pytest, some in a real browser |
 

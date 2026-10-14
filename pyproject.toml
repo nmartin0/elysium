@@ -283,6 +283,9 @@ layers = [
     "notifications",
     # saved_views imports only sqlite_connection, like notifications.
     "saved_views",
+    # canvas_layout imports only sqlite_connection, like saved_views --
+    # one person's presentation, which nothing that decides meaning reads.
+    "canvas_layout",
     # frozen_sets imports only sqlite_connection, like saved_views --
     # its sibling, the frozen kind of saved set.
     "frozen_sets",

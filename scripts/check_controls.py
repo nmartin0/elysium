@@ -2968,6 +2968,28 @@ CONTROLS = [
         tests=["tests/integration/test_a_field_they_may_not_read.py::"
                "test_sorting_by_it_is_ignored_and_reads_nothing_more"],
     ),
+    Control(
+        describes="CANVAS: security chains only for someone who may change roles",
+        path="api/routes.py",
+        old=('    if authorize(current_user, generation.config.roles, "manage:roles"):\n'
+             '        layout["security_chains"]'),
+        new='    if True:\n        layout["security_chains"]',
+        tests=["tests/integration/test_the_ontology_canvas.py::TestTheSecurityLayer::test_anyone_else_gets_no_key_at_all_rather_than_an_empty_list"],
+    ),
+    Control(
+        describes="CANVAS: a position for a type the caller cannot see is not kept",
+        path="core/canvas_layout.py",
+        old="        if type_name in visible:\n            positions[type_name]",
+        new="        if True:\n            positions[type_name]",
+        tests=["tests/integration/test_the_ontology_canvas.py::test_a_type_they_cannot_see_is_dropped_and_the_answer_says_what_was_kept"],
+    ),
+    Control(
+        describes="CANVAS: a stored layout is cleaned again when it is read",
+        path="api/routes.py",
+        old="        layout = clean_layout(document, visible)\n",
+        new="        layout = {**{'positions': {}, 'areas': []}, **document}\n",
+        tests=["tests/integration/test_the_ontology_canvas.py::test_a_type_whose_grant_was_withdrawn_is_not_named_back"],
+    ),
 ]
 
 
