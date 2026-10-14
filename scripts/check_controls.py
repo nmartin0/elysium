@@ -2403,6 +2403,22 @@ CONTROLS = [
         tests=["tests/unit/test_the_changelog_names_real_objects.py::TestWhatIsReported::"
                "test_an_id_that_is_gone_with_no_deletion_recorded"],
     ),
+    Control(
+        describes="a link table whose silver has not moved is not copied again",
+        path="scripts/run_sync.py",
+        old="        elif stamp is not None and table.properties.get(LINK_SOURCE_PROPERTY) == stamp:",
+        new="        elif False:",
+        tests=["tests/unit/test_gold_serves_many_to_many_links.py::TestALinkTableIsNotRebuiltForNothing::test_an_unchanged_link_table_is_left_alone"],
+    ),
+    Control(
+        describes="a changed link table is overwritten in place, never dropped and recreated",
+        path="scripts/run_sync.py",
+        old="        else:\n            table.overwrite(silver)\n",
+        new=("        else:\n            sync._catalog.drop_table(identifier)\n"
+             "            table = sync._catalog.create_table(identifier, schema=silver.schema)\n"
+             "            table.append(silver)\n"),
+        tests=["tests/unit/test_gold_serves_many_to_many_links.py::TestALinkTableIsNotRebuiltForNothing::test_a_changed_one_is_overwritten_in_place_not_recreated"],
+    ),
 ]
 
 

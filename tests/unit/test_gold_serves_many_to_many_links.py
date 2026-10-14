@@ -176,3 +176,69 @@ class TestTheViewKeepsTheJoinTable:
         view, _ = build_gold_view(schema)
 
         assert view["Customer"]["fields"]["orders"]["via_table"] == "Order"
+
+
+class TestALinkTableIsNotRebuiltForNothing:
+    """It was DROPPED AND RECREATED on every sync: a reader following a
+    many-to-many link between the two found no table, and every run threw
+    the history away to write the same rows back (found 14 Oct, while
+    PA001-G11 stopped gold types doing the second half of that)."""
+
+    @pytest.fixture
+    def link(self, tmp_path):
+        source = tmp_path / "s.db"
+        conn = sqlite3.connect(source)
+        conn.executescript(
+            "CREATE TABLE customers (customer_id TEXT PRIMARY KEY, name TEXT, region TEXT);"
+            "CREATE TABLE tags (tag_id TEXT PRIMARY KEY, label TEXT, region TEXT);"
+            "CREATE TABLE customer_tags (customer_id TEXT, tag_id TEXT);"
+            "INSERT INTO customer_tags VALUES ('c1','vip');")
+        conn.commit()
+        conn.close()
+        schema = expand_link_types(LINK_TYPES, OBJECT_TYPES)
+        sync = IcebergMirrorSync(tmp_path / "m", {"p": SQLiteReadAdapter({"path": source})})
+        targets = [t for t in resolve_sync_targets({"object_types": schema})
+                   if t.table_name == "customer_tags"]
+
+        def resync():
+            for target in targets:
+                sync.sync_table(target.silo_name, target.table_name, target.id_column,
+                                target.columns, target.column_types, target.fields_by_column,
+                                target.standardisation, target.expectations,
+                                target.duplicate_policy, target.object_types, target.link_pair)
+
+        def add(customer, tag):
+            conn = sqlite3.connect(source)
+            conn.execute("INSERT INTO customer_tags VALUES (?, ?)", (customer, tag))
+            conn.commit()
+            conn.close()
+            resync()
+
+        def gold():
+            return sync.catalog.load_table("gold.customer_tags")
+
+        resync()
+        return sync, schema, add, gold
+
+    def test_an_unchanged_link_table_is_left_alone(self, link, capsys):
+        sync, schema, _add, gold = link
+        _publish_link_tables(sync, schema)
+        before = gold().current_snapshot().snapshot_id
+
+        _publish_link_tables(sync, schema)
+
+        assert gold().current_snapshot().snapshot_id == before
+        assert "unchanged gold.customer_tags" in capsys.readouterr().out
+
+    def test_a_changed_one_is_overwritten_in_place_not_recreated(self, link):
+        """The SAME table, one more snapshot: never a moment without it."""
+        sync, schema, add, gold = link
+        _publish_link_tables(sync, schema)
+        table_uuid = gold().metadata.table_uuid
+
+        add("c2", "vip")
+        _publish_link_tables(sync, schema)
+
+        assert gold().metadata.table_uuid == table_uuid
+        assert len(gold().metadata.snapshots) >= 2
+        assert gold().scan().to_arrow().num_rows == 2

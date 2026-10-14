@@ -327,24 +327,59 @@ def _link_tables(schema: dict) -> dict[str, Any]:
     return tables
 
 
+#: Which silver snapshot a gold link table was copied from.
+LINK_SOURCE_PROPERTY = "elysium.link_source_snapshot"
+
+
 def _publish_link_tables(sync, schema: dict) -> None:
-    """Copy each join table into gold, unchanged."""
+    """Copy each join table into gold, unchanged.
+
+    NOT DROPPED AND RECREATED, which is what this did on every sync until
+    14 Oct: between the drop and the create, a reader following a
+    many-to-many link found no table at all, and every run threw the
+    table's history away to write the same rows back.
+
+    NOW: skipped when silver has not moved since the copy (the snapshot
+    it was copied from is stamped on it, as gold types stamp their
+    inputs -- PA001-G11), and otherwise OVERWRITTEN IN PLACE, one atomic
+    commit, so a reader sees the old rows or the new ones and never
+    nothing. Dropped only when the columns themselves changed, which an
+    overwrite cannot hold.
+    """
+    from core.mirror.gold import _columns_changed
     from core.ontology.gold_view import GOLD_NAMESPACE
 
     for table_name, silo in _link_tables(schema).items():
         try:
-            silver = sync._catalog.load_table(f"{silo}.{table_name}").scan().to_arrow()
+            silver_table = sync._catalog.load_table(f"{silo}.{table_name}")
+            snapshot = silver_table.current_snapshot()
+            silver = silver_table.scan().to_arrow()
         except Exception as exc:  # noqa: BLE001 - reported, like any other build
             print(f"FAILED  gold.{table_name}: its silver table could not be read: {exc}",
                   file=sys.stderr)
             continue
+        stamp = str(snapshot.snapshot_id) if snapshot is not None else None
         identifier = f"{GOLD_NAMESPACE}.{table_name}"
         with contextlib.suppress(Exception):
             sync._catalog.create_namespace(GOLD_NAMESPACE)
-        with contextlib.suppress(Exception):
+        try:
+            table = sync._catalog.load_table(identifier)
+        except Exception:  # noqa: BLE001 - not there yet is the first build
+            table = None
+        if table is not None and _columns_changed(table, silver.schema):
             sync._catalog.drop_table(identifier)
-        table = sync._catalog.create_table(identifier, schema=silver.schema)
-        table.append(silver)
+            table = None
+        if table is None:
+            table = sync._catalog.create_table(identifier, schema=silver.schema)
+            table.append(silver)
+        elif stamp is not None and table.properties.get(LINK_SOURCE_PROPERTY) == stamp:
+            print(f"unchanged gold.{table_name}: its silver has not moved (link table)")
+            continue
+        else:
+            table.overwrite(silver)
+        if stamp is not None:
+            with sync._catalog.load_table(identifier).transaction() as tx:
+                tx.set_properties({LINK_SOURCE_PROPERTY: stamp})
         print(f"published gold.{table_name}: {silver.num_rows} rows (link table)")
 
 
