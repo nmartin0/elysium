@@ -190,7 +190,7 @@ CASES = (
             ExpectedFact("Transaction", "2", "category", "hardware"),
         ),
     ),
-    # BLOCKING 10's observed question, verbatim. It took FIVE model
+    # BLOCKING.md's agent-loop efficiency item: its observed question, verbatim. It took FIVE model
     # calls and fetched `transaction_date` twice; one aggregate step
     # answers it. Passes ONLY if the model chose `aggregate_object` --
     # counting ids from a search is the behaviour under test, not an

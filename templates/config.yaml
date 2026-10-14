@@ -190,6 +190,10 @@ on_type_mismatch: quarantine
 # false keeps only declared columns, so an undeclared SSN never lands.
 ingest_undeclared_columns: false
 #
+# How many objects one bulk action -- one proposal, one approval -- may
+# name. 256 unless set; at most 1,024.
+# bulk_action_limit: 256
+#
 # How your sources write numbers and dates: en_US (1,234.56, month
 # first), pt_BR (1.234,56, day first), es_AR, es_CL, es_PE... -- a
 # country, because South America is not one format. Absent means

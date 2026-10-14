@@ -232,6 +232,14 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
       .catch(() => {})
   }, [])
 
+  // THE DEPLOYMENT'S BULK LIMIT, carried on every bulk action alike.
+  // The smallest, should two ever differ, since that is the one that
+  // would refuse.
+  const bulkLimits = actionTypes.flatMap((action) =>
+    typeof action.max_objects === 'number' ? [action.max_objects] : [],
+  )
+  const bulkLimit = bulkLimits.length > 0 ? Math.min(...bulkLimits) : undefined
+
   // THE ANCHOR FOR SHIFT-CLICK, held as an ID rather than a position.
   // An index would break the moment the list is sorted, filtered or
   // paged -- and this list is all three.
@@ -786,6 +794,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           selectedCount={selectedIds.size}
           matchCount={totalMatches}
           pageCount={results.length}
+          limit={bulkLimit}
           selectingAll={selectingAll}
           onSelectAllMatching={
             totalMatches > results.length

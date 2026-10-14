@@ -127,8 +127,6 @@ def test_a_selection_at_the_ceiling_is_allowed(bulk_mediator):
     """
     import pytest
 
-    from core.ontology.write_mediator import MAX_BULK_OBJECTS
-
     # REPEATING A VISIBLE ID rather than counting from zero. This test
     # is about the CEILING, and ids alice cannot see fail on MAC first
     # -- which a first version did, refusing for the right reason at
@@ -139,7 +137,7 @@ def test_a_selection_at_the_ceiling_is_allowed(bulk_mediator):
     # so 1 and "1" collide but 1 and 2 do not. Two visible ids,
     # alternated, give a list of the required length that every
     # per-object check accepts.
-    ids = [1 if index % 2 == 0 else 2 for index in range(MAX_BULK_OBJECTS)]
+    ids = [1 if index % 2 == 0 else 2 for index in range(bulk_mediator.bulk_limit)]
 
     with pytest.raises(ValueError, match="identical"):
         bulk_mediator.propose_action(
@@ -160,16 +158,15 @@ def test_one_beyond_the_ceiling_is_refused(bulk_mediator):
     that makes a bulk action safe at small sizes is what makes it
     dangerous at large ones.
 
-    Foundry stops at the same number.
+    Foundry stops at 1,000; the owner chose 256 by default and 1,024
+    at most, per deployment (14 Oct).
     """
     import pytest
-
-    from core.ontology.write_mediator import MAX_BULK_OBJECTS
 
     with pytest.raises(ValueError, match="at most"):
         bulk_mediator.propose_action(
             ALICE, "RecategorizeTransactions",
-            {"transaction_ids": list(range(MAX_BULK_OBJECTS + 1)), "new_category": "audited"},
+            {"transaction_ids": list(range(bulk_mediator.bulk_limit + 1)), "new_category": "audited"},
             origin="human",
         )
 
@@ -179,17 +176,15 @@ def test_the_refusal_says_how_many_and_what_to_do(bulk_mediator):
     # count and the remedy are what turn a refusal into an instruction.
     import pytest
 
-    from core.ontology.write_mediator import MAX_BULK_OBJECTS
-
     with pytest.raises(ValueError) as caught:
         bulk_mediator.propose_action(
             ALICE, "RecategorizeTransactions",
-            {"transaction_ids": list(range(MAX_BULK_OBJECTS + 5)), "new_category": "audited"},
+            {"transaction_ids": list(range(bulk_mediator.bulk_limit + 5)), "new_category": "audited"},
             origin="human",
         )
 
     message = str(caught.value)
-    assert str(MAX_BULK_OBJECTS + 5) in message
+    assert str(bulk_mediator.bulk_limit + 5) in message
     assert "split it" in message
 
 
@@ -203,3 +198,43 @@ def test_a_single_object_is_nowhere_near_it(bulk_mediator):
     )
 
     assert len(pending.sub_writes) == 1
+
+
+class TestTheLimitIsTheDeployments:
+    """Decided 14 Oct: 256 unless config.yaml says `bulk_action_limit`,
+    and never more than 1,024."""
+
+    def _config_dir(self, tmp_path, value):
+        import shutil
+
+        config_dir = tmp_path / "config"
+        shutil.copytree("tests/integration/fixtures", config_dir)
+        if value is not None:
+            with open(config_dir / "config.yaml", "a") as config:
+                config.write(f"\nbulk_action_limit: {value}\n")
+        return config_dir
+
+    def _load(self, tmp_path, value):
+        from core.deployment_loader import load_deployment
+
+        return load_deployment(self._config_dir(tmp_path, value))
+
+    def test_absent_means_256(self, tmp_path):
+        assert self._load(tmp_path, None).bulk_action_limit == 256
+
+    def test_a_deployment_may_raise_it_to_1024(self, tmp_path):
+        assert self._load(tmp_path, 1024).bulk_action_limit == 1024
+
+    def test_past_1024_is_refused_at_load(self, tmp_path):
+        import pytest
+
+        with pytest.raises(ValueError, match="1 to 1024"):
+            self._load(tmp_path, 1025)
+
+    def test_the_limit_in_force_is_the_one_refused_past(self, tmp_path):
+        """THE WIRING: a declared limit reaches the write mediator."""
+        from core.deployment_loader import build_generation
+
+        generation = build_generation(self._config_dir(tmp_path, 3), None, tmp_path / "log")
+
+        assert generation.write_mediator.bulk_limit == 3

@@ -36,12 +36,12 @@ describe('SelectionBar', () => {
   })
 
   it('warns when the selection exceeds the write ceiling', () => {
-    // MAX_BULK_OBJECTS is 1000 in the write mediator. A person who has
-    // selected 1,200 should learn that before filling in a form, not
-    // after submitting one.
-    render(<SelectionBar selectedCount={1200} matchCount={5000} pageCount={5000} onClear={vi.fn()} />)
+    // The deployment's limit, sent by the server on each bulk action. A
+    // person who has selected 300 should learn that before filling in a
+    // form, not after submitting one.
+    render(<SelectionBar selectedCount={300} matchCount={5000} pageCount={5000} limit={256} onClear={vi.fn()} />)
 
-    expect(screen.getByText(/over the 1000 limit/i)).toBeInTheDocument()
+    expect(screen.getByText(/over the 256 limit/i)).toBeInTheDocument()
   })
 
   it('warns when NO selection puts the whole PAGE over the ceiling', () => {
@@ -53,15 +53,23 @@ describe('SelectionBar', () => {
     // action with no selection reaches only what is on screen, so
     // warning on matchCount alone would be a false alarm. The test
     // below with pageCount={20} is the other side of that.
-    render(<SelectionBar selectedCount={0} matchCount={5000} pageCount={5000} onClear={vi.fn()} />)
+    render(<SelectionBar selectedCount={0} matchCount={5000} pageCount={5000} limit={256} onClear={vi.fn()} />)
 
-    expect(screen.getByText(/over the 1000 limit/i)).toBeInTheDocument()
+    expect(screen.getByText(/over the 256 limit/i)).toBeInTheDocument()
   })
 
   it('does not warn below the ceiling', () => {
     // THE CONTROL. A warning that always appeared would be ignored by
     // the time it mattered.
-    render(<SelectionBar selectedCount={3} matchCount={40} pageCount={40} onClear={vi.fn()} />)
+    render(<SelectionBar selectedCount={3} matchCount={40} pageCount={40} limit={256} onClear={vi.fn()} />)
+
+    expect(screen.queryByText(/limit/i)).toBeNull()
+  })
+
+  it('with no bulk action there is no limit to be over', () => {
+    // No action can name a list here, so 5,000 selected is a selection
+    // and not a refusal waiting to happen.
+    render(<SelectionBar selectedCount={5000} matchCount={5000} pageCount={5000} onClear={vi.fn()} />)
 
     expect(screen.queryByText(/limit/i)).toBeNull()
   })
@@ -150,9 +158,9 @@ describe('paging, where the promise could quietly overstate', () => {
     // 5,000 match but 20 are shown: an action with no selection
     // reaches 20, which is nowhere near the limit. Warning here would
     // be a false alarm.
-    render(<SelectionBar selectedCount={0} matchCount={5000} pageCount={20} onClear={vi.fn()} />)
+    render(<SelectionBar selectedCount={0} matchCount={5000} pageCount={20} limit={256} onClear={vi.fn()} />)
 
-    expect(screen.queryByText(/over the 1000 limit/i)).toBeNull()
+    expect(screen.queryByText(/over the 256 limit/i)).toBeNull()
   })
 })
 

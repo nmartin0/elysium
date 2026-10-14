@@ -292,6 +292,10 @@ class DeploymentConfig:
     # AL-10: the most tokens one query may spend, as providers report
     # them. None: no budget. `agent: max_tokens_per_query:` in config.yaml.
     max_tokens_per_query: "int | None" = None
+    # HOW MANY OBJECTS ONE BULK ACTION -- one proposal, one approval --
+    # may name. Decided 14 Oct: 256 unless a deployment says otherwise,
+    # and never more than 1,024. `bulk_action_limit:` in config.yaml.
+    bulk_action_limit: int = 256
 
 
 logger = logging.getLogger(__name__)
@@ -686,6 +690,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             incremental=MappingProxyType(
                 _incremental_policies(data_silos_raw["data_silos"], schema_raw["object_types"])),
             max_tokens_per_query=_token_budget(config["agent"].get("max_tokens_per_query")),
+            bulk_action_limit=_bulk_action_limit(config.get("bulk_action_limit")),
             max_concurrent_requests=_default_concurrency(config),
             # FOUR HOURS by default, not fifteen minutes. Long enough
             # that a reviewer can be in a meeting; short enough that a
@@ -984,6 +989,26 @@ def _source_locales(config: dict, silos: dict) -> dict:
         else:
             resolved[silo_name] = default
     return resolved
+
+
+def _bulk_action_limit(declared) -> int:
+    """How many objects one bulk action may name (decided 14 Oct).
+
+    256 BY DEFAULT, 1,024 AT MOST. Foundry allows 1,000 object references
+    in one list parameter; the owner chose a lower default a reviewer can
+    plausibly read, and a ceiling a deployment may raise to. Past it, a
+    change is a pipeline's job rather than one person's approval.
+    """
+    from core.ontology.write_mediator import DEFAULT_BULK_OBJECTS, MAX_BULK_OBJECTS
+
+    if declared is None:
+        return DEFAULT_BULK_OBJECTS
+    if isinstance(declared, bool) or not isinstance(declared, int) \
+            or not 1 <= declared <= MAX_BULK_OBJECTS:
+        raise ValueError(
+            f"config.yaml bulk_action_limit must be a whole number from 1 to "
+            f"{MAX_BULK_OBJECTS}, got {declared!r}.")
+    return declared
 
 
 def _token_budget(declared) -> "int | None":
@@ -1647,6 +1672,7 @@ def build_generation(
         # WRITES DESCRIBE THE SOURCE (D3), whatever reads are bound to.
         source_schema=config.schema,
         source_silo_for_type=_build_silo_for_type(config.schema),
+        bulk_limit=config.bulk_action_limit,
     )
     memory = None
     if data_dir is not None:

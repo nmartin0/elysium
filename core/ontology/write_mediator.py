@@ -277,7 +277,14 @@ def _describe_action(action_type_name: str, action_def: dict, parameters: dict) 
 #
 # A deployment that genuinely needs more is describing a data pipeline
 # rather than a user action, and should be pointed at one.
-MAX_BULK_OBJECTS = 1000
+#
+# PER DEPLOYMENT SINCE 14 OCT, decided by the owner: 256 unless the
+# deployment says otherwise (`bulk_action_limit`), and never more than
+# 1,024. This constant is the CEILING; the limit in force is
+# WriteMediator.bulk_limit. Frozen sets and exports keep the ceiling,
+# because holding or exporting a set is not approving a change to it.
+MAX_BULK_OBJECTS = 1024
+DEFAULT_BULK_OBJECTS = 256
 
 
 class NotAutomatable(ValueError):
@@ -399,7 +406,12 @@ class WriteMediator:
         self, mediator: DataMediator, write_adapters: dict[str, ExternalWriteAdapter], roles: dict,
         action_types: dict, generation: int,
         source_schema: dict | None = None, source_silo_for_type: dict | None = None,
+        bulk_limit: int = DEFAULT_BULK_OBJECTS,
     ):
+        # How many objects one action may name; see MAX_BULK_OBJECTS.
+        if not 1 <= bulk_limit <= MAX_BULK_OBJECTS:
+            raise ValueError(f"bulk_limit must be 1 to {MAX_BULK_OBJECTS}, got {bulk_limit}")
+        self.bulk_limit = bulk_limit
         # action_types is required, not optional -- a WriteMediator's
         # only real capability is propose_action(), which is useless
         # without declared actions. Verified directly: EVERY real
@@ -1554,10 +1566,10 @@ class WriteMediator:
             # 1000". Refused at PROPOSE time rather than at confirm, so
             # nobody assembles a selection they will not be allowed to
             # act on.
-            if len(object_ids) > MAX_BULK_OBJECTS:
+            if len(object_ids) > self.bulk_limit:
                 raise ValueError(
                     f"Action {action_type_name!r} names {len(object_ids)} objects, and at most "
-                    f"{MAX_BULK_OBJECTS} may be written in one action. Narrow the selection, or "
+                    f"{self.bulk_limit} may be written in one action. Narrow the selection, or "
                     f"split it across several proposals."
                 )
 

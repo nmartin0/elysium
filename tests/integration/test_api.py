@@ -3963,9 +3963,11 @@ def test_matching_ids_refuses_rather_than_truncating(client, monkeypatch):
     a third of what was asked for, and nothing downstream could tell --
     the form would say "1000 objects" and be wrong about which.
     """
-    from api import routes
+    from tests.conftest import with_config
 
-    monkeypatch.setattr(routes, "MAX_BULK_OBJECTS", 1)
+    # THE DEPLOYMENT'S LIMIT (decided 14 Oct), not the module ceiling:
+    # a selection exists to be acted on.
+    with_config(client.app, bulk_action_limit=1)
     _selecting_user(client)
 
     response = client.get("/api/objects/Customer/matching-ids")
@@ -3973,6 +3975,28 @@ def test_matching_ids_refuses_rather_than_truncating(client, monkeypatch):
     assert response.status_code == 400
     assert "at most 1" in response.json()["detail"]
     assert "Narrow the filter" in response.json()["detail"]
+
+
+def test_a_bulk_action_says_how_many_objects_it_may_name(client, monkeypatch):
+    """So the selection bar can say "over the limit" before a form.
+    Only on a bulk action: a single-object action has no list to cap.
+
+    The fixture deployment declares no bulk action (deployment/etc does),
+    so the catalogue is given one; what is under test is the route."""
+    write_mediator = client.app.state.generation.write_mediator
+    monkeypatch.setattr(write_mediator, "bulk_limit", 7)
+    monkeypatch.setattr(write_mediator, "visible_action_types", lambda user: {
+        "Many": {"affected_object_types": ["Customer"], "parameters": {
+            "ids": {"type": "object_reference_list", "object_type": "Customer"}}},
+        "One": {"affected_object_types": ["Customer"], "parameters": {
+            "id": {"type": "object_reference", "object_type": "Customer"}}},
+    })
+    _selecting_user(client)
+
+    actions = client.get("/api/me/visible-action-types").json()
+
+    assert actions["Many"]["max_objects"] == 7
+    assert "max_objects" not in actions["One"]
 
 
 def test_matching_ids_needs_a_session(client):

@@ -2604,6 +2604,28 @@ CONTROLS = [
         new="    if uuid.is_file():",
         tests=["tests/unit/test_encrypted_backups.py::TestTheVolumeCheck::test_a_plain_device_is_unknown_and_warned"],
     ),
+    Control(
+        describes="BULK-1: a proposal naming more than the deployment's limit is refused",
+        path="core/ontology/write_mediator.py",
+        old="            if len(object_ids) > self.bulk_limit:",
+        new="            if len(object_ids) > MAX_BULK_OBJECTS:",
+        tests=["tests/integration/test_bulk_actions.py::test_one_beyond_the_ceiling_is_refused"],
+    ),
+    Control(
+        describes="BULK-1: absent from config.yaml, the limit is 256",
+        path="core/deployment_loader.py",
+        old="    if declared is None:\n        return DEFAULT_BULK_OBJECTS",
+        new="    if declared is None:\n        return MAX_BULK_OBJECTS",
+        tests=["tests/integration/test_bulk_actions.py::TestTheLimitIsTheDeployments::"
+               "test_absent_means_256"],
+    ),
+    Control(
+        describes="BULK-1: select-all-matching refuses past the deployment's limit",
+        path="api/routes.py",
+        old="    limit = _generation(request).config.bulk_action_limit",
+        new="    limit = MAX_BULK_OBJECTS",
+        tests=["tests/integration/test_api.py::test_matching_ids_refuses_rather_than_truncating"],
+    ),
 ]
 
 

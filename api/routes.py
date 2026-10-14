@@ -440,6 +440,8 @@ class VisibleActionTypeResponse(BaseModel):
     # every action. Every frontend test passed regardless, because
     # they mock the API; an integration test found it.
     automatable: bool
+    #: Bulk actions only: how many objects one proposal may name.
+    max_objects: int | None = None
 
 
 class UserSummaryResponse(BaseModel):
@@ -1312,6 +1314,8 @@ class DeploymentConfigResponse(BaseModel):
     constrain_steps: bool = False
     #: AL-10: the per-query token budget; None for none.
     max_tokens_per_query: int | None = None
+    #: Decided 14 Oct: how many objects one bulk action may name.
+    bulk_action_limit: int = 256
     #: Formerly BLOCKING 6: classification labels decide field access.
     label_enforcement: bool = False
     #: R15: whether lineage events also go to a service. WHETHER, never
@@ -3221,6 +3225,7 @@ def deployment_config_route(request: Request,
         "max_consecutive_invalid_steps": config.max_consecutive_invalid_steps,
         "constrain_steps": config.constrain_steps,
         "max_tokens_per_query": config.max_tokens_per_query,
+        "bulk_action_limit": config.bulk_action_limit,
         "label_enforcement": config.label_enforcement,
         "lineage_service": bool(config.lineage.get("url")),
         "lineage_namespace": config.lineage.get("namespace") or "elysium",
@@ -4644,11 +4649,15 @@ def matching_ids_route(object_type: str, request: Request, q: str = "",
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-    if len(matching_ids) > MAX_BULK_OBJECTS:
+    # THE DEPLOYMENT'S BULK LIMIT, not the ceiling: a selection exists
+    # to be acted on, and one larger than an action may name is one the
+    # person cannot use.
+    limit = _generation(request).config.bulk_action_limit
+    if len(matching_ids) > limit:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"{len(matching_ids)} objects match, and at most {MAX_BULK_OBJECTS} "
+                f"{len(matching_ids)} objects match, and at most {limit} "
                 f"can be selected at once. Narrow the filter."
             ),
         )
@@ -5035,6 +5044,13 @@ def my_visible_action_types_route(request: Request, current_user: UserRecord = D
             # than offering one and showing a refusal afterwards.
             # Absent means true -- the validator's own default.
             "automatable": action_def.get("automatable") is not False,
+            # HOW MANY OBJECTS ONE PROPOSAL MAY NAME, on a bulk action
+            # only -- one with an object_reference_list parameter. The
+            # deployment's limit (decided 14 Oct), sent so the selection
+            # bar can say "over the limit" before anyone fills in a form.
+            "max_objects": write_mediator.bulk_limit if any(
+                (spec or {}).get("type") == "object_reference_list"
+                for spec in (action_def["parameters"] or {}).values()) else None,
         }
         for action_name, action_def in visible.items()
     }

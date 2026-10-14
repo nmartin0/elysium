@@ -27,6 +27,8 @@ export interface BulkAction {
   name: string
   display_name?: string
   parameters?: Record<string, { type: string; object_type?: string }>
+  /** How many objects one proposal may name (bulk actions only). */
+  max_objects?: number
 }
 
 interface BulkActionsMenuProps {

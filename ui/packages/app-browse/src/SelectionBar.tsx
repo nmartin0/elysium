@@ -17,20 +17,18 @@
  * "apply to 3" and "apply to 4,000" are different decisions that
  * otherwise look identical.
  *
- * THE CEILING IS SHOWN WHEN IT BINDS, rather than discovered on
- * submit. MAX_BULK_OBJECTS is 1000 in the write mediator -- a person
- * who has selected 1,200 objects should learn that before filling in a
- * form, not after.
+ * THE LIMIT IS SHOWN WHEN IT BINDS, rather than discovered on
+ * submit -- a person who has selected 1,200 objects should learn that
+ * before filling in a form, not after.
+ *
+ * THE DEPLOYMENT'S OWN LIMIT, from the server (decided 14 Oct: 256
+ * unless the deployment says otherwise, never more than 1,024). It
+ * arrives on each bulk action as `max_objects`; with no bulk action
+ * there is nothing to act with, and no limit is shown.
  */
 
 import { Button } from '@blueprintjs/core'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
-
-/** Matches MAX_BULK_OBJECTS in core/ontology/write_mediator.py. Declared
- *  rather than fetched: the server refuses regardless, so this is a
- *  courtesy, and a courtesy that is briefly out of date is better than
- *  a request on every render. */
-const MAX_BULK_OBJECTS = 1000
 
 interface SelectionBarProps {
   /** How many objects are explicitly selected. */
@@ -47,6 +45,9 @@ interface SelectionBarProps {
    *  only these -- so this is the number the bar must promise. */
   pageCount: number
   onClear: () => void
+  /** How many objects one bulk action may name here; absent when no
+   *  bulk action is available, and then nothing is over anything. */
+  limit?: number
 }
 
 export default function SelectionBar({
@@ -56,6 +57,7 @@ export default function SelectionBar({
   onClear,
   onSelectAllMatching,
   selectingAll,
+  limit,
 }: SelectionBarProps) {
   // NOTHING SELECTED AND NOTHING MATCHED means there is no set to
   // describe, and a bar saying so would be noise.
@@ -69,7 +71,7 @@ export default function SelectionBar({
   // person was just told, with nothing looking wrong afterwards.
   const acting = selectedCount > 0 ? selectedCount : pageCount
   const pagedBeyondView = selectedCount === 0 && matchCount > pageCount
-  const overCeiling = acting > MAX_BULK_OBJECTS
+  const overCeiling = limit !== undefined && acting > limit
 
   return (
     <div className="selection-bar" aria-live="polite">
@@ -105,7 +107,7 @@ export default function SelectionBar({
         // enforces this regardless; the point of saying it here is
         // that a person can narrow the filter while they still
         // remember what they were doing.
-        <StatusTag state="pending">Over the {MAX_BULK_OBJECTS} limit — narrow the filter to act on these</StatusTag>
+        <StatusTag state="pending">Over the {limit} limit — narrow the filter to act on these</StatusTag>
       )}
 
       {selectedCount > 0 && (

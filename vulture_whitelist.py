@@ -54,6 +54,8 @@ not_shown
 compare_sets_route
 # WIRED-3: a response field pydantic reads by reflection.
 high_confidence
+# BULK-1: a response field pydantic reads by reflection.
+max_objects
 # E-14, agent memory: routes FastAPI calls.
 list_memories_route
 create_memory_route

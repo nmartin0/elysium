@@ -103,6 +103,7 @@ because failed logins count for usernames that do not exist yet.
 | `pgserver` on Python 3.13 (was item 3) | DECIDED and BUILT, 12 October: the real-PostgreSQL tests fall back to the machine's own `initdb`/`pg_ctl` when `pgserver` has no wheel, on a unix socket only, and FAIL rather than skip when neither exists. Found because it had already happened: the gating machine is now 3.13 and 32 tests of the production read path were skipping, green. With the fallback, the same 32 pass against PostgreSQL 16 |
 | `/api/events` live updates (was item 8) | DECIDED and BUILT, 12 October: GET /api/events, server-sent events carrying a type and a verb and nothing else, filtered per caller by `core/change_hints.py` (built first, while this waited). Building it found that a running server never served a new publication; `api/reload.follow_publications` now moves it, from the running configuration's own bytes. Mail delivery stays out of scope |
 | `/api/help` help assistant (was item 14) | DECIDED and BUILT, 12 October, in the shape decided 5 October: `POST /api/help` answers from the caller's screens, visible schema (names and types, never a value) and own grants -- nothing they may not already know. `core/agent/help_assistant.py`; a Help drawer in the header |
+| Object Explorer phases 3-5 (was item 5) | DECIDED 14 October, and ALREADY BUILT: one proposal per bulk action via an `object_reference_list` parameter, driven by Browse's selection bar. The decision set the limit: 256 by default (`bulk_action_limit`), 1,024 at most. See the `BULK-1` row |
 | `DEP-1` to `DEP-6` (was item 1) | ALL DECIDED, 12-13 October. DEP-1 babel, built 12 October. DEP-2 hypothesis and mutmut, adopted with `tests/unit/test_properties.py` and `scripts/mutation_test.py`, whose first runs found a sync mark that could have moved backwards. DEP-3 splink was already the `identity` extra; scikit-learn approved and NOT added until something imports it. DEP-4 all four adopted, each used only where a field declares it. DEP-5 answered itself (permissive replacements), DEP-6 rejections. See their CSV rows |
 ---
 
@@ -207,23 +208,7 @@ items -- adopting it is its own decision, to be made with this one.
 **Blocked on:** that dependency call, and on whether configuration
 should be editable from the UI at all.
 
-## 5. Object Explorer phases 3 to 5
-
-Phases 1 and 2 are built. **The blocker they existed to remove is
-gone:** the plan opens with "our filter is equality only ... so
-'region is us-west OR us-east' is not expressible -- which means
-clicking two bars on a chart cannot be expressed either." `core/filters.py`
-now has `in` and `not_in`, so it is.
-
-The table, the charts, and saving a selection are now built -- the last
-as frozen sets. What remains is ACTING on a selection at scale, which is
-DEV_UI 11.5's write-path question: one approval covering 200 changes, or
-200 rows in the approvals queue. Frozen sets give it a stable thing to
-act on; they do not answer it.
-
-**Blocked on:** that write-path decision.
-
-## 6. A plugin API, and the reason module federation is not it
+## 5. A plugin API, and the reason module federation is not it
 
 `THIRD_PARTY_EXTENSIONS.md` designs third-party extensions. None of it
 is built, and whether Elysium should have them at all is a product
@@ -247,7 +232,7 @@ code.
 **Blocked on:** whether to have an extension story at all. Everything
 downstream of that is design work that cannot start first.
 
-## 7. Two questions triggers raise and nobody has answered
+## 6. Two questions triggers raise and nobody has answered
 
 Triggers are built. `TRIGGERS_AND_PLUGINS.md` names three risks that
 are "about volume rather than authority", and none of them is a code
@@ -283,7 +268,7 @@ design choice with cost on both sides. The cap that the paragraph on
 `MAX_SUB_WRITES` asks about is being answered by bulk actions (decided
 14 October: 256 by default, 1,024 at most).
 
-## 8. What the interface should be
+## 7. What the interface should be
 
 `DEV_UI.md`, written after the owner said the interface is BOTH
 unfinished and disjointed. **Its diagnosis is the part worth keeping**,
@@ -318,7 +303,7 @@ contrast is not a target.
 **Blocked on:** a front-end agent, and the owner's appetite for a
 redesign rather than more features.
 
-## 9. Agent-loop efficiency, which needs a machine with a model
+## 8. Agent-loop efficiency, which needs a machine with a model
 
 `IDEAS.md`'s open investigations all need traces from a real model on
 real hardware. The measurements already taken are kept because
@@ -495,7 +480,7 @@ measured.
 would reopen plan mode and constrained decoding -- both trade compute
 the CPU does not have.
 
-## 10. Context rot, and a 10,000-id search behind it
+## 9. Context rot, and a 10,000-id search behind it
 
 `UI_ROADMAP.md` calls this "a risk to what already exists, not a
 feature", and it is the only part of that file that is not front-end
@@ -543,7 +528,7 @@ that matters: told its limit was 20 when given 32 ids, a real model
 one object at a time until the duplicate guard stopped it". A cap
 chosen without measuring is how that happens again.
 
-## 11. PostgreSQL row-level security for MAC
+## 10. PostgreSQL row-level security for MAC
 
 Held with a trigger named, alongside column `GRANT` with `SET ROLE`.
 Elysium enforces MAC in the mediator today; pushing it into the
@@ -612,7 +597,7 @@ files reference the SQLite adapter, most of them tests using it as the
 cheap real database, and the write path is where a mistake reaches a
 customer's database. Days, not hours -- but no decision, so not here.
 
-## 12. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
+## 11. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
 
 **Blocked on:** the owner, and on money and calendar time rather than
 engineering.
@@ -660,7 +645,7 @@ an audit is ever bought:
 
 Months, not a patch.
 
-## 13. Owning the UI kit, and when to start
+## 12. Owning the UI kit, and when to start
 
 **Blocked on:** nothing. This is a DECISION ALREADY TAKEN, recorded
 here so the next person does not reopen it from scratch.
