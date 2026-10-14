@@ -104,6 +104,7 @@ because failed logins count for usernames that do not exist yet.
 | `/api/events` live updates (was item 8) | DECIDED and BUILT, 12 October: GET /api/events, server-sent events carrying a type and a verb and nothing else, filtered per caller by `core/change_hints.py` (built first, while this waited). Building it found that a running server never served a new publication; `api/reload.follow_publications` now moves it, from the running configuration's own bytes. Mail delivery stays out of scope |
 | `/api/help` help assistant (was item 14) | DECIDED and BUILT, 12 October, in the shape decided 5 October: `POST /api/help` answers from the caller's screens, visible schema (names and types, never a value) and own grants -- nothing they may not already know. `core/agent/help_assistant.py`; a Help drawer in the header |
 | Object Explorer phases 3-5 (was item 5) | DECIDED 14 October, and ALREADY BUILT: one proposal per bulk action via an `object_reference_list` parameter, driven by Browse's selection bar. The decision set the limit: 256 by default (`bulk_action_limit`), 1,024 at most. See the `BULK-1` row |
+| `R58` (was item 1) | DECIDED by precedent and BUILT, 14 October: a pair whose approval would join records already approved together shows the whole group on its card ("Approve the group of 3") and the server refuses the approval (409) unless it names exactly that group -- Informatica MDM's "pre-merge review", Tamr's cluster-level verification. Records the reviewer cannot see are counted, not named; a bulk approval skips chains and says why |
 | `R13`, the rest of erasure (was item 1) | DECIDED and BUILT, 14 October: every store but the audit log forgets an erased person -- frozen-set membership (and criteria that named them), the write log, waiting writes (withdrawn, audited by id and proposer only), paused questions (the asker told, not about whom), answer notifications (found by the objects they were built from), and merge proposals naming them with their decisions. The audit log keeps a `stage: erasure` entry: who asked, counts per type, never an id. One call, `forget_beyond_the_mirror`, serves both an erasure and a restore |
 | `DEP-1` to `DEP-6` (was item 1) | ALL DECIDED, 12-13 October. DEP-1 babel, built 12 October. DEP-2 hypothesis and mutmut, adopted with `tests/unit/test_properties.py` and `scripts/mutation_test.py`, whose first runs found a sync mark that could have moved backwards. DEP-3 splink was already the `identity` extra; scikit-learn approved and NOT added until something imports it. DEP-4 all four adopted, each used only where a field declares it. DEP-5 answered itself (permissive replacements), DEP-6 rejections. See their CSV rows |
 ---
@@ -134,11 +135,6 @@ they can be answered together.
   and so on). The one part of D5 not decided.
 
 **Smaller calls**
-- `R58` -- approving two merges approves a third. Identity takes the
-  transitive closure of approved pairs, so approving A with B and B
-  with C merges A with C, a pair nobody was shown. Should the
-  reviewer see the resulting group before the second approval takes
-  effect?
 - `E-21` -- the LICENSE says unpublished and proprietary; the
   repository's visibility should match it.
 

@@ -510,11 +510,22 @@ class MergeProposalResponse(BaseModel):
     #: settings in force -- so a decision can still be explained after
     #: the settings change. Never the score, for the reason above.
     provenance: dict | None = None
+    #: WHAT APPROVING IT WOULD JOIN (R58), present only when that is more
+    #: than this pair: approving A-B while B-C stands approved makes A, B
+    #: and C one entity. The records this reviewer may read, by the name
+    #: the proposal uses; `group_hidden` counts the rest, unnamed.
+    group: list[str] | None = None
+    group_hidden: int | None = None
 
 
 class MergeDecisionRequest(BaseModel):
     decision: str
     note: str | None = None
+    #: THE GROUP THE REVIEWER WAS SHOWN (R58), required to approve a
+    #: proposal whose `group` is present: exactly that list. Anything
+    #: else -- absent, or a group that has grown since -- is refused with
+    #: the group as it now stands.
+    confirm_group: list[str] | None = None
 
 
 class MatchingIdsResponse(BaseModel):
@@ -4663,8 +4674,35 @@ def merge_proposals_route(request: Request, object_type: str | None = None,
             withheld=withheld_fields(entries),
             high_confidence=_is_high_confidence(generation.config.schema, proposal),
             provenance=_provenance_of(proposal),
+            **_group_fields(request, current_user, store, proposal),
         ))
     return out
+
+
+def _group_fields(request: Request, user: UserRecord, store, proposal) -> dict:
+    """`group` and `group_hidden` for a waiting proposal that would join
+    more than its own pair (R58), or nothing.
+
+    NAMED ONLY WHERE READABLE. A record in the chain may be in a
+    compartment this reviewer cannot see; its name would say it exists.
+    It is counted instead, so the reviewer still knows the group is
+    bigger than what they were shown.
+    """
+    from core.identity_decisions import PENDING
+    from core.mirror.identity import entity_id_of
+
+    if proposal.decision != PENDING:
+        return {}
+    group = store.group_if_approved(proposal)
+    if len(group) <= 2:
+        return {}
+    generation = _generation(request)
+    type_def = (generation.config.schema or {}).get(proposal.object_type) or {}
+    shown = [name for name in group
+             if name in (proposal.left_id, proposal.right_id)
+             or _may_read_object(generation.mediator, user, proposal.object_type,
+                                 entity_id_of(type_def, name))]
+    return {"group": shown, "group_hidden": len(group) - len(shown)}
 
 
 def _proposal_sides(request: Request, user: UserRecord, proposal) -> "tuple[str, str] | None":
@@ -4759,6 +4797,20 @@ def decide_merge_route(proposal_id: str, body: MergeDecisionRequest,
             status_code=403,
             detail=f"Deciding a {proposal.object_type} merge needs "
                    f"write:{proposal.object_type}")
+
+    # A CHAIN IS APPROVED ONLY AS A GROUP SOMEBODY SAW (R58). The
+    # closure is recomputed here, at the moment of approval, so a stale
+    # screen -- or the bulk approval, which never shows a group -- cannot
+    # approve one that grew while nobody was looking.
+    if body.decision == APPROVED:
+        shown = _group_fields(request, current_user, store, proposal)
+        if shown and (sorted(body.confirm_group or []) != shown["group"]):
+            raise HTTPException(status_code=409, detail={
+                "message": (f"Approving this makes {len(shown['group']) + shown['group_hidden']} "
+                            f"records one {proposal.object_type}, not two. Review the group "
+                            f"and approve it as a group."),
+                **shown,
+            })
 
     store.decide(proposal_id, body.decision, current_user.user_id, body.note)
 

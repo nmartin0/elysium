@@ -54,6 +54,7 @@ not_shown
 compare_sets_route
 # WIRED-3: a response field pydantic reads by reflection.
 high_confidence
+group_hidden  # R58: MergeProposalResponse, set through **_group_fields
 # AL-11: urllib3 reads ConnectionCls and pool_classes_by_scheme; the
 # test server's do_POST is called by http.server.
 ConnectionCls

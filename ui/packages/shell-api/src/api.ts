@@ -284,6 +284,13 @@ export function messageFromErrorBody(body: unknown): string | null {
 
   if (typeof detail === 'string' && detail !== '') return detail
 
+  // A STRUCTURED REFUSAL carries its sentence as `message` beside the
+  // facts it is about (R58's 409 names the group it refused).
+  if (typeof detail === 'object' && detail !== null && !Array.isArray(detail)) {
+    const message: unknown = (detail as { message?: unknown }).message
+    if (typeof message === 'string' && message !== '') return message
+  }
+
   if (Array.isArray(detail)) {
     // `loc` is a path like ["body", "username"]; the leading segment
     // names the request part and means nothing to a reader, so it is
@@ -1017,6 +1024,11 @@ export interface MergeProposal {
   /** What produced it (R62): matcher, version, declared weights and the
    *  settings in force. Absent for a proposal from before it was kept. */
   provenance?: MatchProvenance
+  /** R58: present only when approving would join MORE than this pair --
+   *  approving A-B while B-C stands makes A, B and C one. The records
+   *  this reviewer may read; `group_hidden` counts the rest. */
+  group?: string[]
+  group_hidden?: number
 }
 
 export interface MatchProvenance {
@@ -1053,10 +1065,13 @@ export async function decideMergeProposal(
   proposalId: string,
   decision: 'approved' | 'rejected',
   note?: string,
+  /** R58: the group the reviewer was shown, required to approve a
+   *  proposal that carries one. The server refuses any other. */
+  confirmGroup?: string[],
 ): Promise<void> {
   await apiFetchOrThrow(`/merge-proposals/${encodeURIComponent(proposalId)}/decide`, {
     method: 'POST',
-    body: JSON.stringify({ decision, note }),
+    body: JSON.stringify({ decision, note, confirm_group: confirmGroup }),
   })
 }
 

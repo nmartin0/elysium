@@ -117,6 +117,17 @@ function ProposalList({
     setBusy(true)
     const refused: string[] = []
     for (const proposal of pending.filter((each) => selected.has(each.proposal_id))) {
+      // A CHAIN IS NOT BULK-APPROVED (R58). Its group is on its own card,
+      // and approving it here would approve records nobody looked at.
+      // The server would refuse it too; saying why here is kinder.
+      if (proposal.group && proposal.group.length > 0) {
+        refused.push(
+          `${proposal.left_id} and ${proposal.right_id}: approving joins ${
+            proposal.group.length + (proposal.group_hidden ?? 0)
+          } records, so it is approved on its own card, as a group`,
+        )
+        continue
+      }
       try {
         await decideMergeProposal(proposal.proposal_id, 'approved')
       } catch (caught) {

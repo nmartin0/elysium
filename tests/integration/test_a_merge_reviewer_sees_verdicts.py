@@ -395,3 +395,85 @@ class TestWhatProducedIt:
         (row,) = client.get("/api/merge-proposals").json()
 
         assert "provenance" not in row
+
+
+class TestAChainIsApprovedAsAGroup:
+    """R58. Identity takes the transitive closure of approved pairs, so
+    approving cust_001 with cust_002 while cust_002 with cust_003 stands
+    approved makes all three one -- and cust_001 with cust_003 is a pair
+    nobody was shown. Informatica MDM's "pre-merge review": flagged, not
+    merged, until a person approves the whole group.
+
+    cust_003 is us-east and this reviewer us-west, so it is COUNTED and
+    not named -- the group is bigger than what they may see, and they
+    are told so without being told what it is."""
+
+    def _chain(self, client):
+        store = _store(client)
+        earlier = store.propose("Customer", "primary:cust_002", "primary:cust_003", 0.9, "{}")
+        store.decide(earlier, "approved", "someone-else")
+        return store.propose("Customer", "primary:cust_001", "primary:cust_002", 0.9,
+                             json.dumps({"name": True}))
+
+    def _reviewer(self, client):
+        with_roles(client.app, editor={"allowed_actions": [
+            *client.app.state.generation.config.roles["editor"]["allowed_actions"],
+            "write:Customer"]})
+        _login(client, "carol", role="editor")
+
+    def test_the_card_says_what_else_it_would_join(self, client):
+        _login(client)
+        proposal_id = self._chain(client)
+
+        (row,) = [r for r in client.get("/api/merge-proposals").json()
+                  if r["proposal_id"] == proposal_id]
+
+        assert row["group"] == ["primary:cust_001", "primary:cust_002"]
+        assert row["group_hidden"] == 1
+        assert "cust_003" not in json.dumps(row)
+
+    def test_a_pair_that_joins_only_itself_carries_no_group(self, client):
+        """THE CONTROL: no chain, no group -- the field is not merely
+        always present."""
+        _login(client)
+        _propose(client)
+
+        (row,) = client.get("/api/merge-proposals").json()
+
+        assert "group" not in row and "group_hidden" not in row
+
+    def test_approving_without_the_group_is_refused_with_it(self, client):
+        self._reviewer(client)
+        proposal_id = self._chain(client)
+
+        response = client.post(f"/api/merge-proposals/{proposal_id}/decide",
+                               json={"decision": "approved"}, headers=_csrf(client))
+
+        assert response.status_code == 409, response.text
+        detail = response.json()["detail"]
+        assert detail["group"] == ["primary:cust_001", "primary:cust_002"]
+        assert detail["group_hidden"] == 1 and "3 records" in detail["message"]
+        assert {p.proposal_id: p.decision for p in _store(client).proposals()}[
+            proposal_id] == "pending"
+
+    def test_approving_the_group_shown_goes_through(self, client):
+        self._reviewer(client)
+        proposal_id = self._chain(client)
+
+        response = client.post(
+            f"/api/merge-proposals/{proposal_id}/decide",
+            json={"decision": "approved",
+                  "confirm_group": ["primary:cust_002", "primary:cust_001"]},
+            headers=_csrf(client))
+
+        assert response.status_code == 204, response.text
+
+    def test_rejecting_needs_no_group(self, client):
+        """Saying no joins nothing."""
+        self._reviewer(client)
+        proposal_id = self._chain(client)
+
+        response = client.post(f"/api/merge-proposals/{proposal_id}/decide",
+                               json={"decision": "rejected"}, headers=_csrf(client))
+
+        assert response.status_code == 204, response.text

@@ -26,7 +26,10 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   return {
     ...actual,
     getMergeProposals: () => getMergeProposals(),
-    decideMergeProposal: (id: string, decision: string, note?: string) => decideMergeProposal(id, decision, note),
+    // The group (R58) is passed on only when there is one, so every
+    // assertion written before it still names three arguments.
+    decideMergeProposal: (id: string, decision: string, note?: string, group?: string[]) =>
+      group === undefined ? decideMergeProposal(id, decision, note) : decideMergeProposal(id, decision, note, group),
   }
 })
 
@@ -268,5 +271,46 @@ describe('pre-selected for bulk approval (WIRED-3)', () => {
 
     expect(await screen.findByText('None of the 1 could be approved')).toBeInTheDocument()
     expect(screen.queryByText(/the rest were/)).toBeNull()
+  })
+})
+
+describe('a chain is approved as a group (R58)', () => {
+  /** cust_002 is already approved with cust_003, which this reviewer
+   *  cannot see: approving this pair makes three records one. */
+  const CHAINED = { ...MASKED, group: ['cust_001', 'cust_002'], group_hidden: 1 }
+
+  it('says what else approving would join, counting what it cannot name', async () => {
+    show([CHAINED])
+
+    expect(await screen.findByText(/makes 3 records one Customer, not two/)).toBeInTheDocument()
+    expect(screen.getByText(/1 record you cannot see/)).toBeInTheDocument()
+  })
+
+  it('approves the group it showed, by name', async () => {
+    decideMergeProposal.mockClear()
+    show([CHAINED])
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve the group of 3' }))
+
+    await waitFor(() =>
+      expect(decideMergeProposal).toHaveBeenCalledWith('p1', 'approved', undefined, ['cust_001', 'cust_002']),
+    )
+  })
+
+  it('a pair that joins only itself says nothing and keeps its button', async () => {
+    show([MASKED])
+
+    expect(await screen.findByRole('button', { name: 'Same entity' })).toBeInTheDocument()
+    expect(screen.queryByText(/records one/)).toBeNull()
+  })
+
+  it('is left out of a bulk approval, and says why', async () => {
+    decideMergeProposal.mockClear()
+    show([{ ...CHAINED, high_confidence: true }])
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve 1 selected' }))
+
+    expect(await screen.findByText(/approved on its own card, as a group/)).toBeInTheDocument()
+    expect(decideMergeProposal).not.toHaveBeenCalled()
   })
 })

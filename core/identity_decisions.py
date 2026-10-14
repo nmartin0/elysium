@@ -224,6 +224,38 @@ class MergeDecisionStore:
             for proposal in self.proposals(object_type, decision=APPROVED)
         ]
 
+    def group_if_approved(self, proposal: Proposal) -> list[str]:
+        """Every record approving this proposal would make one entity, by
+        the approved pairs already standing (R58). Sorted; the proposal's
+        own two included.
+
+        THE TRANSITIVE CLOSURE THE GOLD BUILD WILL TAKE (core/mirror/
+        identity._union): approving A-B when B-C is approved makes A, B
+        and C one entity, and A-C is a pair nobody was shown. Two here
+        means the approval joins exactly what the reviewer saw; more
+        means it does not, and the reviewer must see the rest -- the
+        "pre-merge review" Informatica MDM gives a merge that would join
+        clusters: flagged, not merged, until a person decides.
+
+        THE APPROVED PAIRS ONLY. The identity rule's own key matches also
+        group rows at build time, but they are decided by configuration
+        a person wrote, not by this approval.
+        """
+        parent: dict[str, str] = {}
+
+        def root(name: str) -> str:
+            parent.setdefault(name, name)
+            while parent[name] != name:
+                parent[name] = parent[parent[name]]
+                name = parent[name]
+            return name
+
+        pairs = self.approved_pairs(proposal.object_type)
+        for left, right in [*pairs, (proposal.left_id, proposal.right_id)]:
+            parent[root(left)] = root(right)
+        mine = root(proposal.left_id)
+        return sorted(name for name in parent if root(name) == mine)
+
     def forget_erased(self, key_hash, hashes_by_type: dict) -> int:
         """Every proposal naming an erased record, and its decisions,
         gone (R13). Returns how many proposals.

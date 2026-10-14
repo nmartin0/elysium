@@ -2889,6 +2889,27 @@ CONTROLS = [
         new="            doomed = [(row[\"proposal_id\"],) for row in rows if False",
         tests=["tests/unit/test_erasure.py::TestEverythingButTheAuditLog::test_a_merge_proposal_naming_them_goes_with_its_decisions"],
     ),
+    Control(
+        describes="R58: a chained approval needs the group it joins",
+        path="api/routes.py",
+        old="        if shown and (sorted(body.confirm_group or []) != shown[\"group\"]):",
+        new="        if False:",
+        tests=["tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestAChainIsApprovedAsAGroup::test_approving_without_the_group_is_refused_with_it"],
+    ),
+    Control(
+        describes="R58: approved neighbours are pulled into the group",
+        path="core/identity_decisions.py",
+        old="        for left, right in [*pairs, (proposal.left_id, proposal.right_id)]:",
+        new="        for left, right in [(proposal.left_id, proposal.right_id)]:",
+        tests=["tests/unit/test_identity_decisions_group.py::test_an_approved_neighbour_is_pulled_in"],
+    ),
+    Control(
+        describes="R58: an unreadable member of the group is counted, not named",
+        path="api/routes.py",
+        old="             or _may_read_object(generation.mediator, user, proposal.object_type,",
+        new="             or True or _may_read_object(generation.mediator, user, proposal.object_type,",
+        tests=["tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestAChainIsApprovedAsAGroup::test_the_card_says_what_else_it_would_join"],
+    ),
 ]
 
 

@@ -736,3 +736,19 @@ describe('filenameFrom', () => {
     expect(filenameFrom('attachment')).toBeNull()
   })
 })
+
+describe('messageFromErrorBody', () => {
+  it('reads a structured refusal by its message (R58)', async () => {
+    const { messageFromErrorBody } = await import('./api')
+
+    expect(messageFromErrorBody({ detail: { message: 'Approving this makes 3 records one', group: ['a'] } })).toBe(
+      'Approving this makes 3 records one',
+    )
+  })
+
+  it('still answers null for an object with nothing to say', async () => {
+    const { messageFromErrorBody } = await import('./api')
+
+    expect(messageFromErrorBody({ detail: { group: ['a'] } })).toBeNull()
+  })
+})

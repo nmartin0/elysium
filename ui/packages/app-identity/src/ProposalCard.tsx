@@ -57,7 +57,13 @@ export default function ProposalCard({
       setBusy(true)
       setError(null)
       try {
-        await decideMergeProposal(proposal.proposal_id, decision)
+        // THE GROUP SHOWN ON THIS CARD, confirmed by approving it (R58).
+        await decideMergeProposal(
+          proposal.proposal_id,
+          decision,
+          undefined,
+          decision === 'approved' ? proposal.group : undefined,
+        )
         onDecided()
       } catch (caught) {
         // A 401 HERE IS NOT AN ERROR TO SHOW. The session went while
@@ -72,10 +78,11 @@ export default function ProposalCard({
         setBusy(false)
       }
     },
-    [proposal.proposal_id, onDecided, onSessionExpired],
+    [proposal.proposal_id, proposal.group, onDecided, onSessionExpired],
   )
 
   const settled = proposal.decision !== 'pending'
+  const group = proposal.group && proposal.group.length > 0 ? proposal.group : null
 
   return (
     <section className="identity__proposal" aria-label={`Merge ${proposal.left_id} and ${proposal.right_id}`}>
@@ -141,17 +148,47 @@ export default function ProposalCard({
 
       {proposal.provenance && <WhatProducedIt provenance={proposal.provenance} />}
 
+      {!settled && group && <WouldJoin proposal={proposal} group={group} />}
+
       {error && <ErrorState>{error}</ErrorState>}
 
       {!settled && (
         <div className="identity__actions">
-          <Action tone="primary" text="Same entity" disabled={busy} onClick={() => void decide('approved')} />
+          <Action
+            tone="primary"
+            text={group ? `Approve the group of ${group.length + (proposal.group_hidden ?? 0)}` : 'Same entity'}
+            disabled={busy}
+            onClick={() => void decide('approved')}
+          />
           <Action tone="danger" text="Not the same" disabled={busy} onClick={() => void decide('rejected')} />
         </div>
       )}
 
       {settled && proposal.decided_by && <p className="identity__decided">Decided by {proposal.decided_by}.</p>}
     </section>
+  )
+}
+
+/**
+ * WHAT APPROVING THIS WOULD JOIN (R58), when it is more than the pair.
+ *
+ * Merges chain: approving A with B while B with C stands approved makes
+ * all three one entity, and A with C is a pair nobody was shown. This is
+ * Informatica MDM's "pre-merge review" -- a merge that would join
+ * clusters is flagged, not made, until somebody looks at the whole
+ * group -- and the reason the button says how many it approves.
+ */
+function WouldJoin({ proposal, group }: { proposal: MergeProposal; group: string[] }) {
+  const others = group.filter((name) => name !== proposal.left_id && name !== proposal.right_id)
+  const hidden = proposal.group_hidden ?? 0
+  return (
+    <Notice state="pending">
+      Approving this makes {group.length + hidden} records one {proposal.object_type}, not two: it also joins{' '}
+      {others.join(', ')}
+      {hidden > 0 &&
+        `${others.length > 0 ? ', and ' : ''}${hidden} ${hidden === 1 ? 'record' : 'records'} you cannot see`}
+      , through merges already approved. Some of these pairs were never compared with each other.
+    </Notice>
   )
 }
 
