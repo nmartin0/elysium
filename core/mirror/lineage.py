@@ -33,7 +33,7 @@ import json
 # core/carried_columns.py for what each is and why.
 from core.carried_columns import (  # noqa: E402
     CARRIED_COLUMNS,
-    LINEAGE_COLUMNS,
+    LINEAGE_COLUMNS,  # noqa: F401 -- re-exported: iceberg_sync imports it from here
     ROW_HASH_COLUMN,
     SECURITY_COLUMN,
     SILO_COLUMN,
@@ -126,7 +126,13 @@ def with_lineage(rows: list[dict], columns, silo_name: str, table_name: str,
     #
     # The load-time check uses the wide set, correctly: a DECLARED
     # field of any of those names is a mistake wherever it appears.
-    clashes = sorted(set(columns) & set(LINEAGE_COLUMNS))
+    #
+    # AND THE SECURITY COLUMN (SEC-02's residual): a source column called
+    # `_security` was overwritten by the MAC value with no word, because
+    # this checked LINEAGE_COLUMNS alone. The load-time check already
+    # refuses it as a declared name; this is the same refusal for a
+    # caller that reaches the sync without going through the loader.
+    clashes = sorted(set(columns) & set(CARRIED_COLUMNS))
     if clashes:
         raise ValueError(
             f"{silo_name}.{table_name} has {', '.join(repr(c) for c in clashes)}, "

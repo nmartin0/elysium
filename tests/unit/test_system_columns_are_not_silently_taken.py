@@ -93,6 +93,22 @@ class TestTheSyncRefusesTheCollision:
             sync.sync_table("p", "t", "id", ["id", "_silo"], {})
 
 
+    def test_a_source_security_column_is_refused_too(self, tmp_path):
+        """SEC-02's residual: `_security` is not lineage, so the check
+        that only knew LINEAGE_COLUMNS let the MAC value overwrite it."""
+        source = tmp_path / "s.db"
+        conn = sqlite3.connect(source)
+        conn.execute("CREATE TABLE t (id TEXT PRIMARY KEY, region TEXT, _security TEXT)")
+        conn.execute("INSERT INTO t VALUES ('a','us-west','CUSTOMER VALUE')")
+        conn.commit()
+        conn.close()
+        sync = IcebergMirrorSync(tmp_path / "m",
+                                  {"p": SQLiteReadAdapter({"path": source})})
+
+        with pytest.raises(ValueError, match="_security"):
+            sync.sync_table("p", "t", "id", ["id", "region", "_security"], {})
+
+
 class TestTheLoadRefusesADeclaredOne:
     def test_a_field_named_after_a_system_column(self):
         schema = {"object_types": {"C": {"fields": {"_silo": {"type": "data"}}}}}

@@ -2433,6 +2433,14 @@ CONTROLS = [
         new="        if True:\n",
         tests=["tests/unit/test_resume_waits_for_live_writers.py::TestTwoRealWorkers::test_a_live_writers_batch_is_left_to_it"],
     ),
+    Control(
+        describes="SEC-02: a source column named _security is refused, not overwritten",
+        path="core/mirror/lineage.py",
+        old="    clashes = sorted(set(columns) & set(CARRIED_COLUMNS))",
+        new="    clashes = sorted(set(columns) & set(LINEAGE_COLUMNS))",
+        tests=["tests/unit/test_system_columns_are_not_silently_taken.py::TestTheSyncRefusesTheCollision::"
+               "test_a_source_security_column_is_refused_too"],
+    ),
 ]
 
 
