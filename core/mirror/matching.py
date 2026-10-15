@@ -124,7 +124,11 @@ class CandidateMatcher(Protocol):
     """
 
     def candidates(self, type_def: dict, rows_by_storage: dict[Any, list[dict]],
-                   ) -> list[Candidate]:
+                   at_least: "float | None" = None) -> list[Candidate]:
+        """Pairs scoring at least `at_least`; None means the type's
+        declared review threshold. The evaluation harness (R59) asks for
+        0.0, every pair compared, because a true match scored low and a
+        true match never compared are different faults."""
         ...
 
     def provenance(self, type_def: dict) -> dict:
@@ -257,7 +261,7 @@ class SplinkMatcher:
         }
 
     def candidates(self, type_def: dict, rows_by_storage: dict[Any, list[dict]],
-                   ) -> list[Candidate]:
+                   at_least: "float | None" = None) -> list[Candidate]:
         settings = settings_for(type_def)
         if settings is None:
             return []
@@ -293,7 +297,8 @@ class SplinkMatcher:
             DuckDBAPI(),
         )
         predicted = linker.inference.predict(
-            threshold_match_probability=settings.review_above,
+            threshold_match_probability=(
+                settings.review_above if at_least is None else at_least),
         ).as_pandas_dataframe()
         return [
             Candidate(

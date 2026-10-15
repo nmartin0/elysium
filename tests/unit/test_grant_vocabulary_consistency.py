@@ -45,6 +45,7 @@ NOT_GRANTS = {
     "rule",  # sync_targets.py's expectation key for a two-field rule: f"rule:{name}" (R29)
     "dependency",  # sync_targets.py's key for a functional dependency (R29, across rows)
     "outliers",  # sync_targets.py's key for an unusual-value flag: f"outliers:{column}" (R30)
+    "primary",  # match_evaluation.py's record id, as the matcher names rows: f"primary:{id}" (R59)
 }
 
 # Every verb followed by a colon is a grant prefix. Kept as a set

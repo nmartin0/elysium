@@ -187,6 +187,19 @@ class TestScoring:
     def test_no_rows_means_no_candidates(self):
         assert SplinkMatcher().candidates(TYPE, {None: [], "crm": []}) == []
 
+    def test_the_harness_can_ask_for_every_pair_compared(self):
+        """R59: a true match scored low and one never compared are
+        different faults, so evaluation asks for the low scores too.
+        Ben and Zoe share only a postcode, so the default leaves them
+        out and `at_least=0.0` does not."""
+        ben_and_zoe = frozenset(("primary:c2", "crm:7c1b"))
+
+        everything = SplinkMatcher().candidates(TYPE, ROWS, at_least=0.0)
+
+        assert ben_and_zoe in {frozenset((c.left_id, c.right_id)) for c in everything}
+        assert all(c.score < DEFAULT_REVIEW_ABOVE for c in everything
+                   if frozenset((c.left_id, c.right_id)) == ben_and_zoe)
+
 
 class TestANullIsNotADISAGREEMENT:
     """Splink's gamma is THREE-VALUED and was being read as two.

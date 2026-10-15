@@ -177,8 +177,19 @@ Enrichment; once approved, the next sync fills the field in gold.
 Free-text extraction, embeddings (R45), model predictions (R48, R53) and
 an ensemble of candidates are not built.
 
-**Blocked on:** nothing for statistical matching (R56, R57, R59, R60,
-R63), which is next, then the plugin API (item 3).
+**STATISTICAL MATCHING HAS ITS YARDSTICK** (R59, 15 October):
+`scripts/evaluate_matching.py` measures the matcher against synthetic
+copies, a labels file or reviewers' decisions, with intervals. Its first
+run on the development deployment found recall of 0% at the review
+threshold -- comparison is exact-match only, so one typo loses a
+duplicate -- and an auto-propose threshold two compared fields can
+never reach.
+
+**Blocked on:** nothing for the rest of statistical matching (R57,
+R56, R60, R63), then the plugin API (item 3). Two questions are open
+for R57 and R56: whether reviewers' decisions may calibrate the
+thresholds, being labels only for pairs already proposed; and whether
+the cascade gets an LLM stage.
 
 ## 3. A plugin API, and the reason module federation is not it
 
