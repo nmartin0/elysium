@@ -2990,6 +2990,15 @@ CONTROLS = [
         new="        layout = {**{'positions': {}, 'areas': []}, **document}\n",
         tests=["tests/integration/test_the_ontology_canvas.py::test_a_type_whose_grant_was_withdrawn_is_not_named_back"],
     ),
+    Control(
+        describes="READ-BACK: an answer's read-back and doors are built from real data only",
+        path="api/routes.py",
+        old=("        read_back=read_back(real_data, agent_schema),\n"
+             "        doors=doors(real_data, agent_schema),"),
+        new=("        read_back=read_back(result.gathered, agent_schema),\n"
+             "        doors=doors(result.gathered, agent_schema),"),
+        tests=["tests/integration/test_an_answer_comes_with_context.py::test_a_DENIED_read_is_never_read_back"],
+    ),
 ]
 
 

@@ -2052,6 +2052,52 @@
    * Above the table, because the counts are what a reader wants and the
    * rows are what they consult afterwards.
    */
+  /* ---- WHAT COMES WITH AN ANSWER (app-query/AnswerContext) -----------
+   *
+   * The read-back is a quiet list ABOVE the answer: evidence, set in
+   * secondary text so the answer stays the thing being read. Doors and
+   * follow-ons sit below, where somebody finishing the answer goes next.
+   */
+  .answer-context__read-back {
+    margin: var(--space-normal) 0 var(--space-tight);
+    color: var(--text-secondary);
+  }
+
+  .answer-context__read-back summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .answer-context__read-back ol {
+    margin: var(--space-hair) 0 0;
+    padding-left: var(--space-loose);
+  }
+
+  .answer-context {
+    margin: var(--space-tight) 0 var(--space-normal);
+  }
+
+  .answer-context__lede {
+    margin: var(--space-tight) 0 var(--space-hair);
+    color: var(--text-secondary);
+  }
+
+  .answer-context__doors {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-tight);
+  }
+
+  .answer-context__doors .answer-context__lede {
+    margin: 0;
+  }
+
+  .answer-context__follow-ons {
+    margin: 0;
+    padding-left: var(--space-loose);
+  }
+
   .answer-trace__summary {
     margin: 0 0 var(--space-snug);
     display: flex;

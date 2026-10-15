@@ -41,7 +41,7 @@ describe('AnswerTrace', () => {
   it('shows what was read on opening', async () => {
     render(<AnswerTrace {...props} />)
 
-    fireEvent.click(screen.getByRole('button', { name: /How this answer/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Every field it read/ }))
 
     expect(await screen.findByText('Customer')).toBeInTheDocument()
     expect(screen.getByText('c1')).toBeInTheDocument()
@@ -66,7 +66,7 @@ describe('AnswerTrace', () => {
     ])
     render(<AnswerTrace {...props} />)
 
-    fireEvent.click(screen.getByRole('button', { name: /How this answer/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Every field it read/ }))
 
     expect(await screen.findByText('refused')).toBeInTheDocument()
   })
@@ -87,14 +87,14 @@ describe('AnswerTrace', () => {
     ])
     render(<AnswerTrace {...props} />)
 
-    fireEvent.click(screen.getByRole('button', { name: /How this answer/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Every field it read/ }))
 
     expect(await screen.findByText('refused')).toBeInTheDocument()
   })
 
   it('does not refetch when closed and reopened', async () => {
     render(<AnswerTrace {...props} />)
-    const button = screen.getByRole('button', { name: /How this answer/ })
+    const button = screen.getByRole('button', { name: /Every field it read/ })
 
     fireEvent.click(button)
     await screen.findByText('Customer')
@@ -110,7 +110,7 @@ describe('AnswerTrace', () => {
     getRequestTrace.mockResolvedValue([])
     render(<AnswerTrace {...props} />)
 
-    fireEvent.click(screen.getByRole('button', { name: /How this answer/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Every field it read/ }))
 
     expect(await screen.findByText(/No object reads were recorded/)).toBeInTheDocument()
   })
@@ -119,7 +119,7 @@ describe('AnswerTrace', () => {
     getRequestTrace.mockRejectedValue(new Error('trace unavailable'))
     render(<AnswerTrace {...props} />)
 
-    fireEvent.click(screen.getByRole('button', { name: /How this answer/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Every field it read/ }))
 
     expect(await screen.findByText(/trace unavailable/)).toBeInTheDocument()
   })

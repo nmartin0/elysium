@@ -58,9 +58,12 @@ SCREEN_GUIDE: Mapping[str, str] = {
     ),
     "Query": (
         "Ask a question about your data in plain language. An assistant reads only "
-        "what you are permitted to read and answers with what it found; you can see "
-        "the steps it took. If answering needs a change to data, it proposes one, and "
-        "nothing changes until it is confirmed."
+        "what you are permitted to read and answers with what it found. Above the "
+        "answer, 'What it did to answer' lists its steps; under it, 'Open:' leads to "
+        "the objects and sets it used, and 'Ask next:' suggests questions -- choosing one "
+        "puts it in the box to edit or ask. 'Every field it read' shows each read and "
+        "any your permissions refused. If answering needs a change to data, it proposes "
+        "one, and nothing changes until it is confirmed."
     ),
     "Schema": (
         "What kinds of object exist that you may know about: their fields, how they "

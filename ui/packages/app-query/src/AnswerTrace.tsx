@@ -64,7 +64,7 @@ export default function AnswerTrace({
   return (
     <div className="answer-trace">
       <Button minimal small icon={open ? 'chevron-down' : 'chevron-right'} onClick={toggle}>
-        How this answer was found
+        Every field it read
       </Button>
 
       {open && error && <ErrorState>{error}</ErrorState>}

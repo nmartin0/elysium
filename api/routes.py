@@ -218,8 +218,26 @@ class QueryRequest(BaseModel):
     about: QueryAbout | None = None
 
 
+class AnswerDoor(BaseModel):
+    """Where an answer leads (core/agent/answer_context.py): an object's
+    page, or a set Browse can show exactly."""
+    kind: str
+    object_type: str
+    label: str
+    object_id: str | None = None
+    # Browse's own {field, values, mode}, only when it says the set exactly.
+    filters: list[dict] | None = None
+
+
 class QueryResponse(BaseModel):
     answer: str
+    # HOW IT WAS ANSWERED, in the ontology's words, from the agent's own
+    # steps -- the question read back as what was done to answer it.
+    read_back: list[str] = []
+    # Where the answer leads, and complete questions to ask next. Never
+    # a thread: each follow-on is a question someone could have typed.
+    doors: list[AnswerDoor] = []
+    follow_ons: list[str] = []
     # The request this answer was built by, so the caller can ask what
     # was read to produce it. Returning it is what makes the trace
     # reachable -- an id the browser never sees is one nobody can look
@@ -5840,7 +5858,19 @@ async def query(body: QueryRequest, request: Request,
         logger.info("query %s used %d model calls: %d input and %d output tokens reported, "
                     "%d calls unreported", request_context.request_id, usage.calls,
                     usage.input_tokens, usage.output_tokens, usage.unreported)
-    return QueryResponse(answer=insight, request_id=request_context.request_id)
+    # BUILT FROM real_data, what synthesis was given, and named from the
+    # agent's own schema: nothing here the answer itself could not say.
+    from core.agent.answer_context import doors, follow_ons, read_back
+
+    agent_schema = _generation(request).mediator.visible_schema(current_user, for_agent=True)
+    return QueryResponse(
+        answer=insight, request_id=request_context.request_id,
+        read_back=read_back(real_data, agent_schema),
+        doors=doors(real_data, agent_schema),
+        # THE ASKER'S OWN WORDS, not `question`: a follow-on is put back
+        # in their box, and the set sentence Browse appends is not theirs.
+        follow_ons=follow_ons(body.query, real_data, agent_schema),
+    )
 
 
 class HelpRequest(BaseModel):

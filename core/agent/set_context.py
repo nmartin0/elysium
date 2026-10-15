@@ -38,7 +38,8 @@ class SetContextError(ValueError):
     """The set cannot be described for this asker."""
 
 
-def _name(fields: dict, field: str) -> str:
+def field_label(fields: dict, field: str) -> str:
+    """A field's display name, or its api name made readable."""
     return str((fields.get(field) or {}).get("display_name") or field.replace("_", " ").capitalize())
 
 
@@ -48,8 +49,11 @@ def _values(values) -> str:
     return ", ".join(shown) + (f" and {more} more" if more > 0 else "")
 
 
-def _clause(condition: FieldFilter, fields: dict) -> str:
-    name, value, operator = _name(fields, condition.field), condition.value, condition.operator
+def condition_clause(condition: FieldFilter, fields: dict) -> str:
+    """One condition as a relative clause -- "whose Amount is at least
+    100". Shared with core/agent/answer_context.py, so a set described
+    to the agent and a step read back to a person say it the same way."""
+    name, value, operator = field_label(fields, condition.field), condition.value, condition.operator
     if operator == "equals":
         return f"whose {name} is {value}"
     if operator == "in":
@@ -95,7 +99,7 @@ def describe_set(visible_schema: dict, object_type: str, conditions_raw=None,
             validate_filter(condition, (fields.get(condition.field) or {}).get("data_type"))
         except FilterError as e:
             raise SetContextError(str(e)) from e
-        clauses.append(_clause(condition, fields))
+        clauses.append(condition_clause(condition, fields))
     if text.strip():
         clauses.append(f"matching the search {text.strip()!r}")
     described = f"the {object_type} objects" + (" " + " and ".join(clauses) if clauses else "")

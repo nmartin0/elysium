@@ -10,7 +10,8 @@
     "./TraceSummary": "./src/TraceSummary.tsx"
   },
   "dependencies": {
-    "@elysium/shell-api": "*"
+    "@elysium/shell-api": "*",
+    "react-router-dom": "^7.18.3"
   },
   "peerDependencies": {
     "react": "^19.2.8"

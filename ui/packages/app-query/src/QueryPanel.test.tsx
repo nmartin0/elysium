@@ -412,3 +412,73 @@ describe('the backend wrote these messages to be read', () => {
     expect(await screen.findByText('Could not reach the server.')).toBeInTheDocument()
   })
 })
+
+describe('QueryPanel -- what comes with an answer', () => {
+  const WITH_CONTEXT = {
+    answer: 'Ada Okafor has 202 transactions.',
+    request_id: 'r1',
+    read_back: ['Found 1 Customer whose Name is Ada Okafor', 'Counted Transactions whose Customer is cust_001'],
+    doors: [{ kind: 'object', object_type: 'Customer', object_id: 'cust_001', label: 'Ada Okafor' }],
+    follow_ons: ['What support tickets does Ada Okafor have?'],
+  }
+
+  it('reads the question back as what was done, ABOVE the answer and open', async () => {
+    mockedQuery.mockResolvedValue(fakeResponse(200, WITH_CONTEXT))
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+    submit('how many transactions does ada have?')
+
+    const step = await screen.findByText('Found 1 Customer whose Name is Ada Okafor')
+    expect(step.closest('details')).toHaveAttribute('open')
+    const answer = screen.getByText('Ada Okafor has 202 transactions.')
+    // The read-back PRECEDES the answer in the document.
+    expect(step.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('a follow-on fills the box rather than asking -- the reader may edit it first', async () => {
+    mockedQuery.mockResolvedValue(fakeResponse(200, WITH_CONTEXT))
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+    submit('how many transactions does ada have?')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'What support tickets does Ada Okafor have?' }))
+
+    expect(screen.getByPlaceholderText('Ask a question…')).toHaveValue('What support tickets does Ada Okafor have?')
+    expect(mockedQuery).toHaveBeenCalledTimes(1)
+  })
+
+  it('an answer about an object leads to it', async () => {
+    mockedQuery.mockResolvedValue(fakeResponse(200, WITH_CONTEXT))
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+    submit('who is ada?')
+
+    expect(await screen.findByRole('link', { name: 'Ada Okafor' })).toHaveAttribute(
+      'href',
+      '/objects/Customer/cust_001',
+    )
+  })
+
+  it('an older server without these fields still shows the answer alone', async () => {
+    mockedQuery.mockResolvedValue(fakeResponse(200, { answer: '42', request_id: 'r1' }))
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+    submit('how many?')
+
+    await screen.findByText('42')
+    expect(screen.queryByText('What it did to answer')).toBeNull()
+    expect(screen.queryByText('Ask next:')).toBeNull()
+  })
+})

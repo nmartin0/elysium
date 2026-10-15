@@ -11,6 +11,7 @@ import PendingWriteCard, { type PendingWrite } from '@elysium/shell-api/componen
 import Workspace from '@elysium/shell-api/components/Workspace'
 import { getExampleQuestions } from '@elysium/shell-api/api'
 
+import { type AnswerDoor, ReadBack, WhereNext } from './AnswerContext'
 import AskedBefore from './AskedBefore'
 import ExampleQuestions from './ExampleQuestions'
 
@@ -19,7 +20,18 @@ interface QueryResponseBody {
   answer?: string
   request_id?: string
   detail?: string
+  read_back?: string[]
+  doors?: AnswerDoor[]
+  follow_ons?: string[]
 }
+
+interface AnswerExtras {
+  readBack: string[]
+  doors: AnswerDoor[]
+  followOns: string[]
+}
+
+const NO_EXTRAS: AnswerExtras = { readBack: [], doors: [], followOns: [] }
 
 // No additional props beyond the shell's own base contract -- see
 // SubAppProps's own header comment for the full reasoning on why this
@@ -55,6 +67,7 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
   const [queryText, setQueryText] = useUrlValue('q', '')
   const [answer, setAnswer] = useState<string | null>(null)
   const [requestId, setRequestId] = useState<string | null>(null)
+  const [extras, setExtras] = useState<AnswerExtras>(NO_EXTRAS)
   const [pendingWrite, setPendingWrite] = useState<PendingWrite | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -104,6 +117,7 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
     event.preventDefault()
     setError(null)
     setAnswer(null)
+    setExtras(NO_EXTRAS)
     setPendingWrite(null)
     setSubmitting(true)
     setAsked((previous) => [queryText, ...previous.filter((question) => question !== queryText)].slice(0, 10))
@@ -130,6 +144,11 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
       } else if (response.status === 200) {
         setAnswer(body.answer ?? null)
         setRequestId(body.request_id ?? null)
+        setExtras({
+          readBack: body.read_back ?? [],
+          doors: body.doors ?? [],
+          followOns: body.follow_ons ?? [],
+        })
       } else {
         // 403 (stale permissions were already fine at query time but
         // something else denied it), 409 (permissions changed mid-
@@ -193,7 +212,11 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
           outcomes elsewhere (see PendingWriteCard's own Callout usage
           for that real contrast). */}
       {error && <ErrorState>{error}</ErrorState>}
+      {answer && <ReadBack steps={extras.readBack} />}
       {answer && <Notice>{answer}</Notice>}
+      {answer && (
+        <WhereNext doors={extras.doors} followOns={extras.followOns} onPick={(question) => setQueryText(question)} />
+      )}
       {/* Under the answer, and only when there IS one. A trace with
           nothing to explain is a control that raises a question the
           screen cannot answer. */}
