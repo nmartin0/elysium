@@ -129,7 +129,10 @@ def test_an_unrecognised_step_does_not_read_as_a_finish(loop_and_user):
     # now visible instead of arriving as a legitimate finish.
     assert result.stop_reason == "unrecognised_step"
     assert result.possibly_incomplete is True
-    assert result.gathered == []
+    # The model was told once what it got wrong (it invented the same
+    # step again, so it stopped at the two-strike limit). No data.
+    assert [item["step"] for item in result.gathered] == ["rejected_invalid_step"]
+    assert "There is no step 'teleport_object'" in result.gathered[0]["note"]
 
 
 def test_an_invalid_step_spiral_does_not_read_as_a_finish(loop_and_user):
@@ -285,5 +288,38 @@ def test_an_unusable_reply_that_ends_the_run_is_recorded_too(loop_and_user):
     loop, user = loop_and_user
     result = _run(loop, user, '{"step": "teleport_object"}')
 
-    assert result.fabricated_finishes == ("unrecognised_step",)
+    # TWO: an invented step is now corrected once before the run stops,
+    # and each unusable REPLY counts -- the rate is per reply.
+    assert result.fabricated_finishes == ("unrecognised_step", "unrecognised_step")
     assert result.stop_reason == "unrecognised_step"
+
+
+class SaysInTurn:
+    """Each reply in order, then finish."""
+
+    def __init__(self, *replies):
+        self.replies = list(replies)
+
+    def chat(self, *args, **kwargs):
+        return self.replies.pop(0) if self.replies else '{"step": "finish"}'
+
+
+def test_an_invented_count_is_answered_with_the_step_it_meant(loop_and_user):
+    """The 2026-10-14 bench lost count_by_aggregate to `count` twice: the
+    model was nudged generically and invented it again. Told the exact
+    form, a model that takes the hint carries on to a real answer."""
+    loop, user = loop_and_user
+    loop.client = SaysInTurn(
+        '{"step": "count", "object_type": "Transaction"}',
+        '{"step": "aggregate_object", "object_type": "Transaction", "aggregate": "count"}',
+    )
+    with contextlib.redirect_stdout(io.StringIO()):
+        result = loop.run(user, "How many transactions are there?")
+
+    note = result.gathered[0]["note"]
+    assert "There is no step 'count'" in note
+    assert '"aggregate": "count"' in note
+    assert result.gathered[1]["step"] == "aggregate_object"
+    assert result.stop_reason == StopReason.FINISHED
+    # The invention is still on the record: a reply was unusable.
+    assert "unrecognised_step" in result.fabricated_finishes

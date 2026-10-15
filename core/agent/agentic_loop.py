@@ -574,6 +574,25 @@ def _handle_recoverable_mistake(gathered: list[dict], count: int, cap: int, deta
     return count, False
 
 
+#: Step names a model reaches for when it means an aggregate. Matched
+#: case-folded; anything else gets the plain list of steps.
+_AGGREGATE_WORDS = frozenset({"count", "sum", "total", "average", "avg", "mean", "min",
+                              "max", "minimum", "maximum", "aggregate"})
+
+
+def _invented_step_note(name: str, handlers: dict) -> str:
+    """What to tell a model that named a step that does not exist: the
+    steps that do, and -- for the commonest invention, an aggregate by
+    its own name -- the exact form it meant."""
+    note = (f"There is no step {name!r}. The steps are: "
+            f"{', '.join(sorted(handlers))}, and finish.")
+    if name.strip().casefold() in _AGGREGATE_WORDS and "aggregate_object" in handlers:
+        note += (' To count or total objects use one aggregate_object step, e.g. '
+                 '{"step": "aggregate_object", "object_type": "<Type>", '
+                 '"filter": {"<field>": "<value>"}, "aggregate": "count"}.')
+    return note
+
+
 class _StepHandled:
     """A handler that has already recorded whatever it needed to.
 
@@ -1935,6 +1954,30 @@ class AgentLoop:
                                        fabricated_finishes=tuple(fabricated_finishes),
                                        hops_used=hops_used)
                 raise
+
+            if step["step"] == "finish" and step.get("unrecognised"):
+                # AN INVENTED STEP IS A MISTAKE TO CORRECT, like an invalid
+                # one, not a finish to nudge. The invalid-step note is what
+                # taught the model in the 2026-10-12 runs ("the refusal
+                # messages had already taught the model what the grammar
+                # would have forbidden"); an invented name got nothing but
+                # a generic nudge, and the 2026-10-14 bench lost
+                # count_by_aggregate to `count` in two arms. Same two-strike
+                # limit as an invalid step, and still recorded as an
+                # unusable reply.
+                fabricated_finishes.append(StopReason.UNRECOGNISED_STEP)
+                consecutive_invalid, should_stop = _handle_recoverable_mistake(
+                    gathered, consecutive_invalid, self.max_consecutive_invalid_steps,
+                    detail=f"step {step['unrecognised']!r}",
+                    rejected_step_name="rejected_invalid_step",
+                    attempt_label="invented step",
+                    stop_message="too many consecutive invalid steps, stopping",
+                    note=_invented_step_note(step["unrecognised"], self._step_handlers()),
+                )
+                if should_stop:
+                    stop_reason = StopReason.UNRECOGNISED_STEP
+                    break
+                continue
 
             if step["step"] == "finish":
                 # A FABRICATED FINISH IS NOT A FINISH (LB-3). next_step()

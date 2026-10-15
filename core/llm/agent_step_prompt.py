@@ -1000,7 +1000,12 @@ def validated_step(parsed: dict, allow_handles: bool = False,
                 "object_id": parsed["object_id"], "text": parsed["text"]}
 
     logger.warning(f"unrecognized step {step!r}, finishing")
-    return _finish_step(fallback=UNRECOGNISED_STEP)
+    # THE NAME TRAVELS WITH THE FALLBACK, so the loop can tell the model
+    # which step it invented and which one it meant. Without it the model
+    # got a generic nudge and invented the same step again -- `count`,
+    # twice in the 2026-10-14 bench, where an `aggregate_object` was one
+    # sentence away. Clipped: it is the model's text, going back to it.
+    return {**_finish_step(fallback=UNRECOGNISED_STEP), "unrecognised": str(step)[:60]}
 
 
 EXAMPLES_SECTION = """These examples use PLACEHOLDER names. ExampleType and RelatedType are

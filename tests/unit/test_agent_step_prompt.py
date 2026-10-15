@@ -61,7 +61,9 @@ def test_malformed_json_fails_closed_to_finish():
 
 
 def test_unrecognized_step_fails_closed_to_finish():
-    assert _next_step({"step": "totally_made_up_step"}) == {"step": "finish", "fallback": UNRECOGNISED_STEP}
+    # The invented name travels with it, so the loop can say what was meant.
+    assert _next_step({"step": "totally_made_up_step"}) == {
+        "step": "finish", "fallback": UNRECOGNISED_STEP, "unrecognised": "totally_made_up_step"}
 
 
 def test_get_field_missing_a_required_key_fails_closed():

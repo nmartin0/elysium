@@ -3079,6 +3079,14 @@ CONTROLS = [
         new="    if False:\n        raise HTTPException(status_code=409",
         tests=["tests/integration/test_enriched_fields_reach_gold.py::TestReviewingARecipe::test_rules_for_a_question_nobody_asks_any_more_cannot_be_approved"],
     ),
+    Control(
+        describes="LOOP: an invented step is corrected, not nudged as a finish",
+        path="core/agent/agentic_loop.py",
+        old='            if step["step"] == "finish" and step.get("unrecognised"):',
+        new='            if False:',
+        tests=["tests/unit/test_stop_reason_is_named.py::"
+               "test_an_invented_count_is_answered_with_the_step_it_meant"],
+    ),
 ]
 
 

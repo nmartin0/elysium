@@ -532,18 +532,43 @@ a person would have seen fail. Pass and fail at temperature 0 follow the
 model's choices, not its speed, so the verdicts stand; the slowdown is a
 finding about that machine (load, the Ollama version, keep_alive).
 
-**Blocked on:** one confirming run, about 25 minutes at 2026-10-12's
-speed and two hours at today's --
+**SEVENTH RUN, 2026-10-15: THE CONFIRMING RUN**, at close to
+2026-10-12's speed again (a later call's median 56-64 s).
 
-    python -m scripts.llm_bench --features free_text_search,remember_from_query
-    python -m scripts.llm_bench --features none --cases dependent_choice
+| run | passed | failed, and how |
+| --- | --- | --- |
+| original seven, free_text_search + remember_from_query ON | 5/7 | dependent_choice (repeated get_field), count_by_aggregate (invented step `count`) |
+| dependent_choice, everything OFF | 0/1 | repeated get_field, exactly as in every arm |
 
-The first is the original seven with both ON switches together: 7/7
-ships them. The second says whether dependent_choice fails today with
-everything off; if it does, the cap's verdict is reopened. Beyond that,
-nothing on this hardware: a GPU, or a larger model, would reopen plan
-mode and constrained decoding -- both trade compute the CPU does not
-have.
+TWO FINDINGS. **dependent_choice fails today with everything off** -- it
+reads Transaction 2's category, then asks for it again instead of
+finishing -- so it is a regression since 2026-10-12 in the baseline, not
+a cost of any switch, and the cap's only failure is explained: the cap
+passed the other six. **count_by_aggregate is tipped over by a longer
+prompt**: it passed in the cap arm and failed with the operator section
+and with free text + remember, each time by inventing `count`.
+
+WHAT WAS FIXED, 2026-10-15: an invented step name was turned into a
+FINISH and answered with a generic nudge, so the model invented it
+again. It is now corrected like an invalid step -- "There is no step
+'count'... To count or total objects use one aggregate_object step,
+e.g. {...}" -- under the same two-strike limit, and still counted as an
+unusable reply. That is the mechanism 2026-10-12 credited ("the refusal
+messages had already taught the model"), applied where it was missing.
+It changes model behaviour, so it is measured before anything is
+switched on.
+
+**Blocked on:** two runs --
+
+    python -m scripts.llm_bench --features free_text_search,remember_from_query --cases count_by_aggregate
+    python -m scripts.llm_bench --features none --cases dependent_choice --show-steps
+
+The first says whether the correction rescues count_by_aggregate with
+both switches on; if it passes, free_text_search and remember_from_query
+ship, and search_result_cap (20) with them. The second prints every step
+and nudge of the baseline regression, which is what diagnosing it needs.
+Beyond that, nothing on this hardware: a GPU, or a larger model, would
+reopen plan mode and constrained decoding.
 
 ## 7. Context rot, and a 10,000-id search behind it
 

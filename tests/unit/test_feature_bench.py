@@ -67,6 +67,13 @@ class SwitchUser(Scripted):
                     self._next[case.name] = 0
                 steps = WITH_SWITCH[case.name]
                 index = self._next.get(case.name, 0)
+                # A STEP IT WAS TOLD DOES NOT EXIST IS SENT AGAIN, as a model
+                # that only knows that way would. Without this the script
+                # took the correction and walked straight on to its next
+                # line -- which already names the answer's id -- and the
+                # switch-off baseline "passed" by knowing the answer.
+                if index and f"There is no step '{steps[index - 1]['step']}'" in user_message:
+                    return json.dumps(steps[index - 1])
                 self._next[case.name] = index + 1
                 return json.dumps(steps[index] if index < len(steps) else {"step": "finish"})
         return super().chat(system_prompt, user_message, json_mode, temperature,
