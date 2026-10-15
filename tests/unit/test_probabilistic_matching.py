@@ -80,7 +80,12 @@ class TestWhatADeploymentDeclares:
     @pytest.mark.parametrize("declared, message", [
         ({"compare": []}, "non-empty"),
         ({"compare": ["nickname"]}, "unknown field"),
-        ({"compare": ["name"], "fuzzy": True}, "unknown identity.probabilistic key"),
+        ({"compare": ["name"], "phonetic": True}, "unknown identity.probabilistic key"),
+        ({"compare": ["name"], "fuzzy": True}, "fuzzy must be a list"),
+        ({"compare": ["name"], "fuzzy": ["postcode"]}, "fuzzy names field.s. not in compare"),
+        ({"compare": ["name"], "fuzzy": {"name": 0}}, "must be 1, 2 or 3"),
+        ({"compare": ["name"], "fuzzy": {"name": 4}}, "must be 1, 2 or 3"),
+        ({"compare": ["name"], "fuzzy": {"name": True}}, "must be 1, 2 or 3"),
         ({"compare": ["name"], "review_above": 0.99, "auto_propose_above": 0.5}, "thresholds"),
         ("yes", "must be a mapping"),
         ({"compare": ["name"], "block_on": ["postocde"]}, "block_on names unknown field"),

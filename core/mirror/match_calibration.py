@@ -69,7 +69,10 @@ UNCALIBRATED = "uncalibrated"
 # weights give the same score across versions -- and not block_on,
 # which decides which pairs are scored, not what they score.
 _SCORING_KEYS = ("matcher", "m_probability", "u_probability", "prior", "compare",
-                 "review_above", "auto_propose_above")
+                 "review_above", "auto_propose_above",
+                 # R56's, present only when a type declares fuzzy fields, so
+                 # a type without them keeps the evidence it had.
+                 "fuzzy", "m_close", "u_close")
 
 
 def rejections_needed(alpha: float) -> int:

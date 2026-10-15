@@ -50,7 +50,7 @@ class _Matcher:
         self._candidates = candidates or []
         self._raises = raises
 
-    def candidates(self, type_def, rows_by_storage):
+    def candidates(self, type_def, rows_by_storage, at_least=None):
         if self._raises is not None:
             raise self._raises
         return self._candidates
@@ -273,3 +273,23 @@ class TestWhatProducedIt:
                                            "probabilistic": {"compare": ["name", "email"]}}}
 
         assert SplinkMatcher().provenance(undeclared)["block_on"] == ["name"]
+
+
+class TestTheCascade:
+    """R56: a pair the declared rule already merges is not proposed.
+
+    FOUND WHEN THE CASCADE WAS BUILT: two records sharing an email were
+    merged by the rule AND sent to a reviewer, whose decision changed
+    nothing either way."""
+
+    def test_a_pair_the_rule_merges_is_not_proposed(self, store, matcher):
+        rows = {None: [{**ROWS[None][0]}, {**ROWS[None][1], "email": "a@x"}]}
+        matcher(_Matcher([Candidate("primary:c1", "primary:c2", 0.99)]))
+
+        assert _propose_merges(store, _Config(True), "Customer", TYPE, rows) == 0
+        assert store.proposals("Customer") == []
+
+    def test_a_pair_the_rule_left_apart_still_is(self, store, matcher):
+        matcher(_Matcher([Candidate("primary:c1", "primary:c2", 0.99)]))
+
+        assert _propose_merges(store, _Config(True), "Customer", TYPE, ROWS) == 1

@@ -34,7 +34,7 @@ from core.mirror.match_evaluation import (
     labels_from_pairs,
     synthetic_duplicates,
 )
-from core.mirror.matching import SplinkMatcher, settings_for
+from core.mirror.matching import CLOSE, SplinkMatcher, settings_for
 
 
 def _silver_rows(config, data_dir: Path, type_def: dict) -> dict:
@@ -98,6 +98,17 @@ def _interval(bounds) -> str:
     return "" if bounds is None else f"({bounds[0]:.0%}-{bounds[1]:.0%})"
 
 
+def _said(agreement) -> str:
+    """One field's comparison in words. CLOSE IS ITS OWN WORD (R56): it is
+    truthy, and reading it as agreement said a typo'd email agreed --
+    seen on this report's first run with fuzzy fields."""
+    if agreement == CLOSE:
+        return "close"
+    if agreement is None:
+        return "uncompared"
+    return "agrees" if agreement else "differs"
+
+
 def report(evaluation: Evaluation) -> str:
     lines = [f"Labels: {evaluation.source}."]
     if evaluation.exhaustive:
@@ -129,9 +140,7 @@ def report(evaluation: Evaluation) -> str:
                      else f"No errors at {evaluation.errors_at:g}.")
         for error in evaluation.errors:
             score = "never compared" if error.score is None else f"score {error.score:.4f}"
-            agreed = ", ".join(
-                f"{name} {'agrees' if v else 'differs' if v is False else 'uncompared'}"
-                for name, v in sorted(error.agreement.items()))
+            agreed = ", ".join(f"{name} {_said(v)}" for name, v in sorted(error.agreement.items()))
             lines.append(f"  {error.kind}: {error.left_id} ~ {error.right_id}, {score}"
                          + (f"; {agreed}" if agreed else ""))
             if error.note:
@@ -194,14 +203,33 @@ def main(argv=None) -> int:
     else:
         labels = _decision_labels(data_dir, args.object_type)
 
-    candidates = SplinkMatcher().candidates(type_def, rows, at_least=0.0)
+    # THE WHOLE CASCADE (R56): the rule's pairs count as found, at 1.0,
+    # so recall is the pipeline's rather than one stage's.
+    from core.mirror.identity import rule_for
+    from core.mirror.match_cascade import RULE, cascade
+    from core.mirror.match_evaluation import pair
+
+    try:
+        rule = rule_for(type_def)
+    except ValueError as exc:
+        print(f"{args.object_type}: {exc}", file=sys.stderr)
+        return 1
+    candidates = cascade(type_def, rows, SplinkMatcher().candidates, at_least=0.0,
+                         include_rule=True)
+    by_rule = sum(1 for c in candidates if c.stage == RULE
+                  and labels.verdict(pair(c.left_id, c.right_id)) is True)
     evaluation = evaluate(
         candidates, labels,
         declared={"review_above": settings.review_above,
                   "auto_propose_above": settings.auto_propose_above},
         errors_at=settings.review_above)
-    print(f"{args.object_type}: comparing {', '.join(settings.compare)}; "
-          f"blocking on {', '.join(settings.block_on or settings.compare[:1])}.")
+    print(f"{args.object_type}: comparing {', '.join(settings.compare)}"
+          + (f" (close allowed: {', '.join(f'{n} within {e}' for n, e in settings.fuzzy)})"
+             if settings.fuzzy else "")
+          + f"; blocking on {', '.join(settings.block_on or settings.compare[:1])}.")
+    if rule is not None:
+        print(f"Stage 1, the rule (match_on {', '.join(rule.match_on)}), decided {by_rule} "
+              f"true match(es) without review; they score 1.0 below.")
     print(report(evaluation))
     if args.decisions:
         print()

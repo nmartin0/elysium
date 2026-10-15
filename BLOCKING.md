@@ -193,8 +193,15 @@ gets NO LLM stage (owner, 15 October): fuzzy comparison levels first,
 an LLM only if the harness shows a band they cannot settle, and then
 as a note on the card, never a score.
 
-**Blocked on:** nothing for the rest of statistical matching (R56,
-R60, R63), then the plugin API (item 3).
+**THE CASCADE IS BUILT** (R56, 15 October): rule, blocking, scoring with
+an optional CLOSE level per field, a person. Recall on the development
+deployment's copies went from 15% to 65% at the review threshold. One
+edit is the default because two halved precision on a crowded
+population -- a deployment allowing more should run the harness on its
+own rows first.
+
+**Blocked on:** nothing for the rest of statistical matching (R60,
+R63), then the plugin API (item 3).
 
 ## 3. A plugin API, and the reason module federation is not it
 

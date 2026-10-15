@@ -277,12 +277,15 @@ def _propose_merges(store, config, object_type: str, type_def: dict,
     extra is missing or the backend throws, the mirror and gold are
     still correct, so the failure is reported and the run continues.
     """
+    from core.mirror.match_cascade import cascade
     from core.mirror.matching import SplinkMatcher, settings_for
     if not config.identity_inference or settings_for(type_def) is None:
         return 0
     matcher = SplinkMatcher()
     try:
-        candidates = matcher.candidates(type_def, rows_by_storage)
+        # THE CASCADE (R56): a pair the declared rule already merges is
+        # not scored into the review queue, where deciding it did nothing.
+        candidates = cascade(type_def, rows_by_storage, matcher.candidates)
     except Exception as exc:  # noqa: BLE001 - reported per type, like a sync
         print(f"WARNING gold.{object_type}: merges could not be proposed: {exc}",
               file=sys.stderr)

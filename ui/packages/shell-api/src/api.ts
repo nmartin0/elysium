@@ -994,7 +994,8 @@ export interface ServerSavedView {
  */
 export interface MergeField {
   field: string
-  /** agree, differ, one side missing, or not compared. FOUR, and the
+  /** agree, differ, one side missing, or not compared -- and `close`,
+   *  for a field a type declares fuzzy (R56). FOUR, and the
    *  last two are not interchangeable: "one record lacks this" is
    *  evidence against a match and "the matcher could not compare
    *  these" is not evidence at all. */

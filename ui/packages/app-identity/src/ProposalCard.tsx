@@ -28,6 +28,8 @@ import DataTable from '@elysium/shell-api/components/DataTable'
 const VERDICT_STATE = {
   agree: 'granted',
   differ: 'refused',
+  // R56: within the declared edits, not equal -- neither agreement nor difference.
+  close: 'pending',
   'one side missing': 'pending',
   'both missing': 'neutral',
 } as const

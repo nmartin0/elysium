@@ -46,9 +46,11 @@ AGREE = "agree"
 DIFFER = "differ"
 ONE_SIDE_MISSING = "one side missing"
 UNCOMPARED = "not compared"
+# R56: a field declared fuzzy, within its declared edits but not equal.
+CLOSE = "close"
 
 
-def _verdict(agreement: "bool | None", left_has_value: bool,
+def _verdict(agreement: "bool | str | None", left_has_value: bool,
              right_has_value: bool, readable: bool = True) -> str:
     """What may be said about a pair without saying the values.
 
@@ -82,6 +84,8 @@ def _verdict(agreement: "bool | None", left_has_value: bool,
         return ONE_SIDE_MISSING
     if agreement is None:
         return UNCOMPARED
+    if agreement == CLOSE:
+        return CLOSE
     return AGREE if agreement else DIFFER
 
 

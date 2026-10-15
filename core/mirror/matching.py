@@ -49,12 +49,25 @@ from typing import Any, Protocol, runtime_checkable
 #       auto_propose_above: 0.95    # pre-selected for bulk approval (WIRED-3)
 #       review_above: 0.80
 #       false_merge_rate: 0.05      # R57: calibrated pre-selection
+#       fuzzy: [name]               # R56: these may also be CLOSE --
+#                                   # within 1 edit; {name: 2} sets it
 DEFAULT_AUTO_PROPOSE_ABOVE = 0.95
 DEFAULT_REVIEW_ABOVE = 0.80
 DEFAULT_FALSE_MERGE_RATE = 0.05
+# ONE EDIT BY DEFAULT, MEASURED (R56). On 300 people drawn from small
+# name pools -- Jon/Jan, Smith/Smyth, jon.smith12/jon.smith13 -- with 150
+# damaged copies, R59's harness at review_above gave:
+#     exact only         recall 28%  precision 100%
+#     within 1 edit      recall 51%  precision  87%
+#     within 2 edits     recall 55%  precision  45%
+# Two edits catch "Ada" cut to "A." and lose half the precision doing it.
+# A deployment whose values are far apart may declare {name: 2}; its own
+# harness run is the evidence for doing so.
+DEFAULT_FUZZY_EDITS = 1
+CLOSE = "close"
 
 
-def _agreed(gamma: Any) -> "bool | None":
+def _agreed(gamma: Any, fuzzy: bool = False) -> "bool | str | None":
     """What one of Splink's gamma values says about a field pair.
 
     SPLINK'S OWN CONVENTION, which is three-valued and was being read
@@ -81,6 +94,11 @@ def _agreed(gamma: Any) -> "bool | None":
         return None
     if value < 0:
         return None
+    # A FUZZY FIELD HAS THREE LEVELS (R56): 2 exact, 1 close, 0 neither.
+    # "Close" is its own answer, never "agrees": a reviewer told two
+    # emails agree when one has a typo has been told something untrue.
+    if fuzzy:
+        return True if value >= 2 else CLOSE if value == 1 else False
     return value > 0
 
 
@@ -102,7 +120,10 @@ class Candidate:
     # DIFFER on a field where one of them simply had nothing.
     # `masked_review` already has the word for it, UNCOMPARED, and had
     # no way to reach it.
-    agreement: "dict[str, bool | None]" = field(default_factory=dict)
+    #
+    # AND "close" IS A FOURTH, for a field declared fuzzy (R56): neither
+    # equal nor different, within the declared edits.
+    agreement: "dict[str, bool | str | None]" = field(default_factory=dict)
 
     # NO `disposition` (WIRED-3). There was one: "propose" above the
     # DEFAULT auto_propose_above, "review" below. Nothing called it, and
@@ -146,6 +167,8 @@ class ProbabilisticSettings:
     auto_propose_above: float
     review_above: float
     false_merge_rate: float = DEFAULT_FALSE_MERGE_RATE
+    # (field, max edits) for each compared field that may also be CLOSE.
+    fuzzy: tuple[tuple[str, int], ...] = ()
 
 
 def settings_for(type_def: dict) -> ProbabilisticSettings | None:
@@ -169,7 +192,7 @@ def settings_for(type_def: dict) -> ProbabilisticSettings | None:
     if not isinstance(declared, Mapping):
         raise ValueError(f"identity.probabilistic must be a mapping, got {declared!r}.")
     unknown = set(declared) - {"compare", "block_on", "auto_propose_above", "review_above",
-                              "false_merge_rate"}
+                              "false_merge_rate", "fuzzy"}
     if unknown:
         raise ValueError(f"unknown identity.probabilistic key(s) {sorted(unknown)}.")
     compare = declared.get("compare")
@@ -204,7 +227,36 @@ def settings_for(type_def: dict) -> ProbabilisticSettings | None:
         auto_propose_above=auto,
         review_above=review,
         false_merge_rate=rate,
+        fuzzy=_fuzzy_declared(declared.get("fuzzy"), compare),
     )
+
+
+def _fuzzy_declared(declared: Any, compare: Sequence[str]) -> tuple[tuple[str, int], ...]:
+    """`fuzzy: [name]` or `fuzzy: {name: 1}` as ((field, edits), ...).
+
+    ONLY COMPARED FIELDS, as casefold is only key fields: a fuzzy field
+    that is not compared would do nothing, and a declaration that does
+    nothing is one its author believes is working. EDITS 1 TO 3: zero
+    is exact, which every compared field already is, and beyond three a
+    short value is "close" to almost anything.
+    """
+    if not declared:
+        return ()
+    if isinstance(declared, Mapping):
+        pairs = list(declared.items())
+    elif isinstance(declared, Sequence) and not isinstance(declared, str):
+        pairs = [(name, DEFAULT_FUZZY_EDITS) for name in declared]
+    else:
+        raise ValueError("identity.probabilistic.fuzzy must be a list of fields, "
+                         "or a mapping of field to edits.")
+    stray = [name for name, _ in pairs if name not in compare]
+    if stray:
+        raise ValueError(f"identity.probabilistic.fuzzy names field(s) not in compare: {stray}.")
+    for name, edits in pairs:
+        if isinstance(edits, bool) or not isinstance(edits, int) or not 1 <= edits <= 3:
+            raise ValueError(f"identity.probabilistic.fuzzy edits for {name} must be 1, 2 "
+                             f"or 3, got {edits!r}.")
+    return tuple(pairs)
 
 
 class SplinkNotInstalled(RuntimeError):
@@ -222,7 +274,7 @@ class SplinkMatcher:
     """Fellegi-Sunter scoring, with weights this deployment declared."""
 
     def __init__(self, m_probability: float = 0.9, u_probability: float = 0.01,
-                 prior: float = 0.001):
+                 prior: float = 0.001, m_close: float = 0.08, u_close: float = 0.001):
         # THE DECLARED WEIGHTS: a field agreeing is 0.9 likely among
         # matches and 0.01 among non-matches, against a prior that any
         # two records are the same object of 1 in 1,000.
@@ -244,6 +296,28 @@ class SplinkMatcher:
         self._m = m_probability
         self._u = u_probability
         self._prior = prior
+        # THE CLOSE LEVEL (R56), for a field declared fuzzy: within the
+        # declared edits but not equal. 0.08 of true matches land there
+        # -- the re-entries with a slip or a transposition -- and 0.001
+        # of non-matches, two DIFFERENT people that close on that field. Exact keeps 0.9 / 0.01, so a fuzzy field
+        # that agrees scores what it always did; what remains for
+        # "neither" is 0.02 / 0.989. WHAT THEY IMPLY, two fields:
+        #
+        #     both exact               p = 0.890   REVIEW, as before
+        #     one exact, one close     p = 0.878   REVIEW -- the typo case
+        #     both close               p = 0.865   REVIEW
+        #     one exact, one neither   p = 0.002   nothing
+        #     one exact, one blank     p = 0.083   nothing, as before
+        #
+        # R59's first run is why: exact-only, ONE typo put a true
+        # duplicate at 0.08, and recall at the review threshold was 0%.
+        # u_close IS THE HONEST RISK, and it was measured going wrong: a
+        # crowded population has far more different people within two
+        # edits than 1 in 1,000 pairs, which is why the default is ONE
+        # (DEFAULT_FUZZY_EDITS has the numbers). The harness's "wrong"
+        # column on a deployment's own rows is where it shows.
+        self._m_close = m_close
+        self._u_close = u_close
 
     def provenance(self, type_def: dict) -> dict:
         """What would produce this type's proposals, stated so a decision
@@ -275,6 +349,11 @@ class SplinkMatcher:
             "block_on": list(settings.block_on or settings.compare[:1]),
             "auto_propose_above": settings.auto_propose_above,
             "review_above": settings.review_above,
+            # ONLY WHEN DECLARED, so a type without fuzzy fields records
+            # exactly what it did before R56 -- and R57's calibration,
+            # which compares these, keeps its evidence across the upgrade.
+            **({"fuzzy": dict(settings.fuzzy), "m_close": self._m_close,
+                "u_close": self._u_close} if settings.fuzzy else {}),
         }
 
     def candidates(self, type_def: dict, rows_by_storage: dict[Any, list[dict]],
@@ -294,7 +373,9 @@ class SplinkMatcher:
             return []
         # list[Any] because Splink's own annotations are invariant
         # over a union, and this list is handed straight to it.
+        fuzzy = dict(settings.fuzzy)
         comparisons: list[Any] = [
+            self._fuzzy_comparison(name, fuzzy[name]) if name in fuzzy else
             cl.ExactMatch(name).configure(
                 m_probabilities=[self._m, 1 - self._m],
                 u_probabilities=[self._u, 1 - self._u],
@@ -323,12 +404,30 @@ class SplinkMatcher:
                 right_id=str(row["unique_id_r"]),
                 score=float(row["match_probability"]),
                 agreement={
-                    name: _agreed(row.get(f"gamma_{name}"))
+                    name: _agreed(row.get(f"gamma_{name}"), fuzzy=name in fuzzy)
                     for name in settings.compare
                 },
             )
             for _, row in predicted.iterrows()
         ]
+
+    def _fuzzy_comparison(self, name: str, edits: int) -> Any:
+        """Null, exact, within `edits` (Damerau-Levenshtein: a slip, a
+        dropped, doubled or swapped letter), else -- with the declared
+        weights, never estimated."""
+        import splink.comparison_level_library as cll
+        import splink.comparison_library as cl
+
+        return cl.CustomComparison(output_column_name=name, comparison_levels=[
+            cll.NullLevel(name),
+            cll.ExactMatchLevel(name).configure(
+                m_probability=self._m, u_probability=self._u),
+            cll.DamerauLevenshteinLevel(name, edits).configure(
+                m_probability=self._m_close, u_probability=self._u_close),
+            cll.ElseLevel().configure(
+                m_probability=1 - self._m - self._m_close,
+                u_probability=1 - self._u - self._u_close),
+        ])
 
     @staticmethod
     def _records(type_def: dict, rows_by_storage: dict[Any, list[dict]],

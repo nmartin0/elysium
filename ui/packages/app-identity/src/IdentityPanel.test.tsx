@@ -89,6 +89,17 @@ describe('what the reviewer is shown', () => {
   })
 })
 
+describe('a close field (R56)', () => {
+  it('says close, marked like a partial answer rather than unstyled', async () => {
+    show([{ ...MASKED, fields: [{ field: 'email', verdict: 'close', readable: true }] }])
+
+    const tag = (await screen.findByText('close')).closest('.status-tag')
+    // A verdict the card does not know falls back to neutral, which has
+    // no dot; close is mapped, so it has one.
+    expect(tag?.querySelector('.status-tag__dot')).not.toBeNull()
+  })
+})
+
 describe('a withheld value renders as nothing at all', () => {
   it('no placeholder, no dash, no asterisks', async () => {
     /** THE TEST THIS SCREEN EXISTS TO PASS. A masked value was never
