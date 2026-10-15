@@ -67,6 +67,7 @@ from core.ontology.field_types import (
     DECIMAL_SCALE,
     DEFAULT_FIELD_DATA_TYPE,
     coerce,
+    is_computed,
     split_declared_type,
 )
 
@@ -316,10 +317,11 @@ def refuse_rules_over_derived(object_types: Mapping) -> None:
         for rule_name, rule in (type_def.get("rules") or {}).items():
             for key in ("field", "other"):
                 name = (rule or {}).get(key)
-                if name in fields and "derived" in fields[name]:
+                if name in fields and is_computed(fields[name]):
                     raise ValueError(
-                        f"{type_name} rule {rule_name!r} compares {name!r}, which is derived; "
-                        f"a rule is checked on source rows, so compare its inputs instead.")
+                        f"{type_name} rule {rule_name!r} compares {name!r}, which is computed, "
+                        f"not stored; a rule is checked on source rows, so compare its inputs "
+                        f"instead.")
 
 
 def gate_derived_grants(roles: Mapping, schema: Mapping) -> Mapping:
@@ -336,9 +338,17 @@ def gate_derived_grants(roles: Mapping, schema: Mapping) -> Mapping:
 
     Returns `roles` itself when nothing changes, so a deployment with no
     derived fields keeps the exact object it had."""
+    from core.ontology.enriched_fields import enriched_fields
+
+    # AN ENRICHED FIELD (R41) TOO: an inferred mood summarises the
+    # ticket's text exactly as a total summarises a price, and would
+    # hand out what the text says to someone refused the text.
     derived = [(type_name, field_name, derivation.inputs)
                for type_name, type_def in schema.items()
                for field_name, derivation in derived_fields(type_def).items()]
+    derived += [(type_name, field_name, enrichment.inputs)
+                for type_name, type_def in schema.items()
+                for field_name, enrichment in enriched_fields(type_def).items()]
     if not derived:
         return roles
     gated = {}

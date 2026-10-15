@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import UserRecord, authorize
+from core.ontology.field_types import is_computed
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.mediator import DataMediator
 from core.ontology.schema import get_column_for_field
@@ -560,11 +561,11 @@ class WriteMediator:
         # grouping by adapter identity alone would incorrectly merge.
         groups: dict[int, tuple] = {}
         fields = (self._adapter_mediator.schema.get(object_type) or {}).get("fields") or {}
-        derived = sorted(name for name in changes if "derived" in (fields.get(name) or {}))
+        derived = sorted(name for name in changes if is_computed(fields.get(name) or {}))
         if derived:
-            # COMPUTED, NOT STORED (R37). Refused at load for action
+            # COMPUTED, NOT STORED (R37, R41). Refused at load for action
             # types; this is every other way a change can arrive.
-            raise ValueError(f"{object_type}: {derived} derived from other fields and "
+            raise ValueError(f"{object_type}: {derived} computed from other fields and "
                              f"cannot be written; change their inputs instead.")
         for field_name in changes:
             # cast(): this method's own adapter always genuinely comes

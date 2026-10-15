@@ -70,6 +70,7 @@ import operator
 from dataclasses import dataclass
 
 from core.ontology.constraints import _comparable, _data_type
+from core.ontology.field_types import is_computed
 
 OPERATORS = {
     "<": operator.lt, "<=": operator.le, ">": operator.gt,
@@ -221,7 +222,7 @@ def validate_dependencies(object_types) -> None:
                 if field_name not in fields:
                     raise ValueError(f"{where} names {field_name!r}, which {type_name} "
                                      f"does not have.")
-                if fields[field_name].get("type") == "link" or "derived" in fields[field_name]:
+                if fields[field_name].get("type") == "link" or is_computed(fields[field_name]):
                     raise ValueError(f"{where}: {field_name!r} is not a stored value; a "
                                      f"dependency is checked on source rows.")
             if rule["dependent"] in determinant:

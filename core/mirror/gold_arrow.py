@@ -120,6 +120,40 @@ def with_derived(table: pa.Table, type_def: dict) -> pa.Table:
         position = table.column_names.index(field_name)
         table = table.set_column(position, field_name,
                                  pa.array(values, type=table.schema.field(field_name).type))
+    # ENRICHED FIELDS (R41) FROM HERE TOO, for the same reason: this is
+    # where all three gold paths end.
+    return with_enriched(table, type_def)
+
+
+#: Where run_sync puts a field's APPROVED rules on the copy of the type
+#: it hands to build_gold. Underscored, so no ontology can declare it:
+#: an enriched field's ALLOWED_BESIDE refuses any other key at load.
+APPROVED_RULES = "_approved_rules"
+
+
+def with_enriched(table: pa.Table, type_def: dict) -> pa.Table:
+    """Gold's enriched columns (R41): each row's value from the rules a
+    person APPROVED, or empty.
+
+    NO MODEL HERE, and none can be: the rules were compiled and approved
+    before the sync, and applying them is word matching. A field with no
+    approved recipe -- none proposed yet, one rejected, or one approved
+    for a declaration that has since changed -- is left as the empty
+    column conform gave it, which is the honest value (R52)."""
+    from core.ontology.enriched_fields import apply_rules, enriched_fields
+
+    fields = type_def.get("fields") or {}
+    for field_name, enrichment in enriched_fields(type_def).items():
+        rules = (fields.get(field_name) or {}).get(APPROVED_RULES)
+        if not rules or field_name not in table.column_names:
+            continue
+        inputs = {name: table.column(name).to_pylist()
+                  for name in enrichment.inputs if name in table.column_names}
+        values = [apply_rules(rules, {name: column[index] for name, column in inputs.items()})[0]
+                  for index in range(table.num_rows)]
+        position = table.column_names.index(field_name)
+        table = table.set_column(position, field_name,
+                                 pa.array(values, type=table.schema.field(field_name).type))
     return table
 
 

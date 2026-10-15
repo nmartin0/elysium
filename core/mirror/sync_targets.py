@@ -59,6 +59,7 @@ from core.mirror.expectations import expectations_for
 from core.mirror.standardise import rules_for
 from core.ontology.field_rules import dependencies_for
 from core.ontology.field_rules import rules_for as field_rules_for
+from core.ontology.field_types import is_computed
 
 
 @dataclass(frozen=True)
@@ -350,10 +351,10 @@ def _targets_for_type(type_def: dict):
             # A reverse link -- lives in the OTHER type's table, which is
             # already its own sync target. See this module's docstring.
             continue
-        if "derived" in field_config:
-            # COMPUTED FROM OTHER FIELDS (R37), in gold and on read; no
-            # source holds it, and asking for its column would read as a
-            # vanished one.
+        if is_computed(field_config):
+            # COMPUTED FROM OTHER FIELDS (R37), or filled in by approved
+            # enrichment rules (R41), in gold; no source holds it, and
+            # asking for its column would read as a vanished one.
             continue
 
         storage_key = field_config.get("storage")

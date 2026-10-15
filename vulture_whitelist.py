@@ -518,3 +518,5 @@ field_sources
 help_route
 # R2: a config-response field pydantic reads by reflection.
 incremental_tables
+# R41/R38: a response field pydantic fills from visible_schema by name.
+inferred

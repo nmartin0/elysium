@@ -707,6 +707,13 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
     # the lake, because they are what a PERSON told this deployment
     # rather than something derived from a source.
     decisions = MergeDecisionStore(data_dir / "identity_decisions.db")
+    # AND THE ENRICHMENT RECIPES A PERSON APPROVED (R41), for the same
+    # reason. Only an approved recipe for the field's CURRENT question
+    # reaches gold; anything else leaves the field empty.
+    from core.enrichment_recipes import EnrichmentRecipeStore
+    from core.mirror.enrichment import with_approved_recipes
+
+    recipes = EnrichmentRecipeStore(data_dir / "enrichment_recipes.db")
     refused = 0
     # LINK CYCLES (R18). Ordering puts a target before its referrer, but
     # in a cycle one side must go first, and it was audited against its
@@ -726,6 +733,10 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
     leaned_on: dict[str, set] = {}
     not_published: set = set()
     for object_type, type_def in _targets_before_referrers(config.schema or {}):
+        # THE APPROVED RULES RIDE ON THE TYPE, so _gold_inputs digests
+        # them with everything else: approving a recipe is a change to
+        # what gold is built from, and republishes it.
+        type_def = with_approved_recipes(object_type, type_def, recipes)
         storage = type_def.get("storage") or {}
         identifier = f"{storage.get('silo')}.{storage.get('table')}"
         try:

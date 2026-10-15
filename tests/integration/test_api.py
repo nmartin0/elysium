@@ -596,6 +596,12 @@ def test_visible_schema_never_leaks_per_field_internals(client):
                 # 1.1)". Null on a stored field. Field names the caller
                 # can already discover; never a value, never a column.
                 "derived",
+                # A VALUE KIND (R41, R38): "inferred from subject" --
+                # this field's values are chosen by approved rules a
+                # model wrote. Names fields the caller can already see,
+                # as `derived` does; the rules, the instruction and the
+                # choices stay out (the raw `enrich` block is dropped).
+                "inferred",
             }
             assert not leaked, f"{type_name}.{field_name} leaked {sorted(leaked)}"
 

@@ -35,6 +35,8 @@ constraint or standardise rule for the same thing keeps its own.
 
 from collections.abc import Mapping
 
+from core.ontology.field_types import is_computed
+
 KINDS = ("email", "phone")
 
 
@@ -68,7 +70,7 @@ def validate_and_expand_value_types(object_types: Mapping) -> None:
             if (field.get("data_type") or "string") != "string":
                 raise ValueError(f"{where}: an {kind} is text, and this field is "
                                  f"{field.get('data_type')}.")
-            if field.get("type") == "link" or "derived" in field:
+            if field.get("type") == "link" or is_computed(field):
                 raise ValueError(f"{where}: a value type describes a stored value.")
             if kind == "phone":
                 from core.ontology.value_checks import check_phone_setting

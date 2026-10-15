@@ -120,6 +120,7 @@ from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import UserRecord, authorize
 from core.ontology.derived_fields import compute, derivation_of, finished
+from core.ontology.enriched_fields import enrichment_of
 from core.ontology.field_types import coerce
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.schema import (
@@ -940,6 +941,14 @@ class DataMediator:
                     "derived": (derivation.describe()
                                 if (derivation := derivation_of(field_info)) is not None
                                 else None),
+                    # A VALUE KIND, at last (R38): this one was chosen
+                    # by approved rules a model wrote (R41), and says
+                    # from what -- "inferred from subject, body". The UI
+                    # marks every such value; a reader must be able to
+                    # tell an inference from a recorded fact.
+                    "inferred": (enrichment.describe()
+                                 if (enrichment := enrichment_of(field_info)) is not None
+                                 else None),
                     # NAMED BUT WITHHELD. False means the caller may
                     # know this field exists and not what it holds --
                     # the middle rung, and what the approvals diff

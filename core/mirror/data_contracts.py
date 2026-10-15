@@ -49,6 +49,7 @@ import json
 
 from core.ontology.classifications import field_classifications
 from core.ontology.derived_fields import derivation_of
+from core.ontology.enriched_fields import enrichment_of
 from core.ontology.field_types import DECIMAL_PRECISION, DECIMAL_SCALE
 from core.ontology.gold_view import GOLD_NAMESPACE
 from core.ontology.link_types import is_reverse_link
@@ -130,6 +131,12 @@ def _property(name: str, field_info, schema) -> dict:
             # ODCS has no derivation field; `transformLogic` is its
             # place for how a property is produced (R37).
             prop["transformLogic"] = derivation.describe()
+        enrichment = enrichment_of(field_info)
+        if enrichment is not None:
+            # INFERRED, said where a contract's reader looks (R38): the
+            # values are chosen by approved rules, not recorded.
+            prop["transformLogic"] = (f"{enrichment.describe()}, choosing one of "
+                                      f"{', '.join(enrichment.choices)} by rules a person approved")
     if field_info.get("required"):
         prop["required"] = True
     labels = sorted(field_classifications(field_info))

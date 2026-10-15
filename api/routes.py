@@ -385,6 +385,10 @@ class SchemaFieldResponse(BaseModel):
     #: R37: how a derived field is computed, e.g. "multiply(quantity,
     #: unit_price)". None for a stored field.
     derived: str | None = None
+    #: R41/R38: an enriched field's value kind, e.g. "inferred from
+    #: subject" -- chosen by approved rules a model wrote. None for a
+    #: recorded value. The UI marks every value of such a field.
+    inferred: str | None = None
     target: str | None = None
     cardinality: str | None = None
     # The relationship this link field belongs to. Both ends of one

@@ -173,7 +173,7 @@ class TestRefusedAtLoad:
     def test_a_cross_field_rule_over_a_derived_field(self):
         schema = _type_with(total={"multiply": ["quantity", "price"]})
         schema["Line"]["rules"] = {"r": {"field": "total", "op": ">=", "other": "price"}}
-        with pytest.raises(ValueError, match="derived"):
+        with pytest.raises(ValueError, match="computed, not stored"):
             refuse_rules_over_derived(schema)
 
 
@@ -337,7 +337,7 @@ class TestThroughARealDeployment:
         config, mediator = deployment
         from core.ontology.write_mediator import WriteMediator
 
-        with pytest.raises(ValueError, match="derived from other fields"):
+        with pytest.raises(ValueError, match="computed from other fields"):
             WriteMediator._group_changes_by_storage(
                 type("W", (), {"_adapter_mediator": mediator})(), "Transaction",
                 {"with_fee": Decimal(1)})
@@ -353,7 +353,7 @@ def test_an_action_that_sets_a_derived_field_is_refused_at_load(tmp_path):
                                  + ONTOLOGY_ADDITIONS["Transaction"], 1)
                         .replace("              property: category", "              property: with_fee", 1))
 
-    with pytest.raises(ValueError, match="derived from other fields"):
+    with pytest.raises(ValueError, match="computed from other fields"):
         load_deployment_bundle(config_dir, tmp_path / "data", tmp_path / "log", serving=False)
 
 

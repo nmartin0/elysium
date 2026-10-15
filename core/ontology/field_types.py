@@ -520,3 +520,12 @@ def coerce(value, data_type: str, source_timezone: str | None = None,
                 ) from None
         return bool(value)
     raise ValueError(f"Unknown field data_type {data_type!r}")
+
+
+def is_computed(field) -> bool:
+    """A field with no stored value: derived from a formula (R37), or
+    filled in by approved enrichment rules (R41). Everything that writes
+    a value, or checks one on source rows, refuses both alike -- one
+    question asked in one place, so a third kind of computed field is
+    one line here rather than a hunt for every `"derived" in`."""
+    return "derived" in field or "enrich" in field

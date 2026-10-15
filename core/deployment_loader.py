@@ -72,6 +72,7 @@ from core.ontology.derived_fields import (
     refuse_rules_over_derived,
     validate_derived_fields,
 )
+from core.ontology.enriched_fields import fill_enriched_types, validate_enriched_fields
 from core.ontology.field_rules import validate_dependencies, validate_field_rules
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.link_types import expand_link_types, validate_link_types
@@ -643,8 +644,12 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # Fields computed from other fields (R37): checked, then typed by
     # what their formula yields, before anything reads the schema.
     validate_derived_fields(object_types_raw)
+    # Fields filled in by approved enrichment rules (R41): checked --
+    # including that no classified field is ever an input -- and typed.
+    validate_enriched_fields(object_types_raw)
     refuse_rules_over_derived(object_types_raw)
     fill_result_types(object_types_raw)
+    fill_enriched_types(object_types_raw)
     schema_raw["object_types"] = expand_link_types(link_types_raw, object_types_raw)
 
     validate_function_declarations(enabled_tools, schema_raw["object_types"])

@@ -128,6 +128,10 @@ OWNED_DATABASES = (
     # dragging forty types is an afternoon nobody wants to repeat. The
     # backup guard caught it the moment the store appeared.
     "canvas_layouts.db",
+    # WHAT A PERSON APPROVED A MODEL'S RULES TO ANSWER (R41). The only
+    # record of the approvals that decide what enriched fields hold;
+    # losing it empties every one of them at the next sync.
+    "enrichment_recipes.db",
     "triggers.db",
     "notifications.db",
     # ONCE SOMEBODY EDITS A ROLE, THE ONLY COPY OF THE GRANTS. Losing it

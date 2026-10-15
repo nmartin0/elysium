@@ -120,6 +120,8 @@ type isn't even in that list could never be "the current object" on
 any page this action is reachable from).
 """
 
+from core.ontology.field_types import is_computed
+
 MAX_SUB_WRITES = 20
 
 
@@ -707,12 +709,12 @@ def _validate_one_sub_write(action_type_name: str, index: int, sub_write: dict, 
                 f"Action type {action_type_name!r}: sub_writes[{index}].mutations[{mutation_index}] "
                 f"sets unknown property {property_name!r} on {object_type!r}."
             )
-        if "derived" in (object_types[object_type]["fields"].get(property_name) or {}):
+        if is_computed(object_types[object_type]["fields"].get(property_name) or {}):
             # COMPUTED, NOT STORED (R37): there is no column to write,
             # and the value would be overwritten by its own formula.
             raise ValueError(
                 f"Action type {action_type_name!r}: sub_writes[{index}].mutations[{mutation_index}] "
-                f"sets {property_name!r} on {object_type!r}, which is derived from other fields; "
+                f"sets {property_name!r} on {object_type!r}, which is computed from other fields; "
                 f"set those instead."
             )
 

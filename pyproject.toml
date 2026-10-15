@@ -289,6 +289,8 @@ layers = [
     # canvas_layout imports only sqlite_connection, like saved_views --
     # one person's presentation, which nothing that decides meaning reads.
     "canvas_layout",
+    # enrichment_recipes imports only sqlite_connection, like saved_views.
+    "enrichment_recipes",
     # frozen_sets imports only sqlite_connection, like saved_views --
     # its sibling, the frozen kind of saved set.
     "frozen_sets",
@@ -396,6 +398,10 @@ layers = [
     # Derived fields (R37) sit beside them: the mediator computes them,
     # and they read only field_types.
     "field_rules | derived_fields",
+    # Enriched fields (R41) below them: derived_fields gates reads on
+    # both kinds of computed field, and enrichment reads only
+    # classifications.
+    "enriched_fields",
     "interface | schema | write_log | submission_criteria | action_types | object_type_validation | constraints | gold_view | bindings",
     # Real leaves, below everything. object_type_validation imports
     # field_types (to reject an unknown declared data_type at load
