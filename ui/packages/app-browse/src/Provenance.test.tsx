@@ -153,6 +153,34 @@ describe('where the sources disagreed', () => {
     expect(screen.getByText('not enough history')).toBeInTheDocument()
   })
 
+  it('says which sources the majority sides with, and names copies (R60)', async () => {
+    show(LINEAGE, [
+      {
+        ...NAME_CONFLICT,
+        vote: { majority: ['erp', 'web'], sources: ['billing', 'crm', 'erp', 'web'], copies: [['billing', 'crm']] },
+        agreement: { crm: 60 },
+      },
+    ])
+
+    expect(await screen.findByText(/most independent sources/i)).toBeInTheDocument()
+    expect(screen.getByText(/agree with erp and web/)).toBeInTheDocument()
+    expect(screen.getByText(/billing and crm look like copies, counted once/)).toBeInTheDocument()
+    expect(screen.getByText(/crm sides with the majority about 60% of the time/)).toBeInTheDocument()
+  })
+
+  it('says a tie is a tie', async () => {
+    show(LINEAGE, [{ ...NAME_CONFLICT, vote: { majority: [], sources: ['a', 'b', 'c'], copies: [] } }])
+
+    expect(await screen.findByText(/no majority: a tie/)).toBeInTheDocument()
+  })
+
+  it('adds no vote column when no row has one', async () => {
+    show(LINEAGE, [NAME_CONFLICT])
+
+    await screen.findByText(/where the sources disagreed/i)
+    expect(screen.queryByText(/most independent sources/i)).not.toBeInTheDocument()
+  })
+
   it('adds no column when no row has a track record', async () => {
     show(LINEAGE, [NAME_CONFLICT])
 

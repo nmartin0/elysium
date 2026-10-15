@@ -56,6 +56,35 @@ import {
  * reassurance on every object page to describe the absence of a
  * feature most deployments do not use.
  */
+/**
+ * R60's vote for one row: which of this object's sources hold the value
+ * most independent sources agree on, which look like copies, and how
+ * often the two named sources side with the majority. EVIDENCE, NOT A
+ * VERDICT: the declared order still decides what is served.
+ */
+function VoteCell({ conflict }: { conflict: ValueConflict }) {
+  const { vote, agreement } = conflict
+  if (!vote && !agreement) return <span className="conflicts__source">fewer than three sources</span>
+  return (
+    <span className="conflicts__source">
+      {vote && (vote.majority.length > 0 ? `agree with ${vote.majority.join(' and ')}` : 'no majority: a tie')}
+      {vote?.copies.map((pair) => (
+        <span key={pair.join('+')} className="conflicts__copies">
+          {' '}
+          ({pair.join(' and ')} look like copies, counted once)
+        </span>
+      ))}
+      {agreement &&
+        Object.entries(agreement).map(([source, percent]) => (
+          <span key={source} className="conflicts__agreement">
+            {' '}
+            {source} sides with the majority about {percent}% of the time.
+          </span>
+        ))}
+    </span>
+  )
+}
+
 function Disagreements({ conflicts }: { conflicts: ValueConflict[] }) {
   if (conflicts.length === 0) return null
 
@@ -68,6 +97,9 @@ function Disagreements({ conflicts }: { conflicts: ValueConflict[] }) {
   // R60: a column only when some row has a track record, so a
   // deployment without one sees the table it always did.
   const tracked = conflicts.some((conflict) => conflict.track_record)
+  // R60's VOTE, where three or more sources hold a field: its own column,
+  // likewise only when some row has one.
+  const voted = conflicts.some((conflict) => conflict.vote || conflict.agreement)
 
   return (
     <section className="object-detail__conflicts">
@@ -79,6 +111,7 @@ function Disagreements({ conflicts }: { conflicts: ValueConflict[] }) {
             <th>Serving</th>
             <th>Outranked</th>
             {tracked && <th>When these two disagreed before</th>}
+            {voted && <th>Most independent sources</th>}
           </tr>
         </thead>
         <tbody>
@@ -132,6 +165,11 @@ function Disagreements({ conflicts }: { conflicts: ValueConflict[] }) {
                   ) : (
                     <span className="conflicts__source">not enough history</span>
                   )}
+                </td>
+              )}
+              {voted && (
+                <td>
+                  <VoteCell conflict={conflict} />
                 </td>
               )}
             </tr>

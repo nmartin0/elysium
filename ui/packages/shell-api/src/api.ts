@@ -1964,6 +1964,14 @@ export interface ValueConflict {
    *  share rounded to ten per cent. Absent until there are enough ended
    *  disagreements, and from older servers. Never a count. */
   track_record?: { source: string; about_percent: number } | null
+  /** R60's vote, where three or more sources hold this field: which of
+   *  this object's sources hold the value most independent sources agree
+   *  on (empty on a tie), every source holding it, and pairs that look
+   *  like one copying the other, counted as one voice. */
+  vote?: { majority: string[]; sources: string[]; copies: string[][] } | null
+  /** How often each named source agrees with the majority on this
+   *  field, rounded to ten per cent. Never a count. */
+  agreement?: Record<string, number> | null
 }
 
 export async function getObjectConflicts(objectType: string, objectId: string): Promise<ValueConflict[]> {

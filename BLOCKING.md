@@ -203,8 +203,8 @@ own rows first.
 **WHICH SOURCE TENDS TO BE RIGHT IS SHOWN, NOT APPLIED** (R60, 15
 October): when two sources' disagreement ends, the one that changed to
 match the other is recorded; the Provenance panel shows a rounded share
-from ten such endings. Voting across three or more sources waits for a
-deployment that has them.
+from ten such endings. Where three or more sources hold a field, they
+vote, with a source that looks like a copy of another counted once.
 
 **Blocked on:** nothing for the last of statistical matching (R63),
 then the plugin API (item 3).

@@ -31,8 +31,9 @@ ITS LIMITS, STATED SO NOBODY READS MORE INTO IT:
   counted. Neither is a disagreement still open, or one whose entity or
   source has gone.
 
-  NO VOTING across three or more sources yet (owner, 15 October: none
-  of the deployments has a field held by three).
+  WITH THREE OR MORE SOURCES there is a better question than how a
+  pairwise disagreement ended: which value most independent sources
+  hold now. source_vote.py asks it.
 
 EVIDENCE ONLY. Nothing here changes survivorship. A deployment that
 finds its preferred source usually loses changes `prefer` itself.
@@ -71,6 +72,35 @@ CREATE TABLE IF NOT EXISTS ended_disagreements (
     moved_source     TEXT NOT NULL,
     observed_at      TEXT NOT NULL,
     PRIMARY KEY (object_type, entity_id, field, last_recorded_at)
+);
+-- THE VOTING HALF (source_vote.py). Recomputed from what the sources
+-- hold now on every sync, so REPLACED per type rather than appended:
+-- unlike an ended disagreement, nothing here is lost by recomputing.
+CREATE TABLE IF NOT EXISTS votes (
+    object_type TEXT NOT NULL,
+    entity_id   TEXT NOT NULL,
+    field       TEXT NOT NULL,
+    majority    TEXT NOT NULL,   -- JSON list of sources; [] on a tie
+    sources     TEXT NOT NULL,   -- JSON list of every source holding it
+    PRIMARY KEY (object_type, entity_id, field)
+);
+CREATE TABLE IF NOT EXISTS vote_agreement (
+    object_type TEXT NOT NULL,
+    field       TEXT NOT NULL,
+    source      TEXT NOT NULL,
+    agreed      INTEGER NOT NULL,
+    total       INTEGER NOT NULL,
+    PRIMARY KEY (object_type, field, source)
+);
+CREATE TABLE IF NOT EXISTS copying (
+    object_type  TEXT NOT NULL,
+    source_a     TEXT NOT NULL,
+    source_b     TEXT NOT NULL,
+    probability  REAL NOT NULL,
+    shared_true  INTEGER NOT NULL,
+    shared_false INTEGER NOT NULL,
+    different    INTEGER NOT NULL,
+    PRIMARY KEY (object_type, source_a, source_b)
 );
 """
 
@@ -209,6 +239,54 @@ class SourceRecordStore:
         return {key: TrackRecord(key[0], tuple(sorted(key[1])), counts)  # type: ignore[arg-type]
                 for key, counts in held.items()}
 
+    def replace_vote(self, object_type: str, outcome: Any) -> None:
+        """This sync's vote for a type, in place of the last one. Only the
+        DISPUTED items are kept per entity -- a unanimous field has no
+        conflict row to explain -- while agreement rates count them all."""
+        import json
+
+        from core.mirror.source_vote import disputed
+
+        with self._connection() as conn:
+            for table in ("votes", "vote_agreement", "copying"):
+                conn.execute(f"DELETE FROM {table} WHERE object_type = ?", (object_type,))
+            conn.executemany("INSERT INTO votes VALUES (?, ?, ?, ?, ?)", [
+                (object_type, v.entity_id, v.field, json.dumps(list(v.majority)),
+                 json.dumps(list(v.sources))) for v in disputed(outcome.votes)])
+            conn.executemany("INSERT INTO vote_agreement VALUES (?, ?, ?, ?, ?)", [
+                (object_type, field_name, source, agreed, total)
+                for (field_name, source), (agreed, total) in sorted(outcome.agreement.items())])
+            conn.executemany("INSERT INTO copying VALUES (?, ?, ?, ?, ?, ?, ?)", [
+                (object_type, *c.sources, c.probability, c.shared_true, c.shared_false,
+                 c.different) for c in outcome.copying])
+            conn.commit()
+
+    def votes_for(self, object_type: str, entity_id: str) -> dict[str, dict]:
+        """field -> {"majority": [...], "sources": [...]} for one entity."""
+        import json
+
+        with self._connection() as conn:
+            return {row["field"]: {"majority": json.loads(row["majority"]),
+                                   "sources": json.loads(row["sources"])}
+                    for row in conn.execute(
+                        "SELECT field, majority, sources FROM votes "
+                        "WHERE object_type = ? AND entity_id = ?", (object_type, entity_id))}
+
+    def vote_agreement(self, object_type: str) -> dict[tuple[str, str], tuple[int, int]]:
+        """(field, source) -> (agreed with the majority, voted on)."""
+        with self._connection() as conn:
+            return {(row["field"], row["source"]): (row["agreed"], row["total"])
+                    for row in conn.execute(
+                        "SELECT field, source, agreed, total FROM vote_agreement "
+                        "WHERE object_type = ?", (object_type,))}
+
+    def copying(self, object_type: str) -> list[dict]:
+        with self._connection() as conn:
+            return [dict(row) for row in conn.execute(
+                "SELECT source_a, source_b, probability, shared_true, shared_false, different "
+                "FROM copying WHERE object_type = ? ORDER BY source_a, source_b",
+                (object_type,))]
+
     def forget_erased(self, key_hash, hashes_by_type: dict) -> int:
         """Every ended disagreement about an erased record, gone (R13), as
         MergeDecisionStore.forget_erased does for proposals. Returns how
@@ -223,5 +301,20 @@ class SourceRecordStore:
             doomed = [(row["rowid"],) for row in rows
                       if is_erased(key_hash, hashes_by_type, row["object_type"], row["entity_id"])]
             conn.executemany("DELETE FROM ended_disagreements WHERE rowid = ?", doomed)
+            # AND THE VOTES NAMING THEM: which sources sided with which
+            # value about this person is a fact about them too.
+            voted = [(row["rowid"],) for row in conn.execute(
+                "SELECT rowid, object_type, entity_id FROM votes").fetchall()
+                if is_erased(key_hash, hashes_by_type, row["object_type"], row["entity_id"])]
+            conn.executemany("DELETE FROM votes WHERE rowid = ?", voted)
             conn.commit()
         return len(doomed)
+
+
+def agreement_shown(agreed: int, total: int) -> "int | None":
+    """A source's rate of agreeing with the majority, as the browser may
+    see it: rounded to ten per cent, from SHOWN_FROM items, no count --
+    the same rule as a track record, for the same reason."""
+    if total < SHOWN_FROM:
+        return None
+    return int(round(agreed / total * 10) * 10)

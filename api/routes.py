@@ -149,6 +149,7 @@ from core.mirror.expectation_warnings import ExpectationWarnings
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.integrity import _row_count, check_mirror
 from core.mirror.quarantine_report import quarantine_for
+from core.mirror.source_record import agreement_shown
 from core.mirror.sync_attempts import SyncAttempts
 from core.mirror.sync_targets import resolve_sync_targets
 from core.ontology.decimal_text import exact_decimals
@@ -3968,6 +3969,17 @@ class ValueConflictResponse(BaseModel):
     #: they span every compartment, so a count would say how many exist
     #: on objects this reader may not see. It changes nothing gold holds.
     track_record: dict | None = None
+    #: R60's VOTE, where three or more sources hold this field: which of
+    #: THIS OBJECT'S sources hold the value most independent sources
+    #: agree on ({"majority": [...], "sources": [...], "copies": [[a, b]]};
+    #: an empty majority is a tie). About this object's own sources, so
+    #: names, not rates. `copies` are pairs that look like one copying
+    #: the other, counted as one voice. Evidence only.
+    vote: dict | None = None
+    #: How often each of the two sources named above agrees with the
+    #: majority on this field, across every object -- so rounded to ten
+    #: per cent, from ten votes, never a count, like `track_record`.
+    agreement: dict | None = None
 
 
 @router.get("/objects/{object_type}/{object_id}/provenance",
@@ -4112,6 +4124,7 @@ def object_conflicts_route(
 
     readable = _readable_fields(request, current_user, object_type)
     records = _track_records(request, object_type)
+    votes, agreement, copies = _vote_evidence(request, object_type, object_id)
     out = []
     for row in rows:
         field_name = row.get("field")
@@ -4134,6 +4147,16 @@ def object_conflicts_route(
                 (row.get("chosen_source"), row.get("losing_source")))))
             if record is not None:
                 entry["track_record"] = record.shown()
+            voted = votes.get(field_name)
+            if voted is not None:
+                among = set(voted["sources"])
+                entry["vote"] = {**voted, "copies": [
+                    pair for pair in copies if set(pair) <= among]}
+            rates = {source: agreement_shown(*agreement[(field_name, source)])
+                     for source in (row.get("chosen_source"), row.get("losing_source"))
+                     if (field_name, source) in agreement}
+            if any(rate is not None for rate in rates.values()):
+                entry["agreement"] = {k: v for k, v in rates.items() if v is not None}
         if may_read:
             # ABSENT WHEN NULL TOO, not only when withheld: a
             # serialised None has been through this process and sits in
@@ -5091,6 +5114,19 @@ def _track_records(request: Request, object_type: str) -> dict:
     if not path.exists():
         return {}
     return SourceRecordStore(path).track_records(object_type)
+
+
+def _vote_evidence(request: Request, object_type: str, object_id: str):
+    """R60's vote for one object, the type's agreement rates and its
+    copying pairs -- or nothing, without creating the store."""
+    from core.mirror.source_record import SourceRecordStore
+
+    path = request.app.state.runtime_paths.data_dir / "source_record.db"
+    if not path.exists():
+        return {}, {}, []
+    store = SourceRecordStore(path)
+    return (store.votes_for(object_type, object_id), store.vote_agreement(object_type),
+            [[row["source_a"], row["source_b"]] for row in store.copying(object_type)])
 
 
 def _merge_store(request: Request) -> MergeDecisionStore:

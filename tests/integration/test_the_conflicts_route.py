@@ -279,3 +279,47 @@ class TestTheTrackRecord:
     def test_no_record_kept_creates_no_file(self, client):
         assert self._ask(client)["track_record"] is None
         assert not (client.app.state.runtime_paths.data_dir / "source_record.db").exists()
+
+
+class TestTheVote:
+    """R60's voting half: where three or more sources hold the field,
+    which of this object's sources the majority sides with, which look
+    like copies, and rounded agreement rates."""
+
+    def _voted(self, client):
+        from core.mirror.source_record import SourceRecordStore
+        from core.mirror.source_vote import vote
+
+        current = {"cust_001": {"name": {"crm": "Ada Okafor", "primary": "Ada",
+                                         "erp": "Ada"}}}
+        # Ten more objects so the rates clear the minimum.
+        current.update({f"x{i}": {"name": {"crm": "N", "primary": "N", "erp": "N"}}
+                        for i in range(10)})
+        SourceRecordStore(client.app.state.runtime_paths.data_dir / "source_record.db"
+                          ).replace_vote("Customer", vote(current))
+
+    def _ask(self, client):
+        with_roles(client.app, lineage_admin=LINEAGE_ADMIN)
+        _record(client)
+        _login(client, "west", "lineage_admin", region="us-west")
+        [conflict] = client.get("/api/objects/Customer/cust_001/conflicts").json()
+        return conflict
+
+    def test_the_majority_of_this_objects_sources_is_named(self, client):
+        self._voted(client)
+
+        conflict = self._ask(client)
+
+        assert conflict["vote"] == {"majority": ["erp", "primary"],
+                                    "sources": ["crm", "erp", "primary"], "copies": []}
+
+    def test_agreement_rates_are_rounded_and_never_counts(self, client):
+        self._voted(client)
+
+        # crm sided with the majority on 10 of 11, primary on 11 of 11.
+        assert self._ask(client)["agreement"] == {"crm": 90, "primary": 100}
+
+    def test_no_vote_where_fewer_than_three_sources_hold_it(self, client):
+        conflict = self._ask(client)
+
+        assert conflict["vote"] is None and conflict["agreement"] is None

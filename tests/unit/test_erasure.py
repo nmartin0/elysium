@@ -372,6 +372,22 @@ class TestEverythingButTheAuditLog:
         record = store.track_records("Customer")[("email", frozenset(("crm", "primary")))]
         assert record.total == 1
 
+    def test_a_vote_about_them_is_forgotten(self, synced_deployment):
+        """R60's voting half: which sources sided with which value about
+        this person is a fact about them."""
+        from core.mirror.source_record import SourceRecordStore
+        from core.mirror.source_vote import vote
+
+        store = SourceRecordStore(synced_deployment.data_dir / "source_record.db")
+        store.replace_vote("Customer", vote({
+            ADA: {"email": {"primary": "a", "crm": "a", "erp": "b"}},
+            "cust_002": {"email": {"primary": "c", "crm": "c", "erp": "d"}}}))
+
+        _erase(synced_deployment)
+
+        assert store.votes_for("Customer", ADA) == {}
+        assert store.votes_for("Customer", "cust_002") != {}
+
     def test_the_audit_log_says_an_erasure_happened_and_not_of_whom(self, synced_deployment):
         import json
 

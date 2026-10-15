@@ -188,6 +188,36 @@ class TestTheSync:
                                            "Customer", plain, {None: []}, []) == 0
 
 
+class TestTheSyncVotes:
+    """R60's voting half rides on the same hook: where three or more
+    sources hold a field, this sync's vote replaces the last -- and it
+    needs no conflict history, so a type that never recorded one votes."""
+
+    TYPE = {"id_field": "customer_id",
+            "storage": {"silo": "b", "table": "customers", "id_column": "pk"},
+            "additional_storage": {"crm": {"silo": "c", "table": "c", "id_column": "cid"},
+                                   "erp": {"silo": "e", "table": "e", "id_column": "eid"}},
+            "identity": {"match_on": ["email"]},
+            "fields": {"email": {"type": "data"}, "city": {"type": "data"}}}
+
+    def test_a_vote_is_kept_with_no_conflicts_table(self, tmp_path):
+        from core.mirror.gold_conflicts import ConflictsNotRecorded
+        from scripts.run_sync import _record_ended_disagreements
+
+        def none_recorded(identifier):
+            raise ConflictsNotRecorded(identifier)
+
+        store = SourceRecordStore(tmp_path / "r.db")
+        rows = {None: [{"pk": "c1", "email": "a@x", "city": "Leeds"}],
+                "crm": [{"cid": "9", "email": "a@x", "city": "Hull"}],
+                "erp": [{"eid": "7", "email": "a@x", "city": "Hull"}]}
+
+        _record_ended_disagreements(store, SimpleNamespace(load_table=none_recorded),
+                                    "Customer", self.TYPE, rows, [])
+
+        assert store.votes_for("Customer", "c1")["city"]["majority"] == ["crm", "erp"]
+
+
 class TestTheServerSideReport:
     def test_it_gives_the_counts_the_panel_leaves_out(self, tmp_path):
         from scripts.source_track_record import report

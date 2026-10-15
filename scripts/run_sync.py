@@ -308,7 +308,9 @@ def _record_ended_disagreements(store, catalog, object_type: str, type_def: dict
                                 rows_by_storage: dict, approved: list) -> int:
     """R60: disagreements between sources that have since ended, and
     which side's value both now hold -- kept as evidence for whoever
-    judges the survivorship order. Returns how many were new.
+    judges the survivorship order. Returns how many were new. And, where
+    three or more sources hold a field, this sync's vote, copies
+    discounted (source_vote.py).
 
     EVIDENCE ONLY: nothing here changes what gold holds. AND IT NEVER
     BREAKS A SYNC, like the matcher: gold is already published, and a
@@ -317,17 +319,21 @@ def _record_ended_disagreements(store, catalog, object_type: str, type_def: dict
     from core.mirror.gold_conflicts import ConflictsNotRecorded, read_all_conflicts
     from core.mirror.identity import resolve, rule_for
     from core.mirror.source_record import current_values, ended_disagreements
+    from core.mirror.source_vote import vote
 
     try:
         if rule_for(type_def) is None:
             return 0
+        resolution = resolve(type_def, rows_by_storage, approved_pairs=approved)
+        current = current_values(type_def, resolution)
+        # THE VOTE, where three or more sources hold a field: from what
+        # they hold now, so it needs no history and replaces the last.
+        store.replace_vote(object_type, vote(current))
         try:
             history = read_all_conflicts(catalog, object_type)
         except ConflictsNotRecorded:
             return 0
-        resolution = resolve(type_def, rows_by_storage, approved_pairs=approved)
-        return store.record(object_type, ended_disagreements(
-            history, current_values(type_def, resolution)))
+        return store.record(object_type, ended_disagreements(history, current))
     except Exception as exc:  # noqa: BLE001 - see the docstring
         print(f"WARNING gold.{object_type}: track record not updated: {exc}", file=sys.stderr)
         return 0
