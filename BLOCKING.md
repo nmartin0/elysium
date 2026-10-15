@@ -200,8 +200,14 @@ edit is the default because two halved precision on a crowded
 population -- a deployment allowing more should run the harness on its
 own rows first.
 
-**Blocked on:** nothing for the rest of statistical matching (R60,
-R63), then the plugin API (item 3).
+**WHICH SOURCE TENDS TO BE RIGHT IS SHOWN, NOT APPLIED** (R60, 15
+October): when two sources' disagreement ends, the one that changed to
+match the other is recorded; the Provenance panel shows a rounded share
+from ten such endings. Voting across three or more sources waits for a
+deployment that has them.
+
+**Blocked on:** nothing for the last of statistical matching (R63),
+then the plugin API (item 3).
 
 ## 3. A plugin API, and the reason module federation is not it
 

@@ -73,14 +73,8 @@ def read_conflicts(catalog, object_type: str, object_id: str) -> list[dict]:
     here alone would leave three readers of the same shape behaving
     differently for no stated reason.
     """
-    identifier = f"{CONFLICT_NAMESPACE}.{object_type}"
-    try:
-        table = catalog.load_table(identifier)
-    except (NoSuchTableError, NoSuchNamespaceError):
-        raise ConflictsNotRecorded(identifier) from None
-
     rows = [
-        row for row in table.scan().to_arrow().to_pylist()
+        row for row in read_all_conflicts(catalog, object_type)
         if str(row.get("entity_id")) == str(object_id)
     ]
     # BY recorded_at, DESCENDING, and ties keep the order the table
@@ -89,3 +83,15 @@ def read_conflicts(catalog, object_type: str, object_id: str) -> list[dict]:
     # formatted once per call) stay in the order survivorship produced
     # them, which is the declared field order.
     return sorted(rows, key=lambda row: row.get("recorded_at") or "", reverse=True)
+
+
+def read_all_conflicts(catalog, object_type: str) -> list[dict]:
+    """Every row of a type's conflicts table, in table order: the whole
+    history of every argument, which R60's track record reads to find
+    the ones that have ended. Raises ConflictsNotRecorded as above."""
+    identifier = f"{CONFLICT_NAMESPACE}.{object_type}"
+    try:
+        table = catalog.load_table(identifier)
+    except (NoSuchTableError, NoSuchNamespaceError):
+        raise ConflictsNotRecorded(identifier) from None
+    return table.scan().to_arrow().to_pylist()

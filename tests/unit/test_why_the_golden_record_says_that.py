@@ -239,3 +239,70 @@ class TestWhatItDoesNotRecord:
         # actionable: an operator has to go and ask which is right.
         security = conflicts[0]
         assert {security["chosen"], security["losing"]} == {"us-west", "us-east"}
+
+
+class TestWhenTheArgumentEnds:
+    """R60, THROUGH A REAL BUILD: the disagreement above ends, and the
+    track record says whose value both sources ended up holding."""
+
+    def test_billing_adopting_the_crms_name_counts_for_the_crm(self, published, tmp_path):
+        from core.mirror.source_record import SourceRecordStore
+        from scripts.run_sync import _record_ended_disagreements
+
+        _build(published)  # CRM "Ada Okafor" serves, billing "Ada" is outranked
+        conn = sqlite3.connect(tmp_path / "billing.db")
+        conn.execute("UPDATE customers SET name = 'Ada Okafor' WHERE cust_pk = 'c1'")
+        conn.commit()
+        conn.close()
+        columns = ["cust_pk", "email", "region", "name"]
+        published.sync_table("b", "customers", "cust_pk", columns,
+                             dict.fromkeys(columns, "string"))
+        _build(published)
+        store = SourceRecordStore(tmp_path / "record.db")
+        rows = {None: published._catalog.load_table("b.customers").scan().to_arrow().to_pylist(),
+                "crm": published._catalog.load_table("c.contacts").scan().to_arrow().to_pylist()}
+
+        added = _record_ended_disagreements(store, published._catalog, "Customer", TYPE, rows, [])
+
+        assert added == 1
+        record = store.track_records("Customer")[("name", frozenset(("crm", "primary")))]
+        assert record.held == {"crm": 1}
+        # Seen again on the next sync, it is not counted twice.
+        assert _record_ended_disagreements(store, published._catalog, "Customer", TYPE,
+                                           rows, []) == 0
+
+    def test_while_they_still_disagree_nothing_is_recorded(self, published, tmp_path):
+        from core.mirror.source_record import SourceRecordStore
+        from scripts.run_sync import _record_ended_disagreements
+
+        _build(published)
+        rows = {None: published._catalog.load_table("b.customers").scan().to_arrow().to_pylist(),
+                "crm": published._catalog.load_table("c.contacts").scan().to_arrow().to_pylist()}
+
+        assert _record_ended_disagreements(SourceRecordStore(tmp_path / "record.db"),
+                                           published._catalog, "Customer", TYPE, rows, []) == 0
+
+    def test_the_sync_keeps_it_without_being_asked(self, published, tmp_path):
+        """Through run_sync's own gold loop, so the wiring is what is
+        tested: two syncs either side of billing adopting the CRM's name."""
+        from types import SimpleNamespace
+
+        import scripts.run_sync as run_sync
+        from core.mirror.source_record import SourceRecordStore
+
+        config = SimpleNamespace(schema={"Customer": TYPE}, identity_inference=False,
+                                 retain_publications=30, mirror_storage={})
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        run_sync._build_gold(published, config, data_dir, unsynced=set())
+        conn = sqlite3.connect(tmp_path / "billing.db")
+        conn.execute("UPDATE customers SET name = 'Ada Okafor' WHERE cust_pk = 'c1'")
+        conn.commit()
+        conn.close()
+        columns = ["cust_pk", "email", "region", "name"]
+        published.sync_table("b", "customers", "cust_pk", columns,
+                             dict.fromkeys(columns, "string"))
+        run_sync._build_gold(published, config, data_dir, unsynced=set())
+
+        record = SourceRecordStore(data_dir / "source_record.db").track_records("Customer")
+        assert record[("name", frozenset(("crm", "primary")))].held == {"crm": 1}

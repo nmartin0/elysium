@@ -65,6 +65,9 @@ function Disagreements({ conflicts }: { conflicts: ValueConflict[] }) {
   // preferred source for a value it never held -- but not headed as a
   // dispute when nothing was disputed.
   const disputed = conflicts.some((conflict) => conflict.kind !== 'filled')
+  // R60: a column only when some row has a track record, so a
+  // deployment without one sees the table it always did.
+  const tracked = conflicts.some((conflict) => conflict.track_record)
 
   return (
     <section className="object-detail__conflicts">
@@ -75,6 +78,7 @@ function Disagreements({ conflicts }: { conflicts: ValueConflict[] }) {
             <th>Field</th>
             <th>Serving</th>
             <th>Outranked</th>
+            {tracked && <th>When these two disagreed before</th>}
           </tr>
         </thead>
         <tbody>
@@ -115,6 +119,21 @@ function Disagreements({ conflicts }: { conflicts: ValueConflict[] }) {
                   <span className="conflicts__source">from {conflict.losing_source}</span>
                 )}
               </td>
+              {tracked && (
+                <td>
+                  {/* EVIDENCE, NOT A VERDICT (R60): whose value both
+                      sources ended up holding, rounded. It changes
+                      nothing; the declared order still decides. */}
+                  {conflict.track_record ? (
+                    <span className="conflicts__source">
+                      {conflict.track_record.source}'s value held about {conflict.track_record.about_percent}% of the
+                      time
+                    </span>
+                  ) : (
+                    <span className="conflicts__source">not enough history</span>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

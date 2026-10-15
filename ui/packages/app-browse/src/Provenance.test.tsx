@@ -141,6 +141,25 @@ describe('where the sources disagreed', () => {
     expect(screen.getByText('from primary')).toBeInTheDocument()
   })
 
+  it('says whose value held when these two disagreed before (R60)', async () => {
+    show(LINEAGE, [
+      { ...NAME_CONFLICT, track_record: { source: 'crm', about_percent: 80 } },
+      { ...NAME_CONFLICT, field: 'email', recorded_at: '2026-10-11T00:00:01+00:00' },
+    ])
+
+    expect(await screen.findByText(/when these two disagreed before/i)).toBeInTheDocument()
+    expect(screen.getByText("crm's value held about 80% of the time")).toBeInTheDocument()
+    // A row without enough history says so rather than leaving a blank.
+    expect(screen.getByText('not enough history')).toBeInTheDocument()
+  })
+
+  it('adds no column when no row has a track record', async () => {
+    show(LINEAGE, [NAME_CONFLICT])
+
+    await screen.findByText(/where the sources disagreed/i)
+    expect(screen.queryByText(/when these two disagreed before/i)).not.toBeInTheDocument()
+  })
+
   it('says nothing at all when nothing disagreed', async () => {
     // THE CONTROL, and the reason there is no empty state: most
     // deployments declare no identity resolution and would otherwise

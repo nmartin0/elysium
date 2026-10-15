@@ -238,3 +238,44 @@ class TestAContestedCompartment:
         assert entry["field"] is None
         assert entry["readable"] is True
         assert {entry["chosen"], entry["losing"]} == {"us-west", "us-east"}
+
+
+class TestTheTrackRecord:
+    """R60: whose value held when these two sources disagreed before --
+    rounded to ten per cent, from ten ended disagreements, never a count
+    (owner, 15 October)."""
+
+    def _ended(self, client, crm_held, primary_held, field="name"):
+        from core.mirror.source_record import Ended, SourceRecordStore
+
+        store = SourceRecordStore(client.app.state.runtime_paths.data_dir / "source_record.db")
+        store.record("Customer", [Ended(f"e{i}", field, "t", "crm", "primary")
+                                  for i in range(crm_held)]
+                     + [Ended(f"p{i}", field, "t", "primary", "crm")
+                        for i in range(primary_held)])
+
+    def _ask(self, client):
+        with_roles(client.app, lineage_admin=LINEAGE_ADMIN)
+        _record(client)
+        _login(client, "west", "lineage_admin", region="us-west")
+        [conflict] = client.get("/api/objects/Customer/cust_001/conflicts").json()
+        return conflict
+
+    def test_ten_ended_disagreements_show_a_rounded_share(self, client):
+        self._ended(client, crm_held=8, primary_held=3)  # 8 of 11 is 73%
+
+        assert self._ask(client)["track_record"] == {"source": "crm", "about_percent": 70}
+
+    def test_nine_are_not_enough(self, client):
+        self._ended(client, crm_held=7, primary_held=2)
+
+        assert self._ask(client)["track_record"] is None
+
+    def test_another_fields_record_is_not_this_ones(self, client):
+        self._ended(client, crm_held=10, primary_held=0, field="email")
+
+        assert self._ask(client)["track_record"] is None
+
+    def test_no_record_kept_creates_no_file(self, client):
+        assert self._ask(client)["track_record"] is None
+        assert not (client.app.state.runtime_paths.data_dir / "source_record.db").exists()

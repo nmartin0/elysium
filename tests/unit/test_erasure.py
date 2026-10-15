@@ -358,6 +358,20 @@ class TestEverythingButTheAuditLog:
 
         assert [p.proposal_id for p in store.proposals()] == [other]
 
+    def test_an_ended_disagreement_about_them_is_forgotten(self, synced_deployment):
+        """R60: the track record keeps which entity a settled disagreement
+        was about, which is a fact about the person."""
+        from core.mirror.source_record import Ended, SourceRecordStore
+
+        store = SourceRecordStore(synced_deployment.data_dir / "source_record.db")
+        store.record("Customer", [Ended(ADA, "email", "t1", "crm", "primary"),
+                                  Ended("cust_002", "email", "t1", "crm", "primary")])
+
+        _erase(synced_deployment)
+
+        record = store.track_records("Customer")[("email", frozenset(("crm", "primary")))]
+        assert record.total == 1
+
     def test_the_audit_log_says_an_erasure_happened_and_not_of_whom(self, synced_deployment):
         import json
 

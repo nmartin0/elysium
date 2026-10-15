@@ -458,6 +458,7 @@ def forget_beyond_the_mirror(data_dir: Path, register: "ErasureRegister",
     from core.frozen_sets import FrozenSetStore
     from core.identity_decisions import MergeDecisionStore
     from core.memory.store import MemoryStore
+    from core.mirror.source_record import SourceRecordStore
     from core.notifications import NotificationStore
     from core.ontology.write_log import WriteLogWriter
     from core.paused_queries import PausedQueryStore
@@ -479,6 +480,9 @@ def forget_beyond_the_mirror(data_dir: Path, register: "ErasureRegister",
         counts["notes"] = ArtifactStore(path).forget_erased_notes(key_hash, hashes)
     if path := present("identity_decisions.db"):
         counts["merge_proposals"] = MergeDecisionStore(path).forget_erased(key_hash, hashes)
+    if path := present("source_record.db"):
+        # R60: an ended disagreement names the entity it was about.
+        counts["source_track_record"] = SourceRecordStore(path).forget_erased(key_hash, hashes)
     if path := present("frozen_sets.db"):
         counts["frozen_set_members"] = FrozenSetStore(path).forget_erased(key_hash, hashes)
     if path := present("write_log.db"):

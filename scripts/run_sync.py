@@ -304,6 +304,35 @@ def _propose_merges(store, config, object_type: str, type_def: dict,
     return proposed
 
 
+def _record_ended_disagreements(store, catalog, object_type: str, type_def: dict,
+                                rows_by_storage: dict, approved: list) -> int:
+    """R60: disagreements between sources that have since ended, and
+    which side's value both now hold -- kept as evidence for whoever
+    judges the survivorship order. Returns how many were new.
+
+    EVIDENCE ONLY: nothing here changes what gold holds. AND IT NEVER
+    BREAKS A SYNC, like the matcher: gold is already published, and a
+    track record that could not be updated is reported and skipped.
+    """
+    from core.mirror.gold_conflicts import ConflictsNotRecorded, read_all_conflicts
+    from core.mirror.identity import resolve, rule_for
+    from core.mirror.source_record import current_values, ended_disagreements
+
+    try:
+        if rule_for(type_def) is None:
+            return 0
+        try:
+            history = read_all_conflicts(catalog, object_type)
+        except ConflictsNotRecorded:
+            return 0
+        resolution = resolve(type_def, rows_by_storage, approved_pairs=approved)
+        return store.record(object_type, ended_disagreements(
+            history, current_values(type_def, resolution)))
+    except Exception as exc:  # noqa: BLE001 - see the docstring
+        print(f"WARNING gold.{object_type}: track record not updated: {exc}", file=sys.stderr)
+        return 0
+
+
 def _link_tables(schema: dict) -> dict[str, Any]:
     """{join table: the silo it lives in}, for many-to-many links.
 
@@ -710,6 +739,8 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
     # the lake, because they are what a PERSON told this deployment
     # rather than something derived from a source.
     decisions = MergeDecisionStore(data_dir / "identity_decisions.db")
+    from core.mirror.source_record import SourceRecordStore
+    track_record = SourceRecordStore(data_dir / "source_record.db")
     # AND THE ENRICHMENT RECIPES A PERSON APPROVED (R41), for the same
     # reason. Only an approved recipe for the field's CURRENT question
     # reaches gold; anything else leaves the field empty.
@@ -859,6 +890,13 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
              **additional})
         if proposed:
             print(f"proposed {proposed} merge(s) for {object_type}, awaiting a decision")
+        if result.published or result.unchanged:
+            ended = _record_ended_disagreements(
+                track_record, sync._catalog, object_type, type_def,
+                {None: silver if needs_rows else [], **additional}, approved)
+            if ended:
+                print(f"{ended} disagreement(s) between sources about {object_type} "
+                      f"have ended; kept as evidence")
         if result.skipped:
             print(f"skipped gold.{object_type}: {result.skipped}")
         elif result.unchanged:

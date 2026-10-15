@@ -1959,6 +1959,11 @@ export interface ValueConflict {
   chosen?: string | null
   losing?: string | null
   readable: boolean
+  /** R60, evidence only: when these two sources disagreed about this
+   *  field before and it ended, whose value both ended up holding, as a
+   *  share rounded to ten per cent. Absent until there are enough ended
+   *  disagreements, and from older servers. Never a count. */
+  track_record?: { source: string; about_percent: number } | null
 }
 
 export async function getObjectConflicts(objectType: string, objectId: string): Promise<ValueConflict[]> {

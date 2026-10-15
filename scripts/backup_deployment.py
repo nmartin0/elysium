@@ -122,6 +122,11 @@ OWNED_DATABASES = (
     # complaint. The backup guard caught it the moment the store
     # appeared, which is what that guard is for.
     "identity_decisions.db",
+    # WHICH SOURCE HELD WHEN TWO DISAGREED (R60). Not rebuildable: an
+    # ended disagreement is recognised by comparing its last conflict
+    # row with what both sources hold NOW, so once they move on again
+    # the evidence exists only here. The backup guard caught it.
+    "source_record.db",
     "saved_views.db",
     # WHERE EACH PERSON PUT THE TYPES, AND THEIR SUBJECT AREAS (DEV_UI
     # 14). Presentation, but their own work: an arrangement built by

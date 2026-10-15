@@ -3961,6 +3961,13 @@ class ValueConflictResponse(BaseModel):
     losing: str | None = None
     #: Whether the values above were withheld rather than empty.
     readable: bool = True
+    #: R60, EVIDENCE ONLY: when these two sources disagreed about this
+    #: field before and the disagreement ended, whose value both ended up
+    #: holding -- {"source": name, "about_percent": 80}. Rounded to ten
+    #: per cent, and only from ten ended disagreements (owner, 15 Oct):
+    #: they span every compartment, so a count would say how many exist
+    #: on objects this reader may not see. It changes nothing gold holds.
+    track_record: dict | None = None
 
 
 @router.get("/objects/{object_type}/{object_id}/provenance",
@@ -4104,6 +4111,7 @@ def object_conflicts_route(
         return []
 
     readable = _readable_fields(request, current_user, object_type)
+    records = _track_records(request, object_type)
     out = []
     for row in rows:
         field_name = row.get("field")
@@ -4121,6 +4129,11 @@ def object_conflicts_route(
             "recorded_at": row.get("recorded_at"),
             "readable": may_read,
         }
+        if row.get("kind") == "property" and field_name is not None:
+            record = records.get((field_name, frozenset(
+                (row.get("chosen_source"), row.get("losing_source")))))
+            if record is not None:
+                entry["track_record"] = record.shown()
         if may_read:
             # ABSENT WHEN NULL TOO, not only when withheld: a
             # serialised None has been through this process and sits in
@@ -5066,6 +5079,18 @@ def _sorted_by_field(mediator, user_record, object_type: str, object_ids: list,
         key=lambda object_id: (sort_key(values[object_id]), sort_key(object_id)),
         reverse=descending,
     )
+
+
+def _track_records(request: Request, object_type: str) -> dict:
+    """R60's track records for a type, or nothing when none were kept.
+    Read without creating the store: a deployment that never resolved a
+    disagreement has no file, and asking should not make one."""
+    from core.mirror.source_record import SourceRecordStore
+
+    path = request.app.state.runtime_paths.data_dir / "source_record.db"
+    if not path.exists():
+        return {}
+    return SourceRecordStore(path).track_records(object_type)
 
 
 def _merge_store(request: Request) -> MergeDecisionStore:
