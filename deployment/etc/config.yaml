@@ -97,6 +97,9 @@ agent:
   # Four more changes to what the model sees or may do, each built and
   # off until one bench session on THIS model says which help:
   #   python -m scripts.feature_bench
+  # 2026-10-14's session said free_text_search and remember_from_query
+  # ON, the other two OFF; both ON are waiting on one confirming run of
+  # the original seven with them together (BLOCKING.md, agent-loop item).
   # (core/llm/agent_features.py says what each one does.)
   # filter_operators: false     # {"in": [..]}, {"min": .., "max": ..}, ...
   # search_result_cap: 20       # at most this many ids per search reach the model

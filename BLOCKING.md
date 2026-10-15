@@ -486,11 +486,51 @@ them off (25 trials, about 75 minutes at one trial each) and prints a
 verdict per switch: ON only if no original case regressed and the
 switch's own case passed in no more hops than without it.
 
-**Blocked on:** one `python -m scripts.feature_bench` session on the
-deployment's own model, and its verdicts applied to config.yaml. Beyond
-that, nothing on this hardware: a GPU, or a larger model, would reopen
-plan mode and constrained decoding -- both trade compute the CPU does
-not have.
+**SIXTH RUN, 2026-10-14: THE FEATURE BENCH**, one trial per case, step
+mode, free JSON, 273 minutes.
+
+| arm | passed | failed, and how |
+| --- | --- | --- |
+| baseline (new cases, all off) | 1/4 | operators_range (invalid filter), free_text_surname (repeated an exact-name search), remember_preference |
+| filter_operators | 5/9 | link_fanout, dependent_choice (repeated get_field), count_by_aggregate (invented step `count`), operators_range (wrote `{"lt": 0}` twice, after the refusal told it the forms) |
+| search_result_cap = 1 | 6/7 | dependent_choice (repeated get_field) |
+| free_text_search | 3/3 | -- (free_text_surname passes on, failed off) |
+| remember_from_query | 2/2 | -- (remembered when asked; nothing remembered for an ordinary question) |
+
+The bench's verdicts: **filter_operators OFF** -- solid, because
+link_fanout and count_by_aggregate passed in the cap arm and failed with
+the operator section in the prompt, so the longer prompt itself costs
+cases; **search_result_cap OFF**; **free_text_search ON**;
+**remember_from_query ON**.
+
+TWO VERDICTS REST ON LESS THAN THEY LOOK. The ON arms re-ran two and one
+of the original seven, and the operators arm shows a prompt section can
+break cases it has nothing to do with -- free text and remember have
+not been run against link_fanout, dependent_choice or
+count_by_aggregate, nor ever TOGETHER. And the cap's only failure,
+dependent_choice, failed the same way in the operators arm too; the
+comparison is with 7/7 on 2026-10-12, not a baseline run today, so
+whether the cap or today's run caused it is open.
+
+AND THE RUN WAS ABOUT FOUR TIMES SLOWER than 2026-10-12: a step call's
+median was 161 s in the baseline arm against 38 s then, prefix warm-ups
+took up to 708 s, and two first calls passed the 600 s timeout -- queries
+a person would have seen fail. Pass and fail at temperature 0 follow the
+model's choices, not its speed, so the verdicts stand; the slowdown is a
+finding about that machine (load, the Ollama version, keep_alive).
+
+**Blocked on:** one confirming run, about 25 minutes at 2026-10-12's
+speed and two hours at today's --
+
+    python -m scripts.llm_bench --features free_text_search,remember_from_query
+    python -m scripts.llm_bench --features none --cases dependent_choice
+
+The first is the original seven with both ON switches together: 7/7
+ships them. The second says whether dependent_choice fails today with
+everything off; if it does, the cap's verdict is reopened. Beyond that,
+nothing on this hardware: a GPU, or a larger model, would reopen plan
+mode and constrained decoding -- both trade compute the CPU does not
+have.
 
 ## 7. Context rot, and a 10,000-id search behind it
 
