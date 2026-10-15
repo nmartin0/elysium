@@ -3030,6 +3030,20 @@ CONTROLS = [
         tests=["tests/unit/test_erasure.py::TestEverythingButTheAuditLog::test_a_vote_about_them_is_forgotten"],
     ),
     Control(
+        describes="R63: code appends the inferred-values note to the answer",
+        path="core/llm/synthesis_prompt.py",
+        old="    return answer + for_the_reader(found)",
+        new="    return answer",
+        tests=["tests/unit/test_answers_say_what_is_inferred.py::TestCodeEnforcesIt::test_the_note_is_appended_whatever_the_model_wrote"],
+    ),
+    Control(
+        describes="R63: a search filtered on an inferred field counts as inferred data",
+        path="core/llm/inferred_values.py",
+        old='        names.update(k for k in item["filter"] if isinstance(k, str))',
+        new="        pass",
+        tests=["tests/unit/test_answers_say_what_is_inferred.py::TestWhatCountsAsInferredData"],
+    ),
+    Control(
         describes="INBOX: a merge counts only for someone who may write its type",
         path="api/routes.py",
         old="        if (authorize(current_user, roles, f\"write:{proposal.object_type}\")",

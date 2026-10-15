@@ -4779,6 +4779,22 @@ class EnrichmentDecisionRequest(BaseModel):
     approve: bool
 
 
+def _inferred_fields_for(app, generation) -> dict:
+    """This deployment's enriched fields with their approved recipes'
+    held-out scores, for synthesis to name and to note (R63). A missing
+    recipe store is not created: the fields are still named, unscored."""
+    from core.enrichment_recipes import EnrichmentRecipeStore
+    from core.llm.inferred_values import inferred_fields
+
+    path = app.state.runtime_paths.data_dir / "enrichment_recipes.db"
+    return inferred_fields(generation.config.schema,
+                           EnrichmentRecipeStore(path) if path.exists() else None)
+
+
+def _inferred_fields(request: Request) -> dict:
+    return _inferred_fields_for(request.app, _generation(request))
+
+
 def _recipe_store(request: Request):
     from core.enrichment_recipes import EnrichmentRecipeStore
 
@@ -6246,6 +6262,7 @@ async def query(body: QueryRequest, request: Request,
                 result.possibly_incomplete,
                 usage=request_context.token_usage,
                 cancel=synthesis_cancel,
+                inferred=_inferred_fields(request),
             ),
         )
     finally:
@@ -6634,7 +6651,8 @@ def _finish_paused_query(app, generation, write_id: str, pending, outcome: "dict
     cut_short = result.possibly_incomplete
     answer = synthesize_insight(generation.synthesis_client, paused.query_text,
                                 AgentLoop.filter_real_data(result.gathered),
-                                cut_short, usage=context.token_usage)
+                                cut_short, usage=context.token_usage,
+                                inferred=_inferred_fields_for(app, generation))
     notes.notify(paused.user_id, QUERY_ANSWER_KIND, f"Answer to: {asked}", detail=answer,
                  subjects=[*subjects, *ids_in_gathered(result.gathered)])
 

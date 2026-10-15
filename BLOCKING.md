@@ -206,8 +206,13 @@ match the other is recorded; the Provenance panel shows a rounded share
 from ten such endings. Where three or more sources hold a field, they
 vote, with a source that looks like a copy of another counted once.
 
-**Blocked on:** nothing for the last of statistical matching (R63),
-then the plugin API (item 3).
+**AN ANSWER RESTING ON AN INFERENCE SAYS SO** (R63, 15 October): the
+model is told which values were inferred and how their rules scored,
+and code appends a note naming them to every such answer.
+
+**Statistical matching is done** (R56, R57, R59, R60, R63).
+
+**Blocked on:** nothing for the plugin API (item 3), which is next.
 
 ## 3. A plugin API, and the reason module federation is not it
 

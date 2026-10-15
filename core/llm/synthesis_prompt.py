@@ -64,6 +64,7 @@ import json
 import logging
 import re
 import threading
+from collections.abc import Mapping
 
 from core.llm.interface import LLMAdapter, LLMUnavailable, TokenUsage
 from core.llm.prompt_values import render_gathered
@@ -134,7 +135,7 @@ def _numbers_in(text: str) -> set[str]:
     return found
 
 
-def _grounded_numbers(records: list[dict], original_query: str) -> set[str]:
+def _grounded_numbers(records: list[dict], original_query: str, shown: str = "") -> set[str]:
     """Every figure the answer is allowed to contain.
 
     THREE SOURCES, and each is there for a reason found the hard way.
@@ -170,6 +171,10 @@ def _grounded_numbers(records: list[dict], original_query: str) -> set[str]:
     # excluded.
     grounded = _numbers_in(json.dumps(render_gathered(records)))
     grounded |= _numbers_in(original_query)
+    # AND WHAT WE TOLD IT OURSELVES (R63): the held-out score of an
+    # inferred field. A model correctly saying "agreed on 35 of 40" was
+    # otherwise an ungrounded figure, and the answer was withheld.
+    grounded |= _numbers_in(shown)
     for record in records:
         result = record.get("result") if isinstance(record, dict) else None
         if isinstance(result, list):
@@ -178,7 +183,7 @@ def _grounded_numbers(records: list[dict], original_query: str) -> set[str]:
 
 
 def _has_only_grounded_numbers(answer: str, records: list[dict],
-                               original_query: str) -> list[str]:
+                               original_query: str, shown: str = "") -> list[str]:
     """The figures in the answer that came from nowhere.
 
     Returns them rather than a bool, so the log names what was wrong
@@ -190,7 +195,7 @@ def _has_only_grounded_numbers(answer: str, records: list[dict],
     data.
     """
     prose = _CITATION_PATTERN.sub(" ", answer)
-    grounded = _grounded_numbers(records, original_query)
+    grounded = _grounded_numbers(records, original_query, shown)
     return sorted(_numbers_in(prose) - grounded)
 
 
@@ -232,7 +237,13 @@ def _has_only_verified_emails(answer: str, records: list[dict]) -> bool:
 def synthesize_insight(client: LLMAdapter, original_query: str, records: list[dict],
                         possibly_incomplete: bool = False, *,
                         usage: TokenUsage | None = None,
-                        cancel: "threading.Event | None" = None) -> str:
+                        cancel: "threading.Event | None" = None,
+                        inferred: "Mapping | None" = None) -> str:
+    """`inferred` (R63): core/llm/inferred_values.inferred_fields for
+    this deployment. Any of them in `records` is named to the model with
+    its held-out score, and a note naming them is appended to the answer
+    by code -- the model may forget to say a value is a guess; this
+    cannot."""
     # NO DEADLINE, deliberately (E-11): the query's deadline bounds the
     # gathering. A query that spent it gathering must still be able to
     # answer from what it has -- its own timeout bounds this one call.
@@ -256,6 +267,11 @@ def synthesize_insight(client: LLMAdapter, original_query: str, records: list[di
     # below, so they cannot drift apart.
     tagged = _tagged_records(records)
     user_message = f"Question: {original_query}\n\nData:\n{tagged}"
+    from core.llm.inferred_values import for_the_model, for_the_reader, inferred_in
+
+    found = inferred_in(records, inferred or {})
+    told = for_the_model(found)
+    user_message += told
 
     # A LOCAL, per-call string -- never mutates the module-level
     # SYSTEM_PROMPT constant itself, which stays shared/reused as-is
@@ -306,7 +322,7 @@ def synthesize_insight(client: LLMAdapter, original_query: str, records: list[di
             f"now (the language model backend is temporarily unreachable). Please try again."
         )
 
-    ungrounded = _has_only_grounded_numbers(answer, records, original_query)
+    ungrounded = _has_only_grounded_numbers(answer, records, original_query, told)
     if ungrounded:
         logger.warning(
             f"synthesis answer contained figures not present in the data "
@@ -335,4 +351,6 @@ def synthesize_insight(client: LLMAdapter, original_query: str, records: list[di
             f"actually retrieved, so it has been withheld rather than shown."
         )
 
-    return answer
+    # ENFORCED, NOT ASKED (R63): appended after every check, so it is
+    # never what made an answer fail one, and never left out.
+    return answer + for_the_reader(found)

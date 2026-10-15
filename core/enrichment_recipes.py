@@ -139,21 +139,41 @@ class EnrichmentRecipeStore:
                                 "ORDER BY proposed_at DESC").fetchall()
         return [_recipe(row) for row in rows]
 
-    def approved_rules(self, object_type: str, field_name: str,
-                       declaration_hash: str) -> "list | None":
-        """The rules gold applies, or None: only an APPROVED recipe for
-        exactly this declaration counts."""
+    def _latest_approved(self, object_type: str, field_name: str,
+                         declaration_hash: str, column: str):
+        """One column of the APPROVED recipe for exactly this question, or
+        None. The only query that decides what is approved, so the rules
+        gold applies and the score the agent is told cannot disagree."""
         try:
             with self._connection() as conn:
                 row = conn.execute(
-                    "SELECT rules FROM enrichment_recipes WHERE object_type = ? AND "
+                    f"SELECT {column} FROM enrichment_recipes WHERE object_type = ? AND "
                     "field_name = ? AND declaration_hash = ? AND status = 'approved' "
                     "ORDER BY decided_at DESC LIMIT 1",
                     (object_type, field_name, declaration_hash)).fetchone()
         except Exception as e:  # noqa: BLE001 - an unreadable store publishes nothing
             logger.warning("could not read enrichment recipes: %s", e)
             return None
-        return json.loads(row["rules"]) if row else None
+        return None if row is None else row[column]
+
+    def approved_rules(self, object_type: str, field_name: str,
+                       declaration_hash: str) -> "list | None":
+        """The rules gold applies, or None: only an APPROVED recipe for
+        exactly this declaration counts."""
+        rules = self._latest_approved(object_type, field_name, declaration_hash, "rules")
+        return json.loads(rules) if rules is not None else None
+
+    def approved_evaluation(self, object_type: str, field_name: str,
+                            declaration_hash: str) -> "dict | None":
+        """The approved recipe's HELD-OUT score -- {rows, covered, agreed,
+        coverage, agreement} -- or None. What the agent is told about how
+        far to trust the field (R63)."""
+        evaluation = self._latest_approved(object_type, field_name, declaration_hash,
+                                           "evaluation")
+        if evaluation is None:
+            return None
+        held = (json.loads(evaluation or "{}") or {}).get("held_out")
+        return held if isinstance(held, dict) else None
 
 
 def _recipe(row) -> Recipe:

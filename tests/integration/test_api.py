@@ -1531,6 +1531,32 @@ def test_every_early_stop_reaches_synthesis_as_possibly_incomplete(client, stop_
     assert told == [True]
 
 
+def test_synthesis_is_handed_the_deployments_inferred_fields(client):
+    """R63: the route passes this deployment's enriched fields, so the
+    answer can be noted by code. Patched to declare one, since the
+    fixture has none."""
+    from core.agent.agentic_loop import AgentLoop, AgentLoopResult
+
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+    seen = []
+
+    def fake_synthesis(_client, _query, _records, possibly_incomplete=False, **kwargs):
+        seen.append(kwargs.get("inferred"))
+        return "an answer"
+
+    with (
+        patch.object(AgentLoop, "run", lambda *_a, **_k: AgentLoopResult(
+            gathered=[{"step": "search_object", "result": [{"id": 1}]}])),
+        patch("api.routes.synthesize_insight", fake_synthesis),
+        patch("api.routes._inferred_fields", lambda _request: {"marker": True}),
+    ):
+        response = client.post("/api/query", json={"query": "test"}, headers=_csrf_headers(client))
+
+    assert response.status_code == 200
+    assert seen == [{"marker": True}]
+
+
 def _propose_action(client, session=None, new_name="Updated Name"):
     # Helper: a real query that proposes a real named-action invocation
     # against the fixture's own Customer schema (cust_001), returns the
