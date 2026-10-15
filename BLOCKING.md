@@ -163,9 +163,22 @@ statistical matching and truth discovery. These are not "should we do
 this well" questions; they are "is Elysium this product" questions,
 and they should not be picked off a list by whoever is next.
 
-**Blocked on:** a direction. Not on any of them individually -- each
-is buildable -- but on whether this is the product at all, which is
-why picking one off would be the wrong move rather than a slow one.
+**THE DIRECTION WAS GIVEN** (the owner, 14 October: "we'll build each
+of them", in the order LLM enrichment, statistical matching, a plugin
+API).
+
+**LLM ENRICHMENT IS BUILT, choices only** (R41, R42, R38; decided 15
+October: approve first, data rules never code, no classified input,
+served everywhere and marked inferred). A field declares `enrich: {from,
+instruction, choices}`; `scripts/compile_enrichment.py` has the model
+label a sample from one security compartment, write rules from half of
+it and be scored on the other half; the rules wait in Inbox →
+Enrichment; once approved, the next sync fills the field in gold.
+Free-text extraction, embeddings (R45), model predictions (R48, R53) and
+an ensemble of candidates are not built.
+
+**Blocked on:** nothing for statistical matching (R56, R57, R59, R60,
+R63), which is next, then the plugin API (item 3).
 
 ## 3. A plugin API, and the reason module federation is not it
 
