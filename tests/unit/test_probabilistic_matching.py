@@ -83,6 +83,8 @@ class TestWhatADeploymentDeclares:
         ({"compare": ["name"], "fuzzy": True}, "unknown identity.probabilistic key"),
         ({"compare": ["name"], "review_above": 0.99, "auto_propose_above": 0.5}, "thresholds"),
         ("yes", "must be a mapping"),
+        ({"compare": ["name"], "block_on": ["postocde"]}, "block_on names unknown field"),
+        ({"compare": ["name"], "block_on": "postcode"}, "block_on must be a list"),
     ])
     def test_a_malformed_declaration_is_refused(self, declared, message):
         """A deployment that meant to enable matching and typed a key
@@ -186,6 +188,25 @@ class TestScoring:
 
     def test_no_rows_means_no_candidates(self):
         assert SplinkMatcher().candidates(TYPE, {None: [], "crm": []}) == []
+
+    def test_it_can_block_on_a_field_it_does_not_compare(self):
+        """Found by the R59 harness's first live run: blocking on a field
+        outside `compare` failed inside Splink, and the sync turned that
+        into a warning and no proposals. Region separates Ada from the
+        other Ada; name and postcode are what is scored."""
+        type_def = {**TYPE, "identity": {"probabilistic": {
+            "compare": ["name", "postcode"], "block_on": ["region"]}}}
+        rows = {None: [{"cust_pk": "c1", "name": "Ada Okafor", "postcode": "LS1 4AB",
+                        "region": "north"}],
+                "crm": [{"contact_id": "9f2a", "name": "Ada Okafor", "postcode": "LS1 4AB",
+                         "region": "north"},
+                        {"contact_id": "5e5e", "name": "Ada Okafor", "postcode": "LS1 4AB",
+                         "region": "south"}]}
+
+        pairs = {frozenset((c.left_id, c.right_id))
+                 for c in SplinkMatcher().candidates(type_def, rows)}
+
+        assert pairs == {frozenset(("primary:c1", "crm:9f2a"))}
 
     def test_the_harness_can_ask_for_every_pair_compared(self):
         """R59: a true match scored low and one never compared are

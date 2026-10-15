@@ -175,6 +175,12 @@ def settings_for(type_def: dict) -> ProbabilisticSettings | None:
     missing = [name for name in compare if name not in fields]
     if missing:
         raise ValueError(f"identity.probabilistic.compare names unknown field(s) {missing}.")
+    block_on = declared.get("block_on") or ()
+    if isinstance(block_on, str) or not isinstance(block_on, Sequence):
+        raise ValueError("identity.probabilistic.block_on must be a list of fields.")
+    missing = [name for name in block_on if name not in fields]
+    if missing:
+        raise ValueError(f"identity.probabilistic.block_on names unknown field(s) {missing}.")
     auto = float(declared.get("auto_propose_above", DEFAULT_AUTO_PROPOSE_ABOVE))
     review = float(declared.get("review_above", DEFAULT_REVIEW_ABOVE))
     if not 0 < review <= auto <= 1:
@@ -184,7 +190,7 @@ def settings_for(type_def: dict) -> ProbabilisticSettings | None:
         )
     return ProbabilisticSettings(
         compare=tuple(compare),
-        block_on=tuple(declared.get("block_on") or []),
+        block_on=tuple(block_on),
         auto_propose_above=auto,
         review_above=review,
     )
@@ -320,6 +326,15 @@ class SplinkMatcher:
 
         The id carries its storage, because the whole point is that two
         sources call the same object different things.
+
+        AND THE BLOCKING FIELDS, which need not be compared. Only the
+        compared ones were carried, so a type blocking on a field it
+        does not score -- `block_on: [region]`, the natural declaration
+        -- failed inside Splink ("Table l does not have a column named
+        region"), which the sync caught and turned into a warning and
+        no proposals at all. Found by the evaluation harness's first
+        run against a real deployment (R59); every test blocked on a
+        field it also compared.
         """
         storages: dict[Any, dict] = {None: type_def["storage"]}
         storages.update(type_def.get("additional_storage") or {})
@@ -330,7 +345,7 @@ class SplinkMatcher:
             for row in rows_by_storage.get(storage_key) or []:
                 record: dict[str, Any] = {
                     "unique_id": f"{prefix}:{row.get(storage['id_column'])}"}
-                for name in settings.compare:
+                for name in dict.fromkeys(settings.compare + settings.block_on):
                     column = (fields.get(name) or {}).get("column", name)
                     value = row.get(column)
                     record[name] = None if value is None else str(value)
