@@ -89,8 +89,11 @@ SCREEN_GUIDE: Mapping[str, str] = {
         "merged is approved as the whole group."
     ),
     "Admin": (
-        "Users, roles and grants, and this deployment's configuration and data "
-        "sources. Only people who manage users see this screen."
+        "Users, roles and grants, and the configuration and data sources of this "
+        "deployment. Only people who manage users see this screen. Under 'Deployment', "
+        "someone who may change the deployment can alter a few settings in 'Change "
+        "settings': 'Review changes' shows the exact lines of config.yaml that will "
+        "change, and 'Apply and reload' writes them and reloads."
     ),
 }
 

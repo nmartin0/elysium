@@ -25,6 +25,16 @@ PAIRS = (
 )
 
 
+def _normalised(name: str) -> str:
+    """PEP 503's normal form: runs of "-", "_" and "." are one "-".
+
+    THE DOT WAS MISSED. The first rule here folded "_" only, which was
+    enough until a name with a dot arrived: requirements.txt says
+    `ruamel.yaml` and uv writes `ruamel-yaml==`, the same package, and
+    the check reported it unpinned in a lock that pinned it."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
 def declared_names(paths: tuple[str, ...]) -> set[str]:
     names = set()
     for path in paths:
@@ -36,7 +46,7 @@ def declared_names(paths: tuple[str, ...]) -> set[str]:
             # and "starlette>=1.0.1,<2.0" are both just their name here.
             name = re.split(r"[<>=!\[]", line)[0].strip()
             if name:
-                names.add(name.lower().replace("_", "-"))
+                names.add(_normalised(name))
     return names
 
 
@@ -45,7 +55,7 @@ def locked_names(path: str) -> set[str]:
     for line in (ROOT / path).read_text().splitlines():
         match = re.match(r"^([a-zA-Z0-9_.-]+)==", line)
         if match:
-            names.add(match.group(1).lower().replace("_", "-"))
+            names.add(_normalised(match.group(1)))
     return names
 
 

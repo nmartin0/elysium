@@ -59,6 +59,12 @@ pending_for_objects_route
 # The ontology canvas's layout (DEV_UI 14): routes, reached by HTTP.
 my_ontology_canvas_route
 save_my_ontology_canvas_route
+# Editing config.yaml from the UI: routes reached by HTTP, and ruamel's
+# own setting, which ruamel reads.
+config_settings_route
+preview_config_settings_route
+apply_config_settings_route
+preserve_quotes
 # WIRED-3: a response field pydantic reads by reflection.
 high_confidence
 group_hidden  # R58: MergeProposalResponse, set through **_group_fields

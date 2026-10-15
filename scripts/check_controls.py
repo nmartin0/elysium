@@ -2999,6 +2999,35 @@ CONTROLS = [
              "        doors=doors(result.gathered, agent_schema),"),
         tests=["tests/integration/test_an_answer_comes_with_context.py::test_a_DENIED_read_is_never_read_back"],
     ),
+    Control(
+        describes="CONFIG-EDIT: only manage:deployment may change the deployment",
+        path="api/routes.py",
+        old='    if not authorize(current_user, _generation(request).config.roles, "manage:deployment"):\n'
+            '        raise HTTPException(status_code=403, detail="Needs manage:deployment")',
+        new="    if False:\n        pass",
+        tests=["tests/integration/test_editing_config_from_the_ui.py::test_someone_who_manages_users_but_not_the_deployment_may_not"],
+    ),
+    Control(
+        describes="CONFIG-EDIT: a file changed since it was read is not overwritten",
+        path="api/routes.py",
+        old="    if digest(current) != body.digest:",
+        new="    if False:",
+        tests=["tests/integration/test_editing_config_from_the_ui.py::test_a_change_since_it_was_read_is_refused_not_overwritten"],
+    ),
+    Control(
+        describes="CONFIG-EDIT: a file that would not load never reaches the disk",
+        path="api/routes.py",
+        old="                load_deployment(candidate)\n",
+        new="                pass\n",
+        tests=["tests/integration/test_editing_config_from_the_ui.py::test_a_file_that_would_not_load_never_reaches_the_disk"],
+    ),
+    Control(
+        describes="CONFIG-EDIT: a failed reload puts the old file back",
+        path="api/routes.py",
+        old="            staged.write_text(current)\n            os.replace(staged, path)\n",
+        new="",
+        tests=["tests/integration/test_editing_config_from_the_ui.py::test_a_reload_that_fails_puts_the_old_file_back"],
+    ),
 ]
 
 

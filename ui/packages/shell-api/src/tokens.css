@@ -145,6 +145,8 @@
     /* Its first user is the ontology canvas's security layer: a chain
      * of borrowed security is something to notice, not a fault. */
     --status-warning: var(--amber-700);
+    /* First user: the added lines of a config.yaml diff. */
+    --status-success: var(--green-700);
 
     /* --- Elevation --------------------------------------------------
    * A HAIRLINE, NOT A SHADOW (DEV_UI 9.5). "Shadows barely register on
@@ -319,6 +321,7 @@
     --accent-focus: var(--sky-400);
     --status-danger: var(--red-400);
     --status-warning: var(--amber-400);
+    --status-success: var(--green-400);
     --bp-intent-default-rest: var(--steel-500);
   }
 }

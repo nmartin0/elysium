@@ -114,7 +114,9 @@ import base64
 import functools
 import json
 import logging
+import os
 import threading
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -1551,6 +1553,161 @@ def reload_route(request: Request,
         # would make "did anything change?" unanswerable.
         "changed": new.source_digest != generation.source_digest,
     }
+
+
+class ConfigSettingResponse(BaseModel):
+    key: str
+    label: str
+    kind: str
+    description: str
+    when_absent: str
+    choices: list[str]
+    minimum: int | None = None
+    present: bool
+    value: bool | int | str | None = None
+
+
+class ConfigSettingsResponse(BaseModel):
+    # THE FILE'S DIGEST AS READ. An edit sends it back, and is refused if
+    # the file has changed since -- an operator editing by hand and the
+    # UI writing must not silently overwrite each other.
+    digest: str
+    settings: list[ConfigSettingResponse]
+
+
+class ConfigEditRequest(BaseModel):
+    digest: str
+    # A value of null REMOVES the key: "absent" is a state of its own.
+    changes: dict[str, bool | int | str | None]
+
+
+class ConfigEditPreviewResponse(BaseModel):
+    diff: list[str]
+
+
+class ConfigEditResponse(BaseModel):
+    diff: list[str]
+    digest: str
+    to_generation: int
+
+
+#: One edit at a time: two people applying at once would each compare
+#: against the file the other is about to replace.
+_config_edit_lock = threading.Lock()
+
+
+def _config_file(request: Request) -> Path:
+    return request.app.state.runtime_paths.config_dir / "config.yaml"
+
+
+# GATED BY _require_manage_deployment (below, shared with the rule
+# suggestions): manage:deployment, the grant reload and config history
+# use. Changing the deployment is a different power from managing its
+# users, and the read-only panel's manage:users is not enough.
+
+
+def _proposed_config(request: Request, body: ConfigEditRequest) -> tuple[str, str]:
+    """The file now and the file as it would be, or the reason not."""
+    from core.config_editing import ConfigEditError, apply_changes, digest
+
+    current = _config_file(request).read_text()
+    if digest(current) != body.digest:
+        raise HTTPException(status_code=409, detail=(
+            "config.yaml has changed since you opened it. Load it again to see "
+            "the new version before changing it."))
+    try:
+        return current, apply_changes(current, body.changes)
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/admin/config/settings", dependencies=[Depends(_no_store)],
+            response_model=ConfigSettingsResponse)
+def config_settings_route(request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The settings that may be changed from the UI, as config.yaml has them."""
+    from core.config_editing import current_settings, digest
+
+    _require_manage_deployment(request, current_user)
+    text = _config_file(request).read_text()
+    return {"digest": digest(text), "settings": current_settings(text)}
+
+
+@router.post("/admin/config/settings/preview", dependencies=[Depends(_no_store)],
+             response_model=ConfigEditPreviewResponse)
+def preview_config_settings_route(body: ConfigEditRequest, request: Request,
+                                  current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The lines that would change, and nothing written (DEV_UI 13.5:
+    "before saving, the diff"). Only the changed lines appear, because
+    the editor leaves every other byte where it was."""
+    from core.config_editing import diff
+
+    _require_manage_deployment(request, current_user)
+    current, proposed = _proposed_config(request, body)
+    return {"diff": diff(current, proposed)}
+
+
+@router.put("/admin/config/settings", dependencies=[Depends(_no_store)],
+            response_model=ConfigEditResponse)
+def apply_config_settings_route(body: ConfigEditRequest, request: Request,
+                                current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Writes the change to config.yaml and reloads.
+
+    VALIDATE, WRITE, RELOAD, AND PUT IT BACK IF THE RELOAD FAILS -- the
+    role-change route's "save, reload, undo", with the loader run first
+    against a copy of the configuration with the new file in it, so a
+    file that would not load never reaches the disk at all. The undo is
+    for what only a full build finds.
+
+    ATOMIC ON DISK: written beside the file and renamed over it, so a
+    crash mid-write leaves the old file or the new one, never half.
+
+    AUDITED EITHER WAY, with the values -- the allowlist makes them
+    numbers, switches and fixed choices, never a secret.
+    """
+    import shutil
+    import tempfile
+
+    from core.config_editing import diff, digest
+    from core.deployment_loader import load_deployment
+
+    _require_manage_deployment(request, current_user)
+    audit = _generation(request).mediator.audit_log
+    path = _config_file(request)
+    with _config_edit_lock:
+        current, proposed = _proposed_config(request, body)
+        changes = dict(body.changes)
+
+        def refused(status: int, reason: str):
+            audit.log_config_edit(current_user.user_id, "rejected", "config.yaml", changes,
+                                  digest(current), None, detail=reason[:500])
+            return HTTPException(status_code=status, detail=reason)
+
+        with tempfile.TemporaryDirectory() as scratch:
+            candidate = Path(scratch) / "config"
+            shutil.copytree(path.parent, candidate)
+            (candidate / "config.yaml").write_text(proposed)
+            try:
+                load_deployment(candidate)
+            except Exception as e:
+                raise refused(400, f"That configuration would not load: {e}") from e
+
+        staged = path.with_name(f".{path.name}.elysium-edit")
+        staged.write_text(proposed)
+        os.replace(staged, path)
+        try:
+            new = reload_generation(request.app, requested_by=current_user.user_id)
+        except Exception as e:
+            staged.write_text(current)
+            os.replace(staged, path)
+            if isinstance(e, ReloadInProgress):
+                raise refused(409, str(e)) from e
+            raise refused(400, f"The change was not applied: the configuration would not reload ({e}).") from e
+
+        audit.log_config_edit(current_user.user_id, "applied", "config.yaml", changes,
+                              digest(current), digest(proposed))
+        return {"diff": diff(current, proposed), "digest": digest(proposed),
+                "to_generation": new.generation}
 
 
 class GenerationSummary(BaseModel):

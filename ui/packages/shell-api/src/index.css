@@ -1310,6 +1310,77 @@
     color: var(--text-secondary);
   }
 
+  /* ---- CHANGING config.yaml'S SETTINGS (ConfigSettingsEditor) ----------
+   *
+   * A list of settings, each with what it does and -- when unset -- what
+   * absent means, beside its control. The review is the file's own diff,
+   * monospace, added and removed lines marked by colour AND by their
+   * leading + and -, so the meaning survives without colour.
+   */
+  .config-editor {
+    margin-top: var(--space-section);
+  }
+
+  .config-editor__lede {
+    color: var(--text-secondary);
+  }
+
+  .config-editor__row {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-loose);
+    padding: var(--space-tight) 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .config-editor__label {
+    font-weight: 600;
+  }
+
+  .config-editor__description,
+  .config-editor__absent {
+    margin: var(--space-hair) 0 0;
+    color: var(--text-secondary);
+  }
+
+  .config-editor__absent {
+    font-style: italic;
+  }
+
+  .config-editor__control {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--space-tight);
+  }
+
+  .config-editor__was {
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+
+  .config-editor__actions,
+  .config-editor__review {
+    margin-top: var(--space-normal);
+  }
+
+  .config-editor__diff {
+    padding: var(--space-snug);
+    border-radius: 6px;
+    background: var(--surface-sunken);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    white-space: pre-wrap;
+  }
+
+  .config-editor__added {
+    color: var(--status-success);
+  }
+
+  .config-editor__removed {
+    color: var(--status-danger);
+  }
+
   /* --- Silo status --------------------------------------------------
  * The summary callout sits above the table, because "is anything
  * wrong" is the question this screen is opened to answer -- a table of

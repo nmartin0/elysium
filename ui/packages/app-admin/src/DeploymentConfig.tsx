@@ -9,9 +9,12 @@
  * configuration discloses deployment shape, and while none of it is
  * object data, it is what an attacker maps a system with.
  *
- * NOTHING HERE IS EDITABLE, deliberately. Runtime config editing needs
- * a per-request snapshot first, or a change mid-flight leaves one
- * request disagreeing with itself.
+ * THE FIGURES ARE READ-ONLY; SOME SETTINGS CAN BE CHANGED BELOW them,
+ * by someone holding manage:deployment (ConfigSettingsEditor). This
+ * panel once said nothing could be, because "runtime config editing
+ * needs a per-request snapshot first, or a change mid-flight leaves one
+ * request disagreeing with itself". Each request now pins its
+ * generation, and an edit reloads as a new one, so that reason is met.
  */
 
 import { Button, Tag } from '@blueprintjs/core'
@@ -29,6 +32,7 @@ import { useEffect, useRef, useState } from 'react'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 import DataTable from '@elysium/shell-api/components/DataTable'
+import ConfigSettingsEditor, { AppliedNotice } from './ConfigSettingsEditor'
 
 interface DeploymentConfigBody {
   /** WHEN this configuration was loaded, and a digest over the four
@@ -211,6 +215,29 @@ function ConfigHistorySection({ onSessionExpired }: { onSessionExpired: () => vo
 }
 
 export default function DeploymentConfig({ onSessionExpired }: { onSessionExpired: () => void }) {
+  // AN EDIT REMOUNTS THE VIEW, so its figures are the new generation's
+  // rather than what was loaded before the change. The notice lives
+  // out here, where the remount cannot take it away.
+  const [applied, setApplied] = useState<{ generation: number; count: number } | null>(null)
+  return (
+    <>
+      {applied && <AppliedNotice generation={applied.generation} />}
+      <DeploymentConfigView
+        key={applied?.count ?? 0}
+        onSessionExpired={onSessionExpired}
+        onApplied={(generation) => setApplied((current) => ({ generation, count: (current?.count ?? 0) + 1 }))}
+      />
+    </>
+  )
+}
+
+function DeploymentConfigView({
+  onSessionExpired,
+  onApplied,
+}: {
+  onSessionExpired: () => void
+  onApplied: (generation: number) => void
+}) {
   const { data: config, error } = useFetchOnce<DeploymentConfigBody>(() => getDeploymentConfig(), onSessionExpired)
 
   return (
@@ -405,6 +432,7 @@ export default function DeploymentConfig({ onSessionExpired }: { onSessionExpire
                 </DataTable>
               </section>
             ))}
+            <ConfigSettingsEditor onApplied={onApplied} onSessionExpired={onSessionExpired} />
             <ConfigHistorySection onSessionExpired={onSessionExpired} />
           </div>
         )

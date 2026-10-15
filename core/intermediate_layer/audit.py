@@ -515,6 +515,29 @@ class AuditLog:
             "detail": detail,
         })
 
+    def log_config_edit(self, user_id: str, outcome: str, filename: str, changes: dict,
+                        from_digest: str, to_digest: str | None, detail: str | None = None) -> None:
+        """A configuration file was edited from the UI (core/config_editing.py).
+
+        "Configuration is the thing an attacker changes to make everything
+        else permissible", so every attempt is recorded, applied or not.
+
+        THE VALUES ARE RECORDED, because they cannot be secrets: the editor
+        changes only an allowlist of numbers, switches and fixed choices.
+        The digests tie the entry to the exact file before and after, which
+        config history keeps in full.
+        """
+        self._write({
+            "stage": "config_edit",
+            "user_id": user_id,
+            "outcome": outcome,
+            "file": filename,
+            "changes": changes,
+            "from_digest": from_digest,
+            "to_digest": to_digest,
+            "detail": detail,
+        })
+
     def log_write_invalidated(self, write_id: str, user_id: str, description: str,
                                from_generation: int, to_generation: int,
                                fields: list[str], reloaded_by: str) -> None:

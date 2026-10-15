@@ -22,6 +22,7 @@
 # sqlite3 is NOT listed here -- it ships built into Python itself.
 requests<3.0        # HTTP calls to the local Ollama API
 pyyaml<7.0          # reading deployment config/schema/policy YAML files
+ruamel.yaml>=0.19,<0.20  # WRITING config.yaml from the UI -- round-trip mode keeps every comment (core/config_editing.py)
 argon2-cffi<26.0     # password hashing for core/auth/ -- argon2id, the current OWASP-recommended algorithm
 fastapi<1.0         # api/ -- the HTTP layer
 pydantic>=2.0,<3.0  # core/ -- declarative validation of deployment config. Previously reached only

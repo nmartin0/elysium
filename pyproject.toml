@@ -277,6 +277,9 @@ layers = [
     # exhaustive_ignores, which is for modules that sit outside the
     # hierarchy rather than beneath it.
     "secret_references",
+    # config_editing is a leaf too: ruamel and the standard library, no
+    # core module -- the route composes it with the loader and reload.
+    "config_editing",
     # notifications imports only sqlite_connection, which is itself
     # outside the hierarchy -- so this is a leaf beside
     # secret_references rather than a module sitting outside.

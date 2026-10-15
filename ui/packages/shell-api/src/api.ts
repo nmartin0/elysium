@@ -1665,6 +1665,54 @@ export interface ConfigHistory {
  * again. Rendering 44 undifferentiated rows would bury the two moments
  * that actually matter.
  */
+/** One config.yaml setting the UI may change (core/config_editing.py). */
+export interface ConfigSetting {
+  key: string
+  label: string
+  kind: 'int' | 'bool' | 'choice'
+  description: string
+  /** What the deployment does when the key is not in the file at all. */
+  when_absent: string
+  choices: string[]
+  minimum?: number | null
+  present: boolean
+  value: boolean | number | string | null
+}
+
+export interface ConfigSettings {
+  /** The file as read; an edit sends it back and is refused if it moved. */
+  digest: string
+  settings: ConfigSetting[]
+}
+
+/** A value per key; null REMOVES the key, which is its own state. */
+export type ConfigChanges = Record<string, boolean | number | string | null>
+
+export async function getConfigSettings(): Promise<ConfigSettings> {
+  const response = await apiFetchOrThrow('/admin/config/settings')
+  return (await response.json()) as ConfigSettings
+}
+
+/** The lines that would change. Writes nothing. */
+export async function previewConfigSettings(digest: string, changes: ConfigChanges): Promise<string[]> {
+  const response = await apiFetchOrThrow('/admin/config/settings/preview', {
+    method: 'POST',
+    body: JSON.stringify({ digest, changes }),
+  })
+  return ((await response.json()) as { diff: string[] }).diff
+}
+
+export async function applyConfigSettings(
+  digest: string,
+  changes: ConfigChanges,
+): Promise<{ diff: string[]; digest: string; to_generation: number }> {
+  const response = await apiFetchOrThrow('/admin/config/settings', {
+    method: 'PUT',
+    body: JSON.stringify({ digest, changes }),
+  })
+  return (await response.json()) as { diff: string[]; digest: string; to_generation: number }
+}
+
 export async function getConfigHistory(): Promise<ConfigHistory> {
   const response = await apiFetchOrThrow('/admin/config-history')
   const body = (await response.json()) as { current_generation?: unknown; generations?: unknown }

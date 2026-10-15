@@ -196,6 +196,7 @@ roles:
       - execute:CreateCustomer
       - execute:TransferFunds
       - execute:UpdateCustomerName
+      - manage:deployment
       - manage:roles
       - manage:users
       - read:Account

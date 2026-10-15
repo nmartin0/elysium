@@ -167,21 +167,7 @@ and they should not be picked off a list by whoever is next.
 is buildable -- but on whether this is the product at all, which is
 why picking one off would be the wrong move rather than a slow one.
 
-## 3. Writing configuration from the UI
-
-From `CONFIG_ROUND_TRIP_AND_UI_KIT.md`. Its own finding is why it is
-hard: **the configuration files are mostly COMMENTS**, so a naive
-load-and-dump destroys the thing that makes them readable. Its design
-keeps YAML as the source of truth and round-trips through
-`ruamel.yaml`, which preserves comments.
-
-`ruamel` is not a dependency today, and it was never one of the `DEP`
-items -- adopting it is its own decision, to be made with this one.
-
-**Blocked on:** that dependency call, and on whether configuration
-should be editable from the UI at all.
-
-## 4. A plugin API, and the reason module federation is not it
+## 3. A plugin API, and the reason module federation is not it
 
 `THIRD_PARTY_EXTENSIONS.md` designs third-party extensions. None of it
 is built, and whether Elysium should have them at all is a product
@@ -205,7 +191,7 @@ code.
 **Blocked on:** whether to have an extension story at all. Everything
 downstream of that is design work that cannot start first.
 
-## 5. Two questions triggers raise and nobody has answered
+## 4. Two questions triggers raise and nobody has answered
 
 Triggers are built. `TRIGGERS_AND_PLUGINS.md` names three risks that
 are "about volume rather than authority", and none of them is a code
@@ -241,7 +227,7 @@ design choice with cost on both sides. The cap that the paragraph on
 `MAX_SUB_WRITES` asks about is being answered by bulk actions (decided
 14 October: 256 by default, 1,024 at most).
 
-## 6. What the interface should be
+## 5. What the interface should be
 
 `DEV_UI.md`, written after the owner said the interface is BOTH
 unfinished and disjointed. **Its diagnosis is the part worth keeping**,
@@ -316,7 +302,7 @@ configuration from the UI, which is next.
 
 **Blocked on:** nothing.
 
-## 7. Agent-loop efficiency, which needs a machine with a model
+## 6. Agent-loop efficiency, which needs a machine with a model
 
 `IDEAS.md`'s open investigations all need traces from a real model on
 real hardware. The measurements already taken are kept because
@@ -506,7 +492,7 @@ that, nothing on this hardware: a GPU, or a larger model, would reopen
 plan mode and constrained decoding -- both trade compute the CPU does
 not have.
 
-## 8. Context rot, and a 10,000-id search behind it
+## 7. Context rot, and a 10,000-id search behind it
 
 `UI_ROADMAP.md` calls this "a risk to what already exists, not a
 feature", and it is the only part of that file that is not front-end
@@ -562,7 +548,7 @@ that matters: told its limit was 20 when given 32 ids, a real model
 one object at a time until the duplicate guard stopped it". A cap
 chosen without measuring is how that happens again.
 
-## 9. PostgreSQL row-level security for MAC
+## 8. PostgreSQL row-level security for MAC
 
 Held with a trigger named, alongside column `GRANT` with `SET ROLE`.
 Elysium enforces MAC in the mediator today; pushing it into the
@@ -631,7 +617,7 @@ files reference the SQLite adapter, most of them tests using it as the
 cheap real database, and the write path is where a mistake reaches a
 customer's database. Days, not hours -- but no decision, so not here.
 
-## 10. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
+## 9. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
 
 **Blocked on:** the owner, and on money and calendar time rather than
 engineering.
@@ -679,7 +665,7 @@ an audit is ever bought:
 
 Months, not a patch.
 
-## 11. Owning the UI kit, and when to start
+## 10. Owning the UI kit, and when to start
 
 **Blocked on:** nothing. This is a DECISION ALREADY TAKEN, recorded
 here so the next person does not reopen it from scratch.
