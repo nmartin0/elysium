@@ -110,3 +110,50 @@ def test_empty_until_approved_then_filled_and_searchable(deployment):
     found = client.get("/api/objects/SupportTicket/matching-ids", params={"conditions": conditions})
     assert found.status_code == 200, found.text
     assert len(found.json()["object_ids"]) == 1
+
+
+def test_the_compile_script_proposes_and_changes_nothing(deployment, monkeypatch, capsys):
+    """scripts/compile_enrichment.py against real gold and the recipe
+    store, with the model scripted: it reads the field's inputs, labels a
+    sample, proposes -- and the field stays empty until someone approves."""
+    import scripts.compile_enrichment as script
+    from core.enrichment_recipes import EnrichmentRecipeStore
+    from tests.unit.test_enrichment_compiler import GOOD, ScriptedModel
+
+    _sync(deployment)
+    monkeypatch.setenv("ELYSIUM_CONFIG_DIR", str(deployment.config_dir))
+    monkeypatch.setenv("ELYSIUM_DATA_DIR", str(deployment.data_dir))
+    monkeypatch.setenv("ELYSIUM_LOG_DIR", str(deployment.log_dir))
+    model = ScriptedModel(rule_sets=[GOOD])
+    monkeypatch.setattr(script, "build_llm_adapter", lambda config, name: model)
+    monkeypatch.setattr("sys.argv", ["compile_enrichment", "SupportTicket.topic",
+                                     "--sample", "3", "--candidates", "1"])
+
+    # Three tickets in the fixture: too few to write rules from after the
+    # held-out half is set aside -- and the script says so, proposing nothing.
+    assert script.main() == 1
+    out = capsys.readouterr().out
+    assert "NOTHING PROPOSED" in out
+    assert EnrichmentRecipeStore(deployment.data_dir / "enrichment_recipes.db").all() == []
+    # Every label it got is cached: the next run asks the model nothing again.
+    asked = len(model.calls)
+    model.rule_sets = [GOOD]
+    script.main()
+    assert len(model.calls) == asked
+
+    # WITH ENOUGH ROWS, it proposes -- stored, judged on rows it never
+    # saw, and still nothing published.
+    from tests.unit.test_enrichment_compiler import _rows
+
+    monkeypatch.setattr(script, "_gold_rows", lambda *a: _rows(16))
+    monkeypatch.setattr("sys.argv", ["compile_enrichment", "SupportTicket.topic",
+                                     "--sample", "16", "--candidates", "1"])
+    model.rule_sets = [GOOD]
+    assert script.main() == 0
+    assert "PROPOSED as" in capsys.readouterr().out
+    [recipe] = EnrichmentRecipeStore(deployment.data_dir / "enrichment_recipes.db").all()
+    assert recipe.status == "proposed"
+    assert recipe.evaluation["held_out"]["agreement"] == 1.0
+    assert recipe.provenance["sample"] == 16
+    _sync(deployment)
+    assert set(_topics(_client(deployment)).values()) == {None}

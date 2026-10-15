@@ -291,3 +291,11 @@ def apply_rules(rules: list[dict], row: Mapping) -> "tuple[str | None, int | Non
         if holds:
             return rule["then"], number
     return None, None
+
+
+def describe_rule(rule: Mapping) -> str:
+    """One rule in plain words, for the person approving it."""
+    parts = [f"{condition['field']} mentions "
+             + " or ".join(repr(term) for term in condition["contains_any"])
+             for condition in rule["when"]]
+    return f"If {' and '.join(parts)}: {rule['then']}"

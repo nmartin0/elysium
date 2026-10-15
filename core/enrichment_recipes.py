@@ -49,6 +49,19 @@ CREATE TABLE IF NOT EXISTS enrichment_recipes (
 );
 CREATE INDEX IF NOT EXISTS enrichment_recipes_field
     ON enrichment_recipes (object_type, field_name, status);
+-- THE MODEL'S DIRECT ANSWERS ON SAMPLED ROWS, kept so a second compile
+-- re-asks nothing it already has: a call takes minutes on a CPU. Keyed by
+-- everything that would change the answer -- the question, the model,
+-- the prompt, the row's inputs. `answer` is NULL for "the record does
+-- not say"; an unusable reply is never stored, so it is asked again.
+CREATE TABLE IF NOT EXISTS enrichment_labels (
+    declaration_hash TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    input_hash TEXT NOT NULL,
+    answer TEXT,
+    PRIMARY KEY (declaration_hash, model, prompt, input_hash)
+);
 """
 
 STATUSES = ("proposed", "approved", "rejected", "superseded")
@@ -151,3 +164,32 @@ def _recipe(row) -> Recipe:
         provenance=json.loads(row["provenance"] or "{}"), status=row["status"],
         proposed_at=row["proposed_at"], decided_by=row["decided_by"],
         decided_at=row["decided_at"])
+
+
+class EnrichmentLabelCache:
+    """The model's direct answers, by what they answered. MISSING means
+    never asked (or asked and unusable); None means "the record does not
+    say" -- two different things."""
+
+    MISSING = object()
+
+    def __init__(self, db_path: Path, declaration_hash: str, model: str, prompt: str):
+        self._db_path = db_path
+        self._key = (declaration_hash, model, prompt)
+
+    def _connection(self):
+        return connection_with_schema(self._db_path, SCHEMA)
+
+    def get(self, input_hash: str):
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT answer FROM enrichment_labels WHERE declaration_hash = ? AND model = ? "
+                "AND prompt = ? AND input_hash = ?", (*self._key, input_hash)).fetchone()
+        return self.MISSING if row is None else row["answer"]
+
+    def put(self, input_hash: str, answer: "str | None") -> None:
+        with self._connection() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO enrichment_labels (declaration_hash, model, prompt, "
+                "input_hash, answer) VALUES (?, ?, ?, ?, ?)", (*self._key, input_hash, answer))
+            conn.commit()
