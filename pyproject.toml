@@ -391,6 +391,10 @@ exhaustive = true
 name = "core/ontology/ internal layering (write_mediator wraps mediator, both sit above the rest)"
 type = "layers"
 layers = [
+    # Who can see a type (DEV_UI 13.3) asks the mediator it is HANDED
+    # once per role, and imports nothing from this package: on top, so
+    # it may only ever look down.
+    "who_can_see",
     "write_mediator",
     "mediator",
     # Rules between two fields (R29) compare through constraints, so

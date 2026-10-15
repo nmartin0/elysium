@@ -3044,6 +3044,30 @@ CONTROLS = [
         tests=["tests/unit/test_answers_say_what_is_inferred.py::TestWhatCountsAsInferredData"],
     ),
     Control(
+        describes="DEV_UI 13.3: a field a role only knows exists is not called readable",
+        path="core/ontology/who_can_see.py",
+        old='else READ if shown[name].get("readable") else DISCOVER)',
+        new="else READ)",
+        tests=["tests/integration/test_who_can_see.py::TestFields::test_discover_without_read_is_its_own_answer"],
+    ),
+    Control(
+        describes="DEV_UI 13.3: a borrowed compartment is followed to the field compared",
+        path="core/ontology/who_can_see.py",
+        old='        path.append({"type": current, "field": via})\n        current = target',
+        new='        return {"attribute": attribute, "path": path, "type": current, "field": via}',
+        tests=["tests/integration/test_who_can_see.py::TestCompartments::test_a_borrowed_one_is_followed_to_its_end"],
+    ),
+    Control(
+        describes="DEV_UI 13.3: who-can-see is for manage:roles only",
+        path="api/routes.py",
+        old=("    _require_manage_roles(request, current_user)\n"
+             "    generation = _generation(request)\n"
+             "    every, _active = _holders(request)\n    schema"),
+        new=("    generation = _generation(request)\n"
+             "    every, _active = _holders(request)\n    schema"),
+        tests=["tests/integration/test_who_can_see.py::TestWhoMayAsk::test_an_ordinary_user_is_refused"],
+    ),
+    Control(
         describes="INBOX: a merge counts only for someone who may write its type",
         path="api/routes.py",
         old="        if (authorize(current_user, roles, f\"write:{proposal.object_type}\")",

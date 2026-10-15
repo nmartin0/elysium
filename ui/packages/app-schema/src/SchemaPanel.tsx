@@ -30,7 +30,8 @@ import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Worksp
 
 import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/ViewSelector'
 
-import { getVisibleActionTypesCached } from '@elysium/shell-api/api'
+import { getSchemaAccess, getVisibleActionTypesCached, type TypeAccess } from '@elysium/shell-api/api'
+import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 
 import GraphPreview, { toggleSelection, type GraphSelection } from './GraphPreview'
 import OntologyCanvas from './OntologyCanvas'
@@ -38,6 +39,7 @@ import { useDeferredWrite } from '@elysium/shell-api/useDeferredValue'
 import Discover from './Discover'
 import { recordVisit } from './discoverStorage'
 import LinkTypes from './LinkTypes'
+import WhoCanSee from './WhoCanSee'
 import './SchemaPanel.css'
 import DataTable from '@elysium/shell-api/components/DataTable'
 
@@ -183,11 +185,14 @@ function FieldTable({
 function ObjectTypeCard({
   apiName,
   type,
+  access,
   onOpenObjectType,
   onOpenLinkType,
 }: {
   apiName: string
   type: SchemaObjectType
+  /** Who can see it (DEV_UI 13.3): present only for manage:roles. */
+  access?: TypeAccess
   onOpenObjectType: (objectType: string) => void
   onOpenLinkType: (linkType: string) => void
 }) {
@@ -224,6 +229,7 @@ function ObjectTypeCard({
       <h4>Properties</h4>
       <FieldTable fields={normal} onOpenObjectType={onOpenObjectType} onOpenLinkType={onOpenLinkType} />
       {entries.length === 0 && <Notice state="neutral">No fields are visible to you on this object type.</Notice>}
+      {access && <WhoCanSee objectType={apiName} access={access} />}
     </section>
   )
 }
@@ -268,6 +274,10 @@ const SCHEMA_VIEWS: readonly ViewOption[] = [
 ]
 
 export default function SchemaPanel({ visibleSchema, username, onSessionExpired }: SchemaPanelProps) {
+  // WHO CAN SEE EACH TYPE (DEV_UI 13.3), asked once for every type.
+  // Refused for anyone without manage:roles, and then simply absent:
+  // nobody is offered a section that would lead to a 403.
+  const { data: access } = useFetchOnce<Record<string, TypeAccess>>(getSchemaAccess, onSessionExpired)
   // NAVIGATION STATE LIVES IN THE URL, not in component state.
   //
   // Following a reference is one click -- a link's target, a link tag,
@@ -454,6 +464,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
                 key={apiName}
                 apiName={apiName}
                 type={type}
+                access={access?.[apiName]}
                 onOpenObjectType={openObjectType}
                 onOpenLinkType={openLinkType}
               />

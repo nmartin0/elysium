@@ -1,8 +1,16 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter, RouterProvider, createMemoryRouter } from 'react-router-dom'
 
 import SchemaPanel from './SchemaPanel'
+
+// WHO CAN SEE THIS (DEV_UI 13.3) is fetched on mount and is not what
+// these tests are about: a request that never settles keeps it from
+// updating state after a test has finished. WhoCanSee.test.tsx tests it.
+vi.mock('@elysium/shell-api/api', async (original) => ({
+  ...(await original<typeof import('@elysium/shell-api/api')>()),
+  getSchemaAccess: () => new Promise(() => {}),
+}))
 
 /** The panel keeps its tab and filter in the URL, so it needs a
  *  router. MemoryRouter rather than a mock, so the push/replace

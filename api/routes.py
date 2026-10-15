@@ -2124,6 +2124,73 @@ def _role_paths(request: Request):
     return RoleStore(path), RoleChangeStore(path)
 
 
+class CompartmentStep(BaseModel):
+    type: str
+    field: str
+
+
+class CompartmentResponse(BaseModel):
+    #: The person's attribute compared -- "region".
+    attribute: str
+    #: Links followed to reach the type that holds the compartment, in
+    #: order; empty when the type holds its own.
+    path: list[CompartmentStep]
+    #: The type and field whose value is compared.
+    type: str
+    field: str
+
+
+class RoleAccessResponse(BaseModel):
+    role: str
+    #: How many accounts hold the role.
+    holders: int | None = None
+    #: "read", or "discover" -- may know the type exists, not open it.
+    type: str
+    #: The actions that change this type which the role may run.
+    actions: list[str]
+    #: Every field: "read", "discover", or null when the role cannot
+    #: know the field exists.
+    fields: dict[str, str | None]
+
+
+class WhoCanSeeResponse(BaseModel):
+    object_type: str
+    roles: list[RoleAccessResponse]
+    #: Roles that cannot know the type exists.
+    no_access: list[str]
+    #: Which OBJECTS a person sees, as opposed to which fields: null
+    #: when the type declares no compartment.
+    compartment: CompartmentResponse | None = None
+
+
+@router.get("/schema/access", dependencies=[Depends(_no_store)],
+            response_model=dict[str, WhoCanSeeResponse])
+def who_can_see_route(request: Request,
+                      current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Who can see each type and each of its fields, by role (DEV_UI
+    13.3) -- and which objects a person sees, by compartment.
+
+    GATED ON manage:roles, like /roles: it is the permission model's
+    content. ASKED OF THE REAL PERMISSION CODE (core/ontology/
+    who_can_see.py), so it cannot disagree with what people are served.
+
+    EVERY TYPE IN ONE ANSWER: the Schema screen asks once and shows the
+    section on each type's card, rather than once per card -- and a
+    refusal hides it everywhere, so nobody without manage:roles meets a
+    button that leads to a 403.
+    """
+    from core.ontology.who_can_see import who_can_see
+
+    _require_manage_roles(request, current_user)
+    generation = _generation(request)
+    every, _active = _holders(request)
+    schema = generation.config.schema or {}
+    return {object_type: who_can_see(generation.mediator, schema, object_type,
+                                     generation.config.security_attribute, every,
+                                     generation.config.action_types)
+            for object_type in sorted(schema)}
+
+
 def _require_manage_roles(request: Request, current_user: UserRecord) -> None:
     if not authorize(current_user, _generation(request).config.roles, "manage:roles"):
         raise HTTPException(status_code=403, detail="Not authorized to manage roles")

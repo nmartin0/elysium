@@ -2298,6 +2298,28 @@
 
   /* R57: one line per type saying whether pre-selection is calibrated.
      Secondary, like the lede: it explains the ticks, it is not one. */
+  /* DEV_UI 13.3: who can see a type, closed by default on its card. */
+  .schema-panel__access {
+    margin-top: var(--space-normal);
+  }
+  .schema-panel__access > summary {
+    cursor: pointer;
+    color: var(--text-secondary);
+  }
+  .schema-panel__compartment,
+  .schema-panel__no-access {
+    max-width: 68ch;
+    margin: var(--space-tight) 0;
+    color: var(--text-secondary);
+  }
+  /* SHORT ANSWERS STAY ON ONE LINE: "reads it" broke over two in the
+     first screenshot, and so did its header. Only Fields may wrap. */
+  .schema-panel__access-table th,
+  .schema-panel__access-table td:nth-child(2),
+  .schema-panel__access-table td:nth-child(3) {
+    white-space: nowrap;
+  }
+
   .identity__calibration {
     margin: 0 0 var(--space-normal);
     max-width: 68ch;

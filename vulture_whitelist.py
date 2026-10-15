@@ -524,3 +524,7 @@ inferred
 # Enrichment review (R41): routes, reached by HTTP.
 enrichment_recipes_route
 decide_enrichment_recipe_route
+# DEV_UI 13.3, who can see a type: a route reached by HTTP, and a
+# response field pydantic reads by reflection.
+who_can_see_route
+no_access

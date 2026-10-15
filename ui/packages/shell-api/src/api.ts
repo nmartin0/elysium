@@ -1255,6 +1255,36 @@ export async function getRoles(): Promise<RolesView> {
   return (await response.json()) as RolesView
 }
 
+/** Who can see a type and its fields, by role (DEV_UI 13.3). Asked of
+ *  the server's own permission code; manage:roles only. */
+export interface RoleAccess {
+  role: string
+  /** How many accounts hold the role. */
+  holders?: number | null
+  /** 'read', or 'discover' -- may know the type exists, not open it. */
+  type: 'read' | 'discover'
+  /** The actions that change this type which the role may run. */
+  actions: string[]
+  /** Every field: 'read', 'discover', or null when the role cannot know
+   *  the field exists. */
+  fields: Record<string, 'read' | 'discover' | null>
+}
+
+export interface TypeAccess {
+  object_type: string
+  roles: RoleAccess[]
+  /** Roles that cannot know the type exists. */
+  no_access: string[]
+  /** Which OBJECTS a person sees: their `attribute` must equal the
+   *  `field` of `type`, reached through `path`. Null when undeclared. */
+  compartment?: { attribute: string; path: { type: string; field: string }[]; type: string; field: string } | null
+}
+
+export async function getSchemaAccess(): Promise<Record<string, TypeAccess>> {
+  const response = await apiFetchOrThrow('/schema/access')
+  return (await response.json()) as Record<string, TypeAccess>
+}
+
 export async function getRoleChanges(): Promise<RoleChange[]> {
   const response = await apiFetchOrThrow('/roles/changes')
   return (await response.json()).changes as RoleChange[]

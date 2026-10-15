@@ -338,6 +338,13 @@ one Inbox. Built so far, each checked in a real browser:
   moved type kept per person apart from the declaration, actions as a
   count on the type, subject areas (the ontology's own groups offered
   first), and security chains on a layer for manage:roles.
+- 13.3's "who can see this?", on each type's card in the Object types
+  catalogue, for manage:roles: per role, its people, whether it reads
+  the type, which fields it reads, only knows exist or cannot see, and
+  which actions on the type it may run; and which OBJECTS a person
+  sees, as one sentence followed through any compartment chain. Asked
+  of visible_schema per role, so it cannot disagree with what people
+  are served.
 
 WHAT THE CANVAS DOES NOT DO YET, each buildable: edges are not routed
 AROUND other types, so two types dragged far apart can draw a line
