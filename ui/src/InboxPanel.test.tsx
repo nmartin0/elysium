@@ -11,10 +11,11 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
 vi.mock('@elysium/app-approvals/ApprovalsPanel', () => ({ default: () => <p>approvals panel</p> }))
 vi.mock('@elysium/app-notifications/NotificationsPanel', () => ({ default: () => <p>notifications panel</p> }))
 vi.mock('@elysium/app-identity/IdentityPanel', () => ({ default: () => <p>identity panel</p> }))
+vi.mock('@elysium/app-approvals/EnrichmentReview', () => ({ default: () => <p>enrichment review</p> }))
 
 const { default: InboxPanel } = await import('./InboxPanel')
 
-function show(url: string, counts = { approvals: 0, notifications: 0, identity: 0 }) {
+function show(url: string, counts = { approvals: 0, notifications: 0, identity: 0, enrichment: 0 }) {
   getInboxCounts.mockResolvedValue(counts)
   return render(
     <MemoryRouter initialEntries={[url]}>
@@ -26,13 +27,22 @@ function show(url: string, counts = { approvals: 0, notifications: 0, identity: 
 }
 
 describe('the Inbox (DEV_UI 12, 15)', () => {
-  it('holds the three queues as tabs, approvals first', async () => {
+  it('holds the four queues as tabs, approvals first', async () => {
     show('/inbox')
 
     expect(await screen.findByText('approvals panel')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /Approvals/ })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /Notifications/ })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /Identity/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Enrichment/ })).toBeInTheDocument()
+  })
+
+  it('enrichment rules waiting on a decision are counted on their tab, and open there (R41)', async () => {
+    show('/inbox?tab=enrichment', { approvals: 0, notifications: 0, identity: 0, enrichment: 2 })
+
+    expect(await screen.findByText('enrichment review')).toBeInTheDocument()
+    await screen.findByText('2')
+    expect(screen.getByRole('tab', { name: /Enrichment/ })).toHaveTextContent('2')
   })
 
   it('opens the tab the URL names, so a link to a tab is a link', async () => {
@@ -49,7 +59,7 @@ describe('the Inbox (DEV_UI 12, 15)', () => {
   })
 
   it('each tab says how much is waiting in it', async () => {
-    show('/inbox', { approvals: 3, notifications: 0, identity: 1 })
+    show('/inbox', { approvals: 3, notifications: 0, identity: 1, enrichment: 0 })
 
     const approvals = await screen.findByRole('tab', { name: /Approvals/ })
     await screen.findByText('3')

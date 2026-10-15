@@ -37,3 +37,23 @@ describe('FieldValue: three things that are not the same (DEV_UI 9.7, E4)', () =
     expect(screen.queryByText('2026-05-01')).toBeNull()
   })
 })
+
+describe('FieldValue: an inference is marked as one (R41, R38)', () => {
+  it('says "inferred" beside a value approved rules chose', () => {
+    render(<FieldValue value="refund" inferred="inferred from subject" />)
+    expect(screen.getByText('refund', { exact: false })).toBeInTheDocument()
+    expect(screen.getByText('inferred')).toBeInTheDocument()
+    expect(screen.getByTitle(/Chosen by rules a person approved, inferred from subject/)).toBeInTheDocument()
+  })
+
+  it('in a table says it only to a screen reader, since the header says it once', () => {
+    render(<FieldValue value="refund" inferred="inferred from subject" compact />)
+    expect(screen.getByText('(inferred)', { exact: false })).toHaveClass('visually-hidden')
+  })
+
+  it('an empty inferred value is just empty -- no rule held, nothing guessed', () => {
+    render(<FieldValue value={null} inferred="inferred from subject" />)
+    expect(screen.getByText('not set')).toBeInTheDocument()
+    expect(screen.queryByText('inferred')).toBeNull()
+  })
+})

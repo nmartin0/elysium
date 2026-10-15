@@ -43,6 +43,12 @@ def deployment(tmp_path, monkeypatch):
     policy["roles"]["debug"]["allowed_actions"] += [
         "read:SupportTicket", "read:SupportTicket.ticket_id", "read:SupportTicket.subject",
         "read:SupportTicket.topic"]
+    # And a role that may READ the field and its input but not manage the
+    # deployment -- so the review tests below refuse it for the grant
+    # they are about, not for a missing read. (A first version gave it no
+    # read on topic, and its test passed with the grant check deleted.)
+    policy["roles"]["customer_service"]["allowed_actions"] += [
+        "read:SupportTicket", "read:SupportTicket.subject", "read:SupportTicket.topic"]
     (config / "policy.yaml").write_text(yaml.safe_dump(policy))
 
     data = tmp_path / "data"
@@ -129,10 +135,21 @@ def test_the_compile_script_proposes_and_changes_nothing(deployment, monkeypatch
     monkeypatch.setattr("sys.argv", ["compile_enrichment", "SupportTicket.topic",
                                      "--sample", "3", "--candidates", "1"])
 
-    # Three tickets in the fixture: too few to write rules from after the
-    # held-out half is set aside -- and the script says so, proposing nothing.
+    # TWO COMPARTMENTS (cust_001 is us-west, cust_003 us-east): it will not
+    # sample across them, because whoever approves must be cleared for
+    # every row the rules' words came from (R61's rule).
+    assert script.main() == 1
+    assert "2 security compartments" in capsys.readouterr().err
+    assert model.calls == []
+
+    # Within one: two tickets, too few to write rules from once the
+    # held-out half is set aside -- said, and nothing proposed.
+    monkeypatch.setattr("sys.argv", ["compile_enrichment", "SupportTicket.topic",
+                                     "--sample", "3", "--candidates", "1",
+                                     "--compartment", "us-west"])
     assert script.main() == 1
     out = capsys.readouterr().out
+    assert "2 rows in compartment 'us-west'" in out
     assert "NOTHING PROPOSED" in out
     assert EnrichmentRecipeStore(deployment.data_dir / "enrichment_recipes.db").all() == []
     # Every label it got is cached: the next run asks the model nothing again.
@@ -145,7 +162,9 @@ def test_the_compile_script_proposes_and_changes_nothing(deployment, monkeypatch
     # saw, and still nothing published.
     from tests.unit.test_enrichment_compiler import _rows
 
-    monkeypatch.setattr(script, "_gold_rows", lambda *a: _rows(16))
+    # Ids no ticket has, so every row resolves to one (empty) compartment.
+    monkeypatch.setattr(script, "_gold_rows",
+                        lambda *a: [{**row, "ticket_id": 1000 + row["ticket_id"]} for row in _rows(16)])
     monkeypatch.setattr("sys.argv", ["compile_enrichment", "SupportTicket.topic",
                                      "--sample", "16", "--candidates", "1"])
     model.rule_sets = [GOOD]
@@ -155,5 +174,94 @@ def test_the_compile_script_proposes_and_changes_nothing(deployment, monkeypatch
     assert recipe.status == "proposed"
     assert recipe.evaluation["held_out"]["agreement"] == 1.0
     assert recipe.provenance["sample"] == 16
+    assert "compartment" in recipe.provenance
     _sync(deployment)
     assert set(_topics(_client(deployment)).values()) == {None}
+
+
+class TestReviewingARecipe:
+    """GET /api/enrichment-recipes and POST .../decide."""
+
+    def _propose(self, deployment, compartment="us-west", digest=None):
+        from core.enrichment_recipes import EnrichmentRecipeStore
+        from core.ontology.enriched_fields import declaration_hash, enrichment_of
+
+        field = yaml.safe_load((deployment.config_dir / "ontology_schema.yaml").read_text())[
+            "object_types"]["SupportTicket"]["fields"]["topic"]
+        digest = digest or declaration_hash("SupportTicket", "topic", enrichment_of(field))
+        return EnrichmentRecipeStore(deployment.data_dir / "enrichment_recipes.db").propose(
+            "SupportTicket", "topic", digest, RULES, {"held_out": {"agreement": 1.0}},
+            {"model": "m", "compartment": compartment})
+
+    def test_the_approver_reads_the_rules_in_plain_words_and_the_inbox_counts_it(self, deployment):
+        _sync(deployment)
+        self._propose(deployment)
+        client = _client(deployment)
+
+        [recipe] = client.get("/api/enrichment-recipes").json()["recipes"]
+        assert recipe["rules"] == ["If subject mentions 'refund': refund",
+                                   "If subject mentions 'billing address': billing"]
+        assert recipe["current"] is True and recipe["status"] == "proposed"
+        assert client.get("/api/me/inbox").json()["enrichment"] == 1
+
+    def test_another_compartments_recipe_is_not_shown_or_decidable(self, deployment):
+        """The rules' words came from us-east rows; a us-west reviewer is
+        not cleared for them (R61's rule)."""
+        _sync(deployment)
+        recipe_id = self._propose(deployment, compartment="us-east")
+        client = _client(deployment)
+
+        assert client.get("/api/enrichment-recipes").json()["recipes"] == []
+        assert client.get("/api/me/inbox").json()["enrichment"] == 0
+        decided = client.post(f"/api/enrichment-recipes/{recipe_id}/decide", json={"approve": True},
+                              headers=_csrf(client))
+        assert decided.status_code == 404
+
+    def test_without_manage_deployment_it_is_not_there(self, deployment):
+        _sync(deployment)
+        recipe_id = self._propose(deployment)
+        client = _client(deployment)
+        client.app.state.user_directory.create_user("agent", "correct-pw", "us-west", "customer_service")
+        _login(client, "agent", "correct-pw")
+
+        assert client.get("/api/me/visible-schema").json()["SupportTicket"]["fields"]["topic"][
+            "readable"] is True, "the role must be able to read the field, or this proves nothing"
+        assert client.get("/api/enrichment-recipes").json()["recipes"] == []
+        assert client.post(f"/api/enrichment-recipes/{recipe_id}/decide", json={"approve": True},
+                           headers=_csrf(client)).status_code == 404
+
+    def test_approving_is_audited_and_happens_once(self, deployment):
+        from tests.conftest import read_audit_log
+
+        _sync(deployment)
+        recipe_id = self._propose(deployment)
+        client = _client(deployment)
+
+        approved = client.post(f"/api/enrichment-recipes/{recipe_id}/decide", json={"approve": True},
+                               headers=_csrf(client))
+        assert approved.status_code == 200, approved.text
+        assert approved.json()["status"] == "approved"
+        again = client.post(f"/api/enrichment-recipes/{recipe_id}/decide", json={"approve": False},
+                            headers=_csrf(client))
+        assert again.status_code == 409
+        [entry] = [e for e in read_audit_log(deployment.log_dir) if e.get("stage") == "enrichment_decision"]
+        assert (entry["recipe_id"], entry["decision"], entry["field"]) == (recipe_id, "approved", "topic")
+
+    def test_rules_for_a_question_nobody_asks_any_more_cannot_be_approved(self, deployment):
+        _sync(deployment)
+        recipe_id = self._propose(deployment, digest="an-older-question")
+        client = _client(deployment)
+
+        [recipe] = client.get("/api/enrichment-recipes").json()["recipes"]
+        assert recipe["current"] is False
+        assert client.get("/api/me/inbox").json()["enrichment"] == 0
+        refused = client.post(f"/api/enrichment-recipes/{recipe_id}/decide", json={"approve": True},
+                              headers=_csrf(client))
+        assert refused.status_code == 409
+        assert "question has changed" in refused.json()["detail"]
+
+
+def _csrf(client):
+    from tests.integration.test_api import _csrf_headers
+
+    return _csrf_headers(client)

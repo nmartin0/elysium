@@ -2095,3 +2095,23 @@ describe('a field the reader may not read (DEV_UI 9.7, E4)', () => {
     expect(options.map((option) => option.value)).toContain('region')
   })
 })
+
+describe('an inferred column (R41, R38)', () => {
+  it('says "inferred" once, in its header, and marks each value for a screen reader', async () => {
+    const schema: VisibleSchema = {
+      Customer: {
+        title_field: 'name',
+        fields: { name: { type: 'data' }, mood: { type: 'data', inferred: 'inferred from name' } },
+      },
+    }
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor', mood: 'calm' } }]),
+    )
+    renderPanel(schema)
+    await screen.findByText('Ada Okafor', { selector: '.object-search__result-title' })
+
+    expect(screen.getByRole('columnheader', { name: /^Mood\s*inferred/ })).toBeInTheDocument()
+    const table = document.querySelector('table.object-search__results') as HTMLElement
+    expect(within(table).getByText('(inferred)', { exact: false })).toHaveClass('visually-hidden')
+  })
+})

@@ -426,6 +426,17 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
     return readable.filter((field) => schemaFields[field]?.visibility !== 'hidden')
   }
 
+  // AN INFERRED COLUMN SAYS SO ONCE, in its header (R38); its cells carry
+  // only a dotted underline, so "inferred" is not repeated down the page.
+  const columnLabel = (field: string): React.ReactNode =>
+    selectedType && visibleSchema?.[selectedType]?.fields?.[field]?.inferred ? (
+      <>
+        {formatFieldName(field)} <span className="field-value__kind">inferred</span>
+      </>
+    ) : (
+      formatFieldName(field)
+    )
+
   const sortableFields =
     selectedType && visibleSchema
       ? Object.entries(visibleSchema[selectedType]?.fields ?? {})
@@ -1106,14 +1117,14 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                 sortableFields.some((sortable) => sortable.name === field) ? (
                   <SortableHeader
                     key={field}
-                    label={formatFieldName(field)}
+                    label={columnLabel(field)}
                     numeric={isNumericField(field)}
                     direction={orderBy === field ? 'asc' : orderBy === `${field}:desc` ? 'desc' : null}
                     onSort={(next) => setOrderBy(next === null ? '' : next === 'asc' ? field : `${field}:desc`)}
                   />
                 ) : (
                   <th key={field} className={isNumericField(field) ? 'data-table__num' : undefined}>
-                    {formatFieldName(field)}
+                    {columnLabel(field)}
                   </th>
                 ),
               )}
@@ -1174,6 +1185,8 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                           readable={typeSchemaFields?.[field]?.readable}
                           decimalPlaces={typeSchemaFields?.[field]?.decimal_places}
                           dataType={typeSchemaFields?.[field]?.data_type}
+                          inferred={typeSchemaFields?.[field]?.inferred}
+                          compact
                         />
                       ) : null}
                     </td>

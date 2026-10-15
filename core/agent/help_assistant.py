@@ -86,7 +86,10 @@ SCREEN_GUIDE: Mapping[str, str] = {
         "and health of the data. 'Identity': proposed merges -- two records that may be "
         "the same real thing, shown by which fields agree rather than their values; "
         "decide whether they are one. A merge that would also join records already "
-        "merged is approved as the whole group."
+        "merged is approved as the whole group. 'Enrichment': rules a model wrote to "
+        "fill in a field, for someone who manages the deployment to approve or reject; "
+        "each shows the rules in words and how often they agreed with the model on rows "
+        "they were not written from. An approved field is filled at the next sync."
     ),
     "Admin": (
         "Users, roles and grants, and the configuration and data sources of this "
@@ -102,8 +105,9 @@ SCREEN_GUIDE: Mapping[str, str] = {
 SHELL_GUIDE = (
     "On any screen, Ctrl-K (Cmd-K on a Mac) opens a list of commands: go to a "
     "screen, 'Help', switch the theme, change 'Row density', 'Log out'. A field "
-    "shown as 'Not permitted' exists, but this user's role may not read its value "
-    "-- an administrator controls that; a dash means the field is empty."
+    "shown as 'Not permitted' exists, but the role of this user may not read its value "
+    "-- an administrator controls that; a dash means the field is empty. A value "
+    "marked 'inferred' was chosen by rules a person approved, not recorded by anyone."
 )
 
 #: Added to SHELL_GUIDE only for someone who has Browse, because the

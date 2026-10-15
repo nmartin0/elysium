@@ -15,10 +15,14 @@ SLOW, AND SAYS SO. A model call takes minutes on a CPU: a sample of 20 is
 20 calls plus one per candidate. Labels are cached, so a second run --
 with more candidates, say -- re-asks nothing it already has.
 
-Runs SYSTEM-HIGH, as a sync does: it reads every row of the type, and the
-values it proposes are published to whoever may read the field and its
-inputs. The rules it writes can name only the declared inputs and
-conclude only a declared choice (core/ontology/enriched_fields.py).
+ONE COMPARTMENT AT A TIME. The rules a model writes are made of words
+from the rows it was shown, and the person approving them must be cleared
+for those rows -- R61's rule for merge review, applied here. MAC is one
+value per person, so nobody can see every region: the sample is drawn
+from ONE security compartment (--compartment, required when there is more
+than one), recorded with the recipe, and only someone in that compartment
+may see or decide it. The approved rules then run on every row; other
+compartments see the values, never the words.
 """
 
 from __future__ import annotations
@@ -34,7 +38,7 @@ sys.path.insert(0, str(REPO))
 from core.agent.enrichment_compiler import PROMPT_VERSION, UNUSABLE, compile_recipe  # noqa: E402
 from core.deployment_loader import (  # noqa: E402
     build_llm_adapter,
-    load_deployment,
+    load_deployment_bundle,
     resolve_runtime_paths,
 )
 from core.enrichment_recipes import EnrichmentLabelCache, EnrichmentRecipeStore  # noqa: E402
@@ -67,11 +71,15 @@ def main() -> int:
     parser.add_argument("--candidates", type=int, default=3,
                         help="rule sets to ask for (default 3)")
     parser.add_argument("--seed", type=int, default=0, help="which rows are sampled")
+    parser.add_argument("--compartment", metavar="VALUE",
+                        help="the security value to sample from (required when the type's rows "
+                             "have more than one); only someone with this value may approve")
     args = parser.parse_args()
 
     object_type, _, field_name = args.field.partition(".")
     paths = resolve_runtime_paths()
-    config = load_deployment(paths.config_dir)
+    config, mediator, _writers = load_deployment_bundle(paths.config_dir, paths.data_dir,
+                                                        paths.log_dir)
     field = ((config.schema.get(object_type) or {}).get("fields") or {}).get(field_name)
     enrichment = enrichment_of(field or {})
     if enrichment is None:
@@ -86,6 +94,25 @@ def main() -> int:
         print(f"Could not read gold for {object_type} ({type(e).__name__}: {e}). "
               f"Run a sync first.", file=sys.stderr)
         return 1
+    # EACH ROW'S COMPARTMENT AS THE READ PATH RESOLVES IT -- its own
+    # field, or followed through a via_field chain -- so "cleared for
+    # these rows" means what an ordinary read would have decided.
+    for row in rows:
+        row["__compartment"] = mediator.security_value_of(object_type, row.get(id_field))
+    compartments: dict = {}
+    for row in rows:
+        compartments[row["__compartment"]] = compartments.get(row["__compartment"], 0) + 1
+    compartment = args.compartment
+    if compartment is None:
+        if len(compartments) > 1:
+            listed = ", ".join(f"{value} ({count} rows)" for value, count in
+                               sorted(compartments.items(), key=lambda item: str(item[0])))
+            print(f"{object_type}'s rows are in {len(compartments)} security compartments: "
+                  f"{listed}. Choose one with --compartment; only someone in it may approve "
+                  f"what it proposes.", file=sys.stderr)
+            return 1
+        compartment = next(iter(compartments), None)
+    rows = [row for row in rows if row["__compartment"] == compartment]
 
     model = config.synthesis_model
     digest = declaration_hash(object_type, field_name, enrichment)
@@ -93,7 +120,8 @@ def main() -> int:
     cache = EnrichmentLabelCache(data_dir / "enrichment_recipes.db", digest, model, PROMPT_VERSION)
     started = time.monotonic()
     print(f"{args.field}: {enrichment.instruction}")
-    print(f"  {len(rows)} rows in gold; sampling {min(args.sample, len(rows))}, "
+    print(f"  {len(rows)} rows in compartment {compartment!r}; sampling "
+          f"{min(args.sample, len(rows))}, "
           f"{args.candidates} candidate rule set(s), model {model}")
 
     def cached(key):
@@ -125,7 +153,8 @@ def main() -> int:
         print("  That is too few rows to judge by; a larger --sample would say more.")
 
     recipe_id = EnrichmentRecipeStore(data_dir / "enrichment_recipes.db").propose(
-        object_type, field_name, digest, compiled.rules, evaluation, compiled.provenance)
+        object_type, field_name, digest, compiled.rules, evaluation,
+        {**compiled.provenance, "compartment": compartment})
     print(f"\nPROPOSED as {recipe_id}. Nothing changes until someone approves it in the Inbox "
           f"(Enrichment); the next sync then fills {args.field}.")
     return 0

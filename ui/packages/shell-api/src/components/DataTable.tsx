@@ -53,7 +53,8 @@ export function SortableHeader({
   onSort,
   numeric = false,
 }: {
-  label: string
+  /** Text, or text with a mark -- an inferred column says so here. */
+  label: React.ReactNode
   direction: SortDirection
   onSort: (next: SortDirection) => void
   numeric?: boolean

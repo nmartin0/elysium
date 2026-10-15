@@ -153,7 +153,7 @@ from core.mirror.sync_attempts import SyncAttempts
 from core.mirror.sync_targets import resolve_sync_targets
 from core.ontology.decimal_text import exact_decimals
 from core.ontology.mediator import SearchOutcome
-from core.ontology.schema import get_field_column, sort_key
+from core.ontology.schema import get_display_name, get_field_column, sort_key
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
 from core.ontology.write_mediator import MAX_BULK_OBJECTS, WriteMediator
 from core.pending_write_store import PendingWriteStore
@@ -4696,6 +4696,135 @@ class InboxCountsResponse(BaseModel):
     notifications: int
     #: Merge proposals waiting on a decision this caller may make.
     identity: int
+    #: Enrichment recipes waiting on a decision this caller may make.
+    enrichment: int = 0
+
+
+class EnrichmentRecipeResponse(BaseModel):
+    recipe_id: str
+    object_type: str
+    field_name: str
+    field_label: str
+    instruction: str
+    choices: list[str]
+    inputs: list[str]
+    #: proposed | approved | rejected | superseded
+    status: str
+    #: Each rule in plain words, in order -- what the approver reads.
+    rules: list[str]
+    evaluation: dict[str, Any]
+    #: The model, sample, candidates and compartment that produced it.
+    provenance: dict[str, Any]
+    #: False when the field's question has changed since this was
+    #: compiled: it can no longer be approved, and no longer applies.
+    current: bool
+    proposed_at: str
+    decided_by: str | None = None
+    decided_at: str | None = None
+
+
+class EnrichmentRecipesResponse(BaseModel):
+    recipes: list[EnrichmentRecipeResponse]
+
+
+class EnrichmentDecisionRequest(BaseModel):
+    approve: bool
+
+
+def _recipe_store(request: Request):
+    from core.enrichment_recipes import EnrichmentRecipeStore
+
+    return EnrichmentRecipeStore(request.app.state.runtime_paths.data_dir / "enrichment_recipes.db")
+
+
+def _visible_recipe(request: Request, current_user: UserRecord, recipe) -> "dict | None":
+    """The recipe as this caller may see it, or None.
+
+    FOUR CONDITIONS, each for a reason:
+      - manage:deployment: an approval decides what a field holds for
+        everyone, which is a deployment change, as editing config is;
+      - read on the field and EVERY input: the rules are made of words
+        from those inputs, so seeing them is reading them (the read gate
+        on the field itself, at load, asks the same);
+      - the recipe's COMPARTMENT is the caller's own: the words came from
+        rows in that compartment, and R61 says a reviewer must be cleared
+        for what they are shown;
+      - the field still exists and is still enriched.
+    None for any failure, and the routes answer it as "not found" --
+    uniform denial."""
+    from core.ontology.enriched_fields import declaration_hash, describe_rule, enrichment_of
+
+    generation = _generation(request)
+    roles = generation.config.roles
+    if not authorize(current_user, roles, "manage:deployment"):
+        return None
+    if "compartment" in recipe.provenance and recipe.provenance["compartment"] is not None \
+            and recipe.provenance["compartment"] != current_user.security_value:
+        return None
+    type_def = generation.config.schema.get(recipe.object_type) or {}
+    field = (type_def.get("fields") or {}).get(recipe.field_name) or {}
+    enrichment = enrichment_of(field)
+    if enrichment is None:
+        return None
+    for name in (recipe.field_name, *enrichment.inputs):
+        if not authorize(current_user, roles, f"read:{recipe.object_type}.{name}"):
+            return None
+    return {
+        "recipe_id": recipe.recipe_id, "object_type": recipe.object_type,
+        "field_name": recipe.field_name,
+        "field_label": get_display_name(field, recipe.field_name),
+        "instruction": enrichment.instruction, "choices": list(enrichment.choices),
+        "inputs": list(enrichment.inputs), "status": recipe.status,
+        "rules": [describe_rule(rule) for rule in recipe.rules],
+        "evaluation": recipe.evaluation, "provenance": recipe.provenance,
+        "current": recipe.declaration_hash == declaration_hash(
+            recipe.object_type, recipe.field_name, enrichment),
+        "proposed_at": recipe.proposed_at, "decided_by": recipe.decided_by,
+        "decided_at": recipe.decided_at,
+    }
+
+
+@router.get("/enrichment-recipes", dependencies=[Depends(_no_store)],
+            response_model=EnrichmentRecipesResponse)
+def enrichment_recipes_route(request: Request,
+                             current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Rules a model wrote for enriched fields (R41), newest first, as far
+    as this caller may review them. Nothing here is applied: an approved
+    recipe reaches gold at the next sync."""
+    shown = [_visible_recipe(request, current_user, recipe) for recipe in _recipe_store(request).all()]
+    return {"recipes": [recipe for recipe in shown if recipe is not None]}
+
+
+@router.post("/enrichment-recipes/{recipe_id}/decide", response_model=EnrichmentRecipeResponse)
+def decide_enrichment_recipe_route(recipe_id: str, body: EnrichmentDecisionRequest,
+                                   request: Request,
+                                   current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Approve or reject one proposal.
+
+    409, not a silent no-op, for a proposal already decided or one whose
+    question has changed since it was compiled: approving rules for a
+    question nobody is asking any more would publish answers to it."""
+    store = _recipe_store(request)
+    recipe = store.get(recipe_id)
+    shown = _visible_recipe(request, current_user, recipe) if recipe else None
+    if shown is None:
+        raise HTTPException(status_code=404, detail="No such recipe")
+    if recipe.status != "proposed":
+        raise HTTPException(status_code=409, detail=f"This recipe was already {recipe.status}.")
+    if not shown["current"]:
+        raise HTTPException(status_code=409, detail=(
+            "The field's question has changed since these rules were written; compile it again."))
+    decided = store.decide(recipe_id, approve=body.approve, by=current_user.user_id)
+    if decided is None:
+        raise HTTPException(status_code=409, detail="Someone decided it a moment ago.")
+    _generation(request).mediator.audit_log.log_enrichment_decision(
+        current_user.user_id, recipe_id, recipe.object_type, recipe.field_name,
+        "approved" if body.approve else "rejected", recipe.declaration_hash)
+    shown_after = _visible_recipe(request, current_user, decided)
+    # Visible a moment ago, and a decision changes nothing that decides
+    # visibility -- so this is the same recipe, now decided.
+    assert shown_after is not None
+    return shown_after
 
 
 @router.get("/me/inbox", dependencies=[Depends(_no_store)], response_model=InboxCountsResponse)
@@ -4733,7 +4862,15 @@ def my_inbox_counts_route(request: Request,
         if (authorize(current_user, roles, f"write:{proposal.object_type}")
                 and _proposal_sides(request, current_user, proposal) is not None):
             identity += 1
-    return {"approvals": approvals, "notifications": notifications, "identity": identity}
+    # ENRICHMENT RECIPES on the listing's own rule, and only those still
+    # decidable: proposed, for the field's current question.
+    enrichment = sum(
+        1 for recipe in _recipe_store(request).all()
+        if recipe.status == "proposed"
+        and (shown := _visible_recipe(request, current_user, recipe)) is not None
+        and shown["current"])
+    return {"approvals": approvals, "notifications": notifications, "identity": identity,
+            "enrichment": enrichment}
 
 
 @router.get("/me/visible-apps", dependencies=[Depends(_no_store)], response_model=list[VisibleAppResponse])

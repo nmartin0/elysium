@@ -98,6 +98,10 @@ export interface FieldSchema {
    *  e.g. "multiply(quantity, unit_price)" (R37). Absent or null for a
    *  stored field. Field names only, never values. */
   derived?: string | null
+  /** An ENRICHED field's value kind (R41, R38) -- "inferred from
+   *  subject": its values are chosen by approved rules a model wrote,
+   *  not recorded. Every such value is marked where it is shown. */
+  inferred?: string | null
 }
 
 export interface TypeSchema {

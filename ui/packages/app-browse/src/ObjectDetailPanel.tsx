@@ -197,7 +197,14 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
     const isLink = fieldSchema?.type === 'link'
 
     if (!isLink)
-      return <FieldValue value={value} decimalPlaces={fieldSchema?.decimal_places} dataType={fieldSchema?.data_type} />
+      return (
+        <FieldValue
+          value={value}
+          decimalPlaces={fieldSchema?.decimal_places}
+          dataType={fieldSchema?.data_type}
+          inferred={fieldSchema?.inferred}
+        />
+      )
     if (value === null || value === undefined) return <FieldValue value={value} />
 
     const targetType = fieldSchema.target

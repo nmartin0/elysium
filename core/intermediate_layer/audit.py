@@ -538,6 +538,23 @@ class AuditLog:
             "detail": detail,
         })
 
+    def log_enrichment_decision(self, user_id: str, recipe_id: str, object_type: str,
+                                field_name: str, decision: str, declaration_hash: str) -> None:
+        """A person approved or rejected a model's rules for an enriched
+        field (R41). An approval decides what a field holds for everyone
+        who may read it, from the next sync on, so who decided which
+        recipe -- and for exactly which question -- is kept. The rules
+        themselves stay in the recipe store, by id."""
+        self._write({
+            "stage": "enrichment_decision",
+            "user_id": user_id,
+            "recipe_id": recipe_id,
+            "object_type": object_type,
+            "field": field_name,
+            "decision": decision,
+            "declaration_hash": declaration_hash,
+        })
+
     def log_write_invalidated(self, write_id: str, user_id: str, description: str,
                                from_generation: int, to_generation: int,
                                fields: list[str], reloaded_by: str) -> None:

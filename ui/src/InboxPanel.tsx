@@ -1,5 +1,6 @@
 /**
- * The Inbox: approvals, notifications and merge proposals, one place
+ * The Inbox: approvals, notifications, merge proposals and enrichment
+ * rules, one place
  * (DEV_UI 12, 15; decided by the owner 14 Oct).
  *
  * "INBOXES. Approvals and notifications are about EVENTS THAT ARRIVED,
@@ -29,8 +30,9 @@ import { useUrlValue } from '@elysium/shell-api/useUrlState'
 const ApprovalsPanel = lazy(() => import('@elysium/app-approvals/ApprovalsPanel'))
 const NotificationsPanel = lazy(() => import('@elysium/app-notifications/NotificationsPanel'))
 const IdentityPanel = lazy(() => import('@elysium/app-identity/IdentityPanel'))
+const EnrichmentReview = lazy(() => import('@elysium/app-approvals/EnrichmentReview'))
 
-export type InboxTab = 'approvals' | 'notifications' | 'identity'
+export type InboxTab = 'approvals' | 'notifications' | 'identity' | 'enrichment'
 
 const TABS: readonly { id: InboxTab; title: string; icon: IconName }[] = [
   { id: 'approvals', title: 'Approvals', icon: 'inbox' },
@@ -40,6 +42,9 @@ const TABS: readonly { id: InboxTab; title: string; icon: IconName }[] = [
   // merge-columns: the tab is about deciding whether two records are
   // ONE. A padlock would say "security" and mislead.
   { id: 'identity', title: 'Identity', icon: 'merge-columns' },
+  // Rules a model wrote for an enriched field, waiting on a person
+  // (R41). learning: what the rules are is something a model learnt.
+  { id: 'enrichment', title: 'Enrichment', icon: 'learning' },
 ]
 
 function isTab(value: string): value is InboxTab {
@@ -70,6 +75,7 @@ export default function InboxPanel({ onSessionExpired }: { onSessionExpired: () 
                   {id === 'approvals' && <ApprovalsPanel onSessionExpired={onSessionExpired} />}
                   {id === 'notifications' && <NotificationsPanel onSessionExpired={onSessionExpired} />}
                   {id === 'identity' && <IdentityPanel onSessionExpired={onSessionExpired} />}
+                  {id === 'enrichment' && <EnrichmentReview onSessionExpired={onSessionExpired} />}
                 </Suspense>
               }
             />

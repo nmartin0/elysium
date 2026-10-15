@@ -1333,6 +1333,53 @@ export interface InboxCounts {
   approvals: number
   notifications: number
   identity: number
+  /** Enrichment recipes waiting on this caller's decision (R41). */
+  enrichment: number
+}
+
+/** Rules a model wrote for an enriched field, for a person to approve or
+ *  reject (R41). Nothing is applied until approved; the next sync then
+ *  fills the field. */
+export interface EnrichmentRecipe {
+  recipe_id: string
+  object_type: string
+  field_name: string
+  field_label: string
+  instruction: string
+  choices: string[]
+  inputs: string[]
+  status: 'proposed' | 'approved' | 'rejected' | 'superseded'
+  /** Each rule in plain words, in order. */
+  rules: string[]
+  evaluation: {
+    sample?: number
+    labelled?: number
+    unusable?: number
+    model_said_nothing?: number
+    written_from?: number
+    judged_on?: number
+    enough_to_judge?: boolean
+    held_out?: { rows: number; covered: number; agreed: number; coverage: number | null; agreement: number | null }
+  }
+  provenance: { model?: string; sample?: number; candidates?: number; compartment?: string | null }
+  /** False when the field's question changed since: no longer approvable. */
+  current: boolean
+  proposed_at: string
+  decided_by?: string | null
+  decided_at?: string | null
+}
+
+export async function getEnrichmentRecipes(): Promise<EnrichmentRecipe[]> {
+  const response = await apiFetchOrThrow('/enrichment-recipes')
+  return ((await response.json()) as { recipes: EnrichmentRecipe[] }).recipes
+}
+
+export async function decideEnrichmentRecipe(recipeId: string, approve: boolean): Promise<EnrichmentRecipe> {
+  const response = await apiFetchOrThrow(`/enrichment-recipes/${encodeURIComponent(recipeId)}/decide`, {
+    method: 'POST',
+    body: JSON.stringify({ approve }),
+  })
+  return (await response.json()) as EnrichmentRecipe
 }
 
 export async function getInboxCounts(): Promise<InboxCounts> {

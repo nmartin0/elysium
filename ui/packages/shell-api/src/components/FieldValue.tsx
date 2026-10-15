@@ -14,7 +14,8 @@
  *
  *   not permitted   the schema says `readable: false` for this reader
  *   not set         a null the reader was allowed to see
- *   a value         formatted by type
+ *   a value         formatted by type -- and marked INFERRED when the
+ *                   schema says an approved rule chose it (R38)
  *
  * "RESTRICTED" -- a readable field withheld for ONE object -- IS NOT A
  * STATE HERE, deliberately. MAC withholds whole objects, which answer
@@ -42,9 +43,17 @@ export interface FieldValueProps {
   readable?: boolean
   decimalPlaces?: number | null
   dataType?: string | null
+  /** The schema's `inferred` -- "inferred from subject" -- for an
+   * enriched field (R41, R38). A reader must be able to tell a value
+   * rules chose from one somebody recorded. */
+  inferred?: string | null
+  /** In a table, where the column header already says "inferred": a
+   * dotted underline and words only a screen reader hears, rather than
+   * the same label down every row. */
+  compact?: boolean
 }
 
-export default function FieldValue({ value, readable, decimalPlaces, dataType }: FieldValueProps) {
+export default function FieldValue({ value, readable, decimalPlaces, dataType, inferred, compact }: FieldValueProps) {
   // FIRST, before the null check: a withheld value IS null on the wire,
   // and testing null first is exactly the conflation this exists to end.
   if (readable === false) {
@@ -65,5 +74,19 @@ export default function FieldValue({ value, readable, decimalPlaces, dataType }:
       </span>
     )
   }
-  return <>{formatValue(value, decimalPlaces, dataType)}</>
+  const shown = formatValue(value, decimalPlaces, dataType)
+  if (inferred) {
+    const why = `Chosen by rules a person approved, ${inferred} — not recorded by anyone`
+    return compact ? (
+      <span className="field-value field-value--inferred" title={why}>
+        {shown}
+        <span className="visually-hidden"> (inferred)</span>
+      </span>
+    ) : (
+      <span className="field-value field-value--inferred" title={why}>
+        {shown} <span className="field-value__kind">inferred</span>
+      </span>
+    )
+  }
+  return <>{shown}</>
 }

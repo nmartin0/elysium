@@ -520,3 +520,6 @@ help_route
 incremental_tables
 # R41/R38: a response field pydantic fills from visible_schema by name.
 inferred
+# Enrichment review (R41): routes, reached by HTTP.
+enrichment_recipes_route
+decide_enrichment_recipe_route

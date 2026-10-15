@@ -1650,6 +1650,75 @@
     color: var(--text-secondary);
   }
 
+  /* AN INFERENCE, NOT A RECORD (R38). A dotted underline is the
+   * convention for "there is more to this word" without competing with
+   * the value; the word itself sits beside it where there is room. */
+  .field-value--inferred {
+    text-decoration: underline dotted var(--text-secondary);
+    text-underline-offset: 3px;
+  }
+
+  /* ---- ENRICHMENT REVIEW (R41) -------------------------------------- */
+  .enrichment-recipe {
+    margin-bottom: var(--space-normal);
+    padding: var(--space-normal);
+    border-radius: 10px;
+    background: var(--surface-raised);
+    box-shadow: var(--elevate-raised);
+  }
+
+  .enrichment-recipe__head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-tight);
+  }
+
+  .enrichment-recipe__head h3 {
+    margin: 0;
+  }
+
+  .enrichment-recipe__question {
+    margin: var(--space-tight) 0 var(--space-hair);
+    font-weight: 600;
+  }
+
+  .enrichment-recipe__meta,
+  .enrichment-recipe__provenance,
+  .enrichment-recipe__after,
+  .enrichment-review__none {
+    color: var(--text-secondary);
+  }
+
+  .enrichment-recipe__rules {
+    margin: 0 0 var(--space-tight);
+    padding-left: var(--space-loose);
+  }
+
+  .enrichment-recipe__score {
+    margin: 0 0 var(--space-hair);
+  }
+
+  .enrichment-recipe__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-tight);
+    margin-top: var(--space-tight);
+  }
+
+  .enrichment-review__decided h3 {
+    margin: var(--space-loose) 0 var(--space-tight);
+    color: var(--text-secondary);
+  }
+
+  .field-value__kind {
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-style: italic;
+    text-decoration: none;
+    display: inline-block;
+  }
+
   /* ---- WHERE A ROW CAME FROM --------------------------------------
    *
    * The heading takes the same label treatment as HISTORY and CHANGED

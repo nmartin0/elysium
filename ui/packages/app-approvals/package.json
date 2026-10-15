@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./ApprovalsPanel": "./src/ApprovalsPanel.tsx"
+    "./ApprovalsPanel": "./src/ApprovalsPanel.tsx",
+    "./EnrichmentReview": "./src/EnrichmentReview.tsx"
   },
   "dependencies": {
     "@elysium/shell-api": "*",

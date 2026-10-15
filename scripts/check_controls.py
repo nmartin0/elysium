@@ -3057,6 +3057,28 @@ CONTROLS = [
         new="    derived += [(type_name, field_name, ())",
         tests=["tests/unit/test_enriched_fields.py::test_reading_an_inference_needs_reading_what_it_was_inferred_from"],
     ),
+    Control(
+        describes="ENRICH-REVIEW: a recipe from another compartment is not shown",
+        path="api/routes.py",
+        old="            and recipe.provenance[\"compartment\"] != current_user.security_value:",
+        new="            and False:",
+        tests=["tests/integration/test_enriched_fields_reach_gold.py::TestReviewingARecipe::test_another_compartments_recipe_is_not_shown_or_decidable"],
+    ),
+    Control(
+        describes="ENRICH-REVIEW: only manage:deployment reviews a recipe",
+        path="api/routes.py",
+        old=("    if not authorize(current_user, roles, \"manage:deployment\"):\n"
+             "        return None\n    if \"compartment\""),
+        new="    if False:\n        return None\n    if \"compartment\"",
+        tests=["tests/integration/test_enriched_fields_reach_gold.py::TestReviewingARecipe::test_without_manage_deployment_it_is_not_there"],
+    ),
+    Control(
+        describes="ENRICH-REVIEW: rules for a changed question cannot be approved",
+        path="api/routes.py",
+        old="    if not shown[\"current\"]:\n        raise HTTPException(status_code=409",
+        new="    if False:\n        raise HTTPException(status_code=409",
+        tests=["tests/integration/test_enriched_fields_reach_gold.py::TestReviewingARecipe::test_rules_for_a_question_nobody_asks_any_more_cannot_be_approved"],
+    ),
 ]
 
 
