@@ -2444,8 +2444,8 @@ CONTROLS = [
     Control(
         describes="WIRED-3: a match at or above the type's auto_propose_above is flagged for pre-selection",
         path="api/routes.py",
-        old="    return settings is not None and float(proposal.score) >= settings.auto_propose_above",
-        new="    return False",
+        old="        if float(proposal.score) >= settings.auto_propose_above:",
+        new="        if False:",
         tests=["tests/unit/test_high_confidence_matches_are_preselected.py::"
                "test_at_or_above_the_declared_threshold_is_high_confidence"],
     ),
@@ -2909,6 +2909,41 @@ CONTROLS = [
         old="             or _may_read_object(generation.mediator, user, proposal.object_type,",
         new="             or True or _may_read_object(generation.mediator, user, proposal.object_type,",
         tests=["tests/integration/test_a_merge_reviewer_sees_verdicts.py::TestAChainIsApprovedAsAGroup::test_the_card_says_what_else_it_would_join"],
+    ),
+    Control(
+        describes="R57: a rejection shown pre-selected is not calibration evidence",
+        path="core/mirror/match_calibration.py",
+        old="            if score >= float(auto):",
+        new="            if False:",
+        tests=["tests/unit/test_match_calibration.py::TestWhatCountsAsEvidence::test_a_rejection_that_was_pre_selected_does_not_count"],
+    ),
+    Control(
+        describes="R57: a rejection scored under other weights is not evidence",
+        path="core/mirror/match_calibration.py",
+        old="            if scoring_key(_provenance(proposal)) != key:",
+        new="            if False:",
+        tests=["tests/unit/test_match_calibration.py::TestWhatCountsAsEvidence::test_a_rejection_scored_under_other_weights_does_not_count"],
+    ),
+    Control(
+        describes="R57: too few rejections is uncalibrated",
+        path="core/mirror/match_calibration.py",
+        old="    if len(reference) < needed:",
+        new="    if False:",
+        tests=["tests/unit/test_match_calibration.py::TestWhatCountsAsEvidence::test_too_few_rejections_is_uncalibrated_and_selects_nothing"],
+    ),
+    Control(
+        describes="R57: Benjamini-Hochberg's bar falls with the number waiting",
+        path="core/mirror/match_calibration.py",
+        old="        if p <= rank * alpha / m:",
+        new="        if p <= alpha:",
+        tests=["tests/unit/test_match_calibration.py::TestWhatCountsAsEvidence::test_more_waiting_pairs_need_more_rejections"],
+    ),
+    Control(
+        describes="R57: below the declared threshold only an uncalibrated type ticks nothing",
+        path="api/routes.py",
+        old="        elif calibration.status == CALIBRATED and proposal.proposal_id in calibration.selected:",
+        new="        elif True:",
+        tests=["tests/unit/test_match_calibration.py::TestTheListing::test_one_rejection_short_ticks_nothing_and_says_uncalibrated"],
     ),
     Control(
         describes="INBOX: a merge counts only for someone who may write its type",

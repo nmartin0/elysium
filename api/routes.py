@@ -543,6 +543,18 @@ class MergeProposalResponse(BaseModel):
     #: reason `pattern` says: a number invites deference. The screen
     #: ticks these for one bulk approval; a person still presses it.
     high_confidence: bool = False
+    #: WHICH RULE TICKED IT (R57): "declared" -- at or above
+    #: auto_propose_above -- or "calibrated" -- below it, but selected
+    #: against reviewers' rejections at the type's false_merge_rate.
+    #: None when not pre-selected. `high_confidence` is true exactly
+    #: when this is set, so an older screen still ticks the same pairs.
+    preselected_by: str | None = None
+    #: THE TYPE'S CALIBRATION, the same on every proposal of a type:
+    #: {"status": "calibrated" | "uncalibrated", "false_merge_rate": r}.
+    #: NO COUNTS: the rejections behind it span every compartment, and
+    #: how many there are would describe pairs this reviewer cannot see.
+    #: scripts/evaluate_matching.py --decisions prints them, server-side.
+    calibration: dict | None = None
     #: WHAT PRODUCED IT (R62): matcher, version, declared weights and the
     #: settings in force -- so a decision can still be explained after
     #: the settings change. Never the score, for the reason above.
@@ -5194,6 +5206,7 @@ def merge_proposals_route(request: Request, object_type: str | None = None,
     store = _merge_store(request)
 
     out = []
+    calibrations: dict[str, Any] = {}
     for proposal in store.proposals(object_type=object_type, decision=decision):
         if not authorize(current_user, roles, f"read:{proposal.object_type}"):
             continue
@@ -5238,7 +5251,7 @@ def merge_proposals_route(request: Request, object_type: str | None = None,
             pattern=agreement_pattern(entries),
             fields=[MergeFieldResponse(**entry) for entry in entries],
             withheld=withheld_fields(entries),
-            high_confidence=_is_high_confidence(generation.config.schema, proposal),
+            **_preselection(generation.config.schema, store, proposal, calibrations),
             provenance=_provenance_of(proposal),
             **_group_fields(request, current_user, store, proposal),
         ))
@@ -5317,18 +5330,51 @@ def _provenance_of(proposal) -> "dict | None":
     return found if isinstance(found, dict) and found else None
 
 
-def _is_high_confidence(schema: dict, proposal) -> bool:
-    """Whether a proposal clears its type's `auto_propose_above`
-    (WIRED-3). False when the type declares no inference or declares it
-    badly -- a malformed block is the loader's to report, not this
-    listing's to fail on."""
-    from core.mirror.matching import settings_for
+def _preselection(schema: dict, store, proposal, calibrations: dict) -> dict:
+    """`high_confidence`, `preselected_by` and `calibration` for one
+    proposal (WIRED-3, R57). Nothing when the type declares no inference
+    or declares it badly -- a malformed block is the loader's to report,
+    not this listing's to fail on.
 
+    ABOVE `auto_propose_above`: pre-selected by the declaration, as
+    before. BELOW IT, only when the type is calibrated and BH selected
+    it; core/mirror/match_calibration.py has the method and its limits.
+
+    CALIBRATED OVER EVERY PROPOSAL OF THE TYPE, not the ones this
+    reviewer may read: the guarantee is about the matcher's scores, and
+    a reference set filtered per viewer would give each viewer a
+    different, smaller, weaker one. What reaches the viewer is a tick on
+    a pair they can already see and a status with no counts. Computed
+    once per type per listing (`calibrations`), not per proposal.
+    """
+    from core.identity_decisions import PENDING
+    from core.mirror.match_calibration import CALIBRATED, calibrate
+    from core.mirror.matching import SplinkMatcher, settings_for
+
+    type_def = (schema or {}).get(proposal.object_type) or {}
     try:
-        settings = settings_for((schema or {}).get(proposal.object_type) or {})
+        settings = settings_for(type_def)
     except ValueError:
-        return False
-    return settings is not None and float(proposal.score) >= settings.auto_propose_above
+        return {}
+    if settings is None:
+        return {}
+    if proposal.object_type not in calibrations:
+        calibrations[proposal.object_type] = calibrate(
+            store.proposals(object_type=proposal.object_type),
+            SplinkMatcher().provenance(type_def), settings.false_merge_rate)
+    calibration = calibrations[proposal.object_type]
+    by = None
+    if proposal.decision == PENDING:
+        if float(proposal.score) >= settings.auto_propose_above:
+            by = "declared"
+        elif calibration.status == CALIBRATED and proposal.proposal_id in calibration.selected:
+            by = "calibrated"
+    return {
+        "high_confidence": by is not None,
+        "preselected_by": by,
+        "calibration": {"status": calibration.status,
+                        "false_merge_rate": calibration.false_merge_rate},
+    }
 
 
 @router.post("/merge-proposals/{proposal_id}/decide", status_code=204)

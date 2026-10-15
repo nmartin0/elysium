@@ -48,8 +48,10 @@ from typing import Any, Protocol, runtime_checkable
 # cost, and do not expect it to make a match appear or disappear.
 #       auto_propose_above: 0.95    # pre-selected for bulk approval (WIRED-3)
 #       review_above: 0.80
+#       false_merge_rate: 0.05      # R57: calibrated pre-selection
 DEFAULT_AUTO_PROPOSE_ABOVE = 0.95
 DEFAULT_REVIEW_ABOVE = 0.80
+DEFAULT_FALSE_MERGE_RATE = 0.05
 
 
 def _agreed(gamma: Any) -> "bool | None":
@@ -107,7 +109,7 @@ class Candidate:
     # it ignored the threshold a type DECLARES. Every candidate above
     # review_above goes to the same inbox; one at or above the type's
     # auto_propose_above is PRE-SELECTED there for a person to approve in
-    # bulk (owner, 14 Oct) -- api/routes.py's _is_high_confidence.
+    # bulk (owner, 14 Oct) -- api/routes.py's _preselection.
 
 
 @runtime_checkable
@@ -143,6 +145,7 @@ class ProbabilisticSettings:
     block_on: tuple[str, ...]
     auto_propose_above: float
     review_above: float
+    false_merge_rate: float = DEFAULT_FALSE_MERGE_RATE
 
 
 def settings_for(type_def: dict) -> ProbabilisticSettings | None:
@@ -165,7 +168,8 @@ def settings_for(type_def: dict) -> ProbabilisticSettings | None:
         return None
     if not isinstance(declared, Mapping):
         raise ValueError(f"identity.probabilistic must be a mapping, got {declared!r}.")
-    unknown = set(declared) - {"compare", "block_on", "auto_propose_above", "review_above"}
+    unknown = set(declared) - {"compare", "block_on", "auto_propose_above", "review_above",
+                              "false_merge_rate"}
     if unknown:
         raise ValueError(f"unknown identity.probabilistic key(s) {sorted(unknown)}.")
     compare = declared.get("compare")
@@ -188,11 +192,18 @@ def settings_for(type_def: dict) -> ProbabilisticSettings | None:
             f"thresholds must satisfy 0 < review_above ({review}) <= "
             f"auto_propose_above ({auto}) <= 1."
         )
+    # THE RATE A DEPLOYMENT WILL ACCEPT among pre-selected merges (R57),
+    # because only it knows what a false merge costs it. Strictly inside
+    # (0, 1): 0 selects nothing ever, 1 promises nothing.
+    rate = float(declared.get("false_merge_rate", DEFAULT_FALSE_MERGE_RATE))
+    if not 0 < rate < 1:
+        raise ValueError(f"false_merge_rate must be between 0 and 1, got {rate}.")
     return ProbabilisticSettings(
         compare=tuple(compare),
         block_on=tuple(block_on),
         auto_propose_above=auto,
         review_above=review,
+        false_merge_rate=rate,
     )
 
 

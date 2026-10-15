@@ -210,6 +210,49 @@ describe('an empty queue', () => {
   })
 })
 
+describe('calibrated pre-selection (R57)', () => {
+  const calibrated = { status: 'calibrated' as const, false_merge_rate: 0.05 }
+
+  it('names a calibrated pick apart from a declared one', async () => {
+    show([
+      { ...MASKED, high_confidence: true, preselected_by: 'calibrated' as const, calibration: calibrated },
+      {
+        ...MASKED,
+        proposal_id: 'p2',
+        left_id: 'cust_003',
+        right_id: 'cust_004',
+        high_confidence: true,
+        preselected_by: 'declared' as const,
+        calibration: calibrated,
+      },
+    ])
+
+    expect(await screen.findByText('calibrated pick')).toBeInTheDocument()
+    expect(screen.getByText('high confidence')).toBeInTheDocument()
+  })
+
+  it('says per type what the ticks rest on, with the declared rate', async () => {
+    show([{ ...MASKED, calibration: calibrated }])
+
+    expect(
+      await screen.findByText(/Customer: pairs below the declared threshold.*at or under 5%\./),
+    ).toBeInTheDocument()
+  })
+
+  it('says uncalibrated when it is, rather than nothing', async () => {
+    show([{ ...MASKED, calibration: { status: 'uncalibrated' as const, false_merge_rate: 0.05 } }])
+
+    expect(await screen.findByText(/Customer: pre-selection is uncalibrated/)).toBeInTheDocument()
+  })
+
+  it('says nothing for an older server that sends no calibration', async () => {
+    show([MASKED])
+
+    await screen.findAllByLabelText('Include in bulk approval')
+    expect(screen.queryByText(/calibrated/)).toBeNull()
+  })
+})
+
 describe('pre-selected for bulk approval (WIRED-3)', () => {
   const second = { ...MASKED, proposal_id: 'p2', left_id: 'cust_003', right_id: 'cust_004' }
 

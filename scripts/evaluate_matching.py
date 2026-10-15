@@ -15,6 +15,8 @@ at each score it produces, with 95% intervals.
                   the matcher names them: primary:<id> or <storage>:<id>.
   --decisions     what reviewers approved and rejected. Precision only:
                   nobody decided the pairs the matcher never proposed.
+                  Also prints pre-selection's calibration (R57) with its
+                  counts, which the Identity screen does not show.
 
 IT CHANGES NOTHING: no proposal is stored and no setting is touched.
 core/mirror/match_evaluation.py has the method and its precedent.
@@ -137,6 +139,27 @@ def report(evaluation: Evaluation) -> str:
     return "\n".join(lines)
 
 
+def calibration_report(data_dir: Path, object_type: str, type_def: dict, settings) -> str:
+    """Pre-selection's calibration (R57), WITH the counts the Identity
+    screen leaves out: the rejections span every compartment, and this
+    runs on the server, where the operator can read them anyway."""
+    from core.identity_decisions import MergeDecisionStore
+    from core.mirror.match_calibration import CALIBRATED, calibrate
+
+    store = MergeDecisionStore(data_dir / "identity_decisions.db")
+    found = calibrate(store.proposals(object_type), SplinkMatcher().provenance(type_def),
+                      settings.false_merge_rate)
+    head = (f"Pre-selection below auto_propose_above ({settings.auto_propose_above:g}): "
+            f"{found.status.upper()} at false_merge_rate {found.false_merge_rate:g}.")
+    used = (f"{found.rejections_used} comparable rejection(s) -- rejected, not pre-selected "
+            f"when shown, scored under today's settings; at least {found.rejections_needed} "
+            f"needed.")
+    if found.status != CALIBRATED:
+        return "\n".join((head, used))
+    return "\n".join((head, used, f"{len(found.selected)} of {found.considered} waiting pair(s) "
+                                   f"in that band are pre-selected."))
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -180,6 +203,9 @@ def main(argv=None) -> int:
     print(f"{args.object_type}: comparing {', '.join(settings.compare)}; "
           f"blocking on {', '.join(settings.block_on or settings.compare[:1])}.")
     print(report(evaluation))
+    if args.decisions:
+        print()
+        print(calibration_report(data_dir, args.object_type, type_def, settings))
     print("\nNOTHING HAS BEEN CHANGED.")
     return 0
 

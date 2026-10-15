@@ -95,7 +95,11 @@ export default function ProposalCard({
             the right edge rather than floating the first mid-row --
             seen in the browser. */}
         <span className="identity__tags">
-          {!settled && proposal.high_confidence && <StatusTag state="granted">high confidence</StatusTag>}
+          {!settled && proposal.high_confidence && (
+            <StatusTag state="granted">
+              {proposal.preselected_by === 'calibrated' ? 'calibrated pick' : 'high confidence'}
+            </StatusTag>
+          )}
           <StatusTag state={settled ? (proposal.decision === 'approved' ? 'granted' : 'refused') : 'pending'}>
             {proposal.decision}
           </StatusTag>

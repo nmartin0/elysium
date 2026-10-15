@@ -185,11 +185,16 @@ threshold -- comparison is exact-match only, so one typo loses a
 duplicate -- and an auto-propose threshold two compared fields can
 never reach.
 
-**Blocked on:** nothing for the rest of statistical matching (R57,
-R56, R60, R63), then the plugin API (item 3). Two questions are open
-for R57 and R56: whether reviewers' decisions may calibrate the
-thresholds, being labels only for pairs already proposed; and whether
-the cascade gets an LLM stage.
+**PRE-SELECTION IS CALIBRATED** (R57, decided and built 15 October):
+reviewers' rejections calibrate `auto_propose_above` only, leaving out
+pairs shown pre-selected, at a declared `false_merge_rate`; the
+Identity screen says UNCALIBRATED until there are enough. The cascade
+gets NO LLM stage (owner, 15 October): fuzzy comparison levels first,
+an LLM only if the harness shows a band they cannot settle, and then
+as a note on the card, never a score.
+
+**Blocked on:** nothing for the rest of statistical matching (R56,
+R60, R63), then the plugin API (item 3).
 
 ## 3. A plugin API, and the reason module federation is not it
 

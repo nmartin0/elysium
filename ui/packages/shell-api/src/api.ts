@@ -1030,6 +1030,14 @@ export interface MergeProposal {
   /** At or above the type's `auto_propose_above` (WIRED-3): ticked for
    *  bulk approval. A flag, never the score. Absent from older servers. */
   high_confidence?: boolean
+  /** Which rule ticked it (R57): 'declared' -- at or above the type's
+   *  auto_propose_above -- or 'calibrated' -- below it, selected against
+   *  reviewers' past rejections at the type's false_merge_rate. Absent
+   *  or null when not pre-selected, and from older servers. */
+  preselected_by?: 'declared' | 'calibrated' | null
+  /** The type's calibration, the same on each of its proposals. No
+   *  counts: the rejections behind it span every compartment. */
+  calibration?: MatchCalibration | null
   /** What produced it (R62): matcher, version, declared weights and the
    *  settings in force. Absent for a proposal from before it was kept. */
   provenance?: MatchProvenance
@@ -1038,6 +1046,11 @@ export interface MergeProposal {
    *  this reviewer may read; `group_hidden` counts the rest. */
   group?: string[]
   group_hidden?: number
+}
+
+export interface MatchCalibration {
+  status: 'calibrated' | 'uncalibrated'
+  false_merge_rate: number
 }
 
 export interface MatchProvenance {

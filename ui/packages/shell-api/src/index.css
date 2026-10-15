@@ -2296,6 +2296,16 @@
     color: var(--text-secondary);
   }
 
+  /* R57: one line per type saying whether pre-selection is calibrated.
+     Secondary, like the lede: it explains the ticks, it is not one. */
+  .identity__calibration {
+    margin: 0 0 var(--space-normal);
+    max-width: 68ch;
+    color: var(--text-secondary);
+    font-size: var(--type-body-size);
+    line-height: var(--type-body-line);
+  }
+
   .identity__tags {
     display: flex;
     gap: 6px;

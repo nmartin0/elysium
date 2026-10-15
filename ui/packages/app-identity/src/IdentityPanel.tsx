@@ -37,6 +37,7 @@ import {
   decideMergeProposal,
   getMergeProposals,
   handleIfSessionExpired,
+  type MatchCalibration,
   type MergeProposal,
 } from '@elysium/shell-api/api'
 import Action from '@elysium/shell-api/components/Action'
@@ -46,6 +47,11 @@ import Notice from '@elysium/shell-api/components/Notice'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 
 import ProposalCard from './ProposalCard'
+
+/** 0.05 as "5%", 0.005 as "0.5%": a declared rate is read as written. */
+function formatRate(rate: number): string {
+  return `${(rate * 100).toLocaleString('en-GB', { maximumFractionDigits: 1 })}%`
+}
 
 export default function IdentityPanel({ onSessionExpired }: { onSessionExpired: () => void }) {
   /**
@@ -146,6 +152,15 @@ function ProposalList({
   }
 
   const highConfidence = pending.filter((proposal) => proposal.high_confidence).length
+  // ONE LINE PER TYPE, from the calibration its proposals carry (R57).
+  // Said whether or not it ticked anything: "uncalibrated" is the
+  // reason a pair just under the threshold was left for a person.
+  const calibrations = new Map<string, MatchCalibration>()
+  for (const proposal of pending) {
+    if (proposal.calibration && !calibrations.has(proposal.object_type)) {
+      calibrations.set(proposal.object_type, proposal.calibration)
+    }
+  }
 
   return (
     <>
@@ -172,6 +187,13 @@ function ProposalList({
           />
         </div>
       )}
+      {[...calibrations].map(([objectType, calibration]) => (
+        <p key={objectType} className="identity__calibration">
+          {calibration.status === 'calibrated'
+            ? `${objectType}: pairs below the declared threshold are pre-selected only where reviewers' past rejections keep wrong merges at or under ${formatRate(calibration.false_merge_rate)}.`
+            : `${objectType}: pre-selection is uncalibrated. Only pairs at or above the declared threshold are ticked, until reviewers have rejected enough pairs to measure it.`}
+        </p>
+      ))}
       {failures.length > 0 && (
         <ErrorState
           title={
