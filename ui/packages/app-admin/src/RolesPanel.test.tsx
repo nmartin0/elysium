@@ -16,12 +16,20 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
     getRoleChanges: vi.fn(),
     getCurrentUser: vi.fn(),
     proposeRoleChange: vi.fn(),
+    previewRoleChange: vi.fn(),
     approveRoleChange: vi.fn(),
     rejectRoleChange: vi.fn(),
   }
 })
 
-import { approveRoleChange, getCurrentUser, getRoleChanges, getRoles, proposeRoleChange } from '@elysium/shell-api/api'
+import {
+  approveRoleChange,
+  getCurrentUser,
+  getRoleChanges,
+  getRoles,
+  previewRoleChange,
+  proposeRoleChange,
+} from '@elysium/shell-api/api'
 import RolesPanel from './RolesPanel'
 
 const mockedPropose = vi.mocked(proposeRoleChange)
@@ -51,6 +59,9 @@ beforeEach(() => {
   vi.mocked(getCurrentUser).mockResolvedValue({ username: 'alice' })
   mockedPropose.mockResolvedValue('c2')
   mockedApprove.mockResolvedValue(undefined)
+  // NEVER SETTLES unless a test says otherwise: the preview is fetched
+  // after every tick, and most tests here are not about it.
+  vi.mocked(previewRoleChange).mockReturnValue(new Promise(() => {}))
 })
 
 function open() {
@@ -226,5 +237,59 @@ describe('the draft when the selection or the server state changes', () => {
     await waitFor(() => expect((screen.getByLabelText('read:A') as HTMLInputElement).checked).toBe(false))
     expect((screen.getByLabelText('read:B') as HTMLInputElement).checked).toBe(true)
     expect((screen.getByLabelText('read:C') as HTMLInputElement).checked).toBe(true)
+  })
+})
+
+const IMPACT = {
+  role: 'reader',
+  holders: 3,
+  removes_role: false,
+  types_gained: [],
+  types_lost: [],
+  fields_gained: [{ type: 'Customer', field: 'email', from: null, to: 'read' as const }],
+  fields_lost: [{ type: 'Customer', field: 'phone', from: 'read' as const, to: null }],
+  actions_gained: ['UpdateCustomerName'],
+  actions_lost: [],
+  other_gained: [],
+  other_lost: [],
+}
+
+describe('in access terms (DEV_UI 13.5)', () => {
+  it('shows the approver what a waiting change would do, and to how many people', async () => {
+    vi.mocked(getRoleChanges).mockResolvedValue([change({ impact: IMPACT })])
+    open()
+
+    expect(await screen.findByText(/3 people hold reader/)).toBeInTheDocument()
+    expect(screen.getByText('Can now read Customer.email')).toHaveClass('roles__widens')
+    expect(screen.getByText('Can no longer read Customer.phone')).toHaveClass('roles__narrows')
+    expect(screen.getByText('Can now run UpdateCustomerName')).toBeInTheDocument()
+  })
+
+  it('previews the draft before it is proposed', async () => {
+    vi.mocked(previewRoleChange).mockResolvedValue(IMPACT)
+    open()
+    fireEvent.change(await screen.findByLabelText('Role to change'), { target: { value: 'reader' } })
+    fireEvent.click(screen.getByLabelText('read:C'))
+
+    expect(await screen.findByText('Can now read Customer.email', {}, { timeout: 2000 })).toBeInTheDocument()
+    expect(previewRoleChange).toHaveBeenCalledWith('reader', ['read:A', 'read:B', 'read:C'])
+  })
+
+  it('says when proposing the draft would be refused, and why', async () => {
+    vi.mocked(previewRoleChange).mockRejectedValue(new Error('Removing it would leave nobody able to manage roles.'))
+    open()
+    fireEvent.change(await screen.findByLabelText('Role to change'), { target: { value: 'reader' } })
+    fireEvent.click(screen.getByLabelText('read:A'))
+
+    expect(await screen.findByText(/leave nobody able to manage roles/, {}, { timeout: 2000 })).toBeInTheDocument()
+    expect(screen.getByText('Proposing this would be refused')).toBeInTheDocument()
+  })
+
+  it('asks nothing for a draft that changes nothing', async () => {
+    open()
+    fireEvent.change(await screen.findByLabelText('Role to change'), { target: { value: 'reader' } })
+    await new Promise((resolve) => setTimeout(resolve, 600))
+
+    expect(previewRoleChange).not.toHaveBeenCalled()
   })
 })

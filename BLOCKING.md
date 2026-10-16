@@ -345,6 +345,13 @@ one Inbox. Built so far, each checked in a real browser:
   sees, as one sentence followed through any compartment chain. Asked
   of visible_schema per role, so it cannot disagree with what people
   are served.
+- 13.5's "what would this change do?", on the Roles screen: a change
+  in ACCESS terms ("can now read Account", "can no longer read
+  Customer.email", "can now run UpdateCustomerName", and how many
+  people hold the role) -- previewed under the editor as grants are
+  ticked, and on every waiting change for the approver. Gains carry the
+  warning colour (13.6). The proposed grants are compiled as the
+  mediators compile them, so a label grant shows as the fields it opens.
 
 WHAT THE CANVAS DOES NOT DO YET, each buildable: edges are not routed
 AROUND other types, so two types dragged far apart can draw a line

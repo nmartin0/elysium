@@ -27,15 +27,18 @@ import {
   getRoleChanges,
   getRoles,
   handleIfSessionExpired,
+  previewRoleChange,
   proposeRoleChange,
   rejectRoleChange,
   type RoleChange,
+  type RoleImpact as Impact,
   type RolesView,
 } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import RoleImpact from './RoleImpact'
 import { groupGrants, summariseChange } from './roleGrants'
 
 interface RolesPanelProps {
@@ -135,6 +138,45 @@ export default function RolesPanel({ onSessionExpired }: RolesPanelProps) {
   )
   const draft = edited !== null && edited.role === selected && edited.view === view ? edited.grants : baseline
 
+  const roleName = selected === NEW_ROLE ? newName.trim() : selected
+  const current = selected === NEW_ROLE || view === null ? null : (view.roles[selected] ?? null)
+  const proposed = [...draft].sort()
+  const unchanged = current !== null && proposed.join() === [...current].sort().join()
+
+  /**
+   * WHAT THE DRAFT WOULD DO, in access terms (DEV_UI 13.5: "before
+   * saving, the diff"), fetched a moment after the last tick so a run
+   * of clicks asks once. KEYED BY THE DRAFT IT DESCRIBES and shown only
+   * while that key still matches -- the same derive-don't-reset shape as
+   * `edited` above, so a preview of a draft since changed is never
+   * shown, and nothing is set synchronously in the effect.
+   */
+  const previewKey = roleName !== '' && !unchanged ? `${roleName}|${proposed.join(',')}` : ''
+  const [preview, setPreview] = useState<{ key: string; impact: Impact | null; problem: string | null } | null>(null)
+  useEffect(() => {
+    if (previewKey === '') return
+    let cancelled = false
+    const [name, grants] = [previewKey.slice(0, previewKey.indexOf('|')), proposed]
+    const timer = setTimeout(() => {
+      previewRoleChange(name, grants)
+        .then((impact) => {
+          if (!cancelled) setPreview({ key: previewKey, impact, problem: null })
+        })
+        .catch((caught: unknown) => {
+          if (cancelled || handleIfSessionExpired(caught, latestSessionExpired.current)) return
+          setPreview({ key: previewKey, impact: null, problem: getErrorMessage(caught) })
+        })
+    }, 400)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+    // `proposed` is derived from the same draft `previewKey` names, so
+    // the key is the whole dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewKey])
+  const shownPreview = preview !== null && preview.key === previewKey ? preview : null
+
   async function act(action: () => Promise<unknown>, done: string) {
     setNotice(null)
     try {
@@ -149,11 +191,6 @@ export default function RolesPanel({ onSessionExpired }: RolesPanelProps) {
 
   if (error !== null && view === null) return <ErrorState>{error}</ErrorState>
   if (view === null) return <LoadingState />
-
-  const roleName = selected === NEW_ROLE ? newName.trim() : selected
-  const current = selected === NEW_ROLE ? null : (view.roles[selected] ?? null)
-  const proposed = [...draft].sort()
-  const unchanged = current !== null && proposed.join() === [...current].sort().join()
 
   return (
     <div className="roles">
@@ -180,6 +217,7 @@ export default function RolesPanel({ onSessionExpired }: RolesPanelProps) {
               </StatusTag>
               <span className="roles__by">proposed by {change.proposed_by}</span>
             </div>
+            {change.impact && <RoleImpact impact={change.impact} />}
             {summary.added.map((grant) => (
               <div key={`+${grant}`} className="roles__added">
                 + {grant}
@@ -255,6 +293,9 @@ export default function RolesPanel({ onSessionExpired }: RolesPanelProps) {
             ))}
           </fieldset>
         ))}
+
+      {shownPreview?.impact && <RoleImpact impact={shownPreview.impact} />}
+      {shownPreview?.problem && <ErrorState title="Proposing this would be refused">{shownPreview.problem}</ErrorState>}
 
       {selected !== '' && (
         <div className="roles__propose">

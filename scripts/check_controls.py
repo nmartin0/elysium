@@ -3068,6 +3068,29 @@ CONTROLS = [
         tests=["tests/integration/test_who_can_see.py::TestWhoMayAsk::test_an_ordinary_user_is_refused"],
     ),
     Control(
+        describes="DEV_UI 13.5: proposed grants are compiled as the mediators compile them",
+        path="core/role_impact.py",
+        old="    proposed = access_roles(dataclasses.replace(config, roles=declared))",
+        new="    proposed = declared",
+        tests=["tests/integration/test_role_change_impact.py::TestItAsksThePermissionCode::test_a_label_grant_shows_as_the_fields_it_opens"],
+    ),
+    Control(
+        describes="DEV_UI 13.5: a preview refuses what proposing would refuse",
+        path="api/routes.py",
+        old=("    if problem is not None:\n        raise HTTPException(status_code=400, detail=problem)\n"
+             "    from core.role_impact import role_change_impact"),
+        new="    from core.role_impact import role_change_impact",
+        tests=["tests/integration/test_role_change_impact.py::TestItChangesNothingAndRefusesWhatProposingWould::"
+               "test_a_change_proposing_would_refuse_is_refused_with_its_reason"],
+    ),
+    Control(
+        describes="DEV_UI 13.5: the approver sees what a waiting change would do",
+        path="api/routes.py",
+        old='                         "impact": _impact_or_none(request, change.role_name, change.after, every)}',
+        new='                         "impact": None}',
+        tests=["tests/integration/test_role_change_impact.py::TestTheApproverSeesIt::test_a_pending_change_carries_its_impact"],
+    ),
+    Control(
         describes="INBOX: a merge counts only for someone who may write its type",
         path="api/routes.py",
         old="        if (authorize(current_user, roles, f\"write:{proposal.object_type}\")",

@@ -1248,6 +1248,39 @@ export interface RoleChange {
   proposed_by: string
   proposed_at: string
   status: string
+  /** What approving it would do, in access terms (DEV_UI 13.5), against
+   *  the roles in force now. Null when it cannot be computed. */
+  impact?: RoleImpact | null
+}
+
+type AccessLevel = 'read' | 'discover' | null
+
+/** A role change in ACCESS terms, from the server's permission code
+ *  asked as it stands and as it would stand. */
+export interface RoleImpact {
+  role: string
+  /** How many people hold the role. */
+  holders: number
+  removes_role: boolean
+  types_gained: { type: string; from: AccessLevel; to: AccessLevel }[]
+  types_lost: { type: string; from: AccessLevel; to: AccessLevel }[]
+  fields_gained: { type: string; field: string; from: AccessLevel; to: AccessLevel }[]
+  fields_lost: { type: string; field: string; from: AccessLevel; to: AccessLevel }[]
+  actions_gained: string[]
+  actions_lost: string[]
+  /** Administration, tools, labels: said as the grant. */
+  other_gained: string[]
+  other_lost: string[]
+}
+
+/** What proposing this would do, before proposing it. Refused, with the
+ *  reason, for a change proposing would refuse. Changes nothing. */
+export async function previewRoleChange(roleName: string, grants: string[] | null): Promise<RoleImpact> {
+  const response = await apiFetchOrThrow('/roles/changes/preview', {
+    method: 'POST',
+    body: JSON.stringify({ role_name: roleName, grants }),
+  })
+  return (await response.json()) as RoleImpact
 }
 
 export async function getRoles(): Promise<RolesView> {

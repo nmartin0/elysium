@@ -3300,6 +3300,32 @@
     font-family: var(--font-mono);
   }
 
+  /* DEV_UI 13.5: a role change in access terms. GAINS carry the warning
+     colour as a rule beside them -- widening access is the case 13.6
+     reserves attention for; losses are the safe direction, so quiet. */
+  .roles__impact {
+    margin: var(--space-tight) 0;
+  }
+  .roles__impact-head,
+  .roles__impact-none {
+    color: var(--text-secondary);
+  }
+  .roles__impact ul {
+    margin: var(--space-snug) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .roles__impact li {
+    padding: 2px 0 2px var(--space-tight);
+    border-left: 2px solid var(--border-subtle);
+  }
+  .roles__impact li.roles__widens {
+    border-left-color: var(--status-warning);
+  }
+  .roles__impact li.roles__narrows {
+    color: var(--text-secondary);
+  }
+
   .roles__group {
     border: none;
     padding: 0;

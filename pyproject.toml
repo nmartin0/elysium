@@ -339,7 +339,11 @@ exhaustive = true
 # count_condition sits ABOVE filters -- it imports FieldFilter to run a
 # saved view -- and outside the hierarchy otherwise: it is trigger
 # machinery, not a layer anything else builds on.
-exhaustive_ignores = ["adapter_roles", "count_condition", "declared_triggers", "concurrency", "config", "deployment_loader", "internal_storage", "logging_config", "pending_write_persistence", "pending_write_serialisation", "pending_write_store", "sqlite_connection", "user_directory"]
+# role_impact (DEV_UI 13.5) sits with deployment_loader: it compiles
+# proposed grants through access_roles and asks a mediator, so it
+# composes the loader, the ontology and role_changes -- outside the
+# hierarchy, like the loader, rather than beneath part of it.
+exhaustive_ignores = ["adapter_roles", "count_condition", "declared_triggers", "concurrency", "config", "deployment_loader", "role_impact", "internal_storage", "logging_config", "pending_write_persistence", "pending_write_serialisation", "pending_write_store", "sqlite_connection", "user_directory"]
 
 # Contract 3 of 3 -- the single most repeatedly-stated architectural
 # principle throughout this project's own history: authentication

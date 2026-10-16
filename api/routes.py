@@ -121,7 +121,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from api.apps import visible_apps_for
 from api.auth_dependency import get_current_user
@@ -2091,6 +2091,38 @@ class ProposeRoleChangeRequest(BaseModel):
     grants: list[str] | None
 
 
+class TypeAccessChange(BaseModel):
+    type: str
+    #: "read", "discover", or null (cannot know it exists).
+    from_: str | None = Field(None, alias="from")
+    to: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+class FieldAccessChange(TypeAccessChange):
+    field: str
+
+
+class RoleImpactResponse(BaseModel):
+    """A role change in ACCESS terms (DEV_UI 13.5), from the permission
+    code asked as it stands and as it would -- core/role_impact.py."""
+
+    role: str
+    #: How many people hold the role, and so gain or lose all of this.
+    holders: int
+    removes_role: bool
+    types_gained: list[TypeAccessChange]
+    types_lost: list[TypeAccessChange]
+    fields_gained: list[FieldAccessChange]
+    fields_lost: list[FieldAccessChange]
+    actions_gained: list[str]
+    actions_lost: list[str]
+    #: Administration, tools, labels: said as the grant.
+    other_gained: list[str]
+    other_lost: list[str]
+
+
 class RoleChangeResponse(BaseModel):
     change_id: str
     role_name: str
@@ -2099,6 +2131,10 @@ class RoleChangeResponse(BaseModel):
     proposed_by: str
     proposed_at: str
     status: str
+    #: What approving it would do, against the roles in force NOW. Null
+    #: when it cannot be computed -- a change the grants no longer
+    #: validate against is refused on approval anyway, with the reason.
+    impact: RoleImpactResponse | None = None
 
 
 class RoleChangesResponse(BaseModel):
@@ -2290,7 +2326,58 @@ def role_changes_route(
     """Role changes waiting for a decision."""
     _require_manage_roles(request, current_user)
     _, changes = _role_paths(request)
-    return {"changes": [_change_response(change) for change in changes.pending()]}
+    every, _active = _holders(request)
+    return {"changes": [{**_change_response(change),
+                         "impact": _impact_or_none(request, change.role_name, change.after, every)}
+                        for change in changes.pending()]}
+
+
+def _impact_or_none(request: Request, role_name: str, after, holders: dict) -> "dict | None":
+    """core/role_impact.role_change_impact, or None for grants that no
+    longer compile -- the listing must not fail over one stale change."""
+    from core.role_impact import role_change_impact
+
+    generation = _generation(request)
+    try:
+        return role_change_impact(generation.config, generation.mediator, role_name, after,
+                                  holders.get(role_name, 0))
+    except Exception:  # noqa: BLE001 - see the docstring
+        logger.warning("could not compute the impact of a change to role %s", role_name,
+                       exc_info=True)
+        return None
+
+
+@router.post("/roles/changes/preview", dependencies=[Depends(_no_store)],
+             response_model=RoleImpactResponse)
+def preview_role_change_route(
+    body: ProposeRoleChangeRequest,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """What proposing this would do, in access terms, before proposing
+    it (DEV_UI 13.5: "before saving, the diff"). Changes nothing.
+
+    The SAME checks as proposing run first, so the preview never
+    describes a change that would be refused -- the refusal is the
+    answer, with its reason.
+    """
+    from core.role_changes import proposal_problem
+
+    _require_manage_roles(request, current_user)
+    config = _generation(request).config
+    every, active = _holders(request)
+    problem = proposal_problem(
+        config.roles, body.role_name, body.grants, current_user.role_name,
+        every, active, _role_validator(config),
+        holds=lambda grant: authorize(current_user, config.roles, grant),
+    )
+    if problem is not None:
+        raise HTTPException(status_code=400, detail=problem)
+    from core.role_impact import role_change_impact
+
+    generation = _generation(request)
+    return role_change_impact(generation.config, generation.mediator, body.role_name,
+                              body.grants, every.get(body.role_name, 0))
 
 
 @router.post("/roles/changes/{change_id}/approve", dependencies=[Depends(_no_store)])

@@ -528,3 +528,13 @@ decide_enrichment_recipe_route
 # response field pydantic reads by reflection.
 who_can_see_route
 no_access
+# DEV_UI 13.5, a role change in access terms: a route reached by HTTP,
+# and response fields pydantic reads by reflection.
+preview_role_change_route
+from_
+to  # TypeAccessChange.to, read by pydantic
+removes_role
+actions_gained
+actions_lost
+other_gained
+other_lost
