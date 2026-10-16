@@ -1999,6 +1999,42 @@ export async function rejectConfigProposal(proposalId: string): Promise<{ status
   return (await response.json()) as { status: 'rejected' | 'withdrawn' }
 }
 
+/** What putting an earlier generation back would change (GET /admin/config-restore/{n}). */
+export interface RestorePreview {
+  generation: number
+  loaded_at: string
+  /** Of the files as they are now; restoring sends it back. */
+  digest: string
+  /** The ontology's lines; any other file named in one line, never shown. */
+  files: { name: string; diff: string[] }[]
+  impact: AccessImpact
+  needs_approval: boolean
+  /** Roles live in the role store, which no version of the files holds. */
+  roles_in_store: boolean
+}
+
+export async function previewRestore(generation: number): Promise<RestorePreview> {
+  const response = await apiFetchOrThrow(`/admin/config-restore/${generation}`)
+  return (await response.json()) as RestorePreview
+}
+
+/** Puts it back now, or -- when it widens access -- proposes it, with the reason. */
+export async function restoreGeneration(
+  generation: number,
+  digest: string,
+  reason: string | null,
+): Promise<{ status: 'applied' | 'waiting'; to_generation?: number | null; proposal_id?: string | null }> {
+  const response = await apiFetchOrThrow(`/admin/config-restore/${generation}`, {
+    method: 'POST',
+    body: JSON.stringify({ digest, reason }),
+  })
+  return (await response.json()) as {
+    status: 'applied' | 'waiting'
+    to_generation?: number | null
+    proposal_id?: string | null
+  }
+}
+
 export async function getConfigHistory(): Promise<ConfigHistory> {
   const response = await apiFetchOrThrow('/admin/config-history')
   const body = (await response.json()) as { current_generation?: unknown; generations?: unknown }

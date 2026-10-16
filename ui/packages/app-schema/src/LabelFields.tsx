@@ -144,7 +144,7 @@ export default function LabelFields({
   const enforced = preview?.label_enforcement ?? loaded?.label_enforcement ?? false
 
   return (
-    <Dialog isOpen onClose={onClose} title={`Labels on ${shownAs}`} className="describe-type">
+    <Dialog isOpen onClose={onClose} title={`Labels on ${shownAs}`} className="config-dialog">
       <DialogBody>
         {loaded === null && problem === null && <LoadingState />}
         {loaded !== null && !type && <ErrorState>{objectType} is no longer in ontology_schema.yaml.</ErrorState>}
@@ -155,7 +155,7 @@ export default function LabelFields({
                 ? 'A field with a label can be read only by roles holding that label. A change that lets anyone read more waits for someone who manages roles to approve it.'
                 : 'Label enforcement is off, so labels say what a field holds without changing who can read it. Changes apply at once; the lake’s copies are relabelled at the next sync.'}
             </Notice>
-            <p className="describe-type__lede">
+            <p className="config-dialog__lede">
               Lowercase words, separated by commas.
               {inUse.length > 0 && <> In use: {inUse.join(', ')}.</>}
             </p>
@@ -192,17 +192,17 @@ export default function LabelFields({
         )}
         {preview && (
           <>
-            <h4 className="describe-type__fields-heading">What it does to access</h4>
+            <h4 className="config-dialog__heading">What it does to access</h4>
             <ConfigImpact impact={preview.impact} />
-            <h4 className="describe-type__fields-heading">The lines of ontology_schema.yaml</h4>
+            <h4 className="config-dialog__heading">The lines of ontology_schema.yaml</h4>
             <FileDiff lines={preview.diff} label="Changes to ontology_schema.yaml" />
             {preview.needs_approval && (
-              <div className="labels__reason">
+              <div className="config-dialog__reason">
                 <Notice state="pending" title="This waits for a second person">
                   It lets people read more than they can now, so someone who manages roles, other than you, approves it
                   before it applies.
                 </Notice>
-                <label htmlFor="labels-reason" className="describe-type__fields-heading">
+                <label htmlFor="labels-reason" className="config-dialog__heading">
                   Why — shown to whoever approves it
                 </label>
                 <TextArea

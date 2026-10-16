@@ -1703,7 +1703,7 @@ def _write_config_files(request: Request, current_user: UserRecord,
     editor's allowlist makes them numbers, switches, fixed choices,
     descriptive text and labels, never a secret.
     """
-    from core.config_editing import diff, digest
+    from core.config_editing import digest, shown_diff
 
     audit = _generation(request).mediator.audit_log
     config_dir = request.app.state.runtime_paths.config_dir
@@ -1741,8 +1741,11 @@ def _write_config_files(request: Request, current_user: UserRecord,
     for filename, (current, proposed) in files.items():
         audit.log_config_edit(current_user.user_id, "applied", filename, changes,
                               digest(current), digest(proposed))
+    # AS THE INTERFACE MAY SHOW IT (core/config_editing.shown_diff): an
+    # approved restore writes data_silos.yaml too, and its lines must not
+    # come back in the response when the preview never showed them.
     return {"diff": [line for filename, (current, proposed) in files.items()
-                     for line in diff(current, proposed, filename)],
+                     for line in shown_diff(filename, current, proposed)],
             "digest": digest(next(iter(files.values()))[1]),
             "to_generation": new.generation}
 
@@ -2071,7 +2074,7 @@ def _require_roles_or_deployment(request: Request, current_user: UserRecord) -> 
 
 def _proposal_state(request: Request, proposal) -> dict:
     """What a waiting proposal would do if approved now."""
-    from core.config_editing import diff, digest
+    from core.config_editing import digest, shown_diff
 
     config_dir = request.app.state.runtime_paths.config_dir
     now = {name: (config_dir / name).read_text() if (config_dir / name).exists() else ""
@@ -2086,7 +2089,11 @@ def _proposal_state(request: Request, proposal) -> dict:
         "proposal_id": proposal.proposal_id, "kind": proposal.kind, "summary": proposal.summary,
         "reason": proposal.reason, "proposed_by": proposal.proposed_by,
         "proposed_at": proposal.proposed_at,
-        "diff": [line for name, text in proposal.files.items() for line in diff(now[name], text, name)],
+        # Only the ontology's lines; any other file named, not shown
+        # (core/config_editing.shown_diff) -- an earlier version put
+        # back touches them all.
+        "diff": [line for name, text in sorted(proposal.files.items())
+                 for line in shown_diff(name, now[name], text)],
         "impact": impact, "stale": stale, "problem": problem,
     }
 
@@ -4247,6 +4254,180 @@ def config_diff_route(older: int, newer: int, request: Request,
         # changed" should not look like "I found nothing".
         "unchanged": not changed,
     }
+
+
+# ---- Putting an earlier version back (DEV_UI 13.7, decided 16 October) ----
+
+class RestoreFileResponse(BaseModel):
+    name: str
+    # Its lines for the ontology; for any other file one line naming it
+    # (core/config_editing.shown_diff).
+    diff: list[str]
+
+
+class RestorePreviewResponse(BaseModel):
+    generation: int
+    loaded_at: str
+    # Of the files as they are now; applying sends it back, and is
+    # refused if any file has moved since the preview.
+    digest: str
+    files: list[RestoreFileResponse]
+    impact: dict
+    needs_approval: bool
+    # Roles are in the role store, which no version of the files holds:
+    # putting a version back leaves them as they are.
+    roles_in_store: bool
+
+
+class RestoreRequest(BaseModel):
+    digest: str
+    reason: str | None = None
+
+
+class RestoreResponse(BaseModel):
+    status: str
+    to_generation: int | None = None
+    proposal_id: str | None = None
+
+
+def _files_now(request: Request) -> "dict[str, str]":
+    from core.deployment_loader import CONFIG_FILENAMES
+
+    config_dir = request.app.state.runtime_paths.config_dir
+    return {name: (config_dir / name).read_text()
+            for name in CONFIG_FILENAMES if (config_dir / name).exists()}
+
+
+def _files_digest(files: "dict[str, str]") -> str:
+    from core.config_editing import digest
+
+    return digest(json.dumps(sorted(files.items())))
+
+
+def _restoring(request: Request, generation: int) -> tuple[Any, dict, dict]:
+    """The recorded generation, the files as they are now, and the files
+    a restore would write -- or the reason it will not.
+
+    WHAT IT REFUSES, and why each is a refusal rather than a warning:
+      NOTHING TO DO   every file already says what that version said
+      A FILE COMES OR GOES   the version lacks a file there is now, or
+                      the reverse: putting it back would mean deleting a
+                      file, which a restore here never does
+      A DATA TYPE     the lake cannot follow a field back to its old
+                      type -- Iceberg refuses a change that is not a
+                      widening, and the table must be rebuilt first
+                      (CLAUDE.md). Data does not roll back with
+                      configuration; that is the one place it shows.
+    """
+    import yaml as plain_yaml
+
+    from core.config_editing import ONTOLOGY_FILE
+
+    recorded = request.app.state.config_history.get(generation)
+    if recorded is None:
+        raise HTTPException(status_code=404, detail=f"No recorded configuration for generation {generation}.")
+    now = _files_now(request)
+    then = dict(recorded.files)
+    if set(then) != set(now):
+        came = sorted(set(now) - set(then))
+        went = sorted(set(then) - set(now))
+        raise HTTPException(status_code=400, detail=(
+            f"Generation {generation} had a different set of files"
+            + (f" (no {', '.join(came)})" if came else "")
+            + (f" ({', '.join(went)}, which is not here now)" if went else "")
+            + ". Putting it back would mean adding or deleting a file, which this does not do."))
+    changed = {name: text for name, text in then.items() if now[name] != text}
+    if not changed:
+        raise HTTPException(status_code=400, detail=(
+            f"Every file already says what generation {generation} said. There is nothing to put back."))
+
+    def data_types(text: str) -> dict:
+        types = ((plain_yaml.safe_load(text) or {}).get("object_types") or {})
+        return {(t, f): (info or {}).get("data_type", "string")
+                for t, d in types.items() for f, info in ((d or {}).get("fields") or {}).items()}
+
+    if ONTOLOGY_FILE in changed:
+        old, new = data_types(then[ONTOLOGY_FILE]), data_types(now[ONTOLOGY_FILE])
+        moved = sorted(f"{t}.{f} from {new[(t, f)]} to {old[(t, f)]}"
+                       for (t, f) in set(old) & set(new) if old[(t, f)] != new[(t, f)])
+        if moved:
+            raise HTTPException(status_code=400, detail=(
+                f"Putting generation {generation} back would change {'; '.join(moved)}. A restore "
+                "does not change a data type: where the lake mirrors the field, its tables have to "
+                "be rebuilt for the new type first. Change it by hand, then put the rest back."))
+    return recorded, now, changed
+
+
+def _roles_in_store(request: Request) -> bool:
+    from core.role_store import RoleStore
+
+    return RoleStore(request.app.state.runtime_paths.data_dir / "roles.db").load() is not None
+
+
+@router.get("/admin/config-restore/{generation}", dependencies=[Depends(_no_store)],
+            response_model=RestorePreviewResponse)
+def preview_restore_route(generation: int, request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """What putting `generation` back would change, file by file, and what
+    it would do to access. Nothing written.
+
+    A RESTORE ADDS TO HISTORY, never rewrites it -- Grafana: restoring
+    "creates a new version ... so your previous dashboard versions are
+    not affected"; Terraform has "no native undo", only the old
+    configuration applied again. Applied, it is a new generation whose
+    files are that version's.
+    """
+    from core.config_editing import shown_diff
+
+    _require_manage_deployment(request, current_user)
+    recorded, now, changed = _restoring(request, generation)
+    _candidate, impact = _access_impact(request, changed)
+    return {
+        "generation": generation, "loaded_at": recorded.loaded_at, "digest": _files_digest(now),
+        "files": [{"name": name, "diff": shown_diff(name, now[name], text)}
+                  for name, text in sorted(changed.items())],
+        "impact": impact, "needs_approval": impact["widens"],
+        "roles_in_store": _roles_in_store(request),
+    }
+
+
+@router.post("/admin/config-restore/{generation}", dependencies=[Depends(_no_store)],
+             response_model=RestoreResponse)
+def restore_route(generation: int, body: RestoreRequest, request: Request,
+                  current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Puts `generation`'s files back and reloads -- at once, unless
+    anyone could read, know of or run more afterwards; then it waits,
+    with a reason, for a holder of manage:roles who did not propose it
+    (decided 16 October). A restore is often urgent -- AWS AppConfig's
+    revert even skips its alarms "during an application emergency" --
+    so only a widening one waits.
+    """
+    from core.config_editing import digest
+
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        recorded, now, changed = _restoring(request, generation)
+        if _files_digest(now) != body.digest:
+            raise HTTPException(status_code=409, detail=(
+                "The configuration has changed since you looked. Look again before putting "
+                f"generation {generation} back."))
+        _candidate, impact = _access_impact(request, changed)
+        audit_changes = {"restore_generation": generation}
+        if not impact["widens"]:
+            result = _write_config_files(request, current_user,
+                                         {name: (now[name], text) for name, text in changed.items()},
+                                         audit_changes)
+            return {"status": "applied", "to_generation": result["to_generation"]}
+
+        reason = _reason(body.reason)
+        proposal_id = _proposals(request).propose(
+            "restore", f"Put generation {generation} back (from {recorded.loaded_at[:16].replace('T', ' ')})",
+            changed, {name: digest(now[name]) for name in changed}, reason, current_user.user_id)
+        for name in changed:
+            _generation(request).mediator.audit_log.log_config_edit(
+                current_user.user_id, "proposed", name, audit_changes, digest(now[name]),
+                digest(changed[name]), detail=f"proposal {proposal_id}: {reason}"[:500])
+        return {"status": "waiting", "proposal_id": proposal_id}
 
 
 @router.get("/admin/contracts/{object_type}", response_class=Response,

@@ -195,13 +195,13 @@ export default function DescribeType({
   const dataFields = type ? Object.entries(type.fields).filter(([, field]) => field.kind === 'data') : []
 
   return (
-    <Dialog isOpen onClose={onClose} title={`Describe ${shownAs}`} className="describe-type">
+    <Dialog isOpen onClose={onClose} title={`Describe ${shownAs}`} className="config-dialog">
       <DialogBody>
         {loaded === null && problem === null && <LoadingState />}
         {loaded !== null && !type && <ErrorState>{objectType} is no longer in ontology_schema.yaml.</ErrorState>}
         {type && drafts && !preview && (
           <>
-            <p className="describe-type__lede">
+            <p className="config-dialog__lede">
               What {shownAs} and its fields are called and what they mean. Written to ontology_schema.yaml, keeping its
               comments; nothing about its data or who can see it changes. A box left empty is not set.
             </p>
@@ -244,7 +244,7 @@ export default function DescribeType({
               </HTMLSelect>
             </div>
 
-            <h4 className="describe-type__fields-heading">Fields</h4>
+            <h4 className="config-dialog__heading">Fields</h4>
             <table className="describe-type__fields">
               <thead>
                 <tr>
@@ -278,7 +278,7 @@ export default function DescribeType({
         )}
         {preview && (
           <>
-            <p className="describe-type__lede">These lines of ontology_schema.yaml will change:</p>
+            <p className="config-dialog__lede">These lines of ontology_schema.yaml will change:</p>
             <FileDiff lines={preview} label="Changes to ontology_schema.yaml" />
           </>
         )}

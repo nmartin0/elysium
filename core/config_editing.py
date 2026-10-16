@@ -602,3 +602,32 @@ def apply_labels(text: str, changes: list) -> str:
             declared.pop("classification", None)
 
     return _meaning_checked(edited, expected)
+
+
+# ---------------------------------------------------------------------------
+# WHICH FILES' LINES THE INTERFACE SHOWS. A change to any configuration
+# file can reach the screen now -- an earlier version put back touches
+# them all -- and the rule for what may is older than this editor:
+# /admin/config-history names the files that changed and never their
+# contents, "without returning silo hosts and credential references over
+# HTTP". So only the ontology's lines are shown, which every manager of
+# the deployment already reads on the schema screens; the others are
+# named, with why, and their effect on access is shown in access terms.
+# ---------------------------------------------------------------------------
+
+_NOT_SHOWN = {
+    "config.yaml": "it holds the model's connection and other settings this screen does not carry",
+    "data_silos.yaml": "it holds where each source is and how to reach it",
+    "source_bindings.yaml": "it holds which source tables back each type",
+    "policy.yaml": "it holds the people and their compartments; what it changes for each role is shown above",
+}
+
+
+def shown_diff(filename: str, before: str, after: str) -> list[str]:
+    """The change to one file as the interface may show it: its lines for
+    the ontology, and for any other file a line naming it and why its
+    contents stay off the screen."""
+    if filename == ONTOLOGY_FILE:
+        return diff(before, after, filename)
+    why = _NOT_SHOWN.get(filename, "its contents are not shown here")
+    return [f"{filename} changes too. Its lines are not shown here: {why}."]

@@ -36,7 +36,10 @@ same fragility this exists to remove.
 WHAT IT DELIBERATELY DOES NOT DO: apply anything. Reverting is a
 question of writing files back and reloading, which belongs to whoever
 owns the filesystem, not to a history table. This answers "what was
-it"; acting on the answer stays where the permissions are.
+it"; acting on the answer stays where the permissions are -- since 16
+October, the restore route (api/routes.restore_route), which writes a
+version's files back as a NEW generation, refuses what the lake cannot
+follow, and waits for a second person when anyone could read more.
 """
 
 import json

@@ -372,10 +372,18 @@ one Inbox. Built so far, each checked in a real browser:
   everything. The approver sees, on Roles, who asked and why, what it
   does to each role recomputed against what runs now, and the exact
   lines; a file moved since is STALE, refused rather than merged.
-- STILL TO BUILD, decided 16 October: "put this version back" on
-  configuration history, applied as a new generation, waiting only if
-  it widens access. STILL TO DESIGN: the ontology's shape (a new type or
-  field, a data type), which also touches bindings and the mirror.
+- "Put this version back" on configuration history, decided 16
+  October: a version's files written back as a NEW generation (Grafana,
+  Terraform: history grows, never rewinds), at once unless anyone could
+  read more -- then the same queue and the same second person as a
+  label. The preview shows the ontology's lines and only NAMES any other
+  file, as /admin/config-history always has, because data_silos.yaml
+  says where each source is. Refused rather than half-done: a field's
+  data type going back (the lake cannot follow without a rebuild), a
+  file that would have to be added or deleted, or nothing to do. Roles
+  in the role store are in no version, and it says so.
+- STILL TO DESIGN: the ontology's shape (a new type or field, a data
+  type), which also touches bindings and the mirror.
 
 THE NODE NOW CARRIES 14.5's COUNT AND HEALTH, and properties at close
 zoom (16 October): how many objects of the type the reader can see

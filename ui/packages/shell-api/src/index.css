@@ -3343,6 +3343,35 @@
   /* DEV_UI 13.5: a role change in access terms. GAINS carry the warning
      colour as a rule beside them -- widening access is the case 13.6
      reserves attention for; losses are the safe direction, so quiet. */
+  /* THE CONFIGURATION DIALOGS (DEV_UI 13.7) -- describing a type, its
+     labels, putting a version back -- in two apps, so here rather than
+     in either app's stylesheet: in SchemaPanel.css the restore dialog
+     on Admin rendered at Blueprint's default width, because that sheet
+     loads with the Schema app (seen in a browser). Wide enough for a
+     field table, or a diff, side by side. */
+  .config-dialog {
+    inline-size: min(56rem, calc(100vw - 2rem));
+  }
+
+  /* Blueprint sets a text area in the code font; a description is prose,
+     and beside the name box above it read as two different kinds of
+     thing (seen in a browser). */
+  .config-dialog textarea {
+    font-family: inherit;
+  }
+
+  .config-dialog__lede {
+    margin-block-end: var(--space-normal);
+  }
+
+  .config-dialog__heading {
+    margin-block: var(--space-normal) var(--space-snug);
+  }
+
+  .config-dialog__reason {
+    margin-block-start: var(--space-normal);
+  }
+
   .config-proposals {
     margin-block: var(--space-normal);
   }

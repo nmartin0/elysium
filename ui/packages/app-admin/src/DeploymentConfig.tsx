@@ -33,6 +33,8 @@ import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 import DataTable from '@elysium/shell-api/components/DataTable'
 import ConfigProposals from './ConfigProposals'
+import RestoreDialog, { type RestoreOutcome } from './RestoreDialog'
+import Notice from '@elysium/shell-api/components/Notice'
 import ConfigSettingsEditor, { AppliedNotice } from './ConfigSettingsEditor'
 
 interface DeploymentConfigBody {
@@ -108,9 +110,18 @@ interface DeploymentConfigBody {
  * manage:deployment, and file names answer "what moved" without
  * disclosing configuration.
  */
-function ConfigHistorySection({ onSessionExpired }: { onSessionExpired: () => void }) {
+function ConfigHistorySection({
+  onSessionExpired,
+  onRestored,
+}: {
+  onSessionExpired: () => void
+  onRestored: (generation: number, outcome: RestoreOutcome) => void
+}) {
   const [history, setHistory] = useState<ConfigHistory | null>(null)
   const [diffs, setDiffs] = useState<Record<number, ConfigDiff>>({})
+  // PUTTING ONE BACK (DEV_UI 13.7): offered on a version whose files
+  // differ from what runs now -- the same files would be nothing to do.
+  const [restoring, setRestoring] = useState<number | null>(null)
   const latestSessionExpired = useRef(onSessionExpired)
   useEffect(() => {
     latestSessionExpired.current = onSessionExpired
@@ -146,12 +157,23 @@ function ConfigHistorySection({ onSessionExpired }: { onSessionExpired: () => vo
   // when its digest differs from the one loaded before it. The last
   // row has nothing before it, so it is where the record begins rather
   // than a change.
+  const runningDigest = history.generations.find(
+    (entry) => entry.generation === history.current_generation,
+  )?.source_digest
+  // ONE OFFER PER CONFIGURATION, on its newest row. The first browser
+  // check offered it on 47 rows, nearly all restarts of a handful of
+  // configurations; putting back any of them puts back the same files.
+  const offered = new Set<string>()
   const rows = history.generations.map((entry, index) => {
     const previous = history.generations[index + 1]
+    const restorable =
+      runningDigest !== undefined && entry.source_digest !== runningDigest && !offered.has(entry.source_digest)
+    offered.add(entry.source_digest)
     return {
       ...entry,
       changed: previous !== undefined && previous.source_digest !== entry.source_digest,
       comparableWith: previous?.generation,
+      restorable,
     }
   })
 
@@ -164,6 +186,9 @@ function ConfigHistorySection({ onSessionExpired }: { onSessionExpired: () => vo
             <th>Generation</th>
             <th>Loaded</th>
             <th>Change</th>
+            <th>
+              <span className="bp6-text-muted">Put back</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -207,10 +232,29 @@ function ConfigHistorySection({ onSessionExpired }: { onSessionExpired: () => vo
                   <span className="bp6-text-muted">restarted, same configuration</span>
                 )}
               </td>
+              <td>
+                {row.restorable && (
+                  <Button minimal small icon="undo" onClick={() => setRestoring(row.generation)}>
+                    Put this version back
+                  </Button>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
       </DataTable>
+      {restoring !== null && (
+        <RestoreDialog
+          generation={restoring}
+          onClose={() => setRestoring(null)}
+          onDone={(outcome) => {
+            const from = restoring
+            setRestoring(null)
+            onRestored(from, outcome)
+          }}
+          onSessionExpired={onSessionExpired}
+        />
+      )}
     </section>
   )
 }
@@ -219,14 +263,41 @@ export default function DeploymentConfig({ onSessionExpired }: { onSessionExpire
   // AN EDIT REMOUNTS THE VIEW, so its figures are the new generation's
   // rather than what was loaded before the change. The notice lives
   // out here, where the remount cannot take it away.
-  const [applied, setApplied] = useState<{ generation: number; count: number } | null>(null)
+  const [applied, setApplied] = useState<{
+    generation: number
+    count: number
+    /** Put back from this generation, when that is what happened. */
+    restoredFrom?: number
+    waiting?: boolean
+  } | null>(null)
   return (
     <>
-      {applied && <AppliedNotice generation={applied.generation} />}
+      {applied &&
+        (applied.waiting ? (
+          <Notice state="pending" title="Waiting for approval">
+            Putting generation {applied.restoredFrom} back lets people read more than they can now, so it applies once
+            someone who manages roles approves it (Admin → Roles).
+          </Notice>
+        ) : applied.restoredFrom !== undefined ? (
+          <Notice state="granted" title="Put back">
+            Generation {applied.restoredFrom}’s files are the configuration again; the deployment reloaded as generation{' '}
+            {applied.generation}.
+          </Notice>
+        ) : (
+          <AppliedNotice generation={applied.generation} />
+        ))}
       <DeploymentConfigView
         key={applied?.count ?? 0}
         onSessionExpired={onSessionExpired}
         onApplied={(generation) => setApplied((current) => ({ generation, count: (current?.count ?? 0) + 1 }))}
+        onRestored={(from, outcome) =>
+          setApplied((current) => ({
+            generation: outcome.status === 'applied' ? outcome.generation : (current?.generation ?? 0),
+            count: (current?.count ?? 0) + 1,
+            restoredFrom: from,
+            waiting: outcome.status === 'waiting',
+          }))
+        }
       />
     </>
   )
@@ -235,9 +306,11 @@ export default function DeploymentConfig({ onSessionExpired }: { onSessionExpire
 function DeploymentConfigView({
   onSessionExpired,
   onApplied,
+  onRestored,
 }: {
   onSessionExpired: () => void
   onApplied: (generation: number) => void
+  onRestored: (generation: number, outcome: RestoreOutcome) => void
 }) {
   const { data: config, error } = useFetchOnce<DeploymentConfigBody>(() => getDeploymentConfig(), onSessionExpired)
 
@@ -438,7 +511,7 @@ function DeploymentConfigView({
                 for a role manager -- shown here so its proposer can see
                 it, and withdraw it. Nothing when nothing waits. */}
             <ConfigProposals onSessionExpired={onSessionExpired} />
-            <ConfigHistorySection onSessionExpired={onSessionExpired} />
+            <ConfigHistorySection onSessionExpired={onSessionExpired} onRestored={onRestored} />
           </div>
         )
       }}

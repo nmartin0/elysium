@@ -4,6 +4,8 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 const getDeploymentConfig = vi.fn()
 const getConfigHistory = vi.fn()
 const getConfigDiff = vi.fn()
+const previewRestore = vi.fn()
+const restoreGeneration = vi.fn()
 
 vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@elysium/shell-api/api')>()
@@ -12,6 +14,11 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
     getDeploymentConfig: () => getDeploymentConfig(),
     getConfigHistory: () => getConfigHistory(),
     getConfigDiff: (older: number, newer: number) => getConfigDiff(older, newer),
+    previewRestore: (generation: number) => previewRestore(generation),
+    restoreGeneration: (generation: number, digest: string, reason: string | null) =>
+      restoreGeneration(generation, digest, reason),
+    // The waiting-changes list fetches on mount; not what these are about.
+    getConfigProposals: () => new Promise(() => {}),
   }
 })
 
@@ -416,5 +423,102 @@ describe('where the freshness windows come from', () => {
 
     const label = await screen.findByText('Lineage events')
     expect(label.parentElement).toHaveTextContent('lineage.jsonl only (namespace elysium)')
+  })
+})
+
+describe('putting an earlier version back (DEV_UI 13.7)', () => {
+  /** Shaped as GET /admin/config-restore/{n} returns it. */
+  const PREVIEW = {
+    generation: 1,
+    loaded_at: new Date().toISOString(),
+    digest: 'now-digest',
+    files: [
+      { name: 'ontology_schema.yaml', diff: ['--- a', '+++ b', '-    group: People'] },
+      {
+        name: 'data_silos.yaml',
+        diff: ['data_silos.yaml changes too. Its lines are not shown here: it holds where each source is.'],
+      },
+    ],
+    impact: { widens: false, roles: [] },
+    needs_approval: false,
+    roles_in_store: true,
+  }
+
+  it('is offered once per configuration that differs from what runs now', async () => {
+    // 3 runs now; 2 is the same files; 1 and 0 are one earlier
+    // configuration, loaded twice -- offered once, on its newest row.
+    getConfigHistory.mockResolvedValue(
+      historyOf([
+        [3, OTHER],
+        [2, OTHER],
+        [1, SAME],
+        [0, SAME],
+      ]),
+    )
+    render(<DeploymentConfig onSessionExpired={vi.fn()} />)
+    const table = await screen.findByRole('table', { name: 'Configurations this deployment has run' })
+
+    const offered = within(table).getAllByRole('button', { name: 'Put this version back' })
+    expect(offered).toHaveLength(1)
+    expect(offered[0]!.closest('tr')).toHaveTextContent(/^1/)
+  })
+
+  it('shows what goes back and says roles stay, then puts it back', async () => {
+    getConfigHistory.mockResolvedValue(
+      historyOf([
+        [2, OTHER],
+        [1, SAME],
+      ]),
+    )
+    previewRestore.mockResolvedValue(PREVIEW)
+    restoreGeneration.mockResolvedValue({ status: 'applied', to_generation: 9 })
+    render(<DeploymentConfig onSessionExpired={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Put this version back' }))
+
+    expect(await screen.findByText('- group: People')).toBeInTheDocument()
+    expect(screen.getByText(/data_silos.yaml changes too/)).toBeInTheDocument()
+    expect(screen.getByText('Roles stay as they are')).toBeInTheDocument()
+    expect(screen.getByText('No change to what anyone can see or do.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Put it back and reload' }))
+
+    expect(await screen.findByText(/reloaded as generation 9/)).toBeInTheDocument()
+    expect(restoreGeneration).toHaveBeenCalledWith(1, 'now-digest', null)
+  })
+
+  it('a widening one asks why and is proposed', async () => {
+    getConfigHistory.mockResolvedValue(
+      historyOf([
+        [2, OTHER],
+        [1, SAME],
+      ]),
+    )
+    previewRestore.mockResolvedValue({ ...PREVIEW, impact: { widens: true, roles: [] }, needs_approval: true })
+    restoreGeneration.mockResolvedValue({ status: 'waiting', proposal_id: 'p1' })
+    render(<DeploymentConfig onSessionExpired={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Put this version back' }))
+    const propose = await screen.findByRole('button', { name: 'Propose for approval' })
+
+    expect(propose).toBeDisabled()
+    fireEvent.change(screen.getByLabelText(/Why/), { target: { value: 'the old labels were right' } })
+    fireEvent.click(propose)
+
+    expect(await screen.findByText('Waiting for approval')).toBeInTheDocument()
+    expect(restoreGeneration).toHaveBeenCalledWith(1, 'now-digest', 'the old labels were right')
+  })
+
+  it('a refusal is said, with nothing to press', async () => {
+    getConfigHistory.mockResolvedValue(
+      historyOf([
+        [2, OTHER],
+        [1, SAME],
+      ]),
+    )
+    const { ApiError } = await import('@elysium/shell-api/api')
+    previewRestore.mockRejectedValue(new ApiError(400, 'A restore does not change a data type.'))
+    render(<DeploymentConfig onSessionExpired={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Put this version back' }))
+
+    expect(await screen.findByText(/does not change a data type/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Put it back|Propose/ })).not.toBeInTheDocument()
   })
 })
