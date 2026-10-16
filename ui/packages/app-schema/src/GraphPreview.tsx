@@ -72,6 +72,8 @@ interface GraphPreviewProps {
   onOpenFull: (name: string, kind: 'object' | 'action' | 'link') => void
   /** Moving the panel to something it lists -- an action on this type. */
   onSelect?: (selection: GraphSelection) => void
+  /** Describing the type (DEV_UI 13.7): present only for manage:deployment. */
+  onDescribe?: (objectType: string) => void
 }
 
 export default function GraphPreview({
@@ -81,6 +83,7 @@ export default function GraphPreview({
   onOpenFull,
   onClose,
   onSelect,
+  onDescribe,
 }: GraphPreviewProps) {
   // One control, rendered by every branch. A panel that opens and
   // cannot be closed leaves part of the graph covered with no way to
@@ -234,6 +237,11 @@ export default function GraphPreview({
       <Button minimal small onClick={() => onOpenFull(selection.name, 'object')}>
         Open in Object types
       </Button>
+      {onDescribe && (
+        <Button minimal small icon="edit" onClick={() => onDescribe(selection.name)}>
+          Describe
+        </Button>
+      )}
     </div>
   )
 }

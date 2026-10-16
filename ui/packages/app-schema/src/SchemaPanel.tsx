@@ -1,10 +1,13 @@
 /**
- * SchemaPanel -- a read-only view of the ontology this caller can see.
+ * SchemaPanel -- a view of the ontology this caller can see.
  *
- * Deliberately NOT an editor. Editing the ontology edits the security
+ * NOT A GENERAL EDITOR. Editing the ontology can edit the security
  * model: an object type's `security` block is what decides who sees
  * its rows, so "edit what you can see" would not bound the blast
- * radius. See UI_ROADMAP.md.
+ * radius. What it may change is what things are CALLED and MEAN
+ * (DescribeType, DEV_UI 13.7), for manage:deployment, through a
+ * server-side allowlist that cannot reach `security`, storage or a
+ * field's type.
  *
  * Everything rendered here comes from GET /me/visible-schema, which is
  * already filtered per caller. Fields the caller lacks a grant for are
@@ -30,7 +33,13 @@ import Workspace, { WorkspaceFilter } from '@elysium/shell-api/components/Worksp
 
 import ViewSelector, { type ViewOption } from '@elysium/shell-api/components/ViewSelector'
 
-import { getSchemaAccess, getVisibleActionTypesCached, type TypeAccess } from '@elysium/shell-api/api'
+import {
+  getOntologyDescriptions,
+  getSchemaAccess,
+  getVisibleActionTypesCached,
+  type OntologyDescriptions,
+  type TypeAccess,
+} from '@elysium/shell-api/api'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 
 import GraphPreview, { toggleSelection, type GraphSelection } from './GraphPreview'
@@ -40,6 +49,7 @@ import Discover from './Discover'
 import { recordVisit } from './discoverStorage'
 import LinkTypes from './LinkTypes'
 import WhoCanSee from './WhoCanSee'
+import DescribeType from './DescribeType'
 import './SchemaPanel.css'
 import DataTable from '@elysium/shell-api/components/DataTable'
 
@@ -186,6 +196,7 @@ function ObjectTypeCard({
   apiName,
   type,
   access,
+  onDescribe,
   onOpenObjectType,
   onOpenLinkType,
 }: {
@@ -193,6 +204,8 @@ function ObjectTypeCard({
   type: SchemaObjectType
   /** Who can see it (DEV_UI 13.3): present only for manage:roles. */
   access?: TypeAccess
+  /** Describing it (DEV_UI 13.7): present only for manage:deployment. */
+  onDescribe?: (objectType: string) => void
   onOpenObjectType: (objectType: string) => void
   onOpenLinkType: (linkType: string) => void
 }) {
@@ -219,6 +232,11 @@ function ObjectTypeCard({
       </h3>
       {apiName !== (type.display_name ?? apiName) && <div className="schema-panel__api-name">{apiName}</div>}
       {type.description && <p>{type.description}</p>}
+      {onDescribe && (
+        <Button small minimal icon="edit" onClick={() => onDescribe(apiName)}>
+          Describe
+        </Button>
+      )}
 
       {prominent.length > 0 && (
         <>
@@ -278,6 +296,13 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
   // Refused for anyone without manage:roles, and then simply absent:
   // nobody is offered a section that would lead to a 403.
   const { data: access } = useFetchOnce<Record<string, TypeAccess>>(getSchemaAccess, onSessionExpired)
+  // DESCRIBING (DEV_UI 13.7), the same way: refused without
+  // manage:deployment, and then no Describe button anywhere. The dialog
+  // reads the file again when opened, for a digest that is current.
+  const { data: describable } = useFetchOnce<OntologyDescriptions>(getOntologyDescriptions, onSessionExpired)
+  const [describing, setDescribing] = useState<string | null>(null)
+  const [described, setDescribed] = useState<number | null>(null)
+  const onDescribe = describable ? (objectType: string) => setDescribing(objectType) : undefined
   // NAVIGATION STATE LIVES IN THE URL, not in component state.
   //
   // Following a reference is one click -- a link's target, a link tag,
@@ -428,6 +453,26 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
       <Button minimal small icon="arrow-left" aria-label="Back" onClick={() => navigate(-1)}>
         Back
       </Button>
+      {/* THE NEW NAMES ARRIVE BY THEMSELVES: the reload changes the
+          configuration epoch every response carries, and the shell
+          refetches the schema when it moves. */}
+      {described !== null && (
+        <Notice state="granted" title="Applied">
+          ontology_schema.yaml was changed and the deployment reloaded as generation {described}.
+        </Notice>
+      )}
+      {describing !== null && (
+        <DescribeType
+          objectType={describing}
+          shownAs={schema[describing]?.display_name ?? describing}
+          onClose={() => setDescribing(null)}
+          onApplied={(generation) => {
+            setDescribing(null)
+            setDescribed(generation)
+          }}
+          onSessionExpired={onSessionExpired}
+        />
+      )}
       {/* Three resource kinds, matching how the reference
           implementation splits its own ontology browser: object types,
           link types and action types are separately navigable rather
@@ -465,6 +510,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
                 apiName={apiName}
                 type={type}
                 access={access?.[apiName]}
+                onDescribe={onDescribe}
                 onOpenObjectType={openObjectType}
                 onOpenLinkType={openLinkType}
               />
@@ -489,6 +535,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
               onClose={() => setSelection(null)}
               schema={schema}
               actionTypes={graphActionTypes}
+              onDescribe={onDescribe}
               // An action is listed on its type (DEV_UI 14.3) and opens
               // here, in the same panel, rather than as a node.
               onSelect={(next) => setSelection(next)}

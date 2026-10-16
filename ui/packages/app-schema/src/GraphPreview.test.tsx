@@ -267,3 +267,18 @@ describe('selecting the same thing twice closes it', () => {
     expect(toggle(first, { kind: 'action', name: 'Transfer' })).toEqual({ kind: 'action', name: 'Transfer' })
   })
 })
+
+describe('GraphPreview -- describing a type (DEV_UI 13.7)', () => {
+  it('offers Describe only when it is given a way to', () => {
+    const onDescribe = vi.fn()
+    const { unmount } = render(
+      <GraphPreview {...props} selection={{ kind: 'object', name: 'Customer' }} onDescribe={onDescribe} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Describe' }))
+    expect(onDescribe).toHaveBeenCalledWith('Customer')
+    unmount()
+
+    render(<GraphPreview {...props} selection={{ kind: 'object', name: 'Customer' }} />)
+    expect(screen.queryByRole('button', { name: 'Describe' })).not.toBeInTheDocument()
+  })
+})

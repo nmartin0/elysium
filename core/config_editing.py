@@ -25,9 +25,9 @@ is not "refuse", and ingest_undeclared_columns absent is not "false"
 (the loader's comments say why). So a change can REMOVE a key, and the
 form shows which ones are absent and what that means.
 
-WHAT IS NOT EDITABLE YET, and each is buildable: the other files
-(ontology, policy, silos) and config.yaml's nested settings -- lists,
-the llm block. Roles already have their own editor and store. The
+WHAT IS NOT EDITABLE YET, and each is buildable: the ontology's SHAPE
+(types, fields, data types -- below, only its descriptions are), policy,
+silos, and config.yaml's nested settings -- lists, the llm block. Roles already have their own editor and store. The
 dependency and "should configuration be editable from the UI at all"
 were BLOCKING's questions; both were answered yes on 14 October.
 
@@ -185,30 +185,63 @@ def _is_content(line: str) -> bool:
 
 
 def _apply_one(text: str, key: str, value) -> str:
-    """One setting, changed by editing ITS LINE and nothing else.
+    """One config.yaml setting, changed by editing ITS LINE (_edit_line)."""
+    rendered = None if value is None else _render(_checked(_BY_KEY[key], value))
+    return _edit_line(text, key.split("."), rendered, "config.yaml")
+
+
+def _inline_comment(tail: str, old) -> str:
+    """The comment after a value on its line, or "".
+
+    NOT EVERY "#" STARTS ONE: a description may say "Item #3", quoted.
+    A candidate split counts only when what is left of it still reads
+    as the value the file holds now."""
+    import yaml as plain_yaml
+
+    at = tail.find(" #")
+    while at != -1:
+        try:
+            if plain_yaml.safe_load("k:" + tail[:at]) == {"k": old}:
+                return "  " + tail[at:].lstrip()
+        except plain_yaml.YAMLError:
+            pass
+        at = tail.find(" #", at + 1)
+    return ""
+
+
+def _edit_line(text: str, path: list[str], rendered: "str | None", filename: str,
+               after: "tuple[str, ...] | None" = None) -> str:
+    """One scalar at `path`, changed by editing ITS LINE and nothing else.
+    `rendered` is the value as YAML text; None removes the key. `after`,
+    when given, says where a NEW key goes: after the last of those keys
+    present, or first in its block.
 
     LINES, NOT THE DATA MODEL, and a browser-free measurement is why.
     Editing through ruamel's model kept every comment when nothing
     changed -- and, on the first real edit, removing on_type_mismatch
     deleted three comment blocks with it (ruamel stores the comments
     after a key AS PART OF that key), while adding agent.filter_operators
-    put it below the comment introducing `tools:`. Every editable setting
-    is a one-line scalar, so ruamel only FINDS the line; the edit is a
-    line replaced, commented out or inserted, and apply_changes checks
-    the result means exactly what was asked.
+    put it below the comment introducing `tools:`. Every editable value
+    is a scalar, so ruamel only FINDS the line; the edit is a line
+    replaced, commented out or inserted, and the caller checks the
+    result means exactly what was asked.
+
+    A VALUE MAY RUN ONTO LINES BELOW IT -- a folded description, `>`
+    and the sentences under it. Those lines are its own, deeper than
+    its key, and go with it: replaced, the new value is one line;
+    removed, they are commented out with it.
     """
-    setting = _BY_KEY[key]
     lines = text.splitlines(keepends=True)
     if lines and not lines[-1].endswith("\n"):
         lines[-1] += "\n"
     document = _yaml().load(text) or CommentedMap()
-    *parents, leaf = key.split(".")
+    *parents, leaf = path
     parent, parent_line, parent_indent = document, None, -2
     for part in parents:
         if not isinstance(parent, CommentedMap) or part not in parent or not isinstance(parent[part], CommentedMap):
-            if value is None:
+            if rendered is None:
                 return text
-            raise ConfigEditError(f"{key} needs a `{part}:` block, which config.yaml does not have.")
+            raise ConfigEditError(f"{'.'.join(path)} needs a `{part}:` block, which {filename} does not have.")
         parent_line = parent.lc.key(part)[0]
         parent_indent = _indent_of(lines[parent_line])
         parent = parent[part]
@@ -216,21 +249,31 @@ def _apply_one(text: str, key: str, value) -> str:
     if leaf in parent:
         at = parent.lc.key(leaf)[0]
         line = lines[at]
-        indent = " " * _indent_of(line)
-        if value is None:
+        key_indent = _indent_of(line)
+        indent = " " * key_indent
+        # ITS OWN CONTINUATION: content lines deeper than the key, up to
+        # the next line at the key's depth. Comments and blanks between
+        # are left alone -- they may introduce what follows.
+        last = at
+        for index in range(at + 1, len(lines)):
+            if _is_content(lines[index]):
+                if _indent_of(lines[index]) <= key_indent:
+                    break
+                last = index
+        if rendered is None:
             lines[at] = f"{indent}# {line.strip()}  {REMOVED_MARK}\n"
+            for index in range(at + 1, last + 1):
+                if _is_content(lines[index]):
+                    lines[index] = f"{indent}#   {lines[index].strip()}\n"
         else:
-            rendered = _render(_checked(setting, value))
             head, _, tail = line.rstrip("\n").partition(":")
-            comment = ""
-            if "#" in tail:
-                comment = "  #" + tail.split("#", 1)[1]
+            comment = _inline_comment(tail, parent[leaf]) if last == at else ""
             lines[at] = f"{head}: {rendered}{comment}\n"
+            del lines[at + 1:last + 1]
         return "".join(lines)
 
-    if value is None:
+    if rendered is None:
         return text
-    rendered = _render(_checked(setting, value))
 
     # THE BLOCK'S EXTENT: from the parent's line to the next line of
     # content at its own indent or less. Comments and blanks inside it
@@ -244,9 +287,9 @@ def _apply_one(text: str, key: str, value) -> str:
             if parent_line is not None and _indent_of(line) <= parent_indent:
                 end = index
                 break
-            last_content = index
             if child_indent is None and parent_line is not None:
                 child_indent = _indent_of(line)
+            last_content = index
     indent = " " * (0 if parent_line is None else (child_indent if child_indent is not None else parent_indent + 2))
 
     removed = f"{indent}# {leaf}:"
@@ -256,7 +299,20 @@ def _apply_one(text: str, key: str, value) -> str:
             return "".join(lines)
 
     new_line = f"{indent}{leaf}: {rendered}\n"
-    if parent_line is None:
+    if after is not None and parent_line is not None:
+        # BESIDE ITS KIND, NOT AT THE END: a new description belongs with
+        # the type's display_name, not under its last field forty lines
+        # down. After the last of `after` present, else first in the block.
+        present = [parent.lc.key(k)[0] for k in after if k in parent]
+        anchor = max(present) if present else parent_line
+        if present:
+            for index in range(anchor + 1, end):
+                if _is_content(lines[index]):
+                    if _indent_of(lines[index]) <= _indent_of(lines[max(present)]):
+                        break
+                    anchor = index
+        lines.insert(anchor + 1, new_line)
+    elif parent_line is None:
         lines.append(new_line)
     else:
         lines.insert(last_content + 1, new_line)
@@ -303,3 +359,153 @@ def diff(before: str, after: str, filename: str = "config.yaml") -> list[str]:
     return [line.rstrip("\n") for line in difflib.unified_diff(
         before.splitlines(keepends=True), after.splitlines(keepends=True),
         fromfile=f"{filename} (now)", tofile=f"{filename} (after)", n=1)]
+
+
+# ---------------------------------------------------------------------------
+# DESCRIBING THE ONTOLOGY (DEV_UI 13.7): what a type and its fields are
+# CALLED and what they MEAN to a reader, edited in ontology_schema.yaml.
+#
+# PRESENTATION, NOT SHAPE. A display name, a description, a group and a
+# title field change what people read; they move no data, open no
+# access, and need no change to a binding or the mirror. That is why
+# they apply at once (decided 16 October), where a classification label
+# -- which changes who sees what -- would wait for a second person.
+# title_field is the nearest to the line: which field heads an object.
+# It opens nothing, because a title is served only to someone who may
+# read that field (mediator.visible_schema), so it stays here.
+#
+# THE SAME ALLOWLIST LAW as the settings above, and it is what keeps
+# storage, security and every field's type out of reach: a change names
+# one of these keys or it is refused, so no request can touch a type's
+# `security:` block however it is phrased. Structural changes -- a new
+# type or field, a data type -- are the next design, not this one.
+# ---------------------------------------------------------------------------
+
+#: Per key, at which level it may be described and its longest value.
+#: The lengths are a reader's, not the loader's: a 1,000-character
+#: description is already a page in a preview panel.
+TYPE_KEYS: dict[str, int] = {
+    "display_name": 80, "plural_display_name": 80, "description": 1000,
+    "group": 60, "title_field": 100,
+}
+FIELD_KEYS: dict[str, int] = {"display_name": 80, "description": 1000}
+#: More than this in one save is not describing, it is a migration.
+MAX_DESCRIPTION_CHANGES = 100
+ONTOLOGY_FILE = "ontology_schema.yaml"
+
+
+def current_descriptions(text: str) -> dict:
+    """Per type, its describable keys as the file has them (None when
+    absent), and per field the same, with whether it is a data field --
+    the only kind a title may be."""
+    document = _yaml().load(text) or {}
+    described = {}
+    for name, type_def in (document.get("object_types") or {}).items():
+        if not isinstance(type_def, dict):
+            continue
+        fields = {}
+        for field_name, declared in (type_def.get("fields") or {}).items():
+            declared = declared if isinstance(declared, dict) else {}
+            fields[field_name] = {
+                **{key: _as_text(declared.get(key)) for key in FIELD_KEYS},
+                "kind": str(declared.get("type") or "data"),
+            }
+        described[name] = {**{key: _as_text(type_def.get(key)) for key in TYPE_KEYS},
+                           "fields": fields}
+    return described
+
+
+def _as_text(value) -> "str | None":
+    return value if isinstance(value, str) else None
+
+
+def _checked_text(where: str, key: str, value, longest: int) -> "str | None":
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ConfigEditError(f"{where}'s {key} is text.")
+    value = value.strip()
+    if not value:
+        # EMPTY IS NOT ABSENT: object_type_validation refuses an empty
+        # display_name because it renders as a blank. Removing is null.
+        raise ConfigEditError(f"{where}'s {key} is empty; to remove it, remove it.")
+    if any(ord(c) < 32 or ord(c) == 127 for c in value):
+        raise ConfigEditError(f"{where}'s {key} is one line, without control characters.")
+    if len(value) > longest:
+        raise ConfigEditError(f"{where}'s {key} is at most {longest} characters.")
+    return value
+
+
+def _render_text(value: str) -> str:
+    """Plain when YAML reads it back as exactly this string, quoted
+    otherwise -- "yes", "12", "null", a leading "*" and "Item #3" would
+    each come back as something else, or as less."""
+    import json
+
+    import yaml as plain_yaml
+
+    try:
+        if plain_yaml.safe_load(f"k: {value}") == {"k": value}:
+            return value
+    except plain_yaml.YAMLError:
+        pass
+    # A JSON string is a YAML double-quoted scalar.
+    return json.dumps(value, ensure_ascii=False)
+
+
+def apply_descriptions(text: str, changes: list) -> str:
+    """ontology_schema.yaml with these descriptions changed. Each change
+    is {object_type, field (or None for the type), key, value}; a value
+    of None removes the key. Refuses anything off the allowlist, and any
+    result that does not mean exactly the old file with these changes."""
+    import yaml as plain_yaml
+
+    if not isinstance(changes, list) or not changes:
+        raise ConfigEditError("Nothing to change.")
+    if len(changes) > MAX_DESCRIPTION_CHANGES:
+        raise ConfigEditError(f"At most {MAX_DESCRIPTION_CHANGES} changes at once.")
+    expected = plain_yaml.safe_load(text) or {}
+    types = expected.get("object_types") if isinstance(expected, dict) else None
+    if not isinstance(types, dict):
+        raise ConfigEditError(f"{ONTOLOGY_FILE} declares no object_types.")
+
+    edited, seen = text, set()
+    for change in changes:
+        object_type, field_name, key = change.get("object_type"), change.get("field"), change.get("key")
+        type_def = types.get(object_type) if isinstance(object_type, str) else None
+        if not isinstance(type_def, dict):
+            raise ConfigEditError(f"There is no object type {object_type!r}.")
+        if field_name is None:
+            allowed, where, node = TYPE_KEYS, object_type, type_def
+            path = ["object_types", object_type, key]
+            after = tuple(TYPE_KEYS)
+        else:
+            declared = (type_def.get("fields") or {}).get(field_name) if isinstance(field_name, str) else None
+            if not isinstance(declared, dict):
+                raise ConfigEditError(f"{object_type} has no field {field_name!r}.")
+            allowed, where, node = FIELD_KEYS, f"{object_type}.{field_name}", declared
+            path = ["object_types", object_type, "fields", field_name, key]
+            # A field's description goes after its `type:`, which is
+            # where a reader of the file looks for what it is.
+            after = ("type", "data_type", *FIELD_KEYS)
+        if key not in allowed:
+            raise ConfigEditError(f"{where}'s {key} cannot be edited here.")
+        if (object_type, field_name, key) in seen:
+            raise ConfigEditError(f"{where}'s {key} is changed twice.")
+        seen.add((object_type, field_name, key))
+
+        value = _checked_text(where, key, change.get("value"), allowed[key])
+        edited = _edit_line(edited, path, None if value is None else _render_text(value),
+                            ONTOLOGY_FILE, after=after)
+        if value is None:
+            node.pop(key, None)
+        else:
+            node[key] = value
+
+    try:
+        means = plain_yaml.safe_load(edited)
+    except plain_yaml.YAMLError:
+        means = None
+    if means != expected:
+        raise ConfigEditError(f"That change could not be made without disturbing the rest of {ONTOLOGY_FILE}.")
+    return edited

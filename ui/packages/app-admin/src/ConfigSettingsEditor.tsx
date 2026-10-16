@@ -32,6 +32,7 @@ import {
   previewConfigSettings,
 } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
+import FileDiff from '@elysium/shell-api/components/FileDiff'
 import Notice from '@elysium/shell-api/components/Notice'
 import { useEffect, useRef, useState } from 'react'
 
@@ -221,23 +222,7 @@ export default function ConfigSettingsEditor({
       {preview ? (
         <div className="config-editor__review">
           <p className="config-editor__lede">These lines of config.yaml will change:</p>
-          <pre className="config-editor__diff" aria-label="Changes to config.yaml">
-            {preview.map((line, index) => (
-              <span
-                key={index}
-                className={
-                  line.startsWith('+') && !line.startsWith('+++')
-                    ? 'config-editor__added'
-                    : line.startsWith('-') && !line.startsWith('---')
-                      ? 'config-editor__removed'
-                      : undefined
-                }
-              >
-                {line}
-                {'\n'}
-              </span>
-            ))}
-          </pre>
+          <FileDiff lines={preview} label="Changes to config.yaml" />
           <Button intent="primary" loading={busy} onClick={apply}>
             Apply and reload
           </Button>{' '}

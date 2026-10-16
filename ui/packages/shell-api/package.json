@@ -17,6 +17,7 @@
     "./components/EmptyState": "./src/components/EmptyState.tsx",
     "./components/ErrorState": "./src/components/ErrorState.tsx",
     "./components/FieldValue": "./src/components/FieldValue.tsx",
+    "./components/FileDiff": "./src/components/FileDiff.tsx",
     "./components/FilterBar": "./src/components/FilterBar.tsx",
     "./components/FilterBox": "./src/components/FilterBox.tsx",
     "./components/HelpPanel": "./src/components/HelpPanel.tsx",

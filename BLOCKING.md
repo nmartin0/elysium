@@ -352,6 +352,19 @@ one Inbox. Built so far, each checked in a real browser:
   ticked, and on every waiting change for the approver. Gains carry the
   warning colour (13.6). The proposed grants are compiled as the
   mediators compile them, so a label grant shows as the fields it opens.
+- 13.7's describing the ontology, from the schema map's preview and each
+  type's card, for manage:deployment: a type's name, plural,
+  description, group and title field, and each field's name and
+  description, written to ontology_schema.yaml line by line with every
+  comment kept, the loader run on the result before it lands, reloaded
+  and recorded as a generation. Applied at once (decided 16 October):
+  it changes what things are called, not who sees what. The allowlist
+  is the server's and cannot reach `security`, storage or a field's
+  type. STILL TO DECIDE AND BUILD, each proposed 16 October: access
+  labels on fields (with the access preview, a widening waiting for a
+  second person), "put this version back" on configuration history,
+  and the ontology's shape (a new type or field, a data type), which
+  also touches bindings and the mirror.
 
 THE NODE NOW CARRIES 14.5's COUNT AND HEALTH, and properties at close
 zoom (16 October): how many objects of the type the reader can see
@@ -365,8 +378,7 @@ are 40 apart and a taller box would land on its neighbour.
 WHAT THE CANVAS DOES NOT DO YET, each buildable: edges are not routed
 AROUND other types, so two types dragged far apart can draw a line
 across a third ("Auto-layout" undoes it); and the layout is per person,
-with no deployment-wide default -- that belongs with editing
-configuration from the UI, which is next.
+with no deployment-wide default -- small, and not yet asked for.
 
 **Blocked on:** nothing.
 

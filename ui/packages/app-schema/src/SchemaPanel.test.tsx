@@ -7,9 +7,13 @@ import SchemaPanel from './SchemaPanel'
 // WHO CAN SEE THIS (DEV_UI 13.3) is fetched on mount and is not what
 // these tests are about: a request that never settles keeps it from
 // updating state after a test has finished. WhoCanSee.test.tsx tests it.
+// DESCRIBING (DEV_UI 13.7) is fetched on mount the same way, and a test
+// that is about it says what the server answers.
+const describing = vi.hoisted(() => ({ answer: (): Promise<unknown> => new Promise(() => {}) }))
 vi.mock('@elysium/shell-api/api', async (original) => ({
   ...(await original<typeof import('@elysium/shell-api/api')>()),
   getSchemaAccess: () => new Promise(() => {}),
+  getOntologyDescriptions: () => describing.answer(),
 }))
 
 /** The panel keeps its tab and filter in the URL, so it needs a
@@ -400,3 +404,43 @@ describe('SchemaPanel -- icons', () => {
 // SchemaGraph.test.tsx tests that directly: every node has exactly
 // one, and an action node reports 'action'. The routing itself is one
 // ternary reading that value.
+
+describe('describing a type (DEV_UI 13.7)', () => {
+  const DESCRIBED = {
+    digest: 'd1',
+    types: {
+      Customer: {
+        display_name: 'Customer',
+        plural_display_name: 'Customers',
+        description: 'Someone the business serves.',
+        group: 'Core',
+        title_field: 'name',
+        fields: {},
+      },
+    },
+  }
+
+  it('offers Describe to someone the server lets read the descriptions, and opens it', async () => {
+    describing.answer = () => Promise.resolve(DESCRIBED)
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Describe' }))
+
+    expect(await screen.findByRole('dialog', { name: 'Describe Customer' })).toBeInTheDocument()
+  })
+
+  it('offers nothing to someone it refuses', async () => {
+    let refused = false
+    describing.answer = () => {
+      refused = true
+      return Promise.reject(new Error('Needs manage:deployment'))
+    }
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    await waitFor(() => expect(refused).toBe(true))
+    expect(screen.queryByRole('button', { name: 'Describe' })).not.toBeInTheDocument()
+    describing.answer = () => new Promise(() => {})
+  })
+})

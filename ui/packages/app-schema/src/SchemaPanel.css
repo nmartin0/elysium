@@ -40,4 +40,54 @@
     display: inline-flex;
     align-items: center;
   }
+
+  /* Describing a type (DEV_UI 13.7): a form, wide enough for a field
+     table of name and description side by side. */
+  .describe-type {
+    inline-size: min(56rem, calc(100vw - 2rem));
+  }
+
+  /* Blueprint sets a text area in the code font; a description is prose,
+     and beside the name box above it read as two different kinds of
+     thing (seen in a browser). */
+  .describe-type textarea {
+    font-family: inherit;
+  }
+
+  .describe-type__lede {
+    margin-block-end: 1rem;
+  }
+
+  .describe-type__grid {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.5rem 1rem;
+    align-items: start;
+  }
+
+  .describe-type__grid > label {
+    padding-block-start: 0.35rem;
+  }
+
+  .describe-type__fields-heading {
+    margin-block: 1.5rem 0.5rem;
+  }
+
+  .describe-type__fields {
+    inline-size: 100%;
+    border-collapse: collapse;
+  }
+
+  .describe-type__fields th,
+  .describe-type__fields td {
+    padding: 0.25rem 0.5rem 0.25rem 0;
+    text-align: start;
+    vertical-align: top;
+  }
+
+  .describe-type__field-name {
+    font-family: var(--pt-font-family-monospace, monospace);
+    font-weight: normal;
+    padding-block-start: 0.5rem;
+  }
 }

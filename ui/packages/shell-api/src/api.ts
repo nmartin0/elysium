@@ -1851,6 +1851,63 @@ export async function applyConfigSettings(
   return (await response.json()) as { diff: string[]; digest: string; to_generation: number }
 }
 
+/** What a type or field is called and described as, as ontology_schema.yaml
+ *  declares it -- null when absent (core/config_editing.py, DEV_UI 13.7). */
+export interface DescribedField {
+  display_name: string | null
+  description: string | null
+  /** data or link: only a data field may be a title. */
+  kind: string
+}
+
+export interface DescribedType {
+  display_name: string | null
+  plural_display_name: string | null
+  description: string | null
+  group: string | null
+  title_field: string | null
+  fields: Record<string, DescribedField>
+}
+
+export interface OntologyDescriptions {
+  digest: string
+  types: Record<string, DescribedType>
+}
+
+/** One key changed. field null describes the type; value null removes the key. */
+export interface DescriptionChange {
+  object_type: string
+  field: string | null
+  key: string
+  value: string | null
+}
+
+/** For manage:deployment only; anyone else is refused. */
+export async function getOntologyDescriptions(): Promise<OntologyDescriptions> {
+  const response = await apiFetchOrThrow('/admin/ontology/descriptions')
+  return (await response.json()) as OntologyDescriptions
+}
+
+/** The lines of ontology_schema.yaml that would change. Writes nothing. */
+export async function previewOntologyDescriptions(digest: string, changes: DescriptionChange[]): Promise<string[]> {
+  const response = await apiFetchOrThrow('/admin/ontology/descriptions/preview', {
+    method: 'POST',
+    body: JSON.stringify({ digest, changes }),
+  })
+  return ((await response.json()) as { diff: string[] }).diff
+}
+
+export async function applyOntologyDescriptions(
+  digest: string,
+  changes: DescriptionChange[],
+): Promise<{ diff: string[]; digest: string; to_generation: number }> {
+  const response = await apiFetchOrThrow('/admin/ontology/descriptions', {
+    method: 'PUT',
+    body: JSON.stringify({ digest, changes }),
+  })
+  return (await response.json()) as { diff: string[]; digest: string; to_generation: number }
+}
+
 export async function getConfigHistory(): Promise<ConfigHistory> {
   const response = await apiFetchOrThrow('/admin/config-history')
   const body = (await response.json()) as { current_generation?: unknown; generations?: unknown }

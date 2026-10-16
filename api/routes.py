@@ -1668,7 +1668,18 @@ def preview_config_settings_route(body: ConfigEditRequest, request: Request,
             response_model=ConfigEditResponse)
 def apply_config_settings_route(body: ConfigEditRequest, request: Request,
                                 current_user: UserRecord = Depends(get_current_user)) -> dict:
-    """Writes the change to config.yaml and reloads.
+    """Writes the change to config.yaml and reloads (_write_config_file)."""
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        current, proposed = _proposed_config(request, body)
+        return _write_config_file(request, current_user, "config.yaml", current, proposed,
+                                  dict(body.changes))
+
+
+def _write_config_file(request: Request, current_user: UserRecord, filename: str,
+                       current: str, proposed: str, changes: dict) -> dict:
+    """Puts `proposed` in place of `filename` and reloads. Called holding
+    _config_edit_lock, after the caller has checked the digest.
 
     VALIDATE, WRITE, RELOAD, AND PUT IT BACK IF THE RELOAD FAILS -- the
     role-change route's "save, reload, undo", with the loader run first
@@ -1679,8 +1690,9 @@ def apply_config_settings_route(body: ConfigEditRequest, request: Request,
     ATOMIC ON DISK: written beside the file and renamed over it, so a
     crash mid-write leaves the old file or the new one, never half.
 
-    AUDITED EITHER WAY, with the values -- the allowlist makes them
-    numbers, switches and fixed choices, never a secret.
+    AUDITED EITHER WAY, with the values -- each editor's allowlist makes
+    them numbers, switches, fixed choices and descriptive text, never a
+    secret.
     """
     import shutil
     import tempfile
@@ -1688,43 +1700,147 @@ def apply_config_settings_route(body: ConfigEditRequest, request: Request,
     from core.config_editing import diff, digest
     from core.deployment_loader import load_deployment
 
-    _require_manage_deployment(request, current_user)
     audit = _generation(request).mediator.audit_log
-    path = _config_file(request)
-    with _config_edit_lock:
-        current, proposed = _proposed_config(request, body)
-        changes = dict(body.changes)
+    path = request.app.state.runtime_paths.config_dir / filename
 
-        def refused(status: int, reason: str):
-            audit.log_config_edit(current_user.user_id, "rejected", "config.yaml", changes,
-                                  digest(current), None, detail=reason[:500])
-            return HTTPException(status_code=status, detail=reason)
+    def refused(status: int, reason: str):
+        audit.log_config_edit(current_user.user_id, "rejected", filename, changes,
+                              digest(current), None, detail=reason[:500])
+        return HTTPException(status_code=status, detail=reason)
 
-        with tempfile.TemporaryDirectory() as scratch:
-            candidate = Path(scratch) / "config"
-            shutil.copytree(path.parent, candidate)
-            (candidate / "config.yaml").write_text(proposed)
-            try:
-                load_deployment(candidate)
-            except Exception as e:
-                raise refused(400, f"That configuration would not load: {e}") from e
-
-        staged = path.with_name(f".{path.name}.elysium-edit")
-        staged.write_text(proposed)
-        os.replace(staged, path)
+    with tempfile.TemporaryDirectory() as scratch:
+        candidate = Path(scratch) / "config"
+        shutil.copytree(path.parent, candidate)
+        (candidate / filename).write_text(proposed)
         try:
-            new = reload_generation(request.app, requested_by=current_user.user_id)
+            load_deployment(candidate)
         except Exception as e:
-            staged.write_text(current)
-            os.replace(staged, path)
-            if isinstance(e, ReloadInProgress):
-                raise refused(409, str(e)) from e
-            raise refused(400, f"The change was not applied: the configuration would not reload ({e}).") from e
+            raise refused(400, f"That configuration would not load: {e}") from e
 
-        audit.log_config_edit(current_user.user_id, "applied", "config.yaml", changes,
-                              digest(current), digest(proposed))
-        return {"diff": diff(current, proposed), "digest": digest(proposed),
-                "to_generation": new.generation}
+    staged = path.with_name(f".{path.name}.elysium-edit")
+    staged.write_text(proposed)
+    os.replace(staged, path)
+    try:
+        new = reload_generation(request.app, requested_by=current_user.user_id)
+    except Exception as e:
+        staged.write_text(current)
+        os.replace(staged, path)
+        if isinstance(e, ReloadInProgress):
+            raise refused(409, str(e)) from e
+        raise refused(400, f"The change was not applied: the configuration would not reload ({e}).") from e
+
+    audit.log_config_edit(current_user.user_id, "applied", filename, changes,
+                          digest(current), digest(proposed))
+    return {"diff": diff(current, proposed, filename), "digest": digest(proposed),
+            "to_generation": new.generation}
+
+
+# ---- Describing the ontology (DEV_UI 13.7), core/config_editing.py ----
+
+class DescribedFieldResponse(BaseModel):
+    display_name: str | None = None
+    description: str | None = None
+    # data or link: only a data field may be a title.
+    kind: str
+
+
+class DescribedTypeResponse(BaseModel):
+    display_name: str | None = None
+    plural_display_name: str | None = None
+    description: str | None = None
+    group: str | None = None
+    title_field: str | None = None
+    fields: dict[str, DescribedFieldResponse]
+
+
+class OntologyDescriptionsResponse(BaseModel):
+    digest: str
+    types: dict[str, DescribedTypeResponse]
+
+
+class DescriptionChange(BaseModel):
+    object_type: str
+    # None describes the type itself.
+    field: str | None = None
+    key: str
+    # None REMOVES the key, as the settings editor's null does.
+    value: str | None = None
+
+
+class DescriptionEditRequest(BaseModel):
+    digest: str
+    changes: list[DescriptionChange]
+
+
+def _proposed_descriptions(request: Request, body: DescriptionEditRequest) -> tuple[str, str]:
+    from core.config_editing import ONTOLOGY_FILE, ConfigEditError, apply_descriptions, digest
+
+    current = (request.app.state.runtime_paths.config_dir / ONTOLOGY_FILE).read_text()
+    if digest(current) != body.digest:
+        raise HTTPException(status_code=409, detail=(
+            f"{ONTOLOGY_FILE} has changed since you opened it. Load it again to see "
+            "the new version before changing it."))
+    try:
+        return current, apply_descriptions(current, [c.model_dump() for c in body.changes])
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+def _description_audit(body: DescriptionEditRequest) -> dict:
+    """The changes as the audit log's {dotted key: value}."""
+    return {".".join(p for p in (c.object_type, c.field, c.key) if p): c.value for c in body.changes}
+
+
+@router.get("/admin/ontology/descriptions", dependencies=[Depends(_no_store)],
+            response_model=OntologyDescriptionsResponse)
+def ontology_descriptions_route(request: Request,
+                                current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """What each type and field is called and described as, as
+    ontology_schema.yaml declares it -- absent as null, so the editor can
+    say a name is the humanised fallback rather than one somebody chose.
+
+    manage:deployment, as the settings: this is the deployment's
+    declaration, and a person who may change it may read all of it --
+    including types and fields their own role cannot see, whose NAMES
+    they are about to describe. Names and descriptions, never storage.
+    """
+    from core.config_editing import ONTOLOGY_FILE, current_descriptions, digest
+
+    _require_manage_deployment(request, current_user)
+    text = (request.app.state.runtime_paths.config_dir / ONTOLOGY_FILE).read_text()
+    return {"digest": digest(text), "types": current_descriptions(text)}
+
+
+@router.post("/admin/ontology/descriptions/preview", dependencies=[Depends(_no_store)],
+             response_model=ConfigEditPreviewResponse)
+def preview_ontology_descriptions_route(body: DescriptionEditRequest, request: Request,
+                                        current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The lines that would change, and nothing written."""
+    from core.config_editing import ONTOLOGY_FILE, diff
+
+    _require_manage_deployment(request, current_user)
+    current, proposed = _proposed_descriptions(request, body)
+    return {"diff": diff(current, proposed, ONTOLOGY_FILE)}
+
+
+@router.put("/admin/ontology/descriptions", dependencies=[Depends(_no_store)],
+            response_model=ConfigEditResponse)
+def apply_ontology_descriptions_route(body: DescriptionEditRequest, request: Request,
+                                      current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Writes the descriptions to ontology_schema.yaml and reloads.
+
+    AT ONCE, NO SECOND PERSON (decided 16 October): these change what
+    things are called, not what anyone can see or what data exists --
+    the same footing as the settings editor. The reload is what puts
+    the new names in front of every reader and the agent.
+    """
+    from core.config_editing import ONTOLOGY_FILE
+
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        current, proposed = _proposed_descriptions(request, body)
+        return _write_config_file(request, current_user, ONTOLOGY_FILE, current, proposed,
+                                  _description_audit(body))
 
 
 class GenerationSummary(BaseModel):

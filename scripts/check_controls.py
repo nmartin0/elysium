@@ -3107,6 +3107,44 @@ CONTROLS = [
         tests=["tests/integration/test_type_counts.py::TestOneFailureIsOneType::test_a_type_whose_count_fails_is_left_out"],
     ),
     Control(
+        describes="DEV_UI 13.7: a key off the describing allowlist is refused",
+        path="core/config_editing.py",
+        old=("        if key not in allowed:\n"
+             "            raise ConfigEditError(f\"{where}'s {key} cannot be edited here.\")"),
+        new="        if False:\n            pass",
+        tests=["tests/unit/test_describing_the_ontology_lines.py::TestTheAllowlist::test_shape_and_access_are_out_of_reach",
+               "tests/integration/test_describing_the_ontology.py::test_security_is_out_of_reach_however_it_is_asked"],
+    ),
+    Control(
+        describes="DEV_UI 13.7: an edit that would change the file's meaning is refused",
+        path="core/config_editing.py",
+        old="    if means != expected:\n        raise ConfigEditError(f\"That change could not be made",
+        new="    if False:\n        raise ConfigEditError(f\"That change could not be made",
+        tests=["tests/unit/test_describing_the_ontology_lines.py::TestTheMeaningCheck::test_a_layout_it_cannot_edit_cleanly_is_refused_not_mangled"],
+    ),
+    Control(
+        describes="DEV_UI 13.7: a value running onto lines below goes with it",
+        path="core/config_editing.py",
+        old="            del lines[at + 1:last + 1]",
+        new="            pass",
+        tests=["tests/unit/test_describing_the_ontology_lines.py::TestOnlyItsLines::test_a_folded_description_is_replaced_whole"],
+    ),
+    Control(
+        describes="DEV_UI 13.7: a hash inside a value is not a comment",
+        path="core/config_editing.py",
+        old="            if plain_yaml.safe_load(\"k:\" + tail[:at]) == {\"k\": old}:",
+        new="            if True:",
+        tests=["tests/unit/test_describing_the_ontology_lines.py::TestTextThatYamlWouldMisread::test_a_hash_inside_a_quoted_value_is_not_taken_for_a_comment"],
+    ),
+    Control(
+        describes="DEV_UI 13.7: a new key goes beside its kind, not under the last field",
+        path="core/config_editing.py",
+        old="    if after is not None and parent_line is not None:",
+        new="    if False:",
+        tests=["tests/unit/test_describing_the_ontology_lines.py::TestOnlyItsLines::test_a_new_key_goes_first_in_the_type_not_under_its_last_field",
+               "tests/integration/test_describing_the_ontology.py::test_only_the_changed_lines_differ"],
+    ),
+    Control(
         describes="INBOX: a merge counts only for someone who may write its type",
         path="api/routes.py",
         old="        if (authorize(current_user, roles, f\"write:{proposal.object_type}\")",
@@ -3206,21 +3244,33 @@ CONTROLS = [
     Control(
         describes="CONFIG-EDIT: a file changed since it was read is not overwritten",
         path="api/routes.py",
-        old="    if digest(current) != body.digest:",
-        new="    if False:",
+        old=("    if digest(current) != body.digest:\n        raise HTTPException(status_code=409, detail=(\n"
+             "            \"config.yaml has changed"),
+        new=("    if False:\n        raise HTTPException(status_code=409, detail=(\n"
+             "            \"config.yaml has changed"),
         tests=["tests/integration/test_editing_config_from_the_ui.py::test_a_change_since_it_was_read_is_refused_not_overwritten"],
+    ),
+    Control(
+        describes="DEV_UI 13.7: an ontology changed since it was read is not overwritten",
+        path="api/routes.py",
+        old=("    if digest(current) != body.digest:\n        raise HTTPException(status_code=409, detail=(\n"
+             "            f\"{ONTOLOGY_FILE} has changed"),
+        new=("    if False:\n        raise HTTPException(status_code=409, detail=(\n"
+             "            f\"{ONTOLOGY_FILE} has changed"),
+        tests=["tests/integration/test_describing_the_ontology.py::test_a_change_since_it_was_read_is_refused_not_overwritten"],
     ),
     Control(
         describes="CONFIG-EDIT: a file that would not load never reaches the disk",
         path="api/routes.py",
-        old="                load_deployment(candidate)\n",
-        new="                pass\n",
-        tests=["tests/integration/test_editing_config_from_the_ui.py::test_a_file_that_would_not_load_never_reaches_the_disk"],
+        old="            load_deployment(candidate)\n",
+        new="            pass\n",
+        tests=["tests/integration/test_editing_config_from_the_ui.py::test_a_file_that_would_not_load_never_reaches_the_disk",
+               "tests/integration/test_describing_the_ontology.py::test_a_title_the_loader_refuses_never_reaches_the_disk"],
     ),
     Control(
         describes="CONFIG-EDIT: a failed reload puts the old file back",
         path="api/routes.py",
-        old="            staged.write_text(current)\n            os.replace(staged, path)\n",
+        old="        staged.write_text(current)\n        os.replace(staged, path)\n",
         new="",
         tests=["tests/integration/test_editing_config_from_the_ui.py::test_a_reload_that_fails_puts_the_old_file_back"],
     ),
