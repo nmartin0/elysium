@@ -8,6 +8,7 @@ from core.config_editing import (
     REMOVED_MARK,
     ConfigEditError,
     apply_descriptions,
+    apply_labels,
     current_descriptions,
     diff,
 )
@@ -164,3 +165,37 @@ class TestTheMeaningCheck:
         with pytest.raises(ConfigEditError):
             apply_descriptions(flow, [{"object_type": "Account", "field": "balance",
                                        "key": "description", "value": "x"}])
+
+
+class TestLabels:
+    """apply_labels: a field's `classification:`, by the same line editor."""
+
+    def test_one_label_is_a_word_and_several_a_list_on_one_line(self):
+        one = apply_labels(SCHEMA, [{"object_type": "Account", "field": "balance", "labels": ["financial"]}])
+        two = apply_labels(SCHEMA, [{"object_type": "Account", "field": "balance",
+                                     "labels": ["financial", "pii"]}])
+
+        assert "        classification: financial" in one.splitlines()
+        assert "        classification: [financial, pii]" in two.splitlines()
+
+    def test_none_removes_it_and_it_reads_back(self):
+        labelled = apply_labels(SCHEMA, [{"object_type": "Account", "field": "balance", "labels": ["pii"]}])
+        cleared = apply_labels(labelled, [{"object_type": "Account", "field": "balance", "labels": []}])
+
+        assert current_descriptions(labelled)["Account"]["fields"]["balance"]["labels"] == ["pii"]
+        assert current_descriptions(cleared)["Account"]["fields"]["balance"]["labels"] == []
+
+    def test_a_repeated_label_is_one(self):
+        edited = apply_labels(SCHEMA, [{"object_type": "Account", "field": "balance",
+                                        "labels": ["pii", "pii"]}])
+
+        assert yaml.safe_load(edited)["object_types"]["Account"]["fields"]["balance"]["classification"] == "pii"
+
+    @pytest.mark.parametrize("label", ["PII", "pii x", "1pii", "pi-i", ""])
+    def test_a_label_has_one_spelling(self, label):
+        with pytest.raises(ConfigEditError, match="not a label"):
+            apply_labels(SCHEMA, [{"object_type": "Account", "field": "balance", "labels": [label]}])
+
+    def test_only_a_fields_classification_is_reachable(self):
+        with pytest.raises(ConfigEditError, match="no field"):
+            apply_labels(SCHEMA, [{"object_type": "Customer", "field": "security", "labels": ["pii"]}])

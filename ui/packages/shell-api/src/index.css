@@ -3343,6 +3343,22 @@
   /* DEV_UI 13.5: a role change in access terms. GAINS carry the warning
      colour as a rule beside them -- widening access is the case 13.6
      reserves attention for; losses are the safe direction, so quiet. */
+  .config-proposals {
+    margin-block: var(--space-normal);
+  }
+
+  .config-proposals__title {
+    margin-block-end: var(--space-snug);
+  }
+
+  .config-proposals__reason {
+    margin-block: var(--space-snug);
+  }
+
+  .config-proposals__why {
+    font-weight: 600;
+  }
+
   .roles__impact {
     margin: var(--space-tight) 0;
   }

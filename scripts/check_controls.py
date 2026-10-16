@@ -3145,6 +3145,77 @@ CONTROLS = [
                "tests/integration/test_describing_the_ontology.py::test_only_the_changed_lines_differ"],
     ),
     Control(
+        describes="DEV_UI 13.7 labels: a widening waits rather than applying",
+        path="api/routes.py",
+        old="        if not impact[\"widens\"]:\n            result = _write_config_file(",
+        new="        if True:\n            result = _write_config_file(",
+        tests=["tests/integration/test_access_labels.py::TestWhenLabelsDecideAccess::test_removing_a_label_opens_the_field_and_waits"],
+    ),
+    Control(
+        describes="DEV_UI 13.7 labels: widening is asked of the permission code, gains included",
+        path="core/role_impact.py",
+        old='_GAINS = ("types_gained", "fields_gained", "actions_gained", "other_gained")',
+        new='_GAINS = ("types_gained", "actions_gained", "other_gained")',
+        tests=["tests/integration/test_access_labels.py::TestWhenLabelsDecideAccess::test_adding_a_label_can_open_a_field_too"],
+    ),
+    Control(
+        describes="DEV_UI 13.7 proposals: the proposer cannot approve their own",
+        path="api/routes.py",
+        old="        if proposal.proposed_by == current_user.user_id:\n            raise HTTPException(status_code=409",
+        new="        if False:\n            raise HTTPException(status_code=409",
+        tests=["tests/integration/test_access_labels.py::TestTheSecondPerson::test_the_proposer_cannot_approve_their_own"],
+    ),
+    Control(
+        describes="DEV_UI 13.7 proposals: approving is for role managers",
+        path="api/routes.py",
+        old=(
+            "    _require_manage_roles(request, current_user)\n"
+            "    store = _proposals(request)\n"
+            "    with _config_edit_lock:"
+        ),
+        new="    store = _proposals(request)\n    with _config_edit_lock:",
+        tests=["tests/integration/test_access_labels.py::TestTheSecondPerson::test_a_deployment_manager_cannot_approve"],
+    ),
+    Control(
+        describes="DEV_UI 13.7 proposals: a file changed since is stale, not merged",
+        path="api/routes.py",
+        old=(
+            "        if any(digest(current[name]) != proposal.base.get(name) for name in proposal.files):\n"
+            "            reason = ("
+        ),
+        new="        if False:\n            reason = (",
+        tests=["tests/integration/test_access_labels.py::TestTheSecondPerson::test_a_file_changed_since_is_stale_not_merged"],
+    ),
+    Control(
+        describes="DEV_UI 13.7 proposals: rejecting someone else's needs manage:roles",
+        path="api/routes.py",
+        old="    if not own:\n        _require_manage_roles(request, current_user)\n",
+        new="",
+        tests=["tests/integration/test_access_labels.py::TestTheSecondPerson::test_only_role_managers_reject_someone_elses"],
+    ),
+    Control(
+        describes="DEV_UI 13.7 labels: a widening needs a reason",
+        path="api/routes.py",
+        old=(
+            "    if not reason:\n"
+            "        raise HTTPException(status_code=400, detail=(\n"
+            "            \"This lets people read more"
+        ),
+        new=(
+            "    if False:\n"
+            "        raise HTTPException(status_code=400, detail=(\n"
+            "            \"This lets people read more"
+        ),
+        tests=["tests/integration/test_access_labels.py::TestWhenLabelsDecideAccess::test_a_widening_without_a_reason_is_refused"],
+    ),
+    Control(
+        describes="DEV_UI 13.7 labels: a label has one spelling",
+        path="core/config_editing.py",
+        old="            if not shape.match(label):",
+        new="            if False:",
+        tests=["tests/unit/test_describing_the_ontology_lines.py::TestLabels::test_a_label_has_one_spelling"],
+    ),
+    Control(
         describes="INBOX: a merge counts only for someone who may write its type",
         path="api/routes.py",
         old="        if (authorize(current_user, roles, f\"write:{proposal.object_type}\")",
@@ -3253,7 +3324,7 @@ CONTROLS = [
     Control(
         describes="DEV_UI 13.7: an ontology changed since it was read is not overwritten",
         path="api/routes.py",
-        old=("    if digest(current) != body.digest:\n        raise HTTPException(status_code=409, detail=(\n"
+        old=("    if digest(current) != read_digest:\n        raise HTTPException(status_code=409, detail=(\n"
              "            f\"{ONTOLOGY_FILE} has changed"),
         new=("    if False:\n        raise HTTPException(status_code=409, detail=(\n"
              "            f\"{ONTOLOGY_FILE} has changed"),
@@ -3262,15 +3333,15 @@ CONTROLS = [
     Control(
         describes="CONFIG-EDIT: a file that would not load never reaches the disk",
         path="api/routes.py",
-        old="            load_deployment(candidate)\n",
-        new="            pass\n",
+        old="        _load_candidate(request, {name: proposed for name, (_, proposed) in files.items()})\n",
+        new="        pass\n",
         tests=["tests/integration/test_editing_config_from_the_ui.py::test_a_file_that_would_not_load_never_reaches_the_disk",
                "tests/integration/test_describing_the_ontology.py::test_a_title_the_loader_refuses_never_reaches_the_disk"],
     ),
     Control(
         describes="CONFIG-EDIT: a failed reload puts the old file back",
         path="api/routes.py",
-        old="        staged.write_text(current)\n        os.replace(staged, path)\n",
+        old="            staged.write_text(files[filename][0])\n            os.replace(staged, path)\n",
         new="",
         tests=["tests/integration/test_editing_config_from_the_ui.py::test_a_reload_that_fails_puts_the_old_file_back"],
     ),

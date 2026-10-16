@@ -90,4 +90,8 @@
     font-weight: normal;
     padding-block-start: 0.5rem;
   }
+
+  .labels__reason {
+    margin-block-start: 1rem;
+  }
 }

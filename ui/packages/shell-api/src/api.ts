@@ -1858,6 +1858,8 @@ export interface DescribedField {
   description: string | null
   /** data or link: only a data field may be a title. */
   kind: string
+  /** Its access labels (`classification:`); empty for none. */
+  labels: string[]
 }
 
 export interface DescribedType {
@@ -1872,6 +1874,8 @@ export interface DescribedType {
 export interface OntologyDescriptions {
   digest: string
   types: Record<string, DescribedType>
+  /** Whether labels decide who reads a field here, or only say what it holds. */
+  label_enforcement: boolean
 }
 
 /** One key changed. field null describes the type; value null removes the key. */
@@ -1906,6 +1910,93 @@ export async function applyOntologyDescriptions(
     body: JSON.stringify({ digest, changes }),
   })
   return (await response.json()) as { diff: string[]; digest: string; to_generation: number }
+}
+
+/** A configuration change's effect on every role it touches
+ *  (core/role_impact.config_access_impact). */
+export interface AccessImpact {
+  /** Whether anyone could read, know of or run more afterwards. */
+  widens: boolean
+  roles: RoleImpact[]
+}
+
+/** A field's labels after the change; an empty list removes them. */
+export interface LabelChange {
+  object_type: string
+  field: string
+  labels: string[]
+}
+
+export interface LabelPreview {
+  diff: string[]
+  impact: AccessImpact
+  /** It widens access, so it would wait for a role manager. */
+  needs_approval: boolean
+  label_enforcement: boolean
+}
+
+export interface LabelEditResult {
+  status: 'applied' | 'waiting'
+  diff: string[]
+  to_generation?: number | null
+  proposal_id?: string | null
+}
+
+export async function previewLabels(digest: string, changes: LabelChange[]): Promise<LabelPreview> {
+  const response = await apiFetchOrThrow('/admin/ontology/labels/preview', {
+    method: 'POST',
+    body: JSON.stringify({ digest, changes }),
+  })
+  return (await response.json()) as LabelPreview
+}
+
+/** Applies now, or -- when it widens access -- proposes it, with the reason. */
+export async function applyLabels(
+  digest: string,
+  changes: LabelChange[],
+  reason: string | null,
+): Promise<LabelEditResult> {
+  const response = await apiFetchOrThrow('/admin/ontology/labels', {
+    method: 'PUT',
+    body: JSON.stringify({ digest, changes, reason }),
+  })
+  return (await response.json()) as LabelEditResult
+}
+
+/** A configuration change waiting for a role manager who did not propose it. */
+export interface ConfigProposal {
+  proposal_id: string
+  kind: 'labels' | 'restore'
+  summary: string
+  reason: string
+  proposed_by: string
+  proposed_at: string
+  diff: string[]
+  /** Recomputed against what runs now; null when it no longer loads. */
+  impact: AccessImpact | null
+  /** A file changed since it was proposed: approving would be refused. */
+  stale: boolean
+  problem: string | null
+}
+
+export async function getConfigProposals(): Promise<ConfigProposal[]> {
+  const response = await apiFetchOrThrow('/admin/config-proposals')
+  return ((await response.json()) as { proposals: ConfigProposal[] }).proposals
+}
+
+export async function approveConfigProposal(proposalId: string): Promise<{ to_generation: number }> {
+  const response = await apiFetchOrThrow(`/admin/config-proposals/${encodeURIComponent(proposalId)}/approve`, {
+    method: 'POST',
+  })
+  return (await response.json()) as { to_generation: number }
+}
+
+/** Rejects someone else's, or withdraws your own. */
+export async function rejectConfigProposal(proposalId: string): Promise<{ status: 'rejected' | 'withdrawn' }> {
+  const response = await apiFetchOrThrow(`/admin/config-proposals/${encodeURIComponent(proposalId)}/reject`, {
+    method: 'POST',
+  })
+  return (await response.json()) as { status: 'rejected' | 'withdrawn' }
 }
 
 export async function getConfigHistory(): Promise<ConfigHistory> {

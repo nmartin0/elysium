@@ -31,11 +31,15 @@ at load (policy_validation), so a misspelt grant cannot pass silently. What is c
 identifier-like -- so "PII" and "pii " cannot quietly become three
 labels for one thing.
 
-REMOVING ONE IS AN ONTOLOGY EDIT, and recorded as one (config history).
-Foundry calls removal "a sensitive action" requiring its own permission;
-here it is whoever may change the ontology, which is the same set of
-people who could have declared the field unclassified in the first
-place.
+CHANGING ONE IS AN ONTOLOGY EDIT, recorded as one (config history), and
+since 16 October a widening one is two people's. Foundry calls removal
+"a sensitive action" requiring its own permission; here a label change
+from the UI that lets anyone read more waits for a holder of
+manage:roles other than its proposer (api/routes.apply_labels_route).
+"Lets anyone read more" is asked of compile_label_access below, through
+core/role_impact -- not inferred from removal, because a label GRANTS as
+well as restricts: adding one opens the field to a role holding it.
+An operator editing the file by hand is not gated; the file is theirs.
 """
 
 import re

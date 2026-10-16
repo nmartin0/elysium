@@ -1678,61 +1678,100 @@ def apply_config_settings_route(body: ConfigEditRequest, request: Request,
 
 def _write_config_file(request: Request, current_user: UserRecord, filename: str,
                        current: str, proposed: str, changes: dict) -> dict:
-    """Puts `proposed` in place of `filename` and reloads. Called holding
-    _config_edit_lock, after the caller has checked the digest.
+    """One file; see _write_config_files."""
+    return _write_config_files(request, current_user, {filename: (current, proposed)}, changes)
+
+
+def _write_config_files(request: Request, current_user: UserRecord,
+                        files: "dict[str, tuple[str, str]]", changes: dict) -> dict:
+    """Puts each proposed text in place of its file and reloads. Called
+    holding _config_edit_lock, after the caller has checked the files
+    are still what was read. `files` is {filename: (current, proposed)}.
 
     VALIDATE, WRITE, RELOAD, AND PUT IT BACK IF THE RELOAD FAILS -- the
     role-change route's "save, reload, undo", with the loader run first
-    against a copy of the configuration with the new file in it, so a
-    file that would not load never reaches the disk at all. The undo is
-    for what only a full build finds.
+    against a copy of the configuration with the new files in it, so a
+    configuration that would not load never reaches the disk at all.
+    The undo is for what only a full build finds.
 
-    ATOMIC ON DISK: written beside the file and renamed over it, so a
-    crash mid-write leaves the old file or the new one, never half.
+    ATOMIC PER FILE: each is written beside itself and renamed over it,
+    so a crash mid-write leaves the old file or the new one, never half.
+    Several files are not one rename; a crash between two leaves a mix,
+    which the next load judges like any hand edit.
 
-    AUDITED EITHER WAY, with the values -- each editor's allowlist makes
-    them numbers, switches, fixed choices and descriptive text, never a
-    secret.
+    AUDITED EITHER WAY, one entry per file, with the values -- each
+    editor's allowlist makes them numbers, switches, fixed choices,
+    descriptive text and labels, never a secret.
     """
-    import shutil
-    import tempfile
-
     from core.config_editing import diff, digest
-    from core.deployment_loader import load_deployment
 
     audit = _generation(request).mediator.audit_log
-    path = request.app.state.runtime_paths.config_dir / filename
+    config_dir = request.app.state.runtime_paths.config_dir
 
     def refused(status: int, reason: str):
-        audit.log_config_edit(current_user.user_id, "rejected", filename, changes,
-                              digest(current), None, detail=reason[:500])
+        for filename, (current, _) in files.items():
+            audit.log_config_edit(current_user.user_id, "rejected", filename, changes,
+                                  digest(current), None, detail=reason[:500])
         return HTTPException(status_code=status, detail=reason)
 
-    with tempfile.TemporaryDirectory() as scratch:
-        candidate = Path(scratch) / "config"
-        shutil.copytree(path.parent, candidate)
-        (candidate / filename).write_text(proposed)
-        try:
-            load_deployment(candidate)
-        except Exception as e:
-            raise refused(400, f"That configuration would not load: {e}") from e
+    try:
+        _load_candidate(request, {name: proposed for name, (_, proposed) in files.items()})
+    except HTTPException as e:
+        raise refused(e.status_code, e.detail) from e
 
-    staged = path.with_name(f".{path.name}.elysium-edit")
-    staged.write_text(proposed)
-    os.replace(staged, path)
+    written = []
+    for filename, (_, proposed) in files.items():
+        path = config_dir / filename
+        staged = path.with_name(f".{path.name}.elysium-edit")
+        staged.write_text(proposed)
+        os.replace(staged, path)
+        written.append(filename)
     try:
         new = reload_generation(request.app, requested_by=current_user.user_id)
     except Exception as e:
-        staged.write_text(current)
-        os.replace(staged, path)
+        for filename in written:
+            path = config_dir / filename
+            staged = path.with_name(f".{path.name}.elysium-edit")
+            staged.write_text(files[filename][0])
+            os.replace(staged, path)
         if isinstance(e, ReloadInProgress):
             raise refused(409, str(e)) from e
         raise refused(400, f"The change was not applied: the configuration would not reload ({e}).") from e
 
-    audit.log_config_edit(current_user.user_id, "applied", filename, changes,
-                          digest(current), digest(proposed))
-    return {"diff": diff(current, proposed, filename), "digest": digest(proposed),
+    for filename, (current, proposed) in files.items():
+        audit.log_config_edit(current_user.user_id, "applied", filename, changes,
+                              digest(current), digest(proposed))
+    return {"diff": [line for filename, (current, proposed) in files.items()
+                     for line in diff(current, proposed, filename)],
+            "digest": digest(next(iter(files.values()))[1]),
             "to_generation": new.generation}
+
+
+def _load_candidate(request: Request, replacements: "dict[str, str]"):
+    """The configuration as it would load with these files replaced --
+    with the roles actually in force, as a running generation has them
+    -- or a 400 saying why it would not load.
+
+    THE SAME LOAD a reload does, on a copy, so nothing that passes here
+    can fail to load for a reason this did not see; and the result is
+    what the access comparison is asked about, so the preview and the
+    approval describe the configuration that would really run.
+    """
+    import shutil
+    import tempfile
+
+    from core.deployment_loader import _with_effective_roles, load_deployment
+
+    paths = request.app.state.runtime_paths
+    with tempfile.TemporaryDirectory() as scratch:
+        candidate = Path(scratch) / "config"
+        shutil.copytree(paths.config_dir, candidate)
+        for filename, text in replacements.items():
+            (candidate / filename).write_text(text)
+        try:
+            return _with_effective_roles(load_deployment(candidate), paths.data_dir)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"That configuration would not load: {e}") from e
 
 
 # ---- Describing the ontology (DEV_UI 13.7), core/config_editing.py ----
@@ -1742,6 +1781,8 @@ class DescribedFieldResponse(BaseModel):
     description: str | None = None
     # data or link: only a data field may be a title.
     kind: str
+    # Its access labels (`classification:`), [] for none.
+    labels: list[str] = []
 
 
 class DescribedTypeResponse(BaseModel):
@@ -1756,6 +1797,9 @@ class DescribedTypeResponse(BaseModel):
 class OntologyDescriptionsResponse(BaseModel):
     digest: str
     types: dict[str, DescribedTypeResponse]
+    # Whether labels decide who reads a field here, or only say what it
+    # holds -- the editor says which, because it changes what a label is.
+    label_enforcement: bool = False
 
 
 class DescriptionChange(BaseModel):
@@ -1772,14 +1816,24 @@ class DescriptionEditRequest(BaseModel):
     changes: list[DescriptionChange]
 
 
-def _proposed_descriptions(request: Request, body: DescriptionEditRequest) -> tuple[str, str]:
-    from core.config_editing import ONTOLOGY_FILE, ConfigEditError, apply_descriptions, digest
+def _ontology_as_read(request: Request, read_digest: str) -> str:
+    """ontology_schema.yaml now, if it is still the file the editor read;
+    a 409 if it has moved -- an operator editing by hand and the UI
+    writing must not silently overwrite each other."""
+    from core.config_editing import ONTOLOGY_FILE, digest
 
     current = (request.app.state.runtime_paths.config_dir / ONTOLOGY_FILE).read_text()
-    if digest(current) != body.digest:
+    if digest(current) != read_digest:
         raise HTTPException(status_code=409, detail=(
             f"{ONTOLOGY_FILE} has changed since you opened it. Load it again to see "
             "the new version before changing it."))
+    return current
+
+
+def _proposed_descriptions(request: Request, body: DescriptionEditRequest) -> tuple[str, str]:
+    from core.config_editing import ConfigEditError, apply_descriptions
+
+    current = _ontology_as_read(request, body.digest)
     try:
         return current, apply_descriptions(current, [c.model_dump() for c in body.changes])
     except ConfigEditError as e:
@@ -1808,7 +1862,8 @@ def ontology_descriptions_route(request: Request,
 
     _require_manage_deployment(request, current_user)
     text = (request.app.state.runtime_paths.config_dir / ONTOLOGY_FILE).read_text()
-    return {"digest": digest(text), "types": current_descriptions(text)}
+    return {"digest": digest(text), "types": current_descriptions(text),
+            "label_enforcement": bool(_generation(request).config.label_enforcement)}
 
 
 @router.post("/admin/ontology/descriptions/preview", dependencies=[Depends(_no_store)],
@@ -1841,6 +1896,283 @@ def apply_ontology_descriptions_route(body: DescriptionEditRequest, request: Req
         current, proposed = _proposed_descriptions(request, body)
         return _write_config_file(request, current_user, ONTOLOGY_FILE, current, proposed,
                                   _description_audit(body))
+
+
+# ---- Access labels (DEV_UI 13.7, decided 16 October) ----
+
+class LabelChange(BaseModel):
+    object_type: str
+    field: str
+    # The field's labels after; [] removes them all.
+    labels: list[str]
+
+
+class LabelEditRequest(BaseModel):
+    digest: str
+    changes: list[LabelChange]
+    # Required when the change widens access: shown to the approver.
+    reason: str | None = None
+
+
+class LabelPreviewResponse(BaseModel):
+    diff: list[str]
+    # core/role_impact.config_access_impact: {"widens", "roles": [...]}
+    impact: dict
+    needs_approval: bool
+    label_enforcement: bool
+
+
+class LabelEditResponse(BaseModel):
+    # "applied", or "waiting" for a second person.
+    status: str
+    diff: list[str]
+    to_generation: int | None = None
+    proposal_id: str | None = None
+
+
+def _proposed_labels(request: Request, body: LabelEditRequest) -> tuple[str, str]:
+    from core.config_editing import ConfigEditError, apply_labels
+
+    current = _ontology_as_read(request, body.digest)
+    try:
+        return current, apply_labels(current, [c.model_dump() for c in body.changes])
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+def _access_impact(request: Request, replacements: "dict[str, str]") -> tuple[Any, dict]:
+    """The candidate configuration, and what it would do to access
+    compared with the one running now."""
+    from core.role_impact import config_access_impact
+
+    # BOTH SIDES FROM THE FILES, NOT "BEFORE" FROM THIS REQUEST'S PIN.
+    # These run inside _config_edit_lock, and the pin was taken before
+    # the wait: a role change approved meanwhile would be counted as
+    # this change's doing, or could hide what this change opens. Loading
+    # what is on disk now is what the reload after it will start from.
+    # (The pin's one sanctioned exception, latest_generation, stays one.)
+    before = _load_candidate(request, {})
+    candidate = _load_candidate(request, replacements)
+    every, _active = _holders(request)
+    return candidate, config_access_impact(_generation(request).mediator, before, candidate, every)
+
+
+def _label_summary(body: LabelEditRequest, current: str) -> str:
+    """One line per field, "Customer.email: pii → none", for the approver."""
+    from core.config_editing import current_descriptions
+
+    described = current_descriptions(current)
+    lines = []
+    for change in body.changes:
+        was = (described.get(change.object_type, {}).get("fields", {})
+               .get(change.field, {}).get("labels") or [])
+        lines.append(f"{change.object_type}.{change.field}: {', '.join(was) or 'none'} → "
+                     f"{', '.join(change.labels) or 'none'}")
+    return "; ".join(lines)
+
+
+@router.post("/admin/ontology/labels/preview", dependencies=[Depends(_no_store)],
+             response_model=LabelPreviewResponse)
+def preview_labels_route(body: LabelEditRequest, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The lines that would change, what that does to access, and whether
+    it would wait for a second person. Nothing written."""
+    from core.config_editing import ONTOLOGY_FILE, diff
+
+    _require_manage_deployment(request, current_user)
+    current, proposed = _proposed_labels(request, body)
+    candidate, impact = _access_impact(request, {ONTOLOGY_FILE: proposed})
+    return {"diff": diff(current, proposed, ONTOLOGY_FILE), "impact": impact,
+            "needs_approval": impact["widens"],
+            "label_enforcement": bool(candidate.label_enforcement)}
+
+
+@router.put("/admin/ontology/labels", dependencies=[Depends(_no_store)],
+            response_model=LabelEditResponse)
+def apply_labels_route(body: LabelEditRequest, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Applies the labels now, or -- when anyone could read more
+    afterwards -- proposes them for a holder of manage:roles to approve.
+
+    THE RULE IS THE PERMISSION CODE'S ANSWER, not the edit's direction
+    (core/role_impact.config_access_impact): with enforcement off, labels
+    decide nothing and every change applies at once; with it on, adding
+    a label can open a field as surely as removing one can.
+    """
+    from core.config_editing import ONTOLOGY_FILE, diff, digest
+
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        current, proposed = _proposed_labels(request, body)
+        _candidate, impact = _access_impact(request, {ONTOLOGY_FILE: proposed})
+        changes = {f"{c.object_type}.{c.field}.classification": c.labels for c in body.changes}
+        if not impact["widens"]:
+            result = _write_config_file(request, current_user, ONTOLOGY_FILE, current, proposed, changes)
+            return {"status": "applied", "diff": result["diff"], "to_generation": result["to_generation"]}
+
+        reason = _reason(body.reason)
+        proposal_id = _proposals(request).propose(
+            "labels", _label_summary(body, current), {ONTOLOGY_FILE: proposed},
+            {ONTOLOGY_FILE: digest(current)}, reason, current_user.user_id)
+        _generation(request).mediator.audit_log.log_config_edit(
+            current_user.user_id, "proposed", ONTOLOGY_FILE, changes, digest(current), digest(proposed),
+            detail=f"proposal {proposal_id}: {reason}"[:500])
+        return {"status": "waiting", "diff": diff(current, proposed, ONTOLOGY_FILE),
+                "proposal_id": proposal_id}
+
+
+def _reason(text: "str | None") -> str:
+    from core.config_proposals import MAX_REASON
+
+    reason = (text or "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail=(
+            "This lets people read more than they can now, so it waits for someone who "
+            "manages roles to approve it. Say why, for them."))
+    if len(reason) > MAX_REASON:
+        raise HTTPException(status_code=400, detail=f"A reason is at most {MAX_REASON} characters.")
+    return reason
+
+
+def _proposals(request: Request):
+    from core.config_proposals import ConfigProposalStore
+
+    return ConfigProposalStore(request.app.state.runtime_paths.data_dir / "config_proposals.db")
+
+
+# ---- Configuration changes waiting for a second person ----
+
+class ConfigProposalResponse(BaseModel):
+    proposal_id: str
+    kind: str
+    summary: str
+    reason: str
+    proposed_by: str
+    proposed_at: str
+    diff: list[str]
+    # Recomputed against what runs NOW; null when it cannot be (the
+    # proposal no longer loads), with `problem` saying why.
+    impact: dict | None = None
+    # A file has changed since it was proposed: approving would refuse.
+    stale: bool
+    problem: str | None = None
+
+
+class ConfigProposalsResponse(BaseModel):
+    proposals: list[ConfigProposalResponse]
+
+
+def _require_roles_or_deployment(request: Request, current_user: UserRecord) -> None:
+    roles = _generation(request).config.roles
+    if not (authorize(current_user, roles, "manage:roles")
+            or authorize(current_user, roles, "manage:deployment")):
+        raise HTTPException(status_code=403, detail="Needs manage:roles or manage:deployment")
+
+
+def _proposal_state(request: Request, proposal) -> dict:
+    """What a waiting proposal would do if approved now."""
+    from core.config_editing import diff, digest
+
+    config_dir = request.app.state.runtime_paths.config_dir
+    now = {name: (config_dir / name).read_text() if (config_dir / name).exists() else ""
+           for name in proposal.files}
+    stale = any(digest(now[name]) != proposal.base.get(name) for name in proposal.files)
+    impact, problem = None, None
+    try:
+        _candidate, impact = _access_impact(request, proposal.files)
+    except HTTPException as e:
+        problem = e.detail
+    return {
+        "proposal_id": proposal.proposal_id, "kind": proposal.kind, "summary": proposal.summary,
+        "reason": proposal.reason, "proposed_by": proposal.proposed_by,
+        "proposed_at": proposal.proposed_at,
+        "diff": [line for name, text in proposal.files.items() for line in diff(now[name], text, name)],
+        "impact": impact, "stale": stale, "problem": problem,
+    }
+
+
+@router.get("/admin/config-proposals", dependencies=[Depends(_no_store)],
+            response_model=ConfigProposalsResponse)
+def config_proposals_route(request: Request,
+                           current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Configuration changes waiting for a second person: to role
+    managers, who decide them, and to deployment managers, who propose
+    them and may withdraw their own."""
+    _require_roles_or_deployment(request, current_user)
+    return {"proposals": [_proposal_state(request, p) for p in _proposals(request).pending()]}
+
+
+@router.post("/admin/config-proposals/{proposal_id}/approve", dependencies=[Depends(_no_store)],
+             response_model=ConfigEditResponse)
+def approve_config_proposal_route(proposal_id: str, request: Request,
+                                  current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Writes a proposal's files and reloads, for a role manager who did
+    not propose it.
+
+    THE GUARDS, each refusing rather than guessing:
+      FOUR-EYES  the proposer cannot approve their own
+      STALE      a file changed since it was proposed: the approver would
+                 be agreeing to a merge nobody reviewed
+      AUTHORITY  the proposer must still be able to propose -- an active
+                 account holding manage:deployment -- as a role change's
+                 proposer must still hold what they hand out
+      VALID      the same load a reload does, on a copy, first
+    """
+    from core.config_editing import digest
+
+    _require_manage_roles(request, current_user)
+    store = _proposals(request)
+    with _config_edit_lock:
+        proposal = store.get(proposal_id)
+        if proposal is None or proposal.status != "pending":
+            raise HTTPException(status_code=404, detail="No such waiting change")
+        if proposal.proposed_by == current_user.user_id:
+            raise HTTPException(status_code=409, detail=(
+                "You proposed this; someone else who manages roles must approve it."))
+        # The roles in force NOW, from the files, for the same reason
+        # as _access_impact: this request's pin predates the lock.
+        config = _load_candidate(request, {})
+        proposer = _current_authority(request, proposal.proposed_by, config.roles)
+        if proposer is None or not proposer("manage:deployment"):
+            reason = (f"{proposal.proposed_by} can no longer change the deployment, so "
+                      "their proposal cannot be applied.")
+            store.decide(proposal_id, "stale", current_user.user_id, reason)
+            raise HTTPException(status_code=409, detail=reason)
+        config_dir = request.app.state.runtime_paths.config_dir
+        current = {name: (config_dir / name).read_text() for name in proposal.files}
+        if any(digest(current[name]) != proposal.base.get(name) for name in proposal.files):
+            reason = ("The configuration has changed since this was proposed, so it no longer "
+                      "describes what approving it would do. It needs proposing again.")
+            store.decide(proposal_id, "stale", current_user.user_id, reason)
+            raise HTTPException(status_code=409, detail=reason)
+        try:
+            result = _write_config_files(
+                request, current_user,
+                {name: (current[name], text) for name, text in proposal.files.items()},
+                {"proposal": proposal_id, "proposed_by": proposal.proposed_by})
+        except HTTPException as e:
+            store.decide(proposal_id, "failed", current_user.user_id, str(e.detail)[:500])
+            raise
+        store.decide(proposal_id, "applied", current_user.user_id)
+        return result
+
+
+@router.post("/admin/config-proposals/{proposal_id}/reject", dependencies=[Depends(_no_store)])
+def reject_config_proposal_route(proposal_id: str, request: Request,
+                                 current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Declines a waiting change -- a role manager rejecting it, or its
+    proposer withdrawing it."""
+    _require_roles_or_deployment(request, current_user)
+    store = _proposals(request)
+    proposal = store.get(proposal_id)
+    if proposal is None or proposal.status != "pending":
+        raise HTTPException(status_code=404, detail="No such waiting change")
+    own = proposal.proposed_by == current_user.user_id
+    if not own:
+        _require_manage_roles(request, current_user)
+    if not store.decide(proposal_id, "withdrawn" if own else "rejected", current_user.user_id):
+        raise HTTPException(status_code=404, detail="No such waiting change")
+    return {"status": "withdrawn" if own else "rejected"}
 
 
 class GenerationSummary(BaseModel):

@@ -73,12 +73,67 @@ def role_change_impact(config: Any, mediator: Any, role_name: str,
 
     declared = deep_freeze(_freeze_roles(resulting_roles(config.roles, role_name, after)))
     proposed = access_roles(dataclasses.replace(config, roles=declared))
-    current = mediator.roles
+    return _one_role(mediator, mediator.roles, mediator, proposed, role_name,
+                     grants_of(config.roles, role_name), after,
+                     set(config.action_types or {}), holders)
 
-    before_view = _view(mediator, current, role_name) if role_name in current else {}
-    after_view = _view(mediator, proposed, role_name) if role_name in proposed else {}
-    types_gained, types_lost = _compare(_type_levels(before_view, current, role_name),
-                                        _type_levels(after_view, proposed, role_name))
+
+def config_access_impact(mediator: Any, before: Any, after: Any,
+                         holders: "dict[str, int]") -> dict:
+    """What replacing configuration `before` with `after` would do, role
+    by role, in the same access terms as a role change -- for an edit to
+    the ontology's labels, or a whole earlier version put back.
+
+    BOTH SIDES ARE COMPILED HERE, from their configurations, rather than
+    the running mediator standing in for "before": the comparison is
+    then like for like, schema and roles each from its own side. A
+    label changes the SCHEMA, and access_roles compiles labels into
+    grants against the schema it is given.
+
+    `widens` is the question the approval rule asks (decided 16
+    October): may anyone read, know of or run something they could not
+    before. NOT "was a label removed" -- with enforcement on, ADDING a
+    label opens a field to a role that holds read:label:<it> without a
+    grant for the field.
+    """
+    from core.deployment_loader import access_roles
+
+    def probe(config):
+        copy_ = copy.copy(mediator)
+        copy_.schema = config.schema
+        copy_.roles = access_roles(config)
+        return copy_
+
+    old, new = probe(before), probe(after)
+    actions = set(before.action_types or {}) | set(after.action_types or {})
+    changed = []
+    for role_name in sorted(set(before.roles) | set(after.roles)):
+        impact = _one_role(old, old.roles, new, new.roles, role_name,
+                           _declared(before.roles, role_name), _declared(after.roles, role_name),
+                           actions, holders.get(role_name, 0))
+        if any(impact[key] for key in _CHANGES) or impact["removes_role"]:
+            changed.append(impact)
+    return {"widens": any(impact[key] for impact in changed for key in _GAINS),
+            "roles": changed}
+
+
+_GAINS = ("types_gained", "fields_gained", "actions_gained", "other_gained")
+_CHANGES = (*_GAINS, "types_lost", "fields_lost", "actions_lost", "other_lost")
+
+
+def _declared(roles, role_name: str) -> "list | None":
+    role = roles.get(role_name)
+    return None if role is None else list(role.get("allowed_actions") or ())
+
+
+def _one_role(old: Any, old_roles: dict, new: Any, new_roles: dict, role_name: str,
+              before_grants: "list | None", after: "list | None", actions: set,
+              holders: int) -> dict:
+    """One role's access under `old` and under `new`, compared."""
+    before_view = _view(old, old_roles, role_name) if role_name in old_roles else {}
+    after_view = _view(new, new_roles, role_name) if role_name in new_roles else {}
+    types_gained, types_lost = _compare(_type_levels(before_view, old_roles, role_name),
+                                        _type_levels(after_view, new_roles, role_name))
     fields_gained, fields_lost = _compare(_field_levels(before_view), _field_levels(after_view))
     # A field of a type that appears or disappears entirely is said once,
     # on the type: "can now read Order" covers its fields.
@@ -92,9 +147,8 @@ def role_change_impact(config: Any, mediator: Any, role_name: str,
     def types(changes):
         return [{"type": t, "from": was, "to": now} for t, was, now in changes]
 
-    before_grants = set(grants_of(config.roles, role_name) or ())
-    after_grants = set(after or ())
-    actions = {name for name in config.action_types or {}}
+    before_set = set(before_grants or ())
+    after_set = set(after or ())
 
     def runs(grants):
         return {g.removeprefix("execute:") for g in grants
@@ -111,18 +165,16 @@ def role_change_impact(config: Any, mediator: Any, role_name: str,
             return True
         return not grant.startswith(("read:", "discover:", "execute:"))
 
-    other_added = sorted(g for g in after_grants - before_grants if other(g))
-    other_removed = sorted(g for g in before_grants - after_grants if other(g))
     return {
         "role": role_name,
         "holders": holders,
-        "removes_role": after is None,
+        "removes_role": after is None and before_grants is not None,
         "types_gained": types(types_gained),
         "types_lost": types(types_lost),
         "fields_gained": fields(fields_gained),
         "fields_lost": fields(fields_lost),
-        "actions_gained": sorted(runs(after_grants) - runs(before_grants)),
-        "actions_lost": sorted(runs(before_grants) - runs(after_grants)),
-        "other_gained": other_added,
-        "other_lost": other_removed,
+        "actions_gained": sorted(runs(after_set) - runs(before_set)),
+        "actions_lost": sorted(runs(before_set) - runs(after_set)),
+        "other_gained": sorted(g for g in after_set - before_set if other(g)),
+        "other_lost": sorted(g for g in before_set - after_set if other(g)),
     }

@@ -144,6 +144,10 @@ OWNED_DATABASES = (
     # every grant that had been deliberately withdrawn. The backup
     # guard caught this the moment the store was written.
     "roles.db",
+    # CONFIGURATION CHANGES WAITING FOR A SECOND PERSON (DEV_UI 13.7):
+    # who asked for which labels to come off, and why. The only copy of
+    # a waiting decision, like pending_writes.db.
+    "config_proposals.db",
 )
 
 # THE WAREHOUSE, copied as files rather than snapshotted.

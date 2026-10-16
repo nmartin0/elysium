@@ -38,7 +38,8 @@ import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import RoleImpact from './RoleImpact'
+import RoleImpact from '@elysium/shell-api/components/RoleImpact'
+import ConfigProposals from './ConfigProposals'
 import { groupGrants, summariseChange } from './roleGrants'
 
 interface RolesPanelProps {
@@ -248,6 +249,11 @@ export default function RolesPanel({ onSessionExpired }: RolesPanelProps) {
           </Card>
         )
       })}
+
+      {/* THE OTHER ROUTE TO WHO SEES WHAT: a label, or an earlier version
+          put back, that lets anyone read more waits here for the same
+          people (decided 16 October). */}
+      <ConfigProposals onSessionExpired={onSessionExpired} showEmpty />
 
       <H5>Propose a change</H5>
       <HTMLSelect

@@ -50,6 +50,7 @@ import { recordVisit } from './discoverStorage'
 import LinkTypes from './LinkTypes'
 import WhoCanSee from './WhoCanSee'
 import DescribeType from './DescribeType'
+import LabelFields from './LabelFields'
 import './SchemaPanel.css'
 import DataTable from '@elysium/shell-api/components/DataTable'
 
@@ -197,6 +198,7 @@ function ObjectTypeCard({
   type,
   access,
   onDescribe,
+  onLabels,
   onOpenObjectType,
   onOpenLinkType,
 }: {
@@ -206,6 +208,8 @@ function ObjectTypeCard({
   access?: TypeAccess
   /** Describing it (DEV_UI 13.7): present only for manage:deployment. */
   onDescribe?: (objectType: string) => void
+  /** Its fields' access labels: present only for manage:deployment. */
+  onLabels?: (objectType: string) => void
   onOpenObjectType: (objectType: string) => void
   onOpenLinkType: (linkType: string) => void
 }) {
@@ -235,6 +239,11 @@ function ObjectTypeCard({
       {onDescribe && (
         <Button small minimal icon="edit" onClick={() => onDescribe(apiName)}>
           Describe
+        </Button>
+      )}
+      {onLabels && (
+        <Button small minimal icon="tag" onClick={() => onLabels(apiName)}>
+          Labels
         </Button>
       )}
 
@@ -301,8 +310,12 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
   // reads the file again when opened, for a digest that is current.
   const { data: describable } = useFetchOnce<OntologyDescriptions>(getOntologyDescriptions, onSessionExpired)
   const [describing, setDescribing] = useState<string | null>(null)
-  const [described, setDescribed] = useState<number | null>(null)
+  const [labelling, setLabelling] = useState<string | null>(null)
+  // What the last edit did: applied as a generation, or waiting for a
+  // second person (a label that lets anyone read more).
+  const [edited, setEdited] = useState<{ generation: number } | 'waiting' | null>(null)
   const onDescribe = describable ? (objectType: string) => setDescribing(objectType) : undefined
+  const onLabels = describable ? (objectType: string) => setLabelling(objectType) : undefined
   // NAVIGATION STATE LIVES IN THE URL, not in component state.
   //
   // Following a reference is one click -- a link's target, a link tag,
@@ -456,10 +469,17 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
       {/* THE NEW NAMES ARRIVE BY THEMSELVES: the reload changes the
           configuration epoch every response carries, and the shell
           refetches the schema when it moves. */}
-      {described !== null && (
-        <Notice state="granted" title="Applied">
-          ontology_schema.yaml was changed and the deployment reloaded as generation {described}.
+      {edited === 'waiting' ? (
+        <Notice state="pending" title="Waiting for approval">
+          It lets people read more than they can now, so it applies once someone who manages roles approves it (Admin →
+          Roles).
         </Notice>
+      ) : (
+        edited !== null && (
+          <Notice state="granted" title="Applied">
+            ontology_schema.yaml was changed and the deployment reloaded as generation {edited.generation}.
+          </Notice>
+        )
       )}
       {describing !== null && (
         <DescribeType
@@ -468,7 +488,23 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
           onClose={() => setDescribing(null)}
           onApplied={(generation) => {
             setDescribing(null)
-            setDescribed(generation)
+            setEdited({ generation })
+          }}
+          onSessionExpired={onSessionExpired}
+        />
+      )}
+      {labelling !== null && (
+        <LabelFields
+          objectType={labelling}
+          shownAs={schema[labelling]?.display_name ?? labelling}
+          onClose={() => setLabelling(null)}
+          onApplied={(generation) => {
+            setLabelling(null)
+            setEdited({ generation })
+          }}
+          onProposed={() => {
+            setLabelling(null)
+            setEdited('waiting')
           }}
           onSessionExpired={onSessionExpired}
         />
@@ -511,6 +547,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
                 type={type}
                 access={access?.[apiName]}
                 onDescribe={onDescribe}
+                onLabels={onLabels}
                 onOpenObjectType={openObjectType}
                 onOpenLinkType={openLinkType}
               />
@@ -536,6 +573,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
               schema={schema}
               actionTypes={graphActionTypes}
               onDescribe={onDescribe}
+              onLabels={onLabels}
               // An action is listed on its type (DEV_UI 14.3) and opens
               // here, in the same panel, rather than as a node.
               onSelect={(next) => setSelection(next)}

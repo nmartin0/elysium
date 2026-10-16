@@ -360,11 +360,22 @@ one Inbox. Built so far, each checked in a real browser:
   and recorded as a generation. Applied at once (decided 16 October):
   it changes what things are called, not who sees what. The allowlist
   is the server's and cannot reach `security`, storage or a field's
-  type. STILL TO DECIDE AND BUILD, each proposed 16 October: access
-  labels on fields (with the access preview, a widening waiting for a
-  second person), "put this version back" on configuration history,
-  and the ontology's shape (a new type or field, a data type), which
-  also touches bindings and the mirror.
+  type.
+- Access labels on fields, from the same places, decided 16 October: a
+  change that lets anyone read, know of or run more -- asked of the
+  permission code, NOT of the edit's direction, because with enforcement
+  on, ADDING a label opens a field to a role holding that label's grant
+  -- waits, with a reason, for a holder of manage:roles who did not
+  propose it (Foundry: removing a marking needs "the Expand Access
+  permission on the marking itself"; Purview asks a reason to lower a
+  label). Anything else applies at once, which with enforcement off is
+  everything. The approver sees, on Roles, who asked and why, what it
+  does to each role recomputed against what runs now, and the exact
+  lines; a file moved since is STALE, refused rather than merged.
+- STILL TO BUILD, decided 16 October: "put this version back" on
+  configuration history, applied as a new generation, waiting only if
+  it widens access. STILL TO DESIGN: the ontology's shape (a new type or
+  field, a data type), which also touches bindings and the mirror.
 
 THE NODE NOW CARRIES 14.5's COUNT AND HEALTH, and properties at close
 zoom (16 October): how many objects of the type the reader can see

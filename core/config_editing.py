@@ -409,6 +409,7 @@ def current_descriptions(text: str) -> dict:
             fields[field_name] = {
                 **{key: _as_text(declared.get(key)) for key in FIELD_KEYS},
                 "kind": str(declared.get("type") or "data"),
+                "labels": _labels_of(declared),
             }
         described[name] = {**{key: _as_text(type_def.get(key)) for key in TYPE_KEYS},
                            "fields": fields}
@@ -451,6 +452,21 @@ def _render_text(value: str) -> str:
         pass
     # A JSON string is a YAML double-quoted scalar.
     return json.dumps(value, ensure_ascii=False)
+
+
+def _meaning_checked(edited: str, expected) -> str:
+    """`edited`, if it means exactly `expected`; refused otherwise. The
+    net under every line edit: one that went wrong is caught here, never
+    written."""
+    import yaml as plain_yaml
+
+    try:
+        means = plain_yaml.safe_load(edited)
+    except plain_yaml.YAMLError:
+        means = None
+    if means != expected:
+        raise ConfigEditError(f"That change could not be made without disturbing the rest of {ONTOLOGY_FILE}.")
+    return edited
 
 
 def apply_descriptions(text: str, changes: list) -> str:
@@ -502,10 +518,87 @@ def apply_descriptions(text: str, changes: list) -> str:
         else:
             node[key] = value
 
-    try:
-        means = plain_yaml.safe_load(edited)
-    except plain_yaml.YAMLError:
-        means = None
-    if means != expected:
-        raise ConfigEditError(f"That change could not be made without disturbing the rest of {ONTOLOGY_FILE}.")
-    return edited
+    return _meaning_checked(edited, expected)
+
+
+# ---------------------------------------------------------------------------
+# ACCESS LABELS (DEV_UI 13.7, decided 16 October): a field's
+# `classification:`, what its values ARE -- pii, financial. Edited with
+# the same line editor, and ONLY the edit lives here. Whether the change
+# applies at once or waits for a second person is the route's question,
+# answered by asking the permission code (core/role_impact.
+# config_access_impact) whether anyone could read more afterwards.
+# ---------------------------------------------------------------------------
+
+MAX_LABELS_PER_FIELD = 10
+
+
+def _labels_of(field: dict) -> list[str]:
+    declared = field.get("classification")
+    if isinstance(declared, str):
+        return [declared]
+    if isinstance(declared, list):
+        return [label for label in declared if isinstance(label, str)]
+    return []
+
+
+def _render_labels(labels: list[str]) -> str:
+    # One label as a word, several as a flow list on ONE line -- the
+    # shape every classification in the shipped files already has, and
+    # the only shape the line editor writes.
+    return labels[0] if len(labels) == 1 else "[" + ", ".join(labels) + "]"
+
+
+def apply_labels(text: str, changes: list) -> str:
+    """ontology_schema.yaml with these fields' labels set. Each change is
+    {object_type, field, labels}; an empty list removes the key. The
+    label's SHAPE is checked here as the loader checks it -- lowercase,
+    identifier-like -- and the loader judges the rest (a grant naming a
+    label no field carries any more is refused at load)."""
+    import re
+
+    import yaml as plain_yaml
+
+    if not isinstance(changes, list) or not changes:
+        raise ConfigEditError("Nothing to change.")
+    if len(changes) > MAX_DESCRIPTION_CHANGES:
+        raise ConfigEditError(f"At most {MAX_DESCRIPTION_CHANGES} changes at once.")
+    expected = plain_yaml.safe_load(text) or {}
+    types = expected.get("object_types") if isinstance(expected, dict) else None
+    if not isinstance(types, dict):
+        raise ConfigEditError(f"{ONTOLOGY_FILE} declares no object_types.")
+    shape = re.compile(r"^[a-z][a-z0-9_]*$")
+
+    edited, seen = text, set()
+    for change in changes:
+        object_type, field_name, labels = change.get("object_type"), change.get("field"), change.get("labels")
+        type_def = types.get(object_type) if isinstance(object_type, str) else None
+        if not isinstance(type_def, dict):
+            raise ConfigEditError(f"There is no object type {object_type!r}.")
+        declared = (type_def.get("fields") or {}).get(field_name) if isinstance(field_name, str) else None
+        if not isinstance(declared, dict):
+            raise ConfigEditError(f"{object_type} has no field {field_name!r}.")
+        where = f"{object_type}.{field_name}"
+        if (object_type, field_name) in seen:
+            raise ConfigEditError(f"{where}'s labels are changed twice.")
+        seen.add((object_type, field_name))
+        if not isinstance(labels, list) or not all(isinstance(label, str) for label in labels):
+            raise ConfigEditError(f"{where}'s labels are a list of words.")
+        labels = list(dict.fromkeys(label.strip() for label in labels))
+        if len(labels) > MAX_LABELS_PER_FIELD:
+            raise ConfigEditError(f"{where} carries at most {MAX_LABELS_PER_FIELD} labels.")
+        for label in labels:
+            if not shape.match(label):
+                raise ConfigEditError(
+                    f"{label!r} is not a label: lowercase letters, digits and underscores, "
+                    f"starting with a letter -- 'pii', not 'PII' -- so one label cannot be "
+                    f"spelled three ways.")
+        path = ["object_types", object_type, "fields", field_name, "classification"]
+        edited = _edit_line(edited, path, _render_labels(labels) if labels else None,
+                            ONTOLOGY_FILE, after=("type", "data_type", *FIELD_KEYS))
+        if labels:
+            declared["classification"] = labels[0] if len(labels) == 1 else labels
+        else:
+            declared.pop("classification", None)
+
+    return _meaning_checked(edited, expected)

@@ -286,6 +286,9 @@ layers = [
     "notifications",
     # saved_views imports only sqlite_connection, like notifications.
     "saved_views",
+    # config_proposals imports only sqlite_connection, like saved_views:
+    # it stores what waits; the route decides what may.
+    "config_proposals",
     # canvas_layout imports only sqlite_connection, like saved_views --
     # one person's presentation, which nothing that decides meaning reads.
     "canvas_layout",

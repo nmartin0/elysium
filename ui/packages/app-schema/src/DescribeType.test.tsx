@@ -24,6 +24,7 @@ const mockedApply = vi.mocked(applyOntologyDescriptions)
 /** Shaped as GET /admin/ontology/descriptions returns it. */
 const DESCRIPTIONS: OntologyDescriptions = {
   digest: 'd1',
+  label_enforcement: false,
   types: {
     Customer: {
       display_name: 'Customer',
@@ -32,9 +33,9 @@ const DESCRIPTIONS: OntologyDescriptions = {
       group: 'People',
       title_field: 'name',
       fields: {
-        name: { display_name: null, description: null, kind: 'data' },
-        email: { display_name: 'Email', description: null, kind: 'data' },
-        account: { display_name: null, description: null, kind: 'link' },
+        name: { display_name: null, description: null, kind: 'data', labels: [] },
+        email: { display_name: 'Email', description: null, kind: 'data', labels: [] },
+        account: { display_name: null, description: null, kind: 'link', labels: [] },
       },
     },
     Account: {

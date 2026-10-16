@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import RoleImpact, { impactLines } from './RoleImpact'
+import RoleImpact, { ConfigImpact, impactLines } from './RoleImpact'
 
 const NONE = {
   role: 'analyst',
@@ -50,5 +50,42 @@ describe('a role change in access terms', () => {
     render(<RoleImpact impact={{ ...NONE, holders: 0, removes_role: true }} />)
 
     expect(screen.getByText(/Nobody holds analyst yet; removing the role takes all of this/)).toBeInTheDocument()
+  })
+})
+
+describe('ConfigImpact', () => {
+  const role = (name: string, holders: number, field: string) => ({
+    role: name,
+    holders,
+    removes_role: false,
+    types_gained: [],
+    types_lost: [],
+    fields_gained: [{ type: 'Customer', field, from: 'discover' as const, to: 'read' as const }],
+    fields_lost: [],
+    actions_gained: [],
+    actions_lost: [],
+    other_gained: [],
+    other_lost: [],
+  })
+
+  it('says roles the change treats alike once, with how many people', () => {
+    render(
+      <ConfigImpact
+        impact={{
+          widens: true,
+          roles: [role('customer_service', 1, 'email'), role('debug', 2, 'email'), role('editor', 0, 'name')],
+        }}
+      />,
+    )
+
+    expect(screen.getAllByText('Can now read Customer.email')).toHaveLength(1)
+    expect(screen.getByLabelText('What this change would do to customer_service, debug')).toHaveTextContent('3 people')
+    expect(screen.getByLabelText('What this change would do to editor')).toHaveTextContent('nobody holds it yet')
+  })
+
+  it('says so when nothing changes for anyone', () => {
+    render(<ConfigImpact impact={{ widens: false, roles: [] }} />)
+
+    expect(screen.getByText('No change to what anyone can see or do.')).toBeInTheDocument()
   })
 })

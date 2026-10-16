@@ -7,11 +7,15 @@
  * it by asking the permission code as it stands and as it would stand
  * (core/role_impact.py), so a grant that opens nothing says so.
  *
+ * IN shell-api SINCE A SECOND SCREEN SAYS THE SAME THING: a label or an
+ * earlier version put back changes access for several roles at once
+ * (ConfigImpact, below), in exactly these words.
+ *
  * GAINS AND LOSSES LOOK DIFFERENT, gains marked. Widening access is the
  * rare case DEV_UI 13.6 reserves extra attention for; narrowing is the
  * safe direction.
  */
-import type { RoleImpact as Impact } from '@elysium/shell-api/api'
+import type { AccessImpact, RoleImpact as Impact } from '../api'
 
 type Level = 'read' | 'discover' | null
 
@@ -71,5 +75,60 @@ export default function RoleImpact({ impact }: { impact: Impact }) {
         </ul>
       )}
     </div>
+  )
+}
+
+/**
+ * A configuration change's effect on every role it touches -- a label,
+ * or an earlier version put back (core/role_impact.config_access_impact).
+ * Only roles something changes for are listed; none is its own answer.
+ *
+ * ROLES THE CHANGE TREATS ALIKE ARE SAID ONCE. Taking pii off one field
+ * opened it to four roles in the first browser check, and the same line
+ * four times under four headings buried the one thing to judge: who,
+ * and how many people. A deployment with twenty roles would bury it
+ * further.
+ */
+export function ConfigImpact({ impact }: { impact: AccessImpact }) {
+  if (impact.roles.length === 0) {
+    return (
+      <div className="roles__impact" aria-label="What this change would do">
+        <div className="roles__impact-none">No change to what anyone can see or do.</div>
+      </div>
+    )
+  }
+  const groups = new Map<string, { roles: Impact[]; lines: { text: string; widens: boolean }[] }>()
+  for (const role of impact.roles) {
+    const lines = impactLines(role)
+    const key = JSON.stringify([role.removes_role, lines])
+    const group = groups.get(key)
+    if (group) group.roles.push(role)
+    else groups.set(key, { roles: [role], lines })
+  }
+  return (
+    <>
+      {[...groups.values()].map(({ roles, lines }) => {
+        const holders = roles.reduce((sum, role) => sum + role.holders, 0)
+        const names = roles.map((role) => role.role).join(', ')
+        return (
+          <div key={names} className="roles__impact" aria-label={`What this change would do to ${names}`}>
+            <div className="roles__impact-head">
+              <strong>{names}</strong> —{' '}
+              {holders === 0
+                ? 'nobody holds ' + (roles.length === 1 ? 'it' : 'these') + ' yet'
+                : `${holders} ${holders === 1 ? 'person' : 'people'}`}
+              {roles[0]!.removes_role ? '; the role goes, and all of this with it.' : '.'}
+            </div>
+            <ul>
+              {lines.map((line) => (
+                <li key={line.text} className={line.widens ? 'roles__widens' : 'roles__narrows'}>
+                  {line.text}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      })}
+    </>
   )
 }

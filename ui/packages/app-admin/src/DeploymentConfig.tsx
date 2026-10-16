@@ -32,6 +32,7 @@ import { useEffect, useRef, useState } from 'react'
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 import DataTable from '@elysium/shell-api/components/DataTable'
+import ConfigProposals from './ConfigProposals'
 import ConfigSettingsEditor, { AppliedNotice } from './ConfigSettingsEditor'
 
 interface DeploymentConfigBody {
@@ -433,6 +434,10 @@ function DeploymentConfigView({
               </section>
             ))}
             <ConfigSettingsEditor onApplied={onApplied} onSessionExpired={onSessionExpired} />
+            {/* What this deployment's managers proposed and still waits
+                for a role manager -- shown here so its proposer can see
+                it, and withdraw it. Nothing when nothing waits. */}
+            <ConfigProposals onSessionExpired={onSessionExpired} />
             <ConfigHistorySection onSessionExpired={onSessionExpired} />
           </div>
         )

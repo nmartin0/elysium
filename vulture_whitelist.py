@@ -544,3 +544,10 @@ my_type_counts_route
 ontology_descriptions_route
 preview_ontology_descriptions_route
 apply_ontology_descriptions_route
+# DEV_UI 13.7, access labels and the approval queue: routes reached by HTTP.
+preview_labels_route
+apply_labels_route
+config_proposals_route
+approve_config_proposal_route
+reject_config_proposal_route
+needs_approval  # LabelPreviewResponse.needs_approval, read by pydantic
