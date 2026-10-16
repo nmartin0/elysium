@@ -134,6 +134,7 @@ def validate_action_types(action_types: dict, object_types: dict) -> None:
         _validate_sub_writes_action(action_type_name, action_def, object_types)
         _validate_auto_execute(action_type_name, action_def)
         _validate_automatable(action_type_name, action_def)
+        _validate_owner_may_approve_automation(action_type_name, action_def)
         _validate_parameters_are_used(action_type_name, action_def)
         _validate_effects_are_reachable(action_type_name, action_def, object_types)
 
@@ -577,6 +578,40 @@ def _validate_automatable(action_type_name: str, action_def: dict) -> None:
         )
 
 
+def _validate_owner_may_approve_automation(action_type_name: str, action_def: dict) -> None:
+    """Checks the optional owner_may_approve_automation flag (decided 16
+    October: each action decides).
+
+    WHETHER THE OWNER OF AN AUTOMATION MAY APPROVE WHAT IT PROPOSED, on
+    an action whose rules say the approver must not be the proposer.
+    ABSENT MEANS NO: the automation proposes as its owner, so the owner
+    is the proposer and someone else approves -- the rule GitHub chose
+    when people used their own automations to satisfy "required
+    approvals". An action whose automations do routine, reviewed-in-bulk
+    work can say the owner's review is enough
+    (WriteMediator._proposer_for_approval).
+
+    REFUSED BESIDE `automatable: false`: a rule about who approves an
+    automation's proposals, on an action no automation may propose, is
+    a contradiction the author should hear about rather than a setting
+    that silently does nothing.
+    """
+    if "owner_may_approve_automation" not in action_def:
+        return
+    value = action_def["owner_may_approve_automation"]
+    if not isinstance(value, bool):
+        raise ValueError(
+            f"Action type {action_type_name!r}: owner_may_approve_automation must be "
+            f"true or false, got {value!r}."
+        )
+    if value and action_def.get("automatable") is False:
+        raise ValueError(
+            f"Action type {action_type_name!r}: owner_may_approve_automation is true, but "
+            f"automatable is false -- no automation may propose this action, so who "
+            f"approves an automation's proposal never arises. Remove one of them."
+        )
+
+
 def _validate_auto_execute(action_type_name: str, action_def: dict) -> None:
     """Checks the optional auto_execute flag.
 
@@ -751,3 +786,20 @@ def _validate_one_sub_write(action_type_name: str, index: int, sub_write: dict, 
                 f"Action type {action_type_name!r}: sub_writes[{index}].object_id's parameter "
                 f"{param_name!r} references {param_spec.get('object_type')!r}, expected {object_type!r}."
             )
+
+
+def automation_needs_another_approver(action_def: dict) -> bool:
+    """Whether what an automation proposes with this action must be
+    approved by someone other than the automation's owner: a four-eyes
+    rule on any of its sub-writes (`not_equals proposer.user_id`), not
+    lifted by owner_may_approve_automation. For the Watch dialog, which
+    says so before anyone builds an automation that needs a second
+    person every time it fires -- the same answer
+    WriteMediator._proposer_for_approval gives when it is approved."""
+    if action_def.get("owner_may_approve_automation") is True:
+        return False
+    return any(
+        criterion.get("operator") == "not_equals" and criterion.get("value") == "proposer.user_id"
+        for sub_write in action_def.get("sub_writes") or ()
+        for criterion in (sub_write or {}).get("submission_criteria") or ()
+    )

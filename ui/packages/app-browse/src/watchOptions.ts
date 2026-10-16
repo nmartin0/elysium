@@ -21,6 +21,9 @@ export interface VisibleAction {
   parameters?: Record<string, ActionParameter>
   executable?: boolean
   automatable?: boolean
+  /** What an automation proposes with it must be approved by someone
+   *  other than the automation's owner (decided 16 October). */
+  automation_needs_another_approver?: boolean
 }
 
 export interface ActionChoice {
@@ -29,6 +32,8 @@ export interface ActionChoice {
   targets: string[]
   /** The other parameters, which the person fills in once. */
   others: Array<[string, ActionParameter]>
+  /** Each proposal it makes must be approved by someone other than the owner. */
+  anotherApprover: boolean
 }
 
 const OBJECT_PARAMETERS = new Set(['object_reference', 'object_reference_list'])
@@ -56,6 +61,7 @@ export function actionsFor(actions: Record<string, VisibleAction>, objectType: s
       name,
       targets,
       others: parameters.filter(([parameterName]) => !targets.includes(parameterName)),
+      anotherApprover: action.automation_needs_another_approver === true,
     })
   }
   return choices.sort((a, b) => a.name.localeCompare(b.name))

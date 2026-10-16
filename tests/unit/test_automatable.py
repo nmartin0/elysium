@@ -162,3 +162,51 @@ class TestOriginKnowsAboutAutomation:
         from core.ontology.write_mediator import Origin
 
         assert set(typing.get_args(Origin)) == {"human", "agent", "automation"}
+
+
+class TestOwnerMayApproveAutomation:
+    """owner_may_approve_automation (decided 16 October: each action
+    decides whether an automation's owner may approve what it proposed)."""
+
+    def test_true_false_or_absent(self):
+        for declared in ({}, {"owner_may_approve_automation": True},
+                         {"owner_may_approve_automation": False}):
+            validate_action_types({"A": _action(**declared)}, OBJECT_TYPES)
+
+    def test_a_string_is_refused(self):
+        with pytest.raises(ValueError, match="owner_may_approve_automation must be true or false"):
+            validate_action_types({"A": _action(owner_may_approve_automation="yes")}, OBJECT_TYPES)
+
+    def test_beside_automatable_false_it_is_a_contradiction(self):
+        with pytest.raises(ValueError, match="no automation may propose this action"):
+            validate_action_types({"A": _action(owner_may_approve_automation=True, automatable=False)},
+                                  OBJECT_TYPES)
+
+
+class TestWhetherAnotherPersonApproves:
+    """automation_needs_another_approver: what the Watch dialog says while
+    an automation is being made."""
+
+    FOUR_EYES = {"check": "user", "field": "user_id", "operator": "not_equals",
+                 "value": "proposer.user_id", "description": "Someone else approves."}
+
+    def _with_four_eyes(self, **overrides):
+        action = _action(**overrides)
+        action["sub_writes"][0]["submission_criteria"] = [self.FOUR_EYES]
+        return action
+
+    def test_a_four_eyes_rule_means_someone_else(self):
+        from core.ontology.action_types import automation_needs_another_approver
+
+        assert automation_needs_another_approver(self._with_four_eyes()) is True
+
+    def test_unless_the_action_lets_the_owner(self):
+        from core.ontology.action_types import automation_needs_another_approver
+
+        assert automation_needs_another_approver(
+            self._with_four_eyes(owner_may_approve_automation=True)) is False
+
+    def test_no_rule_no_second_person(self):
+        from core.ontology.action_types import automation_needs_another_approver
+
+        assert automation_needs_another_approver(_action()) is False

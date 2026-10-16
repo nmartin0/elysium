@@ -190,7 +190,17 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
         )}
 
         {actions.length > 0 && (
-          <FormGroup label="And propose" helperText="Proposed as you, into Approvals. Somebody still decides.">
+          <FormGroup
+            label="And propose"
+            helperText={
+              // SAID WHILE CHOOSING (decided 16 October: each action
+              // decides): an automation whose every proposal needs a
+              // second person is worth knowing about before it is made.
+              chosen?.anotherApprover
+                ? 'Proposed as you, into Approvals. Someone other than you must approve each one.'
+                : 'Proposed as you, into Approvals. Somebody still decides.'
+            }
+          >
             <HTMLSelect
               value={actionName}
               aria-label="Action to propose"

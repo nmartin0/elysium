@@ -303,6 +303,11 @@ class DeploymentConfig:
     # may name. Decided 14 Oct: 256 unless a deployment says otherwise,
     # and never more than 1,024. `bulk_action_limit:` in config.yaml.
     bulk_action_limit: int = 256
+    # HOW OFTEN THE SERVER CHECKS TRIGGERS BETWEEN SYNCS, in minutes
+    # (decided 16 October); 0 turns the clock off and leaves the sync
+    # as the only time they are checked. `check_triggers_every_minutes:`
+    # in config.yaml. See api/trigger_clock.py.
+    check_triggers_every_minutes: int = 15
 
 
 logger = logging.getLogger(__name__)
@@ -703,6 +708,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
                 _incremental_policies(data_silos_raw["data_silos"], schema_raw["object_types"])),
             max_tokens_per_query=_token_budget(config["agent"].get("max_tokens_per_query")),
             bulk_action_limit=_bulk_action_limit(config.get("bulk_action_limit")),
+            check_triggers_every_minutes=_trigger_clock(config.get("check_triggers_every_minutes")),
             max_concurrent_requests=_default_concurrency(config),
             # FOUR HOURS by default, not fifteen minutes. Long enough
             # that a reviewer can be in a meeting; short enough that a
@@ -1063,6 +1069,27 @@ def _excel_date_silos(silos: dict) -> frozenset:
         if value:
             declared.add(silo_name)
     return frozenset(declared)
+
+
+#: The server's trigger clock when config.yaml says nothing (decided 16
+#: October), and the longest it may be: a day, past which "between
+#: syncs" has stopped meaning anything for a nightly sync.
+DEFAULT_TRIGGER_CLOCK_MINUTES = 15
+MAX_TRIGGER_CLOCK_MINUTES = 1440
+
+
+def _trigger_clock(declared) -> int:
+    """`check_triggers_every_minutes`: a whole number of minutes from 0
+    (off) to a day. Refused at load otherwise, where whoever wrote it is
+    looking, rather than a clock that silently never ticks."""
+    if declared is None:
+        return DEFAULT_TRIGGER_CLOCK_MINUTES
+    if isinstance(declared, bool) or not isinstance(declared, int) \
+            or not 0 <= declared <= MAX_TRIGGER_CLOCK_MINUTES:
+        raise ValueError(
+            f"check_triggers_every_minutes must be a whole number of minutes from 0 (off) "
+            f"to {MAX_TRIGGER_CLOCK_MINUTES}, got {declared!r}.")
+    return declared
 
 
 def _retain_publications(config: dict) -> int:

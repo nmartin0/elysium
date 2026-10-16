@@ -1050,8 +1050,15 @@ def test_visible_action_types_never_leaks_sub_writes_or_mutations(client):
     # a trigger may propose it -- and reveals nothing of sub_writes,
     # mutations or which objects an action touches. The Watch dialog
     # needs it to offer only actions the server will accept.
+    #
+    # `automation_needs_another_approver` ADDED THE SAME WAY (16 October):
+    # one boolean, derived from the criteria rather than carrying them --
+    # whether a four-eyes rule stands between an automation's owner and
+    # its proposals. Approving would say as much by refusing; saying it
+    # while the automation is being made is the point.
     assert set(body["CreateCustomer"].keys()) == {
         "affected_object_types", "parameters", "executable", "automatable",
+        "automation_needs_another_approver",
     }
     assert "sub_writes" not in body["CreateCustomer"]
     assert "sub_writes" not in body["UpdateCustomerName"]

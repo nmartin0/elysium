@@ -92,68 +92,21 @@ def _evaluate_user_triggers(runtime_paths, config, mediator) -> None:
 
     AFTER THE SYNC, like the mirror-health condition, because that is
     when the data changed. A trigger says WHAT to watch; the sync says
-    when to look.
+    when to look -- and since 16 October the server's clock looks too,
+    between syncs (api/trigger_clock.py). Both run core/trigger_runs.
 
     NEVER RAISES INTO THE SYNC. The sync has done its work; failing to
     notice something about that work must not turn a successful sync
     into a failed one.
     """
     try:
-        from core.count_condition import (
-            evaluate_one_trigger,
-            evaluate_user_triggers,
-        )
-        from core.notifications import NotificationStore
-        from core.saved_views import SavedViewStore
-        from core.triggers import TriggerStore
-        from core.user_directory import UserDirectory
+        from core.trigger_runs import run_triggers
 
-        triggers = TriggerStore(runtime_paths.data_dir / "triggers.db")
-        # BOTH KINDS: made in the product, and declared in config.yaml.
-        # They share owner resolution, the write mediator and the
-        # evaluator -- a declared trigger is never a second code path.
-        declared = list(config.declared_triggers)
-        enabled = [*triggers.all_enabled(), *declared]
-        if not enabled:
-            return
-
-        # ONLY THE OWNERS THAT ACTUALLY HAVE A TRIGGER. Resolving every
-        # user would cost a lookup per account on a deployment where
-        # nobody uses triggers at all.
-        directory = UserDirectory(
-            runtime_paths.data_dir / "credentials.db", config.roles,
-        )
-        # OWNERS, PLUS EVERY ACTIVE MEMBER OF A NAMED ROLE. Resolved
-        # only for roles some trigger actually names, so a deployment
-        # where nobody notifies a role pays for owners and no more.
-        # A DISABLED ACCOUNT IS LEFT OUT, and so is never notified.
-        named_roles = {
-            role for trigger in enabled for role in trigger.recipient_roles
-        }
-        wanted = {trigger.owner_user_id for trigger in enabled}
-        if named_roles:
-            wanted |= {
-                row["username"] for row in directory.list_users()
-                # `role_name`, NOT `role` -- read from list_users()
-                # rather than guessed. The guess matched nobody, and
-                # would have notified no role member, silently.
-                if row["role_name"] in named_roles and not row["disabled"]
-            }
-        owners = {}
-        for user_id in wanted:
-            try:
-                if directory.is_user_disabled(user_id):
-                    continue
-                owners[user_id] = directory.get_user_record(user_id)
-            except Exception:  # noqa: BLE001 - a removed account is skipped
-                continue
-
-        # A WRITE MEDIATOR ONLY IF SOME TRIGGER CAN PROPOSE. A sync
-        # otherwise reads the source and nothing else -- that stays
-        # true in the common case, and even here a proposal writes
-        # nothing to the SOURCE, only a row to the approvals queue.
-        write_mediator = pending_store = None
-        if any(trigger.action_type for trigger in enabled):
+        def write_side():
+            # A WRITE MEDIATOR ONLY IF SOME TRIGGER CAN PROPOSE. A sync
+            # otherwise reads the source and nothing else -- that stays
+            # true in the common case, and even here a proposal writes
+            # nothing to the SOURCE, only a row to the approvals queue.
             from datetime import timedelta
 
             from core.deployment_loader import build_generation
@@ -164,8 +117,6 @@ def _evaluate_user_triggers(runtime_paths, config, mediator) -> None:
                 runtime_paths.config_dir, runtime_paths.data_dir,
                 runtime_paths.log_dir,
             )
-            write_mediator = generation.write_mediator
-            mediator = generation.mediator
             # THE SAME DATABASE THE API READS, which is the whole reason
             # the store had to become database-authoritative first: a
             # proposal from this process now appears in Approvals
@@ -177,23 +128,9 @@ def _evaluate_user_triggers(runtime_paths, config, mediator) -> None:
                     runtime_paths.data_dir / "pending_writes.db",
                 ),
             )
+            return generation.mediator, generation.write_mediator, pending_store
 
-        notifications = NotificationStore(
-            runtime_paths.data_dir / "notifications.db",
-        )
-        fired = evaluate_user_triggers(
-            mediator, triggers,
-            SavedViewStore(runtime_paths.data_dir / "saved_views.db"),
-            notifications, owners, config.source_digest,
-            write_mediator, pending_store,
-        )
-        # DECLARED TRIGGERS carry their view inline, so they skip the
-        # saved-view lookup and go straight to the shared path.
-        for trigger in declared:
-            fired += evaluate_one_trigger(
-                trigger, trigger.view, mediator, notifications, owners,
-                config.source_digest, write_mediator, pending_store,
-            )
+        fired = run_triggers(config, runtime_paths.data_dir, mediator, write_side)
         if fired:
             print(f"{fired} trigger(s) fired")
     except Exception as e:  # noqa: BLE001 - see the docstring

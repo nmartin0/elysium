@@ -238,41 +238,39 @@ code.
 **Blocked on:** whether to have an extension story at all. Everything
 downstream of that is design work that cannot start first.
 
-## 4. Two questions triggers raise and nobody has answered
+## 4. Triggers: both questions answered and built, 16 October
 
-Triggers are built. `TRIGGERS_AND_PLUGINS.md` names three risks that
-are "about volume rather than authority", and none of them is a code
-gap -- each is a decision that has to be made before the first
-automation runs at scale.
+Kept as the record of what was decided, with the precedent.
 
-**Queue flooding, and the feedback loop under it (R50) -- DECIDED and
-BUILT, 14 October:** no new proposal from the same automation for the
-same object while an earlier one is still waiting
-(`PendingWriteStore.objects_already_proposed`). Two answers remain.
+**Four-eyes against an automation -- EACH ACTION DECIDES.** An
+automation proposes as its owner, so under a four-eyes rule the owner
+cannot approve it, and that stays the default: GitHub closed the same
+loophole after people used their automations to "satisfy the 'Required
+approvals'" rule with code "that no other person reviewed". An action
+declaring `owner_may_approve_automation: true` lets the owner's review
+suffice for what a condition proposed (the automation stands as the
+proposer for the user_id comparison only; role and compartment stay
+the owner's). Refused beside `automatable: false`. The Watch dialog
+says, while an action is being chosen, when each proposal will need
+someone else.
 
-`MAX_SUB_WRITES` is 20 and `DEFAULT_TTL` is 15
-minutes. An automation firing across a thousand objects either exceeds
-the sub-write cap or creates fifty pending writes that expire before
-anyone reads them. Foundry has an "execute once for all objects"
-option for exactly this; there is no equivalent here, and no stated
-answer for what happens when a condition matches more than the cap.
+**Evaluation cadence -- AFTER EACH SYNC, AND A CLOCK BETWEEN.** The
+premise once offered for a clock was wrong: live reads are gone, so
+every deployment syncs. But a condition still moves without a sync: a
+change approved in Elysium is read at once, and "the last 30 days"
+moves at midnight UTC. The server checks every
+`check_triggers_every_minutes` (15 unless config.yaml says; 0 off; at
+most a day), each worker looking and one checking under a file lock.
+Foundry offers the same pair, "live" and "scheduled", and warns a
+frequent schedule "can result in high compute usage"; a count per
+trigger is the light end. The sync and the clock run one path,
+core/trigger_runs.py.
 
-**Four-eyes against an automation.** The criteria vocabulary can say
-"the approver must not be the proposer". If an automation proposes as
-its OWNER, the owner cannot approve it -- arguably correct, and it
-means every confirmation-required automation needs a second human
-every time it fires. The document's own words: "worth deciding
-deliberately rather than discovering."
+**Queue flooding (R50)** was decided and built 14 October, and the cap
+on how many objects one proposal may name is bulk actions' (256 unless
+a deployment says, 1,024 at most).
 
-**Evaluation cadence.** When conditions should be evaluated -- the
-document argues for when the mirror changes rather than on a clock,
-but it is not settled.
-
-**Blocked on:** two answers. The first is a product decision about
-how much friction an automation should carry, and the second is a
-design choice with cost on both sides. The cap that the paragraph on
-`MAX_SUB_WRITES` asks about is being answered by bulk actions (decided
-14 October: 256 by default, 1,024 at most).
+**Blocked on:** nothing.
 
 ## 5. What the interface should be
 

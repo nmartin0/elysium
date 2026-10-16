@@ -152,6 +152,7 @@ from core.mirror.quarantine_report import quarantine_for
 from core.mirror.source_record import agreement_shown
 from core.mirror.sync_attempts import SyncAttempts
 from core.mirror.sync_targets import resolve_sync_targets
+from core.ontology.action_types import automation_needs_another_approver
 from core.ontology.decimal_text import exact_decimals
 from core.ontology.mediator import SearchOutcome
 from core.ontology.schema import get_display_name, get_field_column, sort_key
@@ -478,6 +479,9 @@ class VisibleActionTypeResponse(BaseModel):
     # every action. Every frontend test passed regardless, because
     # they mock the API; an integration test found it.
     automatable: bool
+    # WHETHER WHAT AN AUTOMATION PROPOSES MUST BE APPROVED BY SOMEONE
+    # OTHER THAN ITS OWNER (decided 16 October: each action decides).
+    automation_needs_another_approver: bool = False
     #: Bulk actions only: how many objects one proposal may name.
     max_objects: int | None = None
 
@@ -1453,6 +1457,9 @@ class DeploymentConfigResponse(BaseModel):
     max_tokens_per_query: int | None = None
     #: Decided 14 Oct: how many objects one bulk action may name.
     bulk_action_limit: int = 256
+    #: Decided 16 Oct: how often the server checks triggers between
+    #: syncs, in minutes; 0 for only after a sync.
+    check_triggers_every_minutes: int = 15
     #: Formerly BLOCKING 6: classification labels decide field access.
     label_enforcement: bool = False
     #: R15: whether lineage events also go to a service. WHETHER, never
@@ -4520,6 +4527,7 @@ def deployment_config_route(request: Request,
         "agent_features": list(config.agent_features.names_on),
         "max_tokens_per_query": config.max_tokens_per_query,
         "bulk_action_limit": config.bulk_action_limit,
+        "check_triggers_every_minutes": config.check_triggers_every_minutes,
         "label_enforcement": config.label_enforcement,
         "lineage_service": bool(config.lineage.get("url")),
         "lineage_namespace": config.lineage.get("namespace") or "elysium",
@@ -6774,6 +6782,10 @@ def my_visible_action_types_route(request: Request, current_user: UserRecord = D
             # than offering one and showing a refusal afterwards.
             # Absent means true -- the validator's own default.
             "automatable": action_def.get("automatable") is not False,
+            # Said in the Watch dialog BEFORE an automation is made: one
+            # that needs a second person every time it fires is worth
+            # knowing about while choosing it.
+            "automation_needs_another_approver": automation_needs_another_approver(action_def),
             # HOW MANY OBJECTS ONE PROPOSAL MAY NAME, on a bulk action
             # only -- one with an object_reference_list parameter. The
             # deployment's limit (decided 14 Oct), sent so the selection

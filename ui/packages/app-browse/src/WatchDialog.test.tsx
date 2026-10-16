@@ -261,3 +261,36 @@ describe('what could not be loaded', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/the list of roles/)
   })
 })
+
+describe('who approves what it proposes (decided 16 October)', () => {
+  it('says, while choosing, when someone other than you must approve each proposal', async () => {
+    vi.mocked(getVisibleActionTypes).mockResolvedValue({
+      RecategorizeTransactions: {
+        executable: true,
+        automatable: true,
+        automation_needs_another_approver: true,
+        parameters: {
+          transaction_ids: { type: 'object_reference_list', object_type: 'Transaction' },
+          new_category: { type: 'string', display_name: 'New category' },
+        },
+      },
+    })
+    open()
+    const select = await screen.findByLabelText('Action to propose')
+    expect(screen.getByText(/Somebody still decides/)).toBeInTheDocument()
+
+    fireEvent.change(select, { target: { value: 'RecategorizeTransactions' } })
+
+    expect(await screen.findByText(/Someone other than you must approve each one/)).toBeInTheDocument()
+  })
+
+  it('says nothing of the kind for an action without that rule', async () => {
+    open()
+    fireEvent.change(await screen.findByLabelText('Action to propose'), {
+      target: { value: 'RecategorizeTransactions' },
+    })
+
+    expect(screen.getByText(/Somebody still decides/)).toBeInTheDocument()
+    expect(screen.queryByText(/Someone other than you/)).not.toBeInTheDocument()
+  })
+})

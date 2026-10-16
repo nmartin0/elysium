@@ -554,3 +554,77 @@ def test_an_unreviewed_write_records_no_approver(wm, tmp_path):
     entry = [e for e in _audit_entries(tmp_path) if e.get("stage") == "pre"][-1]
     assert entry["params"]["approved_by"] is None
     assert entry["params"]["self_approved"] is False
+
+
+# --- an automation's owner, and an action that lets them approve (16 October) ---
+#
+# An automation proposes as its owner. Under a four-eyes rule the owner is
+# therefore the proposer and may not approve -- unless the ACTION declares
+# owner_may_approve_automation, when the automation stands as the proposer
+# for that one comparison.
+
+def _proposed(wm, origin):
+    return wm.propose_action(
+        _record("alice"), "RenameAuthor",
+        {"author_id": "auth_001", "new_name": "Ada L."}, origin=origin,
+    )
+
+
+def test_by_default_an_automation_owner_may_not_approve_its_proposal(wm):
+    original = _with_four_eyes(wm)
+    try:
+        pending = _proposed(wm, "automation")
+
+        with pytest.raises(SubmissionCriteriaViolation, match="other than its proposer"):
+            wm.confirm_and_execute(pending, approved=True, approver=_record("alice"))
+    finally:
+        wm.action_types["RenameAuthor"]["sub_writes"] = original
+
+
+def test_an_action_may_let_the_owner_approve_their_automations_proposal(wm):
+    original = _with_four_eyes(wm)
+    wm.action_types["RenameAuthor"]["owner_may_approve_automation"] = True
+    try:
+        pending = _proposed(wm, "automation")
+
+        result = wm.confirm_and_execute(pending, approved=True, approver=_record("alice"))
+
+        assert result["status"] == "written"
+    finally:
+        wm.action_types["RenameAuthor"]["sub_writes"] = original
+        del wm.action_types["RenameAuthor"]["owner_may_approve_automation"]
+
+
+def test_the_setting_is_about_automations_not_the_owners_own_proposals(wm):
+    """The same person proposing BY HAND is still the proposer: the
+    setting says whose review suffices for what a condition proposed."""
+    original = _with_four_eyes(wm)
+    wm.action_types["RenameAuthor"]["owner_may_approve_automation"] = True
+    try:
+        pending = _proposed(wm, "human")
+
+        with pytest.raises(SubmissionCriteriaViolation, match="other than its proposer"):
+            wm.confirm_and_execute(pending, approved=True, approver=_record("alice"))
+    finally:
+        wm.action_types["RenameAuthor"]["sub_writes"] = original
+        del wm.action_types["RenameAuthor"]["owner_may_approve_automation"]
+
+
+def test_other_proposer_attributes_stay_the_owners(wm):
+    """Only the identity changes. A rule comparing the approver's role
+    with the proposer's still compares with the OWNER's role."""
+    action = wm.action_types["RenameAuthor"]
+    original = action["sub_writes"]
+    action["sub_writes"] = [{**original[0], "submission_criteria": [{
+        "check": "user", "field": "role_name", "operator": "equals",
+        "value": "proposer.role_name", "description": "Approved within the proposer's role.",
+    }]}]
+    action["owner_may_approve_automation"] = True
+    try:
+        pending = _proposed(wm, "automation")
+
+        assert wm.confirm_and_execute(
+            pending, approved=True, approver=_record("alice"))["status"] == "written"
+    finally:
+        action["sub_writes"] = original
+        del action["owner_may_approve_automation"]

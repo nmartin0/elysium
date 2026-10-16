@@ -27,7 +27,9 @@ that notifies whoever holds `manage:deployment`, declared in code
 rather than by a person.
 
 NOT WHEN IT RUNS. A trigger says what to watch and what to do; the
-sync decides when to look, because that is when the data changed.
+sync looks when the data changed, and since 16 October the server looks
+between syncs too, every check_triggers_every_minutes -- an approved
+change and "the last 30 days" both move without one (api/trigger_clock).
 """
 
 import json

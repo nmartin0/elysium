@@ -61,6 +61,8 @@ interface DeploymentConfigBody {
   max_tokens_per_query?: number | null
   /** Formerly BLOCKING 6: classification labels decide field access. */
   label_enforcement?: boolean
+  /** Decided 16 Oct: minutes between the server's trigger checks; 0 for after syncs only. */
+  check_triggers_every_minutes?: number
   /** R15: whether lineage events also go to a service (never its URL). */
   lineage_service?: boolean
   lineage_namespace?: string
@@ -378,6 +380,14 @@ function DeploymentConfigView({
               ['Action types', config.action_type_count],
               ['Security attribute', config.security_attribute],
               ['Classification labels decide field access', config.label_enforcement ? 'yes' : 'no'],
+              [
+                'Triggers checked',
+                config.check_triggers_every_minutes === undefined
+                  ? 'not reported'
+                  : config.check_triggers_every_minutes === 0
+                    ? 'after each sync only'
+                    : `after each sync, and every ${config.check_triggers_every_minutes} minutes between`,
+              ],
               ['Reading from mirror', config.read_from_mirror ? 'yes' : 'no'],
             ],
           ],

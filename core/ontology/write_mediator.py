@@ -32,6 +32,7 @@ Used by: core/agent/agentic_loop.py's AgentLoop (write_mediator +
          confirm_write callback, both None if writes are disabled)
 """
 
+import dataclasses
 import fcntl
 import uuid
 from contextlib import contextmanager
@@ -285,6 +286,14 @@ def _describe_action(action_type_name: str, action_def: dict, parameters: dict) 
 # WriteMediator.bulk_limit. Frozen sets and exports keep the ceiling,
 # because holding or exporting a set is not approving a change to it.
 MAX_BULK_OBJECTS = 1024
+
+#: How an automation stands as the proposer, for an action that lets its
+#: owner approve what it proposes (_proposer_for_approval). User names
+#: MAY contain a colon -- checked, not assumed -- and that is harmless:
+#: an account named "automation:alice" would only find itself counted
+#: as the proposer, unable to approve. The substitution can make a
+#: four-eyes rule refuse one more person; it can never admit one.
+AUTOMATION_PROPOSER = "automation:"
 DEFAULT_BULK_OBJECTS = 256
 
 
@@ -1743,8 +1752,38 @@ class WriteMediator:
             )
             evaluate_submission_criteria(
                 criteria, current_state, pending.parameters, approver,
-                proposer=pending.proposer,
+                proposer=self._proposer_for_approval(pending),
             )
+
+    def _proposer_for_approval(self, pending: PendingWrite) -> UserRecord:
+        """Who the approval rules compare the approver with.
+
+        THE OWNER, unless the action says otherwise (decided 16
+        October: each action decides). An automation proposes as its
+        owner, so a four-eyes rule -- `user.user_id not_equals
+        proposer.user_id` -- keeps the owner from approving what their
+        own automation proposed: GitHub closed the same loophole, after
+        people used their automations to "satisfy the 'Required
+        approvals'" rule with code "that no other person reviewed".
+
+        AN ACTION DECLARING `owner_may_approve_automation: true` makes
+        the automation its own proposer for that one comparison: the
+        user_id becomes "automation:<owner>", which no person's is, so
+        the owner passes a four-eyes rule as anyone else would. Every
+        other attribute -- role, compartment -- stays the owner's, so a
+        rule like "approver in the proposer's region" means what it did.
+        A rule that ONLY the proposer may confirm (`equals
+        proposer.user_id`) then matches nobody: on such an action, the
+        automation is the proposer, and no person is it.
+
+        READ FROM THE CURRENT DEFINITION, as _criteria_for reads the
+        rules: the deployment's answer today governs a decision today.
+        """
+        action_def = self.action_types.get(pending.action_type_name) or {}
+        if pending.origin == "automation" and action_def.get("owner_may_approve_automation") is True:
+            return dataclasses.replace(
+                pending.proposer, user_id=f"{AUTOMATION_PROPOSER}{pending.proposer.user_id}")
+        return pending.proposer
 
     def _refuse_criteria_this_write_cannot_answer(self, pending: PendingWrite,
                                                    criteria: list) -> None:
