@@ -27,8 +27,13 @@ import {
   handleIfSessionExpired,
   type OntologyCanvasLayout,
   saveOntologyCanvas,
+  getDataFreshness,
+  getTypeCounts,
+  type DataFreshness,
+  type TypeCount,
 } from '@elysium/shell-api/api'
 import Notice from '@elysium/shell-api/components/Notice'
+import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 import { pluralise } from '@elysium/shell-api/format'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
@@ -68,9 +73,44 @@ const DRAG_THRESHOLD = 4
 /** A burst of arrow-key moves is saved once, after it stops. */
 const SAVE_AFTER_MS = 600
 const MAX_LABEL = 22
+/** Room for the name when a count sits beside it on the same line. */
+const LABEL_BESIDE_COUNT = 15
 
-function shorten(text: string): string {
-  return text.length > MAX_LABEL ? `${text.slice(0, MAX_LABEL - 1)}…` : text
+/** CLOSE ZOOM (DEV_UI 14.5, "properties at close zoom"): from here the
+ *  node lists its fields instead of summarising them. The box keeps its
+ *  size -- rows are 40 apart in the layout, so a taller box would land on
+ *  its neighbour -- and the text is small enough to fit and, at this
+ *  scale, large enough to read. */
+const CLOSE_ZOOM = 1.5
+const CLOSE_FIELDS = 6
+const MAX_FIELD_LABEL = 14
+
+const noop = () => {}
+
+/** Browse's words for the same states, so one state reads one way. */
+const HEALTH_WORDS: Record<string, string> = {
+  fresh: 'current',
+  warn: 'later than expected',
+  fail: 'overdue',
+  never: 'never published',
+}
+
+function countText(count: TypeCount | undefined): string | null {
+  if (!count) return null
+  return `${count.count.toLocaleString('en-GB')}${count.scan_truncated ? '+' : ''}`
+}
+
+function shorten(text: string, max = MAX_LABEL): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text
+}
+
+/** At close zoom: the first fields, the key first, and how many more. */
+function closeFields(fields: string[]): { label: string; more: boolean }[] {
+  if (fields.length <= CLOSE_FIELDS) return fields.map((label) => ({ label, more: false }))
+  return [
+    ...fields.slice(0, CLOSE_FIELDS - 1).map((label) => ({ label, more: false })),
+    { label: `+${fields.length - (CLOSE_FIELDS - 1)} more`, more: true },
+  ]
 }
 
 /** A subject area's identity: declared and personal ones may share a name. */
@@ -95,6 +135,10 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
   const [activeArea, setActiveArea] = useState<string | null>(null)
   const [showSecurity, setShowSecurity] = useState(false)
   const [undoPositions, setUndoPositions] = useState<Layout['positions'] | null>(null)
+  // COUNTS AND HEALTH ON EACH NODE (DEV_UI 14.5). Asked once each; a
+  // refusal or failure leaves the nodes as they were, without numbers.
+  const { data: counts } = useFetchOnce<Record<string, TypeCount>>(getTypeCounts, onSessionExpired ?? noop)
+  const { data: freshness } = useFetchOnce<DataFreshness>(getDataFreshness, onSessionExpired ?? noop)
   const [areaDialog, setAreaDialog] = useState<{ original: string | null } | null>(null)
   const [width, setWidth] = useState(900)
 
@@ -552,6 +596,12 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
                     ? `secured via ${chain.target}`
                     : `secured by ${chain.field}`
                   : null
+                const counted = countText(counts?.[type.name])
+                const healthState = freshness?.freshness?.[type.name]?.state
+                // EXEMPT IS UNJUDGED, so it gets no dot rather than a
+                // reassuring one.
+                const health = healthState && healthState !== 'exempt' ? healthState : null
+                const close = shownView.scale >= CLOSE_ZOOM
                 return (
                   <g
                     key={type.name}
@@ -567,7 +617,9 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
                     aria-label={
                       `${type.label}: ${pluralise(type.fieldCount, 'field', 'fields')}, ` +
                       `${pluralise(type.linkCount, 'link', 'links')}, ${actionText}` +
-                      (securityText ? `, ${securityText}` : '')
+                      (securityText ? `, ${securityText}` : '') +
+                      (counted ? `, ${counted} you can see` : '') +
+                      (health ? `, data ${HEALTH_WORDS[health]}` : '')
                     }
                     aria-pressed={selectedType === type.name}
                     data-type={type.name}
@@ -584,25 +636,77 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
                     <title>{type.label}</title>
                     <rect className="ontology-canvas__box" width={NODE_WIDTH} height={NODE_HEIGHT} rx={6} />
                     <text className="ontology-canvas__name" x={12} y={22}>
-                      {shorten(type.label)}
+                      {shorten(type.label, counted ? LABEL_BESIDE_COUNT : MAX_LABEL)}
                     </text>
-                    <text className="ontology-canvas__meta" x={12} y={40}>
-                      {pluralise(type.fieldCount, 'field', 'fields')} · {pluralise(type.linkCount, 'link', 'links')}
-                    </text>
-                    <text
-                      className={
-                        'ontology-canvas__badge' + (type.actions.length === 0 ? ' ontology-canvas__badge--quiet' : '')
-                      }
-                      x={12}
-                      y={56}
-                    >
-                      {actionText}
-                      {securityText && (
-                        <tspan className="ontology-canvas__badge--security" dx={8}>
-                          {shorten(securityText)}
-                        </tspan>
-                      )}
-                    </text>
+                    {counted && (
+                      <text
+                        className="ontology-canvas__count"
+                        x={NODE_WIDTH - (health ? 22 : 12)}
+                        y={22}
+                        textAnchor="end"
+                      >
+                        {counted}
+                      </text>
+                    )}
+                    {health && (
+                      <circle
+                        // WRITTEN OUT IN THE ATTRIBUTE, not built from the
+                        // state: theme.test.ts proves each styled class is
+                        // rendered by finding it in a className, and both a
+                        // template and a lookup table hid these from it.
+                        className={
+                          health === 'fresh'
+                            ? 'ontology-canvas__health ontology-canvas__health--fresh'
+                            : health === 'warn'
+                              ? 'ontology-canvas__health ontology-canvas__health--warn'
+                              : health === 'fail'
+                                ? 'ontology-canvas__health ontology-canvas__health--fail'
+                                : 'ontology-canvas__health ontology-canvas__health--never'
+                        }
+                        cx={NODE_WIDTH - 12}
+                        cy={18}
+                        r={4}
+                      >
+                        <title>Data {HEALTH_WORDS[health]}</title>
+                      </circle>
+                    )}
+                    {close ? (
+                      closeFields(type.fields).map((field, index) => (
+                        <text
+                          key={field.label}
+                          className={
+                            'ontology-canvas__field' +
+                            (index === 0 && type.key !== null && !field.more ? ' ontology-canvas__field--key' : '') +
+                            (field.more ? ' ontology-canvas__field--more' : '')
+                          }
+                          x={index % 2 === 0 ? 12 : NODE_WIDTH / 2 + 4}
+                          y={36 + Math.floor(index / 2) * 11}
+                        >
+                          {shorten(field.label, MAX_FIELD_LABEL)}
+                        </text>
+                      ))
+                    ) : (
+                      <>
+                        <text className="ontology-canvas__meta" x={12} y={40}>
+                          {pluralise(type.fieldCount, 'field', 'fields')} · {pluralise(type.linkCount, 'link', 'links')}
+                        </text>
+                        <text
+                          className={
+                            'ontology-canvas__badge' +
+                            (type.actions.length === 0 ? ' ontology-canvas__badge--quiet' : '')
+                          }
+                          x={12}
+                          y={56}
+                        >
+                          {actionText}
+                          {securityText && (
+                            <tspan className="ontology-canvas__badge--security" dx={8}>
+                              {shorten(securityText)}
+                            </tspan>
+                          )}
+                        </text>
+                      </>
+                    )}
                   </g>
                 )
               })}

@@ -2680,6 +2680,46 @@
     font-size: 14px;
   }
 
+  /* DEV_UI 14.5: how many the reader can see, and whether the data is
+     current. The count is secondary text; the dot carries the state,
+     with its words in the node's label and the dot's title. */
+  .ontology-canvas__count {
+    fill: var(--text-secondary);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ontology-canvas__health--fresh {
+    fill: var(--status-success);
+  }
+  .ontology-canvas__health--warn {
+    fill: var(--status-warning);
+  }
+  .ontology-canvas__health--fail {
+    fill: var(--status-danger);
+  }
+  /* NEVER PUBLISHED is absent, not stale: a ring, so it does not read as
+     one more shade of the same scale. */
+  .ontology-canvas__health--never {
+    fill: none;
+    stroke: var(--status-danger);
+    stroke-width: 1.5;
+  }
+  /* Close zoom: the fields themselves, small enough to fit the box and,
+     at 1.5x and beyond, large enough to read. */
+  .ontology-canvas__field {
+    fill: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 7.5px;
+  }
+  .ontology-canvas__field--key {
+    fill: var(--text-primary);
+    font-weight: 600;
+  }
+  .ontology-canvas__field--more {
+    font-family: inherit;
+    font-style: italic;
+  }
+
   .ontology-canvas__meta,
   .ontology-canvas__badge {
     fill: var(--text-secondary);

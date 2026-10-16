@@ -75,3 +75,28 @@ describe('what the canvas draws', () => {
     ])
   })
 })
+
+describe('the fields a node lists at close zoom (DEV_UI 14.5)', () => {
+  it('lists data fields by display name, the key first, links left to the edges', () => {
+    const model = buildCanvasModel({
+      Order: {
+        id_field: 'order_id',
+        fields: {
+          total: { type: 'data', display_name: 'Total' },
+          order_id: { type: 'data', display_name: 'Order ID' },
+          customer: { type: 'link', target: 'Order', link_type: 'x', cardinality: 'many_to_one' },
+        },
+      },
+    })
+
+    expect(model.types[0]!.fields).toEqual(['Order ID', 'Total'])
+    expect(model.types[0]!.key).toBe('Order ID')
+  })
+
+  it('has no key when none is declared', () => {
+    const model = buildCanvasModel({ Note: { fields: { body: { type: 'data' } } } })
+
+    expect(model.types[0]!.key).toBeNull()
+    expect(model.types[0]!.fields).toEqual(['body'])
+  })
+})

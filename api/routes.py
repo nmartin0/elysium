@@ -4818,6 +4818,44 @@ def my_profile_route(request: Request,
     }
 
 
+class TypeCountResponse(BaseModel):
+    count: int
+    #: The count stopped at the scan cap: "at least `count`".
+    scan_truncated: bool = False
+
+
+@router.get("/me/type-counts", dependencies=[Depends(_no_store)],
+            response_model=dict[str, TypeCountResponse])
+def my_type_counts_route(request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """How many objects of each type THIS CALLER can see, for the
+    ontology canvas's nodes (DEV_UI 14.5: "type name, key, counts,
+    health"). One request for every type rather than one per node.
+
+    THE CALLER'S COUNT, through the same count_objects every set count
+    uses, so MAC applies: two people see different numbers, and a count
+    never describes objects someone may not see. ONLY TYPES THEY MAY
+    READ -- a type they may only discover gets no count, since counting
+    its objects would say more than "it exists". A type whose count
+    fails (not yet published, say) is left out rather than failing the
+    rest: the canvas then shows no number for it, which is what
+    /data-freshness's "never published" already explains.
+    """
+    generation = _generation(request)
+    mediator = generation.mediator
+    counts = {}
+    for object_type in sorted(generation.config.schema or {}):
+        if not authorize(current_user, generation.config.roles, f"read:{object_type}"):
+            continue
+        outcome = SearchOutcome()
+        try:
+            count = mediator.count_objects(current_user, object_type, [], outcome=outcome)
+        except Exception:  # noqa: BLE001 - see the docstring: one type, not the answer
+            continue
+        counts[object_type] = {"count": count, "scan_truncated": outcome.scan_truncated}
+    return counts
+
+
 @router.get("/data-freshness", dependencies=[Depends(_no_store)], response_model=DataFreshnessResponse)
 def data_freshness_route(request: Request,
                           _current_user: UserRecord = Depends(get_current_user)) -> dict:

@@ -612,6 +612,20 @@ export async function askHelp(question: string, screen: string | null): Promise<
   return body.answer
 }
 
+/** How many objects of a type the caller can see; `scan_truncated`
+ *  means "at least". */
+export interface TypeCount {
+  count: number
+  scan_truncated: boolean
+}
+
+/** Every type the caller may READ, counted as they see it, in one
+ *  request -- for the ontology canvas's nodes (DEV_UI 14.5). */
+export async function getTypeCounts(): Promise<Record<string, TypeCount>> {
+  const response = await apiFetchOrThrow('/me/type-counts')
+  return (await response.json()) as Record<string, TypeCount>
+}
+
 export async function getDataFreshness(): Promise<DataFreshness> {
   const response = await apiFetchOrThrow('/data-freshness')
   return response.json() as Promise<DataFreshness>

@@ -2,11 +2,18 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
+/** Counts and freshness (DEV_UI 14.5), per test; by default never
+ *  settled, so the tests not about them see the nodes as before. Plain
+ *  functions, not vi.fn: see WhoCanSee.test.tsx on rejections. */
+let counts: () => Promise<unknown> = () => new Promise(() => {})
+let freshness: () => Promise<unknown> = () => new Promise(() => {})
 vi.mock('@elysium/shell-api/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@elysium/shell-api/api')>()),
   getOntologyCanvas: vi.fn(),
   saveOntologyCanvas: vi.fn(),
   getVisibleActionTypesCached: vi.fn(),
+  getTypeCounts: () => counts(),
+  getDataFreshness: () => freshness(),
 }))
 
 import { getOntologyCanvas, getVisibleActionTypesCached, saveOntologyCanvas } from '@elysium/shell-api/api'
@@ -58,6 +65,8 @@ function renderCanvas(props: Partial<React.ComponentProps<typeof OntologyCanvas>
 
 beforeEach(() => {
   vi.clearAllMocks()
+  counts = () => new Promise(() => {})
+  freshness = () => new Promise(() => {})
   mockedGet.mockResolvedValue({ positions: {}, areas: [] })
   mockedSave.mockImplementation(async (layout) => ({ ...layout }))
   mockedActions.mockResolvedValue({
@@ -224,5 +233,53 @@ describe('the security layer (14.5)', () => {
       'Transaction borrows its security from Customer, through customer',
     )
     expect(chain.querySelector('text')).toBeNull()
+  })
+})
+
+describe('counts, health and close zoom (DEV_UI 14.5)', () => {
+  it('puts how many the reader can see, and whether it is current, on each node', async () => {
+    counts = () =>
+      Promise.resolve({
+        Customer: { count: 1284, scan_truncated: false },
+        Transaction: { count: 10000, scan_truncated: true },
+      })
+    freshness = () =>
+      Promise.resolve({
+        source: 'gold',
+        last_synced_at: null,
+        freshness: { Customer: { state: 'fail' }, Transaction: { state: 'fresh' }, Ticket: { state: 'exempt' } },
+      })
+    renderCanvas()
+
+    await waitFor(() => expect(within(node('Customer')).getByText('1,284')).toBeTruthy())
+    expect(within(node('Transaction')).getByText('10,000+')).toBeTruthy()
+    expect(node('Customer').getAttribute('aria-label')).toMatch(/1,284 you can see, data overdue$/)
+    expect(node('Customer').querySelector('.ontology-canvas__health--fail')).not.toBeNull()
+    expect(node('Transaction').querySelector('.ontology-canvas__health--fresh')).not.toBeNull()
+    // EXEMPT IS UNJUDGED: no dot at all, rather than a reassuring one.
+    expect(node('Ticket').querySelector('.ontology-canvas__health')).toBeNull()
+  })
+
+  it('draws nothing extra when counts and freshness are refused', async () => {
+    counts = () => Promise.reject(new Error('no'))
+    freshness = () => Promise.reject(new Error('no'))
+    renderCanvas()
+
+    await waitFor(() => expect(node('Customer')).toBeTruthy())
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(node('Customer').querySelector('.ontology-canvas__count, .ontology-canvas__health')).toBeNull()
+  })
+
+  it('lists the fields once zoomed in close, and summarises them before', async () => {
+    renderCanvas({ schema: { ...SCHEMA, Customer: { ...SCHEMA.Customer, id_field: 'customer_id' } } })
+    await waitFor(() => expect(node('Customer')).toBeTruthy())
+    expect(node('Customer').querySelector('.ontology-canvas__field')).toBeNull()
+
+    for (let i = 0; i < 4; i++) fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }))
+
+    const fields = [...node('Customer').querySelectorAll('.ontology-canvas__field')].map((f) => f.textContent)
+    // THE KEY FIRST, even though it is not a declared field.
+    expect(fields).toEqual(['customer_id', 'region'])
+    expect(node('Customer').querySelector('.ontology-canvas__field--key')?.textContent).toBe('customer_id')
   })
 })

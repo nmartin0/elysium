@@ -3091,6 +3091,22 @@ CONTROLS = [
         tests=["tests/integration/test_role_change_impact.py::TestTheApproverSeesIt::test_a_pending_change_carries_its_impact"],
     ),
     Control(
+        describes="DEV_UI 14.5: a type the caller may only discover gets no count",
+        path="api/routes.py",
+        old=("        if not authorize(current_user, generation.config.roles, f\"read:{object_type}\"):\n"
+             "            continue\n        outcome = SearchOutcome()"),
+        new="        outcome = SearchOutcome()",
+        tests=["tests/integration/test_type_counts.py::TestOnlyWhatTheyMayRead::test_a_type_they_may_only_discover_gets_no_count"],
+    ),
+    Control(
+        describes="DEV_UI 14.5: one type's failed count is one type, not the answer",
+        path="api/routes.py",
+        old=("        except Exception:  # noqa: BLE001 - see the docstring: one type, not the answer\n"
+             "            continue"),
+        new="        except ZeroDivisionError:\n            continue",
+        tests=["tests/integration/test_type_counts.py::TestOneFailureIsOneType::test_a_type_whose_count_fails_is_left_out"],
+    ),
+    Control(
         describes="INBOX: a merge counts only for someone who may write its type",
         path="api/routes.py",
         old="        if (authorize(current_user, roles, f\"write:{proposal.object_type}\")",

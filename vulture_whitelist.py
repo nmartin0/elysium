@@ -538,3 +538,5 @@ actions_gained
 actions_lost
 other_gained
 other_lost
+# DEV_UI 14.5, counts on the ontology canvas: a route reached by HTTP.
+my_type_counts_route

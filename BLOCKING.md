@@ -353,11 +353,18 @@ one Inbox. Built so far, each checked in a real browser:
   warning colour (13.6). The proposed grants are compiled as the
   mediators compile them, so a label grant shows as the fields it opens.
 
+THE NODE NOW CARRIES 14.5's COUNT AND HEALTH, and properties at close
+zoom (16 October): how many objects of the type the reader can see
+(GET /me/type-counts, one request, MAC applied, readable types only),
+a dot for whether its data is current against its own window (from
+/data-freshness: fresh, later than expected, overdue, a ring for never
+published, nothing for exempt), and from 1.5x its fields, the key
+first, in place of the summary -- the box keeps its size, because rows
+are 40 apart and a taller box would land on its neighbour.
+
 WHAT THE CANVAS DOES NOT DO YET, each buildable: edges are not routed
 AROUND other types, so two types dragged far apart can draw a line
-across a third ("Auto-layout" undoes it); a node shows no object COUNT
-or sync HEALTH (14.5 lists both -- a /count per type is the cost);
-properties do not appear at close zoom; and the layout is per person,
+across a third ("Auto-layout" undoes it); and the layout is per person,
 with no deployment-wide default -- that belongs with editing
 configuration from the UI, which is next.
 

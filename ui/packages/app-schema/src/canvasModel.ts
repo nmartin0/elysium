@@ -37,6 +37,11 @@ export interface CanvasType {
   label: string
   /** Data fields, not links -- the links are the edges. */
   fieldCount: number
+  /** Their display names, the KEY first and the rest in declaration
+   *  order: what the node lists at close zoom (DEV_UI 14.5). */
+  fields: string[]
+  /** The display name of the field that identifies an object, or null. */
+  key: string | null
   linkCount: number
   /** Actions that affect this type, by api name, sorted. */
   actions: string[]
@@ -79,10 +84,24 @@ export function buildCanvasModel(schema: VisibleSchema, actionTypes: Record<stri
 
   const types = names.map((name) => {
     const fields = Object.values(schema[name]?.fields ?? {})
+    const entries = Object.entries(schema[name]?.fields ?? {}).filter(([, field]) => field.type !== 'link')
+    const keyName = schema[name]?.id_field ?? null
+    const keyEntry = entries.find(([apiName]) => apiName === keyName)
+    const shown = (apiName: string, display?: string | null) => display ?? apiName
     return {
       name,
       label: schema[name]?.display_name ?? name,
       fieldCount: fields.filter((field) => field.type !== 'link').length,
+      // THE KEY NEED NOT BE A DECLARED FIELD -- the fixture's Customer
+      // names id_field customer_id and declares no such field -- so it is
+      // listed by its own name then, rather than dropped.
+      fields: [
+        ...(keyEntry ? [shown(keyEntry[0], keyEntry[1].display_name)] : keyName ? [keyName] : []),
+        ...entries
+          .filter(([apiName]) => apiName !== keyName)
+          .map(([apiName, field]) => shown(apiName, field.display_name)),
+      ],
+      key: keyEntry ? shown(keyEntry[0], keyEntry[1].display_name) : keyName,
       linkCount: fields.filter((field) => field.type === 'link').length,
       actions: [...(actionsByType.get(name) ?? [])].sort((a, b) => a.localeCompare(b)),
       group: schema[name]?.group ?? null,
