@@ -357,8 +357,10 @@ exhaustive = true
 # the server's checks alike: trigger machinery composing the stores and
 # the evaluator, outside the hierarchy as count_condition is.
 # trigger_windows beside it: it asks a mediator when a date window next
-# changes and registers a timer -- trigger machinery too.
-exhaustive_ignores = ["adapter_roles", "count_condition", "trigger_runs", "trigger_windows", "declared_triggers", "concurrency", "config", "deployment_loader", "role_impact", "internal_storage", "logging_config", "pending_write_persistence", "pending_write_serialisation", "pending_write_store", "sqlite_connection", "user_directory"]
+# changes and registers a timer -- trigger machinery too. trigger_states
+# (17 October) the same: combined, held and scheduled triggers, composing
+# count_condition, timers and the rules.
+exhaustive_ignores = ["adapter_roles", "count_condition", "trigger_runs", "trigger_windows", "trigger_states", "declared_triggers", "concurrency", "config", "deployment_loader", "role_impact", "internal_storage", "logging_config", "pending_write_persistence", "pending_write_serialisation", "pending_write_store", "sqlite_connection", "user_directory"]
 
 # Contract 3 of 3 -- the single most repeatedly-stated architectural
 # principle throughout this project's own history: authentication

@@ -3334,8 +3334,8 @@ CONTROLS = [
     Control(
         describes="WINDOWS: every evaluation sets a date-filtered trigger's next wake",
         path="core/trigger_runs.py",
-        old="    _schedule_windows(data_dir, mediator, views, made, declared, owners)\n    return fired",
-        new="    return fired",
+        old="    _schedule_windows(data_dir, mediator, views, made, declared, owners)\n",
+        new="",
         tests=["tests/integration/test_trigger_windows.py::TestItSetsATimerForTheNextCrossing::test_made_now_it_wakes_when_the_first_record_leaves"],
     ),
     Control(
@@ -3497,6 +3497,89 @@ CONTROLS = [
         old="    if owner is None or not user_is_active(owner):",
         new="    if owner is None:",
         tests=["tests/unit/test_reminders.py::TestWhenItFires::test_a_disabled_owner_is_not_reminded"],
+    ),
+    Control(
+        describes="COMBINED: a change to any condition's view reaches the trigger",
+        path="core/trigger_runs.py",
+        old=("                if any(view is not None and include(trigger, view)\n"
+             "                       for view in _views_of(trigger, views))]"),
+        new=("                if (view := views.get(trigger.view_id)) is not None\n"
+             "                and include(trigger, view)]"),
+        tests=["tests/integration/test_combined_triggers.py::TestAllOrAny::test_all_fires_when_the_last_part_becomes_true"],
+    ),
+    Control(
+        describes="COMBINED: all means all",
+        path="core/trigger_states.py",
+        old='        met = all(met_each) if trigger.combine == "all" else any(met_each)',
+        new="        met = any(met_each)",
+        tests=["tests/integration/test_combined_triggers.py::TestAllOrAny::test_all_fires_when_the_last_part_becomes_true"],
+    ),
+    Control(
+        describes="COMBINED: it fires once while it stays true",
+        path="core/trigger_states.py",
+        old="        if not fired and stamp - since >= hold:",
+        new="        if stamp - since >= hold:",
+        tests=["tests/integration/test_combined_triggers.py::TestAllOrAny::test_it_fires_once_while_it_stays_true"],
+    ),
+    Control(
+        describes="COMBINED: true when made is a baseline, not a firing",
+        path="core/trigger_states.py",
+        old=("                       State(met, stamp if met else None, met, digest))\n"
+             "            if previous is None:"),
+        new=("                       State(met, stamp if met else None, False, digest))\n"
+             "            if previous is None:"),
+        tests=["tests/integration/test_combined_triggers.py::TestAllOrAny::test_already_true_when_made_does_not_fire_for_it"],
+    ),
+    Control(
+        describes="COMBINED: a hold restarts when the condition stops being true",
+        path="core/trigger_states.py",
+        old=("            states.put(trigger.trigger_id, user_id, State(False, None, False, digest))\n"
+             "            continue"),
+        new="            continue",
+        tests=["tests/integration/test_combined_triggers.py::TestHeldForAWhile::test_true_again_after_a_gap_holds_from_the_new_start"],
+    ),
+    Control(
+        describes="COMBINED: a held trigger sets its hold timer",
+        path="core/trigger_runs.py",
+        old="                schedule_hold(timers, states, trigger)",
+        new="                pass",
+        tests=["tests/integration/test_combined_triggers.py::TestHeldForAWhile::test_fires_when_the_hold_ends_not_before"],
+    ),
+    Control(
+        describes="COMBINED: a scheduled trigger tells nobody between its checks",
+        path="core/trigger_states.py",
+        old="            if on_schedule is not None and met:",
+        new="            if met:",
+        tests=["tests/integration/test_combined_triggers.py::TestOnASchedule::test_a_change_between_checks_tells_nobody"],
+    ),
+    Control(
+        describes="COMBINED: one scheduled notice per occurrence per person",
+        path="core/trigger_states.py",
+        old='                                     dedupe_key=f"{on_schedule}/{user_id}")',
+        new="                                     )",
+        tests=["tests/integration/test_combined_triggers.py::TestOnASchedule::test_each_check_while_true_tells_once"],
+    ),
+    Control(
+        describes="COMBINED: a missed scheduled check is said",
+        path="api/trigger_checks.py",
+        old="    if firing.missed:\n        from datetime import UTC, datetime",
+        new="    if False:\n        from datetime import UTC, datetime",
+        tests=["tests/integration/test_combined_triggers.py::TestOnASchedule::test_a_missed_check_is_said"],
+    ),
+    Control(
+        describes="COMBINED: deleting a trigger stops its timers",
+        path="api/routes.py",
+        old=("    disarm(_timer_store(request), TriggerStateStore(request.app.state.runtime_paths.data_dir),\n"
+             "           trigger_id)\n    return {\"deleted\": True}"),
+        new="    return {\"deleted\": True}",
+        tests=["tests/integration/test_combined_triggers.py::TestOnASchedule::test_deleting_it_stops_its_check"],
+    ),
+    Control(
+        describes="COMBINED: gaining and losing are not combined",
+        path="core/trigger_states.py",
+        old="    if gained is not None or fell is not None:",
+        new="    if False:",
+        tests=["tests/integration/test_combined_triggers.py::TestRefusedWithTheReason::test_refused"],
     ),
     Control(
         describes="TRIGGERS: a saved change checks the triggers watching its types",

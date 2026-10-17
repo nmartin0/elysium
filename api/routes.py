@@ -2931,6 +2931,15 @@ class TriggerResponse(BaseModel):
     created_at: str
     action_type: str | None = None
     recipient_roles: list[str] = []
+    # COMBINED TRIGGERS (17 October; core/trigger_states.py).
+    at_most: int | None = None
+    also: list[dict[str, Any]] = []
+    combine: str = "all"
+    hold_minutes: int | None = None
+    schedule: dict[str, Any] | None = None
+    #: The whole condition as a sentence, views by name -- what its
+    #: notices say. Null for a single trigger, which the list words.
+    description: str | None = None
 
 
 class TriggersResponse(BaseModel):
@@ -2951,6 +2960,24 @@ class CreateTriggerRequest(BaseModel):
     # ROLES TO NOTIFY as well as the owner, each member counted with
     # their own authority.
     recipient_roles: list[str] = []
+    # COMBINED, HELD OR SCHEDULED (17 October; core/trigger_states.py):
+    # "at most N" as a state; more conditions on the caller's other
+    # views, [{view_id, above | at_most}], joined by all or any; true
+    # for at least hold_minutes; or checked only on a repeat --
+    # {"days": [...], "time": "HH:MM"} or {"every_minutes": N} -- in
+    # `timezone`.
+    at_most: int | None = None
+    also: list[dict[str, Any]] = []
+    combine: str = "all"
+    hold_minutes: int | None = None
+    schedule: dict[str, Any] | None = None
+    timezone: str = "UTC"
+
+
+def _combined_description(trigger, names: dict) -> "str | None":
+    from core.trigger_states import describe, is_state_trigger
+
+    return describe(trigger, names) if is_state_trigger(trigger) else None
 
 
 def _trigger_store(request: Request):
@@ -2974,6 +3001,10 @@ def triggers_route(
     have -- which is what makes it safe to offer here rather than in
     configuration.
     """
+    # THE CALLER'S OWN VIEW NAMES, for a combined trigger's sentence.
+    # Their own views only: a view somebody else owns is never named.
+    names = {view.view_id: view.name
+             for view in _saved_view_store(request).for_owner(current_user.user_id)}
     return {
         "triggers": [
             {
@@ -2987,6 +3018,12 @@ def triggers_route(
                 "created_at": trigger.created_at,
                 "action_type": trigger.action_type,
                 "recipient_roles": list(trigger.recipient_roles),
+                "at_most": trigger.at_most,
+                "also": list(trigger.also),
+                "combine": trigger.combine,
+                "hold_minutes": trigger.hold_minutes,
+                "schedule": trigger.schedule,
+                "description": _combined_description(trigger, names),
             }
             for trigger in _trigger_store(request).for_owner(
                 current_user.user_id,
@@ -3002,13 +3039,13 @@ def create_trigger_route(
     current_user: UserRecord = Depends(get_current_user),
 ) -> dict:
     """Creates one, watching a view the caller owns."""
-    thresholds = [body.above, body.gained, body.fell]
+    thresholds = [body.above, body.gained, body.fell, body.at_most]
     if all(value is None for value in thresholds):
         # A TRIGGER WITH NO CONDITION would evaluate forever and never
         # fire, which reads as broken rather than as quiet.
         raise HTTPException(
             status_code=400,
-            detail="A trigger needs one of above, gained or fell.",
+            detail="A trigger needs one of above, at most, gained or fell.",
         )
     if sum(value is not None for value in thresholds) > 1:
         # ONE QUESTION PER TRIGGER. Two thresholds on one row would
@@ -3016,7 +3053,7 @@ def create_trigger_route(
         # plainly instead.
         raise HTTPException(
             status_code=400,
-            detail="A trigger watches one of above, gained or fell, not several.",
+            detail="A trigger watches one of above, at most, gained or fell, not several.",
         )
 
     # THE VIEW MUST BE THE CALLER'S OWN, checked by looking in THEIR
@@ -3029,6 +3066,25 @@ def create_trigger_route(
     }
     if body.view_id not in owned:
         raise HTTPException(status_code=404, detail="No such saved view")
+
+    # COMBINED, HELD OR SCHEDULED: refused here, where the maker can
+    # fix it, rather than silently never firing (core/trigger_states.py).
+    schedule = None
+    if body.schedule is not None:
+        from core.timer_rules import RuleError, rule_from
+
+        try:
+            schedule = rule_from(body.schedule, body.timezone)
+        except RuleError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    from core.trigger_states import problem as combined_problem
+
+    combined = combined_problem(
+        above=body.above, gained=body.gained, fell=body.fell, at_most=body.at_most,
+        also=body.also, combine=body.combine, hold_minutes=body.hold_minutes,
+        schedule=schedule, action_type=body.action_type, owned_view_ids=owned)
+    if combined is not None:
+        raise HTTPException(status_code=400, detail=combined)
 
     if body.recipient_roles:
         from core.triggers import recipient_problem
@@ -3066,9 +3122,18 @@ def create_trigger_route(
         body.above, body.gained, body.fell,
         body.action_type, body.action_parameter, body.action_values,
         body.recipient_roles,
+        at_most=body.at_most, also=body.also, combine=body.combine,
+        hold_minutes=body.hold_minutes, schedule=schedule,
     )
     if trigger_id is None:
         raise HTTPException(status_code=500, detail="Could not create that trigger")
+    if schedule is not None:
+        # ITS REPEATING CHECK, owned by its maker (core/timers.py).
+        from core.trigger_states import arm_schedule
+
+        made = next(trigger for trigger in _trigger_store(request).for_owner(current_user.user_id)
+                    if trigger.trigger_id == trigger_id)
+        arm_schedule(_timer_store(request), made)
     # ITS FIRST CHECK NOW, in the background: the "now watching" notice
     # is how its maker knows it works, and with no clock for triggers
     # that only data can move, the next sync might be a day away.
@@ -3094,6 +3159,17 @@ def set_trigger_enabled_route(
         current_user.user_id, trigger_id, enabled,
     ):
         raise HTTPException(status_code=404, detail="No such trigger")
+    # OFF STOPS ITS TIMERS; ON SETS ITS SCHEDULE AGAIN. A trigger turned
+    # off must not keep waking, and one turned back on starts afresh --
+    # its states forgotten, so its next evaluation is a new baseline.
+    from core.trigger_states import TriggerStateStore, arm_schedule, disarm
+
+    timers = _timer_store(request)
+    disarm(timers, TriggerStateStore(request.app.state.runtime_paths.data_dir), trigger_id)
+    if enabled:
+        trigger = next(trigger for trigger in _trigger_store(request).for_owner(current_user.user_id)
+                       if trigger.trigger_id == trigger_id)
+        arm_schedule(timers, trigger)
     return {"enabled": enabled}
 
 
@@ -3106,6 +3182,12 @@ def delete_trigger_route(
     """A 404 FOR SOMEBODY ELSE'S: the DELETE matches no row."""
     if not _trigger_store(request).delete(current_user.user_id, trigger_id):
         raise HTTPException(status_code=404, detail="No such trigger")
+    # AND EVERYTHING IT SET FOR ITSELF -- a deleted trigger's repeating
+    # schedule would otherwise wake forever to find nothing.
+    from core.trigger_states import TriggerStateStore, disarm
+
+    disarm(_timer_store(request), TriggerStateStore(request.app.state.runtime_paths.data_dir),
+           trigger_id)
     return {"deleted": True}
 
 

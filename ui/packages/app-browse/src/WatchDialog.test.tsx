@@ -18,6 +18,7 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
     getCurrentUser: vi.fn(),
     getDataFreshness: vi.fn(),
     getDeploymentConfig: vi.fn(),
+    getSavedViews: vi.fn(),
   }
 })
 
@@ -27,6 +28,7 @@ import {
   getCurrentUser,
   getDataFreshness,
   getDeploymentConfig,
+  getSavedViews,
   getVisibleActionTypes,
 } from '@elysium/shell-api/api'
 import WatchDialog from './WatchDialog'
@@ -57,6 +59,9 @@ beforeEach(() => {
     },
   })
   vi.mocked(getCurrentUser).mockResolvedValue({ role_name: 'analyst' })
+  // THE PERSON'S OTHER VIEWS, for "and also when". Their own, as the
+  // server lists them; the one being watched is left out by the dialog.
+  vi.mocked(getSavedViews).mockResolvedValue([VIEW, { ...VIEW, view_id: 'v2', name: 'Open tickets' }])
   // Transaction data up to 26.4 hours behind: a nightly deployment.
   vi.mocked(getDataFreshness).mockResolvedValue({
     source: 'gold',
@@ -319,5 +324,89 @@ describe('a window shorter than the data is current (16 October)', () => {
     await waitFor(() => expect(vi.mocked(getDataFreshness)).toHaveBeenCalled())
 
     expect(screen.queryByRole('note')).toBeNull()
+  })
+})
+
+describe('combined, held and scheduled (17 October)', () => {
+  async function openIt() {
+    render(<WatchDialog view={VIEW} onClose={() => {}} onSessionExpired={() => {}} />)
+    await waitFor(() => expect(vi.mocked(getSavedViews)).toHaveBeenCalled())
+  }
+
+  function submit() {
+    fireEvent.click(screen.getByRole('button', { name: /^Watch$/ }))
+  }
+
+  it('sends at most as a state', async () => {
+    await openIt()
+    fireEvent.change(screen.getByLabelText('When to notify'), { target: { value: 'at_most' } })
+    submit()
+
+    await waitFor(() =>
+      expect(mockedCreate).toHaveBeenCalledWith(expect.objectContaining({ at_most: 10, above: null })),
+    )
+  })
+
+  it('adds a condition on another of their views, joined by or', async () => {
+    await openIt()
+    fireEvent.click(await screen.findByRole('button', { name: /And also when another view is/ }))
+    fireEvent.change(screen.getByLabelText('Combine'), { target: { value: 'any' } })
+    fireEvent.change(screen.getByLabelText('Condition 2 count'), { target: { value: '50' } })
+    submit()
+
+    await waitFor(() =>
+      expect(mockedCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ also: [{ view_id: 'v2', above: 50 }], combine: 'any' }),
+      ),
+    )
+  })
+
+  it('holds for hours, sent in minutes', async () => {
+    await openIt()
+    fireEvent.click(screen.getByLabelText('only once it has been true for at least'))
+    fireEvent.change(screen.getByLabelText('Hold for'), { target: { value: '2' } })
+    submit()
+
+    await waitFor(() => expect(mockedCreate).toHaveBeenCalledWith(expect.objectContaining({ hold_minutes: 120 })))
+  })
+
+  it('checks on a schedule in the browser zone, and offers no hold beside it', async () => {
+    await openIt()
+    fireEvent.click(screen.getByLabelText('only check on'))
+
+    expect(screen.queryByLabelText('only once it has been true for at least')).toBeNull()
+    fireEvent.change(screen.getByLabelText('Check at'), { target: { value: '08:15' } })
+    submit()
+
+    await waitFor(() =>
+      expect(mockedCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          schedule: { days: [0, 1, 2, 3, 4], time: '08:15' },
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }),
+      ),
+    )
+  })
+
+  it('offers none of it for gaining or losing, which are changes, not states', async () => {
+    await openIt()
+    fireEvent.change(screen.getByLabelText('When to notify'), { target: { value: 'gained' } })
+
+    expect(screen.queryByLabelText('only check on')).toBeNull()
+    expect(screen.queryByRole('button', { name: /And also when/ })).toBeNull()
+  })
+
+  it('a combined watch sends no action, and says why', async () => {
+    await openIt()
+    // An action chosen FIRST, then the watch made combined: the choice
+    // must not travel with it.
+    fireEvent.change(await screen.findByLabelText('Action to propose'), {
+      target: { value: 'RecategorizeTransactions' },
+    })
+    fireEvent.click(screen.getByLabelText('only once it has been true for at least'))
+
+    expect(screen.getByText(/only notifies/)).toBeTruthy()
+    submit()
+    await waitFor(() => expect(mockedCreate).toHaveBeenCalledWith(expect.objectContaining({ action_type: null })))
   })
 })

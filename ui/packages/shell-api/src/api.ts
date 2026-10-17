@@ -1370,7 +1370,20 @@ export interface Trigger {
   created_at: string
   action_type?: string | null
   recipient_roles?: string[]
+  /** Combined, held or scheduled (17 October). */
+  at_most?: number | null
+  also?: TriggerCondition[]
+  combine?: 'all' | 'any'
+  hold_minutes?: number | null
+  schedule?: Record<string, unknown> | null
+  /** The whole condition as a sentence, views by name; null for a
+   *  single trigger. */
+  description?: string | null
 }
+
+/** One more condition of a combined trigger: another of the caller's
+ *  views, above or at most a count. */
+export type TriggerCondition = { view_id: string; above: number } | { view_id: string; at_most: number }
 
 export async function getTriggers(): Promise<Trigger[]> {
   const response = await apiFetchOrThrow('/triggers')
@@ -1387,6 +1400,12 @@ export async function createTrigger(body: {
   action_parameter?: string | null
   action_values?: Record<string, unknown>
   recipient_roles?: string[]
+  at_most?: number | null
+  also?: TriggerCondition[]
+  combine?: 'all' | 'any'
+  hold_minutes?: number | null
+  schedule?: { days: number[]; time: string } | { every_minutes: number } | null
+  timezone?: string
 }): Promise<string> {
   const response = await apiFetchOrThrow('/triggers', {
     method: 'POST',

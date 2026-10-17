@@ -168,7 +168,7 @@ def evaluate_user_triggers(mediator, trigger_store, view_store,
                            notification_store, user_records: dict,
                            config_digest: str | None = None,
                            write_mediator=None, pending_store=None,
-                           include=None) -> int:
+                           include=None, states=None, on_schedule=None) -> int:
     """Runs every enabled trigger as its owner. Returns how many fired.
 
     `include(trigger, view)`, when given, picks which to run -- the
@@ -201,11 +201,50 @@ def evaluate_user_triggers(mediator, trigger_store, view_store,
             continue
         if include is not None and not include(trigger, view):
             continue
+        if states is not None and _is_state(trigger):
+            # A COMBINED, HELD OR SCHEDULED TRIGGER is a state, not a
+            # change in one count (core/trigger_states.py).
+            fired += _evaluate_state(trigger, view_store, mediator, notification_store,
+                                     user_records, config_digest, states, on_schedule)
+            continue
+        if _is_state(trigger) or getattr(trigger, "schedule", None):
+            continue
         fired += evaluate_one_trigger(
             trigger, view, mediator, notification_store, user_records,
             config_digest, write_mediator, pending_store,
         )
     return fired
+
+
+def _is_state(trigger) -> bool:
+    from core.trigger_states import is_state_trigger
+
+    return is_state_trigger(trigger)
+
+
+def _evaluate_state(trigger, view_store, mediator, notification_store, user_records,
+                    config_digest, states, on_schedule) -> int:
+    from core import trigger_windows
+    from core.trigger_states import evaluate, view_ids_of
+
+    owner = user_records.get(trigger.owner_user_id)
+    if owner is None:
+        logger.warning("trigger %r names owner %r, who does not exist or is disabled",
+                       trigger.name, trigger.owner_user_id)
+        return 0
+    views = [view_store.get(view_id) for view_id in view_ids_of(trigger)]
+    if any(view is None for view in views):
+        # A CONDITION'S VIEW WAS DELETED. Not evaluated on what is left:
+        # "A and B" without B is a different question, and answering it
+        # would be a wrong answer reported as a right one.
+        logger.warning("trigger %r watches a view that no longer exists", trigger.name)
+        return 0
+    try:
+        return evaluate(trigger, owner, views, mediator, notification_store, user_records,
+                        config_digest, states, trigger_windows.now(), on_schedule)
+    except Exception as e:  # noqa: BLE001 - one failure costs one trigger
+        logger.warning("could not evaluate trigger %r: %s", trigger.name, e)
+        return 0
 
 
 def recipients_of(trigger, owner, user_records: dict) -> list:

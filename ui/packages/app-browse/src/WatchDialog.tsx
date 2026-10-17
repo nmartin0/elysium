@@ -36,9 +36,11 @@ import {
   getDataFreshness,
   getDeploymentConfig,
   getErrorMessage,
+  getSavedViews,
   getVisibleActionTypes,
   handleIfSessionExpired,
   type ServerSavedView,
+  type TriggerCondition,
 } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import { type FieldFilter, staleWindowNote } from '@elysium/shell-api/components/FilterBar'
@@ -52,9 +54,36 @@ interface WatchDialogProps {
   onSessionExpired?: () => void
 }
 
+/** One more condition being built: another view, above or at most. */
+interface Extra {
+  viewId: string
+  kind: 'above' | 'at_most'
+  count: number
+}
+
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function browserZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    return 'UTC'
+  }
+}
+
 export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDialogProps) {
   const [thresholdKind, setThresholdKind] = useState('above')
   const [threshold, setThreshold] = useState(10)
+  // COMBINED, HELD OR SCHEDULED (17 October; core/trigger_states.py).
+  const [otherViews, setOtherViews] = useState<ServerSavedView[]>([])
+  const [extras, setExtras] = useState<Extra[]>([])
+  const [combine, setCombine] = useState<'all' | 'any'>('all')
+  const [holding, setHolding] = useState(false)
+  const [hold, setHold] = useState(1)
+  const [holdUnit, setHoldUnit] = useState<'minutes' | 'hours'>('hours')
+  const [scheduled, setScheduled] = useState(false)
+  const [days, setDays] = useState<number[]>([0, 1, 2, 3, 4])
+  const [time, setTime] = useState('09:00')
   const [actions, setActions] = useState<ActionChoice[]>([])
   const [roles, setRoles] = useState<string[]>([])
   const [behindBy, setBehindBy] = useState<number | null>(null)
@@ -125,6 +154,14 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
       // records that changed since -- worth knowing before it is made.
       // Quiet on failure: the note is a caution, not a precondition.
       try {
+        // THE OTHER VIEWS THIS PERSON OWNS, for "and also when". Quiet
+        // on failure: the dialog still makes a single trigger.
+        const mine = await getSavedViews()
+        setOtherViews(mine.filter((other) => other.view_id !== view.view_id))
+      } catch {
+        setOtherViews([])
+      }
+      try {
         const freshness = await getDataFreshness()
         setBehindBy(freshness.freshness?.[view.object_type]?.warn_after_hours ?? null)
       } catch {
@@ -140,6 +177,12 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
   // parameter. Never another action's.
   const target = targetByAction[actionName] ?? chosen?.targets[0] ?? ''
 
+  // A STATE (above, at most) can be combined, held or scheduled; a
+  // CHANGE (gaining, losing) cannot -- the server refuses it, so it is
+  // not offered.
+  const isState = thresholdKind === 'above' || thresholdKind === 'at_most'
+  const combined = isState && (extras.length > 0 || holding || scheduled)
+
   async function watch() {
     if (view === null) return
     setRefusal(null)
@@ -151,10 +194,24 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
         above: thresholdKind === 'above' ? threshold : null,
         gained: thresholdKind === 'gained' ? threshold : null,
         fell: thresholdKind === 'fell' ? threshold : null,
-        action_type: chosen?.name ?? null,
-        action_parameter: chosen ? target : null,
-        action_values: chosen ? values : {},
+        at_most: thresholdKind === 'at_most' ? threshold : null,
+        // A combined trigger only notifies, for now; none is sent.
+        action_type: combined ? null : (chosen?.name ?? null),
+        action_parameter: combined || !chosen ? null : target,
+        action_values: combined || !chosen ? {} : values,
         recipient_roles: recipients,
+        ...(isState && extras.length > 0
+          ? {
+              also: extras.map((extra): TriggerCondition =>
+                extra.kind === 'above'
+                  ? { view_id: extra.viewId, above: extra.count }
+                  : { view_id: extra.viewId, at_most: extra.count },
+              ),
+              combine,
+            }
+          : {}),
+        ...(isState && holding && !scheduled ? { hold_minutes: holdUnit === 'hours' ? hold * 60 : hold } : {}),
+        ...(isState && scheduled ? { schedule: { days: [...days].sort(), time }, timezone: browserZone() } : {}),
       })
       onClose()
     } catch (caught: unknown) {
@@ -179,17 +236,155 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
             onChange={(event) => setThresholdKind(event.currentTarget.value)}
             options={[
               { value: 'above', label: 'above' },
+              { value: 'at_most', label: 'at most' },
               { value: 'gained', label: 'gaining' },
               { value: 'fell', label: 'losing' },
             ]}
           />
           <NumericInput
             value={threshold}
-            min={1}
+            min={thresholdKind === 'at_most' ? 0 : 1}
             aria-label="How many"
             onValueChange={(value) => setThreshold(Number.isNaN(value) ? 1 : value)}
           />
         </div>
+
+        {isState && (
+          <div className="watch-combined">
+            {extras.map((extra, index) => (
+              <div className="watch-combined__row" key={index}>
+                {index === 0 ? (
+                  <HTMLSelect
+                    aria-label="Combine"
+                    value={combine}
+                    onChange={(e) => setCombine(e.currentTarget.value as 'all' | 'any')}
+                  >
+                    <option value="all">and</option>
+                    <option value="any">or</option>
+                  </HTMLSelect>
+                ) : (
+                  <span>{combine === 'all' ? 'and' : 'or'}</span>
+                )}
+                <HTMLSelect
+                  aria-label={`Condition ${index + 2} view`}
+                  value={extra.viewId}
+                  onChange={(e) => {
+                    const viewId = e.currentTarget.value
+                    setExtras((current) => current.map((item, at) => (at === index ? { ...item, viewId } : item)))
+                  }}
+                >
+                  {otherViews.map((other) => (
+                    <option key={other.view_id} value={other.view_id}>
+                      {other.name}
+                    </option>
+                  ))}
+                </HTMLSelect>
+                <HTMLSelect
+                  aria-label={`Condition ${index + 2} kind`}
+                  value={extra.kind}
+                  onChange={(e) => {
+                    const kind = e.currentTarget.value as 'above' | 'at_most'
+                    setExtras((current) => current.map((item, at) => (at === index ? { ...item, kind } : item)))
+                  }}
+                >
+                  <option value="above">above</option>
+                  <option value="at_most">at most</option>
+                </HTMLSelect>
+                <NumericInput
+                  aria-label={`Condition ${index + 2} count`}
+                  value={extra.count}
+                  min={0}
+                  onValueChange={(value) =>
+                    setExtras((current) =>
+                      current.map((item, at) =>
+                        at === index ? { ...item, count: Number.isNaN(value) ? 0 : value } : item,
+                      ),
+                    )
+                  }
+                />
+                <Button
+                  minimal
+                  small
+                  icon="cross"
+                  aria-label={`Remove condition ${index + 2}`}
+                  onClick={() => setExtras((current) => current.filter((_, at) => at !== index))}
+                />
+              </div>
+            ))}
+            {otherViews.length > 0 && extras.length < 9 && (
+              <Button
+                minimal
+                small
+                icon="add"
+                onClick={() =>
+                  setExtras((current) => [...current, { viewId: otherViews[0]!.view_id, kind: 'above', count: 0 }])
+                }
+              >
+                And also when another view is…
+              </Button>
+            )}
+
+            {!scheduled && (
+              <div className="watch-combined__row">
+                <Checkbox
+                  label="only once it has been true for at least"
+                  checked={holding}
+                  onChange={() => setHolding((on) => !on)}
+                />
+                {holding && (
+                  <>
+                    <NumericInput
+                      aria-label="Hold for"
+                      value={hold}
+                      min={1}
+                      onValueChange={(value) => setHold(Number.isNaN(value) ? 1 : value)}
+                    />
+                    <HTMLSelect
+                      aria-label="Hold unit"
+                      value={holdUnit}
+                      onChange={(e) => setHoldUnit(e.currentTarget.value as 'minutes' | 'hours')}
+                    >
+                      <option value="minutes">minutes</option>
+                      <option value="hours">hours</option>
+                    </HTMLSelect>
+                  </>
+                )}
+              </div>
+            )}
+
+            <div className="watch-combined__row">
+              <Checkbox label="only check on" checked={scheduled} onChange={() => setScheduled((on) => !on)} />
+              {scheduled && (
+                <>
+                  {WEEKDAYS.map((name, day) => (
+                    <Checkbox
+                      key={name}
+                      inline
+                      label={name}
+                      checked={days.includes(day)}
+                      onChange={() =>
+                        setDays((current) =>
+                          current.includes(day) ? current.filter((d) => d !== day) : [...current, day],
+                        )
+                      }
+                    />
+                  ))}
+                  <InputGroup
+                    aria-label="Check at"
+                    type="time"
+                    value={time}
+                    onChange={(e) => setTime(e.currentTarget.value)}
+                  />
+                </>
+              )}
+            </div>
+            {scheduled && (
+              <p className="watch-combined__note">
+                Checked at {time} ({browserZone()}), and you are told every time it is true then.
+              </p>
+            )}
+          </div>
+        )}
 
         {roles.length > 0 && (
           <FormGroup label="Also tell" helperText="Each person sees only what they are allowed to.">
@@ -208,7 +403,13 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
           </FormGroup>
         )}
 
-        {actions.length > 0 && (
+        {combined && (
+          <p className="watch-combined__note">
+            A combined, held or scheduled watch only notifies: which objects an action would receive is not decided.
+          </p>
+        )}
+
+        {actions.length > 0 && !combined && (
           <FormGroup
             label="And propose"
             helperText={

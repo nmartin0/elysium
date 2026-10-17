@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from core.timer_rules import RuleError, first_occurrence, instant, validate, zone
+from core.timer_rules import RuleError, first_occurrence, instant, rule_from, zone
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ def parse(body: dict, now: datetime) -> ReminderSpec:
             if start <= now:
                 raise ReminderError("That time has already passed.")
             return ReminderSpec(label, start.timestamp(), timezone, late_after, None)
-        rule = _rule(repeat, timezone, body.get("until"))
+        rule = rule_from(repeat, timezone, body.get("until"))
         if start is not None and "every_minutes" not in rule:
             raise ReminderError("A weekday repeat starts at its own time; leave out the start.")
         if start is not None and start <= now:
@@ -98,21 +98,6 @@ def parse(body: dict, now: datetime) -> ReminderSpec:
     if first is None:
         raise ReminderError("That repeat ends before it would first fire.")
     return ReminderSpec(label, first.timestamp(), timezone, late_after, rule)
-
-
-def _rule(repeat: Any, timezone: str, until: Any) -> dict:
-    if not isinstance(repeat, dict):
-        raise ReminderError("A repeat is every_minutes, or days and a time.")
-    if "every_minutes" in repeat:
-        rule: dict = {"every_minutes": repeat["every_minutes"]}
-    else:
-        # A WEEKDAY RULE IS IN THE OWNER'S TIME ZONE, so 09:00 stays nine
-        # on their clock across a daylight-saving change.
-        rule = {"days": repeat.get("days"), "time": repeat.get("time"), "timezone": timezone}
-    if until is not None:
-        rule["until"] = until
-    validate(rule)
-    return rule
 
 
 def describe_repeat(rule: "dict | None") -> "str | None":

@@ -70,6 +70,23 @@ def validate(rule: dict) -> None:
         instant(rule["until"])
 
 
+def rule_from(repeat, timezone: str, until=None) -> dict:
+    """A rule from what a person asked for: {"every_minutes": N}, or
+    {"days": [...], "time": "HH:MM"} kept in THEIR zone -- so 09:00
+    stays nine on their clock -- and optionally until a moment.
+    Validated; RuleError says why not."""
+    if not isinstance(repeat, dict):
+        raise RuleError("A repeat is every_minutes, or days and a time.")
+    if "every_minutes" in repeat:
+        rule: dict = {"every_minutes": repeat["every_minutes"]}
+    else:
+        rule = {"days": repeat.get("days"), "time": repeat.get("time"), "timezone": timezone}
+    if until is not None:
+        rule["until"] = until
+    validate(rule)
+    return rule
+
+
 def next_occurrence(rule: dict, after: datetime, anchor: datetime) -> "datetime | None":
     """The first occurrence strictly after `after`, or None once past
     `until`. `anchor` is the first occurrence, which an interval keeps

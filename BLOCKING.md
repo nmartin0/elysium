@@ -293,11 +293,17 @@ because they re-check current state. Each occurrence carries a key, and
 the notice it writes uses it, so a firing delivered twice is one
 notice. 100 per person; repeats no more often than every 5 minutes.
 
-**Next: combined triggers**, agreed the same day: all or any of
-several conditions (Datadog's composite monitors, no nesting); a
-condition on a schedule ("weekdays at 9, if ..." -- Foundry Automate's
-combined time and object conditions); a condition that holds for a
-duration (Prometheus' `for`), built on these timers.
+**Combined triggers -- built 17 October** (core/trigger_states.py):
+all or any of up to ten conditions, each one of the owner's views above
+or at most a count (Datadog's composite monitors, no nesting); true for
+at least a while (Prometheus' `for`), on time by a hold timer; or
+checked only on a schedule and told every time it is true then (Foundry
+Automate's combined time and object conditions), a missed check said.
+Conditions are STATES: gaining and losing stay single. Each person's
+own state and latch -- fires once when it becomes true, a baseline when
+made. Notify only for now: which objects an action would receive from
+several views is not decided. Declared triggers in config.yaml stay
+single.
 
 **Queue flooding (R50)** was decided and built 14 October, and the cap
 on how many objects one proposal may name is bulk actions' (256 unless

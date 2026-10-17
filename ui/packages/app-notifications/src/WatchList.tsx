@@ -39,10 +39,17 @@ interface WatchListProps {
  *  proposes writes looking identical to one that only notifies would
  *  hide the one fact somebody reviewing their list most needs. */
 function describe(trigger: Trigger): string {
+  // A COMBINED, HELD OR SCHEDULED trigger comes with its own sentence,
+  // views by name -- the words its notices use.
+  if (trigger.description) {
+    const roles = trigger.recipient_roles ?? []
+    return roles.length > 0 ? `${trigger.description} · also tells ${roles.join(', ')}` : trigger.description
+  }
   let condition = 'watching'
   if (trigger.above !== null) condition = `above ${trigger.above}`
   else if (trigger.gained !== null) condition = `gaining ${trigger.gained} or more`
   else if (trigger.fell !== null) condition = `losing ${trigger.fell} or more`
+  else if (trigger.at_most !== null && trigger.at_most !== undefined) condition = `at most ${trigger.at_most}`
 
   const parts = [condition]
   const roles = trigger.recipient_roles ?? []

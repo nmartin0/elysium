@@ -78,7 +78,8 @@ def only(trigger_id: str) -> "Callable[[Any, Any], bool]":
 
 def run_triggers(config: Any, data_dir: Path, mediator: Any,
                  write_side: "Callable[[], tuple[Any, Any, Any]]",
-                 include: "Callable[[Any, Any], bool] | None" = None) -> int:
+                 include: "Callable[[Any, Any], bool] | None" = None,
+                 on_schedule: "str | None" = None) -> int:
     """Evaluates every enabled trigger -- made in the product and
     declared in config.yaml -- and returns how many fired.
 
@@ -101,13 +102,15 @@ def run_triggers(config: Any, data_dir: Path, mediator: Any,
     data_dir.mkdir(parents=True, exist_ok=True)
     with open(data_dir / "trigger_runs.lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        return _run_triggers_locked(config, data_dir, mediator, write_side, include)
+        return _run_triggers_locked(config, data_dir, mediator, write_side, include, on_schedule)
 
 
-def _run_triggers_locked(config, data_dir, mediator, write_side, include) -> int:
+def _run_triggers_locked(config, data_dir, mediator, write_side, include, on_schedule=None) -> int:
     from core.count_condition import evaluate_one_trigger, evaluate_user_triggers
     from core.notifications import NotificationStore
     from core.saved_views import SavedViewStore
+    from core.timers import TimerStore
+    from core.trigger_states import TriggerStateStore, schedule_hold
     from core.triggers import TriggerStore
     from core.user_directory import UserDirectory
 
@@ -123,9 +126,12 @@ def _run_triggers_locked(config, data_dir, mediator, write_side, include) -> int
         # type resolves the owners of the triggers watching it and no
         # others. A view that no longer exists is left to the full run
         # to report.
+        #
+        # A COMBINED TRIGGER IS CHOSEN IF ANY OF ITS VIEWS IS: a change
+        # to either side of "A and B" can change the answer.
         made = [trigger for trigger in made
-                if (view := views.get(trigger.view_id)) is not None
-                and include(trigger, view)]
+                if any(view is not None and include(trigger, view)
+                       for view in _views_of(trigger, views))]
         declared = [trigger for trigger in declared if include(trigger, trigger.view)]
     enabled = [*made, *declared]
     if not enabled:
@@ -164,11 +170,13 @@ def _run_triggers_locked(config, data_dir, mediator, write_side, include) -> int
 
     notifications = NotificationStore(data_dir / "notifications.db")
     chosen = {trigger.trigger_id for trigger in made}
+    states = TriggerStateStore(data_dir)
     fired = evaluate_user_triggers(
         mediator, triggers, views,
         notifications, owners, config.source_digest, write_mediator, pending_store,
         include=None if include is None else (
             lambda trigger, view: trigger.trigger_id in chosen),
+        states=states, on_schedule=on_schedule,
     )
     # DECLARED TRIGGERS carry their view inline, so they skip the
     # saved-view lookup and go straight to the shared path.
@@ -182,7 +190,23 @@ def _run_triggers_locked(config, data_dir, mediator, write_side, include) -> int
     # window (core/trigger_windows.py). After a sync or a saved change
     # too, because a new record may cross sooner than any old one.
     _schedule_windows(data_dir, mediator, views, made, declared, owners)
+    # AND A HELD ONE, the moment its earliest waiting person's hold ends.
+    timers = TimerStore(data_dir)
+    for trigger in made:
+        if getattr(trigger, "hold_minutes", None):
+            try:
+                schedule_hold(timers, states, trigger)
+            except Exception:  # noqa: BLE001 - one trigger's timer costs only itself
+                logger.warning("could not schedule the hold of %r", trigger.name, exc_info=True)
     return fired
+
+
+def _views_of(trigger, views) -> list:
+    """Every view a trigger watches -- its own, and a combined one's
+    others -- looked up; a missing one is None."""
+    from core.trigger_states import view_ids_of
+
+    return [views.get(view_id) for view_id in view_ids_of(trigger)]
 
 
 def _schedule_windows(data_dir, mediator, views, made, declared, owners) -> None:
@@ -193,10 +217,11 @@ def _schedule_windows(data_dir, mediator, views, made, declared, owners) -> None
 
     timers = TimerStore(data_dir)
     now = trigger_windows.now()
-    pairs = [(trigger, views.get(trigger.view_id)) for trigger in made]
-    pairs += [(trigger, trigger.view) for trigger in declared]
-    for trigger, view in pairs:
-        if view is None or not reads_the_clock(trigger, view):
+    pairs = [(trigger, _views_of(trigger, views)) for trigger in made]
+    pairs += [(trigger, [trigger.view]) for trigger in declared]
+    for trigger, watched in pairs:
+        if any(view is None for view in watched) or not any(
+                reads_the_clock(trigger, view) for view in watched):
             continue
         owner = owners.get(trigger.owner_user_id)
         try:
@@ -205,7 +230,7 @@ def _schedule_windows(data_dir, mediator, views, made, declared, owners) -> None
                 # is evaluated by the next sync, which schedules again.
                 timers.cancel(KIND, trigger.trigger_id)
                 continue
-            schedule(timers, trigger, mediator, view,
-                     recipients_of(trigger, owner, owners), now)
+            schedule(timers, trigger, mediator, watched[0],
+                     recipients_of(trigger, owner, owners), now, more_views=watched[1:])
         except Exception:  # noqa: BLE001 - one trigger's wake costs only itself
             logger.warning("could not schedule trigger %r", trigger.name, exc_info=True)

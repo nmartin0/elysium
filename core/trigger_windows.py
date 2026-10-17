@@ -81,9 +81,13 @@ def next_crossing(mediator: Any, view: Any, recipients: list,
 
 
 def schedule(timers: Any, trigger: Any, mediator: Any, view: Any,
-             recipients: list, now: datetime) -> "float | None":
-    """Sets (or clears) this trigger's wake. Returns the time set."""
-    crossing = next_crossing(mediator, view, recipients, now)
+             recipients: list, now: datetime, more_views: Any = ()) -> "float | None":
+    """Sets (or clears) this trigger's wake. Returns the time set.
+    `more_views` are a combined trigger's other conditions: it wakes at
+    the earliest crossing of any of them."""
+    crossings = [crossing for watched in (view, *more_views)
+                 if (crossing := next_crossing(mediator, watched, recipients, now)) is not None]
+    crossing = min(crossings) if crossings else None
     if crossing is None:
         # NOTHING LEFT TO CROSS. The next record that arrives comes
         # with an evaluation, and that evaluation schedules again.

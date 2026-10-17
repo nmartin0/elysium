@@ -110,12 +110,58 @@ def window_timer(app, firing) -> None:
         logger.info("trigger %s fired at its window's edge", firing.key)
 
 
-def _run(app, include) -> int:
+def hold_timer(app, firing) -> None:
+    """A held trigger's hold has ended for its earliest waiting person:
+    evaluate it, which fires for whoever has now held long enough and
+    sets the next hold timer. Re-checks current state, so never too
+    late and needs no key."""
+    from core.trigger_runs import only
+
+    _run(app, only(firing.key))
+
+
+def schedule_timer(app, firing) -> None:
+    """A scheduled trigger's check (core/trigger_states.py).
+
+    ON TIME: evaluated as a scheduled check, which tells each person
+    for whom it is true -- once per occurrence each, by the occurrence's
+    key. MISSED (more than an hour late; the server was down): its
+    owner is told the check did not happen, rather than shown a 09:00
+    digest at 11:00. A trigger deleted or turned off since is not
+    found, and its timer goes with it.
+    """
+    from core.notifications import NotificationStore
+    from core.timers import TimerStore
+    from core.trigger_runs import only
+    from core.trigger_states import SCHEDULE_KIND
+    from core.triggers import TriggerStore
+
+    data_dir = app.state.runtime_paths.data_dir
+    trigger = next((trigger for trigger in TriggerStore(data_dir / "triggers.db").all_enabled()
+                    if trigger.trigger_id == firing.key), None)
+    if trigger is None:
+        TimerStore(data_dir).cancel(SCHEDULE_KIND, firing.key)
+        return
+    if firing.missed:
+        from datetime import UTC, datetime
+
+        when = datetime.fromtimestamp(firing.at, UTC).strftime("%a %d %b %H:%M UTC")
+        written = NotificationStore(data_dir / "notifications.db").notify(
+            trigger.owner_user_id, "trigger",
+            f"{trigger.name}: the check due {when} was missed while Elysium was not running.",
+            dedupe_key=firing.occurrence_key)
+        if written is None:
+            raise RuntimeError(f"could not tell {trigger.owner_user_id} of a missed check")
+        return
+    _run(app, only(firing.key), on_schedule=firing.occurrence_key)
+
+
+def _run(app, include, on_schedule=None) -> int:
     from core.trigger_runs import run_triggers
 
     generation = app.state.generation
     return run_triggers(
         generation.config, app.state.runtime_paths.data_dir, generation.mediator,
         lambda: (generation.mediator, generation.write_mediator, app.state.pending_writes),
-        include=include,
+        include=include, on_schedule=on_schedule,
     )

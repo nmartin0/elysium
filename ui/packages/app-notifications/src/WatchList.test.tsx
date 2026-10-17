@@ -144,3 +144,12 @@ describe('saying what a trigger does', () => {
     expect(await screen.findByText(/also tells reviewer/)).toBeInTheDocument()
   })
 })
+
+it('words a combined trigger in its own sentence (17 October)', async () => {
+  mockedList.mockResolvedValue([
+    aTrigger({ above: 3, description: 'Overdue invoices above 3 and Open tickets above 50, for 2 hours' }),
+  ])
+  render(<WatchList onSessionExpired={() => {}} />)
+
+  expect(await screen.findByText('Overdue invoices above 3 and Open tickets above 50, for 2 hours')).toBeTruthy()
+})

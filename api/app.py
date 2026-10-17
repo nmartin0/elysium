@@ -248,10 +248,14 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
             # server was down, and a first timer for each.
             _app.state.trigger_checks.after_start()
             from api.reminders import reminder_timer
+            from api.trigger_checks import hold_timer, schedule_timer
             from core.reminders import KIND as REMINDER
+            from core.trigger_states import HOLD_KIND, SCHEDULE_KIND
 
-            clock = asyncio.create_task(run_timer_service(
-                _app, {TRIGGER_WINDOW: window_timer, REMINDER: reminder_timer}))
+            clock = asyncio.create_task(run_timer_service(_app, {
+                TRIGGER_WINDOW: window_timer, REMINDER: reminder_timer,
+                HOLD_KIND: hold_timer, SCHEDULE_KIND: schedule_timer,
+            }))
         yield
         if stop_announcing is not None:
             stop_announcing()

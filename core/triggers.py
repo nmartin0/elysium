@@ -86,6 +86,21 @@ class Trigger:
     action_parameter: str | None = None
     action_values: dict | None = None
     recipient_roles: tuple = ()
+    # COMBINED TRIGGERS (17 October; core/trigger_states.py). Each
+    # defaulted and LAST, so every positional constructor keeps working.
+    #
+    # "AT MOST N" -- a state, like `above`, for a count that should
+    # stay low.
+    at_most: int | None = None
+    # MORE CONDITIONS, each {view_id, above | at_most} on another of
+    # the owner's views, combined with this one by `combine`.
+    also: tuple = ()
+    combine: str = "all"
+    # TRUE FOR AT LEAST THIS LONG before it fires (Prometheus' `for`).
+    hold_minutes: int | None = None
+    # CHECKED ONLY ON THIS REPEAT RULE (core/timer_rules.py), and told
+    # every time it is true then.
+    schedule: dict | None = None
 
     @property
     def condition_key(self) -> str:
@@ -120,6 +135,11 @@ class TriggerStore:
         return connection_with_schema(
             self._db_path, SCHEMA,
             migrations=(
+                add_column_if_missing("triggers", "at_most", "INTEGER"),
+                add_column_if_missing("triggers", "also", "TEXT NOT NULL DEFAULT '[]'"),
+                add_column_if_missing("triggers", "combine", "TEXT NOT NULL DEFAULT 'all'"),
+                add_column_if_missing("triggers", "hold_minutes", "INTEGER"),
+                add_column_if_missing("triggers", "schedule", "TEXT"),
                 add_column_if_missing("triggers", "action_type", "TEXT"),
                 add_column_if_missing("triggers", "action_parameter", "TEXT"),
                 add_column_if_missing(
@@ -136,7 +156,10 @@ class TriggerStore:
                fell: int | None = None, action_type: str | None = None,
                action_parameter: str | None = None,
                action_values: dict | None = None,
-               recipient_roles: list | None = None) -> str | None:
+               recipient_roles: list | None = None,
+               at_most: int | None = None, also: list | None = None,
+               combine: str = "all", hold_minutes: int | None = None,
+               schedule: dict | None = None) -> str | None:
         """Makes one. Returns its id, or None if it could not be made."""
         trigger_id = str(uuid.uuid4())
         try:
@@ -145,12 +168,15 @@ class TriggerStore:
                     "INSERT INTO triggers (trigger_id, owner_user_id, name, "
                     "view_id, above, gained, fell, action_type, "
                     "action_parameter, action_values, recipient_roles, "
-                    "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "created_at, at_most, also, combine, hold_minutes, schedule) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (trigger_id, owner_user_id, name, view_id, above, gained,
                      fell, action_type, action_parameter,
                      json.dumps(action_values or {}),
                      json.dumps(sorted(set(recipient_roles or []))),
-                     datetime.now(UTC).isoformat()),
+                     datetime.now(UTC).isoformat(), at_most,
+                     json.dumps(list(also or [])), combine, hold_minutes,
+                     None if schedule is None else json.dumps(schedule)),
                 )
                 conn.commit()
         except Exception as e:  # noqa: BLE001
@@ -226,6 +252,11 @@ class TriggerStore:
                 row["fell"], bool(row["enabled"]), row["created_at"],
                 row["action_type"], row["action_parameter"], values,
                 roles,
+                at_most=row["at_most"],
+                also=tuple(_json(row["also"], [])),
+                combine=row["combine"] or "all",
+                hold_minutes=row["hold_minutes"],
+                schedule=_json(row["schedule"], None),
             ))
         return triggers
 
@@ -238,6 +269,16 @@ class TriggerStore:
         except Exception as e:  # noqa: BLE001
             logger.warning("could not write a trigger: %s", e)
             return False
+
+
+def _json(text, default):
+    # UNREADABLE MEANS ABSENT -- for `also`, no more conditions, which
+    # the evaluator then cannot mistake for a trigger it can run: a
+    # state trigger whose parts are missing is refused there by name.
+    try:
+        return default if text is None else json.loads(text)
+    except (TypeError, json.JSONDecodeError):
+        return default
 
 
 def describe(trigger: Trigger) -> str:
@@ -253,6 +294,8 @@ def describe(trigger: Trigger) -> str:
         return f"{trigger.name} gaining {trigger.gained} or more"
     if trigger.fell is not None:
         return f"{trigger.name} losing {trigger.fell} or more"
+    if getattr(trigger, "at_most", None) is not None:
+        return f"{trigger.name} at most {trigger.at_most}"
     return trigger.name
 
 
