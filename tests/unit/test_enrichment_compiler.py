@@ -1,15 +1,18 @@
 """Compiling an enriched field into rules (R41), against a scripted model."""
 
 import json
+import math
 
 from core.agent.enrichment_compiler import (
     UNUSABLE,
+    combine,
     compile_recipe,
     evaluate,
     input_hash,
     label_row,
+    weight_of,
 )
-from core.ontology.enriched_fields import Enrichment, check_rules
+from core.ontology.enriched_fields import MAX_MEMBERS, MAX_WEIGHT, Enrichment, check_recipe, check_rules
 
 ENRICHMENT = Enrichment(("subject",), "What the ticket is about.", ("billing", "refund", "technical"))
 
@@ -143,3 +146,81 @@ def test_evaluation_counts_a_wrong_answer_against_the_rules():
 def test_the_cache_key_changes_with_the_input():
     assert input_hash(ENRICHMENT, {"subject": "a"}) != input_hash(ENRICHMENT, {"subject": "b"})
     assert input_hash(ENRICHMENT, {"subject": "a", "other": 1}) == input_hash(ENRICHMENT, {"subject": "a"})
+
+
+# THE VOTE (EVAPORATE-Code+): several candidates, each weighted by how
+# often it agreed with the model on the examples, chosen only when the
+# vote beats the best single set there -- and still judged on rows
+# neither saw.
+REFUND_ONLY = [GOOD[0]]
+BILLING_ONLY = [GOOD[1]]
+TECHNICAL_ONLY = [GOOD[2]]
+
+
+def _result(covered, agreed):
+    return {"rows": 10, "covered": covered, "agreed": agreed}
+
+
+def test_a_set_no_better_than_a_coin_has_no_vote():
+    assert weight_of(_result(0, 0)) == 0
+    assert weight_of(_result(2, 1)) == 0
+    assert weight_of(_result(4, 1)) < 0
+    assert weight_of(_result(4, 4)) > weight_of(_result(8, 7)) > 0
+
+
+def test_the_vote_is_of_sets_better_than_even_odds_heaviest_first():
+    vote = combine([(WRONG, _result(6, 2)), (REFUND_ONLY, _result(2, 2)),
+                    (BILLING_ONLY, _result(6, 6)), (TECHNICAL_ONLY, _result(0, 0))])
+    assert [member["rules"] for member in vote["members"]] == [BILLING_ONLY, REFUND_ONLY]
+    assert vote["members"][0]["weight"] == round(math.log(7), 3)
+
+
+def test_one_set_worth_keeping_is_not_a_vote():
+    assert combine([(WRONG, _result(6, 2)), (GOOD, _result(6, 6))]) is None
+
+
+def test_the_vote_is_bounded_in_members_and_weight():
+    vote = combine([(GOOD, _result(100000, 100000))] * (MAX_MEMBERS + 2))
+    assert len(vote["members"]) == MAX_MEMBERS
+    assert {member["weight"] for member in vote["members"]} == {MAX_WEIGHT}
+
+
+def test_sets_that_each_know_one_answer_are_combined_when_that_is_better():
+    model = ScriptedModel(rule_sets=[REFUND_ONLY, BILLING_ONLY, TECHNICAL_ONLY])
+    compiled = compile_recipe(model, "m", ENRICHMENT, _rows(), sample_size=16, candidates=3)
+
+    evaluation = compiled.evaluation
+    assert evaluation["chose"] == "vote"
+    assert evaluation["candidates_kept"] == 3
+    assert [member["rules"] for member in compiled.rules["members"]] == [
+        check_rules(rules, ENRICHMENT) for rules in (REFUND_ONLY, BILLING_ONLY, TECHNICAL_ONLY)]
+    assert evaluation["best_single_on_examples"]["coverage"] < evaluation["vote_on_examples"]["coverage"] == 1.0
+    # JUDGED ON THE ROWS NEITHER WAS CHOSEN ON.
+    assert evaluation["held_out"] == evaluate(compiled.rules, [
+        (row, label) for row, label in _labelled(model)[6:]])
+    assert evaluation["held_out"]["agreement"] == 1.0
+    assert compiled.rules == check_recipe(compiled.rules, ENRICHMENT), "stored as checked"
+
+
+def test_a_vote_no_better_than_the_best_single_set_is_not_chosen():
+    model = ScriptedModel(rule_sets=[GOOD, GOOD])
+    compiled = compile_recipe(model, "m", ENRICHMENT, _rows(), sample_size=16, candidates=2)
+    assert compiled.evaluation["chose"] == "single"
+    assert compiled.rules == check_rules(GOOD, ENRICHMENT)
+    assert compiled.evaluation["vote_on_examples"] == compiled.evaluation["best_single_on_examples"]
+
+
+def _labelled(model):
+    """The (row, label) pairs in the order the compiler kept them: every
+    labelling call the model answered with a value."""
+    pairs = []
+    for system, message, _ in model.calls:
+        if "label one record" not in system:
+            continue
+        row = json.loads(message.split("as data:\n", 1)[1])
+        subject = row["subject"].lower()
+        label = next((v for k, v in (("refund", "refund"), ("invoice", "billing"),
+                                     ("error", "technical")) if k in subject), None)
+        if label is not None:
+            pairs.append((row, label))
+    return pairs

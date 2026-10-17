@@ -1500,6 +1500,9 @@ export interface EnrichmentRecipe {
   status: 'proposed' | 'approved' | 'rejected' | 'superseded'
   /** Each rule in plain words, in order. */
   rules: string[]
+  /** Every rule set, with its weight when several vote (null for a lone
+   *  set). Absent from a server older than 17 October. */
+  rule_sets?: Array<{ weight: number | null; rules: string[] }>
   evaluation: {
     sample?: number
     labelled?: number

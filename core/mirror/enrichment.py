@@ -19,7 +19,7 @@ def with_approved_recipes(object_type: str, type_def, store: EnrichmentRecipeSto
     other type unchanged."""
     from core.mirror.gold_arrow import APPROVED_RULES
     from core.ontology.enriched_fields import (
-        check_rules,
+        check_recipe,
         declaration_hash,
         enriched_fields,
     )
@@ -37,7 +37,8 @@ def with_approved_recipes(object_type: str, type_def, store: EnrichmentRecipeSto
             # CHECKED AGAIN ON THE WAY OUT: the store holds what was
             # checked when proposed, and this is the last place before a
             # value is published.
-            fields[field_name][APPROVED_RULES] = check_rules(rules, enrichment)
+            # One rule set or a weighted vote of several.
+            fields[field_name][APPROVED_RULES] = check_recipe(rules, enrichment)
         except ValueError as e:
             logger.warning("%s.%s: its approved rules no longer check (%s); left empty",
                            object_type, field_name, e)

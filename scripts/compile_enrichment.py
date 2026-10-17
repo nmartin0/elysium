@@ -45,7 +45,7 @@ from core.enrichment_recipes import EnrichmentLabelCache, EnrichmentRecipeStore 
 from core.mirror.catalog import open_mirror_catalog  # noqa: E402
 from core.ontology.enriched_fields import (  # noqa: E402
     declaration_hash,
-    describe_rule,
+    describe_recipe,
     enrichment_of,
 )
 from core.ontology.gold_view import GOLD_NAMESPACE  # noqa: E402
@@ -143,9 +143,17 @@ def main() -> int:
 
     evaluation = compiled.evaluation
     held = evaluation["held_out"]
-    print("\nThe rules:")
-    for number, rule in enumerate(compiled.rules, start=1):
-        print(f"  {number}. {describe_rule(rule)}")
+    rule_sets = describe_recipe(compiled.rules)
+    if len(rule_sets) == 1:
+        print("\nThe rules:")
+    else:
+        print(f"\n{len(rule_sets)} rule sets, which vote -- each answering set adds its weight to "
+              f"its value; the heaviest wins, and a tie is left empty:")
+    for index, rule_set in enumerate(rule_sets, start=1):
+        if rule_set["weight"] is not None:
+            print(f"  Set {index}, weight {rule_set['weight']}:")
+        for number, line in enumerate(rule_set["rules"], start=1):
+            print(f"  {number}. {line}")
     print(f"\nOn {held['rows']} rows they were NOT written from: answered "
           f"{_percent(held['coverage'])}, and agreed with the model on "
           f"{_percent(held['agreement'])} of those.")

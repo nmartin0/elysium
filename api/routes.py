@@ -5792,7 +5792,12 @@ class EnrichmentRecipeResponse(BaseModel):
     #: proposed | approved | rejected | superseded
     status: str
     #: Each rule in plain words, in order -- what the approver reads.
+    #: For a vote, every member's rules one after another; `rule_sets`
+    #: keeps them apart, with their weights.
     rules: list[str]
+    #: [{weight, rules}]: one entry, weight null, for a lone rule set;
+    #: several that vote, each with its weight (17 October).
+    rule_sets: list[dict[str, Any]] = []
     evaluation: dict[str, Any]
     #: The model, sample, candidates and compartment that produced it.
     provenance: dict[str, Any]
@@ -5849,7 +5854,7 @@ def _visible_recipe(request: Request, current_user: UserRecord, recipe) -> "dict
       - the field still exists and is still enriched.
     None for any failure, and the routes answer it as "not found" --
     uniform denial."""
-    from core.ontology.enriched_fields import declaration_hash, describe_rule, enrichment_of
+    from core.ontology.enriched_fields import declaration_hash, describe_recipe, enrichment_of
 
     generation = _generation(request)
     roles = generation.config.roles
@@ -5872,7 +5877,10 @@ def _visible_recipe(request: Request, current_user: UserRecord, recipe) -> "dict
         "field_label": get_display_name(field, recipe.field_name),
         "instruction": enrichment.instruction, "choices": list(enrichment.choices),
         "inputs": list(enrichment.inputs), "status": recipe.status,
-        "rules": [describe_rule(rule) for rule in recipe.rules],
+        # EVERY RULE SET, with its vote's weight when several vote (None
+        # for a lone set) -- all of it read by the person approving.
+        "rule_sets": describe_recipe(recipe.rules),
+        "rules": [line for rule_set in describe_recipe(recipe.rules) for line in rule_set["rules"]],
         "evaluation": recipe.evaluation, "provenance": recipe.provenance,
         "current": recipe.declaration_hash == declaration_hash(
             recipe.object_type, recipe.field_name, enrichment),

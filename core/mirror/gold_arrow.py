@@ -140,7 +140,7 @@ def with_enriched(table: pa.Table, type_def: dict) -> pa.Table:
     approved recipe -- none proposed yet, one rejected, or one approved
     for a declaration that has since changed -- is left as the empty
     column conform gave it, which is the honest value (R52)."""
-    from core.ontology.enriched_fields import apply_rules, enriched_fields
+    from core.ontology.enriched_fields import apply_recipe, enriched_fields
 
     fields = type_def.get("fields") or {}
     for field_name, enrichment in enriched_fields(type_def).items():
@@ -149,7 +149,8 @@ def with_enriched(table: pa.Table, type_def: dict) -> pa.Table:
             continue
         inputs = {name: table.column(name).to_pylist()
                   for name in enrichment.inputs if name in table.column_names}
-        values = [apply_rules(rules, {name: column[index] for name, column in inputs.items()})[0]
+        # ONE RULE SET OR A WEIGHTED VOTE of several (17 October).
+        values = [apply_recipe(rules, {name: column[index] for name, column in inputs.items()})
                   for index in range(table.num_rows)]
         position = table.column_names.index(field_name)
         table = table.set_column(position, field_name,

@@ -94,12 +94,40 @@ function RecipeCard({
         empty.
       </p>
 
-      <h4>The rules, first match wins</h4>
-      <ol className="enrichment-recipe__rules">
-        {recipe.rules.map((rule, index) => (
-          <li key={index}>{rule}</li>
-        ))}
-      </ol>
+      {(recipe.rule_sets?.length ?? 0) > 1 ? (
+        // SEVERAL RULE SETS THAT VOTE (17 October): each answering set
+        // adds its weight to its value; the heaviest wins, a tie is
+        // left empty. Every set is shown -- the approver reads them all.
+        <>
+          <h4>{recipe.rule_sets!.length} rule sets that vote</h4>
+          <p className="enrichment-recipe__meta">
+            Within each set the first match wins. Each set that answers adds its weight to its answer; the answer with
+            the most weight is used, and a tie is left empty. A weight comes from how often the set agreed with the
+            model on its examples.
+          </p>
+          {recipe.rule_sets!.map((ruleSet, setIndex) => (
+            <section key={setIndex} className="enrichment-recipe__set">
+              <h5>
+                Set {setIndex + 1}, weight {ruleSet.weight}
+              </h5>
+              <ol className="enrichment-recipe__rules">
+                {ruleSet.rules.map((rule, index) => (
+                  <li key={index}>{rule}</li>
+                ))}
+              </ol>
+            </section>
+          ))}
+        </>
+      ) : (
+        <>
+          <h4>The rules, first match wins</h4>
+          <ol className="enrichment-recipe__rules">
+            {recipe.rules.map((rule, index) => (
+              <li key={index}>{rule}</li>
+            ))}
+          </ol>
+        </>
+      )}
 
       <p className="enrichment-recipe__score">{heldOutSentence(recipe)}</p>
       {recipe.evaluation.enough_to_judge === false && (

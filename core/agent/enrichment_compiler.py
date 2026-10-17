@@ -11,8 +11,19 @@ EVAPORATE'S METHOD, with its rules as data (core/ontology/enriched_fields):
      because "generated functions vary in quality": the first at
      temperature 0, the rest warmer.
   3. CHECK EVERY CANDIDATE as data (check_rules), score the survivors,
-     keep the best, and PROPOSE it -- nothing is applied; a person
+     and PROPOSE the better of the best single set and a WEIGHTED VOTE
+     of every set that agreed more often than not (EVAPORATE-Code+,
+     17 October; weights below) -- nothing is applied; a person
      approves it in the Inbox.
+
+THE VOTE. Each surviving set's weight is the log-odds of how often it
+agreed with the model on its examples, smoothed by one either way so a
+set right on 2 of 2 is not treated as certain: ln(p / (1 - p)), p =
+(agreed + 1) / (covered + 2) -- weighted majority, the usual weak-
+supervision combiner. Sets at or below even odds are dropped, the
+paper's own cut. The vote is chosen only if it beats the best single
+set on the SAME examples; a tie keeps the single set, which is fewer
+rules for a person to read. Either way the score shown is held out.
 
 HELD OUT, which the paper did not need and this does. The rules are
 written from HALF the sample and chosen on that half; the score a person
@@ -38,17 +49,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import random
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
 from core.ontology.enriched_fields import (
     MAX_CONDITIONS,
+    MAX_MEMBERS,
     MAX_RULES,
     MAX_TERMS,
+    MAX_WEIGHT,
     Enrichment,
     RuleError,
-    apply_rules,
+    apply_recipe,
+    check_recipe,
     check_rules,
 )
 
@@ -150,14 +165,15 @@ def propose_rules(client, enrichment: Enrichment, labelled: list[tuple[Mapping, 
     return check_rules(rules, enrichment)
 
 
-def evaluate(rules: list, labelled: list[tuple[Mapping, str]]) -> dict:
-    """How rules agree with the model's direct answers on rows that HAVE
-    one. `covered` rows got an answer from the rules; `agreed` of those
-    matched the model. Rows the model said nothing about are counted
-    apart: a rule that answers one is claiming more than the model did."""
+def evaluate(rules, labelled: list[tuple[Mapping, str]]) -> dict:
+    """How a recipe -- one rule set or a vote -- agrees with the model's
+    direct answers on rows that HAVE one. `covered` rows got an answer
+    from it; `agreed` of those matched the model. Rows the model said
+    nothing about are counted apart: a rule that answers one is claiming
+    more than the model did."""
     covered = agreed = 0
     for row, answer in labelled:
-        value, _ = apply_rules(rules, row)
+        value = apply_recipe(rules, row)
         if value is not None:
             covered += 1
             agreed += int(value == answer)
@@ -174,6 +190,26 @@ def _score(result: dict) -> tuple:
     # the time. Ties go to the fewer wrong answers.
     wrong = result["covered"] - result["agreed"]
     return (result["agreed"] - wrong, -wrong)
+
+
+def weight_of(result: dict) -> float:
+    """A rule set's vote: the smoothed log-odds that it agrees with the
+    model when it answers. Zero or below means no better than a coin."""
+    p = (result["agreed"] + 1) / (result["covered"] + 2)
+    return math.log(p / (1 - p))
+
+
+def combine(candidates: list[tuple[list, dict]]) -> dict | None:
+    """A weighted vote of the candidates better than even odds -- at
+    most MAX_MEMBERS, heaviest first -- or None if fewer than two are."""
+    members = sorted(((weight_of(result), rules) for rules, result in candidates
+                      if result["covered"] and weight_of(result) > 0),
+                     key=lambda pair: -pair[0])[:MAX_MEMBERS]
+    if len(members) < 2:
+        return None
+    return {"combine": "weighted_vote",
+            "members": [{"weight": round(min(weight, MAX_WEIGHT), 3), "rules": rules}
+                        for weight, rules in members]}
 
 
 @dataclass
@@ -225,7 +261,7 @@ def compile_recipe(client, model: str, enrichment: Enrichment, rows: list[Mappin
                          f"rules need examples to be written from"])
 
     refused: list[str] = []
-    best = None
+    survivors: list[tuple[list, dict]] = []
     for attempt in range(candidates):
         progress(f"candidate {attempt + 1}/{candidates}")
         try:
@@ -233,14 +269,27 @@ def compile_recipe(client, model: str, enrichment: Enrichment, rows: list[Mappin
         except RuleError as e:
             refused.append(f"candidate {attempt + 1}: {e}")
             continue
-        on_train = evaluate(rules, train)
-        if best is None or _score(on_train) > _score(best[1]):
-            best = (rules, on_train)
-    if best is None:
+        survivors.append((rules, evaluate(rules, train)))
+    if not survivors:
         return Compiled(None, base, provenance, refused)
 
-    rules, on_train = best
-    held_out = evaluate(rules, test)
+    # THE BEST SINGLE SET, and the vote of every set better than even
+    # odds -- chosen between on the examples, judged on the rest.
+    best_rules, best_on_train = max(survivors, key=lambda pair: _score(pair[1]))
+    chosen, on_train, kind = best_rules, best_on_train, "single"
+    vote = combine(survivors)
+    vote_on_train = None
+    if vote is not None:
+        vote = check_recipe(vote, enrichment)
+        vote_on_train = evaluate(vote, train)
+        if _score(vote_on_train) > _score(best_on_train):
+            chosen, on_train, kind = vote, vote_on_train, "vote"
+    held_out = evaluate(chosen, test)
     evaluation = {**base, "on_examples": on_train, "held_out": held_out,
-                  "enough_to_judge": len(test) >= MIN_TO_JUDGE}
-    return Compiled(rules, evaluation, provenance, refused)
+                  "enough_to_judge": len(test) >= MIN_TO_JUDGE,
+                  # WHAT WAS WEIGHED, so the approver sees the choice and
+                  # not only its result.
+                  "chose": kind, "candidates_kept": len(survivors),
+                  "best_single_on_examples": best_on_train,
+                  "vote_on_examples": vote_on_train}
+    return Compiled(chosen, evaluation, provenance, refused)

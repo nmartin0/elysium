@@ -45,6 +45,19 @@ classification label -- pii, financial, anything -- cannot be an input:
 whether data may reach a model at all is D3, still open. Refused at
 load, so it cannot be switched on by accident.
 
+SEVERAL RULE SETS MAY VOTE (17 October). EVAPORATE-Code+ keeps many
+candidate functions and "aggregate[s] their extractions using weak
+supervision", dropping any whose estimated accuracy is at or below 0.5,
+and beats asking the model per row by 10.1 F1 points. A recipe may
+therefore be one rule set, or several MEMBERS each with a weight from
+how often it agreed with the model on its examples; each member that
+answers votes its weight for its value, the heaviest value wins, and a
+tie is empty -- never a coin toss. Every member is still a rule set a
+person reads.
+
+    {"combine": "weighted_vote",
+     "members": [{"weight": 1.6, "rules": [...]}, {"weight": 0.9, "rules": [...]}]}
+
 CHOICES ONLY, in this first version: a model choosing among values the
 author named is checkable, and an empty value is honest. Extracting free
 text is a different problem (no rule language covers it) and is not
@@ -80,6 +93,11 @@ MAX_CHOICE = 80
 #: Bounds on what a model may propose. Generous for a rule a person
 #: will read, and a bound on what a request or a model may store.
 MAX_RULES = 40
+#: At most this many rule sets vote in one recipe -- each is read by the
+#: person approving it, and more than a handful is not read.
+MAX_MEMBERS = 5
+#: A member's weight is a log-odds; past this it says nothing more.
+MAX_WEIGHT = 10.0
 MAX_CONDITIONS = 4
 MAX_TERMS = 25
 MAX_TERM = 60
@@ -291,6 +309,67 @@ def apply_rules(rules: list[dict], row: Mapping) -> "tuple[str | None, int | Non
         if holds:
             return rule["then"], number
     return None, None
+
+
+def is_ensemble(recipe) -> bool:
+    """Whether a recipe is several voting rule sets rather than one."""
+    return isinstance(recipe, Mapping) and "members" in recipe
+
+
+def check_recipe(recipe, enrichment: Enrichment):
+    """A recipe as THIS module will run it -- one rule set, or several
+    voting -- or RuleError. Rebuilt from what was checked, as
+    check_rules does, so nothing unchecked reaches storage."""
+    if not is_ensemble(recipe):
+        return check_rules(recipe, enrichment)
+    if set(recipe) - {"combine", "members"} or recipe.get("combine") != "weighted_vote":
+        raise RuleError("a combined recipe is {combine: weighted_vote, members}")
+    members = recipe.get("members")
+    if not isinstance(members, list) or not 2 <= len(members) <= MAX_MEMBERS:
+        raise RuleError(f"a combined recipe has 2 to {MAX_MEMBERS} members")
+    checked = []
+    for number, member in enumerate(members, start=1):
+        if not isinstance(member, Mapping) or set(member) != {"weight", "rules"}:
+            raise RuleError(f"member {number} is not {{weight, rules}}")
+        weight = member["weight"]
+        if (not isinstance(weight, (int, float)) or isinstance(weight, bool)
+                or not 0 < weight <= MAX_WEIGHT):
+            raise RuleError(f"member {number}'s weight is a number above 0 and at most "
+                            f"{MAX_WEIGHT}")
+        try:
+            rules = check_rules(member["rules"], enrichment)
+        except RuleError as e:
+            # WHICH SET, so a refusal names the one to look at.
+            raise RuleError(f"member {number}: {e}") from e
+        checked.append({"weight": round(float(weight), 3), "rules": rules})
+    return {"combine": "weighted_vote", "members": checked}
+
+
+def apply_recipe(recipe, row: Mapping) -> "str | None":
+    """One row's value from a checked recipe, or None. A combined recipe
+    is a weighted vote of its members; nobody answering, or a tie for
+    the heaviest value, is empty -- an honest blank, never a guess."""
+    if not is_ensemble(recipe):
+        return apply_rules(recipe, row)[0]
+    votes: dict[str, float] = {}
+    for member in recipe["members"]:
+        value, _ = apply_rules(member["rules"], row)
+        if value is not None:
+            votes[value] = votes.get(value, 0.0) + member["weight"]
+    if not votes:
+        return None
+    heaviest = max(votes.values())
+    winners = [value for value, weight in votes.items() if weight == heaviest]
+    return winners[0] if len(winners) == 1 else None
+
+
+def describe_recipe(recipe) -> list[dict]:
+    """A recipe for the person approving it: one entry per rule set, its
+    weight (None for a lone set) and its rules in plain words."""
+    if not is_ensemble(recipe):
+        return [{"weight": None, "rules": [describe_rule(rule) for rule in recipe]}]
+    return [{"weight": member["weight"], "rules": [describe_rule(rule) for rule in member["rules"]]}
+            for member in recipe["members"]]
 
 
 def describe_rule(rule: Mapping) -> str:

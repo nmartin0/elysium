@@ -1703,6 +1703,19 @@
     padding-left: var(--space-loose);
   }
 
+  /* One voting rule set: its weight above its rules, a rule between
+     sets so the members read as separate. */
+  .enrichment-recipe__set {
+    border-left: 2px solid var(--border-subtle);
+    padding-left: var(--space-tight);
+    margin-bottom: var(--space-tight);
+  }
+
+  .enrichment-recipe__set h5 {
+    margin: 0 0 var(--space-hair);
+    font-size: var(--type-dense-size);
+  }
+
   .enrichment-recipe__score {
     margin: 0 0 var(--space-hair);
   }

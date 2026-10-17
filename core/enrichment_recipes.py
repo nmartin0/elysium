@@ -73,7 +73,9 @@ class Recipe:
     object_type: str
     field_name: str
     declaration_hash: str
-    rules: list
+    # ONE RULE SET (a list) or SEVERAL THAT VOTE (a dict) -- see
+    # enriched_fields.check_recipe, which both pass before storage.
+    rules: list | dict
     evaluation: dict
     provenance: dict
     status: str
@@ -90,9 +92,9 @@ class EnrichmentRecipeStore:
         return connection_with_schema(self._db_path, SCHEMA)
 
     def propose(self, object_type: str, field_name: str, declaration_hash: str,
-                rules: list, evaluation: dict, provenance: dict) -> str:
+                rules: list | dict, evaluation: dict, provenance: dict) -> str:
         """Stores a proposal. The rules must already have passed
-        enriched_fields.check_rules -- this stores, it does not judge."""
+        enriched_fields.check_recipe -- this stores, it does not judge."""
         recipe_id = str(uuid.uuid4())
         with self._connection() as conn:
             conn.execute(

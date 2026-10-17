@@ -174,8 +174,11 @@ instruction, choices}`; `scripts/compile_enrichment.py` has the model
 label a sample from one security compartment, write rules from half of
 it and be scored on the other half; the rules wait in Inbox →
 Enrichment; once approved, the next sync fills the field in gold.
-Free-text extraction, embeddings (R45), model predictions (R48, R53) and
-an ensemble of candidates are not built.
+SEVERAL CANDIDATES MAY VOTE (17 October, EVAPORATE-Code+): rule sets
+better than even odds on the examples are weighted by their log-odds,
+and the vote is kept only when it beats the best single set there; the
+approver sees every set and its weight. Free-text extraction,
+embeddings (R45) and model predictions (R48, R53) are not built.
 
 **STATISTICAL MATCHING HAS ITS YARDSTICK** (R59, 15 October):
 `scripts/evaluate_matching.py` measures the matcher against synthetic

@@ -51,6 +51,36 @@ describe('reviewing enrichment rules (R41)', () => {
     expect(within(card).getByText(/sample of 20 in us-west/)).toBeInTheDocument()
   })
 
+  it('a vote shows every rule set with its weight, and says how they combine', async () => {
+    mockedList.mockResolvedValue([
+      recipe({
+        rule_sets: [
+          { weight: 2.2, rules: ["If subject mentions 'refund': refund"] },
+          { weight: 1.1, rules: ["If subject mentions 'invoice': billing"] },
+        ],
+      }),
+    ])
+    render(<EnrichmentReview onSessionExpired={vi.fn()} />)
+
+    const card = await screen.findByRole('article', { name: 'SupportTicket Topic' })
+    expect(within(card).getByRole('heading', { name: '2 rule sets that vote' })).toBeInTheDocument()
+    expect(within(card).getByText(/a tie is left empty/)).toBeInTheDocument()
+    const second = within(card).getByRole('heading', { name: 'Set 2, weight 1.1' }).closest('section')!
+    expect(within(second).getByText("If subject mentions 'invoice': billing")).toBeInTheDocument()
+    expect(within(card).queryByText('The rules, first match wins')).not.toBeInTheDocument()
+  })
+
+  it('one rule set reads as before, with no weight', async () => {
+    mockedList.mockResolvedValue([
+      recipe({ rule_sets: [{ weight: null, rules: ["If subject mentions 'refund': refund"] }] }),
+    ])
+    render(<EnrichmentReview onSessionExpired={vi.fn()} />)
+
+    const card = await screen.findByRole('article', { name: 'SupportTicket Topic' })
+    expect(within(card).getByText('The rules, first match wins')).toBeInTheDocument()
+    expect(within(card).queryByText(/weight/)).not.toBeInTheDocument()
+  })
+
   it('approving records the decision and says nothing changes until the sync', async () => {
     mockedList.mockResolvedValue([recipe()])
     mockedDecide.mockResolvedValue(

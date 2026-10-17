@@ -10,9 +10,12 @@ from core.mirror.gold_arrow import APPROVED_RULES, with_derived
 from core.ontology.derived_fields import gate_derived_grants
 from core.ontology.enriched_fields import (
     RuleError,
+    apply_recipe,
     apply_rules,
+    check_recipe,
     check_rules,
     declaration_hash,
+    describe_recipe,
     enrichment_of,
     fill_enriched_types,
     validate_enriched_fields,
@@ -213,3 +216,64 @@ def test_reading_an_inference_needs_reading_what_it_was_inferred_from():
     assert "read:SupportTicket.topic" not in gated["agent"]["allowed_actions"]
     assert "discover:SupportTicket.topic" in gated["agent"]["allowed_actions"]
     assert "read:SupportTicket.topic" in gated["lead"]["allowed_actions"]
+
+
+class TestSeveralRuleSetsVote:
+    """A combined recipe (EVAPORATE-Code+): rule sets that vote, each by
+    its weight. Still data -- checked like one set, run by this module."""
+
+    ENRICHMENT = enrichment_of(_types()["SupportTicket"]["fields"]["topic"])
+    REFUND = [{"when": [{"field": "subject", "contains_any": ["refund"]}], "then": "refund"}]
+    BILLING = [{"when": [{"field": "subject", "contains_any": ["refund", "invoice"]}], "then": "billing"}]
+    TECHNICAL = [{"when": [{"field": "subject", "contains_any": ["refund"]}], "then": "technical"}]
+
+    def _vote(self, *members):
+        return {"combine": "weighted_vote",
+                "members": [{"weight": weight, "rules": rules} for weight, rules in members]}
+
+    def test_the_heavier_side_wins_and_lone_answers_stand(self):
+        recipe = check_recipe(self._vote((2.0, self.REFUND), (1.5, self.BILLING)), self.ENRICHMENT)
+        assert apply_recipe(recipe, {"subject": "Refund please"}) == "refund"
+        # ONLY ONE MEMBER ANSWERS: its answer is the vote.
+        assert apply_recipe(recipe, {"subject": "Invoice wrong"}) == "billing"
+        assert apply_recipe(recipe, {"subject": "Hello"}) is None
+
+    def test_two_lighter_sets_agreeing_outvote_one_heavier(self):
+        recipe = check_recipe(self._vote((2.0, self.REFUND), (1.5, self.BILLING), (1.0, self.BILLING)),
+                              self.ENRICHMENT)
+        assert apply_recipe(recipe, {"subject": "Refund please"}) == "billing"
+
+    def test_a_tie_is_left_empty_rather_than_guessed(self):
+        recipe = check_recipe(self._vote((1.0, self.REFUND), (1.0, self.TECHNICAL)), self.ENRICHMENT)
+        assert apply_recipe(recipe, {"subject": "Refund please"}) is None
+
+    def test_one_rule_set_is_still_one_rule_set(self):
+        recipe = check_recipe(self.REFUND, self.ENRICHMENT)
+        assert recipe == check_rules(self.REFUND, self.ENRICHMENT)
+        assert apply_recipe(recipe, {"subject": "refund"}) == "refund"
+        assert describe_recipe(recipe) == [{"weight": None, "rules": ["If subject mentions 'refund': refund"]}]
+
+    def test_every_member_is_checked_as_a_rule_set_is(self):
+        bad = [{"when": [{"field": "email", "contains_any": ["x"]}], "then": "refund"}]
+        with pytest.raises(RuleError, match="member 2"):
+            check_recipe(self._vote((1.0, self.REFUND), (1.0, bad)), self.ENRICHMENT)
+
+    @pytest.mark.parametrize("recipe, says", [
+        ({"combine": "weighted_vote", "members": [{"weight": 1.0, "rules": REFUND}]}, "2 to 5 members"),
+        ({"combine": "weighted_vote", "members": [{"weight": 1.0, "rules": REFUND}] * 6}, "2 to 5 members"),
+        ({"combine": "majority", "members": []}, "weighted_vote"),
+        ({"combine": "weighted_vote", "members": [], "code": "print()"}, "weighted_vote"),
+        ({"combine": "weighted_vote", "members": [{"weight": 0, "rules": REFUND}] * 2}, "above 0"),
+        ({"combine": "weighted_vote", "members": [{"weight": 11, "rules": REFUND}] * 2}, "at most 10"),
+        ({"combine": "weighted_vote", "members": [{"weight": True, "rules": REFUND}] * 2}, "above 0"),
+        ({"combine": "weighted_vote", "members": [{"weight": 1, "rules": REFUND, "x": 1}] * 2}, "weight, rules"),
+    ])
+    def test_a_malformed_vote_is_refused(self, recipe, says):
+        with pytest.raises(RuleError, match=says):
+            check_recipe(recipe, self.ENRICHMENT)
+
+    def test_the_approver_reads_every_member_and_its_weight(self):
+        recipe = check_recipe(self._vote((2.0, self.REFUND), (1.25, self.BILLING)), self.ENRICHMENT)
+        assert describe_recipe(recipe) == [
+            {"weight": 2.0, "rules": ["If subject mentions 'refund': refund"]},
+            {"weight": 1.25, "rules": ["If subject mentions 'invoice' or 'refund': billing"]}]

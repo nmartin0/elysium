@@ -118,6 +118,47 @@ def test_empty_until_approved_then_filled_and_searchable(deployment):
     assert len(found.json()["object_ids"]) == 1
 
 
+def test_an_approved_vote_fills_the_field_and_its_review_shows_every_set(deployment):
+    """A combined recipe (EVAPORATE-Code+) is stored, reviewed and run like
+    one set: gold takes the weighted vote, and a tie is left empty."""
+    from core.enrichment_recipes import EnrichmentRecipeStore
+    from core.ontology.enriched_fields import check_recipe, declaration_hash, enrichment_of
+
+    _sync(deployment)
+    field = yaml.safe_load((deployment.config_dir / "ontology_schema.yaml").read_text())[
+        "object_types"]["SupportTicket"]["fields"]["topic"]
+    enrichment = enrichment_of(field)
+    vote = check_recipe({"combine": "weighted_vote", "members": [
+        # "refund" alone says refund; the two lighter sets together say
+        # billing for it, and win. "500 error": technical against
+        # refund at equal weight -- a tie, so empty.
+        {"weight": 2.0, "rules": [{"when": [{"field": "subject", "contains_any": ["refund"]}],
+                                   "then": "refund"}]},
+        {"weight": 1.5, "rules": [{"when": [{"field": "subject", "contains_any": ["hardware"]}],
+                                   "then": "billing"}]},
+        {"weight": 1.0, "rules": [{"when": [{"field": "subject", "contains_any": ["order"]}],
+                                   "then": "billing"},
+                                  {"when": [{"field": "subject", "contains_any": ["error"]}],
+                                   "then": "technical"}]},
+        {"weight": 1.0, "rules": [{"when": [{"field": "subject", "contains_any": ["500"]}],
+                                   "then": "refund"}]}]}, enrichment)
+    store = EnrichmentRecipeStore(deployment.data_dir / "enrichment_recipes.db")
+    recipe_id = store.propose("SupportTicket", "topic",
+                              declaration_hash("SupportTicket", "topic", enrichment), vote,
+                              {"held_out": {"agreement": 1.0}, "chose": "vote"},
+                              {"model": "m", "compartment": "us-west"})
+    client = _client(deployment)
+    [shown] = client.get("/api/enrichment-recipes").json()["recipes"]
+    assert [rule_set["weight"] for rule_set in shown["rule_sets"]] == [2.0, 1.5, 1.0, 1.0]
+    assert shown["rule_sets"][2]["rules"] == ["If subject mentions 'order': billing",
+                                              "If subject mentions 'error': technical"]
+
+    store.decide(recipe_id, approve=True, by="ops")
+    _sync(deployment)
+    assert _topics(_client(deployment)) == {"Login page returns a 500 error": None,
+                                            "Requesting a refund for hardware order": "billing"}
+
+
 def test_the_compile_script_proposes_and_changes_nothing(deployment, monkeypatch, capsys):
     """scripts/compile_enrichment.py against real gold and the recipe
     store, with the model scripted: it reads the field's inputs, labels a
