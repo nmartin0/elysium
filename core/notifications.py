@@ -15,7 +15,11 @@ rows, each belonging to one person, each written from an evaluation
 run as that person.
 
 NOT A MESSAGE BUS. No delivery guarantees, no retries, no ordering
-beyond newest-first. A missed notification is a row that was never
+beyond newest-first. But A ROW WRITTEN IN THE SERVER IS ANNOUNCED
+(16 October): `on_notify` listeners hear the recipient's user id --
+and nothing else -- so their open tabs re-read their inbox at once
+rather than at the next minute's poll. A row written by another
+process (the sync) is found by that poll. A missed notification is a row that was never
 written, and the condition that would have written it will be checked
 again on the next sync.
 """
@@ -23,6 +27,7 @@ again on the next sync.
 import json
 import logging
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -104,6 +109,19 @@ class Notification:
     subjects: tuple = ()
 
 
+# WHO TO TELL, in this process, that somebody has a new notification.
+# The user id ONLY: what it says is read by that person through the
+# route that authorises them, never carried by the announcement.
+_listeners: list = []
+
+
+def on_notify(listener) -> "Callable[[], None]":
+    """Calls `listener(user_id)` after each notification this process
+    writes. Returns the function that removes it."""
+    _listeners.append(listener)
+    return lambda: _listeners.remove(listener) if listener in _listeners else None
+
+
 class NotificationStore:
     """Notifications, one row per recipient."""
 
@@ -149,6 +167,11 @@ class NotificationStore:
             logger.warning("could not write a notification for %s: %s",
                            user_id, e)
             return None
+        for listener in list(_listeners):
+            try:
+                listener(user_id)
+            except Exception:  # noqa: BLE001 - announcing never fails the write
+                logger.warning("a notification listener failed", exc_info=True)
         return notification_id
 
     def for_user(self, user_id: str, limit: int = 50) -> list[Notification]:

@@ -15,6 +15,11 @@
  * re-authenticates; EventSource reconnects on its own, so nothing here
  * has to. A 401 is a failed connection, which EventSource does NOT
  * retry -- so an expired session goes quiet rather than hammering.
+ *
+ * AND "YOUR INBOX CHANGED" (16 October): an `inbox` event, sent only to
+ * the person whose inbox it is, with no content. The badge and the
+ * notifications list re-read through their own routes when it arrives,
+ * so an alert shows when it is written rather than at the next poll.
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -27,6 +32,7 @@ export interface ChangeHint {
 type Listener = (hint: ChangeHint) => void
 
 const listeners = new Set<Listener>()
+const inboxListeners = new Set<() => void>()
 let source: EventSource | null = null
 
 function open(): void {
@@ -41,6 +47,13 @@ function open(): void {
     }
     for (const listener of listeners) listener(hint)
   })
+  source.addEventListener('inbox', () => {
+    for (const listener of inboxListeners) listener()
+  })
+}
+
+function closeIfUnused(): void {
+  if (listeners.size === 0 && inboxListeners.size === 0) close()
 }
 
 function close(): void {
@@ -54,7 +67,18 @@ export function subscribeToChanges(listener: Listener): () => void {
   open()
   return () => {
     listeners.delete(listener)
-    if (listeners.size === 0) close()
+    closeIfUnused()
+  }
+}
+
+/** Called whenever the server says this person's inbox changed.
+ *  Shares the one connection. Returns the unsubscribe. */
+export function subscribeToInbox(listener: () => void): () => void {
+  inboxListeners.add(listener)
+  open()
+  return () => {
+    inboxListeners.delete(listener)
+    closeIfUnused()
   }
 }
 

@@ -92,10 +92,6 @@ EDITABLE: tuple[Setting, ...] = (
     Setting("agent.remember_from_query", "Remember from questions", "bool",
             "Let the agent save a sentence about an object when asked to remember it.",
             "Off."),
-    Setting("check_date_triggers_every_minutes", "Check date-filtered triggers every (minutes)", "int",
-            "How often the server checks triggers whose view filters on a recent date. "
-            "Every other trigger is checked when data arrives; 0 checks these then too.",
-            "15 minutes.", minimum=0),
     Setting("on_type_mismatch", "A value of the wrong type", "choice",
             "What a sync does with a source value that is not the declared type.",
             "The loader's default, which its own comment explains.",

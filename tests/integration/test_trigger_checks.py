@@ -1,19 +1,17 @@
 """Triggers checked when something happens (16 October),
 api/trigger_checks.py and core/trigger_runs.py.
 
-A count changes when its data changes or when time moves under a date
-filter, so a trigger is checked after a change is saved, when it is
-made, after a sync, and -- only if its view has a relative date -- on
-the clock. These drive the real routes with the checker run inline
+A count changes when its data changes or when a record crosses a date
+window, so a trigger is checked after a change is saved, when it is
+made, after a sync, and -- only if its view has a relative date -- at
+its next crossing (test_trigger_windows.py). These drive the real routes with the checker run inline
 (the test client starts no lifespan, so nothing runs unless installed).
 """
 
 import fcntl
 import threading
 
-import core.trigger_runs
 from api.trigger_checks import TriggerChecks
-from api.trigger_clock import check_if_due
 from core.saved_views import SavedView
 from core.trigger_runs import reads_the_clock, run_triggers, watching
 
@@ -129,7 +127,7 @@ class TestCoalescing:
         checked = []
         queued = []
         checks = TriggerChecks(app=None, submit=queued.append)
-        monkeypatch.setattr(checks, "_check", lambda types, ids: checked.append(set(types)))
+        monkeypatch.setattr(checks, "_check", lambda types, ids, dated: checked.append(set(types)))
 
         checks.after_change({"Customer"})
         checks.after_change({"Transaction"})
@@ -142,7 +140,7 @@ class TestCoalescing:
     def test_a_failed_check_does_not_stop_the_next(self, monkeypatch):
         calls = []
 
-        def failing(types, ids):
+        def failing(types, ids, dated):
             calls.append(types)
             raise RuntimeError("a silo is down")
         checks = TriggerChecks(app=None, submit=lambda fn: fn())
@@ -154,7 +152,7 @@ class TestCoalescing:
         assert len(calls) == 2
 
 
-class TestTheClock:
+class TestWhichReadTheClock:
     def test_only_date_filtered_views_read_the_clock(self):
         dated = SavedView("v1", "recent", "Customer", "", [
             {"field": "created", "operator": "relative_date", "value": {"since_days_ago": 30}}], {}, "")
@@ -163,14 +161,6 @@ class TestTheClock:
 
         assert reads_the_clock(None, dated) is True
         assert reads_the_clock(None, plain) is False
-
-    def test_the_clock_checks_only_date_filtered_triggers(self, client, monkeypatch):
-        seen = []
-        monkeypatch.setattr(core.trigger_runs, "run_triggers",
-                            lambda *args, include=None: seen.append(include) or 0)
-
-        assert check_if_due(client.app, clock=lambda: 7_000_000.0) is True
-        assert seen == [reads_the_clock]
 
 
 class TestOneAtATime:

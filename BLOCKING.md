@@ -255,20 +255,29 @@ says, while an action is being chosen, when each proposal will need
 someone else.
 
 **Evaluation cadence -- WHEN WHAT IT COUNTS CAN HAVE CHANGED.**
-Revised the same day, after the owner asked why a timer should check
-anything that only data can move. A count changes when its data
-changes or when time moves under a date filter, so: every trigger
-after each sync; the triggers watching the types a saved change wrote,
-straight after it, in the background; a new trigger when it is made;
-and, every `check_date_triggers_every_minutes` (15 unless config.yaml
-says; 0 off; at most a day), only the triggers whose view has a
-`relative_date` filter. That filter is measured from the moment of the
-query, not from midnight, so the interval is how late anyone hears --
-minutes, not a day. Foundry's live monitoring runs "within minutes of
-an object change appearing in the Ontology" and cannot monitor
-"relative time conditions", which fall back to scheduled monitoring:
-the same split. One path for all four, core/trigger_runs.py, under one
-lock so two processes never count one trigger at once.
+Revised twice the same day with the owner. A count changes when its
+data changes or when a record crosses the edge of a date window, so:
+every trigger after each sync; the triggers watching the types a saved
+change wrote, straight after it; a new trigger when it is made; and a
+date-filtered trigger at the moment a record next crosses its window,
+by a TIMER it sets after every evaluation (core/trigger_windows.py).
+Foundry's live monitoring runs "within minutes of an object change
+appearing in the Ontology" and cannot monitor "relative time
+conditions", which fall back to a schedule; a timer at the crossing is
+sooner than any schedule and idle in between. The fifteen-minute clock
+of the first two versions is gone, and its settings are refused.
+
+**Timers -- ONE SERVICE, decided with the owner 16 October.** Anything
+that must act AT a time registers "call me back then" (core/timers.py)
+rather than growing its own loop; one loop in the server fires them
+(api/timer_service.py), persisted, keyed, at least once, retried then
+dropped -- Temporal's durable timer at the size of one table. This
+reverses, for this one purpose, the project's two refusals of a
+standing loop in the API process for RARE work: proposal expiry,
+session expiry and "the sync has not run" stay checked on read, where
+noticing late loses nothing. A notification written in the server now
+also reaches its recipient's open tabs at once, as a data-free "your
+inbox changed" signal on the live-updates stream.
 
 **Queue flooding (R50)** was decided and built 14 October, and the cap
 on how many objects one proposal may name is bulk actions' (256 unless

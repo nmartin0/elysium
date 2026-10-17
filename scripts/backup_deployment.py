@@ -138,6 +138,11 @@ OWNED_DATABASES = (
     # losing it empties every one of them at the next sync.
     "enrichment_recipes.db",
     "triggers.db",
+    # WHAT IS WAITING TO HAPPEN AT A TIME (16 October). A date-filtered
+    # trigger's timer would be rebuilt when the server starts, but the
+    # store is for any caller, and a later one may not be derivable.
+    # Restoring an old timer is harmless: every handler re-checks.
+    "timers.db",
     "notifications.db",
     # ONCE SOMEBODY EDITS A ROLE, THE ONLY COPY OF THE GRANTS. Losing it
     # on restore would silently fall back to policy.yaml -- restoring

@@ -1457,9 +1457,6 @@ class DeploymentConfigResponse(BaseModel):
     max_tokens_per_query: int | None = None
     #: Decided 14 Oct: how many objects one bulk action may name.
     bulk_action_limit: int = 256
-    #: Revised 16 Oct: how often the server checks date-filtered
-    #: triggers, in minutes; 0 for only when data arrives.
-    check_date_triggers_every_minutes: int = 15
     #: Formerly BLOCKING 6: classification labels decide field access.
     label_enforcement: bool = False
     #: R15: whether lineage events also go to a service. WHETHER, never
@@ -4533,7 +4530,6 @@ def deployment_config_route(request: Request,
         "agent_features": list(config.agent_features.names_on),
         "max_tokens_per_query": config.max_tokens_per_query,
         "bulk_action_limit": config.bulk_action_limit,
-        "check_date_triggers_every_minutes": config.check_date_triggers_every_minutes,
         "label_enforcement": config.label_enforcement,
         "lineage_service": bool(config.lineage.get("url")),
         "lineage_namespace": config.lineage.get("namespace") or "elysium",
@@ -7210,7 +7206,8 @@ async def change_events_route(request: Request,
     mediator = _generation(request).mediator
     visible = await asyncio.to_thread(mediator.visible_schema, current_user)
     return StreamingResponse(
-        event_stream(request.app.state.change_bus, visible, request.is_disconnected),
+        event_stream(request.app.state.change_bus, visible, request.is_disconnected,
+                     user_id=current_user.user_id),
         media_type="text/event-stream",
         # NO CACHING AND NO BUFFERING: a proxy that buffers an event
         # stream delivers every hint at once, when the stream ends.

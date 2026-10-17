@@ -7,10 +7,12 @@
  * and moving on should not leave a stale count behind -- and once a
  * minute otherwise, while the tab is visible.
  *
- * WHY POLLING AND NOT THE LIVE-UPDATE STREAM: /api/events carries data
- * changes by type and verb, and nothing about queues. A write proposed
- * by a nightly automation would never reach the badge from there. A
- * minute is the "within a minute" a person would call current.
+ * AND AT ONCE WHEN THE SERVER SAYS SO (16 October): the live-update
+ * stream now carries "your inbox changed" to its owner alone, sent when
+ * the server writes them a notification -- a trigger firing at its
+ * window's edge, or after a saved change. The minute's poll stays for
+ * everything that stream does not carry: approvals proposed, and
+ * notifications written by the sync, which is another process.
  *
  * QUIET ON FAILURE: a badge that cannot be read is absent, not an
  * error on every screen.
@@ -19,6 +21,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { getInboxCounts, type InboxCounts } from './api'
+import { subscribeToInbox } from './liveUpdates'
 
 const EVERY_MS = 60_000
 
@@ -40,9 +43,11 @@ export function useInboxCounts(refreshKey: string): InboxCounts | null {
     }
     read()
     const timer = setInterval(read, EVERY_MS)
+    const unsubscribe = subscribeToInbox(read)
     return () => {
       alive.current = false
       clearInterval(timer)
+      unsubscribe()
     }
   }, [refreshKey])
 

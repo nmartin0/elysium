@@ -63,8 +63,16 @@ MAX_STREAM_SECONDS = 600.0
 QUEUE_LIMIT = 100
 
 
+#: The one thing besides a data change a stream carries: "your inbox
+#: changed" (16 October). Sent ONLY to that person's own streams, with
+#: no content -- the browser re-reads its counts through the route that
+#: authorises it. Not an object type, so no hint can be mistaken for it.
+INBOX = object()
+
+
 class ChangeBus:
-    """Fan-out of (object_type, change) to every open stream.
+    """Fan-out of (object_type, change) to every open stream, and of
+    "your inbox changed" to one person's.
 
     `publish` may be called from any thread -- writes are applied in the
     request thread pool -- so it hands each event to the subscriber's
@@ -73,32 +81,44 @@ class ChangeBus:
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._subscribers: set[tuple[asyncio.AbstractEventLoop, asyncio.Queue]] = set()
+        # (loop, queue, user_id). The user id is whose stream it is,
+        # set at connect from the authenticated caller.
+        self._subscribers: set[tuple[asyncio.AbstractEventLoop, asyncio.Queue, str | None]] = set()
 
     @property
     def listening(self) -> bool:
         with self._lock:
             return bool(self._subscribers)
 
-    def subscribe(self) -> asyncio.Queue:
+    def subscribe(self, user_id: str | None = None) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue(maxsize=QUEUE_LIMIT)
         with self._lock:
-            self._subscribers.add((asyncio.get_running_loop(), queue))
+            self._subscribers.add((asyncio.get_running_loop(), queue, user_id))
         return queue
 
     def unsubscribe(self, queue: asyncio.Queue) -> None:
         with self._lock:
-            self._subscribers = {pair for pair in self._subscribers if pair[1] is not queue}
+            self._subscribers = {entry for entry in self._subscribers if entry[1] is not queue}
 
     def publish(self, object_type: str, change: str) -> None:
         # Validated HERE, at the source, so nothing richer than a type
         # and a verb can ever be queued.
         describe_hint(object_type, change)
+        self._send(lambda user_id: True, (object_type, change))
+
+    def publish_inbox(self, user_id: str) -> None:
+        """Tells this person's open streams, and nobody else's, that
+        their inbox changed."""
+        self._send(lambda owner: owner == user_id, (INBOX, None))
+
+    def _send(self, wanted, item) -> None:
         with self._lock:
             subscribers = list(self._subscribers)
-        for loop, queue in subscribers:
+        for loop, queue, owner in subscribers:
+            if not wanted(owner):
+                continue
             try:
-                loop.call_soon_threadsafe(_offer, queue, (object_type, change))
+                loop.call_soon_threadsafe(_offer, queue, item)
             except RuntimeError:
                 # That loop has closed; its stream is gone.
                 self.unsubscribe(queue)
@@ -174,13 +194,14 @@ async def watch_publications(bus: ChangeBus, sources: Callable[[], tuple],
 
 async def event_stream(bus: ChangeBus, visible_schema: dict, is_disconnected,
                        max_seconds: float | None = None,
-                       heartbeat_seconds: float | None = None) -> AsyncIterator[str]:
+                       heartbeat_seconds: float | None = None,
+                       user_id: str | None = None) -> AsyncIterator[str]:
     """One caller's stream, in the text/event-stream format."""
     # READ AT CALL TIME, so a test (or an operator patching the module)
     # changes them for the next stream rather than never.
     max_seconds = MAX_STREAM_SECONDS if max_seconds is None else max_seconds
     heartbeat_seconds = HEARTBEAT_SECONDS if heartbeat_seconds is None else heartbeat_seconds
-    queue = bus.subscribe()
+    queue = bus.subscribe(user_id)
     loop = asyncio.get_running_loop()
     ends_at = loop.time() + max_seconds
     try:
@@ -194,6 +215,10 @@ async def event_stream(bus: ChangeBus, visible_schema: dict, is_disconnected,
                     queue.get(), timeout=min(heartbeat_seconds, remaining))
             except TimeoutError:
                 yield ": keep-alive\n\n"
+                continue
+            if object_type is INBOX:
+                # Only ever queued for this caller's own stream.
+                yield "event: inbox\ndata: {}\n\n"
                 continue
             # PER CALLER, through the rule that already decides which
             # types this caller may know exist.

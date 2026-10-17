@@ -299,6 +299,9 @@ layers = [
     "frozen_sets",
     # triggers imports only sqlite_connection, like saved_views.
     "triggers",
+    # timers imports only sqlite_connection, like triggers (16 October):
+    # the store any caller registers "call me back then" in.
+    "timers",
     # role_store imports only sqlite_connection, like the other stores.
     "role_store",
     # role_changes imports only sqlite_connection, like role_store.
@@ -347,9 +350,11 @@ exhaustive = true
 # composes the loader, the ontology and role_changes -- outside the
 # hierarchy, like the loader, rather than beneath part of it.
 # trigger_runs (16 October) is count_condition's caller for the sync and
-# the server's clock alike: trigger machinery composing the stores and
+# the server's checks alike: trigger machinery composing the stores and
 # the evaluator, outside the hierarchy as count_condition is.
-exhaustive_ignores = ["adapter_roles", "count_condition", "trigger_runs", "declared_triggers", "concurrency", "config", "deployment_loader", "role_impact", "internal_storage", "logging_config", "pending_write_persistence", "pending_write_serialisation", "pending_write_store", "sqlite_connection", "user_directory"]
+# trigger_windows beside it: it asks a mediator when a date window next
+# changes and registers a timer -- trigger machinery too.
+exhaustive_ignores = ["adapter_roles", "count_condition", "trigger_runs", "trigger_windows", "declared_triggers", "concurrency", "config", "deployment_loader", "role_impact", "internal_storage", "logging_config", "pending_write_persistence", "pending_write_serialisation", "pending_write_store", "sqlite_connection", "user_directory"]
 
 # Contract 3 of 3 -- the single most repeatedly-stated architectural
 # principle throughout this project's own history: authentication
@@ -392,7 +397,7 @@ type = "layers"
 # and they are not.
 layers = [
     "app", "routes",
-    "apps | auth_dependency | generation_dependency | reload | csrf_middleware | request_size_limit_middleware | generation_header_middleware | request_metrics_middleware | live_updates | trigger_clock | trigger_checks",
+    "apps | auth_dependency | generation_dependency | reload | csrf_middleware | request_size_limit_middleware | generation_header_middleware | request_metrics_middleware | live_updates | timer_service | trigger_checks",
 ]
 containers = ["api"]
 exhaustive = true

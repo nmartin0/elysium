@@ -214,30 +214,43 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
         # its loop is the server's, and cancelled on the way out. It
         # reads nothing while nobody is listening.
         watcher = None
+        stop_announcing = None
         bus = getattr(_app.state, "change_bus", None)
         if bus is not None:
+            from core.notifications import on_notify
+
             watcher = asyncio.create_task(watch_publications(
                 bus, lambda: _publication_sources(_app),
                 on_publication=lambda: follow_publications(_app)))
+            # A NOTIFICATION WRITTEN HERE reaches its recipient's open
+            # tabs at once: "your inbox changed", to them alone.
+            stop_announcing = on_notify(bus.publish_inbox)
         # TRIGGERS CHECKED WHEN SOMETHING HAPPENS (16 October): after a
         # change is saved and when a trigger is made (api/trigger_
-        # checks.py); and the CLOCK, for date-filtered triggers only,
-        # every check_date_triggers_every_minutes, each worker looking
-        # and one checking (api/trigger_clock.py). Only where there is
-        # a deployment to check -- a test app built without one has none.
+        # checks.py); and THE TIMER SERVICE (api/timer_service.py), which
+        # fires whatever anything registered -- today, each date-filtered
+        # trigger's next window crossing. Each worker runs the loop; one
+        # fires each round. Only where there is a deployment -- a test
+        # app built without one has none.
         clock = None
         if getattr(_app.state, "runtime_paths", None) is not None \
                 and getattr(_app.state, "pending_writes", None) is not None:
-            from api.trigger_checks import TriggerChecks
-            from api.trigger_clock import run_trigger_clock
+            from api.timer_service import run_timer_service
+            from api.trigger_checks import TriggerChecks, window_timer
+            from core.trigger_windows import KIND as TRIGGER_WINDOW
 
             # ON THE APP'S OWN EXECUTOR, which shutdown joins below, so
             # a check under way finishes rather than being cut off.
             pool = getattr(_app.state, "executor", None)
             _app.state.trigger_checks = TriggerChecks(
                 _app, submit=None if pool is None else pool.submit)
-            clock = asyncio.create_task(run_trigger_clock(_app))
+            # EVERY DATE-FILTERED TRIGGER ONCE: crossings while the
+            # server was down, and a first timer for each.
+            _app.state.trigger_checks.after_start()
+            clock = asyncio.create_task(run_timer_service(_app, {TRIGGER_WINDOW: window_timer}))
         yield
+        if stop_announcing is not None:
+            stop_announcing()
         if clock is not None:
             clock.cancel()
         if watcher is not None:

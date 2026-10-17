@@ -16,3 +16,32 @@ describe('totalWaiting', () => {
     expect(totalWaiting(null)).toBe(0)
   })
 })
+
+describe('useInboxCounts re-reads when told (16 October)', () => {
+  it('reads again the moment the server says the inbox changed, not a minute later', async () => {
+    const { renderHook, waitFor } = await import('@testing-library/react')
+    const { vi } = await import('vitest')
+    const api = await import('./api')
+    const live = await import('./liveUpdates')
+
+    let tell: () => void = () => {}
+    vi.spyOn(live, 'subscribeToInbox').mockImplementation((listener) => {
+      tell = listener
+      return () => {}
+    })
+    const read = vi
+      .spyOn(api, 'getInboxCounts')
+      .mockResolvedValueOnce({ approvals: 0, notifications: 0, identity: 0, enrichment: 0 })
+      .mockResolvedValueOnce({ approvals: 0, notifications: 1, identity: 0, enrichment: 0 })
+    const { useInboxCounts } = await import('./useInboxCounts')
+
+    const { result } = renderHook(() => useInboxCounts('/'))
+    await waitFor(() => expect(result.current?.notifications).toBe(0))
+
+    tell()
+
+    await waitFor(() => expect(result.current?.notifications).toBe(1))
+    expect(read).toHaveBeenCalledTimes(2)
+    vi.restoreAllMocks()
+  })
+})

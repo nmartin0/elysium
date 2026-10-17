@@ -61,8 +61,6 @@ interface DeploymentConfigBody {
   max_tokens_per_query?: number | null
   /** Formerly BLOCKING 6: classification labels decide field access. */
   label_enforcement?: boolean
-  /** Revised 16 Oct: minutes between checks of date-filtered triggers; 0 for none. */
-  check_date_triggers_every_minutes?: number
   /** R15: whether lineage events also go to a service (never its URL). */
   lineage_service?: boolean
   lineage_namespace?: string
@@ -380,14 +378,9 @@ function DeploymentConfigView({
               ['Action types', config.action_type_count],
               ['Security attribute', config.security_attribute],
               ['Classification labels decide field access', config.label_enforcement ? 'yes' : 'no'],
-              ['Triggers checked', 'after each sync, and as soon as a change is saved'],
               [
-                'Date-filtered triggers also checked',
-                config.check_date_triggers_every_minutes === undefined
-                  ? 'not reported'
-                  : config.check_date_triggers_every_minutes === 0
-                    ? 'no more often'
-                    : `every ${config.check_date_triggers_every_minutes} minutes`,
+                'Triggers checked',
+                'after each sync, as soon as a change is saved, and for a date filter when a record crosses its window',
               ],
               ['Reading from mirror', config.read_from_mirror ? 'yes' : 'no'],
             ],

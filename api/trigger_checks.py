@@ -1,11 +1,16 @@
 """Checking triggers when something happens in the server (16 October).
 
-TWO EVENTS, both of which change what a trigger would count without a
-sync (core/trigger_runs.py has the whole account of when triggers are
-checked):
+FOUR EVENTS, each of which can change what a trigger would count
+without a sync (core/trigger_runs.py has the whole account of when
+triggers are checked):
 
 - A CHANGE SAVED: the triggers watching the object types it wrote.
 - A TRIGGER MADE: that one trigger, so "now watching" arrives at once.
+- ITS TIMER: a date-filtered trigger's window crossing
+  (core/trigger_windows.py) -- `window_timer` below, the handler the
+  timer service calls.
+- THE SERVER STARTING: every date-filtered trigger once, which catches
+  crossings while it was down and sets each one's next timer.
 
 IN THE BACKGROUND, NEVER IN THE REQUEST. Evaluating counts once per
 recipient per trigger, which can take seconds; the person approving a
@@ -35,6 +40,7 @@ class TriggerChecks:
         self._lock = threading.Lock()
         self._types: set[str] = set()
         self._ids: set[str] = set()
+        self._dated = False
         self._running = False
         # `submit(fn)` runs fn in the background. A thread by default;
         # a test passes one that runs it at once, to observe it.
@@ -49,10 +55,15 @@ class TriggerChecks:
         """This trigger was just made."""
         self._ask(ids={trigger_id})
 
-    def _ask(self, types=frozenset(), ids=frozenset()) -> None:
+    def after_start(self) -> None:
+        """The server started: every date-filtered trigger."""
+        self._ask(dated=True)
+
+    def _ask(self, types=frozenset(), ids=frozenset(), dated=False) -> None:
         with self._lock:
             self._types |= set(types)
             self._ids |= set(ids)
+            self._dated = self._dated or dated
             if self._running:
                 # GATHERED for the run already going to take them.
                 return
@@ -62,27 +73,45 @@ class TriggerChecks:
     def _drain(self) -> None:
         while True:
             with self._lock:
-                types, ids = self._types, self._ids
-                self._types, self._ids = set(), set()
-                if not types and not ids:
+                types, ids, dated = self._types, self._ids, self._dated
+                self._types, self._ids, self._dated = set(), set(), False
+                if not types and not ids and not dated:
                     self._running = False
                     return
             try:
-                self._check(types, ids)
+                self._check(types, ids, dated)
             except Exception:  # noqa: BLE001 - see the module docstring
                 logger.warning("could not check triggers after a change", exc_info=True)
 
-    def _check(self, types: set, ids: set) -> None:
-        from core.trigger_runs import run_triggers, watching
+    def _check(self, types: set, ids: set, dated: bool = False) -> None:
+        from core.trigger_runs import reads_the_clock, watching
 
-        app = self._app
-        generation = app.state.generation
         moved = watching(types)
-        fired = run_triggers(
-            generation.config, app.state.runtime_paths.data_dir, generation.mediator,
-            lambda: (generation.mediator, generation.write_mediator, app.state.pending_writes),
-            include=lambda trigger, view: (
-                getattr(trigger, "trigger_id", None) in ids or moved(trigger, view)),
-        )
+        fired = _run(self._app, lambda trigger, view: (
+            getattr(trigger, "trigger_id", None) in ids
+            or moved(trigger, view)
+            or (dated and reads_the_clock(trigger, view))))
         if fired:
             logger.info("%d trigger(s) fired after a change", fired)
+
+
+def window_timer(app, key: str, payload: dict) -> None:
+    """The timer service's handler for a date-filtered trigger's
+    crossing: evaluate that trigger, which sets its next timer. A
+    trigger deleted or disabled since is simply not found."""
+    from core.trigger_runs import only
+
+    fired = _run(app, only(key))
+    if fired:
+        logger.info("trigger %s fired at its window's edge", key)
+
+
+def _run(app, include) -> int:
+    from core.trigger_runs import run_triggers
+
+    generation = app.state.generation
+    return run_triggers(
+        generation.config, app.state.runtime_paths.data_dir, generation.mediator,
+        lambda: (generation.mediator, generation.write_mediator, app.state.pending_writes),
+        include=include,
+    )

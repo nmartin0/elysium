@@ -1,23 +1,27 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { subscribeToChanges } from './liveUpdates'
+import { subscribeToChanges, subscribeToInbox } from './liveUpdates'
 
 /** A stand-in EventSource: jsdom has none, and a real one needs a server. */
 class FakeEventSource {
   static instances: FakeEventSource[] = []
   closed = false
-  private handlers: ((event: MessageEvent<string>) => void)[] = []
+  // BY EVENT TYPE, as a real EventSource dispatches: an `inbox` event
+  // must not reach a `change` listener, nor the reverse.
+  private handlers: { type: string; handler: (event: MessageEvent<string>) => void }[] = []
   constructor(public url: string) {
     FakeEventSource.instances.push(this)
   }
-  addEventListener(_type: string, handler: (event: MessageEvent<string>) => void) {
-    this.handlers.push(handler)
+  addEventListener(type: string, handler: (event: MessageEvent<string>) => void) {
+    this.handlers.push({ type, handler })
   }
   close() {
     this.closed = true
   }
-  emit(data: string) {
-    for (const handler of this.handlers) handler(new MessageEvent('change', { data }))
+  emit(data: string, type = 'change') {
+    for (const entry of this.handlers) {
+      if (entry.type === type) entry.handler(new MessageEvent(type, { data }))
+    }
   }
 }
 
@@ -51,5 +55,31 @@ describe('subscribeToChanges', () => {
 
     expect(seen).toEqual([{ object_type: 'Customer', change: 'updated' }])
     stop()
+  })
+})
+
+describe('subscribeToInbox (16 October)', () => {
+  it("is told when the server says this person's inbox changed, and only then", () => {
+    vi.stubGlobal('EventSource', FakeEventSource)
+    let told = 0
+    const stop = subscribeToInbox(() => (told += 1))
+
+    FakeEventSource.instances[0]!.emit('{"object_type":"Customer","change":"updated"}')
+    expect(told).toBe(0)
+    FakeEventSource.instances[0]!.emit('{}', 'inbox')
+    expect(told).toBe(1)
+    stop()
+  })
+
+  it('shares the one connection with change subscribers', () => {
+    vi.stubGlobal('EventSource', FakeEventSource)
+    const changes = subscribeToChanges(() => {})
+    const inbox = subscribeToInbox(() => {})
+    expect(FakeEventSource.instances).toHaveLength(1)
+
+    changes()
+    expect(FakeEventSource.instances[0]!.closed).toBe(false)
+    inbox()
+    expect(FakeEventSource.instances[0]!.closed).toBe(true)
   })
 })

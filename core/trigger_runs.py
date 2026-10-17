@@ -1,5 +1,5 @@
-"""Evaluating triggers, and WHEN (revised 16 October, after the owner
-asked why anything should check on a timer).
+"""Evaluating triggers, and WHEN (revised 16 October, twice: checked when
+data arrives, and at the moment a date window next changes).
 
 A CONDITION CAN ONLY CHANGE IN TWO WAYS: the data under it changes, or
 the clock moves under a date filter. So each is checked when it
@@ -15,18 +15,19 @@ happens, and nothing else is checked at all:
   and its user edits "process faster" than dataset updates.
 - A NEW TRIGGER is checked the moment it is made, so its "now watching"
   arrives then rather than at the next sync.
-- THE CLOCK, every check_date_triggers_every_minutes: ONLY the triggers
-  whose view has a `relative_date` filter -- the one filter that reads
-  the time (core/filters.py, resolve_relative_date). It is measured
-  from the moment of the query, not from midnight, so a record leaves
-  "the last 30 days" at whatever minute it turns 30 days old; how late
-  anybody hears is the interval, which is why it is minutes and not a
-  day. Foundry cannot monitor "relative time conditions" live either,
-  and falls back to "scheduled monitoring" for them.
+- A TIMER, for a trigger whose view has a `relative_date` filter --
+  the one filter that reads the time (core/filters.py). Such a count
+  also changes as records cross the edge of the window, which is
+  predictable: each evaluation sets a timer for the next crossing
+  (core/trigger_windows.py, core/timers.py), and the timer evaluates
+  it again. Foundry cannot monitor "relative time conditions" live and
+  falls back to "scheduled monitoring" for them; a timer at the
+  crossing is sooner than any schedule and does nothing in between.
 
-Checking every other trigger on the clock, as the first version did,
-was work that could never find anything: without new data and without
-a date filter, the count is the count it was.
+Polling, as the first two versions did -- every trigger, then every
+date-filtered one, every fifteen minutes -- was work that mostly found
+nothing: between crossings and without new data, the count is the
+count it was.
 
 ONE PATH for all four. Owners, recipients, the write side built only
 when some trigger proposes, declared and made triggers alike.
@@ -176,4 +177,35 @@ def _run_triggers_locked(config, data_dir, mediator, write_side, include) -> int
             trigger, trigger.view, mediator, notifications, owners,
             config.source_digest, write_mediator, pending_store,
         )
+    # AND EACH DATE-FILTERED ONE SETS ITS NEXT WAKE, whichever of the
+    # four paths evaluated it: the moment a record next crosses its
+    # window (core/trigger_windows.py). After a sync or a saved change
+    # too, because a new record may cross sooner than any old one.
+    _schedule_windows(data_dir, mediator, views, made, declared, owners)
     return fired
+
+
+def _schedule_windows(data_dir, mediator, views, made, declared, owners) -> None:
+    from core import trigger_windows
+    from core.count_condition import recipients_of
+    from core.timers import TimerStore
+    from core.trigger_windows import KIND, schedule
+
+    timers = TimerStore(data_dir)
+    now = trigger_windows.now()
+    pairs = [(trigger, views.get(trigger.view_id)) for trigger in made]
+    pairs += [(trigger, trigger.view) for trigger in declared]
+    for trigger, view in pairs:
+        if view is None or not reads_the_clock(trigger, view):
+            continue
+        owner = owners.get(trigger.owner_user_id)
+        try:
+            if owner is None:
+                # Not evaluated, so not woken: an owner who is back
+                # is evaluated by the next sync, which schedules again.
+                timers.cancel(KIND, trigger.trigger_id)
+                continue
+            schedule(timers, trigger, mediator, view,
+                     recipients_of(trigger, owner, owners), now)
+        except Exception:  # noqa: BLE001 - one trigger's wake costs only itself
+            logger.warning("could not schedule trigger %r", trigger.name, exc_info=True)

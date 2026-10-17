@@ -303,13 +303,6 @@ class DeploymentConfig:
     # may name. Decided 14 Oct: 256 unless a deployment says otherwise,
     # and never more than 1,024. `bulk_action_limit:` in config.yaml.
     bulk_action_limit: int = 256
-    # HOW OFTEN THE SERVER CHECKS DATE-FILTERED TRIGGERS, in minutes
-    # (revised 16 October): the only triggers time alone can move. Every
-    # other trigger is checked when data arrives, never on a clock. 0
-    # leaves date-filtered ones to the sync and to saved changes.
-    # `check_date_triggers_every_minutes:` in config.yaml. See
-    # core/trigger_runs.py for when each is checked.
-    check_date_triggers_every_minutes: int = 15
 
 
 logger = logging.getLogger(__name__)
@@ -599,6 +592,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     }
 
     config = load_yaml(base_path / "config.yaml")
+    _no_trigger_clock(config)
     schema_raw = load_yaml(base_path / "ontology_schema.yaml")
     # WHERE THE DATA COMES FROM, kept apart from what an object IS
     # (GOLD-3c). Merged here so everything downstream sees exactly the
@@ -710,7 +704,6 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
                 _incremental_policies(data_silos_raw["data_silos"], schema_raw["object_types"])),
             max_tokens_per_query=_token_budget(config["agent"].get("max_tokens_per_query")),
             bulk_action_limit=_bulk_action_limit(config.get("bulk_action_limit")),
-            check_date_triggers_every_minutes=_trigger_clock(config),
             max_concurrent_requests=_default_concurrency(config),
             # FOUR HOURS by default, not fifteen minutes. Long enough
             # that a reviewer can be in a meeting; short enough that a
@@ -1073,36 +1066,21 @@ def _excel_date_silos(silos: dict) -> frozenset:
     return frozenset(declared)
 
 
-#: The server's trigger clock when config.yaml says nothing (decided 16
-#: October), and the longest it may be: a day, past which "between
-#: syncs" has stopped meaning anything for a nightly sync.
-DEFAULT_TRIGGER_CLOCK_MINUTES = 15
-MAX_TRIGGER_CLOCK_MINUTES = 1440
+def _no_trigger_clock(config: dict) -> None:
+    """Refuses the trigger-clock settings, which no longer exist.
 
-
-def _trigger_clock(config: dict) -> int:
-    """`check_date_triggers_every_minutes`: a whole number of minutes
-    from 0 (off) to a day. Refused at load otherwise, where whoever
-    wrote it is looking, rather than a clock that silently never ticks.
-
-    THE OLD NAME IS REFUSED, NOT HONOURED. `check_triggers_every_
-    minutes` (one day old) checked every trigger; the setting now covers
-    only date-filtered ones, and a key that silently changed what it
-    governs is the thing this loader exists to prevent."""
-    if "check_triggers_every_minutes" in config:
-        raise ValueError(
-            "check_triggers_every_minutes is now check_date_triggers_every_minutes: "
-            "triggers are checked when data arrives, and the clock checks only those "
-            "whose view filters on a date relative to now. Rename the key.")
-    declared = config.get("check_date_triggers_every_minutes")
-    if declared is None:
-        return DEFAULT_TRIGGER_CLOCK_MINUTES
-    if isinstance(declared, bool) or not isinstance(declared, int) \
-            or not 0 <= declared <= MAX_TRIGGER_CLOCK_MINUTES:
-        raise ValueError(
-            f"check_date_triggers_every_minutes must be a whole number of minutes from 0 (off) "
-            f"to {MAX_TRIGGER_CLOCK_MINUTES}, got {declared!r}.")
-    return declared
+    TWO NAMES IN TWO DAYS, both gone (16 October): the clock checked
+    every trigger, then only date-filtered ones, and is now replaced by
+    timers set for the exact moment a date window next changes
+    (core/trigger_windows.py). A setting left in config.yaml would read
+    as governing something; refused at load, where whoever wrote it is
+    looking, rather than ignored."""
+    for key in ("check_triggers_every_minutes", "check_date_triggers_every_minutes"):
+        if key in config:
+            raise ValueError(
+                f"{key} no longer exists: triggers are checked when data arrives, and a "
+                f"date-filtered trigger at the moment a record next crosses its window. "
+                f"Remove the key from config.yaml.")
 
 
 def _retain_publications(config: dict) -> int:

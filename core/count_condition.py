@@ -208,6 +208,20 @@ def evaluate_user_triggers(mediator, trigger_store, view_store,
     return fired
 
 
+def recipients_of(trigger, owner, user_records: dict) -> list:
+    """The owner, and every member of every named role -- each counted
+    with THEIR OWN authority, so no privileged number exists to leak
+    from. A disabled account is absent from `user_records`, so it is
+    not notified. Shared with core/trigger_windows.py, which asks the
+    same people when their counts can next change."""
+    others = [
+        record for user_id, record in user_records.items()
+        if user_id != owner.user_id
+        and record.role_name in trigger.recipient_roles
+    ]
+    return [owner, *others]
+
+
 def evaluate_one_trigger(trigger, view, mediator, notification_store,
                          user_records: dict, config_digest: str | None,
                          write_mediator, pending_store) -> int:
@@ -231,17 +245,8 @@ def evaluate_one_trigger(trigger, view, mediator, notification_store,
             trigger.name, trigger.owner_user_id,
         )
         return 0
-    # THE OWNER, AND EVERY MEMBER OF EVERY NAMED ROLE -- each
-    # counted with THEIR OWN authority by count_for_each, so no
-    # privileged number exists to leak from. A disabled account is
-    # absent from `user_records`, so it is not notified.
-    others = [
-        record for user_id, record in user_records.items()
-        if user_id != owner.user_id
-        and record.role_name in trigger.recipient_roles
-    ]
     try:
-        counts = count_for_each(mediator, view, [owner, *others])
+        counts = count_for_each(mediator, view, recipients_of(trigger, owner, user_records))
     except Exception as e:  # noqa: BLE001 - see the docstring
         logger.warning("could not evaluate trigger %r: %s", trigger.name, e)
         return 0

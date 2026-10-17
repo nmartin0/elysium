@@ -31,6 +31,7 @@ import EmptyState from '@elysium/shell-api/components/EmptyState'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import { formatTimestamp } from '@elysium/shell-api/format'
+import { subscribeToInbox } from '@elysium/shell-api/liveUpdates'
 import { Link } from 'react-router-dom'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -96,6 +97,10 @@ export default function NotificationsPanel({ onSessionExpired }: NotificationsPa
     // eslint-disable-next-line react/set-state-in-effect
     void load()
   }, [load])
+
+  // A NEW NOTICE APPEARS WHILE THIS IS OPEN (16 October): the server
+  // says this person's inbox changed, and the list re-reads itself.
+  useEffect(() => subscribeToInbox(() => void load()), [load])
 
   async function handleSeen(notificationId: string) {
     try {
