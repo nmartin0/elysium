@@ -423,6 +423,54 @@ def _link_targets(schema: dict) -> dict[str, set]:
     }
 
 
+def _refresh_embeddings(sync, config, data_dir, embedder=None, clock=None) -> dict:
+    """Brings every declared type's vectors up to date with its gold, in
+    the deployment's time budget, and drops the vectors of a type no
+    longer declared. Returns {type: RefreshReport} for what it did."""
+    import time
+    from pathlib import Path
+
+    from core.deployment_loader import build_embedder
+    from core.embeddings import EmbeddingStore, refresh, text_of
+    from core.ontology.gold_view import GOLD_NAMESPACE
+    from core.ontology.semantic_search import semantic_search_of
+
+    store = EmbeddingStore(Path(data_dir) / "embeddings.db")
+    declared = {name: search for name, type_def in (config.schema or {}).items()
+                if (search := semantic_search_of(type_def)) is not None}
+    for gone in store.declared_types() - set(declared):
+        removed = store.remove_type(gone)
+        print(f"embeddings  {gone}: no longer declared; {removed} vector(s) removed")
+    if not declared:
+        return {}
+    embedder = embedder or build_embedder(config)
+    version = embedder.version()
+    budget = config.embedding_budget_seconds
+    started = (clock or time.monotonic)()
+    reports = {}
+    for object_type, search in declared.items():
+        id_field = config.schema[object_type]["id_field"]
+        try:
+            table = sync._catalog.load_table(f"{GOLD_NAMESPACE}.{object_type}")
+            rows = table.scan(selected_fields=(id_field, *search.inputs)).to_arrow().to_pylist()
+        except Exception as e:  # noqa: BLE001 - one type's gold costs only its own vectors
+            print(f"embeddings  {object_type}: gold could not be read ({type(e).__name__}); "
+                  f"left as they were")
+            continue
+        # THE BUDGET IS THE RUN'S, shared by every type in order.
+        left = budget - ((clock or time.monotonic)() - started)
+        report = refresh(store, embedder.embed, version, object_type,
+                         [(row[id_field], text_of(row, search.inputs)) for row in rows],
+                         max(left, 0.0), clock=clock or time.monotonic)
+        reports[object_type] = report
+        line = (f"embeddings  {object_type}: {report.embedded} embedded, {report.reused} "
+                f"unchanged, {report.removed} removed")
+        if report.waiting:
+            line += f", {report.waiting} still to embed ({report.stopped}); the next sync carries on"
+        print(line)
+    return reports
+
+
 def _cycles(schema: dict) -> dict[str, frozenset]:
     """{type: the other types it shares a link cycle with} -- each
     strongly connected component of two or more types (Tarjan's
@@ -1138,6 +1186,15 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
         if relabelled:
             print(f"classifications recorded on {len(relabelled)} table(s): "
                   f"{', '.join(relabelled)}")
+
+        # EMBEDDINGS FOR SEARCH BY MEANING (R45) -- after gold and after
+        # erasures, so a row gone from gold for either reason loses its
+        # vector here, and never a failure: search by meaning is a
+        # convenience beside the published data, not part of it.
+        try:
+            _refresh_embeddings(sync, config, runtime_paths.data_dir)
+        except Exception as exc:  # noqa: BLE001 - never the sync's verdict
+            print(f"WARNING embeddings not refreshed: {exc}", file=sys.stderr)
 
         # THE CONDITION IS CHECKED AFTER THE SYNC, which is the only
         # moment the facts are current. A separate scheduler would need

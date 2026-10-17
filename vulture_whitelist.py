@@ -565,3 +565,8 @@ preview_restore_route
 restore_route
 roles_in_store  # RestorePreviewResponse.roles_in_store, read by pydantic
 extracts  # EnrichmentRecipeResponse.extracts, read by pydantic
+# R45, search by meaning: routes reached by HTTP.
+related_in_meaning_route
+similar_objects_route
+offered  # MeaningResponse.offered, read by pydantic
+text_fields  # MeaningResponse.text_fields, read by pydantic

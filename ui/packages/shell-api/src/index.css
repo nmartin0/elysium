@@ -2996,6 +2996,42 @@
     font-weight: var(--type-section-weight);
   }
 
+  /* RANKED BY MEANING (R45): "Similar records" on an object, "Related
+     in meaning" under a search. Headed like Related, which it sits
+     beside; a numbered list, because the order is all it says. */
+  .meaning-list {
+    margin-top: var(--space-loose);
+  }
+
+  .meaning-list h3 {
+    margin: 0 0 var(--space-snug);
+    font-size: var(--type-section-size);
+    line-height: var(--type-section-line);
+    font-weight: var(--type-section-weight);
+  }
+
+  .meaning-list__items {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-hair);
+    margin: 0;
+    padding-left: var(--space-loose);
+  }
+
+  .meaning-list__items a {
+    overflow-wrap: anywhere;
+  }
+
+  .meaning-list__id {
+    color: var(--text-secondary);
+    font-size: var(--type-dense-size);
+  }
+
+  .meaning-list__note {
+    margin: 0;
+    color: var(--text-secondary);
+  }
+
   .explore-related {
     display: flex;
     flex-direction: column;

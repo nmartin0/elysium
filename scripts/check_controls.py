@@ -4001,6 +4001,151 @@ CONTROLS = [
         ],
     ),
     Control(
+        describes='MEANING: a classified field is never embedded',
+        path='core/ontology/semantic_search.py',
+        old='            if labels:\n                raise ValueError(f"{where}: {name!r} is classified',
+        new='            if False:\n                raise ValueError(f"{where}: {name!r} is classified',
+        tests=[
+            'tests/unit/test_embeddings.py::TestTheDeclaration::test_one_that_could_not_be_embedded_safely_is_refused_at_load',
+        ],
+    ),
+    Control(
+        describes='MEANING: a declaration needs a model to embed with',
+        path='core/ontology/semantic_search.py',
+        old='        if not embedding_model:',
+        new='        if False:',
+        tests=[
+            'tests/unit/test_embeddings.py::TestTheDeclaration::test_one_that_could_not_be_embedded_safely_is_refused_at_load',
+        ],
+    ),
+    Control(
+        describes='MEANING: ranking needs reading every field the text is made from',
+        path='core/ontology/mediator.py',
+        old='        return all(name in fields for name in search.inputs)',
+        new='        return True',
+        tests=[
+            'tests/integration/test_search_by_meaning.py::test_without_reading_the_text_there_is_no_search_by_meaning',
+        ],
+    ),
+    Control(
+        describes='MEANING: a ranking keeps only rows this person may read',
+        path='core/ontology/mediator.py',
+        old='if check_access(self, user_record, self.roles, object_type, candidate, action, context):',
+        new='if True:',
+        tests=[
+            'tests/integration/test_search_by_meaning.py::test_a_search_finds_by_meaning_what_its_words_did_not',
+            'tests/integration/test_search_by_meaning.py::test_similar_records_rank_by_the_objects_own_vector_without_calling_the_model',
+        ],
+    ),
+    Control(
+        describes='MEANING: a deleted record is never ranked',
+        path='core/ontology/mediator.py',
+        old='        candidates = self._without_deleted(object_type, list(object_ids))',
+        new='        candidates = list(object_ids)',
+        tests=[
+            'tests/integration/test_search_by_meaning.py::test_a_deleted_record_is_never_ranked',
+        ],
+    ),
+    Control(
+        describes='MEANING: word matches are not repeated as meaning matches',
+        path='api/routes.py',
+        old='    ranked = [object_id for object_id in nearest(matrix, query) if object_id not in word_matches]',
+        new='    ranked = list(nearest(matrix, query))',
+        tests=[
+            'tests/integration/test_search_by_meaning.py::test_a_word_match_is_not_repeated_as_a_meaning_match',
+        ],
+    ),
+    Control(
+        describes='MEANING: a record is not its own similar record',
+        path='api/routes.py',
+        old='    ranked = nearest(matrix, matrix.vectors[position], exclude=str(object_id))',
+        new='    ranked = nearest(matrix, matrix.vectors[position], exclude=None)',
+        tests=[
+            'tests/integration/test_search_by_meaning.py::test_similar_records_rank_by_the_objects_own_vector_without_calling_the_model',
+        ],
+    ),
+    Control(
+        describes='MEANING: no similar records for a record you cannot read',
+        path='api/routes.py',
+        old='    if not mediator.readable_in_order(current_user, object_type, [object_id], 1, context=context):',
+        new='    if False:',
+        tests=[
+            'tests/integration/test_search_by_meaning.py::test_a_record_in_another_region_has_no_similar_records_for_you',
+        ],
+    ),
+    Control(
+        describes='MEANING: a stale vector goes before anything is embedded',
+        path='core/embeddings.py',
+        old='    report.removed = store.remove(object_type, stale)',
+        new='    report.removed = 0',
+        tests=[
+            'tests/unit/test_embeddings.py::TestRefreshing::test_a_row_whose_text_changed_loses_its_old_vector_first',
+        ],
+    ),
+    Control(
+        describes='MEANING: vectors of two model versions are never compared',
+        path='core/embeddings.py',
+        old='"WHERE object_type = ? AND version = ? ORDER BY object_id",',
+        new='"WHERE object_type = ? AND (version = ? OR 1) ORDER BY object_id",',
+        tests=[
+            'tests/unit/test_embeddings.py::TestRefreshing::test_a_new_model_version_embeds_everything_again',
+        ],
+    ),
+    Control(
+        describes='MEANING: the sync embeds within its budget',
+        path='core/embeddings.py',
+        old='        if clock() - started >= budget_seconds:',
+        new='        if False:',
+        tests=[
+            'tests/unit/test_embeddings.py::TestRefreshing::test_the_budget_stops_it_and_the_next_run_carries_on',
+        ],
+    ),
+    Control(
+        describes='MEANING: blank text is not embedded',
+        path='core/embeddings.py',
+        old='        if text and text.strip():',
+        new='        if text:',
+        tests=[
+            'tests/unit/test_embeddings.py::TestRefreshing::test_rows_gone_from_gold_and_rows_with_no_text_are_removed',
+        ],
+    ),
+    Control(
+        describes='MEANING: a failure to embed never fails the sync',
+        path='scripts/run_sync.py',
+        old="        except Exception as exc:  # noqa: BLE001 - never the sync's verdict",
+        new="        except ZeroDivisionError as exc:  # noqa: BLE001 - never the sync's verdict",
+        tests=[
+            'tests/integration/test_search_by_meaning.py::test_a_failure_to_embed_never_fails_the_sync',
+        ],
+    ),
+    Control(
+        describes='MEANING: a type no longer declared loses its vectors',
+        path='scripts/run_sync.py',
+        old='    for gone in store.declared_types() - set(declared):',
+        new='    for gone in set():',
+        tests=[
+            'tests/integration/test_search_by_meaning.py::test_a_type_no_longer_declared_loses_its_vectors',
+        ],
+    ),
+    Control(
+        describes='MEANING: the embedder asks the endpoint beside the chat one',
+        path='adapters/ollama_adapter.py',
+        old='        url = f"{self.server}/api/embed"',
+        new='        url = f"{self.server}/api/embeddings"',
+        tests=[
+            'tests/unit/test_embeddings.py::TestTheOllamaEmbedder::test_it_asks_the_embed_endpoint_beside_the_chat_one',
+        ],
+    ),
+    Control(
+        describes='MEANING: a reply without one vector per text is refused',
+        path='adapters/ollama_adapter.py',
+        old='        if (not isinstance(vectors, list) or len(vectors) != len(texts)',
+        new='        if (not isinstance(vectors, list)',
+        tests=[
+            'tests/unit/test_embeddings.py::TestTheOllamaEmbedder::test_a_reply_without_one_vector_per_text_is_unavailable',
+        ],
+    ),
+    Control(
         describes="ENRICH: a classified field is never an input to a model",
         path="core/ontology/enriched_fields.py",
         old="        if labels:\n            raise ValueError(",

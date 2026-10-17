@@ -116,6 +116,7 @@ import json
 import logging
 import os
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -1443,6 +1444,10 @@ class DeploymentConfigResponse(BaseModel):
     llm_provider: str
     step_model: str
     synthesis_model: str
+    #: Search by meaning (R45): the model that embeds, None when unset,
+    #: and how long one sync may spend embedding.
+    embedding_model: str | None = None
+    embedding_budget_seconds: float = 300.0
     max_hops: int
     max_consecutive_duplicates: int
     max_consecutive_invalid_steps: int
@@ -4711,6 +4716,8 @@ def deployment_config_route(request: Request,
         "llm_provider": config.llm_provider,
         "step_model": config.step_model,
         "synthesis_model": config.synthesis_model,
+        "embedding_model": config.embedding_model,
+        "embedding_budget_seconds": config.embedding_budget_seconds,
         "max_hops": config.max_hops,
         "max_consecutive_duplicates": config.max_consecutive_duplicates,
         # THE OPERATIONAL TOGGLES. Each answers "why is it behaving
@@ -6858,6 +6865,152 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
         "next_page_token": (_encode_page_token(next_start)
                             if next_start < len(matching_ids) else None),
     }
+
+
+class MeaningResponse(BaseModel):
+    """Rows ranked by meaning (R45): nearest first, each with the same
+    summary fields a search result carries. No scores -- a cosine has no
+    meaning a person could act on, and differs by model."""
+    #: False when this person cannot rank this type by meaning, or there
+    #: is nothing to rank yet; `reason` says which in words.
+    available: bool
+    #: Whether this person could ever rank this type by meaning: False
+    #: hides the feature; True with `available` False says why not now.
+    offered: bool = True
+    reason: str | None = None
+    results: list[dict[str, Any]] = []
+    #: The fields the ranking read -- what a result is best named by,
+    #: since it is why the result is near. Empty when not offered.
+    text_fields: list[str] = []
+
+
+#: How long a model's version is trusted before it is asked again: a
+#: re-pulled model is noticed within this, and a question does not pay
+#: for a second request to the model server every time.
+_EMBEDDER_VERSION_SECONDS = 300.0
+_NOT_OFFERED = "Search by meaning is not offered for this type."
+
+
+def _embedder_for(request: Request):
+    """(embedder, version) for this request's configuration, or (None,
+    None) when it embeds nothing. Built once per configuration, and its
+    version asked at most every few minutes."""
+    from core.deployment_loader import build_embedder
+
+    config = _generation(request).config
+    if not config.embedding_model:
+        return None, None
+    key = (config.llm_provider, config.embedding_model,
+           str(dict(config.llm_connection).get("base_url")))
+    cache = request.app.state.embedders
+    entry = cache.get(key)
+    now = time.monotonic()
+    if entry is None:
+        entry = cache[key] = {"embedder": build_embedder(config), "version": None, "at": 0.0}
+    if entry["version"] is None or now - entry["at"] > _EMBEDDER_VERSION_SECONDS:
+        entry["version"], entry["at"] = entry["embedder"].version(), now
+    return entry["embedder"], entry["version"]
+
+
+def _ranked_results(request: Request, current_user: UserRecord, object_type: str,
+                    ranked: list, k: int, context) -> list[dict]:
+    """The first `k` of `ranked` this person may read, as search results."""
+    mediator = _generation(request).mediator
+    kept = mediator.readable_in_order(current_user, object_type, ranked, k, context=context)
+    summary_fields = mediator.free_text_searchable_fields(current_user, object_type)
+    return [{"id": str(object_id),
+             "fields": exact_decimals(mediator.get_object(
+                 current_user, object_type, object_id, summary_fields, context=context),
+                 _declared_fields(mediator, object_type))}
+            for object_id in kept]
+
+
+def _text_fields(request: Request, object_type: str) -> list[str]:
+    from core.ontology.semantic_search import semantic_search_of
+
+    search = semantic_search_of(_generation(request).config.schema.get(object_type) or {})
+    return list(search.inputs) if search else []
+
+
+def _meaning_setup(request: Request, current_user: UserRecord, object_type: str):
+    """(matrix, embedder, None) when this person may rank this type by
+    meaning and there is something to rank; (None, None, reason)
+    otherwise. Not declared, not visible and not permitted read the same."""
+    mediator = _generation(request).mediator
+    if not mediator.may_search_by_meaning(current_user, object_type):
+        return None, None, _NOT_OFFERED
+    try:
+        embedder, version = _embedder_for(request)
+    except ValueError:
+        return None, None, _NOT_OFFERED
+    if embedder is None:
+        return None, None, _NOT_OFFERED
+    matrix = request.app.state.embedding_store.matrix(object_type, version)
+    if matrix is None:
+        return None, None, ("Nothing has been embedded for this type yet; the next sync does "
+                            "it.")
+    return matrix, embedder, None
+
+
+@router.get("/objects/{object_type}/related-in-meaning", response_model=MeaningResponse,
+            dependencies=[Depends(_no_store)])
+def related_in_meaning_route(object_type: str, request: Request, q: str = "", k: int = 10,
+                             current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Rows nearest in meaning to a search's text that its WORDS did not
+    match (R45) -- shown beside the word matches, never mixed into them,
+    because the word matches are the set every count, chart and trigger
+    shares (core/ontology/semantic_search.py)."""
+    from core.embeddings import MAX_K, nearest, unit
+    from core.llm.interface import LLMUnavailable
+
+    if not q.strip():
+        return {"available": False, "reason": "Type something to search for.", "results": []}
+    matrix, embedder, reason = _meaning_setup(request, current_user, object_type)
+    if matrix is None:
+        return {"available": False, "offered": reason != _NOT_OFFERED, "reason": reason,
+                "results": []}
+    try:
+        query = unit(embedder.embed([q.strip()], timeout=20)[0])
+    except (LLMUnavailable, ValueError, IndexError):
+        return {"available": False, "results": [],
+                "reason": "The embedding model did not answer; word search still works."}
+    context = RequestContext.new()
+    mediator = _generation(request).mediator
+    word_matches = {str(found) for found in mediator.search_object_free_text(
+        current_user, object_type, q, context=context)}
+    ranked = [object_id for object_id in nearest(matrix, query) if object_id not in word_matches]
+    return {"available": True, "text_fields": _text_fields(request, object_type),
+            "results": _ranked_results(request, current_user, object_type, ranked,
+                                       max(1, min(k, MAX_K)), context)}
+
+
+@router.get("/objects/{object_type}/{object_id}/similar", response_model=MeaningResponse,
+            dependencies=[Depends(_no_store)])
+def similar_objects_route(object_type: str, object_id: str, request: Request, k: int = 5,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The rows nearest in meaning to this one (R45). Its own stored
+    vector is the question, so no model is called. An object this
+    person cannot read has no similar records -- the same answer as one
+    that does not exist."""
+    from core.embeddings import MAX_K, nearest
+
+    matrix, _embedder, reason = _meaning_setup(request, current_user, object_type)
+    if matrix is None:
+        return {"available": False, "offered": reason != _NOT_OFFERED, "reason": reason,
+                "results": []}
+    context = RequestContext.new()
+    mediator = _generation(request).mediator
+    if not mediator.readable_in_order(current_user, object_type, [object_id], 1, context=context):
+        return {"available": False, "offered": False, "reason": _NOT_OFFERED, "results": []}
+    try:
+        position = matrix.ids.index(str(object_id))
+    except ValueError:
+        return {"available": False, "results": [],
+                "reason": "This record has not been embedded yet; the next sync does it."}
+    ranked = nearest(matrix, matrix.vectors[position], exclude=str(object_id))
+    return {"available": True, "text_fields": _text_fields(request, object_type),
+            "results": _ranked_results(request, current_user, object_type, ranked,
+                                       max(1, min(k, MAX_K)), context)}
 
 
 @router.get("/objects/{object_type}/{object_id}", response_model=ObjectDetailResponse)

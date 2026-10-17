@@ -12,6 +12,7 @@ import ObjectHistory from './ObjectHistory'
 import Provenance from './Provenance'
 import PublishedHistory from './PublishedHistory'
 import ExploreRelated from './ExploreRelated'
+import MeaningList from './MeaningList'
 import ObjectMemories from './ObjectMemories'
 import ObjectNotes from './ObjectNotes'
 import {
@@ -19,6 +20,7 @@ import {
   getVisibleActionTypesCached,
   getErrorMessage,
   handleIfSessionExpired,
+  similarObjects,
 } from '@elysium/shell-api/api'
 import { formatFieldName, formatValue, getDisplayTitle } from '@elysium/shell-api/format'
 import type { SubAppProps } from '@elysium/shell-api/types'
@@ -392,6 +394,19 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
           onSessionExpired={onSessionExpired}
         />
       </section>
+
+      {/* SIMILAR BY MEANING (R45), beside Related: both answer "what else
+          should I look at", one by declared links, one by what the record
+          says. Absent for a type that does not declare it. */}
+      <MeaningList
+        title="Similar records"
+        objectType={objectType}
+        visibleSchema={visibleSchema}
+        load={() => similarObjects(objectType, objectId)}
+        requestKey={`${objectType}/${objectId}`}
+        emptyText="No similar records that you can see."
+        onSessionExpired={onSessionExpired}
+      />
 
       {/* Notes before history. What people SAID about this object is
           more often what someone came for than what changed about it

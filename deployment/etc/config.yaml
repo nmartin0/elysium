@@ -38,6 +38,15 @@ llm:
   # scores. qwen2.5:3b was also tried as the step model earlier and
   # reverted for repeating its first step (see git history).
   model: "phi4-mini"
+  # SEARCH BY MEANING (R45): the model that turns a record's text into an
+  # embedding, for any type declaring `semantic_search: {from: [...]}`
+  # in ontology_schema.yaml. Pull it first (`ollama pull
+  # nomic-embed-text`), then measure this machine with
+  # `python -m scripts.embedding_bench <Type>` before declaring a large
+  # table. A sync embeds for at most embedding_budget_seconds and the
+  # next one carries on.
+  # embedding_model: "nomic-embed-text"
+  # embedding_budget_seconds: 300
 
 # CLASSIFICATION LABELS DECIDE FIELD ACCESS (formerly BLOCKING 6). With this on,
 # a field labelled `pii` (ontology_schema.yaml, `classification:`) is

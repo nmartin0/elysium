@@ -38,7 +38,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
 
 from adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
-from adapters.ollama_adapter import OllamaAdapter
+from adapters.ollama_adapter import OllamaAdapter, OllamaEmbedder
 from adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
 from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
 from adapters.vllm_adapter import VLLMAdapter
@@ -78,6 +78,7 @@ from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.link_types import expand_link_types, validate_link_types
 from core.ontology.mediator import DataMediator
 from core.ontology.object_type_validation import validate_object_types
+from core.ontology.semantic_search import validate_semantic_search
 from core.ontology.submission_criteria import validate_action_type_criteria
 from core.ontology.write_log import WriteLogReader, WriteLogWriter
 
@@ -120,6 +121,13 @@ _LLM_ADAPTER_REGISTRY: dict[str, type] = {
     # Claude subscription Agent SDK credit rather than separately
     # billed API credits. See the adapter's own module docstring.
     "claude_agent_sdk": ClaudeAgentSDKAdapter,
+}
+
+# PROVIDERS THAT CAN EMBED TEXT (R45). Ollama only, for now: it is the
+# local model server this deployment already runs, so nothing leaves the
+# machine and no model library is added.
+_EMBEDDER_REGISTRY: dict[str, type] = {
+    "ollama": OllamaEmbedder,
 }
 
 
@@ -288,6 +296,14 @@ class DeploymentConfig:
     # None for a silo means machine formats only -- the behaviour before
     # this existed, and what an absent declaration still means.
     source_locales: Mapping[str, "str | None"] = MappingProxyType({})
+    # THE MODEL THAT EMBEDS TEXT FOR SEARCH BY MEANING (R45), from
+    # config.yaml's `llm.embedding_model`. None when no type declares
+    # `semantic_search`, which load requires it for.
+    embedding_model: "str | None" = None
+    # HOW LONG ONE SYNC MAY SPEND EMBEDDING, in seconds. A first pass
+    # over a large table on a CPU can take far longer than a sync should;
+    # the rest is embedded by the next one (core/embeddings.py).
+    embedding_budget_seconds: float = 300.0
     # SILOS WHOSE DATE COLUMNS MAY HOLD EXCEL SERIALS (ZOO-22): those
     # declaring `excel_dates: true` in data_silos.yaml. Declared, never
     # inferred -- a bare number in a date column is ambiguous.
@@ -648,6 +664,10 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # Fields filled in by approved enrichment rules (R41): checked --
     # including that no classified field is ever an input -- and typed.
     validate_enriched_fields(object_types_raw)
+    # Search by meaning (R45): text inputs only, never a classified one,
+    # and a model to embed with.
+    embedding_model, embedding_budget = _embedding_settings(config["llm"])
+    validate_semantic_search(object_types_raw, embedding_model)
     refuse_rules_over_derived(object_types_raw)
     fill_result_types(object_types_raw)
     fill_enriched_types(object_types_raw)
@@ -697,6 +717,8 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             agent_features=features_from_config(config["agent"]),
             label_enforcement=bool((config.get("access") or {}).get("label_enforcement", False)),
             lineage=deep_freeze(validate_lineage_block(config.get("lineage"))),
+            embedding_model=embedding_model,
+            embedding_budget_seconds=embedding_budget,
             source_locales=MappingProxyType(
                 _source_locales(config, data_silos_raw["data_silos"])),
             excel_date_silos=_excel_date_silos(data_silos_raw["data_silos"]),
@@ -829,6 +851,31 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     validate_role_coherence(deployment_config.roles)
 
     return deployment_config
+
+
+def _embedding_settings(llm_config) -> "tuple[str | None, float]":
+    """(`llm.embedding_model`, `llm.embedding_budget_seconds`), checked."""
+    model = llm_config.get("embedding_model")
+    if model is not None and (not isinstance(model, str) or not model.strip()):
+        raise ValueError("llm.embedding_model is the name of an embedding model, such as "
+                         "nomic-embed-text.")
+    budget = llm_config.get("embedding_budget_seconds", 300)
+    if isinstance(budget, bool) or not isinstance(budget, (int, float)) or budget <= 0:
+        raise ValueError("llm.embedding_budget_seconds is a number of seconds above 0.")
+    return (model.strip() if model else None), float(budget)
+
+
+def build_embedder(config: DeploymentConfig):
+    """The deployment's embedder, or None when no embedding model is set.
+    Only providers that can embed are registered; another fails at load
+    of the first type that needs one, with the reason."""
+    if not config.embedding_model:
+        return None
+    embedder_class = _EMBEDDER_REGISTRY.get(config.llm_provider)
+    if embedder_class is None:
+        raise ValueError(f"llm.embedding_model is set, but provider {config.llm_provider!r} "
+                         f"cannot embed here -- registered: {sorted(_EMBEDDER_REGISTRY)}")
+    return embedder_class(config.embedding_model, dict(config.llm_connection))
 
 
 def build_llm_adapter(config: DeploymentConfig, model: str) -> LLMAdapter:

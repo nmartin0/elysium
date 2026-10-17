@@ -183,8 +183,16 @@ integer, decimal, date); rules are context words plus a fixed shape the
 model picks but never writes, the value is always a span of the row, and
 numbers and dates are typed by the source's declared locale. Dates
 relative to something, times of day, and dates or numbers written in
-words each wait for their own decision. Embeddings (R45) and model
-predictions (R48, R53) are not built.
+words each wait for their own decision. SEARCH BY MEANING (R45, 17
+October): a type declares `semantic_search: {from: [fields]}`; the sync
+embeds changed rows with `llm.embedding_model` through the local Ollama,
+within a time budget, versioned by the model's digest; Browse shows
+"Related in meaning" beside a search's word matches -- never inside
+them, since the word matches are the set counts and triggers share --
+and "Similar records" on an object. Never a classified input (D3), only
+for someone who may read every input, no vector or score ever served.
+Its use for statistical matching and enrichment is not built; neither
+are model predictions (R48, R53).
 
 **STATISTICAL MATCHING HAS ITS YARDSTICK** (R59, 15 October):
 `scripts/evaluate_matching.py` measures the matcher against synthetic

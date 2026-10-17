@@ -138,6 +138,11 @@ OWNED_DATABASES = (
     # losing it empties every one of them at the next sync.
     "enrichment_recipes.db",
     "triggers.db",
+    # VECTORS FOR SEARCH BY MEANING (R45). Derivable from gold, but a
+    # first pass on a CPU can take hours, so a restore should not have
+    # to pay it again. As sensitive as the text they came from --
+    # backups are encrypted (core/encrypted_archive.py).
+    "embeddings.db",
     # WHAT IS WAITING TO HAPPEN AT A TIME (16 October). A date-filtered
     # trigger's timer would be rebuilt when the server starts, but the
     # store is for any caller, and a later one may not be derivable.

@@ -823,6 +823,37 @@ export async function searchObjects(
   return response.json()
 }
 
+/** Rows ranked by meaning (R45), nearest first, each with the same
+ *  summary fields a search result carries. `available` is false --
+ *  with `reason` in words -- when this person cannot rank this type by
+ *  meaning, or nothing is embedded yet. No scores, deliberately. */
+export interface MeaningResults {
+  available: boolean
+  /** False when this person could never rank this type by meaning: the
+   *  feature is then not shown at all. */
+  offered?: boolean
+  reason?: string | null
+  results: Array<{ id: string; fields: Record<string, unknown> }>
+  /** The fields the ranking read: what a result is best named by. */
+  text_fields?: string[]
+}
+
+/** Rows whose meaning is near `queryText` and whose WORDS did not match
+ *  it -- shown beside a search's word matches, never mixed into them. */
+export async function relatedInMeaning(objectType: string, queryText: string, k = 10): Promise<MeaningResults> {
+  const params = new URLSearchParams({ q: queryText, k: String(k) })
+  const response = await apiFetchOrThrow(`/objects/${encodeURIComponent(objectType)}/related-in-meaning?${params}`)
+  return response.json()
+}
+
+/** The records nearest in meaning to one object. */
+export async function similarObjects(objectType: string, objectId: string, k = 5): Promise<MeaningResults> {
+  const response = await apiFetchOrThrow(
+    `/objects/${encodeURIComponent(objectType)}/${encodeURIComponent(objectId)}/similar?k=${k}`,
+  )
+  return response.json()
+}
+
 /** Every id the current filter matches, for "select all matching".
  *
  * IDS, NOT A FILTER PASSED ONWARD. Foundry's approvals model settles

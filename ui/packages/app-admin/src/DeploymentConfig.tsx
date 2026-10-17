@@ -50,6 +50,10 @@ interface DeploymentConfigBody {
   llm_provider: string
   step_model: string
   synthesis_model: string
+  /** Search by meaning (R45); null when no type declares it. Absent from
+   *  a server older than 17 October. */
+  embedding_model?: string | null
+  embedding_budget_seconds?: number
   max_hops: number
   max_consecutive_duplicates: number
   max_consecutive_invalid_steps: number
@@ -347,6 +351,11 @@ function DeploymentConfigView({
               ['Provider', config.llm_provider],
               ['Step model', config.step_model],
               ['Synthesis model', config.synthesis_model],
+              ['Embedding model', config.embedding_model ?? 'none (no search by meaning)'],
+              [
+                'Embedding budget per sync',
+                config.embedding_budget_seconds === undefined ? '—' : `${config.embedding_budget_seconds} s`,
+              ],
             ],
           ],
           [

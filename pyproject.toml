@@ -302,6 +302,10 @@ layers = [
     # timers imports only sqlite_connection, like triggers (16 October):
     # the store any caller registers "call me back then" in.
     "timers",
+    # embeddings imports only sqlite_connection and numpy (R45): the
+    # vectors, their versions and the ranking. The sync and the routes
+    # compose it with the ontology.
+    "embeddings",
     # reminders sits on timer_rules (17 October): what a person's own
     # timer says and when it repeats. timer_rules imports only zoneinfo.
     "reminders",
@@ -426,7 +430,9 @@ layers = [
     # Enriched fields (R41) below them: derived_fields gates reads on
     # both kinds of computed field, and enrichment reads only
     # classifications.
-    "enriched_fields",
+    # Search by meaning (R45) beside it: a declaration the mediator asks
+    # about, reading only classifications.
+    "enriched_fields | semantic_search",
     # Its extraction rules (17 October): the shapes, the tokenizer, and
     # typing a span through field_types.coerce, below.
     "extraction_rules",

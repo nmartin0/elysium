@@ -80,6 +80,12 @@ phonenumbers>=9.0,<10
 email-validator>=2.2,<3
 ftfy>=6.3,<7
 holidays>=0.106,<1
+# numpy -- semantic search (R45, 17 October): a query is compared with
+# every row's embedding at once, as one matrix product. Measured need:
+# pure Python takes seconds per query at tens of thousands of rows;
+# numpy takes milliseconds. BSD-3. Already in the dev lock, where
+# pyarrow's tests pulled it in.
+numpy>=2.0,<3
 sqlalchemy<3.0
 # The PostgreSQL driver SQLAlchemy dials through. psycopg 3, not 2:
 # it returns Decimal, aware datetime, date and UUID objects natively,

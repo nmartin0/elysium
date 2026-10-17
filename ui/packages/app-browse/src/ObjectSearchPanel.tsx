@@ -47,6 +47,7 @@ import {
   getVisibleActionTypesCached,
   handleIfSessionExpired,
   matchingIds,
+  relatedInMeaning,
   MAX_SCAN_LABEL,
   searchObjects,
   type DataFreshness,
@@ -69,6 +70,7 @@ import ActiveFilters from './ActiveFilters'
 import BulkActionForm from './BulkActionForm'
 import BulkActionsMenu, { type BulkAction } from './BulkActionsMenu'
 import LinkTrail from './LinkTrail'
+import MeaningList from './MeaningList'
 import { activeTrail } from './linkTrail'
 import SavedViews from './SavedViews'
 import SelectionBar from './SelectionBar'
@@ -1258,6 +1260,25 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
             Next
           </Button>
         </div>
+      )}
+
+      {/* RELATED IN MEANING (R45), BELOW the word matches and apart from
+          them. The table above is the SET every count, chart, export and
+          trigger shares, decided by words; a ranking by meaning has no
+          edge, so it is shown beside the set and never inside it. Only
+          rows the words did not match; absent for a type that does not
+          declare search by meaning. */}
+      {queryText.trim() !== '' && (
+        <MeaningList
+          title="Related in meaning"
+          objectType={currentType}
+          visibleSchema={visibleSchema}
+          load={() => relatedInMeaning(currentType, queryText.trim())}
+          requestKey={`${currentType}\u0000${queryText.trim()}`}
+          emptyText="Nothing else you can see is close in meaning."
+          onSessionExpired={onSessionExpired}
+          delayMs={600}
+        />
       )}
     </Workspace>
   )

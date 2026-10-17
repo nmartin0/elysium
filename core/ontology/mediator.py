@@ -1398,6 +1398,44 @@ class DataMediator:
             for object_id in object_ids
         }
 
+    def may_search_by_meaning(self, user_record: UserRecord, object_type: str,
+                              visible: dict | None = None) -> bool:
+        """Whether this person may rank a type by meaning (R45): the type
+        declares semantic_search, and they may read the type AND every
+        field its text is made from. A ranking by a field's meaning is a
+        read of that field."""
+        from core.ontology.semantic_search import semantic_search_of
+
+        search = semantic_search_of(self.schema.get(object_type) or {})
+        if search is None:
+            return False
+        visible = visible if visible is not None else self.visible_schema(user_record)
+        fields = (visible.get(object_type) or {}).get("fields") or {}
+        return all(name in fields for name in search.inputs)
+
+    def readable_in_order(self, user_record: UserRecord, object_type: str,
+                          object_ids: list, limit: int,
+                          context: RequestContext | None = None) -> list:
+        """The first `limit` of `object_ids`, in their order, that this
+        person may read and that are not deleted -- for a ranking, which
+        knows only what is near, never who may see it.
+
+        Ids arrive as text, as the vector store keeps them -- the form
+        the object page's own route reads every object by, whatever its
+        id type."""
+        if object_type not in self.visible_schema(user_record):
+            return []
+        candidates = self._without_deleted(object_type, list(object_ids))
+        self._prefetch_security_values(object_type, candidates)
+        action = f"read:{object_type}"
+        kept = []
+        for candidate in candidates:
+            if check_access(self, user_record, self.roles, object_type, candidate, action, context):
+                kept.append(candidate)
+                if len(kept) >= limit:
+                    break
+        return kept
+
     def free_text_searchable_fields(self, user_record: UserRecord, object_type: str,
                                      visible_schema: dict | None = None) -> list[str]:
         # PUBLIC (unlike _filterable_columns() above) -- api/routes.py's

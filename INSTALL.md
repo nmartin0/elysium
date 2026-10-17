@@ -46,7 +46,12 @@ For a real, running production install, see section 7 instead.
 ```bash
 ollama pull phi4-mini      # example: step-selection model
 ollama pull qwen2.5:3b     # example: answer-synthesis model
+ollama pull nomic-embed-text   # only for search by meaning (llm.embedding_model)
 ```
+
+For search by meaning, measure this machine before declaring a large
+table: `python -m scripts.embedding_bench <Type>` embeds a sample and
+says how long a first pass over the whole table would take.
 
 Smaller, "reasoning-flavored" models have generally worked better for
 step-selection than larger general-purpose ones — this is genuinely
