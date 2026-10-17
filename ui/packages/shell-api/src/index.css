@@ -1678,8 +1678,15 @@
 
   .enrichment-recipe__head {
     display: flex;
+    /* A long type and field name wraps the tag below it, rather than
+       squeezing it to "propo…" at phone width (seen 17 October). */
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-tight);
+  }
+
+  .enrichment-recipe__head > :last-child {
+    flex-shrink: 0;
   }
 
   .enrichment-recipe__head h3 {

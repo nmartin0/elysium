@@ -129,6 +129,9 @@ def with_derived(table: pa.Table, type_def: dict) -> pa.Table:
 #: it hands to build_gold. Underscored, so no ontology can declare it:
 #: an enriched field's ALLOWED_BESIDE refuses any other key at load.
 APPROVED_RULES = "_approved_rules"
+#: Beside them, for an EXTRACTED field: the locale its source writes
+#: numbers and dates in (DEP-1), which types the text a rule took.
+APPROVED_LOCALE = "_approved_locale"
 
 
 def with_enriched(table: pa.Table, type_def: dict) -> pa.Table:
@@ -141,6 +144,7 @@ def with_enriched(table: pa.Table, type_def: dict) -> pa.Table:
     for a declaration that has since changed -- is left as the empty
     column conform gave it, which is the honest value (R52)."""
     from core.ontology.enriched_fields import apply_recipe, enriched_fields
+    from core.ontology.extraction_rules import typed
 
     fields = type_def.get("fields") or {}
     for field_name, enrichment in enriched_fields(type_def).items():
@@ -152,6 +156,12 @@ def with_enriched(table: pa.Table, type_def: dict) -> pa.Table:
         # ONE RULE SET OR A WEIGHTED VOTE of several (17 October).
         values = [apply_recipe(rules, {name: column[index] for name, column in inputs.items()})
                   for index in range(table.num_rows)]
+        if enrichment.extract is not None:
+            # TEXT TAKEN FROM THE ROW, TYPED AS THE SYNC TYPES: the same
+            # converter, the same locale, the same refusals -- and a
+            # value that does not convert is empty, never repaired.
+            locale = (fields.get(field_name) or {}).get(APPROVED_LOCALE)
+            values = [typed(value, enrichment.extract, locale) for value in values]
         position = table.column_names.index(field_name)
         table = table.set_column(position, field_name,
                                  pa.array(values, type=table.schema.field(field_name).type))

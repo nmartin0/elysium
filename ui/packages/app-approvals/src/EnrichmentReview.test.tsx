@@ -81,6 +81,22 @@ describe('reviewing enrichment rules (R41)', () => {
     expect(within(card).queryByText(/weight/)).not.toBeInTheDocument()
   })
 
+  it('a value taken from the text says what kind it takes, not a list of choices', async () => {
+    mockedList.mockResolvedValue([
+      recipe({
+        extracts: 'decimal',
+        choices: [],
+        rules: ["In body, after 'refund of' (next word), take a number"],
+      }),
+    ])
+    render(<EnrichmentReview onSessionExpired={vi.fn()} />)
+
+    const card = await screen.findByRole('article', { name: 'SupportTicket Topic' })
+    expect(within(card).getByText(/takes a number from the text, as written there/)).toBeInTheDocument()
+    expect(within(card).queryByText(/answers one of/)).not.toBeInTheDocument()
+    expect(within(card).getByText("In body, after 'refund of' (next word), take a number")).toBeInTheDocument()
+  })
+
   it('approving records the decision and says nothing changes until the sync', async () => {
     mockedList.mockResolvedValue([recipe()])
     mockedDecide.mockResolvedValue(

@@ -84,7 +84,8 @@ def main() -> int:
     enrichment = enrichment_of(field or {})
     if enrichment is None:
         print(f"{args.field} is not an enriched field. Declare it with `enrich: {{from, "
-              f"instruction, choices}}` in ontology_schema.yaml first.", file=sys.stderr)
+              f"instruction}}` and either `choices` or `extract: true` in ontology_schema.yaml "
+              f"first.", file=sys.stderr)
         return 1
 
     id_field = config.schema[object_type]["id_field"]
@@ -133,7 +134,10 @@ def main() -> int:
         sample_size=args.sample, candidates=args.candidates, seed=args.seed,
         cached_label=cached, remember_label=cache.put,
         progress=lambda step: print(f"  {step}  [{(time.monotonic() - started) / 60:.1f} min]",
-                                    flush=True))
+                                    flush=True),
+        # AS THE SYNC WILL TYPE IT: the locale of the type's silo (DEP-1).
+        locale=config.source_locales.get((config.schema[object_type].get("storage") or {})
+                                         .get("silo")))
 
     for reason in compiled.refused:
         print(f"  refused: {reason}")

@@ -1496,6 +1496,9 @@ export interface EnrichmentRecipe {
   field_label: string
   instruction: string
   choices: string[]
+  /** For a value taken from the text: the field's data type (string,
+   *  integer, decimal, date). Null or absent for choices. */
+  extracts?: string | null
   inputs: string[]
   status: 'proposed' | 'approved' | 'rejected' | 'superseded'
   /** Each rule in plain words, in order. */

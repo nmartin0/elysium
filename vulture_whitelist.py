@@ -564,3 +564,4 @@ needs_approval  # LabelPreviewResponse.needs_approval, read by pydantic
 preview_restore_route
 restore_route
 roles_in_store  # RestorePreviewResponse.roles_in_store, read by pydantic
+extracts  # EnrichmentRecipeResponse.extracts, read by pydantic

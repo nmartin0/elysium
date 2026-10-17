@@ -161,6 +161,29 @@ class TestGold:
             ["refund", "technical", None]
 
 
+    def test_an_extracted_amount_is_typed_by_the_sources_locale(self):
+        """The locale the sync passes with the rules is the one the text
+        is read by: 1.234,50 is an amount in pt_BR and nothing without it."""
+        from decimal import Decimal
+
+        from core.mirror.enrichment import with_approved_recipes
+
+        types = _types(data_type="decimal",
+                       enrich={"from": ["body"], "instruction": "The amount.", "extract": True})
+        type_def = types["SupportTicket"]
+        rules = [{"field": "body", "after": ["refund of"], "within": 1, "take": "number"}]
+
+        class Approved:
+            def approved_rules(self, *_):
+                return rules
+
+        table = pa.table({"ticket_id": [1, 2], "body": ["a refund of 1.234,50", "no amount"],
+                          "topic": pa.array([None, None], type=pa.decimal128(38, 9))})
+        for locale, expected in (("pt_BR", [Decimal("1234.50"), None]), (None, [None, None])):
+            ready = with_approved_recipes("SupportTicket", type_def, Approved(), locale=locale)
+            assert with_derived(table, ready).column("topic").to_pylist() == expected, locale
+
+
 class TestTheStore:
     def test_only_an_approved_recipe_for_the_current_question_reaches_gold(self, tmp_path):
         store = EnrichmentRecipeStore(tmp_path / "recipes.db")
@@ -277,3 +300,111 @@ class TestSeveralRuleSetsVote:
         assert describe_recipe(recipe) == [
             {"weight": 2.0, "rules": ["If subject mentions 'refund': refund"]},
             {"weight": 1.25, "rules": ["If subject mentions 'invoice' or 'refund': billing"]}]
+
+
+class TestAValueTakenFromTheText:
+    """`extract: true` (17 October): the field's value is a piece of its
+    input, found by context words and a fixed shape."""
+
+    def _extract(self, data_type=None, **enrich):
+        declared = {"from": ["body"], "instruction": "The order number.", "extract": True}
+        declared.update(enrich)
+        field = {"enrich": declared}
+        if data_type is not None:
+            field["data_type"] = data_type
+        return _types(**field)
+
+    def _enrichment(self, data_type="string"):
+        types = self._extract(data_type)
+        return enrichment_of(types["SupportTicket"]["fields"]["topic"])
+
+    @pytest.mark.parametrize("data_type", [None, "string", "integer", "decimal", "date"])
+    def test_a_good_one_loads_with_its_type(self, data_type):
+        types = self._extract(data_type)
+        validate_enriched_fields(types)
+        enrichment = enrichment_of(types["SupportTicket"]["fields"]["topic"])
+        assert enrichment.extract == (data_type or "string")
+        assert enrichment.choices == ()
+        assert enrichment.describe() == "extracted from body"
+
+    @pytest.mark.parametrize("types, why", [
+        ("both", "exactly one of"),
+        ("neither", "exactly one of"),
+        ("not_true", "`extract` is `true`"),
+        ("timestamp", "not offered yet"),
+    ])
+    def test_a_declaration_that_is_neither_question_is_refused(self, types, why):
+        built = {"both": lambda: self._extract(choices=["a", "b"]),
+                 "neither": lambda: _types(enrich={"from": ["body"], "instruction": "x"}),
+                 "not_true": lambda: self._extract(extract="yes"),
+                 "timestamp": lambda: self._extract("timestamp")}[types]()
+        with pytest.raises(ValueError, match=why):
+            validate_enriched_fields(built)
+
+    def test_a_choices_fields_hash_and_so_its_approval_is_unchanged(self):
+        """Adding `extract` to the question must not move the hash of every
+        field that does not use it: that would void every approval given."""
+        import hashlib
+        import json
+
+        enrichment = enrichment_of(_types()["SupportTicket"]["fields"]["topic"])
+        before = hashlib.sha256(json.dumps(
+            {"type": "SupportTicket", "field": "topic", "from": ["subject"],
+             "instruction": "What the ticket is about.",
+             "choices": ["billing", "technical", "refund"]}, sort_keys=True).encode()).hexdigest()
+        assert declaration_hash("SupportTicket", "topic", enrichment) == before
+        assert declaration_hash("SupportTicket", "topic", self._enrichment("integer")) != \
+            declaration_hash("SupportTicket", "topic", self._enrichment("string"))
+
+    def test_a_rule_is_checked_and_rebuilt(self):
+        [rule] = check_rules([{"field": "body", "after": ["Order No.", "order no"],
+                               "within": 2, "take": "code"}], self._enrichment())
+        assert rule == {"field": "body", "after": ["order no"], "within": 2, "take": "code"}
+        assert describe_recipe([rule]) == [{"weight": None, "rules": [
+            "In body, after 'order no' (within 2 words), take a code"]}]
+
+    @pytest.mark.parametrize("rule, why", [
+        ({"field": "subject", "after": ["x"], "within": 1, "take": "code"}, "not an input"),
+        ({"field": "body", "after": ["x"], "within": 1, "take": "regex"}, "takes 'regex'"),
+        ({"field": "body", "after": ["x"], "within": 0, "take": "code"}, "within is 1 to 5"),
+        ({"field": "body", "after": ["x"], "within": 6, "take": "code"}, "within is 1 to 5"),
+        ({"field": "body", "after": [], "within": 1, "take": "code"}, "after is 1 to"),
+        ({"field": "body", "after": ["!!"], "within": 1, "take": "code"}, "not a word or phrase"),
+        ({"field": "body", "after": ["x"], "within": 1, "take": "code", "pattern": ".*"},
+         "field, after, within, take"),
+        ({"field": "body", "after": ["x"], "within": 1, "take": "code", "max_words": 2},
+         "field, after, within, take"),
+        ({"field": "body", "after": ["x"], "within": 1, "take": "words"}, "max_words"),
+        ({"field": "body", "after": ["x"], "within": 1, "take": "words", "max_words": 9},
+         "max_words is 1 to 6"),
+    ])
+    def test_a_rule_this_module_will_not_run_is_refused(self, rule, why):
+        with pytest.raises(RuleError, match=why):
+            check_rules([rule], self._enrichment())
+
+    def test_a_shape_that_cannot_become_the_fields_type_is_refused(self):
+        with pytest.raises(RuleError, match="a decimal field takes number"):
+            check_rules([{"field": "body", "after": ["x"], "within": 1, "take": "code"}],
+                        self._enrichment("decimal"))
+        with pytest.raises(RuleError, match="a date field takes date"):
+            check_rules([{"field": "body", "after": ["x"], "within": 1, "take": "number"}],
+                        self._enrichment("date"))
+
+    def test_the_first_rule_that_finds_a_value_gives_it(self):
+        rules = check_rules([
+            {"field": "body", "after": ["invoice"], "within": 1, "take": "code"},
+            {"field": "body", "after": ["order number"], "within": 2, "take": "code"},
+        ], self._enrichment())
+        assert apply_recipe(rules, {"body": "order number: INV-7, invoice pending"}) == "INV-7"
+        assert apply_recipe(rules, {"body": "invoice 88 for order number 7"}) == "88"
+        assert apply_recipe(rules, {"body": "nothing here"}) is None
+
+    def test_sets_that_found_the_same_value_written_differently_agree(self):
+        enrichment = self._enrichment()
+        rule = {"field": "body", "within": 1, "take": "code"}
+        vote = check_recipe({"combine": "weighted_vote", "members": [
+            {"weight": 1.0, "rules": [{**rule, "after": ["ref"]}]},
+            {"weight": 1.5, "rules": [{**rule, "after": ["order"]}]},
+            {"weight": 1.0, "rules": [{**rule, "after": ["ticket"]}]}]}, enrichment)
+        # "inv-7" and "INV-7" are one answer weighing 2.0 against 1.5.
+        assert apply_recipe(vote, {"body": "ref inv-7 order Q-1 ticket INV-7"}) == "inv-7"

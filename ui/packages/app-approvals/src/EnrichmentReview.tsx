@@ -33,6 +33,14 @@ import { formatTimestamp } from '@elysium/shell-api/format'
 import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
 import { useState } from 'react'
 
+/** What an extracted field takes, by its data type, in words. */
+const EXTRACTED: Record<string, string> = {
+  string: 'a piece of text',
+  integer: 'a whole number',
+  decimal: 'a number',
+  date: 'a date',
+}
+
 const STATUS_TAG: Record<EnrichmentRecipe['status'], TagState> = {
   proposed: 'pending',
   approved: 'granted',
@@ -90,8 +98,20 @@ function RecipeCard({
       </header>
       <p className="enrichment-recipe__question">{recipe.instruction}</p>
       <p className="enrichment-recipe__meta">
-        Reads {recipe.inputs.join(', ')}; answers one of {recipe.choices.join(', ')}. A row no rule matches is left
-        empty.
+        {recipe.extracts ? (
+          // A VALUE TAKEN FROM THE TEXT (17 October): always the row's own
+          // words, typed as the sync types them.
+          <>
+            Reads {recipe.inputs.join(', ')}; takes {EXTRACTED[recipe.extracts] ?? recipe.extracts} from the text, as
+            written there. A row no rule finds one in, or whose value is not {EXTRACTED[recipe.extracts] ?? 'that'}, is
+            left empty.
+          </>
+        ) : (
+          <>
+            Reads {recipe.inputs.join(', ')}; answers one of {recipe.choices.join(', ')}. A row no rule matches is left
+            empty.
+          </>
+        )}
       </p>
 
       {(recipe.rule_sets?.length ?? 0) > 1 ? (

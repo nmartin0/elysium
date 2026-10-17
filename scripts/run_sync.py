@@ -714,7 +714,12 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
         # THE APPROVED RULES RIDE ON THE TYPE, so _gold_inputs digests
         # them with everything else: approving a recipe is a change to
         # what gold is built from, and republishes it.
-        type_def = with_approved_recipes(object_type, type_def, recipes)
+        # AN EXTRACTED NUMBER OR DATE IS READ AS ITS SOURCE WRITES THEM
+        # (DEP-1): the locale of the silo the type is stored in -- from
+        # sync.locales, the same map silver's read used.
+        type_def = with_approved_recipes(
+            object_type, type_def, recipes,
+            locale=sync.locales.get((type_def.get("storage") or {}).get("silo")))
         storage = type_def.get("storage") or {}
         identifier = f"{storage.get('silo')}.{storage.get('table')}"
         try:

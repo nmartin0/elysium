@@ -159,6 +159,49 @@ def test_an_approved_vote_fills_the_field_and_its_review_shows_every_set(deploym
                                             "Requesting a refund for hardware order": "billing"}
 
 
+def test_an_extracted_number_reaches_gold_typed_and_its_review_says_what_it_takes(deployment):
+    """`extract: true` with `data_type: integer` (17 October): the rule
+    takes text from the row, gold stores it as the field's type, a row
+    with no such text is empty."""
+    from core.enrichment_recipes import EnrichmentRecipeStore
+    from core.ontology.enriched_fields import check_recipe, declaration_hash, enrichment_of
+
+    schema_path = deployment.config_dir / "ontology_schema.yaml"
+    ontology = yaml.safe_load(schema_path.read_text())
+    ontology["object_types"]["SupportTicket"]["fields"]["status_code"] = {
+        "data_type": "integer",
+        "enrich": {"from": ["subject"], "instruction": "The HTTP status the customer saw.",
+                   "extract": True}}
+    schema_path.write_text(yaml.safe_dump(ontology))
+    policy_path = deployment.config_dir / "policy.yaml"
+    policy = yaml.safe_load(policy_path.read_text())
+    policy["roles"]["debug"]["allowed_actions"] += ["read:SupportTicket.status_code"]
+    policy_path.write_text(yaml.safe_dump(policy))
+    _sync(deployment)
+
+    enrichment = enrichment_of(ontology["object_types"]["SupportTicket"]["fields"]["status_code"])
+    rules = check_recipe([{"field": "subject", "after": ["returns a"], "within": 1,
+                           "take": "number"}], enrichment)
+    store = EnrichmentRecipeStore(deployment.data_dir / "enrichment_recipes.db")
+    recipe_id = store.propose("SupportTicket", "status_code",
+                              declaration_hash("SupportTicket", "status_code", enrichment), rules,
+                              {"held_out": {"agreement": 1.0}}, {"model": "m", "compartment": "us-west"})
+    client = _client(deployment)
+    [shown] = [recipe for recipe in client.get("/api/enrichment-recipes").json()["recipes"]
+               if recipe["field_name"] == "status_code"]
+    assert shown["extracts"] == "integer" and shown["choices"] == []
+    assert shown["rules"] == ["In subject, after 'returns a' (next word), take a number"]
+    schema = client.get("/api/me/visible-schema").json()
+    assert schema["SupportTicket"]["fields"]["status_code"]["inferred"] == "extracted from subject"
+
+    store.decide(recipe_id, approve=True, by="ops")
+    _sync(deployment)
+    rows = _client(deployment).get("/api/objects/SupportTicket/search?q=").json()["results"]
+    assert {row["fields"]["subject"]: row["fields"].get("status_code") for row in rows} == {
+        "Login page returns a 500 error": 500,
+        "Requesting a refund for hardware order": None}
+
+
 def test_the_compile_script_proposes_and_changes_nothing(deployment, monkeypatch, capsys):
     """scripts/compile_enrichment.py against real gold and the recipe
     store, with the model scripted: it reads the field's inputs, labels a

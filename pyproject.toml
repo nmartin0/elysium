@@ -427,6 +427,9 @@ layers = [
     # both kinds of computed field, and enrichment reads only
     # classifications.
     "enriched_fields",
+    # Its extraction rules (17 October): the shapes, the tokenizer, and
+    # typing a span through field_types.coerce, below.
+    "extraction_rules",
     "interface | schema | write_log | submission_criteria | action_types | object_type_validation | constraints | gold_view | bindings",
     # Real leaves, below everything. object_type_validation imports
     # field_types (to reject an unknown declared data_type at load

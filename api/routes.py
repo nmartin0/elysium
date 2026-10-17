@@ -5788,6 +5788,9 @@ class EnrichmentRecipeResponse(BaseModel):
     field_label: str
     instruction: str
     choices: list[str]
+    #: For a field whose value is taken from the text: its data type
+    #: (string, integer, decimal, date). None for choices.
+    extracts: str | None = None
     inputs: list[str]
     #: proposed | approved | rejected | superseded
     status: str
@@ -5876,6 +5879,7 @@ def _visible_recipe(request: Request, current_user: UserRecord, recipe) -> "dict
         "field_name": recipe.field_name,
         "field_label": get_display_name(field, recipe.field_name),
         "instruction": enrichment.instruction, "choices": list(enrichment.choices),
+        "extracts": enrichment.extract,
         "inputs": list(enrichment.inputs), "status": recipe.status,
         # EVERY RULE SET, with its vote's weight when several vote (None
         # for a lone set) -- all of it read by the person approving.

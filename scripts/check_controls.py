@@ -3837,16 +3837,16 @@ CONTROLS = [
     Control(
         describes='ENRICH-VOTE: a tie for the heaviest answer is left empty',
         path='core/ontology/enriched_fields.py',
-        old='    return winners[0] if len(winners) == 1 else None',
-        new='    return winners[0]',
+        old='    return first_seen[winners[0]] if len(winners) == 1 else None',
+        new='    return first_seen[winners[0]]',
         tests=['tests/unit/test_enriched_fields.py::TestSeveralRuleSetsVote::test_a_tie_is_left_empty_rather_than_guessed',
                'tests/integration/test_enriched_fields_reach_gold.py::test_an_approved_vote_fills_the_field_and_its_review_shows_every_set'],
     ),
     Control(
         describes='ENRICH-VOTE: a set votes with its weight, not one each',
         path='core/ontology/enriched_fields.py',
-        old='votes[value] = votes.get(value, 0.0) + member["weight"]',
-        new='votes[value] = votes.get(value, 0.0) + 1.0',
+        old='votes[key] = votes.get(key, 0.0) + member["weight"]',
+        new='votes[key] = votes.get(key, 0.0) + 1.0',
         tests=['tests/unit/test_enriched_fields.py::TestSeveralRuleSetsVote::test_the_heavier_side_wins_and_lone_answers_stand'],
     ),
     Control(
@@ -3880,8 +3880,8 @@ CONTROLS = [
     Control(
         describes="ENRICH-VOTE: the shown score is the chosen recipe's, on rows neither saw",
         path='core/agent/enrichment_compiler.py',
-        old='held_out = evaluate(chosen, test)',
-        new='held_out = evaluate(best_rules, test)',
+        old='held_out = judge(chosen, test)',
+        new='held_out = judge(best_rules, test)',
         tests=['tests/unit/test_enrichment_compiler.py::test_sets_that_each_know_one_answer_are_combined_when_that_is_better'],
     ),
     Control(
@@ -3890,6 +3890,115 @@ CONTROLS = [
         old='"rule_sets": describe_recipe(recipe.rules)',
         new='"rule_sets": []',
         tests=['tests/integration/test_enriched_fields_reach_gold.py::test_an_approved_vote_fills_the_field_and_its_review_shows_every_set'],
+    ),
+    Control(
+        describes='EXTRACT: a sign stays with its number',
+        path='core/ontology/extraction_rules.py',
+        old='_TOKEN = re.compile(r"(?:(?<!\\w)[-+](?=\\d))?\\w+(?:[-_/.,]\\w+)*|[^\\w\\s]", re.UNICODE)',
+        new='_TOKEN = re.compile(r"\\w+(?:[-_/.,]\\w+)*|[^\\w\\s]", re.UNICODE)',
+        tests=[
+            'tests/unit/test_extraction_rules.py::TestShapes::test_each_shape_takes_its_kind_of_value_as_written',
+        ],
+    ),
+    Control(
+        describes='EXTRACT: punctuation between phrase and value is not counted',
+        path='core/ontology/extraction_rules.py',
+        old='        if not _IS_WORD.search(token):\n            # PUNCTUATION',
+        new='        if False:\n            # PUNCTUATION',
+        tests=[
+            'tests/unit/test_extraction_rules.py::TestWhereTheValueIs::test_punctuation_between_is_skipped_and_words_are_counted',
+        ],
+    ),
+    Control(
+        describes='EXTRACT: a rule looks no further than `within` words',
+        path='core/ontology/extraction_rules.py',
+        old='while index < len(found) and looked < within:',
+        new='while index < len(found) and looked < within + 5:',
+        tests=[
+            'tests/unit/test_extraction_rules.py::TestWhereTheValueIs::test_punctuation_between_is_skipped_and_words_are_counted',
+        ],
+    ),
+    Control(
+        describes="EXTRACT: a model's sample answer must be copied from the record",
+        path='core/agent/enrichment_compiler.py',
+        old='    if not any(_folded(value) in _folded(text) for text in record.values() if text):',
+        new='    if False:',
+        tests=[
+            'tests/unit/test_enrichment_compiler.py::test_an_extracted_label_must_be_copied_from_the_record_and_be_its_type',
+        ],
+    ),
+    Control(
+        describes="EXTRACT: a model's sample answer must be of the field's type",
+        path='core/agent/enrichment_compiler.py',
+        old='    if typed(value, enrichment.extract, locale) is None:\n        return UNUSABLE',
+        new='    if False:\n        return UNUSABLE',
+        tests=[
+            'tests/unit/test_enrichment_compiler.py::test_an_extracted_label_must_be_copied_from_the_record_and_be_its_type',
+        ],
+    ),
+    Control(
+        describes='EXTRACT: rules are scored on the value as gold will type it',
+        path='core/agent/enrichment_compiler.py',
+        old='            value = typed(value, extract, locale)',
+        new='            pass',
+        tests=[
+            'tests/unit/test_enrichment_compiler.py::test_a_span_that_does_not_convert_is_not_an_answer',
+        ],
+    ),
+    Control(
+        describes="EXTRACT: a choices field's hash, and its approval, is unchanged",
+        path='core/ontology/enriched_fields.py',
+        old='    if enrichment.extract is not None:\n        # ONLY WHEN EXTRACTING',
+        new='    if True:\n        # ONLY WHEN EXTRACTING',
+        tests=[
+            'tests/unit/test_enriched_fields.py::TestAValueTakenFromTheText::test_a_choices_fields_hash_and_so_its_approval_is_unchanged',
+        ],
+    ),
+    Control(
+        describes="EXTRACT: a rule takes only a shape its field's type can hold",
+        path='core/ontology/enriched_fields.py',
+        old='    if shape not in shapes:',
+        new='    if shape not in SHAPES_FOR["string"]:',
+        tests=[
+            'tests/unit/test_enriched_fields.py::TestAValueTakenFromTheText::test_a_shape_that_cannot_become_the_fields_type_is_refused',
+        ],
+    ),
+    Control(
+        describes="EXTRACT: gold stores the value as the field's type",
+        path='core/mirror/gold_arrow.py',
+        old='            values = [typed(value, enrichment.extract, locale) for value in values]',
+        new='            values = list(values)',
+        tests=[
+            'tests/unit/test_enriched_fields.py::TestGold::test_an_extracted_amount_is_typed_by_the_sources_locale',
+            'tests/integration/test_enriched_fields_reach_gold.py::test_an_extracted_number_reaches_gold_typed_and_its_review_says_what_it_takes',
+        ],
+    ),
+    Control(
+        describes="EXTRACT: gold reads the text by the source's locale",
+        path='core/mirror/enrichment.py',
+        old='                fields[field_name][APPROVED_LOCALE] = locale',
+        new='                fields[field_name][APPROVED_LOCALE] = None',
+        tests=[
+            'tests/unit/test_enriched_fields.py::TestGold::test_an_extracted_amount_is_typed_by_the_sources_locale',
+        ],
+    ),
+    Control(
+        describes='EXTRACT: votes agree on a value written differently',
+        path='core/ontology/enriched_fields.py',
+        old='            key = " ".join(value.casefold().split())',
+        new='            key = value',
+        tests=[
+            'tests/unit/test_enriched_fields.py::TestAValueTakenFromTheText::test_sets_that_found_the_same_value_written_differently_agree',
+        ],
+    ),
+    Control(
+        describes='EXTRACT: the approver is told what kind of value is taken',
+        path='api/routes.py',
+        old='        "extracts": enrichment.extract,',
+        new='        "extracts": None,',
+        tests=[
+            'tests/integration/test_enriched_fields_reach_gold.py::test_an_extracted_number_reaches_gold_typed_and_its_review_says_what_it_takes',
+        ],
     ),
     Control(
         describes="ENRICH: a classified field is never an input to a model",
