@@ -374,6 +374,32 @@ def resolve_relative_date(value: dict, now: datetime | None = None) -> dict:
     return resolved
 
 
+def resolved(condition: FieldFilter, declared_type: str | None = None,
+             now: datetime | None = None) -> FieldFilter:
+    """A relative date made absolute -- a `date_range` -- and anything
+    else unchanged. Called by the mediator after validation, once per
+    query, so every storage and the Python fallback see only operators
+    they can evaluate.
+
+    THE COMMENT IN adapters/sqlalchemy_adapter.py SAID THE MEDIATOR DID
+    THIS, AND NOTHING DID (found 16 October): every adapter declined
+    `relative_date`, the fallback raised "Cannot evaluate", and a view
+    filtered on a recent date answered with an error wherever it was
+    run -- in the browser, and in every trigger that watched one.
+
+    A `date` FIELD GETS DATES, because a timestamp bound compared with
+    a date column is a type question each storage answers differently;
+    for a date, "the last 30 days" means from the day, which is what a
+    date can say. Strings and timestamps keep the full instant.
+    """
+    if condition.operator != "relative_date":
+        return condition
+    bounds = resolve_relative_date(condition.value, now)
+    if declared_type == "date":
+        bounds = {key: None if bound is None else bound[:10] for key, bound in bounds.items()}
+    return FieldFilter(field=condition.field, operator="date_range", value=bounds)
+
+
 def row_matches(row: dict, condition: FieldFilter) -> bool:
     """Whether one row satisfies one condition, in Python.
 

@@ -303,11 +303,13 @@ class DeploymentConfig:
     # may name. Decided 14 Oct: 256 unless a deployment says otherwise,
     # and never more than 1,024. `bulk_action_limit:` in config.yaml.
     bulk_action_limit: int = 256
-    # HOW OFTEN THE SERVER CHECKS TRIGGERS BETWEEN SYNCS, in minutes
-    # (decided 16 October); 0 turns the clock off and leaves the sync
-    # as the only time they are checked. `check_triggers_every_minutes:`
-    # in config.yaml. See api/trigger_clock.py.
-    check_triggers_every_minutes: int = 15
+    # HOW OFTEN THE SERVER CHECKS DATE-FILTERED TRIGGERS, in minutes
+    # (revised 16 October): the only triggers time alone can move. Every
+    # other trigger is checked when data arrives, never on a clock. 0
+    # leaves date-filtered ones to the sync and to saved changes.
+    # `check_date_triggers_every_minutes:` in config.yaml. See
+    # core/trigger_runs.py for when each is checked.
+    check_date_triggers_every_minutes: int = 15
 
 
 logger = logging.getLogger(__name__)
@@ -708,7 +710,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
                 _incremental_policies(data_silos_raw["data_silos"], schema_raw["object_types"])),
             max_tokens_per_query=_token_budget(config["agent"].get("max_tokens_per_query")),
             bulk_action_limit=_bulk_action_limit(config.get("bulk_action_limit")),
-            check_triggers_every_minutes=_trigger_clock(config.get("check_triggers_every_minutes")),
+            check_date_triggers_every_minutes=_trigger_clock(config),
             max_concurrent_requests=_default_concurrency(config),
             # FOUR HOURS by default, not fifteen minutes. Long enough
             # that a reviewer can be in a meeting; short enough that a
@@ -1078,16 +1080,27 @@ DEFAULT_TRIGGER_CLOCK_MINUTES = 15
 MAX_TRIGGER_CLOCK_MINUTES = 1440
 
 
-def _trigger_clock(declared) -> int:
-    """`check_triggers_every_minutes`: a whole number of minutes from 0
-    (off) to a day. Refused at load otherwise, where whoever wrote it is
-    looking, rather than a clock that silently never ticks."""
+def _trigger_clock(config: dict) -> int:
+    """`check_date_triggers_every_minutes`: a whole number of minutes
+    from 0 (off) to a day. Refused at load otherwise, where whoever
+    wrote it is looking, rather than a clock that silently never ticks.
+
+    THE OLD NAME IS REFUSED, NOT HONOURED. `check_triggers_every_
+    minutes` (one day old) checked every trigger; the setting now covers
+    only date-filtered ones, and a key that silently changed what it
+    governs is the thing this loader exists to prevent."""
+    if "check_triggers_every_minutes" in config:
+        raise ValueError(
+            "check_triggers_every_minutes is now check_date_triggers_every_minutes: "
+            "triggers are checked when data arrives, and the clock checks only those "
+            "whose view filters on a date relative to now. Rename the key.")
+    declared = config.get("check_date_triggers_every_minutes")
     if declared is None:
         return DEFAULT_TRIGGER_CLOCK_MINUTES
     if isinstance(declared, bool) or not isinstance(declared, int) \
             or not 0 <= declared <= MAX_TRIGGER_CLOCK_MINUTES:
         raise ValueError(
-            f"check_triggers_every_minutes must be a whole number of minutes from 0 (off) "
+            f"check_date_triggers_every_minutes must be a whole number of minutes from 0 (off) "
             f"to {MAX_TRIGGER_CLOCK_MINUTES}, got {declared!r}.")
     return declared
 

@@ -167,8 +167,14 @@ def count_for_each(mediator, view, user_records: list) -> dict:
 def evaluate_user_triggers(mediator, trigger_store, view_store,
                            notification_store, user_records: dict,
                            config_digest: str | None = None,
-                           write_mediator=None, pending_store=None) -> int:
+                           write_mediator=None, pending_store=None,
+                           include=None) -> int:
     """Runs every enabled trigger as its owner. Returns how many fired.
+
+    `include(trigger, view)`, when given, picks which to run -- the
+    triggers a saved change could have moved, or those whose view reads
+    the clock. Added last and defaulted, so every caller that runs them
+    all is unchanged.
 
     AS THE OWNER, AND ONLY FOR THE OWNER. A UI-created trigger
     notifies the person who made it -- which is what makes it safe to
@@ -192,6 +198,8 @@ def evaluate_user_triggers(mediator, trigger_store, view_store,
                 "trigger %r watches a view that no longer exists",
                 trigger.name,
             )
+            continue
+        if include is not None and not include(trigger, view):
             continue
         fired += evaluate_one_trigger(
             trigger, view, mediator, notification_store, user_records,

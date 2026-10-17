@@ -219,15 +219,23 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
             watcher = asyncio.create_task(watch_publications(
                 bus, lambda: _publication_sources(_app),
                 on_publication=lambda: follow_publications(_app)))
-        # THE TRIGGER CLOCK (decided 16 October): triggers checked
-        # between syncs, every check_triggers_every_minutes; each worker
-        # looks, one checks (api/trigger_clock.py). Only where there is
+        # TRIGGERS CHECKED WHEN SOMETHING HAPPENS (16 October): after a
+        # change is saved and when a trigger is made (api/trigger_
+        # checks.py); and the CLOCK, for date-filtered triggers only,
+        # every check_date_triggers_every_minutes, each worker looking
+        # and one checking (api/trigger_clock.py). Only where there is
         # a deployment to check -- a test app built without one has none.
         clock = None
         if getattr(_app.state, "runtime_paths", None) is not None \
                 and getattr(_app.state, "pending_writes", None) is not None:
+            from api.trigger_checks import TriggerChecks
             from api.trigger_clock import run_trigger_clock
 
+            # ON THE APP'S OWN EXECUTOR, which shutdown joins below, so
+            # a check under way finishes rather than being cut off.
+            pool = getattr(_app.state, "executor", None)
+            _app.state.trigger_checks = TriggerChecks(
+                _app, submit=None if pool is None else pool.submit)
             clock = asyncio.create_task(run_trigger_clock(_app))
         yield
         if clock is not None:

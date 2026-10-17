@@ -26,10 +26,10 @@ Mirror health is the counter-example and stays as it is: a BUILT-IN
 that notifies whoever holds `manage:deployment`, declared in code
 rather than by a person.
 
-NOT WHEN IT RUNS. A trigger says what to watch and what to do; the
-sync looks when the data changed, and since 16 October the server looks
-between syncs too, every check_triggers_every_minutes -- an approved
-change and "the last 30 days" both move without one (api/trigger_clock).
+NOT WHEN IT RUNS. A trigger says what to watch and what to do; it is
+checked when what it counts can have changed -- after a sync, after a
+change is saved, when it is made, and on the clock if its view filters
+on a recent date. core/trigger_runs.py has the account.
 """
 
 import json

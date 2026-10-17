@@ -254,17 +254,21 @@ the owner's). Refused beside `automatable: false`. The Watch dialog
 says, while an action is being chosen, when each proposal will need
 someone else.
 
-**Evaluation cadence -- AFTER EACH SYNC, AND A CLOCK BETWEEN.** The
-premise once offered for a clock was wrong: live reads are gone, so
-every deployment syncs. But a condition still moves without a sync: a
-change approved in Elysium is read at once, and "the last 30 days"
-moves at midnight UTC. The server checks every
-`check_triggers_every_minutes` (15 unless config.yaml says; 0 off; at
-most a day), each worker looking and one checking under a file lock.
-Foundry offers the same pair, "live" and "scheduled", and warns a
-frequent schedule "can result in high compute usage"; a count per
-trigger is the light end. The sync and the clock run one path,
-core/trigger_runs.py.
+**Evaluation cadence -- WHEN WHAT IT COUNTS CAN HAVE CHANGED.**
+Revised the same day, after the owner asked why a timer should check
+anything that only data can move. A count changes when its data
+changes or when time moves under a date filter, so: every trigger
+after each sync; the triggers watching the types a saved change wrote,
+straight after it, in the background; a new trigger when it is made;
+and, every `check_date_triggers_every_minutes` (15 unless config.yaml
+says; 0 off; at most a day), only the triggers whose view has a
+`relative_date` filter. That filter is measured from the moment of the
+query, not from midnight, so the interval is how late anyone hears --
+minutes, not a day. Foundry's live monitoring runs "within minutes of
+an object change appearing in the Ontology" and cannot monitor
+"relative time conditions", which fall back to scheduled monitoring:
+the same split. One path for all four, core/trigger_runs.py, under one
+lock so two processes never count one trigger at once.
 
 **Queue flooding (R50)** was decided and built 14 October, and the cap
 on how many objects one proposal may name is bulk actions' (256 unless

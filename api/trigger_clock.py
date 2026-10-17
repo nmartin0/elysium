@@ -1,28 +1,32 @@
-"""The server checking triggers between syncs (decided 16 October).
+"""The server's clock for DATE-FILTERED triggers (revised 16 October).
 
-WHY A CLOCK AT ALL, when the sync already checks them "when the data
-changed": two things change a condition WITHOUT a sync. A change
-approved in Elysium is read at once, through the read-your-writes
-overlay, before the next sync copies it back from the source; and a
-condition on "the last 30 days" moves at midnight UTC on its own. On a
-nightly or weekly sync either would wait a day or more to be noticed.
-Foundry offers the same pair -- "live", within minutes of a change, and
-"scheduled" -- and warns that a frequent schedule "can result in high
-compute usage, especially for complex queries"; a count per trigger is
-the light end of that.
+ONLY THOSE. A trigger's count changes when the data under it changes --
+checked at the end of a sync and straight after a change is saved
+(core/trigger_runs.py) -- or when the clock moves under a date filter.
+This loop is for the second, and nothing else: the first version
+checked every trigger every fifteen minutes, which for a trigger with
+no date filter could never find anything a sync or a saved change had
+not already found.
+
+WHY MINUTES AND NOT A DAY. `relative_date` is resolved against the
+moment of the query (core/filters.py), not against midnight, so a
+record leaves "the last 30 days" at whatever minute it turns 30 days
+old. How late anybody hears is the interval. Foundry cannot monitor
+"relative time conditions" live either; they fall back to its
+"scheduled monitoring", which it warns "can result in high compute
+usage" when frequent -- a count per date-filtered trigger is the light
+end of that.
 
 WHY THE SERVER, when INSTALL.md says Elysium has "no scheduler of its
 own": that sentence is about the SYNC, which copies whole tables and
 would compete with users for the CPU, so the operator schedules it.
 Counting what a saved view matches is what the server does for every
-request already; the publication watcher is the precedent for a small
-loop of its own. `check_triggers_every_minutes: 0` turns it off.
+request already. `check_date_triggers_every_minutes: 0` turns it off.
 
 ONE CHECK PER INTERVAL, HOWEVER MANY WORKERS. Each worker runs this
 loop; the first to find the interval elapsed takes a file lock in the
 data directory, records the time, and checks. The others find the lock
-taken, or the time recent, and do nothing -- the same flock the write
-path uses to keep two processes from applying one write twice.
+taken, or the time recent, and do nothing.
 
 NEVER RAISES INTO THE SERVER, and one failed check costs one check.
 """
@@ -43,12 +47,13 @@ _LAST = "trigger_clock.last"
 
 
 def check_if_due(app, clock=time.time) -> bool:
-    """Checks every trigger if the interval has passed since the last
-    check by any worker. Returns whether this call checked."""
-    from core.trigger_runs import run_triggers
+    """Checks the date-filtered triggers if the interval has passed
+    since the last check by any worker. Returns whether this call
+    checked."""
+    from core.trigger_runs import reads_the_clock, run_triggers
 
     generation = app.state.generation
-    minutes = generation.config.check_triggers_every_minutes
+    minutes = generation.config.check_date_triggers_every_minutes
     if minutes <= 0:
         return False
     data_dir = Path(app.state.runtime_paths.data_dir)
@@ -72,7 +77,8 @@ def check_if_due(app, clock=time.time) -> bool:
             fired = run_triggers(
                 generation.config, data_dir, generation.mediator,
                 lambda: (generation.mediator, generation.write_mediator,
-                         app.state.pending_writes))
+                         app.state.pending_writes),
+                include=reads_the_clock)
             if fired:
                 logger.info("trigger clock: %d trigger(s) fired", fired)
         except Exception:  # noqa: BLE001 - see the module docstring

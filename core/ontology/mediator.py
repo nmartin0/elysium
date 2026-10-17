@@ -115,7 +115,7 @@ from typing import Any, cast
 
 from core.carried_columns import SECURITY_COLUMN
 from core.concurrency import ConcurrencyLimiter, KeyedLockManager
-from core.filters import FieldFilter, row_matches, validate_filter
+from core.filters import FieldFilter, resolved, row_matches, validate_filter
 from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import UserRecord, authorize
@@ -1260,13 +1260,16 @@ class DataMediator:
         # why the id_field needs its own handling (it isn't a regular
         # entry in type_schema["fields"] at all).
         # Field names become column names; operator and value survive.
+        # A RELATIVE DATE IS MADE ABSOLUTE HERE, once, against now
+        # (core/filters.py, resolved) -- no storage can evaluate one.
         translated = [
             FieldFilter(
                 field=get_column_for_field(resolved_type_config, condition.field),
-                operator=condition.operator,
-                value=condition.value,
+                operator=absolute.operator,
+                value=absolute.value,
             )
             for condition in conditions
+            for absolute in [resolved(condition, self._declared_type(object_type, condition.field))]
         ]
         # THE MAC FILTER, PUSHED INTO THE QUERY where the ontology lets
         # it be. `field:` security lives in a column of this very
@@ -1637,12 +1640,14 @@ class DataMediator:
                 # absent -- uniform denial, exactly as search_object()
                 # does it.
                 raise ValueError("Invalid search criteria")
-            validate_filter(condition, self._declared_type(object_type, condition.field))
+            declared = self._declared_type(object_type, condition.field)
+            validate_filter(condition, declared)
+            absolute = resolved(condition, declared)
             translated.append(
                 FieldFilter(
                     field=get_column_for_field(resolved_type_config, condition.field),
-                    operator=condition.operator,
-                    value=condition.value,
+                    operator=absolute.operator,
+                    value=absolute.value,
                 )
             )
         return translated
@@ -1739,8 +1744,26 @@ class DataMediator:
         # genuine gap here would let a search miss or wrongly include
         # an object for exactly the torn-state reason this whole
         # reconciliation mechanism exists to prevent.
+        # AND THE APPLIED-BUT-NOT-YET-MIRRORED ONES (16 October). Only
+        # pending writes were reconciled, so after a change was saved a
+        # search for its NEW value missed the object until the next
+        # sync -- while reading the object showed the new value, through
+        # the overlay in _read_field_with_log_check(). The write log's
+        # get_all_applied_changes_since() was written "for search
+        # reconciliation" and nothing called it. Found by a trigger:
+        # checking one straight after a saved change found nothing,
+        # because the count it rests on could not see the change.
+        #
+        # Bounded the same way as the overlay: since the mirror's last
+        # sync, and nothing at all for a live deployment
+        # (mirror_synced_at None), whose adapter reads the current value.
+        id_field = self._type_schema(object_type)["id_field"]
+        applied = [
+            {**entry, "operation": "create" if id_field in entry["changes"] else "update"}
+            for entry in self.write_log.get_all_applied_changes_since(self.mirror_synced_at)
+        ]
         relevant_entries = [
-            entry for entry in self.write_log.get_all_pending_writes()
+            entry for entry in [*self.write_log.get_all_pending_writes(), *applied]
             # Only the FIELD NAMES matter here -- whether a pending
             # write touched anything the search filtered on. The
             # operator and value are irrelevant to that question, which

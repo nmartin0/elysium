@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 
 import FilterBar, { ALL_OPERATORS, describeFilter, operatorsFor } from './FilterBar'
 import type { FieldSchema } from '../types'
@@ -221,7 +221,9 @@ describe('the set operators, which were formatted but never offerable', () => {
           ? ['1', '2']
           : operator === 'in' || operator === 'not_in'
             ? ['a', 'b']
-            : 'x'
+            : operator === 'relative_date'
+              ? { since_days_ago: 7 }
+              : 'x'
       const described = describeFilter({ field: 'name', operator, value })
 
       // AN UNDERSCORE IS THE TELL, not the operator word itself: "name
@@ -231,5 +233,58 @@ describe('the set operators, which were formatted but never offerable', () => {
       expect(described).not.toContain('_')
       expect(described.length).toBeGreaterThan(0)
     }
+  })
+
+  describe('a relative date (16 October)', () => {
+    /** It sent the typed text, "7d", which the server refuses -- so no
+     *  view filtered on a recent date, and no trigger watching one,
+     *  could be made from here. */
+    const dated: Record<string, FieldSchema> = { created: { type: 'data', data_type: 'timestamp' } }
+
+    function build(direction: string, days: string) {
+      const onChange = vi.fn()
+      render(<FilterBar fields={dated} filters={[]} onChange={onChange} />)
+      fireEvent.change(screen.getByLabelText('Field to filter'), { target: { value: 'created' } })
+      fireEvent.change(screen.getByLabelText('Operator'), { target: { value: 'relative_date' } })
+      fireEvent.change(screen.getByLabelText('When'), { target: { value: direction } })
+      fireEvent.change(screen.getByLabelText('Days'), { target: { value: days } })
+      fireEvent.click(screen.getByRole('button', { name: /Add/ }))
+      return onChange
+    }
+
+    it('is offered on date and timestamp fields, not only strings', () => {
+      for (const type of ['date', 'timestamp', 'timestamptz']) {
+        expect(operatorsFor(type)).toEqual(expect.arrayContaining(['date_range', 'relative_date']))
+        expect(operatorsFor(type)).not.toContain('contains')
+      }
+    })
+
+    it('"in the last N days" sends since_days_ago, the shape the server takes', () => {
+      expect(build('since', '30')).toHaveBeenCalledWith([
+        { field: 'created', operator: 'relative_date', value: { since_days_ago: 30 } },
+      ])
+    })
+
+    it('"more than N days ago" sends until_days_ago', () => {
+      expect(build('until', '14')).toHaveBeenCalledWith([
+        { field: 'created', operator: 'relative_date', value: { until_days_ago: 14 } },
+      ])
+    })
+
+    it('adds nothing for a value that is not a whole number of days', () => {
+      for (const days of ['7d', '1.5', '-3', '0']) {
+        expect(build('since', days)).not.toHaveBeenCalled()
+        cleanup()
+      }
+    })
+
+    it('reads back the way it was built', () => {
+      expect(describeFilter({ field: 'created', operator: 'relative_date', value: { since_days_ago: 30 } })).toBe(
+        'created in the last 30 days',
+      )
+      expect(describeFilter({ field: 'created', operator: 'relative_date', value: { until_days_ago: 1 } })).toBe(
+        'created more than 1 day ago',
+      )
+    })
   })
 })

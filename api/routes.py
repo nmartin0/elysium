@@ -1457,9 +1457,9 @@ class DeploymentConfigResponse(BaseModel):
     max_tokens_per_query: int | None = None
     #: Decided 14 Oct: how many objects one bulk action may name.
     bulk_action_limit: int = 256
-    #: Decided 16 Oct: how often the server checks triggers between
-    #: syncs, in minutes; 0 for only after a sync.
-    check_triggers_every_minutes: int = 15
+    #: Revised 16 Oct: how often the server checks date-filtered
+    #: triggers, in minutes; 0 for only when data arrives.
+    check_date_triggers_every_minutes: int = 15
     #: Formerly BLOCKING 6: classification labels decide field access.
     label_enforcement: bool = False
     #: R15: whether lineage events also go to a service. WHETHER, never
@@ -3072,6 +3072,12 @@ def create_trigger_route(
     )
     if trigger_id is None:
         raise HTTPException(status_code=500, detail="Could not create that trigger")
+    # ITS FIRST CHECK NOW, in the background: the "now watching" notice
+    # is how its maker knows it works, and with no clock for triggers
+    # that only data can move, the next sync might be a day away.
+    checks = getattr(request.app.state, "trigger_checks", None)
+    if checks is not None:
+        checks.after_made(trigger_id)
     return {"trigger_id": trigger_id}
 
 
@@ -4527,7 +4533,7 @@ def deployment_config_route(request: Request,
         "agent_features": list(config.agent_features.names_on),
         "max_tokens_per_query": config.max_tokens_per_query,
         "bulk_action_limit": config.bulk_action_limit,
-        "check_triggers_every_minutes": config.check_triggers_every_minutes,
+        "check_date_triggers_every_minutes": config.check_date_triggers_every_minutes,
         "label_enforcement": config.label_enforcement,
         "lineage_service": bool(config.lineage.get("url")),
         "lineage_namespace": config.lineage.get("namespace") or "elysium",
@@ -7369,6 +7375,13 @@ async def _decide_reserved_write(request: Request, write_id: str, pending, appro
         if bus is not None:
             for sub in pending.sub_writes:
                 bus.publish(sub.object_type, _CHANGE_VERB.get(sub.operation, "updated"))
+        # TRIGGERS, AS SOON AS THE CHANGE IS SAVED (16 October): the
+        # ones watching the types it wrote, in the background. The
+        # read-your-writes overlay serves this change at once; waiting
+        # for the next sync to notice it would be waiting for nothing.
+        checks = getattr(request.app.state, "trigger_checks", None)
+        if checks is not None:
+            checks.after_change({sub.object_type for sub in pending.sub_writes})
 
     # THE ASKER'S QUESTION, FINISHED IN THE BACKGROUND (WIRED-2). Not
     # awaited: the approver's request is about the write, and the agent

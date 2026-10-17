@@ -213,12 +213,13 @@ requests for the same CPU.
 
 **Schedule it however you already schedule things.** A cron entry, a
 systemd timer, a Kubernetes CronJob — Elysium has no opinion, and no
-scheduler of its own. (One exception, small by design: the server checks
-**triggers** every 15 minutes between syncs, because a change approved
-in Elysium or a condition on "the last 30 days" can move without one.
-That is a count per trigger, not a copy of anything;
-`check_triggers_every_minutes:` in config.yaml changes the interval, and
-`0` leaves the sync as the only time they are checked.) Running the command by hand is also the "sync
+scheduler of its own. (One exception, small by design: **triggers**
+are checked when data arrives -- after each sync, and as soon as a
+change is saved in Elysium -- and those whose view filters on a recent
+date, like "in the last 30 days", are also checked every 15 minutes,
+because time alone moves them. That is a count per trigger, not a copy
+of anything; `check_date_triggers_every_minutes:` in config.yaml
+changes the interval, and `0` turns it off.) Running the command by hand is also the "sync
 now" escape hatch; there is no separate mechanism for it.
 
 **What it syncs is derived from your ontology**, not from a separate

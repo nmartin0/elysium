@@ -1,13 +1,35 @@
-"""One evaluation of every trigger, each as its owner (moved here 16 October).
+"""Evaluating triggers, and WHEN (revised 16 October, after the owner
+asked why anything should check on a timer).
 
-TWO CALLERS, ONE PATH. The sync runs it when the data changed
-(scripts/run_sync.py), and the server's clock runs it between syncs
-(api/trigger_clock.py) -- because a condition can change without a
-sync: a change approved in Elysium is read at once, before the next
-sync copies it from the source, and "in the last 30 days" moves at
-midnight UTC on its own. Two copies of this would be two places for
-owner resolution, recipients or the write side to drift, so it moved
-out of the sync script rather than being copied.
+A CONDITION CAN ONLY CHANGE IN TWO WAYS: the data under it changes, or
+the clock moves under a date filter. So each is checked when it
+happens, and nothing else is checked at all:
+
+- A SYNC copies new data in from the sources: every trigger, at the
+  end of it (scripts/run_sync.py).
+- A CHANGE SAVED IN ELYSIUM is read at once through the read-your-
+  writes overlay, before any sync: the triggers watching the object
+  types it touched, straight after it is written
+  (api/trigger_checks.py). Foundry the same -- live monitoring
+  "within minutes of an object change appearing in the Ontology",
+  and its user edits "process faster" than dataset updates.
+- A NEW TRIGGER is checked the moment it is made, so its "now watching"
+  arrives then rather than at the next sync.
+- THE CLOCK, every check_date_triggers_every_minutes: ONLY the triggers
+  whose view has a `relative_date` filter -- the one filter that reads
+  the time (core/filters.py, resolve_relative_date). It is measured
+  from the moment of the query, not from midnight, so a record leaves
+  "the last 30 days" at whatever minute it turns 30 days old; how late
+  anybody hears is the interval, which is why it is minutes and not a
+  day. Foundry cannot monitor "relative time conditions" live either,
+  and falls back to "scheduled monitoring" for them.
+
+Checking every other trigger on the clock, as the first version did,
+was work that could never find anything: without new data and without
+a date filter, the count is the count it was.
+
+ONE PATH for all four. Owners, recipients, the write side built only
+when some trigger proposes, declared and made triggers alike.
 
 EVERYTHING SAID ABOUT TRIGGERS STILL HOLDS: each runs as its owner, a
 disabled or missing owner is skipped, a recipient is counted with their
@@ -23,8 +45,39 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def watching(object_types) -> "Callable[[Any, Any], bool]":
+    """The triggers a change to these object types could have moved.
+
+    A view counts ONE object type (SavedView.object_type), filtered on
+    that type's own fields, so a write to another type cannot change
+    its count."""
+    types = frozenset(object_types)
+    return lambda trigger, view: view.object_type in types
+
+
+def reads_the_clock(trigger: Any, view: Any) -> bool:
+    """Whether this trigger's count can change with no new data: its
+    view filters on a date relative to now."""
+    return any(_operator(condition) == "relative_date"
+               for condition in (view.conditions or []))
+
+
+def _operator(condition: Any) -> "str | None":
+    # STORED AS DICTS in a saved view, as FieldFilters in a declared
+    # one -- read either rather than assume.
+    if isinstance(condition, dict):
+        return condition.get("operator")
+    return getattr(condition, "operator", None)
+
+
+def only(trigger_id: str) -> "Callable[[Any, Any], bool]":
+    """One trigger, by id -- the one just made."""
+    return lambda trigger, view: getattr(trigger, "trigger_id", None) == trigger_id
+
+
 def run_triggers(config: Any, data_dir: Path, mediator: Any,
-                 write_side: "Callable[[], tuple[Any, Any, Any]]") -> int:
+                 write_side: "Callable[[], tuple[Any, Any, Any]]",
+                 include: "Callable[[Any, Any], bool] | None" = None) -> int:
     """Evaluates every enabled trigger -- made in the product and
     declared in config.yaml -- and returns how many fired.
 
@@ -33,7 +86,24 @@ def run_triggers(config: Any, data_dir: Path, mediator: Any,
     deployment whose triggers only notify builds no write path at all.
     The mediator it returns replaces `mediator`, so a proposal and the
     count it rests on are read the same way.
+
+    `include(trigger, view)` picks which to run (watching, reads_the_
+    clock, only); None runs them all, as the sync does.
     """
+    # ONE EVALUATION AT A TIME, ACROSS PROCESSES. A sync, a saved
+    # change and the clock can now all start one, in different
+    # processes; two counting one trigger at once would both read the
+    # same previous count and both say "crossed". Blocking, not
+    # skipping: a check that waits still runs, and none is lost.
+    import fcntl
+
+    data_dir.mkdir(parents=True, exist_ok=True)
+    with open(data_dir / "trigger_runs.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return _run_triggers_locked(config, data_dir, mediator, write_side, include)
+
+
+def _run_triggers_locked(config, data_dir, mediator, write_side, include) -> int:
     from core.count_condition import evaluate_one_trigger, evaluate_user_triggers
     from core.notifications import NotificationStore
     from core.saved_views import SavedViewStore
@@ -45,7 +115,18 @@ def run_triggers(config: Any, data_dir: Path, mediator: Any,
     # They share owner resolution, the write mediator and the
     # evaluator -- a declared trigger is never a second code path.
     declared = list(config.declared_triggers)
-    enabled = [*triggers.all_enabled(), *declared]
+    views = SavedViewStore(data_dir / "saved_views.db")
+    made = triggers.all_enabled()
+    if include is not None:
+        # CHOSEN BEFORE ANYBODY IS LOOKED UP, so a change saved to one
+        # type resolves the owners of the triggers watching it and no
+        # others. A view that no longer exists is left to the full run
+        # to report.
+        made = [trigger for trigger in made
+                if (view := views.get(trigger.view_id)) is not None
+                and include(trigger, view)]
+        declared = [trigger for trigger in declared if include(trigger, trigger.view)]
+    enabled = [*made, *declared]
     if not enabled:
         return 0
 
@@ -81,9 +162,12 @@ def run_triggers(config: Any, data_dir: Path, mediator: Any,
         mediator, write_mediator, pending_store = write_side()
 
     notifications = NotificationStore(data_dir / "notifications.db")
+    chosen = {trigger.trigger_id for trigger in made}
     fired = evaluate_user_triggers(
-        mediator, triggers, SavedViewStore(data_dir / "saved_views.db"),
+        mediator, triggers, views,
         notifications, owners, config.source_digest, write_mediator, pending_store,
+        include=None if include is None else (
+            lambda trigger, view: trigger.trigger_id in chosen),
     )
     # DECLARED TRIGGERS carry their view inline, so they skip the
     # saved-view lookup and go straight to the shared path.

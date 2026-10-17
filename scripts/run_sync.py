@@ -92,8 +92,9 @@ def _evaluate_user_triggers(runtime_paths, config, mediator) -> None:
 
     AFTER THE SYNC, like the mirror-health condition, because that is
     when the data changed. A trigger says WHAT to watch; the sync says
-    when to look -- and since 16 October the server's clock looks too,
-    between syncs (api/trigger_clock.py). Both run core/trigger_runs.
+    when to look. The server also looks after a change is saved, and
+    on a clock for date-filtered triggers; all of them run
+    core/trigger_runs.
 
     NEVER RAISES INTO THE SYNC. The sync has done its work; failing to
     notice something about that work must not turn a successful sync

@@ -108,7 +108,8 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
     # `contains` IS HERE AND `relative_date` IS NOT: LIKE is expressible
     # in Core, and a relative date needs today's date resolved first --
     # which the mediator does before calling, turning it into a
-    # date_range.
+    # date_range (core/filters.py, resolved). This comment said so for
+    # months before anything did; see that function for what it cost.
     pushable_operators = frozenset({
         "equals", "in", "not_in", "range", "date_range", "contains",
     })

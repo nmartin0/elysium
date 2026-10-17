@@ -13,8 +13,9 @@
  * remove, and results you cannot explain.
  *
  * THE OPERATORS OFFERED COME FROM THE FIELD'S TYPE, mirroring
- * core/filters.py's own table: range is for numbers, contains and the
- * date operators for strings, equality for anything. Offering an
+ * core/filters.py's own table: range is for numbers, contains for
+ * strings, the date operators for strings AND date and timestamp
+ * fields, equality for anything. Offering an
  * operator the server will reject is a control that exists to fail.
  */
 
@@ -52,6 +53,11 @@ export function operatorsFor(type: string | undefined): string[] {
   if (type === undefined || type === null) return [...ALL_OPERATORS]
 
   const numeric = type === 'integer' || type === 'number'
+  // THE DATE OPERATORS ON DATE FIELDS TOO (16 October). They were
+  // offered on strings only, so a field declared `date` or `timestamp`
+  // -- the one kind the server's own comment calls gap-free -- could
+  // not be filtered by date at all. core/filters.py allows all four.
+  const dateLike = type === 'string' || type === 'date' || type === 'timestamp' || type === 'timestamptz'
   return [
     'equals',
     // `in` and `not_in` APPLY TO ANY TYPE, which is why they sit
@@ -65,7 +71,8 @@ export function operatorsFor(type: string | undefined): string[] {
     'in',
     'not_in',
     ...(numeric ? ['range'] : []),
-    ...(type === 'string' ? ['contains', 'date_range', 'relative_date'] : []),
+    ...(type === 'string' ? ['contains'] : []),
+    ...(dateLike ? ['date_range', 'relative_date'] : []),
   ]
 }
 
@@ -78,8 +85,37 @@ export function describeFilter(filter: FieldFilter): string {
   if (operator === 'in' && Array.isArray(value)) return `${field} is ${value.join(', ')}`
   if (operator === 'not_in' && Array.isArray(value)) return `${field} is not ${value.join(', ')}`
   if (operator === 'contains') return `${field} contains "${String(value)}"`
-  if (operator === 'relative_date') return `${field} in the last ${String(value)}`
+  if (operator === 'relative_date') return describeRelative(field, value)
   return `${field} = ${String(value)}`
+}
+
+/**
+ * A relative date as the server takes it: `since_days_ago` is "in the
+ * last N days", `until_days_ago` is "more than N days ago"
+ * (core/filters.py, resolve_relative_date -- measured from now, in UTC).
+ */
+function describeRelative(field: string, value: unknown): string {
+  if (value !== null && typeof value === 'object') {
+    const { since_days_ago: since, until_days_ago: until } = value as Record<string, unknown>
+    if (typeof since === 'number' && typeof until === 'number') {
+      return `${field} between ${since} and ${until} days ago`
+    }
+    if (typeof since === 'number') return `${field} in the last ${daysWord(since)}`
+    if (typeof until === 'number') return `${field} more than ${daysWord(until)} ago`
+  }
+  return `${field} in the last ${String(value)}`
+}
+
+function daysWord(days: number): string {
+  return days === 1 ? '1 day' : `${days} days`
+}
+
+/** Whole days from 1 up, or null. The server refuses fractions and
+ *  negatives; refusing them here keeps the Add button honest. */
+function wholeDays(text: string): number | null {
+  if (!/^\s*\d+\s*$/.test(text)) return null
+  const days = Number(text)
+  return days >= 1 ? days : null
 }
 
 interface FilterBarProps {
@@ -93,6 +129,9 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
   const [operator, setOperator] = useState('equals')
   const [value, setValue] = useState('')
   const [upper, setUpper] = useState('')
+  // WHICH SIDE OF "N DAYS AGO" a relative date keeps. Both are the one
+  // server operator, so this is a choice inside it, not another.
+  const [direction, setDirection] = useState<'since' | 'until'>('since')
 
   // Link fields are excluded: a relationship has no column to compare,
   // and the server would reject a filter on one.
@@ -110,6 +149,8 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
    * drops blanks, and will not add a filter that ends up empty.
    */
   const isSet = operator === 'in' || operator === 'not_in'
+  const isRelative = operator === 'relative_date'
+  const days = isRelative ? wholeDays(value) : null
   const setValues = value
     .split(',')
     .map((part) => part.trim())
@@ -118,6 +159,7 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
   function add() {
     if (!field || value === '') return
     if (isSet && setValues.length === 0) return
+    if (isRelative && days === null) return
     onChange([
       ...filters,
       {
@@ -126,7 +168,17 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
         // A two-part operator takes a pair, a SET takes a list, and
         // everything else one value. Sending the wrong shape is what
         // the server rejects, so none of them is constructible here.
-        value: needsTwo ? [value, upper] : isSet ? setValues : value,
+        //
+        // A RELATIVE DATE IS AN OBJECT. This sent the typed text ("7d"),
+        // which the server refuses -- so no view filtered on a recent
+        // date could be made here, and no trigger could watch one.
+        value: needsTwo
+          ? [value, upper]
+          : isSet
+            ? setValues
+            : isRelative
+              ? { [direction === 'since' ? 'since_days_ago' : 'until_days_ago']: days }
+              : value,
       },
     ])
     setValue('')
@@ -185,11 +237,24 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
               ))}
             </HTMLSelect>
 
+            {isRelative && (
+              <HTMLSelect
+                aria-label="When"
+                value={direction}
+                onChange={(e) => setDirection(e.currentTarget.value as 'since' | 'until')}
+              >
+                <option value="since">in the last</option>
+                <option value="until">more than</option>
+              </HTMLSelect>
+            )}
+
             <InputGroup
-              aria-label={needsTwo ? 'From' : 'Value'}
+              aria-label={needsTwo ? 'From' : isRelative ? 'Days' : 'Value'}
               placeholder={
-                operator === 'relative_date'
-                  ? 'e.g. 7d'
+                isRelative
+                  ? direction === 'since'
+                    ? 'days, e.g. 30'
+                    : 'days ago, e.g. 14'
                   : // A SET NEEDS THE SEPARATOR SAYING SO. Typing one
                     // value into a field marked "Value" and getting a
                     // one-element set is correct but teaches nothing;
@@ -213,7 +278,7 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
               />
             )}
 
-            <Button icon="add" onClick={add} disabled={value === ''}>
+            <Button icon="add" onClick={add} disabled={value === '' || (isRelative && days === null)}>
               Add
             </Button>
           </>
