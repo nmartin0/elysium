@@ -197,6 +197,12 @@ class TimerStore:
                 "ORDER BY due_at", (owner_user_id, kind)).fetchall()
         return [_timer(row) for row in rows]
 
+    def keys_of(self, kind: str) -> list[str]:
+        """Every key set for one kind -- for a caller tidying its own."""
+        with self._connection() as conn:
+            rows = conn.execute("SELECT key FROM timers WHERE kind = ?", (kind,)).fetchall()
+        return [row[0] for row in rows]
+
     def get(self, kind: str, key: str) -> "Timer | None":
         with self._connection() as conn:
             row = conn.execute(

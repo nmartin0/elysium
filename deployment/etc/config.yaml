@@ -163,13 +163,40 @@ tools:
 #     object_type: Transaction
 #     query_text: ""                  # optional free text
 #     conditions: []                  # optional, as in a saved view
-#     above: 10                       # exactly one of above/gained/fell
+#     above: 10                       # exactly one of above/at_most/
+#                                     # gained/fell
 #     recipient_roles: [reviewer]     # optional; each member is counted
 #                                     # with their OWN authority
 #     action:                         # optional; PROPOSED, never run --
 #       type: RecategorizeTransactions  # it waits in Approvals
 #       parameter: transaction_ids    # receives what matched
 #       values: {new_category: review}
+#
+# COMBINED, HELD OR SCHEDULED, as in the Watch dialog. Conditions are
+# STATES (above, at_most); gained and fell cannot be combined.
+#
+#   - name: Refunds while busy
+#     owner: ops-bot
+#     object_type: Transaction
+#     conditions: [{field: category, operator: equals, value: refund}]
+#     above: 5
+#     also:                           # more conditions, at most ten in all
+#       - name: Customers             # optional; used in notices and below
+#         object_type: Customer
+#         conditions: []              # as in a saved view
+#         above: 1000                 # or at_most
+#     combine: all                    # or any
+#     hold_minutes: 240               # true for at least this long first
+#     # schedule: {days: [0, 1, 2, 3, 4], time: "09:00"}  # instead of a
+#     # timezone: Europe/London       # hold: checked only then, told
+#     #                               # every time it is true then
+#     action:
+#       type: RecategorizeTransactions
+#       parameter: transaction_ids
+#       values: {new_category: review}
+#       objects_from: Refunds while busy   # whose objects; the
+#                                     # trigger's own name, or a
+#                                     # condition's name under `also`
 
 # WHICH SILOS A CONFIRMED WRITE MAY REACH. Empty means none: an action
 # still applies to Elysium's own state -- the pending-write store, the

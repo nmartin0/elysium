@@ -600,9 +600,9 @@ left behind.
 
 | suite | how to run | size |
 | --- | --- | --- |
-| unit | `pytest tests/unit` | 432 files |
+| unit | `pytest tests/unit` | 433 files |
 | integration | `pytest tests/integration` | 82 files |
-| controls | declared in CI | 483 |
+| controls | declared in CI | 490 |
 | front end | `cd ui && npm run test` | vitest |
 | site | `bash site/check.sh` | ruff + pytest, some in a real browser |
 

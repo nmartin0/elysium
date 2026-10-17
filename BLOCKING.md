@@ -307,7 +307,10 @@ too. The maker names which condition's view supplies the objects (its
 own by default), Foundry's "the type of the action parameter needs to
 align with the type of the exposed condition effect input"; proposed as
 the owner when the owner's state fires, less what already waits.
-Declared triggers in config.yaml stay single.
+Declared triggers in config.yaml do all of it too (`also:`, `combine:`,
+`hold_minutes:`, `schedule:` with `timezone:`, `action: objects_from:`),
+checked at load by the same rules; their schedules are set at start and
+after each reload, and cancelled when removed.
 
 **Queue flooding (R50)** was decided and built 14 October, and the cap
 on how many objects one proposal may name is bulk actions' (256 unless

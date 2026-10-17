@@ -386,6 +386,23 @@ def arm_schedule(timers: Any, trigger: Any, now: "datetime | None" = None) -> No
                late_after=SCHEDULE_LATE_AFTER_SECONDS, repeat=trigger.schedule)
 
 
+def arm_declared(timers: Any, declared: Any, now: "datetime | None" = None) -> None:
+    """Every scheduled trigger in config.yaml has its check set, and no
+    other config.yaml trigger has one -- run when the server starts and
+    after every reload, since config.yaml is where they are made and
+    unmade. A check already set for the same rule is left alone, so a
+    reload does not move it; a changed rule is set again."""
+    wanted = {trigger.trigger_id: trigger for trigger in declared
+              if getattr(trigger, "schedule", None)}
+    for key in timers.keys_of(SCHEDULE_KIND):
+        if key.startswith("declared/") and key not in wanted:
+            timers.cancel(SCHEDULE_KIND, key)
+    for trigger_id, trigger in wanted.items():
+        existing = timers.get(SCHEDULE_KIND, trigger_id)
+        if existing is None or existing.repeat != trigger.schedule:
+            arm_schedule(timers, trigger, now)
+
+
 def disarm(timers: Any, states: TriggerStateStore, trigger_id: str) -> None:
     """Everything a trigger set for itself, gone: turned off or deleted."""
     from core.trigger_windows import KIND as WINDOW_KIND

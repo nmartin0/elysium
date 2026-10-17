@@ -160,6 +160,17 @@ def reload_generation(app, requested_by: str = "unknown",
         # leave an audit line pointing at a generation with no content
         # recorded, which is the exact gap this closes.
         record_generation(app.state.config_history, new)
+        # A SCHEDULED TRIGGER ADDED, CHANGED OR REMOVED IN config.yaml has
+        # its check set, moved or cancelled with the configuration.
+        if getattr(app.state, "runtime_paths", None) is not None:
+            try:
+                from core.timers import TimerStore
+                from core.trigger_states import arm_declared
+
+                arm_declared(TimerStore(app.state.runtime_paths.data_dir),
+                             new.config.declared_triggers)
+            except Exception:  # noqa: BLE001 - a schedule never fails a reload
+                logger.warning("could not set the schedules of declared triggers", exc_info=True)
         audit_log.log_reload(
             requested_by, "applied", current.generation, new.generation,
             new.source_digest,

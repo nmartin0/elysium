@@ -151,6 +151,20 @@ PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=(), payment=(), usb=
 
 
 
+def arm_declared_schedules(app) -> None:
+    """Sets the checks of config.yaml's scheduled triggers (core/
+    trigger_states.arm_declared). Never raises: a timer that could not
+    be set costs that trigger its schedule, logged, not the server."""
+    try:
+        from core.timers import TimerStore
+        from core.trigger_states import arm_declared
+
+        arm_declared(TimerStore(app.state.runtime_paths.data_dir),
+                     app.state.generation.config.declared_triggers)
+    except Exception:  # noqa: BLE001
+        logger.warning("could not set the schedules of declared triggers", exc_info=True)
+
+
 def _publication_sources(app) -> tuple:
     """(catalog, object types) of the generation serving right now."""
     from api.routes import _deployment_catalog
@@ -247,6 +261,9 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
             # EVERY DATE-FILTERED TRIGGER ONCE: crossings while the
             # server was down, and a first timer for each.
             _app.state.trigger_checks.after_start()
+            # AND EVERY SCHEDULED config.yaml TRIGGER'S CHECK, set; the
+            # same after each reload (api/reload.py).
+            arm_declared_schedules(_app)
             from api.reminders import reminder_timer
             from api.trigger_checks import hold_timer, schedule_timer
             from core.reminders import KIND as REMINDER

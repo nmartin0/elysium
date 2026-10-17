@@ -269,3 +269,58 @@ def test_the_list_says_it_in_words(alice):
     [listed] = alice.get("/api/triggers").json()["triggers"]
 
     assert listed["description"] == "All transactions above 3 and Graces at most 0, for 2 hours"
+
+
+def test_a_scheduled_config_yaml_trigger_is_checked_by_its_timer(client):
+    """The handler finds a declared trigger in the running configuration
+    -- it is not in the store -- and tells its owner at the check."""
+    import dataclasses
+
+    from core.declared_triggers import load_declared_triggers
+    from core.trigger_states import arm_declared
+
+    client.app.state.user_directory.create_user("alice", "pw", "us-west", "customer_service")
+    client.post("/api/login", json={"username": "alice", "password": "pw"})
+    generation = client.app.state.generation
+    (declared,) = load_declared_triggers(
+        [{"name": "Morning refunds", "owner": "alice", "object_type": "Transaction",
+          "conditions": REFUNDS, "above": 0, "schedule": {"days": [0, 1, 2, 3, 4, 5, 6], "time": "09:00"}}],
+        generation.config.schema, generation.config.action_types, generation.config.roles)
+    client.app.state.generation = dataclasses.replace(
+        generation, config=dataclasses.replace(generation.config, declared_triggers=(declared,)))
+    timers = TimerStore(Path(client.app.state.runtime_paths.data_dir))
+    arm_declared(timers, (declared,))
+    timer = timers.get(SCHEDULE_KIND, declared.trigger_id)
+
+    schedule_timer(client.app, Firing(timer, timer.due_at))  # first look: the baseline
+    schedule_timer(client.app, Firing(timer, timer.due_at + 86400, occurrence_at=timer.due_at + 86400))
+
+    assert any(note.startswith("Morning refunds: Morning refunds above 0, checked every day at 09:00 (UTC)")
+               for note in _notes(client)), _notes(client)
+
+
+def test_a_reload_sets_the_check_of_a_scheduled_config_yaml_trigger(client, monkeypatch):
+    """config.yaml is where declared triggers are made and unmade, so a
+    reload is when their schedules are set -- not the next restart. The
+    reload's build is wrapped to add one, as an edited config.yaml would."""
+    import dataclasses
+
+    import api.reload
+    from core.declared_triggers import load_declared_triggers
+
+    real = api.reload.build_generation
+
+    def with_a_scheduled_trigger(*args, **kwargs):
+        built = real(*args, **kwargs)
+        (declared,) = load_declared_triggers(
+            [{"name": "Morning refunds", "owner": "alice", "object_type": "Transaction",
+              "conditions": REFUNDS, "above": 0, "schedule": {"days": [0], "time": "09:00"}}],
+            built.config.schema, built.config.action_types, built.config.roles)
+        return dataclasses.replace(built, config=dataclasses.replace(built.config,
+                                                                     declared_triggers=(declared,)))
+    monkeypatch.setattr(api.reload, "build_generation", with_a_scheduled_trigger)
+
+    api.reload.reload_generation(client.app, requested_by="test")
+
+    timers = TimerStore(Path(client.app.state.runtime_paths.data_dir))
+    assert timers.get(SCHEDULE_KIND, "declared/Morning refunds") is not None

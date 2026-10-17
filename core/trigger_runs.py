@@ -132,7 +132,8 @@ def _run_triggers_locked(config, data_dir, mediator, write_side, include, on_sch
         made = [trigger for trigger in made
                 if any(view is not None and include(trigger, view)
                        for view in _views_of(trigger, views))]
-        declared = [trigger for trigger in declared if include(trigger, trigger.view)]
+        declared = [trigger for trigger in declared
+                    if any(include(trigger, view) for view in _views_of(trigger, views))]
     enabled = [*made, *declared]
     if not enabled:
         return 0
@@ -180,7 +181,18 @@ def _run_triggers_locked(config, data_dir, mediator, write_side, include, on_sch
     )
     # DECLARED TRIGGERS carry their view inline, so they skip the
     # saved-view lookup and go straight to the shared path.
+    #
+    # A COMBINED, HELD OR SCHEDULED ONE goes to the state evaluator, its
+    # inline views served as the saved-view store serves a made one's.
+    from core.count_condition import _evaluate_state
+    from core.trigger_states import is_state_trigger
+
     for trigger in declared:
+        if is_state_trigger(trigger):
+            fired += _evaluate_state(trigger, _Inline(trigger), mediator, notifications, owners,
+                                     config.source_digest, states, on_schedule,
+                                     write_mediator, pending_store)
+            continue
         fired += evaluate_one_trigger(
             trigger, trigger.view, mediator, notifications, owners,
             config.source_digest, write_mediator, pending_store,
@@ -192,7 +204,7 @@ def _run_triggers_locked(config, data_dir, mediator, write_side, include, on_sch
     _schedule_windows(data_dir, mediator, views, made, declared, owners)
     # AND A HELD ONE, the moment its earliest waiting person's hold ends.
     timers = TimerStore(data_dir)
-    for trigger in made:
+    for trigger in [*made, *declared]:
         if getattr(trigger, "hold_minutes", None):
             try:
                 schedule_hold(timers, states, trigger)
@@ -203,10 +215,22 @@ def _run_triggers_locked(config, data_dir, mediator, write_side, include, on_sch
 
 def _views_of(trigger, views) -> list:
     """Every view a trigger watches -- its own, and a combined one's
-    others -- looked up; a missing one is None."""
+    others -- looked up; a missing one is None. A declared trigger's
+    are inline, in the trigger itself."""
     from core.trigger_states import view_ids_of
 
-    return [views.get(view_id) for view_id in view_ids_of(trigger)]
+    source = _Inline(trigger) if hasattr(trigger, "views_by_id") else views
+    return [source.get(view_id) for view_id in view_ids_of(trigger)]
+
+
+class _Inline:
+    """A declared trigger's inline views, read like the saved-view store."""
+
+    def __init__(self, trigger):
+        self._views = trigger.views_by_id
+
+    def get(self, view_id):
+        return self._views.get(view_id)
 
 
 def _schedule_windows(data_dir, mediator, views, made, declared, owners) -> None:
@@ -218,7 +242,7 @@ def _schedule_windows(data_dir, mediator, views, made, declared, owners) -> None
     timers = TimerStore(data_dir)
     now = trigger_windows.now()
     pairs = [(trigger, _views_of(trigger, views)) for trigger in made]
-    pairs += [(trigger, [trigger.view]) for trigger in declared]
+    pairs += [(trigger, _views_of(trigger, views)) for trigger in declared]
     for trigger, watched in pairs:
         if any(view is None for view in watched) or not any(
                 reads_the_clock(trigger, view) for view in watched):

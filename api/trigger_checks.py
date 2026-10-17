@@ -137,8 +137,11 @@ def schedule_timer(app, firing) -> None:
     from core.triggers import TriggerStore
 
     data_dir = app.state.runtime_paths.data_dir
-    trigger = next((trigger for trigger in TriggerStore(data_dir / "triggers.db").all_enabled()
-                    if trigger.trigger_id == firing.key), None)
+    # MADE OR DECLARED: a config.yaml trigger's check is keyed by its
+    # name, and it lives in the running configuration, not the store.
+    candidates = [*TriggerStore(data_dir / "triggers.db").all_enabled(),
+                  *app.state.generation.config.declared_triggers]
+    trigger = next((trigger for trigger in candidates if trigger.trigger_id == firing.key), None)
     if trigger is None:
         TimerStore(data_dir).cancel(SCHEDULE_KIND, firing.key)
         return
