@@ -3109,6 +3109,116 @@ def delete_trigger_route(
     return {"deleted": True}
 
 
+# --- Reminders (17 October) -------------------------------------------
+#
+# Timers a person makes for themselves (core/reminders.py): once, or
+# repeating in their own time zone; listed and cancelled by their owner
+# alone. A 404 for anybody else's, the same as for one that does not
+# exist -- uniform denial, as triggers and saved views.
+
+
+class CreateReminderRequest(BaseModel):
+    label: str
+    #: ISO 8601 with an offset: when a one-off fires, or when an
+    #: interval repeat starts.
+    at: str | None = None
+    #: {"every_minutes": N} or {"days": [0..6], "time": "HH:MM"}.
+    repeat: dict[str, Any] | None = None
+    #: IANA name; a weekday repeat keeps to this clock.
+    timezone: str = "UTC"
+    #: Past this many minutes late it was MISSED, and the owner is told
+    #: so instead; null delivers however late.
+    late_after_minutes: int | None = 60
+    #: ISO 8601 with an offset: a repeat's last moment.
+    until: str | None = None
+
+
+class ReminderResponse(BaseModel):
+    reminder_id: str
+    label: str
+    #: The next time it fires, ISO 8601 UTC.
+    next_at: str
+    timezone: str
+    #: How the repeat reads, or null for a one-off.
+    repeats: str | None = None
+    late_after_minutes: int | None = None
+
+
+class RemindersResponse(BaseModel):
+    reminders: list[ReminderResponse]
+
+
+def _timer_store(request: Request):
+    from core.timers import TimerStore
+
+    return TimerStore(request.app.state.runtime_paths.data_dir)
+
+
+@router.get("/reminders", dependencies=[Depends(_no_store)], response_model=RemindersResponse)
+def list_reminders_route(request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The caller's own reminders, soonest first."""
+    from datetime import UTC, datetime
+
+    from core.reminders import KIND, describe_repeat
+
+    return {"reminders": [
+        {
+            "reminder_id": timer.key,
+            "label": timer.payload.get("label", ""),
+            "next_at": datetime.fromtimestamp(timer.occurrence_at, UTC).isoformat(),
+            "timezone": timer.payload.get("timezone", "UTC"),
+            "repeats": describe_repeat(timer.repeat),
+            "late_after_minutes": None if timer.late_after is None else int(timer.late_after // 60),
+        }
+        for timer in _timer_store(request).owned_by(current_user.user_id, KIND)
+    ]}
+
+
+@router.post("/reminders", dependencies=[Depends(_no_store)], response_model=ReminderResponse)
+def create_reminder_route(body: CreateReminderRequest, request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Makes one, for the caller alone. Refused with the reason in words."""
+    from datetime import UTC, datetime
+
+    from core.reminders import KIND, MAX_PER_PERSON, ReminderError, describe_repeat, parse
+
+    store = _timer_store(request)
+    if len(store.owned_by(current_user.user_id, KIND)) >= MAX_PER_PERSON:
+        raise HTTPException(status_code=400, detail=(
+            f"You have {MAX_PER_PERSON} reminders, the most one person may have. "
+            f"Cancel one to make another."))
+    try:
+        spec = parse(body.model_dump(), datetime.now(UTC))
+    except ReminderError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    key = store.create_owned(KIND, current_user.user_id, spec.due_at,
+                             {"label": spec.label, "timezone": spec.timezone},
+                             late_after=spec.late_after, repeat=spec.repeat)
+    return {
+        "reminder_id": key, "label": spec.label,
+        "next_at": datetime.fromtimestamp(spec.due_at, UTC).isoformat(),
+        "timezone": spec.timezone, "repeats": describe_repeat(spec.repeat),
+        "late_after_minutes": None if spec.late_after is None else int(spec.late_after // 60),
+    }
+
+
+class CancelledResponse(BaseModel):
+    cancelled: bool
+
+
+@router.delete("/reminders/{reminder_id}", dependencies=[Depends(_no_store)],
+               response_model=CancelledResponse)
+def cancel_reminder_route(reminder_id: str, request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """A 404 FOR SOMEBODY ELSE'S: the DELETE matches no row."""
+    from core.reminders import KIND
+
+    if not _timer_store(request).cancel_owned(KIND, reminder_id, current_user.user_id):
+        raise HTTPException(status_code=404, detail="No such reminder")
+    return {"cancelled": True}
+
+
 class SavedViewResponse(BaseModel):
     view_id: str
     name: str

@@ -279,6 +279,26 @@ noticing late loses nothing. A notification written in the server now
 also reaches its recipient's open tabs at once, as a data-free "your
 inbox changed" signal on the live-updates stream.
 
+**Timers people make -- REMINDERS, decided with the owner 17 October.**
+Once, or repeating (every N minutes, or weekdays at a time in the
+owner's zone, staying on their clock across a daylight-saving change;
+optionally until a moment), listed and cancelled by their owner alone,
+in Inbox -> Notifications -> Reminders. Each timer carries HOW LATE IS
+TOO LATE (Quartz's misfire instructions, Kubernetes'
+startingDeadlineSeconds): a reminder more than an hour late, by default,
+is reported missed rather than delivered as if on time, and a repeating
+one catches up at most once -- the latest occurrence still in time is
+delivered, the earlier ones counted. Trigger timers fire however late,
+because they re-check current state. Each occurrence carries a key, and
+the notice it writes uses it, so a firing delivered twice is one
+notice. 100 per person; repeats no more often than every 5 minutes.
+
+**Next: combined triggers**, agreed the same day: all or any of
+several conditions (Datadog's composite monitors, no nesting); a
+condition on a schedule ("weekdays at 9, if ..." -- Foundry Automate's
+combined time and object conditions); a condition that holds for a
+duration (Prometheus' `for`), built on these timers.
+
 **Queue flooding (R50)** was decided and built 14 October, and the cap
 on how many objects one proposal may name is bulk actions' (256 unless
 a deployment says, 1,024 at most).

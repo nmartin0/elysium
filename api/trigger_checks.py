@@ -95,15 +95,19 @@ class TriggerChecks:
             logger.info("%d trigger(s) fired after a change", fired)
 
 
-def window_timer(app, key: str, payload: dict) -> None:
+def window_timer(app, firing) -> None:
     """The timer service's handler for a date-filtered trigger's
     crossing: evaluate that trigger, which sets its next timer. A
-    trigger deleted or disabled since is simply not found."""
+    trigger deleted or disabled since is simply not found.
+
+    NEVER TOO LATE, and needs no occurrence key: it re-checks CURRENT
+    state, so running late or twice says what is true now (its timers
+    are set with no lateness policy)."""
     from core.trigger_runs import only
 
-    fired = _run(app, only(key))
+    fired = _run(app, only(firing.key))
     if fired:
-        logger.info("trigger %s fired at its window's edge", key)
+        logger.info("trigger %s fired at its window's edge", firing.key)
 
 
 def _run(app, include) -> int:

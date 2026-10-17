@@ -3320,8 +3320,8 @@ CONTROLS = [
     Control(
         describes="TIMERS: a kind nobody handles is dropped, not retried forever",
         path="api/timer_service.py",
-        old="                store.done(timer)\n                continue\n            try:",
-        new="                continue\n            try:",
+        old="                store.done(timer)\n                continue\n            now = clock()",
+        new="                continue\n            now = clock()",
         tests=["tests/integration/test_timer_service.py::test_a_kind_nobody_handles_is_dropped"],
     ),
     Control(
@@ -3355,7 +3355,7 @@ CONTROLS = [
     Control(
         describes="WINDOWS: the timer's handler evaluates the trigger",
         path="api/trigger_checks.py",
-        old="    fired = _run(app, only(key))\n",
+        old="    fired = _run(app, only(firing.key))\n",
         new="    fired = 0\n",
         tests=["tests/integration/test_trigger_windows.py::TestItSetsATimerForTheNextCrossing::test_the_timer_firing_tells_them_and_sets_the_next"],
     ),
@@ -3421,6 +3421,82 @@ CONTROLS = [
         old='        unit = "hours" if any(',
         new='        unit = "days" if any(',
         tests=["tests/unit/test_relative_hours.py::TestOneHelperForEveryReader::test_the_agent_says_hours"],
+    ),
+    Control(
+        describes="LATENESS: a timer past its policy is missed, not run as if on time",
+        path="api/timer_service.py",
+        old="    if now - latest <= threshold:",
+        new="    if True:",
+        tests=["tests/integration/test_timer_service.py::TestHowLateIsTooLate::test_later_than_its_policy_is_missed_not_run_as_if_on_time"],
+    ),
+    Control(
+        describes="LATENESS: under a minute late is never a miss",
+        path="api/timer_service.py",
+        old="    threshold = max(timer.late_after, ON_TIME_SECONDS)",
+        new="    threshold = timer.late_after",
+        tests=["tests/integration/test_timer_service.py::TestHowLateIsTooLate::test_under_a_minute_late_is_never_a_miss"],
+    ),
+    Control(
+        describes="REPEAT: a repeating timer moves on rather than ending",
+        path="api/timer_service.py",
+        old=("    if timer.repeat is None:\n        return None\n    from core.timer_rules import next_occurrence\n"
+             "\n    anchor = datetime.fromtimestamp(timer.occurrence_at, UTC)\n    after"),
+        new=("    if True:\n        return None\n    from core.timer_rules import next_occurrence\n"
+             "\n    anchor = datetime.fromtimestamp(timer.occurrence_at, UTC)\n    after"),
+        tests=["tests/integration/test_timer_service.py::TestARepeatingTimer::test_moves_on_to_its_next_occurrence"],
+    ),
+    Control(
+        describes="REPEAT: back from an outage, the latest occurrence still in time is delivered",
+        path="api/timer_service.py",
+        old=("    threshold = max(timer.late_after, ON_TIME_SECONDS)\n"
+             "    latest = since[-1] if since else timer.occurrence_at"),
+        new=("    threshold = max(timer.late_after, ON_TIME_SECONDS)\n"
+             "    latest = timer.occurrence_at"),
+        tests=["tests/integration/test_timer_service.py::TestARepeatingTimer::test_catches_up_at_most_once_delivering_the_latest_still_in_time"],
+    ),
+    Control(
+        describes="REPEAT: a retry keeps its occurrence, so its key",
+        path="core/timers.py",
+        old='                "UPDATE timers SET due_at = ?, attempts = attempts + 1 "',
+        new=('                "UPDATE timers SET due_at = ?, occurrence_at = due_at + 1, '
+             'attempts = attempts + 1 "'),
+        tests=["tests/integration/test_timer_service.py::TestARepeatingTimer::test_a_retry_is_the_same_occurrence"],
+    ),
+    Control(
+        describes="REPEAT: a weekday rule keeps to the owner's clock",
+        path="core/timer_rules.py",
+        old="        candidate = datetime.combine(day, at, tzinfo=tz).astimezone(UTC)",
+        new="        candidate = datetime.combine(day, at, tzinfo=UTC)",
+        tests=["tests/unit/test_timer_rules.py::TestAWeekdayRule::test_stays_nine_on_the_owners_clock_across_the_spring_change"],
+    ),
+    Control(
+        describes="ONCE: a notification with a seen key is not written twice",
+        path="core/notifications.py",
+        old='                    "INSERT OR IGNORE INTO notifications (notification_id, user_id, "',
+        new='                    "INSERT INTO notifications (notification_id, user_id, "',
+        tests=["tests/unit/test_reminders.py::TestWhenItFires::test_delivered_twice_it_is_one_notice"],
+    ),
+    Control(
+        describes="REMINDERS: nobody else cancels yours",
+        path="core/timers.py",
+        old=('                "DELETE FROM timers WHERE kind = ? AND key = ? AND owner_user_id = ?",\n'
+             '                (kind, key, owner_user_id))'),
+        new='                "DELETE FROM timers WHERE kind = ? AND key = ?",\n                (kind, key))',
+        tests=["tests/integration/test_reminder_routes.py::test_nobody_else_sees_or_cancels_it"],
+    ),
+    Control(
+        describes="REMINDERS: a reminder that could not be written is retried",
+        path="core/reminders.py",
+        old="    if written is None:\n        raise RuntimeError",
+        new="    if False:\n        raise RuntimeError",
+        tests=["tests/unit/test_reminders.py::TestWhenItFires::test_a_notice_that_could_not_be_written_is_retried"],
+    ),
+    Control(
+        describes="REMINDERS: a disabled owner is not reminded",
+        path="core/reminders.py",
+        old="    if owner is None or not user_is_active(owner):",
+        new="    if owner is None:",
+        tests=["tests/unit/test_reminders.py::TestWhenItFires::test_a_disabled_owner_is_not_reminded"],
     ),
     Control(
         describes="TRIGGERS: a saved change checks the triggers watching its types",

@@ -247,7 +247,11 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
             # EVERY DATE-FILTERED TRIGGER ONCE: crossings while the
             # server was down, and a first timer for each.
             _app.state.trigger_checks.after_start()
-            clock = asyncio.create_task(run_timer_service(_app, {TRIGGER_WINDOW: window_timer}))
+            from api.reminders import reminder_timer
+            from core.reminders import KIND as REMINDER
+
+            clock = asyncio.create_task(run_timer_service(
+                _app, {TRIGGER_WINDOW: window_timer, REMINDER: reminder_timer}))
         yield
         if stop_announcing is not None:
             stop_announcing()

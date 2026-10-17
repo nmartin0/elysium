@@ -389,6 +389,15 @@ action_parameter
 action_values
 recipient_roles
 
+# reminder routes and their models (api/routes.py, 17 October) --
+# FastAPI routes, and response fields read by the Reminders tab.
+list_reminders_route
+create_reminder_route
+cancel_reminder_route
+reminders
+repeats
+late_after_minutes
+
 # VisibleActionTypeResponse.automatable (api/routes.py) -- a response
 # field, read by the Watch dialog rather than by Python.
 automatable

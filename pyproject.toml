@@ -302,6 +302,10 @@ layers = [
     # timers imports only sqlite_connection, like triggers (16 October):
     # the store any caller registers "call me back then" in.
     "timers",
+    # reminders sits on timer_rules (17 October): what a person's own
+    # timer says and when it repeats. timer_rules imports only zoneinfo.
+    "reminders",
+    "timer_rules",
     # role_store imports only sqlite_connection, like the other stores.
     "role_store",
     # role_changes imports only sqlite_connection, like role_store.
@@ -397,7 +401,7 @@ type = "layers"
 # and they are not.
 layers = [
     "app", "routes",
-    "apps | auth_dependency | generation_dependency | reload | csrf_middleware | request_size_limit_middleware | generation_header_middleware | request_metrics_middleware | live_updates | timer_service | trigger_checks",
+    "apps | auth_dependency | generation_dependency | reload | csrf_middleware | request_size_limit_middleware | generation_header_middleware | request_metrics_middleware | live_updates | timer_service | trigger_checks | reminders",
 ]
 containers = ["api"]
 exhaustive = true

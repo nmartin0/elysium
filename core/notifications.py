@@ -133,7 +133,8 @@ class NotificationStore:
 
     def notify(self, user_id: str, kind: str, summary: str,
                detail: str | None = None,
-               subjects: "list[tuple[str, object]] | None" = None) -> str | None:
+               subjects: "list[tuple[str, object]] | None" = None,
+               dedupe_key: "str | None" = None) -> str | None:
         """Writes one notification for one person.
 
         RETURNS THE ID, or None if it could not be written. Best-effort
@@ -145,19 +146,33 @@ class NotificationStore:
         -- an answered question's gathered reads. Never shown; kept so an
         erasure can find a notice whose prose talks about a person, which
         no hash of an id could find in the prose itself (R13).
+
+        `dedupe_key` MAKES A SECOND WRITE A NO-OP (17 October). A timer
+        fires at least once -- a server stopped mid-firing fires it again
+        -- so a reminder passes its occurrence's key, and the second
+        delivery returns the FIRST notice's id, unannounced, rather than
+        writing it twice. The idempotency key every at-least-once system
+        settles on.
         """
         notification_id = str(uuid.uuid4())
         try:
             with self._connection() as conn:
-                conn.execute(
-                    "INSERT INTO notifications (notification_id, user_id, "
-                    "created_at, kind, summary, detail, subjects) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                cursor = conn.execute(
+                    "INSERT OR IGNORE INTO notifications (notification_id, user_id, "
+                    "created_at, kind, summary, detail, subjects, dedupe_key) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (notification_id, user_id, datetime.now(UTC).isoformat(),
                      kind, summary, detail,
                      json.dumps(sorted({(str(t) if t is not None else None, str(i))
                                         for t, i in subjects or ()},
-                                       key=lambda pair: (pair[0] or "", pair[1])))),
+                                       key=lambda pair: (pair[0] or "", pair[1]))),
+                     dedupe_key),
                 )
+                if cursor.rowcount == 0 and dedupe_key is not None:
+                    existing = conn.execute(
+                        "SELECT notification_id FROM notifications WHERE dedupe_key = ?",
+                        (dedupe_key,)).fetchone()
+                    return None if existing is None else existing[0]
                 # EXPLICIT, because open_connection sets
                 # isolation_level='': an implicit transaction is ROLLED
                 # BACK on close unless committed. sync_attempts.py
@@ -392,4 +407,16 @@ def _subjects(raw) -> tuple:
                  if isinstance(pair, list) and len(pair) == 2 and pair[0] is not None)
 
 
-_MIGRATIONS = (add_column_if_missing("notifications", "subjects", "TEXT NOT NULL DEFAULT '[]'"),)
+def _dedupe_index(conn) -> None:
+    # AFTER the column exists -- a migration, not SCHEMA, because SCHEMA
+    # runs first and an existing table has no dedupe_key yet. Partial:
+    # only keyed notices are unique; every other one is NULL here.
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS notifications_dedupe "
+                 "ON notifications (dedupe_key) WHERE dedupe_key IS NOT NULL")
+
+
+_MIGRATIONS = (
+    add_column_if_missing("notifications", "subjects", "TEXT NOT NULL DEFAULT '[]'"),
+    add_column_if_missing("notifications", "dedupe_key", "TEXT"),
+    _dedupe_index,
+)

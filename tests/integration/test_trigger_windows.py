@@ -13,7 +13,7 @@ from pathlib import Path
 
 import core.filters
 import core.trigger_windows
-from api.timer_service import fire_due
+from api.timer_service import Firing, fire_due
 from api.trigger_checks import window_timer
 from core.saved_views import SavedView
 from core.timers import TimerStore
@@ -78,7 +78,7 @@ class TestItSetsATimerForTheNextCrossing:
         trigger_id = _recent_transactions_trigger(client, fell=1)
         clock.at = datetime(2026, 9, 1, tzinfo=UTC)
 
-        window_timer(client.app, trigger_id, {})
+        window_timer(client.app, Firing(_timers(client).get(KIND, trigger_id), clock.at.timestamp()))
 
         assert _timers(client).get(KIND, trigger_id) is None
 

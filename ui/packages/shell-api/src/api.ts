@@ -1405,6 +1405,45 @@ export async function deleteTrigger(triggerId: string): Promise<void> {
   })
 }
 
+/** One of the caller's own reminders (17 October): a timer they made,
+ *  that notifies them alone. */
+export interface Reminder {
+  reminder_id: string
+  label: string
+  /** The next time it fires, ISO 8601 UTC. */
+  next_at: string
+  timezone: string
+  /** How the repeat reads, or null for a one-off. */
+  repeats: string | null
+  /** Past this many minutes late it is missed rather than delivered;
+   *  null delivers however late. */
+  late_after_minutes: number | null
+}
+
+export interface CreateReminder {
+  label: string
+  /** ISO 8601 with an offset: a one-off's moment, or an interval's start. */
+  at?: string
+  repeat?: { every_minutes: number } | { days: number[]; time: string }
+  timezone: string
+  late_after_minutes: number | null
+  until?: string
+}
+
+export async function getReminders(): Promise<Reminder[]> {
+  const response = await apiFetchOrThrow('/reminders')
+  return (await response.json()).reminders as Reminder[]
+}
+
+export async function createReminder(body: CreateReminder): Promise<Reminder> {
+  const response = await apiFetchOrThrow('/reminders', { method: 'POST', body: JSON.stringify(body) })
+  return (await response.json()) as Reminder
+}
+
+export async function cancelReminder(reminderId: string): Promise<void> {
+  await apiFetchOrThrow(`/reminders/${encodeURIComponent(reminderId)}`, { method: 'DELETE' })
+}
+
 export interface Notification {
   notification_id: string
   created_at: string

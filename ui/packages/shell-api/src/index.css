@@ -3313,6 +3313,32 @@
 
   /* A WATCHED CONDITION: the switch carries the name, the condition
    sits beside it, and the remove control ends the row. */
+  /* Reminders (17 October): the form above the list, stacked. */
+  .reminders {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-normal);
+  }
+
+  .reminders__new {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-tight);
+  }
+
+  .reminders__when {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-hair);
+  }
+
+  .reminders__zone {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--type-dense-size);
+  }
+
   .watch-list__item {
     display: flex;
     align-items: center;

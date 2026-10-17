@@ -35,6 +35,7 @@ import { subscribeToInbox } from '@elysium/shell-api/liveUpdates'
 import { Link } from 'react-router-dom'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import ReminderList from './ReminderList'
 import WatchList from './WatchList'
 
 interface NotificationsPanelProps {
@@ -122,6 +123,7 @@ export default function NotificationsPanel({ onSessionExpired }: NotificationsPa
     <Tabs id="notifications" defaultSelectedTabId="inbox">
       <Tab id="inbox" title="Notifications" panel={<>{inbox}</>} />
       <Tab id="watching" title="Watching" panel={<WatchList onSessionExpired={onSessionExpired} />} />
+      <Tab id="reminders" title="Reminders" panel={<ReminderList onSessionExpired={onSessionExpired} />} />
     </Tabs>
   )
 
