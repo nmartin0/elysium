@@ -37,9 +37,18 @@ same count_for_each every trigger uses: the owner and each member of a
 named role may see different records, so each has their own
 true-since and their own latch. No privileged count exists.
 
-NOTIFY ONLY, for now. A combined trigger matches objects of several
-views, and which of them an action should receive is a question
-nobody has answered; refused with that reason rather than guessed.
+AND PROPOSE, like any trigger (decided 17 October, the owner: "isn't
+that the main point of the triggers?"). Foundry's answer to "which
+objects": an action parameter takes the objects a CONDITION exposes,
+and "the type of the action parameter needs to align with the type of
+the exposed condition effect input". So the maker names WHICH
+condition's view supplies the objects -- the trigger's own by default --
+and the parameter must take that view's type. Proposed AS THE OWNER,
+when THE OWNER's state fires -- becoming true, a hold completing, or a
+scheduled check finding it true -- never because a recipient's did.
+What is proposed is what that view matches NOW, less anything this
+automation already has waiting (R50), so a daily check proposes only
+what is new.
 """
 
 import logging
@@ -88,13 +97,31 @@ def view_ids_of(trigger: Any) -> list[str]:
     return [condition["view_id"] for condition in conditions_of(trigger)]
 
 
+def action_view_id(trigger: Any) -> str:
+    """Whose objects the action receives: the chosen condition's view,
+    or the trigger's own."""
+    return getattr(trigger, "action_view_id", None) or trigger.view_id
+
+
 def problem(*, above, gained, fell, at_most, also, combine, hold_minutes, schedule,
-            action_type, owned_view_ids: set) -> "str | None":
+            action_type, owned_view_ids: set, view_id: "str | None" = None,
+            action_view: "str | None" = None) -> "str | None":
     """Why this combination cannot be made, or None. Checked when the
     trigger is made, where its maker can fix it."""
     main = [value for value in (above, gained, fell, at_most) if value is not None]
     if len(main) != 1:
         return "A trigger watches one of above, at most, gaining or losing, not several."
+    # CHECKED BEFORE ANYTHING ELSE RETURNS, single triggers included: an
+    # action naming a view outside the trigger would act on something it
+    # does not watch.
+    if action_type is None and action_view is not None:
+        return "Objects for an action were chosen, but no action."
+    if action_view is not None and action_view not in {
+            view_id, *(condition.get("view_id") for condition in also or []
+                       if isinstance(condition, dict))}:
+        # ONE OF ITS OWN CONDITIONS, never some other view: the action
+        # acts on what this trigger watches.
+        return "An action takes its objects from one of this trigger's own conditions."
     combined = bool(also) or hold_minutes is not None or schedule is not None
     if not combined and at_most is None:
         return None
@@ -102,9 +129,6 @@ def problem(*, above, gained, fell, at_most, also, combine, hold_minutes, schedu
         return ("Gaining and losing describe a change since the last check, not a "
                 "state, so they cannot be combined, held or scheduled. Use above or "
                 "at most.")
-    if action_type is not None:
-        return ("A combined, held or scheduled trigger only notifies for now: which "
-                "objects an action would receive is not decided.")
     if combine not in ("all", "any"):
         return "Combine conditions with all or any."
     if len(also or []) + 1 > MAX_CONDITIONS:
@@ -240,11 +264,19 @@ class TriggerStateStore:
 # --- Evaluation ----------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class Evaluated:
+    #: How many people were told.
+    told: int
+    #: Whether THE OWNER's state fired -- what an action waits on.
+    owner_fired: bool
+
+
 def evaluate(trigger: Any, owner: Any, views: list, mediator: Any, notifications: Any,
              user_records: dict, digest: "str | None", states: TriggerStateStore,
-             now: datetime, on_schedule: "str | None" = None) -> int:
-    """One combined trigger, for each of its recipients. Returns how
-    many were told.
+             now: datetime, on_schedule: "str | None" = None) -> Evaluated:
+    """One combined trigger, for each of its recipients. Says how many
+    were told, and whether the owner's state fired.
 
     `views` are the SavedViews of conditions_of(trigger), in order.
     `on_schedule` is the schedule occurrence's key when the schedule
@@ -261,6 +293,7 @@ def evaluate(trigger: Any, owner: Any, views: list, mediator: Any, notifications
     scheduled = bool(getattr(trigger, "schedule", None))
     hold = (getattr(trigger, "hold_minutes", None) or 0) * 60.0
     told = 0
+    owner_fired = False
 
     for recipient in recipients:
         user_id = recipient.user_id
@@ -297,6 +330,7 @@ def evaluate(trigger: Any, owner: Any, views: list, mediator: Any, notifications
                 notifications.notify(user_id, "trigger", f"{trigger.name}: {sentence} -- met.",
                                      dedupe_key=f"{on_schedule}/{user_id}")
                 told += 1
+                owner_fired = owner_fired or user_id == owner.user_id
             continue
 
         if not met:
@@ -308,8 +342,9 @@ def evaluate(trigger: Any, owner: Any, views: list, mediator: Any, notifications
             notifications.notify(user_id, "trigger", f"{trigger.name}: {sentence} -- met.")
             fired = True
             told += 1
+            owner_fired = owner_fired or user_id == owner.user_id
         states.put(trigger.trigger_id, user_id, State(True, since, fired, digest))
-    return told
+    return Evaluated(told, owner_fired)
 
 
 def _meets(condition: dict, count: int) -> bool:

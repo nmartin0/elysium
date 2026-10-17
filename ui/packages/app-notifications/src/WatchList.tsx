@@ -42,8 +42,11 @@ function describe(trigger: Trigger): string {
   // A COMBINED, HELD OR SCHEDULED trigger comes with its own sentence,
   // views by name -- the words its notices use.
   if (trigger.description) {
+    const parts = [trigger.description]
     const roles = trigger.recipient_roles ?? []
-    return roles.length > 0 ? `${trigger.description} · also tells ${roles.join(', ')}` : trigger.description
+    if (roles.length > 0) parts.push(`also tells ${roles.join(', ')}`)
+    if (trigger.action_type) parts.push(`proposes ${trigger.action_type}`)
+    return parts.join(' · ')
   }
   let condition = 'watching'
   if (trigger.above !== null) condition = `above ${trigger.above}`

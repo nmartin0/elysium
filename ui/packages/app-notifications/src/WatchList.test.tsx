@@ -147,9 +147,17 @@ describe('saying what a trigger does', () => {
 
 it('words a combined trigger in its own sentence (17 October)', async () => {
   mockedList.mockResolvedValue([
-    aTrigger({ above: 3, description: 'Overdue invoices above 3 and Open tickets above 50, for 2 hours' }),
+    aTrigger({
+      above: 3,
+      description: 'Overdue invoices above 3 and Open tickets above 50, for 2 hours',
+      action_type: 'EscalateInvoices',
+    }),
   ])
   render(<WatchList onSessionExpired={() => {}} />)
 
-  expect(await screen.findByText('Overdue invoices above 3 and Open tickets above 50, for 2 hours')).toBeTruthy()
+  expect(
+    await screen.findByText(
+      'Overdue invoices above 3 and Open tickets above 50, for 2 hours · proposes EscalateInvoices',
+    ),
+  ).toBeTruthy()
 })

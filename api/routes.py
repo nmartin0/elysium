@@ -2940,6 +2940,7 @@ class TriggerResponse(BaseModel):
     #: The whole condition as a sentence, views by name -- what its
     #: notices say. Null for a single trigger, which the list words.
     description: str | None = None
+    action_view_id: str | None = None
 
 
 class TriggersResponse(BaseModel):
@@ -2972,6 +2973,9 @@ class CreateTriggerRequest(BaseModel):
     hold_minutes: int | None = None
     schedule: dict[str, Any] | None = None
     timezone: str = "UTC"
+    # WHICH CONDITION'S VIEW GIVES THE ACTION ITS OBJECTS, for a trigger
+    # with several; absent is the trigger's own view.
+    action_view_id: str | None = None
 
 
 def _combined_description(trigger, names: dict) -> "str | None":
@@ -3024,6 +3028,7 @@ def triggers_route(
                 "hold_minutes": trigger.hold_minutes,
                 "schedule": trigger.schedule,
                 "description": _combined_description(trigger, names),
+                "action_view_id": trigger.action_view_id,
             }
             for trigger in _trigger_store(request).for_owner(
                 current_user.user_id,
@@ -3082,7 +3087,8 @@ def create_trigger_route(
     combined = combined_problem(
         above=body.above, gained=body.gained, fell=body.fell, at_most=body.at_most,
         also=body.also, combine=body.combine, hold_minutes=body.hold_minutes,
-        schedule=schedule, action_type=body.action_type, owned_view_ids=owned)
+        schedule=schedule, action_type=body.action_type, owned_view_ids=owned,
+        view_id=body.view_id, action_view=body.action_view_id)
     if combined is not None:
         raise HTTPException(status_code=400, detail=combined)
 
@@ -3101,11 +3107,14 @@ def create_trigger_route(
     if body.action_type is not None:
         from core.triggers import action_problem
 
+        # THE VIEW WHOSE OBJECTS THE ACTION RECEIVES: the chosen
+        # condition's, or the trigger's own -- and the parameter must
+        # take that view's type.
         view = next(
             view for view in _saved_view_store(request).for_owner(
                 current_user.user_id,
             )
-            if view.view_id == body.view_id
+            if view.view_id == (body.action_view_id or body.view_id)
         )
         generation = _generation(request)
         problem = action_problem(
@@ -3124,6 +3133,7 @@ def create_trigger_route(
         body.recipient_roles,
         at_most=body.at_most, also=body.also, combine=body.combine,
         hold_minutes=body.hold_minutes, schedule=schedule,
+        action_view_id=body.action_view_id,
     )
     if trigger_id is None:
         raise HTTPException(status_code=500, detail="Could not create that trigger")

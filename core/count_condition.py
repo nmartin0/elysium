@@ -205,7 +205,8 @@ def evaluate_user_triggers(mediator, trigger_store, view_store,
             # A COMBINED, HELD OR SCHEDULED TRIGGER is a state, not a
             # change in one count (core/trigger_states.py).
             fired += _evaluate_state(trigger, view_store, mediator, notification_store,
-                                     user_records, config_digest, states, on_schedule)
+                                     user_records, config_digest, states, on_schedule,
+                                     write_mediator, pending_store)
             continue
         if _is_state(trigger) or getattr(trigger, "schedule", None):
             continue
@@ -223,9 +224,10 @@ def _is_state(trigger) -> bool:
 
 
 def _evaluate_state(trigger, view_store, mediator, notification_store, user_records,
-                    config_digest, states, on_schedule) -> int:
+                    config_digest, states, on_schedule, write_mediator=None,
+                    pending_store=None) -> int:
     from core import trigger_windows
-    from core.trigger_states import evaluate, view_ids_of
+    from core.trigger_states import action_view_id, evaluate, view_ids_of
 
     owner = user_records.get(trigger.owner_user_id)
     if owner is None:
@@ -240,11 +242,17 @@ def _evaluate_state(trigger, view_store, mediator, notification_store, user_reco
         logger.warning("trigger %r watches a view that no longer exists", trigger.name)
         return 0
     try:
-        return evaluate(trigger, owner, views, mediator, notification_store, user_records,
-                        config_digest, states, trigger_windows.now(), on_schedule)
+        result = evaluate(trigger, owner, views, mediator, notification_store, user_records,
+                          config_digest, states, trigger_windows.now(), on_schedule)
     except Exception as e:  # noqa: BLE001 - one failure costs one trigger
         logger.warning("could not evaluate trigger %r: %s", trigger.name, e)
         return 0
+    # PROPOSED ONLY WHEN THE OWNER'S STATE FIRED, on what the chosen
+    # condition's view matches now -- the single trigger's rule, kept.
+    if result.owner_fired and trigger.action_type and write_mediator is not None:
+        chosen = next(view for view in views if view.view_id == action_view_id(trigger))
+        _propose_for(trigger, chosen, owner, mediator, write_mediator, pending_store)
+    return result.told
 
 
 def recipients_of(trigger, owner, user_records: dict) -> list:

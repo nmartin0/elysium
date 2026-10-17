@@ -302,8 +302,12 @@ Automate's combined time and object conditions), a missed check said.
 Conditions are STATES: gaining and losing stay single. Each person's
 own state and latch -- fires once when it becomes true, a baseline when
 made. Notify only for now: which objects an action would receive from
-several views is not decided. Declared triggers in config.yaml stay
-single.
+several views is not decided -- REVERSED the same day: they propose
+too. The maker names which condition's view supplies the objects (its
+own by default), Foundry's "the type of the action parameter needs to
+align with the type of the exposed condition effect input"; proposed as
+the owner when the owner's state fires, less what already waits.
+Declared triggers in config.yaml stay single.
 
 **Queue flooding (R50)** was decided and built 14 October, and the cap
 on how many objects one proposal may name is bulk actions' (256 unless

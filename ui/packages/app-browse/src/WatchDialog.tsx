@@ -84,7 +84,13 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
   const [scheduled, setScheduled] = useState(false)
   const [days, setDays] = useState<number[]>([0, 1, 2, 3, 4])
   const [time, setTime] = useState('09:00')
-  const [actions, setActions] = useState<ActionChoice[]>([])
+  // EVERY ACTION THIS PERSON MAY SEE; which are offered depends on whose
+  // objects it would receive (below), so it is filtered during render.
+  const [visibleActions, setVisibleActions] = useState<Record<string, VisibleAction>>({})
+  // WHICH CONDITION'S VIEW GIVES THE ACTION ITS OBJECTS -- '' is this
+  // view. Foundry's rule: an action parameter takes the objects a
+  // condition exposes, of the matching type (17 October).
+  const [actionFrom, setActionFrom] = useState('')
   const [roles, setRoles] = useState<string[]>([])
   const [behindBy, setBehindBy] = useState<number | null>(null)
   const [recipients, setRecipients] = useState<string[]>([])
@@ -123,9 +129,9 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
       const failed: string[] = []
       try {
         const visible = (await getVisibleActionTypes()) as Record<string, VisibleAction>
-        setActions(actionsFor(visible, view.object_type))
+        setVisibleActions(visible)
       } catch (caught: unknown) {
-        setActions([])
+        setVisibleActions({})
         failed.push(`actions (${getErrorMessage(caught)})`)
       }
       let ownRole: string | null = null
@@ -170,6 +176,12 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
     })()
   }, [view])
 
+  // WHOSE OBJECTS: this view, or one of the added conditions' views --
+  // and only actions taking objects of THAT type are offered.
+  const actionSourceId = extras.some((extra) => extra.viewId === actionFrom) ? actionFrom : ''
+  const actionSource =
+    actionSourceId === '' ? view : (otherViews.find((other) => other.view_id === actionSourceId) ?? view)
+  const actions: ActionChoice[] = actionSource === null ? [] : actionsFor(visibleActions, actionSource.object_type)
   const chosen = actions.find((action) => action.name === actionName) ?? null
   const stale = view === null ? null : staleWindowNote(view.conditions as unknown as FieldFilter[], behindBy)
 
@@ -181,7 +193,6 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
   // CHANGE (gaining, losing) cannot -- the server refuses it, so it is
   // not offered.
   const isState = thresholdKind === 'above' || thresholdKind === 'at_most'
-  const combined = isState && (extras.length > 0 || holding || scheduled)
 
   async function watch() {
     if (view === null) return
@@ -195,10 +206,10 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
         gained: thresholdKind === 'gained' ? threshold : null,
         fell: thresholdKind === 'fell' ? threshold : null,
         at_most: thresholdKind === 'at_most' ? threshold : null,
-        // A combined trigger only notifies, for now; none is sent.
-        action_type: combined ? null : (chosen?.name ?? null),
-        action_parameter: combined || !chosen ? null : target,
-        action_values: combined || !chosen ? {} : values,
+        action_type: chosen?.name ?? null,
+        action_parameter: chosen ? target : null,
+        action_values: chosen ? values : {},
+        ...(chosen && actionSourceId !== '' ? { action_view_id: actionSourceId } : {}),
         recipient_roles: recipients,
         ...(isState && extras.length > 0
           ? {
@@ -403,13 +414,28 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
           </FormGroup>
         )}
 
-        {combined && (
-          <p className="watch-combined__note">
-            A combined, held or scheduled watch only notifies: which objects an action would receive is not decided.
-          </p>
+        {isState && extras.length > 0 && (
+          <FormGroup label="An action would use the objects of" labelFor="watch-action-from">
+            <HTMLSelect
+              id="watch-action-from"
+              aria-label="Objects for the action"
+              value={actionSourceId}
+              onChange={(e) => setActionFrom(e.currentTarget.value)}
+            >
+              <option value="">{view?.name ?? 'this view'}</option>
+              {extras.map((extra) => {
+                const other = otherViews.find((candidate) => candidate.view_id === extra.viewId)
+                return other ? (
+                  <option key={extra.viewId} value={extra.viewId}>
+                    {other.name}
+                  </option>
+                ) : null
+              })}
+            </HTMLSelect>
+          </FormGroup>
         )}
 
-        {actions.length > 0 && !combined && (
+        {actions.length > 0 && (
           <FormGroup
             label="And propose"
             helperText={

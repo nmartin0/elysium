@@ -101,6 +101,12 @@ class Trigger:
     # CHECKED ONLY ON THIS REPEAT RULE (core/timer_rules.py), and told
     # every time it is true then.
     schedule: dict | None = None
+    # WHOSE OBJECTS THE ACTION RECEIVES when the trigger has several
+    # conditions: one of their views, chosen by the maker -- Foundry's
+    # rule that an action parameter takes the objects a condition
+    # exposes, "the type of the action parameter needs to align". NULL
+    # is the trigger's own view.
+    action_view_id: str | None = None
 
     @property
     def condition_key(self) -> str:
@@ -140,6 +146,7 @@ class TriggerStore:
                 add_column_if_missing("triggers", "combine", "TEXT NOT NULL DEFAULT 'all'"),
                 add_column_if_missing("triggers", "hold_minutes", "INTEGER"),
                 add_column_if_missing("triggers", "schedule", "TEXT"),
+                add_column_if_missing("triggers", "action_view_id", "TEXT"),
                 add_column_if_missing("triggers", "action_type", "TEXT"),
                 add_column_if_missing("triggers", "action_parameter", "TEXT"),
                 add_column_if_missing(
@@ -159,7 +166,8 @@ class TriggerStore:
                recipient_roles: list | None = None,
                at_most: int | None = None, also: list | None = None,
                combine: str = "all", hold_minutes: int | None = None,
-               schedule: dict | None = None) -> str | None:
+               schedule: dict | None = None,
+               action_view_id: str | None = None) -> str | None:
         """Makes one. Returns its id, or None if it could not be made."""
         trigger_id = str(uuid.uuid4())
         try:
@@ -168,15 +176,17 @@ class TriggerStore:
                     "INSERT INTO triggers (trigger_id, owner_user_id, name, "
                     "view_id, above, gained, fell, action_type, "
                     "action_parameter, action_values, recipient_roles, "
-                    "created_at, at_most, also, combine, hold_minutes, schedule) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "created_at, at_most, also, combine, hold_minutes, schedule, "
+                    "action_view_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (trigger_id, owner_user_id, name, view_id, above, gained,
                      fell, action_type, action_parameter,
                      json.dumps(action_values or {}),
                      json.dumps(sorted(set(recipient_roles or []))),
                      datetime.now(UTC).isoformat(), at_most,
                      json.dumps(list(also or [])), combine, hold_minutes,
-                     None if schedule is None else json.dumps(schedule)),
+                     None if schedule is None else json.dumps(schedule),
+                     action_view_id),
                 )
                 conn.commit()
         except Exception as e:  # noqa: BLE001
@@ -257,6 +267,7 @@ class TriggerStore:
                 combine=row["combine"] or "all",
                 hold_minutes=row["hold_minutes"],
                 schedule=_json(row["schedule"], None),
+                action_view_id=row["action_view_id"],
             ))
         return triggers
 

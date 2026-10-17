@@ -235,8 +235,7 @@ class TestOnASchedule:
 class TestRefusedWithTheReason:
     @pytest.mark.parametrize("extra, says", [
         ({"gained": 1, "above": None, "hold_minutes": 10}, "change since the last check"),
-        ({"hold_minutes": 10, "action_type": "UpdateCustomerName", "action_parameter": "customer_id"},
-         "only notifies for now"),
+        ({"action_view_id": "SELF-ELSEWHERE"}, "chosen, but no action"),
         ({"hold_minutes": 10, "schedule": {"days": [1], "time": "09:00"}}, "cannot also require"),
         ({"hold_minutes": 0}, "Hold for 1 minute"),
         ({"combine": "xor", "also": [{"view_id": "SELF", "above": 1}]}, "all or any"),

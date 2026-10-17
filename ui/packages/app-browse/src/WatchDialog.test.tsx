@@ -396,17 +396,46 @@ describe('combined, held and scheduled (17 October)', () => {
     expect(screen.queryByRole('button', { name: /And also when/ })).toBeNull()
   })
 
-  it('a combined watch sends no action, and says why', async () => {
+  it('a held watch keeps its action', async () => {
     await openIt()
-    // An action chosen FIRST, then the watch made combined: the choice
-    // must not travel with it.
     fireEvent.change(await screen.findByLabelText('Action to propose'), {
       target: { value: 'RecategorizeTransactions' },
     })
     fireEvent.click(screen.getByLabelText('only once it has been true for at least'))
-
-    expect(screen.getByText(/only notifies/)).toBeTruthy()
     submit()
-    await waitFor(() => expect(mockedCreate).toHaveBeenCalledWith(expect.objectContaining({ action_type: null })))
+
+    await waitFor(() =>
+      expect(mockedCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ action_type: 'RecategorizeTransactions', hold_minutes: 60 }),
+      ),
+    )
+  })
+
+  it("takes the action's objects from the condition chosen, and says which", async () => {
+    await openIt()
+    fireEvent.click(await screen.findByRole('button', { name: /And also when another view is/ }))
+    fireEvent.change(screen.getByLabelText('Objects for the action'), { target: { value: 'v2' } })
+    fireEvent.change(await screen.findByLabelText('Action to propose'), {
+      target: { value: 'RecategorizeTransactions' },
+    })
+    submit()
+
+    await waitFor(() =>
+      expect(mockedCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ action_type: 'RecategorizeTransactions', action_view_id: 'v2' }),
+      ),
+    )
+  })
+
+  it("offers only actions that take the chosen view's objects", async () => {
+    vi.mocked(getSavedViews).mockResolvedValue([
+      VIEW,
+      { ...VIEW, view_id: 'v3', name: 'Customers', object_type: 'Customer' },
+    ])
+    await openIt()
+    fireEvent.click(await screen.findByRole('button', { name: /And also when another view is/ }))
+    fireEvent.change(screen.getByLabelText('Objects for the action'), { target: { value: 'v3' } })
+
+    expect(screen.queryByLabelText('Action to propose')).toBeNull()
   })
 })

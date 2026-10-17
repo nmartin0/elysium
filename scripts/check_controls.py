@@ -3575,6 +3575,35 @@ CONTROLS = [
         tests=["tests/integration/test_combined_triggers.py::TestOnASchedule::test_deleting_it_stops_its_check"],
     ),
     Control(
+        describes="COMBINED ACTIONS: proposed only when the owner's state fired",
+        path="core/count_condition.py",
+        old="    if result.owner_fired and trigger.action_type and write_mediator is not None:",
+        new="    if trigger.action_type and write_mediator is not None:",
+        tests=["tests/unit/test_combined_trigger_actions.py::TestWhenItProposes::test_not_on_the_baseline"],
+    ),
+    Control(
+        describes="COMBINED ACTIONS: on the chosen condition's objects",
+        path="core/count_condition.py",
+        old="        chosen = next(view for view in views if view.view_id == action_view_id(trigger))",
+        new="        chosen = views[0]",
+        tests=["tests/unit/test_combined_trigger_actions.py::TestWhenItProposes::test_on_the_chosen_conditions_objects"],
+    ),
+    Control(
+        describes="COMBINED ACTIONS: a scheduled check that finds it true proposes",
+        path="core/trigger_states.py",
+        old=("                told += 1\n"
+             "                owner_fired = owner_fired or user_id == owner.user_id\n            continue"),
+        new="                told += 1\n            continue",
+        tests=["tests/unit/test_combined_trigger_actions.py::TestWhenItProposes::test_at_each_scheduled_check_while_true_but_not_again_for_what_waits"],
+    ),
+    Control(
+        describes="COMBINED ACTIONS: objects only from the trigger's own conditions",
+        path="core/trigger_states.py",
+        old="    if action_view is not None and action_view not in {",
+        new="    if False and action_view not in {",
+        tests=["tests/unit/test_combined_trigger_actions.py::TestWhatMayBeChosen::test_not_some_other_view_even_of_its_owner"],
+    ),
+    Control(
         describes="COMBINED: gaining and losing are not combined",
         path="core/trigger_states.py",
         old="    if gained is not None or fell is not None:",
