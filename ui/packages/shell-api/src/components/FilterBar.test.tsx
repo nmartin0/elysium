@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 
-import FilterBar, { ALL_OPERATORS, describeFilter, operatorsFor } from './FilterBar'
+import FilterBar, { ALL_OPERATORS, describeFilter, operatorsFor, staleWindowNote } from './FilterBar'
 import type { FieldSchema } from '../types'
 
 // `type` is data-or-link; `data_type` is the semantic type. A first
@@ -285,6 +285,85 @@ describe('the set operators, which were formatted but never offerable', () => {
       expect(describeFilter({ field: 'created', operator: 'relative_date', value: { until_days_ago: 1 } })).toBe(
         'created more than 1 day ago',
       )
+    })
+  })
+
+  describe('in hours (16 October)', () => {
+    const timed: Record<string, FieldSchema> = {
+      opened: { type: 'data', data_type: 'timestamp' },
+      due: { type: 'data', data_type: 'date' },
+    }
+
+    function start(field: string) {
+      const onChange = vi.fn()
+      render(<FilterBar fields={timed} filters={[]} onChange={onChange} />)
+      fireEvent.change(screen.getByLabelText('Field to filter'), { target: { value: field } })
+      fireEvent.change(screen.getByLabelText('Operator'), { target: { value: 'relative_date' } })
+      return onChange
+    }
+
+    it('sends since_hours_ago when hours are chosen', () => {
+      const onChange = start('opened')
+      fireEvent.change(screen.getByLabelText('Unit'), { target: { value: 'hours' } })
+      fireEvent.change(screen.getByLabelText('Hours'), { target: { value: '4' } })
+      fireEvent.click(screen.getByRole('button', { name: /Add/ }))
+
+      expect(onChange).toHaveBeenCalledWith([
+        { field: 'opened', operator: 'relative_date', value: { since_hours_ago: 4 } },
+      ])
+    })
+
+    it('does not offer hours on a date, which has no time of day', () => {
+      start('due')
+      const units = Array.from((screen.getByLabelText('Unit') as HTMLSelectElement).options).map((o) => o.value)
+
+      expect(units).toEqual(['days'])
+    })
+
+    it('reads back in the unit it counts', () => {
+      expect(describeFilter({ field: 'opened', operator: 'relative_date', value: { since_hours_ago: 4 } })).toBe(
+        'opened in the last 4 hours',
+      )
+      expect(describeFilter({ field: 'opened', operator: 'relative_date', value: { until_hours_ago: 1 } })).toBe(
+        'opened more than 1 hour ago',
+      )
+    })
+  })
+
+  describe('a window shorter than the data is current (16 October)', () => {
+    const lastFour = { field: 'opened', operator: 'relative_date', value: { since_hours_ago: 4 } }
+
+    it('is noted when the type may be further behind than the window', () => {
+      const note = staleWindowNote([lastFour], 26.4)
+
+      expect(note).toContain('up to 26 hours behind its source')
+      expect(note).toContain('"opened in the last 4 hours"')
+    })
+
+    it('is not noted when the window is wider than the lag, or the lag is unknown', () => {
+      const lastThirty = { field: 'opened', operator: 'relative_date', value: { since_days_ago: 30 } }
+
+      expect(staleWindowNote([lastThirty], 26.4)).toBeNull()
+      expect(staleWindowNote([lastFour], 2)).toBeNull()
+      expect(staleWindowNote([lastFour], null)).toBeNull()
+    })
+
+    it('counts days in hours: "the last 2 days" is wider than 26 hours, so it is not noted', () => {
+      const lastTwoDays = { field: 'opened', operator: 'relative_date', value: { since_days_ago: 2 } }
+
+      expect(staleWindowNote([lastTwoDays], 26.4)).toBeNull()
+    })
+
+    it('counts a day as 24 hours: "the last 1 day" over data 26 hours behind is noted', () => {
+      const lastDay = { field: 'opened', operator: 'relative_date', value: { since_days_ago: 1 } }
+
+      expect(staleWindowNote([lastDay], 26.4)).not.toBeNull()
+    })
+
+    it('shows under the bar when given how far behind the type may be', () => {
+      render(<FilterBar fields={{}} filters={[lastFour]} onChange={() => {}} behindByHours={26.4} />)
+
+      expect(screen.getByRole('note').textContent).toContain('26 hours behind')
     })
   })
 })

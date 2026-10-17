@@ -33,6 +33,7 @@ import {
   ApiError,
   createTrigger,
   getCurrentUser,
+  getDataFreshness,
   getDeploymentConfig,
   getErrorMessage,
   getVisibleActionTypes,
@@ -40,6 +41,7 @@ import {
   type ServerSavedView,
 } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
+import { type FieldFilter, staleWindowNote } from '@elysium/shell-api/components/FilterBar'
 import { useEffect, useState } from 'react'
 
 import { type ActionChoice, actionsFor, rolesFor, type VisibleAction } from './watchOptions'
@@ -55,6 +57,7 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
   const [threshold, setThreshold] = useState(10)
   const [actions, setActions] = useState<ActionChoice[]>([])
   const [roles, setRoles] = useState<string[]>([])
+  const [behindBy, setBehindBy] = useState<number | null>(null)
   const [recipients, setRecipients] = useState<string[]>([])
   const [actionName, setActionName] = useState('')
   /**
@@ -117,10 +120,21 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
       }
       setRoles(rolesFor(ownRole, allRoles))
       setUnloaded(failed)
+      // HOW FAR BEHIND ITS SOURCE THIS TYPE MAY BE (16 October). A
+      // watch on "the last 4 hours" of data a day behind can alert on
+      // records that changed since -- worth knowing before it is made.
+      // Quiet on failure: the note is a caution, not a precondition.
+      try {
+        const freshness = await getDataFreshness()
+        setBehindBy(freshness.freshness?.[view.object_type]?.warn_after_hours ?? null)
+      } catch {
+        setBehindBy(null)
+      }
     })()
   }, [view])
 
   const chosen = actions.find((action) => action.name === actionName) ?? null
+  const stale = view === null ? null : staleWindowNote(view.conditions as unknown as FieldFilter[], behindBy)
 
   // Derived during render: this action's own choice, or its own first
   // parameter. Never another action's.
@@ -152,6 +166,11 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
   return (
     <Dialog isOpen={view !== null} onClose={onClose} title={view === null ? '' : `Watch ${view.name}`}>
       <DialogBody>
+        {stale !== null && (
+          <p className="filter-bar__note" role="note">
+            {stale}
+          </p>
+        )}
         <p>Notify me when this view is</p>
         <div className="saved-views__watch">
           <HTMLSelect

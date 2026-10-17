@@ -16,6 +16,7 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
     createTrigger: vi.fn(),
     getVisibleActionTypes: vi.fn(),
     getCurrentUser: vi.fn(),
+    getDataFreshness: vi.fn(),
     getDeploymentConfig: vi.fn(),
   }
 })
@@ -24,6 +25,7 @@ import {
   ApiError,
   createTrigger,
   getCurrentUser,
+  getDataFreshness,
   getDeploymentConfig,
   getVisibleActionTypes,
 } from '@elysium/shell-api/api'
@@ -55,6 +57,12 @@ beforeEach(() => {
     },
   })
   vi.mocked(getCurrentUser).mockResolvedValue({ role_name: 'analyst' })
+  // Transaction data up to 26.4 hours behind: a nightly deployment.
+  vi.mocked(getDataFreshness).mockResolvedValue({
+    source: 'gold',
+    last_synced_at: null,
+    freshness: { Transaction: { state: 'fresh', warn_after_hours: 26.4, fail_after_hours: 50.4 } },
+  } as unknown as Awaited<ReturnType<typeof getDataFreshness>>)
   // A REAL 403, as the server sends for anybody without manage:users.
   // A first version rejected with a plain Error, which the dialog now
   // correctly treats as a FAILURE -- so every test ran under a failure
@@ -292,5 +300,24 @@ describe('who approves what it proposes (decided 16 October)', () => {
 
     expect(screen.getByText(/Somebody still decides/)).toBeInTheDocument()
     expect(screen.queryByText(/Someone other than you/)).not.toBeInTheDocument()
+  })
+})
+
+describe('a window shorter than the data is current (16 October)', () => {
+  it('says so before the watch is made', async () => {
+    const recent = {
+      ...VIEW,
+      conditions: [{ field: 'transaction_date', operator: 'relative_date', value: { since_hours_ago: 4 } }],
+    }
+    render(<WatchDialog view={recent} onClose={() => {}} onSessionExpired={() => {}} />)
+
+    expect(await screen.findByRole('note')).toHaveTextContent('up to 26 hours behind its source')
+  })
+
+  it('says nothing for a view without a short date window', async () => {
+    render(<WatchDialog view={VIEW} onClose={() => {}} onSessionExpired={() => {}} />)
+    await waitFor(() => expect(vi.mocked(getDataFreshness)).toHaveBeenCalled())
+
+    expect(screen.queryByRole('note')).toBeNull()
   })
 })

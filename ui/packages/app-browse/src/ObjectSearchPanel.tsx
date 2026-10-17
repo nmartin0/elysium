@@ -634,6 +634,9 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
               <FilterBar
                 fields={visibleSchema[currentType]?.fields ?? {}}
                 filters={barFilters}
+                // HOW FAR BEHIND ITS SOURCE THIS TYPE MAY BE: a date
+                // window shorter than that is noted (16 October).
+                behindByHours={freshness?.freshness?.[currentType]?.warn_after_hours}
                 onChange={(next) => {
                   setBarFilters(next)
                   // A filter change is a new result set, so a page token

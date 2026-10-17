@@ -59,3 +59,19 @@ def test_a_date_field_gets_dates():
 
     assert core.filters.resolved(condition, "date", NOW).value == {"start": "2026-07-19", "end": None}
     assert core.filters.resolved(condition, "timestamp", NOW).value["start"].startswith("2026-07-19T12:00")
+
+
+def test_in_the_last_n_hours(client, monkeypatch):
+    """Hours (16 October), through the same path. At 10:00 on 14 June,
+    the last 12 hours reach back to 22:00 on the 13th: of alice's four,
+    only 14 June is inside."""
+    real = core.filters.resolve_relative_date
+    monkeypatch.setattr(core.filters, "resolve_relative_date",
+                        lambda value, now=None: real(value, now or datetime(2026, 6, 14, 10, tzinfo=UTC)))
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+
+    assert _count(client, {"since_hours_ago": 12}) == 1
+    # 300 hours is twelve and a half days -- back to 22:00 on 1 June,
+    # so 2 June joins. Read as days it would reach every one of the four.
+    assert _count(client, {"since_hours_ago": 300}) == 2

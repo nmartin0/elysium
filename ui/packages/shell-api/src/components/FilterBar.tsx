@@ -89,42 +89,91 @@ export function describeFilter(filter: FieldFilter): string {
   return `${field} = ${String(value)}`
 }
 
+type Unit = 'days' | 'hours'
+
 /**
- * A relative date as the server takes it: `since_days_ago` is "in the
- * last N days", `until_days_ago` is "more than N days ago"
- * (core/filters.py, resolve_relative_date -- measured from now, in UTC).
+ * A relative date as the server takes it: `since_<unit>_ago` is "in the
+ * last N", `until_<unit>_ago` is "more than N ago", in days or -- since
+ * 16 October -- hours (core/filters.py, relative_window; measured from
+ * now, in UTC). One unit per filter.
  */
-function describeRelative(field: string, value: unknown): string {
-  if (value !== null && typeof value === 'object') {
-    const { since_days_ago: since, until_days_ago: until } = value as Record<string, unknown>
-    if (typeof since === 'number' && typeof until === 'number') {
-      return `${field} between ${since} and ${until} days ago`
+function relativeParts(value: unknown): { unit: Unit; since: number | null; until: number | null } | null {
+  if (value === null || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  for (const unit of ['days', 'hours'] as const) {
+    const since = record[`since_${unit}_ago`]
+    const until = record[`until_${unit}_ago`]
+    if (typeof since === 'number' || typeof until === 'number') {
+      return {
+        unit,
+        since: typeof since === 'number' ? since : null,
+        until: typeof until === 'number' ? until : null,
+      }
     }
-    if (typeof since === 'number') return `${field} in the last ${daysWord(since)}`
-    if (typeof until === 'number') return `${field} more than ${daysWord(until)} ago`
   }
-  return `${field} in the last ${String(value)}`
+  return null
 }
 
-function daysWord(days: number): string {
-  return days === 1 ? '1 day' : `${days} days`
+function describeRelative(field: string, value: unknown): string {
+  const parts = relativeParts(value)
+  if (parts === null) return `${field} in the last ${String(value)}`
+  const { unit, since, until } = parts
+  if (since !== null && until !== null) return `${field} between ${since} and ${until} ${unit} ago`
+  if (since !== null) return `${field} in the last ${amount(since, unit)}`
+  return `${field} more than ${amount(until ?? 0, unit)} ago`
 }
 
-/** Whole days from 1 up, or null. The server refuses fractions and
+function amount(count: number, unit: Unit): string {
+  return count === 1 ? `1 ${unit.slice(0, -1)}` : `${count} ${unit}`
+}
+
+/** Whole numbers from 1 up, or null. The server refuses fractions and
  *  negatives; refusing them here keeps the Add button honest. */
-function wholeDays(text: string): number | null {
+function wholeNumber(text: string): number | null {
   if (!/^\s*\d+\s*$/.test(text)) return null
-  const days = Number(text)
-  return days >= 1 ? days : null
+  const count = Number(text)
+  return count >= 1 ? count : null
+}
+
+/**
+ * Whether a date filter's window is shorter than how far behind its
+ * source this type's data may be, and if so what to say (16 October).
+ *
+ * `behindByHours` is the type's freshness target -- the most its copy
+ * may lag the source while still counting as current (core/mirror/
+ * freshness.py: 1.1 times the declared sync interval, 26 hours on a
+ * nightly sync). A "last 4 hours" window over data up to a day behind
+ * can include records that have changed at the source since, so it is
+ * SAID -- a warning, not a refusal, because a type that syncs often
+ * enough is fine, and changes made in Elysium are seen at once.
+ */
+export function staleWindowNote(filters: FieldFilter[], behindByHours: number | null | undefined): string | null {
+  if (behindByHours === null || behindByHours === undefined) return null
+  for (const filter of filters) {
+    if (filter.operator !== 'relative_date') continue
+    const parts = relativeParts(filter.value)
+    if (parts === null) continue
+    const hoursPer = parts.unit === 'days' ? 24 : 1
+    const spans = [parts.since, parts.until].filter((span): span is number => span !== null)
+    if (spans.length === 0 || Math.min(...spans) * hoursPer >= behindByHours) continue
+    return (
+      `This data can be up to ${amount(Math.round(behindByHours), 'hours')} behind its source, so ` +
+      `"${describeFilter(filter)}" may include records that have changed there since the last sync.`
+    )
+  }
+  return null
 }
 
 interface FilterBarProps {
   fields: Record<string, FieldSchema>
   filters: FieldFilter[]
   onChange: (filters: FieldFilter[]) => void
+  /** How far behind its source this type's data may be, in hours --
+   *  its freshness target. When given, a shorter date window is noted. */
+  behindByHours?: number | null
 }
 
-export default function FilterBar({ fields, filters, onChange }: FilterBarProps) {
+export default function FilterBar({ fields, filters, onChange, behindByHours }: FilterBarProps) {
   const [field, setField] = useState('')
   const [operator, setOperator] = useState('equals')
   const [value, setValue] = useState('')
@@ -132,6 +181,7 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
   // WHICH SIDE OF "N DAYS AGO" a relative date keeps. Both are the one
   // server operator, so this is a choice inside it, not another.
   const [direction, setDirection] = useState<'since' | 'until'>('since')
+  const [unit, setUnit] = useState<Unit>('days')
 
   // Link fields are excluded: a relationship has no column to compare,
   // and the server would reject a filter on one.
@@ -150,7 +200,12 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
    */
   const isSet = operator === 'in' || operator === 'not_in'
   const isRelative = operator === 'relative_date'
-  const days = isRelative ? wholeDays(value) : null
+  // A DATE HAS NO TIME OF DAY, so hours are not offered on one -- the
+  // server refuses them there by name.
+  const hoursAllowed = chosen?.data_type !== 'date'
+  const relativeUnit: Unit = hoursAllowed ? unit : 'days'
+  const count = isRelative ? wholeNumber(value) : null
+  const stale = staleWindowNote(filters, behindByHours)
   const setValues = value
     .split(',')
     .map((part) => part.trim())
@@ -159,7 +214,7 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
   function add() {
     if (!field || value === '') return
     if (isSet && setValues.length === 0) return
-    if (isRelative && days === null) return
+    if (isRelative && count === null) return
     onChange([
       ...filters,
       {
@@ -177,7 +232,7 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
           : isSet
             ? setValues
             : isRelative
-              ? { [direction === 'since' ? 'since_days_ago' : 'until_days_ago']: days }
+              ? { [`${direction === 'since' ? 'since' : 'until'}_${relativeUnit}_ago`]: count }
               : value,
       },
     ])
@@ -249,12 +304,12 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
             )}
 
             <InputGroup
-              aria-label={needsTwo ? 'From' : isRelative ? 'Days' : 'Value'}
+              aria-label={needsTwo ? 'From' : isRelative ? (relativeUnit === 'hours' ? 'Hours' : 'Days') : 'Value'}
               placeholder={
                 isRelative
-                  ? direction === 'since'
-                    ? 'days, e.g. 30'
-                    : 'days ago, e.g. 14'
+                  ? relativeUnit === 'hours'
+                    ? 'e.g. 4'
+                    : 'e.g. 30'
                   : // A SET NEEDS THE SEPARATOR SAYING SO. Typing one
                     // value into a field marked "Value" and getting a
                     // one-element set is correct but teaches nothing;
@@ -269,6 +324,16 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
               value={value}
               onChange={(e) => setValue(e.currentTarget.value)}
             />
+            {isRelative && (
+              <HTMLSelect
+                aria-label="Unit"
+                value={relativeUnit}
+                onChange={(e) => setUnit(e.currentTarget.value as Unit)}
+              >
+                <option value="days">{direction === 'since' ? 'days' : 'days ago'}</option>
+                {hoursAllowed && <option value="hours">{direction === 'since' ? 'hours' : 'hours ago'}</option>}
+              </HTMLSelect>
+            )}
             {needsTwo && (
               <InputGroup
                 aria-label="To"
@@ -278,12 +343,17 @@ export default function FilterBar({ fields, filters, onChange }: FilterBarProps)
               />
             )}
 
-            <Button icon="add" onClick={add} disabled={value === '' || (isRelative && days === null)}>
+            <Button icon="add" onClick={add} disabled={value === '' || (isRelative && count === null)}>
               Add
             </Button>
           </>
         )}
       </div>
+      {stale !== null && (
+        <p className="filter-bar__note" role="note">
+          {stale}
+        </p>
+      )}
     </div>
   )
 }

@@ -69,11 +69,14 @@ def condition_clause(condition: FieldFilter, fields: dict) -> str:
             return f"whose {name} is between {low} and {high}"
         return f"whose {name} is at least {low}" if low is not None else f"whose {name} is at most {high}"
     if operator == "relative_date":
-        since, until = value.get("since_days_ago"), value.get("until_days_ago")
+        # DAYS OR HOURS (16 October), whichever the filter counts in.
+        unit = "hours" if any(key.endswith("_hours_ago") and value.get(key) is not None
+                              for key in value) else "days"
+        since, until = value.get(f"since_{unit}_ago"), value.get(f"until_{unit}_ago")
         if since is not None and until is not None:
-            return f"whose {name} is from {since} to {until} days ago"
-        return (f"whose {name} is within the last {since} days" if since is not None
-                else f"whose {name} is more than {until} days ago")
+            return f"whose {name} is from {since} to {until} {unit} ago"
+        return (f"whose {name} is within the last {since} {unit}" if since is not None
+                else f"whose {name} is more than {until} {unit} ago")
     raise SetContextError(f"no words for the operator {operator!r}")
 
 

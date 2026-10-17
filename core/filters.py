@@ -17,7 +17,7 @@ language:
                    dropdown
     range          numeric min/max, either side optional
     date_range     absolute start/end
-    relative_date  "the last N days", resolved server-side in UTC
+    relative_date  "the last N days" or hours, resolved server-side in UTC
     contains       substring, for text
 
 A closed set is checkable. An open one -- arbitrary nesting, OR across
@@ -261,7 +261,7 @@ def validate_filter(condition: FieldFilter, declared_type: str | None) -> None:
     elif condition.operator == "date_range":
         _validate_date_range(condition)
     elif condition.operator == "relative_date":
-        _validate_relative_date(condition)
+        _validate_relative_date(condition, declared_type)
     elif condition.operator == "contains":
         if not isinstance(condition.value, str) or condition.value == "":
             raise FilterError(
@@ -325,36 +325,75 @@ def _validate_date_range(condition: FieldFilter) -> None:
             ) from e
 
 
-def _validate_relative_date(condition: FieldFilter) -> None:
+#: The two units a relative date may count in (16 October: hours added).
+#: One unit per filter -- "the last 2 days and 3 hours" is not a thing
+#: anybody types, and a mixed value would need a rule for which wins.
+RELATIVE_UNITS = {"days": timedelta(days=1), "hours": timedelta(hours=1)}
+
+
+def relative_window(value: dict) -> "tuple[timedelta | None, timedelta | None]":
+    """(since, until) as durations back from now, for a VALIDATED value.
+
+    `since` is how far back the window opens -- "in the last N" -- and
+    `until` how far back it closes -- "more than N ago". Either may be
+    None. Every reader of a relative date goes through this, so a unit
+    added here is a unit everywhere: the query, the trigger timers, the
+    stale-data warning.
+    """
+    for unit, size in RELATIVE_UNITS.items():
+        since, until = value.get(f"since_{unit}_ago"), value.get(f"until_{unit}_ago")
+        if since is not None or until is not None:
+            return (None if since is None else since * size,
+                    None if until is None else until * size)
+    return None, None
+
+
+def _validate_relative_date(condition: FieldFilter, declared_type: str | None = None) -> None:
     value = condition.value
-    if not isinstance(value, dict) or not ({"since_days_ago", "until_days_ago"} & set(value)):
+    keys = {f"{bound}_{unit}_ago" for bound in ("since", "until") for unit in RELATIVE_UNITS}
+    used = set(value) & keys if isinstance(value, dict) else set()
+    if not used:
         raise FilterError(
-            f"{condition.field!r}: relative_date needs since_days_ago, "
-            f"until_days_ago, or both."
+            f"{condition.field!r}: relative_date needs since_days_ago, until_days_ago, "
+            f"since_hours_ago or until_hours_ago."
         )
-    for bound in ("since_days_ago", "until_days_ago"):
+    units = {key.split("_")[1] for key in used if value.get(key) is not None}
+    if len(units) > 1:
+        raise FilterError(
+            f"{condition.field!r}: relative_date counts in days or in hours, not both."
+        )
+    if "hours" in units and declared_type == "date":
+        # A DATE HAS NO TIME OF DAY, so "4 hours ago" cannot be told
+        # from "today" on it -- and answering anyway would be a wrong
+        # answer reported as a right one.
+        raise FilterError(
+            f"{condition.field!r} is a date, with no time of day -- it cannot be "
+            f"filtered in hours. Use days."
+        )
+    unit = units.pop() if units else "days"
+    for bound in (f"since_{unit}_ago", f"until_{unit}_ago"):
         if value.get(bound) is None:
             continue
         if not isinstance(value[bound], int) or isinstance(value[bound], bool):
             raise FilterError(
                 f"{condition.field!r}: relative_date {bound} must be a whole "
-                f"number of days, got {value[bound]!r}."
+                f"number of {unit}, got {value[bound]!r}."
             )
         if value[bound] < 0:
             raise FilterError(
                 f"{condition.field!r}: relative_date {bound} cannot be negative -- "
-                f"days_ago counts backwards from now."
+                f"{unit}_ago counts backwards from now."
             )
-    since, until = value.get("since_days_ago"), value.get("until_days_ago")
+    since, until = value.get(f"since_{unit}_ago"), value.get(f"until_{unit}_ago")
     if since is not None and until is not None and until > since:
         raise FilterError(
-            f"{condition.field!r}: until_days_ago {until} is further back than "
-            f"since_days_ago {since} -- this matches nothing."
+            f"{condition.field!r}: until_{unit}_ago {until} is further back than "
+            f"since_{unit}_ago {since} -- this matches nothing."
         )
 
 
 def resolve_relative_date(value: dict, now: datetime | None = None) -> dict:
-    """Turns days-ago into an absolute UTC range.
+    """Turns days-ago or hours-ago into an absolute UTC range.
 
     Resolved on the SERVER, in UTC, at query time. A saved search must
     mean the same thing to everyone who opens it: browser-local would
@@ -366,12 +405,11 @@ def resolve_relative_date(value: dict, now: datetime | None = None) -> dict:
     arithmetic twice.
     """
     reference = now or datetime.now(UTC)
-    resolved: dict[str, str | None] = {"start": None, "end": None}
-    if value.get("since_days_ago") is not None:
-        resolved["start"] = (reference - timedelta(days=value["since_days_ago"])).isoformat()
-    if value.get("until_days_ago") is not None:
-        resolved["end"] = (reference - timedelta(days=value["until_days_ago"])).isoformat()
-    return resolved
+    since, until = relative_window(value)
+    return {
+        "start": None if since is None else (reference - since).isoformat(),
+        "end": None if until is None else (reference - until).isoformat(),
+    }
 
 
 def resolved(condition: FieldFilter, declared_type: str | None = None,

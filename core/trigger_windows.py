@@ -4,7 +4,8 @@ A view filtered "in the last N days" changes in two ways: data arrives
 (a sync, a saved change -- core/trigger_runs.py checks then), or a
 record crosses the edge of the window as time passes. The second is
 predictable. A record dated T leaves "the last N days" at exactly T + N
-days; a record dated T enters "more than N days ago" at T + N days. So
+days; a record dated T enters "more than N days ago" at T + N days --
+and the same in hours. So
 the next moment a count can change with no new data is
 
     min(T over records still inside that edge) + N
@@ -31,7 +32,7 @@ would be a load, not a notice.
 """
 
 import logging
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -51,7 +52,7 @@ def next_crossing(mediator: Any, view: Any, recipients: list,
                   now: datetime) -> "datetime | None":
     """The earliest moment any recipient's count can change with no new
     data, or None if no record will ever cross an edge."""
-    from core.filters import FieldFilter
+    from core.filters import FieldFilter, relative_window
 
     conditions = [_as_filter(condition) for condition in (view.conditions or [])]
     soonest: datetime | None = None
@@ -59,11 +60,12 @@ def next_crossing(mediator: Any, view: Any, recipients: list,
         if condition.operator != "relative_date":
             continue
         others = conditions[:index] + conditions[index + 1:]
-        for bound in ("since_days_ago", "until_days_ago"):
-            days = (condition.value or {}).get(bound)
-            if days is None:
+        # IN WHATEVER UNIT IT COUNTS -- days or hours -- through the
+        # one helper every reader of a relative date uses.
+        for span in relative_window(condition.value or {}):
+            if span is None:
                 continue
-            edge = now - timedelta(days=days)
+            edge = now - span
             # Records at or after the edge are the ones still to cross it.
             still_to_cross = FieldFilter(condition.field, "date_range",
                                          {"start": edge.isoformat(), "end": None})
@@ -72,7 +74,7 @@ def next_crossing(mediator: Any, view: Any, recipients: list,
                                      [*others, still_to_cross])
                 if earliest is None:
                     continue
-                crossing = earliest + timedelta(days=days)
+                crossing = earliest + span
                 if soonest is None or crossing < soonest:
                     soonest = crossing
     return soonest

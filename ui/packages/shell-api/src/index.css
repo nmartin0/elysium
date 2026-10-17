@@ -1471,6 +1471,15 @@
     gap: var(--space-hair);
   }
 
+  /* A date window shorter than the data's freshness (16 October). Text,
+ * not a Callout: it qualifies a filter the reader chose, and a coloured
+ * box would read as an error the filter does not have. */
+  .filter-bar__note {
+    margin: 0;
+    font-size: var(--type-dense-size);
+    color: var(--status-warning);
+  }
+
   /* The count leads the list, because "how many" is the question asked
  * before "which ones". */
   .object-detail__link-count {
