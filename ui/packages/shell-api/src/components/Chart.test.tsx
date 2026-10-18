@@ -104,6 +104,16 @@ describe('Chart', () => {
       expect(applied.color).toEqual(['#ff0000'])
     })
 
+    it('gives every series the first colour when they are one quantity', () => {
+      // Recorded and projected (R68): told apart by line style and the
+      // legend, never by a second colour that would say "another thing".
+      render(<Chart option={{ ...OPTION, oneColour: true }} ariaLabel="Orders, with a forecast" />)
+
+      const [applied] = setOption.mock.calls[0] as [Record<string, unknown>]
+      expect(applied.color).toHaveLength(1)
+      expect('oneColour' in applied).toBe(false)
+    })
+
     it('themes axes the caller declared, and invents none', () => {
       // Adding an xAxis to a pie chart makes ECharts render an empty
       // grid behind it, so an axis is themed only where one exists.

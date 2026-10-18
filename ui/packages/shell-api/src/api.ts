@@ -1836,6 +1836,40 @@ export interface AggregateResult {
   scan_truncated: boolean
 }
 
+/** Where a total per period is heading (R68): the finished periods, the
+ *  one still running, and -- unless `refusal` says why not -- the periods
+ *  ahead with an 80% band, tested from past points in time. */
+export interface ForecastResult {
+  /** {period start: total} for every finished period. */
+  history: Record<string, number>
+  /** The period still running: shown, never fitted. */
+  running: { start: string; value: number } | null
+  points: { start: string; value: number; low: number; high: number }[]
+  season: number | null
+  backtest: {
+    form?: string
+    origins?: number
+    horizon?: number
+    typical_miss?: number
+    naive_miss?: number
+    share?: number | null
+  }
+  refusal: string | null
+  scan_truncated?: boolean
+}
+
+export async function forecastObjects(
+  objectType: string,
+  body: Omit<AggregateBody, 'group_by' | 'period'> & { group_by: string; period: TimePeriod },
+): Promise<ForecastResult> {
+  const response = await apiFetchOrThrow(`/objects/${objectType}/forecast`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return (await response.json()) as ForecastResult
+}
+
 export async function aggregateObjects(objectType: string, body: AggregateBody): Promise<unknown> {
   const response = await apiFetchOrThrow(`/objects/${objectType}/aggregate`, {
     method: 'POST',

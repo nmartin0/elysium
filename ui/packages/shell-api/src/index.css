@@ -1130,14 +1130,24 @@
   .charts-panel__over-time-head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     flex-wrap: wrap;
-    gap: var(--space-tight);
+    gap: var(--space-snug);
     margin-bottom: var(--space-tight);
   }
 
   .charts-panel__over-time-head h4 {
     margin: 0;
+    margin-right: auto;
+  }
+
+  .charts-panel__forecast-switch {
+    margin: 0;
+  }
+
+  .charts-panel__forecast-note {
+    margin: var(--space-tight) 0 0;
+    color: var(--text-secondary);
+    font-size: var(--type-label-size);
   }
 
   /* --- The rail -----------------------------------------------------

@@ -93,6 +93,13 @@ numpy>=2.0,<3
 # and narwhals (7 packages, 203 MB, measured). Chosen over TabPFN, whose
 # 2.5 weights forbid production use and whose v2 wants 16 GB and PyTorch.
 scikit-learn>=1.6,<2
+# statsmodels -- forecasts of totals per period (R53, 18 October):
+# exponential smoothing with a damped trend and prediction intervals, the
+# standard implementation rather than one of our own. BSD-3; brings pandas
+# and patsy (about 139 MB beyond scikit-learn's, measured). Imported only
+# when a forecast is asked for. statsforecast was set aside: 26 packages,
+# 437 MB.
+statsmodels>=0.14,<0.16
 sqlalchemy<3.0
 # The PostgreSQL driver SQLAlchemy dials through. psycopg 3, not 2:
 # it returns Decimal, aware datetime, date and UUID objects natively,

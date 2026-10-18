@@ -225,8 +225,18 @@ model again whenever it is rebuilt -- and only then -- measures it again,
 and fills the field only if the skill is above 0 and within 0.05 of the
 approved one (a judgement, not a measurement); otherwise it stays empty
 and the run log says why. An answer resting on a prediction says so, by
-code (R63). Not yet measured on a real deployment's records. Forecasts
-of totals (R53) and learned checks come next.
+code (R63). Not yet measured on a real deployment's records.
+
+**FORECASTS OF TOTALS ARE BEING BUILT** (R68; the owner, 18 October:
+statsmodels, triggers on totals per period, no approval). A date field
+is counted or summed per day, week or month and drawn as a line in
+Browse, the period still running marked "so far"; a Forecast switch
+extends it, dashed, with an 80% range -- exponential smoothing in the
+form AICc chooses, tested from four past points against carrying the
+last period on, and not drawn when it does not beat that. Worked out per
+request from what the viewer may see, so it crosses no compartment and
+is never stored. A trigger warning when a total is projected to cross a
+line comes next; learned checks (R51) after it.
 
 **NOT BUILT, BY THE OWNER'S CHOICE (18 October)**, each with what would
 change that:

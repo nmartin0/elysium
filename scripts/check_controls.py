@@ -4612,6 +4612,98 @@ CONTROLS = [
         ],
     ),
     Control(
+        describes='FORECAST: the period still running is never fitted',
+        path='core/forecasts.py',
+        old='    every = periods_between(starts[0], current, period)[:-1]',
+        new='    every = periods_between(starts[0], current, period)',
+        tests=[
+            'tests/unit/test_forecasts.py::TestTheSeries::test_carried_on_to_today_with_zeros_and_the_running_period_apart',
+            'tests/integration/test_forecast_api.py::test_weekly_counts_are_forecast_and_tested',
+        ],
+    ),
+    Control(
+        describes='FORECAST: a series is carried on to today with zeros',
+        path='core/forecasts.py',
+        old='    every = periods_between(starts[0], current, period)[:-1]',
+        new='    every = periods_between(starts[0], starts[-1], period)[:-1]',
+        tests=[
+            'tests/unit/test_forecasts.py::TestTheSeries::test_carried_on_to_today_with_zeros_and_the_running_period_apart',
+        ],
+    ),
+    Control(
+        describes='FORECAST: one no better than the naive forecast is not drawn',
+        path='core/forecasts.py',
+        old='    if typical >= naive - tolerance and naive > tolerance:',
+        new='    if False:',
+        tests=[
+            'tests/unit/test_forecasts.py::TestForecasting::test_a_forecast_no_better_than_the_naive_one_is_not_drawn',
+        ],
+    ),
+    Control(
+        describes='FORECAST: a perfectly steady series is still drawn',
+        path='core/forecasts.py',
+        old='    if typical >= naive - tolerance and naive > tolerance:',
+        new='    if typical >= naive - tolerance:',
+        tests=[
+            'tests/unit/test_forecasts.py::TestForecasting::test_a_steady_series_is_drawn_though_the_naive_one_is_as_good',
+        ],
+    ),
+    Control(
+        describes='FORECAST: a count never goes below zero',
+        path='core/forecasts.py',
+        old='            mean, low, high = max(mean, 0.0), max(low, 0.0), max(high, 0.0)',
+        new='            pass',
+        tests=[
+            'tests/unit/test_forecasts.py::TestForecasting::test_a_count_never_goes_below_zero',
+        ],
+    ),
+    Control(
+        describes='FORECAST: a season needs two full ones in every test',
+        path='core/forecasts.py',
+        old='    return season if count - ORIGINS * HORIZON[period] >= 2 * season else None',
+        new='    return season',
+        tests=[
+            'tests/unit/test_forecasts.py::TestForecasting::test_no_season_without_two_full_ones',
+            'tests/unit/test_forecasts.py::TestForecasting::test_a_season_only_when_every_test_sees_two_full_ones',
+        ],
+    ),
+    Control(
+        describes='FORECAST: the form is the one AICc chooses',
+        path='core/forecasts.py',
+        old='            if math.isfinite(aicc) and aicc < best_aicc:',
+        new='            if best is None:',
+        tests=[
+            'tests/integration/test_forecast_api.py::test_weekly_counts_are_forecast_and_tested',
+        ],
+    ),
+    Control(
+        describes='FORECAST: too little history is refused',
+        path='core/forecasts.py',
+        old='    if n < MIN_PERIODS:',
+        new='    if False:',
+        tests=[
+            'tests/unit/test_forecasts.py::TestForecasting::test_too_little_history_is_refused_and_said',
+        ],
+    ),
+    Control(
+        describes='FORECAST: a cut-off set is not forecast',
+        path='api/routes.py',
+        old='    if search_outcome.scan_truncated:\n        # A SHORT TOTAL IS NOT A TREND',
+        new='    if False:\n        # A SHORT TOTAL IS NOT A TREND',
+        tests=[
+            'tests/integration/test_forecast_api.py::test_a_cut_off_set_is_not_forecast',
+        ],
+    ),
+    Control(
+        describes='FORECAST: only a count or a sum',
+        path='api/routes.py',
+        old='    if body.aggregate not in ("count", "sum"):',
+        new='    if False:',
+        tests=[
+            'tests/integration/test_forecast_api.py::test_only_a_count_or_a_sum',
+        ],
+    ),
+    Control(
         describes="ENRICH: a classified field is never an input to a model",
         path="core/ontology/enriched_fields.py",
         old="        if labels:\n            raise ValueError(",

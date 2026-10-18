@@ -298,6 +298,8 @@ layers = [
     "enrichment_recipes",
     # prediction_proposals likewise: it stores measurements and decisions.
     "prediction_proposals",
+    # forecasts imports only periods below it and, lazily, statsmodels.
+    "forecasts",
     # periods imports nothing of Elysium's: date arithmetic, read by the
     # mediator and the forecasts.
     "periods",

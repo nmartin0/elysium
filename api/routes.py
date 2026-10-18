@@ -8017,6 +8017,78 @@ def aggregate_objects_route(object_type: str, body: AggregateRequest, request: R
             "scan_truncated": search_outcome.scan_truncated}
 
 
+class ForecastRequest(TextSetQueryRequest):
+    """A count or a sum per period of a date field, and where it is heading
+    (R68). The same set definition as /aggregate."""
+
+    aggregate: str = "count"
+    field: str | None = None
+    group_by: str
+    period: str
+
+
+class ForecastResponse(BaseModel):
+    #: {period start: total} for every FINISHED period, gaps zero, carried
+    #: on to the last finished period before today.
+    history: dict[str, Any]
+    #: The period still running -- {start, value} -- shown, never fitted.
+    running: dict[str, Any] | None = None
+    #: [{start, value, low, high}]: the periods ahead, with the 80% band.
+    #: Empty when `refusal` says why there is no forecast.
+    points: list[dict[str, Any]] = []
+    #: Periods per season it learned, or None.
+    season: int | None = None
+    #: How it did when tested from past points in time: {origins,
+    #: horizon, typical_miss, naive_miss, share}.
+    backtest: dict[str, Any] = {}
+    refusal: str | None = None
+    scan_truncated: bool = False
+
+
+@router.post("/objects/{object_type}/forecast", response_model=ForecastResponse)
+def forecast_route(object_type: str, body: ForecastRequest, request: Request,
+                   current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Where a total per period is heading (R68), worked out from the
+    caller's OWN totals -- what /aggregate gives them -- so it crosses no
+    compartment and needs no approval: nothing is stored or served as
+    data (the owner, 18 October). core/forecasts.py says how it is made
+    and tested; a forecast that does not beat the naive one comes back
+    as a refusal, with the history still there to draw."""
+    import datetime
+
+    from core.forecasts import cached_forecast, finished_series
+
+    if body.aggregate not in ("count", "sum"):
+        raise HTTPException(status_code=400, detail=(
+            "A forecast extends a count or a sum per period; an average, minimum or maximum "
+            "of an empty period is not zero, so its series has gaps."))
+    mediator = _generation(request).mediator
+    search_outcome = SearchOutcome()
+    try:
+        totals = mediator.aggregate_by_field(
+            current_user, object_type, _set_conditions(request, current_user, object_type, body),
+            group_by=body.group_by, aggregate=body.aggregate, field_name=body.field,
+            outcome=search_outcome, query_text=body.q, period=body.period)
+        series = finished_series(totals, body.period, datetime.datetime.now(datetime.UTC).date())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    answer: dict[str, Any] = {
+        "history": {start.isoformat(): value
+                    for start, value in zip(series.starts, series.values, strict=True)},
+        "running": None if series.running is None else {
+            "start": series.running[0].isoformat(), "value": series.running[1]},
+        "scan_truncated": search_outcome.scan_truncated,
+    }
+    if search_outcome.scan_truncated:
+        # A SHORT TOTAL IS NOT A TREND: counted from a cut-off set, every
+        # period is a floor, and a forecast of floors is a guess about
+        # where the cut fell.
+        return {**answer, "refusal": "Only part of the set was counted, so there is no "
+                "forecast; narrow the set to forecast all of it."}
+    made = cached_forecast(series.values, series.starts, body.period, body.aggregate == "count")
+    return {**answer, **made.as_dict()}
+
+
 @router.post("/objects/{object_type}/search-around", response_model=SearchAroundResponse)
 def search_around_route(object_type: str, body: SearchAroundRequest, request: Request,
                          current_user: UserRecord = Depends(get_current_user)) -> dict:

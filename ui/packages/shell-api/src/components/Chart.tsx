@@ -106,7 +106,15 @@ function withTheme(option: Record<string, unknown>): Record<string, unknown> {
   // passing". That comment exists because it had happened once
   // before. This was the second time.
   const theme = chartTheme(document.body.classList.contains(Classes.DARK))
-  const themed: Record<string, unknown> = { color: theme.categorical, ...option }
+  // `oneColour`: every series is the SAME quantity -- recorded and
+  // projected, say -- so they share the first colour, told apart by
+  // line style and the legend. A one-colour palette is what ECharts
+  // cycles through.
+  const { oneColour, ...rest } = option
+  const themed: Record<string, unknown> = {
+    color: oneColour === true ? [theme.categorical[0]] : theme.categorical,
+    ...rest,
+  }
 
   for (const axis of ['xAxis', 'yAxis'] as const) {
     if (option[axis] === undefined) continue

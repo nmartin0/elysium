@@ -280,15 +280,17 @@ export function overTimeOption(
   today: string = new Date().toISOString().slice(0, 10),
 ): Record<string, unknown> {
   const entries = Object.entries(results).sort(([a], [b]) => a.localeCompare(b))
-  const labels = entries.map(([start]) =>
-    unfinished(start, period, today) ? `${periodLabel(start, period)} (so far)` : periodLabel(start, period),
-  )
+  const running = entries.findIndex(([start]) => unfinished(start, period, today))
   return {
+    // The running period is the same quantity, unfinished: same colour.
+    oneColour: true,
     grid: { left: 8, right: 24, top: 16, bottom: 8, containLabel: true },
     xAxis: {
       type: 'category',
       boundaryGap: false,
-      data: labels,
+      data: entries.map(([start], index) =>
+        index === running ? `${periodLabel(start, period)} (so far)` : periodLabel(start, period),
+      ),
       // The axis names a week by its first day; the tooltip says "Week of".
       axisLabel: { hideOverlap: true, formatter: (label: string) => label.replace(/^Week of /, '') },
     },
@@ -298,18 +300,165 @@ export function overTimeOption(
       {
         type: 'line',
         name: 'Recorded',
-        // ONE SERIES, ONE COLOUR: the period still running is the same
-        // thing, unfinished, so it differs by shape -- hollow -- and is
-        // the one point always drawn; the rest are drawn only when there
-        // are few enough to see one by one. (ECharts' own default marker
-        // is hollow, hence `circle` for the rest.)
-        data: entries.map(([start, value]) =>
-          unfinished(start, period, today)
-            ? { value, symbol: 'emptyCircle', symbolSize: 9 }
-            : { value, symbol: 'circle', symbolSize: entries.length <= 24 ? 8 : 0 },
-        ),
+        // (ECharts' own default marker is hollow, hence `circle`.)
+        data: entries.map(([, value], index) => (index === running ? null : value)),
         lineStyle: { width: 2, cap: 'round', join: 'round' },
-        showSymbol: true,
+        symbol: 'circle',
+        showSymbol: entries.length <= 24,
+        symbolSize: 8,
+      },
+      ...(running >= 0 ? [soFar(entries.map(([, value], index) => (index === running ? value : null)))] : []),
+    ],
+  }
+}
+
+/** The period still running, as its own point: hollow, NOT JOINED to the
+ *  line -- a line down to half a week's count reads as a fall -- and
+ *  drawn however many periods there are. */
+function soFar(data: (number | null)[]): Record<string, unknown> {
+  return {
+    type: 'line',
+    name: 'So far',
+    data,
+    symbol: 'emptyCircle',
+    symbolSize: 9,
+    showSymbol: true,
+    // NEVER THINNED: on a long axis ECharts hides points at intervals
+    // ("auto"), and this one fell on a skipped index -- found in the
+    // browser, with the legend naming a point that was not there.
+    showAllSymbol: true,
+    lineStyle: { width: 0 },
+    z: 4,
+  }
+}
+
+export interface ForecastShape {
+  history: Record<string, number>
+  running: { start: string; value: number } | null
+  points: { start: string; value: number; low: number; high: number }[]
+}
+
+/**
+ * The recorded totals and where they are heading (R68), on one axis.
+ *
+ * THE PROJECTION IS DASHED -- the one meaning a dashed line keeps on these
+ * charts -- and starts from the last finished period, so it reads as a
+ * continuation rather than a second series. THE BAND is the 80% range,
+ * a wash of the same colour; the period still running stays a hollow
+ * point on the recorded line, beside the projection of where it will
+ * finish.
+ *
+ * ONE COLOUR FOR ALL THREE: they are one quantity, recorded and
+ * projected. The legend and the line's style tell them apart, never
+ * colour alone.
+ */
+export function forecastOption(forecast: ForecastShape, period: 'day' | 'week' | 'month'): Record<string, unknown> {
+  const finished = Object.keys(forecast.history).sort()
+  const ahead = forecast.points.map((point) => point.start)
+  const starts = [...new Set([...finished, ...(forecast.running ? [forecast.running.start] : []), ...ahead])].sort()
+  const at = new Map(starts.map((start, index) => [start, index]))
+  const last = finished.at(-1)
+  const blank = (): (number | null)[] => starts.map(() => null)
+
+  const recorded = blank()
+  for (const start of finished) recorded[at.get(start)!] = forecast.history[start] ?? null
+  const projected = blank()
+  const low = blank()
+  const spread = blank()
+  if (last !== undefined) {
+    // ANCHORED on the last finished period, so the dashes leave the line.
+    const anchor = forecast.history[last] ?? 0
+    projected[at.get(last)!] = anchor
+    low[at.get(last)!] = anchor
+    spread[at.get(last)!] = 0
+  }
+  for (const point of forecast.points) {
+    const index = at.get(point.start)!
+    projected[index] = point.value
+    low[index] = point.low
+    spread[index] = point.high - point.low
+  }
+  const runningIndex = forecast.running ? at.get(forecast.running.start) : undefined
+
+  const shown = (value: number | null | undefined) =>
+    value === null || value === undefined ? '' : String(Number(value.toFixed(2)))
+  return {
+    oneColour: true,
+    grid: { left: 8, right: 24, top: 32, bottom: 8, containLabel: true },
+    // Every series a reader sees, by name -- the hollow point included,
+    // since nothing else says what it is.
+    legend: { top: 0, data: ['Recorded', ...(runningIndex === undefined ? [] : ['So far']), 'Forecast', '80% range'] },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: starts.map((start) =>
+        start === forecast.running?.start ? `${periodLabel(start, period)} (so far)` : periodLabel(start, period),
+      ),
+      axisLabel: { hideOverlap: true, formatter: (label: string) => label.replace(/^Week of /, '') },
+    },
+    yAxis: { type: 'value' },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'line' },
+      // THE RANGE AS ITS TWO EDGES: the stacked series hold its floor and
+      // its width, neither of which a reader asked for.
+      formatter: (params: { dataIndex: number; axisValueLabel: string }[]) => {
+        const index = params[0]?.dataIndex ?? 0
+        const lines = [params[0]?.axisValueLabel ?? '']
+        const value = index === runningIndex ? forecast.running!.value : recorded[index]
+        if (value !== null && value !== undefined)
+          lines.push(index === runningIndex ? `So far: ${shown(value)}` : `Recorded: ${shown(value)}`)
+        const point = forecast.points.find((candidate) => candidate.start === starts[index])
+        if (point)
+          lines.push(`Forecast: ${shown(point.value)}`, `80% range: ${shown(point.low)} to ${shown(point.high)}`)
+        return lines.join('<br/>')
+      },
+    },
+    series: [
+      {
+        type: 'line',
+        name: 'Recorded',
+        data: recorded,
+        lineStyle: { width: 2, cap: 'round', join: 'round' },
+        symbol: 'circle',
+        showSymbol: starts.length <= 24,
+        symbolSize: 8,
+        z: 3,
+      },
+      ...(runningIndex === undefined
+        ? []
+        : [soFar(starts.map((_, index) => (index === runningIndex ? forecast.running!.value : null)))]),
+      {
+        type: 'line',
+        name: 'Forecast',
+        data: projected,
+        lineStyle: { width: 2, type: 'dashed' },
+        showSymbol: false,
+        z: 2,
+      },
+      // THE BAND, as a stack: an invisible floor at the low edge, and the
+      // spread above it washed in.
+      {
+        type: 'line',
+        name: '80% range floor',
+        data: low,
+        stack: 'band',
+        lineStyle: { opacity: 0 },
+        showSymbol: false,
+        tooltip: { show: false },
+        silent: true,
+      },
+      {
+        type: 'line',
+        name: '80% range',
+        data: spread,
+        stack: 'band',
+        lineStyle: { opacity: 0 },
+        // A wash, not a block -- stronger than a light theme's 10% so it
+        // still reads on a dark surface.
+        areaStyle: { opacity: 0.2 },
+        showSymbol: false,
+        silent: true,
       },
     ],
   }

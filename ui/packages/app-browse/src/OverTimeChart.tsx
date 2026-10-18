@@ -17,11 +17,20 @@
  *
  * NOT CLICKABLE YET: a point is a range of dates, and filtering the set
  * to a range is a condition this panel does not build.
+ *
+ * A FORECAST ON REQUEST (R68): the switch asks /forecast for the same
+ * set, and the chart extends the line, dashed, with its 80% range. It
+ * always says how it was tested and against what; one that did not beat
+ * carrying the last period on is not drawn, and the reason is shown
+ * instead. Off by default: it is worked out per request, and a chart
+ * nobody asked to project should not be.
  */
 
-import { Button, ButtonGroup } from '@blueprintjs/core'
+import { Button, ButtonGroup, Switch } from '@blueprintjs/core'
 import {
   aggregateObjects,
+  type ForecastResult,
+  forecastObjects,
   getErrorMessage,
   handleIfSessionExpired,
   MAX_SCAN_LABEL,
@@ -34,13 +43,30 @@ import LoadingState from '@elysium/shell-api/components/LoadingState'
 import Notice from '@elysium/shell-api/components/Notice'
 import { useEffect, useState } from 'react'
 
-import { type AggregateResults, overTimeOption } from './aggregateCharts'
+import { type AggregateResults, forecastOption, overTimeOption } from './aggregateCharts'
 
 const PERIODS: { id: TimePeriod; label: string }[] = [
   { id: 'day', label: 'Day' },
   { id: 'week', label: 'Week' },
   { id: 'month', label: 'Month' },
 ]
+
+/** How the forecast did when tested, in a sentence: against what, and by
+ *  how much. */
+function testedSentence(result: ForecastResult, period: TimePeriod): string {
+  const backtest = result.backtest
+  const number = (value: number | undefined) => (value === undefined ? '?' : String(Number(value.toPrecision(3))))
+  const share =
+    backtest.share === null || backtest.share === undefined
+      ? ''
+      : ` (${Math.round(backtest.share * 100)}% of a typical ${period})`
+  return (
+    `Read as ${backtest.form ?? 'a trend'}. Tested from ${backtest.origins ?? '?'} past points, ` +
+    `${backtest.horizon ?? '?'} ${period}s ahead each time, it was off by about ${number(backtest.typical_miss)} a ${period}` +
+    `${share}, against ${number(backtest.naive_miss)} for simply carrying the last ${period} on. ` +
+    `The shaded range is where 8 in 10 outcomes should fall.`
+  )
+}
 
 interface OverTimeChartProps {
   objectType: string
@@ -66,7 +92,37 @@ export default function OverTimeChart({
   const [results, setResults] = useState<AggregateResults | null>(null)
   const [truncated, setTruncated] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [projecting, setProjecting] = useState(false)
+  const [forecast, setForecast] = useState<ForecastResult | null>(null)
+  const [forecastError, setForecastError] = useState<string | null>(null)
   const conditionsKey = JSON.stringify(conditions)
+
+  useEffect(() => {
+    setForecast(null)
+    setForecastError(null)
+    if (!projecting) return
+    let cancelled = false
+    forecastObjects(objectType, {
+      conditions: JSON.parse(conditionsKey) as unknown[],
+      ...(frozenSet ? { frozen_set: frozenSet } : {}),
+      ...(queryText.trim() ? { q: queryText } : {}),
+      aggregate: 'count',
+      group_by: field,
+      period,
+    })
+      .then((result) => {
+        if (!cancelled) setForecast(result)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        if (handleIfSessionExpired(err, onSessionExpired)) return
+        setForecastError(getErrorMessage(err))
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projecting, objectType, field, conditionsKey, frozenSet, queryText, period])
 
   useEffect(() => {
     let cancelled = false
@@ -103,6 +159,12 @@ export default function OverTimeChart({
     <section className="charts-panel__chart charts-panel__chart--over-time" aria-label={`${label} over time`}>
       <header className="charts-panel__over-time-head">
         <h4>{label} over time</h4>
+        <Switch
+          className="charts-panel__forecast-switch"
+          label="Forecast"
+          checked={projecting}
+          onChange={() => setProjecting((on) => !on)}
+        />
         <ButtonGroup aria-label="Count by">
           {PERIODS.map(({ id, label: name }) => (
             <Button key={id} small active={period === id} onClick={() => setPeriod(id)} aria-pressed={period === id}>
@@ -129,7 +191,24 @@ export default function OverTimeChart({
               exactly.
             </Notice>
           )}
-          <Chart ariaLabel={`${label}: records per ${period}`} option={overTimeOption(results, period)} />
+          {projecting && forecast?.points.length ? (
+            <Chart
+              ariaLabel={`${label}: records per ${period}, with a forecast`}
+              option={forecastOption(forecast, period)}
+            />
+          ) : (
+            <Chart ariaLabel={`${label}: records per ${period}`} option={overTimeOption(results, period)} />
+          )}
+          {projecting &&
+            (forecastError ? (
+              <ErrorState>{forecastError}</ErrorState>
+            ) : forecast === null ? (
+              <p className="charts-panel__forecast-note">Working out a forecast…</p>
+            ) : forecast.refusal ? (
+              <Notice state="neutral">No forecast: {forecast.refusal}</Notice>
+            ) : (
+              <p className="charts-panel__forecast-note">{testedSentence(forecast, period)}</p>
+            ))}
         </>
       )}
     </section>
