@@ -4478,6 +4478,83 @@ CONTROLS = [
         ],
     ),
     Control(
+        describes="PREDICT: a model fills only its own compartment's records",
+        path='core/mirror/gold_arrow.py',
+        old='                  if compartment == approval["compartment"]]',
+        new='                  if True]',
+        tests=[
+            'tests/unit/test_predictions.py::TestFillingGold::test_only_an_approved_compartment_is_filled_and_only_where_unknown',
+            'tests/unit/test_predictions.py::TestFillingGold::test_a_compartment_learns_only_from_its_own_records',
+            'tests/integration/test_predicted_fields.py::TestFilling::test_another_compartment_stays_empty_until_its_own_approval',
+        ],
+    ),
+    Control(
+        describes="PREDICT: through a link, the linked record's compartment decides",
+        path='core/mirror/gold_arrow.py',
+        old='        compartments = [None if row.get(link) is None else by_id.get(str(row[link]))',
+        new='        compartments = [None if row.get(link) is None else next(iter(by_id.values()))',
+        tests=[
+            'tests/unit/test_predictions.py::TestFillingGold::test_through_a_link_the_linked_records_compartment_decides',
+        ],
+    ),
+    Control(
+        describes='PREDICT: the carried security value decides first, as reads do',
+        path='core/mirror/prediction_fill.py',
+        old='    return carried if carried is not None else row.get(security_field)',
+        new='    return row.get(security_field)',
+        tests=[
+            'tests/unit/test_predictions.py::TestFillingGold::test_only_an_approved_compartment_is_filled_and_only_where_unknown',
+        ],
+    ),
+    Control(
+        describes='PREDICT: a retrained model must still earn its approval',
+        path='core/predictions.py',
+        old='    return skill > 0 and skill >= approved_skill - RETRAIN_TOLERANCE',
+        new='    return skill > 0',
+        tests=[
+            'tests/unit/test_predictions.py::TestRetraining::test_a_retrained_model_must_still_earn_its_approval',
+            'tests/unit/test_predictions.py::TestFillingGold::test_measuring_worse_than_approved_fills_nothing',
+            'tests/integration/test_predicted_fields.py::TestFilling::test_a_model_that_measures_worse_than_approved_fills_nothing',
+        ],
+    ),
+    Control(
+        describes='PREDICT: a retrained model no better than guessing fills nothing',
+        path='core/predictions.py',
+        old='    return skill > 0 and skill >= approved_skill - RETRAIN_TOLERANCE',
+        new='    return skill >= approved_skill - RETRAIN_TOLERANCE',
+        tests=[
+            'tests/unit/test_predictions.py::TestRetraining::test_a_retrained_model_must_still_earn_its_approval',
+        ],
+    ),
+    Control(
+        describes='PREDICT: a type with an approved prediction is never streamed',
+        path='core/mirror/gold.py',
+        old='    if isinstance(silver_rows, pa.RecordBatchReader) and type_def.get(COMPARTMENTS) is not None:',
+        new='    if False:',
+        tests=[
+            'tests/unit/test_gold_streaming.py::test_a_type_with_an_approved_prediction_is_never_streamed',
+        ],
+    ),
+    Control(
+        describes='PREDICT: an answer resting on a prediction says so',
+        path='core/llm/inferred_values.py',
+        old='            if prediction is not None:\n                found[(object_type, field_name)] = InferredField(',
+        new='            if False:\n                found[(object_type, field_name)] = InferredField(',
+        tests=[
+            'tests/unit/test_predictions.py::test_an_answer_resting_on_a_prediction_says_so',
+        ],
+    ),
+    Control(
+        describes='PREDICT: approvals ride on the type, so approving one rebuilds gold',
+        path='scripts/run_sync.py',
+        old=('        type_def = with_approved_predictions(lambda: sync._catalog, config.schema or {},\n'
+             '                                             object_type, type_def, predictions)'),
+        new='        pass',
+        tests=[
+            'tests/integration/test_predicted_fields.py::TestFilling::test_empty_until_approved_then_filled_only_where_unknown',
+        ],
+    ),
+    Control(
         describes="ENRICH: a classified field is never an input to a model",
         path="core/ontology/enriched_fields.py",
         old="        if labels:\n            raise ValueError(",

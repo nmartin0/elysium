@@ -201,7 +201,7 @@ switches were (scripts/llm_bench.py); and smaller vectors through
 data is unmeasured. Its use for statistical
 matching and enrichment is not built.
 
-**MODEL PREDICTIONS ARE BEING BUILT** (R48; the owner, 18 October: all
+**MODEL PREDICTIONS: THE FIRST LEVEL IS BUILT** (R48; the owner, 18 October: all
 three levels -- a prediction per record, forecasts of totals, learned
 checks -- with scikit-learn, retrained when gold is rebuilt, and the
 score broken down by a group the approver chooses). A field declares
@@ -220,8 +220,13 @@ records its reader cannot see -- Foundry's "mandatory controls propagate
 through derivation" -- so each is learned from one compartment, fills
 only it, and is approved by someone in it. Learning across compartments
 would be a deliberate, per-field owner opt-in; not built, and worth it
-only if a compartment proves too small. Filling in gold comes next;
-forecasts (R53) and learned checks after them.
+only if a compartment proves too small. Once approved, gold trains the
+model again whenever it is rebuilt -- and only then -- measures it again,
+and fills the field only if the skill is above 0 and within 0.05 of the
+approved one (a judgement, not a measurement); otherwise it stays empty
+and the run log says why. An answer resting on a prediction says so, by
+code (R63). Not yet measured on a real deployment's records. Forecasts
+of totals (R53) and learned checks come next.
 
 **NOT BUILT, BY THE OWNER'S CHOICE (18 October)**, each with what would
 change that:

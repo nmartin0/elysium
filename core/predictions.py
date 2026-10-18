@@ -59,6 +59,13 @@ MIN_GROUP = 30
 MAX_GROUPS = 20
 #: A skill at or above this is too good to be true.
 SUSPICIOUS_SKILL = 0.98
+#: How far below its approved skill a retrained model may measure and
+#: still fill its field. The same records give the same model and the same
+#: skill exactly; new records move the held-out fifth, and with it the
+#: score, a little either way. 0.05 is a judgement, not a measurement: it
+#: lets the ordinary wobble of a growing table through, and stops a model
+#: that has lost a twentieth of the way from guessing to perfect.
+RETRAIN_TOLERANCE = 0.05
 #: The most distinct values of a text input kept as categories; the rest
 #: are "other" (the trees' own limit is 255 bins).
 MAX_CATEGORIES = 200
@@ -251,9 +258,11 @@ class Trained:
 
 
 def train(rows: Sequence[Mapping], prediction: Prediction, data_types: Mapping[str, str],
-          group_by: "str | None" = None, seed: int = SEED) -> Trained:
+          group_by: "str | None" = None, seed: int = SEED, explain: bool = True) -> Trained:
     """Measure on held-out records, then fit on every known one.
-    NotLearnable when there is not enough to learn from."""
+    NotLearnable when there is not enough to learn from. `explain=False`
+    skips which inputs matter -- for the sync, which only needs the score
+    and pays for importance once per input per repeat."""
     known = [(row, answer) for row in rows
              if (answer := _answer(prediction, row.get(prediction.target))) is not None]
     if len(known) < MIN_KNOWN:
@@ -284,7 +293,8 @@ def train(rows: Sequence[Mapping], prediction: Prediction, data_types: Mapping[s
         "judged_on": len(test_rows), "measure": _MEASURE[prediction.kind],
         "score": round(model_score, 4), "naive_score": round(naive_score, 4),
         "skill": round(skill, 4),
-        "important": _importance(prediction, held_model, test_matrix, test_y, seed),
+        "important": _importance(prediction, held_model, test_matrix, test_y, seed)
+        if explain else [],
         "groups": None if group_by is None else _groups(
             prediction, group_by, test_rows, test_y, guesses, naive),
         "group_by": group_by,
@@ -309,6 +319,15 @@ def data_types_of(fields: Mapping) -> dict[str, str]:
     """Each field's declared data type, text when undeclared -- what
     train() reads the inputs and the answer as."""
     return {name: (field or {}).get("data_type") or "string" for name, field in fields.items()}
+
+
+def still_earned(skill: float, approved_skill: "float | None") -> bool:
+    """Whether a model retrained at a sync may fill its field: better than
+    the naive guess, and no more than RETRAIN_TOLERANCE below the skill it
+    was approved at. An approval with no recorded skill earns nothing."""
+    if not isinstance(approved_skill, (int, float)):
+        return False
+    return skill > 0 and skill >= approved_skill - RETRAIN_TOLERANCE
 
 
 def refusal(evaluation: Mapping) -> "str | None":

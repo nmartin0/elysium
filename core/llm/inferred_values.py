@@ -8,9 +8,12 @@ the calibrated method had the sense to refuse. A model told "this value
 is a guess" may still state it as fact; a footer written by code cannot
 be left out.
 
-THE STATISTICAL OUTPUT THAT REACHES THE AGENT IS ENRICHMENT (R41): a
+THE STATISTICAL OUTPUTS THAT REACH THE AGENT ARE ENRICHMENT (R41): a
 field filled by rules a model wrote and a person approved, scored when
-it was approved against the model's own answers on held-out records.
+it was approved against the model's own answers on held-out records;
+AND PREDICTION (R48): a field a model guesses where the answer is not
+recorded, approved per compartment only after beating the naive guess
+on records it never learned from.
 Merges reach it too, but every one was approved by a person, record by
 record (R57 ticks, a person presses); that is a decision, not an
 estimate. Source track records and votes (R60) are about which source to
@@ -52,11 +55,23 @@ class InferredField:
     # none recorded.
     agreed: "int | None" = None
     covered: "int | None" = None
+    # R48: a model's guess, not rules' choice -- said in its own words.
+    predicted: bool = False
 
     def label(self) -> str:
         return f"{self.object_type}.{self.field}"
 
+    def how(self) -> str:
+        if self.predicted:
+            return "guessed by a model a person approved, only where it is not recorded"
+        return "chosen by rules a person approved"
+
     def score(self) -> str:
+        if self.predicted:
+            # PER COMPARTMENT, so no one number is the reader's: the rule
+            # every approval met is what can be said of them all.
+            return ("it was approved only after beating the naive guess on records it never "
+                    "learned from, and is measured again whenever it is retrained")
         if self.agreed is None or not self.covered:
             return "no held-out score was recorded when they were approved"
         return (f"when approved, they agreed with the model's own answers on "
@@ -66,12 +81,20 @@ class InferredField:
 def inferred_fields(schema: Mapping[str, Any], recipes: Any = None
                     ) -> dict[tuple[str, str], InferredField]:
     """Every enriched field in the schema, with its approved recipe's
-    held-out score when `recipes` (an EnrichmentRecipeStore) has one."""
+    held-out score when `recipes` (an EnrichmentRecipeStore) has one; and
+    every predicted field (R48)."""
     from core.ontology.enriched_fields import declaration_hash, enrichment_of
+    from core.ontology.predicted_fields import prediction_of
 
     found = {}
     for object_type, type_def in (schema or {}).items():
-        for field_name, field_info in ((type_def or {}).get("fields") or {}).items():
+        fields = (type_def or {}).get("fields") or {}
+        for field_name, field_info in fields.items():
+            prediction = prediction_of(field_info, fields)
+            if prediction is not None:
+                found[(object_type, field_name)] = InferredField(
+                    object_type, field_name, prediction.describe(), predicted=True)
+                continue
             enrichment = enrichment_of(field_info)
             if enrichment is None:
                 continue
@@ -128,8 +151,7 @@ def for_the_model(found: list[InferredField]) -> str:
     """Appended to the data synthesis reads."""
     if not found:
         return ""
-    lines = "\n".join(f"- {f.label()}: {f.source}, by rules a person approved; {f.score()}."
-                      for f in found)
+    lines = "\n".join(f"- {f.label()}: {f.source}, {f.how()}; {f.score()}." for f in found)
     return ("\n\nSome values above are INFERRED, not recorded. Say so if your answer "
             f"relies on them:\n{lines}")
 
@@ -138,6 +160,6 @@ def for_the_reader(found: list[InferredField]) -> str:
     """Appended to the answer by code, whatever the model wrote."""
     if not found:
         return ""
-    lines = "\n".join(f"- {f.label()} was chosen by rules a person approved ({f.source}); "
-                      f"{f.score()}." for f in found)
+    lines = "\n".join(f"- {f.label()} was {f.how()} ({f.source}); {f.score()}."
+                      for f in found)
     return f"\n\nInferred, not recorded -- this answer's data includes:\n{lines}"

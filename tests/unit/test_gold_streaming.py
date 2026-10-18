@@ -180,3 +180,21 @@ class TestTheStreamedBuildMatches:
                              silver.scan().to_arrow_batch_reader())
 
         assert result.rows == 2_000
+
+
+def test_a_type_with_an_approved_prediction_is_never_streamed(mirrored, monkeypatch):
+    """R48: a model learns from every record of a compartment at once, so
+    a batch reader is read whole first -- a model trained per batch would
+    learn from a slice, and differ from batch to batch."""
+    import core.mirror.gold_arrow as gold_arrow
+    from core.mirror.prediction_fill import COMPARTMENTS
+
+    seen = []
+    monkeypatch.setattr(gold_arrow, "with_predicted",
+                        lambda table, type_def: seen.append(table.num_rows) or table)
+    silver = mirrored._catalog.load_table("p.customers").scan().to_arrow()
+    reader = pa.RecordBatchReader.from_batches(silver.schema, silver.to_batches(max_chunksize=500))
+
+    build_gold(mirrored._catalog, "Predicted", {**TYPED, COMPARTMENTS: {"field": "region"}}, reader)
+
+    assert seen == [2_000]

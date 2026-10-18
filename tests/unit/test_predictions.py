@@ -285,3 +285,94 @@ class TestAComputedField:
         types["Customer"]["semantic_search"] = {"from": ["risk"]}
         with pytest.raises(ValueError, match="is computed"):
             validate_semantic_search(types, "nomic-embed-text")
+
+
+class TestRetraining:
+    def test_a_retrained_model_must_still_earn_its_approval(self):
+        from core.predictions import RETRAIN_TOLERANCE, still_earned
+
+        assert still_earned(0.6, 0.6) and still_earned(0.6 - RETRAIN_TOLERANCE, 0.6)
+        assert not still_earned(0.6 - RETRAIN_TOLERANCE - 0.001, 0.6)
+        assert not still_earned(0.0, 0.0), "never at or below the naive guess"
+        assert not still_earned(0.9, None), "an approval with no skill earns nothing"
+
+    def test_the_sync_skips_explaining(self):
+        rows = _customers()
+        assert train(rows, _prediction(), DATA_TYPES, explain=False).evaluation["important"] == []
+
+
+def _gold(rows, approvals, how):
+    import pyarrow as pa
+
+    from core.mirror.gold_arrow import with_predicted
+    from core.mirror.prediction_fill import APPROVED_PREDICTIONS, COMPARTMENTS
+
+    types = _types()
+    type_def = types["Customer"]
+    fill_predicted_types(types)
+    type_def["fields"]["risk"][APPROVED_PREDICTIONS] = approvals
+    type_def[COMPARTMENTS] = how
+    columns = ["customer_id", "plan", "tenure", "region", "churned", "_security", "risk"]
+    table = pa.table({name: [row.get(name) for row in rows] for name in columns[:-1]}
+                     | {"risk": pa.nulls(len(rows), pa.float64())})
+    return with_predicted(table, type_def).column("risk").to_pylist()
+
+
+class TestFillingGold:
+    def _rows(self):
+        rows = _customers()
+        for index, row in enumerate(rows):
+            row["_security"] = "west" if index % 2 else "east"
+            if index < 40:
+                row["churned"] = None
+        return rows
+
+    def test_only_an_approved_compartment_is_filled_and_only_where_unknown(self):
+        rows = self._rows()
+        values = _gold(rows, [{"compartment": "west", "skill": 0.3, "proposal_id": "p"}],
+                       {"field": "region"})
+        for row, value in zip(rows, values, strict=True):
+            filled = row["_security"] == "west" and row["churned"] is None
+            assert (value is not None) == filled, (row, value)
+
+    def test_a_compartment_learns_only_from_its_own_records(self):
+        """East's answers are flipped: a model that learned from them too
+        would guess west's records the wrong way round."""
+        rows = self._rows()
+        for row in rows:
+            if row["_security"] == "east" and row["churned"] is not None:
+                row["churned"] = "no" if row["churned"] == "yes" else "yes"
+        rows[1].update(plan="basic", tenure=3, region="US", churned=None)
+        values = _gold(rows, [{"compartment": "west", "skill": 0.3, "proposal_id": "p"}],
+                       {"field": "region"})
+        assert values[1] > 0.7
+
+    def test_through_a_link_the_linked_records_compartment_decides(self):
+        rows = self._rows()
+        for index, row in enumerate(rows):
+            row["region"] = f"account-{row['customer_id']}"
+            row["_security"] = None
+            if 1000 <= index < 1040:
+                row["churned"] = None
+        # The first thousand link into west, the rest into east; forty of
+        # each are unknown. Only west is approved.
+        by_id = {f"account-{row['customer_id']}": "west" if index < 1000 else "east"
+                 for index, row in enumerate(rows)}
+        values = _gold(rows, [{"compartment": "west", "skill": 0.3, "proposal_id": "p"}],
+                       {"via": "region", "by_id": by_id})
+        assert all(value is not None for value in values[:40])
+        assert values[40:] == [None] * (len(values) - 40)
+
+    def test_measuring_worse_than_approved_fills_nothing(self):
+        values = _gold(self._rows(), [{"compartment": "west", "skill": 1.0, "proposal_id": "p"}],
+                       {"field": "region"})
+        assert set(values) == {None}
+
+
+def test_an_answer_resting_on_a_prediction_says_so():
+    from core.llm.inferred_values import for_the_reader, inferred_fields
+
+    found = inferred_fields(_types())
+    note = for_the_reader([found[("Customer", "risk")]])
+    assert "guessed by a model a person approved, only where it is not recorded" in note
+    assert "predicted from plan, tenure, region" in note

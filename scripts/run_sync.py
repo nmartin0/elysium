@@ -740,6 +740,12 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
     from core.mirror.enrichment import with_approved_recipes
 
     recipes = EnrichmentRecipeStore(data_dir / "enrichment_recipes.db")
+    # AND THE PREDICTIONS A PERSON APPROVED (R48), one per compartment;
+    # only an approval for the field's CURRENT question is trained.
+    from core.mirror.prediction_fill import with_approved_predictions
+    from core.prediction_proposals import PredictionProposalStore
+
+    predictions = PredictionProposalStore(data_dir / "prediction_proposals.db")
     refused = 0
     # LINK CYCLES (R18). Ordering puts a target before its referrer, but
     # in a cycle one side must go first, and it was audited against its
@@ -768,6 +774,12 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
         type_def = with_approved_recipes(
             object_type, type_def, recipes,
             locale=sync.locales.get((type_def.get("storage") or {}).get("silo")))
+        # THE APPROVED PREDICTIONS, AND EACH RECORD'S COMPARTMENT, RIDE
+        # ON THE TYPE TOO: approving one, a record changing, or a linked
+        # record moving compartment is a change to what gold is built
+        # from -- and nothing else retrains (the owner, 17 October).
+        type_def = with_approved_predictions(lambda: sync._catalog, config.schema or {},
+                                             object_type, type_def, predictions)
         storage = type_def.get("storage") or {}
         identifier = f"{storage.get('silo')}.{storage.get('table')}"
         try:

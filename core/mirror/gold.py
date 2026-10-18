@@ -387,6 +387,14 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
         _confirm_current(catalog, f"{GOLD_NAMESPACE}.{object_type}", run_id)
         return GoldResult(object_type, unchanged=True)
 
+    from core.mirror.prediction_fill import COMPARTMENTS
+
+    if isinstance(silver_rows, pa.RecordBatchReader) and type_def.get(COMPARTMENTS) is not None:
+        # AN APPROVED PREDICTION (R48) LEARNS FROM EVERY RECORD AT ONCE,
+        # which a batch cannot: read whole, and take the Arrow path. The
+        # memory streaming saves is spent only on a type a person chose
+        # to predict.
+        silver_rows = silver_rows.read_all()  # type: ignore[assignment]
     result = GoldResult(object_type)
     unresolved: list = []
     rows: list[dict] | None = None

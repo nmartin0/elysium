@@ -28,12 +28,17 @@ blocked on the audit: "are these ids unique" cannot be answered by a
 batch that has not seen the others.
 """
 
+import logging
+
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from core.carried_columns import SECURITY_COLUMN
 from core.mirror.lineage import CARRIED_COLUMNS
 from core.ontology.field_types import arrow_type_for
 from core.ontology.link_types import is_reverse_link
+
+logger = logging.getLogger(__name__)
 
 
 def conform_arrow(type_def: dict, silver: pa.Table) -> pa.Table:
@@ -121,8 +126,10 @@ def with_derived(table: pa.Table, type_def: dict) -> pa.Table:
         table = table.set_column(position, field_name,
                                  pa.array(values, type=table.schema.field(field_name).type))
     # ENRICHED FIELDS (R41) FROM HERE TOO, for the same reason: this is
-    # where all three gold paths end.
-    return with_enriched(table, type_def)
+    # where all three gold paths end. PREDICTED ONES (R48) too -- only on
+    # a whole table, since a model learns from every record at once
+    # (build_gold never streams such a type).
+    return with_predicted(with_enriched(table, type_def), type_def)
 
 
 #: Where run_sync puts a field's APPROVED rules on the copy of the type
@@ -162,6 +169,75 @@ def with_enriched(table: pa.Table, type_def: dict) -> pa.Table:
             # value that does not convert is empty, never repaired.
             locale = (fields.get(field_name) or {}).get(APPROVED_LOCALE)
             values = [typed(value, enrichment.extract, locale) for value in values]
+        position = table.column_names.index(field_name)
+        table = table.set_column(position, field_name,
+                                 pa.array(values, type=table.schema.field(field_name).type))
+    return table
+
+
+def with_predicted(table: pa.Table, type_def: dict) -> pa.Table:
+    """Gold's predicted columns (R48): for each APPROVED compartment, a
+    model trained on that compartment's records, measured again, and --
+    only if it still earns its approval -- filling that compartment's
+    records whose answer is not known. Everything else stays empty (R52).
+
+    TRAINED HERE, NOT LOADED: no model is ever stored (a saved
+    scikit-learn model is a pickle). The same seed and the same records
+    give the same model, so an unchanged compartment gets the same values.
+
+    MEASURED AGAIN FIRST (predictions.still_earned): a model no better
+    than the naive guess, or fallen more than RETRAIN_TOLERANCE below the
+    skill it was approved at, fills nothing, and the run log says so.
+
+    ONE COMPARTMENT AT A TIME (the owner, 17 October): a model learns
+    only from its own compartment's records and fills only them.
+
+    WHOLE TABLES ONLY: training needs every record of a compartment at
+    once, so build_gold never streams a type with an approved prediction.
+    """
+    from core.mirror.prediction_fill import APPROVED_PREDICTIONS, COMPARTMENTS, compartment_of
+    from core.ontology.predicted_fields import predicted_fields
+    from core.predictions import NotLearnable, data_types_of, still_earned, train
+
+    fields = type_def.get("fields") or {}
+    how = type_def.get(COMPARTMENTS)
+    predicted = {name: prediction for name, prediction in predicted_fields(type_def).items()
+                 if (fields.get(name) or {}).get(APPROVED_PREDICTIONS)
+                 and name in table.column_names}
+    if how is None or not predicted or table.num_rows == 0:
+        return table
+    needed = {name for prediction in predicted.values()
+              for name in (prediction.target, *prediction.inputs)}
+    needed |= {how.get("via"), how.get("field"), SECURITY_COLUMN} - {None}
+    rows = table.select([name for name in sorted(needed) if name in table.column_names]
+                        ).to_pylist()
+    if "via" in how:
+        by_id, link = how["by_id"], how["via"]
+        compartments = [None if row.get(link) is None else by_id.get(str(row[link]))
+                        for row in rows]
+    else:
+        compartments = [compartment_of(row, how.get("field")) for row in rows]
+    data_types = data_types_of(fields)
+    for field_name, prediction in predicted.items():
+        values: list = [None] * table.num_rows
+        for approval in fields[field_name][APPROVED_PREDICTIONS]:
+            at = [index for index, compartment in enumerate(compartments)
+                  if compartment == approval["compartment"]]
+            mine = [rows[index] for index in at]
+            try:
+                trained = train(mine, prediction, data_types, explain=False)
+            except NotLearnable as e:
+                logger.warning("%s, compartment %r: no longer learnable (%s); left empty",
+                               field_name, approval["compartment"], e)
+                continue
+            skill = trained.evaluation["skill"]
+            if not still_earned(skill, approval.get("skill")):
+                logger.warning("%s, compartment %r: measured skill %s against %s approved; left "
+                               "empty until it is proposed and approved again", field_name,
+                               approval["compartment"], skill, approval.get("skill"))
+                continue
+            for index, value in zip(at, trained.predict(mine), strict=True):
+                values[index] = value
         position = table.column_names.index(field_name)
         table = table.set_column(position, field_name,
                                  pa.array(values, type=table.schema.field(field_name).type))

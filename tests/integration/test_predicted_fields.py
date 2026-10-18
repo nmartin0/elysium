@@ -228,3 +228,122 @@ class TestReviewing:
         response = client.post(f"/api/prediction-proposals/{proposal}/decide",
                                json={"approve": True}, headers=_csrf(client))
         assert response.status_code == 404
+
+
+def _approve(paths, monkeypatch, compartment="us-west"):
+    """Propose with the script, and approve as someone in the compartment."""
+    from core.prediction_proposals import PredictionProposalStore
+
+    code, said = _propose(paths, monkeypatch, "--group-by", "currency",
+                          "--compartment", compartment)
+    assert code == 0, said
+    store = PredictionProposalStore(paths.data_dir / "prediction_proposals.db")
+    waiting = [p for p in store.all() if p.status == "proposed" and p.compartment == compartment]
+    store.decide(waiting[0].proposal_id, approve=True, by="ops")
+    return waiting[0]
+
+
+def _chances(client):
+    """{(amount, category): refund_chance} for every transaction the
+    caller may see -- category None where it is not known."""
+    return [(row["fields"].get("amount"), row["fields"].get("category") or None,
+             row["fields"].get("refund_chance")) for row in _every_transaction(client)]
+
+
+def _every_transaction(client):
+    rows, token = [], None
+    while True:
+        response = client.get("/api/objects/Transaction/search",
+                              params={"q": "", "page_size": 500,
+                                      **({"page_token": token} if token else {})})
+        assert response.status_code == 200, response.text
+        rows += response.json()["results"]
+        token = response.json().get("next_page_token")
+        if not token:
+            return rows
+
+
+class TestFilling:
+    def test_empty_until_approved_then_filled_only_where_unknown(self, deployment, monkeypatch):
+        _sync(deployment)
+        assert {chance for *_, chance in _chances(_client(deployment))} == {None}
+        _approve(deployment, monkeypatch)
+        _sync(deployment)
+
+        rows = _chances(_client(deployment))
+        unknown = [(amount, chance) for amount, category, chance in rows if category is None]
+        known = [chance for _, category, chance in rows if category is not None]
+        assert len(unknown) == 10 and set(known) == {None}, "a known answer is never guessed"
+        # THE PATTERN, not noise: a negative amount is far likelier a refund.
+        negative = [chance for amount, chance in unknown if amount < 0]
+        positive = [chance for amount, chance in unknown if amount > 0]
+        assert min(negative) > 0.5 > max(positive), unknown
+
+    def test_another_compartment_stays_empty_until_its_own_approval(self, deployment,
+                                                                    monkeypatch):
+        _sync(deployment)
+        _approve(deployment, monkeypatch, "us-west")
+        _sync(deployment)
+        east = _client(deployment, "east", region="us-east")
+        assert {chance for *_, chance in _chances(east)} == {None}, \
+            "us-west's model never fills us-east"
+
+        _approve(deployment, monkeypatch, "us-east")
+        _sync(deployment)
+        east = _client(deployment, "east", region="us-east")
+        assert any(chance is not None for *_, chance in _chances(east))
+
+    def test_a_changed_question_empties_the_field(self, deployment, monkeypatch):
+        _sync(deployment)
+        _approve(deployment, monkeypatch)
+        ontology_path = deployment.config_dir / "ontology_schema.yaml"
+        ontology = yaml.safe_load(ontology_path.read_text())
+        ontology["object_types"]["Transaction"]["fields"]["refund_chance"]["predict"]["from"] = [
+            "amount"]
+        ontology_path.write_text(yaml.safe_dump(ontology))
+        _sync(deployment)
+        assert {chance for *_, chance in _chances(_client(deployment))} == {None}
+
+    def test_a_model_that_measures_worse_than_approved_fills_nothing(self, deployment,
+                                                                    monkeypatch):
+        from core.prediction_proposals import PredictionProposalStore
+
+        _sync(deployment)
+        proposal = _approve(deployment, monkeypatch)
+        # As though approved at a skill no model can reach (1 is never wrong).
+        store = PredictionProposalStore(deployment.data_dir / "prediction_proposals.db")
+        with store._connection() as conn:
+            conn.execute("UPDATE prediction_proposals SET evaluation = json_set(evaluation, "
+                         "'$.skill', 1.1) WHERE proposal_id = ?", (proposal.proposal_id,))
+            conn.commit()
+        _sync(deployment)
+        assert {chance for *_, chance in _chances(_client(deployment))} == {None}
+
+    def test_not_readable_without_reading_the_answer(self, deployment, monkeypatch):
+        _sync(deployment)
+        _approve(deployment, monkeypatch)
+        _sync(deployment)
+        policy_path = deployment.config_dir / "policy.yaml"
+        policy = yaml.safe_load(policy_path.read_text())
+        policy["roles"]["customer_service"]["allowed_actions"] = [
+            action for action in policy["roles"]["customer_service"]["allowed_actions"]
+            if action != "read:Transaction.category"]
+        policy_path.write_text(yaml.safe_dump(policy))
+        client = _client(deployment, "cs", role="customer_service")
+        fields = client.get("/api/me/visible-schema").json()["Transaction"]["fields"]
+        assert "refund_chance" not in fields or not fields["refund_chance"].get("readable", True)
+        rows = _every_transaction(client)
+        assert rows and all(row["fields"].get("refund_chance") is None for row in rows)
+
+    def test_an_unchanged_table_is_not_retrained(self, deployment, monkeypatch):
+        import core.predictions
+
+        _sync(deployment)
+        _approve(deployment, monkeypatch)
+        _sync(deployment)
+        calls = []
+        real = core.predictions.train
+        monkeypatch.setattr(core.predictions, "train",
+                            lambda *args, **kwargs: calls.append(1) or real(*args, **kwargs))
+        _sync(deployment)
+        assert calls == [], "nothing changed, so gold was not rebuilt and nothing retrained"
