@@ -5796,6 +5796,8 @@ class InboxCountsResponse(BaseModel):
     identity: int
     #: Enrichment recipes waiting on a decision this caller may make.
     enrichment: int = 0
+    #: Predicted fields waiting on a decision this caller may make (R48).
+    predictions: int = 0
 
 
 class EnrichmentRecipeResponse(BaseModel):
@@ -5953,6 +5955,141 @@ def decide_enrichment_recipe_route(recipe_id: str, body: EnrichmentDecisionReque
     return shown_after
 
 
+class PredictionProposalResponse(BaseModel):
+    proposal_id: str
+    object_type: str
+    field_name: str
+    field_label: str
+    #: The field whose answer is learned, and its label.
+    target: str
+    target_label: str
+    #: chance | class | number
+    kind: str
+    chance_of: str | None = None
+    inputs: list[str]
+    #: The compartment it learned from and fills, as a string; None for none.
+    compartment: str | None = None
+    #: proposed | approved | rejected | superseded
+    status: str
+    #: Aggregates only (core/predictions.py): held-out score against the
+    #: naive guess, skill, the score per group, what it leans on.
+    evaluation: dict[str, Any]
+    provenance: dict[str, Any]
+    #: False when the field's question has changed since it was trained.
+    current: bool
+    #: Why it cannot be approved, in words; None when it can.
+    refusal: str | None = None
+    proposed_at: str
+    decided_by: str | None = None
+    decided_at: str | None = None
+
+
+class PredictionProposalsResponse(BaseModel):
+    proposals: list[PredictionProposalResponse]
+
+
+def _prediction_store(request: Request):
+    from core.prediction_proposals import PredictionProposalStore
+
+    return PredictionProposalStore(request.app.state.runtime_paths.data_dir / "prediction_proposals.db")
+
+
+def _visible_prediction(request: Request, current_user: UserRecord, proposal) -> "dict | None":
+    """The proposal as this caller may see it, or None.
+
+    THE ENRICHMENT RULE (_visible_recipe), for the same reasons:
+      - manage:deployment: an approval decides what a field holds;
+      - read on the field, its answer, EVERY input and the group field:
+        the scores and group values are aggregates of exactly those;
+      - the proposal's COMPARTMENT is the caller's own (the owner, 17
+        October): it learned from that compartment's records alone;
+      - the field still exists and is still predicted.
+    None for any failure, answered as "not found" -- uniform denial."""
+    from core.ontology.predicted_fields import declaration_hash, prediction_of
+    from core.predictions import refusal
+
+    generation = _generation(request)
+    roles = generation.config.roles
+    if not authorize(current_user, roles, "manage:deployment"):
+        return None
+    if proposal.compartment is not None and proposal.compartment != current_user.security_value:
+        return None
+    type_def = generation.config.schema.get(proposal.object_type) or {}
+    fields = type_def.get("fields") or {}
+    field = fields.get(proposal.field_name) or {}
+    prediction = prediction_of(field, fields)
+    if prediction is None:
+        return None
+    group_by = proposal.evaluation.get("group_by")
+    for name in (proposal.field_name, prediction.target, *prediction.inputs,
+                 *([group_by] if group_by else [])):
+        if not authorize(current_user, roles, f"read:{proposal.object_type}.{name}"):
+            return None
+    return {
+        "proposal_id": proposal.proposal_id, "object_type": proposal.object_type,
+        "field_name": proposal.field_name,
+        "field_label": get_display_name(field, proposal.field_name),
+        "target": prediction.target,
+        "target_label": get_display_name(fields.get(prediction.target) or {}, prediction.target),
+        "kind": prediction.kind, "chance_of": prediction.chance_of,
+        "inputs": list(prediction.inputs),
+        "compartment": None if proposal.compartment is None else str(proposal.compartment),
+        "status": proposal.status, "evaluation": proposal.evaluation,
+        "provenance": proposal.provenance,
+        "current": proposal.declaration_hash == declaration_hash(
+            proposal.object_type, proposal.field_name, prediction),
+        "refusal": refusal(proposal.evaluation),
+        "proposed_at": proposal.proposed_at, "decided_by": proposal.decided_by,
+        "decided_at": proposal.decided_at,
+    }
+
+
+@router.get("/prediction-proposals", dependencies=[Depends(_no_store)],
+            response_model=PredictionProposalsResponse)
+def prediction_proposals_route(request: Request,
+                               current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Predicted fields measured and waiting (R48), newest first, as far as
+    this caller may review them. Nothing here is applied: an approved one
+    is trained again, and fills its field, at the next sync."""
+    shown = [_visible_prediction(request, current_user, proposal)
+             for proposal in _prediction_store(request).all()]
+    return {"proposals": [proposal for proposal in shown if proposal is not None]}
+
+
+@router.post("/prediction-proposals/{proposal_id}/decide",
+             response_model=PredictionProposalResponse)
+def decide_prediction_proposal_route(proposal_id: str, body: EnrichmentDecisionRequest,
+                                     request: Request,
+                                     current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Approve or reject one proposal.
+
+    409 for one already decided, one whose question has changed, and --
+    on APPROVE only -- one predictions.refusal refuses: no better than
+    the naive guess, or no group breakdown. Rejecting is always allowed."""
+    store = _prediction_store(request)
+    proposal = store.get(proposal_id)
+    shown = _visible_prediction(request, current_user, proposal) if proposal else None
+    if shown is None:
+        raise HTTPException(status_code=404, detail="No such proposal")
+    if proposal.status != "proposed":
+        raise HTTPException(status_code=409, detail=f"This proposal was already {proposal.status}.")
+    if not shown["current"]:
+        raise HTTPException(
+            status_code=409,
+            detail="The field's question has changed since this was trained; propose it again.")
+    if body.approve and shown["refusal"]:
+        raise HTTPException(status_code=409, detail=f"Cannot be approved: {shown['refusal']}")
+    decided = store.decide(proposal_id, approve=body.approve, by=current_user.user_id)
+    if decided is None:
+        raise HTTPException(status_code=409, detail="Someone decided it a moment ago.")
+    _generation(request).mediator.audit_log.log_prediction_decision(
+        current_user.user_id, proposal_id, proposal.object_type, proposal.field_name,
+        "approved" if body.approve else "rejected", proposal.declaration_hash)
+    shown_after = _visible_prediction(request, current_user, decided)
+    assert shown_after is not None
+    return shown_after
+
+
 @router.get("/me/inbox", dependencies=[Depends(_no_store)], response_model=InboxCountsResponse)
 def my_inbox_counts_route(request: Request,
                           current_user: UserRecord = Depends(get_current_user)) -> dict:
@@ -5995,8 +6132,15 @@ def my_inbox_counts_route(request: Request,
         if recipe.status == "proposed"
         and (shown := _visible_recipe(request, current_user, recipe)) is not None
         and shown["current"])
+    # PREDICTIONS likewise: the listing's rule, and still decidable. One
+    # that can only be rejected still waits on that decision.
+    predictions = sum(
+        1 for proposal in _prediction_store(request).all()
+        if proposal.status == "proposed"
+        and (shown := _visible_prediction(request, current_user, proposal)) is not None
+        and shown["current"])
     return {"approvals": approvals, "notifications": notifications, "identity": identity,
-            "enrichment": enrichment}
+            "enrichment": enrichment, "predictions": predictions}
 
 
 @router.get("/me/visible-apps", dependencies=[Depends(_no_store)], response_model=list[VisibleAppResponse])

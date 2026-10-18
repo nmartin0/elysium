@@ -137,6 +137,10 @@ OWNED_DATABASES = (
     # record of the approvals that decide what enriched fields hold;
     # losing it empties every one of them at the next sync.
     "enrichment_recipes.db",
+    # WHAT A PERSON APPROVED A MODEL TO PREDICT, PER COMPARTMENT (R48).
+    # No model is kept -- the sync retrains -- so this is the only record
+    # of the approvals; losing it empties every predicted field.
+    "prediction_proposals.db",
     "triggers.db",
     # VECTORS FOR SEARCH BY MEANING (R45). Derivable from gold, but a
     # first pass on a CPU can take hours, so a restore should not have

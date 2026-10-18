@@ -218,6 +218,40 @@ def _check_inputs(where: str, type_def: Mapping, field_name: str, prediction: Pr
                              f"never learns from a classified value (D3, D5).")
 
 
+def check_group_by(object_type: str, type_def: Mapping, field_name: str,
+                   prediction: Prediction, group_by: str) -> None:
+    """Refuses a field a prediction's score cannot fairly be broken down
+    by. Read by scripts/propose_prediction.py before anything is
+    trained. Any plain recorded field may group -- an input is the usual
+    choice -- except:
+
+      - the id: a group per record;
+      - the predicted field or its answer: grouping by the thing judged;
+      - a link or a computed field: not a recorded value;
+      - a classified field: its values would be shown, per group, to the
+        approver, and whether a model's outputs may be examined by a
+        classified value is D3, still open."""
+    fields = type_def.get("fields") or {}
+    where = f"{object_type}.{field_name}"
+    if group_by not in fields:
+        raise ValueError(f"{where}: {group_by!r} is not a field of {object_type}, so the score "
+                         f"cannot be broken down by it.")
+    if group_by == type_def.get("id_field"):
+        raise ValueError(f"{where}: {group_by!r} is the id -- one group per record.")
+    if group_by == field_name:
+        raise ValueError(f"{where}: {group_by!r} is the predicted field itself.")
+    if group_by == prediction.target:
+        raise ValueError(f"{where}: {group_by!r} is the answer; group by something the answer "
+                         f"might depend on.")
+    field = fields[group_by]
+    if field.get("type", "data") != "data" or _computed(field):
+        raise ValueError(f"{where}: {group_by!r} is computed or a link; group by a recorded "
+                         f"field.")
+    if field_classifications(field):
+        raise ValueError(f"{where}: {group_by!r} is classified, and its values would be shown "
+                         f"per group (D3).")
+
+
 def fill_predicted_types(object_types: Mapping) -> None:
     """`type: data` and each predicted field's data_type written into the
     raw schema, as fill_enriched_types does, so every reader sees one

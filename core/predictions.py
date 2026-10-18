@@ -305,6 +305,35 @@ def train(rows: Sequence[Mapping], prediction: Prediction, data_types: Mapping[s
     return Trained(prediction, encoding, model, evaluation)
 
 
+def data_types_of(fields: Mapping) -> dict[str, str]:
+    """Each field's declared data type, text when undeclared -- what
+    train() reads the inputs and the answer as."""
+    return {name: (field or {}).get("data_type") or "string" for name, field in fields.items()}
+
+
+def refusal(evaluation: Mapping) -> "str | None":
+    """Why a measured prediction may NOT be approved, in words; None when
+    it may. The one rule, read by the proposing script, the review and
+    the decide route alike:
+
+      - SKILL ABOVE 0: no better than the naive guess is noise with a
+        number on it;
+      - A BREAKDOWN BY GROUP (the owner, 17 October): every approval sees
+        the score per value of a field the approver chose, because an
+        average can hide a group the model fails.
+
+    A too-good-to-be-true warning does not refuse: it is for the approver
+    to read, and the leak it suspects is theirs to judge."""
+    skill = evaluation.get("skill")
+    if not isinstance(skill, (int, float)) or skill <= 0:
+        shown = "unmeasured" if not isinstance(skill, (int, float)) else f"{skill:.0%}"
+        return f"it is no better than the naive guess (skill {shown})."
+    if not evaluation.get("groups"):
+        return ("its score is not broken down by group; propose it again with --group-by, so "
+                "an average cannot hide a group it fails.")
+    return None
+
+
 _MEASURE = {"class": "share right", "chance": "chance error (Brier)",
             "number": "typical miss (mean absolute error)"}
 

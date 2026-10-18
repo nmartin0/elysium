@@ -296,6 +296,8 @@ layers = [
     "canvas_layout",
     # enrichment_recipes imports only sqlite_connection, like saved_views.
     "enrichment_recipes",
+    # prediction_proposals likewise: it stores measurements and decisions.
+    "prediction_proposals",
     # frozen_sets imports only sqlite_connection, like saved_views --
     # its sibling, the frozen kind of saved set.
     "frozen_sets",

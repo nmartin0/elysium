@@ -211,9 +211,17 @@ known, never from or about a classified field, readable only by someone
 who may read the answer and every input, and marked "predicted from …".
 Training and measuring are built: a fifth of the known records held out,
 skill against the naive guess, the score per group, which inputs
-matter, and a warning when a score is too good to be true. Approval in
-the Inbox and filling in gold come next; forecasts (R53) and learned
-checks after them.
+matter, and a warning when a score is too good to be true.
+`scripts/propose_prediction.py Type.field --group-by F` measures and
+proposes; Inbox → Predictions approves, refusing anything no better than
+the naive guess or without its group breakdown. ONE MODEL PER SECURITY
+COMPARTMENT (the owner, 17 October): a guess must not be shaped by
+records its reader cannot see -- Foundry's "mandatory controls propagate
+through derivation" -- so each is learned from one compartment, fills
+only it, and is approved by someone in it. Learning across compartments
+would be a deliberate, per-field owner opt-in; not built, and worth it
+only if a compartment proves too small. Filling in gold comes next;
+forecasts (R53) and learned checks after them.
 
 **NOT BUILT, BY THE OWNER'S CHOICE (18 October)**, each with what would
 change that:

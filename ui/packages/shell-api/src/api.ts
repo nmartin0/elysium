@@ -1515,6 +1515,9 @@ export interface InboxCounts {
   identity: number
   /** Enrichment recipes waiting on this caller's decision (R41). */
   enrichment: number
+  /** Predicted fields waiting on this caller's decision (R48). Absent
+   *  from a server older than 17 October. */
+  predictions?: number
 }
 
 /** Rules a model wrote for an enriched field, for a person to approve or
@@ -1566,6 +1569,64 @@ export async function decideEnrichmentRecipe(recipeId: string, approve: boolean)
     body: JSON.stringify({ approve }),
   })
   return (await response.json()) as EnrichmentRecipe
+}
+
+/** A predicted field's measurement, for a person to approve or reject
+ *  (R48). Aggregates only: no record, no model. Approving lets the next
+ *  sync train it again and fill the field where the answer is unknown. */
+export interface PredictionProposal {
+  proposal_id: string
+  object_type: string
+  field_name: string
+  field_label: string
+  /** The field whose answer is learned. */
+  target: string
+  target_label: string
+  kind: 'chance' | 'class' | 'number'
+  chance_of?: string | null
+  inputs: string[]
+  /** The compartment it learned from and fills; null for none. */
+  compartment: string | null
+  status: 'proposed' | 'approved' | 'rejected' | 'superseded'
+  evaluation: {
+    kind: 'chance' | 'class' | 'number'
+    known: number
+    learned_from: number
+    judged_on: number
+    /** The plain measure's name: share right, chance error, typical miss. */
+    measure: string
+    score: number
+    naive_score: number
+    /** 0 = no better than the naive guess, 1 = never wrong. */
+    skill: number
+    important: Array<{ field: string; share: number }>
+    group_by: string | null
+    /** Null skill and score: too few held-out records to judge. */
+    groups: Array<{ value: string; records: number; score: number | null; skill: number | null }> | null
+    share_right?: number
+    warning?: string
+  }
+  provenance: { library?: string; seed?: number; records?: number }
+  /** False when the field's question changed since: no longer approvable. */
+  current: boolean
+  /** Why it cannot be approved, in words; null when it can. */
+  refusal?: string | null
+  proposed_at: string
+  decided_by?: string | null
+  decided_at?: string | null
+}
+
+export async function getPredictionProposals(): Promise<PredictionProposal[]> {
+  const response = await apiFetchOrThrow('/prediction-proposals')
+  return ((await response.json()) as { proposals: PredictionProposal[] }).proposals
+}
+
+export async function decidePredictionProposal(proposalId: string, approve: boolean): Promise<PredictionProposal> {
+  const response = await apiFetchOrThrow(`/prediction-proposals/${encodeURIComponent(proposalId)}/decide`, {
+    method: 'POST',
+    body: JSON.stringify({ approve }),
+  })
+  return (await response.json()) as PredictionProposal
 }
 
 export async function getInboxCounts(): Promise<InboxCounts> {

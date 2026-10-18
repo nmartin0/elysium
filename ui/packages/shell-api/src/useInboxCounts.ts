@@ -58,5 +58,7 @@ export function useInboxCounts(refreshKey: string): InboxCounts | null {
 export function totalWaiting(counts: InboxCounts | null): number {
   // `?? 0` for a server that predates the field, so the badge is a
   // number rather than NaN while a deployment is mid-upgrade.
-  return counts === null ? 0 : counts.approvals + counts.notifications + counts.identity + (counts.enrichment ?? 0)
+  return counts === null
+    ? 0
+    : counts.approvals + counts.notifications + counts.identity + (counts.enrichment ?? 0) + (counts.predictions ?? 0)
 }

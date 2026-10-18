@@ -4392,6 +4392,92 @@ CONTROLS = [
         ],
     ),
     Control(
+        describes='PREDICT: no better than the naive guess is never approved',
+        path='core/predictions.py',
+        old='    if not isinstance(skill, (int, float)) or skill <= 0:',
+        new='    if not isinstance(skill, (int, float)):',
+        tests=[
+            'tests/unit/test_prediction_proposals.py::TestWhatMayBeApproved::test_no_better_than_guessing_may_not_be',
+        ],
+    ),
+    Control(
+        describes='PREDICT: an approval always sees the score by group',
+        path='core/predictions.py',
+        old='    if not evaluation.get("groups"):',
+        new='    if False:',
+        tests=[
+            'tests/unit/test_prediction_proposals.py::TestWhatMayBeApproved::test_without_a_breakdown_by_group_it_may_not_be',
+        ],
+    ),
+    Control(
+        describes='PREDICT: the decide route refuses what may not be approved',
+        path='api/routes.py',
+        old='    if body.approve and shown["refusal"]:',
+        new='    if False:',
+        tests=[
+            'tests/integration/test_predicted_fields.py::TestReviewing::test_no_better_than_guessing_is_refused_but_may_be_rejected',
+        ],
+    ),
+    Control(
+        describes='PREDICT: a proposal is seen and decided only in its own compartment',
+        path='api/routes.py',
+        old='    if proposal.compartment is not None and proposal.compartment != current_user.security_value:',
+        new='    if False:',
+        tests=[
+            'tests/integration/test_predicted_fields.py::TestReviewing::test_seen_only_in_its_own_compartment',
+            'tests/integration/test_predicted_fields.py::TestReviewing::test_another_compartments_proposal_cannot_be_decided',
+        ],
+    ),
+    Control(
+        describes='PREDICT: reviewing a prediction needs managing the deployment',
+        path='api/routes.py',
+        old=('    if not authorize(current_user, roles, "manage:deployment"):\n'
+             '        return None\n'
+             '    if proposal.compartment'),
+        new='    if False:\n        return None\n    if proposal.compartment',
+        tests=[
+            'tests/integration/test_predicted_fields.py::TestReviewing::test_not_seen_without_managing_the_deployment',
+        ],
+    ),
+    Control(
+        describes='PREDICT: reviewing a prediction needs reading every input',
+        path='api/routes.py',
+        old='    for name in (proposal.field_name, prediction.target, *prediction.inputs,',
+        new='    for name in (proposal.field_name, prediction.target,',
+        tests=[
+            'tests/integration/test_predicted_fields.py::TestReviewing::test_not_seen_without_reading_every_input',
+        ],
+    ),
+    Control(
+        describes='PREDICT: one approval per compartment, superseding only its own',
+        path='core/prediction_proposals.py',
+        old='                    "AND field_name = ? AND declaration_hash = ? AND compartment = ? "',
+        new='                    "AND field_name = ? AND declaration_hash = ? AND ? IS NOT NULL "',
+        tests=[
+            'tests/unit/test_prediction_proposals.py::TestTheStore::test_one_approval_per_compartment_and_a_new_one_supersedes',
+        ],
+    ),
+    Control(
+        describes='PREDICT: only an approval for the current question is trained',
+        path='core/prediction_proposals.py',
+        old=('                    "field_name = ? AND declaration_hash = ? AND status = \'approved\' "\n'
+             '                    "ORDER BY decided_at DESC",'),
+        new=('                    "field_name = ? AND ? IS NOT NULL AND status = \'approved\' "\n'
+             '                    "ORDER BY decided_at DESC",'),
+        tests=[
+            'tests/unit/test_prediction_proposals.py::TestTheStore::test_only_an_approved_proposal_for_the_current_question_is_trained',
+        ],
+    ),
+    Control(
+        describes='PREDICT: a classified field is never a group',
+        path='core/ontology/predicted_fields.py',
+        old='    if field_classifications(field):\n        raise ValueError(f"{where}: {group_by!r} is classified',
+        new='    if False:\n        raise ValueError(f"{where}: {group_by!r} is classified',
+        tests=[
+            'tests/unit/test_prediction_proposals.py::TestTheGroupField::test_a_field_that_cannot_group_fairly_is_refused',
+        ],
+    ),
+    Control(
         describes="ENRICH: a classified field is never an input to a model",
         path="core/ontology/enriched_fields.py",
         old="        if labels:\n            raise ValueError(",

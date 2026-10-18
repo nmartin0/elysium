@@ -555,6 +555,23 @@ class AuditLog:
             "declaration_hash": declaration_hash,
         })
 
+    def log_prediction_decision(self, user_id: str, proposal_id: str, object_type: str,
+                                field_name: str, decision: str, declaration_hash: str) -> None:
+        """A person approved or rejected a predicted field for their
+        compartment (R48). An approval lets every later sync train a model
+        and fill the field there, so who decided which proposal -- for
+        exactly which question -- is kept. The measurement stays in the
+        proposal store, by id."""
+        self._write({
+            "stage": "prediction_decision",
+            "user_id": user_id,
+            "proposal_id": proposal_id,
+            "object_type": object_type,
+            "field": field_name,
+            "decision": decision,
+            "declaration_hash": declaration_hash,
+        })
+
     def log_write_invalidated(self, write_id: str, user_id: str, description: str,
                                from_generation: int, to_generation: int,
                                fields: list[str], reloaded_by: str) -> None:

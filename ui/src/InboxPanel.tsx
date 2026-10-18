@@ -1,6 +1,6 @@
 /**
- * The Inbox: approvals, notifications, merge proposals and enrichment
- * rules, one place
+ * The Inbox: approvals, notifications, merge proposals, enrichment
+ * rules and predicted fields, one place
  * (DEV_UI 12, 15; decided by the owner 14 Oct).
  *
  * "INBOXES. Approvals and notifications are about EVENTS THAT ARRIVED,
@@ -31,8 +31,9 @@ const ApprovalsPanel = lazy(() => import('@elysium/app-approvals/ApprovalsPanel'
 const NotificationsPanel = lazy(() => import('@elysium/app-notifications/NotificationsPanel'))
 const IdentityPanel = lazy(() => import('@elysium/app-identity/IdentityPanel'))
 const EnrichmentReview = lazy(() => import('@elysium/app-approvals/EnrichmentReview'))
+const PredictionReview = lazy(() => import('@elysium/app-approvals/PredictionReview'))
 
-export type InboxTab = 'approvals' | 'notifications' | 'identity' | 'enrichment'
+export type InboxTab = 'approvals' | 'notifications' | 'identity' | 'enrichment' | 'predictions'
 
 const TABS: readonly { id: InboxTab; title: string; icon: IconName }[] = [
   { id: 'approvals', title: 'Approvals', icon: 'inbox' },
@@ -45,6 +46,8 @@ const TABS: readonly { id: InboxTab; title: string; icon: IconName }[] = [
   // Rules a model wrote for an enriched field, waiting on a person
   // (R41). learning: what the rules are is something a model learnt.
   { id: 'enrichment', title: 'Enrichment', icon: 'learning' },
+  // A predicted field measured and waiting on a person (R48).
+  { id: 'predictions', title: 'Predictions', icon: 'predictive-analysis' },
 ]
 
 function isTab(value: string): value is InboxTab {
@@ -76,6 +79,7 @@ export default function InboxPanel({ onSessionExpired }: { onSessionExpired: () 
                   {id === 'notifications' && <NotificationsPanel onSessionExpired={onSessionExpired} />}
                   {id === 'identity' && <IdentityPanel onSessionExpired={onSessionExpired} />}
                   {id === 'enrichment' && <EnrichmentReview onSessionExpired={onSessionExpired} />}
+                  {id === 'predictions' && <PredictionReview onSessionExpired={onSessionExpired} />}
                 </Suspense>
               }
             />

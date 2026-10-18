@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import type { InboxCounts } from '@elysium/shell-api/api'
 
 const getInboxCounts = vi.fn()
 
@@ -12,10 +13,14 @@ vi.mock('@elysium/app-approvals/ApprovalsPanel', () => ({ default: () => <p>appr
 vi.mock('@elysium/app-notifications/NotificationsPanel', () => ({ default: () => <p>notifications panel</p> }))
 vi.mock('@elysium/app-identity/IdentityPanel', () => ({ default: () => <p>identity panel</p> }))
 vi.mock('@elysium/app-approvals/EnrichmentReview', () => ({ default: () => <p>enrichment review</p> }))
+vi.mock('@elysium/app-approvals/PredictionReview', () => ({ default: () => <p>prediction review</p> }))
 
 const { default: InboxPanel } = await import('./InboxPanel')
 
-function show(url: string, counts = { approvals: 0, notifications: 0, identity: 0, enrichment: 0 }) {
+function show(
+  url: string,
+  counts: InboxCounts = { approvals: 0, notifications: 0, identity: 0, enrichment: 0, predictions: 0 },
+) {
   getInboxCounts.mockResolvedValue(counts)
   return render(
     <MemoryRouter initialEntries={[url]}>
@@ -43,6 +48,14 @@ describe('the Inbox (DEV_UI 12, 15)', () => {
     expect(await screen.findByText('enrichment review')).toBeInTheDocument()
     await screen.findByText('2')
     expect(screen.getByRole('tab', { name: /Enrichment/ })).toHaveTextContent('2')
+  })
+
+  it('predicted fields waiting on a decision are counted on their tab, and open there (R48)', async () => {
+    show('/inbox?tab=predictions', { approvals: 0, notifications: 0, identity: 0, enrichment: 0, predictions: 3 })
+
+    expect(await screen.findByText('prediction review')).toBeInTheDocument()
+    await screen.findByText('3')
+    expect(screen.getByRole('tab', { name: /Predictions/ })).toHaveTextContent('3')
   })
 
   it('opens the tab the URL names, so a link to a tab is a link', async () => {

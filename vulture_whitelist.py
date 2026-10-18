@@ -533,6 +533,11 @@ inferred
 # Enrichment review (R41): routes, reached by HTTP.
 enrichment_recipes_route
 decide_enrichment_recipe_route
+# Prediction review (R48): routes reached by HTTP, and a response field
+# pydantic reads by reflection.
+prediction_proposals_route
+decide_prediction_proposal_route
+target_label
 # DEV_UI 13.3, who can see a type: a route reached by HTTP, and a
 # response field pydantic reads by reflection.
 who_can_see_route

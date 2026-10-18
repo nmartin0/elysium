@@ -63,11 +63,11 @@ def _merges(client):
 
 
 class TestTheCounts:
-    def test_nothing_waiting_is_four_zeros(self, client):
+    def test_nothing_waiting_is_all_zeros(self, client):
         _as(client, "alice")
 
         assert client.get("/api/me/inbox").json() == {
-            "approvals": 0, "notifications": 0, "identity": 0, "enrichment": 0}
+            "approvals": 0, "notifications": 0, "identity": 0, "enrichment": 0, "predictions": 0}
 
     def test_unseen_notifications_are_counted_and_only_the_callers(self, client):
         _notes(client).notify("alice", "query_answer", "Answer to: one")
