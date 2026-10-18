@@ -4555,6 +4555,63 @@ CONTROLS = [
         ],
     ),
     Control(
+        describes='PERIOD: a week starts on Monday',
+        path='core/periods.py',
+        old='        return day - datetime.timedelta(days=day.weekday())',
+        new='        return day',
+        tests=[
+            'tests/unit/test_totals_by_period.py::TestThePeriods::test_each_value_falls_in_the_period_it_starts',
+        ],
+    ),
+    Control(
+        describes='PERIOD: an instant falls in its UTC day',
+        path='core/periods.py',
+        old='            value = value.astimezone(datetime.UTC)',
+        new='            pass',
+        tests=[
+            'tests/unit/test_totals_by_period.py::TestThePeriods::test_each_value_falls_in_the_period_it_starts',
+        ],
+    ),
+    Control(
+        describes='PERIOD: an empty period is zero for a count or a sum',
+        path='core/periods.py',
+        old='    return {start: totals.get(start, 0) for start in periods_between(starts[0], starts[-1], period)}',
+        new='    return dict(totals)',
+        tests=[
+            'tests/unit/test_totals_by_period.py::TestThePeriods::test_an_empty_period_is_zero_for_a_count_or_a_sum_and_absent_otherwise',
+            'tests/unit/test_totals_by_period.py::TestThroughTheMediator::test_counted_by_week_with_the_empty_week_as_zero',
+            'tests/integration/test_totals_by_period_api.py::test_summed_by_week',
+        ],
+    ),
+    Control(
+        describes='PERIOD: an average of nothing is not zero',
+        path='core/periods.py',
+        old='    if aggregate not in ZERO_WHEN_EMPTY:',
+        new='    if False:',
+        tests=[
+            'tests/unit/test_totals_by_period.py::TestThePeriods::test_an_empty_period_is_zero_for_a_count_or_a_sum_and_absent_otherwise',
+        ],
+    ),
+    Control(
+        describes='PERIOD: too many periods are refused',
+        path='core/periods.py',
+        old='        if len(out) > MAX_PERIODS:',
+        new='        if False:',
+        tests=[
+            'tests/unit/test_totals_by_period.py::TestThePeriods::test_too_many_periods_is_refused_with_the_longer_one_to_ask_for',
+        ],
+    ),
+    Control(
+        describes='PERIOD: only a date is grouped by period',
+        path='core/ontology/mediator.py',
+        old='            if group_by is None or declared not in TEMPORAL:',
+        new='            if group_by is None:',
+        tests=[
+            'tests/unit/test_totals_by_period.py::TestThroughTheMediator::test_a_period_needs_a_date_and_a_known_period',
+            'tests/integration/test_totals_by_period_api.py::test_a_period_on_text_is_a_400_that_says_why',
+        ],
+    ),
+    Control(
         describes="ENRICH: a classified field is never an input to a model",
         path="core/ontology/enriched_fields.py",
         old="        if labels:\n            raise ValueError(",

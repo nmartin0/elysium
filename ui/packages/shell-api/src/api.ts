@@ -1784,6 +1784,9 @@ export function getVisibleActionTypesCached(): Promise<unknown> {
   return cachedActionTypes
 }
 
+/** The periods a date can be counted by. */
+export type TimePeriod = 'day' | 'week' | 'month'
+
 export interface AggregateBody {
   /** The object set to aggregate over, as filter conditions. */
   conditions?: unknown[]
@@ -1796,6 +1799,10 @@ export interface AggregateBody {
   group_by?: string
   /** A frozen set to aggregate within. See SearchOptions.frozenSet. */
   frozen_set?: string
+  /** day, week or month: group a DATE `group_by` by the period each value
+   *  falls in. Keys are the period's first day (ISO, UTC); an empty
+   *  period between the first and last is 0 for a count or a sum. */
+  period?: TimePeriod
   /** The search box's text, so a chart describes the same set the
    *  table does. Without it a donut beside "Transaction · 81" drew all
    *  five categories of all 404. */

@@ -41,7 +41,7 @@ vi.mock('echarts/core', async () => {
 // GraphChart included: registration is what makes a series type
 // exist, so a mock missing one turns every test in this file into an
 // import error rather than a failure about the thing under test.
-vi.mock('echarts/charts', () => ({ BarChart: {}, GraphChart: {}, PieChart: {} }))
+vi.mock('echarts/charts', () => ({ BarChart: {}, GraphChart: {}, LineChart: {}, PieChart: {} }))
 vi.mock('echarts/components', () => ({
   GridComponent: {},
   LegendComponent: {},

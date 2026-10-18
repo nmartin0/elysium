@@ -298,6 +298,9 @@ layers = [
     "enrichment_recipes",
     # prediction_proposals likewise: it stores measurements and decisions.
     "prediction_proposals",
+    # periods imports nothing of Elysium's: date arithmetic, read by the
+    # mediator and the forecasts.
+    "periods",
     # frozen_sets imports only sqlite_connection, like saved_views --
     # its sibling, the frozen kind of saved set.
     "frozen_sets",

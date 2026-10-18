@@ -35,6 +35,7 @@ import {
 } from '@elysium/shell-api/api'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
+import OverTimeChart from './OverTimeChart'
 import {
   type AggregateResults,
   type ChartFilter,
@@ -76,15 +77,23 @@ interface FieldChart {
   truncated: boolean
 }
 
+/** The data types a field is charted over time for, not counted by value. */
+const TEMPORAL = new Set(['date', 'timestamp', 'timestamptz'])
+
 export function chartableFields(
   objectType: string,
   visibleSchema: VisibleSchema | null,
-): { field: string; label: string }[] {
+): { field: string; label: string; overTime: boolean }[] {
   const fields = visibleSchema?.[objectType]?.fields ?? {}
   const usable = Object.entries(fields).filter(([, field]) => field.type !== 'link')
   const prominent = usable.filter(([, field]) => field.visibility === 'prominent')
   const chosen = prominent.length > 0 ? prominent : usable.filter(([, field]) => field.visibility !== 'hidden')
-  return chosen.map(([name, field]) => ({ field: name, label: field.display_name ?? name }))
+  return chosen.map(([name, field]) => ({
+    field: name,
+    label: field.display_name ?? name,
+    // A DATE IS DRAWN OVER TIME (R68), not counted value by value.
+    overTime: TEMPORAL.has(field.data_type ?? ''),
+  }))
 }
 
 /** Whether a field's distribution says anything.
@@ -137,7 +146,9 @@ export default function ChartsPanel({
   // one.
   const [partialFields, setPartialFields] = useState<string[]>([])
 
-  const fields = chartableFields(objectType, visibleSchema)
+  const chartable = chartableFields(objectType, visibleSchema)
+  const fields = chartable.filter((field) => !field.overTime)
+  const overTime = chartable.filter((field) => field.overTime)
   // Serialised so the effect depends on the CONTENT of the filter
   // rather than the array's identity, which is new on every render of
   // the parent.
@@ -269,13 +280,25 @@ export default function ChartsPanel({
           // An EMPTY result is not a loading state and not a failure --
           // every field has one distinct value, which is a true answer
           // and needs saying rather than showing an empty box.
-          charts.length === 0 ? (
+          charts.length === 0 && overTime.length === 0 ? (
             <Notice state="neutral">
               No field in this object type has more than one distinct value in the current results, so there is nothing
               to chart.
             </Notice>
           ) : (
             <div className="charts-panel">
+              {overTime.map(({ field, label }) => (
+                <OverTimeChart
+                  key={field}
+                  objectType={objectType}
+                  field={field}
+                  label={label}
+                  conditions={[...conditionsExcluding(filters, field), ...extraConditions]}
+                  frozenSet={frozenSet}
+                  queryText={queryText}
+                  onSessionExpired={onSessionExpired}
+                />
+              ))}
               {charts.map((chart) => (
                 <section key={chart.field} className="charts-panel__chart">
                   <h4>{chart.label}</h4>

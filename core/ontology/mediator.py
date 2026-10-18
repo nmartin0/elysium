@@ -2257,8 +2257,14 @@ class DataMediator:
     def aggregate_by_field(self, user_record: UserRecord, object_type: str, conditions: list,
                             group_by: str | None, aggregate: str, field_name: str | None = None,
                             outcome: "SearchOutcome | None" = None,
-                            query_text: str = "") -> dict:
+                            query_text: str = "", period: "str | None" = None) -> dict:
         """Aggregates a field over the objects the caller can see.
+
+        `period` (day, week or month) groups a DATE field by the period
+        each value falls in rather than by its exact value, keyed by the
+        period's first day, with empty periods between the first and last
+        filled in as 0 for a count or a sum (core/periods.py) -- a series
+        over time, which is what a chart over time and a forecast need.
 
         `aggregate` is one of count/sum/avg/min/max -- the same set
         Foundry's own aggregate API exposes. `field_name` is required
@@ -2317,6 +2323,18 @@ class DataMediator:
                     f"aggregate over the objects on the far side."
                 )
 
+        if period is not None:
+            from core.periods import PERIODS, TEMPORAL
+
+            if period not in PERIODS:
+                raise ValueError(f"Unknown period {period!r} -- expected one of {list(PERIODS)}")
+            declared = ((type_config.get("fields") or {}).get(group_by or "") or {}).get("data_type")
+            if group_by is None or declared not in TEMPORAL:
+                raise ValueError(
+                    f"period groups by a date: group_by must name a date or timestamp field of "
+                    f"{object_type}; {group_by!r} is {declared or 'text'}."
+                )
+
         visible_ids = set(self._set_members(user_record, object_type, conditions, outcome, query_text))
         if not visible_ids:
             return {}
@@ -2332,6 +2350,23 @@ class DataMediator:
             return {None: len(visible_ids)}
 
         rows = self._read_fields_for_ids(user_record, object_type, visible_ids, wanted)
+
+        if period is not None:
+            from core.periods import by_period, with_gaps_filled
+
+            assert group_by is not None
+            # A RECORD THE CALLER MAY NOT READ THE DATE OF is in no
+            # period -- _read_fields_for_ids returns nothing for a field
+            # they lack read on, exactly as a null group is dropped below.
+            per = by_period(
+                ((row.get(group_by),
+                  row.get(field_name) if field_name is not None else object_id)
+                 for object_id, row in rows.items()
+                 if field_name is None or row.get(field_name) is not None),
+                period)
+            return with_gaps_filled(
+                {start: _AGGREGATES[aggregate](values) for start, values in per.items()},
+                period, aggregate)
 
         grouped: dict[Any, list] = {}
         for object_id, row in rows.items():

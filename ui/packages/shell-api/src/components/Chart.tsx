@@ -25,7 +25,7 @@
 import { Classes } from '@blueprintjs/core'
 import { useEffect, useRef } from 'react'
 import * as echarts from 'echarts/core'
-import { BarChart, GraphChart, PieChart } from 'echarts/charts'
+import { BarChart, GraphChart, LineChart, PieChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TitleComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 
@@ -40,6 +40,9 @@ echarts.use([
   // error -- so a missing entry here looks like a broken option
   // object rather than a missing import.
   GraphChart,
+  // LineChart for totals over time (R68): a series is read as a shape,
+  // which bars broken into a hundred columns are not.
+  LineChart,
   PieChart,
   GridComponent,
   LegendComponent,

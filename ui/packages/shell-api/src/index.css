@@ -1120,6 +1120,26 @@
     letter-spacing: 0.04em;
   }
 
+  /* A TIME CHART spans the row: a line over months needs the width a
+   * ranked list of six regions does not, and its period buttons sit
+   * beside its title. */
+  .charts-panel__chart--over-time {
+    grid-column: 1 / -1;
+  }
+
+  .charts-panel__over-time-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-tight);
+    margin-bottom: var(--space-tight);
+  }
+
+  .charts-panel__over-time-head h4 {
+    margin: 0;
+  }
+
   /* --- The rail -----------------------------------------------------
  *
  * Collapsed, the sidebar becomes an icon rail rather than disappearing

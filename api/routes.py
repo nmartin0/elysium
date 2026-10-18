@@ -710,6 +710,10 @@ class AggregateRequest(TextSetQueryRequest):
     aggregate: str
     field: str | None = None
     group_by: str | None = None
+    #: day | week | month: group a DATE `group_by` by the period each
+    #: value falls in (core/periods.py). Keys are the period's first day,
+    #: ISO 8601; empty periods are 0 for a count or a sum.
+    period: str | None = None
 
 
 class SearchAroundRequest(ObjectSetQueryRequest):
@@ -7999,7 +8003,7 @@ def aggregate_objects_route(object_type: str, body: AggregateRequest, request: R
             current_user, object_type,
             _set_conditions(request, current_user, object_type, body),
             group_by=body.group_by, aggregate=body.aggregate, field_name=body.field,
-            outcome=search_outcome, query_text=body.q,
+            outcome=search_outcome, query_text=body.q, period=body.period,
         )
     except ValueError as e:
         # An unknown aggregate name or a missing field is a caller

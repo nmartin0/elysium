@@ -230,3 +230,87 @@ export function selectionFor(
 export function conditionsExcluding(filters: ChartFilter[], field: string): unknown[] {
   return asConditions(filters.filter((filter) => filter.field !== field))
 }
+
+/** How a period is named on the axis: by the day it starts, at the
+ *  precision the period has. UTC, as the server buckets in UTC. */
+export function periodLabel(start: string, period: 'day' | 'week' | 'month'): string {
+  const date = new Date(`${start}T00:00:00Z`)
+  if (Number.isNaN(date.getTime())) return start
+  if (period === 'month') {
+    return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' })
+  }
+  const day = date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+  return period === 'week' ? `Week of ${day}` : day
+}
+
+/** The day after a period ends, as an ISO date (UTC). */
+function periodEnd(start: string, period: 'day' | 'week' | 'month'): string {
+  const date = new Date(`${start}T00:00:00Z`)
+  if (period === 'day') date.setUTCDate(date.getUTCDate() + 1)
+  else if (period === 'week') date.setUTCDate(date.getUTCDate() + 7)
+  else date.setUTCMonth(date.getUTCMonth() + 1)
+  return date.toISOString().slice(0, 10)
+}
+
+/** Whether a period has not finished yet on `today` (an ISO date, UTC):
+ *  its total is so far, not final. */
+export function unfinished(start: string, period: 'day' | 'week' | 'month', today: string): boolean {
+  return periodEnd(start, period) > today
+}
+
+/**
+ * A total per period, as a line over time (R68).
+ *
+ * A LINE, NOT BARS: a series over time is read as a shape -- rising,
+ * flat, seasonal -- and a hundred thin columns hide it. In the
+ * period's own order, which the ISO keys sort into.
+ *
+ * A CROSSHAIR, NOT A POINT TOOLTIP: on a line the reader asks "what was
+ * it then", so the tooltip follows the axis, not the nearest mark.
+ * Points are drawn only when there are few enough to see one by one.
+ *
+ * THE PERIOD STILL RUNNING IS MARKED "so far": this week's count on a
+ * Wednesday is half a week's, and drawn like the others it reads as a
+ * fall that has not happened. Its point is hollow, and the axis and
+ * tooltip say so.
+ */
+export function overTimeOption(
+  results: AggregateResults,
+  period: 'day' | 'week' | 'month',
+  today: string = new Date().toISOString().slice(0, 10),
+): Record<string, unknown> {
+  const entries = Object.entries(results).sort(([a], [b]) => a.localeCompare(b))
+  const labels = entries.map(([start]) =>
+    unfinished(start, period, today) ? `${periodLabel(start, period)} (so far)` : periodLabel(start, period),
+  )
+  return {
+    grid: { left: 8, right: 24, top: 16, bottom: 8, containLabel: true },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: labels,
+      // The axis names a week by its first day; the tooltip says "Week of".
+      axisLabel: { hideOverlap: true, formatter: (label: string) => label.replace(/^Week of /, '') },
+    },
+    yAxis: { type: 'value' },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'line' } },
+    series: [
+      {
+        type: 'line',
+        name: 'Recorded',
+        // ONE SERIES, ONE COLOUR: the period still running is the same
+        // thing, unfinished, so it differs by shape -- hollow -- and is
+        // the one point always drawn; the rest are drawn only when there
+        // are few enough to see one by one. (ECharts' own default marker
+        // is hollow, hence `circle` for the rest.)
+        data: entries.map(([start, value]) =>
+          unfinished(start, period, today)
+            ? { value, symbol: 'emptyCircle', symbolSize: 9 }
+            : { value, symbol: 'circle', symbolSize: entries.length <= 24 ? 8 : 0 },
+        ),
+        lineStyle: { width: 2, cap: 'round', join: 'round' },
+        showSymbol: true,
+      },
+    ],
+  }
+}
