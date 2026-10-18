@@ -1411,7 +1411,11 @@ class DataMediator:
             return False
         visible = visible if visible is not None else self.visible_schema(user_record)
         fields = (visible.get(object_type) or {}).get("fields") or {}
-        return all(name in fields for name in search.inputs)
+        # READABLE, NOT MERELY LISTED: the visible schema also carries
+        # fields a person may only DISCOVER, marked readable False.
+        # Checking presence alone let a discover-only grant on `subject`
+        # rank tickets by what their subjects mean (found 18 October).
+        return all((fields.get(name) or {}).get("readable") is True for name in search.inputs)
 
     def readable_in_order(self, user_record: UserRecord, object_type: str,
                           object_ids: list, limit: int,

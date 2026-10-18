@@ -4021,10 +4021,19 @@ CONTROLS = [
     Control(
         describes='MEANING: ranking needs reading every field the text is made from',
         path='core/ontology/mediator.py',
-        old='        return all(name in fields for name in search.inputs)',
+        old='        return all((fields.get(name) or {}).get("readable") is True for name in search.inputs)',
         new='        return True',
         tests=[
             'tests/integration/test_search_by_meaning.py::test_without_reading_the_text_there_is_no_search_by_meaning',
+        ],
+    ),
+    Control(
+        describes='MEANING: knowing a field exists is not reading it',
+        path='core/ontology/mediator.py',
+        old='        return all((fields.get(name) or {}).get("readable") is True for name in search.inputs)',
+        new='        return all(name in fields for name in search.inputs)',
+        tests=[
+            'tests/integration/test_search_by_meaning.py::test_knowing_a_field_exists_is_not_reading_it',
         ],
     ),
     Control(

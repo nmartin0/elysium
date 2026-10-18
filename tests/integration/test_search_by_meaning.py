@@ -75,6 +75,11 @@ def deployment(tmp_path, monkeypatch, model):
            if key != "allowed_actions"},
         "allowed_actions": ["read:SupportTicket", "read:SupportTicket.ticket_id",
                             "read:SupportTicket.status"]}
+    # MAY KNOW `subject` EXISTS -- discover -- but not read it.
+    policy["roles"]["discovers_subject"] = {
+        **policy["roles"]["no_subject"],
+        "allowed_actions": [*policy["roles"]["no_subject"]["allowed_actions"],
+                            "discover:SupportTicket.subject"]}
     (config / "policy.yaml").write_text(yaml.safe_dump(policy))
 
     data = tmp_path / "data"
@@ -235,3 +240,13 @@ def test_a_type_no_longer_declared_loses_its_vectors(deployment):
         run_sync(deployment)
     assert "SupportTicket: no longer declared; 3 vector(s) removed" in output.getvalue()
     assert EmbeddingStore(deployment.data_dir / "embeddings.db").declared_types() == set()
+
+
+def test_knowing_a_field_exists_is_not_reading_it(deployment):
+    """A discover-only grant puts `subject` in the visible schema, marked
+    unreadable. Ranking by its meaning would read it."""
+    client = _client(deployment, "discoverer", "discovers_subject")
+    fields = client.get("/api/me/visible-schema").json()["SupportTicket"]["fields"]
+    assert fields["subject"]["readable"] is False, "the case this test is about"
+    assert client.get("/api/objects/SupportTicket/related-in-meaning",
+                      params={"q": "refund"}).json()["offered"] is False
