@@ -116,7 +116,6 @@ import json
 import logging
 import os
 import threading
-import time
 from pathlib import Path
 from typing import Any
 
@@ -1448,6 +1447,8 @@ class DeploymentConfigResponse(BaseModel):
     #: and how long one sync may spend embedding.
     embedding_model: str | None = None
     embedding_budget_seconds: float = 300.0
+    #: The task prefixes as configured; None for the model family's own.
+    embedding_prefixes: dict[str, str] | None = None
     max_hops: int
     max_consecutive_duplicates: int
     max_consecutive_invalid_steps: int
@@ -4718,6 +4719,8 @@ def deployment_config_route(request: Request,
         "synthesis_model": config.synthesis_model,
         "embedding_model": config.embedding_model,
         "embedding_budget_seconds": config.embedding_budget_seconds,
+        "embedding_prefixes": (dict(config.embedding_prefixes)
+                               if config.embedding_prefixes is not None else None),
         "max_hops": config.max_hops,
         "max_consecutive_duplicates": config.max_consecutive_duplicates,
         # THE OPERATIONAL TOGGLES. Each answers "why is it behaving
@@ -6884,72 +6887,27 @@ class MeaningResponse(BaseModel):
     text_fields: list[str] = []
 
 
-#: How long a model's version is trusted before it is asked again: a
-#: re-pulled model is noticed within this, and a question does not pay
-#: for a second request to the model server every time.
-_EMBEDDER_VERSION_SECONDS = 300.0
-_NOT_OFFERED = "Search by meaning is not offered for this type."
-
-
-def _embedder_for(request: Request):
-    """(embedder, version) for this request's configuration, or (None,
-    None) when it embeds nothing. Built once per configuration, and its
-    version asked at most every few minutes."""
-    from core.deployment_loader import build_embedder
-
-    config = _generation(request).config
-    if not config.embedding_model:
-        return None, None
-    key = (config.llm_provider, config.embedding_model,
-           str(dict(config.llm_connection).get("base_url")))
-    cache = request.app.state.embedders
-    entry = cache.get(key)
-    now = time.monotonic()
-    if entry is None:
-        entry = cache[key] = {"embedder": build_embedder(config), "version": None, "at": 0.0}
-    if entry["version"] is None or now - entry["at"] > _EMBEDDER_VERSION_SECONDS:
-        entry["version"], entry["at"] = entry["embedder"].version(), now
-    return entry["embedder"], entry["version"]
-
-
-def _ranked_results(request: Request, current_user: UserRecord, object_type: str,
-                    ranked: list, k: int, context) -> list[dict]:
-    """The first `k` of `ranked` this person may read, as search results."""
+def _meaning_response(request: Request, current_user: UserRecord, object_type: str,
+                      ranked, context) -> dict:
+    """A ranking (core/meaning_search.py) as the routes answer it: each
+    record with the same summary fields a search result carries."""
+    if not ranked.available:
+        return {"available": False, "offered": ranked.offered, "reason": ranked.reason,
+                "results": []}
     mediator = _generation(request).mediator
-    kept = mediator.readable_in_order(current_user, object_type, ranked, k, context=context)
     summary_fields = mediator.free_text_searchable_fields(current_user, object_type)
-    return [{"id": str(object_id),
-             "fields": exact_decimals(mediator.get_object(
-                 current_user, object_type, object_id, summary_fields, context=context),
-                 _declared_fields(mediator, object_type))}
-            for object_id in kept]
+    return {"available": True, "text_fields": ranked.text_fields,
+            "results": [{"id": str(object_id),
+                         "fields": exact_decimals(mediator.get_object(
+                             current_user, object_type, object_id, summary_fields,
+                             context=context), _declared_fields(mediator, object_type))}
+                        for object_id in ranked.ids]}
 
 
-def _text_fields(request: Request, object_type: str) -> list[str]:
-    from core.ontology.semantic_search import semantic_search_of
+def _not_offered() -> dict:
+    from core.meaning_search import NOT_OFFERED
 
-    search = semantic_search_of(_generation(request).config.schema.get(object_type) or {})
-    return list(search.inputs) if search else []
-
-
-def _meaning_setup(request: Request, current_user: UserRecord, object_type: str):
-    """(matrix, embedder, None) when this person may rank this type by
-    meaning and there is something to rank; (None, None, reason)
-    otherwise. Not declared, not visible and not permitted read the same."""
-    mediator = _generation(request).mediator
-    if not mediator.may_search_by_meaning(current_user, object_type):
-        return None, None, _NOT_OFFERED
-    try:
-        embedder, version = _embedder_for(request)
-    except ValueError:
-        return None, None, _NOT_OFFERED
-    if embedder is None:
-        return None, None, _NOT_OFFERED
-    matrix = request.app.state.embedding_store.matrix(object_type, version)
-    if matrix is None:
-        return None, None, ("Nothing has been embedded for this type yet; the next sync does "
-                            "it.")
-    return matrix, embedder, None
+    return {"available": False, "offered": False, "reason": NOT_OFFERED, "results": []}
 
 
 @router.get("/objects/{object_type}/related-in-meaning", response_model=MeaningResponse,
@@ -6960,57 +6918,34 @@ def related_in_meaning_route(object_type: str, request: Request, q: str = "", k:
     match (R45) -- shown beside the word matches, never mixed into them,
     because the word matches are the set every count, chart and trigger
     shares (core/ontology/semantic_search.py)."""
-    from core.embeddings import MAX_K, nearest, unit
-    from core.llm.interface import LLMUnavailable
-
     if not q.strip():
         return {"available": False, "reason": "Type something to search for.", "results": []}
-    matrix, embedder, reason = _meaning_setup(request, current_user, object_type)
-    if matrix is None:
-        return {"available": False, "offered": reason != _NOT_OFFERED, "reason": reason,
-                "results": []}
-    try:
-        query = unit(embedder.embed([q.strip()], timeout=20)[0])
-    except (LLMUnavailable, ValueError, IndexError):
-        return {"available": False, "results": [],
-                "reason": "The embedding model did not answer; word search still works."}
+    generation = _generation(request)
+    if generation.meaning is None:
+        return _not_offered()
     context = RequestContext.new()
-    mediator = _generation(request).mediator
+    mediator = generation.mediator
+    if not mediator.may_search_by_meaning(current_user, object_type):
+        return _not_offered()
     word_matches = {str(found) for found in mediator.search_object_free_text(
         current_user, object_type, q, context=context)}
-    ranked = [object_id for object_id in nearest(matrix, query) if object_id not in word_matches]
-    return {"available": True, "text_fields": _text_fields(request, object_type),
-            "results": _ranked_results(request, current_user, object_type, ranked,
-                                       max(1, min(k, MAX_K)), context)}
+    ranked = generation.meaning.related(mediator, current_user, object_type, q, k,
+                                        context=context, exclude=word_matches)
+    return _meaning_response(request, current_user, object_type, ranked, context)
 
 
 @router.get("/objects/{object_type}/{object_id}/similar", response_model=MeaningResponse,
             dependencies=[Depends(_no_store)])
 def similar_objects_route(object_type: str, object_id: str, request: Request, k: int = 5,
                           current_user: UserRecord = Depends(get_current_user)) -> dict:
-    """The rows nearest in meaning to this one (R45). Its own stored
-    vector is the question, so no model is called. An object this
-    person cannot read has no similar records -- the same answer as one
-    that does not exist."""
-    from core.embeddings import MAX_K, nearest
-
-    matrix, _embedder, reason = _meaning_setup(request, current_user, object_type)
-    if matrix is None:
-        return {"available": False, "offered": reason != _NOT_OFFERED, "reason": reason,
-                "results": []}
+    """The rows nearest in meaning to this one (R45); no model call."""
+    generation = _generation(request)
+    if generation.meaning is None:
+        return _not_offered()
     context = RequestContext.new()
-    mediator = _generation(request).mediator
-    if not mediator.readable_in_order(current_user, object_type, [object_id], 1, context=context):
-        return {"available": False, "offered": False, "reason": _NOT_OFFERED, "results": []}
-    try:
-        position = matrix.ids.index(str(object_id))
-    except ValueError:
-        return {"available": False, "results": [],
-                "reason": "This record has not been embedded yet; the next sync does it."}
-    ranked = nearest(matrix, matrix.vectors[position], exclude=str(object_id))
-    return {"available": True, "text_fields": _text_fields(request, object_type),
-            "results": _ranked_results(request, current_user, object_type, ranked,
-                                       max(1, min(k, MAX_K)), context)}
+    ranked = generation.meaning.similar(generation.mediator, current_user, object_type,
+                                        object_id, k, context=context)
+    return _meaning_response(request, current_user, object_type, ranked, context)
 
 
 @router.get("/objects/{object_type}/{object_id}", response_model=ObjectDetailResponse)

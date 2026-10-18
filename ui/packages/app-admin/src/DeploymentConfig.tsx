@@ -54,6 +54,8 @@ interface DeploymentConfigBody {
    *  a server older than 17 October. */
   embedding_model?: string | null
   embedding_budget_seconds?: number
+  /** Task prefixes as configured; null for the model family's own. */
+  embedding_prefixes?: { document?: string; query?: string } | null
   max_hops: number
   max_consecutive_duplicates: number
   max_consecutive_invalid_steps: number
@@ -352,6 +354,12 @@ function DeploymentConfigView({
               ['Step model', config.step_model],
               ['Synthesis model', config.synthesis_model],
               ['Embedding model', config.embedding_model ?? 'none (no search by meaning)'],
+              [
+                'Embedding prefixes',
+                config.embedding_prefixes
+                  ? `document "${config.embedding_prefixes.document ?? ''}", query "${config.embedding_prefixes.query ?? ''}"`
+                  : "the model family's own",
+              ],
               [
                 'Embedding budget per sync',
                 config.embedding_budget_seconds === undefined ? '—' : `${config.embedding_budget_seconds} s`,

@@ -230,6 +230,20 @@ class EmbeddingStore:
         return built
 
 
+_STORES: dict[str, EmbeddingStore] = {}
+_STORES_LOCK = threading.Lock()
+
+
+def store_at(db_path: Path) -> EmbeddingStore:
+    """The one store for this file in this process, so its cached matrix
+    outlives a configuration reload and is shared by every reader."""
+    key = str(Path(db_path).resolve())
+    with _STORES_LOCK:
+        if key not in _STORES:
+            _STORES[key] = EmbeddingStore(Path(db_path))
+        return _STORES[key]
+
+
 def refresh(store: EmbeddingStore, embed: Callable[[list[str]], list], version: str,
             object_type: str, rows: "Iterable[tuple[object, str]]", budget_seconds: float,
             clock: Callable[[], float] = time.monotonic) -> RefreshReport:

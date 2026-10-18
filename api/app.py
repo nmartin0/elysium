@@ -569,13 +569,6 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # RED metrics: one row per request, written by
     # RequestMetricsMiddleware, read by the admin metrics route.
     app.state.request_metrics = RequestMetrics(runtime_paths.data_dir / "metrics.db")
-    # VECTORS FOR SEARCH BY MEANING (R45), written by the sync. One store
-    # for the process, so its per-type matrix is read once per sync
-    # rather than once per question.
-    from core.embeddings import EmbeddingStore
-
-    app.state.embedding_store = EmbeddingStore(runtime_paths.data_dir / "embeddings.db")
-    app.state.embedders = {}
     # A real, explicit schema-creation step, run here, once, before ANY
     # internal store below is constructed -- a real, necessary addition,
     # not previously needed: every store here used to lazily create its

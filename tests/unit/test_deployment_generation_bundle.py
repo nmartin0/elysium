@@ -133,4 +133,7 @@ def test_every_field_is_declared(generation):
         # E-14: the one gate to what people asked to have remembered,
         # shared by the loop and the memory routes.
         "memory",
+        # R45, 18 October: search by meaning's rules, shared by Browse's
+        # routes and the Query agent; it follows config.yaml's embedder.
+        "meaning",
     }

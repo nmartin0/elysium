@@ -173,58 +173,99 @@ class TestTheDeclaration:
             validate_semantic_search(_types(**declared), model)
 
 
-class TestTheOllamaEmbedder:
-    def _embedder(self, monkeypatch, reply, tags=None):
-        from adapters import ollama_adapter
+class TestTheEmbedder:
+    """The one request every embedding server speaks (18 October)."""
+
+    def _embedder(self, monkeypatch, reply, tags=None, model="nomic-embed-text", **options):
+        from adapters import embedding_adapter
 
         sent = []
 
         class Response:
-            def __init__(self, body):
+            def __init__(self, body, status=200):
                 self.body = body
+                self.status = status
 
             def raise_for_status(self):
-                pass
+                if self.status >= 400:
+                    raise embedding_adapter.requests.HTTPError(str(self.status))
 
             def json(self):
                 return self.body
 
-        def post(url, json, timeout, **_):
-            sent.append((url, json, timeout))
+        def post(url, json, timeout, headers=None, **_):
+            sent.append((url, json, headers))
             return Response(reply)
 
-        monkeypatch.setattr(ollama_adapter.http_transport, "post", post)
-        monkeypatch.setattr(ollama_adapter.requests, "get", lambda url, timeout: Response(tags or {}))
-        embedder = ollama_adapter.OllamaEmbedder(
-            "nomic-embed-text", {"base_url": "http://localhost:11434/api/chat"})
+        monkeypatch.setattr(embedding_adapter.http_transport, "post", post)
+        monkeypatch.setattr(embedding_adapter.requests, "get",
+                            lambda url, timeout: Response(tags or {}, 200 if tags else 404))
+        embedder = embedding_adapter.OpenAICompatibleEmbedder(
+            model, embedding_adapter.server_origin("http://localhost:11434/api/chat"), **options)
         return embedder, sent
 
-    def test_it_asks_the_embed_endpoint_beside_the_chat_one(self, monkeypatch):
-        embedder, sent = self._embedder(monkeypatch, {"embeddings": [[1.0, 2.0], [3.0, 4.0]]})
-        assert embedder.embed(["a", "b"]) == [[1.0, 2.0], [3.0, 4.0]]
-        url, payload, _ = sent[0]
-        assert url == "http://localhost:11434/api/embed"
-        assert payload == {"model": "nomic-embed-text", "input": ["a", "b"]}
+    @staticmethod
+    def _data(*vectors, order=None):
+        indexes = order or list(range(len(vectors)))
+        return {"data": [{"index": index, "embedding": vectors[index]} for index in indexes]}
+
+    def test_it_asks_the_generic_endpoint_on_the_chat_servers_origin(self, monkeypatch):
+        embedder, sent = self._embedder(monkeypatch, self._data([1.0, 2.0], [3.0, 4.0]),
+                                        model="all-minilm")
+        assert embedder.embed_documents(["a", "b"]) == [[1.0, 2.0], [3.0, 4.0]]
+        url, payload, headers = sent[0]
+        assert url == "http://localhost:11434/v1/embeddings"
+        assert payload == {"model": "all-minilm", "input": ["a", "b"]}
+        assert headers is None
+
+    def test_vectors_come_back_in_the_order_asked_whatever_order_they_arrive(self, monkeypatch):
+        embedder, _ = self._embedder(monkeypatch, self._data([1.0], [2.0], [3.0], order=[2, 0, 1]),
+                                     model="all-minilm")
+        assert embedder.embed_documents(["a", "b", "c"]) == [[1.0], [2.0], [3.0]]
+
+    def test_a_model_that_needs_task_prefixes_gets_them(self, monkeypatch):
+        """nomic-embed-text's card: the text "must include a task
+        instruction prefix" -- one for what is stored, one for what is
+        asked."""
+        embedder, sent = self._embedder(monkeypatch, self._data([1.0]))
+        embedder.embed_documents(["refund please"])
+        embedder.embed_query("money back")
+        assert sent[0][1]["input"] == ["search_document: refund please"]
+        assert sent[1][1]["input"] == ["search_query: money back"]
+
+    def test_configured_prefixes_win_and_empty_means_none(self, monkeypatch):
+        embedder, sent = self._embedder(monkeypatch, self._data([1.0]),
+                                        prefixes={"document": "", "query": ""})
+        embedder.embed_query("x")
+        assert sent[0][1]["input"] == ["x"]
 
     @pytest.mark.parametrize("reply", [
-        {"embeddings": [[1.0]]},                     # one vector for two texts
-        {"error": "model 'nomic-embed-text' not found"},
-        {"embeddings": [[1.0], []]},
+        {"data": [{"index": 0, "embedding": [1.0]}]},          # one vector for two texts
+        {"error": {"message": "model not found"}},
+        {"data": [{"index": 0, "embedding": [1.0]}, {"index": 0, "embedding": [2.0]}]},
+        {"data": [{"index": 0, "embedding": [1.0]}, {"index": 1, "embedding": []}]},
     ])
     def test_a_reply_without_one_vector_per_text_is_unavailable(self, monkeypatch, reply):
         from core.llm.interface import LLMUnavailable
 
         embedder, _ = self._embedder(monkeypatch, reply)
         with pytest.raises(LLMUnavailable, match="one vector per text"):
-            embedder.embed(["a", "b"])
+            embedder.embed_documents(["a", "b"])
 
-    def test_its_version_is_the_models_digest_when_the_server_says(self, monkeypatch):
-        tags = {"models": [{"name": "other:latest", "digest": "aaa"},
-                           {"name": "nomic-embed-text:latest", "digest": "0a109f422b47"}]}
-        embedder, _ = self._embedder(monkeypatch, {}, tags)
-        assert embedder.version() == "nomic-embed-text@0a109f422b47"
-        bare, _ = self._embedder(monkeypatch, {}, {"models": []})
-        assert bare.version() == "nomic-embed-text"
+    def test_its_version_names_the_weights_and_the_prefixes(self, monkeypatch):
+        tags = {"models": [{"name": "nomic-embed-text:latest", "digest": "0a109f422b47"}]}
+        ollama, _ = self._embedder(monkeypatch, {}, tags)
+        assert ollama.version().startswith("nomic-embed-text@0a109f422b47/p")
+        unprefixed, _ = self._embedder(monkeypatch, {}, None, model="all-minilm")
+        assert unprefixed.version() == "all-minilm", "another server: the name, no digest"
+        other_prefixes, _ = self._embedder(monkeypatch, {}, tags, prefixes={"document": "d: ",
+                                                                            "query": "q: "})
+        assert other_prefixes.version() != ollama.version()
+
+    def test_a_key_is_sent_as_a_bearer_token(self, monkeypatch):
+        embedder, sent = self._embedder(monkeypatch, self._data([1.0]), api_key="sekret")
+        embedder.embed_query("x")
+        assert sent[0][2] == {"Authorization": "Bearer sekret"}
 
 
 def test_the_stand_in_is_what_the_tests_say_it_is():
@@ -233,3 +274,62 @@ def test_the_stand_in_is_what_the_tests_say_it_is():
     vectors = ConceptModel().embed(["refund", "reimburse", "login"])
     assert vectors[0] == vectors[1] != vectors[2]
     assert json.dumps(vectors)
+
+
+class TestTheSettings:
+    """`llm.embedding_*` in config.yaml, checked at load (18 October)."""
+
+    def _config(self, provider="ollama", **overrides):
+        from types import MappingProxyType, SimpleNamespace
+
+        settings = {"embedding_model": "nomic-embed-text", "embedding_prefixes": None,
+                    "embedding_connection": MappingProxyType({}),
+                    "llm_connection": MappingProxyType(
+                        {"base_url": "http://ollama.internal:11434/api/chat"}),
+                    "llm_provider": provider}
+        settings.update(overrides)
+        return SimpleNamespace(**settings)
+
+    def test_any_provider_embeds_at_the_chat_servers_origin(self):
+        from core.deployment_loader import build_embedder
+
+        for provider in ("ollama", "vllm"):
+            assert build_embedder(self._config(provider)).origin == "http://ollama.internal:11434"
+
+    def test_a_separate_embedding_server_is_used_when_named(self):
+        from types import MappingProxyType
+
+        from core.deployment_loader import build_embedder
+
+        embedder = build_embedder(self._config(embedding_connection=MappingProxyType(
+            {"base_url": "http://tei:8080", "api_key": "k"})))
+        assert embedder.origin == "http://tei:8080"
+
+    def test_a_provider_with_no_server_is_told_to_name_one(self):
+        from types import MappingProxyType
+
+        from core.deployment_loader import build_embedder
+
+        with pytest.raises(ValueError, match="embedding_connection.base_url"):
+            build_embedder(self._config("claude_agent_sdk", llm_connection=MappingProxyType({})))
+
+    @pytest.mark.parametrize("llm, why", [
+        ({"embedding_model": "  "}, "name of an embedding model"),
+        ({"embedding_budget_seconds": 0}, "seconds above 0"),
+        ({"embedding_prefixes": {"doc": "x"}}, "document: <text>, query: <text>"),
+        ({"embedding_prefixes": {"document": 3}}, "document: <text>, query: <text>"),
+        ({"embedding_connection": {"base_url": "x", "password": "p"}}, "base_url, api_key"),
+    ])
+    def test_a_bad_setting_is_refused_with_the_reason(self, llm, why):
+        from core.deployment_loader import _embedding_settings
+
+        with pytest.raises(ValueError, match=why):
+            _embedding_settings(llm)
+
+    def test_a_key_is_read_from_the_environment_by_reference(self, monkeypatch):
+        from core.deployment_loader import _embedding_settings
+
+        monkeypatch.setenv("EMBED_KEY", "from-env")
+        settings = _embedding_settings({"embedding_model": "m",
+                                        "embedding_connection": {"api_key": "${EMBED_KEY}"}})
+        assert settings.connection["api_key"] == "from-env"

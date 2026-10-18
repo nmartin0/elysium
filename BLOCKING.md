@@ -191,8 +191,11 @@ within a time budget, versioned by the model's digest; Browse shows
 them, since the word matches are the set counts and triggers share --
 and "Similar records" on an object. Never a classified input (D3), only
 for someone who may read every input, no vector or score ever served.
-Its use for statistical matching and enrichment is not built; neither
-are model predictions (R48, R53).
+Since 18 October: any embedding server through the OpenAI-style
+/v1/embeddings request, and the task prefixes nomic-embed-text's card
+requires (missing from the first version). Its use for statistical
+matching and enrichment is not built; neither are model predictions
+(R48, R53).
 
 **STATISTICAL MATCHING HAS ITS YARDSTICK** (R59, 15 October):
 `scripts/evaluate_matching.py` measures the matcher against synthetic

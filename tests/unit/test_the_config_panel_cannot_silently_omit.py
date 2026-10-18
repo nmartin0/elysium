@@ -40,6 +40,7 @@ from core.deployment_loader import DeploymentConfig
 #: or to this map -- the test below accepts nothing else.
 WITHHELD_FROM_CONFIG_RESPONSE = {
     "llm_connection": "hosts, paths and credential references",
+    "embedding_connection": "the embedding server's host and credential, as llm_connection",
     "silo_configs": "connection details -- the material the Silo work "
                      "says must never reach a UI",
     "users": "already served, properly scoped, by /users",

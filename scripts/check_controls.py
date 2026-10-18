@@ -4057,27 +4057,27 @@ CONTROLS = [
     ),
     Control(
         describes='MEANING: word matches are not repeated as meaning matches',
-        path='api/routes.py',
-        old='    ranked = [object_id for object_id in nearest(matrix, query) if object_id not in word_matches]',
-        new='    ranked = list(nearest(matrix, query))',
+        path='core/meaning_search.py',
+        old='        ranked = [object_id for object_id in nearest(matrix, query) if object_id not in skip]',
+        new='        ranked = list(nearest(matrix, query))',
         tests=[
             'tests/integration/test_search_by_meaning.py::test_a_word_match_is_not_repeated_as_a_meaning_match',
         ],
     ),
     Control(
         describes='MEANING: a record is not its own similar record',
-        path='api/routes.py',
-        old='    ranked = nearest(matrix, matrix.vectors[position], exclude=str(object_id))',
-        new='    ranked = nearest(matrix, matrix.vectors[position], exclude=None)',
+        path='core/meaning_search.py',
+        old='        ranked = nearest(matrix, matrix.vectors[position], exclude=str(object_id))',
+        new='        ranked = nearest(matrix, matrix.vectors[position], exclude=None)',
         tests=[
             'tests/integration/test_search_by_meaning.py::test_similar_records_rank_by_the_objects_own_vector_without_calling_the_model',
         ],
     ),
     Control(
         describes='MEANING: no similar records for a record you cannot read',
-        path='api/routes.py',
-        old='    if not mediator.readable_in_order(current_user, object_type, [object_id], 1, context=context):',
-        new='    if False:',
+        path='core/meaning_search.py',
+        old='        if not mediator.readable_in_order(user_record, object_type, [object_id], 1,',
+        new='        if False and not mediator.readable_in_order(user_record, object_type, [object_id], 1,',
         tests=[
             'tests/integration/test_search_by_meaning.py::test_a_record_in_another_region_has_no_similar_records_for_you',
         ],
@@ -4137,21 +4137,66 @@ CONTROLS = [
         ],
     ),
     Control(
-        describes='MEANING: the embedder asks the endpoint beside the chat one',
-        path='adapters/ollama_adapter.py',
-        old='        url = f"{self.server}/api/embed"',
-        new='        url = f"{self.server}/api/embeddings"',
+        describes='MEANING: the embedder asks the generic endpoint on the server origin',
+        path='adapters/embedding_adapter.py',
+        old='        url = f"{self.origin}/v1/embeddings"',
+        new='        url = f"{self.origin}/api/embed"',
         tests=[
-            'tests/unit/test_embeddings.py::TestTheOllamaEmbedder::test_it_asks_the_embed_endpoint_beside_the_chat_one',
+            'tests/unit/test_embeddings.py::TestTheEmbedder::test_it_asks_the_generic_endpoint_on_the_chat_servers_origin',
         ],
     ),
     Control(
         describes='MEANING: a reply without one vector per text is refused',
-        path='adapters/ollama_adapter.py',
-        old='        if (not isinstance(vectors, list) or len(vectors) != len(texts)',
-        new='        if (not isinstance(vectors, list)',
+        path='adapters/embedding_adapter.py',
+        old='        if [int(entry["index"]) for entry in ordered] != list(range(len(texts))) or not all(',
+        new='        if False and not all(',
         tests=[
-            'tests/unit/test_embeddings.py::TestTheOllamaEmbedder::test_a_reply_without_one_vector_per_text_is_unavailable',
+            'tests/unit/test_embeddings.py::TestTheEmbedder::test_a_reply_without_one_vector_per_text_is_unavailable',
+        ],
+    ),
+    Control(
+        describes='MEANING: stored text and asked text get their task prefixes',
+        path='adapters/embedding_adapter.py',
+        old='        return self._embed([self.prefixes["query"] + text], timeout)[0]',
+        new='        return self._embed([text], timeout)[0]',
+        tests=[
+            'tests/unit/test_embeddings.py::TestTheEmbedder::test_a_model_that_needs_task_prefixes_gets_them',
+        ],
+    ),
+    Control(
+        describes="MEANING: a model family's required prefixes are its default",
+        path='adapters/embedding_adapter.py',
+        old='        if model.startswith(family):',
+        new='        if False:',
+        tests=[
+            'tests/unit/test_embeddings.py::TestTheEmbedder::test_a_model_that_needs_task_prefixes_gets_them',
+        ],
+    ),
+    Control(
+        describes='MEANING: vectors are put back in the order asked',
+        path='adapters/embedding_adapter.py',
+        old='            ordered = sorted(data, key=lambda entry: int(entry["index"]))',
+        new='            ordered = list(data)',
+        tests=[
+            'tests/unit/test_embeddings.py::TestTheEmbedder::test_vectors_come_back_in_the_order_asked_whatever_order_they_arrive',
+        ],
+    ),
+    Control(
+        describes='MEANING: the version changes with the prefixes',
+        path='adapters/embedding_adapter.py',
+        old='        return f"{weights}{prefixes}"',
+        new='        return f"{weights}"',
+        tests=[
+            'tests/unit/test_embeddings.py::TestTheEmbedder::test_its_version_names_the_weights_and_the_prefixes',
+        ],
+    ),
+    Control(
+        describes='MEANING: a provider with no server is told at load',
+        path='core/deployment_loader.py',
+        old='    if not url:\n        raise ValueError(f"llm.embedding_model is set, but provider',
+        new='    if False:\n        raise ValueError(f"llm.embedding_model is set, but provider',
+        tests=[
+            'tests/unit/test_embeddings.py::TestTheSettings::test_a_provider_with_no_server_is_told_to_name_one',
         ],
     ),
     Control(

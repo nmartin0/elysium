@@ -86,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
           f"{config.embedding_model} ({embedder.version()})")
 
     started = time.monotonic()
-    first = embedder.embed(sample[:1])
+    first = embedder.embed_documents(sample[:1])
     loaded = time.monotonic() - started
     dims = unit(first[0]).size
     print(f"  first call (includes loading the model): {loaded:.1f} s; {dims} numbers per row")
@@ -95,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     done = 0
     for start in range(0, len(sample), BATCH):
         batch = sample[start:start + BATCH]
-        embedder.embed(batch)
+        embedder.embed_documents(batch)
         done += len(batch)
     elapsed = max(time.monotonic() - started, 1e-6)
     per_minute = done / elapsed * 60

@@ -38,7 +38,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
 
 from adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
-from adapters.ollama_adapter import OllamaAdapter, OllamaEmbedder
+from adapters.ollama_adapter import OllamaAdapter
 from adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
 from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
 from adapters.vllm_adapter import VLLMAdapter
@@ -49,6 +49,7 @@ from core.secret_references import expand_secrets
 
 if TYPE_CHECKING:
     from core.agent.agentic_loop import AgentLoop
+    from core.meaning_search import MeaningSearch
     from core.memory.guard import MemoryGuard
     from core.ontology.write_mediator import WriteMediator
 from core.functions.registry import validate_function_declarations
@@ -123,12 +124,6 @@ _LLM_ADAPTER_REGISTRY: dict[str, type] = {
     "claude_agent_sdk": ClaudeAgentSDKAdapter,
 }
 
-# PROVIDERS THAT CAN EMBED TEXT (R45). Ollama only, for now: it is the
-# local model server this deployment already runs, so nothing leaves the
-# machine and no model library is added.
-_EMBEDDER_REGISTRY: dict[str, type] = {
-    "ollama": OllamaEmbedder,
-}
 
 
 @dataclass(frozen=True)
@@ -304,6 +299,11 @@ class DeploymentConfig:
     # over a large table on a CPU can take far longer than a sync should;
     # the rest is embedded by the next one (core/embeddings.py).
     embedding_budget_seconds: float = 300.0
+    # {document, query} task prefixes; None for the model family's own.
+    embedding_prefixes: "Mapping[str, str] | None" = None
+    # Where the embedding server is, when it is not the chat server.
+    # May hold a credential, so never shown.
+    embedding_connection: Mapping[str, Any] = MappingProxyType({})
     # SILOS WHOSE DATE COLUMNS MAY HOLD EXCEL SERIALS (ZOO-22): those
     # declaring `excel_dates: true` in data_silos.yaml. Declared, never
     # inferred -- a bare number in a date column is ambiguous.
@@ -666,8 +666,8 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     validate_enriched_fields(object_types_raw)
     # Search by meaning (R45): text inputs only, never a classified one,
     # and a model to embed with.
-    embedding_model, embedding_budget = _embedding_settings(config["llm"])
-    validate_semantic_search(object_types_raw, embedding_model)
+    embedding = _embedding_settings(config["llm"])
+    validate_semantic_search(object_types_raw, embedding.model)
     refuse_rules_over_derived(object_types_raw)
     fill_result_types(object_types_raw)
     fill_enriched_types(object_types_raw)
@@ -717,8 +717,11 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             agent_features=features_from_config(config["agent"]),
             label_enforcement=bool((config.get("access") or {}).get("label_enforcement", False)),
             lineage=deep_freeze(validate_lineage_block(config.get("lineage"))),
-            embedding_model=embedding_model,
-            embedding_budget_seconds=embedding_budget,
+            embedding_model=embedding.model,
+            embedding_budget_seconds=embedding.budget_seconds,
+            embedding_prefixes=(MappingProxyType(dict(embedding.prefixes))
+                                if embedding.prefixes is not None else None),
+            embedding_connection=MappingProxyType(dict(embedding.connection)),
             source_locales=MappingProxyType(
                 _source_locales(config, data_silos_raw["data_silos"])),
             excel_date_silos=_excel_date_silos(data_silos_raw["data_silos"]),
@@ -853,8 +856,16 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     return deployment_config
 
 
-def _embedding_settings(llm_config) -> "tuple[str | None, float]":
-    """(`llm.embedding_model`, `llm.embedding_budget_seconds`), checked."""
+@dataclass(frozen=True)
+class EmbeddingSettings:
+    model: "str | None"
+    budget_seconds: float
+    prefixes: "dict | None"
+    connection: dict
+
+
+def _embedding_settings(llm_config) -> EmbeddingSettings:
+    """`llm.embedding_*`, checked at load (R45, 18 October)."""
     model = llm_config.get("embedding_model")
     if model is not None and (not isinstance(model, str) or not model.strip()):
         raise ValueError("llm.embedding_model is the name of an embedding model, such as "
@@ -862,20 +873,52 @@ def _embedding_settings(llm_config) -> "tuple[str | None, float]":
     budget = llm_config.get("embedding_budget_seconds", 300)
     if isinstance(budget, bool) or not isinstance(budget, (int, float)) or budget <= 0:
         raise ValueError("llm.embedding_budget_seconds is a number of seconds above 0.")
-    return (model.strip() if model else None), float(budget)
+    prefixes = llm_config.get("embedding_prefixes")
+    if prefixes is not None and (not hasattr(prefixes, "items")
+                                 or set(prefixes) - {"document", "query"}
+                                 or not all(isinstance(value, str) for value in prefixes.values())):
+        raise ValueError("llm.embedding_prefixes is {document: <text>, query: <text>}; use "
+                         "empty text for none.")
+    connection = llm_config.get("embedding_connection") or {}
+    if not hasattr(connection, "items") or set(connection) - {
+            "base_url", "api_key", "request_timeout_seconds"}:
+        raise ValueError("llm.embedding_connection is {base_url, api_key?, "
+                         "request_timeout_seconds?}.")
+    # A CREDENTIAL BY REFERENCE, as a silo's is: ${ENV_NAME} in the file,
+    # the value from the environment.
+    connection = expand_secrets(dict(connection), where="config.yaml: llm.embedding_connection")
+    return EmbeddingSettings((model.strip() if model else None), float(budget),
+                             dict(prefixes) if prefixes is not None else None, connection)
 
 
 def build_embedder(config: DeploymentConfig):
     """The deployment's embedder, or None when no embedding model is set.
-    Only providers that can embed are registered; another fails at load
-    of the first type that needs one, with the reason."""
+
+    ANY PROVIDER: the request is the one every embedding server speaks
+    (adapters/embedding_adapter.py). Sent to `llm.embedding_connection`
+    when given, else to the chat server's own origin -- which a provider
+    with no server of its own (the Claude CLI) does not have, and is
+    told so at load."""
+    from adapters.embedding_adapter import OpenAICompatibleEmbedder, server_origin
+
     if not config.embedding_model:
         return None
-    embedder_class = _EMBEDDER_REGISTRY.get(config.llm_provider)
-    if embedder_class is None:
+    connection = dict(config.embedding_connection or {})
+    url = connection.get("base_url") or dict(config.llm_connection).get("base_url")
+    if not url:
         raise ValueError(f"llm.embedding_model is set, but provider {config.llm_provider!r} "
-                         f"cannot embed here -- registered: {sorted(_EMBEDDER_REGISTRY)}")
-    return embedder_class(config.embedding_model, dict(config.llm_connection))
+                         f"has no server to embed with: set llm.embedding_connection.base_url.")
+    try:
+        origin = server_origin(str(url))
+    except ValueError as e:
+        raise ValueError(f"llm.embedding_connection: {e}") from e
+    return OpenAICompatibleEmbedder(
+        config.embedding_model, origin,
+        prefixes=dict(config.embedding_prefixes) if config.embedding_prefixes is not None else None,
+        timeout_seconds=float(connection.get("request_timeout_seconds")
+                              or dict(config.llm_connection).get("request_timeout_seconds")
+                              or 180),
+        api_key=connection.get("api_key"))
 
 
 def build_llm_adapter(config: DeploymentConfig, model: str) -> LLMAdapter:
@@ -1635,6 +1678,10 @@ class DeploymentGeneration:
     # gate to core/memory. None for a generation built without a data
     # directory (some scripts and tests), which simply has no memory.
     memory: "MemoryGuard | None" = None
+    # SEARCH BY MEANING (R45): the rules every caller ranks by -- Browse's
+    # routes and the Query agent alike. None without a data directory or
+    # an embedding model.
+    meaning: "MeaningSearch | None" = None
 
     #: Example questions a deployment chooses to SHOW in the query
     #: screen -- those marked `display: true`. They are kept here
@@ -1758,6 +1805,13 @@ def build_generation(
 
         memory = MemoryGuard(MemoryStore(Path(data_dir) / "memories.db"), mediator,
                              access_roles(config))
+    meaning = None
+    if data_dir is not None and config.embedding_model:
+        from core.embeddings import store_at
+        from core.meaning_search import MeaningSearch
+
+        meaning = MeaningSearch(store_at(Path(data_dir) / "embeddings.db"),
+                                build_embedder(config), config.schema)
     return DeploymentGeneration(
         generation=config.generation,
         loaded_at=config.loaded_at,
@@ -1768,6 +1822,7 @@ def build_generation(
         loop=AgentLoop.from_deployment(config, mediator, write_mediator=write_mediator,
                                        memory=memory),
         memory=memory,
+        meaning=meaning,
         synthesis_client=build_llm_adapter(config, config.synthesis_model),
         write_adapters=write_adapters,
         display_examples=display_examples,

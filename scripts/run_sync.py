@@ -459,7 +459,7 @@ def _refresh_embeddings(sync, config, data_dir, embedder=None, clock=None) -> di
             continue
         # THE BUDGET IS THE RUN'S, shared by every type in order.
         left = budget - ((clock or time.monotonic)() - started)
-        report = refresh(store, embedder.embed, version, object_type,
+        report = refresh(store, embedder.embed_documents, version, object_type,
                          [(row[id_field], text_of(row, search.inputs)) for row in rows],
                          max(left, 0.0), clock=clock or time.monotonic)
         reports[object_type] = report

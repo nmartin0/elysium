@@ -47,6 +47,20 @@ llm:
   # next one carries on.
   # embedding_model: "nomic-embed-text"
   # embedding_budget_seconds: 300
+  #
+  # ANY EMBEDDING SERVER: Elysium sends the OpenAI-style /v1/embeddings
+  # request, which Ollama, vLLM, llama.cpp and Hugging Face's TEI all
+  # answer -- to the chat server above unless this names another.
+  # embedding_connection:
+  #   base_url: "http://localhost:8080"
+  #   api_key: "${EMBEDDING_API_KEY}"   # from the environment, never the file
+  #
+  # TASK PREFIXES: models such as nomic-embed-text must be told whether a
+  # text is stored or asked; Elysium knows nomic's, and this overrides it.
+  # Changing them re-embeds everything at the next sync.
+  # embedding_prefixes:
+  #   document: "search_document: "
+  #   query: "search_query: "
 
 # CLASSIFICATION LABELS DECIDE FIELD ACCESS (formerly BLOCKING 6). With this on,
 # a field labelled `pii` (ontology_schema.yaml, `classification:`) is

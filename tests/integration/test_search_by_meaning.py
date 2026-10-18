@@ -45,6 +45,13 @@ class ConceptModel:
             vectors.append(vector)
         return vectors
 
+    # The two sides of the embedder (adapters/embedding_adapter.py).
+    def embed_documents(self, texts, timeout=None):
+        return self.embed(texts, timeout)
+
+    def embed_query(self, text, timeout=None):
+        return self.embed([text], timeout)[0]
+
 
 @pytest.fixture
 def model(monkeypatch):
