@@ -19,6 +19,7 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
     getDataFreshness: vi.fn(),
     getDeploymentConfig: vi.fn(),
     getSavedViews: vi.fn(),
+    getMyVisibleSchema: vi.fn(),
   }
 })
 
@@ -28,6 +29,7 @@ import {
   getCurrentUser,
   getDataFreshness,
   getDeploymentConfig,
+  getMyVisibleSchema,
   getSavedViews,
   getVisibleActionTypes,
 } from '@elysium/shell-api/api'
@@ -74,6 +76,9 @@ beforeEach(() => {
   // nobody asserted on. A mock that is not the real refusal hides
   // exactly the distinction being tested.
   vi.mocked(getDeploymentConfig).mockRejectedValue(new ApiError(403, 'forbidden'))
+  // NO DATE FIELD unless a test gives one, so the other tests see the
+  // dialog as it was.
+  vi.mocked(getMyVisibleSchema).mockResolvedValue({ Transaction: { fields: { amount: { data_type: 'number' } } } })
 })
 
 function open() {
@@ -437,5 +442,75 @@ describe('combined, held and scheduled (17 October)', () => {
     fireEvent.change(screen.getByLabelText('Objects for the action'), { target: { value: 'v3' } })
 
     expect(screen.queryByLabelText('Action to propose')).toBeNull()
+  })
+})
+
+describe('projected above (R68)', () => {
+  it('an action chosen first is not sent once projected is chosen', async () => {
+    vi.mocked(getMyVisibleSchema).mockResolvedValue({
+      Transaction: { fields: { booked: { data_type: 'date', display_name: 'Booked' } } },
+    })
+    open()
+    fireEvent.change(await screen.findByLabelText('Action to propose'), {
+      target: { value: 'RecategorizeTransactions' },
+    })
+    await screen.findByRole('option', { name: 'projected above' })
+    fireEvent.change(screen.getByLabelText('When to notify'), { target: { value: 'projected' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Watch' }))
+
+    await waitFor(() =>
+      expect(mockedCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ projected_field: 'booked', action_type: null, action_values: {} }),
+      ),
+    )
+  })
+
+  function withDates() {
+    vi.mocked(getMyVisibleSchema).mockResolvedValue({
+      Transaction: {
+        fields: {
+          amount: { data_type: 'number' },
+          booked: { data_type: 'date', display_name: 'Booked' },
+          hidden_date: { data_type: 'date', readable: false },
+        },
+      },
+    })
+  }
+
+  it('is offered only for a view whose type has a date field it may read', async () => {
+    open()
+    await screen.findByLabelText('analyst')
+    expect(screen.queryByRole('option', { name: 'projected above' })).not.toBeInTheDocument()
+  })
+
+  it('sends the date field, the period and the line, and nothing beside them', async () => {
+    withDates()
+    open()
+    const when = await screen.findByLabelText('When to notify')
+    await screen.findByRole('option', { name: 'projected above' })
+    fireEvent.change(when, { target: { value: 'projected' } })
+    expect(screen.getByLabelText('Date field')).toHaveValue('booked')
+    // A DATE THEY MAY NOT READ is not offered: its totals would be none.
+    expect(screen.queryByRole('option', { name: 'hidden_date' })).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Per'), { target: { value: 'month' } })
+    expect(screen.getByText(/counted per month, forecast/)).toBeInTheDocument()
+    // NO ACTION BESIDE IT: the server refuses one.
+    expect(screen.queryByText('And propose')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Watch' }))
+
+    await waitFor(() =>
+      expect(mockedCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projected_field: 'booked',
+          projected_period: 'month',
+          projected_above: 10,
+          above: null,
+          gained: null,
+          fell: null,
+          at_most: null,
+          action_type: null,
+        }),
+      ),
+    )
   })
 })

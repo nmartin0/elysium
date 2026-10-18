@@ -73,6 +73,15 @@ describe('showing what is watched', () => {
 
     expect(await screen.findByText('losing 5 or more')).toBeInTheDocument()
   })
+
+  it('describes a projected one by its period, its date and its line (R68)', async () => {
+    mockedList.mockResolvedValue([
+      aTrigger({ above: null, projected_field: 'requested', projected_period: 'week', projected_above: 50 }),
+    ])
+    render(<WatchList onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText('per week of requested, projected above 50')).toBeInTheDocument()
+  })
 })
 
 describe('quieting one', () => {

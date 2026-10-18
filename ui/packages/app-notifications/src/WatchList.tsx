@@ -53,6 +53,8 @@ function describe(trigger: Trigger): string {
   else if (trigger.gained !== null) condition = `gaining ${trigger.gained} or more`
   else if (trigger.fell !== null) condition = `losing ${trigger.fell} or more`
   else if (trigger.at_most !== null && trigger.at_most !== undefined) condition = `at most ${trigger.at_most}`
+  else if (trigger.projected_field)
+    condition = `per ${trigger.projected_period} of ${trigger.projected_field}, projected above ${trigger.projected_above}`
 
   const parts = [condition]
   const roles = trigger.recipient_roles ?? []

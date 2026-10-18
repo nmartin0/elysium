@@ -3395,6 +3395,21 @@
  * own width -- squeezed onto one line, the selects were cut to "ar" and
  * "abov" and the unit picker sat on the number's arrows (seen in a
  * browser; jsdom has no layout). */
+  .watch-projected {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-tight);
+    margin-top: var(--space-tight);
+  }
+
+  /* What a projected condition watches, said under it (R68). */
+  .watch-projected__note {
+    margin-block: var(--space-tight);
+    color: var(--text-secondary);
+    font-size: var(--type-label-size);
+  }
+
   .watch-combined {
     display: flex;
     flex-direction: column;

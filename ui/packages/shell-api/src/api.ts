@@ -1410,6 +1410,10 @@ export interface Trigger {
   /** The whole condition as a sentence, views by name; null for a
    *  single trigger. */
   description?: string | null
+  /** Projected above (R68). */
+  projected_field?: string | null
+  projected_period?: TimePeriod | null
+  projected_above?: number | null
 }
 
 /** One more condition of a combined trigger: another of the caller's
@@ -1437,6 +1441,10 @@ export async function createTrigger(body: {
   hold_minutes?: number | null
   schedule?: { days: number[]; time: string } | { every_minutes: number } | null
   timezone?: string
+  /** Projected above (R68): counted per period of a date field, forecast. */
+  projected_field?: string
+  projected_period?: TimePeriod
+  projected_above?: number
 }): Promise<string> {
   const response = await apiFetchOrThrow('/triggers', {
     method: 'POST',

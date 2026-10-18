@@ -125,3 +125,49 @@ def test_a_cut_off_set_is_not_forecast(paths, monkeypatch):
     body = _forecast(_client(paths, "ops", "us-west", monkeypatch)).json()
     assert body["scan_truncated"] is True
     assert body["points"] == [] and "Only part of the set was counted" in body["refusal"]
+
+
+def _inline(client):
+    from tests.integration.test_trigger_checks import _inline as inline
+
+    inline(client)
+
+
+def _view(client, name):
+    response = client.post("/api/saved-views", headers=_csrf_headers(client),
+                           json={"name": name, "object_type": "Transaction", "conditions": []})
+    assert response.status_code in (200, 201), response.text
+    return next(view["view_id"] for view in client.get("/api/saved-views").json()["views"]
+                if view["name"] == name)
+
+
+def _projected(client, view_id, **extra):
+    return client.post("/api/triggers", headers=_csrf_headers(client), json={
+        "name": "Transactions", "view_id": view_id, "projected_field": "transaction_date",
+        "projected_period": "week", **extra})
+
+
+class TestAProjectedTrigger:
+    def test_made_checked_at_once_and_listed(self, paths, monkeypatch):
+        client = _client(paths, "pat", "us-west", monkeypatch)
+        _inline(client)
+        made = _projected(client, _view(client, "All of them"), projected_above=10)
+        assert made.status_code == 200, made.text
+        notes = [note["summary"] for note in client.get("/api/notifications").json()[
+            "notifications"]]
+        # WELL OVER TEN A WEEK ALREADY, so it is said when it starts watching.
+        assert "Transactions per week projected above 10: now watching, currently projected " \
+               "to pass it." in notes
+        (listed,) = client.get("/api/triggers").json()["triggers"]
+        assert (listed["projected_field"], listed["projected_period"],
+                listed["projected_above"]) == ("transaction_date", "week", 10)
+
+    @pytest.mark.parametrize("extra, why", [
+        ({"projected_above": 10, "above": 5}, "stands alone"),
+        ({"projected_above": 10, "projected_field": "category"}, "not a date field"),
+        ({}, "needs a date field, a period and a line"),
+    ])
+    def test_one_that_could_not_be_checked_is_refused(self, paths, monkeypatch, extra, why):
+        client = _client(paths, "quinn", "us-west", monkeypatch)
+        response = _projected(client, _view(client, f"View {why}"), **extra)
+        assert response.status_code == 400 and why in response.text

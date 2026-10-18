@@ -12,6 +12,12 @@
  * The server still checks all of it -- this is so the dialog does not
  * offer a choice and then refuse it.
  *
+ * PROJECTED ABOVE (R68): the view's records counted per day, week or
+ * month of one of its date fields, forecast, and told when the forecast
+ * passes the line. Offered only when the view's type has a date field;
+ * it stands alone, so the combining, holding and proposing below are
+ * not offered beside it -- the server refuses them.
+ *
  * AND A REFUSAL IS SHOWN, NOT SWALLOWED. The first version of Watch
  * dropped every error that was not an expired session, which was
  * harmless while nothing could be refused. Now the server validates
@@ -36,10 +42,12 @@ import {
   getDataFreshness,
   getDeploymentConfig,
   getErrorMessage,
+  getMyVisibleSchema,
   getSavedViews,
   getVisibleActionTypes,
   handleIfSessionExpired,
   type ServerSavedView,
+  type TimePeriod,
   type TriggerCondition,
 } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
@@ -74,6 +82,10 @@ function browserZone(): string {
 export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDialogProps) {
   const [thresholdKind, setThresholdKind] = useState('above')
   const [threshold, setThreshold] = useState(10)
+  // PROJECTED ABOVE (R68): which date field, and per what.
+  const [dateFields, setDateFields] = useState<{ name: string; label: string }[]>([])
+  const [projectedField, setProjectedField] = useState('')
+  const [projectedPeriod, setProjectedPeriod] = useState<TimePeriod>('week')
   // COMBINED, HELD OR SCHEDULED (17 October; core/trigger_states.py).
   const [otherViews, setOtherViews] = useState<ServerSavedView[]>([])
   const [extras, setExtras] = useState<Extra[]>([])
@@ -168,6 +180,21 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
         setOtherViews([])
       }
       try {
+        // THE VIEW'S DATE FIELDS, for "projected above". Quiet on
+        // failure: the other conditions are still offered.
+        const schema = (await getMyVisibleSchema()) as Record<
+          string,
+          { fields?: Record<string, { data_type?: string; display_name?: string; readable?: boolean }> }
+        >
+        const fields = Object.entries(schema[view.object_type]?.fields ?? {})
+          .filter(([, field]) => ['date', 'timestamp', 'timestamptz'].includes(field.data_type ?? ''))
+          .filter(([, field]) => field.readable !== false)
+          .map(([name, field]) => ({ name, label: field.display_name ?? name }))
+        setDateFields(fields)
+      } catch {
+        setDateFields([])
+      }
+      try {
         const freshness = await getDataFreshness()
         setBehindBy(freshness.freshness?.[view.object_type]?.warn_after_hours ?? null)
       } catch {
@@ -193,6 +220,8 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
   // CHANGE (gaining, losing) cannot -- the server refuses it, so it is
   // not offered.
   const isState = thresholdKind === 'above' || thresholdKind === 'at_most'
+  const projected = thresholdKind === 'projected'
+  const field = projectedField || dateFields[0]?.name || ''
 
   async function watch() {
     if (view === null) return
@@ -201,15 +230,16 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
       await createTrigger({
         name: view.name,
         view_id: view.view_id,
+        ...(projected ? { projected_field: field, projected_period: projectedPeriod, projected_above: threshold } : {}),
         // ONE THRESHOLD, because the server refuses two.
         above: thresholdKind === 'above' ? threshold : null,
         gained: thresholdKind === 'gained' ? threshold : null,
         fell: thresholdKind === 'fell' ? threshold : null,
         at_most: thresholdKind === 'at_most' ? threshold : null,
-        action_type: chosen?.name ?? null,
-        action_parameter: chosen ? target : null,
-        action_values: chosen ? values : {},
-        ...(chosen && actionSourceId !== '' ? { action_view_id: actionSourceId } : {}),
+        action_type: projected ? null : (chosen?.name ?? null),
+        action_parameter: chosen && !projected ? target : null,
+        action_values: chosen && !projected ? values : {},
+        ...(chosen && !projected && actionSourceId !== '' ? { action_view_id: actionSourceId } : {}),
         recipient_roles: recipients,
         ...(isState && extras.length > 0
           ? {
@@ -250,6 +280,7 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
               { value: 'at_most', label: 'at most' },
               { value: 'gained', label: 'gaining' },
               { value: 'fell', label: 'losing' },
+              ...(dateFields.length > 0 ? [{ value: 'projected', label: 'projected above' }] : []),
             ]}
           />
           <NumericInput
@@ -259,6 +290,37 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
             onValueChange={(value) => setThreshold(Number.isNaN(value) ? 1 : value)}
           />
         </div>
+        {projected && (
+          // ITS OWN LINE: beside the threshold the four controls did not
+          // fit, and their labels were cut off (seen in the browser).
+          <div className="watch-projected">
+            <span>per</span>
+            <HTMLSelect
+              aria-label="Per"
+              value={projectedPeriod}
+              onChange={(event) => setProjectedPeriod(event.currentTarget.value as TimePeriod)}
+              options={[
+                { value: 'day', label: 'day' },
+                { value: 'week', label: 'week' },
+                { value: 'month', label: 'month' },
+              ]}
+            />
+            <span>of</span>
+            <HTMLSelect
+              aria-label="Date field"
+              value={field}
+              onChange={(event) => setProjectedField(event.currentTarget.value)}
+              options={dateFields.map(({ name, label }) => ({ value: name, label }))}
+            />
+          </div>
+        )}
+        {projected && (
+          <p className="watch-projected__note">
+            Its records are counted per {projectedPeriod}, forecast, and you are told when the forecast passes{' '}
+            {threshold} — the forecast itself, not the top of its range. A forecast that does not beat carrying the last{' '}
+            {projectedPeriod} on warns about nothing.
+          </p>
+        )}
 
         {isState && (
           <div className="watch-combined">
@@ -435,7 +497,7 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
           </FormGroup>
         )}
 
-        {actions.length > 0 && (
+        {actions.length > 0 && !projected && (
           <FormGroup
             label="And propose"
             helperText={

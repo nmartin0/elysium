@@ -201,6 +201,14 @@ def evaluate_user_triggers(mediator, trigger_store, view_store,
             continue
         if include is not None and not include(trigger, view):
             continue
+        from core.projected_condition import evaluate_projected, is_projected
+
+        if is_projected(trigger):
+            # PROJECTED TO CROSS (R68): a forecast of the view's totals
+            # per period, not a count -- its own evaluator.
+            fired += evaluate_projected(trigger, view, mediator, notification_store,
+                                        user_records, config_digest)
+            continue
         if states is not None and _is_state(trigger):
             # A COMBINED, HELD OR SCHEDULED TRIGGER is a state, not a
             # change in one count (core/trigger_states.py).

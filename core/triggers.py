@@ -107,6 +107,14 @@ class Trigger:
     # exposes, "the type of the action parameter needs to align". NULL
     # is the trigger's own view.
     action_view_id: str | None = None
+    # PROJECTED TO CROSS (R68, 18 October; core/projected_condition.py):
+    # the view's records counted per `projected_period` of the date field
+    # `projected_field`, forecast, and told when the forecast passes
+    # `projected_above` within its horizon. A condition of its own: none
+    # of the thresholds above sits beside it.
+    projected_field: str | None = None
+    projected_period: str | None = None
+    projected_above: float | None = None
 
     @property
     def condition_key(self) -> str:
@@ -155,6 +163,9 @@ class TriggerStore:
                 add_column_if_missing(
                     "triggers", "recipient_roles", "TEXT NOT NULL DEFAULT '[]'",
                 ),
+                add_column_if_missing("triggers", "projected_field", "TEXT"),
+                add_column_if_missing("triggers", "projected_period", "TEXT"),
+                add_column_if_missing("triggers", "projected_above", "REAL"),
             ),
         )
 
@@ -167,7 +178,8 @@ class TriggerStore:
                at_most: int | None = None, also: list | None = None,
                combine: str = "all", hold_minutes: int | None = None,
                schedule: dict | None = None,
-               action_view_id: str | None = None) -> str | None:
+               action_view_id: str | None = None,
+               projected: "tuple[str, str, float] | None" = None) -> str | None:
         """Makes one. Returns its id, or None if it could not be made."""
         trigger_id = str(uuid.uuid4())
         try:
@@ -177,8 +189,8 @@ class TriggerStore:
                     "view_id, above, gained, fell, action_type, "
                     "action_parameter, action_values, recipient_roles, "
                     "created_at, at_most, also, combine, hold_minutes, schedule, "
-                    "action_view_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "action_view_id, projected_field, projected_period, projected_above) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (trigger_id, owner_user_id, name, view_id, above, gained,
                      fell, action_type, action_parameter,
                      json.dumps(action_values or {}),
@@ -186,7 +198,7 @@ class TriggerStore:
                      datetime.now(UTC).isoformat(), at_most,
                      json.dumps(list(also or [])), combine, hold_minutes,
                      None if schedule is None else json.dumps(schedule),
-                     action_view_id),
+                     action_view_id, *(projected or (None, None, None))),
                 )
                 conn.commit()
         except Exception as e:  # noqa: BLE001
@@ -268,6 +280,9 @@ class TriggerStore:
                 hold_minutes=row["hold_minutes"],
                 schedule=_json(row["schedule"], None),
                 action_view_id=row["action_view_id"],
+                projected_field=row["projected_field"],
+                projected_period=row["projected_period"],
+                projected_above=row["projected_above"],
             ))
         return triggers
 
@@ -307,7 +322,15 @@ def describe(trigger: Trigger) -> str:
         return f"{trigger.name} losing {trigger.fell} or more"
     if getattr(trigger, "at_most", None) is not None:
         return f"{trigger.name} at most {trigger.at_most}"
+    if getattr(trigger, "projected_field", None) is not None:
+        return (f"{trigger.name} per {trigger.projected_period} projected above "
+                f"{_number(trigger.projected_above)}")
     return trigger.name
+
+
+def _number(value) -> str:
+    """A threshold as a person wrote it: 50, not 50.0."""
+    return str(int(value)) if isinstance(value, float) and value.is_integer() else str(value)
 
 
 # PARAMETER TYPES THAT CAN RECEIVE THE OBJECTS A VIEW MATCHED.

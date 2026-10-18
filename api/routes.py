@@ -2957,6 +2957,11 @@ class TriggerResponse(BaseModel):
     #: notices say. Null for a single trigger, which the list words.
     description: str | None = None
     action_view_id: str | None = None
+    #: PROJECTED TO CROSS (R68): the view counted per `projected_period`
+    #: of `projected_field`, forecast, told when it passes `projected_above`.
+    projected_field: str | None = None
+    projected_period: str | None = None
+    projected_above: float | None = None
 
 
 class TriggersResponse(BaseModel):
@@ -2992,6 +2997,12 @@ class CreateTriggerRequest(BaseModel):
     # WHICH CONDITION'S VIEW GIVES THE ACTION ITS OBJECTS, for a trigger
     # with several; absent is the trigger's own view.
     action_view_id: str | None = None
+    # PROJECTED TO CROSS (R68; core/projected_condition.py): the view's
+    # records counted per day, week or month of a date field, forecast,
+    # and told when the forecast passes the line. Stands alone.
+    projected_field: str | None = None
+    projected_period: str | None = None
+    projected_above: float | None = None
 
 
 def _combined_description(trigger, names: dict) -> "str | None":
@@ -3045,6 +3056,9 @@ def triggers_route(
                 "schedule": trigger.schedule,
                 "description": _combined_description(trigger, names),
                 "action_view_id": trigger.action_view_id,
+                "projected_field": trigger.projected_field,
+                "projected_period": trigger.projected_period,
+                "projected_above": trigger.projected_above,
             }
             for trigger in _trigger_store(request).for_owner(
                 current_user.user_id,
@@ -3060,8 +3074,12 @@ def create_trigger_route(
     current_user: UserRecord = Depends(get_current_user),
 ) -> dict:
     """Creates one, watching a view the caller owns."""
+    projected = body.projected_field is not None or body.projected_period is not None \
+        or body.projected_above is not None
     thresholds = [body.above, body.gained, body.fell, body.at_most]
-    if all(value is None for value in thresholds):
+    if projected:
+        pass  # checked below, once the view's type is known
+    elif all(value is None for value in thresholds):
         # A TRIGGER WITH NO CONDITION would evaluate forever and never
         # fire, which reads as broken rather than as quiet.
         raise HTTPException(
@@ -3088,6 +3106,21 @@ def create_trigger_route(
     if body.view_id not in owned:
         raise HTTPException(status_code=404, detail="No such saved view")
 
+    if projected:
+        from core.projected_condition import problem as projected_problem
+
+        view = next(view for view in _saved_view_store(request).for_owner(current_user.user_id)
+                    if view.view_id == body.view_id)
+        refused = projected_problem(
+            view.object_type, _generation(request).config.schema, body.projected_field,
+            body.projected_period, body.projected_above,
+            others={"above": body.above, "gained": body.gained, "fell": body.fell,
+                    "at most": body.at_most, "more conditions": body.also,
+                    "a hold": body.hold_minutes, "a schedule": body.schedule,
+                    "an action": body.action_type})
+        if refused is not None:
+            raise HTTPException(status_code=400, detail=refused)
+
     # COMBINED, HELD OR SCHEDULED: refused here, where the maker can
     # fix it, rather than silently never firing (core/trigger_states.py).
     schedule = None
@@ -3100,7 +3133,8 @@ def create_trigger_route(
             raise HTTPException(status_code=400, detail=str(e)) from e
     from core.trigger_states import problem as combined_problem
 
-    combined = combined_problem(
+    # A PROJECTED CONDITION STANDS ALONE, and was checked as such above.
+    combined = None if projected else combined_problem(
         above=body.above, gained=body.gained, fell=body.fell, at_most=body.at_most,
         also=body.also, combine=body.combine, hold_minutes=body.hold_minutes,
         schedule=schedule, action_type=body.action_type, owned_view_ids=owned,
@@ -3150,6 +3184,8 @@ def create_trigger_route(
         at_most=body.at_most, also=body.also, combine=body.combine,
         hold_minutes=body.hold_minutes, schedule=schedule,
         action_view_id=body.action_view_id,
+        projected=(body.projected_field, body.projected_period, body.projected_above)
+        if projected else None,
     )
     if trigger_id is None:
         raise HTTPException(status_code=500, detail="Could not create that trigger")

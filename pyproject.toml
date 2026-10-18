@@ -379,7 +379,10 @@ exhaustive = true
 # predictions (R48) reads the ontology's declaration to train and
 # measure a predicted field; the sync composes it -- outside the
 # hierarchy for the reason meaning_search is.
-exhaustive_ignores = ["predictions", "meaning_search", "adapter_roles", "count_condition", "trigger_runs", "trigger_windows", "trigger_states", "declared_triggers", "concurrency", "config", "deployment_loader", "role_impact", "internal_storage", "logging_config", "pending_write_persistence", "pending_write_serialisation", "pending_write_store", "sqlite_connection", "user_directory"]
+# projected_condition (R68, 18 October) is a trigger's forecast of its
+# view's totals per period: trigger machinery beside count_condition,
+# composing the mediator's aggregate and the forecasts.
+exhaustive_ignores = ["predictions", "meaning_search", "adapter_roles", "count_condition", "projected_condition", "trigger_runs", "trigger_windows", "trigger_states", "declared_triggers", "concurrency", "config", "deployment_loader", "role_impact", "internal_storage", "logging_config", "pending_write_persistence", "pending_write_serialisation", "pending_write_store", "sqlite_connection", "user_directory"]
 
 # Contract 3 of 3 -- the single most repeatedly-stated architectural
 # principle throughout this project's own history: authentication

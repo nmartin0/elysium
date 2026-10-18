@@ -4704,6 +4704,81 @@ CONTROLS = [
         ],
     ),
     Control(
+        describes='PROJECTED: it follows the forecast line, not the top of its range',
+        path='core/projected_condition.py',
+        old='                     if point["value"] > trigger.projected_above), None)',
+        new='                     if point["high"] > trigger.projected_above), None)',
+        tests=[
+            'tests/unit/test_projected_condition.py::TestWhatItReads::test_the_forecast_line_not_the_top_of_its_range',
+        ],
+    ),
+    Control(
+        describes='PROJECTED: told once on becoming projected, not while it stays so',
+        path='core/projected_condition.py',
+        old='        if current and not previous and not changed:',
+        new='        if current and not changed:',
+        tests=[
+            'tests/unit/test_projected_condition.py::TestWhenItIsTold::test_first_it_is_watching_then_told_once_on_becoming_projected',
+        ],
+    ),
+    Control(
+        describes='PROJECTED: a changed configuration is a new baseline',
+        path='core/projected_condition.py',
+        old=('        changed = previous_digest is not None and config_digest is not None \\\n'
+             '            and previous_digest != config_digest'),
+        new='        changed = False',
+        tests=[
+            'tests/unit/test_projected_condition.py::TestWhenItIsTold::test_a_changed_configuration_is_a_new_baseline',
+        ],
+    ),
+    Control(
+        describes='PROJECTED: each recipient is projected from their own totals',
+        path='core/projected_condition.py',
+        old='            projection = projection_for(mediator, view, trigger, person, today)',
+        new='            projection = projection_for(mediator, view, trigger, owner, today)',
+        tests=[
+            'tests/unit/test_projected_condition.py::TestAsEachPerson::test_each_recipient_is_projected_from_their_own_totals',
+        ],
+    ),
+    Control(
+        describes='PROJECTED: a cut-off set is not trusted',
+        path='core/projected_condition.py',
+        old='    if outcome.scan_truncated:\n        return {"state": "untrusted",',
+        new='    if False:\n        return {"state": "untrusted",',
+        tests=[
+            'tests/unit/test_projected_condition.py::TestWhatItReads::test_a_cut_off_set_is_not_trusted',
+        ],
+    ),
+    Control(
+        describes='PROJECTED: it stands alone',
+        path='core/projected_condition.py',
+        old='    if named:\n        return (f"A projected condition stands alone',
+        new='    if False:\n        return (f"A projected condition stands alone',
+        tests=[
+            'tests/unit/test_projected_condition.py::TestTheDeclaration::test_one_that_could_not_be_checked_is_refused',
+            'tests/integration/test_forecast_api.py::TestAProjectedTrigger::test_one_that_could_not_be_checked_is_refused',
+        ],
+    ),
+    Control(
+        describes='PROJECTED: only a date field',
+        path='core/projected_condition.py',
+        old='    if declared.get("data_type") not in TEMPORAL:',
+        new='    if False:',
+        tests=[
+            'tests/unit/test_projected_condition.py::TestTheDeclaration::test_one_that_could_not_be_checked_is_refused',
+            'tests/integration/test_forecast_api.py::TestAProjectedTrigger::test_one_that_could_not_be_checked_is_refused',
+        ],
+    ),
+    Control(
+        describes='PROJECTED: a projected trigger is evaluated as a projection',
+        path='core/count_condition.py',
+        old='        if is_projected(trigger):',
+        new='        if False:',
+        tests=[
+            'tests/integration/test_forecast_api.py::TestAProjectedTrigger::test_made_checked_at_once_and_listed',
+        ],
+    ),
+    Control(
         describes="ENRICH: a classified field is never an input to a model",
         path="core/ontology/enriched_fields.py",
         old="        if labels:\n            raise ValueError(",
