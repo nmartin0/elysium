@@ -659,5 +659,6 @@ def test_every_declared_step_kind_has_a_handler(loop_and_mediator):
     from core.llm.agent_features import AgentFeatures
 
     loop.features = AgentFeatures(filter_operators=True, search_result_cap=1,
-                                  free_text_search=True, remember_from_query=True)
+                                  free_text_search=True, remember_from_query=True,
+                                  meaning_search=True)
     assert offered - {"finish"} == set(loop._step_handlers())

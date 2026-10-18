@@ -193,7 +193,10 @@ and "Similar records" on an object. Never a classified input (D3), only
 for someone who may read every input, no vector or score ever served.
 Since 18 October: any embedding server through the OpenAI-style
 /v1/embeddings request, and the task prefixes nomic-embed-text's card
-requires (missing from the first version). Its use for statistical
+requires (missing from the first version); and a search_meaning step
+for Query's agent behind `agent.meaning_search`, through the same rules
+Browse ranks by -- not yet measured on a real model, as the other
+switches were (scripts/llm_bench.py). Its use for statistical
 matching and enrichment is not built; neither are model predictions
 (R48, R53).
 

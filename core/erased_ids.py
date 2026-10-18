@@ -77,7 +77,8 @@ def ids_in_gathered(gathered: Iterable) -> Iterator[tuple[Any, Any]]:
             yield object_type, object_id
         result = entry.get("result")
         if isinstance(result, list):
-            own = object_type if entry.get("step") in ("search_object", "search_text") else None
+            own = (object_type if entry.get("step") in ("search_object", "search_text",
+                                                        "search_meaning") else None)
             for object_id in result:
                 if not isinstance(object_id, (dict, list)):
                     yield own, object_id

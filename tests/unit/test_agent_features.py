@@ -26,6 +26,7 @@ from core.llm.agent_features import OFF, AgentFeatures, features_from_config
 from core.llm.agent_step_prompt import (
     FILTER_OPERATORS_SECTION,
     FREE_TEXT_SECTION,
+    MEANING_SECTION,
     REMEMBER_SECTION,
     _build_system_prompt,
     validated_step,
@@ -41,7 +42,7 @@ READ_ALL = ["read:Author", "read:Author.author_id", "read:Author.org_id", "read:
 ROLES = {"reader": {"allowed_actions": READ_ALL}}
 USERS = {"alice": {"org_id": "org-a", "role": "reader"}}
 ALL_ON = AgentFeatures(filter_operators=True, search_result_cap=1, free_text_search=True,
-                       remember_from_query=True)
+                       remember_from_query=True, meaning_search=True)
 
 
 def _alice():
@@ -75,9 +76,10 @@ class TestConfig:
 
     def test_each_switch_is_read(self):
         features = features_from_config({"filter_operators": True, "search_result_cap": 5,
-                                         "free_text_search": True, "remember_from_query": True})
+                                         "free_text_search": True, "remember_from_query": True,
+                                         "meaning_search": True})
         assert features.names_on == ("filter_operators", "search_result_cap=5",
-                                     "free_text_search", "remember_from_query")
+                                     "free_text_search", "remember_from_query", "meaning_search")
 
     @pytest.mark.parametrize("block", [{"filter_operators": "yes"}, {"search_result_cap": 0},
                                        {"search_result_cap": True}, {"search_result_cap": "5"}])
@@ -94,9 +96,11 @@ class TestOffChangesNothing:
         hash, which every legitimate prompt edit would break; pinned as
         what the switches add being absent, which only they can break."""
         prompt = _build_system_prompt(TEST_SCHEMA, [], False, {})
-        for section in (FILTER_OPERATORS_SECTION, FREE_TEXT_SECTION, REMEMBER_SECTION):
+        for section in (FILTER_OPERATORS_SECTION, FREE_TEXT_SECTION, REMEMBER_SECTION,
+                        MEANING_SECTION):
             assert section not in prompt
         assert '"search_text"' not in prompt and '"remember"' not in prompt
+        assert '"search_meaning"' not in prompt
 
     def test_on_the_prompt_grows(self):
         """THE CONTROL for the one above: the sections exist and are
@@ -111,7 +115,8 @@ class TestOffChangesNothing:
 
     def test_the_new_steps_are_unrecognised(self):
         for step in ({"step": "search_text", "object_type": "Book", "text": "x"},
-                     {"step": "remember", "object_type": "Book", "object_id": 1, "text": "x"}):
+                     {"step": "remember", "object_type": "Book", "object_id": 1, "text": "x"},
+                     {"step": "search_meaning", "object_type": "Book", "text": "x"}):
             assert validated_step(step).get("fallback") is not None
             assert validated_step(step, features=ALL_ON) == step
 
@@ -264,3 +269,77 @@ class TestRememberFromQuery:
         wrong = EvalCase("r", "q", "alice", (),
                          expected_memories=(ExpectedMemory("Author", "auth_002"),))
         assert not grade(wrong, result).passed
+
+
+class TestMeaningSearch:
+    """R45, behind features.meaning_search: the agent ranks by meaning
+    through the same service Browse does (core/meaning_search.py) -- a
+    stand-in here; the real one is tested end to end."""
+
+    ON = AgentFeatures(meaning_search=True)
+    STEP = {"step": "search_meaning", "object_type": "Book", "text": "a long poem"}
+
+    class Service:
+        def __init__(self, ranked):
+            self.ranked = ranked
+            self.asked = []
+
+        def related(self, mediator, user_record, object_type, text, k, context=None, exclude=None):
+            self.asked.append((user_record.user_id, object_type, text, k))
+            return self.ranked
+
+    def _run(self, mediator, service, features=None):
+        loop = AgentLoop(scripted_llm_client([self.STEP, {"step": "finish"}]), mediator,
+                         features=features or self.ON, meaning=service)
+        return loop.run(_alice(), "which books read like a long poem?")
+
+    def test_the_nearest_records_come_back_nearest_first_and_marked_a_ranking(self, mediator):
+        from core.meaning_search import Ranked
+
+        service = self.Service(Ranked(True, ids=[2, 1]))
+        [entry] = _entries(self._run(mediator, service), "search_meaning")
+        assert entry["result"] == [2, 1]
+        assert "do not count it" in entry["order"]
+        assert service.asked == [("alice", "Book", "a long poem", AgentLoop.MEANING_K)]
+
+    def test_when_it_cannot_answer_the_model_is_told_why_not_handed_an_empty_list(self, mediator):
+        from core.meaning_search import MODEL_DOWN, Ranked
+
+        [entry] = _entries(self._run(mediator, self.Service(Ranked(False, reason=MODEL_DOWN))),
+                           "search_meaning")
+        assert entry["result"] == [] and entry["note"] == MODEL_DOWN
+
+    def test_with_no_embedder_it_is_not_offered(self, mediator):
+        from core.meaning_search import NOT_OFFERED
+
+        [entry] = _entries(self._run(mediator, None), "search_meaning")
+        assert entry["note"] == NOT_OFFERED
+
+    def test_off_it_is_not_a_step(self, mediator):
+        from core.meaning_search import Ranked
+
+        service = self.Service(Ranked(True, ids=[1]))
+        assert not _entries(self._run(mediator, service, features=OFF), "search_meaning")
+        assert service.asked == []
+
+    def test_only_types_searchable_by_meaning_are_marked_and_offered(self):
+        schema = json.loads(json.dumps(TEST_SCHEMA))
+        for definition in schema.values():
+            definition["searchable_by_meaning"] = False
+        schema["Book"]["searchable_by_meaning"] = True
+        prompt = _build_system_prompt(schema, [], False, {}, features=self.ON)
+        assert prompt.count("(search by meaning)") == 1
+        assert MEANING_SECTION in prompt
+        variants = step_schema(schema, [], False, {}, features=self.ON)["anyOf"]
+        offered = {variant["properties"]["object_type"]["const"] for variant in variants
+                   if variant["properties"]["step"]["const"] == "search_meaning"}
+        assert offered == {"Book"}
+        off = _build_system_prompt(schema, [], False, {})
+        assert "(search by meaning)" not in off, "off, the prompt is what it was"
+
+    def test_the_answer_says_these_are_the_nearest_not_how_many_there_are(self):
+        from core.agent.answer_context import read_back
+
+        sentences = " ".join(read_back([{**self.STEP, "result": [2, 1]}], TEST_SCHEMA))
+        assert "close in meaning to 'a long poem'" in sentences
+        assert "read the 2 nearest" in sentences

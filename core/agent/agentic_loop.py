@@ -93,6 +93,7 @@ from core.ontology.write_mediator import PendingWrite, WriteMediator
 from core.request_context import RequestContext
 
 if TYPE_CHECKING:
+    from core.meaning_search import MeaningSearch
     from core.memory.guard import MemoryGuard
 
 logger = logging.getLogger(__name__)
@@ -331,7 +332,7 @@ def check_step_values(step: dict, features: AgentFeatures = OFF_FEATURES) -> Non
         if features.filter_operators and isinstance(value, dict):
             continue
         scalar(f"filter[{name!r}]", value)
-    if step.get("step") in ("search_text", "remember"):
+    if step.get("step") in ("search_text", "search_meaning", "remember"):
         for key in ("object_type", "text"):
             scalar(key, step.get(key))
 
@@ -383,8 +384,8 @@ def _step_signature(step: dict):
     if step["step"] == "search_around":
         return ("search_around", step["object_type"], _hashable_filter(step),
                 _hashable(step["link_field"]))
-    if step["step"] == "search_text":
-        return ("search_text", step["object_type"], " ".join(str(step["text"]).lower().split()))
+    if step["step"] in ("search_text", "search_meaning"):
+        return (step["step"], step["object_type"], " ".join(str(step["text"]).lower().split()))
     return None
 
 
@@ -426,7 +427,7 @@ def _reject_ids_of_another_type(object_type: str, object_ids: list,
             continue
         result = item.get("result")
         found = [str(i) for i in result] if isinstance(result, list) else []
-        if kind in ("search_object", "search_text"):
+        if kind in ("search_object", "search_text", "search_meaning"):
             if item_type == object_type:
                 this_type.update(found)
             else:
@@ -638,7 +639,8 @@ class AgentLoop:
                  max_consecutive_invalid_steps: int = 2, constrain_steps: bool = False,
                  max_tokens_per_query: int | None = None,
                  memory: "MemoryGuard | None" = None,
-                 features: AgentFeatures = OFF_FEATURES):
+                 features: AgentFeatures = OFF_FEATURES,
+                 meaning: "MeaningSearch | None" = None):
         # These stay fixed across every query this loop instance ever
         # runs -- constructed once per deployment, then run() called
         # once per actual user question. tools defaults to None, not []
@@ -651,6 +653,9 @@ class AgentLoop:
         # is NEVER this class's job -- see module docstring.
         self.client = client
         self.mediator = mediator
+        # SEARCH BY MEANING (R45): the same rules Browse ranks by, for the
+        # search_meaning step. None when the deployment embeds nothing.
+        self.meaning = meaning
         self.tools = tools if tools is not None else []
         self._tools_by_name = {tool.name: tool for tool in self.tools}
         self._tool_limiters = {
@@ -682,7 +687,8 @@ class AgentLoop:
     @classmethod
     def from_deployment(cls, deployment, mediator: DataMediator,
                          write_mediator: WriteMediator | None = None,
-                         memory: "MemoryGuard | None" = None) -> "AgentLoop":
+                         memory: "MemoryGuard | None" = None,
+                         meaning: "MeaningSearch | None" = None) -> "AgentLoop":
         # The standard way every caller should build an AgentLoop -- one
         # authoritative place reading deployment.max_hops etc. write_mediator
         # is NOT built here automatically (unlike tools) -- a caller not
@@ -700,6 +706,7 @@ class AgentLoop:
             max_tokens_per_query=deployment.max_tokens_per_query,
             memory=memory,
             features=deployment.agent_features,
+            meaning=meaning,
         )
 
     @staticmethod
@@ -930,6 +937,35 @@ class AgentLoop:
         )
         self._append_search_result(step, user_record, object_ids, visible_schema,
                                    gathered, context)
+        return STEP_HANDLED
+
+    #: How many records a search_meaning step returns. A ranking has no
+    #: edge, so its length is a choice; ten nearest is a page to read.
+    MEANING_K = 10
+
+    def _step_search_meaning(self, step: dict, user_record: UserRecord,
+                             visible_schema: dict, gathered: list[dict],
+                             context: RequestContext | None = None) -> Any:
+        """R45, behind features.meaning_search: the records nearest in
+        meaning to the step's text, nearest first -- the ranking Browse
+        shows as "Related in meaning", through the same rules
+        (core/meaning_search.py): only for someone who may read every
+        field the text is made from, only records they may read, none
+        deleted. When it cannot answer, the entry says why, so the model
+        does not read an empty list as "there are none"."""
+        ranked = (self.meaning.related(self.mediator, user_record, step["object_type"],
+                                       step["text"], self.MEANING_K, context=context)
+                  if self.meaning is not None else None)
+        if ranked is None or not ranked.available:
+            from core.meaning_search import NOT_OFFERED
+
+            gathered.append({**step, "result": [],
+                             "note": ranked.reason if ranked is not None else NOT_OFFERED})
+            return STEP_HANDLED
+        self._append_search_result(step, user_record, ranked.ids, visible_schema,
+                                   gathered, context)
+        gathered[-1]["order"] = ("nearest in meaning first; a ranking, not a set of "
+                                 "matches -- do not count it")
         return STEP_HANDLED
 
     #: The words that make a question one asking for something to be kept.
@@ -1336,6 +1372,8 @@ class AgentLoop:
                if self.features.free_text_search else {}),
             **({"remember": self._step_remember}
                if self.features.remember_from_query else {}),
+            **({"search_meaning": self._step_search_meaning}
+               if self.features.meaning_search else {}),
         }
 
     def execute_plan(self, plan: list[dict], user_record: UserRecord,

@@ -332,6 +332,11 @@ def test_visible_schema_never_leaks_internal_storage_or_security_config(mediator
         # deployment is wired and are what this test exists to keep
         # out. A UI needs it to decide whether to offer a search box.
         "readable",
+        # The same kind of outcome for search by meaning (R45): False
+        # both where a type does not declare it and where this person
+        # may not read what it embeds, so it says nothing about the
+        # deployment that `readable` does not.
+        "searchable_by_meaning",
     }
     assert "storage" not in visible["Author"]
     assert "additional_storage" not in visible["Author"]

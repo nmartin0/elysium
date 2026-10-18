@@ -31,7 +31,7 @@ from core.llm.agent_step_prompt import _build_system_prompt, next_step
 #: Every switch on (core/llm/agent_features.py). The vocabulary must
 #: agree with them off -- the tests below -- and with them on.
 ALL_ON = AgentFeatures(filter_operators=True, search_result_cap=1, free_text_search=True,
-                       remember_from_query=True)
+                       remember_from_query=True, meaning_search=True)
 
 
 def _handler_steps(features: AgentFeatures | None = None) -> set[str]:
@@ -74,6 +74,7 @@ _PROBES = {
 _SWITCHED_PROBES = {
     "search_text": '{"step": "search_text", "object_type": "T", "text": "x"}',
     "remember": '{"step": "remember", "object_type": "T", "object_id": 1, "text": "x"}',
+    "search_meaning": '{"step": "search_meaning", "object_type": "T", "text": "x"}',
 }
 
 

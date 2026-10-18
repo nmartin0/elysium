@@ -570,3 +570,4 @@ related_in_meaning_route
 similar_objects_route
 offered  # MeaningResponse.offered, read by pydantic
 text_fields  # MeaningResponse.text_fields, read by pydantic
+searchable_by_meaning  # VisibleObjectTypeResponse.searchable_by_meaning, read by pydantic

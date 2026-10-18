@@ -4021,8 +4021,8 @@ CONTROLS = [
     Control(
         describes='MEANING: ranking needs reading every field the text is made from',
         path='core/ontology/mediator.py',
-        old='        return all((fields.get(name) or {}).get("readable") is True for name in search.inputs)',
-        new='        return True',
+        old='    return all((visible_fields.get(name) or {}).get("readable") is True for name in search.inputs)',
+        new='    return True',
         tests=[
             'tests/integration/test_search_by_meaning.py::test_without_reading_the_text_there_is_no_search_by_meaning',
         ],
@@ -4030,8 +4030,8 @@ CONTROLS = [
     Control(
         describes='MEANING: knowing a field exists is not reading it',
         path='core/ontology/mediator.py',
-        old='        return all((fields.get(name) or {}).get("readable") is True for name in search.inputs)',
-        new='        return all(name in fields for name in search.inputs)',
+        old='    return all((visible_fields.get(name) or {}).get("readable") is True for name in search.inputs)',
+        new='    return all(name in visible_fields for name in search.inputs)',
         tests=[
             'tests/integration/test_search_by_meaning.py::test_knowing_a_field_exists_is_not_reading_it',
         ],
@@ -4197,6 +4197,42 @@ CONTROLS = [
         new='    if False:\n        raise ValueError(f"llm.embedding_model is set, but provider',
         tests=[
             'tests/unit/test_embeddings.py::TestTheSettings::test_a_provider_with_no_server_is_told_to_name_one',
+        ],
+    ),
+    Control(
+        describes='MEANING-AGENT: the step is offered only for types searchable by meaning',
+        path='core/llm/step_schema.py',
+        old='    if features.meaning_search and definition.get("searchable_by_meaning"):',
+        new='    if features.meaning_search:',
+        tests=[
+            'tests/unit/test_agent_features.py::TestMeaningSearch::test_only_types_searchable_by_meaning_are_marked_and_offered',
+        ],
+    ),
+    Control(
+        describes='MEANING-AGENT: the prompt marks types only with the switch on',
+        path='core/llm/agent_step_prompt.py',
+        old='    if mark_meaning and definition.get("searchable_by_meaning"):',
+        new='    if definition.get("searchable_by_meaning"):',
+        tests=[
+            'tests/unit/test_agent_features.py::TestMeaningSearch::test_only_types_searchable_by_meaning_are_marked_and_offered',
+        ],
+    ),
+    Control(
+        describes='MEANING-AGENT: a ranking that cannot answer says why',
+        path='core/agent/agentic_loop.py',
+        old='        if ranked is None or not ranked.available:',
+        new='        if ranked is None:',
+        tests=[
+            'tests/unit/test_agent_features.py::TestMeaningSearch::test_when_it_cannot_answer_the_model_is_told_why_not_handed_an_empty_list',
+        ],
+    ),
+    Control(
+        describes='MEANING-AGENT: the step without an embedding model is refused at load',
+        path='core/deployment_loader.py',
+        old='    if config.agent_features.meaning_search and meaning is None and data_dir is not None:',
+        new='    if False:',
+        tests=[
+            'tests/integration/test_search_by_meaning.py::test_the_agent_step_without_an_embedding_model_is_refused_at_load',
         ],
     ),
     Control(

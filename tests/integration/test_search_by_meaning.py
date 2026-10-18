@@ -74,6 +74,8 @@ def deployment(tmp_path, monkeypatch, model):
     (config / "ontology_schema.yaml").write_text(yaml.safe_dump(ontology))
     settings = yaml.safe_load((config / "config.yaml").read_text())
     settings["llm"]["embedding_model"] = "concepts"
+    # THE AGENT'S STEP TOO (18 October), through the same service.
+    settings["agent"]["meaning_search"] = True
     (config / "config.yaml").write_text(yaml.safe_dump(settings))
     policy = yaml.safe_load((config / "policy.yaml").read_text())
     # MAY READ TICKETS, BUT NOT THE TEXT THEY ARE EMBEDDED FROM.
@@ -257,3 +259,47 @@ def test_knowing_a_field_exists_is_not_reading_it(deployment):
     assert fields["subject"]["readable"] is False, "the case this test is about"
     assert client.get("/api/objects/SupportTicket/related-in-meaning",
                       params={"q": "refund"}).json()["offered"] is False
+
+
+def test_the_query_agent_ranks_by_meaning_through_the_same_rules(deployment):
+    """The configured loop, its model scripted: a search_meaning step
+    reaches the deployment's embedder and store, and keeps what Browse
+    keeps -- the refund ticket first, never the other region's."""
+    from core.intermediate_layer.auth import UserRecord
+    from tests.conftest import scripted_llm_client
+
+    client = _client(deployment)
+    loop = client.app.state.generation.loop
+    loop.client = scripted_llm_client([
+        {"step": "search_meaning", "object_type": "SupportTicket", "text": "money back"},
+        {"step": "finish"}])
+    result = loop.run(UserRecord("ops", "us-west", "debug"), "tickets about getting money back?")
+    [entry] = [item for item in result.gathered if item["step"] == "search_meaning"]
+    subjects = {row["id"]: row["fields"]["subject"] for row in client.get(
+        "/api/objects/SupportTicket/search", params={"q": ""}).json()["results"]}
+    assert [subjects[str(found)] for found in entry["result"]][0] == REFUND
+    assert BILLING not in [subjects.get(str(found)) for found in entry["result"]]
+
+
+def test_the_visible_schema_says_which_types_rank_by_meaning(deployment):
+    reader = _client(deployment).get("/api/me/visible-schema").json()
+    assert reader["SupportTicket"]["searchable_by_meaning"] is True
+    assert reader["Customer"]["searchable_by_meaning"] is False
+    discoverer = _client(deployment, "discoverer", "discovers_subject").get(
+        "/api/me/visible-schema").json()
+    assert discoverer["SupportTicket"]["searchable_by_meaning"] is False
+
+
+def test_the_agent_step_without_an_embedding_model_is_refused_at_load(deployment):
+    from core.deployment_loader import build_generation
+
+    settings_path = deployment.config_dir / "config.yaml"
+    settings = yaml.safe_load(settings_path.read_text())
+    del settings["llm"]["embedding_model"]
+    ontology_path = deployment.config_dir / "ontology_schema.yaml"
+    ontology = yaml.safe_load(ontology_path.read_text())
+    del ontology["object_types"]["SupportTicket"]["semantic_search"]
+    settings_path.write_text(yaml.safe_dump(settings))
+    ontology_path.write_text(yaml.safe_dump(ontology))
+    with pytest.raises(ValueError, match="agent.meaning_search needs llm.embedding_model"):
+        build_generation(deployment.config_dir, deployment.data_dir, deployment.log_dir)

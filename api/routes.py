@@ -452,6 +452,10 @@ class VisibleObjectTypeResponse(BaseModel):
     # A label for filtering and browsing a large ontology. Purely
     # organisational -- it groups nothing structurally.
     group: str | None = None
+    # SEARCH BY MEANING (R45): whether THIS person may rank this type by
+    # meaning -- declared, and every embedded field readable. Defaulted
+    # for the reason `readable` is: an undeclared key is stripped.
+    searchable_by_meaning: bool = False
 
 
 class ActionParameterResponse(BaseModel):

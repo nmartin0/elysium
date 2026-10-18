@@ -1812,6 +1812,10 @@ def build_generation(
 
         meaning = MeaningSearch(store_at(Path(data_dir) / "embeddings.db"),
                                 build_embedder(config), config.schema)
+    if config.agent_features.meaning_search and meaning is None and data_dir is not None:
+        # SAID AT LOAD, not discovered on the first question.
+        raise ValueError("config.yaml agent.meaning_search needs llm.embedding_model: the "
+                         "agent ranks by the same embeddings Browse does.")
     return DeploymentGeneration(
         generation=config.generation,
         loaded_at=config.loaded_at,
@@ -1820,7 +1824,7 @@ def build_generation(
         mediator=mediator,
         write_mediator=write_mediator,
         loop=AgentLoop.from_deployment(config, mediator, write_mediator=write_mediator,
-                                       memory=memory),
+                                       memory=memory, meaning=meaning),
         memory=memory,
         meaning=meaning,
         synthesis_client=build_llm_adapter(config, config.synthesis_model),

@@ -132,6 +132,7 @@ from core.ontology.schema import (
     is_link_field,
     is_searchable_field,
 )
+from core.ontology.semantic_search import semantic_search_of
 from core.ontology.write_log import WriteLogReader
 from core.request_context import RequestContext
 
@@ -272,6 +273,17 @@ def _security_scoped(method):
     return scoped
 
 
+
+
+def _all_readable(visible_fields: dict, search) -> bool:
+    """Whether every input of a semantic_search declaration is READABLE
+    in this visible schema. The visible schema also carries fields a
+    person may only DISCOVER, marked readable False; presence alone let
+    a discover-only grant rank records by a field's meaning (found 18
+    October)."""
+    if search is None:
+        return False
+    return all((visible_fields.get(name) or {}).get("readable") is True for name in search.inputs)
 
 class DataMediator:
     def __init__(self, schema: dict, adapters: dict[str, ExternalReadAdapter],
@@ -1036,6 +1048,12 @@ class DataMediator:
                 "icon": type_def.get("icon"),
                 "color": type_def.get("color"),
                 "status": type_def.get("status", "active"),
+                # SEARCH BY MEANING (R45): declared, and every field its
+                # text is made from READABLE -- knowing a field exists is
+                # not reading it. The one answer Browse, the agent's
+                # prompt and its step schema all read.
+                "searchable_by_meaning": readable and _all_readable(
+                    visible_fields, semantic_search_of(type_def)),
             }
         return visible
 
@@ -1404,18 +1422,8 @@ class DataMediator:
         declares semantic_search, and they may read the type AND every
         field its text is made from. A ranking by a field's meaning is a
         read of that field."""
-        from core.ontology.semantic_search import semantic_search_of
-
-        search = semantic_search_of(self.schema.get(object_type) or {})
-        if search is None:
-            return False
         visible = visible if visible is not None else self.visible_schema(user_record)
-        fields = (visible.get(object_type) or {}).get("fields") or {}
-        # READABLE, NOT MERELY LISTED: the visible schema also carries
-        # fields a person may only DISCOVER, marked readable False.
-        # Checking presence alone let a discover-only grant on `subject`
-        # rank tickets by what their subjects mean (found 18 October).
-        return all((fields.get(name) or {}).get("readable") is True for name in search.inputs)
+        return bool((visible.get(object_type) or {}).get("searchable_by_meaning"))
 
     def readable_in_order(self, user_record: UserRecord, object_type: str,
                           object_ids: list, limit: int,

@@ -180,6 +180,10 @@ def _feature_steps(object_type: str, definition: dict, features: AgentFeatures) 
         steps.append(_step("search_text", {"object_type": named,
                                            "text": {"type": "string", "minLength": 1}},
                            ["object_type", "text"]))
+    if features.meaning_search and definition.get("searchable_by_meaning"):
+        steps.append(_step("search_meaning", {"object_type": named,
+                                              "text": {"type": "string", "minLength": 1}},
+                           ["object_type", "text"]))
     if features.remember_from_query:
         steps.append(_step("remember", {"object_type": named, "object_id": _ID,
                                         "text": {"type": "string", "minLength": 1}},

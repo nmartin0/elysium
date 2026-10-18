@@ -18,6 +18,10 @@ turn on. Off, the prompt is byte-for-byte what it was.
   free_text_search     a search_text step: the free-text search the UI
                        already has, instead of guessing an exact value
                        (LB-8).
+  meaning_search       a search_meaning step: records ranked by what their
+                       text MEANS (R45), for types that declare
+                       semantic_search -- the same ranking Browse shows
+                       as "Related in meaning". Needs llm.embedding_model.
   remember_from_query  a remember step, honoured only when the person's
                        question itself asks for something to be
                        remembered (E-14's "written only when a person
@@ -35,6 +39,7 @@ class AgentFeatures:
     search_result_cap: "int | None" = None
     free_text_search: bool = False
     remember_from_query: bool = False
+    meaning_search: bool = False
 
     @property
     def names_on(self) -> tuple[str, ...]:
@@ -47,6 +52,8 @@ class AgentFeatures:
             on.append("free_text_search")
         if self.remember_from_query:
             on.append("remember_from_query")
+        if self.meaning_search:
+            on.append("meaning_search")
         return tuple(on)
 
 
@@ -69,4 +76,5 @@ def features_from_config(agent: dict) -> AgentFeatures:
                          f"least 1, or absent; got {cap!r}.")
     return AgentFeatures(filter_operators=flag("filter_operators"), search_result_cap=cap,
                          free_text_search=flag("free_text_search"),
-                         remember_from_query=flag("remember_from_query"))
+                         remember_from_query=flag("remember_from_query"),
+                         meaning_search=flag("meaning_search"))

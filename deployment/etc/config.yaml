@@ -128,6 +128,9 @@ agent:
   # search_result_cap: 20       # at most this many ids per search reach the model
   # free_text_search: false     # a search_text step, as the UI's search box
   # remember_from_query: false  # remember, only when the question asks to
+  # meaning_search: false       # search_meaning: records ranked by what their
+  #                             # text means, on types declaring
+  #                             # semantic_search (needs llm.embedding_model)
 
 # Tools the LLM may call, by name -- entirely optional; omitting this
 # section (or listing none) is completely valid, unlike llm:, which

@@ -165,6 +165,14 @@ def read_back(real_data: list[dict], schema: dict) -> list[str]:
             count = _count(entry)
             sentences.append(f"Searched {_type_label(schema, object_type)} for {entry.get('text')!r} "
                              f"and found {count if count else 'none'}")
+        elif step == "search_meaning":
+            # A RANKING, NOT A SET: "found 10" would read as "there are
+            # ten", and there are not -- these are the ten nearest.
+            count = _count(entry)
+            sentences.append(f"Looked for {_type_label(schema, object_type)} close in meaning to "
+                             f"{entry.get('text')!r}"
+                             + (f" and read the {count} nearest" if count else
+                                " and found none it could rank"))
         elif step == "search_around":
             target = entry.get("_target") or "objects"
             count = _count(entry)
@@ -216,7 +224,8 @@ def doors(real_data: list[dict], schema: dict) -> list[dict]:
         step = entry.get("step")
         object_type = entry.get("object_type") or ""
         result = entry.get("result")
-        if step in ("search_object", "search_around", "search_text") and isinstance(result, list):
+        if (step in ("search_object", "search_around", "search_text", "search_meaning")
+                and isinstance(result, list)):
             type_of_ids = entry.get("_target") or object_type
             if len(result) == 1 and type_of_ids in schema:
                 object_id = str(result[0])
