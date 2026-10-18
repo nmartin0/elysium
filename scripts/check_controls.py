@@ -4272,6 +4272,126 @@ CONTROLS = [
         ],
     ),
     Control(
+        describes='PREDICT: a classified answer is never learned about',
+        path='core/ontology/predicted_fields.py',
+        old='            if field_classifications(answer):',
+        new='            if False:',
+        tests=[
+            'tests/unit/test_predictions.py::TestTheDeclaration::test_a_prediction_that_could_not_be_learned_safely_is_refused',
+        ],
+    ),
+    Control(
+        describes='PREDICT: a classified input is never learned from',
+        path='core/ontology/predicted_fields.py',
+        old='        labels = field_classifications(source)\n        if labels:',
+        new='        labels = field_classifications(source)\n        if False:',
+        tests=[
+            'tests/unit/test_predictions.py::TestTheDeclaration::test_a_prediction_that_could_not_be_learned_safely_is_refused',
+        ],
+    ),
+    Control(
+        describes='PREDICT: the answer is never an input',
+        path='core/ontology/predicted_fields.py',
+        old='        if name in (field_name, prediction.target):',
+        new='        if name == field_name:',
+        tests=[
+            'tests/unit/test_predictions.py::TestTheDeclaration::test_a_prediction_that_could_not_be_learned_safely_is_refused',
+        ],
+    ),
+    Control(
+        describes='PREDICT: the id is never an input',
+        path='core/ontology/predicted_fields.py',
+        old='        if name == type_def.get("id_field"):',
+        new='        if False:',
+        tests=[
+            'tests/unit/test_predictions.py::TestTheDeclaration::test_a_prediction_that_could_not_be_learned_safely_is_refused',
+        ],
+    ),
+    Control(
+        describes='PREDICT: reading a prediction needs reading its answer',
+        path='core/ontology/derived_fields.py',
+        old='    derived += [(type_name, field_name, (*prediction.inputs, prediction.target))',
+        new='    derived += [(type_name, field_name, prediction.inputs)',
+        tests=[
+            'tests/unit/test_predictions.py::TestTheDeclaration::test_reading_a_prediction_needs_reading_the_answer_and_every_input',
+        ],
+    ),
+    Control(
+        describes='PREDICT: the model is judged on records it never learned from',
+        path='core/predictions.py',
+        old='    held_model = _model(prediction, encoding, seed).fit(encoding.matrix(train_rows), train_y)',
+        new=('    held_model = _model(prediction, encoding, seed).fit(encoding.matrix(train_rows + test_rows),\n'
+             '                                                        np.concatenate([train_y, test_y]))'),
+        tests=[
+            'tests/unit/test_predictions.py::TestLearning::test_noise_is_not_mistaken_for_a_pattern',
+        ],
+    ),
+    Control(
+        describes='PREDICT: skill is measured against the naive guess',
+        path='core/predictions.py',
+        old='    naive = _naive(prediction, train_y, len(test_y))',
+        new='    naive = test_y',
+        tests=[
+            'tests/unit/test_predictions.py::TestLearning::test_a_real_pattern_is_learned_and_beats_the_naive_guess',
+        ],
+    ),
+    Control(
+        describes='PREDICT: a group too small to judge shows no score',
+        path='core/predictions.py',
+        old='        if len(indexes) < MIN_GROUP:',
+        new='        if False:',
+        tests=[
+            'tests/unit/test_predictions.py::TestLearning::test_a_group_too_small_to_judge_shows_no_score',
+        ],
+    ),
+    Control(
+        describes='PREDICT: a score too good to be true is said',
+        path='core/predictions.py',
+        old='    if skill >= SUSPICIOUS_SKILL:',
+        new='    if False:',
+        tests=[
+            'tests/unit/test_predictions.py::TestLearning::test_an_input_carrying_the_answer_is_said_to_be_too_good_to_be_true',
+        ],
+    ),
+    Control(
+        describes='PREDICT: blank text is a value of its own',
+        path='core/predictions.py',
+        old='                    code = codes.get(EMPTY)',
+        new='                    code = None',
+        tests=[
+            'tests/unit/test_predictions.py::TestLearning::test_an_input_carrying_the_answer_is_said_to_be_too_good_to_be_true',
+        ],
+    ),
+    Control(
+        describes='PREDICT: a known answer is never overwritten by a guess',
+        path='core/predictions.py',
+        old='                   if _answer(self.prediction, row.get(self.prediction.target)) is None]',
+        new='                   if True]',
+        tests=[
+            'tests/unit/test_predictions.py::TestPredicting::test_only_records_without_a_known_answer_are_predicted',
+        ],
+    ),
+    Control(
+        describes='PREDICT: the schema marks a prediction as predicted',
+        path='core/ontology/mediator.py',
+        old='                                 else prediction.describe()',
+        new='                                 else None',
+        tests=[
+            'tests/unit/test_predictions.py::test_the_schema_marks_a_prediction_as_predicted',
+        ],
+    ),
+    Control(
+        describes="PREDICT: a prediction is computed, never read from a source",
+        path="core/ontology/field_types.py",
+        old='    return "derived" in field or "enrich" in field or "predict" in field',
+        new='    return "derived" in field or "enrich" in field',
+        tests=[
+            "tests/unit/test_predictions.py::TestAComputedField::test_it_is_computed",
+            "tests/unit/test_predictions.py::TestAComputedField::test_the_sync_never_asks_the_source_for_it",
+            "tests/unit/test_predictions.py::TestAComputedField::test_meaning_is_never_embedded_from_it",
+        ],
+    ),
+    Control(
         describes="ENRICH: a classified field is never an input to a model",
         path="core/ontology/enriched_fields.py",
         old="        if labels:\n            raise ValueError(",

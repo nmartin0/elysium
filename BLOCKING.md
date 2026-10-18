@@ -199,8 +199,21 @@ Browse ranks by -- not yet measured on a real model, as the other
 switches were (scripts/llm_bench.py); and smaller vectors through
 `llm.embedding_dimensions`, whose cost in quality on a deployment's own
 data is unmeasured. Its use for statistical
-matching and enrichment is not built; neither are model predictions
-(R48, R53).
+matching and enrichment is not built.
+
+**MODEL PREDICTIONS ARE BEING BUILT** (R48; the owner, 18 October: all
+three levels -- a prediction per record, forecasts of totals, learned
+checks -- with scikit-learn, retrained when gold is rebuilt, and the
+score broken down by a group the approver chooses). A field declares
+`predict: {of, from, chance_of?}`: the chance of one answer, the most
+likely answer, or a likely number, filled only where the answer is not
+known, never from or about a classified field, readable only by someone
+who may read the answer and every input, and marked "predicted from …".
+Training and measuring are built: a fifth of the known records held out,
+skill against the naive guess, the score per group, which inputs
+matter, and a warning when a score is too good to be true. Approval in
+the Inbox and filling in gold come next; forecasts (R53) and learned
+checks after them.
 
 **NOT BUILT, BY THE OWNER'S CHOICE (18 October)**, each with what would
 change that:

@@ -349,6 +349,13 @@ def gate_derived_grants(roles: Mapping, schema: Mapping) -> Mapping:
     derived += [(type_name, field_name, enrichment.inputs)
                 for type_name, type_def in schema.items()
                 for field_name, enrichment in enriched_fields(type_def).items()]
+    # A PREDICTED FIELD (R48) summarises its inputs AND the answer it
+    # learned: someone refused `churned` must not read a chance of it.
+    from core.ontology.predicted_fields import predicted_fields
+
+    derived += [(type_name, field_name, (*prediction.inputs, prediction.target))
+                for type_name, type_def in schema.items()
+                for field_name, prediction in predicted_fields(type_def).items()]
     if not derived:
         return roles
     gated = {}

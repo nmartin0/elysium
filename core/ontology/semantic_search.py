@@ -36,6 +36,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from core.ontology.classifications import field_classifications
+from core.ontology.field_types import is_computed
 
 #: How many fields one declaration may embed together.
 MAX_INPUTS = 8
@@ -85,7 +86,7 @@ def validate_semantic_search(object_types: Mapping, embedding_model: "str | None
             if source.get("type", "data") != "data":
                 raise ValueError(f"{where}: {name!r} is a {source['type']}; meaning is read "
                                  f"from text.")
-            if "derived" in source or "enrich" in source:
+            if is_computed(source):
                 raise ValueError(f"{where}: {name!r} is computed; embed the fields it comes "
                                  f"from instead.")
             if (source.get("data_type") or "string") != "string":

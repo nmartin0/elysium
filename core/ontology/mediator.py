@@ -123,6 +123,7 @@ from core.ontology.derived_fields import compute, derivation_of, finished
 from core.ontology.enriched_fields import enrichment_of
 from core.ontology.field_types import coerce
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
+from core.ontology.predicted_fields import prediction_of
 from core.ontology.schema import (
     get_column_for_field,
     get_display_name,
@@ -960,6 +961,11 @@ class DataMediator:
                     # tell an inference from a recorded fact.
                     "inferred": (enrichment.describe()
                                  if (enrichment := enrichment_of(field_info)) is not None
+                                 # A PREDICTION (R48) is marked the same way,
+                                 # in its own words: "predicted from ...".
+                                 else prediction.describe()
+                                 if (prediction := prediction_of(field_info,
+                                                                 type_def["fields"])) is not None
                                  else None),
                     # NAMED BUT WITHHELD. False means the caller may
                     # know this field exists and not what it holds --

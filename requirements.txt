@@ -86,6 +86,13 @@ holidays>=0.106,<1
 # numpy takes milliseconds. BSD-3. Already in the dev lock, where
 # pyarrow's tests pulled it in.
 numpy>=2.0,<3
+# scikit-learn -- predicted fields (R48, 18 October): gradient-boosted
+# trees, which "remain state-of-the-art on medium-sized data (~10K
+# samples)" (Grinsztajn et al., NeurIPS 2022), with missing values and
+# categories handled natively. BSD-3; brings scipy, joblib, threadpoolctl
+# and narwhals (7 packages, 203 MB, measured). Chosen over TabPFN, whose
+# 2.5 weights forbid production use and whose v2 wants 16 GB and PyTorch.
+scikit-learn>=1.6,<2
 sqlalchemy<3.0
 # The PostgreSQL driver SQLAlchemy dials through. psycopg 3, not 2:
 # it returns Decimal, aware datetime, date and UUID objects natively,

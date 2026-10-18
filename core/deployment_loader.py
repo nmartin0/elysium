@@ -79,6 +79,7 @@ from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.link_types import expand_link_types, validate_link_types
 from core.ontology.mediator import DataMediator
 from core.ontology.object_type_validation import validate_object_types
+from core.ontology.predicted_fields import fill_predicted_types, validate_predicted_fields
 from core.ontology.semantic_search import validate_semantic_search
 from core.ontology.submission_criteria import validate_action_type_criteria
 from core.ontology.write_log import WriteLogReader, WriteLogWriter
@@ -667,6 +668,9 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # Fields filled in by approved enrichment rules (R41): checked --
     # including that no classified field is ever an input -- and typed.
     validate_enriched_fields(object_types_raw)
+    # Fields a model fills in from the records whose answer is known
+    # (R48): checked -- never a classified input or answer -- and typed.
+    validate_predicted_fields(object_types_raw)
     # Search by meaning (R45): text inputs only, never a classified one,
     # and a model to embed with.
     embedding = _embedding_settings(config["llm"])
@@ -674,6 +678,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     refuse_rules_over_derived(object_types_raw)
     fill_result_types(object_types_raw)
     fill_enriched_types(object_types_raw)
+    fill_predicted_types(object_types_raw)
     schema_raw["object_types"] = expand_link_types(link_types_raw, object_types_raw)
 
     validate_function_declarations(enabled_tools, schema_raw["object_types"])
