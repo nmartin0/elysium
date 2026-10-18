@@ -1451,6 +1451,8 @@ class DeploymentConfigResponse(BaseModel):
     #: and how long one sync may spend embedding.
     embedding_model: str | None = None
     embedding_budget_seconds: float = 300.0
+    #: Numbers per vector when smaller than the model's own; None for its own.
+    embedding_dimensions: int | None = None
     #: The task prefixes as configured; None for the model family's own.
     embedding_prefixes: dict[str, str] | None = None
     max_hops: int
@@ -4723,6 +4725,7 @@ def deployment_config_route(request: Request,
         "synthesis_model": config.synthesis_model,
         "embedding_model": config.embedding_model,
         "embedding_budget_seconds": config.embedding_budget_seconds,
+        "embedding_dimensions": config.embedding_dimensions,
         "embedding_prefixes": (dict(config.embedding_prefixes)
                                if config.embedding_prefixes is not None else None),
         "max_hops": config.max_hops,

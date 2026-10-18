@@ -55,6 +55,12 @@ llm:
   #   base_url: "http://localhost:8080"
   #   api_key: "${EMBEDDING_API_KEY}"   # from the environment, never the file
   #
+  # SMALLER VECTORS: a model trained for it (nomic-embed-text v1.5: 64 to
+  # 768) can return fewer numbers per text -- less memory and faster
+  # search, at some cost to quality to measure on your own data. Changing
+  # it re-embeds everything at the next sync.
+  # embedding_dimensions: 512
+  #
   # TASK PREFIXES: models such as nomic-embed-text must be told whether a
   # text is stored or asked; Elysium knows nomic's, and this overrides it.
   # Changing them re-embeds everything at the next sync.

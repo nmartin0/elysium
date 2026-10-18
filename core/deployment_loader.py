@@ -299,6 +299,9 @@ class DeploymentConfig:
     # over a large table on a CPU can take far longer than a sync should;
     # the rest is embedded by the next one (core/embeddings.py).
     embedding_budget_seconds: float = 300.0
+    # HOW MANY NUMBERS PER VECTOR, when the model can give fewer than its
+    # full size (Matryoshka); None for its own size.
+    embedding_dimensions: "int | None" = None
     # {document, query} task prefixes; None for the model family's own.
     embedding_prefixes: "Mapping[str, str] | None" = None
     # Where the embedding server is, when it is not the chat server.
@@ -719,6 +722,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             lineage=deep_freeze(validate_lineage_block(config.get("lineage"))),
             embedding_model=embedding.model,
             embedding_budget_seconds=embedding.budget_seconds,
+            embedding_dimensions=embedding.dimensions,
             embedding_prefixes=(MappingProxyType(dict(embedding.prefixes))
                                 if embedding.prefixes is not None else None),
             embedding_connection=MappingProxyType(dict(embedding.connection)),
@@ -860,6 +864,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
 class EmbeddingSettings:
     model: "str | None"
     budget_seconds: float
+    dimensions: "int | None"
     prefixes: "dict | None"
     connection: dict
 
@@ -873,6 +878,11 @@ def _embedding_settings(llm_config) -> EmbeddingSettings:
     budget = llm_config.get("embedding_budget_seconds", 300)
     if isinstance(budget, bool) or not isinstance(budget, (int, float)) or budget <= 0:
         raise ValueError("llm.embedding_budget_seconds is a number of seconds above 0.")
+    dimensions = llm_config.get("embedding_dimensions")
+    if dimensions is not None and (isinstance(dimensions, bool) or not isinstance(dimensions, int)
+                                   or not 16 <= dimensions <= 8192):
+        raise ValueError("llm.embedding_dimensions is a whole number of numbers per vector, "
+                         "16 to 8192 -- 512, say, for nomic-embed-text.")
     prefixes = llm_config.get("embedding_prefixes")
     if prefixes is not None and (not hasattr(prefixes, "items")
                                  or set(prefixes) - {"document", "query"}
@@ -887,7 +897,7 @@ def _embedding_settings(llm_config) -> EmbeddingSettings:
     # A CREDENTIAL BY REFERENCE, as a silo's is: ${ENV_NAME} in the file,
     # the value from the environment.
     connection = expand_secrets(dict(connection), where="config.yaml: llm.embedding_connection")
-    return EmbeddingSettings((model.strip() if model else None), float(budget),
+    return EmbeddingSettings((model.strip() if model else None), float(budget), dimensions,
                              dict(prefixes) if prefixes is not None else None, connection)
 
 
@@ -913,7 +923,7 @@ def build_embedder(config: DeploymentConfig):
     except ValueError as e:
         raise ValueError(f"llm.embedding_connection: {e}") from e
     return OpenAICompatibleEmbedder(
-        config.embedding_model, origin,
+        config.embedding_model, origin, dimensions=config.embedding_dimensions,
         prefixes=dict(config.embedding_prefixes) if config.embedding_prefixes is not None else None,
         timeout_seconds=float(connection.get("request_timeout_seconds")
                               or dict(config.llm_connection).get("request_timeout_seconds")

@@ -4184,8 +4184,8 @@ CONTROLS = [
     Control(
         describes='MEANING: the version changes with the prefixes',
         path='adapters/embedding_adapter.py',
-        old='        return f"{weights}{prefixes}"',
-        new='        return f"{weights}"',
+        old='        return f"{weights}{size}{prefixes}"',
+        new='        return f"{weights}{size}"',
         tests=[
             'tests/unit/test_embeddings.py::TestTheEmbedder::test_its_version_names_the_weights_and_the_prefixes',
         ],
@@ -4233,6 +4233,42 @@ CONTROLS = [
         new='    if False:',
         tests=[
             'tests/integration/test_search_by_meaning.py::test_the_agent_step_without_an_embedding_model_is_refused_at_load',
+        ],
+    ),
+    Control(
+        describes='MEANING-SIZE: a smaller size is asked of the server',
+        path='adapters/embedding_adapter.py',
+        old='            payload["dimensions"] = self.dimensions',
+        new='            pass',
+        tests=[
+            'tests/unit/test_embeddings.py::TestTheEmbedder::test_a_smaller_size_is_asked_for_and_held_to',
+        ],
+    ),
+    Control(
+        describes='MEANING-SIZE: a vector of another size is refused, not cut',
+        path='adapters/embedding_adapter.py',
+        old='        if self.dimensions is not None and any(len(vector) != self.dimensions',
+        new='        if False and any(len(vector) != self.dimensions',
+        tests=[
+            'tests/unit/test_embeddings.py::TestTheEmbedder::test_a_smaller_size_is_asked_for_and_held_to',
+        ],
+    ),
+    Control(
+        describes='MEANING-SIZE: the size is part of the version',
+        path='adapters/embedding_adapter.py',
+        old='        return f"{weights}{size}{prefixes}"',
+        new='        return f"{weights}{prefixes}"',
+        tests=[
+            'tests/unit/test_embeddings.py::TestTheEmbedder::test_the_size_is_part_of_the_version',
+        ],
+    ),
+    Control(
+        describes='MEANING-SIZE: an impossible size is refused at load',
+        path='core/deployment_loader.py',
+        old='                                   or not 16 <= dimensions <= 8192):',
+        new='                                   or not 0 <= dimensions):',
+        tests=[
+            'tests/unit/test_embeddings.py::TestTheSettings::test_a_bad_setting_is_refused_with_the_reason',
         ],
     ),
     Control(

@@ -54,6 +54,8 @@ interface DeploymentConfigBody {
    *  a server older than 17 October. */
   embedding_model?: string | null
   embedding_budget_seconds?: number
+  /** Numbers per vector; null for the model's own size. */
+  embedding_dimensions?: number | null
   /** Task prefixes as configured; null for the model family's own. */
   embedding_prefixes?: { document?: string; query?: string } | null
   max_hops: number
@@ -354,6 +356,10 @@ function DeploymentConfigView({
               ['Step model', config.step_model],
               ['Synthesis model', config.synthesis_model],
               ['Embedding model', config.embedding_model ?? 'none (no search by meaning)'],
+              [
+                'Embedding size',
+                config.embedding_dimensions ? `${config.embedding_dimensions} numbers` : "the model's own",
+              ],
               [
                 'Embedding prefixes',
                 config.embedding_prefixes

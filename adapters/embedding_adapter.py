@@ -14,6 +14,15 @@ WHERE: `llm.embedding_connection.base_url` when the embedding server is
 not the chat server -- a TEI container on its own port, say -- and
 otherwise the chat server's own origin, taken from `llm.connection`.
 
+SMALLER VECTORS (`llm.embedding_dimensions`, 18 October). A model
+trained Matryoshka-style packs most of its meaning into the first
+numbers: nomic-embed-text v1.5 takes any size from 64 to 768, and Nomic
+reports it at 512 still beating OpenAI's ada-002 with a third less
+memory. Asked for by `dimensions`, and a server that answers with
+another length is refused rather than cut down here -- cutting is right
+only for a model trained for it, and the server knows which model it is
+running; this does not.
+
 TASK PREFIXES. Some models are trained to be told what a text is for:
 nomic-embed-text's card says the text "must include a task instruction
 prefix" -- `search_document: ` for what is stored, `search_query: ` for
@@ -23,7 +32,8 @@ known to need them, and part of the VERSION: vectors made with and
 without them are not comparable.
 
 VERSIONED. A vector is comparable only with vectors made the same way:
-the same weights and the same prefixes. `version()` names both -- the
+the same weights, the same size and the same prefixes. `version()`
+names all three -- the
 weights by the digest an Ollama server reports, when the server is
 Ollama; otherwise by the model's name, which an operator re-pulling
 different weights under one name must change.
@@ -70,11 +80,12 @@ def prefixes_for(model: str, configured: "dict | None") -> dict:
 
 
 class OpenAICompatibleEmbedder:
-    def __init__(self, model: str, origin: str, *,
+    def __init__(self, model: str, origin: str, *, dimensions: "int | None" = None,
                  prefixes: "dict | None" = None, timeout_seconds: float = 180,
                  api_key: "str | None" = None):
         self.model = model
         self.origin = origin.rstrip("/")
+        self.dimensions = dimensions
         self.prefixes = prefixes_for(model, prefixes)
         self.timeout_seconds = timeout_seconds
         self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
@@ -89,6 +100,8 @@ class OpenAICompatibleEmbedder:
 
     def _embed(self, texts: "list[str]", timeout: "float | None") -> list:
         payload: dict[str, Any] = {"model": self.model, "input": list(texts)}
+        if self.dimensions is not None:
+            payload["dimensions"] = self.dimensions
         url = f"{self.origin}/v1/embeddings"
         try:
             response = http_transport.post(url, json=payload, headers=self._headers,
@@ -119,18 +132,26 @@ class OpenAICompatibleEmbedder:
                 isinstance(vector, list) and vector for vector in vectors):
             raise LLMUnavailable(f"The embedding server at {url} answered without one vector "
                                  f"per text")
+        # THE SIZE ASKED FOR, or refused: cutting a longer vector down is
+        # right only for a model trained for it, which this cannot know.
+        if self.dimensions is not None and any(len(vector) != self.dimensions
+                                               for vector in vectors):
+            raise LLMUnavailable(f"The embedding server at {url} answered with "
+                                 f"{len(vectors[0])} numbers, not the {self.dimensions} asked "
+                                 f"for: it does not support `dimensions` for {self.model}")
         return vectors
 
     def version(self) -> str:
-        """What makes two vectors comparable: the weights and the
-        prefixes."""
+        """What makes two vectors comparable: the weights, the size and
+        the prefixes."""
         weights = self._ollama_digest() or self.model
+        size = f"/{self.dimensions}d" if self.dimensions is not None else ""
         prefixes = ""
         if self.prefixes["document"] or self.prefixes["query"]:
             prefixes = "/p" + hashlib.sha256(
                 (self.prefixes["document"] + "\x00" + self.prefixes["query"]).encode()
             ).hexdigest()[:8]
-        return f"{weights}{prefixes}"
+        return f"{weights}{size}{prefixes}"
 
     def _ollama_digest(self) -> "str | None":
         """The model's digest when the server is Ollama, which lists them

@@ -262,6 +262,29 @@ class TestTheEmbedder:
                                                                             "query": "q: "})
         assert other_prefixes.version() != ollama.version()
 
+    def test_a_smaller_size_is_asked_for_and_held_to(self, monkeypatch):
+        """Matryoshka (18 October): `dimensions` is sent, and a server
+        answering another length is refused -- never cut down here, which
+        is right only for a model trained for it."""
+        from core.llm.interface import LLMUnavailable
+
+        embedder, sent = self._embedder(monkeypatch, self._data([0.5] * 4), dimensions=4)
+        assert embedder.embed_query("x") == [0.5] * 4
+        assert sent[0][1]["dimensions"] == 4
+        too_long, _ = self._embedder(monkeypatch, self._data([0.5] * 8), dimensions=4)
+        with pytest.raises(LLMUnavailable, match="not the 4 asked for"):
+            too_long.embed_query("x")
+
+    def test_without_a_size_none_is_sent(self, monkeypatch):
+        embedder, sent = self._embedder(monkeypatch, self._data([1.0]))
+        embedder.embed_query("x")
+        assert "dimensions" not in sent[0][1]
+
+    def test_the_size_is_part_of_the_version(self, monkeypatch):
+        full, _ = self._embedder(monkeypatch, {}, None, model="all-minilm")
+        small, _ = self._embedder(monkeypatch, {}, None, model="all-minilm", dimensions=256)
+        assert (full.version(), small.version()) == ("all-minilm", "all-minilm/256d")
+
     def test_a_key_is_sent_as_a_bearer_token(self, monkeypatch):
         embedder, sent = self._embedder(monkeypatch, self._data([1.0]), api_key="sekret")
         embedder.embed_query("x")
@@ -283,6 +306,7 @@ class TestTheSettings:
         from types import MappingProxyType, SimpleNamespace
 
         settings = {"embedding_model": "nomic-embed-text", "embedding_prefixes": None,
+                    "embedding_dimensions": None,
                     "embedding_connection": MappingProxyType({}),
                     "llm_connection": MappingProxyType(
                         {"base_url": "http://ollama.internal:11434/api/chat"}),
@@ -295,6 +319,12 @@ class TestTheSettings:
 
         for provider in ("ollama", "vllm"):
             assert build_embedder(self._config(provider)).origin == "http://ollama.internal:11434"
+
+    def test_the_configured_size_reaches_the_embedder(self):
+        from core.deployment_loader import build_embedder
+
+        assert build_embedder(self._config(embedding_dimensions=512)).dimensions == 512
+        assert build_embedder(self._config(embedding_dimensions=None)).dimensions is None
 
     def test_a_separate_embedding_server_is_used_when_named(self):
         from types import MappingProxyType
@@ -319,6 +349,9 @@ class TestTheSettings:
         ({"embedding_prefixes": {"doc": "x"}}, "document: <text>, query: <text>"),
         ({"embedding_prefixes": {"document": 3}}, "document: <text>, query: <text>"),
         ({"embedding_connection": {"base_url": "x", "password": "p"}}, "base_url, api_key"),
+        ({"embedding_dimensions": 8}, "16 to 8192"),
+        ({"embedding_dimensions": "512"}, "16 to 8192"),
+        ({"embedding_dimensions": True}, "16 to 8192"),
     ])
     def test_a_bad_setting_is_refused_with_the_reason(self, llm, why):
         from core.deployment_loader import _embedding_settings

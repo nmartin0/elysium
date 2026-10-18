@@ -196,7 +196,9 @@ Since 18 October: any embedding server through the OpenAI-style
 requires (missing from the first version); and a search_meaning step
 for Query's agent behind `agent.meaning_search`, through the same rules
 Browse ranks by -- not yet measured on a real model, as the other
-switches were (scripts/llm_bench.py). Its use for statistical
+switches were (scripts/llm_bench.py); and smaller vectors through
+`llm.embedding_dimensions`, whose cost in quality on a deployment's own
+data is unmeasured. Its use for statistical
 matching and enrichment is not built; neither are model predictions
 (R48, R53).
 
