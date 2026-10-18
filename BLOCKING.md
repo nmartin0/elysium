@@ -202,6 +202,27 @@ data is unmeasured. Its use for statistical
 matching and enrichment is not built; neither are model predictions
 (R48, R53).
 
+**NOT BUILT, BY THE OWNER'S CHOICE (18 October)**, each with what would
+change that:
+
+- A SEPARATE VECTOR SERVER (Qdrant was the design: Apache-2.0, a single
+  program, filtering by compartment while it searches, Elysium's own
+  access check still deciding). Not worth running at this size --
+  "built for the sake of being built". Exact search in-process measured
+  10.8 ms a question at 100,000 rows of 768 numbers, 38 ms at 500,000
+  of 512, 52 ms at a million of 256; speed does not force it. MEMORY
+  would: every server process holds its own copy of the vectors (977 MB
+  at a million of 256), where a vector server holds one. Revisit when a
+  declared table nears a million rows, or several processes each hold
+  a large copy.
+- AN MCP SERVER, letting outside language models call Elysium's search
+  as a tool. Waits on D3 -- whether Elysium's data may reach a model
+  outside this machine at all -- since that is its whole purpose. If
+  built: every call as the asking person, under the same access checks
+  as the routes; MCP's own record (tool poisoning, CVE-2025-6514, the
+  NSA's May 2026 note that its spread "outpaced the development of its
+  security model") is the reason to start from that rule.
+
 **STATISTICAL MATCHING HAS ITS YARDSTICK** (R59, 15 October):
 `scripts/evaluate_matching.py` measures the matcher against synthetic
 copies, a labels file or reviewers' decisions, with intervals. Its first
