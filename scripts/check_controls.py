@@ -4870,6 +4870,68 @@ CONTROLS = [
         ],
     ),
     Control(
+        describes='UNUSUAL: the marker needs read on every field it was compared within',
+        path='api/routes.py',
+        old='        authorize(current_user, roles, f"read:{flag.object_type}.{name}") for name in names)',
+        new='        authorize(current_user, roles, f"read:{flag.object_type}.{name}") for name in names[:1])',
+        tests=[
+            ('tests/integration/test_unusual_records.py::TestTheMarker::'
+             'test_not_without_reading_every_field_it_was_compared_within'),
+        ],
+    ),
+    Control(
+        describes='UNUSUAL: a flag is shown only in the compartment it was judged in',
+        path='api/routes.py',
+        old='    if flag.compartment is not None and flag.compartment != current_user.security_value:',
+        new='    if False:',
+        tests=[
+            ('tests/integration/test_unusual_records.py::TestTheMarker::'
+             'test_a_flag_from_another_compartment_is_not_shown_on_a_readable_record'),
+        ],
+    ),
+    Control(
+        describes='UNUSUAL: a value marked expected is not marked for anyone',
+        path='api/routes.py',
+        old='        if flag.decision == "expected" or not _may_see_flag(generation, current_user, flag):',
+        new='        if not _may_see_flag(generation, current_user, flag):',
+        tests=[
+            ('tests/integration/test_unusual_records.py::TestTheMarker::'
+             'test_expected_clears_it_for_everyone_until_the_value_changes'),
+        ],
+    ),
+    Control(
+        describes="UNUSUAL: the record's own read check answers for it",
+        path='api/routes.py',
+        old=('    return {"unusual": {record_id: flags for record_id, flags in found.items()\n'
+             '                        if _may_read_object('),
+        new=('    return {"unusual": {record_id: flags for record_id, flags in found.items()\n'
+             '                        if True or _may_read_object('),
+        tests=[
+            ('tests/integration/test_unusual_records.py::TestTheMarker::'
+             'test_a_record_the_reader_cannot_see_is_not_answered'),
+        ],
+    ),
+    Control(
+        describes='UNUSUAL: a flag for a number no longer declared is not shown',
+        path='api/routes.py',
+        old='    if declared is None or flag.field not in declared[0]:',
+        new='    if declared is None:',
+        tests=[
+            ('tests/integration/test_unusual_records.py::TestTheMarker::'
+             'test_a_flag_the_declaration_no_longer_makes_is_not_shown'),
+        ],
+    ),
+    Control(
+        describes='UNUSUAL: a flag compared within other fields than declared is not shown',
+        path='api/routes.py',
+        old='    if [field for field, _ in flag.kind] != list(declared[1]):',
+        new='    if False:',
+        tests=[
+            ('tests/integration/test_unusual_records.py::TestTheMarker::'
+             'test_a_flag_the_declaration_no_longer_makes_is_not_shown'),
+        ],
+    ),
+    Control(
         describes="ENRICH: a classified field is never an input to a model",
         path="core/ontology/enriched_fields.py",
         old="        if labels:\n            raise ValueError(",

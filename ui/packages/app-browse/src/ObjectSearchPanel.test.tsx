@@ -29,6 +29,8 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
     matchingIds: vi.fn(),
     getFrozenSets: vi.fn(),
     getFrozenSet: vi.fn(),
+    // Which rows shown are unusual for their kind (R51).
+    getUnusualFor: vi.fn(),
   }
 })
 
@@ -42,6 +44,7 @@ import {
   getVisibleActionTypesCached,
   searchObjects,
   getObjectDetail,
+  getUnusualFor,
 } from '@elysium/shell-api/api'
 import ObjectSearchPanel, { type SearchResult } from './ObjectSearchPanel'
 import type { VisibleSchema } from '@elysium/shell-api/types'
@@ -109,6 +112,27 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(getFrozenSets).mockResolvedValue([])
   vi.mocked(matchingIds).mockResolvedValue(['c1', 'c2', 'c3'])
+  vi.mocked(getUnusualFor).mockResolvedValue({})
+})
+
+describe('ObjectSearchPanel -- a row unusual for its kind (R51)', () => {
+  it('marks the row the server says is unusual, and only that row', async () => {
+    mockedSearchObjects.mockResolvedValue(
+      searchResult([
+        { id: 'cust_001', fields: { name: 'Ada Okafor', region: 'us-west' } },
+        { id: 'cust_002', fields: { name: 'Bo Lin', region: 'us-west' } },
+      ]),
+    )
+    vi.mocked(getUnusualFor).mockResolvedValue({
+      cust_002: [{ field: 'region', value: 1, reason: 'far from its kind', decision: null }],
+    })
+    renderPanel(CUSTOMER_SCHEMA)
+
+    const tag = await results().findByText('unusual')
+    expect(tag.closest('tr')).toHaveTextContent('Bo Lin')
+    expect(results().getAllByText('unusual')).toHaveLength(1)
+    expect(getUnusualFor).toHaveBeenCalledWith('Customer', ['cust_001', 'cust_002'])
+  })
 })
 
 /**

@@ -1103,6 +1103,82 @@ def pending_for_objects_route(object_type: str, ids: str, request: Request,
     return {"pending": readable}
 
 
+class UnusualValueResponse(BaseModel):
+    field: str
+    value: float
+    #: In words: against which records, and how far (core/unusual.py).
+    reason: str
+    #: "worth_a_look" when someone has looked and kept it; an "expected"
+    #: one is not returned at all.
+    decision: str | None = None
+
+
+class UnusualOnObjectsResponse(BaseModel):
+    #: By object id, only the ids with something unusual.
+    unusual: dict[str, list[UnusualValueResponse]]
+
+
+def _unusual_store(request: Request):
+    from core.unusual_flags import UnusualFlagStore
+
+    return UnusualFlagStore(request.app.state.runtime_paths.data_dir / "unusual_flags.db")
+
+
+def _may_see_flag(generation, current_user: UserRecord, flag) -> bool:
+    """Whether this caller may be told of this flag (R51; the owner, 19
+    October: everyone who may read the fields involved).
+
+    THREE CONDITIONS, each for a reason:
+      - read on the type, the flagged number, and EVERY field it was
+        compared within: the reason names their values;
+      - the flag's compartment is the caller's: it was judged against
+        that compartment's records alone (core/mirror/unusual_scan.py);
+      - and the declaration still names them -- a check since removed
+        or changed flags nothing.
+    The record itself is checked by the caller, through the mediator."""
+    from core.ontology.unusual_checks import unusual_of
+
+    roles = generation.config.roles
+    declared = unusual_of(generation.config.schema.get(flag.object_type) or {})
+    if declared is None or flag.field not in declared[0]:
+        return False
+    if flag.compartment is not None and flag.compartment != current_user.security_value:
+        return False
+    names = [flag.field, *(field for field, _ in flag.kind)]
+    if [field for field, _ in flag.kind] != list(declared[1]):
+        return False
+    return authorize(current_user, roles, f"read:{flag.object_type}") and all(
+        authorize(current_user, roles, f"read:{flag.object_type}.{name}") for name in names)
+
+
+@router.get("/unusual/{object_type}", dependencies=[Depends(_no_store)],
+            response_model=UnusualOnObjectsResponse)
+def unusual_on_objects_route(object_type: str, ids: str, request: Request,
+                             current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Which of these records have a number unusual for their kind (R51),
+    and why -- for a marker on the record, where it is read.
+
+    "THE SAME CHECKS AS EVERY READ": the flag's own rule (_may_see_flag)
+    and the record's, through the mediator -- an id the caller cannot see
+    is answered as one with nothing unusual, as everywhere. A value a
+    person marked "expected" is not returned: that decision clears the
+    marker for everyone until the value changes."""
+    wanted = [part for part in ids.split(",") if part][:MAX_PENDING_IDS]
+    if not wanted:
+        return {"unusual": {}}
+    generation = _generation(request)
+    found: dict[str, list[dict]] = {}
+    for flag in _unusual_store(request).flags(object_type, wanted):
+        if flag.decision == "expected" or not _may_see_flag(generation, current_user, flag):
+            continue
+        found.setdefault(flag.record_id, []).append({
+            "field": flag.field, "value": flag.value, "reason": flag.reason(),
+            "decision": flag.decision})
+    return {"unusual": {record_id: flags for record_id, flags in found.items()
+                        if _may_read_object(generation.mediator, current_user, object_type,
+                                            record_id)}}
+
+
 @router.get("/writes/awaiting", dependencies=[Depends(_no_store)],
             response_model=list[AwaitingWriteResponse])
 def awaiting_writes_route(request: Request,

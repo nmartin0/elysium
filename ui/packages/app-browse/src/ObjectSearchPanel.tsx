@@ -65,6 +65,7 @@ import { useChangedSince } from '@elysium/shell-api/liveUpdates'
 import DataTable, { SortableHeader } from '@elysium/shell-api/components/DataTable'
 import TableSkeleton from '@elysium/shell-api/components/TableSkeleton'
 import { PendingInSet, usePendingFor } from './PendingHere'
+import { UnusualTag, useUnusualFor } from './UnusualHere'
 import { useRovingFocus } from './useRovingFocus'
 import ActiveFilters from './ActiveFilters'
 import BulkActionForm from './BulkActionForm'
@@ -518,6 +519,12 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   // 15.3): "3 of these 40 have pending changes". The page's ids, so the
   // count is of what is on screen. Above the early returns: it is a hook.
   const pendingOnPage = usePendingFor(
+    selectedType || null,
+    results.map((result) => result.id),
+  )
+  // NUMBERS UNUSUAL FOR THEIR KIND (R51), marked on the row for whoever
+  // may read the fields involved.
+  const unusualOnPage = useUnusualFor(
     selectedType || null,
     results.map((result) => result.id),
   )
@@ -1179,6 +1186,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                     </Link>
                     {titleValue !== result.id && <span className="object-search__result-subtitle">{result.id}</span>}
                     {pendingOnPage[result.id] && <StatusTag state="pending">change waiting</StatusTag>}
+                    <UnusualTag values={unusualOnPage[result.id]} />
                   </td>
                   {tableColumns.map((field) => (
                     <td key={field} className={isNumericField(field) ? 'data-table__num' : undefined}>

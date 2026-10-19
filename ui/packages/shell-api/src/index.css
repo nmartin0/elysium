@@ -3154,6 +3154,15 @@
   }
 
   /* A value from an approved change the copy has not caught up with (R67b). */
+  /* A NUMBER UNUSUAL FOR ITS KIND (R51): its own line under the value,
+   * since the reason is a sentence. */
+  .object-detail__unusual {
+    display: block;
+    margin-top: var(--space-hair);
+    color: var(--text-secondary);
+    font-size: var(--type-label-size);
+  }
+
   .object-detail__overlaid {
     font-size: var(--type-dense-size);
     color: var(--text-secondary);

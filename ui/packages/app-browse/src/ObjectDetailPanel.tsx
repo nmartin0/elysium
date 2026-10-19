@@ -28,6 +28,7 @@ import { useLatestRequestGuard } from '@elysium/shell-api/useLatestRequestGuard'
 import { useUrlValue } from '@elysium/shell-api/useUrlState'
 import { useChangedSince } from '@elysium/shell-api/liveUpdates'
 import { PendingOnObject, usePendingFor } from './PendingHere'
+import { useUnusualFor } from './UnusualHere'
 import Notice from '@elysium/shell-api/components/Notice'
 import ActionForm, { type ActionDef } from './ActionForm'
 
@@ -157,6 +158,10 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
   const { changed: typeChanged, acknowledge: acknowledgeChange } = useChangedSince(objectType)
   // A CHANGE WAITING FOR APPROVAL, ON THE OBJECT IT WOULD CHANGE (15.3).
   const pendingHere = usePendingFor(objectType, [objectId])
+  // A NUMBER UNUSUAL FOR ITS KIND (R51), said under the field, in words.
+  const unusualHere = Object.fromEntries(
+    (useUnusualFor(objectType, [objectId])[objectId] ?? []).map((value) => [value.field, value.reason]),
+  )
 
   // Fetched ONCE per mount, not re-fetched on every object navigation
   // within this same route pattern -- which actions a user can invoke
@@ -368,6 +373,11 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
                     change the source or the mirror has not caught up
                     with. Without it the screen and the source system
                     disagree and nothing says why. */}
+                {unusualHere[fieldName] && (
+                  <span className="object-detail__unusual" role="note">
+                    <StatusTag state="active">unusual</StatusTag> {unusualHere[fieldName]}
+                  </span>
+                )}
                 {overlaid[fieldName] && (
                   <span className="object-detail__overlaid">
                     {overlaid[fieldName] === 'pending'

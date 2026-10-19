@@ -1676,6 +1676,25 @@ export interface PendingFor {
   proposed_by_you: boolean
 }
 
+/** A number unusual for its kind (R51): which field, the value, and why
+ *  in words. An "expected" one is never sent. */
+export interface UnusualValue {
+  field: string
+  value: number
+  reason: string
+  /** "worth_a_look" when someone has looked and kept it. */
+  decision?: string | null
+}
+
+/** Which of these records have an unusual number, for a marker where they
+ *  are read; only ones the caller may read, with every field involved. */
+export async function getUnusualFor(objectType: string, ids: string[]): Promise<Record<string, UnusualValue[]>> {
+  if (ids.length === 0) return {}
+  const params = new URLSearchParams({ ids: ids.join(',') })
+  const response = await apiFetchOrThrow(`/unusual/${encodeURIComponent(objectType)}?${params}`)
+  return ((await response.json()) as { unusual: Record<string, UnusualValue[]> }).unusual
+}
+
 /** Which of these objects have a change waiting -- by id, only the ids
  *  that do. */
 export async function getPendingFor(objectType: string, ids: string[]): Promise<Record<string, PendingFor[]>> {

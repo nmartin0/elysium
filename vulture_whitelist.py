@@ -56,6 +56,7 @@ compare_sets_route
 my_inbox_counts_route
 # Changes waiting, shown on the object and the set (DEV_UI 15.3).
 pending_for_objects_route
+unusual_on_objects_route
 # The ontology canvas's layout (DEV_UI 14): routes, reached by HTTP.
 my_ontology_canvas_route
 save_my_ontology_canvas_route

@@ -10,6 +10,7 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
     ...actual,
     getObjectDetail: vi.fn(),
     getVisibleActionTypesCached: vi.fn(),
+    getUnusualFor: vi.fn(),
   }
 })
 vi.mock('./ActionForm', () => ({
@@ -34,12 +35,13 @@ vi.mock('./ActionForm', () => ({
   ),
 }))
 
-import { getObjectDetail, getVisibleActionTypesCached, ApiError } from '@elysium/shell-api/api'
+import { getObjectDetail, getVisibleActionTypesCached, getUnusualFor, ApiError } from '@elysium/shell-api/api'
 import ObjectDetailPanel from './ObjectDetailPanel'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
 const mockedGetObjectDetail = vi.mocked(getObjectDetail)
 const mockedGetVisibleActionTypes = vi.mocked(getVisibleActionTypesCached)
+const mockedGetUnusualFor = vi.mocked(getUnusualFor)
 
 const CUSTOMER_SCHEMA: VisibleSchema = {
   Customer: {
@@ -102,6 +104,35 @@ function renderPanelWithNavigation(
 beforeEach(() => {
   vi.clearAllMocks()
   mockedGetVisibleActionTypes.mockResolvedValue({})
+  mockedGetUnusualFor.mockResolvedValue({})
+})
+
+describe('ObjectDetailPanel -- a number unusual for its kind (R51)', () => {
+  const REASON = 'name 300 is far above the usual 50 for the 978 records with category subscription.'
+
+  it('says why, under the field it is about', async () => {
+    mockedGetObjectDetail.mockResolvedValue({ fields: { name: 'Ada O.', account_id: null } })
+    mockedGetUnusualFor.mockResolvedValue({
+      cust_001: [{ field: 'name', value: 300, reason: REASON, decision: null }],
+    })
+    renderPanel('Customer', 'cust_001')
+
+    const note = await screen.findByText(REASON, { exact: false })
+    expect(note.closest('.object-detail__field')).toHaveTextContent('Name')
+    expect(note.closest('.object-detail__field')).not.toHaveTextContent('Account id')
+    expect(mockedGetUnusualFor).toHaveBeenCalledWith('Customer', ['cust_001'])
+  })
+
+  it('says nothing when nothing is unusual, or the question fails', async () => {
+    // THE CONTROL: the ordinary case, and a failed ask, carry no note.
+    mockedGetObjectDetail.mockResolvedValue({ fields: { name: 'Ada Okafor', account_id: null } })
+    mockedGetUnusualFor.mockRejectedValue(new Error('down'))
+    renderPanel('Customer', 'cust_001')
+
+    await screen.findByText('Account id')
+    await waitFor(() => expect(mockedGetUnusualFor).toHaveBeenCalled())
+    expect(screen.queryByText('unusual')).not.toBeInTheDocument()
+  })
 })
 
 describe('ObjectDetailPanel -- a value from an approved change (R67b)', () => {
