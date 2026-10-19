@@ -1060,3 +1060,43 @@ work just paid for.
 When either fires, the wrappers are already the call-site layer: the
 implementation changes underneath them and the 97 call sites do not
 move.
+
+## 11. The simulator as Elysium's live test, and five kinds of source
+
+**AGREED WITH THE OWNER, 19 October, to take up once the agent-speed
+patch has landed.** Nothing here is built yet; the design is the next
+conversation, not this file's.
+
+**THE SIMULATOR STAYS OUTSIDE ELYSIUM.** `sim/` operates real
+PostgreSQL, MariaDB, SQLite, CSV-folder and REST sources for a
+simulated organisation, changing their contents on a clock and their
+structure on a schedule. Its founding rule -- "the databases are the
+only interface", and it "does not import [Elysium], depend on it, or
+know it exists" (sim/README.md, sim/AGENTS.md) -- is kept: an Elysium
+that controlled the world it reads would know a rename was coming,
+and a product shipping a way to create and alter databases is a
+product with one more door. So:
+
+- A CONTROL PANEL SERVED BY THE SIMULATOR ITSELF (`simulator serve`,
+  say), its own page on its own port: start and stop, pause (which it
+  lacks), speed, advance, trigger a scheduled change, choose a pack,
+  status, and each database's connection details to copy. It may
+  borrow Elysium's look; it is not part of the product.
+- Elysium keeps reading only the databases, wired by an ordinary
+  `data_silos.yaml`.
+
+**THE SIMULATOR AS A LIVE TEST OF ELYSIUM.** Point a deployment at a
+running world and check, from outside, that what Elysium serves follows
+what the world did -- rows that arrive, change and vanish, and the
+drifts a pack schedules (no pack declares `migrations` yet). The
+simulator's own oracle (`verify`, `watches`) is the yardstick.
+
+**ELYSIUM SHOULD READ ALL FIVE KINDS** -- PostgreSQL, MariaDB, SQLite,
+CSV files and REST. Today: SQLite, and PostgreSQL through the
+SQLAlchemy adapter, read only, and not yet a supported production silo
+(Q4); MariaDB would come through the same adapter's dialect; CSV and
+REST have no adapter. Writes reach SQLite alone. The simulator's
+PostgreSQL and MariaDB are also what item 8 (row-level security) and
+writes to a server database have been waiting for: a real one.
+
+**Blocked on:** finishing the current work, then agreeing the design.
