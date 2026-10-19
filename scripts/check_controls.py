@@ -5089,6 +5089,94 @@ CONTROLS = [
         ],
     ),
     Control(
+        describes='PROGRESS: nothing is shown once the asker has changed',
+        path='api/routes.py',
+        old=('    def steps(self, gathered: list[dict]) -> None:\n'
+             '        """From the loop\'s thread, between hops."""\n'
+             '        if self._still_them is None or not self._still_them():\n'
+             '            return'),
+        new=('    def steps(self, gathered: list[dict]) -> None:\n'
+             '        """From the loop\'s thread, between hops."""\n'
+             '        if self._still_them is None:\n'
+             '            return'),
+        tests=[
+            ('tests/integration/test_a_question_shows_its_steps.py::'
+             'test_nothing_is_shown_once_the_asker_has_changed'),
+        ],
+    ),
+    Control(
+        describes="PROGRESS: a step is shown in the answer's own read-back, refusals stripped",
+        path='api/routes.py',
+        old='        return read_back(AgentLoop.filter_real_data(gathered), self._schema)',
+        new='        return read_back(gathered, self._schema)',
+        tests=[
+            ('tests/integration/test_a_question_shows_its_steps.py::'
+             'test_a_refused_read_is_not_shown'),
+        ],
+    ),
+    Control(
+        describes='PROGRESS: only a client asking for the stream gets it',
+        path='api/routes.py',
+        old='    if "application/x-ndjson" in request.headers.get("accept", ""):',
+        new='    if True:',
+        tests=[
+            ('tests/integration/test_a_question_shows_its_steps.py::'
+             'test_a_plain_request_is_answered_exactly_as_before'),
+        ],
+    ),
+    Control(
+        describes="PROGRESS: the stream ends with the question's own status and body",
+        path='api/routes.py',
+        old='            return {"type": "done", "status": e.status_code, "body": {"detail": e.detail}}',
+        new='            return {"type": "done", "status": 200, "body": {"detail": e.detail}}',
+        tests=[
+            ('tests/integration/test_a_question_shows_its_steps.py::'
+             'test_nothing_is_shown_once_the_asker_has_changed'),
+        ],
+    ),
+    Control(
+        describes='PROGRESS: the loop hands on a copy of what it gathered',
+        path='core/agent/agentic_loop.py',
+        old='                    progress(list(gathered))',
+        new='                    progress(gathered)',
+        tests=[
+            ('tests/unit/test_the_loop_reports_its_progress.py::'
+             'test_what_it_is_given_is_a_copy'),
+        ],
+    ),
+    Control(
+        describes='PROGRESS: a failing progress hook never stops the question',
+        path='core/agent/agentic_loop.py',
+        old='                except Exception:  # noqa: BLE001 - showing progress must never stop a question',
+        new='                except ZeroDivisionError:',
+        tests=[
+            ('tests/unit/test_the_loop_reports_its_progress.py::'
+             'test_a_failing_hook_does_not_stop_the_question'),
+        ],
+    ),
+    Control(
+        describes='PROGRESS: a person leaving ends the question through its own cancel events',
+        path='api/routes.py',
+        old=('                progress.left()\n'),
+        new=('                task.cancel()\n'),
+        tests=[
+            ('tests/integration/test_a_question_shows_its_steps.py::'
+             'test_leaving_partway_ends_the_question_its_own_way'),
+        ],
+    ),
+    Control(
+        describes='PROGRESS: an event watched after leaving is set at once',
+        path='api/routes.py',
+        old=('        self._cancels.append(cancel)\n'
+             '        if self._left:\n'
+             '            cancel.set()'),
+        new='        self._cancels.append(cancel)',
+        tests=[
+            ('tests/integration/test_a_question_shows_its_steps.py::'
+             'test_an_event_watched_after_leaving_is_set_at_once'),
+        ],
+    ),
+    Control(
         describes="ENRICH: a classified field is never an input to a model",
         path="core/ontology/enriched_fields.py",
         old="        if labels:\n            raise ValueError(",

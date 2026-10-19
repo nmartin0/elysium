@@ -24,14 +24,14 @@
  * minutes on a CPU, and a spinner with no words reads as hung.
  */
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Button, Drawer, DrawerSize, TextArea } from '@blueprintjs/core'
 import { Link } from 'react-router-dom'
 
-import { messageFromErrorBody, query } from '@elysium/shell-api/api'
+import { messageFromErrorBody, query, type QueryProgress } from '@elysium/shell-api/api'
 import Action from '@elysium/shell-api/components/Action'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
-import LoadingState from '@elysium/shell-api/components/LoadingState'
+import QuestionProgress from '@elysium/shell-api/components/QuestionProgress'
 import PendingWriteCard, { type PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
 
 import AskTheAgent from './AskTheAgent'
@@ -70,6 +70,11 @@ export default function AskAboutSet({
   const [answer, setAnswer] = useState<string | null>(null)
   const [pendingWrite, setPendingWrite] = useState<PendingWrite | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // WHAT IT HAS DONE SO FAR, and the way to stop it (19 October), as in Query.
+  const [progress, setProgress] = useState<QueryProgress | null>(null)
+  const [startedAt, setStartedAt] = useState(0)
+  const [stopped, setStopped] = useState(false)
+  const asked = useRef<AbortController | null>(null)
 
   if (!objectType) return null
   const subject = describe(objectType, filterCount, total)
@@ -84,8 +89,17 @@ export default function AskAboutSet({
     setAnswer(null)
     setPendingWrite(null)
     setError(null)
+    setProgress(null)
+    setStopped(false)
+    setStartedAt(Date.now())
+    const controller = new AbortController()
+    asked.current = controller
     try {
-      const response = await query(question, { object_type: objectType, conditions, text })
+      const response = await query(
+        question,
+        { object_type: objectType, conditions, text },
+        { onProgress: setProgress, signal: controller.signal },
+      )
       if (response.status === 401) {
         onSessionExpired()
         return
@@ -98,8 +112,11 @@ export default function AskAboutSet({
       else if (response.status === 200) setAnswer(body.answer ?? null)
       else setError(messageFromErrorBody(body) ?? `Request failed (${response.status})`)
     } catch {
-      setError('Could not reach the server.')
+      if (controller.signal.aborted) setStopped(true)
+      else setError('Could not reach the server.')
     } finally {
+      asked.current = null
+      setProgress(null)
       setAsking(false)
     }
   }
@@ -143,11 +160,9 @@ export default function AskAboutSet({
             </Link>
           </div>
           {asking && (
-            <>
-              <LoadingState label="Asking…" />
-              <p className="ask-panel__note">This can take a few minutes on this deployment's hardware.</p>
-            </>
+            <QuestionProgress progress={progress} startedAt={startedAt} onStop={() => asked.current?.abort()} />
           )}
+          {stopped && <p className="ask-panel__note">Stopped. Nothing was answered.</p>}
           {error && <ErrorState>{error}</ErrorState>}
           {answer !== null && <p className="ask-panel__answer">{answer}</p>}
           {pendingWrite && (

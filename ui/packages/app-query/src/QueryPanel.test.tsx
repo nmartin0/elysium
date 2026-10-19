@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
 
@@ -108,7 +108,13 @@ describe('QueryPanel -- submitting', () => {
 
     submit('how many customers do we have?')
 
-    await waitFor(() => expect(mockedQuery).toHaveBeenCalledWith('how many customers do we have?'))
+    await waitFor(() =>
+      expect(mockedQuery).toHaveBeenCalledWith(
+        'how many customers do we have?',
+        undefined,
+        expect.objectContaining({ onProgress: expect.any(Function), signal: expect.any(AbortSignal) }),
+      ),
+    )
   })
 
   it('shows "Thinking…" and disables the button while in flight', async () => {
@@ -480,5 +486,54 @@ describe('QueryPanel -- what comes with an answer', () => {
     await screen.findByText('42')
     expect(screen.queryByText('What it did to answer')).toBeNull()
     expect(screen.queryByText('Ask next:')).toBeNull()
+  })
+})
+
+describe('QueryPanel -- a question shows its steps as it goes (19 October)', () => {
+  function answeringLater() {
+    let finish: (response: Response) => void = () => {}
+    mockedQuery.mockImplementation((_text, _about, options) => {
+      options?.onProgress?.({ lines: ['Found 1 Customer whose Name is Ada Okafor'], answering: false })
+      return new Promise<Response>((resolve, reject) => {
+        finish = resolve
+        options?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      })
+    })
+    return (response: Response) => finish(response)
+  }
+
+  it('what it has done, while it works -- and gone once the answer is here', async () => {
+    const finish = answeringLater()
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+    submit('What is Ada’s email?')
+
+    expect(await screen.findByText('Found 1 Customer whose Name is Ada Okafor')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Working on your question' })).toBeInTheDocument()
+
+    await act(async () => finish(fakeResponse(200, { answer: 'ada.okafor@example.com', read_back: [] })))
+
+    expect(await screen.findByText('ada.okafor@example.com')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Working on your question' })).toBeNull()
+  })
+
+  it('Stop stops it, and says so -- not "could not reach the server"', async () => {
+    answeringLater()
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={vi.fn()} />
+      </MemoryRouter>,
+    )
+    submit('What is Ada’s email?')
+    await screen.findByText('Found 1 Customer whose Name is Ada Okafor')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+
+    expect(await screen.findByText('Stopped. Nothing was answered.')).toBeInTheDocument()
+    expect(screen.queryByText('Could not reach the server.')).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Working on your question' })).toBeNull()
   })
 })

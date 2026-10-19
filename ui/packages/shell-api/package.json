@@ -26,6 +26,7 @@
     "./components/Notice": "./src/components/Notice.tsx",
     "./components/Page": "./src/components/Page.tsx",
     "./components/PendingWriteCard": "./src/components/PendingWriteCard.tsx",
+    "./components/QuestionProgress": "./src/components/QuestionProgress.tsx",
     "./components/RoleImpact": "./src/components/RoleImpact.tsx",
     "./components/StatusTag": "./src/components/StatusTag.tsx",
     "./components/TableSkeleton": "./src/components/TableSkeleton.tsx",

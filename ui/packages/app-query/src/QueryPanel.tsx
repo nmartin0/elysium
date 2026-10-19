@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useUrlValue } from '@elysium/shell-api/useUrlState'
 import Notice from '@elysium/shell-api/components/Notice'
 import { Button } from '@blueprintjs/core'
-import { messageFromErrorBody, query } from '@elysium/shell-api/api'
+import { messageFromErrorBody, query, type QueryProgress } from '@elysium/shell-api/api'
+import QuestionProgress from '@elysium/shell-api/components/QuestionProgress'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 
 import AnswerTrace from './AnswerTrace'
@@ -71,6 +72,13 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
   const [pendingWrite, setPendingWrite] = useState<PendingWrite | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // WHAT IT HAS DONE SO FAR, while it runs (19 October), and the way to
+  // stop it. Cleared when the answer arrives: the answer carries its own
+  // read-back.
+  const [progress, setProgress] = useState<QueryProgress | null>(null)
+  const [startedAt, setStartedAt] = useState(0)
+  const [stopped, setStopped] = useState(false)
+  const asking = useRef<AbortController | null>(null)
   const [examples, setExamples] = useState<string[]>([])
   /**
    * IN MEMORY, FOR THIS SESSION. A question is not sensitive but the
@@ -119,7 +127,12 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
     setAnswer(null)
     setExtras(NO_EXTRAS)
     setPendingWrite(null)
+    setProgress(null)
+    setStopped(false)
+    setStartedAt(Date.now())
     setSubmitting(true)
+    const controller = new AbortController()
+    asking.current = controller
     setAsked((previous) => [queryText, ...previous.filter((question) => question !== queryText)].slice(0, 10))
 
     try {
@@ -127,7 +140,10 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
       // Promise<unknown> like most other api.ts callers -- see that
       // file's own comment on why: /query has four meaningfully
       // different outcomes the caller needs to branch on by status).
-      const response = await query(queryText)
+      const response = await query(queryText, undefined, {
+        onProgress: setProgress,
+        signal: controller.signal,
+      })
 
       if (response.status === 401) {
         onSessionExpired()
@@ -171,8 +187,12 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
         setError(messageFromErrorBody(body) ?? `Request failed (${response.status})`)
       }
     } catch {
-      setError('Could not reach the server.')
+      // STOPPED IS NOT A FAILURE to reach the server; it is what was asked.
+      if (controller.signal.aborted) setStopped(true)
+      else setError('Could not reach the server.')
     } finally {
+      asking.current = null
+      setProgress(null)
       setSubmitting(false)
     }
   }
@@ -211,6 +231,10 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
           for; success/danger stays reserved for genuinely binary
           outcomes elsewhere (see PendingWriteCard's own Callout usage
           for that real contrast). */}
+      {submitting && (
+        <QuestionProgress progress={progress} startedAt={startedAt} onStop={() => asking.current?.abort()} />
+      )}
+      {stopped && <Notice state="neutral">Stopped. Nothing was answered.</Notice>}
       {error && <ErrorState>{error}</ErrorState>}
       {answer && <ReadBack steps={extras.readBack} />}
       {answer && <Notice>{answer}</Notice>}

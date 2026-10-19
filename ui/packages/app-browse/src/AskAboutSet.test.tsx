@@ -51,11 +51,11 @@ describe('asking about the set on screen, without leaving it', () => {
     await askAbout('Which is largest?')
 
     expect(await screen.findByText('Transaction 4.')).toBeInTheDocument()
-    expect(query).toHaveBeenCalledWith('Which is largest?', {
-      object_type: 'Transaction',
-      conditions: CONDITIONS,
-      text: 'Feldman',
-    })
+    expect(query).toHaveBeenCalledWith(
+      'Which is largest?',
+      { object_type: 'Transaction', conditions: CONDITIONS, text: 'Feldman' },
+      expect.objectContaining({ onProgress: expect.any(Function) }),
+    )
   })
 
   it('shows a refusal as the server words it', async () => {

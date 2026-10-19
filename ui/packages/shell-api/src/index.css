@@ -3946,6 +3946,54 @@
   }
 
   .ask-panel__subject,
+  /* A QUESTION IN PROGRESS (19 October): what it has done so far, how
+   * long it has been, and Stop. One block, sunken like a record of work,
+   * so it reads as the question's own and not as the answer. */
+  .question-progress {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-tight);
+    margin: var(--space-normal) 0;
+    padding: var(--space-snug) var(--space-normal);
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius);
+  }
+
+  .question-progress__head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-tight);
+  }
+
+  .question-progress__title {
+    flex: 1;
+  }
+
+  /* Digits that do not shift the line as they change. */
+  .question-progress__elapsed {
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+  }
+
+  .question-progress__steps {
+    margin: 0;
+    padding-left: var(--space-loose);
+    color: var(--text-secondary);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+  }
+
+  .question-progress__steps:empty {
+    display: none;
+  }
+
+  .question-progress__waiting {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--type-dense-size);
+  }
+
   .ask-panel__note {
     margin: 0;
     color: var(--text-secondary);

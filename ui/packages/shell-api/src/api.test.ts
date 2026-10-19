@@ -752,3 +752,76 @@ describe('messageFromErrorBody', () => {
     expect(messageFromErrorBody({ detail: { group: ['a'] } })).toBeNull()
   })
 })
+
+describe('query(), shown as it goes (19 October)', () => {
+  function streaming(chunks: string[]) {
+    const encoder = new TextEncoder()
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk))
+        controller.close()
+      },
+    })
+    return new Response(body, { status: 200, headers: { 'Content-Type': 'application/x-ndjson' } })
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('asks for the stream, hands on each step, and returns the question’s own status and body', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        streaming([
+          '{"type": "steps", "lines": ["Found 1 Customer"]}\n{"type": "st',
+          'eps", "lines": ["Found 1 Customer", "Read Email of Ada"]}\n',
+          '{"type": "answering", "lines": ["Found 1 Customer", "Read Email of Ada"]}\n',
+          '{"type": "done", "status": 202, "body": {"pending_write": {"id": "w1"}}}\n',
+        ]),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+    const seen: { lines: string[]; answering: boolean }[] = []
+
+    const response = await query('q', undefined, { onProgress: (progress) => seen.push(progress) })
+
+    expect(fetchMock.mock.calls[0]?.[1].headers.Accept).toBe('application/x-ndjson')
+    // A LINE SPLIT ACROSS TWO CHUNKS is still one step.
+    expect(seen).toEqual([
+      { lines: ['Found 1 Customer'], answering: false },
+      { lines: ['Found 1 Customer', 'Read Email of Ada'], answering: false },
+      { lines: ['Found 1 Customer', 'Read Email of Ada'], answering: true },
+    ])
+    expect(response.status).toBe(202)
+    expect(await response.json()).toEqual({ pending_write: { id: 'w1' } })
+  })
+
+  it('a plain answer -- a 401, a 429, an older server -- comes back as it was', async () => {
+    const plain = new Response('{"detail": "Too many queries"}', {
+      status: 429,
+      headers: { 'Content-Type': 'application/json' },
+    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(plain))
+    const onProgress = vi.fn()
+
+    const response = await query('q', undefined, { onProgress })
+
+    expect(response).toBe(plain)
+    expect(onProgress).not.toHaveBeenCalled()
+  })
+
+  it('a stream that ends without its last line is a failure, not an empty answer', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streaming(['{"type": "steps", "lines": ["a"]}\n'])))
+
+    await expect(query('q', undefined, { onProgress: () => {} })).rejects.toThrow('did not arrive')
+  })
+
+  it('without onProgress, nothing changes: no stream asked for', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await query('q')
+
+    expect(fetchMock.mock.calls[0]?.[1].headers.Accept).toBeUndefined()
+  })
+})

@@ -117,11 +117,13 @@ import json
 import logging
 import os
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
 from api.apps import visible_apps_for
@@ -7598,6 +7600,142 @@ async def query(body: QueryRequest, request: Request,
             detail="Too many queries -- please wait before asking again.",
         )
 
+    # SHOWN AS IT HAPPENS, WHEN ASKED (19 October): a client accepting
+    # NDJSON gets each step as it is done, then one last line with the
+    # status and body this route would otherwise have answered with.
+    # Every other client -- the bench, a script, an older UI -- is
+    # answered exactly as before.
+    if "application/x-ndjson" in request.headers.get("accept", ""):
+        return _streamed_query(body, request, current_user)
+    return await _answer_query(body, request, current_user)
+
+
+class _QueryProgress:
+    """What a person waiting on a question is shown, as it happens.
+
+    "10 seconds is about the limit for keeping the user's attention
+    focused on the dialogue"; past it, people "should be given feedback
+    indicating when the computer expects to be done" (Nielsen, Response
+    Times: The 3 Important Limits). A question here takes minutes on a
+    CPU, and the page said nothing until the end.
+
+    NOTHING THE ANSWER WOULD NOT CARRY: each update is the read-back --
+    the sentences the answer ends with, from what synthesis is given,
+    refusals stripped (core/agent/answer_context.py) -- recomputed over
+    what has been gathered so far. And NOT UNDER AN AUTHORITY NO LONGER
+    HELD: before each update the asker is looked up again, as the loop
+    does between hops; if they have changed, nothing is sent, and the
+    loop stops at its next hop as it always has.
+
+    The answer itself is NOT streamed (the owner, 19 October): it is
+    checked after it is written -- citations, emails, numbers -- and
+    thrown away whole if a check fails, so it is shown whole, checked.
+    """
+
+    def __init__(self, event_loop, queue):
+        self._event_loop = event_loop
+        self._queue = queue
+        self._last: list[str] = []
+        self._still_them: Callable[[], bool] | None = None
+        self._schema: dict = {}
+        self._cancels: list[threading.Event] = []
+        self._left = False
+
+    def bind(self, still_them, schema: dict) -> None:
+        self._still_them = still_them
+        self._schema = schema
+
+    def watch(self, cancel: threading.Event) -> None:
+        """A cancel event of the question's own: set if the person leaves,
+        so it ends the way a question always has when they do -- stopped
+        between hops or mid-call (AL-11), and audited as cancelled."""
+        self._cancels.append(cancel)
+        if self._left:
+            cancel.set()
+
+    def left(self) -> None:
+        self._left = True
+        for cancel in self._cancels:
+            cancel.set()
+
+    def _send(self, event: dict) -> None:
+        self._event_loop.call_soon_threadsafe(self._queue.put_nowait, event)
+
+    def _lines(self, gathered: list[dict]) -> list[str]:
+        from core.agent.answer_context import read_back
+
+        return read_back(AgentLoop.filter_real_data(gathered), self._schema)
+
+    def steps(self, gathered: list[dict]) -> None:
+        """From the loop's thread, between hops."""
+        if self._still_them is None or not self._still_them():
+            return
+        lines = self._lines(gathered)
+        if lines != self._last:
+            self._last = lines
+            self._send({"type": "steps", "lines": lines})
+
+    def answering(self, real_data: list[dict]) -> None:
+        if self._still_them is None or not self._still_them():
+            return
+        from core.agent.answer_context import read_back
+
+        self._send({"type": "answering", "lines": read_back(real_data, self._schema)})
+
+
+def _streamed_query(body: QueryRequest, request: Request, current_user: UserRecord):
+    """The query, as NDJSON: progress lines, then {"type": "done",
+    "status", "body"} -- the status and body the plain route returns.
+    NDJSON because Ollama streams the same way, and a POST cannot be read
+    by an EventSource. The stream's own status is 200; the question's is
+    in its last line."""
+    queue: asyncio.Queue = asyncio.Queue()
+    progress = _QueryProgress(asyncio.get_running_loop(), queue)
+
+    async def outcome() -> dict:
+        try:
+            answered = await _answer_query(body, request, current_user, progress)
+        except HTTPException as e:
+            return {"type": "done", "status": e.status_code, "body": {"detail": e.detail}}
+        if isinstance(answered, Response):
+            return {"type": "done", "status": answered.status_code,
+                    "body": json.loads(bytes(answered.body))}
+        return {"type": "done", "status": 200, "body": jsonable_encoder(answered)}
+
+    async def lines():
+        task = asyncio.create_task(outcome())
+        waiting: asyncio.Task | None = None
+        try:
+            while True:
+                waiting = asyncio.create_task(queue.get())
+                done, _ = await asyncio.wait({task, waiting}, return_when=asyncio.FIRST_COMPLETED)
+                if waiting in done:
+                    yield json.dumps(waiting.result()) + "\n"
+                    continue
+                waiting.cancel()
+                while not queue.empty():
+                    yield json.dumps(queue.get_nowait()) + "\n"
+                yield json.dumps(task.result(), default=str) + "\n"
+                return
+        finally:
+            # THE PERSON LEFT (Stop, or the tab closed). The question is
+            # NOT cancelled from outside: its own cancel events are set,
+            # so it stops as it always has when someone leaves -- between
+            # hops or mid-call (AL-11) -- and its audit entry is written.
+            # Found in a browser: cancelling the task instead stopped the
+            # run and skipped the `query_cancelled` entry.
+            if waiting is not None and not waiting.done():
+                waiting.cancel()
+            if not task.done():
+                progress.left()
+                task.add_done_callback(lambda finished: finished.cancelled() or finished.exception())
+
+    return StreamingResponse(lines(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-store"})
+
+
+async def _answer_query(body: QueryRequest, request: Request, current_user: UserRecord,
+                        progress: "_QueryProgress | None" = None):
     # THE QUESTION AS THE AGENT RECEIVES IT: the asker's words, then --
     # when asked from Browse -- the set on screen in words, validated
     # against what this asker may see. Used everywhere below, so the
@@ -7621,6 +7759,8 @@ async def query(body: QueryRequest, request: Request,
     event_loop = asyncio.get_running_loop()
 
     cancel_event = threading.Event()
+    if progress is not None:
+        progress.watch(cancel_event)
     watcher_task = asyncio.create_task(_watch_for_disconnect(request, cancel_event))
     try:
         # ONE context per query, created here and threaded down. Every
@@ -7652,11 +7792,15 @@ async def query(body: QueryRequest, request: Request,
                 return None
             return user_directory.get_user_record(current_user.user_id)
 
+        if progress is not None:
+            progress.bind(lambda: refresh_user() == current_user,
+                          _generation(request).mediator.visible_schema(current_user, for_agent=True))
         result = await event_loop.run_in_executor(
             executor,
             functools.partial(
                 loop.run, current_user, question, cancel_event, request_context,
                 refresh_user=refresh_user,
+                progress=progress.steps if progress is not None else None,
             ),
         )
     finally:
@@ -7761,10 +7905,14 @@ async def query(body: QueryRequest, request: Request,
         )
 
     real_data = AgentLoop.filter_real_data(result.gathered)
+    if progress is not None:
+        progress.answering(real_data)
     # SYNTHESIS IS WATCHED TOO (AL-11). It is a model call like any
     # other, often the longest, and the loop's event was set on the way
     # out of the loop -- so it gets its own, and its own watcher.
     synthesis_cancel = threading.Event()
+    if progress is not None:
+        progress.watch(synthesis_cancel)
     synthesis_watcher = asyncio.create_task(_watch_for_disconnect(request, synthesis_cancel))
     try:
         insight = await event_loop.run_in_executor(

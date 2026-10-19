@@ -376,11 +376,66 @@ export interface QueryAbout {
   text: string
 }
 
-export async function query(queryText: string, about?: QueryAbout): Promise<Response> {
-  return apiFetch('/query', {
+/** What has been done so far, while a question is being answered: the
+ *  read-back sentences, and whether the answer is now being written. */
+export interface QueryProgress {
+  lines: string[]
+  answering: boolean
+}
+
+export interface QueryOptions {
+  /** Each step as it is done (19 October). Given, the server streams
+   *  NDJSON; the Response returned is still the question's own status
+   *  and body, built from the stream's last line. */
+  onProgress?: (progress: QueryProgress) => void
+  /** Aborting it stops the question: the server sees the connection
+   *  close and abandons the run (AL-11). */
+  signal?: AbortSignal
+}
+
+export async function query(queryText: string, about?: QueryAbout, options: QueryOptions = {}): Promise<Response> {
+  const body = JSON.stringify(about ? { query: queryText, about } : { query: queryText })
+  if (!options.onProgress) return apiFetch('/query', { method: 'POST', body, signal: options.signal })
+  const response = await apiFetch('/query', {
     method: 'POST',
-    body: JSON.stringify(about ? { query: queryText, about } : { query: queryText }),
+    body,
+    signal: options.signal,
+    headers: { Accept: 'application/x-ndjson' },
   })
+  // A 401, a 429, or a server that predates the stream: answered plainly.
+  if (!(response.headers.get('content-type') ?? '').startsWith('application/x-ndjson') || !response.body) {
+    return response
+  }
+  return readQueryStream(response.body, options.onProgress)
+}
+
+async function readQueryStream(
+  stream: ReadableStream<Uint8Array>,
+  onProgress: (progress: QueryProgress) => void,
+): Promise<Response> {
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  let buffered = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    buffered += decoder.decode(value ?? new Uint8Array(), { stream: !done })
+    const lines = buffered.split('\n')
+    buffered = lines.pop() ?? ''
+    for (const line of done ? [...lines, buffered] : lines) {
+      if (!line.trim()) continue
+      const event = JSON.parse(line) as { type: string; lines?: string[]; status?: number; body?: unknown }
+      if (event.type === 'done') {
+        return new Response(JSON.stringify(event.body ?? {}), {
+          status: event.status ?? 500,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      onProgress({ lines: event.lines ?? [], answering: event.type === 'answering' })
+    }
+    // ENDED WITHOUT ITS LAST LINE: the connection dropped. A failure to
+    // reach the server, as the callers already say it.
+    if (done) throw new Error('The answer did not arrive.')
+  }
 }
 
 export async function confirmWrite(writeId: string, approved: boolean): Promise<unknown> {

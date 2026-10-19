@@ -77,7 +77,7 @@ class TestAnAgentQueryIsOneScope:
         from core.agent.agentic_loop import AgentLoop
         seen = []
         monkeypatch.setattr(AgentLoop, "_run",
-                            lambda self, *args: seen.append(_SECURITY_CACHE.get()) or "done")
+                            lambda self, *args, **kwargs: seen.append(_SECURITY_CACHE.get()) or "done")
         loop = AgentLoop.__new__(AgentLoop)
 
         assert loop.run("user", "question") == "done"

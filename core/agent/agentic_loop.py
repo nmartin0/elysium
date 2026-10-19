@@ -1624,8 +1624,15 @@ class AgentLoop:
     def run(self, user_record: UserRecord, query_text: str,
             cancel_event: threading.Event | None = None,
             context: RequestContext | None = None,
-            refresh_user: "Callable[[], UserRecord | None] | None" = None) -> AgentLoopResult:
+            refresh_user: "Callable[[], UserRecord | None] | None" = None, *,
+            progress: "Callable[[list[dict]], None] | None" = None) -> AgentLoopResult:
         """One agent query, inside ONE security cache scope.
+
+        `progress`, when given, is called with what has been gathered so
+        far each time a step has added to it, before the next model call
+        -- so a person waiting can be shown what was done (19 October).
+        It is told nothing the result will not carry, and a failure in it
+        is logged, never allowed to stop the question.
 
         The loop runs on an executor thread, which the per-request
         middleware's scope does not reach. Scoping here keeps a query's
@@ -1636,7 +1643,8 @@ class AgentLoop:
         # THE REAL SIGNATURE, not *args: a wrapper that erases the
         # typed signature is 001's F-04, and this would have been one.
         with security_cache_scope(), span(INVOKE_AGENT, "elysium"):
-            return self._run(user_record, query_text, cancel_event, context, refresh_user)
+            return self._run(user_record, query_text, cancel_event, context, refresh_user,
+                             progress=progress)
 
     def run_planned(self, user_record: UserRecord, query_text: str,
                     cancel_event: threading.Event | None = None,
@@ -1865,7 +1873,8 @@ class AgentLoop:
             context: RequestContext | None = None,
             refresh_user: "Callable[[], UserRecord | None] | None" = None,
             prior_gathered: list[dict] | None = None,
-            hops_already_used: int = 0) -> AgentLoopResult:
+            hops_already_used: int = 0, *,
+            progress: "Callable[[list[dict]], None] | None" = None) -> AgentLoopResult:
         # The actual traversal: repeatedly picks a step, executes it,
         # and accumulates results until finish/duplicate-cap/invalid-cap/
         # a proposed write/cancellation/max_hops -- whichever comes
@@ -1913,8 +1922,15 @@ class AgentLoop:
         deadline = context.deadline if context is not None else None
         usage = context.token_usage if context is not None else None
         hops_used = hops_already_used
+        told = len(gathered)
         for _ in range(hops_already_used + 1, self.max_hops + 1):
             hops_used += 1
+            if progress is not None and len(gathered) > told:
+                told = len(gathered)
+                try:
+                    progress(list(gathered))
+                except Exception:  # noqa: BLE001 - showing progress must never stop a question
+                    logger.warning("could not report a query's progress", exc_info=True)
             if cancel_event is not None and cancel_event.is_set():
                 return AgentLoopResult(gathered=gathered, stop_reason=StopReason.CANCELLED,
                                        fabricated_finishes=tuple(fabricated_finishes),
