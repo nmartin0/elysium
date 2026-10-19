@@ -82,6 +82,7 @@ from core.ontology.object_type_validation import validate_object_types
 from core.ontology.predicted_fields import fill_predicted_types, validate_predicted_fields
 from core.ontology.semantic_search import validate_semantic_search
 from core.ontology.submission_criteria import validate_action_type_criteria
+from core.ontology.unusual_checks import validate_unusual_checks
 from core.ontology.write_log import WriteLogReader, WriteLogWriter
 
 # Two real, SEPARATE registries -- not one, mapping to a (read, write)
@@ -675,6 +676,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # and a model to embed with.
     embedding = _embedding_settings(config["llm"])
     validate_semantic_search(object_types_raw, embedding.model)
+    validate_unusual_checks(object_types_raw)
     refuse_rules_over_derived(object_types_raw)
     fill_result_types(object_types_raw)
     fill_enriched_types(object_types_raw)

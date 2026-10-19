@@ -578,3 +578,5 @@ similar_objects_route
 offered  # MeaningResponse.offered, read by pydantic
 text_fields  # MeaningResponse.text_fields, read by pydantic
 searchable_by_meaning  # VisibleObjectTypeResponse.searchable_by_meaning, read by pydantic
+# R51: a stored flag's time, read by the review queue.
+found_at

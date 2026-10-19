@@ -298,6 +298,10 @@ layers = [
     "enrichment_recipes",
     # prediction_proposals likewise: it stores measurements and decisions.
     "prediction_proposals",
+    # unusual_flags imports only sqlite_connection, like the other stores;
+    # unusual, the scoring, imports nothing of Elysium's.
+    "unusual_flags",
+    "unusual",
     # forecasts imports only periods below it and, lazily, statsmodels.
     "forecasts",
     # periods imports nothing of Elysium's: date arithmetic, read by the
@@ -450,7 +454,7 @@ layers = [
     # classifications.
     # Search by meaning (R45) beside it: a declaration the mediator asks
     # about, reading only classifications.
-    "enriched_fields | semantic_search | predicted_fields",
+    "enriched_fields | semantic_search | predicted_fields | unusual_checks",
     # Its extraction rules (17 October): the shapes, the tokenizer, and
     # typing a span through field_types.coerce, below.
     "extraction_rules",

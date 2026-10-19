@@ -746,6 +746,11 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
     from core.prediction_proposals import PredictionProposalStore
 
     predictions = PredictionProposalStore(data_dir / "prediction_proposals.db")
+    # UNUSUAL RECORDS (R51), looked for again when a type's gold is rebuilt.
+    from core.mirror.unusual_scan import scan as scan_unusual
+    from core.unusual_flags import UnusualFlagStore
+
+    unusual = UnusualFlagStore(data_dir / "unusual_flags.db")
     refused = 0
     # LINK CYCLES (R18). Ordering puts a target before its referrer, but
     # in a cycle one side must go first, and it was audited against its
@@ -913,6 +918,11 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
                   f"current publication, nothing written")
         elif result.published:
             print(f"published gold.{object_type}: {result.rows} rows")
+            # ONLY WHEN IT CHANGED: unchanged gold keeps its flags, since
+            # nothing they rest on moved.
+            found = scan_unusual(sync._catalog, config.schema or {}, object_type, unusual)
+            if found:
+                print(f"{found} unusual record value(s) in {object_type}, for a person to look at")
         else:
             refused += 1
             not_published.add(object_type)

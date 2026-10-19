@@ -65,7 +65,7 @@ def with_approved_predictions(catalog_of: Callable[[], Any], schema: dict, objec
     for field_name, approvals in attached.items():
         fields[field_name][APPROVED_PREDICTIONS] = approvals
     try:
-        compartments = _how_compartments_resolve(catalog_of(), schema, object_type)
+        compartments = how_compartments_resolve(catalog_of(), schema, object_type)
     except Exception as e:  # noqa: BLE001 - unresolvable compartments fill nothing
         logger.warning("%s: its records' compartments could not be resolved (%s: %s); its "
                        "predicted fields are left empty", object_type, type(e).__name__, e)
@@ -73,7 +73,7 @@ def with_approved_predictions(catalog_of: Callable[[], Any], schema: dict, objec
     return {**type_def, "fields": fields, COMPARTMENTS: compartments}
 
 
-def _how_compartments_resolve(catalog, schema: dict, object_type: str) -> dict:
+def how_compartments_resolve(catalog, schema: dict, object_type: str) -> dict:
     security = (schema.get(object_type) or {}).get("security") or {}
     if "via_field" in security:
         link = security["via_field"]

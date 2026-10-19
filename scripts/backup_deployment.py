@@ -141,6 +141,10 @@ OWNED_DATABASES = (
     # No model is kept -- the sync retrains -- so this is the only record
     # of the approvals; losing it empties every predicted field.
     "prediction_proposals.db",
+    # WHAT PEOPLE DECIDED ABOUT UNUSUAL RECORDS (R51). The flags rebuild
+    # at the next sync; the "expected" decisions do not, and losing them
+    # brings back every flag somebody already looked at.
+    "unusual_flags.db",
     "triggers.db",
     # VECTORS FOR SEARCH BY MEANING (R45). Derivable from gold, but a
     # first pass on a CPU can take hours, so a restore should not have

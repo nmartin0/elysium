@@ -4779,6 +4779,97 @@ CONTROLS = [
         ],
     ),
     Control(
+        describes='UNUSUAL: a number is judged against records of its own kind',
+        path='core/unusual.py',
+        old='            kind = tuple((name, row.get(name)) for name in within)',
+        new='            kind = ()',
+        tests=[
+            'tests/unit/test_unusual.py::TestFinding::test_a_value_ordinary_for_the_table_but_wrong_for_its_kind_is_found',
+        ],
+    ),
+    Control(
+        describes='UNUSUAL: the published cut-off, not a looser one',
+        path='core/unusual.py',
+        old='                if abs(score) > THRESHOLD:',
+        new='                if abs(score) > 1.0:',
+        tests=[
+            'tests/unit/test_unusual.py::TestFinding::test_clean_records_raise_nothing',
+        ],
+    ),
+    Control(
+        describes='UNUSUAL: a kind too small to judge is not judged',
+        path='core/unusual.py',
+        old='            if len(members) < MIN_GROUP:',
+        new='            if False:',
+        tests=[
+            'tests/unit/test_unusual.py::TestFinding::test_a_kind_too_small_to_judge_is_not_judged',
+        ],
+    ),
+    Control(
+        describes='UNUSUAL: at most a capped number, the furthest first',
+        path='core/unusual.py',
+        old='    return flags[:MAX_FLAGS], len(flags)',
+        new='    return flags, len(flags)',
+        tests=[
+            'tests/unit/test_unusual.py::TestFinding::test_the_furthest_first_and_at_most_a_capped_number',
+        ],
+    ),
+    Control(
+        describes='UNUSUAL: each compartment is judged on its own',
+        path='core/mirror/unusual_scan.py',
+        old='        by_compartment.setdefault(compartment, []).append(row)',
+        new='        by_compartment.setdefault(None, []).append(row)',
+        tests=[
+            'tests/integration/test_unusual_records.py::test_found_at_the_sync_and_judged_within_each_compartment',
+        ],
+    ),
+    Control(
+        describes='UNUSUAL: a classified field is never checked',
+        path='core/ontology/unusual_checks.py',
+        old='    labels = field_classifications(field)\n    if labels:',
+        new='    labels = field_classifications(field)\n    if False:',
+        tests=[
+            'tests/unit/test_unusual.py::TestTheDeclaration::test_one_that_could_not_be_made_is_refused',
+        ],
+    ),
+    Control(
+        describes='UNUSUAL: only a number may be unusual',
+        path='core/ontology/unusual_checks.py',
+        old='            if (fields[name].get("data_type") or "string") not in NUMERIC:',
+        new='            if False:',
+        tests=[
+            'tests/unit/test_unusual.py::TestTheDeclaration::test_one_that_could_not_be_made_is_refused',
+        ],
+    ),
+    Control(
+        describes="UNUSUAL: a type's flags are replaced whole",
+        path='core/unusual_flags.py',
+        old='            conn.execute("DELETE FROM unusual_flags WHERE object_type = ?", (object_type,))\n',
+        new='',
+        tests=[
+            'tests/unit/test_unusual.py::TestTheStore::test_no_longer_unusual_is_no_longer_flagged',
+        ],
+    ),
+    Control(
+        describes="UNUSUAL: 'expected' holds for the value judged, not a changed one",
+        path='core/unusual_flags.py',
+        old='               "d.record_id = f.record_id AND d.field = f.field AND d.value = f.value")',
+        new='               "d.record_id = f.record_id AND d.field = f.field")',
+        tests=[
+            'tests/unit/test_unusual.py::TestTheStore::test_replaced_whole_and_expected_is_remembered_by_the_value',
+        ],
+    ),
+    Control(
+        describes='UNUSUAL: looked for only when gold changed',
+        path='scripts/run_sync.py',
+        old='            print(f"unchanged gold.{object_type}: built from the same inputs as its "',
+        new=('            scan_unusual(sync._catalog, config.schema or {}, object_type, unusual)\n'
+             '            print(f"unchanged gold.{object_type}: built from the same inputs as its "'),
+        tests=[
+            'tests/integration/test_unusual_records.py::test_unchanged_gold_keeps_its_flags_and_is_not_scanned_again',
+        ],
+    ),
+    Control(
         describes="ENRICH: a classified field is never an input to a model",
         path="core/ontology/enriched_fields.py",
         old="        if labels:\n            raise ValueError(",
