@@ -147,8 +147,9 @@ they can be answered together.
 
 **Customers**
 - `Q1` -- which regulatory regimes apply (the compliance item below
-  waits on this). `Q4` -- which source databases come first
-  (PostgreSQL is not yet a supported production silo).
+  waits on this). (`Q4`, which source databases come first, was
+  answered on 19 October: PostgreSQL and MariaDB, then CSV files, then
+  REST; see "The simulator as Elysium's live test" below.)
 
 **Blocked on:** answers. None blocks building anything else.
 
@@ -906,10 +907,15 @@ so, because a join-shaped predicate forces a full scan. The
 row-level-security guidance is "keep predicates join-free", and
 Databricks' SecureView barrier forces full scans for the same reason.
 
-**Blocked on:** PostgreSQL being a supported silo in production, which
-it is not. (The other half this used to name -- no real-PostgreSQL
-tests on Python 3.13 -- is gone: tests/postgres_server.py falls back to
-the machine's own PostgreSQL, and fails when there is none.)
+**Blocked on:** a decision this item's premise now needs. PostgreSQL is
+a supported READ source since 19 October -- but questions are answered
+from the mirror, never from the source (GOLD-9), so a row-level policy
+in the customer's PostgreSQL would bind only the sync's own account,
+which reads everything by design. What "MAC in the database" means
+under that architecture is the question to settle before anything is
+built. (The older blocker, no real-PostgreSQL tests on Python 3.13, is
+gone: tests/postgres_server.py falls back to the machine's own
+PostgreSQL, and fails when there is none.)
 
 
 ---
@@ -1092,11 +1098,19 @@ drifts a pack schedules (no pack declares `migrations` yet). The
 simulator's own oracle (`verify`, `watches`) is the yardstick.
 
 **ELYSIUM SHOULD READ ALL FIVE KINDS** -- PostgreSQL, MariaDB, SQLite,
-CSV files and REST. Today: SQLite, and PostgreSQL through the
-SQLAlchemy adapter, read only, and not yet a supported production silo
-(Q4); MariaDB would come through the same adapter's dialect; CSV and
-REST have no adapter. Writes reach SQLite alone. The simulator's
-PostgreSQL and MariaDB are also what item 8 (row-level security) and
-writes to a server database have been waiting for: a real one.
+CSV files and REST. Since 19 October PostgreSQL and MariaDB are read
+through the SQLAlchemy adapter, checked against the simulator's real
+servers and tested against real ones (tests/postgres_server.py,
+tests/mariadb_server.py): read-only sessions, a server-side time limit
+on both, a column's time zone reported as part of its type. CSV and
+REST have no adapter yet -- next, in that order. Writes reach SQLite
+alone.
+
+**Found on the way, still open:** a live drift from `simulator drift`
+crashes the running world on its next write to the moved column (the
+engine keeps the old schema) -- for the control panel to fix; and every
+object type must name a security field, so shared reference data such
+as a product catalogue cannot be declared visible to everyone. That is
+a security-model change, for the owner.
 
 **Blocked on:** finishing the current work, then agreeing the design.

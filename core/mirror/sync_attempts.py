@@ -58,7 +58,9 @@ CREATE TABLE IF NOT EXISTS sync_attempts (
     -- 'degraded' (PA001-A17) is "ran, silver is current, but bronze
     -- could not be written".
     outcome TEXT NOT NULL,
-    -- Why, when it was refused or degraded. Null otherwise. The full
+    -- Why, when it was refused or degraded -- or, beside 'synced' or
+    -- 'unchanged', a declared column the source dropped and the drift
+    -- policy absorbed (19 October). Null otherwise. The full
     -- drift report for a refusal, because a reader who sees one wants
     -- the column and the value, not a category.
     detail TEXT,

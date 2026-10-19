@@ -208,6 +208,29 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
           </Notice>
         ))}
 
+      {/* A COLUMN THE SOURCE DROPPED, absorbed by the drift policy: the
+          run succeeded, and the field it backed is now served empty.
+          Found against the simulator (19 October) -- a renamed column
+          blanked every order total while this screen showed nothing,
+          because it looked only at refusals and degraded runs. The
+          policy's own words, which name the likely new column. */}
+      {state.tables
+        .filter(
+          (each) =>
+            (each.last_attempt_outcome === 'synced' || each.last_attempt_outcome === 'unchanged') &&
+            each.last_attempt_detail,
+        )
+        .map((each) => (
+          <Notice
+            state="pending"
+            key={`drift-${each.silo}.${each.table}`}
+            title={`${each.silo}.${each.table} no longer has a column the ontology reads`}
+          >
+            <pre className="mirror__refusal">{each.last_attempt_detail}</pre>
+            The sync succeeded, and the field that column backed is served empty until the ontology is changed.
+          </Notice>
+        ))}
+
       {state.problems.length > 0 && (
         <Notice state="pending" title="Integrity check found problems">
           <ul>

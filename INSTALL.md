@@ -528,12 +528,45 @@ that a sync "can change the source system if the source credentials
 allow it — for instance... dropping data from a database via
 arbitrary SQL." The credential is the real boundary.
 
-**A note on scope:** Elysium currently ships a SQLite adapter only.
-When a server-backed adapter is added, its configuration in
-`data_silos.yaml` will accept real connection credentials, and this
-is the point at which the guidance above becomes directly actionable.
-Until then it is recorded here so the requirement is not discovered
-late.
+### PostgreSQL and MariaDB
+
+Both are read through the `sqlalchemy` adapter (examples in
+`deployment/etc/data_silos.yaml`). Checked against real servers of
+both, PostgreSQL 16 and MariaDB 10.11, on 19 October. Writes still reach
+SQLite silos only.
+
+**A SELECT-only account.** On PostgreSQL, per schema the ontology reads
+(the shape Airbyte documents for its own Postgres source):
+
+```sql
+CREATE USER elysium PASSWORD '...';
+GRANT USAGE ON SCHEMA public TO elysium;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO elysium;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO elysium;
+```
+
+On MariaDB (or MySQL):
+
+```sql
+CREATE USER 'elysium'@'elysium-host' IDENTIFIED BY '...';
+GRANT SELECT ON shop.* TO 'elysium'@'elysium-host';
+```
+
+**The password goes in the environment**, as `${VAR}` in the URL; a
+plaintext password in the file is refused at load.
+
+**What Elysium does on its side**, on both: every session is opened read
+only, so even an account granted too much cannot write through it; a
+query is stopped by the server after `query_timeout_seconds` (30 unless
+set); and a sync reads each database as one consistent snapshot. On
+MariaDB and MySQL, pooled connections are replaced after an hour, under
+the server's default eight-hour idle limit. MySQL itself takes the
+same code path but has not been run against here; MariaDB has.
+
+**Declare timestamps as the source holds them.** A PostgreSQL
+`timestamp with time zone` column is `data_type: timestamptz`; plain
+`timestamp` and MariaDB's `DATETIME` are `timestamp`. A mismatch holds
+every row of that table back, and the sync says so.
 
 ## A note for backups
 

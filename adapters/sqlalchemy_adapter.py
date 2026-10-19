@@ -46,9 +46,11 @@ from sqlalchemy import (
     Table,
     and_,
     create_engine,
+    event,
     inspect,
     select,
 )
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 
 from core.ontology.interface import ExternalReadAdapter, StorageUnavailable
@@ -67,6 +69,8 @@ logger = logging.getLogger(__name__)
 # waiting, leaving the database still working on something nobody will
 # read.
 DEFAULT_QUERY_TIMEOUT_SECONDS = 30
+#: Under MySQL and MariaDB's default wait_timeout of eight hours.
+MYSQL_POOL_RECYCLE_SECONDS = 3600
 
 # ONE SNAPSHOT FOR A WHOLE SYNC OF A SILO (R4), by dialect: the isolation
 # level under which every read in one transaction sees the database as
@@ -98,6 +102,24 @@ SNAPSHOT_ISOLATION = {
     "oracle": "SERIALIZABLE",
 }
 
+def _type_text(column_type) -> str:
+    """A column's type as the source declared it, time zone included.
+
+    FOUND AGAINST A REAL POSTGRESQL (19 October): `str()` of
+    TIMESTAMP(timezone=True) is "TIMESTAMP" -- the same text as a column
+    without one. So the change the drift report was built to catch first,
+    timestamptz -> timestamp losing the offset (core/mirror/
+    iceberg_sync.py), compared equal and was never reported; and a
+    declaration copied from this report would be the wrong one, which
+    quarantined every row of a simulated till. The zone is added back in
+    the SQL standard's own words, which PostgreSQL and Oracle both use.
+    """
+    text = str(column_type)
+    if getattr(column_type, "timezone", False) and "TIME ZONE" not in text.upper():
+        text += " WITH TIME ZONE"
+    return text
+
+
 class SQLAlchemyReadAdapter(ExternalReadAdapter):
     """Reads objects from a database SQLAlchemy has a dialect for."""
 
@@ -124,6 +146,7 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
         self._timeout_seconds = connection.get(
             "query_timeout_seconds", DEFAULT_QUERY_TIMEOUT_SECONDS,
         )
+        self._mysql_family = make_url(self._url).get_backend_name() in ("mysql", "mariadb")
         self._engine = create_engine(
             self._url,
             # POOLED, because a connection per query to a network
@@ -131,8 +154,14 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
             # default; naming it here is documentation rather than
             # configuration.
             pool_pre_ping=True,
+            # MYSQL AND MARIADB CLOSE AN IDLE CONNECTION after
+            # wait_timeout, eight hours by default; SQLAlchemy's advice
+            # is to recycle pooled connections sooner than that.
+            **({"pool_recycle": MYSQL_POOL_RECYCLE_SECONDS} if self._mysql_family else {}),
             connect_args=self._connect_args(),
         )
+        if self._mysql_family:
+            event.listen(self._engine, "connect", self._on_mysql_connect)
         self._metadata = MetaData()
         # THE CONNECTION A CONSISTENT READ IS HOLDING, per thread: the
         # sync reads on one thread, and anything else that shares this
@@ -177,16 +206,46 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
         """Per-dialect connection settings, chiefly the timeout.
 
         THE ONE PLACE THIS FILE KNOWS ABOUT A SPECIFIC DATABASE, and
-        it says so. `statement_timeout` is PostgreSQL's spelling; MySQL
-        has `max_execution_time` and Oracle has its own. A dialect
-        Elysium has not met gets no timeout rather than a wrong one,
-        and that gap is visible here rather than buried.
+        it says so (with _on_mysql_connect, for the MySQL family).
+        `statement_timeout` is PostgreSQL's spelling; MySQL has
+        `max_execution_time`, MariaDB `max_statement_time`, and Oracle
+        its own. A dialect Elysium has not met gets no timeout rather
+        than a wrong one, and that gap is visible here rather than
+        buried.
         """
         if self._url.startswith("postgresql"):
+            # READ ONLY AS WELL (19 October): INSTALL.md asks for a
+            # SELECT-only account, and this is the second lock, for the
+            # account that was given more. Every transaction this
+            # adapter opens refuses to write.
             return {
-                "options": f"-c statement_timeout={self._timeout_seconds * 1000}",
+                "options": (f"-c statement_timeout={self._timeout_seconds * 1000} "
+                            f"-c default_transaction_read_only=on"),
             }
         return {}
+
+    def _on_mysql_connect(self, dbapi_connection, _record) -> None:
+        """The MySQL family's equivalents, set on each new connection.
+
+        AT CONNECT, NOT IN THE URL: the time limit is spelled differently
+        by the two servers SQLAlchemy treats as one dialect -- MariaDB's
+        `max_statement_time` in seconds, MySQL's `max_execution_time` in
+        milliseconds and for SELECT only -- and which one answered is
+        known only once it has. Setting the wrong one is an error.
+
+        READ ONLY as on PostgreSQL. The isolation level a consistent read
+        sets later is a separate setting and leaves this one alone.
+        """
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("SELECT VERSION()")
+            if "mariadb" in str(cursor.fetchone()[0]).lower():
+                cursor.execute(f"SET SESSION max_statement_time = {float(self._timeout_seconds)}")
+            else:
+                cursor.execute(f"SET SESSION max_execution_time = {int(self._timeout_seconds * 1000)}")
+            cursor.execute("SET SESSION TRANSACTION READ ONLY")
+        finally:
+            cursor.close()
 
     def _table(self, table_name: str, columns: list[str]) -> Table:
         """A Table object for the columns being asked about.
@@ -418,7 +477,7 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
         """
         try:
             return {
-                column["name"]: str(column["type"])
+                column["name"]: _type_text(column["type"])
                 for column in inspect(self._engine).get_columns(table_name)
             }
         except SQLAlchemyError as e:

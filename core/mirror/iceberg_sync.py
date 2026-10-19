@@ -205,7 +205,15 @@ BRONZE_RETENTION = {
 #
 # BRONZE, NOT SILVER: bronze is what the source looked like, and this
 # is a fact about the source rather than about the mirror.
-SOURCE_TYPES_PROPERTY = "elysium.source_column_types"
+#
+# ".v2" SINCE 19 OCTOBER, when the SQLAlchemy adapter began saying
+# "TIMESTAMP WITH TIME ZONE" where it had said "TIMESTAMP". Compared
+# against the old text, every such column would have reported a change on
+# the first sync after upgrading -- an alarm about Elysium, not about the
+# source. Under a new key, that first sync has nothing to compare with and
+# only records; the next one compares like with like. The old property is
+# left where it is, read by nothing.
+SOURCE_TYPES_PROPERTY = "elysium.source_column_types.v2"
 
 # TYPE CHANGES THAT WIDEN, which are worth a quieter word than the
 # rest. The canonical severity model for schema drift puts a removed
@@ -659,6 +667,7 @@ class IcebergMirrorSync(MirrorSync):
         # reason (the lake holds data nobody granted), so a reader saw
         # a loss and an unrelated gain and had to join them.
         appeared = tuple(sorted(set(present) - set(columns)))
+        absorbed_drift = None
         if missing:
             verdict = self._verdict_for_missing(
                 silo_name, table_name, missing, fields_by_column or {}, appeared,
@@ -666,6 +675,7 @@ class IcebergMirrorSync(MirrorSync):
             if not verdict.absorbed:
                 raise ValueError(verdict.detail)
             logger.warning(verdict.detail)
+            absorbed_drift = verdict.detail
             columns = [column for column in columns if column not in missing]
             if column_types is not None:
                 column_types = {k: v for k, v in column_types.items() if k not in missing}
@@ -1143,6 +1153,7 @@ class IcebergMirrorSync(MirrorSync):
             degraded=(None if source.bronze_failure is None else
                       f"the bronze copy failed ({source.bronze_failure}): silver is "
                       f"current, bronze is behind and this read left no raw record"),
+            absorbed_drift=absorbed_drift,
         )
 
     def _bronze_snapshot_id(self, silo_name: str, table_name: str):

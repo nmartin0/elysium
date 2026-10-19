@@ -5280,6 +5280,86 @@ CONTROLS = [
         ],
     ),
     Control(
+        describes="SOURCES: a column's time zone is part of its reported type",
+        path='adapters/sqlalchemy_adapter.py',
+        old='    if getattr(column_type, "timezone", False) and "TIME ZONE" not in text.upper():',
+        new='    if False:',
+        tests=[
+            ('tests/unit/test_source_type_drift.py::'
+             'TestCapturingWhatTheSourceSaid::test_postgresql_can'),
+        ],
+    ),
+    Control(
+        describes='SOURCES: corrected source types are kept under their own key',
+        path='core/mirror/iceberg_sync.py',
+        old='SOURCE_TYPES_PROPERTY = "elysium.source_column_types.v2"',
+        new='SOURCE_TYPES_PROPERTY = "elysium.source_column_types"',
+        tests=[
+            ('tests/unit/test_source_type_drift.py::'
+             'test_the_corrected_types_have_their_own_key'),
+        ],
+    ),
+    Control(
+        describes='SOURCES: MariaDB has a query time limit',
+        path='adapters/sqlalchemy_adapter.py',
+        old='                cursor.execute(f"SET SESSION max_statement_time = {float(self._timeout_seconds)}")',
+        new='                cursor.execute("SELECT 1")',
+        tests=[
+            ('tests/unit/test_server_databases_read_safely.py::'
+             'TestMariaDB::test_a_query_past_its_time_limit_is_stopped'),
+        ],
+    ),
+    Control(
+        describes='SOURCES: a MariaDB session refuses to write',
+        path='adapters/sqlalchemy_adapter.py',
+        old='            cursor.execute("SET SESSION TRANSACTION READ ONLY")',
+        new='            cursor.execute("SELECT 1")',
+        tests=[
+            ('tests/unit/test_server_databases_read_safely.py::'
+             'TestMariaDB::test_the_session_refuses_to_write'),
+        ],
+    ),
+    Control(
+        describes='SOURCES: a PostgreSQL session refuses to write',
+        path='adapters/sqlalchemy_adapter.py',
+        old='                            f"-c default_transaction_read_only=on"),',
+        new='                            f""),',
+        tests=[
+            ('tests/unit/test_server_databases_read_safely.py::'
+             'TestPostgreSQL::test_the_session_refuses_to_write'),
+        ],
+    ),
+    Control(
+        describes='SOURCES: MySQL-family connections are recycled before the server drops them',
+        path='adapters/sqlalchemy_adapter.py',
+        old='            **({"pool_recycle": MYSQL_POOL_RECYCLE_SECONDS} if self._mysql_family else {}),',
+        new='            **({}),',
+        tests=[
+            ('tests/unit/test_server_databases_read_safely.py::'
+             'TestMariaDB::test_pooled_connections_are_recycled_before_the_server_drops_them'),
+        ],
+    ),
+    Control(
+        describes='SOURCES: an absorbed column travels on the sync result',
+        path='core/mirror/iceberg_sync.py',
+        old='            absorbed_drift = verdict.detail',
+        new='            absorbed_drift = None',
+        tests=[
+            ('tests/unit/test_a_source_changes_and_what_a_reader_sees.py::'
+             'TestAnAbsorbedColumnIsRecorded::test_the_result_carries_the_explanation'),
+        ],
+    ),
+    Control(
+        describes='SOURCES: an absorbed column is recorded on the attempt',
+        path='scripts/run_sync.py',
+        old='                               getattr(result, "absorbed_drift", None)) if part]',
+        new='                               None) if part]',
+        tests=[
+            ('tests/unit/test_a_source_changes_and_what_a_reader_sees.py::'
+             'TestAnAbsorbedColumnIsRecorded::test_the_attempt_records_it_beside_its_outcome'),
+        ],
+    ),
+    Control(
         describes="ENRICH: a classified field is never an input to a model",
         path="core/ontology/enriched_fields.py",
         old="        if labels:\n            raise ValueError(",

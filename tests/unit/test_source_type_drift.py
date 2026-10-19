@@ -167,14 +167,20 @@ class TestWhatEachAdapterCanSay:
         uri, stop = real_postgres()
         try:
             with psycopg.connect(uri) as conn, conn.cursor() as cur:
-                cur.execute("CREATE TABLE t (amount numeric(12,2))")
+                cur.execute("CREATE TABLE t (amount numeric(12,2), at timestamptz, "
+                            "plain timestamp, clock timetz)")
                 conn.commit()
 
             adapter = SQLAlchemyReadAdapter({
                 "url": uri.replace("postgresql://", "postgresql+psycopg://"),
             })
 
-            assert adapter.source_column_types("t") == {"amount": "NUMERIC(12, 2)"}
+            # THE ZONE IS PART OF THE TYPE: without it, timestamptz and
+            # timestamp read the same and the change between them -- the
+            # one this report exists for -- compared equal.
+            assert adapter.source_column_types("t") == {
+                "amount": "NUMERIC(12, 2)", "at": "TIMESTAMP WITH TIME ZONE",
+                "plain": "TIMESTAMP", "clock": "TIME WITH TIME ZONE"}
         finally:
             stop()
 
@@ -183,3 +189,20 @@ def test_the_property_lives_on_bronze():
     """BRONZE, NOT SILVER: bronze is what the source looked like, and
     this is a fact about the SOURCE rather than about the mirror."""
     assert SOURCE_TYPES_PROPERTY.startswith("elysium.")
+
+
+def test_losing_a_time_zone_is_reported_as_a_change(caplog):
+    """The silent failure named in this file's docstring, end to end
+    through the comparison, in the words the adapter now uses."""
+    with caplog.at_level(logging.WARNING):
+        _report_type_drift("till", "transactions",
+                           json.dumps({"at": "TIMESTAMP WITH TIME ZONE"}),
+                           json.dumps({"at": "TIMESTAMP"}))
+
+    assert "CHANGED from TIMESTAMP WITH TIME ZONE to TIMESTAMP" in caplog.text
+
+
+def test_the_corrected_types_have_their_own_key():
+    """Compared against the old wording, every zoned column would have
+    reported a change on the first sync after upgrading."""
+    assert SOURCE_TYPES_PROPERTY == "elysium.source_column_types.v2"

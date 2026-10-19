@@ -227,6 +227,26 @@ describe('a refused sync', () => {
     expect(screen.queryByText(/was refused/)).toBeNull()
   })
 
+  it('says when a sync absorbed a column the source dropped (19 October)', async () => {
+    mocked.mockResolvedValue({
+      reading_from_mirror: true,
+      tables: [
+        table({
+          last_attempt_outcome: 'synced',
+          last_attempt_detail:
+            "web.orders: source column 'goods_total' backing field 'goods_total' is gone. If 'goods_total' was RENAMED, repoint the field",
+        }),
+      ],
+      problems: [],
+    })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/no longer has a column the ontology reads/)).toBeInTheDocument()
+    expect(screen.getByText(/'goods_total' was RENAMED/)).toBeInTheDocument()
+    expect(screen.getByText(/served empty until the ontology is changed/)).toBeInTheDocument()
+    expect(screen.queryByText(/was refused/)).toBeNull()
+  })
+
   it('says nothing about a refusal when the last attempt succeeded', async () => {
     // THE CONTROL. A warning banner on a healthy mirror is one nobody
     // reads by the time it matters.

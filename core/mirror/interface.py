@@ -69,6 +69,14 @@ class SyncResult:
     # just read -- but recording that as plain "synced" hid that the raw
     # layer had fallen behind. None for a run that did everything.
     degraded: "str | None" = None
+    # A DECLARED COLUMN THE SOURCE NO LONGER HAS, absorbed by the drift
+    # policy (core/mirror/drift_policy.py): the run succeeded, and the
+    # field it backed is now served empty. The policy's own explanation,
+    # rename candidates included. Found against the simulator (19
+    # October): a renamed column left every order total blank while the
+    # attempt read plain "synced" with no detail, and the Mirror screen,
+    # which shows refusals and degraded runs, showed nothing.
+    absorbed_drift: "str | None" = None
     violations: dict = dataclass_field(default_factory=dict)
     # THE WARN-POLICY FINDINGS ALONE, structured, as `RuleCount`s.
     #

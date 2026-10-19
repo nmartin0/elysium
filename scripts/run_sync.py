@@ -605,6 +605,19 @@ def _outcome_for(result) -> str:
     return "unchanged" if getattr(result, "unchanged", False) else "synced"
 
 
+def _detail_for(result) -> "str | None":
+    """What an attempt's history should say beside its outcome.
+
+    A DEGRADED RUN'S REASON, and A COLUMN THE DRIFT POLICY ABSORBED --
+    both are runs that succeeded and are not the whole story. Recorded on
+    the attempt so the Mirror screen can show them where an operator
+    looks, rather than in a log line nobody reads.
+    """
+    parts = [part for part in (getattr(result, "degraded", None),
+                               getattr(result, "absorbed_drift", None)) if part]
+    return "\n\n".join(parts) or None
+
+
 def deletions_accepted_for(type_def: dict, accepted: set) -> bool:
     """Whether the operator's --accept-deletions covers this TYPE (R66).
 
@@ -1150,7 +1163,7 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
                     # to answer "when did this last actually move?".
                     attempts.record(target.silo_name, target.table_name,
                                     _outcome_for(result),
-                                    detail=getattr(result, "degraded", None), run_id=run_id)
+                                    detail=_detail_for(result), run_id=run_id)
                     if getattr(result, "degraded", None):
                         print(f"WARNING {target.silo_name}.{target.table_name}: "
                               f"{result.degraded}", file=sys.stderr)

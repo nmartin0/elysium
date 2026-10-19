@@ -453,6 +453,34 @@ class TestARenamedColumn:
         assert "repoint" not in drift.lower()
 
 
+class TestAnAbsorbedColumnIsRecorded:
+    """FOUND AGAINST THE SIMULATOR (19 October): a renamed column blanked
+    every order total while the attempt history read plain "synced" with
+    no detail -- and the Mirror screen reads that history. The policy's
+    explanation now travels on the result and onto the attempt."""
+
+    def test_the_result_carries_the_explanation(self, deployment):
+        deployment.execute("ALTER TABLE customers RENAME COLUMN score TO risk_score")
+
+        result = deployment.sync_and_publish_cleanly()
+
+        assert result.absorbed_drift and "risk_score" in result.absorbed_drift
+
+    def test_and_a_sync_that_lost_nothing_carries_none(self, deployment):
+        deployment.execute("UPDATE customers SET name = 'Ada L.' WHERE id = 'c1'")
+
+        assert deployment.sync_and_publish_cleanly().absorbed_drift is None
+
+    def test_the_attempt_records_it_beside_its_outcome(self, deployment):
+        from scripts.run_sync import _detail_for, _outcome_for
+
+        deployment.execute("ALTER TABLE customers RENAME COLUMN score TO risk_score")
+        result = deployment.sync_and_publish_cleanly()
+
+        assert _outcome_for(result) == "synced"
+        assert "RENAMED" in _detail_for(result)
+
+
 class TestWhichTablesLicenseAType:
     """R66's rule, as a function: the tables deciding which objects a
     type HAS must all be accepted."""
