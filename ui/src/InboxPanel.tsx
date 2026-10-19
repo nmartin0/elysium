@@ -1,6 +1,6 @@
 /**
  * The Inbox: approvals, notifications, merge proposals, enrichment
- * rules and predicted fields, one place
+ * rules, predicted fields and unusual values, one place
  * (DEV_UI 12, 15; decided by the owner 14 Oct).
  *
  * "INBOXES. Approvals and notifications are about EVENTS THAT ARRIVED,
@@ -32,8 +32,9 @@ const NotificationsPanel = lazy(() => import('@elysium/app-notifications/Notific
 const IdentityPanel = lazy(() => import('@elysium/app-identity/IdentityPanel'))
 const EnrichmentReview = lazy(() => import('@elysium/app-approvals/EnrichmentReview'))
 const PredictionReview = lazy(() => import('@elysium/app-approvals/PredictionReview'))
+const UnusualReview = lazy(() => import('@elysium/app-approvals/UnusualReview'))
 
-export type InboxTab = 'approvals' | 'notifications' | 'identity' | 'enrichment' | 'predictions'
+export type InboxTab = 'approvals' | 'notifications' | 'identity' | 'enrichment' | 'predictions' | 'unusual'
 
 const TABS: readonly { id: InboxTab; title: string; icon: IconName }[] = [
   { id: 'approvals', title: 'Approvals', icon: 'inbox' },
@@ -48,6 +49,10 @@ const TABS: readonly { id: InboxTab; title: string; icon: IconName }[] = [
   { id: 'enrichment', title: 'Enrichment', icon: 'learning' },
   // A predicted field measured and waiting on a person (R48).
   { id: 'predictions', title: 'Predictions', icon: 'predictive-analysis' },
+  // A value unusual for its kind, for someone who may edit the type to
+  // say whether it is expected (R51). A scatter plot: one point away
+  // from the rest. Not the eye, which is watching (WatchList).
+  { id: 'unusual', title: 'Unusual', icon: 'scatter-plot' },
 ]
 
 function isTab(value: string): value is InboxTab {
@@ -80,6 +85,7 @@ export default function InboxPanel({ onSessionExpired }: { onSessionExpired: () 
                   {id === 'identity' && <IdentityPanel onSessionExpired={onSessionExpired} />}
                   {id === 'enrichment' && <EnrichmentReview onSessionExpired={onSessionExpired} />}
                   {id === 'predictions' && <PredictionReview onSessionExpired={onSessionExpired} />}
+                  {id === 'unusual' && <UnusualReview onSessionExpired={onSessionExpired} />}
                 </Suspense>
               }
             />

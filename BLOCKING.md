@@ -242,7 +242,7 @@ while the forecast is not trusted. Checked when triggers are, not at the
 turn of a period with no new data. Not yet measured on a real
 deployment's records.
 
-**UNUSUAL RECORDS ARE BEING BUILT** (R51; the owner, 19 October: shown to
+**UNUSUAL RECORDS ARE BUILT** (R51; the owner, 19 October: shown to
 every reader of the fields and queued for review, judged within context
 by a published cut-off). A type declares `unusual: {numbers: [amount],
 within: [category]}`; each number is compared with the records sharing
@@ -252,8 +252,15 @@ on planted oddities: the forest flagged 48% of records at its default
 threshold, changed its picks with the random seed, and missed most
 amounts ordinary for the table but wrong for their kind, all of which
 the within-kind score caught. Found when a type's gold is rebuilt, at
-most 50 per type and compartment, each with its reason in words. The
-marker in Browse and the review queue come next. A calibrated cut-off
+most 50 per type and compartment, each with its reason in words.
+Marked on the row and under the field in Browse for whoever may read the
+type, the number and every field it was compared within, in the
+compartment it was judged in; decided in the Inbox's Unusual tab by
+someone who may also edit the type -- "expected" clears the marker for
+everyone until the value changes, "worth a look" keeps it -- each
+decision audited. What is left needs a person: LLM-WRITTEN RULES, the
+other half of R51, need a decision on what a rule may say and who
+approves one. A calibrated cut-off
 (conformal, as the merge thresholds are) needs records known to be
 normal; people's "expected" decisions will be that set.
 

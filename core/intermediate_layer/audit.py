@@ -572,6 +572,21 @@ class AuditLog:
             "declaration_hash": declaration_hash,
         })
 
+    def log_unusual_decision(self, user_id: str, object_type: str, record_id: str,
+                             field_name: str, value: float, decision: str) -> None:
+        """A person said a value flagged unusual for its kind is expected,
+        or worth a look (R51). "Expected" clears the marker for everyone
+        until the value changes, so who said so, of which value, is kept."""
+        self._write({
+            "stage": "unusual_decision",
+            "user_id": user_id,
+            "object_type": object_type,
+            "object_id": record_id,
+            "field": field_name,
+            "value": value,
+            "decision": decision,
+        })
+
     def log_write_invalidated(self, write_id: str, user_id: str, description: str,
                                from_generation: int, to_generation: int,
                                fields: list[str], reloaded_by: str) -> None:

@@ -60,5 +60,10 @@ export function totalWaiting(counts: InboxCounts | null): number {
   // number rather than NaN while a deployment is mid-upgrade.
   return counts === null
     ? 0
-    : counts.approvals + counts.notifications + counts.identity + (counts.enrichment ?? 0) + (counts.predictions ?? 0)
+    : counts.approvals +
+        counts.notifications +
+        counts.identity +
+        (counts.enrichment ?? 0) +
+        (counts.predictions ?? 0) +
+        (counts.unusual ?? 0)
 }

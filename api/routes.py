@@ -111,6 +111,7 @@ loop for meaningfully longer than intended.
 
 import asyncio
 import base64
+import dataclasses
 import functools
 import json
 import logging
@@ -1177,6 +1178,112 @@ def unusual_on_objects_route(object_type: str, ids: str, request: Request,
     return {"unusual": {record_id: flags for record_id, flags in found.items()
                         if _may_read_object(generation.mediator, current_user, object_type,
                                             record_id)}}
+
+
+class UnusualReviewItemResponse(BaseModel):
+    object_type: str
+    record_id: str
+    field: str
+    field_label: str
+    value: float
+    reason: str
+    #: The compartment it was judged in, as a string; None for none.
+    compartment: str | None = None
+    #: None while undecided; expected | worth_a_look.
+    decision: str | None = None
+    decided_by: str | None = None
+
+
+class UnusualReviewResponse(BaseModel):
+    items: list[UnusualReviewItemResponse]
+    #: How many were found in all, in the types and compartment this
+    #: caller reviews: at most core.unusual.MAX_FLAGS per type are kept,
+    #: the furthest first, so a short list can say "of N".
+    found: int
+
+
+class UnusualDecisionRequest(BaseModel):
+    object_type: str
+    record_id: str
+    field: str
+    #: expected | worth_a_look
+    decision: str
+
+
+def _may_review_flag(generation, current_user: UserRecord, flag) -> bool:
+    """Whether this caller may DECIDE about a flag (R51; the owner, 19
+    October: someone who may edit the type). Everything a reader of it
+    needs (_may_see_flag), and write on the type: "expected" clears the
+    marker for everyone, which is a statement about the data, as an edit
+    is. The record's own read check is the caller's, through the
+    mediator."""
+    return (_may_see_flag(generation, current_user, flag)
+            and authorize(current_user, generation.config.roles, f"write:{flag.object_type}"))
+
+
+def _reviewable_flags(request: Request, current_user: UserRecord) -> list:
+    generation = _generation(request)
+    return [flag for flag in _unusual_store(request).flags()
+            if _may_review_flag(generation, current_user, flag)
+            and _may_read_object(generation.mediator, current_user, flag.object_type,
+                                 flag.record_id)]
+
+
+def _review_item(generation, flag) -> dict:
+    fields = (generation.config.schema.get(flag.object_type) or {}).get("fields") or {}
+    return {"object_type": flag.object_type, "record_id": flag.record_id, "field": flag.field,
+            "field_label": get_display_name(fields.get(flag.field) or {}, flag.field),
+            "value": flag.value, "reason": flag.reason(),
+            "compartment": None if flag.compartment is None else str(flag.compartment),
+            "decision": flag.decision, "decided_by": flag.decided_by}
+
+
+@router.get("/unusual-review", dependencies=[Depends(_no_store)],
+            response_model=UnusualReviewResponse)
+def unusual_review_route(request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Values unusual for their kind (R51), furthest first, as far as this
+    caller may decide about them -- undecided and decided both, so a
+    decision can be changed. Nothing in the data is changed by any of it."""
+    generation = _generation(request)
+    store = _unusual_store(request)
+    flags = _reviewable_flags(request, current_user)
+    found = 0
+    for object_type in sorted({flag.object_type for flag in flags}):
+        for compartment, total in store.totals(object_type).items():
+            if compartment is None or compartment == current_user.security_value:
+                found += total
+    return {"items": [_review_item(generation, flag) for flag in flags],
+            "found": max(found, len(flags))}
+
+
+@router.post("/unusual-review/decide", response_model=UnusualReviewItemResponse)
+def decide_unusual_route(body: UnusualDecisionRequest, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """"Expected" or "worth a look", for the value as it was judged.
+
+    404 for a flag this caller may not decide about, or that is not
+    there -- uniform denial. "Expected" holds for THAT VALUE: if the
+    record's number changes, the next scan judges it afresh."""
+    from core.unusual_flags import DECISIONS
+
+    if body.decision not in DECISIONS:
+        raise HTTPException(status_code=422, detail=f"A decision is one of {', '.join(DECISIONS)}.")
+    generation = _generation(request)
+    store = _unusual_store(request)
+    flag = next((flag for flag in store.flags(body.object_type, [body.record_id])
+                 if flag.field == body.field), None)
+    if (flag is None or not _may_review_flag(generation, current_user, flag)
+            or not _may_read_object(generation.mediator, current_user, flag.object_type,
+                                    flag.record_id)):
+        raise HTTPException(status_code=404, detail="No such unusual value")
+    store.decide(flag.object_type, flag.record_id, flag.field, flag.value, body.decision,
+                 current_user.user_id)
+    generation.mediator.audit_log.log_unusual_decision(
+        current_user.user_id, flag.object_type, flag.record_id, flag.field, flag.value,
+        body.decision)
+    return _review_item(generation, dataclasses.replace(
+        flag, decision=body.decision, decided_by=current_user.user_id))
 
 
 @router.get("/writes/awaiting", dependencies=[Depends(_no_store)],
@@ -5914,6 +6021,8 @@ class InboxCountsResponse(BaseModel):
     enrichment: int = 0
     #: Predicted fields waiting on a decision this caller may make (R48).
     predictions: int = 0
+    #: Values unusual for their kind, undecided, this caller may decide (R51).
+    unusual: int = 0
 
 
 class EnrichmentRecipeResponse(BaseModel):
@@ -6225,6 +6334,8 @@ def my_inbox_counts_route(request: Request,
       identity       a waiting proposal whose BOTH sides this caller may
                      read (the listing's rule, R61) and whose type they
                      may write (the decide route's rule).
+      unusual        an undecided value the caller may decide about --
+                     the Unusual tab's own rule (_may_review_flag).
 
     COUNTS ONLY. A count of proposals is a fact about the caller's own
     queue, so it says nothing the queue does not.
@@ -6255,8 +6366,10 @@ def my_inbox_counts_route(request: Request,
         if proposal.status == "proposed"
         and (shown := _visible_prediction(request, current_user, proposal)) is not None
         and shown["current"])
+    # UNUSUAL VALUES on the queue's own rule, undecided only.
+    unusual = sum(1 for flag in _reviewable_flags(request, current_user) if flag.decision is None)
     return {"approvals": approvals, "notifications": notifications, "identity": identity,
-            "enrichment": enrichment, "predictions": predictions}
+            "enrichment": enrichment, "predictions": predictions, "unusual": unusual}
 
 
 @router.get("/me/visible-apps", dependencies=[Depends(_no_store)], response_model=list[VisibleAppResponse])

@@ -14,6 +14,7 @@ vi.mock('@elysium/app-notifications/NotificationsPanel', () => ({ default: () =>
 vi.mock('@elysium/app-identity/IdentityPanel', () => ({ default: () => <p>identity panel</p> }))
 vi.mock('@elysium/app-approvals/EnrichmentReview', () => ({ default: () => <p>enrichment review</p> }))
 vi.mock('@elysium/app-approvals/PredictionReview', () => ({ default: () => <p>prediction review</p> }))
+vi.mock('@elysium/app-approvals/UnusualReview', () => ({ default: () => <p>unusual review</p> }))
 
 const { default: InboxPanel } = await import('./InboxPanel')
 
@@ -56,6 +57,21 @@ describe('the Inbox (DEV_UI 12, 15)', () => {
     expect(await screen.findByText('prediction review')).toBeInTheDocument()
     await screen.findByText('3')
     expect(screen.getByRole('tab', { name: /Predictions/ })).toHaveTextContent('3')
+  })
+
+  it('unusual values waiting on a decision are counted on their tab, and open there (R51)', async () => {
+    show('/inbox?tab=unusual', {
+      approvals: 0,
+      notifications: 0,
+      identity: 0,
+      enrichment: 0,
+      predictions: 0,
+      unusual: 4,
+    })
+
+    expect(await screen.findByText('unusual review')).toBeInTheDocument()
+    await screen.findByText('4')
+    expect(screen.getByRole('tab', { name: /Unusual/ })).toHaveTextContent('4')
   })
 
   it('opens the tab the URL names, so a link to a tab is a link', async () => {

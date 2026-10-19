@@ -6,7 +6,8 @@
   "exports": {
     "./ApprovalsPanel": "./src/ApprovalsPanel.tsx",
     "./EnrichmentReview": "./src/EnrichmentReview.tsx",
-    "./PredictionReview": "./src/PredictionReview.tsx"
+    "./PredictionReview": "./src/PredictionReview.tsx",
+    "./UnusualReview": "./src/UnusualReview.tsx"
   },
   "dependencies": {
     "@elysium/shell-api": "*",

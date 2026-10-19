@@ -227,3 +227,132 @@ def _restore(store, stored):
             flag.group_size, flag.score))
     store.replace("Transaction", {key: (flags, len(flags)) for key, flags in
                                   by_compartment.items()})
+
+
+def _with_roles(paths, **extra):
+    """Adds roles to the copy's policy: each the debug role's grants,
+    plus or minus some."""
+    policy_path = paths.config_dir / "policy.yaml"
+    policy = yaml.safe_load(policy_path.read_text())
+    base = policy["roles"]["debug"]["allowed_actions"]
+    for name, (plus, minus) in extra.items():
+        policy["roles"][name] = {"allowed_actions": [a for a in base if a not in minus] + plus}
+    policy_path.write_text(yaml.safe_dump(policy))
+
+
+def _queue(client):
+    response = client.get("/api/unusual-review")
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _decide(client, record_id, decision, field="amount"):
+    from tests.integration.test_api import _csrf_headers
+
+    return client.post("/api/unusual-review/decide", json={
+        "object_type": "Transaction", "record_id": record_id, "field": field,
+        "decision": decision}, headers=_csrf_headers(client))
+
+
+def _waiting(client):
+    response = client.get("/api/me/inbox")
+    assert response.status_code == 200, response.text
+    return response.json()["unusual"]
+
+
+@pytest.fixture
+def reviewed(deployment, monkeypatch):
+    monkeypatch.setenv("ELYSIUM_COOKIE_SECURE", "false")
+    _with_roles(deployment, reviewer=(["write:Transaction"], []),
+                reviewer_no_category=(["write:Transaction"], ["read:Transaction.category"]))
+    _sync(deployment)
+    return deployment
+
+
+class TestTheQueue:
+    def test_someone_who_may_edit_the_type_is_shown_why_in_their_compartment(self, reviewed):
+        client = _client(reviewed, "rev", "us-west", "reviewer")
+        queue = _queue(client)
+        planted = next(item for item in queue["items"] if item["value"] == 300.0)
+        assert planted["reason"].startswith("amount 300 is far above the usual ")
+        assert planted["field_label"] and planted["decision"] is None
+        assert {item["compartment"] for item in queue["items"]} == {"us-west"}
+        assert queue["found"] >= len(queue["items"]) > 0
+        assert _waiting(client) == len(queue["items"])
+
+    def test_not_without_write_on_the_type(self, reviewed):
+        """A reader is told of it on the record; deciding is an editor's."""
+        client = _client(reviewed, "ops", "us-west")
+        west = _planted_id(reviewed, "us-west", 300.0)
+        assert _unusual(client, [west])
+        assert _queue(client)["items"] == [] and _waiting(client) == 0
+        assert _decide(client, west, "expected").status_code == 404
+
+    def test_not_without_read_on_every_field_compared_within(self, reviewed):
+        client = _client(reviewed, "revnocat", "us-west", "reviewer_no_category")
+        west = _planted_id(reviewed, "us-west", 300.0)
+        assert _queue(client)["items"] == [] and _waiting(client) == 0
+        assert _decide(client, west, "expected").status_code == 404
+
+    def test_another_compartment_neither_sees_nor_decides(self, reviewed):
+        client = _client(reviewed, "reveast", "us-east", "reviewer")
+        west = _planted_id(reviewed, "us-west", 300.0)
+        assert all(item["record_id"] != west for item in _queue(client)["items"])
+        assert _decide(client, west, "expected").status_code == 404
+        # THE CONTROL: its own compartment's planted value is there.
+        assert any(item["value"] == 50.0 for item in _queue(client)["items"])
+
+    def test_expected_clears_the_marker_for_everyone_and_is_audited(self, reviewed):
+        import json
+
+        reviewer = _client(reviewed, "rev", "us-west", "reviewer")
+        reader = _client(reviewed, "ops", "us-west")
+        west = _planted_id(reviewed, "us-west", 300.0)
+        before = _waiting(reviewer)
+        response = _decide(reviewer, west, "expected")
+        assert response.status_code == 200, response.text
+        assert response.json()["decision"] == "expected"
+        assert _unusual(reader, [west]) == {}
+        assert _waiting(reviewer) == before - 1
+        # STILL LISTED, decided, so the decision can be changed.
+        (item,) = [item for item in _queue(reviewer)["items"] if item["record_id"] == west]
+        assert item["decision"] == "expected" and item["decided_by"] == "rev"
+        lines = (reviewed.log_dir / "audit.log").read_text().splitlines()
+        entries = [entry for entry in map(json.loads, lines)
+                   if entry.get("stage") == "unusual_decision"]
+        assert [(e["object_id"], e["value"], e["decision"], e["user_id"]) for e in entries] == [
+            (west, 300.0, "expected", "rev")]
+
+    def test_worth_a_look_keeps_the_marker_and_leaves_the_count(self, reviewed):
+        reviewer = _client(reviewed, "rev", "us-west", "reviewer")
+        reader = _client(reviewed, "ops", "us-west")
+        west = _planted_id(reviewed, "us-west", 300.0)
+        before = _waiting(reviewer)
+        assert _decide(reviewer, west, "worth_a_look").status_code == 200
+        (shown,) = _unusual(reader, [west])[west]
+        assert shown["decision"] == "worth_a_look"
+        assert _waiting(reviewer) == before - 1
+
+    def test_only_the_two_decisions(self, reviewed):
+        reviewer = _client(reviewed, "rev", "us-west", "reviewer")
+        west = _planted_id(reviewed, "us-west", 300.0)
+        assert _decide(reviewer, west, "deleted").status_code == 422
+        assert _decide(reviewer, west, "expected", field="currency").status_code == 404
+
+    def test_a_record_the_reviewer_cannot_see_is_neither_listed_nor_decided(self, reviewed):
+        """A flag with no compartment on a record of another: the record's
+        own read check answers, in the listing and the decision both."""
+        import dataclasses
+
+        from core.unusual_flags import UnusualFlagStore
+
+        store = UnusualFlagStore(reviewed.data_dir / "unusual_flags.db")
+        east = next(flag for flag in store.flags("Transaction")
+                    if flag.compartment == "us-east" and flag.value == 50.0)
+        _restore(store, [dataclasses.replace(east, compartment=None)])
+        reviewer = _client(reviewed, "rev", "us-west", "reviewer")
+        assert _queue(reviewer)["items"] == [] and _waiting(reviewer) == 0
+        assert _decide(reviewer, east.record_id, "expected").status_code == 404
+        # THE CONTROL: its own compartment's reviewer may.
+        assert _decide(_client(reviewed, "reveast", "us-east", "reviewer"), east.record_id,
+                       "expected").status_code == 200

@@ -4932,6 +4932,71 @@ CONTROLS = [
         ],
     ),
     Control(
+        describes='UNUSUAL: deciding needs write on the type',
+        path='api/routes.py',
+        old='            and authorize(current_user, generation.config.roles, f"write:{flag.object_type}"))',
+        new='            )',
+        tests=[
+            ('tests/integration/test_unusual_records.py::TestTheQueue::'
+             'test_not_without_write_on_the_type'),
+        ],
+    ),
+    Control(
+        describes='UNUSUAL: a reviewer needs everything a reader of the flag needs',
+        path='api/routes.py',
+        old=('    return (_may_see_flag(generation, current_user, flag)\n'
+             '            and authorize('),
+        new=('    return (True\n'
+             '            and authorize('),
+        tests=[
+            ('tests/integration/test_unusual_records.py::TestTheQueue::'
+             'test_not_without_read_on_every_field_compared_within'),
+        ],
+    ),
+    Control(
+        describes='UNUSUAL: the queue lists only records the reviewer may read',
+        path='api/routes.py',
+        old=('            if _may_review_flag(generation, current_user, flag)\n'
+             '            and _may_read_object('),
+        new=('            if _may_review_flag(generation, current_user, flag)\n'
+             '            and True or _may_read_object('),
+        tests=[
+            ('tests/integration/test_unusual_records.py::TestTheQueue::'
+             'test_a_record_the_reviewer_cannot_see_is_neither_listed_nor_decided'),
+        ],
+    ),
+    Control(
+        describes='UNUSUAL: a decision only on a record the reviewer may read',
+        path='api/routes.py',
+        old=('            or not _may_read_object(generation.mediator, current_user, flag.object_type,\n'
+             '                                    flag.record_id)):'),
+        new='            or False):',
+        tests=[
+            ('tests/integration/test_unusual_records.py::TestTheQueue::'
+             'test_a_record_the_reviewer_cannot_see_is_neither_listed_nor_decided'),
+        ],
+    ),
+    Control(
+        describes='UNUSUAL: the Inbox counts only what waits on a decision',
+        path='api/routes.py',
+        old='    unusual = sum(1 for flag in _reviewable_flags(request, current_user) if flag.decision is None)',
+        new='    unusual = sum(1 for flag in _reviewable_flags(request, current_user))',
+        tests=[
+            ('tests/integration/test_unusual_records.py::TestTheQueue::'
+             'test_worth_a_look_keeps_the_marker_and_leaves_the_count'),
+        ],
+    ),
+    Control(
+        describes='UNUSUAL: every decision is audited',
+        path='api/routes.py',
+        old=('    generation.mediator.audit_log.log_unusual_decision(\n'),
+        new=('    (lambda *a: None)(\n'),
+        tests=[
+            ('tests/integration/test_unusual_records.py::TestTheQueue::'
+             'test_expected_clears_the_marker_for_everyone_and_is_audited'),
+        ],
+    ),
+    Control(
         describes="ENRICH: a classified field is never an input to a model",
         path="core/ontology/enriched_fields.py",
         old="        if labels:\n            raise ValueError(",

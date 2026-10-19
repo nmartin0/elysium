@@ -7,6 +7,12 @@ describe('totalWaiting', () => {
     expect(totalWaiting({ approvals: 2, notifications: 3, identity: 1, enrichment: 4 })).toBe(10)
   })
 
+  it('counts unusual values waiting on a decision (R51)', () => {
+    expect(
+      totalWaiting({ approvals: 0, notifications: 0, identity: 0, enrichment: 0, predictions: 1, unusual: 5 }),
+    ).toBe(6)
+  })
+
   it('reads a server that predates the enrichment count as none there, not NaN', () => {
     const older = { approvals: 2, notifications: 3, identity: 1 } as unknown as Parameters<typeof totalWaiting>[0]
     expect(totalWaiting(older)).toBe(6)

@@ -1526,6 +1526,9 @@ export interface InboxCounts {
   /** Predicted fields waiting on this caller's decision (R48). Absent
    *  from a server older than 17 October. */
   predictions?: number
+  /** Values unusual for their kind, undecided, this caller may decide
+   *  (R51). Absent from a server older than 19 October. */
+  unusual?: number
 }
 
 /** Rules a model wrote for an enriched field, for a person to approve or
@@ -1635,6 +1638,43 @@ export async function decidePredictionProposal(proposalId: string, approve: bool
     body: JSON.stringify({ approve }),
   })
   return (await response.json()) as PredictionProposal
+}
+
+/** A value unusual for its kind, for someone who may edit the type to
+ *  decide about (R51). Nothing in the data is changed by deciding. */
+export interface UnusualReviewItem {
+  object_type: string
+  record_id: string
+  field: string
+  field_label: string
+  value: number
+  reason: string
+  compartment: string | null
+  /** null while undecided. */
+  decision: 'expected' | 'worth_a_look' | null
+  decided_by: string | null
+}
+
+export interface UnusualReview {
+  items: UnusualReviewItem[]
+  /** How many were found in all; at most 50 per type are kept. */
+  found: number
+}
+
+export async function getUnusualReview(): Promise<UnusualReview> {
+  const response = await apiFetchOrThrow('/unusual-review')
+  return (await response.json()) as UnusualReview
+}
+
+export async function decideUnusual(
+  item: Pick<UnusualReviewItem, 'object_type' | 'record_id' | 'field'>,
+  decision: 'expected' | 'worth_a_look',
+): Promise<UnusualReviewItem> {
+  const response = await apiFetchOrThrow('/unusual-review/decide', {
+    method: 'POST',
+    body: JSON.stringify({ object_type: item.object_type, record_id: item.record_id, field: item.field, decision }),
+  })
+  return (await response.json()) as UnusualReviewItem
 }
 
 export async function getInboxCounts(): Promise<InboxCounts> {
