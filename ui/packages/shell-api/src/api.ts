@@ -1410,7 +1410,15 @@ export interface TypeAccess {
   no_access: string[]
   /** Which OBJECTS a person sees: their `attribute` must equal the
    *  `field` of `type`, reached through `path`. Null when undeclared. */
-  compartment?: { attribute: string; path: { type: string; field: string }[]; type: string; field: string } | null
+  compartment?: {
+    attribute: string
+    path: { type: string; field: string }[]
+    type: string
+    /** Null for an unrestricted type, where nothing is compared. */
+    field: string | null
+    /** `security: unrestricted`: no row check; the role decides. */
+    unrestricted?: boolean
+  } | null
 }
 
 export async function getSchemaAccess(): Promise<Record<string, TypeAccess>> {

@@ -27,6 +27,7 @@ a chain is where the surprises have been (F-19).
 from typing import Any
 
 from core.intermediate_layer.auth import UserRecord, authorize
+from core.ontology.unrestricted import is_unrestricted
 
 READ = "read"
 DISCOVER = "discover"
@@ -44,6 +45,9 @@ def _compartment(schema: dict, object_type: str, attribute: str) -> dict | None:
     while current not in seen:
         seen.add(current)
         security = (schema.get(current) or {}).get("security") or {}
+        if is_unrestricted(schema.get(current)):
+            return {"attribute": attribute, "path": path, "type": current, "field": None,
+                    "unrestricted": True}
         if "field" in security:
             return {"attribute": attribute, "path": path, "type": current,
                     "field": security["field"]}

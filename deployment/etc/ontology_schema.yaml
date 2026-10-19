@@ -39,6 +39,16 @@ object_types:
     # waited thirty seconds. The test was right and the deployment was
     # wrong; no object type here declared one.
     title_field: name
+    # WHO SEES WHICH CUSTOMER: a person's `region` (policy.yaml's
+    # security_attribute) must equal the customer's. A type everyone
+    # whose role reads it may see in full -- a product catalogue --
+    # says so instead, in one word:
+    #
+    #   security: unrestricted
+    #
+    # The role check still applies; nothing written from a restricted
+    # record may be copied into one; and no via_field chain may end at
+    # one (core/ontology/unrestricted.py).
     security:
       field: region
     fields:

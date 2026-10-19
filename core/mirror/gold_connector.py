@@ -304,6 +304,11 @@ class GoldConnector:
             return set()
         return {field.name for field in table.schema().fields}
 
+    def rows_hidden_from_this_reader(self, table_name: str) -> None:
+        """Nothing: gold is Elysium's own lake, with no row rules of its
+        own -- who sees which rows is decided by the mediator above it."""
+        return None
+
     def health_check(self) -> None:
         """Is the lake readable at all.
 

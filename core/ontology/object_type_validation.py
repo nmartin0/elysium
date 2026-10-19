@@ -82,6 +82,7 @@ import zoneinfo
 from core.ontology.classifications import validate_field_classification
 from core.ontology.field_types import FIELD_DATA_TYPES
 from core.ontology.link_types import is_reverse_link
+from core.ontology.unrestricted import is_unrestricted
 
 
 def validate_object_types(object_types: dict, only: str | None = None) -> None:
@@ -409,7 +410,8 @@ def _validate_title_field(object_type_name: str, type_def: dict) -> None:
         )
 
 
-def _validate_security(object_type_name: str, object_types: dict, visited: frozenset[str]) -> None:
+def _validate_security(object_type_name: str, object_types: dict, visited: frozenset[str],
+                       origin: "str | None" = None) -> None:
     # visited: every object_type_name already walked on THIS specific
     # via_field chain -- passed down explicitly on each recursive
     # call, not a module-level or shared mutable set, so validating
@@ -429,6 +431,29 @@ def _validate_security(object_type_name: str, object_types: dict, visited: froze
         # time any MAC check ever touched this object type, not a
         # clear error at startup.
         raise ValueError(f"Object type {object_type_name!r} has no security block declared.")
+
+    if is_unrestricted(type_def):
+        # EXACTLY {"unrestricted": True}: nothing beside it, so a block
+        # cannot say both "no row check" and "check this field".
+        if dict(security) != {"unrestricted": True}:
+            raise ValueError(
+                f"Object type {object_type_name!r}: security is `unrestricted`, which takes "
+                f"nothing else beside it; got {dict(security)!r}.")
+        if origin is not None:
+            # REACHED THROUGH A CHAIN: the type that started it would
+            # become unrestricted without anyone having written so.
+            raise ValueError(
+                f"Object type {origin!r}: its security.via_field chain ends at "
+                f"{object_type_name!r}, which is unrestricted -- so {origin!r} would be "
+                f"visible to everyone without saying so. Declare {origin!r} `security: "
+                f"unrestricted` if that is meant, or point its chain at a type with a "
+                f"security field.")
+        return
+
+    if not hasattr(security, "get") or isinstance(security, str):
+        raise ValueError(
+            f"Object type {object_type_name!r}: security must be a block with `field` or "
+            f"`via_field`, or the word `unrestricted`; got {security!r}.")
 
     has_field = "field" in security
     has_via_field = "via_field" in security
@@ -507,4 +532,4 @@ def _validate_security(object_type_name: str, object_types: dict, visited: froze
     # fail loudly here, at schema-load time, instead of hanging a
     # real request via infinite recursion in mediator.py's own,
     # identically-shaped runtime resolution.
-    _validate_security(target_type, object_types, visited)
+    _validate_security(target_type, object_types, visited, origin or object_type_name)

@@ -300,6 +300,23 @@ class ExternalReadAdapter(ReadAdapter):
         raise IncrementalUnsupported(
             f"{type(self).__name__} cannot read changed rows only")
 
+    def rows_hidden_from_this_reader(self, table_name: str) -> "str | None":
+        """Why some rows of `table_name` may be invisible to the account
+        this adapter reads as, or None when nothing hides them (or the
+        source cannot say).
+
+        THE HAZARD (19 October, with the owner): a database's own row
+        rules apply to the sync's account like anyone's. PostgreSQL with
+        row-level security on and no policy for that account "applies a
+        default-deny policy and returns no rows without raising an error"
+        (Fivetran's documentation, which tells its customers to grant
+        BYPASSRLS for the same reason). A sync would then copy a partial
+        table and call it whole. Elysium enforces who sees which rows on
+        its own copy; the copy has to be complete for that to mean
+        anything. Default: cannot say.
+        """
+        return None
+
     def source_column_types(self, table_name: str) -> dict[str, str]:
         """What the SOURCE says its columns are, verbatim.
 

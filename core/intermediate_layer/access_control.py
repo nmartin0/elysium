@@ -55,7 +55,14 @@ def check_access(mediator, user_record: UserRecord, roles: dict,
                   object_type: str, object_id, action: str,
                   context: RequestContext | None = None,
                   *, part_of_bulk_read: bool = False) -> bool:
-    mac_allowed = (
+    # AN UNRESTRICTED TYPE HAS NO ROW CHECK (core/ontology/unrestricted.py),
+    # so it is passed even for a user with no security value -- the role
+    # check below still has to pass. Asked of the TYPE, not the object,
+    # so it costs no read; asked OF THE MEDIATOR, because this package
+    # is a leaf and may not import core.ontology (pyproject's layers).
+    has_no_row_check = getattr(mediator, "has_no_row_check", None)
+    unrestricted = bool(has_no_row_check and has_no_row_check(object_type))
+    mac_allowed = unrestricted or (
         user_record.security_value is not None
         and mediator._security_allowed(object_type, object_id, user_record.security_value)
     )

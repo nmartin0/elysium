@@ -134,6 +134,7 @@ from core.ontology.schema import (
     is_searchable_field,
 )
 from core.ontology.semantic_search import semantic_search_of
+from core.ontology.unrestricted import UNRESTRICTED, is_unrestricted
 from core.ontology.write_log import WriteLogReader
 from core.request_context import RequestContext
 
@@ -633,6 +634,11 @@ class DataMediator:
         type_schema = self._type_schema(object_type)
         security = type_schema["security"]
 
+        # THE LOWEST LABEL, never None (core/ontology/unrestricted.py):
+        # None means "unresolvable, visible to nobody".
+        if is_unrestricted(type_schema):
+            return UNRESTRICTED
+
         if "field" in security:
             field_name = security["field"]
 
@@ -900,8 +906,17 @@ class DataMediator:
 
         return get_column_for_field(security_config, field_name)
 
+    def has_no_row_check(self, object_type: str) -> bool:
+        """Whether `object_type` is declared `security: unrestricted`
+        (core/ontology/unrestricted.py) -- the role check alone decides."""
+        return is_unrestricted(self.schema.get(object_type))
+
     def _security_allowed(self, object_type: str, object_id: Any, requesting_user_security_value: str) -> bool:
         security_value = self._get_security_value(object_type, object_id)
+        # AN UNRESTRICTED TYPE NEVER REACHES THIS: check_access passes it
+        # through has_no_row_check, so the decision lives in one place. A
+        # caller that did reach here with one would be refused -- the
+        # sentinel equals no user's value -- which is the safe direction.
         return security_value is not None and security_value == requesting_user_security_value
 
     def visible_schema(self, user_record: UserRecord, *, for_agent: bool = False) -> dict:

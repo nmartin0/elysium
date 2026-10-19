@@ -474,7 +474,10 @@ layers = [
     # standardisation call it, and it imports nothing from here.
     # value_types expands into rules value_checks judges (R28).
     "value_types",
-    "field_types | link_types | classifications | value_checks",
+    # unrestricted (19 October) is a leaf: the declaration, its sentinel
+    # and is_unrestricted, read by validation, the mediator, the write
+    # mediator and who_can_see; it imports nothing.
+    "field_types | link_types | classifications | value_checks | unrestricted",
     # Below field_types, which reads locale-written text through it
     # (DEP-1). It imports nothing from this package.
     "localised_values",

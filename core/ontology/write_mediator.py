@@ -49,6 +49,7 @@ from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.mediator import DataMediator
 from core.ontology.schema import get_column_for_field
 from core.ontology.submission_criteria import evaluate_submission_criteria
+from core.ontology.unrestricted import UNRESTRICTED, is_unrestricted
 from core.ontology.write_log import WriteLogWriter
 
 if TYPE_CHECKING:
@@ -352,6 +353,15 @@ def _compartment_crossings(read_labels: dict, write_labels: dict) -> list[tuple]
     """
     crossings = []
     for (read_type, read_id), read_label in read_labels.items():
+        # THE LOWEST LABEL READ (core/ontology/unrestricted.py): it holds
+        # nothing any compartment does not already see, so writing it
+        # anywhere crosses nothing. The other direction -- a labelled
+        # read written INTO an unrestricted object -- falls to the loop
+        # below as a crossing, because UNRESTRICTED is not None and not
+        # equal to any compartment: that is the write-down this exists
+        # to refuse.
+        if read_label is UNRESTRICTED:
+            continue
         if read_label is None:
             # AN UNLABELLED SOURCE CANNOT LEAK A COMPARTMENT it does
             # not have. This is not a silent pass: an object with no
@@ -1395,6 +1405,11 @@ class WriteMediator:
             declared = self._adapter_mediator._type_schema(sub_write.object_type) or {}
         except (KeyError, ValueError):
             return None
+        # A NEW UNRESTRICTED OBJECT IS LABELLED, with the lowest label --
+        # NOT None, which _compartment_crossings skips. As None, creating
+        # a product from a restricted record's values would have passed.
+        if is_unrestricted(declared):
+            return UNRESTRICTED
         field_name = (declared.get("security") or {}).get("field")
         return sub_write.changes.get(field_name) if field_name else None
 
@@ -2083,7 +2098,9 @@ class WriteMediator:
             # The narrow claim is the true one: a write is refused when
             # the object has MOVED OUT of the proposer's reach.
             current = self._adapter_mediator.security_value_of(object_type, object_id)
-            if current is None or current == proposer.security_value:
+            # AN UNRESTRICTED OBJECT IS IN EVERYONE'S REACH: it cannot
+            # have moved out of the proposer's.
+            if current is None or current is UNRESTRICTED or current == proposer.security_value:
                 continue
             self.audit_log.log_access(
                 proposer.user_id, object_type, object_id,

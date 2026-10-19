@@ -77,6 +77,11 @@ class SyncResult:
     # attempt read plain "synced" with no detail, and the Mirror screen,
     # which shows refusals and degraded runs, showed nothing.
     absorbed_drift: "str | None" = None
+    # ROWS THE SOURCE MAY HAVE HIDDEN FROM THE SYNC'S ACCOUNT (19
+    # October): the adapter's rows_hidden_from_this_reader, e.g.
+    # PostgreSQL row-level security applying to it. The copy is then not
+    # the whole table, and nothing else would say so.
+    hidden_rows: "str | None" = None
     violations: dict = dataclass_field(default_factory=dict)
     # THE WARN-POLICY FINDINGS ALONE, structured, as `RuleCount`s.
     #

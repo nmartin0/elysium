@@ -29,6 +29,18 @@ Everything below is a continuation of that, not a departure from it.
 
 ---
 
+## Unrestricted types: the lowest label
+
+**19 October, with the owner.** A type may declare `security:
+unrestricted` -- no row check, the role check still applies, as a
+Foundry object type with no object security policy is governed by its
+ordinary permissions. In the lattice below it is the EMPTY SET of
+compartments: reading it crosses nothing, and writing a labelled value
+INTO it is a write-down, refused by the same check as any other
+(tests/unit/test_unrestricted_types.py). The decision whether to skip
+the row check is made once, in check_access, through the mediator's
+has_no_row_check.
+
 ## CLOSED: Elysium used to enforce half of MAC
 
 **CLOSED (E-18).** What follows is kept because the reasoning is the

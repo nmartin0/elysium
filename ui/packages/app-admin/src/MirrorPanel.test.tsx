@@ -241,9 +241,8 @@ describe('a refused sync', () => {
     })
     render(<MirrorPanel onSessionExpired={vi.fn()} />)
 
-    expect(await screen.findByText(/no longer has a column the ontology reads/)).toBeInTheDocument()
+    expect(await screen.findByText(/succeeded, with a warning/)).toBeInTheDocument()
     expect(screen.getByText(/'goods_total' was RENAMED/)).toBeInTheDocument()
-    expect(screen.getByText(/served empty until the ontology is changed/)).toBeInTheDocument()
     expect(screen.queryByText(/was refused/)).toBeNull()
   })
 

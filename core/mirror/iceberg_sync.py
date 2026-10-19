@@ -250,6 +250,19 @@ def _source_types_json(adapter, table_name: str) -> str:
     return json.dumps(types, sort_keys=True) if types else ""
 
 
+def _rows_hidden(adapter, table_name: str) -> "str | None":
+    """The adapter's answer, or None if it has no such method or fails:
+    a warning about the read must never stop the read."""
+    check = getattr(adapter, "rows_hidden_from_this_reader", None)
+    if check is None:
+        return None
+    try:
+        return check(table_name)
+    except Exception as e:  # noqa: BLE001 - a warning, not a read path
+        logger.warning("%s: could not check for hidden rows: %s", table_name, e)
+        return None
+
+
 def _report_type_drift(silo_name: str, table_name: str,
                        previous_json: str, current_json: str) -> None:
     """Says what changed about the source's own column types.
@@ -658,6 +671,12 @@ class IcebergMirrorSync(MirrorSync):
         # to replace.
         present = adapter.columns_present(table_name)
         missing = [column for column in columns if column not in present]
+        # ROWS THIS ACCOUNT MAY NOT SEE, asked before reading for the same
+        # reason: the read itself cannot tell -- PostgreSQL's default-deny
+        # returns nothing, without an error.
+        hidden_rows = _rows_hidden(adapter, table_name)
+        if hidden_rows:
+            logger.warning("%s.%s: %s", silo_name, table_name, hidden_rows)
         # WHAT ARRIVED, which is the only evidence a rename leaves. No
         # source records that `tier` became `tier_name`; one column
         # gone and one column present, in the same table in the same
@@ -708,7 +727,7 @@ class IcebergMirrorSync(MirrorSync):
         # answer: everything after it is still overlaid.
         read_started_at = datetime.now(UTC).isoformat()
         source, bronze_is_current = self._write_bronze(
-            adapter, silo_name, table_name, id_column, columns)
+            adapter, silo_name, table_name, id_column, columns, hidden_rows)
         bronze_snapshot = self._bronze_snapshot_id(silo_name, table_name)
 
         # BRONZE: what the source said, before anything was done to it.
@@ -1154,6 +1173,7 @@ class IcebergMirrorSync(MirrorSync):
                       f"the bronze copy failed ({source.bronze_failure}): silver is "
                       f"current, bronze is behind and this read left no raw record"),
             absorbed_drift=absorbed_drift,
+            hidden_rows=hidden_rows,
         )
 
     def _bronze_snapshot_id(self, silo_name: str, table_name: str):
@@ -1394,7 +1414,7 @@ class IcebergMirrorSync(MirrorSync):
         return totals
 
     def _refuse_suspected_partial_read(self, silo_name: str, table_name: str,
-                                        row_count: int) -> None:
+                                        row_count: int, hidden_rows: "str | None" = None) -> None:
         """Stop before overwriting the mirror with half a table
         (PA001-F4).
 
@@ -1437,8 +1457,16 @@ class IcebergMirrorSync(MirrorSync):
             f"down from {previous} -- more than "
             f"{int(MAX_DELETED_FRACTION * 100)}% of the table. A partially "
             f"failed read looks exactly like a mass deletion, so the mirror is "
-            f"UNCHANGED and still serves {previous} rows. If the rows really "
-            f"are gone, re-run with --accept-deletions {silo_name}.{table_name}"
+            f"UNCHANGED and still serves {previous} rows. "
+            # THE LIKELY CAUSE BEFORE THE ESCAPE (19 October, found
+            # against the simulator): row-level security switched on
+            # with no policy for the sync's account returns nothing
+            # without an error -- and the advice below, followed, would
+            # have replaced a whole copy with an empty one.
+            + (f"THE LIKELY CAUSE: {hidden_rows} Do NOT accept deletions until that "
+               f"is fixed. " if hidden_rows else "")
+            + f"If the rows really are gone, re-run with --accept-deletions "
+              f"{silo_name}.{table_name}"
         )
 
     def _object_types_for(self, table_name: str) -> frozenset:
@@ -1513,7 +1541,8 @@ class IcebergMirrorSync(MirrorSync):
         return rows
 
     def _write_bronze(self, adapter, silo_name: str, table_name: str,
-                       id_column: str, declared: list[str]) -> "tuple[SourceRead, bool]":
+                       id_column: str, declared: list[str],
+                       hidden_rows: "str | None" = None) -> "tuple[SourceRead, bool]":
         """Stores the source rows unaltered, with provenance in metadata.
 
         EVERY VALUE AS A STRING, deliberately. Bronze must not decide
@@ -1697,7 +1726,7 @@ class IcebergMirrorSync(MirrorSync):
             # bronze had already been overwritten would leave the raw
             # record destroyed by the very read we decided not to
             # trust -- a test caught exactly that.
-            self._refuse_suspected_partial_read(silo_name, table_name, row_count)
+            self._refuse_suspected_partial_read(silo_name, table_name, row_count, hidden_rows)
 
             if not self._catalog.namespace_exists(f"bronze_{silo_name}"):
                 self._catalog.create_namespace(f"bronze_{silo_name}")

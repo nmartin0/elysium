@@ -66,6 +66,21 @@ describe('WhoCanSee (DEV_UI 13.3)', () => {
     ).toBeInTheDocument()
   })
 
+  it('says a type is unrestricted outright, not as a missing compartment (19 October)', () => {
+    render(
+      <WhoCanSee
+        objectType="Product"
+        access={{
+          ...CUSTOMER,
+          compartment: { attribute: 'region', path: [], type: 'Product', field: null, unrestricted: true },
+        }}
+      />,
+    )
+
+    expect(screen.getByText(/Product is declared unrestricted: .* whatever their region/)).toBeInTheDocument()
+    expect(screen.queryByText(/No compartment is declared/)).toBeNull()
+  })
+
   it('says when no compartment is declared rather than nothing', () => {
     render(<WhoCanSee objectType="Note" access={{ ...CUSTOMER, compartment: null }} />)
 

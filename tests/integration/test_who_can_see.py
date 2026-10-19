@@ -79,12 +79,13 @@ class TestWhatChangesIt:
 class TestCompartments:
     def test_a_type_holding_its_own(self, client):
         assert _access(client)["Customer"]["compartment"] == {
-            "attribute": "region", "path": [], "type": "Customer", "field": "region"}
+            "attribute": "region", "path": [], "type": "Customer", "field": "region",
+            "unrestricted": False}
 
     def test_a_borrowed_one_is_followed_to_its_end(self, client):
         assert _access(client)["Transaction"]["compartment"] == {
             "attribute": "region", "path": [{"type": "Transaction", "field": "customer_id"}],
-            "type": "Customer", "field": "region"}
+            "type": "Customer", "field": "region", "unrestricted": False}
 
     def test_a_loop_or_a_break_answers_nothing_rather_than_hanging(self):
         looped = {"A": {"security": {"via_field": "b"}, "fields": {"b": {"target": "B"}}},

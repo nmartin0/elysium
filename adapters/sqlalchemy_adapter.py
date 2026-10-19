@@ -49,6 +49,7 @@ from sqlalchemy import (
     event,
     inspect,
     select,
+    text,
 )
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
@@ -490,6 +491,45 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
                 self._describe_source(), table_name, e,
             )
             return {}
+
+    def rows_hidden_from_this_reader(self, table_name: str) -> "str | None":
+        """PostgreSQL's row-level security, as it applies to this account.
+
+        It applies when the table has it ON and the account is neither a
+        superuser nor BYPASSRLS -- and, for the table's owner, only when
+        it is FORCED (PostgreSQL exempts owners otherwise). Other engines
+        have no equivalent this can ask about, and say nothing.
+        """
+        if self._engine.dialect.name != "postgresql":
+            return None
+        query = text(
+            "SELECT c.relrowsecurity, c.relforcerowsecurity, "
+            "       pg_get_userbyid(c.relowner) = current_user AS owns, "
+            "       r.rolsuper OR r.rolbypassrls AS exempt, "
+            "       (SELECT count(*) FROM pg_policy p WHERE p.polrelid = c.oid) AS policies "
+            "FROM pg_class c, pg_roles r "
+            "WHERE c.oid = to_regclass(:table) AND r.rolname = current_user")
+        try:
+            with self._engine.connect() as conn:
+                row = conn.execute(query, {"table": table_name}).mappings().first()
+        except SQLAlchemyError as e:
+            logger.warning("%s: could not check row-level security on %r: %s",
+                           self._describe_source(), table_name, e)
+            return None
+        if row is None or not row["relrowsecurity"] or row["exempt"]:
+            return None
+        if row["owns"] and not row["relforcerowsecurity"]:
+            return None
+        policies = row["policies"]
+        return (f"{table_name} has PostgreSQL row-level security switched on, and the account "
+                f"Elysium syncs with is subject to it -- "
+                + ("no policy is defined, so PostgreSQL returns NO rows to it, without an error"
+                   if not policies else
+                   f"{policies} polic{'y' if policies == 1 else 'ies'} decide which rows it sees, "
+                   f"and rows they hide are not copied")
+                + ". Elysium decides who sees which rows on its own copy, so the copy must be "
+                  "complete: grant the account BYPASSRLS (ALTER ROLE <account> BYPASSRLS), or a "
+                  "policy that lets it read every row.")
 
     def columns_present(self, table_name: str) -> set[str]:
         """What the source actually has, via Core's Inspector.

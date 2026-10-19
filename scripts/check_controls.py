@@ -5352,11 +5352,167 @@ CONTROLS = [
     Control(
         describes='SOURCES: an absorbed column is recorded on the attempt',
         path='scripts/run_sync.py',
-        old='                               getattr(result, "absorbed_drift", None)) if part]',
-        new='                               None) if part]',
+        old='                               getattr(result, "absorbed_drift", None),',
+        new='                               None,',
         tests=[
             ('tests/unit/test_a_source_changes_and_what_a_reader_sees.py::'
              'TestAnAbsorbedColumnIsRecorded::test_the_attempt_records_it_beside_its_outcome'),
+        ],
+    ),
+    Control(
+        describes='UNRESTRICTED: the declaration becomes its block at load',
+        path='core/ontology/unrestricted.py',
+        old='            type_def["security"] = {DECLARED: True}',
+        new='            pass',
+        tests=[
+            ('tests/unit/test_unrestricted_types.py::'
+             'TestDeclaringIt::test_it_validates'),
+        ],
+    ),
+    Control(
+        describes='UNRESTRICTED: nothing may sit beside it',
+        path='core/ontology/object_type_validation.py',
+        old='        if dict(security) != {"unrestricted": True}:',
+        new='        if False:',
+        tests=[
+            ('tests/unit/test_unrestricted_types.py::'
+             'TestDeclaringIt::test_nothing_may_sit_beside_it'),
+        ],
+    ),
+    Control(
+        describes='UNRESTRICTED: a security chain may not end at an unrestricted type',
+        path='core/ontology/object_type_validation.py',
+        old='        if origin is not None:',
+        new='        if False:',
+        tests=[
+            ('tests/unit/test_unrestricted_types.py::'
+             'TestDeclaringIt::test_a_chain_may_not_end_at_it'),
+        ],
+    ),
+    Control(
+        describes='UNRESTRICTED: its label is the lowest, never None',
+        path='core/ontology/mediator.py',
+        old=('        if is_unrestricted(type_schema):\n'
+             '            return UNRESTRICTED'),
+        new=('        if False:\n'
+             '            return UNRESTRICTED'),
+        tests=[
+            ('tests/unit/test_unrestricted_types.py::'
+             'TestReading::test_its_label_is_the_lowest_never_none'),
+        ],
+    ),
+    Control(
+        describes='UNRESTRICTED: a person with no compartment still sees it',
+        path='core/intermediate_layer/access_control.py',
+        old='    unrestricted = bool(has_no_row_check and has_no_row_check(object_type))',
+        new='    unrestricted = False',
+        tests=[
+            ('tests/unit/test_unrestricted_types.py::'
+             'TestReading::test_even_someone_with_no_compartment_at_all'),
+        ],
+    ),
+    Control(
+        describes='UNRESTRICTED: its values may be written anywhere',
+        path='core/ontology/write_mediator.py',
+        old=('        if read_label is UNRESTRICTED:\n'
+             '            continue'),
+        new=('        if False:\n'
+             '            continue'),
+        tests=[
+            ('tests/unit/test_unrestricted_types.py::'
+             'TestWritingIsNotAWayOut::test_its_values_may_go_anywhere'),
+        ],
+    ),
+    Control(
+        describes='UNRESTRICTED: a new record of it is labelled, so writing restricted values into it is refused',
+        path='core/ontology/write_mediator.py',
+        old=('        if is_unrestricted(declared):\n'
+             '            return UNRESTRICTED'),
+        new=('        if False:\n'
+             '            return UNRESTRICTED'),
+        tests=[
+            ('tests/unit/test_unrestricted_types.py::'
+             'TestWritingIsNotAWayOut::test_a_new_record_of_it_is_labelled'),
+        ],
+    ),
+    Control(
+        describes="UNRESTRICTED: writing to it is within everyone's reach",
+        path='core/ontology/write_mediator.py',
+        old='            if current is None or current is UNRESTRICTED or current == proposer.security_value:',
+        new='            if current is None or current == proposer.security_value:',
+        tests=[
+            ('tests/unit/test_unrestricted_types.py::'
+             'TestWritingIsNotAWayOut::test_writing_to_it_is_within_everyones_reach'),
+        ],
+    ),
+    Control(
+        describes='UNRESTRICTED: review stores record it as shared',
+        path='core/ontology/unrestricted.py',
+        old='    return None if value is UNRESTRICTED else value',
+        new='    return value',
+        tests=[
+            ('tests/unit/test_unrestricted_types.py::'
+             'test_review_stores_record_it_as_shared'),
+        ],
+    ),
+    Control(
+        describes='UNRESTRICTED: who-can-see says so',
+        path='core/ontology/who_can_see.py',
+        old='        if is_unrestricted(schema.get(current)):',
+        new='        if False:',
+        tests=[
+            ('tests/integration/test_unrestricted_end_to_end.py::'
+             'test_who_can_see_says_unrestricted'),
+        ],
+    ),
+    Control(
+        describes='SOURCES: an account that bypasses row-level security is not warned',
+        path='adapters/sqlalchemy_adapter.py',
+        old='        if row is None or not row["relrowsecurity"] or row["exempt"]:',
+        new='        if row is None or not row["relrowsecurity"]:',
+        tests=[
+            ('tests/unit/test_server_databases_read_safely.py::'
+             'TestRowsHiddenFromTheSync::test_an_account_that_bypasses_it_is_not_warned'),
+        ],
+    ),
+    Control(
+        describes="SOURCES: a table's owner is exempt from row-level security unless forced",
+        path='adapters/sqlalchemy_adapter.py',
+        old='        if row["owns"] and not row["relforcerowsecurity"]:',
+        new='        if False:',
+        tests=[
+            ('tests/unit/test_server_databases_read_safely.py::'
+             'TestRowsHiddenFromTheSync::test_the_owner_is_exempt_unless_forced'),
+        ],
+    ),
+    Control(
+        describes='SOURCES: rows hidden from the sync travel on its result',
+        path='core/mirror/iceberg_sync.py',
+        old='        hidden_rows = _rows_hidden(adapter, table_name)',
+        new='        hidden_rows = None',
+        tests=[
+            ('tests/unit/test_server_databases_read_safely.py::'
+             'test_a_sync_carries_the_warning_onto_its_result'),
+        ],
+    ),
+    Control(
+        describes='SOURCES: rows hidden from the sync are recorded on the attempt',
+        path='scripts/run_sync.py',
+        old='                               getattr(result, "hidden_rows", None)) if part]',
+        new='                               None) if part]',
+        tests=[
+            ('tests/unit/test_server_databases_read_safely.py::'
+             'test_a_sync_carries_the_warning_onto_its_result'),
+        ],
+    ),
+    Control(
+        describes='SOURCES: a refused empty read names row-level security as the likely cause',
+        path='core/mirror/iceberg_sync.py',
+        old='self._refuse_suspected_partial_read(silo_name, table_name, row_count, hidden_rows)',
+        new='self._refuse_suspected_partial_read(silo_name, table_name, row_count, None)',
+        tests=[
+            ('tests/unit/test_server_databases_read_safely.py::'
+             'test_a_refused_empty_read_names_the_likely_cause_first'),
         ],
     ),
     Control(

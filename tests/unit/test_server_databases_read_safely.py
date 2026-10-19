@@ -128,3 +128,127 @@ def test_a_sqlite_url_is_given_none_of_it(tmp_path):
     adapter.health_check()
 
     assert adapter._mysql_family is False
+
+
+class TestRowsHiddenFromTheSync:
+    """PostgreSQL's row-level security, as it applies to the account a
+    sync reads as (19 October). With it on and no policy for that account,
+    PostgreSQL "returns no rows without raising an error" (Fivetran) -- a
+    sync would copy a partial table and call it whole."""
+
+    @pytest.fixture(scope="class")
+    def server(self):
+        from sqlalchemy import create_engine
+
+        from tests.postgres_server import real_postgres
+
+        uri, stop = real_postgres()
+        owner_url = uri.replace("postgresql://", "postgresql+psycopg://")
+        with create_engine(owner_url).begin() as conn:
+            for statement in (
+                "CREATE ROLE reader LOGIN", "CREATE ROLE bypasser LOGIN BYPASSRLS",
+                "CREATE TABLE open_t (id TEXT)", "CREATE TABLE locked (id TEXT)",
+                "CREATE TABLE governed (id TEXT, region TEXT)",
+                "INSERT INTO locked VALUES ('a'), ('b')",
+                "ALTER TABLE locked ENABLE ROW LEVEL SECURITY",
+                "ALTER TABLE governed ENABLE ROW LEVEL SECURITY",
+                "CREATE POLICY west ON governed FOR SELECT USING (region = 'west')",
+                "GRANT SELECT ON open_t, locked, governed TO reader, bypasser",
+                "CREATE TABLE owned (id TEXT)", "ALTER TABLE owned ENABLE ROW LEVEL SECURITY",
+                "ALTER TABLE owned OWNER TO reader",
+                "CREATE TABLE owned_forced (id TEXT)",
+                "ALTER TABLE owned_forced ENABLE ROW LEVEL SECURITY",
+                "ALTER TABLE owned_forced FORCE ROW LEVEL SECURITY",
+                "ALTER TABLE owned_forced OWNER TO reader",
+            ):
+                conn.execute(text(statement))
+        user = owner_url.split("://", 1)[1].split("@", 1)[0]
+
+        def as_role(role):
+            return SQLAlchemyReadAdapter({"url": owner_url.replace(f"://{user}@", f"://{role}@", 1)})
+        yield as_role
+        stop()
+
+    def test_no_policy_means_no_rows_and_it_says_so(self, server):
+        adapter = server("reader")
+
+        warning = adapter.rows_hidden_from_this_reader("locked")
+
+        assert adapter.read_all_rows("locked", ["id"], {}) == [], "the trap itself: nothing, no error"
+        assert "NO rows" in warning and "BYPASSRLS" in warning
+
+    def test_a_policy_is_counted(self, server):
+        assert "1 policy decide" in server("reader").rows_hidden_from_this_reader("governed")
+
+    def test_an_account_that_bypasses_it_is_not_warned(self, server):
+        assert server("bypasser").rows_hidden_from_this_reader("locked") is None
+
+    def test_the_owner_is_exempt_unless_forced(self, server):
+        """PostgreSQL exempts a table's owner from its row-level security
+        unless it is FORCED -- so an owner reads everything, until then."""
+        owner = server("reader")
+
+        assert owner.rows_hidden_from_this_reader("owned") is None
+        assert "NO rows" in owner.rows_hidden_from_this_reader("owned_forced")
+
+    def test_a_table_without_it_is_not_warned(self, server):
+        assert server("reader").rows_hidden_from_this_reader("open_t") is None
+
+
+def test_a_sync_carries_the_warning_onto_its_result(tmp_path):
+    """The adapter's answer reaches the attempt the Mirror screen reads."""
+    import sqlite3
+
+    from adapters.sqlite_adapter import SQLiteReadAdapter
+    from core.mirror.iceberg_sync import IcebergMirrorSync
+    from scripts.run_sync import _detail_for
+
+    class Hiding(SQLiteReadAdapter):
+        def rows_hidden_from_this_reader(self, table_name):
+            return f"{table_name}: rows may be hidden"
+
+    db = tmp_path / "s.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE t (id TEXT, v TEXT)")
+        conn.execute("INSERT INTO t VALUES ('1', 'x')")
+    sync = IcebergMirrorSync(tmp_path / "mirror", {"s": Hiding({"path": str(db)})})
+
+    result = sync.sync_table("s", "t", "id", ["id", "v"])
+
+    assert result.hidden_rows == "t: rows may be hidden"
+    assert "rows may be hidden" in _detail_for(result)
+
+
+def test_a_refused_empty_read_names_the_likely_cause_first(tmp_path):
+    """FOUND AGAINST THE SIMULATOR: row-level security switched on made
+    the source return nothing; the mass-deletion guard rightly refused --
+    and its only advice was `--accept-deletions`, which would have
+    replaced the whole copy with an empty one."""
+    import sqlite3
+
+    from adapters.sqlite_adapter import SQLiteReadAdapter
+    from core.mirror.iceberg_sync import IcebergMirrorSync
+
+    class Hiding(SQLiteReadAdapter):
+        warn = None
+
+        def rows_hidden_from_this_reader(self, table_name):
+            return self.warn
+
+    db = tmp_path / "s.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE t (id TEXT, v TEXT)")
+        conn.executemany("INSERT INTO t VALUES (?, ?)", [(str(i), "x") for i in range(10)])
+    adapter = Hiding({"path": str(db)})
+    sync = IcebergMirrorSync(tmp_path / "mirror", {"s": adapter})
+    sync.sync_table("s", "t", "id", ["id", "v"])
+    with sqlite3.connect(db) as conn:
+        conn.execute("DELETE FROM t")
+    adapter.warn = "t has row-level security switched on."
+
+    with pytest.raises(Exception) as refused:
+        sync.sync_table("s", "t", "id", ["id", "v"])
+
+    message = str(refused.value)
+    assert "THE LIKELY CAUSE: t has row-level security" in message
+    assert message.index("LIKELY CAUSE") < message.index("--accept-deletions")

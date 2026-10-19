@@ -82,6 +82,7 @@ from core.ontology.object_type_validation import validate_object_types
 from core.ontology.predicted_fields import fill_predicted_types, validate_predicted_fields
 from core.ontology.semantic_search import validate_semantic_search
 from core.ontology.submission_criteria import validate_action_type_criteria
+from core.ontology.unrestricted import normalise_security_blocks
 from core.ontology.unusual_checks import validate_unusual_checks
 from core.ontology.write_log import WriteLogReader, WriteLogWriter
 
@@ -526,6 +527,10 @@ def validate_identifier_types(schema_raw: dict, policy_raw: dict) -> None:
         if "title_field" in object_type_def:
             _require_str(object_type_def["title_field"], f"{object_type_name!r}'s own title_field")
         security = object_type_def.get("security", {})
+        if not isinstance(security, dict):
+            raise ValueError(
+                f"Object type {object_type_name!r}: security must be a block with `field` or "
+                f"`via_field`, or the word `unrestricted`; got {security!r}.")
         if "field" in security:
             _require_str(security["field"], f"{object_type_name!r}'s own security.field")
         if "via_field" in security:
@@ -619,6 +624,9 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # (GOLD-3c). Merged here so everything downstream sees exactly the
     # schema it always saw; only the files a person edits changed.
     schema_raw = _merged_with_bindings(base_path, schema_raw)
+    # `security: unrestricted` becomes {"unrestricted": True} before
+    # anything reads it (core/ontology/unrestricted.py).
+    normalise_security_blocks(schema_raw)
     policy_raw = load_yaml(base_path / "policy.yaml")
     data_silos_raw = load_yaml(base_path / "data_silos.yaml")
 

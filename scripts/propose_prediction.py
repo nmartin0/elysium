@@ -41,6 +41,7 @@ from core.ontology.predicted_fields import (  # noqa: E402
     declaration_hash,
     prediction_of,
 )
+from core.ontology.unrestricted import as_stored_compartment  # noqa: E402
 from core.prediction_proposals import PredictionProposalStore  # noqa: E402
 from core.predictions import SEED, NotLearnable, data_types_of, refusal, train  # noqa: E402
 
@@ -96,7 +97,8 @@ def main() -> int:
     # compile_enrichment does: its own field, or through a via_field chain.
     compartments: dict = {}
     for row in rows:
-        row["__compartment"] = mediator.security_value_of(object_type, row.get(id_field))
+        row["__compartment"] = as_stored_compartment(
+            mediator.security_value_of(object_type, row.get(id_field)))
         compartments[row["__compartment"]] = compartments.get(row["__compartment"], 0) + 1
     compartment = args.compartment
     if compartment is None:

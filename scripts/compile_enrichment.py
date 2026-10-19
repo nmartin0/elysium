@@ -49,6 +49,7 @@ from core.ontology.enriched_fields import (  # noqa: E402
     enrichment_of,
 )
 from core.ontology.gold_view import GOLD_NAMESPACE  # noqa: E402
+from core.ontology.unrestricted import as_stored_compartment  # noqa: E402
 
 
 def _gold_rows(paths, config, object_type: str, columns: list[str]) -> list[dict]:
@@ -99,7 +100,8 @@ def main() -> int:
     # field, or followed through a via_field chain -- so "cleared for
     # these rows" means what an ordinary read would have decided.
     for row in rows:
-        row["__compartment"] = mediator.security_value_of(object_type, row.get(id_field))
+        row["__compartment"] = as_stored_compartment(
+            mediator.security_value_of(object_type, row.get(id_field)))
     compartments: dict = {}
     for row in rows:
         compartments[row["__compartment"]] = compartments.get(row["__compartment"], 0) + 1

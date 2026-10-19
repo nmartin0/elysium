@@ -2831,9 +2831,14 @@ class CompartmentResponse(BaseModel):
     #: Links followed to reach the type that holds the compartment, in
     #: order; empty when the type holds its own.
     path: list[CompartmentStep]
-    #: The type and field whose value is compared.
+    #: The type and field whose value is compared; field is null for an
+    #: unrestricted type, where nothing is.
     type: str
-    field: str
+    field: str | None = None
+    #: `security: unrestricted` (core/ontology/unrestricted.py): no row
+    #: check -- anyone whose role reads the type sees every record. Said
+    #: outright, because "no compartment" read as an omission.
+    unrestricted: bool = False
 
 
 class RoleAccessResponse(BaseModel):

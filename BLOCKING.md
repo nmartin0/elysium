@@ -895,28 +895,34 @@ that matters: told its limit was 20 when given 32 ids, a real model
 one object at a time until the duplicate guard stopped it". A cap
 chosen without measuring is how that happens again.
 
-## 8. PostgreSQL row-level security for MAC
+## 8. Who can read Elysium's copied data without going through Elysium
 
-Held with a trigger named, alongside column `GRANT` with `SET ROLE`.
-Elysium enforces MAC in the mediator today; pushing it into the
-database would make it true for any caller, not just ours.
+**REWRITTEN 19 October, with the owner.** This item was "PostgreSQL
+row-level security for MAC": push the row check into the customer's
+database so it held for any caller. It does not fit how Elysium works.
+Questions are answered from Elysium's own copy (GOLD-9); the only thing
+that touches the customer's database is the sync, which must read every
+row to make a whole copy -- Fivetran tells its customers to grant its
+account BYPASSRLS for exactly that reason. A policy in the source would
+bind the sync and nobody else. Foundry draws the line the same way: its
+restricted views enforce rows on Foundry's copy, at read time.
 
-**The hazard is already measured and recorded in the schema:**
-`via_field:` CANNOT be pushed down, and `ontology_schema.yaml` says
-so, because a join-shaped predicate forces a full scan. The
-row-level-security guidance is "keep predicates join-free", and
-Databricks' SecureView barrier forces full scans for the same reason.
+**What was built instead:** the sync now asks PostgreSQL whether
+row-level security applies to its own account on each table, and warns
+-- in the run and on Admin -> Mirror -- when it does, because PostgreSQL
+with no policy for that account "returns no rows without raising an
+error" and the copy would be silently partial.
 
-**Blocked on:** a decision this item's premise now needs. PostgreSQL is
-a supported READ source since 19 October -- but questions are answered
-from the mirror, never from the source (GOLD-9), so a row-level policy
-in the customer's PostgreSQL would bind only the sync's own account,
-which reads everything by design. What "MAC in the database" means
-under that architecture is the question to settle before anything is
-built. (The older blocker, no real-PostgreSQL tests on Python 3.13, is
-gone: tests/postgres_server.py falls back to the machine's own
-PostgreSQL, and fails when there is none.)
+**What remains, and is this item now:** the copy itself. The mediator
+applies the row check to everyone who asks through Elysium; anyone who
+can read the lake's files on disk gets past it. Today file permissions
+(the sync warns on a mirror directory others can read) and disk
+encryption are what stand in the way. Whether that is enough, or the
+lake's files need their own per-compartment protection, is the
+question.
 
+**Blocked on:** a decision about the threat -- who, beside Elysium,
+can reach that disk.
 
 ---
 
@@ -1108,9 +1114,8 @@ alone.
 
 **Found on the way, still open:** a live drift from `simulator drift`
 crashes the running world on its next write to the moved column (the
-engine keeps the old schema) -- for the control panel to fix; and every
-object type must name a security field, so shared reference data such
-as a product catalogue cannot be declared visible to everyone. That is
-a security-model change, for the owner.
+engine keeps the old schema) -- for the control panel to fix. (Shared
+reference data, the other thing found, is now declarable:
+`security: unrestricted`, SECURITY_ARCHITECTURE.md.)
 
 **Blocked on:** finishing the current work, then agreeing the design.

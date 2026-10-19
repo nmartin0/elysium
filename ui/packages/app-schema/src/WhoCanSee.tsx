@@ -22,6 +22,9 @@ function compartmentSentence(objectType: string, access: TypeAccess): string {
   if (!rule) {
     return `No compartment is declared: anyone whose role can read ${objectType} sees every one.`
   }
+  if (rule.unrestricted) {
+    return `${objectType} is declared unrestricted: anyone whose role can read it sees every one, whatever their ${rule.attribute}.`
+  }
   if (rule.path.length === 0) {
     return `A person sees a ${objectType} only when their ${rule.attribute} matches its ${rule.field}.`
   }

@@ -608,13 +608,15 @@ def _outcome_for(result) -> str:
 def _detail_for(result) -> "str | None":
     """What an attempt's history should say beside its outcome.
 
-    A DEGRADED RUN'S REASON, and A COLUMN THE DRIFT POLICY ABSORBED --
-    both are runs that succeeded and are not the whole story. Recorded on
+    A DEGRADED RUN'S REASON, A COLUMN THE DRIFT POLICY ABSORBED, and
+    ROWS THE SOURCE MAY HAVE HIDDEN FROM THE SYNC -- all runs that
+    succeeded and are not the whole story. Recorded on
     the attempt so the Mirror screen can show them where an operator
     looks, rather than in a log line nobody reads.
     """
     parts = [part for part in (getattr(result, "degraded", None),
-                               getattr(result, "absorbed_drift", None)) if part]
+                               getattr(result, "absorbed_drift", None),
+                               getattr(result, "hidden_rows", None)) if part]
     return "\n\n".join(parts) or None
 
 
