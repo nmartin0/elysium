@@ -66,6 +66,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -267,6 +268,28 @@ def grade(case: EvalCase, result: AgentLoopResult) -> TrialResult:
         gathered=list(gathered),
         fabricated_finishes=result.fabricated_finishes,
     )
+
+
+_CITATION = re.compile(r"\[R\d+\]")
+
+
+def answer_states(case: EvalCase, answer: str | None) -> bool | None:
+    """Whether the answer a person was shown states every expected fact
+    and aggregate value (19 October).
+
+    grade() judges what the loop GATHERED, which is right for the loop
+    and blind to the answer: an answer made shorter could drop the very
+    value it was asked for and every case would still pass. So the bench
+    checks the answer too, by the value as the prompt renders it -- a
+    plain substring, citation tags removed so "[R2]" is not a 2. None
+    when there is nothing to check: no answer, or a case with no value.
+    """
+    expected = [fact.value for fact in case.expected_facts] + \
+        [aggregate.value for aggregate in case.expected_aggregates]
+    if answer is None or not expected:
+        return None
+    said = _CITATION.sub("", answer).lower()
+    return all(str(value).lower() in said for value in expected)
 
 
 def pass_hat_k(successes: int, trials: int, k: int) -> float:

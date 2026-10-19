@@ -31,6 +31,7 @@ server that writes the same model faster is the answer to D2.
 WHAT THE COLUMNS ARE:
 
   right        cases passed, graded on facts the mediator returned
+  said         answers that stated their expected facts, of those with any
   question     median seconds for a whole question, answer included
   steps        median seconds in step calls, and how many calls
   answer       median seconds writing the answer
@@ -70,7 +71,8 @@ def summarise(trials: list, timings: list) -> dict:
     writing = tokens_while_writing = 0.0
     prompt_tokens = cached_tokens = 0
     told_reuse = False
-    for _name, usage, seconds in timings:
+    said = [entry[3] for entry in timings if len(entry) > 3 and entry[3] is not None]
+    for _name, usage, seconds, *_ in timings:
         per_question.append(seconds)
         parts = usage.by_part()
         steps = parts.get("step") or parts.get("plan") or {}
@@ -94,6 +96,10 @@ def summarise(trials: list, timings: list) -> dict:
     return {
         "right": sum(1 for result, _ in trials if result.passed),
         "trials": len(trials),
+        # THE ANSWER, graded too: how many stated their expected facts, of
+        # those that had any to state (core.agent.evaluation.answer_states).
+        "said": sum(1 for value in said if value),
+        "said_of": len(said),
         "question_seconds": median(per_question),
         "step_seconds": median(step_seconds),
         "step_calls": median(step_calls),
@@ -109,13 +115,14 @@ def _shown(value, form: str) -> str:
 
 
 def table(rows: dict) -> str:
-    lines = [f"  {'model':<34} {'right':>6} {'question':>9} {'steps':>12} {'answer':>8} "
+    lines = [f"  {'model':<34} {'right':>6} {'said':>6} {'question':>9} {'steps':>12} {'answer':>8} "
              f"{'written':>8} {'write/s':>8} {'reused':>7}"]
     for model, row in rows.items():
         steps = (f"{_shown(row['step_seconds'], '.0f')}s/{_shown(row['step_calls'], '.0f')}"
                  if row["step_seconds"] is not None else "-")
         lines.append(
             f"  {model:<34} {row['right']:>3}/{row['trials']:<2} "
+            f"{row.get('said', 0):>3}/{row.get('said_of', 0):<2} "
             f"{_shown(row['question_seconds'], '.0f'):>8}s {steps:>12} "
             f"{_shown(row['answer_seconds'], '.0f'):>7}s {_shown(row['tokens_written'], '.0f'):>8} "
             f"{_shown(row['write_per_second'], '.1f'):>8} "

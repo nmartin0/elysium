@@ -103,6 +103,24 @@ reached at all. State this limitation explicitly in your answer (e.g.
 rather than answering as if this were a complete result.
 """
 
+#: agent.brief_answers (19 October). On a CPU the answer is the one long
+#: thing the model writes, at ~1.5 tokens a second -- so every sentence
+#: that restates the question or describes the data is seconds a person
+#: waits. Off until the bench's `brief` arm says answers still state
+#: their facts this way.
+_BRIEF_NOTE = """
+
+BE BRIEF: answer in the fewest words that answer the question -- one
+sentence for one fact, a short list for several. Do not restate the
+question, and do not describe the data beyond what answers it. Still
+cite each claim with its [Rn] tag.
+"""
+
+#: Said by code when the provider reports the answer stopped at its
+#: length limit (agent.answer_max_tokens): a cut answer must not read as
+#: a finished one.
+CUT_SHORT_NOTE = "\n\n(This answer was cut short: it reached the length an answer may run to.)"
+
 _CITATION_PATTERN = re.compile(r"\[R(\d+)\]")
 # A number as it appears in prose: optional thousands separators, an
 # optional decimal part. Currency symbols and percent signs sit
@@ -238,8 +256,10 @@ def synthesize_insight(client: LLMAdapter, original_query: str, records: list[di
                         possibly_incomplete: bool = False, *,
                         usage: TokenUsage | None = None,
                         cancel: "threading.Event | None" = None,
-                        inferred: "Mapping | None" = None) -> str:
-    """`inferred` (R63): core/llm/inferred_values.inferred_fields for
+                        inferred: "Mapping | None" = None,
+                        brief: bool = False) -> str:
+    """`brief` (agent.brief_answers) asks for the shortest answer that
+    answers. `inferred` (R63): core/llm/inferred_values.inferred_fields for
     this deployment. Any of them in `records` is named to the model with
     its held-out score, and a note naming them is appended to the answer
     by code -- the model may forget to say a value is a guess; this
@@ -277,6 +297,8 @@ def synthesize_insight(client: LLMAdapter, original_query: str, records: list[di
     # SYSTEM_PROMPT constant itself, which stays shared/reused as-is
     # across every other call.
     system_prompt = SYSTEM_PROMPT + _INCOMPLETE_SEARCH_NOTE if possibly_incomplete else SYSTEM_PROMPT
+    if brief:
+        system_prompt += _BRIEF_NOTE
 
     try:
         with span(CHAT, "synthesis"):
@@ -352,6 +374,11 @@ def synthesize_insight(client: LLMAdapter, original_query: str, records: list[di
             f"actually retrieved, so it has been withheld rather than shown."
         )
 
+    # CUT SHORT, SAID BY CODE: the provider reported the answer stopped at
+    # its length limit. After every check, like the note below, so it is
+    # never what made an answer fail one.
+    written = usage.last("answer") if usage is not None else None
+    cut = CUT_SHORT_NOTE if written is not None and written.stopped_at_limit else ""
     # ENFORCED, NOT ASKED (R63): appended after every check, so it is
     # never what made an answer fail one, and never left out.
-    return answer + for_the_reader(found)
+    return answer + cut + for_the_reader(found)

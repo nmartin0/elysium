@@ -33,6 +33,11 @@ THE ARMS, and what each answers:
                not get worse.
   remember     remember_from_query ON: its case, and one ordinary
                question during which nothing may be remembered.
+  answers      the original seven with every switch off, ANSWERS
+               WRITTEN: what brief is compared against.
+  brief        brief_answers ON: the original seven, answers written.
+               ON only if every answer that stated its facts still does,
+               and the answers are shorter.
 
 Memories a trial writes are removed after it (llm_bench._MemoryCleanup):
 a bench must not leave the deployment remembering what nobody asked.
@@ -66,6 +71,9 @@ class Arm:
     name: str
     features: AgentFeatures
     cases: tuple[str, ...]
+    #: Write each trial's answer -- only the arms about answers do, since
+    #: on a CPU it is the longest call of a question.
+    answers: bool = False
 
 
 ARMS = (
@@ -78,6 +86,8 @@ ARMS = (
         ("free_text_surname", "one_field", "two_constraints")),
     Arm("remember", AgentFeatures(remember_from_query=True),
         ("remember_preference", "one_field")),
+    Arm("answers", AgentFeatures(), ORIGINAL, answers=True),
+    Arm("brief", AgentFeatures(brief_answers=True), ORIGINAL, answers=True),
 )
 
 #: The original seven passed 7 of 7 with every switch off, step mode,
@@ -86,7 +96,7 @@ ARMS = (
 ORIGINAL_BASELINE = "7/7 on 2026-10-12"
 
 
-def _summary(trials: list) -> dict:
+def _summary(trials: list, timings: list | None = None) -> dict:
     by_case: dict[str, dict] = {}
     for graded, seconds in trials:
         entry = by_case.setdefault(graded.case_name, {"passed": 0, "trials": 0, "hops": [],
@@ -95,6 +105,16 @@ def _summary(trials: list) -> dict:
         entry["passed"] += int(graded.passed)
         entry["hops"].append(graded.hops)
         entry["seconds"].append(round(seconds, 1))
+    # AND EACH ANSWER, where the arm wrote them: its tokens and whether it
+    # stated the case's facts (llm_bench passes (name, usage, s, said)).
+    for name, usage, _seconds, said in timings or ():
+        record = usage.last("answer")
+        if record is None and said is None:
+            continue   # no answer was written
+        entry = by_case.setdefault(name, {"passed": 0, "trials": 0, "hops": [], "seconds": []})
+        entry.setdefault("answer_tokens", []).append(
+            record.output_tokens if record is not None else None)
+        entry.setdefault("said", []).append(said)
     return by_case
 
 
@@ -105,6 +125,30 @@ def _all_pass(summary: dict, names) -> bool:
 
 def _mean(values: list) -> float:
     return sum(values) / len(values) if values else 0.0
+
+
+def _brief_verdict(off: dict, on: dict) -> tuple[str, str]:
+    """ON only if nothing got worse: every case passes, every answer that
+    stated its facts off still does on, and the answers are shorter."""
+    failed = [n for n in ORIGINAL if not _all_pass(on, [n])]
+    if failed:
+        return "OFF", f"failed with it on: {', '.join(failed)}"
+    lost = [n for n in ORIGINAL
+            if sum(1 for v in off.get(n, {}).get("said", []) if v)
+            > sum(1 for v in on.get(n, {}).get("said", []) if v)]
+    if lost:
+        return "OFF", f"answers stopped stating their facts: {', '.join(lost)}"
+
+    def tokens(arm):
+        values = [v for n in ORIGINAL for v in arm.get(n, {}).get("answer_tokens", []) if v]
+        return sum(values) / len(values) if values else None
+
+    before, after = tokens(off), tokens(on)
+    if before is None or after is None:
+        return "OFF", "the server did not report how many tokens the answers took"
+    if after >= before:
+        return "OFF", f"answers were not shorter ({before:.0f} tokens off, {after:.0f} on)"
+    return "ON", f"answers {before:.0f} tokens off, {after:.0f} on, every fact still stated"
 
 
 def verdicts(results: dict[str, dict]) -> list[tuple[str, str, str]]:
@@ -149,6 +193,8 @@ def verdicts(results: dict[str, dict]) -> list[tuple[str, str, str]]:
         else:
             good, why = better_or_equal(arm, "free_text_surname")
             out.append(("free_text_search", "ON" if good else "OFF", why))
+    if "brief" in results and "answers" in results:
+        out.append(("brief_answers", *_brief_verdict(results["answers"], results["brief"])))
     if "remember" in results:
         arm = results["remember"]
         ok = _all_pass(arm, ("remember_preference", "one_field"))
@@ -163,6 +209,7 @@ CONFIG_LINE = {
     "search_result_cap": "  search_result_cap: 20",
     "free_text_search": "  free_text_search: true",
     "remember_from_query": "  remember_from_query: true",
+    "brief_answers": "  brief_answers: true",
 }
 
 
@@ -209,12 +256,13 @@ def main() -> int:
     for arm in arms:
         print(f"\n######## ARM {arm.name}: {', '.join(arm.features.names_on) or 'all off'}")
         trials: list = []
+        timings: list = []
         try:
-            # NO ANSWERS: every arm here is about the steps, and on a CPU
-            # the answer is the longest call of a question.
+            # ANSWERS ONLY WHERE THE ARM IS ABOUT THEM: on a CPU the
+            # answer is the longest call of a question.
             run(paths, args.trials, tuple(by_name[n] for n in arm.cases),
                 show_steps=args.show_steps, features=arm.features, collect=trials,
-                answer=False)
+                answer=arm.answers, timings=timings)
         except KeyboardInterrupt:
             pass
         # AN ARM THAT DID NOT FINISH DECIDES NOTHING. The model went away
@@ -224,11 +272,11 @@ def main() -> int:
         # interruption. Its trials are still printed, and the session
         # stops: the next arm would meet the same unreachable model.
         if len(trials) < len(arm.cases) * args.trials:
-            unfinished[arm.name] = _summary(trials)
+            unfinished[arm.name] = _summary(trials, timings)
             print(f"\n  arm {arm.name} did not finish ({len(trials)} of "
                   f"{len(arm.cases) * args.trials} trials); stopping the session.")
             break
-        results[arm.name] = _summary(trials)
+        results[arm.name] = _summary(trials, timings)
 
     print("\n\n======== FEATURE BENCH ========")
     for arm_name, summary in results.items():

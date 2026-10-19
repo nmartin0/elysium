@@ -84,7 +84,8 @@ def test_each_model_is_run_and_the_faster_one_shows_it(monkeypatch, synced_deplo
     slow = next(line for line in table.splitlines() if line.strip().startswith("slow-model"))
     fast = next(line for line in table.splitlines() if line.strip().startswith("fast-model"))
     assert "1/1" in slow and "1/1" in fast
-    assert slow.split()[6] == "1.5" and fast.split()[6] == "6.0"   # write/s, as the server said
+    assert slow.split()[7] == "1.5" and fast.split()[7] == "6.0"   # write/s, as the server said
+    assert slow.split()[2] == "1/1"   # said: the answer stated the email
     saved = json.loads((synced_deployment.log_dir / "compare_models.json").read_text())
     # WHAT THE SERVER REPORTED, not the clock: a scripted model is no
     # slower in wall time, but says it wrote four times faster.

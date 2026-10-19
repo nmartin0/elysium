@@ -80,13 +80,36 @@ class SwitchUser(Scripted):
                             deadline=deadline, usage=usage, cancel=cancel)
 
 
+class Answering:
+    """Writes each case's answer: its expected values, in more words or
+    fewer as the answer prompt asks, reporting the tokens it wrote."""
+
+    max_concurrent_requests = 1
+
+    def chat(self, system_prompt, user_message, json_mode=False, temperature=None, *,
+             deadline=None, usage=None, cancel=None):
+        from scripts.llm_bench import ALL_CASES
+
+        case = next((c for c in ALL_CASES if c.query in user_message), None)
+        values = [f.value for f in case.expected_facts] + [a.value for a in case.expected_aggregates] \
+            if case else []
+        brief = "BE BRIEF" in system_prompt
+        if usage is not None:
+            usage.add(500, 20 if brief else 60, seconds=0.01, writing_seconds=0.01)
+        said = ", ".join(values) or "nothing"
+        return f"{said} [R1]." if brief else f"Here is what the data shows: {said} [R1]."
+
+
 @pytest.fixture
 def scripted_generations(synced_deployment, monkeypatch):
-    """Every generation the bench builds answers through SwitchUser."""
+    """Every generation the bench builds answers through SwitchUser, and
+    writes its answers through Answering."""
+    import dataclasses
+
     built = []
 
     def build(*args):
-        generation = build_generation(*args)
+        generation = dataclasses.replace(build_generation(*args), synthesis_client=Answering())
         generation.loop.client = SwitchUser()
         built.append(generation)
         return generation
@@ -127,7 +150,11 @@ def test_the_whole_session_runs_and_decides(scripted_generations, monkeypatch, c
     assert arms["baseline"]["remember_preference"]["passed"] == 0
     verdict = {v["switch"]: v["verdict"] for v in written["verdicts"]}
     assert verdict == {"filter_operators": "ON", "search_result_cap": verdict["search_result_cap"],
-                       "free_text_search": "ON", "remember_from_query": "ON"}
+                       "free_text_search": "ON", "remember_from_query": "ON",
+                       "brief_answers": "ON"}
+    # Answers only in the arms about them.
+    assert "answer_tokens" in arms["brief"]["one_field"]
+    assert "answer_tokens" not in arms["operators"]["one_field"]
     assert verdict["search_result_cap"].startswith("ON")
     assert "filter_operators: true" in capsys.readouterr().out
 

@@ -54,6 +54,15 @@ DEFAULT_TIMEOUT_SECONDS = 180
 DEFAULT_MAX_CONCURRENT_REQUESTS = 16
 
 
+def _stopped_at_limit(body: dict) -> "bool | None":
+    """OpenAI's finish_reason: "length" when the reply hit max_tokens."""
+    try:
+        reason = body["choices"][0].get("finish_reason")
+    except (KeyError, IndexError, TypeError, AttributeError):
+        return None
+    return None if reason is None else reason == "length"
+
+
 def _milliseconds(value) -> "float | None":
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
@@ -75,6 +84,8 @@ class VLLMAdapter:
         self.max_concurrent_requests = connection.get(
             "max_concurrent_requests", DEFAULT_MAX_CONCURRENT_REQUESTS)
         self.api_key = connection.get("api_key")
+        #: An answer's length limit, when the deployment set one.
+        self.prose_max_tokens = connection.get("prose_max_tokens")
 
     def model_name(self) -> str:
         return self.model
@@ -92,6 +103,8 @@ class VLLMAdapter:
         }
         if temperature is not None:
             payload["temperature"] = temperature
+        if not json_mode and self.prose_max_tokens:
+            payload["max_tokens"] = self.prose_max_tokens
         if json_mode:
             # OpenAI's name for it, which vLLM implements. Asked for
             # rather than assumed: a model that ignores it still
@@ -151,7 +164,8 @@ class VLLMAdapter:
             usage.add(reported.get("prompt_tokens"), reported.get("completion_tokens"),
                       seconds=time.monotonic() - started, cached_input_tokens=cached,
                       reading_seconds=_milliseconds(timings.get("prompt_ms")),
-                      writing_seconds=_milliseconds(timings.get("predicted_ms")))
+                      writing_seconds=_milliseconds(timings.get("predicted_ms")),
+                      stopped_at_limit=_stopped_at_limit(body))
 
         try:
             return body["choices"][0]["message"]["content"]

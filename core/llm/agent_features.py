@@ -26,6 +26,16 @@ turn on. Off, the prompt is byte-for-byte what it was.
                        question itself asks for something to be
                        remembered (E-14's "written only when a person
                        asks").
+  brief_answers        the answer is asked to be as short as the question
+                       allows (19 October). On a CPU the answer is the
+                       one long thing the model writes, at ~1.5 tokens a
+                       second. Off until the bench's `brief` arm says the
+                       answers still state their facts.
+
+AND ONE LIMIT THAT IS ON, because it changes nothing the model is shown:
+answer_max_tokens, 400 unless said (null for none), the most an answer
+may run to before it is cut -- a guard against a runaway, as the step
+replies already have, and a cut answer says it was cut.
 
 Declared under `agent:` in config.yaml with these names.
 """
@@ -40,6 +50,9 @@ class AgentFeatures:
     free_text_search: bool = False
     remember_from_query: bool = False
     meaning_search: bool = False
+    brief_answers: bool = False
+    #: Not a switch: a limit, on by default. See the module docstring.
+    answer_max_tokens: "int | None" = 400
 
     @property
     def names_on(self) -> tuple[str, ...]:
@@ -54,10 +67,18 @@ class AgentFeatures:
             on.append("remember_from_query")
         if self.meaning_search:
             on.append("meaning_search")
+        if self.brief_answers:
+            on.append("brief_answers")
         return tuple(on)
 
 
 OFF = AgentFeatures()
+
+DEFAULT_ANSWER_MAX_TOKENS = 400
+#: Below this an ordinary answer naming a few records is cut; above it a
+#: limit no longer guards anything on this hardware.
+MIN_ANSWER_TOKENS = 32
+MAX_ANSWER_TOKENS = 4096
 
 
 def features_from_config(agent: dict) -> AgentFeatures:
@@ -74,7 +95,14 @@ def features_from_config(agent: dict) -> AgentFeatures:
     if cap is not None and (isinstance(cap, bool) or not isinstance(cap, int) or cap < 1):
         raise ValueError(f"config.yaml agent.search_result_cap must be a whole number of at "
                          f"least 1, or absent; got {cap!r}.")
+    limit = agent.get("answer_max_tokens", DEFAULT_ANSWER_MAX_TOKENS)
+    if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int)
+                              or not MIN_ANSWER_TOKENS <= limit <= MAX_ANSWER_TOKENS):
+        raise ValueError(f"config.yaml agent.answer_max_tokens must be a whole number from "
+                         f"{MIN_ANSWER_TOKENS} to {MAX_ANSWER_TOKENS}, or null for no limit; "
+                         f"got {limit!r}.")
     return AgentFeatures(filter_operators=flag("filter_operators"), search_result_cap=cap,
                          free_text_search=flag("free_text_search"),
                          remember_from_query=flag("remember_from_query"),
-                         meaning_search=flag("meaning_search"))
+                         meaning_search=flag("meaning_search"),
+                         brief_answers=flag("brief_answers"), answer_max_tokens=limit)

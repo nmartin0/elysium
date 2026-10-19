@@ -92,6 +92,10 @@ class OllamaAdapter:
         # hundred; an eight-step plan a few hundred. See chat() for why
         # this exists at all.
         self.json_num_predict = connection.get("json_num_predict", DEFAULT_JSON_NUM_PREDICT)
+        # PROSE IS CAPPED ONLY WHEN THE DEPLOYMENT SAYS: the answer's
+        # client is built with `prose_max_tokens` from
+        # agent.answer_max_tokens (core/deployment_loader.py).
+        self.prose_num_predict = connection.get("prose_max_tokens")
 
     def _warn_if_context_is_tight(self, system_prompt: str,
                                   user_message: str) -> None:
@@ -232,6 +236,11 @@ class OllamaAdapter:
         # A deployment's own num_predict, if it set one, wins.
         if json_mode and "num_predict" not in options and self.json_num_predict:
             options["num_predict"] = self.json_num_predict
+        # AND AN ANSWER, WHERE A LIMIT WAS SET (19 October): at ~1.5
+        # tokens a second, 400 tokens is four and a half minutes of a
+        # person waiting. A cut answer says so -- done_reason below.
+        if not json_mode and "num_predict" not in options and self.prose_num_predict:
+            options["num_predict"] = self.prose_num_predict
 
         if options:
             payload["options"] = options
@@ -288,7 +297,9 @@ class OllamaAdapter:
                       cached_input_tokens=body.get("prompt_eval_cached_count"),
                       reading_seconds=_seconds(body.get("prompt_eval_duration")),
                       writing_seconds=_seconds(body.get("eval_duration")),
-                      loading_seconds=_seconds(body.get("load_duration")))
+                      loading_seconds=_seconds(body.get("load_duration")),
+                      stopped_at_limit=(body.get("done_reason") == "length"
+                                        if "done_reason" in body else None))
         try:
             return body["message"]["content"]
         except (KeyError, TypeError) as e:

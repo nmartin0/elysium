@@ -3032,8 +3032,8 @@ CONTROLS = [
     Control(
         describes="R63: code appends the inferred-values note to the answer",
         path="core/llm/synthesis_prompt.py",
-        old="    return answer + for_the_reader(found)",
-        new="    return answer",
+        old="    return answer + cut + for_the_reader(found)",
+        new="    return answer + cut",
         tests=["tests/unit/test_answers_say_what_is_inferred.py::TestCodeEnforcesIt::test_the_note_is_appended_whatever_the_model_wrote"],
     ),
     Control(
@@ -5019,8 +5019,8 @@ CONTROLS = [
     Control(
         describes="TIMING: llama-server's own timings are read",
         path='adapters/vllm_adapter.py',
-        old='                      writing_seconds=_milliseconds(timings.get("predicted_ms")))',
-        new='                      writing_seconds=None)',
+        old='                      writing_seconds=_milliseconds(timings.get("predicted_ms")),',
+        new='                      writing_seconds=None,',
         tests=[
             'tests/unit/test_where_a_questions_time_goes.py::TestOpenAIStyle::test_llama_servers_own_timings',
         ],
@@ -5058,10 +5058,8 @@ CONTROLS = [
     Control(
         describes='TIMING: the bench writes and times the answer too',
         path='scripts/llm_bench.py',
-        old=('                if answer:\n'
-             '                    answer_for('),
-        new=('                if False:\n'
-             '                    answer_for('),
+        old='                            if answer else None)',
+        new='                            if False else None)',
         tests=[
             'tests/unit/test_llm_bench.py::test_a_trial_is_a_whole_question_answer_included',
         ],
@@ -5174,6 +5172,111 @@ CONTROLS = [
         tests=[
             ('tests/integration/test_a_question_shows_its_steps.py::'
              'test_an_event_watched_after_leaving_is_set_at_once'),
+        ],
+    ),
+    Control(
+        describes='ANSWER: Ollama caps an answer where a limit is set',
+        path='adapters/ollama_adapter.py',
+        old='        if not json_mode and "num_predict" not in options and self.prose_num_predict:',
+        new='        if False:',
+        tests=[
+            ('tests/unit/test_shorter_answers.py::'
+             'TestOllama::test_an_answer_is_capped_where_a_limit_is_set'),
+        ],
+    ),
+    Control(
+        describes='ANSWER: Ollama reports stopping at the limit',
+        path='adapters/ollama_adapter.py',
+        old='                      stopped_at_limit=(body.get("done_reason") == "length"',
+        new='                      stopped_at_limit=(False',
+        tests=[
+            ('tests/unit/test_shorter_answers.py::'
+             'TestOllama::test_stopping_at_the_limit_is_reported'),
+        ],
+    ),
+    Control(
+        describes='ANSWER: an OpenAI-style answer is given max_tokens',
+        path='adapters/vllm_adapter.py',
+        old=('        if not json_mode and self.prose_max_tokens:\n'
+             '            payload["max_tokens"] = self.prose_max_tokens'),
+        new=('        if False:\n'
+             '            payload["max_tokens"] = self.prose_max_tokens'),
+        tests=[
+            ('tests/unit/test_shorter_answers.py::'
+             'TestOpenAIStyle::test_max_tokens_and_finish_reason'),
+        ],
+    ),
+    Control(
+        describes="ANSWER: only the answer's client is given the limit",
+        path='core/deployment_loader.py',
+        old='            prose_max_tokens=config.agent_features.answer_max_tokens),',
+        new='            prose_max_tokens=None),',
+        tests=[
+            ('tests/unit/test_shorter_answers.py::'
+             'test_only_the_answers_client_is_given_the_limit'),
+        ],
+    ),
+    Control(
+        describes='ANSWER: a cut answer says it was cut',
+        path='core/llm/synthesis_prompt.py',
+        old='    cut = CUT_SHORT_NOTE if written is not None and written.stopped_at_limit else ""',
+        new='    cut = ""',
+        tests=[
+            ('tests/unit/test_shorter_answers.py::'
+             'TestTheAnswer::test_a_cut_answer_says_so'),
+        ],
+    ),
+    Control(
+        describes='ANSWER: brief is asked for only when switched on',
+        path='core/llm/synthesis_prompt.py',
+        old=('    if brief:\n'
+             '        system_prompt += _BRIEF_NOTE'),
+        new='    system_prompt += _BRIEF_NOTE',
+        tests=[
+            ('tests/unit/test_shorter_answers.py::'
+             'TestTheAnswer::test_brief_is_asked_for_only_when_switched_on'),
+        ],
+    ),
+    Control(
+        describes='ANSWER: a citation tag is not taken for a stated value',
+        path='core/agent/evaluation.py',
+        old='    said = _CITATION.sub("", answer).lower()',
+        new='    said = answer.lower()',
+        tests=[
+            ('tests/unit/test_shorter_answers.py::'
+             'TestTheAnswerIsGraded::test_a_citation_tag_is_not_a_value'),
+        ],
+    ),
+    Control(
+        describes='ANSWER: brief stays off if an answer stops stating its facts',
+        path='scripts/feature_bench.py',
+        old=('    if lost:\n'
+             '        return "OFF", f"answers stopped stating their facts'),
+        new=('    if False:\n'
+             '        return "OFF", f"answers stopped stating their facts'),
+        tests=[
+            ('tests/unit/test_shorter_answers.py::'
+             'TestTheBriefVerdict::test_off_when_an_answer_stops_stating_its_facts'),
+        ],
+    ),
+    Control(
+        describes="ANSWER: the bench's answer is written as the switch says",
+        path='scripts/llm_bench.py',
+        old='        brief=generation.loop.features.brief_answers)',
+        new='        brief=False)',
+        tests=[
+            ('tests/unit/test_feature_bench.py::'
+             'test_the_whole_session_runs_and_decides'),
+        ],
+    ),
+    Control(
+        describes='ANSWER: a limit that guards nothing is refused',
+        path='core/llm/agent_features.py',
+        old='                              or not MIN_ANSWER_TOKENS <= limit <= MAX_ANSWER_TOKENS):',
+        new='                              or False):',
+        tests=[
+            ('tests/unit/test_shorter_answers.py::'
+             'TestTheSettings::test_a_limit_that_guards_nothing_is_refused'),
         ],
     ),
     Control(

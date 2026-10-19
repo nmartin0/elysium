@@ -137,6 +137,14 @@ agent:
   # meaning_search: false       # search_meaning: records ranked by what their
   #                             # text means, on types declaring
   #                             # semantic_search (needs llm.embedding_model)
+  # brief_answers: false        # ask for the shortest answer that answers;
+  #                             # its arm in feature_bench checks every
+  #                             # answer still states its facts
+  # The most an answer may run to, in tokens, before it is cut -- and a
+  # cut answer says so. ON at 400 unless set: at ~1.5 tokens a second on
+  # this hardware that is about four and a half minutes of writing.
+  # null for no limit.
+  # answer_max_tokens: 400
 
 # Tools the LLM may call, by name -- entirely optional; omitting this
 # section (or listing none) is completely valid, unlike llm:, which

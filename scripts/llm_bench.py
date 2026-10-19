@@ -87,6 +87,7 @@ from core.agent.evaluation import (  # noqa: E402
     ExpectedFact,
     ExpectedMemory,
     aggregate,
+    answer_states,
     grade,
 )
 from core.deployment_loader import (  # noqa: E402
@@ -389,7 +390,8 @@ def answer_for(generation, case_query: str, outcome, usage) -> str | None:
     return synthesize_insight(
         generation.synthesis_client, case_query, AgentLoop.filter_real_data(outcome.gathered),
         outcome.possibly_incomplete, usage=usage,
-        inferred=inferred_fields(generation.config.schema, None))
+        inferred=inferred_fields(generation.config.schema, None),
+        brief=generation.loop.features.brief_answers)
 
 
 def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
@@ -558,8 +560,8 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
                 outcome = (generation.loop.run_planned(user, case.query, context=context)
                            if mode == "plan"
                            else generation.loop.run(user, case.query, context=context))
-                if answer:
-                    answer_for(generation, case.query, outcome, context.token_usage)
+                answered = (answer_for(generation, case.query, outcome, context.token_usage)
+                            if answer else None)
             except KeyboardInterrupt:
                 # STOPPING IS NOT LOSING. Every trial already finished
                 # is still worth reporting, and on slow hardware
@@ -584,8 +586,10 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
             graded = grade(case, outcome)
             removed = cleanup()
             results.append(graded)
+            said = answer_states(case, answered)
             if timings is not None:
-                timings.append((case.name, context.token_usage, time.monotonic() - trial_started))
+                timings.append((case.name, context.token_usage, time.monotonic() - trial_started,
+                                said))
             if collect is not None:
                 collect.append((graded, time.monotonic() - trial_started))
             done += 1
@@ -598,6 +602,8 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
                   f"unusable={len(graded.fabricated_finishes)} "
                   f"[{elapsed / 60:.1f}m]"
                   + f"\n      {context.token_usage.describe()}"
+                  + ("" if said is None else
+                     f"\n      the answer {'states' if said else 'DOES NOT STATE'} the expected facts")
                   + (f"  (removed {removed} memory written by the trial)" if removed else ""))
             if show_steps:
                 for number, line in enumerate(describe_gathered(outcome.gathered), 1):

@@ -7928,6 +7928,7 @@ async def _answer_query(body: QueryRequest, request: Request, current_user: User
                 usage=request_context.token_usage,
                 cancel=synthesis_cancel,
                 inferred=_inferred_fields(request),
+                brief=loop.features.brief_answers,
             ),
         )
     finally:
@@ -8329,7 +8330,8 @@ def _finish_paused_query(app, generation, write_id: str, pending, outcome: "dict
     answer = synthesize_insight(generation.synthesis_client, paused.query_text,
                                 AgentLoop.filter_real_data(result.gathered),
                                 cut_short, usage=context.token_usage,
-                                inferred=_inferred_fields_for(app, generation))
+                                inferred=_inferred_fields_for(app, generation),
+                                brief=generation.loop.features.brief_answers)
     notes.notify(paused.user_id, QUERY_ANSWER_KIND, f"Answer to: {asked}", detail=answer,
                  subjects=[*subjects, *ids_in_gathered(result.gathered)])
 

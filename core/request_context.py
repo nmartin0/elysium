@@ -79,6 +79,10 @@ class CallRecord:
     reading_seconds: float | None = None
     writing_seconds: float | None = None
     loading_seconds: float | None = None
+    #: True when the provider says it stopped at the length it was
+    #: allowed (Ollama's done_reason, OpenAI's finish_reason, "length"):
+    #: the reply is cut short. None when it did not say.
+    stopped_at_limit: bool | None = None
 
 
 @dataclass
@@ -116,28 +120,34 @@ class TokenUsage:
     def add(self, input_tokens: int | None, output_tokens: int | None, *,
             seconds: float | None = None, cached_input_tokens: int | None = None,
             reading_seconds: float | None = None, writing_seconds: float | None = None,
-            loading_seconds: float | None = None) -> None:
+            loading_seconds: float | None = None, stopped_at_limit: bool | None = None) -> None:
         if self._parent is not None:
             self._parent._add(self._part, input_tokens, output_tokens, seconds,
                               cached_input_tokens, reading_seconds, writing_seconds,
-                              loading_seconds)
+                              loading_seconds, stopped_at_limit)
             return
         self._add(self._part, input_tokens, output_tokens, seconds, cached_input_tokens,
-                  reading_seconds, writing_seconds, loading_seconds)
+                  reading_seconds, writing_seconds, loading_seconds, stopped_at_limit)
 
     def _add(self, part, input_tokens, output_tokens, seconds, cached_input_tokens,
-             reading_seconds, writing_seconds, loading_seconds) -> None:
+             reading_seconds, writing_seconds, loading_seconds, stopped_at_limit) -> None:
         with self._lock:
             self.calls += 1
             if seconds is not None:
                 self.records.append(CallRecord(
                     part, input_tokens, output_tokens, seconds, cached_input_tokens,
-                    reading_seconds, writing_seconds, loading_seconds))
+                    reading_seconds, writing_seconds, loading_seconds, stopped_at_limit))
             if input_tokens is None and output_tokens is None:
                 self.unreported += 1
                 return
             self.input_tokens += input_tokens or 0
             self.output_tokens += output_tokens or 0
+
+    def last(self, part: str) -> CallRecord | None:
+        """The most recent timed call of `part`, or None."""
+        root = self._parent or self
+        with root._lock:
+            return next((record for record in reversed(root.records) if record.part == part), None)
 
     def by_part(self) -> dict[str, dict]:
         """{part: totals} over the timed calls, in the order parts first

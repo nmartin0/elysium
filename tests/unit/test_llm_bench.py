@@ -498,10 +498,12 @@ def test_a_trial_is_a_whole_question_answer_included(monkeypatch, synced_deploym
     status, timings, answering, out = _bench(monkeypatch, synced_deployment)
 
     assert status == 0 and answering.asked == 1
-    ((name, usage, seconds),) = timings
+    ((name, usage, seconds, said),) = timings
     assert name == "one_field" and seconds > 0
     parts = [record.part for record in usage.records]
     assert parts[-1] == "answer" and set(parts[:-1]) == {"step"}
+    # AND THE ANSWER IS GRADED: this one states ada.okafor@example.com.
+    assert said is True and "the answer states the expected facts" in out
     # AND SAID, per trial, where a person running it on the VM reads it.
     assert "answer 1 call" in out and "step " in out
 

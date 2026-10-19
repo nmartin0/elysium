@@ -72,6 +72,8 @@ def test_a_resumed_answer_says_what_is_inferred(tmp_path):
     from core.agent.agentic_loop import AgentLoopResult
 
     class Answering:
+        from core.llm.agent_features import OFF as features
+
         def resume(self, previous, user, *args, **kwargs):
             return AgentLoopResult(gathered=[{
                 "step": "get_field", "object_type": "SupportTicket", "object_id": "t1",

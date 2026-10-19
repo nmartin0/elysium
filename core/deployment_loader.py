@@ -938,7 +938,8 @@ def build_embedder(config: DeploymentConfig):
         api_key=connection.get("api_key"))
 
 
-def build_llm_adapter(config: DeploymentConfig, model: str) -> LLMAdapter:
+def build_llm_adapter(config: DeploymentConfig, model: str, *,
+                      prose_max_tokens: "int | None" = None) -> LLMAdapter:
     # The one place an LLM adapter gets constructed -- used for BOTH the
     # step-selection and synthesis clients. Always wrapped in
     # ConcurrencyLimitedLLMAdapter -- concrete adapters never throttle
@@ -969,8 +970,15 @@ def build_llm_adapter(config: DeploymentConfig, model: str) -> LLMAdapter:
     # ONLY `retryable` FAILURES ARE RETRIED, which the wrapper
     # enforces: a refusal, a bad request or a timeout that has already
     # passed its deadline raises on the first attempt.
+    # AN ANSWER'S LENGTH LIMIT reaches only the client built with it --
+    # the answer's (agent.answer_max_tokens) -- as a connection key each
+    # adapter that can honour it reads. The step client already caps its
+    # JSON replies; a prose limit there would cap nothing.
+    connection = config.llm_connection
+    if prose_max_tokens is not None:
+        connection = {**dict(config.llm_connection), "prose_max_tokens": prose_max_tokens}
     return RetryingLLMAdapter(
-        ConcurrencyLimitedLLMAdapter(adapter_class(model, config.llm_connection))
+        ConcurrencyLimitedLLMAdapter(adapter_class(model, connection))
     )
 
 
@@ -1844,7 +1852,9 @@ def build_generation(
                                        memory=memory, meaning=meaning),
         memory=memory,
         meaning=meaning,
-        synthesis_client=build_llm_adapter(config, config.synthesis_model),
+        synthesis_client=build_llm_adapter(
+            config, config.synthesis_model,
+            prose_max_tokens=config.agent_features.answer_max_tokens),
         write_adapters=write_adapters,
         display_examples=display_examples,
         mirror_snapshots=_mirror_snapshot_ids(mediator),

@@ -575,6 +575,20 @@ writes each trial's answer and prints, per trial, where its time went
 query logs the same line. `scripts/compare_models.py` puts models side
 by side on it.
 
+**TWO ANSWER SETTINGS, 19 October** (core/llm/agent_features.py): a
+LIMIT on how long an answer may run, ON at 400 tokens -- a cut answer
+says it was cut, from the server's own stop reason -- and
+`brief_answers`, OFF until feature_bench's `brief` arm, which compares
+answers written with and without it, says the answers are shorter and
+still state every fact. The bench now grades the ANSWER too
+(core.agent.evaluation.answer_states): it judged only what the loop
+gathered, so an answer could drop the very value it was asked for and
+pass. The step replies were left alone: they are already bare JSON with
+no reasoning field -- 18 characters for a finish, 86 to 119 for a
+search, a read or a count, as the bench cases write them -- and
+shortening them means changing the step vocabulary, which a
+measurement would have to justify first.
+
 **The agent asks too many questions to answer one.** Observed, not
 inferred: "how many transactions does Ada Okafor have?" took SIX
 gathered entries across FIVE model calls, two of which fetched
