@@ -781,7 +781,8 @@ def next_step(client: LLMAdapter, query_text: str, visible_schema: dict,
                 json_mode=(step_schema(visible_schema, tools, writes_enabled,
                                        visible_action_types, features=features)
                            if constrain else True),
-                temperature=0, deadline=deadline, usage=usage, cancel=cancel,
+                temperature=0, deadline=deadline,
+                usage=usage.for_part("step") if usage is not None else None, cancel=cancel,
             )
         # Logs the model's raw response BEFORE any parsing/validation --
         # silent by default (DEBUG), but genuinely valuable when a step's
@@ -1147,7 +1148,8 @@ def next_plan(client: LLMAdapter, query_text: str, visible_schema: dict,
                                        visible_action_types, max_steps)
                            if constrain
                            else True),
-                temperature=0, deadline=deadline, usage=usage, cancel=cancel,
+                temperature=0, deadline=deadline,
+                usage=usage.for_part("plan") if usage is not None else None, cancel=cancel,
             )
     except LLMUnavailable:
         # NOT CAUGHT HERE. Unlike next_step(), there is no gathered

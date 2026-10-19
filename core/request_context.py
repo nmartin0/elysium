@@ -50,6 +50,37 @@ import uuid
 from dataclasses import dataclass, field
 
 
+@dataclass(frozen=True)
+class CallRecord:
+    """One model call, as far as its provider said, and how long it took.
+
+    WHERE A QUESTION'S SECONDS GO, which nothing recorded until 19
+    October: the bench timed whole calls and never the answer, and a
+    query logged token totals. On a CPU the two halves of a call cost
+    very differently -- the deployment's own measurements are about 5.4
+    tokens a second READING a prompt and 1.5 WRITING a reply -- so "a
+    call took 50 s" cannot say which to make smaller.
+
+    READING is the provider's prompt evaluation (prefill), WRITING its
+    generation, LOADING the model coming into memory. Each is None when
+    the provider did not say: Ollama reports all three, llama-server
+    reports reading and writing, an OpenAI-style server neither, and
+    `seconds` -- timed here, around the request -- is then all there
+    is. `cached_input_tokens` is what the provider says it did NOT
+    re-read (Ollama's prompt_eval_cached_count, llama-server's cache_n).
+    """
+
+    #: Which part of a question: "step", "plan", "answer", or "other".
+    part: str
+    input_tokens: int | None
+    output_tokens: int | None
+    seconds: float
+    cached_input_tokens: int | None = None
+    reading_seconds: float | None = None
+    writing_seconds: float | None = None
+    loading_seconds: float | None = None
+
+
 @dataclass
 class TokenUsage:
     """What the provider REPORTED it consumed, summed over calls (E-11).
@@ -60,6 +91,10 @@ class TokenUsage:
     whose provider reported nothing -- so "no tokens" is never mistaken
     for "not told".
 
+    AND EACH CALL, with its timings (`records`): a caller names the part
+    of the question its calls are for with `for_part("answer")`, which
+    returns a view that records into this one under that name.
+
     Thread-safe: one query's calls may run on more than one thread.
     """
 
@@ -67,17 +102,87 @@ class TokenUsage:
     output_tokens: int = 0
     calls: int = 0
     unreported: int = 0
+    records: list[CallRecord] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+    #: For a view from for_part(): where its calls are recorded, and as what.
+    _parent: TokenUsage | None = field(default=None, repr=False, compare=False)
+    _part: str = field(default="other", repr=False, compare=False)
 
-    def add(self, input_tokens: int | None, output_tokens: int | None) -> None:
+    def for_part(self, part: str) -> TokenUsage:
+        """A view recording this tally's calls as `part`."""
+        root = self._parent or self
+        return TokenUsage(_parent=root, _part=part)
+
+    def add(self, input_tokens: int | None, output_tokens: int | None, *,
+            seconds: float | None = None, cached_input_tokens: int | None = None,
+            reading_seconds: float | None = None, writing_seconds: float | None = None,
+            loading_seconds: float | None = None) -> None:
+        if self._parent is not None:
+            self._parent._add(self._part, input_tokens, output_tokens, seconds,
+                              cached_input_tokens, reading_seconds, writing_seconds,
+                              loading_seconds)
+            return
+        self._add(self._part, input_tokens, output_tokens, seconds, cached_input_tokens,
+                  reading_seconds, writing_seconds, loading_seconds)
+
+    def _add(self, part, input_tokens, output_tokens, seconds, cached_input_tokens,
+             reading_seconds, writing_seconds, loading_seconds) -> None:
         with self._lock:
             self.calls += 1
+            if seconds is not None:
+                self.records.append(CallRecord(
+                    part, input_tokens, output_tokens, seconds, cached_input_tokens,
+                    reading_seconds, writing_seconds, loading_seconds))
             if input_tokens is None and output_tokens is None:
                 self.unreported += 1
                 return
             self.input_tokens += input_tokens or 0
             self.output_tokens += output_tokens or 0
 
+    def by_part(self) -> dict[str, dict]:
+        """{part: totals} over the timed calls, in the order parts first
+        appeared. A sum is None when no call of the part reported it, so
+        "not told" stays apart from zero."""
+        root = self._parent or self
+        with root._lock:
+            records = list(root.records)
+        totals: dict[str, dict] = {}
+        for record in records:
+            into = totals.setdefault(record.part, {
+                "calls": 0, "seconds": 0.0, "input_tokens": None, "cached_input_tokens": None,
+                "output_tokens": None, "reading_seconds": None, "writing_seconds": None,
+                "loading_seconds": None})
+            into["calls"] += 1
+            into["seconds"] += record.seconds
+            for key in ("input_tokens", "cached_input_tokens", "output_tokens",
+                        "reading_seconds", "writing_seconds", "loading_seconds"):
+                value = getattr(record, key)
+                if value is not None:
+                    into[key] = (into[key] or 0) + value
+        return totals
+
+    def describe(self) -> str:
+        """Where the time went, in a line: per part, its calls and
+        seconds, then reading and writing where the provider said."""
+        parts = []
+        for part, totals in self.by_part().items():
+            calls = totals["calls"]
+            text = f"{part} {calls} call{'s' if calls != 1 else ''} {totals['seconds']:.1f}s"
+            detail = []
+            if totals["reading_seconds"] is not None:
+                detail.append(f"reading {totals['reading_seconds']:.1f}s")
+            if totals["writing_seconds"] is not None:
+                written = totals["output_tokens"]
+                rate = (f" at {written / totals['writing_seconds']:.1f}/s"
+                        if written and totals["writing_seconds"] else "")
+                detail.append(f"writing {totals['writing_seconds']:.1f}s"
+                              + (f" for {written} tokens{rate}" if written is not None else ""))
+            elif totals["output_tokens"] is not None:
+                detail.append(f"{totals['output_tokens']} tokens written")
+            if totals["loading_seconds"]:
+                detail.append(f"loading {totals['loading_seconds']:.1f}s")
+            parts.append(text + (f" ({', '.join(detail)})" if detail else ""))
+        return "; ".join(parts) if parts else "no timed model calls"
 
 
 @dataclass(frozen=True)

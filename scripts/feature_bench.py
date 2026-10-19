@@ -210,8 +210,11 @@ def main() -> int:
         print(f"\n######## ARM {arm.name}: {', '.join(arm.features.names_on) or 'all off'}")
         trials: list = []
         try:
+            # NO ANSWERS: every arm here is about the steps, and on a CPU
+            # the answer is the longest call of a question.
             run(paths, args.trials, tuple(by_name[n] for n in arm.cases),
-                show_steps=args.show_steps, features=arm.features, collect=trials)
+                show_steps=args.show_steps, features=arm.features, collect=trials,
+                answer=False)
         except KeyboardInterrupt:
             pass
         # AN ARM THAT DID NOT FINISH DECIDES NOTHING. The model went away

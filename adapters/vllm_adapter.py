@@ -35,6 +35,7 @@ to use.
 """
 
 import threading
+import time
 from typing import Any
 
 import requests
@@ -51,6 +52,12 @@ DEFAULT_TIMEOUT_SECONDS = 180
 # the benchmarks name. A vLLM deployment that says nothing gets a
 # limit worth having.
 DEFAULT_MAX_CONCURRENT_REQUESTS = 16
+
+
+def _milliseconds(value) -> "float | None":
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return value / 1000
 
 
 class VLLMAdapter:
@@ -101,6 +108,7 @@ class VLLMAdapter:
         # NO LONGER THAN THE REQUEST HAS LEFT (E-11), the same rule the
         # Ollama adapter follows.
         timeout = call_timeout(deadline, self.timeout_seconds)
+        started = time.monotonic()
         try:
             response = http_transport.post(self.base_url, json=payload, headers=headers,
                                            timeout=timeout, cancel=cancel)
@@ -131,7 +139,19 @@ class VLLMAdapter:
             # completion_tokens out. Absent on some error shapes, which
             # is why they are read defensively rather than indexed.
             reported = body.get("usage") or {}
-            usage.add(reported.get("prompt_tokens"), reported.get("completion_tokens"))
+            # llama-server adds its own `timings` (milliseconds): reading
+            # the prompt, writing the reply, and cache_n, the prompt
+            # tokens it reused. Another OpenAI-style server sends none,
+            # and only the time around the request is known.
+            timings = body.get("timings") if isinstance(body.get("timings"), dict) else {}
+            details = reported.get("prompt_tokens_details")
+            cached = timings.get("cache_n")
+            if cached is None and isinstance(details, dict):
+                cached = details.get("cached_tokens")
+            usage.add(reported.get("prompt_tokens"), reported.get("completion_tokens"),
+                      seconds=time.monotonic() - started, cached_input_tokens=cached,
+                      reading_seconds=_milliseconds(timings.get("prompt_ms")),
+                      writing_seconds=_milliseconds(timings.get("predicted_ms")))
 
         try:
             return body["choices"][0]["message"]["content"]

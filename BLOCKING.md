@@ -121,10 +121,17 @@ they can be answered together.
 
 **The model and where it runs**
 - `D1` -- switch phi4-mini to Qwen3-4B-Instruct after the bench? The
-  shipped config is still phi4-mini.
+  shipped config is still phi4-mini. NOW A MEASUREMENT (19 October):
+  `python -m scripts.compare_models phi4-mini <other>` runs the bench's
+  seven questions on each, answers included, and tabulates how many
+  each got right and where a whole question's seconds went -- steps
+  and answer, reading and writing, as the server reported them.
 - `D2` -- stay on Ollama, or run llama-server? The OpenAI-compatible
-  adapter already reaches it; prompt caching (AR-3) and speculative
-  decoding (AR-8) need it.
+  adapter already reaches it, and reads its timings; prompt caching
+  (AR-3) and speculative decoding (AR-8) need it -- llama.cpp's n-gram
+  drafting (`--spec-type ngram-simple`) needs no second model, and
+  suits replies that copy names and values out of their prompt. Run
+  compare_models once per server, with --config naming each.
 - `D3` and `AR-9` -- may a query leave the VM for a hosted model, and
   if so on what policy? Today a deployment can swap the whole model,
   never escalate one question.
@@ -558,6 +565,15 @@ with no deployment-wide default -- small, and not yet asked for.
 `IDEAS.md`'s open investigations all need traces from a real model on
 real hardware. The measurements already taken are kept because
 re-taking them costs an afternoon of somebody's GPU.
+
+**THE ANSWER WAS NEVER TIMED** (found 19 October): every run below
+timed the loop's step calls and stopped, though the answer is prose
+with no length limit and a person waits for it too. The bench now
+writes each trial's answer and prints, per trial, where its time went
+(`step 3 calls 96.0s (reading 12.0s, writing 84.0s for 126 tokens at
+1.5/s); answer 1 call ...`), from the server's own durations; every
+query logs the same line. `scripts/compare_models.py` puts models side
+by side on it.
 
 **The agent asks too many questions to answer one.** Observed, not
 inferred: "how many transactions does Ada Okafor have?" took SIX

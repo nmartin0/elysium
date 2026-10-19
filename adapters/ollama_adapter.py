@@ -12,6 +12,7 @@ Used by: core/deployment_loader.py's build_llm_adapter() factory
 
 import logging
 import threading
+import time
 from typing import Any
 
 import requests
@@ -43,6 +44,13 @@ _CHARS_PER_TOKEN = 4
 #: Tokens a JSON (step or plan) reply may run to before it is cut off.
 #: An eight-step plan is a few hundred; see OllamaAdapter.chat().
 DEFAULT_JSON_NUM_PREDICT = 768
+
+
+def _seconds(nanoseconds) -> "float | None":
+    """Ollama's durations are nanoseconds; None when absent or not a number."""
+    if isinstance(nanoseconds, bool) or not isinstance(nanoseconds, (int, float)):
+        return None
+    return nanoseconds / 1e9
 
 
 class OllamaAdapter:
@@ -233,6 +241,7 @@ class OllamaAdapter:
         # server trickling bytes could exceed it -- but a stalled server,
         # the case that matters, is cut off at it.
         timeout = call_timeout(deadline, self.timeout_seconds)
+        started = time.monotonic()
         try:
             response = http_transport.post(self.base_url, json=payload, timeout=timeout,
                                            cancel=cancel)
@@ -269,7 +278,17 @@ class OllamaAdapter:
         if usage is not None:
             # Ollama's own names: prompt_eval_count is the input,
             # eval_count the output. Absent on some cached answers.
-            usage.add(body.get("prompt_eval_count"), body.get("eval_count"))
+            # AND WHERE THE TIME WENT, in Ollama's nanoseconds: reading
+            # the uncached prompt, writing the reply, loading the model
+            # (docs.ollama.com/api/usage). prompt_eval_cached_count is
+            # how much of the prompt it did NOT re-read -- the number
+            # the bench once had to infer from timings alone.
+            usage.add(body.get("prompt_eval_count"), body.get("eval_count"),
+                      seconds=time.monotonic() - started,
+                      cached_input_tokens=body.get("prompt_eval_cached_count"),
+                      reading_seconds=_seconds(body.get("prompt_eval_duration")),
+                      writing_seconds=_seconds(body.get("eval_duration")),
+                      loading_seconds=_seconds(body.get("load_duration")))
         try:
             return body["message"]["content"]
         except (KeyError, TypeError) as e:

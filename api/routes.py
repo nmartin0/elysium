@@ -7797,6 +7797,10 @@ async def query(body: QueryRequest, request: Request,
         logger.info("query %s used %d model calls: %d input and %d output tokens reported, "
                     "%d calls unreported", request_context.request_id, usage.calls,
                     usage.input_tokens, usage.output_tokens, usage.unreported)
+        # WHERE THE SECONDS WENT, per part of the question (19 October):
+        # what to make smaller -- the steps or the answer, the reading or
+        # the writing -- is a different fix each time.
+        logger.info("query %s time: %s", request_context.request_id, usage.describe())
     # BUILT FROM real_data, what synthesis was given, and named from the
     # agent's own schema: nothing here the answer itself could not say.
     from core.agent.answer_context import doors, follow_ons, read_back

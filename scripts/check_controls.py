@@ -4997,6 +4997,98 @@ CONTROLS = [
         ],
     ),
     Control(
+        describes="TIMING: Ollama's reading time is its prompt evaluation",
+        path='adapters/ollama_adapter.py',
+        old='                      reading_seconds=_seconds(body.get("prompt_eval_duration")),',
+        new='                      reading_seconds=None,',
+        tests=[
+            ('tests/unit/test_where_a_questions_time_goes.py::'
+             'TestOllama::test_reading_writing_loading_and_reuse_from_its_nanoseconds'),
+        ],
+    ),
+    Control(
+        describes="TIMING: Ollama's reuse is its cached prompt count",
+        path='adapters/ollama_adapter.py',
+        old='                      cached_input_tokens=body.get("prompt_eval_cached_count"),',
+        new='                      cached_input_tokens=None,',
+        tests=[
+            ('tests/unit/test_where_a_questions_time_goes.py::'
+             'TestOllama::test_reading_writing_loading_and_reuse_from_its_nanoseconds'),
+        ],
+    ),
+    Control(
+        describes="TIMING: llama-server's own timings are read",
+        path='adapters/vllm_adapter.py',
+        old='                      writing_seconds=_milliseconds(timings.get("predicted_ms")))',
+        new='                      writing_seconds=None)',
+        tests=[
+            'tests/unit/test_where_a_questions_time_goes.py::TestOpenAIStyle::test_llama_servers_own_timings',
+        ],
+    ),
+    Control(
+        describes='TIMING: a step call is recorded as a step',
+        path='core/llm/agent_step_prompt.py',
+        old='                usage=usage.for_part("step") if usage is not None else None, cancel=cancel,',
+        new='                usage=usage, cancel=cancel,',
+        tests=[
+            ('tests/unit/test_where_a_questions_time_goes.py::'
+             'TestEachCallSaysWhatItIsFor::test_a_step_a_plan_and_an_answer'),
+        ],
+    ),
+    Control(
+        describes='TIMING: the answer call is recorded as the answer',
+        path='core/llm/synthesis_prompt.py',
+        old='                usage=usage.for_part("answer") if usage is not None else None,',
+        new='                usage=usage,',
+        tests=[
+            ('tests/unit/test_where_a_questions_time_goes.py::'
+             'TestEachCallSaysWhatItIsFor::test_a_step_a_plan_and_an_answer'),
+        ],
+    ),
+    Control(
+        describes="TIMING: a part's calls are recorded in the whole",
+        path='core/request_context.py',
+        old=('        root = self._parent or self\n'
+             '        return TokenUsage(_parent=root, _part=part)'),
+        new='        return TokenUsage(_part=part)',
+        tests=[
+            'tests/unit/test_where_a_questions_time_goes.py::TestTheTally::test_a_part_records_into_the_whole',
+        ],
+    ),
+    Control(
+        describes='TIMING: the bench writes and times the answer too',
+        path='scripts/llm_bench.py',
+        old=('                if answer:\n'
+             '                    answer_for('),
+        new=('                if False:\n'
+             '                    answer_for('),
+        tests=[
+            'tests/unit/test_llm_bench.py::test_a_trial_is_a_whole_question_answer_included',
+        ],
+    ),
+    Control(
+        describes='TIMING: another model is set on the adapter beneath every wrapper',
+        path='scripts/llm_bench.py',
+        old=('    while hasattr(adapter, "_wrapped"):\n'
+             '        adapter = adapter._wrapped\n'
+             '    if not hasattr(adapter, "model"):'),
+        new=('    if hasattr(adapter, "_wrapped"):\n'
+             '        adapter = adapter._wrapped\n'
+             '    if not hasattr(adapter, "model"):'),
+        tests=[
+            'tests/unit/test_llm_bench.py::test_another_model_through_every_wrapper',
+        ],
+    ),
+    Control(
+        describes='TIMING: reuse is measured only over calls that reported it',
+        path='scripts/compare_models.py',
+        old='            if record.input_tokens and record.cached_input_tokens is not None:',
+        new='            if record.input_tokens:',
+        tests=[
+            'tests/unit/test_compare_models.py::test_each_model_is_run_and_the_faster_one_shows_it',
+        ],
+    ),
+    Control(
         describes="ENRICH: a classified field is never an input to a model",
         path="core/ontology/enriched_fields.py",
         old="        if labels:\n            raise ValueError(",

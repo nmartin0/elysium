@@ -16,6 +16,7 @@ the VM for a reason that has nothing to do with the model.
 """
 
 import contextlib
+import dataclasses
 import io
 
 import pytest
@@ -443,3 +444,82 @@ def test_the_generous_timeout_is_not_restored_and_that_is_deliberate():
     assert "deployment_limit=real_timeout" in source, (
         "the real limit must still be REPORTED, just not enforced"
     )
+
+
+class _Reporting:
+    """Scripted steps, each reporting what a provider would."""
+
+    max_concurrent_requests = 1
+
+    def __init__(self, wrapped):
+        self._script = wrapped
+
+    def chat(self, system_prompt, user_message, json_mode=False, temperature=None, *,
+             deadline=None, usage=None, cancel=None):
+        if usage is not None:
+            usage.add(100, 12, seconds=0.02, reading_seconds=0.005, writing_seconds=0.015)
+        return self._script.chat(system_prompt, user_message, json_mode, temperature)
+
+
+class _Answering:
+    max_concurrent_requests = 1
+
+    def __init__(self):
+        self.asked = 0
+
+    def chat(self, system_prompt, user_message, json_mode=False, temperature=None, *,
+             deadline=None, usage=None, cancel=None):
+        self.asked += 1
+        if usage is not None:
+            usage.add(300, 40, seconds=0.05, writing_seconds=0.04)
+        return "Ada Okafor's email address is ada.okafor@example.com [R1]."
+
+
+def _bench(monkeypatch, synced_deployment, **options):
+    """scripts/llm_bench.run(), end to end, on scripted models."""
+    import scripts.llm_bench as bench
+
+    generation = build_generation(synced_deployment.config_dir, synced_deployment.data_dir,
+                                  synced_deployment.log_dir)
+    generation.loop.client = _Reporting(Scripted())
+    answering = _Answering()
+    generation = dataclasses.replace(generation, synthesis_client=answering)
+    monkeypatch.setattr(bench, "build_generation", lambda *a: generation)
+    timings: list = []
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        status = bench.run(synced_deployment, 1, (CASES[0],), timings=timings, **options)
+    return status, timings, answering, out.getvalue()
+
+
+def test_a_trial_is_a_whole_question_answer_included(monkeypatch, synced_deployment):
+    """THE ANSWER WAS NEVER TIMED (19 October): the bench ran the loop and
+    stopped, though the answer is prose with no length limit."""
+    status, timings, answering, out = _bench(monkeypatch, synced_deployment)
+
+    assert status == 0 and answering.asked == 1
+    ((name, usage, seconds),) = timings
+    assert name == "one_field" and seconds > 0
+    parts = [record.part for record in usage.records]
+    assert parts[-1] == "answer" and set(parts[:-1]) == {"step"}
+    # AND SAID, per trial, where a person running it on the VM reads it.
+    assert "answer 1 call" in out and "step " in out
+
+
+def test_the_answer_can_be_left_out(monkeypatch, synced_deployment):
+    status, timings, answering, _ = _bench(monkeypatch, synced_deployment, answer=False)
+
+    assert answering.asked == 0
+    assert "answer" not in {record.part for record in timings[0][1].records}
+
+
+def test_another_model_through_every_wrapper():
+    from adapters.ollama_adapter import OllamaAdapter
+    from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
+    from core.llm.retrying_adapter import RetryingLLMAdapter
+    from scripts.llm_bench import use_model
+
+    inner = OllamaAdapter("phi4-mini", {"base_url": "http://ollama.invalid/api/chat"})
+    use_model(ConcurrencyLimitedLLMAdapter(RetryingLLMAdapter(inner)), "qwen3:4b")
+
+    assert inner.model == "qwen3:4b"

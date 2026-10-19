@@ -104,3 +104,20 @@ def test_a_DENIED_read_is_never_read_back(client):
 
     assert not any("cust_004" in sentence for sentence in body["read_back"])
     assert not any(door.get("object_id") == "cust_004" for door in body["doors"])
+
+
+def test_the_log_says_where_the_questions_time_went(client, caplog):
+    """19 October: per part of the question, its calls and seconds -- what
+    to make smaller is a different fix for the steps and for the answer."""
+    import logging
+    import re
+
+    _login(client)
+    with caplog.at_level(logging.INFO, logger="api.routes"):
+        response = _ask(client, "Who is Ada Okafor?",
+                        {"step": "search_object", "object_type": "Customer",
+                         "filter": {"name": "Ada Okafor"}})
+
+    assert response.status_code == 200, response.text
+    (line,) = [record.getMessage() for record in caplog.records if " time: " in record.getMessage()]
+    assert re.search(r"time: step 2 calls [\d.]+s; answer 1 call [\d.]+s$", line), line

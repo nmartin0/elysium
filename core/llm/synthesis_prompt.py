@@ -281,7 +281,8 @@ def synthesize_insight(client: LLMAdapter, original_query: str, records: list[di
     try:
         with span(CHAT, "synthesis"):
             answer = client.chat(
-                system_prompt, user_message, json_mode=False, temperature=0, usage=usage,
+                system_prompt, user_message, json_mode=False, temperature=0,
+                usage=usage.for_part("answer") if usage is not None else None,
                 cancel=cancel,
             )
     except LLMUnavailable as e:

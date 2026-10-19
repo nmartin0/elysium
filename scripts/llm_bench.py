@@ -33,6 +33,11 @@ without a model.
 
 == READ THIS BEFORE TRUSTING ANY CACHE NUMBER ==
 
+**SINCE 19 OCTOBER, READ prompt_eval_cached_count INSTEAD**: Ollama
+now documents it as "how many prompt tokens were read from the cache",
+and each trial's line reports it with reading and writing time. What
+follows was true of the field the bench had, and is kept for that.
+
 **IGNORE prompt_eval_count.** Ollama's own documented behaviour: it
 "does not currently return an accurate count of just the tokens
 processed in a request when using caching"; the field "reports the
@@ -96,6 +101,7 @@ from core.llm.agent_step_prompt import (  # noqa: E402
     _build_system_prompt,
 )
 from core.llm.interface import LLMUnavailable  # noqa: E402
+from core.request_context import RequestContext  # noqa: E402
 
 USER_ID = "user_alice"
 
@@ -357,16 +363,57 @@ def describe_gathered(gathered: list[dict]) -> list[str]:
     return lines
 
 
+def use_model(client, model: str) -> None:
+    """Point an adapter -- through its retrying and limiting wrappers --
+    at another model on the same server. For scripts/compare_models.py:
+    the same deployment, the same cases, only the model different."""
+    adapter = client
+    while hasattr(adapter, "_wrapped"):
+        adapter = adapter._wrapped
+    if not hasattr(adapter, "model"):
+        raise ValueError(f"{type(adapter).__name__} has no model to change")
+    adapter.model = model
+
+
+def answer_for(generation, case_query: str, outcome, usage) -> str | None:
+    """The answer a person would have been shown, timed into `usage` --
+    the call the bench never made until 19 October, though it is prose
+    with no length limit and may be the longest of the question. None for
+    a trial that ended in a proposed write, which has no answer to write."""
+    if outcome.pending_write is not None:
+        return None
+    from core.agent.agentic_loop import AgentLoop
+    from core.llm.inferred_values import inferred_fields
+    from core.llm.synthesis_prompt import synthesize_insight
+
+    return synthesize_insight(
+        generation.synthesis_client, case_query, AgentLoop.filter_real_data(outcome.gathered),
+        outcome.possibly_incomplete, usage=usage,
+        inferred=inferred_fields(generation.config.schema, None))
+
+
 def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
         mode: str = "step", show_plan: bool = False, show_steps: bool = False,
         constrain: bool = False, features: AgentFeatures | None = None,
-        collect: list | None = None) -> int:
+        collect: list | None = None, *, answer: bool = True,
+        model: str | None = None, answer_model: str | None = None,
+        timings: list | None = None) -> int:
     """One bench session. `collect`, when given, receives every graded
     trial as it completes -- scripts/feature_bench.py's way of reading
-    the results without parsing the report, as (TrialResult, seconds)."""
+    the results without parsing the report, as (TrialResult, seconds).
+
+    `answer` writes each trial's answer too, as a person would be shown
+    it, so a trial's time is a whole question's. `model` and
+    `answer_model` point the steps and the answer at other models on the
+    configured server. `timings` receives (case name, TokenUsage, seconds)
+    per trial -- where each one's time went."""
     if show_plan:
         _show_plans()
     generation = build_generation(paths.config_dir, paths.data_dir, paths.log_dir)
+    if model is not None:
+        use_model(generation.loop.client, model)
+    if model is not None or answer_model is not None:
+        use_model(generation.synthesis_client, answer_model or model)
     if constrain:
         generation.loop.constrain_steps = True
     if features is not None:
@@ -499,14 +546,20 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
             before = len(timer.calls)
             cleanup = _MemoryCleanup(generation, case)
             trial_started = time.monotonic()
+            # A CONTEXT PER TRIAL, as the query route makes one per
+            # request: its tally is where this trial's time went. No
+            # deadline -- a bench measures; a deployment enforces.
+            context = RequestContext.new()
             try:
                 # THE WHOLE REASON run_planned() IS A SIBLING ENTRY
                 # POINT rather than a config flag: AL-4 can be measured
                 # against the loop it replaces, today, without wiring
                 # anyone else owns.
-                outcome = (generation.loop.run_planned(user, case.query)
+                outcome = (generation.loop.run_planned(user, case.query, context=context)
                            if mode == "plan"
-                           else generation.loop.run(user, case.query))
+                           else generation.loop.run(user, case.query, context=context))
+                if answer:
+                    answer_for(generation, case.query, outcome, context.token_usage)
             except KeyboardInterrupt:
                 # STOPPING IS NOT LOSING. Every trial already finished
                 # is still worth reporting, and on slow hardware
@@ -531,6 +584,8 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
             graded = grade(case, outcome)
             removed = cleanup()
             results.append(graded)
+            if timings is not None:
+                timings.append((case.name, context.token_usage, time.monotonic() - trial_started))
             if collect is not None:
                 collect.append((graded, time.monotonic() - trial_started))
             done += 1
@@ -542,6 +597,7 @@ def run(paths: RuntimePaths, trials: int, cases: tuple = CASES,
                   f"calls={len(timer.calls) - before} "
                   f"unusable={len(graded.fabricated_finishes)} "
                   f"[{elapsed / 60:.1f}m]"
+                  + f"\n      {context.token_usage.describe()}"
                   + (f"  (removed {removed} memory written by the trial)" if removed else ""))
             if show_steps:
                 for number, line in enumerate(describe_gathered(outcome.gathered), 1):
@@ -666,6 +722,14 @@ def main() -> int:
                              "turns every one off. Absent: config.yaml's.")
     parser.add_argument("--search-cap", type=int, default=None,
                         help="search_result_cap for this run (AL-3)")
+    parser.add_argument("--no-answer", action="store_true",
+                        help="do not write each trial's answer. By default it is "
+                             "written, as a person would be shown it, so a "
+                             "trial's time is a whole question's.")
+    parser.add_argument("--model", help="the steps' model, on the configured server, "
+                                        "whatever config.yaml says")
+    parser.add_argument("--answer-model", help="the answer's model, likewise; "
+                                               "default --model")
     parser.add_argument("--config", help="overrides ELYSIUM_CONFIG_DIR")
     parser.add_argument("--data", help="overrides ELYSIUM_DATA_DIR")
     parser.add_argument("--log", help="overrides ELYSIUM_LOG_DIR")
@@ -709,7 +773,8 @@ def main() -> int:
         return 2
     print(f"mode {args.mode}")
     return run(paths, args.trials, cases, args.mode, args.show_plan, args.show_steps,
-               args.constrain, features)
+               args.constrain, features, answer=not args.no_answer, model=args.model,
+               answer_model=args.answer_model)
 
 
 SWITCHES = ("filter_operators", "free_text_search", "remember_from_query")

@@ -51,6 +51,7 @@ import os
 import shutil
 import subprocess
 import threading
+import time
 
 from core.llm.interface import LLMCancelled, LLMUnavailable, TokenUsage, call_timeout
 
@@ -220,6 +221,7 @@ class ClaudeAgentSDKAdapter:
         timeout = call_timeout(deadline, self.timeout_seconds)
         if cancel is not None and cancel.is_set():
             raise LLMCancelled("The request was cancelled before the model was called.")
+        started = time.monotonic()
         try:
             if cancel is None:
                 completed = subprocess.run(
@@ -250,7 +252,9 @@ class ClaudeAgentSDKAdapter:
             )
 
         if usage is not None:
-            usage.add(*self._extract_usage(completed.stdout))
+            # A hosted model says nothing of reading and writing apart;
+            # the time around the command is all there is.
+            usage.add(*self._extract_usage(completed.stdout), seconds=time.monotonic() - started)
         return self._extract_text(completed.stdout)
 
     @staticmethod
