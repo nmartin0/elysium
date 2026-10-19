@@ -59,6 +59,30 @@ data_silos:
 #      # charset that holds every character (MySQL's "utf8" does not).
 #      url: "mariadb+pymysql://elysium:${SHOP_DB_PASSWORD}@db.internal:3306/shop?charset=utf8mb4"
 #
+#  supplier_files:
+#    adapter: csv_folder
+#    connection:
+#      # A FOLDER OF CSV FILES, relative to the data directory or absolute.
+#      # Read only, by the sync only (adapters/csv_folder_adapter.py).
+#      path: "feeds/supplier"
+#      tables:
+#        sold:
+#          files: "sold_*.csv"   # a name pattern within the folder
+#          # latest   -- each file is a whole export; only the newest counts
+#          # combined -- each file is a slice; all of them are the table, the
+#          #             newer file winning where a record is in two. A record
+#          #             that stops appearing STAYS: a slice cannot say
+#          #             "deleted" from "not in this file".
+#          shape: combined
+#      # encoding: utf-8-sig    # the default; a byte-order mark is optional
+#      # delimiter: ","
+#      # null_values: [""]      # which text means empty
+#    # A BROKEN LINE STOPS THE TABLE's sync, naming the file and line, and
+#    # the mirror keeps its last good copy. Files with temporary names
+#    # (.part, .tmp, .writing) are not read: a writer renames a file into
+#    # place when it is complete. Every value arrives as text; declare
+#    # data_type in the ontology, and locale / excel_dates here, as needed.
+#
 # THE PASSWORD DOES NOT GO IN THIS FILE. Any value here may carry a
 # ${VAR} reference, resolved from the process environment when the
 # deployment loads:

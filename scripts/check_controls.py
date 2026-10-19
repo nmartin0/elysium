@@ -5516,6 +5516,98 @@ CONTROLS = [
         ],
     ),
     Control(
+        describes='CSV: a latest-shaped table reads only the newest file',
+        path='adapters/csv_folder_adapter.py',
+        old='        return files[-1:] if self._spec(table_name)["shape"] == "latest" else files',
+        new='        return files',
+        tests=[
+            ('tests/unit/test_csv_folder_adapter.py::'
+             'TestTheTwoShapes::test_latest_reads_only_the_newest_file'),
+        ],
+    ),
+    Control(
+        describes='CSV: in a combined table the newer file wins',
+        path='adapters/csv_folder_adapter.py',
+        old='            newest.update(this_file)',
+        new='            newest.update({k: v for k, v in this_file.items() if k not in newest})',
+        tests=[
+            ('tests/unit/test_csv_folder_adapter.py::'
+             'TestTheTwoShapes::test_combined_reads_them_all_and_the_newer_file_wins'),
+        ],
+    ),
+    Control(
+        describes='CSV: files are ordered by when they were written',
+        path='adapters/csv_folder_adapter.py',
+        old='            chosen.append((entry.stat().st_mtime_ns, name, Path(entry.path)))',
+        new='            chosen.append((0, name, Path(entry.path)))',
+        tests=[
+            ('tests/unit/test_csv_folder_adapter.py::'
+             'TestTheTwoShapes::test_newest_is_by_when_it_was_written_not_its_name'),
+        ],
+    ),
+    Control(
+        describes="CSV: a duplicate within one file reaches the sync's guard",
+        path='adapters/csv_folder_adapter.py',
+        old='                    this_file.setdefault(key, []).append(row)',
+        new='                    this_file[key] = [row]',
+        tests=[
+            ('tests/unit/test_csv_folder_adapter.py::'
+             'TestTheTwoShapes::test_a_duplicate_within_one_file_is_left_for_the_syncs_guard'),
+        ],
+    ),
+    Control(
+        describes='CSV: a broken line stops the table, naming the file and line',
+        path='adapters/csv_folder_adapter.py',
+        old='                if len(record) != len(header):',
+        new='                if False:',
+        tests=[
+            ('tests/unit/test_csv_folder_adapter.py::'
+             'TestAFileThatCannotBeRead::test_a_broken_line_stops_the_table_naming_the_file_and_line'),
+        ],
+    ),
+    Control(
+        describes='CSV: half-written and lock files are not read',
+        path='adapters/csv_folder_adapter.py',
+        old='                    or name.lower().endswith(TEMPORARY)',
+        new='                    or False',
+        tests=[
+            ('tests/unit/test_csv_folder_adapter.py::'
+             'TestWhatIsNotRead::test_half_written_hidden_and_lock_files'),
+        ],
+    ),
+    Control(
+        describes="CSV: one listing of a table's files per sync",
+        path='adapters/csv_folder_adapter.py',
+        old=('        if self._pinned is not None:\n'
+             '            self._pinned[table_name] = files'),
+        new=('        if False:\n'
+             '            self._pinned[table_name] = files'),
+        tests=[
+            ('tests/unit/test_csv_folder_adapter.py::'
+             'TestWhatIsNotRead::test_a_file_arriving_mid_sync_waits_for_the_next'),
+        ],
+    ),
+    Control(
+        describes="CSV: Excel's sep= line names the delimiter",
+        path='adapters/csv_folder_adapter.py',
+        old='        if first.rstrip("\\r").lower().startswith("sep=") and len(first.rstrip("\\r")) == 5:',
+        new='        if False:',
+        tests=[
+            ('tests/unit/test_csv_folder_adapter.py::'
+             'TestFormatsAsTheyArrive::test_excel_on_windows'),
+        ],
+    ),
+    Control(
+        describes='CSV: the declared null values read as empty',
+        path='adapters/csv_folder_adapter.py',
+        old='                rows.append((line, {name: (None if value in self.null_values else value)',
+        new='                rows.append((line, {name: value',
+        tests=[
+            ('tests/unit/test_csv_folder_adapter.py::'
+             'TestFormatsAsTheyArrive::test_empty_means_null_and_others_can_be_named'),
+        ],
+    ),
+    Control(
         describes="ENRICH: a classified field is never an input to a model",
         path="core/ontology/enriched_fields.py",
         old="        if labels:\n            raise ValueError(",

@@ -177,6 +177,8 @@ ignore_imports = [
     "core.deployment_loader -> adapters.sqlalchemy_adapter",
     # The embedder (R45, 18 October): built where the chat adapters are.
     "core.deployment_loader -> adapters.embedding_adapter",
+    # The CSV folder source (19 October): registered where the others are.
+    "core.deployment_loader -> adapters.csv_folder_adapter",
 ]
 
 # Contract 2 of 3 -- the real, internal shape of core/ itself, mapped

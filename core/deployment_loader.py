@@ -38,6 +38,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
 
 from adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
+from adapters.csv_folder_adapter import CsvFolderAdapter
 from adapters.ollama_adapter import OllamaAdapter
 from adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
 from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
@@ -107,6 +108,9 @@ _READ_ADAPTER_REGISTRY: dict[str, type] = {
     # Elysium's OWN storage, it works, and churning it would buy
     # nothing.
     "sqlalchemy": SQLAlchemyReadAdapter,
+    # A FOLDER OF CSV FILES (19 October): read only, by the sync only.
+    # adapters/csv_folder_adapter.py says which precedent chose what.
+    "csv_folder": CsvFolderAdapter,
 }
 
 _WRITE_ADAPTER_REGISTRY: dict[str, type] = {
