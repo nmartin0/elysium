@@ -1119,3 +1119,54 @@ reference data, the other thing found, is now declarable:
 `security: unrestricted`, SECURITY_ARCHITECTURE.md.)
 
 **Blocked on:** finishing the current work, then agreeing the design.
+
+## 12. Make the simulator's sources behave like real ones, then run Elysium over it
+
+**AGREED WITH THE OWNER, 19 October.** Next up once the item above
+(five kinds of source: CSV and REST still to build) is complete. Two
+halves, in this order.
+
+**1. Polish the simulator until each source behaves authentically.** For
+each kind it operates -- PostgreSQL, MariaDB, SQLite, a CSV drop folder,
+a REST API, and a lagged replica (`replicates:`) -- research how the real
+thing behaves, probe the simulated one, and close the differences.
+Research first, from primary sources (vendor documentation, the
+connector guides of Fivetran, Airbyte and Foundry), then write the
+expected behaviours down as the checklist the probes are run against.
+Starting points, each to be confirmed by that research rather than
+assumed:
+
+- *Server databases:* real accounts and grants (a SELECT-only reader, an
+  owner, row-level security that can be switched on), idle-connection
+  limits, statement time limits, isolation and what a long read sees
+  while writes continue, server-side defaults (time zones, collation,
+  charset), types as each engine reports them.
+- *Schema change:* renames, drops, added columns and changed types, both
+  scheduled in a pack and triggered live -- today a live `simulator
+  drift` crashes the running world on its next write to a moved column,
+  and no shipped pack declares `migrations`.
+- *CSV drops:* how real exports arrive -- partial files mid-write,
+  late and duplicate files, encodings and byte-order marks, delimiters,
+  quoting, header changes, Excel-style dates.
+- *REST:* authentication and expiring tokens, page and cursor pagination,
+  rate limits with 429 and Retry-After, transient 5xx, eventual
+  consistency, changed response shapes.
+- *Operations:* a pause (missing), outages and slow responses on demand,
+  and the control panel this file's item above asks for.
+
+Each difference found is fixed in `sim/`, keeping its founding rule:
+the databases are the only interface, and it does not know Elysium
+exists.
+
+**2. Run Elysium over it, and debug both.** Point a deployment at a
+running world covering every kind, sync on a schedule while time passes
+and the pack's changes land, and compare what Elysium serves against
+the simulator's own oracle (`verify`, `watches`). Every disagreement is
+a bug in one or the other, and is fixed where it lives. The runs on 19
+October already found four in Elysium and one in the simulator: a
+column's time zone dropped from its reported type; a rename recorded as
+a plain success; an empty read whose refusal advised accepting the
+deletions; row-level security hiding rows silently; and the live-drift
+crash above.
+
+**Blocked on:** finishing the item above.
