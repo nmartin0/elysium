@@ -29,6 +29,7 @@ the configuration. Refusing at load names the variable.
 
 import os
 import re
+from collections.abc import Mapping
 from urllib.parse import urlsplit
 
 # ${NAME}, with names restricted to what an environment variable may
@@ -137,12 +138,18 @@ def expand_secrets(value, *, where: str = "configuration"):
     stay one, and calling str() on it to run a regex would silently
     change its type.
     """
-    if isinstance(value, dict):
+    # ANY MAPPING, ANY LIST OR TUPLE -- not only dict and list. The loaded
+    # configuration is DEEP-FROZEN, and the loader unfreezes only a
+    # connection's top level; nested blocks stayed read-only mappings and
+    # were returned untouched, so a `${VAR}` in a REST source's `auth:`
+    # reached the API as its literal text (a 401 against the simulator,
+    # 19 October) -- and a PLAINTEXT credential there was never refused.
+    if isinstance(value, Mapping):
         return {
             key: expand_secrets(item, where=f"{where}.{key}")
             for key, item in value.items()
         }
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         return [
             expand_secrets(item, where=f"{where}[{index}]")
             for index, item in enumerate(value)

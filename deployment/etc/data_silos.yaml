@@ -83,6 +83,32 @@ data_silos:
 #    # place when it is complete. Every value arrives as text; declare
 #    # data_type in the ontology, and locale / excel_dates here, as needed.
 #
+#  books_api:
+#    adapter: rest
+#    connection:
+#      # A REST/JSON API. Read only, by the sync only; every sync reads
+#      # every page, so a record deleted in the API leaves Elysium too
+#      # (adapters/rest_adapter.py).
+#      base_url: "https://api.example.com/v1"
+#      auth: {type: bearer, token: "${BOOKS_TOKEN}"}
+#      #   or {type: api_key, name: "X-Api-Key", api_key: "${KEY}", in: header|query}
+#      #   or {type: basic, username: "elysium", password: "${PASS}"}
+#      tables:
+#        invoices:
+#          path: "/invoices"
+#          records: "data"          # dotted path to the list; "" for a root list
+#          pagination:              # declared, never guessed:
+#            type: cursor           # cursor | next_url | link_header | page | offset | none
+#            cursor_field: "cursor" # cursor: where the next token is in the reply
+#            cursor_param: "cursor" #         the parameter it is sent back as
+#            # next_url: next_field: "links.next"
+#            # page / offset: page_param / offset_param, page_size
+#      # timeout_seconds: 60
+#      # max_retries: 5         # 429 and 5xx, waiting 1, 2, 4, 8, 16 s --
+#      #                        # or as long as Retry-After says, up to 300 s
+#    # A refused login, or any other 4xx, stops the table at once. Numbers
+#    # arrive as exact decimals; a nested object arrives as its JSON text.
+#
 # THE PASSWORD DOES NOT GO IN THIS FILE. Any value here may carry a
 # ${VAR} reference, resolved from the process environment when the
 # deployment loads:

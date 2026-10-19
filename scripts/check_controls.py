@@ -5608,6 +5608,100 @@ CONTROLS = [
         ],
     ),
     Control(
+        describes='REST: server errors and 429 are retried',
+        path='adapters/rest_adapter.py',
+        old='                if response.status_code not in RETRIED:',
+        new='                if True:',
+        tests=[
+            ('tests/unit/test_rest_adapter.py::'
+             'TestFailures::test_server_errors_are_retried_with_growing_waits'),
+        ],
+    ),
+    Control(
+        describes='REST: a Retry-After the API sends wins over the default wait',
+        path='adapters/rest_adapter.py',
+        old='            delay = wait if wait is not None else 2.0 ** attempt',
+        new='            delay = 2.0 ** attempt',
+        tests=[
+            ('tests/unit/test_rest_adapter.py::'
+             'TestFailures::test_retry_after_as_a_date_wins'),
+        ],
+    ),
+    Control(
+        describes='REST: any other client error stops at once',
+        path='adapters/rest_adapter.py',
+        old='RETRIED = frozenset({429, 500, 502, 503, 504})',
+        new='RETRIED = frozenset({404, 429, 500, 502, 503, 504})',
+        tests=[
+            ('tests/unit/test_rest_adapter.py::'
+             'TestFailures::test_a_client_error_is_not_retried'),
+        ],
+    ),
+    Control(
+        describes='REST: a repeated page token is refused',
+        path='adapters/rest_adapter.py',
+        old='                if token in seen_tokens:',
+        new='                if False:',
+        tests=[
+            ('tests/unit/test_rest_adapter.py::'
+             'TestPaging::test_a_repeated_page_token_is_refused_not_followed_forever'),
+        ],
+    ),
+    Control(
+        describes='REST: numbers are read as exact decimals',
+        path='adapters/rest_adapter.py',
+        old='                body = json.loads(response.text, parse_float=Decimal)',
+        new='                body = json.loads(response.text, parse_float=float)',
+        tests=[
+            ('tests/unit/test_rest_adapter.py::'
+             'TestPaging::test_numbers_stay_exact'),
+        ],
+    ),
+    Control(
+        describes='REST: the credential never appears in an error',
+        path='adapters/rest_adapter.py',
+        old='                body = body.replace(str(secret), "***")',
+        new='                pass',
+        tests=[
+            ('tests/unit/test_rest_adapter.py::'
+             'TestFailures::test_the_credential_never_appears_in_an_error'),
+        ],
+    ),
+    Control(
+        describes='REST: one read of a table per sync',
+        path='adapters/rest_adapter.py',
+        old=('        if self._pinned is not None:\n'
+             '            self._pinned[table_name] = records'),
+        new=('        if False:\n'
+             '            self._pinned[table_name] = records'),
+        tests=[
+            ('tests/unit/test_rest_adapter.py::'
+             'TestOneReadPerSync::test_columns_and_rows_come_from_one_read'),
+        ],
+    ),
+    Control(
+        describes='REST: a bearer token is sent',
+        path='adapters/rest_adapter.py',
+        old='            return {"Authorization": f"Bearer {auth[\'token\']}"}, {}, None',
+        new='            return {}, {}, None',
+        tests=[
+            ('tests/unit/test_rest_adapter.py::'
+             'TestTheSimulatorsApi::test_every_page_is_read_once'),
+        ],
+    ),
+    Control(
+        describes='SECRETS: a ${VAR} inside a frozen nested block is filled in, and plaintext there refused',
+        path='core/secret_references.py',
+        old='    if isinstance(value, Mapping):',
+        new='    if isinstance(value, dict):',
+        tests=[
+            ('tests/unit/test_secret_references.py::'
+             'TestNestedFrozenBlocks::test_a_reference_inside_a_frozen_nested_block_is_filled'),
+            ('tests/unit/test_secret_references.py::'
+             'TestNestedFrozenBlocks::test_a_plaintext_credential_there_is_refused'),
+        ],
+    ),
+    Control(
         describes="ENRICH: a classified field is never an input to a model",
         path="core/ontology/enriched_fields.py",
         old="        if labels:\n            raise ValueError(",

@@ -1112,8 +1112,11 @@ on both, a column's time zone reported as part of its type. A FOLDER OF
 CSV FILES since 19 October too (`adapter: csv_folder`): each table's
 files chosen by a pattern, `latest` or `combined`, a broken line
 stopping the table by name -- checked against the simulator's weekly
-supplier files, which matched the till's own rows exactly. REST has no
-adapter yet -- next. Writes reach SQLite alone.
+supplier files, which matched the till's own rows exactly. And a REST
+API (`adapter: rest`), with declared pagination, retries that honour
+Retry-After, and a refused login stopping at once -- checked against the
+simulator's bookkeeping API, whose 26 invoices matched its PostgreSQL
+exactly. ALL FIVE KINDS ARE NOW READ. Writes reach SQLite alone.
 
 **Found on the way, still open:** a live drift from `simulator drift`
 crashes the running world on its next write to the moved column (the

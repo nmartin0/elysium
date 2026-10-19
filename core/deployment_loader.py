@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Any, cast
 from adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
 from adapters.csv_folder_adapter import CsvFolderAdapter
 from adapters.ollama_adapter import OllamaAdapter
+from adapters.rest_adapter import RestAdapter
 from adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
 from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
 from adapters.vllm_adapter import VLLMAdapter
@@ -111,6 +112,9 @@ _READ_ADAPTER_REGISTRY: dict[str, type] = {
     # A FOLDER OF CSV FILES (19 October): read only, by the sync only.
     # adapters/csv_folder_adapter.py says which precedent chose what.
     "csv_folder": CsvFolderAdapter,
+    # A REST/JSON API (19 October): read only, by the sync only.
+    # adapters/rest_adapter.py says which precedent chose what.
+    "rest": RestAdapter,
 }
 
 _WRITE_ADAPTER_REGISTRY: dict[str, type] = {

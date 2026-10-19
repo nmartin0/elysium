@@ -20,7 +20,7 @@ the one worth making first.
 
 import pytest
 
-from core.secret_references import MissingSecret, expand_secrets
+from core.secret_references import MissingSecret, PlaintextSecret, expand_secrets
 
 
 class TestItSubstitutes:
@@ -133,3 +133,31 @@ class TestAgainstARealDeployment:
 
         monkeypatch.setenv("ELYSIUM_TEST_DB", "dev_fixtures/mediator.db")
         assert build_generation(config, paths.data_dir, tmp_path / "log")
+
+
+class TestNestedFrozenBlocks:
+    """FOUND AGAINST THE SIMULATOR (19 October): the loaded configuration is
+    deep-frozen and only a connection's top level is unfrozen, so a nested
+    block -- a REST source's `auth:` -- was returned untouched: its
+    ${VAR} reached the API literally, and a plaintext credential in it was
+    never refused."""
+
+    def test_a_reference_inside_a_frozen_nested_block_is_filled(self, monkeypatch):
+        from core.immutable import deep_freeze
+
+        monkeypatch.setenv("BOOKS_TOKEN", "t0k")
+        frozen = deep_freeze({"auth": {"type": "bearer", "token": "${BOOKS_TOKEN}"},
+                              "tables": {"t": {"files": ["a", "${BOOKS_TOKEN}"]}}})
+
+        expanded = expand_secrets(dict(frozen))
+
+        assert expanded["auth"]["token"] == "t0k"
+        assert expanded["tables"]["t"]["files"] == ["a", "t0k"]
+
+    def test_a_plaintext_credential_there_is_refused(self):
+        from core.immutable import deep_freeze
+
+        frozen = deep_freeze({"auth": {"type": "bearer", "token": "literally-the-token"}})
+
+        with pytest.raises(PlaintextSecret):
+            expand_secrets(dict(frozen))
