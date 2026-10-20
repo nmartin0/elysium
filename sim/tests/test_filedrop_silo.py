@@ -283,3 +283,20 @@ def test_a_partially_written_file_would_be_a_short_parse(silo):
 
     parsed = list(csv.reader(io.StringIO(truncated)))
     assert len(parsed) < 11
+
+
+def test_a_share_left_out_by_a_crashed_run_is_restored(tmp_path):
+    # Whether a source is out lives in the running process. One killed
+    # mid-outage leaves the folder aside, and the next run's silo starts
+    # with offline False, so restore has to look at the disk.
+    from simulator import outages
+
+    first = FileDropSilo(name="drop", data_dir=tmp_path)
+    first.create()
+    outages.cut_off(first, None)
+
+    again = FileDropSilo(name="drop", data_dir=tmp_path)
+    assert not again.is_reachable()
+    outages.restore(again, None)
+
+    assert again.is_reachable()

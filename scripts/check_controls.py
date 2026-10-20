@@ -179,7 +179,7 @@ CONTROLS = [
     Control(
         describes="a resume with no live entities refuses rather than continuing",
         path="sim/simulator/resume.py",
-        old="    if not any(entities.values()) and world.pack.persistence:",
+        old="    if not any(entities.values()) and still_held:",
         new="    if False:",
         tests=["sim/tests/test_resume.py::test_a_resume_with_no_entities_refuses"],
     ),
@@ -216,14 +216,10 @@ CONTROLS = [
     Control(
         describes="an export with a window reaches back only that far",
         path="sim/simulator/event.py",
-        old="        if self.window is not None:\n"
-            "            statement += self.window.clause(dialect, dialect.placeholder)\n"
-            "            parameters = (self.window.earliest(context.now),)\n"
-            "        rows = fetch_all(source, world.database(self.source_silo), "
-            "statement, parameters)\n"
-            "        name = str(self.filename.value(context))",
-        new="        rows = fetch_all(source, world.database(self.source_silo), statement)\n"
-            "        name = str(self.filename.value(context))",
+        old="    if window is not None:\n"
+            "        window_column = world.lineage.column(silo_name, table_name, window.column)",
+        new="    if False:\n"
+            "        window_column = world.lineage.column(silo_name, table_name, window.column)",
         tests=["sim/tests/test_field_service.py::"
                "test_the_payroll_file_holds_real_pay_lines"],
     ),
@@ -354,7 +350,8 @@ CONTROLS = [
         describes="an update's pick is read fresh, not from the cache",
         path="sim/simulator/event.py",
         old="    rows = fetch_all(silo, world.database(silo_name),\n"
-            '                     f"SELECT {selected} FROM {dialect.quote(table_name)}")',
+            '                     f"SELECT {selected} FROM {dialect.quote(table.name)}") '
+            "if table else []",
         new="    rows = [tuple(row.get(name) for name in names)\n"
             "            for row in world.subject_rows(qualified)]",
         tests=["sim/tests/test_runner.py::"
@@ -379,7 +376,7 @@ CONTROLS = [
     Control(
         describes="a resumed entity keeps the dwell it had",
         path="sim/simulator/resume.py",
-        old="            entered = row[2] if where.entered_column is not None else None",
+        old="            entered = row[2] if entered_column is not None else None",
         new="            entered = None",
         tests=["sim/tests/test_resume.py::test_a_resumed_entity_keeps_the_dwell_it_had"],
     ),
@@ -5762,6 +5759,87 @@ CONTROLS = [
             ('tests/unit/test_rest_adapter.py::'
              'TestFoundInReview::test_the_health_check_does_not_wait_out_retries'),
         ],
+    ),
+    Control(
+        describes="SIM: an export's header follows a live rename",
+        path="sim/simulator/event.py",
+        old="    header = [now for now in (world.lineage.column(silo_name, table_name, name)\n"
+            "                              for name in columns) if now is not None]",
+        new="    header = list(columns)",
+        tests=["sim/tests/test_control.py::"
+               "test_a_live_rename_is_followed_by_the_business_and_its_exports"],
+    ),
+    Control(
+        describes="SIM: live drift goes through the world, so the business follows it",
+        path="sim/simulator/control.py",
+        old="    world.apply_change(silo_name, change)\n",
+        new="    world.schemas[silo_name] = change.apply(world.silo(silo_name), "
+            "world.database(silo_name), world.schema(silo_name), world.clock.now())\n",
+        tests=["sim/tests/test_control.py::"
+               "test_a_live_rename_is_followed_by_the_business_and_its_exports"],
+    ),
+    Control(
+        describes="SIM: a resume keeps the record of renames",
+        path="sim/simulator/resume.py",
+        old="    world.lineage = Lineage.from_json(saved.lineage)\n",
+        new="",
+        tests=["sim/tests/test_resume.py::"
+               "test_a_renamed_column_is_still_followed_after_a_resume"],
+    ),
+    Control(
+        describes="SIM: a PostgreSQL outage ends the reader's open sessions",
+        path="sim/simulator/outages.py",
+        old="SELECT count(pg_terminate_backend(pid))",
+        new="SELECT count(pid)",
+        tests=["sim/tests/test_control.py::"
+               "test_a_postgresql_outage_ends_open_sessions_and_refuses_new_ones"],
+    ),
+    Control(
+        describes="SIM: a paused world does not tick",
+        path="sim/simulator/cli.py",
+        old="                time.sleep(CONTROL_POLL_SECONDS)\n                continue",
+        new="                time.sleep(CONTROL_POLL_SECONDS)",
+        tests=["sim/tests/test_control.py::test_a_paused_world_does_not_tick"],
+    ),
+    Control(
+        describes="SIM: control.json is readable by its owner only",
+        path="sim/simulator/control.py",
+        old="os.O_TRUNC, 0o600)",
+        new="os.O_TRUNC, 0o644)",
+        tests=["sim/tests/test_control.py::"
+               "test_the_control_file_is_the_owners_alone_and_not_a_connection"],
+    ),
+    Control(
+        describes="SIM: a new table under an old pack name is not the pack's",
+        path="sim/simulator/lineage.py",
+        old="        return None if (silo, current) in self._tables else current",
+        new="        return current",
+        tests=["sim/tests/test_lineage.py::"
+               "test_a_new_table_wearing_an_old_name_is_not_the_packs"],
+    ),
+    Control(
+        describes="SIM: a new column under an old pack name is not the pack's",
+        path="sim/simulator/lineage.py",
+        old="        return None if (silo, table, current) in self._columns else current",
+        new="        return current",
+        tests=["sim/tests/test_lineage.py::"
+               "test_a_new_column_wearing_an_old_name_is_not_the_packs"],
+    ),
+    Control(
+        describes="SIM: a control command the caller gave up on is not carried out",
+        path="sim/simulator/control.py",
+        old="            if not future.set_running_or_notify_cancel():\n"
+            "                continue        # withdrawn by a caller that stopped waiting\n",
+        new="",
+        tests=["sim/tests/test_control_queue.py::"
+               "test_a_command_the_caller_gave_up_on_is_not_carried_out"],
+    ),
+    Control(
+        describes="SIM: a fresh world records its replicas' schemas",
+        path="sim/simulator/runner.py",
+        old="        schemas=dict(schemas),",
+        new="        schemas=dict(pack.schemas),",
+        tests=["sim/tests/test_replicas.py::test_a_world_with_a_replica_resumes"],
     ),
     Control(
         describes="ENRICH: a classified field is never an input to a model",

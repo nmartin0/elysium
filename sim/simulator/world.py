@@ -27,6 +27,7 @@ from datetime import datetime
 from simulator.clock import SimulatedClock
 from simulator.context import EvaluationContext
 from simulator.lifecycle import Entity
+from simulator.lineage import Lineage
 from simulator.oracle import Oracle
 from simulator.ports import PortRegistry
 from simulator.rng import RandomSource
@@ -79,8 +80,40 @@ class World:
     transitions: list[dict] = field(default_factory=list)
     #: Rows of tables events are `per`, read once. See subject_rows.
     _subject_cache: dict[str, list[dict]] = field(default_factory=dict)
+    #: What the pack's table and column names are called now, after
+    #: renames and drops (simulator/lineage.py).
+    lineage: Lineage = field(default_factory=Lineage)
 
     # -- access ------------------------------------------------------
+
+    def table_now(self, silo_name: str, table_name: str):
+        """The current form of a table the pack names, or None if it was
+        dropped -- in which case the business has stopped writing to it."""
+        current = self.lineage.table(silo_name, table_name)
+        if current is None:
+            return None
+        return self.schema(silo_name).table(current)
+
+    def apply_change(self, silo_name: str, change) -> None:
+        """A schema change, applied the one way every path uses: the
+        database, the model, the lineage, the cached reference rows, and
+        any replica of this silo -- a real replica receives the source's
+        DDL, so its next refresh copies into the same shape."""
+        from simulator.relational import read_schema
+
+        self.schemas[silo_name] = change.apply(
+            self.silo(silo_name), self.database(silo_name),
+            self.schema(silo_name), self.clock.now(),
+        )
+        self.lineage.record(silo_name, change)
+        self._subject_cache.clear()
+        for name, spec in self.pack.silos.items():
+            if getattr(spec, "replicates", None) == silo_name and name in self.silos:
+                replica, database = self.silo(name), self.database(name)
+                # Its record too, or the shape saved at the next stop
+                # disagrees with the database at the next resume.
+                self.schemas[name] = change.apply(
+                    replica, database, read_schema(replica, database), self.clock.now())
 
     def silo(self, name: str) -> Silo:
         if name not in self.silos:
@@ -203,7 +236,10 @@ class World:
         if qualified.count(".") != 1:
             raise KeyError(f"{qualified!r} must be written as silo.table")
         silo_name, table_name = qualified.split(".")
-        table = self.schema(silo_name).table(table_name)
+        table = self.table_now(silo_name, table_name)
+        if table is None:
+            self._subject_cache[qualified] = []         # dropped: nothing to choose from
+            return []
 
         from simulator.dialect import dialect_for
         from simulator.relational import fetch_all
@@ -212,8 +248,12 @@ class World:
         names = [column.name for column in table.columns]
         columns = ", ".join(dialect.quote(name) for name in names)
         rows = fetch_all(self.silo(silo_name), self.database(silo_name),
-                         f"SELECT {columns} FROM {dialect.quote(table_name)}")
-        self._subject_cache[qualified] = [dict(zip(names, row, strict=True)) for row in rows]
+                         f"SELECT {columns} FROM {dialect.quote(table.name)}")
+        # Keyed as the pack names them, so `subject.x` still finds x after
+        # a rename (simulator/lineage.py).
+        self._subject_cache[qualified] = [
+            self.lineage.to_original(silo_name, table_name, dict(zip(names, row, strict=True)))
+            for row in rows]
         return self._subject_cache[qualified]
 
     # -- evaluation --------------------------------------------------

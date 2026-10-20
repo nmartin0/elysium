@@ -185,8 +185,11 @@ def build(pack: PackSpec, data_dir: Path, *, seed: int = 1,
         pack=pack,
         # A copy, because migrations revise it and the pack's own
         # declaration is what the file says rather than what is true
-        # now.
-        schemas=dict(pack.schemas),
+        # now. Replicas included, as attach() reads them in: leaving
+        # them out made the shape saved at the first stop differ from
+        # every resumed one, and every resume of a world with a replica
+        # was refused.
+        schemas=dict(schemas),
         clock=SimulatedClock(start=start or _default_start(), compression=compression),
         rng=RandomSource(seed),
         silos=silos,
@@ -259,15 +262,22 @@ def seed(world: World) -> dict[str, int]:
 
 
 def _seed_step(world: World, step: SeedStep) -> int:
-    schema = world.schema(step.silo)
-    table = schema.table(step.table)
+    # Under the names the database has now, which at seeding are the
+    # pack's own unless a migration ran at the very start.
+    table = world.table_now(step.silo, step.table)
+    if table is None:
+        return 0
+
+    def current(rows):
+        return [world.lineage.to_current(step.silo, step.table, row) for row in rows]
+
     if step.rows:
         # A lookup table, written out rather than generated. Nothing to
         # evaluate, no context, no stream: the values ARE the
         # declaration. See _load_literal_rows for why no generator can
         # express this.
         return insert_rows(world.silo(step.silo), world.database(step.silo),
-                           table, step.rows)
+                           table, current(step.rows))
     generators = {name: build_generator(spec) for name, spec in step.columns.items()}
     # A stream per table, so adding a column to one seed step does not
     # shift the values another produces.
@@ -326,7 +336,7 @@ def _seed_step(world: World, step: SeedStep) -> int:
             context.set_field(column_name, generator.value(context))
         chunk.append(context.finish_row(step.qualified))
         if len(chunk) >= SEED_CHUNK_ROWS:
-            written += insert_rows(silo, database, table, chunk)
+            written += insert_rows(silo, database, table, current(chunk))
             chunk = []
             # finish_row files each row under `emitted`, which nothing
             # in a seed step can reach -- the loader allows a seed
@@ -335,7 +345,7 @@ def _seed_step(world: World, step: SeedStep) -> int:
             # defeated the chunking entirely while serving nobody.
             context.emitted.clear()
     if chunk:
-        written += insert_rows(silo, database, table, chunk)
+        written += insert_rows(silo, database, table, current(chunk))
     return written
 
 
@@ -508,10 +518,9 @@ def _apply_due_migrations(world: World, seconds: float) -> None:
     started = now - seconds
     for migration in world.pack.migrations:
         if started < migration.at_seconds <= now:
-            world.schemas[migration.silo] = migration.change.apply(
-                world.silo(migration.silo), world.database(migration.silo),
-                world.schema(migration.silo), world.clock.now(),
-            )
+            # Through the world, so the business follows the new names
+            # (simulator/lineage.py) and any reporting copy changes too.
+            world.apply_change(migration.silo, migration.change)
 
 
 def _advance_lifecycles(world: World, seconds: float) -> list[dict]:
@@ -557,7 +566,7 @@ def _advance_lifecycles(world: World, seconds: float) -> list[dict]:
                 # without the business system having a column for it,
                 # which is a legitimate thing for a pack to want.
                 continue
-            table = world.schema(where.silo).table(where.table)
+            table = world.table_now(where.silo, where.table)
             values: dict[str, Any] = {where.state_column: entity.state}
             if where.entered_column is not None:
                 # The simulated moment, not the wall clock: this is a
@@ -565,10 +574,16 @@ def _advance_lifecycles(world: World, seconds: float) -> list[dict]:
                 # world reads it back to know how long an entity has
                 # been where it is.
                 values[where.entered_column] = entity.entered_state_at
-            update_columns(
-                world.silo(where.silo), world.database(where.silo), table, values,
-                {where.id_column: entity.entity_id},
-            )
+            # Under the current names; once the table, its state column
+            # or its key is dropped, the business has nowhere to record
+            # the move and the entity moves in memory only.
+            values = world.lineage.to_current(where.silo, where.table, values)
+            key = world.lineage.column(where.silo, where.table, where.id_column)
+            if table is not None and key is not None and values:
+                update_columns(
+                    world.silo(where.silo), world.database(where.silo), table, values,
+                    {key: entity.entity_id},
+                )
 
         transitions.extend(_with_entity_rows(world, where, moved))
     return transitions
@@ -590,11 +605,17 @@ def _with_entity_rows(world: World, where, moved: list[dict]) -> list[dict]:
     """
     if where is None or not moved:
         return moved
-    table = world.schema(where.silo).table(where.table)
-    rows = fetch_rows_by_key(
+    table = world.table_now(where.silo, where.table)
+    key = world.lineage.column(where.silo, where.table, where.id_column)
+    if table is None or key is None:
+        return moved
+    found = fetch_rows_by_key(
         world.silo(where.silo), world.database(where.silo), table,
-        where.id_column, [entry[where.id_column] for entry in moved],
+        key, [entry[where.id_column] for entry in moved],
     )
+    # Read under the current names, handed on under the pack's.
+    rows = {k: world.lineage.to_original(where.silo, where.table, row)
+            for k, row in found.items()}
     merged = []
     for entry in moved:
         row = rows.get(entry[where.id_column], {})

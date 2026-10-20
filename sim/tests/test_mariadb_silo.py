@@ -321,3 +321,24 @@ def test_root_is_not_required(tmp_path):
     # nothing in the path checks for privilege.
     assert os.access(tmp_path, os.W_OK)
     _silo(tmp_path)
+
+
+@pytest.mark.mariadb
+def test_the_hosts_configuration_is_not_read(running_silo):
+    """REAL_SOURCES.md M7: the server read the host's /etc/mysql, so a
+    world differed from machine to machine -- on Debian, whose packaging
+    sets utf8mb4, against upstream MariaDB's latin1. A simulated server is
+    MariaDB's own defaults on every machine. (On a host whose
+    configuration already says latin1 this cannot tell the difference; on
+    Debian and Ubuntu, where it says utf8mb4, it can.)"""
+    import pymysql
+
+    connection = pymysql.connect(**running_silo.connection_kwargs())
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT @@character_set_server")
+            charset = cursor.fetchone()[0]
+    finally:
+        connection.close()
+
+    assert charset == "latin1"

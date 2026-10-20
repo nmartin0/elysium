@@ -64,6 +64,9 @@ PARTIAL_SUFFIX = ".part"
 #: change, not a deletion.
 TERMINATED_SUFFIX = ".gone"
 
+#: Where a share's files are while it is out (simulator/outages.py).
+OFFLINE_SUFFIX = ".offline"
+
 
 class FileDropSilo(Silo):
     """One silo that is a directory files are published into."""
@@ -80,10 +83,21 @@ class FileDropSilo(Silo):
         self.folder = folder or name
         self.bom = bom
         self.line_terminator = line_terminator
+        #: True while an outage has the share moved aside.
+        self.offline = False
+
+    @property
+    def home(self) -> Path:
+        """Where consumers are told the share is."""
+        return self.data_dir / self.folder
 
     @property
     def path(self) -> Path:
-        return self.data_dir / self.folder
+        """Where the files really are now: the home, or -- during an outage
+        (simulator/outages.py) -- moved aside, where publishing carries on
+        unseen, as an upstream system keeps exporting while the share is
+        unmounted."""
+        return self.home.with_name(self.folder + OFFLINE_SUFFIX) if self.offline else self.home
 
     # -- lifecycle ---------------------------------------------------
 
@@ -111,13 +125,13 @@ class FileDropSilo(Silo):
         or a dropped mount, not a deletion -- and in both of those the
         path can still be there.
         """
-        return self.path.is_dir() and os.access(self.path, os.R_OK | os.X_OK)
+        return self.home.is_dir() and os.access(self.home, os.R_OK | os.X_OK)
 
     def connection(self, database: str | None = None) -> ConnectionDescriptor:
         refuse_database(self.name, self.kind, database)
         """A path, and the format a consumer should expect to find."""
         return ConnectionDescriptor(kind=self.kind, details={
-            "path": str(self.path),
+            "path": str(self.home),
             "format": "csv",
             "encoding": "utf-8-sig" if self.bom else "utf-8",
         })
@@ -144,7 +158,9 @@ class FileDropSilo(Silo):
             # separator in it is a bug in the caller, and allowing it
             # would let a pack write outside its own silo.
             raise SiloError(f"{self.name}: {filename!r} must be a plain file name")
-        if not self.is_reachable():
+        # Where the files are, not the public home: during an outage the
+        # upstream system goes on exporting into the share moved aside.
+        if not (self.path.is_dir() and os.access(self.path, os.W_OK | os.X_OK)):
             raise SiloError(f"{self.name}: {self.path} is not reachable")
 
         target = self.path / filename

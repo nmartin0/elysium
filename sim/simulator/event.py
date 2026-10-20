@@ -275,8 +275,13 @@ class InsertEmission(Emission):
                     row[where.entered_column] = entity.entered_state_at
         if not rows:
             return 0
-        table = world.schema(self.silo).table(self.table)
-        return insert_rows(world.silo(self.silo), world.database(self.silo), table, rows)
+        # Written under the names the database has now (simulator/lineage.py);
+        # nothing is written to a table that has been dropped.
+        table = world.table_now(self.silo, self.table)
+        if table is None:
+            return 0
+        current = [world.lineage.to_current(self.silo, self.table, row) for row in rows]
+        return insert_rows(world.silo(self.silo), world.database(self.silo), table, current)
 
 
 def _pick_fresh(world: WorldView, qualified: str,
@@ -299,19 +304,20 @@ def _pick_fresh(world: WorldView, qualified: str,
 
     silo_name, table_name = qualified.split(".")
     silo = world.silo(silo_name)
-    schema = world.schema(silo_name)
-    table = schema.table(table_name)
+    table = world.table_now(silo_name, table_name)
     dialect = dialect_for(silo.kind)
-    names = [column.name for column in table.columns]
+    names = [column.name for column in table.columns] if table is not None else []
     selected = ", ".join(dialect.quote(name) for name in names)
     rows = fetch_all(silo, world.database(silo_name),
-                     f"SELECT {selected} FROM {dialect.quote(table_name)}")
+                     f"SELECT {selected} FROM {dialect.quote(table.name)}") if table else []
     if not rows:
         raise EventError(
             f"cannot pick from {qualified!r}, which has no rows yet. An update that "
             f"picks runs only once something has been written to pick from."
         )
-    return dict(zip(names, context.rng.choice(rows), strict=True))
+    # Given back under the pack's names, so `picked.t.x` keeps meaning x.
+    return world.lineage.to_original(
+        silo_name, table_name, dict(zip(names, context.rng.choice(rows), strict=True)))
 
 
 @dataclass(frozen=True)
@@ -345,7 +351,6 @@ class UpdateEmission(Emission):
     def emit(self, world: WorldView, context: EvaluationContext) -> int:
         from simulator.relational import update_columns
 
-        table = world.schema(self.silo).table(self.table)
         for name, qualified in self.picks.items():
             context.picked[name] = _pick_fresh(world, qualified, context)
         values = {}
@@ -356,15 +361,57 @@ class UpdateEmission(Emission):
             # column in the same update can refer to an earlier one --
             # the same contract an insert has.
             context.set_field(column_name, value)
-        changed = update_columns(
-            world.silo(self.silo), world.database(self.silo), table, values,
-            {name: generator.value(context) for name, generator in self.where.items()},
-        )
+        where = {name: generator.value(context) for name, generator in self.where.items()}
+        changed = 0
+        table = world.table_now(self.silo, self.table)
+        current_values = world.lineage.to_current(self.silo, self.table, values)
+        current_where = world.lineage.to_current(self.silo, self.table, where)
+        # The updated application cannot set a dropped column, nor find a
+        # row by one: such an update has nothing left to do.
+        if table is not None and current_values and len(current_where) == len(where):
+            changed = update_columns(
+                world.silo(self.silo), world.database(self.silo), table,
+                current_values, current_where,
+            )
         # Cleared rather than finished: an update produces no row for
         # `emitted` to aggregate over, and leaving the half-built row
         # behind would leak into whatever ran next.
         context.row = {}
         return changed
+
+
+def _export_query(world: WorldView, silo_name: str, table_name: str,
+                  columns, window: "Window | None", now: datetime):
+    """An export's header and rows, as the database has them now.
+
+    A real report follows the schema it reads: after `quantity` becomes
+    `qty` the next file's header says `qty`, and a dropped column is
+    simply gone from it (REAL_SOURCES.md, "headers change between
+    exports"). None when there is nothing to export from: the table, or
+    the column the window filters on, has been dropped.
+    """
+    from simulator.dialect import dialect_for
+    from simulator.relational import fetch_all
+
+    source = world.silo(silo_name)
+    table = world.table_now(silo_name, table_name)
+    if table is None:
+        return None
+    header = [now for now in (world.lineage.column(silo_name, table_name, name)
+                              for name in columns) if now is not None]
+    if not header:
+        return None
+    dialect = dialect_for(source.kind)
+    selected = ", ".join(dialect.quote(name) for name in header)
+    statement = f"SELECT {selected} FROM {dialect.quote(table.name)}"
+    parameters: tuple = ()
+    if window is not None:
+        window_column = world.lineage.column(silo_name, table_name, window.column)
+        if window_column is None:
+            return None
+        statement += window.clause(dialect, dialect.placeholder, window_column)
+        parameters = (window.earliest(now),)
+    return header, fetch_all(source, world.database(silo_name), statement, parameters)
 
 
 @dataclass(frozen=True)
@@ -391,8 +438,8 @@ class Window:
     column: str
     seconds: float
 
-    def clause(self, dialect: Any, placeholder: str) -> str:
-        return f" WHERE {dialect.quote(self.column)} >= {placeholder}"
+    def clause(self, dialect: Any, placeholder: str, column: str | None = None) -> str:
+        return f" WHERE {dialect.quote(column or self.column)} >= {placeholder}"
 
     def earliest(self, now: datetime) -> datetime:
         return now - timedelta(seconds=self.seconds)
@@ -442,20 +489,15 @@ class PublishEmission(Emission):
         return f"{self.silo}(file)"
 
     def emit(self, world: WorldView, context: EvaluationContext) -> int:
-        from simulator.dialect import dialect_for
-        from simulator.relational import fetch_all
 
         context.set_field("today", context.now.date().isoformat())
         context.set_field("now", context.now.isoformat())
-        source = world.silo(self.source_silo)
-        dialect = dialect_for(source.kind)
-        selected = ", ".join(dialect.quote(name) for name in self.columns)
-        statement = f"SELECT {selected} FROM {dialect.quote(self.source_table)}"
-        parameters: tuple = ()
-        if self.window is not None:
-            statement += self.window.clause(dialect, dialect.placeholder)
-            parameters = (self.window.earliest(context.now),)
-        rows = fetch_all(source, world.database(self.source_silo), statement, parameters)
+        found = _export_query(world, self.source_silo, self.source_table,
+                              self.columns, self.window, context.now)
+        if found is None:
+            context.row = {}
+            return 0
+        header, rows = found
         name = str(self.filename.value(context))
         # Cleared for the same reason an update clears: the facts above
         # are this emission's own, and leaving them on the row would
@@ -465,7 +507,7 @@ class PublishEmission(Emission):
         # publication whose silo is not a filedrop, so by the time this
         # runs the method is there. See worldview.py.
         destination = cast("WritesFiles", world.silo(self.silo))
-        destination.write_csv(name, self.columns, rows)
+        destination.write_csv(name, header, rows)
         return len(rows)
 
 
@@ -510,20 +552,15 @@ class ExposeEmission(Emission):
         return f"{self.silo}({self.collection})"
 
     def emit(self, world: WorldView, context: EvaluationContext) -> int:
-        from simulator.dialect import dialect_for
-        from simulator.relational import fetch_all
 
-        source = world.silo(self.source_silo)
-        dialect = dialect_for(source.kind)
-        selected = ", ".join(dialect.quote(name) for name in self.columns)
-        statement = f"SELECT {selected} FROM {dialect.quote(self.source_table)}"
-        parameters: tuple = ()
-        if self.window is not None:
-            statement += self.window.clause(dialect, dialect.placeholder)
-            parameters = (self.window.earliest(context.now),)
-        rows = fetch_all(source, world.database(self.source_silo), statement, parameters)
+        found = _export_query(world, self.source_silo, self.source_table,
+                              self.columns, self.window, context.now)
+        if found is None:
+            context.row = {}
+            return 0
+        header, rows = found
         records = [
-            {name: _json_safe(value) for name, value in zip(self.columns, row, strict=True)}
+            {name: _json_safe(value) for name, value in zip(header, row, strict=True)}
             for row in rows
         ]
         destination = cast("ServesCollections", world.silo(self.silo))
@@ -596,12 +633,15 @@ class AdjustEffect(Effect):
     def apply(self, world: WorldView, context: EvaluationContext) -> int:
         from simulator.relational import adjust_column
 
-        table = world.schema(self.silo).table(self.table)
+        table = world.table_now(self.silo, self.table)
+        column = world.lineage.column(self.silo, self.table, self.column)
+        where = {name: generator.value(context) for name, generator in self.where.items()}
+        current_where = world.lineage.to_current(self.silo, self.table, where)
+        if table is None or column is None or len(current_where) != len(where):
+            return 0
         return adjust_column(
-            world.silo(self.silo), world.database(self.silo), table, self.column,
-            delta=self.by.value(context),
-            where={name: generator.value(context) for name, generator in self.where.items()},
-            floor=self.floor,
+            world.silo(self.silo), world.database(self.silo), table, column,
+            delta=self.by.value(context), where=current_where, floor=self.floor,
         )
 
 

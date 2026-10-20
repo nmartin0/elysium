@@ -252,3 +252,60 @@ def test_two_worlds_do_not_share_a_refresh_clock(tmp_path, postgres_binaries):
         assert second.replica_refreshed, "nothing recorded the refresh"
     finally:
         runner.stop(second)
+
+
+@pytest.mark.postgres
+def test_a_world_with_a_replica_resumes_after_a_live_change(tmp_path, postgres_binaries):
+    # Two faults, found in review on 20 October. A fresh world left its
+    # replicas out of its record of schemas while a resumed one read them
+    # in, so the shape saved at the first stop never matched and every
+    # resume of a world with a replica was refused. And a change to the
+    # source reached the replica's database but not that record.
+    from simulator.control import apply_drift
+    from simulator.resume import resume, save
+
+    pack = write_pack(tmp_path, LAGGING, "lagging")
+    directory = tmp_path / "var"
+    world = runner.build(pack, directory, seed=1)
+    try:
+        runner.seed(world)
+        runner.run(world, total_seconds=2 * 3600, tick_seconds=3600)
+        apply_drift(world, "rename_column",
+                    {"table": "live.orders", "column": "total", "to": "amount"})
+        save(world, directory)
+    finally:
+        runner.stop(world)
+
+    world = runner.attach(pack, directory, seed=1)
+    try:
+        resume(world, directory)
+        runner.run(world, total_seconds=7 * 3600, tick_seconds=3600)
+        copied = fetch_all(world.silo("reporting"), "reporting",
+                           "SELECT count(amount) FROM orders")[0][0]
+    finally:
+        runner.stop(world)
+
+    assert copied > 0
+
+
+@pytest.mark.postgres
+def test_a_world_with_a_replica_resumes(tmp_path, postgres_binaries):
+    # The first of the two faults above on its own: nothing drifted, and
+    # the resume was still refused, because the shape saved by a freshly
+    # built world left its replica out.
+    from simulator.resume import resume, save
+
+    pack = write_pack(tmp_path, LAGGING, "lagging")
+    directory = tmp_path / "var"
+    world = runner.build(pack, directory, seed=1)
+    try:
+        runner.seed(world)
+        save(world, directory)
+    finally:
+        runner.stop(world)
+
+    world = runner.attach(pack, directory, seed=1)
+    try:
+        resume(world, directory)
+    finally:
+        runner.stop(world)

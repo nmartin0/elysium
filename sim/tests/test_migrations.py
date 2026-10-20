@@ -180,12 +180,15 @@ def test_the_running_schema_diverges_from_the_declared_one(world):
 
 
 @pytest.mark.postgres
-def test_dropping_a_column_its_own_events_write_fails_loudly(tmp_path,
-                                                             postgres_binaries):
-    # A migration removing something still in use is how real outages
-    # happen, and the pack breaking itself is the right outcome. What
-    # matters is that it fails LOUDLY, naming the column, rather than
-    # writing nulls or carrying on.
+def test_dropping_a_column_its_own_events_write_is_followed_by_the_business(
+        tmp_path, postgres_binaries):
+    # This used to assert the world crashed, naming the column. That made
+    # every schema change the simulator was built to produce fatal to the
+    # simulator itself -- a live rename crashed it too (REAL_SOURCES.md
+    # O3). A source's owner ships the migration with the application, so
+    # the business now follows it (simulator/lineage.py): orders keep
+    # arriving, without the dropped column. What must still not happen is
+    # writing the old name, which would fail, or silently stopping.
     #
     # A dedicated pack rather than editing SHOP by string replacement:
     # SHOP has been through textwrap.dedent, so the indentation in the
@@ -236,10 +239,20 @@ def test_dropping_a_column_its_own_events_write_fails_loudly(tmp_path,
     try:
         runner.seed(built)
         runner.run(built, total_seconds=86400, tick_seconds=3600)
-        with pytest.raises(Exception, match=r"customer"):
-            runner.run(built, total_seconds=2 * 86400, tick_seconds=3600)
+        before = _count(built, "orders")
+        runner.run(built, total_seconds=2 * 86400, tick_seconds=3600)
+
+        columns = [c.name for c in built.schema("ops").table("orders").columns]
+        assert "customer" not in columns
+        assert _count(built, "orders") > before, "orders stopped after the drop"
     finally:
         runner.stop(built)
+
+
+def _count(world, table: str) -> int:
+    from simulator.relational import fetch_all
+
+    return fetch_all(world.silo("ops"), "ops", f'SELECT count(*) FROM "{table}"')[0][0]
 
 
 # -- the timeline, checked at load ------------------------------------

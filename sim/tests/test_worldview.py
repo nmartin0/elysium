@@ -40,8 +40,8 @@ def test_the_view_asks_for_what_events_use_and_no_more():
     # Counted from the call sites rather than copied from World. A
     # Protocol mirroring everything World offers would be a second copy
     # of an interface, and the two would drift.
-    expected = {"clock", "rng", "transitions", "pack", "silo", "database", "schema",
-                "subject_rows", "spawn", "context"}
+    expected = {"clock", "rng", "transitions", "pack", "silo", "database",
+                "table_now", "lineage", "subject_rows", "spawn", "context"}
     declared = {name for name in dir(WorldView) if not name.startswith("_")}
     assert declared == expected
 
@@ -60,7 +60,7 @@ def test_the_call_signatures_match():
     # arguments changed would satisfy issubclass and fail at the call.
     # `context` is the one this caught: the view first declared
     # `**kwargs` and the world takes (stream, subject, now).
-    for name in ("silo", "database", "schema", "subject_rows", "spawn", "context"):
+    for name in ("silo", "database", "table_now", "subject_rows", "spawn", "context"):
         view = inspect.signature(getattr(WorldView, name))
         real = inspect.signature(getattr(World, name))
         assert list(view.parameters) == list(real.parameters), (

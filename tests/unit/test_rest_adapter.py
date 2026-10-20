@@ -82,11 +82,17 @@ class TestTheSimulatorsApi:
         assert no_waiting == [], "a refused credential is not retried"
 
     def test_its_rate_limit_is_waited_out_as_it_says(self, sim_api, no_waiting):
+        # The simulator's window rolls on its own clock now and Retry-After
+        # says how long is left in it (sim REAL_SOURCES.md R2). Its clock is
+        # driven by the adapter's waiting, so the test is the adapter doing
+        # exactly what it was told: wait 2 s, and the window has rolled.
+        now = [0.0]
+        sim_api._clock = lambda: now[0]
+        sim_api.rate_window_seconds = 2.0
+        sim_api.reset_rate_limit()
         sim_api.rate_limit = 2
         adapter = _sim_adapter(sim_api, max_retries=1)
-        # Its window never resets by itself; reset it on the first wait, as
-        # time passing would.
-        rest._sleep = lambda s: (no_waiting.append(s), sim_api.reset_rate_limit())
+        rest._sleep = lambda s: (no_waiting.append(s), now.__setitem__(0, now[0] + s))
 
         rows = adapter.read_all_rows("invoices", ["id"], CONFIG)
 

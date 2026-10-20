@@ -191,3 +191,33 @@ def _fake_postgres_binaries():
     from simulator.silos.postgres import PostgresBinaries
 
     return PostgresBinaries(initdb=Path("/nonexistent/initdb"), pg_ctl=Path("/nonexistent/pg_ctl"))
+
+
+# -- an outage (simulator/outages.py) ---------------------------------
+
+def test_an_outage_hides_the_file_from_readers_and_not_from_the_business(silo):
+    from pathlib import Path
+
+    from simulator import outages
+
+    home = Path(silo.connection().details["path"])
+    # A connection kept open, so the write below sits in the -wal file
+    # when the outage starts: moving the main file alone would lose it.
+    keeper = sqlite3.connect(home)
+    keeper.execute("CREATE TABLE t (a TEXT)")
+    keeper.execute("INSERT INTO t VALUES ('before')")
+    keeper.commit()
+
+    outages.cut_off(silo, None)
+    try:
+        assert not home.exists() and not silo.is_reachable()
+        with silo.connect() as connection:          # the business writes on
+            connection.execute("INSERT INTO t VALUES ('during')")
+            connection.commit()
+    finally:
+        outages.restore(silo, None)
+        keeper.close()
+
+    assert silo.is_reachable()
+    with sqlite3.connect(f"file:{home}?mode=ro", uri=True) as reader:
+        assert sorted(r[0] for r in reader.execute("SELECT a FROM t")) == ["before", "during"]

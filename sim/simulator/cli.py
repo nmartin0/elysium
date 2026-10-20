@@ -42,6 +42,10 @@ from simulator.world import World
 FOLLOW_INTERVAL_SECONDS = 1.0
 
 
+#: How often an idle or paused world looks for operator commands.
+CONTROL_POLL_SECONDS = 0.2
+
+
 class _Interrupted(Exception):
     """Ctrl-C, turned into something a finally block can act on."""
 
@@ -62,6 +66,8 @@ def main(argv: list[str] | None = None) -> int:
             return _verify(arguments)
         if arguments.command == "clean":
             return _clean(arguments)
+        if arguments.command in _CONTROL_VERBS:
+            return _control(arguments)
         return _run(arguments)
     except BrokenPipeError:
         # `simulator check pack.yaml | head` is an ordinary thing to
@@ -153,7 +159,47 @@ def _parser() -> argparse.ArgumentParser:
         "verify", help="check the silos are sound, the way a consumer would")
     verify.add_argument("--dir", type=Path, default=Path("var"),
                         help="the world's directory (default: ./var)")
+
+    # Operating a running world (simulator/control.py), through its
+    # control channel rather than its databases.
+    for verb, text in _CONTROL_VERBS.items():
+        command = commands.add_parser(verb, help=text)
+        if verb in ("outage", "restore"):
+            command.add_argument("silo", help="the silo, as connections.json names it")
+        if verb == "advance":
+            command.add_argument("duration", help="as in 3d or 6h")
+        command.add_argument("--dir", type=Path, default=Path("var"),
+                             help="the world's directory (default: ./var)")
     return parser
+
+
+_CONTROL_VERBS = {
+    "pause": "stop a running world's clock",
+    "resume": "start a paused world's clock again",
+    "advance": "run a running world forward now, as in `advance 3d`",
+    "outage": "cut a silo off from its reader, as a restart or an unmounted share would",
+    "restore": "end an outage",
+    "oracle": "print every watched number's samples, as JSON",
+}
+
+
+def _control(arguments: argparse.Namespace) -> int:
+    import json
+
+    from simulator.control import ControlError, send
+
+    extra = {}
+    if arguments.command in ("outage", "restore"):
+        extra["silo"] = arguments.silo
+    if arguments.command == "advance":
+        extra["duration"] = arguments.duration
+    try:
+        result = send(arguments.dir, arguments.command, **extra)
+    except ControlError as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    print(json.dumps(result, indent=2, default=str))
+    return 0
 
 
 # -- check -----------------------------------------------------------
@@ -214,6 +260,12 @@ def _run(arguments: argparse.Namespace) -> int:
         print(f"  clock at {world.clock.now():%Y-%m-%d %H:%M}")
         for what, count in sorted(restored.items()):
             print(f"  {what}: {count}")
+        from simulator.outages import restore_leftovers
+
+        # A run that was killed during an outage could not end it.
+        for name, did in restore_leftovers(world).items():
+            if did not in ("not out", "reader may log in again", "reader's account unlocked"):
+                print(f"  {name}: an outage left by the last run was ended ({did})")
     else:
         print(f"Building {pack.name} in {arguments.dir}")
         world = runner.build(pack, arguments.dir, seed=arguments.seed)
@@ -222,6 +274,15 @@ def _run(arguments: argparse.Namespace) -> int:
     # than after it.
     path = write_connections(world, arguments.dir)
     _report(world, path)
+
+    from simulator.control import Controller, ControlServer
+
+    controller = Controller(world)
+    # Not in console mode: the console reads the terminal on this thread,
+    # so nothing would serve the queue; its own commands do the same work.
+    control = None if arguments.console else ControlServer(controller, arguments.dir)
+    if control is not None:
+        control.start()
 
     interrupted = False
     try:
@@ -245,13 +306,20 @@ def _run(arguments: argparse.Namespace) -> int:
                 print("\nWorld is up. Type `help` for commands, `quit` to stop.")
                 Console(world=world).run()
             elif arguments.follow:
-                _follow(world, arguments.compression, arguments.tick)
+                _follow(world, arguments.compression, arguments.tick, controller)
             else:
                 print("\nWorld is up. Press Ctrl-C to stop.")
-                signal.pause()
+                while True:
+                    controller.serve()
+                    time.sleep(CONTROL_POLL_SECONDS)
     except _Interrupted:
         interrupted = True
     finally:
+        # No outage outlives the world, and no stale control file says a
+        # world is running when it is not.
+        controller.restore_everything()
+        if control is not None:
+            control.stop()
         # The clock, so this world can be picked up again. Written
         # before the silos stop, while there is still something to ask.
         try:
@@ -267,7 +335,7 @@ def _run(arguments: argparse.Namespace) -> int:
     return 0
 
 
-def _follow(world: World, compression: float, tick_seconds: float) -> None:
+def _follow(world: World, compression: float, tick_seconds: float, controller=None) -> None:
     """Keep simulating in real time until interrupted.
 
     The clock has always known how to do this and nothing had ever
@@ -277,6 +345,13 @@ def _follow(world: World, compression: float, tick_seconds: float) -> None:
     print(f"\nFollowing at {compression:g}x. Press Ctrl-C to stop.")
     step = min(tick_seconds, FOLLOW_INTERVAL_SECONDS * compression)
     while True:
+        if controller is not None:
+            controller.serve()
+            if controller.paused:
+                # Paused: no tick, so simulated time stands still; and no
+                # catching up afterwards -- the pause is not owed back.
+                time.sleep(CONTROL_POLL_SECONDS)
+                continue
         started = time.monotonic()
         runner.tick(world, step)
         # Sleep for what is left of the interval, so a slow tick

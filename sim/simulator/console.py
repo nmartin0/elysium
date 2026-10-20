@@ -45,7 +45,6 @@ from simulator import runner
 from simulator.drift import history
 from simulator.oracle import Oracle, Watch
 from simulator.silo import SiloError
-from simulator.spec import PackError, build_change
 from simulator.world import World
 
 PROMPT = "sim> "
@@ -182,25 +181,16 @@ def _drift(console: Console, rest: str) -> None:
         raise ConsoleError("drift needs an operation, as in "
                            "`drift drop_column table=ops.orders column=note`")
     fields = _fields(arguments)
-    if "table" not in fields:
-        raise ConsoleError("drift needs table=silo.table")
-    silo_name = str(fields["table"]).split(".")[0]
-    world = console.world
-    try:
-        change = build_change(operation, fields, world.schema(silo_name))
-    except (PackError, KeyError) as error:
-        raise ConsoleError(str(error)) from error
+    # The same function the control server calls (simulator/control.py):
+    # the engine applies the change, so its model moves with the
+    # database, and the oracle samples the moment the ground moved --
+    # without which `drift` then `oracle` reports the value from before.
+    from simulator.control import ControlError, apply_drift
 
-    world.schemas[silo_name] = change.apply(
-        world.silo(silo_name), world.database(silo_name),
-        world.schema(silo_name), world.clock.now(),
-    )
-    # Sampled immediately, so the oracle records the moment the ground
-    # moved rather than whenever the next tick happens to come round.
-    # Without this, `drift` followed by `oracle` reports the value from
-    # before the drift, which is the most misleading possible answer at
-    # the most interesting possible moment.
-    world.oracle.sample(world)
+    try:
+        change = apply_drift(console.world, operation, fields)
+    except ControlError as error:
+        raise ConsoleError(str(error)) from error
     console.write(f"applied: {change.describe()}"
                   f"{'  (BREAKING)' if change.is_breaking else ''}")
 

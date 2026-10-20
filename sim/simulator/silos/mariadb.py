@@ -191,6 +191,14 @@ class MariaDbSilo(Silo):
         result = subprocess.run(
             [
                 str(self.binaries.install_db),
+                # FIRST, as MariaDB requires: no option files. Without it
+                # the server read the HOST's /etc/mysql, so a world's
+                # charset, sql_mode and timeouts were whatever that
+                # machine's packaging chose -- Debian's utf8mb4 here,
+                # upstream's latin1 elsewhere (REAL_SOURCES.md M7). A
+                # simulated server is MariaDB's defaults plus what this
+                # file says, on every machine.
+                "--no-defaults",
                 f"--datadir={self.cluster_dir}",
                 # Password-less root over the loopback socket. Same
                 # reasoning as the PostgreSQL silo: the data is
@@ -220,6 +228,7 @@ class MariaDbSilo(Silo):
         self._process = subprocess.Popen(
             [
                 str(self.binaries.daemon),
+                "--no-defaults",                # see create(): the host's config is not ours
                 f"--datadir={self.cluster_dir}",
                 f"--port={self.port}",
                 f"--socket={self.socket_path}",

@@ -49,6 +49,9 @@ SQLITE_MAGIC = b"SQLite format 3\x00"
 #: can move it back.
 TERMINATED_SUFFIX = ".gone"
 
+#: Where the file is while it is out (simulator/outages.py).
+OFFLINE_SUFFIX = ".offline"
+
 
 class SqliteSilo(Silo):
     """One silo, backed by a single SQLite file."""
@@ -62,10 +65,21 @@ class SqliteSilo(Silo):
         #: Named after the silo by default, so a directory of them
         #: reads as a list of systems rather than of files.
         self.filename = filename or f"{name}.db"
+        #: True while an outage has the file moved aside.
+        self.offline = False
+
+    @property
+    def home(self) -> Path:
+        """Where consumers are told the file is."""
+        return self.data_dir / self.filename
 
     @property
     def path(self) -> Path:
-        return self.data_dir / self.filename
+        """Where the file really is now: the home, or -- during an outage
+        (simulator/outages.py) -- moved aside, where the business's own
+        application goes on writing to it, as a desktop application keeps
+        its database while the share a reader used has gone."""
+        return self.home.with_name(self.filename + OFFLINE_SUFFIX) if self.offline else self.home
 
     # -- lifecycle ---------------------------------------------------
 
@@ -109,7 +123,7 @@ class SqliteSilo(Silo):
         been terminated and then touched by a careless reader would
         pass an exists() check forever after.
         """
-        if not self.path.exists():
+        if not self.home.exists():
             return False
         # The header check comes first and is not redundant with the
         # query below. A zero-byte file is a valid empty database as far
@@ -117,13 +131,13 @@ class SqliteSilo(Silo):
         # succeeds -- so opening it proves nothing. The header is what
         # distinguishes a database from a file something else created.
         try:
-            with self.path.open("rb") as handle:
+            with self.home.open("rb") as handle:
                 if handle.read(len(SQLITE_MAGIC)) != SQLITE_MAGIC:
                     return False
         except OSError:
             return False
         try:
-            connection = sqlite3.connect(f"file:{self.path}?mode=rw", uri=True)
+            connection = sqlite3.connect(f"file:{self.home}?mode=rw", uri=True)
         except sqlite3.Error:
             return False
         try:
@@ -137,7 +151,7 @@ class SqliteSilo(Silo):
     def connection(self, database: str | None = None) -> ConnectionDescriptor:
         _refuse_database(self.name, self.kind, database)
         """A path, not a host and port. That is the point."""
-        return ConnectionDescriptor(kind=self.kind, details={"path": str(self.path)})
+        return ConnectionDescriptor(kind=self.kind, details={"path": str(self.home)})
 
     def driver_errors(self) -> tuple[type[Exception], ...]:
         # OSError as well as sqlite3.Error: a file-based silo fails at

@@ -42,6 +42,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from simulator.lifecycle import Entity
+from simulator.lineage import Lineage
 from simulator.relational import fetch_all
 from simulator.world import World
 
@@ -76,12 +77,24 @@ class SavedState:
     #: comparing against the declaration would refuse every drifted
     #: world.
     shape: str
+    #: How far the world had run in all, in simulated seconds, since it was
+    #: built. Which migrations are due is computed from elapsed time; a
+    #: resume that started it again at zero applied the first leg's
+    #: migrations a second time and crashed (REAL_SOURCES.md O4). None in
+    #: a state file written before this was recorded.
+    elapsed_seconds: float | None = None
+    #: What the pack's names are called now (simulator/lineage.py). The
+    #: databases hold only the new names; nothing in them says `qty` used
+    #: to be `quantity`, so without this a resumed business would write to
+    #: the old names again. None in a state file from before it was kept.
+    lineage: dict | None = None
 
     def write(self, directory: Path) -> Path:
         path = Path(directory) / STATE_FILENAME
         partial = path.with_suffix(".json.part")
         partial.write_text(json.dumps(
-            {"clock": self.now.isoformat(), "pack": self.pack, "shape": self.shape},
+            {"clock": self.now.isoformat(), "pack": self.pack, "shape": self.shape,
+             "elapsed_seconds": self.elapsed_seconds, "lineage": self.lineage},
             indent=2) + "\n")
         # Renamed into place, like everything else this project
         # publishes: a half-written state file read by a resume would
@@ -99,9 +112,12 @@ class SavedState:
             )
         try:
             saved = json.loads(path.read_text())
+            elapsed = saved.get("elapsed_seconds")
             return cls(now=datetime.fromisoformat(saved["clock"]),
                        pack=str(saved.get("pack", "")),
-                       shape=str(saved.get("shape", "")))
+                       shape=str(saved.get("shape", "")),
+                       elapsed_seconds=None if elapsed is None else float(elapsed),
+                       lineage=saved.get("lineage"))
         except (ValueError, KeyError, OSError) as error:
             raise ResumeError(f"{path} is not readable: {error}") from error
 
@@ -132,7 +148,9 @@ def fingerprint(world: World) -> str:
 def save(world: World, directory: Path) -> Path:
     """Record what the databases cannot."""
     return SavedState(now=world.clock.now(), pack=world.pack.name,
-                      shape=fingerprint(world)).write(directory)
+                      shape=fingerprint(world),
+                      elapsed_seconds=world.clock.elapsed.total_seconds(),
+                      lineage=world.lineage.to_json()).write(directory)
 
 
 def restore_entities(world: World) -> dict[str, int]:
@@ -144,21 +162,31 @@ def restore_entities(world: World) -> dict[str, int]:
     """
     found: dict[str, int] = {}
     for name, where in world.pack.persistence.items():
-        table = world.schema(where.silo).table(where.table)
+        # Under the names the database has now (simulator/lineage.py).
+        table = world.table_now(where.silo, where.table)
+        state_column = world.lineage.column(where.silo, where.table, where.state_column)
+        if table is None or state_column is None:
+            # Nowhere left that records these entities; the lifecycle
+            # starts empty, as it would for the updated application.
+            world.entities[name] = []
+            found[name] = 0
+            continue
         key = table.primary_key()
         if key is None:
             raise ResumeError(
                 f"{where.silo}.{where.table} has no primary key, so a {name} entity "
                 f"cannot be identified in it"
             )
+        entered_column = (None if where.entered_column is None else
+                          world.lineage.column(where.silo, where.table, where.entered_column))
         try:
-            selected = [key.name, where.state_column]
-            if where.entered_column is not None:
-                selected.append(where.entered_column)
+            selected = [key.name, state_column]
+            if entered_column is not None:
+                selected.append(entered_column)
             rows = fetch_all(
                 world.silo(where.silo), world.database(where.silo),
                 f"SELECT {', '.join(_quote(world, where.silo, name) for name in selected)} "
-                f"FROM {_quote(world, where.silo, where.table)}",
+                f"FROM {_quote(world, where.silo, table.name)}",
             )
         except Exception as error:  # noqa: BLE001 -- driver errors differ per engine
             raise ResumeError(
@@ -182,7 +210,7 @@ def restore_entities(world: World) -> dict[str, int]:
             # so any transition gated on dwell waits its full time
             # again and a year built from twelve legs restarts every
             # entity's clock twelve times.
-            entered = row[2] if where.entered_column is not None else None
+            entered = row[2] if entered_column is not None else None
             if entered is not None and entered.tzinfo is None:
                 entered = entered.replace(tzinfo=UTC)
             if str(state) not in states:
@@ -266,17 +294,26 @@ def resume(world: World, directory: Path) -> dict[str, int]:
             "would write rows that do not fit. Build a new world, or put the pack "
             "back the way it was."
         )
-    # The clock's start moves rather than its elapsed time, so a
-    # resumed world counts from where the last one stopped and every
-    # `elapsed`-based question -- which migrations are due, how far a
-    # run has got -- is answered against this leg rather than the
-    # whole history.
-    world.clock.start = saved.now
-    world.clock._elapsed = timedelta()
+    # The whole history, not this leg. This used to move the clock's
+    # start to `now` and set elapsed to zero, so `elapsed`-based questions
+    # were answered against the leg -- and the one that matters, which
+    # migrations are due, then answered "the first leg's, again": a
+    # migration already applied came due a second time and crashed the
+    # world (REAL_SOURCES.md O4). `run --days` counts its own seconds, so
+    # nothing needed the leg. A state file from before elapsed was
+    # recorded resumes as before.
+    elapsed = timedelta(seconds=saved.elapsed_seconds or 0)
+    world.clock.start = saved.now - elapsed
+    world.clock._elapsed = elapsed
+    world.lineage = Lineage.from_json(saved.lineage)
 
     counters = restore_counters(world)
     entities = restore_entities(world)
-    if not any(entities.values()) and world.pack.persistence:
+    # Only if some table still holds them: once every one has been
+    # dropped, an empty start is what the updated application would have.
+    still_held = any(world.table_now(where.silo, where.table) is not None
+                     for where in world.pack.persistence.values())
+    if not any(entities.values()) and still_held:
         raise ResumeError(
             "no live entities were found in any table, so every lifecycle would "
             "start empty. An earlier prototype hit exactly this and produced 3,360 "

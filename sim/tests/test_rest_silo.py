@@ -167,7 +167,7 @@ def test_authentication_can_be_turned_off(tmp_path):
 def test_rate_limiting_returns_429_with_a_retry_after(tmp_path):
     registry = PortRegistry.allocate(tmp_path, ["limited"])
     silo = RestSilo(name="limited", data_dir=tmp_path / "limited",
-                    port=registry.port("limited"), rate_limit=2)
+                    port=registry.port("limited"), rate_limit=2, rate_window_seconds=None)
     silo.create()
     silo.start()
     try:
@@ -180,6 +180,34 @@ def test_rate_limiting_returns_429_with_a_retry_after(tmp_path):
         assert headers["Retry-After"] == str(RETRY_AFTER_SECONDS)
 
         silo.reset_rate_limit()
+        assert fetch(silo, f"{API_PREFIX}/payments")[0] == 200
+    finally:
+        silo.stop()
+
+
+def test_the_window_rolls_on_the_clock_and_says_how_long_is_left(tmp_path):
+    """REAL_SOURCES.md R2: the window turned only when something called
+    reset_rate_limit(), and nothing in a running world did -- so once on,
+    the API refused for ever. Real APIs roll per minute (Xero: 60 calls a
+    minute, 429 with Retry-After)."""
+    registry = PortRegistry.allocate(tmp_path, ["limited"])
+    silo = RestSilo(name="limited", data_dir=tmp_path / "limited",
+                    port=registry.port("limited"), rate_limit=2)
+    now = [1000.0]
+    silo._clock = lambda: now[0]
+    silo.reset_rate_limit()
+    silo.create()
+    silo.start()
+    try:
+        silo.publish("payments", [{"id": "p1"}])
+        status, _, headers = fetch(silo, f"{API_PREFIX}/payments")
+        assert status == 200 and headers["X-RateLimit-Remaining"] == "1"
+        fetch(silo, f"{API_PREFIX}/payments")
+        now[0] += 45
+        status, _, headers = fetch(silo, f"{API_PREFIX}/payments")
+        assert status == 429 and headers["Retry-After"] == "15"
+
+        now[0] += 15                     # the minute is up
         assert fetch(silo, f"{API_PREFIX}/payments")[0] == 200
     finally:
         silo.stop()

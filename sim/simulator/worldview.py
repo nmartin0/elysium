@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from simulator.context import EvaluationContext
-from simulator.schema import Schema
+from simulator.schema import Table
 from simulator.silo import Silo
 
 
@@ -89,7 +89,10 @@ class WorldView(Protocol):
 
     def database(self, silo_name: str) -> str: ...
 
-    def schema(self, silo_name: str) -> Schema: ...
+    def table_now(self, silo_name: str, table_name: str) -> Table | None: ...
+
+    @property
+    def lineage(self) -> Any: ...
 
     def subject_rows(self, qualified: str) -> list[dict]: ...
 

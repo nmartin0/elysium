@@ -390,3 +390,74 @@ def test_a_fingerprint_is_about_shape_and_not_order(tmp_path):
     changed = Fake({"x": Schema(tables=(
         Table(name="t", columns=(Column("a", ColumnType.INTEGER),)), other))})
     assert fingerprint(changed) != fingerprint(first)
+
+
+@pytest.mark.postgres
+def test_a_migration_is_not_applied_again_after_a_resume(tmp_path, postgres_binaries):
+    """REAL_SOURCES.md O4. Which migrations are due is computed from
+    elapsed time, and a resume reset elapsed to zero -- so a migration the
+    first leg applied came due again in the second, as if history
+    repeated."""
+    migrating = SHOP.replace("\nseed:", textwrap.dedent("""
+        migrations:
+          - at: 1d
+            operation: add_column
+            table: ops.orders
+            column: channel
+            type: text
+            length: 16
+        """) + "\nseed:", 1)
+    assert "migrations:" in migrating, "the fixture itself must declare one"
+    pack = write_pack(tmp_path, migrating, "resumable")
+    directory = tmp_path / "var"
+    world = runner.build(pack, directory, seed=4)
+    try:
+        runner.seed(world)
+        runner.run(world, total_seconds=2 * 86400, tick_seconds=3600)
+        save(world, directory)
+    finally:
+        runner.stop(world)
+
+    world = runner.attach(pack, directory, seed=4)
+    try:
+        resume(world, directory)
+        runner.run(world, total_seconds=2 * 86400, tick_seconds=3600)
+        applied = fetch_all(world.silo("ops"), "ops",
+                            "SELECT count(*) FROM _simulator_migrations")[0][0]
+    finally:
+        runner.stop(world)
+
+    assert applied == 1
+
+
+@pytest.mark.postgres
+def test_a_renamed_column_is_still_followed_after_a_resume(tmp_path, postgres_binaries):
+    """REAL_SOURCES.md O3. The databases hold only the new name; nothing in
+    them says `order_state` used to be `status`. The world's record of the
+    rename (simulator/lineage.py) is kept in state.json, or a resumed
+    business reads and writes the old name and fails."""
+    from simulator.control import apply_drift
+
+    pack = write_pack(tmp_path, SHOP, "resumable")
+    directory = tmp_path / "var"
+    world = runner.build(pack, directory, seed=4)
+    try:
+        runner.seed(world)
+        runner.run(world, total_seconds=86400, tick_seconds=3600)
+        apply_drift(world, "rename_column",
+                    {"table": "ops.orders", "column": "status", "to": "order_state"})
+        save(world, directory)
+    finally:
+        runner.stop(world)
+
+    world = runner.attach(pack, directory, seed=4)
+    try:
+        restored = resume(world, directory)
+        runner.run(world, total_seconds=86400, tick_seconds=3600)
+        settled = fetch_all(world.silo("ops"), "ops",
+                            "SELECT count(*) FROM orders WHERE order_state = 'settled'")[0][0]
+    finally:
+        runner.stop(world)
+
+    assert restored["Order"] > 0
+    assert settled > 0

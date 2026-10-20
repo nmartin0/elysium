@@ -21,11 +21,18 @@ its only interface, and it still does not know Elysium exists.
 
 | # | Real behaviour | Simulator today | Verdict |
 |---|---|---|---|
-| O1 | Sources go away and come back: a database restarts (PostgreSQL clients see SQLSTATE 57P01 `admin_shutdown`), an API is down for maintenance, a share is unmounted. | `terminate()` exists for every kind (SIGQUIT, SIGKILL, rename to `.gone`, socket closed) but nothing outside the tests calls it. | Missing |
-| O2 | Time can be stopped while someone looks. | No pause; `clock.py` defers it to a control server that does not exist. | Missing |
-| O3 | A schema change made by a DBA lands while applications keep writing. | A live `simulator drift` from another terminal changes the database but not the running engine, which crashes on its next write to the moved column. | Bug |
-| O4 | After a restart, history does not repeat. | Scheduled migrations are matched against elapsed time, which resets on `--resume`; from the code they look likely to fire again. Not yet reproduced. | Bug (suspected) |
-| O5 | -- (the yardstick) | The oracle lives in memory and can be read only through the console; nothing outside the process can compare against it. `verify` is hard-wired to `/v1/invoices`. | Missing |
+| O1 | Sources go away and come back: a database restarts (PostgreSQL clients see SQLSTATE 57P01 `admin_shutdown`), an API is down for maintenance, a share is unmounted. | `outage` / `restore` through the control channel (simulator/outages.py), cutting off the reader only: PostgreSQL ends its sessions (57P01) and refuses logins, MariaDB locks the account and kills its connections, REST answers 503 with Retry-After, a share or SQLite file is moved aside while the business keeps writing to it. Stopping the world restores every outage. | Fixed (item 12 step 1) |
+| O2 | Time can be stopped while someone looks. | `pause`, `resume` and `advance` through the control channel (simulator/control.py); a paused world does not tick and the pause is not owed back. | Fixed (item 12 step 1) |
+| O3 | A schema change made by a DBA lands while applications keep writing. | A live `simulator drift` is sent to the running world and applied by it. The business then follows the change (simulator/lineage.py): it writes and reads under the new names, stops writing a dropped column, and keeps the record across a resume. This crash happened even for a rename the engine applied itself. | Fixed (item 12 step 1) |
+| O4 | After a restart, history does not repeat. | Reproduced, then fixed: state.json now keeps the elapsed time, and a resume restores the whole history rather than restarting at zero. | Fixed (item 12 step 1) |
+| O5 | -- (the yardstick) | `oracle` through the control channel returns every watched number's samples as JSON. The control channel's address and token are in `control.json` (owner-only), never in `connections.json`. | Fixed (item 12 step 1) |
+
+Found while fixing these, by an independent review on 20 October, and
+fixed with them: a world with a replica could never be resumed (a fresh
+world's saved shape left the replica out), a schema change reached a
+replica's database but not the world's record of it, a control command
+that timed out still ran later, and an outage left by a killed run could
+not be ended.
 
 ## PostgreSQL 16
 
@@ -50,7 +57,7 @@ its only interface, and it still does not know Elysium exists.
 | M4 | `time_zone` defaults to SYSTEM; TIMESTAMP is converted through the session zone, DATETIME is stored literally ([time-zones](https://mariadb.com/docs/server/reference/data-types/string-data-types/character-sets/internationalization-and-localization/time-zones)). | Timestamps are DATETIME holding UTC wall-clock values. | Agrees (one of the real choices) |
 | M5 | REPEATABLE READ by default; the snapshot is taken at the first read, not at BEGIN ([set-transaction](https://mariadb.com/docs/server/reference/sql-statements/administrative-sql-statements/set-commands/set-transaction)). | Real MariaDB. | Agrees |
 | M6 | BOOLEAN is TINYINT(1); JSON is LONGTEXT with a check ([boolean](https://mariadb.com/docs/server/reference/data-types/numeric-data-types/boolean), [json](https://mariadb.com/docs/server/reference/data-types/string-data-types/json)). | BOOLEAN; no JSON type in the simulator. | Agrees; JSON missing |
-| M7 | The server's behaviour is whatever its configuration says. | The server reads the host's `/etc/mysql` configuration (no `--no-defaults`), so a world differs from machine to machine. | Bug |
+| M7 | The server's behaviour is whatever its configuration says. | The server starts with `--no-defaults`, so a world behaves the same on every machine (character_set_server reads latin1, MariaDB's own default). | Fixed (item 12 step 1) |
 | M8 | Withholding one table from a reader does not change what it can see of tables added later. | `withheld:` replaces the database-wide grant with per-table grants, so later tables are readable by nobody. | Bug (or an accidental P1) |
 
 ## CSV drops
@@ -61,7 +68,7 @@ its only interface, and it still does not know Elysium exists.
 | F2 | Files are re-sent, replaced in place, arrive late, or vanish to retention (S3 expiry is asynchronous) ([S3 lifecycle](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-expire-general-considerations.html)). | One file per firing, never re-sent, never late, never deleted. | Missing |
 | F3 | Excel's plain CSV is a Windows code page; "CSV UTF-8" carries a BOM; the delimiter is the regional list separator -- a semicolon where the decimal mark is a comma ([Excel formats](https://support.microsoft.com/en-US/Excel/file-formats-supported-in-excel-for-mac)). The code-page and BOM details are not confirmed from a primary page. | UTF-8 with BOM, comma, CRLF, always. | Kinder |
 | F4 | A file opened and saved in Excel loses leading zeros, turns long numbers into scientific notation, and turns codes into dates ([automatic data conversions](https://support.microsoft.com/en-US/Excel/set-automatic-data-conversions)). | Never. | Missing |
-| F5 | Headers change between exports: columns added, renamed, reordered. (Practitioner knowledge; no primary source.) | Columns are fixed by the pack; a drift that drops or renames one makes the export FAIL instead. | Missing, and Bug |
+| F5 | Headers change between exports: columns added, renamed, reordered. (Practitioner knowledge; no primary source.) | After a rename or drop, the next export's header follows the database: the new name, or the column gone. Columns are still never added or reordered on their own. | Partly fixed (item 12 step 1); additions and reordering are step 2 |
 | F6 | Exports arrive zipped (QuickBooks Online exports "Excel files in one .zip file") ([QuickBooks](https://quickbooks.intuit.com/learn-support/en-us/exporting-reports/export-reports-lists-and-more/00/187949)). | CSV only. | Missing |
 
 ## REST APIs
@@ -69,7 +76,7 @@ its only interface, and it still does not know Elysium exists.
 | # | Real behaviour | Simulator today | Verdict |
 |---|---|---|---|
 | R1 | Access tokens expire: Xero 30 minutes, QuickBooks 1 hour; refresh tokens rotate ([Xero](https://devblog.xero.com/xero-api-token-management-best-practices-and-troubleshooting-01853f4244a9), [Intuit](https://github.com/IntuitDeveloper/OAuth2-Dotnet_UsingSDK/blob/master/docs/help/Tokens.md)). | A fixed token that never expires. | Kinder |
-| R2 | Rate limits are per window and say so: Shopify's leaky bucket with `X-Shopify-Shop-Api-Call-Limit` and `Retry-After: 2.0`; Xero 60 calls/minute with `Retry-After`; GitHub 403 or 429 with `x-ratelimit-reset` ([Shopify](https://shopify.dev/docs/api/admin-rest/usage/rate-limits), [Xero](https://developer.xero.com/faq/limits), [GitHub](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api)). | Off by default; when on, a counter that never resets, so the API refuses forever. | Bug |
+| R2 | Rate limits are per window and say so: Shopify's leaky bucket with `X-Shopify-Shop-Api-Call-Limit` and `Retry-After: 2.0`; Xero 60 calls/minute with `Retry-After`; GitHub 403 or 429 with `x-ratelimit-reset` ([Shopify](https://shopify.dev/docs/api/admin-rest/usage/rate-limits), [Xero](https://developer.xero.com/faq/limits), [GitHub](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api)). | A rolling window (60 s by default) with X-RateLimit-Limit, -Remaining and -Reset headers and a Retry-After that counts down to the window's end. | Fixed (item 12 step 1) |
 | R3 | Servers fail: 500/502/503/504, timeouts (GitHub ends requests over 10 s), and 429 that is a lock, not a limit (Stripe) ([Stripe errors](https://docs.stripe.com/api/errors?lang=node)). | No 5xx, no slowness. | Missing |
 | R4 | Paging while records change can skip or repeat them -- Stripe says so of search ([Stripe search](https://docs.stripe.com/search)). | An offset inside an opaque cursor over a list replaced whole at each republication: a republish mid-read skips or repeats. | Agrees |
 | R5 | Formats vary: Stripe money in integer minor units and timestamps as epoch seconds, nulls present ([Stripe currencies](https://docs.stripe.com/currencies.md)); many accounting APIs use decimal strings and ISO dates. | Decimal strings, ISO 8601. | Agrees (one real choice); not variable |

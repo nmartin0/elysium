@@ -22,6 +22,7 @@ words for the same operations is two vocabularies to keep in step.
 
 import argparse
 import sys
+from pathlib import Path
 from typing import Any
 
 import yaml
@@ -98,6 +99,24 @@ def _drift(arguments: argparse.Namespace) -> int:
         print(f"no silo called {silo_name!r} in {arguments.dir}", file=sys.stderr)
         return 1
 
+    # A running world applies it itself (simulator/control.py), so its
+    # model moves with the database. Applied from here instead, the
+    # engine kept the old schema and crashed on its next write to the
+    # moved column (REAL_SOURCES.md O3). Straight to the database only
+    # when no world is running -- or one in console mode, which has its
+    # own `drift`.
+    from simulator.control import CONTROL_FILENAME, ControlError, send
+
+    if (Path(arguments.dir) / CONTROL_FILENAME).exists():
+        try:
+            result = send(arguments.dir, "drift", operation=arguments.operation, **fields)
+        except ControlError as error:
+            print(str(error), file=sys.stderr)
+            return 1
+        print(f"applied by the running world: {result['applied']}"
+              f"{'  (BREAKING)' if result['breaking'] else ''}")
+        return 0
+
     details = published["silos"][silo_name]
     database = details.get("database")
     if database is None:
@@ -121,11 +140,10 @@ def _drift(arguments: argparse.Namespace) -> int:
 
     print(f"applied: {change.describe()}"
           f"{'  (BREAKING)' if change.is_breaking else ''}")
-    # Said plainly, because it is the one thing this cannot do: the
-    # running process holds its schema in memory and has just been
-    # made wrong about it.
-    print("note: the running simulation still believes the old schema; "
-          "it will fail on its next write to a column that moved.")
+    # Said plainly, for the one case left: a world running with
+    # --console has no control channel and holds its schema in memory.
+    print("note: no running world was told. One started with --console still "
+          "believes the old schema -- use its own `drift` command instead.")
     return 0
 
 def _audit(arguments: argparse.Namespace) -> int:

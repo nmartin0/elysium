@@ -42,7 +42,9 @@ nothing here needs.
 import base64
 import binascii
 import json
+import math
 import threading
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Sequence
@@ -61,9 +63,20 @@ DEFAULT_PAGE_SIZE = 100
 #: The prefix these APIs conventionally version under.
 API_PREFIX = "/v1"
 
-#: Seconds a 429 asks the caller to wait. Real values vary; what
-#: matters is that the header is there to be honoured or ignored.
+#: Seconds a 429 asks the caller to wait when no window is running.
+#: Real values vary; what matters is that the header is there to be
+#: honoured or ignored.
 RETRY_AFTER_SECONDS = 2
+
+#: How long a rate-limit window lasts, in REAL seconds: a consumer waits
+#: in wall time, as it would on Xero's 60-calls-a-minute limit
+#: (developer.xero.com/faq/limits). REAL_SOURCES.md R2: the window used
+#: to turn only when something called reset_rate_limit(), and nothing in
+#: a running world did -- so once on, the API refused for ever.
+DEFAULT_RATE_WINDOW_SECONDS = 60.0
+
+#: How long a maintenance 503 asks the caller to wait.
+MAINTENANCE_RETRY_AFTER_SECONDS = 30
 
 _SHUTDOWN_TIMEOUT = 10
 
@@ -97,11 +110,22 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802 -- http.server's naming
         silo = self.server.silo  # type: ignore[attr-defined]
 
-        if not silo._rate_limit_allows():
+        if silo.maintenance:
+            # Down for maintenance (simulator/outages.py): what real APIs
+            # serve -- Stripe lists 503 among its server errors -- with a
+            # Retry-After saying when to come back.
+            self._respond(503, {"errors": [{"code": "MAINTENANCE",
+                                            "detail": "Down for maintenance"}]},
+                          extra_headers={"Retry-After": str(MAINTENANCE_RETRY_AFTER_SECONDS)})
+            return
+
+        allowed, limit_headers = silo._rate_limit_allows()
+        if not allowed:
             self._respond(429, {"errors": [{"code": "RATE_LIMITED",
                                             "detail": "Too many requests"}]},
-                          extra_headers={"Retry-After": str(RETRY_AFTER_SECONDS)})
+                          extra_headers=limit_headers)
             return
+        self._limit_headers = limit_headers
 
         if not self._authorised(silo.token):
             # A well-formed JSON error, not a connection failure --
@@ -150,7 +174,9 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
-        for name, value in (extra_headers or {}).items():
+        # Where the caller stands against the rate limit, on every reply
+        # while one is on -- as GitHub's x-ratelimit-* headers are.
+        for name, value in {**getattr(self, "_limit_headers", {}), **(extra_headers or {})}.items():
             self.send_header(name, value)
         self.end_headers()
         self.wfile.write(payload)
@@ -164,7 +190,8 @@ class RestSilo(Silo):
 
     def __init__(self, name: str, data_dir: Path, port: int, *,
                  token: str | None = "sim-token", page_size: int = DEFAULT_PAGE_SIZE,
-                 rate_limit: int | None = None) -> None:
+                 rate_limit: int | None = None,
+                 rate_window_seconds: float | None = DEFAULT_RATE_WINDOW_SECONDS) -> None:
         super().__init__(name, data_dir)
         self.port = port
         #: None disables authentication entirely. Some small-business
@@ -177,7 +204,13 @@ class RestSilo(Silo):
         #: make every consumer's first run fail for a reason that is
         #: not about the data.
         self.rate_limit = rate_limit
+        self.rate_window_seconds = rate_window_seconds
+        #: Wall time, replaceable by a test so it need not wait a minute.
+        self._clock = time.monotonic
+        self._window_started = self._clock()
         self.collections: dict[str, list[dict]] = {}
+        #: True during an outage (simulator/outages.py): every request 503s.
+        self.maintenance = False
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._request_count = 0
@@ -290,12 +323,33 @@ class RestSilo(Silo):
 
     # -- rate limiting -----------------------------------------------
 
-    def _rate_limit_allows(self) -> bool:
+    def _rate_limit_allows(self) -> tuple[bool, dict[str, str]]:
+        """(allowed, headers saying where the caller stands).
+
+        The window rolls on the clock, as real APIs' do, unless
+        `rate_window_seconds` is None, which keeps the old manual window
+        for a test or a scenario that wants to turn it itself. Headers in
+        GitHub's x-ratelimit-* form, and on a refusal a Retry-After of the
+        seconds the window has left (RFC 9110)."""
         if self.rate_limit is None:
-            return True
+            return True, {}
         with self._lock:
+            now = self._clock()
+            if self.rate_window_seconds is not None and \
+                    now - self._window_started >= self.rate_window_seconds:
+                self._window_started, self._request_count = now, 0
             self._request_count += 1
-            return self._request_count <= self.rate_limit
+            allowed = self._request_count <= self.rate_limit
+            if self.rate_window_seconds is None:
+                left = float(RETRY_AFTER_SECONDS)
+            else:
+                left = max(0.0, self.rate_window_seconds - (now - self._window_started))
+            headers = {"X-RateLimit-Limit": str(self.rate_limit),
+                       "X-RateLimit-Remaining": str(max(0, self.rate_limit - self._request_count)),
+                       "X-RateLimit-Reset": str(math.ceil(left))}
+            if not allowed:
+                headers["Retry-After"] = str(max(1, math.ceil(left)))
+            return allowed, headers
 
     def reset_rate_limit(self) -> None:
         """Begin a fresh window.
@@ -306,6 +360,7 @@ class RestSilo(Silo):
         """
         with self._lock:
             self._request_count = 0
+            self._window_started = self._clock()
 
 
 # =============================================================================

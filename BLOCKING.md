@@ -1175,4 +1175,20 @@ a plain success; an empty read whose refusal advised accepting the
 deletions; row-level security hiding rows silently; and the live-drift
 crash above.
 
-**Blocked on:** finishing the item above.
+**Progress, 20 October.** The checklist is `sim/docs/REAL_SOURCES.md`.
+Step 1 of the order agreed for it -- the simulator's own bugs and
+controls -- is done: a world now has a control channel (`control.json`,
+owner-only, never in `connections.json`) with pause, resume, advance,
+live drift, per-source outages and the oracle as JSON; a live rename no
+longer crashes it, because the simulated business follows renames and
+drops (`sim/simulator/lineage.py`) and keeps that record across a
+resume; migrations no longer repeat after a resume; MariaDB no longer
+reads the host's configuration; the REST rate limit rolls over and
+says when; and, found in review, a world with a replica can be
+resumed at all. One behaviour changed on purpose: a pack migration that
+drops a column its own events still write used to crash the world, and
+now the business stops writing it, as an application shipped with its
+migration does. Next: step 2 (realism options per source), then step 3
+(Elysium over a world with all of it on).
+
+**Blocked on:** nothing; in progress.
