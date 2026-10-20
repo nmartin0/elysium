@@ -54,7 +54,7 @@ from sqlalchemy import (
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 
-from core.ontology.interface import ExternalReadAdapter, StorageUnavailable
+from core.ontology.interface import ExternalReadAdapter, RowsHidden, StorageUnavailable
 from core.ontology.schema import get_column_for_field
 
 logger = logging.getLogger(__name__)
@@ -556,7 +556,7 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
         if row["owns"] and not row["relforcerowsecurity"]:
             return None
         policies = row["policies"]
-        return (f"{table_name} has PostgreSQL row-level security switched on, and the account "
+        return RowsHidden(f"{table_name} has PostgreSQL row-level security switched on, and the account "
                 f"Elysium syncs with is subject to it -- "
                 + ("no policy is defined, so PostgreSQL returns NO rows to it, without an error"
                    if not policies else
@@ -564,7 +564,7 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
                    f"and rows they hide are not copied")
                 + ". Elysium decides who sees which rows on its own copy, so the copy must be "
                   "complete: grant the account BYPASSRLS (ALTER ROLE <account> BYPASSRLS), or a "
-                  "policy that lets it read every row.")
+                  "policy that lets it read every row.", every_row=not policies)
 
     def columns_present(self, table_name: str) -> set[str]:
         """What the source actually has, via Core's Inspector.

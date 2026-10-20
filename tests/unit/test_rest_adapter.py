@@ -105,6 +105,133 @@ class TestTheSimulatorsApi:
         _sim_adapter(sim_api).health_check()
 
 
+
+# ---- tokens that expire (20 October) ---------------------------------------
+
+def _oauth_adapter(silo, **auth):
+    return _sim_adapter(silo, auth={"type": "oauth_client_credentials",
+                                    "token_url": f"{silo.base_url}/oauth/token",
+                                    "client_id": silo.client_id, "client_secret": "sim-token",
+                                    **auth})
+
+
+@pytest.fixture
+def expiring_api(sim_api):
+    """The simulator's API with Xero's 30-minute tokens, on a clock the
+    test moves."""
+    now = [0.0]
+    sim_api.token_lifetime_seconds = 1800
+    sim_api._clock = lambda: now[0]
+    sim_api.now = now
+    return sim_api
+
+
+class TestTokensThatExpire:
+    def test_a_token_is_asked_for_and_every_record_read(self, expiring_api):
+        rows = _oauth_adapter(expiring_api).read_all_rows("invoices", ["id"], CONFIG)
+
+        assert len(rows) == 37
+
+    def test_a_token_the_server_ended_is_renewed_once_and_the_read_goes_on(
+            self, expiring_api, no_waiting):
+        adapter = _oauth_adapter(expiring_api)
+        adapter.health_check()
+        held = adapter._token[0]
+        expiring_api.now[0] = 1800.0          # the server's clock: lapsed
+
+        rows = adapter.read_all_rows("invoices", ["id"], CONFIG)
+
+        assert len(rows) == 37 and adapter._token[0] != held
+        assert no_waiting == [], "a renewal is not a retry with a wait"
+
+    def test_a_token_about_to_lapse_is_renewed_before_it_is_used(
+            self, expiring_api, monkeypatch):
+        adapter = _oauth_adapter(expiring_api)
+        adapter.health_check()
+        held = adapter._token[0]
+        later = rest.time.time() + 1800 - rest.TOKEN_MARGIN_SECONDS + 1
+        monkeypatch.setattr(rest.time, "time", lambda: later)
+
+        adapter.health_check()
+
+        assert adapter._token[0] != held
+
+    def test_a_wrong_secret_stops_at_once_and_never_shows_the_secret(
+            self, expiring_api, no_waiting):
+        adapter = _oauth_adapter(expiring_api, client_secret="not-the-secret")
+
+        with pytest.raises(rest.ApiRefused, match="refused the credentials") as refused:
+            adapter.health_check()
+
+        assert "not-the-secret" not in str(refused.value) and no_waiting == []
+
+    def test_a_token_refused_twice_is_the_credentials_refused(self, expiring_api):
+        adapter = _oauth_adapter(expiring_api)
+        # Every token the server issues has lapsed by the time it is used:
+        # its clock jumps an hour on every look.
+        ticks = iter(range(0, 10**9, 3600))
+        expiring_api._clock = lambda: float(next(ticks))
+
+        with pytest.raises(rest.ApiRefused, match="refused the credentials"):
+            adapter.health_check()
+
+    def test_a_reply_that_echoes_the_secret_or_the_token_has_both_masked(self, expiring_api):
+        adapter = _oauth_adapter(expiring_api)
+        adapter.health_check()
+        token = adapter._token[0]
+
+        class Echo:
+            status_code = 401
+            text = f"bad client sim-token, bad token {token}"
+
+        said = str(adapter._refused("https://x/token", Echo()))
+
+        assert "sim-token" not in said and token not in said
+
+    def test_a_secret_with_plus_and_slash_reaches_the_server_intact(self, expiring_api):
+        # RFC 6749 section 2.3.1: form-encoded, then Base64 (found in review).
+        expiring_api.token = "a+b/c=d"
+
+        rows = _oauth_adapter(expiring_api, client_secret="a+b/c=d").read_all_rows(
+            "invoices", ["id"], CONFIG)
+
+        assert len(rows) == 37
+
+    @pytest.mark.parametrize(("given", "lasts"), [
+        (3600, 3540), ("3600", 3540), (60, 30), (None, float("inf")), ("soon", float("inf")),
+    ], ids=["number", "text", "short", "absent", "nonsense"])
+    def test_how_long_a_token_is_kept(self, given, lasts, monkeypatch):
+        adapter = rest.RestAdapter({"base_url": "http://127.0.0.1:1/v1", "auth": {
+            "type": "oauth_client_credentials", "token_url": "http://127.0.0.1:1/t",
+            "client_id": "c", "client_secret": "s"}, "tables": {"t": {"path": "/t"}}})
+        reply = {"access_token": "tok", **({} if given is None else {"expires_in": given})}
+
+        class Reply:
+            status_code = 200
+
+            def json(self):
+                return reply
+
+        monkeypatch.setattr(adapter._session, "post", lambda *a, **k: Reply())
+        monkeypatch.setattr(rest.time, "time", lambda: 0.0)
+        adapter._bearer()
+
+        assert adapter._token == ("tok", lasts)
+
+    @pytest.mark.parametrize("auth", [
+        {"token_url": "ftp://x/token"}, {"client_id": ""}, {"client_secret": ""},
+    ], ids=["url", "id", "secret"])
+    def test_an_incomplete_login_is_refused_at_load(self, expiring_api, auth):
+        with pytest.raises(ValueError, match="oauth_client_credentials"):
+            _oauth_adapter(expiring_api, **auth)
+
+    def test_a_literal_client_secret_is_refused_in_configuration(self):
+        from core.secret_references import PlaintextSecret, expand_secrets
+
+        with pytest.raises(PlaintextSecret):
+            expand_secrets({"auth": {"client_secret": "s3cret"}}, where="books")
+
+
 # ---- a stand-in for what the simulator does not do ------------------------
 
 class _Api:

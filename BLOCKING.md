@@ -1208,4 +1208,59 @@ time zones are now pinned to UTC rather than the host's. A replica must
 run its source's engine. Next: step 3, Elysium over a world with all of
 it on.
 
-**Blocked on:** nothing; in progress.
+**Step 3 begun, 20 October: Elysium over a world, and what it found.**
+`scripts/live_world.py` starts a world as an operator would, configures a
+deployment from its `connections.json` alone, and each round syncs and
+compares every object type with an independent plain reader of the same
+source, and the watched totals with the simulator's oracle. Over
+field_service and retail with every realism option on -- expiring tokens,
+API faults and an outage, Windows-encoded, semicolon, decimal-comma,
+zipped, Excel-saved, reordered, re-sent and late files, zero dates,
+row-level security, a column dropped mid-run -- every table ends in
+agreement or in a refusal that names its reason. (Half-written files
+were on too, but no round happened to meet one; see the limit below.)
+What it took:
+
+- Elysium: a deployment reading anything but SQLite without a
+  `write_targets` line failed to LOAD ("Unknown adapter type 'rest'");
+  the API reader had no login for tokens that expire (OAuth client
+  credentials, added); the CSV reader could not open a zip or gzip
+  (added); a first sync under row-level security with no policy
+  PUBLISHED AN EMPTY TABLE, the warning in the log its only sign
+  (refused now); MariaDB's zero dates refused a whole table with no way
+  through (`zero_dates_as_null: true`, declared per silo); and the
+  refusal of a time with no zone did not say to declare one.
+- The simulator: a replica did not carry its source's grants, so
+  withheld pay lines were readable through `office`; and `zero_dates`
+  wrote none for the columns an application leaves out.
+
+**FOR THE OWNER: a renamed column is still served as empty.** The sync
+says plainly that a column the ontology reads is gone and an unknown one
+appeared, and that "the mirror is now serving null for them" -- and it
+does, every customer's phone empty while the numbers sit in the source
+under the new name. That was pinned on purpose
+(tests/unit/test_a_source_changes_and_what_a_reader_sees.py,
+`TestARenamedColumn`: "absent, never wrong"), the alternative being a
+table frozen on what may be a coincidence. Elysium's own rule calls a
+reader seeing NULL where a value exists a wrong value; whether a likely
+rename should hold the table at its last good copy instead is the
+owner's call, not a bug fix.
+
+**A LIMIT, FOR THE OWNER: a CSV cut inside its last field.** A file
+being written in place (no write-then-rename), read mid-write, can stop
+inside a row's last value -- "2;4567,00" read as "2;456" -- with every
+row still the header's width, so nothing looks broken and the number is
+wrong (found in review, 20 October). The only sign is a last line with
+no line ending, and RFC 4180 says a file's last record "may or may not
+have an ending line break", so refusing those would refuse sound files
+from producers that never write one. Elysium cannot tell the two apart;
+the defence is the producer's write-then-rename, which the CSV reader
+already honours. The harness reports such a round as unverifiable
+rather than as agreement. Whether to refuse files that end mid-line
+anyway, trading those producers for this case, is a judgement.
+
+**Next in step 3:** longer runs, the pack-scheduled migrations, a
+SQLite source (no pack declares one), and the replica's lag.
+
+**Blocked on:** the owner, for the rename question and the cut-CSV
+limit; otherwise in progress.

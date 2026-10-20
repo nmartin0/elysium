@@ -52,7 +52,10 @@ class MissingSecret(ValueError):
 # gives for its operators: a closed vocabulary a person can read and a
 # linter can check, rather than something that needs its own evaluator
 # and surprises somebody at load time.
-_SECRET_KEYS = frozenset({"password", "secret", "token", "api_key", "access_key"})
+# `client_secret` since 20 October, with the REST source's OAuth login: an
+# OAuth client's secret is as much a credential as a password.
+_SECRET_KEYS = frozenset({"password", "secret", "token", "api_key", "access_key",
+                          "client_secret"})
 
 
 class PlaintextSecret(ValueError):

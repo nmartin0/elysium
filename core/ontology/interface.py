@@ -101,6 +101,21 @@ class StorageUnavailable(RuntimeError):
     """
 
 
+class RowsHidden(str):
+    """Why rows may be hidden from the account a source is read as -- and
+    whether it is EVERY row (`every_row`), which is certain only when the
+    source says no rule lets that account see any: PostgreSQL's row-level
+    security with no policy at all. A policy may let it read every row,
+    and that cannot be told from here."""
+
+    every_row: bool
+
+    def __new__(cls, text: str, *, every_row: bool = False) -> "RowsHidden":
+        made = super().__new__(cls, text)
+        made.every_row = every_row
+        return made
+
+
 class ExternalReadAdapter(ReadAdapter):
     """A customer's database, read.
 
@@ -300,7 +315,7 @@ class ExternalReadAdapter(ReadAdapter):
         raise IncrementalUnsupported(
             f"{type(self).__name__} cannot read changed rows only")
 
-    def rows_hidden_from_this_reader(self, table_name: str) -> "str | None":
+    def rows_hidden_from_this_reader(self, table_name: str) -> "RowsHidden | str | None":
         """Why some rows of `table_name` may be invisible to the account
         this adapter reads as, or None when nothing hides them (or the
         source cannot say).

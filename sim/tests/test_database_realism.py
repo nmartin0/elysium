@@ -144,6 +144,7 @@ MARIA = textwrap.dedent("""
             columns:
               order_id:   {type: text, length: 64, primary_key: true, nullable: false}
               shipped_on: {type: date}
+              packed_at:  {type: timestamp}
     seed:
       - table: shop.orders
         count: 3
@@ -215,3 +216,13 @@ def test_the_business_writes_zero_dates_where_it_has_none(maria_world):
                       "SELECT count(*) FROM orders WHERE shipped_on IS NULL")[0][0]
 
     assert (zero, nulls) == (3, 0)
+
+
+def test_a_date_the_business_leaves_out_is_written_as_zero_too(maria_world):
+    # Found 20 October by the first run of Elysium over retail: an order
+    # is created without dispatched_at, and with only explicit Nones
+    # replaced no zero date was ever written.
+    zero = fetch_all(maria_world.silo("shop"), "shop",
+                     "SELECT count(*) FROM orders WHERE packed_at = '0000-00-00 00:00:00'")[0][0]
+
+    assert zero == 3

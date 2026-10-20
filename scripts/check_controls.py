@@ -5711,7 +5711,8 @@ CONTROLS = [
     Control(
         describes='REST: a token echoed alone in an error is masked',
         path='adapters/rest_adapter.py',
-        old='        self._secrets = [str(auth[key]) for key in ("token", "api_key", "password")',
+        old='        self._secrets = [str(auth[key]) for key in ("token", "api_key", "password",\n'
+            '                                                    "client_secret")',
         new='        self._secrets = [str(auth[key]) for key in ()',
         tests=[
             ('tests/unit/test_rest_adapter.py::'
@@ -5927,6 +5928,61 @@ CONTROLS = [
         new="    if False:",
         tests=["sim/tests/test_database_realism.py::"
                "test_the_business_writes_zero_dates_where_it_has_none"],
+    ),
+    Control(
+        describes="LOAD: with no write_targets, only writable silos get a writer",
+        path="core/deployment_loader.py",
+        old='                    if silo.get("adapter") in _WRITE_ADAPTER_REGISTRY}',
+        new="}",
+        tests=["tests/unit/test_external_writes_are_opt_in.py::TestWhichSilosGetAWriteAdapter::"
+               "test_absent_leaves_out_what_cannot_be_written"],
+    ),
+    Control(
+        describes="REST: an OAuth token the server ended is renewed once",
+        path="adapters/rest_adapter.py",
+        old="                if response.status_code == 401 and self._oauth is not None and not renewed:",
+        new="                if False:",
+        tests=["tests/unit/test_rest_adapter.py::TestTokensThatExpire::"
+               "test_a_token_the_server_ended_is_renewed_once_and_the_read_goes_on"],
+    ),
+    Control(
+        describes="CSV: a zipped file is opened",
+        path="adapters/csv_folder_adapter.py",
+        old='        if name.endswith(".zip"):\n            try:',
+        new="        if False:\n            try:",
+        tests=["tests/unit/test_csv_folder_adapter.py::TestCompressedFiles::"
+               "test_a_zipped_export_from_the_simulator_is_read"],
+    ),
+    Control(
+        describes="SYNC: an empty read with rows hidden from the account is refused",
+        path="core/mirror/iceberg_sync.py",
+        old='        if getattr(hidden_rows, "every_row", False) and row_count == 0:',
+        new="        if False:",
+        tests=["tests/unit/test_server_databases_read_safely.py::TestAnEmptyReadWithRowsHidden::"
+               "test_a_first_sync_that_reads_nothing_is_refused_and_says_why"],
+    ),
+    Control(
+        describes="TYPES: a declared silo's zero dates are read as empty",
+        path="core/ontology/field_types.py",
+        old="    if zero_dates and data_type in _TEMPORAL and is_zero_date(value):",
+        new="    if False:",
+        tests=["tests/unit/test_numbers_and_dates_as_sources_write_them.py::TestZeroDates::"
+               "test_through_a_real_sync_and_the_refusal_says_how"],
+    ),
+    Control(
+        describes="SIM: a replica withholds what its source withholds",
+        path="sim/simulator/runner.py",
+        old="            origin = pack.silo(silo_name).replicates or silo_name",
+        new="            origin = silo_name",
+        tests=["sim/tests/test_replicas.py::test_a_replica_withholds_what_its_source_withholds"],
+    ),
+    Control(
+        describes="LIVE: the harness names a value Elysium serves wrongly",
+        path="scripts/live_world.py",
+        old="             for column in truth[key] if served[key].get(column) != truth[key][column]]",
+        new="             for column in truth[key] if False]",
+        tests=["tests/unit/test_live_world.py::TestHowItJudges::"
+               "test_a_missing_an_extra_and_a_wrong_row_are_each_named"],
     ),
     Control(
         describes="ENRICH: a classified field is never an input to a model",

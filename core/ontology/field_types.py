@@ -209,6 +209,19 @@ _ASCII_DIGITS = set("0123456789")
 # plausibly some other system's day count, and choosing for it is a guess.
 _EXCEL_SERIAL = re.compile(r"^[0-9]+(\.[0-9]+)?$")
 _TEMPORAL = frozenset({"date", "timestamp", "timestamptz"})
+# MYSQL'S AND MARIADB'S ZERO DATES (20 October): '0000-00-00', with or
+# without a zero time, which their default sql_mode lets an application
+# write for "no date". Read as NULL only for a silo that DECLARES it
+# (`zero_dates_as_null: true`), as CData's MySQL driver does by default
+# and MySQL Connector/J's zeroDateTimeBehavior=CONVERT_TO_NULL does on
+# request. Fivetran keeps them as they are; undeclared, Elysium refuses
+# them as the type mismatch they are, and says how to declare it.
+_ZERO_DATE = re.compile(r"^0000-00-00([ T]00:00:00(\.0+)?)?$")
+
+
+def is_zero_date(value) -> bool:
+    """A MySQL or MariaDB zero date, as text, with or without a zero time."""
+    return value is not None and bool(_ZERO_DATE.match(str(value).strip()))
 _EXCEL_EPOCH = datetime.datetime(1899, 12, 30)
 # Excel's day 60 is 29 February 1900, a day that never existed (Lotus
 # 1-2-3's bug, kept for compatibility). Below 61 the count is off by one
@@ -337,7 +350,8 @@ def _whole_number(value):
 
 
 def coerce(value, data_type: str, source_timezone: str | None = None,
-           locale: str | None = None, excel_dates: bool = False):
+           locale: str | None = None, excel_dates: bool = False,
+           zero_dates: bool = False):
     """A raw source value, converted to what its declared type says it
     is. None stays None -- a real NULL is not a type error.
 
@@ -357,6 +371,8 @@ def coerce(value, data_type: str, source_timezone: str | None = None,
         return None
     if data_type == "string":
         return str(value)
+    if zero_dates and data_type in _TEMPORAL and is_zero_date(value):
+        return None
     if excel_dates and data_type in _TEMPORAL and _EXCEL_SERIAL.match(str(value).strip()):
         value = _from_excel_serial(str(value).strip(), data_type)
     elif locale is not None and isinstance(value, str):

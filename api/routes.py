@@ -1670,6 +1670,8 @@ class DeploymentConfigResponse(BaseModel):
     source_locales: dict[str, str | None] = {}
     #: ZOO-22: silos whose date columns may hold Excel serials.
     excel_date_silos: list[str] = []
+    # Silos whose 0000-00-00 dates are read as empty (`zero_dates_as_null`).
+    zero_date_silos: list[str] = []
     #: R2: tables read by changed rows -- "silo.table" -> its cursor
     #: column and schedule. Column names, never a mark's value.
     incremental_tables: dict[str, str] = {}
@@ -4984,6 +4986,7 @@ def deployment_config_route(request: Request,
         "lineage_namespace": config.lineage.get("namespace") or "elysium",
         "source_locales": dict(config.source_locales),
         "excel_date_silos": sorted(config.excel_date_silos),
+        "zero_date_silos": sorted(config.zero_date_silos),
         "incremental_tables": {
             f"{silo}.{table}": _describe_incremental(policy)
             for (silo, table), policy in sorted(config.incremental.items())},

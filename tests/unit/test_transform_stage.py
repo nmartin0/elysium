@@ -179,3 +179,29 @@ def test_the_last_good_mirror_survives_a_drifted_sync(tmp_path, source_db):
     mirrored = sync._catalog.load_table("p.accounts").scan().to_arrow().to_pydict()
     assert mirrored["account_id"] == ["a1", "a2"]
     assert mirrored["balance"] == [500.0, 1000.0]
+
+
+def test_a_naive_time_in_an_instant_column_says_how_to_declare_its_zone():
+    # Found 20 October over a simulated MariaDB, whose DATETIME has no
+    # zone: the refusal was right and gave no way forward.
+    from core.mirror.transform import DriftedColumn
+
+    naive = DriftedColumn(column="created_at", declared_type="timestamptz",
+                          example_value="2026-01-01 00:00:00", row_count_checked=60)
+    other = DriftedColumn(column="total", declared_type="decimal",
+                          example_value="12,50", row_count_checked=60)
+
+    message = describe_drift("web", "customers", [naive, other])
+
+    assert "`timezone: UTC`" in message
+    assert message.count("Declare the zone") == 1, "only the naive column gets the advice"
+
+
+def test_a_date_alone_is_not_taken_for_a_naive_time():
+    from core.mirror.transform import DriftedColumn
+
+    message = describe_drift("web", "customers", [DriftedColumn(
+        column="joined", declared_type="timestamptz", example_value="2026-01-01",
+        row_count_checked=1)])
+
+    assert "Declare the zone" not in message

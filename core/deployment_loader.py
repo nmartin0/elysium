@@ -322,6 +322,9 @@ class DeploymentConfig:
     # declaring `excel_dates: true` in data_silos.yaml. Declared, never
     # inferred -- a bare number in a date column is ambiguous.
     excel_date_silos: frozenset = frozenset()
+    # SILOS WHOSE ZERO DATES ('0000-00-00') ARE READ AS NULL: those
+    # declaring `zero_dates_as_null: true`. Declared, never inferred.
+    zero_date_silos: frozenset = frozenset()
     # TABLES READ BY CHANGED ROWS (R2): {(silo, table): IncrementalPolicy},
     # from each silo's `incremental:` in data_silos.yaml. Empty means
     # every table is read in full every sync, as before this existed.
@@ -752,6 +755,8 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             source_locales=MappingProxyType(
                 _source_locales(config, data_silos_raw["data_silos"])),
             excel_date_silos=_excel_date_silos(data_silos_raw["data_silos"]),
+            zero_date_silos=_excel_date_silos(data_silos_raw["data_silos"],
+                                              key="zero_dates_as_null"),
             incremental=MappingProxyType(
                 _incremental_policies(data_silos_raw["data_silos"], schema_raw["object_types"])),
             max_tokens_per_query=_token_budget(config["agent"].get("max_tokens_per_query")),
@@ -1182,16 +1187,17 @@ def _incremental_policies(silos: dict, object_types: dict) -> dict:
     return incremental_policies(silos, readable)
 
 
-def _excel_date_silos(silos: dict) -> frozenset:
-    """The silos declaring `excel_dates: true`. Anything but a boolean is
-    refused: `excel_dates: yes-please` silently read as false would leave
-    every serial set aside with nothing pointing at why."""
+def _excel_date_silos(silos: dict, key: str = "excel_dates") -> frozenset:
+    """The silos declaring `excel_dates: true` -- or another `key` of the
+    same kind, `zero_dates_as_null`. Anything but a boolean is refused:
+    `excel_dates: yes-please` silently read as false would leave every
+    serial set aside with nothing pointing at why."""
     declared = set()
     for silo_name, silo in (silos or {}).items():
-        value = (silo or {}).get("excel_dates", False)
+        value = (silo or {}).get(key, False)
         if not isinstance(value, bool):
             raise ValueError(
-                f"data_silos.yaml {silo_name}.excel_dates must be true or false, got {value!r}.")
+                f"data_silos.yaml {silo_name}.{key} must be true or false, got {value!r}.")
         if value:
             declared.add(silo_name)
     return frozenset(declared)
@@ -1245,10 +1251,22 @@ def _writable_silo_configs(config: "DeploymentConfig",
     """
     targets = config.write_targets
     if targets is None:
+        # THE EXISTING BEHAVIOUR WAS ONLY EVER WRITES TO SILOS THAT CAN
+        # BE WRITTEN, which is SQLite's alone. Found 20 October by the
+        # first run over a simulated world: with every silo kept here, a
+        # deployment reading PostgreSQL, a CSV folder or an API without a
+        # `write_targets` line failed to load at all -- "Unknown adapter
+        # type 'rest' ... registered adapters: ['sqlite']" -- for a write
+        # it never asked for.
+        resolved = {name: silo for name, silo in resolved.items()
+                    if silo.get("adapter") in _WRITE_ADAPTER_REGISTRY}
+        if not resolved:
+            return {}
         logger.warning(
             "NO write_targets DECLARED, so confirmed writes still reach "
-            "every configured silo -- which is this deployment's existing "
-            "behaviour and is kept deliberately. To make it explicit, add "
+            "every configured silo that can be written (SQLite) -- which is "
+            "this deployment's existing behaviour and is kept deliberately. "
+            "To make it explicit, add "
             "to config.yaml:\n"
             "\n    write_targets: []            # refuse all external writes"
             "\n\nor name the silos a write may reach:\n"
@@ -1262,6 +1280,13 @@ def _writable_silo_configs(config: "DeploymentConfig",
         raise ValueError(
             f"write_targets names {unknown}, which is not a configured "
             f"silo. Configured silos: {sorted(resolved)}"
+        )
+    unwritable = [name for name in targets
+                  if resolved[name].get("adapter") not in _WRITE_ADAPTER_REGISTRY]
+    if unwritable:
+        raise ValueError(
+            f"write_targets names {unwritable}, which Elysium can only read: "
+            f"writes reach {sorted(_WRITE_ADAPTER_REGISTRY)} silos alone."
         )
     return {name: resolved[name] for name in targets}
 

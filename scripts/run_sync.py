@@ -1071,6 +1071,7 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
         # HOW EACH SILO WRITES NUMBERS AND DATES (DEP-1).
         sync.locales = dict(config.source_locales)
         sync.excel_date_silos = config.excel_date_silos
+        sync.zero_date_silos = config.zero_date_silos
         # CHANGED ROWS ONLY where data_silos.yaml declares a cursor (R2),
         # unless this run was asked to read everything (`--full`).
         sync.incremental = dict(config.incremental)

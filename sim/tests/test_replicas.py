@@ -325,3 +325,30 @@ def test_a_replica_runs_its_sources_engine():
                 "id": {"type": "text", "length": 8, "primary_key": True,
                        "nullable": False}}}}}},
         })
+
+
+@pytest.mark.postgres
+def test_a_replica_withholds_what_its_source_withholds(tmp_path, postgres_binaries):
+    # Found 20 October by the first run of Elysium over field_service:
+    # pay_lines, withheld on dispatch, were readable in full through the
+    # `office` replica. A streamed replica copies the catalog, grants and
+    # all, so the reader is refused there too.
+    import psycopg
+
+    withheld = LAGGING.replace("live:      {kind: postgresql, database: live}",
+                               "live:      {kind: postgresql, database: live, "
+                               "withheld: [orders]}")
+    assert withheld != LAGGING
+    world = runner.build(write_pack(tmp_path, withheld, "lagging"), tmp_path / "var", seed=1)
+    try:
+        runner.seed(world)
+        runner.run(world, total_seconds=7 * 3600, tick_seconds=3600)
+        details = world.connections()["reporting"].details
+        with psycopg.connect(host=details["host"], port=details["port"],
+                             dbname=details["database"], user=details["user"],
+                             password=details["password"]) as connection, \
+                pytest.raises(psycopg.errors.InsufficientPrivilege):
+            connection.execute("SELECT count(*) FROM orders")
+        assert counts(world)[1] > 0, "the copy is still made; only the reader is refused"
+    finally:
+        runner.stop(world)

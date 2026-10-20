@@ -18,7 +18,7 @@ import pytest
 from sqlalchemy import text
 
 from adapters.sqlalchemy_adapter import MYSQL_POOL_RECYCLE_SECONDS, SQLAlchemyReadAdapter
-from core.ontology.interface import StorageUnavailable
+from core.ontology.interface import RowsHidden, StorageUnavailable
 
 
 @pytest.fixture(scope="module")
@@ -199,12 +199,14 @@ class TestRowsHiddenFromTheSync:
         adapter = server("reader")
 
         warning = adapter.rows_hidden_from_this_reader("locked")
+        assert warning.every_row, "no policy: certain"
 
         assert adapter.read_all_rows("locked", ["id"], {}) == [], "the trap itself: nothing, no error"
         assert "NO rows" in warning and "BYPASSRLS" in warning
 
     def test_a_policy_is_counted(self, server):
-        assert "1 policy decide" in server("reader").rows_hidden_from_this_reader("governed")
+        governed = server("reader").rows_hidden_from_this_reader("governed")
+        assert "1 policy decide" in governed and not governed.every_row
 
     def test_an_account_that_bypasses_it_is_not_warned(self, server):
         assert server("bypasser").rows_hidden_from_this_reader("locked") is None
@@ -274,7 +276,9 @@ def test_a_refused_empty_read_names_the_likely_cause_first(tmp_path):
     sync = IcebergMirrorSync(tmp_path / "mirror", {"s": adapter})
     sync.sync_table("s", "t", "id", ["id", "v"])
     with sqlite3.connect(db) as conn:
-        conn.execute("DELETE FROM t")
+        # All but one: a read that came back EMPTY is refused outright
+        # since 20 October (the test below); this is the shrunken one.
+        conn.execute("DELETE FROM t WHERE id != '0'")
     adapter.warn = "t has row-level security switched on."
 
     with pytest.raises(Exception) as refused:
@@ -283,3 +287,72 @@ def test_a_refused_empty_read_names_the_likely_cause_first(tmp_path):
     message = str(refused.value)
     assert "THE LIKELY CAUSE: t has row-level security" in message
     assert message.index("LIKELY CAUSE") < message.index("--accept-deletions")
+
+
+EVERY_ROW = RowsHidden("t has row-level security switched on, and no policy.", every_row=True)
+
+
+class TestAnEmptyReadWithRowsHidden:
+    """FOUND 20 OCTOBER by the first run of Elysium over a simulated
+    world: row-level security with no policy on a table's FIRST sync
+    published an empty table -- no copy to compare against, so the
+    deletion guard never spoke -- and a user saw no work orders where
+    the business had 76."""
+
+    def _sync(self, tmp_path, rows, warn):
+        import sqlite3
+
+        from adapters.sqlite_adapter import SQLiteReadAdapter
+        from core.mirror.iceberg_sync import IcebergMirrorSync
+
+        class Hiding(SQLiteReadAdapter):
+            def rows_hidden_from_this_reader(self, table_name):
+                return warn
+
+        db = tmp_path / "s.db"
+        with sqlite3.connect(db) as conn:
+            conn.execute("CREATE TABLE t (id TEXT, v TEXT)")
+            conn.executemany("INSERT INTO t VALUES (?, ?)", [(str(i), "x") for i in range(rows)])
+        return IcebergMirrorSync(tmp_path / "mirror", {"s": Hiding({"path": str(db)})})
+
+    def test_a_first_sync_that_reads_nothing_is_refused_and_says_why(self, tmp_path):
+        from core.mirror.iceberg_sync import SuspectedPartialRead
+
+        sync = self._sync(tmp_path, 0, EVERY_ROW)
+
+        with pytest.raises(SuspectedPartialRead) as refused:
+            sync.sync_table("s", "t", "id", ["id", "v"])
+
+        assert "row-level security" in str(refused.value)
+        assert "--accept-deletions" not in str(refused.value), "a grant is the remedy"
+        assert not sync._catalog.namespace_exists("bronze_s"), "nothing is written"
+
+    def test_accepting_deletions_does_not_wave_it_through(self, tmp_path):
+        from core.mirror.iceberg_sync import SuspectedPartialRead
+
+        sync = self._sync(tmp_path, 0, EVERY_ROW)
+
+        with pytest.raises(SuspectedPartialRead):
+            sync.sync_table("s", "t", "id", ["id", "v"], accept_deletions=True)
+
+    def test_an_empty_table_nothing_hides_is_published_as_empty(self, tmp_path):
+        """THE CONTROL: an empty table is an ordinary thing to be."""
+        result = self._sync(tmp_path, 0, None).sync_table("s", "t", "id", ["id", "v"])
+
+        assert result.row_count == 0
+
+    def test_an_empty_read_under_a_policy_is_an_empty_table(self, tmp_path):
+        """A policy may let the account read every row; the table may be
+        really empty. Refusing would refuse it for ever (found in review)."""
+        result = self._sync(tmp_path, 0, RowsHidden("1 policy decides")).sync_table(
+            "s", "t", "id", ["id", "v"])
+
+        assert result.row_count == 0
+
+    def test_rows_read_under_a_warning_are_still_published(self, tmp_path):
+        """A policy may let the account read every row; that cannot be
+        told from here, so a non-empty read is kept, with the warning."""
+        result = self._sync(tmp_path, 3, "1 policy decides").sync_table(
+            "s", "t", "id", ["id", "v"])
+
+        assert result.row_count == 3

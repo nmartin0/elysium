@@ -5,6 +5,9 @@
       connection:
         base_url: "https://api.example.com/v1"
         auth: {type: bearer, token: "${BOOKS_TOKEN}"}
+        # or, for an API whose tokens expire (Xero's custom connections):
+        # auth: {type: oauth_client_credentials, token_url: "https://.../token",
+        #        client_id: "...", client_secret: "${BOOKS_SECRET}", scope: "..."}
         tables:
           invoices:
             path: "/invoices"
@@ -43,6 +46,18 @@ and the IETF RateLimit draft):
     broken API, refused rather than looped on.
   - ONE READ PER SYNC, inside the consistent read: the columns checked and
     the rows copied come from the same pages.
+  - TOKENS THAT EXPIRE ARE ASKED FOR AGAIN (20 October): the OAuth
+    client-credentials grant (RFC 6749 section 4.4), the server-to-server
+    login Xero's custom connections use, with tokens that "expire after 30
+    minutes" and no refresh token. Airbyte's OAuth authenticator and dlt's
+    OAuth2ClientCredentials both take the same four things -- a token
+    URL, a client id and secret, an optional scope -- and keep the token
+    until its `expires_in` runs out. Asked for a minute early, so one does
+    not lapse between a check and a request; and asked for once more, then
+    the request retried once, on a 401 -- a token the server ended early.
+    The client authenticates with HTTP Basic, which RFC 6749 section
+    2.3.1 says every server MUST accept. Found missing by the first run
+    of Elysium over a simulated world, whose API can require it.
   - THE LOGIN GOES TO ONE PLACE: a next page on another host is refused,
     and an error quoting the reply masks every credential (both found in
     review, 19 October). Page and offset paging end on an EMPTY page and
@@ -56,6 +71,7 @@ it is.
 READ ONLY, and only by the sync: questions are answered from gold.
 """
 
+import base64
 import email.utils
 import json
 import re
@@ -64,7 +80,7 @@ from collections.abc import Mapping
 from contextlib import contextmanager
 from decimal import Decimal
 from typing import Any
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import quote_plus, urljoin, urlsplit
 
 import requests
 
@@ -75,6 +91,8 @@ RETRIED = frozenset({429, 500, 502, 503, 504})
 DEFAULT_TIMEOUT_SECONDS = 60          # dlt's request_timeout
 DEFAULT_MAX_RETRIES = 5               # Airbyte's and dlt's
 MAX_RETRY_DELAY_SECONDS = 300         # dlt's request_max_retry_delay
+#: An OAuth token is asked for again this long before it lapses.
+TOKEN_MARGIN_SECONDS = 60
 #: A guard, not a limit anyone should meet: an API that never stops
 #: paging is broken, and this says so instead of reading forever.
 MAX_PAGES = 100_000
@@ -115,12 +133,21 @@ class RestAdapter(ExternalReadAdapter):
         self.base_url = base.rstrip("/") + "/"
         self.timeout = float(connection.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS))
         self.max_retries = int(connection.get("max_retries", DEFAULT_MAX_RETRIES))
-        self._headers, self._params, self._auth = self._credentials(connection.get("auth"))
+        auth = connection.get("auth") if isinstance(connection.get("auth"), Mapping) else {}
+        self._oauth: dict | None = None
+        self._token: tuple[str, float] | None = None      # (access token, good until)
+        self._headers: dict
+        self._params: dict
+        if auth and auth.get("type") == "oauth_client_credentials":
+            self._oauth = self._oauth_settings(auth)
+            self._headers, self._params, self._auth = {}, {}, None
+        else:
+            self._headers, self._params, self._auth = self._credentials(connection.get("auth"))
         # THE RAW SECRETS, for masking: a header's VALUE is "Bearer <token>",
         # and an API that echoes only the token in its error went unmasked
         # (found in review, 19 October).
-        auth = connection.get("auth") if isinstance(connection.get("auth"), Mapping) else {}
-        self._secrets = [str(auth[key]) for key in ("token", "api_key", "password")
+        self._secrets = [str(auth[key]) for key in ("token", "api_key", "password",
+                                                    "client_secret")
                          if auth and auth.get(key)]
         self._origin = _origin(self.base_url)
         tables = connection.get("tables")
@@ -147,6 +174,69 @@ class RestAdapter(ExternalReadAdapter):
         self._session = requests.Session()
 
     @staticmethod
+    def _oauth_settings(auth: Mapping) -> dict:
+        url = auth.get("token_url")
+        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+            raise ValueError("rest: oauth_client_credentials needs token_url, an http(s) URL.")
+        if not auth.get("client_id") or not auth.get("client_secret"):
+            raise ValueError("rest: oauth_client_credentials needs client_id and "
+                             "client_secret (the secret as a ${VAR}).")
+        return {"token_url": url, "client_id": str(auth["client_id"]),
+                "client_secret": str(auth["client_secret"]),
+                "scope": str(auth["scope"]) if auth.get("scope") else None}
+
+    def _bearer(self, *, renew: bool = False) -> dict:
+        """The Authorization header for an OAuth source: the token held,
+        or a new one when it is about to lapse or `renew` says so."""
+        assert self._oauth is not None
+        if not renew and self._token is not None and time.time() < self._token[1]:
+            return {"Authorization": f"Bearer {self._token[0]}"}
+        form = {"grant_type": "client_credentials"}
+        if self._oauth["scope"]:
+            form["scope"] = self._oauth["scope"]
+        # RFC 6749 section 2.3.1: the id and secret are form-encoded, THEN
+        # joined and Base64'd -- which requests' auth=(id, secret) skips,
+        # so a secret holding "+" or "/" reached the server changed (found
+        # in review, 20 October).
+        pair = (f"{quote_plus(self._oauth['client_id'])}:"
+                f"{quote_plus(self._oauth['client_secret'])}")
+        basic = base64.b64encode(pair.encode()).decode()
+        try:
+            response = self._session.post(
+                self._oauth["token_url"], data=form, timeout=self.timeout,
+                headers={"Authorization": f"Basic {basic}"})
+        except (requests.ConnectionError, requests.Timeout) as e:
+            raise StorageUnavailable(f"rest {self._oauth['token_url']}: "
+                                     f"{type(e).__name__} asking for a token.") from e
+        if response.status_code in RETRIED:
+            raise StorageUnavailable(f"rest {self._oauth['token_url']}: HTTP "
+                                     f"{response.status_code} asking for a token.")
+        if response.status_code >= 400:
+            raise self._refused(self._oauth["token_url"], response)
+        try:
+            body = response.json()
+            token = str(body["access_token"])
+        except (ValueError, KeyError, TypeError) as e:
+            raise ApiRefused(f"rest {self._oauth['token_url']}: the token reply carries no "
+                             f"access_token.") from e
+        # A number, or a number as text, which some servers send. Absent
+        # or unreadable: kept until the API refuses it, which the 401
+        # handling below renews.
+        try:
+            lifetime = float(body["expires_in"]) if not isinstance(
+                body.get("expires_in"), bool) else None
+        except (KeyError, TypeError, ValueError):
+            lifetime = None
+        # The margin never more than half the life, or a short-lived token
+        # would be asked for again before every page.
+        good_until = (time.time() + lifetime - min(TOKEN_MARGIN_SECONDS, lifetime / 2)
+                      if lifetime is not None and lifetime > 0 else float("inf"))
+        self._token = (token, good_until)
+        if token not in self._secrets:
+            self._secrets.append(token)
+        return {"Authorization": f"Bearer {token}"}
+
+    @staticmethod
     def _credentials(auth) -> tuple[dict, dict, "tuple | None"]:
         """(headers, query params, basic auth). The values arrive with
         ${VAR} already expanded from the environment by the loader."""
@@ -166,7 +256,9 @@ class RestAdapter(ExternalReadAdapter):
         if kind == "basic" and auth.get("username") is not None:
             return {}, {}, (auth["username"], auth.get("password") or "")
         raise ValueError("rest: auth must be {type: bearer, token}, {type: api_key, name, "
-                         "api_key, in: header|query}, or {type: basic, username, password}.")
+                         "api_key, in: header|query}, {type: basic, username, password}, or "
+                         "{type: oauth_client_credentials, token_url, client_id, "
+                         "client_secret}.")
 
     # ---- one request -----------------------------------------------------
 
@@ -182,16 +274,24 @@ class RestAdapter(ExternalReadAdapter):
             raise ApiRefused(f"rest: the API pointed the next page at {_origin(url)}, not "
                              f"{self._origin}; the credential is not sent there.")
         attempt = 0
+        renewed = False
         while True:
+            headers = self._headers if self._oauth is None else self._bearer()
             try:
                 response = self._session.get(url, params={**self._params, **params},
-                                             headers=self._headers, auth=self._auth,
+                                             headers=headers, auth=self._auth,
                                              timeout=self.timeout)
             except (requests.ConnectionError, requests.Timeout) as e:
                 failure, wait = f"{type(e).__name__}", None
             else:
                 if response.status_code < 400:
                     return response
+                if response.status_code == 401 and self._oauth is not None and not renewed:
+                    # Ended early, or lapsed in transit: one new token, one
+                    # retry. A second 401 is the credentials being refused.
+                    renewed = True
+                    self._bearer(renew=True)
+                    continue
                 if response.status_code not in RETRIED:
                     raise self._refused(url, response)
                 failure = f"HTTP {response.status_code}"

@@ -75,6 +75,24 @@ class TestWhichSilosGetAWriteAdapter:
         rather than breaking on upgrade."""
         assert _writable_silo_configs(_Config(None), SILOS) == SILOS
 
+    def test_absent_leaves_out_what_cannot_be_written(self):
+        """FOUND BY THE FIRST RUN OVER A SIMULATED WORLD, 20 October.
+        Kept whole, a PostgreSQL, CSV or REST silo here stopped the
+        deployment loading -- "Unknown adapter type 'rest'" -- for a
+        write nobody asked for. Only SQLite can be written; the old
+        behaviour never wrote anywhere else."""
+        mixed = {**SILOS, "books": {"adapter": "rest"}, "ops": {"adapter": "sqlalchemy"},
+                 "drop": {"adapter": "csv_folder"}}
+
+        assert _writable_silo_configs(_Config(None), mixed) == SILOS
+        assert _writable_silo_configs(_Config(None), {"books": {"adapter": "rest"}}) == {}
+
+    def test_a_named_silo_that_can_only_be_read_is_an_error(self):
+        mixed = {**SILOS, "books": {"adapter": "rest"}}
+
+        with pytest.raises(ValueError, match="can only read"):
+            _writable_silo_configs(_Config(("books",)), mixed)
+
     def test_absent_warns_and_names_a_real_silo(self, caplog):
         """A warning that says 'configure it' without saying what to
         write is a warning somebody ignores."""

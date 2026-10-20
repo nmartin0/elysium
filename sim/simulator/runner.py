@@ -157,10 +157,18 @@ def build(pack: PackSpec, data_dir: Path, *, seed: int = 1,
             # After the tables exist, because there is nothing to
             # revoke before that. See reader.withhold.
             grant_existing(silos[silo_name], database)
-            withhold(silos[silo_name], database,
-                     pack.silo(silo_name).withheld, pack.silo(silo_name).kind)
-            secure_rows(silos[silo_name], database,
-                        tuple(getattr(silos[silo_name], "row_security", ())))
+            # A replica carries its source's permissions, as a streamed
+            # one does: grants and row security are in the catalog it
+            # copies. Found 20 October by the first run of Elysium over a
+            # world: field_service's withheld pay_lines were readable in
+            # full through its `office` replica.
+            origin = pack.silo(silo_name).replicates or silo_name
+            withheld = tuple(dict.fromkeys((*pack.silo(origin).withheld,
+                                            *pack.silo(silo_name).withheld)))
+            withhold(silos[silo_name], database, withheld, pack.silo(silo_name).kind)
+            secure_rows(silos[silo_name], database, tuple(dict.fromkeys(
+                (*getattr(silos[origin], "row_security", ()),
+                 *getattr(silos[silo_name], "row_security", ())))))
     except Exception as failure:
         # A half-built world is worse than none: its ports are held and
         # its clusters are running, so the next attempt fails on a

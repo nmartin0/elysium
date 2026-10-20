@@ -58,6 +58,8 @@ data_silos:
 #      # SQLAlchemy refuse a server that is not MariaDB; utf8mb4 is the
 #      # charset that holds every character (MySQL's "utf8" does not).
 #      url: "mariadb+pymysql://elysium:${SHOP_DB_PASSWORD}@db.internal:3306/shop?charset=utf8mb4"
+#    # zero_dates_as_null: true  # an application that writes 0000-00-00 for "no
+#    #                           # date": read those as empty rather than refused
 #
 #  supplier_files:
 #    adapter: csv_folder
@@ -93,6 +95,8 @@ data_silos:
 #      auth: {type: bearer, token: "${BOOKS_TOKEN}"}
 #      #   or {type: api_key, name: "X-Api-Key", api_key: "${KEY}", in: header|query}
 #      #   or {type: basic, username: "elysium", password: "${PASS}"}
+#      #   or {type: oauth_client_credentials, token_url: "https://.../token",
+#      #       client_id: "...", client_secret: "${BOOKS_SECRET}"}   # tokens that expire
 #      tables:
 #        invoices:
 #          path: "/invoices"

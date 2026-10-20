@@ -259,3 +259,74 @@ class TestFoundInReview:
         adapter = CsvFolderAdapter({"path": tmp_path, "tables": {"sold": {"files": "sold_*.csv"}}})
 
         assert len(adapter.read_all_rows("sold", ["id"], CONFIG)) == 3
+
+
+class TestCompressedFiles:
+    """Read as Fivetran's file connectors read them (20 October)."""
+
+    def _zipped(self, folder, name, members):
+        import zipfile
+
+        with zipfile.ZipFile(folder / name, "w") as archive:
+            for member, text in members.items():
+                archive.writestr(member, text)
+
+    def test_a_zipped_export_from_the_simulator_is_read(self, tmp_path):
+        from simulator.silos.filedrop import FileDropSilo
+
+        drop = FileDropSilo(name="supplier", data_dir=tmp_path, zipped=True)
+        drop.create()
+        drop.write_csv("sold_2026-01-05.csv", ["id", "qty"], [["a", "1"], ["b", "2"]])
+        adapter = CsvFolderAdapter({"path": drop.path, "encoding": "utf-8-sig",
+                                    "tables": {"sold": {"files": "sold_*.csv.zip",
+                                                        "shape": "combined"}}})
+
+        assert _rows(adapter) == [{"id": "a", "qty": "1"}, {"id": "b", "qty": "2"}]
+
+    def test_a_gzipped_file_is_read(self, tmp_path):
+        import gzip
+
+        (tmp_path / "sold_1.csv.gz").write_bytes(gzip.compress(b"id,qty\na,1\n"))
+        adapter = CsvFolderAdapter({"path": tmp_path, "tables": {
+            "sold": {"files": "sold_*.csv.gz", "shape": "combined"}}})
+
+        assert _rows(adapter) == [{"id": "a", "qty": "1"}]
+
+    def test_a_zip_of_several_files_stops_the_table_rather_than_guess(self, tmp_path):
+        self._zipped(tmp_path, "sold_1.zip", {"a.csv": "id,qty\na,1\n", "b.csv": "id,qty\nb,2\n"})
+        adapter = CsvFolderAdapter({"path": tmp_path, "tables": {
+            "sold": {"files": "sold_*.zip", "shape": "combined"}}})
+
+        with pytest.raises(BadLine, match="holds 2 files"):
+            _rows(adapter)
+
+    def test_a_mac_archives_hidden_extras_are_not_counted(self, tmp_path):
+        self._zipped(tmp_path, "sold_1.zip", {"sold.csv": "id,qty\na,1\n",
+                                              "__MACOSX/._sold.csv": "junk"})
+        adapter = CsvFolderAdapter({"path": tmp_path, "tables": {
+            "sold": {"files": "sold_*.zip", "shape": "combined"}}})
+
+        assert _rows(adapter) == [{"id": "a", "qty": "1"}]
+
+    def test_a_cut_off_archive_is_a_broken_file(self, tmp_path):
+        (tmp_path / "sold_1.zip").write_bytes(b"PK\x03\x04 not really")
+        adapter = CsvFolderAdapter({"path": tmp_path, "tables": {
+            "sold": {"files": "sold_*.zip", "shape": "combined"}}})
+
+        with pytest.raises(BadLine, match="not a whole zip"):
+            _rows(adapter)
+
+
+    def test_a_damaged_gzip_is_a_broken_file_naming_it(self, tmp_path):
+        import gzip
+
+        # Damaged inside the compressed stream, which zlib reports as its
+        # own error, not an OSError (found in review).
+        damaged = bytearray(gzip.compress(b"id,qty\n" + b"a,1\n" * 2000))
+        damaged[20:30] = b"\xff" * 10
+        (tmp_path / "sold_1.csv.gz").write_bytes(bytes(damaged))
+        adapter = CsvFolderAdapter({"path": tmp_path, "tables": {
+            "sold": {"files": "sold_*.csv.gz", "shape": "combined"}}})
+
+        with pytest.raises(BadLine, match="sold_1.csv.gz"):
+            _rows(adapter)

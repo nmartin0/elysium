@@ -38,6 +38,19 @@ BigQuery and Snowflake loads):
     (Spring Integration's `.writing`, the simulator's `.part`), so
     temporary names are skipped. No tool documents a "minimum age" rule,
     and a delay "does not prove completion" (Files.com), so there is none.
+    AND WHAT IT CANNOT CATCH: a file written in place and read mid-write
+    can stop inside a row's last value, every row still the header's
+    width -- "2;4567,00" read as "2;456". Its last line has no line
+    ending, but RFC 4180 lets a sound file end that way too, so it is not
+    refused (found running over a simulated world, 20 October;
+    BLOCKING.md records the judgement).
+  - COMPRESSED FILES ARE READ (20 October), as Fivetran's file connectors
+    read CSV "compressed with gzip, zip, bz2, or zstd": a file named
+    `.gz` or `.zip` is opened, the pattern matching the archive's own name.
+    A zip must hold ONE file -- which of several is "the table" is a
+    guess, so more is a broken file, stopping the table like a broken
+    line. Found missing by the first run of Elysium over a simulated
+    world, whose drops can be zipped.
   - ONE LISTING PER SYNC: inside a consistent read, a table's files are
     listed once, so the columns checked and the rows read come from the
     same files, and a file arriving mid-sync waits for the next one.
@@ -53,8 +66,11 @@ are refused with a message rather than half-implemented.
 
 import csv
 import fnmatch
+import gzip
 import io
 import os
+import zipfile
+import zlib
 from collections.abc import Mapping
 from contextlib import contextmanager
 from pathlib import Path
@@ -159,10 +175,37 @@ class CsvFolderAdapter(ExternalReadAdapter):
                 f"for table {table_name!r}.")
         return files[-1:] if self._spec(table_name)["shape"] == "latest" else files
 
+    @staticmethod
+    def _bytes(path: Path) -> bytes:
+        """A file's contents, opened if it is compressed."""
+        raw = path.read_bytes()
+        name = path.name.lower()
+        if name.endswith(".gz"):
+            try:
+                return gzip.decompress(raw)
+            except (OSError, EOFError, zlib.error) as e:
+                raise BadLine(f"{path.name}: is not a whole gzip file ({e}).") from e
+        if name.endswith(".zip"):
+            try:
+                with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                    # Hidden entries are not the table: macOS adds
+                    # __MACOSX/._<name> to every archive it makes.
+                    members = [m for m in archive.infolist() if not m.is_dir()
+                               and not m.filename.rsplit("/", 1)[-1].startswith(".")]
+                    if len(members) != 1:
+                        raise BadLine(
+                            f"{path.name}: holds {len(members)} files; an archive is read "
+                            f"when it holds one, because which of several is the table "
+                            f"would be a guess.")
+                    return archive.read(members[0])
+            except zipfile.BadZipFile as e:
+                raise BadLine(f"{path.name}: is not a whole zip file ({e}).") from e
+        return raw
+
     def _read(self, path: Path) -> tuple[list[str], list[tuple[int, dict]]]:
         """(header, [(line number, row)]) for one file, or BadLine."""
         try:
-            text = path.read_bytes().decode(self.encoding)
+            text = self._bytes(path).decode(self.encoding)
         except UnicodeDecodeError as e:
             raise BadLine(f"{path.name}: is not {self.encoding} text (byte {e.start}). Set "
                           f"connection.encoding to what the file is written in.") from e

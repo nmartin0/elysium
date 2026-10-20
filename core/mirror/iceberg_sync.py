@@ -539,6 +539,8 @@ class IcebergMirrorSync(MirrorSync):
         self.locales: dict = {}
         # SILOS THAT DECLARE EXCEL DATE SERIALS (ZOO-22), set by run_sync.
         self.excel_date_silos: frozenset = frozenset()
+        # SILOS WHOSE ZERO DATES MEAN "NO DATE" (core/ontology/field_types).
+        self.zero_date_silos: frozenset = frozenset()
         # INCREMENTAL TABLES (R2): {(silo, table): IncrementalPolicy}, set
         # by run_sync from data_silos.yaml. Empty means every table is
         # read in full, which is every deployment that has not declared.
@@ -841,7 +843,8 @@ class IcebergMirrorSync(MirrorSync):
         transformed = transform_batches(batches, columns, column_types, standardisation,
                                         security_column=security_column,
                                         locale=locale, localised_columns=text_columns,
-                                        excel_dates=silo_name in self.excel_date_silos)
+                                        excel_dates=silo_name in self.excel_date_silos,
+                                        zero_dates=silo_name in self.zero_date_silos)
         if transformed.has_drift and self._on_type_mismatch == "quarantine":
             # THE ROW, NOT THE TABLE. Databricks separates a MALFORMED
             # RECORD from a TYPE MISMATCH -- "only incomplete and
@@ -1442,7 +1445,24 @@ class IcebergMirrorSync(MirrorSync):
         is deliberately per-run and per-table rather than a config key
         -- the question "did half this table really just go?" has a
         different answer every time it is asked.
+
+        NOTHING READ, WITH EVERY ROW HIDDEN FROM THIS ACCOUNT, IS REFUSED
+        OUTRIGHT -- with no copy to compare against, and whatever
+        --accept-deletions says. Every row: row-level security with no
+        policy, the one case the source makes certain; a policy may let
+        the account read everything, and an empty read under one is an
+        empty table (found in review). Found 20 October by the first run of
+        Elysium over a simulated world: row-level security with no
+        policy on a table's FIRST sync published an empty table, the
+        warning in the log the only sign, and a user saw "no work
+        orders" where the business had 76. The remedy is a grant
+        (BYPASSRLS), never accepting deletions, so the flag cannot
+        wave it through.
         """
+        if getattr(hidden_rows, "every_row", False) and row_count == 0:
+            raise SuspectedPartialRead(
+                f"{silo_name}.{table_name}: the source returned no rows, and {hidden_rows} "
+                f"Nothing is published from this read; the mirror is unchanged.")
         if self._accept_deletions:
             return
         try:

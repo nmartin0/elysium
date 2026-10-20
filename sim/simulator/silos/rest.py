@@ -464,6 +464,9 @@ class RestSilo(Silo):
             except (binascii.Error, UnicodeDecodeError):
                 pair = ""
             client_id, _, secret = pair.partition(":")
+            # Form-encoded before Base64, RFC 6749 section 2.3.1 says.
+            client_id = urllib.parse.unquote_plus(client_id)
+            secret = urllib.parse.unquote_plus(secret)
         if client_id != self.client_id or secret != self.token:
             return 401, {"error": "invalid_client"}
         if form.get("grant_type") != "client_credentials":

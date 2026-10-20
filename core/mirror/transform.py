@@ -63,6 +63,7 @@ from core.mirror.standardise import standardise_explained
 from core.ontology.field_types import (
     DEFAULT_FIELD_DATA_TYPE,
     coerce,
+    is_zero_date,
     split_declared_type,
 )
 
@@ -140,7 +141,8 @@ def transform_rows(rows: list[dict], columns: list[str],
                     security_column: "str | None" = None,
                     locale: "str | None" = None,
                     localised_columns: "frozenset | set | None" = None,
-                    excel_dates: bool = False) -> TransformResult:
+                    excel_dates: bool = False,
+                    zero_dates: bool = False) -> TransformResult:
     """Casts every column to its ontology-declared type, reporting any
     column whose real data does not fit.
 
@@ -210,7 +212,8 @@ def transform_rows(rows: list[dict], columns: list[str],
             try:
                 cleaned_row[column] = coerce(value, declared, source_timezone,
                                              locale if column in localised else None,
-                                             excel_dates=excel_dates)
+                                             excel_dates=excel_dates,
+                                             zero_dates=zero_dates)
                 if declared == "integer" and _has_leading_zeros(value):
                     leading_zeros[column] = leading_zeros.get(column, 0) + 1
             except (ValueError, TypeError):
@@ -264,7 +267,40 @@ def describe_drift(silo_name: str, table_name: str, drift: list[DriftedColumn]) 
             f"but contains {item.example_value!r} "
             f"(checked {item.row_count_checked} rows)"
         )
+        if item.declared_type in ("date", "timestamp", "timestamptz") and \
+                is_zero_date(item.example_value):
+            lines.append(
+                "    That is a MySQL or MariaDB zero date, which an application writes "
+                "for \"no date\". If that is what it means here, declare it on the "
+                "silo -- `zero_dates_as_null: true` in data_silos.yaml -- and it is "
+                "read as empty.")
+        elif item.declared_type == "timestamptz" and _is_naive_moment(item.example_value):
+            # THE FIX, NOT ONLY THE FAULT. Found 20 October running over a
+            # simulated MariaDB: DATETIME has no zone, the refusal was
+            # right, and nothing in it said the answer is to declare the
+            # zone the source writes in.
+            lines.append(
+                "    That is a time with no zone, which an instant cannot be read from "
+                "without one. Declare the zone the source writes in, beside the "
+                "type -- `timezone: UTC`, or an IANA name such as Europe/London -- "
+                "or declare `data_type: timestamp` to keep it as a wall-clock reading."
+            )
     return "\n".join(lines)
+
+
+def _is_naive_moment(value) -> bool:
+    """A date and time with no offset, as text or a datetime."""
+    import datetime as _dt
+
+    if isinstance(value, _dt.datetime):
+        return value.tzinfo is None
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = _dt.datetime.fromisoformat(value.strip())
+    except ValueError:
+        return False
+    return parsed.tzinfo is None and ("T" in value or " " in value.strip())
 
 
 def transform_batches(batches, columns: list[str], column_types: dict[str, str] | None = None,

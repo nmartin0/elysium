@@ -123,6 +123,16 @@ def insert_rows(silo: Silo, database: str, table: Table,
                 f"must carry the same columns"
             )
 
+    if getattr(silo, "zero_dates", False):
+        # A column left out is a date not had, too. Found 20 October: the
+        # business never names a column it does not fill -- a new order
+        # carries no dispatched_at -- so with only explicit Nones replaced
+        # the option wrote no zero dates at all. A legacy application
+        # writing 0000-00-00 writes it in every date it leaves empty.
+        left_out = [c.name for c in table.columns
+                    if c.type in _ZERO and c.nullable and c.name not in expected]
+        columns = [*columns, *left_out]
+        rows = [{**row, **dict.fromkeys(left_out)} for row in rows]
     statement = dialect.insert(table.name, columns)
     values = [[_stored(silo, table, name, row[name]) for name in columns] for row in rows]
     with silo.connect(database) as connection:  # type: ignore[attr-defined]

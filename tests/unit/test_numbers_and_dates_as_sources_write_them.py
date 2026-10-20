@@ -211,3 +211,70 @@ class TestExcelDateSerials:
         (row,) = sync._catalog.load_table("x.t").scan().to_arrow().to_pylist()
         assert row["seen"] == datetime.date(2024, 1, 1)
         assert row["typed"] == datetime.date(2024, 1, 2)
+
+
+class TestZeroDates:
+    """MySQL's and MariaDB's '0000-00-00' for "no date" (20 October),
+    found by the first run of Elysium over a simulated MariaDB."""
+
+    @pytest.mark.parametrize("text", ["0000-00-00", "0000-00-00 00:00:00",
+                                      "0000-00-00 00:00:00.000000", "0000-00-00T00:00:00"])
+    @pytest.mark.parametrize("declared", ["date", "timestamp", "timestamptz"])
+    def test_declared_they_are_empty(self, text, declared):
+        assert coerce(text, declared, "UTC", zero_dates=True) is None
+
+    def test_undeclared_they_are_refused_as_before(self):
+        with pytest.raises(ValueError):
+            coerce("0000-00-00", "date")
+
+    @pytest.mark.parametrize("text", ["0000-01-01", "2026-00-00", "0000-00-00 10:00:00"])
+    def test_only_a_wholly_zero_date_is_empty(self, text):
+        with pytest.raises(ValueError):
+            coerce(text, "timestamp", zero_dates=True)
+
+    def test_a_text_field_keeps_it_as_written(self):
+        assert coerce("0000-00-00", "string", zero_dates=True) == "0000-00-00"
+
+    def test_the_declaration_is_read_per_silo_and_must_be_a_boolean(self):
+        from core.deployment_loader import _excel_date_silos
+
+        assert _excel_date_silos({"a": {"zero_dates_as_null": True}, "b": {}},
+                                 key="zero_dates_as_null") == frozenset({"a"})
+        with pytest.raises(ValueError, match="zero_dates_as_null must be true or false"):
+            _excel_date_silos({"a": {"zero_dates_as_null": "yes"}}, key="zero_dates_as_null")
+
+    def test_through_a_real_sync_and_the_refusal_says_how(self, tmp_path):
+        source = tmp_path / "z.db"
+        conn = sqlite3.connect(source)
+        conn.execute("CREATE TABLE t (id TEXT PRIMARY KEY, shipped TEXT)")
+        conn.executemany("INSERT INTO t VALUES (?, ?)",
+                         [("1", "0000-00-00 00:00:00"), ("2", "2026-01-02 03:04:05")])
+        conn.commit()
+        conn.close()
+
+        def sync(declared):
+            sync = IcebergMirrorSync(tmp_path / f"m-{declared}",
+                                     {"s": SQLiteReadAdapter({"path": source})})
+            sync.zero_date_silos = frozenset({"s"}) if declared else frozenset()
+            return sync.sync_table("s", "t", "id", ["id", "shipped"],
+                                   {"id": "string", "shipped": "timestamp"}), sync
+
+        result, done = sync(True)
+        rows = {r["id"]: r for r in done._catalog.load_table("s.t").scan().to_arrow().to_pylist()}
+        assert rows["1"]["shipped"] is None
+        assert rows["2"]["shipped"] == datetime.datetime(2026, 1, 2, 3, 4, 5)
+
+        with pytest.raises(ValueError, match="zero_dates_as_null: true"):
+            sync(False)
+
+
+    def test_the_advice_is_for_a_wholly_zero_date_only(self):
+        from core.mirror.transform import DriftedColumn, describe_drift
+
+        def advice(value):
+            return "zero_dates_as_null" in describe_drift("s", "t", [DriftedColumn(
+                column="c", declared_type="timestamp", example_value=value,
+                row_count_checked=1)])
+
+        assert advice("0000-00-00 00:00:00")
+        assert not advice("0000-00-00 12:00:00"), "not a zero date; declaring it would not help"
