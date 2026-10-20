@@ -5842,6 +5842,14 @@ CONTROLS = [
         tests=["sim/tests/test_replicas.py::test_a_world_with_a_replica_resumes"],
     ),
     Control(
+        describes="FORECAST: the first period, nearly always a part one, is not fitted",
+        path="core/forecasts.py",
+        old="        return self.starts[1:], self.values[1:]",
+        new="        return self.starts, self.values",
+        tests=["tests/unit/test_forecasts.py::TestTheSeries::"
+               "test_the_first_period_is_shown_but_not_fitted"],
+    ),
+    Control(
         describes="ENRICH: a classified field is never an input to a model",
         path="core/ontology/enriched_fields.py",
         old="        if labels:\n            raise ValueError(",

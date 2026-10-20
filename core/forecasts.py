@@ -34,6 +34,16 @@ by as much as the naive one is not drawn: it says so instead.
 THE PERIOD STILL RUNNING IS LEFT OUT: this week's count on a Wednesday is
 half a week's, and fitted as a whole one it would read as a fall.
 
+AND SO IS THE FIRST, from the fit though not from the chart: the series
+begins in the period of the first record, which almost never falls on
+the period's first day, so the first total is nearly always a part one
+and reads as a slow start. Only totals per period reach this module, so
+whether it was whole cannot be told, and one period is the cost of not
+guessing. Measured on a year of a rising daily count, ten seeds, every
+weekday: drawn on 58 of 70 with it left out against 38 of 70 with it in;
+on a steeper rise, 70 of 70 against 54. Found because the integration
+test failed every Tuesday and Saturday (19 October).
+
 THE BAND is the 80% prediction interval: wide enough to be honest,
 narrow enough to read; a judgement, and stated on the chart. A count's
 band never goes below zero.
@@ -162,7 +172,10 @@ def forecast(values: Sequence[float], starts: Sequence[datetime.date], period: s
     horizon = min(HORIZON[period], n // 3)
     if n < MIN_PERIODS:
         return Forecast([], None, {}, refusal=(
-            f"Only {n} finished {period}s of records; a forecast needs at least {MIN_PERIODS}."))
+            # "Whole": the count is of what is fitted, which leaves out the
+            # first period as well as the running one (see the module note).
+            f"Only {n} whole {period}{'' if n == 1 else 's'} of records to forecast from; "
+            f"a forecast needs at least {MIN_PERIODS}."))
     season = _season_for(period, n)
     try:
         form, fitted = _choose(values, season)
@@ -229,6 +242,12 @@ class Series:
     starts: list
     values: list
     running: "tuple[datetime.date, float] | None"
+
+    @property
+    def to_fit(self) -> "tuple[list, list]":
+        """(starts, values) without the first period, which is nearly
+        always a part one. See the module docstring."""
+        return self.starts[1:], self.values[1:]
 
 
 def finished_series(totals: dict, period: str, today: datetime.date) -> Series:

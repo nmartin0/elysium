@@ -101,7 +101,8 @@ def projection_for(mediator, view, trigger, user_record, today: datetime.date) -
         return {"state": "untrusted",
                 "reason": "only part of the set could be counted, so there is no forecast"}
     series = finished_series(totals, trigger.projected_period, today)
-    made = cached_forecast(series.values, series.starts, trigger.projected_period, True)
+    starts, values = series.to_fit
+    made = cached_forecast(values, starts, trigger.projected_period, True)
     if made.refusal:
         return {"state": "untrusted", "reason": made.refusal.rstrip(".")}
     crossing = next((point for point in made.points

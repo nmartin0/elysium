@@ -103,7 +103,9 @@ class TestWhenItIsTold:
         mediator = Totals({"alice": [5.0, 6.0, 3.0]})    # three weeks: too little
         evaluate_projected(_trigger(), VIEW, mediator, store, people, "d", TODAY)
         (watching,) = _said(store, "alice", WATCHING)
-        assert "No projection yet: Only 2 finished weeks of records" in watching
+        # Three weeks: one running, one the records began part-way through,
+        # one whole one to forecast from.
+        assert "No projection yet: Only 1 whole week of records" in watching
         assert evaluate_projected(_trigger(), VIEW, mediator, store, people, "d", TODAY) == 0
         assert len(_said(store, "alice")) == 1
 

@@ -47,6 +47,14 @@ class TestTheSeries:
         assert series.starts == [D(2026, 10, 5)] and series.running == (D(2026, 10, 12), 1)
         assert 9 not in series.values
 
+    def test_the_first_period_is_shown_but_not_fitted(self):
+        # The records begin part-way through it, nearly always, so its
+        # total is a part one; core/forecasts.py has the measurement.
+        totals = {D(2026, 9, 7): 1, D(2026, 9, 14): 30, D(2026, 9, 21): 31}
+        series = finished_series(totals, "week", D(2026, 9, 30))
+        assert series.values == [1, 30, 31]
+        assert series.to_fit == ([D(2026, 9, 14), D(2026, 9, 21)], [30, 31])
+
     def test_nothing_yet_is_nothing(self):
         assert finished_series({}, "week", D(2026, 10, 14)).starts == []
         assert finished_series({D(2027, 1, 4): 2}, "week", D(2026, 10, 14)).starts == []

@@ -1075,9 +1075,9 @@ move.
 
 ## 11. The simulator as Elysium's live test, and five kinds of source
 
-**AGREED WITH THE OWNER, 19 October, to take up once the agent-speed
-patch has landed.** Nothing here is built yet; the design is the next
-conversation, not this file's.
+**AGREED WITH THE OWNER, 19 October.** Mostly built since: Elysium reads
+all five kinds, and a running world can be operated from outside it
+(item 12, step 1). What is left is the control panel as a page.
 
 **THE SIMULATOR STAYS OUTSIDE ELYSIUM.** `sim/` operates real
 PostgreSQL, MariaDB, SQLite, CSV-folder and REST sources for a
@@ -1089,18 +1089,22 @@ that controlled the world it reads would know a rename was coming,
 and a product shipping a way to create and alter databases is a
 product with one more door. So:
 
-- A CONTROL PANEL SERVED BY THE SIMULATOR ITSELF (`simulator serve`,
-  say), its own page on its own port: start and stop, pause (which it
-  lacks), speed, advance, trigger a scheduled change, choose a pack,
-  status, and each database's connection details to copy. It may
-  borrow Elysium's look; it is not part of the product.
+- A CONTROL PANEL SERVED BY THE SIMULATOR ITSELF, its own page on its
+  own port: start and stop, speed, choose a pack, and each database's
+  connection details to copy. THE CHANNEL UNDER IT IS BUILT
+  (sim/simulator/control.py, 20 October): POST /control on loopback
+  with a token kept in an owner-only `control.json`, carrying status,
+  pause, resume, advance, live drift, outage and restore per source, and
+  the oracle as JSON; `simulator pause`, `outage ops` and the rest send
+  to it. The page is what remains, and it would call the same commands.
+  It may borrow Elysium's look; it is not part of the product.
 - Elysium keeps reading only the databases, wired by an ordinary
   `data_silos.yaml`.
 
 **THE SIMULATOR AS A LIVE TEST OF ELYSIUM.** Point a deployment at a
 running world and check, from outside, that what Elysium serves follows
 what the world did -- rows that arrive, change and vanish, and the
-drifts a pack schedules (no pack declares `migrations` yet). The
+drifts a pack schedules or an operator applies live. The
 simulator's own oracle (`verify`, `watches`) is the yardstick.
 
 **ELYSIUM SHOULD READ ALL FIVE KINDS** -- PostgreSQL, MariaDB, SQLite,
@@ -1118,13 +1122,14 @@ Retry-After, and a refused login stopping at once -- checked against the
 simulator's bookkeeping API, whose 26 invoices matched its PostgreSQL
 exactly. ALL FIVE KINDS ARE NOW READ. Writes reach SQLite alone.
 
-**Found on the way, still open:** a live drift from `simulator drift`
-crashes the running world on its next write to the moved column (the
-engine keeps the old schema) -- for the control panel to fix. (Shared
-reference data, the other thing found, is now declarable:
-`security: unrestricted`, SECURITY_ARCHITECTURE.md.)
+**Found on the way, both closed:** a live drift crashed the running
+world on its next write -- fixed 20 October, the simulated business now
+follows renames and drops (sim/simulator/lineage.py); and shared
+reference data is now declarable (`security: unrestricted`,
+SECURITY_ARCHITECTURE.md).
 
-**Blocked on:** finishing the current work, then agreeing the design.
+**Blocked on:** nothing but order: the page comes after item 12, whose
+runs will show which controls an operator actually reaches for.
 
 ## 12. Make the simulator's sources behave like real ones, then run Elysium over it
 

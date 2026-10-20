@@ -8469,7 +8469,8 @@ def forecast_route(object_type: str, body: ForecastRequest, request: Request,
         # where the cut fell.
         return {**answer, "refusal": "Only part of the set was counted, so there is no "
                 "forecast; narrow the set to forecast all of it."}
-    made = cached_forecast(series.values, series.starts, body.period, body.aggregate == "count")
+    starts, values = series.to_fit
+    made = cached_forecast(values, starts, body.period, body.aggregate == "count")
     return {**answer, **made.as_dict()}
 
 
