@@ -1258,7 +1258,45 @@ What it took:
   `allow_unterminated_last_line: true`. "Done" marker files, the next
   best defence, are not built: no deployment has asked.
 
-**Next in step 3:** longer runs, the pack-scheduled migrations, a
-SQLite source (no pack declares one), and the replica's lag.
+**Two weeks with five migrations, 21 October.** `--migration` adds to a
+pack's timeline. Over field_service with every realism option on: a
+RESCALE of invoice totals by 100 was served -- it is what the source now
+says -- and flagged by the profile monitor ("average 8.167e+04, was
+842.4 (214.1 standard deviations)"); a decimal column retyped to integer
+was named ("CHANGED from NUMERIC(19, 4) to INTEGER ... a value may still
+parse and mean something else"); an added table was left alone; a
+renamed and a dropped table kept their last good copies. Every round
+agreed or refused with a reason. What it took:
+
+- Elysium: the reason a renamed or dropped table gave was "could not
+  read the columns of 'skills': skills" -- and on SQLite "source column
+  'id' ... is gone". The sync now says the table has gone and names the
+  source's tables the mirror does not hold, where a renamed table's new
+  name is.
+- The simulator: a type change that did not say `nullable` made the
+  column nullable in the declared schema while the engine kept NOT
+  NULL, and the world stopped on its own check.
+
+**NOT DONE, AND WHY:**
+
+- A SQLite SOURCE. The simulator's SQLite silo cannot hold tables: it
+  has no SQL dialect, and every relational silo there assumes a server
+  with roles, grants and named databases. Elysium's SQLite reader is
+  the one most of its own suite reads through; driving it from a live
+  simulated application would need a SQLite dialect and session in the
+  simulator, which is buildable.
+- REPLICA LAG. The simulator's replica is a separate database refilled
+  every tick, not a streaming standby, so nothing about lag can be
+  tested honestly against it. The precedent names two effects: a
+  standby's lag is `now() - pg_last_xact_replay_timestamp()` (NULL when
+  the primary is idle, which reads as lag when it is not), and a long
+  read on a standby is cancelled after `max_standby_streaming_delay`,
+  30 seconds by default -- Stitch's symptom is data "trickling" in.
+  Elysium reports a replica as fresh by its own sync time, whatever the
+  replica's lag. A real standby in the simulator (pg_basebackup and
+  `standby.signal`, on the PostgreSQL binaries it already runs) would
+  test both; also buildable.
+
+**Next in step 3:** whichever of those two the owner wants first.
 
 **Blocked on:** nothing; in progress.

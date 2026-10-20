@@ -46,6 +46,23 @@ class TestWhatItReadsFromAPack:
         assert silos["payroll"]["options"]["zipped"] is True
 
 
+class TestWhatItAddsToAPack:
+    def test_a_silo_can_run_as_another_kind(self, tmp_path):
+        retail = FIELD_SERVICE.parent / "retail.yaml"
+        silos = yaml.safe_load(live.overlay(retail, tmp_path / "p.yaml", False,
+                                            kinds={"till": "sqlite"}).read_text())["silos"]
+
+        assert silos["till"]["kind"] == "sqlite" and "database" not in silos["till"]
+
+    def test_migrations_join_the_packs_own(self, tmp_path):
+        rescale = {"at": "9d", "operation": "rescale_column", "table": "dispatch.invoices",
+                   "column": "total", "factor": "100"}
+        spec = yaml.safe_load(live.overlay(FIELD_SERVICE, tmp_path / "p.yaml", False,
+                                           migrations=[rescale]).read_text())
+
+        assert spec["migrations"][-1] == rescale
+
+
 class TestTheDeploymentItWrites:
     CONNECTIONS = {
         "dispatch": {"kind": "postgresql", "host": "127.0.0.1", "port": 5, "database": "d",

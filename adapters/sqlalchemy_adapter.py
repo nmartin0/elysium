@@ -52,9 +52,14 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import NoSuchTableError, SQLAlchemyError
 
-from core.ontology.interface import ExternalReadAdapter, RowsHidden, StorageUnavailable
+from core.ontology.interface import (
+    ExternalReadAdapter,
+    RowsHidden,
+    StorageUnavailable,
+    TableNotFound,
+)
 from core.ontology.schema import get_column_for_field
 
 logger = logging.getLogger(__name__)
@@ -580,11 +585,31 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
                 column["name"]
                 for column in inspect(self._engine).get_columns(table_name)
             }
+        except NoSuchTableError as e:
+            raise TableNotFound(
+                f"{self._describe_source()}: there is no table {table_name!r}") from e
         except SQLAlchemyError as e:
             raise StorageUnavailable(
                 f"{self._describe_source()}: could not read the columns of "
                 f"{table_name!r}: {e}"
             ) from e
+
+    def tables_present(self) -> "set[str] | None":
+        """Tables and views, through the Inspector (see columns_present)."""
+        try:
+            inspector = inspect(self._engine)
+            names = set(inspector.get_table_names()) | set(inspector.get_view_names())
+            # Materialized views, and PostgreSQL's foreign tables, which
+            # the two calls above leave out and a source may be.
+            for extra in ("get_materialized_view_names", "get_foreign_table_names"):
+                try:
+                    names |= set(getattr(inspector, extra)())
+                except (AttributeError, NotImplementedError):
+                    pass
+            return names
+        except SQLAlchemyError as e:
+            logger.warning("%s: could not list tables: %s", self._describe_source(), e)
+            return None
 
     def health_check(self) -> None:
         from sqlalchemy import text

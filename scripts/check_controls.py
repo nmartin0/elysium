@@ -6001,6 +6001,22 @@ CONTROLS = [
                "test_it_is_refused_naming_the_file"],
     ),
     Control(
+        describes="SYNC: a table gone from the source is named as gone",
+        path="core/mirror/iceberg_sync.py",
+        old="        if tables is None or table_name in tables:\n            return",
+        new="        if True:\n            return",
+        tests=["tests/unit/test_a_missing_source_table.py::TestOnSQLite::"
+               "test_a_dropped_table_is_named_as_gone"],
+    ),
+    Control(
+        describes="SIM: a type change keeps NOT NULL unless it says otherwise",
+        path="sim/simulator/spec/migrations.py",
+        old='    if "nullable" not in definition and existing is not None:',
+        new="    if False:",
+        tests=["sim/tests/test_migrations.py::"
+               "test_a_type_change_keeps_not_null_unless_it_says_otherwise"],
+    ),
+    Control(
         describes="ENRICH: a classified field is never an input to a model",
         path="core/ontology/enriched_fields.py",
         old="        if labels:\n            raise ValueError(",

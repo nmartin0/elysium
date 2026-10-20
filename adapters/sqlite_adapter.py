@@ -583,6 +583,19 @@ class SQLiteReadAdapter(ExternalReadAdapter):
             # gone" separately.
             return set()
 
+    #: SQLite matches table names without regard to case.
+    table_names_ignore_case = True
+
+    def tables_present(self) -> "set[str] | None":
+        """Tables and views, by a SELECT on sqlite_master: the operation
+        the read-only authorizer permits (see columns_present)."""
+        try:
+            with self._connection() as conn:
+                return {row[0] for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')")}
+        except sqlite3.Error:
+            return None
+
     def resolve_reverse_link(self, object_id: Any, field_config: dict, target_id_column: str) -> list[Any]:
         # For a MANY-TO-MANY link the row lives in a join table, so the
         # id to return is that table's own target column -- the join

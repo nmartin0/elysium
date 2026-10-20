@@ -91,9 +91,21 @@ ROLE = "live_reader"
 
 # -- the pack -------------------------------------------------------------
 
-def overlay(pack: Path, out: Path, realism: bool, extra: dict | None = None) -> Path:
-    """The pack with each silo's realism options switched on."""
+def overlay(pack: Path, out: Path, realism: bool, extra: dict | None = None,
+            kinds: dict | None = None, migrations: list | None = None) -> Path:
+    """The pack with each silo's realism options switched on; `kinds`
+    runs a silo as another kind of database (no pack declares SQLite),
+    and `migrations` adds to the pack's own timeline of schema changes."""
     spec = yaml.safe_load(pack.read_text())
+    for name, kind in (kinds or {}).items():
+        if name not in spec["silos"]:
+            raise SystemExit(f"--kind {name}={kind}: the pack has no silo {name!r}; "
+                             f"it has {sorted(spec['silos'])}")
+        spec["silos"][name]["kind"] = kind
+        if kind == "sqlite":
+            spec["silos"][name].pop("database", None)      # one file, no databases
+    if migrations:
+        spec["migrations"] = [*(spec.get("migrations") or []), *migrations]
     for silo in (spec.get("silos") or {}).values():
         options = dict(silo.get("options") or {})
         if realism:
@@ -196,8 +208,13 @@ class World:
             data=json.dumps({"command": command, **arguments}).encode(),
             headers={"Authorization": f"Bearer {found['token']}",
                      "Content-Type": "application/json"})
-        with urllib.request.urlopen(request, timeout=900) as response:
-            return json.loads(response.read())["result"]
+        try:
+            with urllib.request.urlopen(request, timeout=900) as response:
+                return json.loads(response.read())["result"]
+        except urllib.error.HTTPError as refused:
+            # THE WORLD'S OWN REASON, which a bare "HTTP Error 400" hid.
+            raise RuntimeError(f"the world refused {command!r}: "
+                               f"{refused.read().decode(errors='replace')[:500]}") from None
 
     @property
     def connections(self) -> dict:
@@ -381,6 +398,17 @@ def read_source(table: Table, found: dict) -> dict[str, dict] | str:
                 with conn.cursor() as cursor:
                     cursor.execute(f"SELECT * FROM `{table.name}`")
                     return _rows(table, list(cursor.fetchall()))
+            finally:
+                conn.close()
+        if kind == "sqlite":
+            import sqlite3
+
+            # READ ONLY, as Elysium's own reader opens it.
+            conn = sqlite3.connect(f"file:{found['path']}?mode=ro", uri=True)
+            conn.row_factory = sqlite3.Row
+            try:
+                return _rows(table, [dict(r) for r in conn.execute(
+                    f'SELECT * FROM "{table.name}"').fetchall()])
             finally:
                 conn.close()
         if kind == "rest":
@@ -587,11 +615,12 @@ def sync(paths, env: dict) -> tuple[int, str]:
 
 def run(pack: Path, work: Path, rounds: int, advance: str, realism: bool, days: int,
         seed: int, extra: dict | None = None, events: dict | None = None,
-        report=print) -> list[Finding]:
+        report=print, kinds: dict | None = None,
+        migrations: list | None = None) -> list[Finding]:
     from core.deployment_loader import RuntimePaths, load_deployment_bundle
     from core.intermediate_layer.auth import UserRecord
 
-    spec_path = overlay(pack, work / "pack.yaml", realism, extra)
+    spec_path = overlay(pack, work / "pack.yaml", realism, extra, kinds, migrations)
     spec = yaml.safe_load(spec_path.read_text())
     tables = tables_of(spec)
     findings: list[Finding] = []
@@ -690,7 +719,14 @@ def main(argv: list[str] | None = None) -> int:
                         help="a control command before a round's sync, e.g. "
                              "2:outage:{\"silo\":\"books\"} or "
                              "3:drift:{\"operation\":\"drop_column\",...}")
+    parser.add_argument("--kind", action="append", default=[], metavar="SILO=KIND",
+                        help="run a silo as another database, e.g. till=sqlite")
+    parser.add_argument("--migration", action="append", default=[], metavar="JSON",
+                        help="one more scheduled schema change, as a pack writes it, e.g. "
+                             "{\"at\":\"9d\",\"operation\":\"rescale_column\",...}")
     arguments = parser.parse_args(argv)
+    kinds = dict(kind.split("=", 1) for kind in arguments.kind)
+    migrations = [json.loads(m) for m in arguments.migration]
     extra: dict[str, dict] = {}
     for option in arguments.option:
         key, _, value = option.partition("=")
@@ -703,7 +739,7 @@ def main(argv: list[str] | None = None) -> int:
             (command, json.loads(rest[0]) if rest else {}))
     findings = run(arguments.pack.resolve(), arguments.work.resolve(), arguments.rounds,
                    arguments.advance, arguments.realism, arguments.days, arguments.seed,
-                   extra, events)
+                   extra, events, kinds=kinds, migrations=migrations)
     print(f"\n{len(findings)} disagreement(s)")
     for finding in findings:
         print(f"  {finding}")

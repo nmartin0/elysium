@@ -92,7 +92,7 @@ from core.ontology.field_types import (
     arrow_type_for,
     split_declared_type,
 )
-from core.ontology.interface import ExternalReadAdapter, IncrementalUnsupported
+from core.ontology.interface import ExternalReadAdapter, IncrementalUnsupported, TableNotFound
 
 logger = logging.getLogger(__name__)
 
@@ -679,7 +679,15 @@ class IcebergMirrorSync(MirrorSync):
         # case at all -- it surfaced as whatever the SELECT raised,
         # which is the storage-dictated behaviour drift_policy exists
         # to replace.
-        present = adapter.columns_present(table_name)
+        try:
+            present = adapter.columns_present(table_name)
+        except TableNotFound:
+            # ONLY WHEN THE SOURCE SAYS SO: a denied read or a timeout
+            # keeps its own reason (found in review, 21 October).
+            self._refuse_a_missing_table(adapter, silo_name, table_name)
+            raise
+        if not present:
+            self._refuse_a_missing_table(adapter, silo_name, table_name)
         missing = [column for column in columns if column not in present]
         # ROWS THIS ACCOUNT MAY NOT SEE, asked before reading for the same
         # reason: the read itself cannot tell -- PostgreSQL's default-deny
@@ -1421,6 +1429,47 @@ class IcebergMirrorSync(MirrorSync):
             shape=verdicts[0].shape,
             detail="\n".join(verdict.detail for verdict in verdicts),
         )
+
+    def _refuse_a_missing_table(self, adapter, silo_name: str, table_name: str) -> None:
+        """If the table is not in the source at all, say THAT, naming the
+        tables there the mirror does not hold -- a renamed table's new name
+        is one of them. Returns quietly when the source cannot say.
+
+        WHAT THE PRECEDENT DOES with a source table that goes: Fivetran
+        keeps the destination table and stops updating it; nothing infers
+        a table rename, any more than a column one. Elysium keeps its last
+        good copy, and the operator repoints `storage.table` or removes
+        the type.
+        """
+        tables = adapter.tables_present()
+        if tables is None or table_name in tables:
+            return
+        # SQLite's names ignore case, as its lookups do: "Orders" reads
+        # a table stored as orders.
+        if getattr(adapter, "table_names_ignore_case", False) and \
+                table_name.casefold() in {name.casefold() for name in tables}:
+            return
+        try:
+            held = {name[-1] for name in self._catalog.list_tables(f"bronze_{silo_name}")}
+        except (NoSuchNamespaceError, NoSuchTableError):
+            held = set()
+        others = sorted(tables - held - {table_name})
+        named = ", ".join(repr(name) for name in others[:10]) + (
+            f" and {len(others) - 10} more" if len(others) > 10 else "")
+        if table_name not in held:
+            # NEVER SYNCED: a name the ontology has wrong, not a table gone.
+            raise ValueError(
+                f"{silo_name}.{table_name}: the source has no table {table_name!r}. "
+                + (f"It has: {named}. " if others else "")
+                + "Check the type's `storage.table` in ontology_schema.yaml.")
+        raise ValueError(
+            f"{silo_name}.{table_name}: the source has no table {table_name!r} any more -- "
+            f"renamed or dropped. The mirror is unchanged and still serving its last good "
+            f"contents. "
+            + (f"The source has tables the mirror does not hold: {named}; if it was "
+               f"renamed, point the type's `storage.table` at its new name in "
+               f"ontology_schema.yaml. " if others else "")
+            + "If it was dropped, remove the type, or leave it serving its last copy.")
 
     def _previous_source_columns(self, silo_name: str, table_name: str) -> "set[str] | None":
         """The columns the source had when bronze was last written, or None

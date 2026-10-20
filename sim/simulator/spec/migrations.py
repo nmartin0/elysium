@@ -19,6 +19,7 @@ names, so the words a pack writes are a decision rather than an
 accident of refactoring.
 """
 
+from dataclasses import replace
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -126,8 +127,22 @@ def _rename_column(definition, path, table_name, schema):
 
 def _change_column_type(definition, path, table_name, schema):
     name = _string(definition, "column", path)
-    return ChangeColumnType(table=table_name, column=name,
-                            new_column=_migration_column(definition, path, name))
+    # A type change keeps NOT NULL unless it says otherwise, as ALTER
+    # COLUMN ... TYPE does in both engines. Unsaid, it defaulted to
+    # nullable, the engine kept NOT NULL, and the world stopped on its
+    # own check that the schema changed as declared (found running
+    # Elysium over a world, 21 October).
+    try:
+        existing = schema.table(table_name).column(name)
+    except (KeyError, ValueError):
+        existing = None                  # the builder's own check names it
+    if "nullable" not in definition and existing is not None:
+        definition = {**definition, "nullable": existing.nullable}
+    built = _migration_column(definition, path, name)
+    if existing is not None and existing.primary_key and not built.primary_key:
+        # A retyped key is still the key (found in review, 21 October).
+        built = replace(built, primary_key=True, nullable=False)
+    return ChangeColumnType(table=table_name, column=name, new_column=built)
 
 def _rename_table(definition, path, table_name, schema):
     return RenameTable(old_name=table_name, new_name=_string(definition, "to", path))

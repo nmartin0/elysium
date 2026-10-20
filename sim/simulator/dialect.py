@@ -247,9 +247,15 @@ class PostgresDialect(SqlDialect):
         # point of retyping in a drift test is that the data already
         # in the column comes along.
         rendered = self.render_type(column)
+        # And nullability, which ALTER ... TYPE leaves alone: a migration
+        # saying `nullable` stopped the world on its own schema check
+        # (found in review, 21 October). Unsaid, the builder carries the
+        # column's own over, so this restates what it already was.
         return (f"ALTER TABLE {self.quote(table_name)} "
                 f"ALTER COLUMN {self.quote(column.name)} TYPE {rendered} "
-                f"USING {self.quote(column.name)}::{rendered}")
+                f"USING {self.quote(column.name)}::{rendered}, "
+                f"ALTER COLUMN {self.quote(column.name)} "
+                + ("DROP NOT NULL" if column.nullable else "SET NOT NULL"))
 
 
 class MariaDbDialect(SqlDialect):

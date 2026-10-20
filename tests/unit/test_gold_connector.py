@@ -203,6 +203,9 @@ class TestItIsNotAnAdapter:
         # into bronze (R5). The mediator reads objects, never tables.
         asked.discard("iter_all_rows")
         asked.discard("iter_rows_since")  # R2, the sync's too
+        # tables_present: the sync asking whether a source table it reads
+        # has gone; gold's tables are its own declaration.
+        asked.discard("tables_present")
 
         missing = {name for name in asked if not hasattr(GoldConnector, name)}
 

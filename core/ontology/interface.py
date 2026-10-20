@@ -101,6 +101,13 @@ class StorageUnavailable(RuntimeError):
     """
 
 
+
+class TableNotFound(StorageUnavailable):
+    """The source itself says the table does not exist -- not a denied
+    read or a timeout, which keep their own reasons (found in review,
+    21 October: on MySQL a revoked grant hides a table from the listing
+    too, and was reported as a table gone)."""
+
 class RowsHidden(str):
     """Why rows may be hidden from the account a source is read as -- and
     whether it is EVERY row (`every_row`), which is certain only when the
@@ -314,6 +321,18 @@ class ExternalReadAdapter(ReadAdapter):
         """
         raise IncrementalUnsupported(
             f"{type(self).__name__} cannot read changed rows only")
+
+    def tables_present(self) -> "set[str] | None":
+        """The names of the tables (and views) the source holds now, or
+        None when it cannot say -- a folder, an API, a failed look.
+
+        FOR ONE QUESTION: is a table the sync reads still there? Without
+        it a renamed or dropped table surfaced as whatever reading its
+        columns raised -- "could not read the columns of 'skills':
+        skills", or on SQLite "column 'id' is gone" -- found running
+        Elysium over a simulated world, 21 October. Names only.
+        """
+        return None
 
     def rows_hidden_from_this_reader(self, table_name: str) -> "RowsHidden | str | None":
         """Why some rows of `table_name` may be invisible to the account

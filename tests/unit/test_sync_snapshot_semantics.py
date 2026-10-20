@@ -205,13 +205,10 @@ def test_syncing_a_table_that_does_not_exist_fails_loudly(sync):
     # table must be an error, since an empty mirror is otherwise
     # indistinguishable from a genuinely empty source.
     #
-    # ValueError, not sqlite3.OperationalError, since the drift policy
-    # landed: a missing table means every declared column is missing,
-    # which the policy decides on BEFORE the adapter's SELECT gets a
-    # chance to fail. The property this guards is unchanged and the
-    # message is strictly better -- it now says what to do rather than
-    # naming a SQLite error.
-    with pytest.raises(ValueError, match="gone"):
+    # ValueError, not sqlite3.OperationalError. Since 21 October it says
+    # the table is not there and to check the name, where it used to say
+    # a column was gone -- true of every column, and not the news.
+    with pytest.raises(ValueError, match="no table 'nonexistent'.*storage.table"):
         sync.sync_table("primary", "nonexistent", "id", ["id"])
 
 

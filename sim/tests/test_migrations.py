@@ -361,3 +361,46 @@ def test_every_operation_can_be_declared():
         {"at": "8d", "operation": "drop_table", "table": "ops.refunds"},
     ]))
     assert len(pack.migrations) == 8
+
+
+
+@pytest.mark.postgres
+def test_a_type_change_keeps_not_null_unless_it_says_otherwise(tmp_path, postgres_binaries):
+    # Found 21 October: unsaid, the column became nullable in the
+    # declared schema, the engine kept NOT NULL, and the world stopped
+    # on its own check.
+    rescale = "  - at: 6d\n    operation: rescale_column"
+    assert rescale in SHOP
+    pack = SHOP.replace(rescale, "  - at: 4d\n    operation: change_column_type\n"
+                        "    table: ops.orders\n    column: customer\n    type: text\n"
+                        "    length: 200\n" + rescale)
+    with running_world(tmp_path, pack, seed=8) as built:
+        runner.run(built, total_seconds=5 * 86400, tick_seconds=3600)
+
+        assert any("retyped orders.customer" in entry["detail"]
+                   for entry in history(built.silo("ops"), "ops"))
+        assert built.schema("ops").table("orders").column("customer").nullable is False
+
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(("column", "said", "after"), [
+    ("customer", True, True),       # NOT NULL made nullable, as asked
+    ("order_id", None, False),      # the key, retyped, is still the key
+], ids=["nullable_said", "key_retyped"])
+def test_a_type_change_applies_what_it_says(tmp_path, postgres_binaries, column, said, after):
+    # Found in review, 21 October: ALTER ... TYPE left NOT NULL alone, so
+    # a migration saying `nullable` stopped the world on its own check;
+    # and a retyped key lost its key flag in the declared schema.
+    rescale = "  - at: 6d\n    operation: rescale_column"
+    extra = "" if said is None else f"    nullable: {str(said).lower()}\n"
+    pack = SHOP.replace(rescale, "  - at: 4d\n    operation: change_column_type\n"
+                        f"    table: ops.orders\n    column: {column}\n    type: text\n"
+                        f"    length: 200\n{extra}" + rescale)
+    with running_world(tmp_path, pack, seed=8) as built:
+        runner.run(built, total_seconds=5 * 86400, tick_seconds=3600)
+
+        declared = built.schema("ops").table("orders").column(column)
+        assert declared.nullable is after
+        if column == "order_id":
+            assert declared.primary_key
