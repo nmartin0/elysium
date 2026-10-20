@@ -43,11 +43,16 @@ import base64
 import binascii
 import json
 import math
+import random
+import secrets
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Sequence
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import ClassVar
@@ -77,6 +82,18 @@ DEFAULT_RATE_WINDOW_SECONDS = 60.0
 
 #: How long a maintenance 503 asks the caller to wait.
 MAINTENANCE_RETRY_AFTER_SECONDS = 30
+
+#: Where a client exchanges its id and secret for an access token, when
+#: tokens expire (`token_lifetime_seconds`). The client-credentials grant
+#: (RFC 6749 section 4.4) is what Xero's server-to-server "custom
+#: connections" use, with access tokens that "expire after 30 minutes"
+#: and no refresh token (developer.xero.com/faq/custom-integration).
+TOKEN_PATH = "/oauth/token"
+
+#: The statuses a failing request answers with, by default: the server
+#: errors Stripe lists (docs.stripe.com/api/errors) and a gateway in front
+#: of an API gives.
+DEFAULT_FAULT_STATUSES = (500, 502, 503, 504)
 
 _SHUTDOWN_TIMEOUT = 10
 
@@ -119,6 +136,7 @@ class _Handler(BaseHTTPRequestHandler):
                           extra_headers={"Retry-After": str(MAINTENANCE_RETRY_AFTER_SECONDS)})
             return
 
+        silo._delay()
         allowed, limit_headers = silo._rate_limit_allows()
         if not allowed:
             self._respond(429, {"errors": [{"code": "RATE_LIMITED",
@@ -127,12 +145,23 @@ class _Handler(BaseHTTPRequestHandler):
             return
         self._limit_headers = limit_headers
 
-        if not self._authorised(silo.token):
+        fault = silo._fault()
+        if fault is not None:
+            # A server error a retry may well get past: what a real API
+            # gives now and then, and a gateway in front of it more often.
+            self._respond(fault, {"errors": [{"code": "SERVER_ERROR",
+                                              "detail": "The server could not answer"}]})
+            return
+
+        refusal = silo._refuse_token(self.headers.get("Authorization", ""))
+        if refusal is not None:
             # A well-formed JSON error, not a connection failure --
             # which is a different thing for a consumer to handle, and
-            # the thing that really happens.
-            self._respond(401, {"errors": [{"code": "UNAUTHORIZED",
-                                            "detail": "Missing or invalid bearer token"}]})
+            # the thing that really happens. An expired token says so in
+            # WWW-Authenticate, as RFC 6750 section 3.1 has it.
+            detail, challenge = refusal
+            self._respond(401, {"errors": [{"code": "UNAUTHORIZED", "detail": detail}]},
+                          extra_headers={"WWW-Authenticate": challenge} if challenge else None)
             return
 
         path, _, query = self.path.partition("?")
@@ -156,6 +185,13 @@ class _Handler(BaseHTTPRequestHandler):
             return
 
         records = silo.collections[collection]
+        since = self.headers.get("If-Modified-Since")
+        if since and silo.modified_since_field is not None:
+            try:
+                records = silo._modified_since(records, since)
+            except ValueError as error:
+                self._respond(400, {"errors": [{"code": "INVALID_DATE", "detail": str(error)}]})
+                return
         page = records[offset: offset + silo.page_size]
         next_offset = offset + len(page)
         body: dict[str, object] = {"data": page}
@@ -163,11 +199,19 @@ class _Handler(BaseHTTPRequestHandler):
             body["cursor"] = _encode_cursor(next_offset)
         self._respond(200, body)
 
-    def _authorised(self, token: str | None) -> bool:
-        if token is None:
-            return True
-        header = self.headers.get("Authorization", "")
-        return header == f"Bearer {token}"
+    def do_POST(self) -> None:  # noqa: N802 -- http.server's naming
+        """The token endpoint, and nothing else: this API takes no writes."""
+        silo = self.server.silo  # type: ignore[attr-defined]
+        path = self.path.partition("?")[0]
+        if path != TOKEN_PATH or silo.token_lifetime_seconds is None:
+            self._respond(404, {"errors": [{"code": "NOT_FOUND", "detail": path}]})
+            return
+        silo._delay()
+        length = int(self.headers.get("Content-Length") or 0)
+        form = dict(pair.split("=", 1) for pair in
+                    self.rfile.read(length).decode().split("&") if "=" in pair)
+        status, body = silo._issue_token(self.headers.get("Authorization", ""), form)
+        self._respond(status, body)
 
     def _respond(self, status: int, body: dict, *, extra_headers: dict | None = None) -> None:
         payload = json.dumps(body).encode()
@@ -191,7 +235,12 @@ class RestSilo(Silo):
     def __init__(self, name: str, data_dir: Path, port: int, *,
                  token: str | None = "sim-token", page_size: int = DEFAULT_PAGE_SIZE,
                  rate_limit: int | None = None,
-                 rate_window_seconds: float | None = DEFAULT_RATE_WINDOW_SECONDS) -> None:
+                 rate_window_seconds: float | None = DEFAULT_RATE_WINDOW_SECONDS,
+                 token_lifetime_seconds: float | None = None,
+                 fault_rate: float = 0.0,
+                 fault_statuses: Sequence[int] = DEFAULT_FAULT_STATUSES,
+                 latency_ms: float = 0.0, latency_jitter_ms: float = 0.0,
+                 modified_since_field: str | None = None) -> None:
         super().__init__(name, data_dir)
         self.port = port
         #: None disables authentication entirely. Some small-business
@@ -205,6 +254,41 @@ class RestSilo(Silo):
         #: not about the data.
         self.rate_limit = rate_limit
         self.rate_window_seconds = rate_window_seconds
+        # The realism options (REAL_SOURCES.md R1, R3, R7), all off unless
+        # a pack switches them on, as Toxiproxy's toxics are off until added.
+        if token_lifetime_seconds is not None:
+            if token is None:
+                raise SiloError(f"{name}: tokens that expire need a client secret (`token`)")
+            if token_lifetime_seconds <= 0:
+                raise SiloError(f"{name}: token_lifetime_seconds must be positive")
+        if not 0.0 <= fault_rate <= 1.0:
+            raise SiloError(f"{name}: fault_rate is a share of requests, from 0 to 1")
+        if not fault_statuses or any(not 500 <= int(status) <= 599 for status in fault_statuses):
+            raise SiloError(f"{name}: fault_statuses are server errors, 500 to 599")
+        if latency_ms < 0 or latency_jitter_ms < 0 or latency_jitter_ms > latency_ms:
+            raise SiloError(f"{name}: latency_ms and latency_jitter_ms must be >= 0, "
+                            f"the jitter no larger than the latency")
+        #: Real seconds an access token lasts; None keeps one token for
+        #: ever, as an API key does. When set, `token` is the client
+        #: secret, exchanged at TOKEN_PATH for tokens that expire.
+        self.token_lifetime_seconds = token_lifetime_seconds
+        self.client_id = f"{name}-client"
+        self._issued: dict[str, float] = {}
+        #: The share of requests answered with a server error, and which:
+        #: Toxiproxy's "toxicity", applied per request.
+        self.fault_rate = fault_rate
+        self.fault_statuses = tuple(int(status) for status in fault_statuses)
+        #: Every reply delayed by latency +/- jitter, in milliseconds, as
+        #: Toxiproxy's latency toxic does.
+        self.latency_ms = latency_ms
+        self.latency_jitter_ms = latency_jitter_ms
+        #: The record field a GET's If-Modified-Since is compared with:
+        #: Xero's filter. None ignores the header, as most APIs would.
+        self.modified_since_field = modified_since_field
+        #: Seeded by name: the same share of requests fails each run, though
+        #: which ones depends on the order requests arrive in.
+        self._random = random.Random(f"rest:{name}")
+        self._sleep = time.sleep
         #: Wall time, replaceable by a test so it need not wait a minute.
         self._clock = time.monotonic
         self._window_started = self._clock()
@@ -277,8 +361,11 @@ class RestSilo(Silo):
         conflating them is how a health check reports an outage during
         a rate-limit window.
         """
+        # Long enough to wait out the latency a pack set: a slow API is
+        # slow, not down.
+        wait = 2 + (self.latency_ms + self.latency_jitter_ms) / 1000.0
         try:
-            urllib.request.urlopen(f"{self.base_url}{API_PREFIX}/", timeout=2)
+            urllib.request.urlopen(f"{self.base_url}{API_PREFIX}/", timeout=wait)
             return True
         except urllib.error.HTTPError:
             return True
@@ -288,7 +375,14 @@ class RestSilo(Silo):
     def connection(self, database: str | None = None) -> ConnectionDescriptor:
         refuse_database(self.name, self.kind, database)
         details: dict[str, object] = {"base_url": self.base_url, "format": "json"}
-        if self.token is not None:
+        if self.token is not None and self.token_lifetime_seconds is not None:
+            # What a consumer is given for a client-credentials API: where
+            # to ask, and as whom. Never a token, which would expire.
+            details["auth"] = "oauth_client_credentials"
+            details["token_url"] = f"{self.base_url}{TOKEN_PATH}"
+            details["client_id"] = self.client_id
+            details["client_secret"] = self.token
+        elif self.token is not None:
             details["auth"] = "bearer"
             details["token"] = self.token
         return ConnectionDescriptor(kind=self.kind, details=details)
@@ -320,6 +414,103 @@ class RestSilo(Silo):
         """Add one record, creating the collection if needed."""
         with self._lock:
             self.collections.setdefault(collection, []).append(dict(record))
+
+    # -- realism (REAL_SOURCES.md R1, R3, R7) ---------------------------
+
+    def _delay(self) -> None:
+        if self.latency_ms <= 0:
+            return
+        with self._lock:
+            jitter = self._random.uniform(-self.latency_jitter_ms, self.latency_jitter_ms)
+        self._sleep((self.latency_ms + jitter) / 1000.0)
+
+    def _fault(self) -> "int | None":
+        if self.fault_rate <= 0:
+            return None
+        with self._lock:
+            if self._random.random() >= self.fault_rate:
+                return None
+            return self._random.choice(self.fault_statuses)
+
+    def _refuse_token(self, header: str) -> "tuple[str, str | None] | None":
+        """None if the Authorization header may pass; otherwise what to
+        say, and the WWW-Authenticate challenge."""
+        if self.token is None:
+            return None
+        if self.token_lifetime_seconds is None:
+            if header == f"Bearer {self.token}":
+                return None
+            return "Missing or invalid bearer token", None
+        presented = header[len("Bearer "):] if header.startswith("Bearer ") else ""
+        with self._lock:
+            expires = self._issued.get(presented)
+            now = self._clock()
+        if expires is None:
+            return ("Missing or invalid bearer token",
+                    'Bearer error="invalid_token", error_description="Unknown token"')
+        if now >= expires:
+            return ("The access token expired",
+                    'Bearer error="invalid_token", error_description="The access token expired"')
+        return None
+
+    def _issue_token(self, header: str, form: dict) -> "tuple[int, dict]":
+        """RFC 6749 section 4.4: the client authenticates by HTTP Basic or
+        by form fields (section 2.3.1) and is given a token that expires."""
+        form = {key: urllib.parse.unquote_plus(value) for key, value in form.items()}
+        client_id, secret = form.get("client_id"), form.get("client_secret")
+        if header.startswith("Basic "):
+            try:
+                pair = base64.b64decode(header[len("Basic "):]).decode()
+            except (binascii.Error, UnicodeDecodeError):
+                pair = ""
+            client_id, _, secret = pair.partition(":")
+        if client_id != self.client_id or secret != self.token:
+            return 401, {"error": "invalid_client"}
+        if form.get("grant_type") != "client_credentials":
+            return 400, {"error": "unsupported_grant_type"}
+        assert self.token_lifetime_seconds is not None  # the caller checked
+        issued = secrets.token_urlsafe(24)
+        with self._lock:
+            now = self._clock()
+            # Expired ones are forgotten, so a long run does not grow a list.
+            self._issued = {t: e for t, e in self._issued.items() if e > now}
+            self._issued[issued] = now + self.token_lifetime_seconds
+        return 200, {"access_token": issued, "token_type": "Bearer",
+                     "expires_in": int(self.token_lifetime_seconds)}
+
+    def _modified_since(self, records: list[dict], since: str) -> list[dict]:
+        """Records whose `modified_since_field` is at or after `since`.
+
+        An ISO 8601 moment, as Xero's examples give, or an HTTP-date
+        (RFC 9110), which is what the header formally carries. A moment
+        without an offset is UTC, as Xero says its dates are."""
+        def moment(text: str) -> datetime:
+            try:
+                parsed = datetime.fromisoformat(text)
+            except ValueError:
+                try:
+                    parsed = parsedate_to_datetime(text)
+                except (TypeError, ValueError) as error:
+                    raise ValueError(f"not a date: {text!r}") from error
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+        threshold = moment(since)
+        field = self.modified_since_field
+        kept = []
+        for record in records:
+            value = record.get(field)
+            if value is None:
+                continue        # never modified, as far as the API can say
+            try:
+                changed = moment(str(value))
+            except ValueError:
+                # The API's own data, not the caller's header, is at fault;
+                # it is served rather than silently dropped.
+                kept.append(record)
+                continue
+            if changed >= threshold:
+                kept.append(record)
+        return kept
 
     # -- rate limiting -----------------------------------------------
 
@@ -374,10 +565,12 @@ class RestSilo(Silo):
 # that cracks one open and does arithmetic on it is writing a bug -- one this
 # silo should not make easy by handing out a readable number.
 #
-# RESOLVED: rate limiting is off by default and its window resets manually. A
-# limiter on by default would make a consumer's first run fail for a reason
-# that has nothing to do with the data, and a wall-clock window would make
-# behaviour depend on how long a test took to run.
+# RESOLVED: rate limiting is off by default. A limiter on by default would make
+# a consumer's first run fail for a reason that has nothing to do with the
+# data. Its window used to turn only by hand, which nothing in a running world
+# did, so once on it refused for ever; since 20 October it rolls on a clock a
+# test can replace (REAL_SOURCES.md R2), and rate_window_seconds=None keeps the
+# manual window for a scenario that wants it.
 #
 # RESOLVED: is_reachable() counts 401 and 429 as reachable. Those mean the
 # service is up and refusing this request, which is a different condition from
@@ -402,5 +595,18 @@ class RestSilo(Silo):
 # DEFERRED: collections live in memory, so a restart empties them. Fine while a
 # run is one process; the moment a world is resumed across processes this needs
 # the same treatment the other silos get from their own storage.
-
-
+#
+# RESOLVED (20 October, item 12 step 2): realism options, every one off unless
+# a pack sets it -- token_lifetime_seconds (client credentials, as Xero's
+# custom connections), fault_rate/fault_statuses and latency_ms/jitter (as
+# Toxiproxy), modified_since_field (Xero's If-Modified-Since). Faults and
+# jitter draw from a Random seeded by the silo's name, so a world fails the
+# same way each run.
+#
+# DEFERRED: rotating refresh tokens (Xero's and QuickBooks' authorization-code
+# apps). Client credentials is the server-to-server form a reporting tool
+# uses; rotation matters to an app acting for a signed-in user.
+#
+# DEFERRED: a fault that cuts the connection mid-body rather than answering
+# 5xx (Toxiproxy's limit_data). http.server makes it awkward; the 5xx and
+# the outage cover the consumer's retry path between them.

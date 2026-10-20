@@ -5850,6 +5850,85 @@ CONTROLS = [
                "test_the_first_period_is_shown_but_not_fitted"],
     ),
     Control(
+        describes="SIM: an expired REST token is refused and says so",
+        path="sim/simulator/silos/rest.py",
+        old="        if now >= expires:",
+        new="        if False:",
+        tests=["sim/tests/test_rest_silo.py::"
+               "test_a_token_works_until_it_expires_and_then_says_so"],
+    ),
+    Control(
+        describes="SIM: a REST fault_rate really fails requests",
+        path="sim/simulator/silos/rest.py",
+        old="            if self._random.random() >= self.fault_rate:\n"
+            "                return None",
+        new="            return None",
+        tests=["sim/tests/test_rest_silo.py::test_every_request_can_fail_with_a_server_error"],
+    ),
+    Control(
+        describes="SIM: If-Modified-Since filters records",
+        path="sim/simulator/silos/rest.py",
+        old="                records = silo._modified_since(records, since)",
+        new="                pass",
+        tests=["sim/tests/test_rest_silo.py::test_if_modified_since_returns_only_what_changed"],
+    ),
+    Control(
+        describes="SIM: a non-atomic file is seen half-written",
+        path="sim/simulator/silos/filedrop.py",
+        old="            self.place(filename, payload[: max(1, len(payload) // 2)], atomic=False)",
+        new="            self.place(filename, payload, atomic=False)",
+        tests=["sim/tests/test_filedrop_silo.py::"
+               "test_a_non_atomic_file_is_half_written_until_the_next_tick"],
+    ),
+    Control(
+        describes="SIM: Excel drops leading zeros",
+        path="sim/simulator/silos/filedrop.py",
+        old='        shown = format(Decimal(text).normalize(), "f")',
+        new="        shown = text",
+        tests=["sim/tests/test_filedrop_silo.py::"
+               "test_excel_conversions_apply_to_every_cell_but_the_header"],
+    ),
+    Control(
+        describes="SIM: the runner gives sources their between-ticks turn",
+        path="sim/simulator/runner.py",
+        old="        silo.between_ticks(world.clock.now())",
+        new="        pass",
+        tests=["sim/tests/test_publishing.py::"
+               "test_a_packs_file_options_reach_the_share_and_late_files_follow_the_clock"],
+    ),
+    Control(
+        describes="SIM: without default privileges a later table refuses the reader",
+        path="sim/simulator/silos/reader.py",
+        old='          if getattr(silo, "reader_default_privileges", True) else []),',
+        new="          if True else []),",
+        tests=["sim/tests/test_database_realism.py::"
+               "test_a_table_added_later_is_refused_without_default_privileges"],
+    ),
+    Control(
+        describes="SIM: row security with no policy hides every row",
+        path="sim/simulator/silos/reader.py",
+        old="    if tables:\n        _run(silo, database, [f'ALTER TABLE",
+        new="    if False:\n        _run(silo, database, [f'ALTER TABLE",
+        tests=["sim/tests/test_database_realism.py::"
+               "test_row_security_with_no_policy_shows_the_reader_nothing_and_says_nothing"],
+    ),
+    Control(
+        describes="SIM: MariaDB consumer limits arrive through init_connect",
+        path="sim/simulator/silos/mariadb.py",
+        old="                *self._init_connect(),\n",
+        new="",
+        tests=["sim/tests/test_database_realism.py::"
+               "test_the_reader_is_disconnected_when_idle_and_the_business_is_not"],
+    ),
+    Control(
+        describes="SIM: zero dates are written where configured",
+        path="sim/simulator/relational.py",
+        old='    if value is None and getattr(silo, "zero_dates", False):',
+        new="    if False:",
+        tests=["sim/tests/test_database_realism.py::"
+               "test_the_business_writes_zero_dates_where_it_has_none"],
+    ),
+    Control(
         describes="ENRICH: a classified field is never an input to a model",
         path="core/ontology/enriched_fields.py",
         old="        if labels:\n            raise ValueError(",

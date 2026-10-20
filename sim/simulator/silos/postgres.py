@@ -34,9 +34,11 @@ the pid file, which is what makes a stale one detectable.
 """
 
 import os
+import re
 import shutil
 import signal
 import subprocess
+from collections.abc import Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -127,6 +129,12 @@ def refuse_if_root() -> None:
         )
 
 
+#: A time zone NAME -- UTC, America/New_York, Etc/GMT+5 -- and so what can
+#: safely reach pg_ctl's shell. Not a bare offset: PostgreSQL reads "+05:00"
+#: the POSIX way, five hours WEST, the opposite of MariaDB's time_zone.
+_SETTING = re.compile(r"[A-Za-z][A-Za-z0-9_+\-/]*")
+
+
 class PostgresSilo(Silo):
     """One silo, backed by its own PostgreSQL instance."""
 
@@ -135,9 +143,46 @@ class PostgresSilo(Silo):
 
     def __init__(self, name: str, data_dir: Path, port: int,
                  binaries: PostgresBinaries | None = None,
-                 superuser: str = DEFAULT_SUPERUSER) -> None:
+                 superuser: str = DEFAULT_SUPERUSER, *,
+                 timezone: str = "UTC",
+                 reader_default_privileges: bool = True,
+                 row_security: Sequence[str] = (),
+                 reader_statement_timeout_ms: int | None = None,
+                 reader_idle_session_timeout_ms: int | None = None,
+                 reader_idle_in_transaction_timeout_ms: int | None = None) -> None:
         super().__init__(name, data_dir)
         self.port = port
+        # The realism options (REAL_SOURCES.md P1-P4). The time zone is
+        # pinned rather than left to initdb, which copies the host's: a
+        # world must not read differently on another machine, and UTC is
+        # what managed services such as RDS default to. The rest are off.
+        if not _SETTING.fullmatch(timezone):
+            raise SiloError(f"{name}: {timezone!r} is not a time zone name such as UTC or "
+                            f"America/New_York")
+        if isinstance(row_security, str):
+            raise SiloError(f"{name}: row_security is a list of tables, as [{row_security}]")
+        for option, value in (("reader_statement_timeout_ms", reader_statement_timeout_ms),
+                              ("reader_idle_session_timeout_ms", reader_idle_session_timeout_ms),
+                              ("reader_idle_in_transaction_timeout_ms",
+                               reader_idle_in_transaction_timeout_ms)):
+            if value is not None and int(value) <= 0:
+                raise SiloError(f"{name}: {option} must be positive")
+        self.timezone = timezone
+        #: False: tables created later -- by drift -- are not readable by
+        #: the reader until someone grants them, which is what happens when
+        #: nobody set ALTER DEFAULT PRIVILEGES for the role that creates
+        #: them (P1; SQLSTATE 42501).
+        self.reader_default_privileges = reader_default_privileges
+        #: Tables with row-level security on and no policy: a reader sees
+        #: no rows and no error (P2).
+        self.row_security = tuple(row_security)
+        #: Limits set on the reader's role, as a DBA or managed service
+        #: sets them (P3); None leaves PostgreSQL's default of none.
+        self.reader_limits = {
+            "statement_timeout": reader_statement_timeout_ms,
+            "idle_session_timeout": reader_idle_session_timeout_ms,
+            "idle_in_transaction_session_timeout": reader_idle_in_transaction_timeout_ms,
+        }
         #: Discovered lazily by default so a caller does not have to
         #: locate binaries it has no opinion about, but injectable so a
         #: test can hand in a known-bad pair without patching.
@@ -313,7 +358,10 @@ class PostgresSilo(Silo):
             f"-c unix_socket_directories= "
             # Loopback only. A simulated world that answered on a LAN
             # interface would be a genuinely bad thing to leave running.
-            f"-c listen_addresses=127.0.0.1"
+            f"-c listen_addresses=127.0.0.1 "
+            # Checked against _SETTING when the silo was made: pg_ctl
+            # hands these to a shell.
+            f"-c timezone={self.timezone}"
         )
         self._run([
             str(self.binaries.pg_ctl),
@@ -464,3 +512,9 @@ class PostgresSilo(Silo):
 # is killed, its servers keep running and the next start finds the port taken --
 # reported by PortRegistry.verify_available(), which names the port, but a
 # `simulator stop --all` reading ports.json would be kinder.
+#
+# RESOLVED (20 October, item 12 step 2): the server's time zone is pinned (UTC
+# by default, `timezone` to change it) rather than copied from the host by
+# initdb. Untestable on a UTC host, where the two agree; said in
+# tests/test_database_realism.py. The reader's limits, default privileges and
+# row security are options too; see reader.py.

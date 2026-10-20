@@ -309,3 +309,19 @@ def test_a_world_with_a_replica_resumes(tmp_path, postgres_binaries):
         resume(world, directory)
     finally:
         runner.stop(world)
+
+
+def test_a_replica_runs_its_sources_engine():
+    # Found in review: a MariaDB source's zero dates, copied into a
+    # PostgreSQL "replica", would fail every refresh. No real replica
+    # crosses engines.
+    with pytest.raises(PackError, match="runs its source's engine"):
+        load_spec({
+            "pack": "x",
+            "silos": {"shop": {"kind": "mariadb", "database": "shop"},
+                      "copy": {"kind": "postgresql", "database": "copy",
+                               "replicates": "shop", "refresh": "6h"}},
+            "schemas": {"shop": {"tables": {"t": {"columns": {
+                "id": {"type": "text", "length": 8, "primary_key": True,
+                       "nullable": False}}}}}},
+        })

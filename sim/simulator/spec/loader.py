@@ -132,6 +132,17 @@ def _check_replicas(silos: dict, schemas: dict) -> None:
                 f"silos.{name}.replicates",
                 f"names {silo.replicates!r}, which declares no tables to copy"
             )
+        if source.kind != silo.kind:
+            # A read replica runs the engine its source runs: streaming
+            # replication and MariaDB's binlog both copy one engine to
+            # itself. Across engines the copy would also carry one
+            # engine's values into another that refuses them -- a
+            # MariaDB zero date into a PostgreSQL DATE.
+            raise PackError(
+                f"silos.{name}.replicates",
+                f"a {silo.kind} silo cannot be a replica of {silo.replicates!r}, which is "
+                f"{source.kind}; a read replica runs its source's engine"
+            )
         if name in schemas:
             raise PackError(
                 f"schemas.{name}",

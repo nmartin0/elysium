@@ -124,7 +124,7 @@ def insert_rows(silo: Silo, database: str, table: Table,
             )
 
     statement = dialect.insert(table.name, columns)
-    values = [[row[name] for name in columns] for row in rows]
+    values = [[_stored(silo, table, name, row[name]) for name in columns] for row in rows]
     with silo.connect(database) as connection:  # type: ignore[attr-defined]
         with connection.cursor() as cursor:
             cursor.executemany(statement, values)
@@ -204,8 +204,28 @@ def update_columns(silo: Silo, database: str, table: Table,
                  f"WHERE {predicate}")
     with silo.connect(database) as connection:  # type: ignore[attr-defined]
         with connection.cursor() as cursor:
-            cursor.execute(statement, [*values.values(), *where.values()])
+            cursor.execute(statement, [*(_stored(silo, table, name, value)
+                                         for name, value in values.items()),
+                                       *where.values()])
             return int(cursor.rowcount)
+
+
+#: What a MariaDB with `zero_dates` writes for a date it does not have.
+_ZERO = {ColumnType.DATE: "0000-00-00", ColumnType.TIMESTAMP: "0000-00-00 00:00:00"}
+
+
+def _stored(silo: Silo, table: Table, name: str, value: Any) -> Any:
+    """A value as the business's application writes it.
+
+    The same value, except on a MariaDB whose application writes
+    0000-00-00 rather than NULL for a date it has none of -- which the
+    default sql_mode allows, and which many drivers then fail to read
+    (REAL_SOURCES.md M2)."""
+    if value is None and getattr(silo, "zero_dates", False):
+        column = next((c for c in table.columns if c.name == name), None)
+        if column is not None and column.type in _ZERO:
+            return _ZERO[column.type]
+    return value
 
 
 def count_rows(silo: Silo, database: str, table_name: str) -> int:

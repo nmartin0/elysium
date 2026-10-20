@@ -54,7 +54,7 @@ from simulator.rng import RandomSource
 from simulator.schema import Schema
 from simulator.silo import Silo, SiloError
 from simulator.silos import SILO_TYPES, build_silo
-from simulator.silos.reader import withhold
+from simulator.silos.reader import grant_existing, secure_rows, withhold
 from simulator.spec import PackSpec, SeedStep
 from simulator.world import World
 
@@ -156,8 +156,11 @@ def build(pack: PackSpec, data_dir: Path, *, seed: int = 1,
             verify_schema(silos[silo_name], database, schema)
             # After the tables exist, because there is nothing to
             # revoke before that. See reader.withhold.
+            grant_existing(silos[silo_name], database)
             withhold(silos[silo_name], database,
                      pack.silo(silo_name).withheld, pack.silo(silo_name).kind)
+            secure_rows(silos[silo_name], database,
+                        tuple(getattr(silos[silo_name], "row_security", ())))
     except Exception as failure:
         # A half-built world is worse than none: its ports are held and
         # its clusters are running, so the next attempt fails on a
@@ -462,6 +465,9 @@ def _quote(silo: Silo, identifier: str) -> str:
 
 
 def _tick(world: World, seconds: float) -> int:
+    # First, so a file due now is there before this tick's own exports.
+    for silo in world.silos.values():
+        silo.between_ticks(world.clock.now())
     with ExitStack() as stack:
         for name, spec in world.pack.silos.items():
             if spec.database is not None:

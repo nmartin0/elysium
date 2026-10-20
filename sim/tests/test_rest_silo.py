@@ -357,3 +357,180 @@ def test_it_is_registered_as_a_kind():
     from simulator.silos import SILO_TYPES
 
     assert SILO_TYPES["rest"] is RestSilo
+
+
+# -- realism options (REAL_SOURCES.md R1, R3, R7) ----------------------
+
+@pytest.fixture
+def make(tmp_path):
+    """A silo with options, started, and stopped afterwards."""
+    made = []
+
+    def build(**options):
+        name = f"api{len(made)}"
+        registry = PortRegistry.allocate(tmp_path / name, [name])
+        silo = RestSilo(name=name, data_dir=tmp_path / name, port=registry.port(name),
+                        page_size=10, **options)
+        silo.create()
+        silo.start()
+        made.append(silo)
+        return silo
+
+    yield build
+    for silo in made:
+        silo.stop()
+
+
+def _token_request(silo, *, basic=True, secret="sim-token", grant="client_credentials"):
+    import base64
+
+    form = f"grant_type={grant}"
+    request = urllib.request.Request(f"{silo.base_url}/oauth/token", method="POST")
+    if basic:
+        pair = base64.b64encode(f"{silo.client_id}:{secret}".encode()).decode()
+        request.add_header("Authorization", f"Basic {pair}")
+    else:
+        form += f"&client_id={silo.client_id}&client_secret={secret}"
+    request.data = form.encode()
+    request.add_header("Content-Type", "application/x-www-form-urlencoded")
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return response.status, json.loads(response.read())
+    except urllib.error.HTTPError as error:
+        return error.code, json.loads(error.read())
+
+
+def test_options_are_off_by_default(silo):
+    assert (silo.token_lifetime_seconds, silo.fault_rate, silo.latency_ms,
+            silo.modified_since_field) == (None, 0.0, 0.0, None)
+    silo.publish("p", [{"id": "1"}])
+    assert all(fetch(silo, f"{API_PREFIX}/p")[0] == 200 for _ in range(50))
+
+
+def test_every_request_can_fail_with_a_server_error(make):
+    silo = make(fault_rate=1.0, fault_statuses=[502])
+    silo.publish("p", [{"id": "1"}])
+
+    status, body, _ = fetch(silo, f"{API_PREFIX}/p")
+
+    assert status == 502 and body["errors"][0]["code"] == "SERVER_ERROR"
+
+
+def test_a_share_of_requests_fail_and_the_rest_answer(make):
+    silo = make(fault_rate=0.2)
+    silo.publish("p", [{"id": "1"}])
+
+    statuses = [fetch(silo, f"{API_PREFIX}/p")[0] for _ in range(300)]
+
+    failed = [status for status in statuses if status != 200]
+    # 300 draws at 0.2: a band about four standard deviations wide.
+    assert 33 <= len(failed) <= 87, len(failed)
+    assert set(failed) <= {500, 502, 503, 504} and len(set(failed)) > 1
+
+
+def test_replies_are_delayed_by_latency_plus_or_minus_jitter(make):
+    silo = make(latency_ms=200, latency_jitter_ms=50)
+    waited = []
+    silo._sleep = waited.append
+    silo.publish("p", [{"id": "1"}])
+
+    for _ in range(40):
+        fetch(silo, f"{API_PREFIX}/p")
+
+    assert len(waited) == 40
+    assert all(0.150 <= seconds <= 0.250 for seconds in waited)
+    assert max(waited) - min(waited) > 0.05, "jitter varies the delay"
+
+
+def test_an_expiring_token_is_given_by_the_token_endpoint_not_the_descriptor(make):
+    silo = make(token_lifetime_seconds=1800)
+
+    details = silo.connection().details
+
+    assert details["auth"] == "oauth_client_credentials"
+    assert details["token_url"] == f"{silo.base_url}/oauth/token"
+    assert "token" not in details
+    assert fetch(silo, f"{API_PREFIX}/p", token="sim-token")[0] == 401
+
+
+@pytest.mark.parametrize("basic", [True, False], ids=["basic", "form"])
+def test_a_token_works_until_it_expires_and_then_says_so(make, basic):
+    now = [0.0]
+    silo = make(token_lifetime_seconds=1800)
+    silo._clock = lambda: now[0]
+    silo.publish("p", [{"id": "1"}])
+
+    status, issued = _token_request(silo, basic=basic)
+    assert status == 200 and issued["token_type"] == "Bearer" and issued["expires_in"] == 1800
+    assert fetch(silo, f"{API_PREFIX}/p", token=issued["access_token"])[0] == 200
+
+    now[0] = 1800.0
+    status, body, headers = fetch(silo, f"{API_PREFIX}/p", token=issued["access_token"])
+
+    assert status == 401 and body["errors"][0]["detail"] == "The access token expired"
+    assert 'error="invalid_token"' in headers["WWW-Authenticate"]
+
+
+def test_the_token_endpoint_refuses_a_wrong_secret_and_a_wrong_grant(make):
+    silo = make(token_lifetime_seconds=60)
+
+    assert _token_request(silo, secret="guess") == (401, {"error": "invalid_client"})
+    assert _token_request(silo, grant="password") == (400, {"error": "unsupported_grant_type"})
+
+
+def test_if_modified_since_returns_only_what_changed(make):
+    silo = make(modified_since_field="updated_at")
+    silo.publish("p", [{"id": "a", "updated_at": "2026-10-01T09:00:00+00:00"},
+                       {"id": "b", "updated_at": "2026-10-05T09:00:00+00:00"},
+                       {"id": "c", "updated_at": None}])
+
+    def since(value):
+        request = urllib.request.Request(f"{silo.base_url}{API_PREFIX}/p",
+                                         headers={"Authorization": "Bearer sim-token",
+                                                  "If-Modified-Since": value})
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                return response.status, [r["id"] for r in json.loads(response.read())["data"]]
+        except urllib.error.HTTPError as error:
+            return error.code, None
+
+    assert since("2026-10-03T00:00:00") == (200, ["b"])
+    assert since("Thu, 01 Oct 2026 09:00:00 GMT") == (200, ["a", "b"])
+    assert since("last tuesday")[0] == 400
+
+
+def test_if_modified_since_is_ignored_unless_switched_on(silo):
+    silo.publish("p", [{"id": "a", "updated_at": "2020-01-01T00:00:00+00:00"}])
+    request = urllib.request.Request(f"{silo.base_url}{API_PREFIX}/p",
+                                     headers={"Authorization": "Bearer sim-token",
+                                              "If-Modified-Since": "2026-01-01T00:00:00"})
+    with urllib.request.urlopen(request, timeout=5) as response:
+        assert len(json.loads(response.read())["data"]) == 1
+
+
+@pytest.mark.parametrize("options", [
+    {"fault_rate": 1.5}, {"fault_statuses": [404]}, {"latency_ms": 10, "latency_jitter_ms": 20},
+    {"token_lifetime_seconds": 0}, {"token_lifetime_seconds": 60, "token": None},
+    {"fault_statuses": []},
+], ids=["rate", "status", "jitter", "lifetime", "no-secret", "no-statuses"])
+def test_nonsense_options_are_refused(tmp_path, options):
+    with pytest.raises(SiloError):
+        RestSilo(name="x", data_dir=tmp_path, port=1, **options)
+
+
+def test_a_record_whose_time_cannot_be_read_is_served_not_blamed_on_the_caller(make):
+    silo = make(modified_since_field="updated_at")
+    silo.publish("p", [{"id": "a", "updated_at": "20/10/2026"},
+                       {"id": "b", "updated_at": "2020-01-01T00:00:00+00:00"}])
+    request = urllib.request.Request(f"{silo.base_url}{API_PREFIX}/p",
+                                     headers={"Authorization": "Bearer sim-token",
+                                              "If-Modified-Since": "2026-01-01T00:00:00"})
+
+    with urllib.request.urlopen(request, timeout=5) as response:
+        assert [r["id"] for r in json.loads(response.read())["data"]] == ["a"]
+
+
+def test_a_slow_api_is_slow_not_down(make):
+    silo = make(latency_ms=2500)
+
+    assert silo.is_reachable()

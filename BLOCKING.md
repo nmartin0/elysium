@@ -1193,7 +1193,19 @@ says when; and, found in review, a world with a replica can be
 resumed at all. One behaviour changed on purpose: a pack migration that
 drops a column its own events still write used to crash the world, and
 now the business stops writing it, as an application shipped with its
-migration does. Next: step 2 (realism options per source), then step 3
-(Elysium over a world with all of it on).
+migration does.
+
+**Step 2 done, 20 October: realism options per source**, each a pack
+option, off unless set, so existing packs read exactly as before. REST:
+expiring client-credentials tokens, server errors and latency at a set
+rate, an If-Modified-Since filter. CSV drops: a Windows code page,
+semicolons and decimal commas, Excel's own conversions, reordered
+columns, zips, half-written, re-sent, late and expiring files.
+PostgreSQL: no default privileges for later tables, row-level security
+with no policy, statement and idle limits on the reader. MariaDB: idle
+and statement limits on consumer accounts, zero dates. Both servers'
+time zones are now pinned to UTC rather than the host's. A replica must
+run its source's engine. Next: step 3, Elysium over a world with all of
+it on.
 
 **Blocked on:** nothing; in progress.

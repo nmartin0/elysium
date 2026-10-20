@@ -36,6 +36,7 @@ pinned port -- is not.
 
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -127,9 +128,35 @@ class MariaDbSilo(Silo):
 
     def __init__(self, name: str, data_dir: Path, port: int,
                  binaries: MariaDbBinaries | None = None,
-                 superuser: str = DEFAULT_SUPERUSER) -> None:
+                 superuser: str = DEFAULT_SUPERUSER, *,
+                 time_zone: str = "+00:00",
+                 reader_wait_timeout_seconds: int | None = None,
+                 reader_max_statement_seconds: float | None = None,
+                 zero_dates: bool = False) -> None:
         super().__init__(name, data_dir)
         self.port = port
+        # The realism options (REAL_SOURCES.md M2-M4). The time zone is
+        # pinned: --no-defaults leaves it SYSTEM, the host's, and a world
+        # must not read differently on another machine. An offset, because
+        # named zones need the time zone tables loaded.
+        if not re.fullmatch(r"[+-]\d{2}:\d{2}", time_zone):
+            raise SiloError(f"{name}: time_zone is an offset such as +00:00 or -05:00")
+        for option, value in (("reader_wait_timeout_seconds", reader_wait_timeout_seconds),
+                              ("reader_max_statement_seconds", reader_max_statement_seconds)):
+            if value is not None and value <= 0:
+                raise SiloError(f"{name}: {option} must be positive")
+        self.time_zone = time_zone
+        #: Session limits for consumer accounts, set through init_connect,
+        #: which the server runs for every connection but a SUPER user's
+        #: -- so the business's own superuser connection is untouched, as
+        #: an application's pool usually has its own settings (M3; an idle
+        #: connection past wait_timeout gets error 2006).
+        self.reader_wait_timeout_seconds = reader_wait_timeout_seconds
+        self.reader_max_statement_seconds = reader_max_statement_seconds
+        #: True: the business writes 0000-00-00 where it has no date, as a
+        #: legacy application does under the default sql_mode, which has
+        #: no NO_ZERO_DATE (M2).
+        self.zero_dates = zero_dates
         self.binaries = binaries or MariaDbBinaries.discover()
         self.superuser = superuser
         #: Holding one connection open across a block of work, and
@@ -236,6 +263,8 @@ class MariaDbSilo(Silo):
                 # Loopback only. A simulated business answering on a LAN
                 # interface would be a genuinely bad thing to leave running.
                 "--bind-address=127.0.0.1",
+                f"--default-time-zone={self.time_zone}",
+                *self._init_connect(),
                 # The general query log: every statement, with the
                 # account and connection that issued it. See the same
                 # note in postgres.py -- this records attempts, not
@@ -246,6 +275,14 @@ class MariaDbSilo(Silo):
             stdout=log, stderr=log,
         )
         self._await_readiness()
+
+    def _init_connect(self) -> list[str]:
+        settings = []
+        if self.reader_wait_timeout_seconds is not None:
+            settings.append(f"wait_timeout={int(self.reader_wait_timeout_seconds)}")
+        if self.reader_max_statement_seconds is not None:
+            settings.append(f"max_statement_time={float(self.reader_max_statement_seconds)}")
+        return [f"--init-connect=SET SESSION {', '.join(settings)}"] if settings else []
 
     def _await_readiness(self) -> None:
         """Poll the port until it answers, or give up saying why.
@@ -446,3 +483,11 @@ class MariaDbSilo(Silo):
 # than a name of our choosing, unlike the PostgreSQL silo where initdb -U
 # accepts one. Changing it means a CREATE user after initialisation, which is
 # real work for a cosmetic gain.
+#
+# RESOLVED (20 October, item 12 step 2): the server's zone is pinned
+# (+00:00 by default, `time_zone` to change it; offsets only, because named
+# zones need the time zone tables loaded). Consumer accounts' wait_timeout and
+# max_statement_time are set through init_connect, which the server skips for
+# SUPER users, so the business's own connection keeps its defaults -- checked
+# in tests/test_database_realism.py. Measured: a BENCHMARK cut off by
+# max_statement_time returns 0 rather than raising; SLEEP raises 1969.

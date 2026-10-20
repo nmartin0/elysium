@@ -125,9 +125,20 @@ def provision_postgres(silo, database: str, owner: str, seed: int = 1) -> None:
         # Tables that do not exist yet, which drift will create. This
         # applies only to tables the owner makes AFTER it is issued, so
         # ordering matters: it is issued when the database is created,
-        # before any schema is applied.
-        f'ALTER DEFAULT PRIVILEGES FOR ROLE "{owner}" IN SCHEMA public '
-        f'GRANT SELECT ON TABLES TO "{READER}"',
+        # before any schema is applied. A pack can leave it out
+        # (`reader_default_privileges: false`), and then a table added
+        # later refuses the reader with 42501 -- the commoner case in
+        # real deployments (REAL_SOURCES.md P1).
+        *([f'ALTER DEFAULT PRIVILEGES FOR ROLE "{owner}" IN SCHEMA public '
+           f'GRANT SELECT ON TABLES TO "{READER}"']
+          if getattr(silo, "reader_default_privileges", True) else []),
+        # Limits on the reader's own sessions, as a DBA or a managed
+        # service sets them (P3). RESET first, so a cluster reused with
+        # different options does not keep the old ones.
+        *[f'ALTER ROLE "{READER}" RESET {setting}' for setting in _PG_LIMITS],
+        *[f'ALTER ROLE "{READER}" SET {setting} = {int(value)}'
+          for setting, value in getattr(silo, "reader_limits", {}).items()
+          if value is not None],
 
         f"""DO $$ BEGIN
                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{WRITER}')
@@ -146,6 +157,39 @@ def provision_postgres(silo, database: str, owner: str, seed: int = 1) -> None:
         f'GRANT SELECT, INSERT, UPDATE ON TABLES TO "{WRITER}"',
     ]
     _run(silo, database, statements, autocommit=False)
+
+
+#: The session limits a pack may set on PostgreSQL's reader, in ms.
+_PG_LIMITS = ("statement_timeout", "idle_session_timeout",
+              "idle_in_transaction_session_timeout")
+
+
+def grant_existing(silo, database: str) -> None:
+    """Grant the reader the tables the schema made, when there are no
+    default privileges to have done it.
+
+    Without `reader_default_privileges` the pack's own tables would be as
+    unreadable as the ones drift adds later -- and P1 is about the later
+    ones: a DBA grants what exists and forgets what comes after.
+    """
+    if silo.kind == "postgresql" and not getattr(silo, "reader_default_privileges", True):
+        _run(silo, database, [f'GRANT SELECT ON ALL TABLES IN SCHEMA public TO "{READER}"'],
+             autocommit=False)
+
+
+def secure_rows(silo, database: str, tables: "tuple[str, ...]") -> None:
+    """Turn row-level security on for these tables, with no policy.
+
+    PostgreSQL's documented default: "If no policy exists for the table,
+    a default-deny policy is used, meaning that no rows are visible or
+    can be modified" (ddl-rowsecurity) -- for every role but the owner
+    and a superuser. So a reader and the writer see an empty table and
+    no error, while the business, writing as the superuser, carries on
+    (REAL_SOURCES.md P2).
+    """
+    if tables:
+        _run(silo, database, [f'ALTER TABLE "{table}" ENABLE ROW LEVEL SECURITY'
+                              for table in tables], autocommit=False)
 
 
 def provision_mariadb(silo, database: str, seed: int = 1) -> None:

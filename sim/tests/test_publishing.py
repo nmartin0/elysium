@@ -302,3 +302,24 @@ def test_a_malformed_window_is_refused():
     ):
         with pytest.raises(PackError, match=message):
             load_spec(base({"every": "1d", "emits": [publication(since=since)]}))
+
+
+@pytest.mark.postgres
+def test_a_packs_file_options_reach_the_share_and_late_files_follow_the_clock(
+        tmp_path, postgres_binaries):
+    # End to end: options in the pack reach the silo, and the runner's
+    # between_ticks delivers a late file when simulated time comes round.
+    late = EXPORT.replace(
+        "bank: {kind: filedrop}",
+        "bank: {kind: filedrop, options: {late_rate: 1.0, late_seconds: 172800, "
+        "delimiter: ';'}}")
+    assert late != EXPORT
+    with running_world(tmp_path, late, seed=3) as built:
+        runner.run(built, total_seconds=86400, tick_seconds=3600)
+        before = published(built)
+        runner.run(built, total_seconds=2 * 86400, tick_seconds=3600)
+        after = published(built)
+        header = read_text(built, after[0]).splitlines()[0]
+
+    assert before == []
+    assert after and header == "invoice_id;customer;total"

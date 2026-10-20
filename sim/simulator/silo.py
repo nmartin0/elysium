@@ -37,6 +37,7 @@ reach it, and can be made to go away.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import ClassVar
 
@@ -141,6 +142,14 @@ class Silo(ABC):
         running -- rather than the mechanism. This matters: a server
         that exits on its own between the check and the shutdown
         command must not turn a successful teardown into an error.
+        """
+
+    def between_ticks(self, now: "datetime") -> None:  # noqa: B027 -- deliberately optional
+        """Called at the start of every tick, with the simulated moment.
+
+        For what a source does on its own as time passes rather than when
+        the business writes to it: a late file arriving, a half-written
+        one being finished (filedrop.py). Nothing, for most kinds.
         """
 
     @abstractmethod

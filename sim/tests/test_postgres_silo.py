@@ -366,3 +366,14 @@ def test_liveness_is_asked_in_exactly_one_place():
     assert "is_alive" in source
     assert "os.kill" not in source
     assert "PermissionError" in inspect.getsource(is_alive)
+
+
+@pytest.mark.parametrize(("options", "message"), [
+    ({"timezone": "+05:00"}, "time zone name"),           # read west, the POSIX way
+    ({"timezone": "UTC; rm -rf"}, "time zone name"),
+    ({"row_security": "orders"}, "list of tables"),
+], ids=["offset", "shell", "string"])
+def test_realism_options_that_would_mislead_are_refused(tmp_path, options, message):
+    with pytest.raises(SiloError, match=message):
+        PostgresSilo(name="ops", data_dir=tmp_path, port=5999,
+                     binaries=PostgresBinaries(initdb=tmp_path, pg_ctl=tmp_path), **options)
