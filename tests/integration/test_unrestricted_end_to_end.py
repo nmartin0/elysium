@@ -86,7 +86,9 @@ def test_people_in_different_regions_both_see_every_product(client):
 def test_a_role_without_the_grant_sees_none(client):
     response = _products(client, "admin")
 
-    assert response.status_code != 200 or response.json()["total_matches"] == 0
+    # UNIFORM DENIAL: an empty answer, not an error -- asserted exactly, so
+    # a 500 cannot pass as "sees none" (the first version allowed it).
+    assert response.status_code == 200 and response.json()["total_matches"] == 0
 
 
 def test_customers_beside_it_stay_compartmented(client):

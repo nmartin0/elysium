@@ -43,6 +43,10 @@ and the IETF RateLimit draft):
     broken API, refused rather than looped on.
   - ONE READ PER SYNC, inside the consistent read: the columns checked and
     the rows copied come from the same pages.
+  - THE LOGIN GOES TO ONE PLACE: a next page on another host is refused,
+    and an error quoting the reply masks every credential (both found in
+    review, 19 October). Page and offset paging end on an EMPTY page and
+    refuse a page served twice. The health check is one quick attempt.
 
 COLUMNS ARE THE KEYS THE RECORDS CARRY. An API that leaves a key out when
 its value is null will make that column look removed in a sync where it
@@ -60,7 +64,7 @@ from collections.abc import Mapping
 from contextlib import contextmanager
 from decimal import Decimal
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import requests
 
@@ -112,6 +116,13 @@ class RestAdapter(ExternalReadAdapter):
         self.timeout = float(connection.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS))
         self.max_retries = int(connection.get("max_retries", DEFAULT_MAX_RETRIES))
         self._headers, self._params, self._auth = self._credentials(connection.get("auth"))
+        # THE RAW SECRETS, for masking: a header's VALUE is "Bearer <token>",
+        # and an API that echoes only the token in its error went unmasked
+        # (found in review, 19 October).
+        auth = connection.get("auth") if isinstance(connection.get("auth"), Mapping) else {}
+        self._secrets = [str(auth[key]) for key in ("token", "api_key", "password")
+                         if auth and auth.get(key)]
+        self._origin = _origin(self.base_url)
         tables = connection.get("tables")
         if not isinstance(tables, Mapping) or not tables:
             raise ValueError("rest: connection.tables must name each table and its path.")
@@ -159,9 +170,17 @@ class RestAdapter(ExternalReadAdapter):
 
     # ---- one request -----------------------------------------------------
 
-    def _get(self, url: str, params: dict) -> requests.Response:
+    def _get(self, url: str, params: dict, *, retries: "int | None" = None) -> requests.Response:
         """GET with the retry rules above; StorageUnavailable when the API
         cannot answer, ApiRefused when its answer means stop."""
+        max_retries = self.max_retries if retries is None else retries
+        if _origin(url) != self._origin:
+            # THE LOGIN GOES TO ONE PLACE. A next-page URL or Link header
+            # naming another host would otherwise have been sent the
+            # credential (found in review: an API reply of "next":
+            # "https://evil.example/steal" got the API key).
+            raise ApiRefused(f"rest: the API pointed the next page at {_origin(url)}, not "
+                             f"{self._origin}; the credential is not sent there.")
         attempt = 0
         while True:
             try:
@@ -177,18 +196,17 @@ class RestAdapter(ExternalReadAdapter):
                     raise self._refused(url, response)
                 failure = f"HTTP {response.status_code}"
                 wait = retry_after_seconds(response.headers.get("Retry-After"))
-            if attempt >= self.max_retries:
+            if attempt >= max_retries:
                 raise StorageUnavailable(
-                    f"rest {self._where(url)}: {failure}, still after {self.max_retries} retries.")
+                    f"rest {self._where(url)}: {failure}, still after {max_retries} retries.")
             delay = wait if wait is not None else 2.0 ** attempt
             _sleep(min(delay, MAX_RETRY_DELAY_SECONDS))
             attempt += 1
 
     def _refused(self, url: str, response) -> ApiRefused:
         body = (response.text or "")[:300]
-        for secret in [*self._headers.values(), *self._params.values(), *(self._auth or ())]:
-            if secret:
-                body = body.replace(str(secret), "***")
+        for secret in sorted(self._secrets, key=len, reverse=True):
+            body = body.replace(secret, "***")
         if response.status_code in (401, 403):
             return ApiRefused(f"rest {self._where(url)}: HTTP {response.status_code} -- the API "
                               f"refused the credentials. Check connection.auth. {body}")
@@ -251,6 +269,9 @@ class RestAdapter(ExternalReadAdapter):
                 token = self._at(body, paging["cursor_field"])
                 if not token:
                     break
+                if not isinstance(token, (str, int, Decimal)):
+                    raise ApiRefused(f"rest {self._where(url)}: the page token at "
+                                     f"{paging['cursor_field']!r} is not a string or number.")
                 if token in seen_tokens:
                     raise ApiRefused(f"rest {self._where(url)}: the API returned the same page "
                                      f"token twice; it would page forever.")
@@ -273,15 +294,25 @@ class RestAdapter(ExternalReadAdapter):
                     raise ApiRefused(f"rest {self._where(url)}: the Link next repeats.")
                 seen_tokens.add(nxt)
                 url, params = nxt, {}
-            elif kind == "page":
-                name = paging.get("page_param", "page")
-                params[name] = int(params[name]) + 1
-            elif kind == "offset":
-                name = paging.get("offset_param", "offset")
-                params[name] = int(params[name]) + len(page)
-            if kind in ("page", "offset") and paging.get("page_size") \
-                    and len(page) < int(paging["page_size"]):
-                break                   # a short page is the last (Airbyte's stop rule)
+            elif kind in ("page", "offset"):
+                # THE SAME PAGE TWICE IS AN API IGNORING THE PARAMETER, and
+                # would be read until the page ceiling -- found in review.
+                signature = json.dumps(page, sort_keys=True, default=str)
+                if signature in seen_tokens:
+                    raise ApiRefused(f"rest {self._where(url)}: the API returned the same page "
+                                     f"twice; check pagination.{kind}_param.")
+                seen_tokens.add(signature)
+                if kind == "page":
+                    name = paging.get("page_param", "page")
+                    params[name] = int(params[name]) + 1
+                else:
+                    name = paging.get("offset_param", "offset")
+                    params[name] = int(params[name]) + len(page)
+                # ONLY AN EMPTY PAGE ENDS IT, not a short one. Airbyte stops
+                # on a short page; but a server capping page_size lower than
+                # asked makes EVERY page short, and the review read 100 of
+                # 300 rows that way, with nothing to notice it. One extra
+                # request is the price.
         else:
             raise ApiRefused(f"rest {self._where(url)}: more than {MAX_PAGES} pages; stopped.")
         if self._pinned is not None:
@@ -305,9 +336,12 @@ class RestAdapter(ExternalReadAdapter):
 
     def health_check(self) -> None:
         """The first page of the first table answers."""
+        # ONE ATTEMPT: startup and the Silos screen run this while someone
+        # waits, and with retries a 503 asking for 300 s held startup for
+        # 25 minutes (found in review). A sync still retries in full.
         name = next(iter(self.tables))
         spec = self._spec(name)
-        self._get(urljoin(self.base_url, spec["path"]), dict(spec["params"]))
+        self._get(urljoin(self.base_url, spec["path"]), dict(spec["params"]), retries=0)
 
     def columns_present(self, table_name: str) -> set[str]:
         return {key for record in self._read_table(table_name) for key in record}
@@ -336,6 +370,13 @@ class RestAdapter(ExternalReadAdapter):
     resolve_reverse_links_batch = _gold_only
     read_fields_for_ids = _gold_only
     resolve_reverse_link = _gold_only
+
+
+def _origin(url: str) -> tuple:
+    """(scheme, host, port), the default port filled in."""
+    parts = urlsplit(url)
+    port = parts.port or {"http": 80, "https": 443}.get(parts.scheme)
+    return (parts.scheme, (parts.hostname or "").lower(), port)
 
 
 def _flat(value: Any) -> Any:

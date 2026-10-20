@@ -325,3 +325,99 @@ def test_it_is_registered():
     from core.deployment_loader import _READ_ADAPTER_REGISTRY
 
     assert _READ_ADAPTER_REGISTRY["rest"] is RestAdapter
+
+
+class TestFoundInReview:
+    """Each from an independent review of this adapter (19 October), each
+    reproduced before it was fixed."""
+
+    def _serve(self, handler_body):
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                status, body, headers = handler_body(self)
+                payload = json.dumps(body).encode() if not isinstance(body, bytes) else body
+                self.send_response(status)
+                for k, v in headers.items():
+                    self.send_header(k, v)
+                self.end_headers()
+                self.wfile.write(payload)
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        return server, f"http://127.0.0.1:{server.server_address[1]}"
+
+    def test_a_bearer_token_echoed_alone_is_masked(self):
+        server, base = self._serve(lambda h: (401, b"token s3cr3tTOKEN is expired", {}))
+        try:
+            adapter = RestAdapter({"base_url": base, "auth": {"type": "bearer", "token": "s3cr3tTOKEN"},
+                                   "tables": {"t": {"path": "/"}}})
+            with pytest.raises(ApiRefused) as refused:
+                adapter.read_all_rows("t", ["id"], CONFIG)
+        finally:
+            server.shutdown()
+        assert "s3cr3tTOKEN" not in str(refused.value)
+
+    def test_a_next_page_on_another_host_is_not_sent_the_login(self):
+        server, base = self._serve(lambda h: (200, {"items": [{"id": 1}],
+                                                    "next": "https://evil.example/steal"}, {}))
+        try:
+            adapter = RestAdapter({"base_url": base, "auth": {"type": "api_key", "name": "key",
+                                                              "api_key": "K123", "in": "query"},
+                                   "tables": {"t": {"path": "/", "records": "items",
+                                                    "pagination": {"type": "next_url", "next_field": "next"}}}})
+            with pytest.raises(ApiRefused, match="not .* the credential is not sent there"):
+                adapter.read_all_rows("t", ["id"], CONFIG)
+        finally:
+            server.shutdown()
+
+    def test_an_api_ignoring_the_page_parameter_is_refused_quickly(self):
+        calls = []
+        server, base = self._serve(lambda h: (calls.append(1), (200, {"items": [{"id": 1}, {"id": 2}]}, {}))[1])
+        try:
+            adapter = RestAdapter({"base_url": base, "tables": {"t": {"path": "/", "records": "items",
+                                   "pagination": {"type": "page", "page_param": "pg"}}}})
+            with pytest.raises(ApiRefused, match="same page twice"):
+                adapter.read_all_rows("t", ["id"], CONFIG)
+        finally:
+            server.shutdown()
+        assert len(calls) == 2
+
+    def test_a_server_capping_the_page_size_is_still_read_to_the_end(self):
+        rows = [{"id": i} for i in range(300)]
+
+        def page(h):
+            offset = int(parse_qs(urlparse(h.path).query).get("offset", ["0"])[0])
+            return 200, {"items": rows[offset:offset + 100]}, {}     # caps at 100
+
+        server, base = self._serve(page)
+        try:
+            adapter = RestAdapter({"base_url": base, "tables": {"t": {"path": "/", "records": "items",
+                                   "pagination": {"type": "offset", "offset_param": "offset",
+                                                  "page_size": 500, "page_size_param": "limit"}}}})
+            read = adapter.read_all_rows("t", ["id"], CONFIG)
+        finally:
+            server.shutdown()
+        assert len(read) == 300
+
+    def test_the_health_check_does_not_wait_out_retries(self, no_waiting):
+        server, base = self._serve(lambda h: (503, {"e": 1}, {"Retry-After": "300"}))
+        try:
+            adapter = RestAdapter({"base_url": base, "tables": {"t": {"path": "/"}}})
+            with pytest.raises(StorageUnavailable):
+                adapter.health_check()
+        finally:
+            server.shutdown()
+        assert no_waiting == []
+
+    def test_a_page_token_that_is_not_a_value_is_refused_by_name(self):
+        server, base = self._serve(lambda h: (200, {"items": [{"id": 1}], "next": {"a": 1}}, {}))
+        try:
+            adapter = RestAdapter({"base_url": base, "tables": {"t": {"path": "/", "records": "items",
+                                   "pagination": {"type": "cursor", "cursor_field": "next"}}}})
+            with pytest.raises(ApiRefused, match="not a string or number"):
+                adapter.read_all_rows("t", ["id"], CONFIG)
+        finally:
+            server.shutdown()

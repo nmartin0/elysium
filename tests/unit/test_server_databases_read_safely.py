@@ -74,6 +74,30 @@ class TestMariaDB:
             with pytest.raises(Exception, match="max_statement_time"):
                 conn.execute(text("SELECT SLEEP(5) FROM orders"))
 
+    def test_a_copy_longer_than_the_limit_finishes_and_the_limit_returns(self, mariadb):
+        """FOUND IN REVIEW (19 October): a streamed read is ONE statement on
+        MariaDB, so a session-wide limit cut long copies off partway --
+        80,000 of 200,000 rows. The limit is lifted for the stream only."""
+        import time
+
+        from sqlalchemy import create_engine
+
+        with create_engine(mariadb).begin() as conn:
+            conn.execute(text("CREATE TABLE IF NOT EXISTS big (id INT PRIMARY KEY, v VARCHAR(200))"))
+            conn.execute(text("DELETE FROM big"))
+            conn.execute(text("INSERT INTO big SELECT seq, REPEAT('x', 200) FROM seq_1_to_200000"))
+        adapter = SQLAlchemyReadAdapter({"url": mariadb, "query_timeout_seconds": 1})
+
+        copied = 0
+        with adapter.consistent_read():
+            for batch in adapter.iter_all_rows("big", ["id", "v"], {}, batch_size=40_000):
+                copied += len(batch)
+                time.sleep(0.6)
+            limit = adapter._pinned.conn.execute(text("SELECT @@SESSION.max_statement_time")).scalar()
+
+        assert copied == 200_000
+        assert float(limit) == 1.0, "and an ordinary statement is limited again"
+
     def test_the_session_refuses_to_write(self, mariadb):
         adapter = SQLAlchemyReadAdapter({"url": mariadb})
 
@@ -160,6 +184,8 @@ class TestRowsHiddenFromTheSync:
                 "ALTER TABLE owned_forced ENABLE ROW LEVEL SECURITY",
                 "ALTER TABLE owned_forced FORCE ROW LEVEL SECURITY",
                 "ALTER TABLE owned_forced OWNER TO reader",
+                'CREATE TABLE "Orders" (id TEXT)', 'ALTER TABLE "Orders" ENABLE ROW LEVEL SECURITY',
+                'GRANT SELECT ON "Orders" TO reader',
             ):
                 conn.execute(text(statement))
         user = owner_url.split("://", 1)[1].split("@", 1)[0]
@@ -190,6 +216,11 @@ class TestRowsHiddenFromTheSync:
 
         assert owner.rows_hidden_from_this_reader("owned") is None
         assert "NO rows" in owner.rows_hidden_from_this_reader("owned_forced")
+
+    def test_a_table_named_with_capitals_is_found(self, server):
+        """to_regclass folds a bare name to lower case, so "Orders" was never
+        found and never warned about (found in review)."""
+        assert "NO rows" in server("reader").rows_hidden_from_this_reader("Orders")
 
     def test_a_table_without_it_is_not_warned(self, server):
         assert server("reader").rows_hidden_from_this_reader("open_t") is None

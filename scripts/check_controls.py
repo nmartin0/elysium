@@ -5302,8 +5302,8 @@ CONTROLS = [
     Control(
         describes='SOURCES: MariaDB has a query time limit',
         path='adapters/sqlalchemy_adapter.py',
-        old='                cursor.execute(f"SET SESSION max_statement_time = {float(self._timeout_seconds)}")',
-        new='                cursor.execute("SELECT 1")',
+        old='            cursor.execute(self._time_limit_sql(self._timeout_seconds))',
+        new='            cursor.execute("SELECT 1")',
         tests=[
             ('tests/unit/test_server_databases_read_safely.py::'
              'TestMariaDB::test_a_query_past_its_time_limit_is_stopped'),
@@ -5660,8 +5660,8 @@ CONTROLS = [
     Control(
         describes='REST: the credential never appears in an error',
         path='adapters/rest_adapter.py',
-        old='                body = body.replace(str(secret), "***")',
-        new='                pass',
+        old='            body = body.replace(secret, "***")',
+        new='            pass',
         tests=[
             ('tests/unit/test_rest_adapter.py::'
              'TestFailures::test_the_credential_never_appears_in_an_error'),
@@ -5699,6 +5699,68 @@ CONTROLS = [
              'TestNestedFrozenBlocks::test_a_reference_inside_a_frozen_nested_block_is_filled'),
             ('tests/unit/test_secret_references.py::'
              'TestNestedFrozenBlocks::test_a_plaintext_credential_there_is_refused'),
+        ],
+    ),
+    Control(
+        describes='SOURCES: a MariaDB copy longer than the time limit is not cut off',
+        path='adapters/sqlalchemy_adapter.py',
+        old='        conn.exec_driver_sql(self._time_limit_sql(0))',
+        new='        conn.exec_driver_sql(self._time_limit_sql(self._timeout_seconds))',
+        tests=[
+            ('tests/unit/test_server_databases_read_safely.py::'
+             'TestMariaDB::test_a_copy_longer_than_the_limit_finishes_and_the_limit_returns'),
+        ],
+    ),
+    Control(
+        describes='REST: a token echoed alone in an error is masked',
+        path='adapters/rest_adapter.py',
+        old='        self._secrets = [str(auth[key]) for key in ("token", "api_key", "password")',
+        new='        self._secrets = [str(auth[key]) for key in ()',
+        tests=[
+            ('tests/unit/test_rest_adapter.py::'
+             'TestFoundInReview::test_a_bearer_token_echoed_alone_is_masked'),
+        ],
+    ),
+    Control(
+        describes='REST: the login is never sent to another host',
+        path='adapters/rest_adapter.py',
+        old='        if _origin(url) != self._origin:',
+        new='        if False:',
+        tests=[
+            ('tests/unit/test_rest_adapter.py::'
+             'TestFoundInReview::test_a_next_page_on_another_host_is_not_sent_the_login'),
+        ],
+    ),
+    Control(
+        describes='REST: a page served twice is refused',
+        path='adapters/rest_adapter.py',
+        old='                if signature in seen_tokens:',
+        new='                if False:',
+        tests=[
+            ('tests/unit/test_rest_adapter.py::'
+             'TestFoundInReview::test_an_api_ignoring_the_page_parameter_is_refused_quickly'),
+        ],
+    ),
+    Control(
+        describes='REST: only an empty page ends page or offset paging',
+        path='adapters/rest_adapter.py',
+        old='                    params[name] = int(params[name]) + len(page)',
+        new=('                    params[name] = int(params[name]) + len(page)\n'
+             '                    if paging.get("page_size") and len(page) < int(paging["page_size"]):\n'
+             '                        break'),
+        tests=[
+            ('tests/unit/test_rest_adapter.py::'
+             'TestFoundInReview::test_a_server_capping_the_page_size_is_still_read_to_the_end'),
+        ],
+    ),
+    Control(
+        describes='REST: the health check is one attempt',
+        path='adapters/rest_adapter.py',
+        old='        self._get(urljoin(self.base_url, spec["path"]), dict(spec["params"]), retries=0)',
+        new='        self._get(urljoin(self.base_url, spec["path"]), dict(spec["params"]))',
+        tests=[
+            ('tests/unit/test_rest_adapter.py::'
+             'TestFoundInReview::test_the_health_check_does_not_wait_out_retries'),
         ],
     ),
     Control(

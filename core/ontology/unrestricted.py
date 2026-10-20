@@ -31,6 +31,14 @@ THREE RULES, agreed with the owner:
      read them. Foundry warns that object policies do not follow data
      into downstream outputs; this is the part of that Elysium can stop.
 
+     WHAT "FROM A LABELLED OBJECT" COVERS, said precisely after review
+     (19 October): the objects an action READS -- its object-reference
+     parameters. A value a person or the agent TYPES into a plain
+     parameter, having read it elsewhere, carries no label, so no
+     crossing is seen. That is the same limit every compartment has had
+     (the write-down check compares objects, not text), but here the
+     destination is readable by everyone whose role reads the type.
+
 THE SENTINEL is a distinct object, never None: None already means "could
 not resolve, visible to nobody", and several checks skip None. Code that
 must show it to a person or put it in JSON uses `str()`.

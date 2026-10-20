@@ -92,6 +92,7 @@ from core.ontology.action_types import validate_action_types
 from core.ontology.link_types import expand_link_types, validate_link_types
 from core.ontology.object_type_validation import validate_object_types
 from core.ontology.submission_criteria import validate_action_type_criteria
+from core.ontology.unrestricted import normalise_security_blocks
 
 
 def _report_invalid(config_dir: Path, errors: list[str]) -> bool:
@@ -315,6 +316,10 @@ def lint_deployment(config_dir: Path | None = None) -> bool:
             config = yaml.safe_load((config_dir / "config.yaml").read_text())
             schema_raw = yaml.safe_load(schema_text)
             policy_raw = yaml.safe_load(policy_text)
+            # AS THE LOADER READS IT: `security: unrestricted` normalised
+            # first, or this re-check refuses the word and the full error
+            # list is lost (found in review, 19 October).
+            normalise_security_blocks(schema_raw)
             validate_identifier_types(schema_raw, policy_raw)
         except (OSError, yaml.YAMLError, ValueError):
             return _report_invalid(config_dir, [str(e)])

@@ -37,7 +37,11 @@ Foundry object type with no object security policy is governed by its
 ordinary permissions. In the lattice below it is the EMPTY SET of
 compartments: reading it crosses nothing, and writing a labelled value
 INTO it is a write-down, refused by the same check as any other
-(tests/unit/test_unrestricted_types.py). The decision whether to skip
+(tests/unit/test_unrestricted_types.py) -- for the objects an action
+READS through its object-reference parameters. A value typed into a
+plain parameter after being read elsewhere carries no label and is not
+seen as a crossing: the limit every compartment has, sharper here
+because the destination is readable by every role that reads the type. The decision whether to skip
 the row check is made once, in check_access, through the mediator's
 has_no_row_check.
 

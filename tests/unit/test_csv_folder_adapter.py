@@ -245,3 +245,17 @@ def test_a_frozen_declaration_is_accepted(tmp_path):
                           "tables": {"sold": {"files": "sold_*.csv", "shape": "combined"}}})
 
     assert _rows(CsvFolderAdapter(frozen)) == [{"id": "a", "qty": "1"}]
+
+
+class TestFoundInReview:
+    def test_a_broken_record_spanning_lines_is_named_by_its_first_line(self, tmp_path):
+        _write(tmp_path, "sold_1.csv", 'id,qty\na,"one\ntwo",extra\nb,2\n')
+
+        with pytest.raises(BadLine, match=r"sold_1\.csv, line 2:"):
+            _rows(_adapter(tmp_path))
+
+    def test_an_empty_value_in_a_one_column_file_is_a_row(self, tmp_path):
+        _write(tmp_path, "sold_1.csv", 'id\na\n""\nb\n')
+        adapter = CsvFolderAdapter({"path": tmp_path, "tables": {"sold": {"files": "sold_*.csv"}}})
+
+        assert len(adapter.read_all_rows("sold", ["id"], CONFIG)) == 3

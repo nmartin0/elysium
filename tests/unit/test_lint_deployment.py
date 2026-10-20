@@ -576,3 +576,25 @@ def test_naming_only_half_the_split_form_is_rejected(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "synthesis_model" in out
     assert "step_model" not in out.split("missing")[1][:40], "should name only the absent key"
+
+
+def test_an_unrestricted_type_does_not_cost_the_full_error_list(tmp_path, capsys):
+    """FOUND IN REVIEW (19 October): the lint's second look re-parsed the
+    raw YAML without normalising `security: unrestricted`, refused the word,
+    and printed only the first error, without its line."""
+    ontology = VALID_ONTOLOGY_YAML + """
+  Tag:
+    storage: {silo: primary_sql, table: tags, id_column: tag_id}
+    id_field: tag_id
+    security: unrestricted
+    fields:
+      label: {type: data}
+"""
+    policy = VALID_POLICY_YAML.replace("      - read:Widget.name",
+                                       "      - read:Widget.name\n      - read:Nope\n      - read:Widget.nofield")
+    _write_deployment(tmp_path, ontology=ontology, policy=policy)
+
+    assert lint_deployment(tmp_path) is False
+    out = capsys.readouterr().out
+    assert "'read:Nope'" in out and "'read:Widget.nofield'" in out
+    assert "policy.yaml, line" in out

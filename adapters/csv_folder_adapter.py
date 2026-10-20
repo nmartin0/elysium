@@ -188,10 +188,20 @@ class CsvFolderAdapter(ExternalReadAdapter):
                           f"unnamed: {header}.")
         rows = []
         try:
-            for record in reader:
-                line = reader.line_num + skipped
-                if not record or record == [""]:
-                    continue                    # a blank line, as at the end of a file
+            while True:
+                # THE LINE A RECORD STARTS ON, not the one it ends on: a
+                # quoted value spanning lines was reported at its last line
+                # (found in review, 19 October).
+                line = reader.line_num + 1 + skipped
+                try:
+                    record = next(reader)
+                except StopIteration:
+                    break
+                if not record:
+                    # A BLANK LINE, as at the end of a file. Not [""]: in a
+                    # one-column file that is an empty VALUE, and dropping it
+                    # lost a row (found in review).
+                    continue
                 if len(record) != len(header):
                     raise BadLine(
                         f"{path.name}, line {line}: {len(record)} values where the header "
@@ -200,7 +210,7 @@ class CsvFolderAdapter(ExternalReadAdapter):
                 rows.append((line, {name: (None if value in self.null_values else value)
                                     for name, value in zip(header, record, strict=True)}))
         except csv.Error as e:
-            raise BadLine(f"{path.name}, line {reader.line_num + skipped}: {e}") from e
+            raise BadLine(f"{path.name}, line {line}: {e}") from e
         return header, rows
 
     def _rows(self, table_name: str, id_column: "str | None") -> list[dict]:

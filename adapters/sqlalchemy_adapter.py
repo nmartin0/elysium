@@ -223,6 +223,12 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
                 "options": (f"-c statement_timeout={self._timeout_seconds * 1000} "
                             f"-c default_transaction_read_only=on"),
             }
+        if self._mysql_family:
+            # A SERVER THAT STOPS SENDING, caught by the driver: how long
+            # one read from the socket may wait. Not the statement's
+            # length -- a long streamed copy reads continually -- which is
+            # why it can stand in while the stream lifts the server's limit.
+            return {"read_timeout": max(60, int(self._timeout_seconds * 2))}
         return {}
 
     def _on_mysql_connect(self, dbapi_connection, _record) -> None:
@@ -240,10 +246,8 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
         cursor = dbapi_connection.cursor()
         try:
             cursor.execute("SELECT VERSION()")
-            if "mariadb" in str(cursor.fetchone()[0]).lower():
-                cursor.execute(f"SET SESSION max_statement_time = {float(self._timeout_seconds)}")
-            else:
-                cursor.execute(f"SET SESSION max_execution_time = {int(self._timeout_seconds * 1000)}")
+            self._mariadb = "mariadb" in str(cursor.fetchone()[0]).lower()
+            cursor.execute(self._time_limit_sql(self._timeout_seconds))
             cursor.execute("SET SESSION TRANSACTION READ ONLY")
         finally:
             cursor.close()
@@ -420,6 +424,32 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
             table.c[cursor_column] >= since)
         yield from self._stream(statement, batch_size)
 
+    def _time_limit_sql(self, seconds: float) -> str:
+        """MariaDB's spelling, in seconds, or MySQL's, in milliseconds; 0 is
+        no limit on both."""
+        if getattr(self, "_mariadb", True):
+            return f"SET SESSION max_statement_time = {float(seconds)}"
+        return f"SET SESSION max_execution_time = {int(seconds * 1000)}"
+
+    @contextmanager
+    def _no_time_limit_while_streaming(self, conn):
+        """A STREAMED READ IS ONE STATEMENT on MariaDB and MySQL, and their
+        limits run while the sync is still working through its batches --
+        so a table taking longer than the limit to COPY failed partway
+        (found in review, 19 October: 80,000 of 200,000 rows on a real
+        MariaDB, error 1969). PostgreSQL is unaffected: each FETCH from its
+        server-side cursor is a statement of its own. So the limit is lifted
+        for the stream and restored after; a server that stops sending is
+        still caught, by the driver's read timeout (`_connect_args`)."""
+        if not self._mysql_family:
+            yield
+            return
+        conn.exec_driver_sql(self._time_limit_sql(0))
+        try:
+            yield
+        finally:
+            conn.exec_driver_sql(self._time_limit_sql(self._timeout_seconds))
+
     def _stream(self, statement, batch_size: int):
         # ON THE STATEMENT, NOT THE CONNECTION: Connection.execution_options
         # changes the connection IN PLACE, and on the held snapshot that
@@ -429,15 +459,17 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
         pinned = getattr(self._pinned, "conn", None)
         try:
             if pinned is not None:
-                with pinned.begin_nested():
+                with pinned.begin_nested(), self._no_time_limit_while_streaming(pinned):
                     result = pinned.execute(statement)
                     for partition in result.mappings().partitions(batch_size):
                         yield [dict(row) for row in partition]
+                    result.close()
                 return
-            with self._engine.connect() as conn:
+            with self._engine.connect() as conn, self._no_time_limit_while_streaming(conn):
                 result = conn.execute(statement)
                 for partition in result.mappings().partitions(batch_size):
                     yield [dict(row) for row in partition]
+                result.close()
         except SQLAlchemyError as e:
             raise StorageUnavailable(
                 f"{self._describe_source()}: {type(e).__name__}: {e}") from e
@@ -508,7 +540,10 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
             "       r.rolsuper OR r.rolbypassrls AS exempt, "
             "       (SELECT count(*) FROM pg_policy p WHERE p.polrelid = c.oid) AS policies "
             "FROM pg_class c, pg_roles r "
-            "WHERE c.oid = to_regclass(:table) AND r.rolname = current_user")
+            # QUOTED, as the adapter's own queries quote it: to_regclass
+            # folds a bare name to lower case, so "Orders" was never found
+            # (found in review, 19 October).
+            "WHERE c.oid = to_regclass(quote_ident(:table)) AND r.rolname = current_user")
         try:
             with self._engine.connect() as conn:
                 row = conn.execute(query, {"table": table_name}).mappings().first()
