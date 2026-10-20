@@ -219,7 +219,9 @@ def _check(arguments: argparse.Namespace) -> int:
         # whatever it copies -- and printing nothing there reads as a
         # silo with an empty schema, which is a different and worrying
         # thing.
-        if silo.replicates is not None:
+        if silo.replicates is not None and silo.replication == "streaming":
+            shape = f", a streaming standby of {silo.replicates}"
+        elif silo.replicates is not None:
             shape = (f", a copy of {silo.replicates}"
                      f" every {silo.refresh_seconds / 3600:g}h")
         else:

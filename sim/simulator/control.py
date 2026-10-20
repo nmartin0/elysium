@@ -28,6 +28,8 @@ Commands (POST /control, {"command": ..., ...}, bearer token):
   outage {"silo"} / restore     cut a silo off from its reader, and back
                                 (simulator/outages.py)
   oracle                        every watched number's samples, as JSON
+  pause_replay {"silo"} /       stop a streaming replica applying its
+    resume_replay               source's changes, and start again
 """
 
 import json
@@ -66,6 +68,10 @@ def apply_drift(world, operation: str, fields: dict[str, Any]):
     silo_name = str(fields["table"]).split(".")[0]
     if silo_name not in world.schemas:
         raise ControlError(f"no silo {silo_name!r} holds a schema in this world")
+    spec = world.pack.silos.get(silo_name)
+    if spec is not None and spec.replication == "streaming":
+        raise ControlError(f"{silo_name} is a standby of {spec.replicates}; drift its source, "
+                           f"and the change arrives by the WAL")
     try:
         change = build_change(operation, fields, world.schema(silo_name))
     except (PackError, KeyError) as error:
@@ -127,6 +133,8 @@ class Controller:
             "resume": self._cmd_resume, "advance": self._cmd_advance,
             "drift": self._cmd_drift, "outage": self._cmd_outage,
             "restore": self._cmd_restore, "oracle": self._cmd_oracle,
+            "pause_replay": self._cmd_pause_replay,
+            "resume_replay": self._cmd_resume_replay,
         }
         handler = handlers.get(command)
         if handler is None:
@@ -177,6 +185,11 @@ class Controller:
 
     def _cmd_outage(self, arguments: dict) -> dict:
         name, silo = self._silo(arguments)
+        if getattr(silo, "is_standby", False):
+            # Before it is marked out, or status would say out when nothing
+            # happened (found in review, 21 October).
+            raise ControlError(f"{name} is a standby and cannot change its own roles; cut off "
+                               f"its source, or pause its replay")
         # Noted first, so an interruption part-way still restores it.
         self.out.add(name)
         did = outages.cut_off(silo, self.world.pack.silos[name].database)
@@ -187,6 +200,20 @@ class Controller:
         did = outages.restore(silo, self.world.pack.silos[name].database)
         self.out.discard(name)
         return {"silo": name, "out": False, "did": did}
+
+    def _cmd_pause_replay(self, arguments: dict) -> dict:
+        name, silo = self._replica(arguments)
+        return {"silo": name, "did": silo.pause_replay(True)}
+
+    def _cmd_resume_replay(self, arguments: dict) -> dict:
+        name, silo = self._replica(arguments)
+        return {"silo": name, "did": silo.pause_replay(False)}
+
+    def _replica(self, arguments: dict):
+        name, silo = self._silo(arguments)
+        if self.world.pack.silos[name].replication != "streaming":
+            raise ControlError(f"{name} is not a streaming replica; it has no replay to pause")
+        return name, silo
 
     def _cmd_oracle(self, _arguments: dict) -> dict:
         oracle = self.world.oracle

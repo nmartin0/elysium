@@ -109,6 +109,10 @@ class World:
         self._subject_cache.clear()
         for name, spec in self.pack.silos.items():
             if getattr(spec, "replicates", None) == silo_name and name in self.silos:
+                if getattr(spec, "replication", "copy") == "streaming":
+                    # The DDL arrives by the WAL; only the record moves.
+                    self.schemas[name] = self.schemas[silo_name]
+                    continue
                 replica, database = self.silo(name), self.database(name)
                 # Its record too, or the shape saved at the next stop
                 # disagrees with the database at the next resume.

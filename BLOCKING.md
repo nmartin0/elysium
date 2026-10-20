@@ -1285,18 +1285,38 @@ agreed or refused with a reason. What it took:
   the one most of its own suite reads through; driving it from a live
   simulated application would need a SQLite dialect and session in the
   simulator, which is buildable.
-- REPLICA LAG. The simulator's replica is a separate database refilled
-  every tick, not a streaming standby, so nothing about lag can be
-  tested honestly against it. The precedent names two effects: a
-  standby's lag is `now() - pg_last_xact_replay_timestamp()` (NULL when
-  the primary is idle, which reads as lag when it is not), and a long
-  read on a standby is cancelled after `max_standby_streaming_delay`,
-  30 seconds by default -- Stitch's symptom is data "trickling" in.
-  Elysium reports a replica as fresh by its own sync time, whatever the
-  replica's lag. A real standby in the simulator (pg_basebackup and
-  `standby.signal`, on the PostgreSQL binaries it already runs) would
-  test both; also buildable.
 
-**Next in step 3:** whichever of those two the owner wants first.
+**Replica lag, 21 October.** The simulator's replica can now be a real
+PostgreSQL standby (`replication: streaming`, made by pg_basebackup),
+with replay paused and resumed through the control channel. The time a
+sync records is when its read began, and it means "everything
+committed before this is in the copy" -- freshness is shown from it,
+and the overlay rests on it. A lagging standby broke both: its data
+stops at the last change it replayed. A PostgreSQL source now says
+whether it is a standby that has received more than it has replayed --
+received against replayed rather than against the clock, which reads an
+idle primary as lag -- and the copy is dated from its last replayed
+change, with the reason on the Mirror screen. Over field_service with
+`office` a standby and replay paused for two rounds, it froze, Elysium
+said so, and every table agreed. What it cannot see: WAL not yet
+received ("the replica doesn't know the current transaction position of
+the primary"); measuring that needs the primary, which Elysium does not
+reach. Long reads cancelled by `max_standby_streaming_delay` are not
+provoked; a cancelled read is an ordinary failed read, keeping the
+last good copy.
+
+FOR THE OWNER, from review: the deployment's "synced at" is the OLDEST
+of its tables' (core/deployment_loader.py, `_mirror_last_synced_at`),
+and the overlay of Elysium's own writes runs from it. That predates
+this work, but a standby with replay paused now pins it for as long as
+replay stays paused. Then, in a table read from a current source, a
+write Elysium made earlier is laid over a newer change made directly at
+the source, and the newer value is hidden. Never a double application
+-- a write sets values, it does not add to them -- but a stale value
+shown. Taking the overlay window per table rather than per deployment
+would end it; it is a change to how the overlay is scoped, so it is
+written down here rather than made in passing.
+
+**Next in step 3:** the SQLite source, if the owner wants it.
 
 **Blocked on:** nothing; in progress.

@@ -38,6 +38,7 @@ goes through `Table`/`Column` objects, which the dialect quotes.
 import logging
 import threading
 from contextlib import contextmanager
+from datetime import UTC
 from typing import Any
 
 from sqlalchemy import (
@@ -57,6 +58,7 @@ from sqlalchemy.exc import NoSuchTableError, SQLAlchemyError
 from core.ontology.interface import (
     ExternalReadAdapter,
     RowsHidden,
+    SourceBehind,
     StorageUnavailable,
     TableNotFound,
 )
@@ -125,6 +127,16 @@ def _type_text(column_type) -> str:
         text += " WITH TIME ZONE"
     return text
 
+
+
+def _age(interval) -> str:
+    """An interval as a person says it: 40 s, 12 min, 3 h 5 min."""
+    seconds = int(interval.total_seconds()) if interval is not None else 0
+    if seconds < 120:
+        return f"{seconds} s"
+    if seconds < 7200:
+        return f"{seconds // 60} min"
+    return f"{seconds // 3600} h {seconds % 3600 // 60} min"
 
 class SQLAlchemyReadAdapter(ExternalReadAdapter):
     """Reads objects from a database SQLAlchemy has a dialect for."""
@@ -224,9 +236,19 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
             # SELECT-only account, and this is the second lock, for the
             # account that was given more. Every transaction this
             # adapter opens refuses to write.
+            # THE URL'S OWN OPTIONS KEPT, AND FIRST (21 October). These
+            # connect_args replaced a URL's `?options=` outright, so
+            # `-c search_path=reporting` was dropped without a word and the
+            # wrong schema read. Theirs first, ours after: of two settings
+            # of one parameter the later wins, so a URL cannot switch
+            # read-only off.
+            theirs = make_url(self._url).query.get("options") or ""
+            if isinstance(theirs, tuple):
+                theirs = " ".join(theirs)
             return {
-                "options": (f"-c statement_timeout={self._timeout_seconds * 1000} "
-                            f"-c default_transaction_read_only=on"),
+                "options": (f"{theirs} " if theirs else "")
+                + (f"-c statement_timeout={self._timeout_seconds * 1000} "
+                   f"-c default_transaction_read_only=on"),
             }
         if self._mysql_family:
             # A SERVER THAT STOPS SENDING, caught by the driver: how long
@@ -593,6 +615,67 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
                 f"{self._describe_source()}: could not read the columns of "
                 f"{table_name!r}: {e}"
             ) from e
+
+    def source_behind(self) -> "SourceBehind | None":
+        """A PostgreSQL standby whose replay has fallen behind what it has
+        received: the commit time of the last change it applied.
+
+        RECEIVED AGAINST REPLAYED, NOT THE CLOCK. `now() -
+        pg_last_xact_replay_timestamp()` is the usual measure, and it
+        reads as lag whenever the primary is merely idle -- it "might lead
+        to wrong conclusions that standby is lagging" (postgres.ai). When
+        everything received has been replayed, the standby is as current
+        as it can know, and nothing is claimed. WHAT THIS CANNOT SEE: WAL
+        not yet received -- "the replica doesn't know the current
+        transaction position of the primary" (Adjust's engineering blog,
+        which measures on the primary instead, through
+        pg_stat_replication). Elysium reaches only the replica.
+
+        PESSIMISTIC, NEVER LATE: WAL that holds no transaction -- a
+        checkpoint, a segment switch -- also makes received differ from
+        replayed, and the copy is then dated from the last commit, earlier
+        than it need be (found in review, 21 October). Earlier is the safe
+        side: freshness reads older and more of Elysium's writes are
+        overlaid; nothing committed is missed.
+
+        IN UTC, because the overlay compares this as TEXT with the write
+        log's UTC stamps: psycopg returns it in the session's time zone,
+        and a standby in Tokyo was dated nine hours AHEAD as text --
+        hiding every write from the overlay (found in review).
+        """
+        if self._engine.dialect.name != "postgresql":
+            return None
+        query = text(
+            "SELECT pg_is_in_recovery() AS standby, "
+            "       pg_last_wal_receive_lsn() = pg_last_wal_replay_lsn() AS caught_up, "
+            "       CASE WHEN pg_is_in_recovery() THEN pg_is_wal_replay_paused() END AS paused, "
+            "       pg_last_xact_replay_timestamp() AS replayed_at, "
+            "       now() - pg_last_xact_replay_timestamp() AS behind")
+        try:
+            with self._engine.connect() as conn:
+                row = conn.execute(query).mappings().first()
+        except SQLAlchemyError as e:
+            logger.warning("%s: could not ask whether it is a lagging standby: %s",
+                           self._describe_source(), e)
+            return None
+        if row is not None and row["standby"] and row["caught_up"] is None:
+            # NOT STREAMING -- restoring from an archive, or its receiver
+            # down: nothing says how current it is (found in review).
+            logger.warning("%s is a PostgreSQL standby that is not streaming from its "
+                           "primary, so how current it is cannot be told",
+                           self._describe_source())
+        if row is None or not row["standby"] or row["caught_up"] is not False \
+                or row["replayed_at"] is None:
+            return None
+        behind = row["behind"]
+        return SourceBehind(
+            as_of=row["replayed_at"].astimezone(UTC),
+            why=("this source is a PostgreSQL standby "
+                 + ("whose replay is PAUSED, " if row["paused"] else "")
+                 + f"up to {_age(behind)} behind what it has received: its data stops at "
+                   f"{row['replayed_at'].astimezone(UTC).isoformat()}, and the copy is "
+                   f"dated from then, "
+                   f"not from when it was read."))
 
     def tables_present(self) -> "set[str] | None":
         """Tables and views, through the Inspector (see columns_present)."""

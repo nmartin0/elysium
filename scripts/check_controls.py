@@ -5319,8 +5319,8 @@ CONTROLS = [
     Control(
         describes='SOURCES: a PostgreSQL session refuses to write',
         path='adapters/sqlalchemy_adapter.py',
-        old='                            f"-c default_transaction_read_only=on"),',
-        new='                            f""),',
+        old='                   f"-c default_transaction_read_only=on"),',
+        new='                   f""),',
         tests=[
             ('tests/unit/test_server_databases_read_safely.py::'
              'TestPostgreSQL::test_the_session_refuses_to_write'),
@@ -5495,8 +5495,8 @@ CONTROLS = [
     Control(
         describes='SOURCES: rows hidden from the sync are recorded on the attempt',
         path='scripts/run_sync.py',
-        old='                               getattr(result, "hidden_rows", None)) if part]',
-        new='                               None) if part]',
+        old='                               getattr(result, "hidden_rows", None),',
+        new='                               None,',
         tests=[
             ('tests/unit/test_server_databases_read_safely.py::'
              'test_a_sync_carries_the_warning_onto_its_result'),
@@ -6015,6 +6015,22 @@ CONTROLS = [
         new="    if False:",
         tests=["sim/tests/test_migrations.py::"
                "test_a_type_change_keeps_not_null_unless_it_says_otherwise"],
+    ),
+    Control(
+        describes="SYNC: a lagging standby's copy is dated from its last replayed change",
+        path="core/mirror/iceberg_sync.py",
+        old="            read_started = behind.as_of\n",
+        new="",
+        tests=["tests/unit/test_a_lagging_standby.py::"
+               "test_a_lagging_standby_dates_the_copy_from_its_last_change"],
+    ),
+    Control(
+        describes="SIM: a streaming replica's replay can be paused",
+        path="sim/simulator/silos/postgres.py",
+        old='            conn.execute("SELECT pg_wal_replay_pause()" if paused',
+        new='            conn.execute("SELECT 1" if paused',
+        tests=["sim/tests/test_replicas.py::"
+               "test_paused_replay_is_lag_and_resumed_replay_catches_up"],
     ),
     Control(
         describes="ENRICH: a classified field is never an input to a model",

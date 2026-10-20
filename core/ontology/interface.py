@@ -70,6 +70,8 @@ itself; core/ enforces based on what's declared, never assumes:
 
 from abc import abstractmethod
 from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from core.adapter_roles import ReadAdapter, WriteAdapter
@@ -100,6 +102,14 @@ class StorageUnavailable(RuntimeError):
     the same class of failure rather than inventing its own.
     """
 
+
+
+@dataclass(frozen=True)
+class SourceBehind:
+    """A source that lags what it copies (see source_behind)."""
+
+    as_of: datetime          # everything committed before this is in the source
+    why: str
 
 
 class TableNotFound(StorageUnavailable):
@@ -321,6 +331,20 @@ class ExternalReadAdapter(ReadAdapter):
         """
         raise IncrementalUnsupported(
             f"{type(self).__name__} cannot read changed rows only")
+
+    def source_behind(self) -> "SourceBehind | None":
+        """When the source is a standby whose replay has fallen behind, how
+        far: the commit time of the last change it applied, and why. None
+        when it is not a standby, is caught up, or cannot say.
+
+        WHY (21 October): the time a sync records is when its read began,
+        and it means "everything committed before this is in the copy" --
+        the overlay rests on that, and freshness is shown from it. On a
+        lagging replica neither holds: its data stops at the last change
+        it replayed. Found by running Elysium against a real streaming
+        standby in the simulator, with replay paused.
+        """
+        return None
 
     def tables_present(self) -> "set[str] | None":
         """The names of the tables (and views) the source holds now, or

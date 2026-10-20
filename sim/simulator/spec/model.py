@@ -67,6 +67,13 @@ class SiloSpec:
     #: separate delay to configure, because a materialised copy is
     #: exactly as stale as the time since it was last rebuilt.
     refresh_seconds: float = 0.0
+    #: "copy" (the default): a separate database emptied and refilled
+    #: every `refresh_seconds`. "streaming": a real PostgreSQL standby,
+    #: made by pg_basebackup from its source and fed by the WAL -- its
+    #: lag is replay's, paused and resumed through the control channel
+    #: (REAL_SOURCES.md P7). Added 21 October, so Elysium could be run
+    #: against a source that lags the way a read replica really does.
+    replication: str = "copy"
 
 
 @dataclass(frozen=True)

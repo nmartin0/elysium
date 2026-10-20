@@ -149,6 +149,13 @@ def _check_replicas(silos: dict, schemas: dict) -> None:
                 f"{name!r} is a replica of {silo.replicates!r}, so its shape is "
                 f"whatever it copies; remove its schema"
             )
+        if silo.replication == "streaming" and silo.database != source.database:
+            # A standby is its source's whole cluster: the databases are
+            # the source's, under the source's names.
+            raise PackError(
+                f"silos.{name}.database",
+                f"a streaming replica holds {silo.replicates!r}'s databases under their own "
+                f"names; set `database: {source.database}`")
 
 
 def load_spec(raw: dict) -> PackSpec:

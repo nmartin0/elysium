@@ -92,7 +92,8 @@ ROLE = "live_reader"
 # -- the pack -------------------------------------------------------------
 
 def overlay(pack: Path, out: Path, realism: bool, extra: dict | None = None,
-            kinds: dict | None = None, migrations: list | None = None) -> Path:
+            kinds: dict | None = None, migrations: list | None = None,
+            streaming: tuple = ()) -> Path:
     """The pack with each silo's realism options switched on; `kinds`
     runs a silo as another kind of database (no pack declares SQLite),
     and `migrations` adds to the pack's own timeline of schema changes."""
@@ -106,6 +107,14 @@ def overlay(pack: Path, out: Path, realism: bool, extra: dict | None = None,
             spec["silos"][name].pop("database", None)      # one file, no databases
     if migrations:
         spec["migrations"] = [*(spec.get("migrations") or []), *migrations]
+    for name in streaming:
+        # A real standby: no refresh, and its source's databases by name.
+        replica = spec["silos"][name]
+        if not replica.get("replicates"):
+            raise SystemExit(f"--streaming {name}: {name!r} is not a replica")
+        replica.pop("refresh", None)
+        replica["replication"] = "streaming"
+        replica["database"] = spec["silos"][replica["replicates"]]["database"]
     for silo in (spec.get("silos") or {}).values():
         options = dict(silo.get("options") or {})
         if realism:
@@ -616,11 +625,11 @@ def sync(paths, env: dict) -> tuple[int, str]:
 def run(pack: Path, work: Path, rounds: int, advance: str, realism: bool, days: int,
         seed: int, extra: dict | None = None, events: dict | None = None,
         report=print, kinds: dict | None = None,
-        migrations: list | None = None) -> list[Finding]:
+        migrations: list | None = None, streaming: tuple = ()) -> list[Finding]:
     from core.deployment_loader import RuntimePaths, load_deployment_bundle
     from core.intermediate_layer.auth import UserRecord
 
-    spec_path = overlay(pack, work / "pack.yaml", realism, extra, kinds, migrations)
+    spec_path = overlay(pack, work / "pack.yaml", realism, extra, kinds, migrations, streaming)
     spec = yaml.safe_load(spec_path.read_text())
     tables = tables_of(spec)
     findings: list[Finding] = []
@@ -724,6 +733,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--migration", action="append", default=[], metavar="JSON",
                         help="one more scheduled schema change, as a pack writes it, e.g. "
                              "{\"at\":\"9d\",\"operation\":\"rescale_column\",...}")
+    parser.add_argument("--streaming", action="append", default=[], metavar="SILO",
+                        help="make a replica a real PostgreSQL standby, e.g. office")
     arguments = parser.parse_args(argv)
     kinds = dict(kind.split("=", 1) for kind in arguments.kind)
     migrations = [json.loads(m) for m in arguments.migration]
@@ -739,7 +750,8 @@ def main(argv: list[str] | None = None) -> int:
             (command, json.loads(rest[0]) if rest else {}))
     findings = run(arguments.pack.resolve(), arguments.work.resolve(), arguments.rounds,
                    arguments.advance, arguments.realism, arguments.days, arguments.seed,
-                   extra, events, kinds=kinds, migrations=migrations)
+                   extra, events, kinds=kinds, migrations=migrations,
+                   streaming=tuple(arguments.streaming))
     print(f"\n{len(findings)} disagreement(s)")
     for finding in findings:
         print(f"  {finding}")

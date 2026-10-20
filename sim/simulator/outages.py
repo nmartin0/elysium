@@ -38,6 +38,12 @@ class OutageError(Exception):
 def cut_off(silo, database: "str | None") -> str:
     """Make `silo` unreachable to its reader. Returns what was done."""
     kind = silo.kind
+    if getattr(silo, "is_standby", False):
+        # A standby is read only: it cannot lock its own reader out, and
+        # the role it would lock is its source's (found in review, 21
+        # October). Its outage is stopping it, which this does not do.
+        raise OutageError(f"{silo.name} is a standby and cannot change its own roles; "
+                          f"cut off its source, or pause its replay")
     if kind == "postgresql":
         with silo.connect(autocommit=True) as conn:
             conn.execute(f'ALTER ROLE "{READER}" NOLOGIN')
@@ -74,6 +80,11 @@ def cut_off(silo, database: "str | None") -> str:
 def restore(silo, database: "str | None") -> str:
     """Undo cut_off(). Returns what was done."""
     kind = silo.kind
+    if getattr(silo, "is_standby", False):
+        # Never cut off (see cut_off); its roles are its source's, which a
+        # restore of the source puts right. Writing here crashed the
+        # resume of any world with a standby (found in review).
+        return "a standby; its source's restore covers it"
     if kind == "postgresql":
         with silo.connect(autocommit=True) as conn:
             conn.execute(f'ALTER ROLE "{READER}" LOGIN')

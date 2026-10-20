@@ -178,3 +178,20 @@ def test_on_postgresql_a_renamed_table_is_named_as_gone(postgres, tmp_path):
     assert "could not read the columns" not in said
     assert adapter.tables_present() >= {"competencies", "kept", "kept_summary"}, \
         "a materialized view is a table a source can be"
+
+
+def test_a_urls_own_options_are_kept_and_read_only_still_wins(postgres):
+    """Found 21 October: the reader's own connect options replaced a URL's
+    `?options=`, so a `search_path` naming the schema to read was dropped."""
+    from sqlalchemy import create_engine
+
+    with create_engine(postgres).begin() as conn:
+        conn.execute(text("CREATE SCHEMA reporting"))
+        conn.execute(text("CREATE TABLE reporting.only_here (id TEXT, v TEXT)"))
+    url = (postgres + ("&" if "?" in postgres else "?")
+           + "options=-c%20search_path%3Dreporting%20-c%20default_transaction_read_only%3Doff")
+    adapter = SQLAlchemyReadAdapter({"url": url})
+
+    assert adapter.columns_present("only_here") == {"id", "v"}, "the URL's search_path is used"
+    with adapter._engine.connect() as conn:
+        assert conn.execute(text("SHOW default_transaction_read_only")).scalar() == "on"

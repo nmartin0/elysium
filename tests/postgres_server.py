@@ -118,3 +118,37 @@ def real_postgres():
         cluster.stop()
         pytest.fail(f"PostgreSQL at {bin_dir} would not start: {exc.stderr.strip()[-500:]}",
                     pytrace=False)
+
+
+class _StandbyCluster(_SystemCluster):
+    """A hot standby of a running cluster, by pg_basebackup -R over the
+    primary's socket (21 October): for the tests of a source that lags.
+    Its own socket directory, so both listen on the same port number."""
+
+    def start_from(self, primary: _SystemCluster) -> str:
+        self._run("pg_basebackup", "-D", str(self.data), "-h", str(primary.socket_dir),
+                  "-U", primary.user, "-R", "-X", "stream", "-c", "fast")
+        self._run("pg_ctl", "-D", str(self.data), "-w", "-l", str(self.root / "log"),
+                  "-o", f"-c listen_addresses='' -k {self.socket_dir} -F", "start")
+        return f"postgresql://{self.user}@/postgres?host={self.socket_dir}"
+
+
+def real_postgres_standby():
+    """(primary uri, standby uri, stop): a PostgreSQL and a streaming
+    standby of it, from the system's binaries (pgserver cannot make one),
+    or pytest.fail with the reason."""
+    bin_dir = _binaries()
+    if bin_dir is None or not (bin_dir / "pg_basebackup").exists():
+        pytest.fail(f"{NONE_AVAILABLE} A standby also needs pg_basebackup.", pytrace=False)
+    primary, standby = _SystemCluster(bin_dir), _StandbyCluster(bin_dir)
+
+    def stop():
+        standby.stop()
+        primary.stop()
+
+    try:
+        return primary.start(), standby.start_from(primary), stop
+    except subprocess.CalledProcessError as exc:
+        stop()
+        pytest.fail(f"a PostgreSQL standby would not start: {exc.stderr.strip()[-500:]}",
+                    pytrace=False)

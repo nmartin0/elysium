@@ -82,6 +82,9 @@ class SyncResult:
     # PostgreSQL row-level security applying to it. The copy is then not
     # the whole table, and nothing else would say so.
     hidden_rows: "str | None" = None
+    # A SOURCE THAT LAGS WHAT IT COPIES (21 October): a standby behind its
+    # primary. The copy is dated from the standby's data, and this says why.
+    behind: "str | None" = None
     violations: dict = dataclass_field(default_factory=dict)
     # THE WARN-POLICY FINDINGS ALONE, structured, as `RuleCount`s.
     #

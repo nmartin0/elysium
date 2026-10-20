@@ -286,6 +286,39 @@ class PostgresSilo(Silo):
         self._configure_statement_logging()
         self._require_passwords_of_consumers()
 
+    def create_standby(self, source: "PostgresSilo") -> None:
+        """A hot standby of `source`, by pg_basebackup -R: the source's
+        whole cluster -- databases, roles, grants, row security, pg_hba --
+        streamed from it and replayed from then on. The source must be
+        running; initdb's trust rules already let it serve replication on
+        127.0.0.1. Refuses rather than replacing, like create()."""
+        refuse_if_root()
+        if self.cluster_dir.exists():
+            raise SiloError(
+                f"{self.name}: {self.cluster_dir} already exists; remove the "
+                f"world's directory to rebuild it")
+        self._run([
+            str(self.binaries.pg_ctl.parent / "pg_basebackup"),
+            "-D", str(self.cluster_dir), "-h", "127.0.0.1", "-p", str(source.port),
+            "-U", source.superuser, "-R", "-X", "stream", "-c", "fast",
+        ], "pg_basebackup")
+
+    @property
+    def is_standby(self) -> bool:
+        """Made by create_standby: pg_basebackup -R leaves this file, and
+        PostgreSQL starts in recovery while it is there."""
+        return (self.cluster_dir / "standby.signal").exists()
+
+    def pause_replay(self, paused: bool) -> str:
+        """Stop or restart applying the source's changes: the lag a
+        standby really has, made on demand. Only on a standby."""
+        with self.connect(autocommit=True) as conn:
+            if not conn.execute("SELECT pg_is_in_recovery()").fetchone()[0]:
+                raise SiloError(f"{self.name} is not a standby; it has no replay to pause")
+            conn.execute("SELECT pg_wal_replay_pause()" if paused
+                         else "SELECT pg_wal_replay_resume()")
+        return "replay paused" if paused else "replay resumed"
+
     def _require_passwords_of_consumers(self) -> None:
         """Make reader and writer send a password; leave the owner alone.
 

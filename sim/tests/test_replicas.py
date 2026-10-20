@@ -352,3 +352,176 @@ def test_a_replica_withholds_what_its_source_withholds(tmp_path, postgres_binari
         assert counts(world)[1] > 0, "the copy is still made; only the reader is refused"
     finally:
         runner.stop(world)
+
+
+# ---- a streaming standby (21 October) ---------------------------------------
+
+STREAMING = textwrap.dedent("""
+    pack: streaming
+    silos:
+      live:      {kind: postgresql, database: live, withheld: [secrets]}
+      reporting: {kind: postgresql, database: live, replicates: live,
+                  replication: streaming}
+    schemas:
+      live:
+        tables:
+          orders:
+            columns:
+              order_id: {type: text, length: 64, primary_key: true, nullable: false}
+              total:    {type: decimal, precision: 19, scale: 4, nullable: false}
+          secrets:
+            columns:
+              secret_id: {type: text, length: 64, primary_key: true, nullable: false}
+    seed:
+      - table: live.orders
+        count: 5
+        columns:
+          order_id: {generator: id, prefix: o}
+          total:    {generator: constant, value: "10.0000"}
+    events:
+      ordered:
+        every: 1h
+        emits:
+          - table: live.orders
+            columns:
+              order_id: {generator: id, prefix: o}
+              total:    {generator: constant, value: "10.0000"}
+    """)
+
+
+def _standby_count(world, timeout=10.0):
+    """The standby's count once replay has had a moment: streaming is
+    asynchronous, so a read straight after a commit may be just behind."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    while True:
+        live = fetch_all(world.silo("live"), "live", "SELECT count(*) FROM orders")[0][0]
+        standby = fetch_all(world.silo("reporting"), "live", "SELECT count(*) FROM orders")[0][0]
+        if standby == live or time.monotonic() > deadline:
+            return live, standby
+        time.sleep(0.1)
+
+
+@pytest.mark.postgres
+def test_a_streaming_replica_is_a_standby_fed_by_the_wal(tmp_path, postgres_binaries):
+    world = runner.build(write_pack(tmp_path, STREAMING, "streaming"), tmp_path / "var", seed=1)
+    try:
+        runner.seed(world)
+        runner.run(world, total_seconds=3 * 3600, tick_seconds=3600)
+
+        live, standby = _standby_count(world)
+        assert live == standby == 8
+        in_recovery = fetch_all(world.silo("reporting"), "live", "SELECT pg_is_in_recovery()")
+        assert in_recovery[0][0] is True
+    finally:
+        runner.stop(world)
+
+
+@pytest.mark.postgres
+def test_paused_replay_is_lag_and_resumed_replay_catches_up(tmp_path, postgres_binaries):
+    world = runner.build(write_pack(tmp_path, STREAMING, "streaming"), tmp_path / "var", seed=1)
+    try:
+        runner.seed(world)
+        _standby_count(world)
+        world.silo("reporting").pause_replay(True)
+        runner.run(world, total_seconds=3 * 3600, tick_seconds=3600)
+
+        live, standby = _standby_count(world, timeout=1.0)
+        assert (live, standby) == (8, 5), "paused, the standby stays where it was"
+
+        world.silo("reporting").pause_replay(False)
+        assert _standby_count(world) == (8, 8)
+    finally:
+        runner.stop(world)
+
+
+@pytest.mark.postgres
+def test_a_standby_carries_the_sources_grants_and_drift(tmp_path, postgres_binaries):
+    import psycopg
+
+    world = runner.build(write_pack(tmp_path, STREAMING, "streaming"), tmp_path / "var", seed=1)
+    try:
+        runner.seed(world)
+        world.apply_change("live", load_spec_change(world, "add_column", {
+            "table": "live.orders", "column": "note", "type": "text", "length": 20}))
+        _standby_count(world)
+        details = world.connections()["reporting"].details
+        with psycopg.connect(host=details["host"], port=details["port"],
+                             dbname=details["database"], user=details["user"],
+                             password=details["password"]) as connection:
+            columns = {row[0] for row in connection.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'orders'").fetchall()}
+            assert "note" in columns, "the source's DDL reaches the standby"
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                connection.execute("SELECT count(*) FROM secrets")
+    finally:
+        runner.stop(world)
+
+
+def load_spec_change(world, operation, fields):
+    from simulator.spec.migrations import build_change
+
+    return build_change(operation, fields, world.schema("live"))
+
+
+@pytest.mark.parametrize(("change", "says"), [
+    ("replication: streaming}", "only means something with `replicates`"),
+    ("replicates: live, replication: streaming, refresh: 6h}", "no refresh"),
+    ("replicates: live, replication: carrier-pigeon}", "copy or streaming"),
+], ids=["no_source", "refresh", "unknown"])
+def test_what_a_streaming_replica_may_say(tmp_path, change, says):
+    import yaml
+
+    raw = yaml.safe_load(STREAMING)
+    line = "reporting: {kind: postgresql, database: live, " + change
+    raw["silos"]["reporting"] = yaml.safe_load("{" + line.split("{", 1)[1])
+    with pytest.raises(PackError, match=says):
+        load_spec(raw)
+
+
+def test_a_standby_holds_its_sources_databases_by_name():
+    import yaml
+
+    raw = yaml.safe_load(STREAMING)
+    raw["silos"]["reporting"]["database"] = "reporting"
+    with pytest.raises(PackError, match="set `database: live`"):
+        load_spec(raw)
+
+
+@pytest.mark.postgres
+def test_a_standby_is_left_alone_by_outages_and_drift(tmp_path, postgres_binaries):
+    """Found in review, 21 October: restoring leftover outages wrote to the
+    standby, crashing the resume of any world with one; an outage on it was
+    marked out though nothing happened; a drift on it failed inside
+    PostgreSQL rather than being refused."""
+    from simulator import outages
+    from simulator.control import ControlError, Controller, apply_drift
+
+    world = runner.build(write_pack(tmp_path, STREAMING, "streaming"), tmp_path / "var", seed=1)
+    try:
+        done = outages.restore_leftovers(world)
+        assert "standby" in done["reporting"], "a resumed world's restore passes it by"
+
+        controller = Controller(world)
+        with pytest.raises(ControlError, match="standby"):
+            controller._cmd_outage({"silo": "reporting"})
+        assert "reporting" not in controller.out
+        with pytest.raises(ControlError, match="drift its source"):
+            apply_drift(world, "add_column", {"table": "reporting.orders", "column": "x",
+                                              "type": "text", "length": 5})
+    finally:
+        runner.stop(world)
+
+
+@pytest.mark.parametrize("extra", [{"withheld": ["orders"]},
+                                   {"options": {"row_security": ["orders"]}}],
+                         ids=["withheld", "row_security"])
+def test_a_standbys_grants_are_its_sources(extra):
+    import yaml
+
+    raw = yaml.safe_load(STREAMING)
+    raw["silos"]["reporting"].update(extra)
+    with pytest.raises(PackError, match="grants are its source's"):
+        load_spec(raw)

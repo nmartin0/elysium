@@ -254,6 +254,19 @@ def _source_types_json(adapter, table_name: str) -> str:
     return json.dumps(types, sort_keys=True) if types else ""
 
 
+def _source_behind(adapter):
+    """The adapter's answer, or None: a question about freshness must
+    never stop the read."""
+    check = getattr(adapter, "source_behind", None)
+    if check is None:
+        return None
+    try:
+        return check()
+    except Exception as e:  # noqa: BLE001 - a dating, not a read path
+        logger.warning("could not ask whether the source lags: %s", e)
+        return None
+
+
 def _rows_hidden(adapter, table_name: str) -> "str | None":
     """The adapter's answer, or None if it has no such method or fails:
     a warning about the read must never stop the read."""
@@ -758,7 +771,15 @@ class IcebergMirrorSync(MirrorSync):
         # (excluded as older than the commit). Measured: a 2 s source
         # read left a 2.08 s window. The read's START is the honest
         # answer: everything after it is still overlaid.
-        read_started_at = datetime.now(UTC).isoformat()
+        read_started = datetime.now(UTC)
+        # AND NO LATER THAN A LAGGING STANDBY'S DATA (21 October): a copy
+        # of a replica is only as recent as the last change it replayed,
+        # so that is when "everything before this is in the copy" holds.
+        behind = _source_behind(adapter)
+        if behind is not None and behind.as_of < read_started:
+            logger.warning("%s.%s: %s", silo_name, table_name, behind.why)
+            read_started = behind.as_of
+        read_started_at = read_started.isoformat()
         source, bronze_is_current = self._write_bronze(
             adapter, silo_name, table_name, id_column, columns, hidden_rows, set(present))
         bronze_snapshot = self._bronze_snapshot_id(silo_name, table_name)
@@ -1208,6 +1229,7 @@ class IcebergMirrorSync(MirrorSync):
                       f"current, bronze is behind and this read left no raw record"),
             absorbed_drift=absorbed_drift,
             hidden_rows=hidden_rows,
+            behind=None if behind is None else behind.why,
         )
 
     def _bronze_snapshot_id(self, silo_name: str, table_name: str):

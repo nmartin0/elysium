@@ -63,6 +63,15 @@ class TestWhatItAddsToAPack:
         assert spec["migrations"][-1] == rescale
 
 
+def test_a_replica_can_be_made_a_real_standby(tmp_path):
+    silos = yaml.safe_load(live.overlay(FIELD_SERVICE, tmp_path / "p.yaml", False,
+                                        streaming=("office",)).read_text())["silos"]
+
+    assert silos["office"]["replication"] == "streaming"
+    assert "refresh" not in silos["office"]
+    assert silos["office"]["database"] == silos["dispatch"]["database"]
+
+
 class TestTheDeploymentItWrites:
     CONNECTIONS = {
         "dispatch": {"kind": "postgresql", "host": "127.0.0.1", "port": 5, "database": "d",

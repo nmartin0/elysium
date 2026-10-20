@@ -59,6 +59,14 @@ def _load_withheld(raw: object, path: str, kind: str,
     return tuple(names)
 
 
+#: PostgreSQL silo options that write the catalog, which a standby reads
+#: from its source and cannot write.
+_CATALOG_OPTIONS = frozenset({"row_security", "reader_default_privileges",
+                              "reader_statement_timeout_ms",
+                              "reader_idle_session_timeout_ms",
+                              "reader_idle_in_transaction_timeout_ms"})
+
+
 def _load_silos(raw: dict) -> dict[str, SiloSpec]:
     if not raw:
         raise PackError("silos", "a pack must declare at least one silo")
@@ -84,7 +92,28 @@ def _load_silos(raw: dict) -> dict[str, SiloSpec]:
         withheld = _load_withheld(definition.get("withheld"), path, kind, database)
         replicates = definition.get("replicates")
         refresh = 0.0
-        if replicates is not None:
+        replication = str(definition.get("replication", "copy"))
+        if replication not in ("copy", "streaming"):
+            raise PackError(f"{path}.replication", "must be copy or streaming")
+        if replication == "streaming" and replicates is None:
+            raise PackError(path, "`replication` only means something with `replicates`")
+        if replication == "streaming":
+            # A standby is the engine's own: there is no refresh, and
+            # PostgreSQL's is the one built (MariaDB's binlog is not).
+            if kind != "postgresql":
+                raise PackError(f"{path}.replication",
+                                f"streaming is built for postgresql, not {kind}")
+            if "refresh" in definition:
+                raise PackError(f"{path}.refresh",
+                                "a streaming replica has no refresh; its lag is replay's")
+            # Its catalog is its source's: a standby cannot REVOKE, switch
+            # on row security or alter a role, so these would be ignored.
+            catalog = sorted(set(options) & _CATALOG_OPTIONS)
+            if definition.get("withheld") or catalog:
+                raise PackError(path, f"a streaming replica's grants are its source's; declare "
+                                      f"{'withheld' if definition.get('withheld') else catalog} "
+                                      f"on {replicates!r} instead")
+        if replicates is not None and replication == "copy":
             if not isinstance(replicates, str):
                 raise PackError(path, "replicates must name a silo")
             if replicates == name:
@@ -100,10 +129,14 @@ def _load_silos(raw: dict) -> dict[str, SiloSpec]:
             refresh = _duration(definition["refresh"], f"{path}.refresh")
             if refresh <= 0:
                 raise PackError(f"{path}.refresh", "must be a positive interval")
-        elif "refresh" in definition:
+        elif replicates is None and "refresh" in definition:
             raise PackError(path, "`refresh` only means something with `replicates`")
+        if replicates is not None and replication == "streaming":
+            if not isinstance(replicates, str) or replicates == name:
+                raise PackError(path, "replicates must name another silo")
 
         silos[name] = SiloSpec(name=name, kind=kind, database=database,
                                options=options, withheld=withheld,
-                               replicates=replicates, refresh_seconds=refresh)
+                               replicates=replicates, refresh_seconds=refresh,
+                               replication=replication)
     return silos

@@ -206,6 +206,9 @@ class TestItIsNotAnAdapter:
         # tables_present: the sync asking whether a source table it reads
         # has gone; gold's tables are its own declaration.
         asked.discard("tables_present")
+        # source_behind: the sync dating a copy of a lagging standby;
+        # gold is its own source.
+        asked.discard("source_behind")
 
         missing = {name for name in asked if not hasattr(GoldConnector, name)}
 

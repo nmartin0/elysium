@@ -54,6 +54,7 @@ from simulator.rng import RandomSource
 from simulator.schema import Schema
 from simulator.silo import Silo, SiloError
 from simulator.silos import SILO_TYPES, build_silo
+from simulator.silos.postgres import PostgresSilo
 from simulator.silos.reader import grant_existing, secure_rows, withhold
 from simulator.spec import PackSpec, SeedStep
 from simulator.world import World
@@ -138,9 +139,15 @@ def build(pack: PackSpec, data_dir: Path, *, seed: int = 1,
         if spec.replicates is not None:
             schemas[name] = schemas[spec.replicates]
 
+    # A standby is made from its source, after the source is whole: its
+    # databases, tables, grants and row security all arrive by the WAL.
+    standbys = {name: spec.replicates for name, spec in pack.silos.items()
+                if spec.replication == "streaming"}
     started: list[Silo] = []
     try:
-        for silo in silos.values():
+        for name, silo in silos.items():
+            if name in standbys:
+                continue
             silo.create()
             silo.start()
             started.append(silo)
@@ -149,6 +156,8 @@ def build(pack: PackSpec, data_dir: Path, *, seed: int = 1,
         # and its grants -- it is a real database that happens to be
         # shaped by something else.
         for silo_name, schema in schemas.items():
+            if silo_name in standbys:
+                continue
             database = pack.silo(silo_name).database
             assert database is not None  # the loader guarantees this
             create_database(silos[silo_name], database, seed)
@@ -169,6 +178,13 @@ def build(pack: PackSpec, data_dir: Path, *, seed: int = 1,
             secure_rows(silos[silo_name], database, tuple(dict.fromkeys(
                 (*getattr(silos[origin], "row_security", ()),
                  *getattr(silos[silo_name], "row_security", ())))))
+        for name, source in standbys.items():
+            standby, primary = silos[name], silos[str(source)]
+            # The loader allows streaming only between PostgreSQL silos.
+            assert isinstance(standby, PostgresSilo) and isinstance(primary, PostgresSilo)
+            standby.create_standby(primary)
+            standby.start()
+            started.append(standby)
     except Exception as failure:
         # A half-built world is worse than none: its ports are held and
         # its clusters are running, so the next attempt fails on a
@@ -440,8 +456,8 @@ def _refresh_replicas(world: World) -> int:
     """
     written = 0
     for name, spec in world.pack.silos.items():
-        if spec.replicates is None:
-            continue
+        if spec.replicates is None or spec.replication == "streaming":
+            continue                     # a standby is fed by the WAL
         elapsed = world.clock.elapsed.total_seconds()
         due = world.replica_refreshed.get(name)
         if due is not None and elapsed - due < spec.refresh_seconds:

@@ -616,7 +616,8 @@ def _detail_for(result) -> "str | None":
     """
     parts = [part for part in (getattr(result, "degraded", None),
                                getattr(result, "absorbed_drift", None),
-                               getattr(result, "hidden_rows", None)) if part]
+                               getattr(result, "hidden_rows", None),
+                               getattr(result, "behind", None)) if part]
     return "\n\n".join(parts) or None
 
 
