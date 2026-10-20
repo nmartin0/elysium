@@ -441,9 +441,10 @@ def _read_files(table: Table, found: dict) -> dict[str, dict]:
     A FILE ENDING MID-LINE IS BEING WRITTEN: the simulator ends every
     row, so one that stops part-way is a half-written upload. Its rows
     may all have the header's width -- cut inside the last field, "2;4567"
-    becomes "2;456" -- so neither this reader nor Elysium can tell its
-    last value from a true one (found in review, 20 October). The round
-    is reported as unverifiable for the table rather than as agreement.
+    becomes "2;456" -- so this reader cannot tell its last value from a
+    true one (found in review, 20 October). Elysium refuses such a file
+    since 21 October; if it ever publishes from one, the round is
+    reported as unverifiable rather than as agreement.
     A file whose rows are not all the header's width is skipped."""
     folder = Path(found["path"])
     zipped = found.get("format") == "zip"

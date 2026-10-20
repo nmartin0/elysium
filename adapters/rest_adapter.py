@@ -124,6 +124,9 @@ def retry_after_seconds(value: "str | None", now: "float | None" = None) -> "flo
 
 class RestAdapter(ExternalReadAdapter):
     max_concurrent_reads = None
+    #: Columns are the keys the records carry, so a key absent this sync
+    #: may only be null everywhere: no rename is inferred from one.
+    columns_from_records = True
     pushable_operators = frozenset()
 
     def __init__(self, connection: Mapping):

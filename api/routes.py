@@ -1687,6 +1687,8 @@ class DeploymentConfigResponse(BaseModel):
     write_targets: "tuple[str, ...] | None" = None
     trusted_proxies: "tuple[str, ...]" = ()
     on_type_mismatch: "str | None" = None
+    # "hold" or "serve_empty": what a suspected source rename costs.
+    on_suspected_rename: str = "hold"
     ingest_undeclared_columns: "bool | None" = None
     # HOW OFTEN THIS DEPLOYMENT EXPECTS TO SYNC, and therefore every
     # freshness threshold a reader is judged against (DEV_UI.md 16.6).
@@ -4970,6 +4972,7 @@ def deployment_config_route(request: Request,
         "write_targets": config.write_targets,
         "trusted_proxies": config.trusted_proxies,
         "on_type_mismatch": config.on_type_mismatch,
+        "on_suspected_rename": config.on_suspected_rename,
         "ingest_undeclared_columns": config.ingest_undeclared_columns,
         # THE DECLARED CADENCE, read back off a resolved target rather
         # than re-parsing the YAML: every type's window derives from

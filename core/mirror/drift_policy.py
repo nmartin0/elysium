@@ -57,12 +57,13 @@ class DriftShape(Enum):
     # case throws away a field whose values are still there. Those are
     # different enough to be different shapes.
     #
-    # NOT A DIFFERENT VERDICT, though. See
-    # verdict_for_removed_column: absorbing or refusing still turns on
-    # the write log, because freezing a whole table on a name
-    # coincidence would be worse than the warning this shape exists to
-    # improve.
+    # AND, SINCE 21 OCTOBER, A DIFFERENT VERDICT: held, not absorbed.
+    # See verdict_for_removed_column.
     COLUMN_RENAMED = "column_renamed"
+
+
+#: What a suspected rename costs (config.yaml `on_suspected_rename`).
+ON_SUSPECTED_RENAME = ("hold", "serve_empty")
 
 
 @dataclass(frozen=True)
@@ -80,7 +81,10 @@ class DriftVerdict:
 
 def verdict_for_removed_column(silo: str, table: str, column: str, field: str | None,
                                 edits: dict | None,
-                                appeared: "tuple[str, ...]" = ()) -> DriftVerdict:
+                                appeared: "tuple[str, ...]" = (),
+                                on_suspected_rename: str = "hold",
+                                unrecorded: bool = False,
+                                undeclared_earlier: "tuple[str, ...]" = ()) -> DriftVerdict:
     """A column the ontology declares has gone from the source.
 
     BREAKING ONLY IF SOMETHING WROTE TO IT -- Foundry's line, not an
@@ -92,21 +96,39 @@ def verdict_for_removed_column(silo: str, table: str, column: str, field: str | 
     prevent: the answer would look identical to "nothing was written",
     and it is not the same claim.
 
-    `appeared` NAMES THE COLUMNS THE SAME SYNC FOUND AND THE ONTOLOGY
-    DOES NOT DECLARE, which is the only evidence a rename leaves. No
-    source records that `tier` became `tier_name`; a sync sees one
-    column gone and one column arrived, in the same table, in the same
-    run, and that is all anybody gets.
+    `appeared` NAMES THE COLUMNS THE SAME SYNC FOUND THAT WERE NOT THERE
+    BEFORE and the ontology does not declare, which is the only evidence
+    a rename leaves. No source records that `tier` became `tier_name`;
+    a sync sees one column gone and one column arrived, in the same
+    table, in the same run, and that is all anybody gets.
 
-    WHY IT CHANGES THE MESSAGE AND NOT THE VERDICT. Found by running
-    the source-mutation matrix (R19) against a real rename: the sync
-    absorbed it, the mirror began serving NULL for a field whose values
-    were still in the source under the new name, and the log said
-    "remove it from ontology_schema.yaml when convenient" -- advice
-    that, followed, deletes a live field. Refusing instead would freeze
-    a whole table on a name coincidence, which the module docstring
-    already argues against. So the disposition stands and the sentence
-    is corrected.
+    A SUSPECTED RENAME HOLDS THE TABLE (21 October, with the owner).
+    Until then it was absorbed: the mirror served NULL in every row for
+    a field whose values were still in the source under the new name --
+    a reader seeing empty where a value exists, which Elysium's own rule
+    calls wrong. The precedent splits. Replicators carry on: Fivetran
+    keeps the old column "with the data that existed before" and writes
+    NULL only for new rows, and Airbyte propagates by default. Strict
+    modes stop: dlt's `freeze` loads nothing, Auto Loader's
+    `failOnNewColumns` "fails and does not restart unless you update
+    the provided schema", and Airbyte offers "Pause connection". Elysium
+    serves the current state rather than keeping history, so carrying
+    on means NULL in every row, not just new ones -- worse than
+    Fivetran's default, and so it holds. A deployment that would rather
+    serve the field empty says `on_suspected_rename: serve_empty`.
+
+    `unrecorded`: no record of the source's earlier columns (a first
+    sync, or bronze written before the record existed), so every
+    undeclared column is a candidate and the message says it cannot
+    tell which are new rather than claiming they all are.
+
+    A RENAME IN TWO RELEASES IS NOT SEEN, and `undeclared_earlier` is
+    the most that can be said about it. Add the new column and copy the
+    values in one release, drop the old one in the next, and by the drop
+    the new column is not new -- indistinguishable from one that has
+    always been there. The removal is absorbed, as a plain drop is, and
+    the message names the undeclared columns that might be its new home
+    (found in review, 21 October; BLOCKING.md records the limit).
 
     IT DOES NOT CLAIM A RENAME HAPPENED. It names the candidates and
     puts the costly mistake first, because `tier` really might have
@@ -132,6 +154,26 @@ def verdict_for_removed_column(silo: str, table: str, column: str, field: str | 
     pending = edits.get("pending", 0)
 
     if applied == 0 and pending == 0:
+        if appeared and on_suspected_rename != "serve_empty":
+            return DriftVerdict(
+                absorbed=False,
+                shape=shape,
+                detail=(
+                    f"{silo}.{table}: source column {column!r} backing {described} "
+                    + (f"is gone. Elysium has no record of this source's earlier "
+                       f"columns, so cannot tell which of these the ontology does not "
+                       f"declare are new: {suspects}. If one is, that is what a rename "
+                       if unrecorded else
+                       f"is gone, and the same sync found {len(appeared)} column(s) "
+                       f"that were not there before: {suspects}. That is what a rename ")
+                    + f"looks like, so the mirror is unchanged and still serving its "
+                    f"last good contents, rather than {field or column!r} empty in "
+                    f"every row. If it was RENAMED, repoint the field's `column:` at "
+                    f"the new name in ontology_schema.yaml; if it was dropped, remove "
+                    f"the field. To serve the field empty instead whenever this "
+                    f"happens, set `on_suspected_rename: serve_empty` in config.yaml."
+                ),
+            )
         if appeared:
             # THE REMEDY THAT LOSES SOMETHING COMES SECOND. Removing the
             # field is irreversible from the ontology's side and wrong
@@ -160,6 +202,10 @@ def verdict_for_removed_column(silo: str, table: str, column: str, field: str | 
                 f"gone, and no write has ever touched it. Syncing the remaining "
                 f"columns; remove {field or column!r} from ontology_schema.yaml "
                 f"when convenient."
+                + (f" If it was renamed in an earlier release, its values may be in one "
+                   f"of the columns the ontology does not declare -- "
+                   f"{', '.join(repr(c) for c in undeclared_earlier)} -- and the field "
+                   f"should point there instead." if undeclared_earlier else "")
             ),
         )
 

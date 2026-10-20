@@ -90,6 +90,19 @@ class TestTheRefusal:
             sync.sync_table(*ARGS)
 
 
+    def test_a_broken_BRONZE_table_is_named_before_any_drift_verdict(self, mirrored, tmp_path):
+        """A column also gone: the broken catalog is still what is said."""
+        sync, _ = mirrored
+        _break_the_catalogs_word(sync, "bronze_primary.customers")
+        args = list(ARGS)
+        args[3] = [*args[3], "not_in_the_source"]
+
+        with pytest.raises(ValueError, match="bronze_primary.customers") as refused:
+            sync.sync_table(*args)
+
+        assert "RENAMED" not in str(refused.value) and "is gone" not in str(refused.value)
+
+
 class TestWhatIsNotADisagreement:
     def test_a_healthy_mirror_syncs(self, mirrored):
         sync, _ = mirrored

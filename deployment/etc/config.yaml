@@ -330,6 +330,16 @@ trusted_proxies: []
 # key means a deployment written before this existed.
 on_type_mismatch: quarantine
 
+# WHAT A SUSPECTED RENAME COSTS. A source column the ontology reads has
+# gone, and a column that was not there last sync has appeared -- which
+# is all a rename ever looks like from outside.
+#
+#   hold         keep the table at its last good copy, saying why, until
+#                the field is repointed or removed (the default)
+#   serve_empty  carry on, serving the field empty in every row
+#
+# on_suspected_rename: hold
+
 # WHETHER BRONZE HOLDS COLUMNS THE ONTOLOGY NEVER DECLARED.
 #
 # false (the shipped default) keeps only declared columns.

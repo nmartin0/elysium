@@ -1234,33 +1234,31 @@ What it took:
   withheld pay lines were readable through `office`; and `zero_dates`
   wrote none for the columns an application leaves out.
 
-**FOR THE OWNER: a renamed column is still served as empty.** The sync
-says plainly that a column the ontology reads is gone and an unknown one
-appeared, and that "the mirror is now serving null for them" -- and it
-does, every customer's phone empty while the numbers sit in the source
-under the new name. That was pinned on purpose
-(tests/unit/test_a_source_changes_and_what_a_reader_sees.py,
-`TestARenamedColumn`: "absent, never wrong"), the alternative being a
-table frozen on what may be a coincidence. Elysium's own rule calls a
-reader seeing NULL where a value exists a wrong value; whether a likely
-rename should hold the table at its last good copy instead is the
-owner's call, not a bug fix.
+**Decided 21 October, with the owner, after the precedent:**
 
-**A LIMIT, FOR THE OWNER: a CSV cut inside its last field.** A file
-being written in place (no write-then-rename), read mid-write, can stop
-inside a row's last value -- "2;4567,00" read as "2;456" -- with every
-row still the header's width, so nothing looks broken and the number is
-wrong (found in review, 20 October). The only sign is a last line with
-no line ending, and RFC 4180 says a file's last record "may or may not
-have an ending line break", so refusing those would refuse sound files
-from producers that never write one. Elysium cannot tell the two apart;
-the defence is the producer's write-then-rename, which the CSV reader
-already honours. The harness reports such a round as unverifiable
-rather than as agreement. Whether to refuse files that end mid-line
-anyway, trading those producers for this case, is a judgement.
+- A suspected rename -- a column the ontology reads gone, and a column
+  that was not there last sync arrived -- HOLDS the table at its last
+  good copy, saying why, until the field is repointed or removed.
+  Fivetran and Airbyte carry on by default, but Fivetran keeps the old
+  values and blanks only new rows; Elysium serves the current state, so
+  carrying on blanked every row. dlt's `freeze`, Auto Loader's
+  `failOnNewColumns` and Airbyte's "Pause connection" stop instead.
+  `on_suspected_rename: serve_empty` in config.yaml is the old answer.
+  ONE RENAME IS NOT CAUGHT: one made in two releases -- the new column
+  added and filled in one, the old dropped in the next. By the drop the
+  new column is not new, and cannot be told from one that was always
+  there, so the field is served empty as on a plain drop; the sync's
+  message names the undeclared columns its values may be in. An API
+  source never holds, since a key it leaves out may only be null.
+- A CSV ending part-way through a line is REFUSED, the table keeping its
+  last good copy: cut inside its last value, nothing else about it looks
+  wrong. No tool found does this check -- the precedent says the reader
+  cannot be sure and the writer's write-then-rename is the defence -- so
+  a silo whose writer never ends its last line says
+  `allow_unterminated_last_line: true`. "Done" marker files, the next
+  best defence, are not built: no deployment has asked.
 
 **Next in step 3:** longer runs, the pack-scheduled migrations, a
 SQLite source (no pack declares one), and the replica's lag.
 
-**Blocked on:** the owner, for the rename question and the cut-CSV
-limit; otherwise in progress.
+**Blocked on:** nothing; in progress.

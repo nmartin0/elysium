@@ -378,70 +378,61 @@ class TestAChangeTheMirrorWITHHOLDS:
 
 
 class TestARenamedColumn:
-    """A RENAME IS THE MUTATION NOTHING HAD EVER RUN against this
-    pipeline. `sim/simulator/drift.py:229` implements one, and nothing
-    wires `sim/` to `core/` in either direction, so it drove only the
-    simulator's own oracle.
+    """A RENAME IS NOT A SHAPE A SOURCE CAN REPORT. No database records
+    that `score` became `risk_score`. A sync sees one declared column
+    gone and one column present that was not there last time, in the
+    same table in the same run, and that is the entire evidence.
 
-    IT IS NOT A SHAPE A SOURCE CAN REPORT. No database records that
-    `score` became `risk_score`. A sync sees one declared column gone
-    and one undeclared column present, in the same table in the same
-    run, and that is the entire evidence.
+    HELD SINCE 21 OCTOBER, with the owner. Until then the table carried
+    on and served `score` empty in every row while the values sat in the
+    source under the new name; see drift_policy.verdict_for_removed_column
+    for the precedent on both sides.
     """
 
-    def test_the_values_go_quiet_rather_than_going_wrong(self, deployment):
-        """Absorbed, and the reader gets NULL rather than a stale 10.
+    def test_a_rename_holds_the_table_at_its_last_good_copy(self, deployment):
+        deployment.execute("ALTER TABLE customers RENAME COLUMN score TO risk_score",
+                           "UPDATE customers SET name = 'Ada L.' WHERE id = 'c1'")
 
-        PINNED AS THE CURRENT ANSWER, not endorsed as the only possible
-        one. Refusing instead would freeze the whole table on a name
-        coincidence -- `score` really might have been dropped in the
-        same release that added an unrelated column -- and a frozen
-        mirror goes stale while the source moves on. What the matrix
-        settles is that the failure is downward: absent, never wrong.
-        """
-        deployment.execute("ALTER TABLE customers RENAME COLUMN score TO risk_score")
+        with pytest.raises(ValueError) as held:
+            deployment.sync_and_publish()
 
-        deployment.sync_and_publish_cleanly()
+        assert deployment.what_a_reader_sees() == INTACT, "the last good copy, not empties"
+        said = str(held.value)
+        assert "risk_score" in said and "RENAMED" in said and "repoint" in said
+        assert "on_suspected_rename: serve_empty" in said, "the way through is named"
 
-        seen = deployment.what_a_reader_sees()
-        assert seen["ids"] == ["c1", "c2"], "a rename must not lose the rows"
-        assert seen["c1"] == {"name": "Ada", "score": None}
-
-    def test_and_the_operator_is_told_the_remedy_that_does_not_LOSE_A_FIELD(self, deployment, caplog):
-        """THE DEFECT THIS MATRIX FOUND.
-
-        Before this, the two halves of a rename were reported as two
-        unrelated events -- "source column 'score' is gone ... remove
-        it from ontology_schema.yaml when convenient", and separately
-        "bronze is holding 1 column this ontology never declared:
-        risk_score" -- in the same log, with the matching names, and
-        nothing joined them.
-
-        FOLLOWING THAT ADVICE DELETES A LIVE FIELD. The values are
-        still in the source; only the name moved. The sync holds both
-        halves at the same moment, in `sync_table`, and threw one of
-        them away.
-        """
+    def test_serve_empty_is_the_old_answer_when_a_deployment_asks_for_it(
+            self, deployment, caplog):
+        deployment.sync._on_suspected_rename = "serve_empty"
         deployment.execute("ALTER TABLE customers RENAME COLUMN score TO risk_score")
 
         with caplog.at_level("WARNING"):
             deployment.sync_and_publish_cleanly()
 
+        seen = deployment.what_a_reader_sees()
+        assert seen["ids"] == ["c1", "c2"], "a rename must not lose the rows"
+        assert seen["c1"] == {"name": "Ada", "score": None}
         drift = "\n".join(record.getMessage() for record in caplog.records)
-        assert "risk_score" in drift, "the candidate the sync already knew about is not named"
-        assert "RENAMED" in drift
-        assert "repoint" in drift.lower()
-        # AND THE COST SAID OUT LOUD, because "the mirror is now
-        # serving null for them" is the sentence that tells an operator
-        # this is urgent rather than tidy-up.
-        assert "serving null" in drift
+        assert "RENAMED" in drift and "serving null" in drift
+
+    def test_a_column_that_was_always_there_is_no_suspect(self, deployment, caplog):
+        """THE CONTROL: only a column NEW since the last sync suggests a
+        rename. One that has always been there and was never declared
+        would otherwise hold the table at every later removal, for good."""
+        deployment.execute("ALTER TABLE customers ADD COLUMN notes TEXT")
+        deployment.sync_and_publish_cleanly()
+        deployment.execute("ALTER TABLE customers DROP COLUMN score")
+
+        with caplog.at_level("WARNING"):
+            deployment.sync_and_publish_cleanly()
+
+        drift = "\n".join(record.getMessage() for record in caplog.records)
+        assert "is gone" in drift and "RENAMED" not in drift
+        assert deployment.what_a_reader_sees()["c1"] == {"name": "Ada", "score": None}
 
     def test_an_ordinary_DROP_is_not_described_as_a_possible_rename(self, deployment, caplog):
-        """THE CONTROL. A message that always offered the rename remedy
-        would pass the test above and would be noise on every genuine
-        removal -- and worse, it would invite somebody to go looking
-        for a new column that does not exist.
-        """
+        """A removal with nothing new beside it is absorbed, as before:
+        the source no longer holds the value, so empty is the truth."""
         deployment.execute("ALTER TABLE customers DROP COLUMN score")
 
         with caplog.at_level("WARNING"):
@@ -453,6 +444,96 @@ class TestARenamedColumn:
         assert "repoint" not in drift.lower()
 
 
+class TestARenameAfterTheFirstSync:
+    """What a hold does next, and the cases review found (21 October)."""
+
+    def test_the_hold_lasts_until_the_field_is_repointed(self, deployment):
+        deployment.execute("ALTER TABLE customers RENAME COLUMN score TO risk_score")
+        for _ in range(2):
+            with pytest.raises(ValueError, match="RENAMED"):
+                deployment.sync_and_publish()
+
+        repointed = {**FIELDS_BY_COLUMN, "risk_score": "score"}
+        del repointed["score"]
+        result = deployment.sync.sync_table(
+            "p", "customers", "id", ["id", "name", "region", "risk_score"],
+            {**COLUMN_TYPES, "risk_score": "integer"}, repointed)
+
+        assert result.row_count == 3, "repointed, the table syncs again"
+
+    def test_with_no_record_of_earlier_columns_it_says_so(self, tmp_path):
+        """A deployment from before the record existed: it cannot tell
+        which undeclared column is new, and must not claim they all are."""
+        live = Deployment(tmp_path)
+        live.execute("ALTER TABLE customers ADD COLUMN notes TEXT",
+                     "ALTER TABLE customers DROP COLUMN score")
+
+        with pytest.raises(ValueError) as held:
+            live.sync_and_publish()
+
+        assert "no record of this source's earlier columns" in str(held.value)
+        assert "were not there before" not in str(held.value)
+
+    def test_a_rename_in_two_releases_names_where_the_values_may_be(
+            self, deployment, caplog):
+        """THE LIMIT: absorbed as a plain drop, since by the drop the new
+        column is not new. The most that can be said is where to look."""
+        deployment.execute("ALTER TABLE customers ADD COLUMN risk_score TEXT",
+                           "UPDATE customers SET risk_score = score")
+        deployment.sync_and_publish_cleanly()
+        deployment.execute("ALTER TABLE customers DROP COLUMN score")
+
+        with caplog.at_level("WARNING"):
+            deployment.sync_and_publish_cleanly()
+
+        drift = "\n".join(record.getMessage() for record in caplog.records)
+        assert "renamed in an earlier release" in drift and "'risk_score'" in drift
+
+    def test_an_apis_missing_key_is_not_taken_for_a_rename(self, deployment):
+        """An API leaves out a key whose value is null: a key gone and
+        another back is not evidence. Absorbed, as before."""
+        deployment.sync.adapters["p"].columns_from_records = True
+        deployment.execute("ALTER TABLE customers RENAME COLUMN score TO risk_score")
+
+        deployment.sync_and_publish_cleanly()
+
+        assert deployment.what_a_reader_sees()["c1"]["score"] is None
+
+    def test_the_sources_columns_are_asked_for_once(self, deployment):
+        adapter = deployment.sync.adapters["p"]
+        asked = []
+        original = adapter.columns_present
+        adapter.columns_present = lambda table: asked.append(table) or original(table)
+
+        deployment.sync_and_publish_cleanly()
+
+        assert asked == ["customers"]
+
+
+class TestTheRenameSetting:
+    @pytest.mark.parametrize(("config", "means"), [
+        ({}, "hold"), ({"on_suspected_rename": "serve_empty"}, "serve_empty"),
+        ({"on_suspected_rename": " HOLD "}, "hold"), ({"on_suspected_rename": None}, "hold"),
+    ], ids=["absent", "serve_empty", "spelled_loosely", "left_blank"])
+    def test_what_config_yaml_says(self, config, means):
+        from core.deployment_loader import _resolve_suspected_rename
+
+        assert _resolve_suspected_rename(config) == means
+
+    def test_anything_else_is_refused_at_load(self):
+        from core.deployment_loader import _resolve_suspected_rename
+
+        with pytest.raises(ValueError, match="on_suspected_rename must be one of"):
+            _resolve_suspected_rename({"on_suspected_rename": "absorb"})
+
+    def test_the_sync_is_given_it(self):
+        import inspect
+
+        from scripts import run_sync
+
+        assert "on_suspected_rename=config.on_suspected_rename" in inspect.getsource(run_sync)
+
+
 class TestAnAbsorbedColumnIsRecorded:
     """FOUND AGAINST THE SIMULATOR (19 October): a renamed column blanked
     every order total while the attempt history read plain "synced" with
@@ -460,6 +541,7 @@ class TestAnAbsorbedColumnIsRecorded:
     explanation now travels on the result and onto the attempt."""
 
     def test_the_result_carries_the_explanation(self, deployment):
+        deployment.sync._on_suspected_rename = "serve_empty"
         deployment.execute("ALTER TABLE customers RENAME COLUMN score TO risk_score")
 
         result = deployment.sync_and_publish_cleanly()
@@ -474,6 +556,7 @@ class TestAnAbsorbedColumnIsRecorded:
     def test_the_attempt_records_it_beside_its_outcome(self, deployment):
         from scripts.run_sync import _detail_for, _outcome_for
 
+        deployment.sync._on_suspected_rename = "serve_empty"
         deployment.execute("ALTER TABLE customers RENAME COLUMN score TO risk_score")
         result = deployment.sync_and_publish_cleanly()
 

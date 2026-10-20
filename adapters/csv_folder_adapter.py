@@ -38,12 +38,18 @@ BigQuery and Snowflake loads):
     (Spring Integration's `.writing`, the simulator's `.part`), so
     temporary names are skipped. No tool documents a "minimum age" rule,
     and a delay "does not prove completion" (Files.com), so there is none.
-    AND WHAT IT CANNOT CATCH: a file written in place and read mid-write
-    can stop inside a row's last value, every row still the header's
-    width -- "2;4567,00" read as "2;456". Its last line has no line
-    ending, but RFC 4180 lets a sound file end that way too, so it is not
-    refused (found running over a simulated world, 20 October;
-    BLOCKING.md records the judgement).
+  - A FILE ENDING PART-WAY THROUGH A LINE IS REFUSED (21 October, with
+    the owner). Written in place and read mid-write, a file can stop
+    inside a row's last value with every row still the header's width --
+    "2;4567,00" read as "2;456" -- and nothing else looks wrong: "a
+    prefix of a CSV is a valid CSV" (DocEvent, on truncated uploads).
+    The missing line ending is the one sign. RFC 4180 lets a sound file
+    end that way too, so a silo whose writer always does says
+    `allow_unterminated_last_line: true`. No tool found does this check;
+    the precedent is unanimous that the reader cannot be sure, and that
+    the real defence is the writer's -- write under a temporary name and
+    rename, which this reader honours. Found running over a simulated
+    world, 20 October.
   - COMPRESSED FILES ARE READ (20 October), as Fivetran's file connectors
     read CSV "compressed with gzip, zip, bz2, or zstd": a file named
     `.gz` or `.zip` is opened, the pattern matching the archive's own name.
@@ -111,6 +117,10 @@ class CsvFolderAdapter(ExternalReadAdapter):
         if not isinstance(nulls, (list, tuple)) or not all(isinstance(n, str) for n in nulls):
             raise ValueError("csv_folder: null_values must be a list of strings.")
         self.null_values = frozenset(nulls)
+        allow = connection.get("allow_unterminated_last_line", False)
+        if not isinstance(allow, bool):
+            raise ValueError("csv_folder: allow_unterminated_last_line must be true or false.")
+        self.allow_unterminated = allow
         tables = connection.get("tables")
         # MAPPINGS, NOT DICTS: the loaded configuration is deep-frozen,
         # so these arrive as read-only mappings -- found on the first run
@@ -211,6 +221,15 @@ class CsvFolderAdapter(ExternalReadAdapter):
                           f"connection.encoding to what the file is written in.") from e
         except OSError as e:
             raise StorageUnavailable(f"csv_folder {path.name}: {type(e).__name__}") from e
+        bare = text.lstrip("\ufeff")        # a byte-order mark alone is empty
+        if bare and not text.endswith(("\n", "\r")) and not self.allow_unterminated:
+            raise BadLine(
+                f"{path.name}: ends part-way through a line, so it may still be being "
+                f"written and its last value cut short. Nothing from this table was "
+                f"synced, and the mirror still serves its last good copy. Whoever writes "
+                f"these files should write under a temporary name and rename when done; "
+                f"if they always end without a line break, set "
+                f"connection.allow_unterminated_last_line: true.")
         if text.startswith("﻿"):
             text = text[1:]                     # a BOM under an encoding that kept it
         delimiter, skipped = self.delimiter, 0

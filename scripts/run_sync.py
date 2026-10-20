@@ -1063,6 +1063,7 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
             # default buried in the sync. Absent keeps refusing.
             on_type_mismatch=config.on_type_mismatch,
             ingest_undeclared_columns=config.ingest_undeclared_columns,
+            on_suspected_rename=config.on_suspected_rename,
         )
 
         # ERASURES (R13): the register decides what every read drops.

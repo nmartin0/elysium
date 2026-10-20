@@ -92,6 +92,8 @@ interface DeploymentConfigBody {
   write_targets?: string[] | null
   trusted_proxies?: string[]
   on_type_mismatch?: string | null
+  /** What a suspected source rename costs: 'hold' or 'serve_empty'. */
+  on_suspected_rename?: string
   /** How often this deployment expects to sync, in hours. Every
    *  freshness threshold a reader is judged against derives from it. */
   sync_interval_hours?: number | null
@@ -437,6 +439,9 @@ function DeploymentConfigView({
                   : config.trusted_proxies.join(', ') || 'none (TCP peer)',
               ],
               ['On type mismatch', config.on_type_mismatch ?? 'not reported'],
+              // `on_suspected_rename` -- a column gone and a new one arrived:
+              // hold the table, or serve the field empty.
+              ['On suspected rename', config.on_suspected_rename ?? 'not reported'],
               [
                 // HOW EACH SOURCE WRITES NUMBERS AND DATES. The first
                 // place to look when a silo's rows are being set aside

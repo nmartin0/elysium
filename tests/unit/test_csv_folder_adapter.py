@@ -330,3 +330,49 @@ class TestCompressedFiles:
 
         with pytest.raises(BadLine, match="sold_1.csv.gz"):
             _rows(adapter)
+
+
+class TestAFileEndingPartWayThroughALine:
+    """Cut inside its last value, every row still the header's width:
+    the missing line ending is the only sign (21 October, with the
+    owner)."""
+
+    def test_it_is_refused_naming_the_file(self, tmp_path):
+        _write(tmp_path, "sold_1.csv", "id,qty\r\na,12\r\nb,456")
+
+        with pytest.raises(BadLine, match="sold_1.csv: ends part-way through a line"):
+            _rows(_adapter(tmp_path))
+
+    def test_a_silo_whose_writer_never_ends_lines_says_so(self, tmp_path):
+        _write(tmp_path, "sold_1.csv", "id,qty\na,12\nb,456")
+
+        rows = _rows(_adapter(tmp_path, allow_unterminated_last_line=True))
+
+        assert rows == [{"id": "a", "qty": "12"}, {"id": "b", "qty": "456"}]
+
+    @pytest.mark.parametrize("ending", ["\n", "\r\n", "\r"])
+    def test_every_line_ending_counts(self, tmp_path, ending):
+        _write(tmp_path, "sold_1.csv", f"id,qty{ending}a,12{ending}")
+
+        assert _rows(_adapter(tmp_path)) == [{"id": "a", "qty": "12"}]
+
+    def test_inside_an_archive_too(self, tmp_path):
+        import gzip
+
+        (tmp_path / "sold_1.csv.gz").write_bytes(gzip.compress(b"id,qty\na,45"))
+        adapter = CsvFolderAdapter({"path": tmp_path, "tables": {
+            "sold": {"files": "sold_*.csv.gz", "shape": "combined"}}})
+
+        with pytest.raises(BadLine, match="part-way"):
+            _rows(adapter)
+
+    def test_the_setting_must_be_true_or_false(self, tmp_path):
+        with pytest.raises(ValueError, match="true or false"):
+            _adapter(tmp_path, allow_unterminated_last_line="yes")
+
+
+    def test_a_file_of_only_a_byte_order_mark_is_called_empty(self, tmp_path):
+        _write(tmp_path, "sold_1.csv", "\ufeff")
+
+        with pytest.raises(BadLine, match="is empty"):
+            _rows(_adapter(tmp_path, encoding="utf-8"))

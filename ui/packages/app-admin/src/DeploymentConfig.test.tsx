@@ -301,12 +301,15 @@ describe('the four operational toggles', () => {
     getDeploymentConfig.mockResolvedValue({
       ...BODY,
       on_type_mismatch: 'quarantine',
+      on_suspected_rename: 'serve_empty',
       ingest_undeclared_columns: false,
     })
     render(<DeploymentConfig onSessionExpired={() => {}} />)
 
     expect(await screen.findByText('On type mismatch')).toBeInTheDocument()
     expect(screen.getByText('quarantine')).toBeInTheDocument()
+    expect(screen.getByText('On suspected rename')).toBeInTheDocument()
+    expect(screen.getByText('serve_empty')).toBeInTheDocument()
     expect(screen.getByText('Ingest undeclared columns')).toBeInTheDocument()
   })
 

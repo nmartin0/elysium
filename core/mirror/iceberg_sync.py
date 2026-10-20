@@ -214,6 +214,10 @@ BRONZE_RETENTION = {
 # only records; the next one compares like with like. The old property is
 # left where it is, read by nothing.
 SOURCE_TYPES_PROPERTY = "elysium.source_column_types.v2"
+# EVERY COLUMN THE SOURCE HAD at the last bronze write, declared or not,
+# so a later sync can tell a column that ARRIVED from one that was always
+# there (drift_policy: a suspected rename).
+SOURCE_COLUMNS_PROPERTY = "elysium.source_columns"
 
 # TYPE CHANGES THAT WIDEN, which are worth a quieter word than the
 # rest. The canonical severity model for schema drift puts a removed
@@ -514,7 +518,8 @@ class IcebergMirrorSync(MirrorSync):
                  write_log=None, storage: dict | None = None,
                  run_id: "str | None" = None,
                  on_type_mismatch: "str | None" = None,
-                 ingest_undeclared_columns: "bool | None" = None):
+                 ingest_undeclared_columns: "bool | None" = None,
+                 on_suspected_rename: str = "hold"):
         # WHICH RUN THIS SYNC BELONGS TO (PR001-R9). None for a
         # script or a test outside a run, in which case the property
         # is not written rather than invented.
@@ -526,6 +531,9 @@ class IcebergMirrorSync(MirrorSync):
         # deployment has not said, which keeps the old behaviour and
         # warns -- see _resolve_undeclared_columns.
         self._ingest_undeclared_columns = ingest_undeclared_columns
+        # WHAT A SUSPECTED RENAME COSTS: the table held (the default), or
+        # the field served empty. See drift_policy.verdict_for_removed_column.
+        self._on_suspected_rename = on_suspected_rename
         self._run_id = run_id
         # ERASURE (R13): {(silo, table): (key columns, hasher, hashes)},
         # set by run_sync from the register. Empty means nobody has
@@ -687,11 +695,26 @@ class IcebergMirrorSync(MirrorSync):
         # also names the arrival, but separately and for a different
         # reason (the lake holds data nobody granted), so a reader saw
         # a loss and an unrelated gain and had to join them.
-        appeared = tuple(sorted(set(present) - set(columns)))
+        #
+        # NEW SINCE THE LAST SYNC, NOT MERELY UNDECLARED (21 October). A
+        # source with a column the ontology does not declare would otherwise
+        # make every later removal look like a rename -- and, now that a
+        # suspected rename holds the table, hold it for good. With no
+        # record (a first sync, or bronze written before the record
+        # existed), every undeclared column is a candidate, as before.
+        before = self._previous_source_columns(silo_name, table_name)
+        appeared = tuple(sorted(set(present) - set(columns) - (before or set())))
+        # AN API'S COLUMNS ARE THE KEYS ITS RECORDS CARRY, and many leave a
+        # key out when its value is null, so a key gone and another back
+        # is not evidence of a rename (found in review, 21 October).
+        if getattr(adapter, "columns_from_records", False):
+            appeared = ()
         absorbed_drift = None
         if missing:
             verdict = self._verdict_for_missing(
                 silo_name, table_name, missing, fields_by_column or {}, appeared,
+                undeclared=tuple(sorted(set(present) - set(columns))),
+                unrecorded=before is None,
             )
             if not verdict.absorbed:
                 raise ValueError(verdict.detail)
@@ -729,7 +752,7 @@ class IcebergMirrorSync(MirrorSync):
         # answer: everything after it is still overlaid.
         read_started_at = datetime.now(UTC).isoformat()
         source, bronze_is_current = self._write_bronze(
-            adapter, silo_name, table_name, id_column, columns, hidden_rows)
+            adapter, silo_name, table_name, id_column, columns, hidden_rows, set(present))
         bronze_snapshot = self._bronze_snapshot_id(silo_name, table_name)
 
         # BRONZE: what the source said, before anything was done to it.
@@ -1355,8 +1378,14 @@ class IcebergMirrorSync(MirrorSync):
 
     def _verdict_for_missing(self, silo_name: str, table_name: str, missing: list[str],
                               fields_by_column: dict[str, str],
-                              appeared: tuple[str, ...] = ()):
+                              appeared: tuple[str, ...] = (),
+                              undeclared: tuple[str, ...] = (),
+                              unrecorded: bool = False):
         """One verdict for several missing columns, decided by the worst.
+
+        `undeclared`: every column present that the ontology does not
+        declare; those not in `appeared` are named as possible homes of a
+        rename made in two releases.
 
         A REFUSAL WINS OVER AN ABSORPTION. If three columns vanished and
         one of them has pending writes, the sync must stop -- absorbing
@@ -1374,7 +1403,9 @@ class IcebergMirrorSync(MirrorSync):
             verdict_for_removed_column(
                 silo_name, table_name, column, fields_by_column.get(column),
                 self._edits_for(table_name, fields_by_column.get(column)),
-                appeared,
+                appeared, self._on_suspected_rename,
+                unrecorded=unrecorded,
+                undeclared_earlier=tuple(c for c in undeclared if c not in appeared),
             )
             for column in missing
         ]
@@ -1390,6 +1421,25 @@ class IcebergMirrorSync(MirrorSync):
             shape=verdicts[0].shape,
             detail="\n".join(verdict.detail for verdict in verdicts),
         )
+
+    def _previous_source_columns(self, silo_name: str, table_name: str) -> "set[str] | None":
+        """The columns the source had when bronze was last written, or None
+        when nothing recorded them."""
+        try:
+            table = self._catalog.load_table(f"bronze_{silo_name}.{table_name}")
+        except (NoSuchTableError, NoSuchNamespaceError):
+            return None
+        except Exception:  # noqa: BLE001
+            # A CATALOG THAT CANNOT READ ITS OWN TABLE is reported as the
+            # sync's own check reports it, naming the table and the repair,
+            # and before any drift verdict -- failing here gave a bare file
+            # error instead (found by the suite, 21 October).
+            broken = unreadable_tables(self._catalog, (f"bronze_{silo_name}.{table_name}",))
+            if broken:
+                raise ValueError(describe_disagreement(broken)) from None
+            return None
+        recorded = table.properties.get(SOURCE_COLUMNS_PROPERTY)
+        return set(json.loads(recorded)) if recorded else None
 
     def _edits_for(self, table_name: str, field: str | None) -> dict | None:
         """What the write log says about a field, or None if it cannot say.
@@ -1562,7 +1612,8 @@ class IcebergMirrorSync(MirrorSync):
 
     def _write_bronze(self, adapter, silo_name: str, table_name: str,
                        id_column: str, declared: list[str],
-                       hidden_rows: "str | None" = None) -> "tuple[SourceRead, bool]":
+                       hidden_rows: "str | None" = None,
+                       present: "set[str] | None" = None) -> "tuple[SourceRead, bool]":
         """Stores the source rows unaltered, with provenance in metadata.
 
         EVERY VALUE AS A STRING, deliberately. Bronze must not decide
@@ -1607,8 +1658,16 @@ class IcebergMirrorSync(MirrorSync):
             # columns_present() already reports them, having been built
             # for drift detection. An adapter that cannot answer falls
             # back to the declared set, which is no worse than before.
-            present = adapter.columns_present(table_name)
+            # ASKED ONCE PER SYNC: sync_table already asked, to judge drift,
+            # and passes its answer. Asking again cost an API a second full
+            # read, and a rename landing between the two was recorded as
+            # seen without ever being judged (found in review, 21 October).
+            if present is None:
+                present = adapter.columns_present(table_name)
             columns = sorted(present) if present else list(declared)
+            # NAMES ONLY, kept even for columns not ingested: what arrived
+            # since last time is the evidence of a rename.
+            source_columns = json.dumps(sorted(present)) if present else None
             # UNDECLARED COLUMNS, WHICH BRONZE HOLDS BY DEFAULT TODAY.
             #
             # Keeping them is what makes a column declared next year
@@ -1825,6 +1884,8 @@ class IcebergMirrorSync(MirrorSync):
 
                     **({SOURCE_TYPES_PROPERTY: current_types}
                        if current_types else {}),
+                    **({SOURCE_COLUMNS_PROPERTY: source_columns}
+                       if source_columns else {}),
                     TEXT_COLUMNS_PROPERTY: json.dumps(sorted(text_columns)),
                     # HOW EACH COLUMN'S TEXT DECODES (R3). A changed-rows
                     # read saw only a few rows, so what bronze already

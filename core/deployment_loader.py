@@ -203,6 +203,11 @@ class DeploymentConfig:
                                   # which keeps today's behaviour (hold them)
                                   # and warns at sync naming them. False is
                                   # the shipped default for new deployments.
+    on_suspected_rename: str
+                                  # WHAT A SUSPECTED RENAME COSTS: "hold" keeps
+                                  # the table at its last good copy (the
+                                  # default), "serve_empty" serves the field
+                                  # empty. See core/mirror/drift_policy.py.
     on_type_mismatch: "str | None"
                                   # WHAT A VALUE THAT WILL NOT COERCE COSTS:
                                   # "refuse" stops the whole table, "quarantine"
@@ -824,6 +829,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
             # read-through cache rather than as a serving path.
             ingest_undeclared_columns=_resolve_undeclared_columns(config),
             on_type_mismatch=_resolve_type_mismatch_policy(config),
+            on_suspected_rename=_resolve_suspected_rename(config),
             trusted_proxies=_resolve_trusted_proxies(config),
             write_targets=_resolve_write_targets(config),
             read_from_mirror=_refuse_live_reads(config),
@@ -1360,6 +1366,25 @@ def _resolve_type_mismatch_policy(config: dict) -> "str | None":
             f"on_type_mismatch must be one of {list(ON_TYPE_MISMATCH)}, "
             f"not {declared!r}"
         )
+    return declared
+
+
+def _resolve_suspected_rename(config: dict) -> str:
+    """`on_suspected_rename`: "hold" (the default) or "serve_empty".
+
+    ABSENT MEANS HOLD, unlike `on_type_mismatch`, whose absence keeps an
+    old behaviour. Serving a field empty where the source holds values is
+    a wrong value by Elysium's own rule, and a deployment meets this only
+    when a source has just changed shape -- not a working pipeline
+    broken by an upgrade. See core/mirror/drift_policy.py for the
+    precedent.
+    """
+    from core.mirror.drift_policy import ON_SUSPECTED_RENAME
+
+    declared = str(config.get("on_suspected_rename") or "hold").strip().lower()
+    if declared not in ON_SUSPECTED_RENAME:
+        raise ValueError(f"on_suspected_rename must be one of {list(ON_SUSPECTED_RENAME)}, "
+                         f"not {declared!r}")
     return declared
 
 

@@ -79,6 +79,10 @@ data_silos:
 #      # encoding: utf-8-sig    # the default; a byte-order mark is optional
 #      # delimiter: ","
 #      # null_values: [""]      # which text means empty
+#      # allow_unterminated_last_line: false
+#      #                        # a file whose last line has no line ending is
+#      #                        # refused as possibly half-written; true for a
+#      #                        # writer that never ends its last line
 #    # A BROKEN LINE STOPS THE TABLE's sync, naming the file and line, and
 #    # the mirror keeps its last good copy. Files with temporary names
 #    # (.part, .tmp, .writing) are not read: a writer renames a file into

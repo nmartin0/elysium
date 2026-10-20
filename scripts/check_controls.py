@@ -734,9 +734,9 @@ CONTROLS = [
     Control(
         describes="a rename is reported as a rename, not as a bare removal",
         path="core/mirror/iceberg_sync.py",
-        old="        appeared = tuple(sorted(set(present) - set(columns)))",
+        old="        appeared = tuple(sorted(set(present) - set(columns) - (before or set())))",
         new="        appeared = ()",
-        tests=["tests/unit/test_a_source_changes_and_what_a_reader_sees.py::TestARenamedColumn::test_and_the_operator_is_told_the_remedy_that_does_not_LOSE_A_FIELD"],
+        tests=["tests/unit/test_a_source_changes_and_what_a_reader_sees.py::TestARenamedColumn::test_a_rename_holds_the_table_at_its_last_good_copy"],
     ),
     Control(
         describes="a bare removal is NOT reported as a possible rename",
@@ -5983,6 +5983,22 @@ CONTROLS = [
         new="             for column in truth[key] if False]",
         tests=["tests/unit/test_live_world.py::TestHowItJudges::"
                "test_a_missing_an_extra_and_a_wrong_row_are_each_named"],
+    ),
+    Control(
+        describes="DRIFT: a suspected rename holds the table",
+        path="core/mirror/drift_policy.py",
+        old='        if appeared and on_suspected_rename != "serve_empty":',
+        new="        if False:",
+        tests=["tests/unit/test_a_source_changes_and_what_a_reader_sees.py::TestARenamedColumn::"
+               "test_a_rename_holds_the_table_at_its_last_good_copy"],
+    ),
+    Control(
+        describes="CSV: a file ending part-way through a line is refused",
+        path="adapters/csv_folder_adapter.py",
+        old='        if bare and not text.endswith(("\\n", "\\r")) and not self.allow_unterminated:',
+        new="        if False:",
+        tests=["tests/unit/test_csv_folder_adapter.py::TestAFileEndingPartWayThroughALine::"
+               "test_it_is_refused_naming_the_file"],
     ),
     Control(
         describes="ENRICH: a classified field is never an input to a model",
