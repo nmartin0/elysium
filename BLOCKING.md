@@ -330,29 +330,83 @@ and code appends a note naming them to every such answer.
 
 **Blocked on:** nothing for the plugin API (item 3), which is next.
 
-## 3. A plugin API, and the reason module federation is not it
+## 3. Modules: a generic shell, and every sub-app an equal
 
-`THIRD_PARTY_EXTENSIONS.md` designs third-party extensions. None of it
-is built, and whether Elysium should have them at all is a product
-question.
+**AGREED WITH THE OWNER, 21 October.** Elysium is a CORE -- sign-in, the
+ontology and its security, the mirror and sync, the write path and its
+approvals, audit, configuration -- and its API is the ONE API every
+sub-app uses. Everything else is a module, and modules are equals:
 
-**ITS MOST IMPORTANT FINDING IS WORTH KEEPING WHOLE**, because it is
-the kind of thing a later reader would otherwise rediscover by
-shipping it:
+- A SUB-APP FOR A SYSTEM COMPONENT (Query, Browse, Schema, Admin, the
+  Inbox) has no server of its own; it is the GUI for core functions
+  and calls the core API, management included.
+- AN ADD-ON may bring its own server, run as its own process, which
+  Elysium starts, watches, restarts and stops. Its frontend talks to
+  it; both may call the core API.
+- "SYSTEM" IS NOT A TIER. Management calls are permissions in the same
+  API; any sub-app may declare them, and the signed-in user's role
+  decides. No sub-app has code inside Elysium's server -- so loading,
+  unloading and refreshing are live everywhere (Python cannot truly
+  unload code: "restarting the entire process is the only generally
+  reliable way to get a clean state").
+- TRUSTED FOR NOW, as Backstage, JupyterLab and Grafana treat their
+  plugins by default: in the page and sharing one React. The shell can
+  only ADVISE which API a module declared; enforcement stays where it
+  is, the user's role on the server. Untrusted third-party code needs
+  the isolation layer below, later.
+- CORE INTERFACE IS THE SHELL ONLY -- frame, sign-in, session, palette,
+  the module manager and a SAFE MODE that loads no modules. All seven
+  of today's sub-apps become modules, each failing safely when
+  unloaded (approvals wait in their queue; links to an object page with
+  no module to open it say so).
 
-> A federated module runs **in your page, in your origin**. It gets
-> the same DOM, the same cookies, the same `localStorage`, and the
-> same authenticated access to every `/api/*` route as Elysium itself.
-> The federation frameworks say so themselves -- they "do not claim
-> that same-realm JavaScript is a security sandbox".
+**THE GENERIC SHELL, `shell/` (`@shell/*`)**, a top-level package that
+knows nothing about Elysium; Elysium and the simulator depend on it, it
+depends on neither. Its backend contract is plain HTTP: the session
+and how to sign in; a FEED of modules filtered for the user (id,
+version, bundle address and integrity, shared-library versions,
+static contributions -- Piral's feed service lists `name`, `version`,
+`link`, `integrity`, `config`); change events; and enable, disable and
+refresh, authorised by the backend. It replaces api/apps.py.
 
-Module federation is the obvious answer and the wrong one. The design
-proposes JSON-RPC 2.0 over `postMessage` instead, a third-party
-adapter as a SILO, and ontology fragments declared as DATA rather than
-code.
+**DECIDED IN DISCUSSION:**
+- CONTRIBUTIONS ARE STATIC, CODE IS LAZY: a manifest declares routes,
+  navigation entries and commands -- VS Code's `contributes`, "static
+  declarations" -- and the bundle's `activate(context)` runs when one
+  is first used; `deactivate()` on unload.
+- SHARED LIBRARIES ARE FIXED AT PAGE LOAD (React, the router,
+  Blueprint, `@shell/*`, the backend's client), by import map: import
+  maps follow "initialization is finalization". A module needing a
+  version the page lacks is refused until a reload, and the module
+  manager says why.
+- SLOTS -- a module adding a tab or section inside another module's
+  screen, Backstage's `attachTo` -- come later in step 1, after pages,
+  navigation and commands.
+- UNLOADING removes a module's contributions and unmounts it; the
+  browser keeps its imported code until the next page load.
 
-**Blocked on:** whether to have an extension story at all. Everything
-downstream of that is design work that cannot start first.
+**BUILD ORDER:** (1) `shell/` and the contract, Elysium implementing
+it, then the Schema graph as the first module through the feed, then
+the module manager and safe mode, then slots; (2) the SIMULATOR as a
+loadable sub-app with its own server -- first to test the API's shape,
+then for simulation itself (it need not run without Elysium); (3) the
+remaining sub-apps moved one at a time; (4) the sub-app API written
+down and versioned from what (1)-(3) used.
+
+**AND STILL TRUE FROM THE EARLIER DESIGN (THIRD_PARTY_EXTENSIONS.md,
+consumed):** for UNTRUSTED code, module federation is the wrong answer
+-- "a federated module runs in your page, in your origin" with the same
+cookies and API access; the isolation layer is a sandboxed iframe
+(`allow-scripts` WITHOUT `allow-same-origin`) speaking the same API as
+JSON-RPC 2.0 over `postMessage`, as MCP Apps do ("all UI content runs
+in sandboxed iframes"). A third-party data source is a SILO, and an
+ontology fragment is DATA, not code.
+
+**DEFERRED, by the owner:** separating the simulator from Elysium at
+the code level (tests importing it, its contracts in pyproject.toml,
+its controls in scripts/check_controls.py) waits until modules work.
+
+**Blocked on:** nothing; step 1 is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 
@@ -1128,7 +1182,10 @@ follows renames and drops (sim/simulator/lineage.py); and shared
 reference data is now declarable (`security: unrestricted`,
 SECURITY_ARCHITECTURE.md).
 
-**Blocked on:** nothing but order: the page comes after item 12, whose
+**Blocked on:** item 3: the panel will be the simulator's sub-app, loaded as a
+module (step 2 there). Superseded wording below kept for its reasons:
+
+**Was blocked on:** nothing but order: the page comes after item 12, whose
 runs will show which controls an operator actually reaches for.
 
 ## 12. Make the simulator's sources behave like real ones, then run Elysium over it
