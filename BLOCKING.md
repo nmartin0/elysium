@@ -393,6 +393,159 @@ then for simulation itself (it need not run without Elysium); (3) the
 remaining sub-apps moved one at a time; (4) the sub-app API written
 down and versioned from what (1)-(3) used.
 
+**THE FRAME AND THE SUB-APP, agreed with the owner 21 October.** The
+shell owns the FRAME -- the rail and the header. A sub-app owns
+everything inside the content area: its own panes or none, its own
+canvas, its own libraries. It touches the frame only two ways:
+
+- DECLARED, for what appears in the frame, which the shell draws in its
+  own style: rail tabs, palette commands, a badge on its tab, help
+  text. No sub-app renders into the rail or the header.
+- REQUESTED, for what the frame does: navigate, a notice or a
+  confirmation, who is signed in, the page title, the theme, and
+  FULL SCREEN -- which the shell grants, controls and always offers a
+  way back from. A sub-app never hides the frame itself.
+
+TODAY'S SHELL BREAKS THIS IN THREE PLACES, written before sub-apps were
+modules; step 1.3 fixes them, and they are its test of being generic:
+(a) the palette knows Browse -- `Shell.tsx` checks for `/browse` and
+builds object-type commands, saved views and search suggestions itself;
+they become Browse's declared commands; (b) the Inbox button and its
+count are wired into the header -- the Inbox declares a tab with a
+badge, and if it keeps a place in the header the shell offers that
+place generically; (c) the shell is handed Elysium's schema -- a generic
+shell does not know what an object type is.
+
+**THE SHELL AND THE SERVER EACH HAVE A SYSTEM SUB-APP**, the hybrid
+applied to the two central components. THE SHELL'S holds the frame's
+controls: the module manager (load, unload, refresh), safe mode, which
+tabs appear and in what order, the theme, and grants such as full
+screen; the frame itself only draws what it configured. THE SERVER'S
+holds Elysium's server controls: configuration and reload, silos and
+the mirror, add-on processes and their logs -- much of today's Admin,
+which splits into the server and people-and-roles.
+
+THIS REFINES "SYSTEM IS NOT A TIER" AND "A SAFE MODE THAT LOADS NO
+MODULES" rather than reversing them. System sub-apps are built like
+any other and call the same API; they differ only in being PINNED: they
+load in safe mode and cannot be unloaded from the interface, because
+safe mode exists for when a module breaks the page, and a module must
+not be able to take away the tool that fixes it. Safe mode therefore
+loads the pinned system sub-apps and nothing else. The last resort is
+still `modules.yaml`, from a terminal.
+
+**THE LOOK: A BASELINE EVERY SUB-APP INHERITS, AND MAY OVERRIDE INSIDE
+ITSELF.** Three layers: (1) DESIGN TOKENS -- colour, font, type sizes,
+spacing, radii -- as CSS custom properties defined for light and dark,
+promised as a public, versioned part of the API rather than internals;
+(2) THE KIT -- table, chart, forms, empty, loading and error states --
+built on the tokens, so a sub-app using it looks native for free; (3)
+THE SUB-APP'S OWN overrides and libraries, scoped to its own root. Its
+obligations: overrides derive from the tokens or supply both themes;
+no global CSS, no styling of `body`; no reaching into another
+module's DOM (that is what slots are for). VS Code is the precedent:
+webviews inherit theme colours as `--vscode-*` variables and style
+their own content freely, without touching the workbench.
+
+**LIBRARIES: SHARED OR PRIVATE.** Shared libraries are the page's,
+fixed by the import map (React, the router, the kit and whatever else
+the API promises -- ECharts, Blueprint); a module uses those copies or
+hooks and context break. Anything else -- a trading chart, a graph
+editor -- a module BUNDLES PRIVATELY, loaded only when one of its pages
+opens, so nothing Elysium does pays for it and Elysium never adopts a
+domain library. Open for step 1.2: whether a module's bundle and assets
+are served by Elysium from its folder or by an add-on's own server
+through the proxy (self-contained, but needs the proxy).
+
+**TESTING FOLLOWS THE LAYERS, agreed 21 October.** The shell is the
+PROVIDER; each sub-app, system ones included, is an entity of its own
+that uses the provider's API and has its own tests. Today all seven
+sub-app packages already import only `@elysium/shell-api` -- none
+imports another -- but none can test alone: one root config runs them
+all under the host's `ui/src/setupTests.ts`, and 52 test files each
+mock the API by hand. The layers:
+
+1. THE SHELL (`shell/`) -- its own suite (it has one, 13 tests).
+2. THE PROVIDER'S API AND KIT -- its own suite, and it SHIPS A TEST
+   HOST: fakes for every declared and requested frame call and for the
+   API client, so a sub-app's tests render inside a faithful frame
+   instead of hand-mocking. Backstage's precedent exactly:
+   `renderInTestApp` with `mockApis`, where a mock "returns a working
+   fake" and its `.mock()` form makes "every method ... a
+   `jest.fn()`".
+3. EACH SUB-APP -- its own package, test config and setup (a preset the
+   provider ships, carrying today's act-warning guard), runnable alone,
+   depending only on the provider's public API and test host, never on
+   the host app or another sub-app; including a check that its
+   `module.json` is valid against the contract.
+4. THE HOST (`ui/src`) -- composition only: the feed becomes routes and
+   a rail, safe mode, the frame's grants.
+5. THE FAKES ARE CHECKED AGAINST THE REAL THING. One conformance suite
+   runs against the test host AND the real shell, so a fake cannot
+   drift -- this project's oldest failure, "a fixture that does not
+   match the API is a test that proves nothing". For the backend half,
+   Pact's provider verification is the model: "each request generates
+   a response that contains at least the data" the consumer described;
+   Elysium's HTTP tests of the shell routes are that side today.
+6. IN A REAL BROWSER, per sub-app, with fixtures the shell provides for
+   the frame -- Grafana's `@grafana/plugin-e2e` precedent, whose APIs
+   are "guaranteed to work with all the latest minor versions" so a
+   plugin's tests need not track the host's markup.
+
+An ADD-ON'S SERVER is tested in its own repository; Elysium tests only
+the HTTP contract it offers add-ons. The Inbox, still in `ui/src`
+because it imports three sub-apps, becomes a package when slots exist.
+The Schema graph, the first separately built module (step 1.2), is
+the first sub-app to run its tests alone.
+
+**GENERIC SERVICES FOR ADD-ONS, from Heliograph's request (21
+October), recorded with the owner.** Heliograph, a trading-signal
+add-on, asked for sixteen features; checked against the code, most
+have a base already. What is generic and worth building, by step:
+
+- STEP 2, with the simulator, which needs each one: who the user is,
+  told to an add-on's server (a signed header from the proxy); a
+  SAME-ORIGIN PROXY to add-on servers that passes SSE and WebSocket
+  upgrades through (Elysium keeps SSE for itself); a written
+  LIFECYCLE contract (health, restart with back-off, logs, config and
+  secrets at start, stop with a deadline -- sim/simulator's control,
+  health and lifecycle are the precedent); POSTING TO THE INBOX for
+  kinds the manifest declares, with the existing `dedupe_key`;
+  declared permissions listed in the manifest for the role editor;
+  a manifest field naming the contract version a module was built for.
+- ASYNC AT THE EDGES, NOT IN THE CORE: request handling stays
+  synchronous (audit context cannot leak between requests); add-ons
+  have their own processes and loops. What they need: JOBS -- a record
+  with owner, state, progress, cancel and result, outliving the tab
+  (mirror sync's polled status is the base; its docstring's objection
+  to "a job id nobody would poll" falls away once add-ons run long
+  work); TIMER CALLBACKS to an add-on's server for its own kinds
+  (`/api/reminders` is the one kind on HTTP today); and an EVENT
+  SUBSCRIPTION -- tell an add-on's server when a trigger fires, a sync
+  finishes or an object changes -- which Heliograph did not ask for
+  and every add-on with a server would want.
+- TIME-SERIES READS OVER WHAT ELYSIUM ALREADY MIRRORS -- still not
+  infrastructure: no historian, no high-rate ingest, no store add-ons
+  write into. `/aggregate` already buckets by day, ISO week and month,
+  labelled by start, gaps honest, the filling period kept apart
+  (`/forecast`'s `running`). To add: hour and minute buckets, a time
+  zone, FIRST and LAST -- with min and max, a candlestick is first, max,
+  min, last per bucket, so OHLC is generic -- several series at once, a
+  declared time property per object type, `period` in the agent's
+  aggregate step (the real gap for trend questions), and a tail cursor.
+  NOT a type-wide as-of read from snapshots: erasure drops older
+  snapshots "time travel included", and gold keeps 30 publications;
+  per-object change history already answers "what did we know".
+- THE KIT: a time-series chart (Browse's `OverTimeChart` promoted, with
+  a time axis, several series and zoom), a virtualised table, forms from
+  JSON Schema, a job panel. Later: a profile needing no model (storage
+  is already SQLite; the mandatory `llm:` block is the gap).
+
+What stays in an add-on is its domain: Heliograph keeps market data,
+bars, indicators, its charts, strategies, backtests and signals. The
+reply sent to its developer is "Building Heliograph for Elysium"
+(PDF, 21 October).
+
 **AND STILL TRUE FROM THE EARLIER DESIGN (THIRD_PARTY_EXTENSIONS.md,
 consumed):** for UNTRUSTED code, module federation is the wrong answer
 -- "a federated module runs in your page, in your origin" with the same
@@ -418,7 +571,8 @@ OF BEHAVIOUR, on purpose: someone without `manage:users` who opens
 before, the route existed for everyone and the panel refused inside it.
 
 **Blocked on:** nothing; the Schema graph as a separately built module
-(bundle, import map, `activate`/`deactivate`) is next.
+(bundle, import map, `activate`/`deactivate`, and the first sub-app
+tested alone against the provider's test host) is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 
