@@ -3,9 +3,15 @@ A sub-app is declared in five places. They must agree.
 
     ui/packages/app-*/            the package exists on disk
     ui/package.json               the shell DEPENDS on it
-    ui/src/App.tsx                a lazy import and a route
-    api/apps.py                   VISIBLE_APPS, which drives the rail
-    appIcons.ts                   an icon for its path
+    module.json                   its pages and rail entries, which the
+                                  module feed serves (core/modules.py)
+    ui/src/App.tsx                BUILT_IN_PAGES: the code for each page
+    appIcons.ts                   an icon for its rail path
+
+THE MODULES ARE THE ONES ELYSIUM SHIPS (core/modules.SHIPPED_MODULES):
+a deployment's modules.yaml may drop some, and a module from outside
+brings its own code, so only the shipped set can be checked against
+this page's code.
 
 THE SAME CLASS AS test_step_vocabulary_consistency.py and
 test_filter_vocabulary_consistency.py: a vocabulary spread across
@@ -49,12 +55,26 @@ def _shell_dependencies() -> set[str]:
     }
 
 
-def _routed_paths() -> set[str]:
-    return set(re.findall(r'path="/([a-z-]+)"', (UI / "src" / "App.tsx").read_text()))
+def _manifests() -> list[dict]:
+    from core.modules import SHIPPED_MODULES
+    return [json.loads((ROOT / folder / "module.json").read_text()) for folder in SHIPPED_MODULES]
+
+
+def _manifest_pages() -> set[str]:
+    """Every page the shipped modules contribute, as `module:page`."""
+    return {f"{m['id']}:{page['id']}" for m in _manifests() for page in m["contributes"].get("pages", [])}
+
+
+def _resolved_pages() -> set[str]:
+    """The `module:page` keys App.tsx has code for (BUILT_IN_PAGES)."""
+    source = (UI / "src" / "App.tsx").read_text()
+    table = source[source.index("const BUILT_IN_PAGES"):]
+    table = table[:table.index("}")]
+    return set(re.findall(r"'([a-z-]+:[a-z-]+)':", table))
 
 
 def _rail_paths() -> set[str]:
-    return set(re.findall(r'"path": "/([a-z-]+)"', (ROOT / "api" / "apps.py").read_text()))
+    return {entry["path"].removeprefix("/") for m in _manifests() for entry in m["contributes"].get("nav", [])}
 
 
 def _iconed_paths() -> set[str]:
@@ -93,16 +113,25 @@ def test_every_shell_dependency_exists_on_disk():
     assert not missing, f"ui/package.json depends on {sorted(missing)}, which do not exist"
 
 
-def test_every_rail_entry_has_a_route():
-    """A rail icon leading nowhere.
+def test_every_shipped_page_has_code():
+    """A rail entry opening "nothing loaded opens this page".
 
-    api/apps.py drives what the sidebar OFFERS. A path there with no
-    route in App.tsx renders a link that navigates to the fallback --
-    which looks like the app losing your click.
+    The manifests decide what the sidebar OFFERS and where each page is
+    mounted. A page there with no entry in App.tsx's BUILT_IN_PAGES
+    mounts the shell's "nothing opens this" in place of the sub-app --
+    for a shipped module, a broken install that looks like a missing one.
     """
-    missing = _rail_paths() - _routed_paths()
+    missing = _manifest_pages() - _resolved_pages()
 
-    assert not missing, f"the rail offers {sorted(missing)}, which App.tsx does not route"
+    assert not missing, f"the modules contribute {sorted(missing)}, which App.tsx has no code for"
+
+
+def test_no_page_code_is_left_for_a_page_no_module_contributes():
+    # The reverse: code kept for a page whose manifest entry was renamed
+    # or removed is dead, and says the table was not kept with them.
+    orphaned = _resolved_pages() - _manifest_pages()
+
+    assert not orphaned, f"App.tsx has code for {sorted(orphaned)}, which no module contributes"
 
 
 def test_every_rail_entry_has_an_icon():

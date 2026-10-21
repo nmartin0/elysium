@@ -23,6 +23,13 @@ const API_PROXY_TARGET = process.env.VITE_API_PROXY_TARGET || 'http://localhost:
 
 export default defineConfig({
   plugins: [react()],
+  // ONE REACT. `@shell/core` (../shell, BLOCKING.md item 3) is linked
+  // in by `file:`, and its own node_modules holds a React for its own
+  // tests; a second copy in the bundle would give the shell's routes a
+  // different React -- and a different router context -- from the
+  // page's, and every hook in them would throw. Shared libraries are
+  // the page's, fixed once (the import-map decision in item 3).
+  resolve: { dedupe: ['react', 'react-dom', 'react-router-dom'] },
   server: {
     proxy: {
       // ONE entry, deliberately -- every real backend path lives

@@ -46,6 +46,7 @@ from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
 from adapters.vllm_adapter import VLLMAdapter
 from core.config import load_yaml
 from core.declared_triggers import load_declared_triggers
+from core.modules import Modules, load_modules
 from core.ontology.constraints import validate_constraints
 from core.secret_references import expand_secrets
 
@@ -341,6 +342,10 @@ class DeploymentConfig:
     # may name. Decided 14 Oct: 256 unless a deployment says otherwise,
     # and never more than 1,024. `bulk_action_limit:` in config.yaml.
     bulk_action_limit: int = 256
+    # THE SUB-APPS THIS DEPLOYMENT LOADS, as modules (BLOCKING.md item 3):
+    # `modules.yaml`, or the five Elysium ships when it is absent. None
+    # only for a config built by hand in a test, which loads none.
+    modules: "Modules | None" = None
 
 
 logger = logging.getLogger(__name__)
@@ -364,7 +369,7 @@ def _next_generation() -> int:
 # about what a deployment consists of -- the same reasoning as the step
 # vocabulary probe in tests/unit/test_step_vocabulary_consistency.py.
 CONFIG_FILENAMES = ["config.yaml", "ontology_schema.yaml", "source_bindings.yaml",
-                     "policy.yaml", "data_silos.yaml"]
+                     "policy.yaml", "data_silos.yaml", "modules.yaml"]
 
 
 def _source_digest(base_path: Path, filenames: list[str]) -> str:
@@ -766,6 +771,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
                 _incremental_policies(data_silos_raw["data_silos"], schema_raw["object_types"])),
             max_tokens_per_query=_token_budget(config["agent"].get("max_tokens_per_query")),
             bulk_action_limit=_bulk_action_limit(config.get("bulk_action_limit")),
+            modules=load_modules(base_path),
             max_concurrent_requests=_default_concurrency(config),
             # FOUR HOURS by default, not fifteen minutes. Long enough
             # that a reviewer can be in a meeting; short enough that a

@@ -76,6 +76,8 @@ interface DeploymentConfigBody {
   source_locales?: Record<string, string | null>
   /** ZOO-22: silos whose date columns may hold Excel serials. */
   excel_date_silos?: string[]
+  /** BLOCKING item 3: the modules loaded, by id, in rail order. */
+  modules?: string[]
   incremental_tables?: Record<string, string>
   max_concurrent_requests: number
   security_attribute: string
@@ -349,6 +351,7 @@ function DeploymentConfigView({
                   <code>{config.source_digest.slice(0, 12)}</code>
                 </span>,
               ],
+              ['Modules', config.modules === undefined ? 'not reported' : config.modules.join(', ') || 'none'],
             ],
           ],
           [

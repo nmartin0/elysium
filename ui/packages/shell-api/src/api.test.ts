@@ -18,7 +18,7 @@ import {
   logoutAllForUser,
   getVisibleSchema,
   getMyVisibleSchema,
-  getVisibleApps,
+  getModuleFeed,
   searchObjects,
   getObjectDetail,
   getVisibleActionTypes,
@@ -419,7 +419,7 @@ describe('every remaining export hits the correct endpoint and method', () => {
       method: undefined,
     },
     { name: 'getMyVisibleSchema', call: () => getMyVisibleSchema(), path: '/api/me/visible-schema', method: undefined },
-    { name: 'getVisibleApps', call: () => getVisibleApps(), path: '/api/me/visible-apps', method: undefined },
+    { name: 'getModuleFeed', call: () => getModuleFeed(), path: '/api/shell/modules', method: undefined },
     {
       name: 'searchObjects',
       call: () => searchObjects('Customer', 'ada'),

@@ -5,8 +5,10 @@ without anything else breaking. This keeps the two together."""
 import re
 from pathlib import Path
 
-from api.apps import VISIBLE_APPS
+from api.apps import visible_apps_for
 from core.agent.help_assistant import SCREEN_GUIDE, SHELL_GUIDE, SHELL_GUIDE_WITH_BROWSE, build_context
+from core.intermediate_layer.auth import UserRecord
+from core.modules import load_modules
 
 # The packages AND the shell's own screens: the Inbox's tab labels live
 # in ui/src/InboxPanel.tsx, since the Inbox is the shell's (14 Oct).
@@ -24,7 +26,11 @@ def test_every_quoted_label_is_on_screen_somewhere():
 
 def test_every_screen_in_the_rail_has_a_guide_entry():
     """A new screen with no entry is one the assistant cannot explain."""
-    assert {app["name"] for app in VISIBLE_APPS} == set(SCREEN_GUIDE)
+    # Every shipped module, as somebody offered all of them sees the rail.
+    everyone = UserRecord(user_id="all", security_value=None, role_name="all")
+    roles = {"all": {"allowed_actions": frozenset({"manage:users"})}}
+    rail = visible_apps_for(everyone, roles, load_modules(Path("/nonexistent")))
+    assert {app["name"] for app in rail} == set(SCREEN_GUIDE)
 
 
 def test_a_schema_too_large_is_summarised_by_type_not_cut_mid_field():

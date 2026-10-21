@@ -1,0 +1,9 @@
+{
+  "id": "schema",
+  "name": "Schema",
+  "version": "1",
+  "contributes": {
+    "pages": [{ "id": "schema", "path": "/schema" }],
+    "nav": [{ "title": "Schema", "path": "/schema", "subject": "Ontology" }]
+  }
+}

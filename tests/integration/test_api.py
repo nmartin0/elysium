@@ -4261,3 +4261,96 @@ def test_the_inbox_counts_approvals_not_decisions(client):
 
     entry = client.get("/api/writes/awaiting").json()[0]
     assert entry["tasks_approved"] == 0
+
+
+# ---------------------------------------------------------------------------
+# The shell contract (shell/README.md, BLOCKING.md item 3): what any
+# backend serves a shell, and Elysium serving it.
+# ---------------------------------------------------------------------------
+
+
+def test_shell_session_answers_nobody_rather_than_refusing(client):
+    """The shell asks before it knows. A 401 here would make the first
+    request of every visit a failure in the console."""
+    response = client.get("/api/shell/session")
+
+    assert response.status_code == 200
+    assert response.json()["user"] is None
+    assert response.json()["sign_in"] == {"kind": "form", "submit": "/api/login"}
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_shell_session_names_who_is_signed_in(client):
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    _login(client, "alice", "correct-pw")
+
+    body = client.get("/api/shell/session").json()
+
+    assert body["user"] == {"id": "alice", "name": "alice"}
+    assert body["must_change_password"] is False
+
+
+def test_shell_session_answers_an_account_that_must_change_its_password(client):
+    """Allowed before the change, like /me: the shell has to learn it
+    must show the change form, not be refused into the login loop."""
+    directory = client.app.state.user_directory
+    directory.create_user("alice", "correct-pw", "us-west", "editor")
+    directory.set_must_change_password("alice", True)
+    _login(client, "alice", "correct-pw")
+
+    response = client.get("/api/shell/session")
+
+    assert response.status_code == 200
+    assert response.json()["must_change_password"] is True
+
+
+def test_shell_modules_is_refused_to_an_account_that_must_change_its_password(client):
+    """Only the session and the password change are allowed before it:
+    the feed is the apps, and a reset account may use none of them."""
+    directory = client.app.state.user_directory
+    directory.create_user("alice", "correct-pw", "us-west", "editor")
+    directory.set_must_change_password("alice", True)
+    _login(client, "alice", "correct-pw")
+
+    assert client.get("/api/shell/modules").status_code == 403
+
+
+def test_shell_modules_needs_a_login(client):
+    assert client.get("/api/shell/modules").status_code in (401, 403)
+
+
+def test_shell_modules_offers_admin_only_to_whoever_may_manage_users(client):
+    """The feed is filtered ON THE SERVER: a module the caller may not
+    use is absent, not hidden by the page."""
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    _login(client, "alice", "correct-pw")
+
+    feed = client.get("/api/shell/modules").json()
+
+    assert feed["contract"] == 1
+    assert feed["home"] == "/query"
+    ids = [m["id"] for m in feed["modules"]]
+    assert {"query", "browse"}.issubset(ids)
+    assert "admin" not in ids
+
+
+def test_shell_modules_includes_admin_for_an_administrator(client):
+    _make_admin(client)
+
+    ids = [m["id"] for m in client.get("/api/shell/modules").json()["modules"]]
+
+    assert "admin" in ids
+
+
+def test_shell_modules_carries_no_grant_and_no_folder(client):
+    """THE KEY SET IS FROZEN, as for /me/visible-apps: a module's
+    `permission` and its folder on the server are not the browser's."""
+    _make_admin(client)
+
+    response = client.get("/api/shell/modules")
+
+    assert response.headers["cache-control"] == "no-store"
+    for module in response.json()["modules"]:
+        assert set(module) == {"id", "name", "version", "contributes", "entry"}
+    assert "manage:users" not in response.text
+    assert "/packages/" not in response.text

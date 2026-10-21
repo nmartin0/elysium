@@ -60,13 +60,12 @@ import HelpPanel from '@elysium/shell-api/components/HelpPanel'
 //
 // COLLAPSED MEANS FULLY HIDDEN, not shrunk to an icon strip -- the
 // real reference's own collapsed state still shows one icon per
-// section; visibleApps (GET /me/visible-apps) carries no icon data
-// today, only path/name (see this file's own VisibleApp type below
-// -- gating_permission is a real, internal-only field the backend
-// itself uses to decide which apps to include at all; deliberately
-// excluded from the HTTP response and this type both, since nothing
-// here needs the raw permission-string name of what gates an app it
-// can already see is visible -- see api/routes.py's own AI-notes),
+// section; visibleApps (the rail entries of the module feed, GET
+// /api/shell/modules) carries no icon data today, only path/name (see
+// this file's own VisibleApp type below -- a module's `permission` is
+// what the backend uses to decide which modules to offer at all, and
+// is deliberately not in the feed, since nothing here needs the name
+// of what gates an app it can already see -- core/modules.py),
 // and adding an icon would be a real backend and type change outside
 // this specific step's own scope (a layout change only, no backend
 // change -- decided explicitly before starting this file). A future
@@ -74,7 +73,7 @@ import HelpPanel from '@elysium/shell-api/components/HelpPanel'
 // that data exists, not forgotten -- see the AI-only notes at the
 // end of this file.
 //
-// Nav is DATA-DRIVEN from visibleApps (GET /me/visible-apps) --
+// Nav is DATA-DRIVEN from visibleApps (the module feed's rail) --
 // replaces three hardcoded <NavLink> entries that were ALWAYS shown
 // to every logged-in user regardless of what they could actually use
 // (Admin was visible in nav even to a role with no manage:users grant

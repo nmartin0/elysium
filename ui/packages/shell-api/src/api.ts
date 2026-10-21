@@ -780,8 +780,12 @@ export async function getMyVisibleSchema(): Promise<unknown> {
   return response.json()
 }
 
-export async function getVisibleApps(): Promise<unknown> {
-  const response = await apiFetchOrThrow('/me/visible-apps')
+/** The shell's module feed (shell/README.md): the sub-apps this person is
+ *  offered, each with the pages and rail entries it contributes. Through
+ *  apiFetchOrThrow, so a configuration reload is noticed here as on every
+ *  other request. Unchecked here; @shell/core's checkFeed reads it. */
+export async function getModuleFeed(): Promise<unknown> {
+  const response = await apiFetchOrThrow('/shell/modules')
   return response.json()
 }
 

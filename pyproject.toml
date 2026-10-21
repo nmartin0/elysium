@@ -389,7 +389,11 @@ exhaustive = true
 # projected_condition (R68, 18 October) is a trigger's forecast of its
 # view's totals per period: trigger machinery beside count_condition,
 # composing the mediator's aggregate and the forecasts.
-exhaustive_ignores = ["predictions", "meaning_search", "adapter_roles", "count_condition", "projected_condition", "trigger_runs", "trigger_windows", "trigger_states", "declared_triggers", "concurrency", "config", "deployment_loader", "role_impact", "internal_storage", "logging_config", "pending_write_persistence", "pending_write_serialisation", "pending_write_store", "sqlite_connection", "user_directory"]
+# modules (BLOCKING item 3, 21 October) sits with deployment_loader, its
+# only loader: it reads module.json files with core.config and asks
+# intermediate_layer's authorize who is offered each -- configuration
+# composed with authorization, outside the hierarchy like role_impact.
+exhaustive_ignores = ["modules", "predictions", "meaning_search", "adapter_roles", "count_condition", "projected_condition", "trigger_runs", "trigger_windows", "trigger_states", "declared_triggers", "concurrency", "config", "deployment_loader", "role_impact", "internal_storage", "logging_config", "pending_write_persistence", "pending_write_serialisation", "pending_write_store", "sqlite_connection", "user_directory"]
 
 # Contract 3 of 3 -- the single most repeatedly-stated architectural
 # principle throughout this project's own history: authentication

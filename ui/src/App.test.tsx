@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 
 // App.jsx pulls in every sub-app package plus the shell's own API --
@@ -29,7 +29,7 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
     changeOwnPassword: vi.fn(),
     getCurrentUser: vi.fn(),
     getMyVisibleSchema: vi.fn(),
-    getVisibleApps: vi.fn(),
+    getModuleFeed: vi.fn(),
   }
 })
 vi.mock('@elysium/shell-api/components/LoginForm', () => ({
@@ -50,7 +50,7 @@ import {
   changeOwnPassword,
   getCurrentUser,
   getMyVisibleSchema,
-  getVisibleApps,
+  getModuleFeed,
   ApiError,
 } from '@elysium/shell-api/api'
 import App from './App'
@@ -58,11 +58,25 @@ import App from './App'
 const mockedLogout = vi.mocked(logout)
 const mockedGetCurrentUser = vi.mocked(getCurrentUser)
 const mockedGetMyVisibleSchema = vi.mocked(getMyVisibleSchema)
-const mockedGetVisibleApps = vi.mocked(getVisibleApps)
+const mockedGetModuleFeed = vi.mocked(getModuleFeed)
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockedGetVisibleApps.mockResolvedValue([])
+  // The feed as the server sends it: the shell routes /query to the
+  // query module's page, which is mocked to "query screen" above.
+  mockedGetModuleFeed.mockResolvedValue({
+    contract: 1,
+    home: '/query',
+    modules: [
+      {
+        id: 'query',
+        name: 'Query',
+        version: '1',
+        entry: null,
+        contributes: { pages: [{ id: 'query', path: '/query' }], nav: [{ title: 'Query', path: '/query' }] },
+      },
+    ],
+  })
   mockedGetCurrentUser.mockResolvedValue({ username: 'testuser', role_name: 'editor', mac_value: 'us-west' })
 })
 
@@ -142,7 +156,7 @@ describe('App -- the three-state boot sequence (checking / loggedOut / loggedIn)
     // This used to wait for "query screen" and then immediately click
     // the user menu. Those are fed by SEPARATE fetches -- App makes
     // three independent useFetchOnLogin calls, for visibleSchema,
-    // visibleApps and currentUser -- and only the first gates the
+    // the module feed and currentUser -- and only the first gates the
     // screen. So the username could still be absent when the click
     // happened, and the trigger read "Account" instead.
     //
@@ -168,7 +182,7 @@ describe('App -- the screen and the username arrive separately', () => {
      * THE RACE, MADE PERMANENT rather than left to a fast machine.
      *
      * App makes three independent useFetchOnLogin calls --
-     * visibleSchema, visibleApps and currentUser -- and only the first
+     * visibleSchema, the module feed and currentUser -- and only the first
      * gates the screen. A test that waits for "query screen" and then
      * reaches for the username is asserting on something it never
      * waited for; the trigger reads "Account" until currentUser lands.
@@ -200,31 +214,31 @@ describe('App -- the screen and the username arrive separately', () => {
   })
 })
 
-describe('App -- fetching visibleSchema/visibleApps/currentUser once logged in', () => {
-  it('fetches visibleApps once a session is confirmed to already exist', async () => {
+describe('App -- fetching visibleSchema/the module feed/currentUser once logged in', () => {
+  it('fetches the module feed once a session is confirmed to already exist', async () => {
     mockedGetMyVisibleSchema.mockResolvedValue({})
     render(<App />)
-    await waitFor(() => expect(mockedGetVisibleApps).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mockedGetModuleFeed).toHaveBeenCalledTimes(1))
   })
 
-  it('does not fetch visibleApps while the initial session check is still pending or has failed', async () => {
+  it('does not fetch the module feed while the initial session check is still pending or has failed', async () => {
     mockedGetCurrentUser.mockRejectedValue(new ApiError(401, 'no session'))
     render(<App />)
     await waitFor(() => expect(screen.getByText('login screen')).toBeInTheDocument())
-    expect(mockedGetVisibleApps).not.toHaveBeenCalled()
+    expect(mockedGetModuleFeed).not.toHaveBeenCalled()
   })
 
-  it('fetches visibleApps again after a fresh login, since the initial check already ran once before it', async () => {
+  it('fetches the module feed again after a fresh login, since the initial check already ran once before it', async () => {
     mockedGetCurrentUser
       .mockRejectedValueOnce(new ApiError(401, 'no session'))
       .mockResolvedValue({ username: 'testuser', role_name: 'editor', mac_value: 'us-west' })
     render(<App />)
     await waitFor(() => expect(screen.getByText('login screen')).toBeInTheDocument())
-    expect(mockedGetVisibleApps).not.toHaveBeenCalled()
+    expect(mockedGetModuleFeed).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'fake login submit' }))
 
-    await waitFor(() => expect(mockedGetVisibleApps).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mockedGetModuleFeed).toHaveBeenCalledTimes(1))
   })
 
   it("fetches currentUser once a session is confirmed to already exist, and Shell's own real UserMenu shows it", async () => {
@@ -263,9 +277,9 @@ describe('App -- a 401 mid-session returns to the login screen', () => {
     await waitFor(() => expect(screen.getByText('login screen')).toBeInTheDocument())
   })
 
-  it('a 401 from the visibleApps fetch logs the user back out too', async () => {
+  it('a 401 from the module-feed fetch logs the user back out too', async () => {
     mockedGetMyVisibleSchema.mockResolvedValue({})
-    mockedGetVisibleApps.mockRejectedValue(new ApiError(401, 'session expired'))
+    mockedGetModuleFeed.mockRejectedValue(new ApiError(401, 'session expired'))
     render(<App />)
     await waitFor(() => expect(screen.getByText('login screen')).toBeInTheDocument())
   })
@@ -305,7 +319,7 @@ describe('App -- after an administrator reset your password', () => {
     render(<App />)
     await screen.findByText(/An administrator reset your password/)
 
-    expect(vi.mocked(getVisibleApps)).not.toHaveBeenCalled()
+    expect(mockedGetModuleFeed).not.toHaveBeenCalled()
     expect(vi.mocked(getMyVisibleSchema)).not.toHaveBeenCalled()
   })
 
@@ -320,7 +334,7 @@ describe('App -- after an administrator reset your password', () => {
     fireEvent.change(screen.getByLabelText('New password, again'), { target: { value: 'my-own-choice-at-last' } })
     fireEvent.click(screen.getByRole('button', { name: 'Change password' }))
 
-    await waitFor(() => expect(vi.mocked(getVisibleApps)).toHaveBeenCalled())
+    await waitFor(() => expect(mockedGetModuleFeed).toHaveBeenCalled())
   })
 
   it('a fresh login lands here too', async () => {
@@ -342,5 +356,99 @@ describe('App -- after an administrator reset your password', () => {
     render(<App />)
 
     expect(await screen.findByRole('button', { name: 'Log out' })).toBeInTheDocument()
+  })
+})
+
+describe('App -- routes and rail come from the module feed', () => {
+  afterEach(() => window.history.pushState({}, '', '/'))
+
+  it('offers in the rail what the feed contributes, and nothing else', async () => {
+    mockedGetMyVisibleSchema.mockResolvedValue({})
+    render(<App />)
+
+    await screen.findByText('query screen')
+    expect(screen.getByRole('menuitem', { name: 'Query' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Admin' })).not.toBeInTheDocument()
+  })
+
+  it('holds a deep link until the feed arrives, rather than sending it home', async () => {
+    /** BEFORE THE FEED the shell cannot know whether anything opens an
+     *  address; redirecting then would lose every bookmark. */
+    let deliver: (feed: unknown) => void = () => {}
+    mockedGetModuleFeed.mockReturnValue(new Promise((resolve) => (deliver = resolve)))
+    mockedGetMyVisibleSchema.mockResolvedValue({})
+    window.history.pushState({}, '', '/admin')
+    render(<App />)
+
+    await waitFor(() => expect(mockedGetModuleFeed).toHaveBeenCalled())
+    expect(window.location.pathname).toBe('/admin')
+
+    deliver({
+      contract: 1,
+      home: '/query',
+      modules: [
+        {
+          id: 'admin',
+          name: 'Admin',
+          version: '1',
+          entry: null,
+          contributes: { pages: [{ id: 'admin', path: '/admin' }] },
+        },
+      ],
+    })
+
+    expect(await screen.findByText('admin screen')).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/admin')
+  })
+
+  it('says nothing opens a page whose module this page has no code for', async () => {
+    mockedGetModuleFeed.mockResolvedValue({
+      contract: 1,
+      home: '/query',
+      modules: [
+        {
+          id: 'elsewhere',
+          name: 'Elsewhere',
+          version: '1',
+          entry: null,
+          contributes: { pages: [{ id: 'main', path: '/elsewhere' }] },
+        },
+      ],
+    })
+    mockedGetMyVisibleSchema.mockResolvedValue({})
+    window.history.pushState({}, '', '/elsewhere')
+    render(<App />)
+
+    expect(await screen.findByText(/belongs to the module/)).toHaveTextContent('elsewhere')
+  })
+})
+
+describe('App -- a module feed that cannot be had', () => {
+  it('says so, rather than loading for ever', async () => {
+    /** BEFORE THE FEED, A FAILURE LEFT THE ROUTES IN PLACE. With the
+     *  routes made from the feed, a silent failure would leave every
+     *  page on "Loading" with nothing to say why. */
+    mockedGetModuleFeed.mockRejectedValue(new ApiError(500, 'the configuration could not be read'))
+    mockedGetMyVisibleSchema.mockResolvedValue({})
+    render(<App />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/the configuration could not be read/)
+    expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
+  })
+
+  it('still signs the person out on an expired session', async () => {
+    mockedGetModuleFeed.mockRejectedValue(new ApiError(401, 'session expired'))
+    mockedGetMyVisibleSchema.mockResolvedValue({})
+    render(<App />)
+
+    expect(await screen.findByText('login screen')).toBeInTheDocument()
+  })
+
+  it('refuses a feed in another contract version by name', async () => {
+    mockedGetModuleFeed.mockResolvedValue({ contract: 2, home: '/query', modules: [] })
+    mockedGetMyVisibleSchema.mockResolvedValue({})
+    render(<App />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/contract 2/)
   })
 })

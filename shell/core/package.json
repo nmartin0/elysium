@@ -1,0 +1,15 @@
+{
+  "name": "@shell/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./contract": "./src/contract.ts",
+    "./registry": "./src/registry.ts",
+    "./ModuleRoutes": "./src/ModuleRoutes.tsx"
+  },
+  "peerDependencies": {
+    "react": "^19.2.8",
+    "react-router-dom": "^7.18.3"
+  }
+}

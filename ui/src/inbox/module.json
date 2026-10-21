@@ -1,0 +1,14 @@
+{
+  "id": "inbox",
+  "name": "Inbox",
+  "version": "1",
+  "contributes": {
+    "pages": [{ "id": "inbox", "path": "/inbox" }],
+    "nav": [{ "title": "Inbox", "path": "/inbox", "subject": "Inbox" }],
+    "redirects": [
+      { "from": "/approvals", "to": "/inbox?tab=approvals" },
+      { "from": "/identity", "to": "/inbox?tab=identity" },
+      { "from": "/notifications", "to": "/inbox?tab=notifications" }
+    ]
+  }
+}

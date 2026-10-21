@@ -54,7 +54,7 @@ _INVALID_SESSION_DETAIL = "Invalid or expired session"
 # there. test_passwords pins that a reset account CAN log out, so if
 # logout ever starts depending on this function, that test says so.
 PASSWORD_CHANGE_REQUIRED = "password_change_required"
-_ALLOWED_BEFORE_A_CHANGE = frozenset({"/api/me", "/api/me/password"})
+_ALLOWED_BEFORE_A_CHANGE = frozenset({"/api/me", "/api/me/password", "/api/shell/session"})
 
 
 def get_current_user(request: Request) -> UserRecord:

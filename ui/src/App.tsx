@@ -1,5 +1,8 @@
-import { lazy, useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { createContext, lazy, useContext, useEffect, useMemo, useState, type ComponentType } from 'react'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { checkFeed, type ModuleFeed } from '@shell/core/contract'
+import { moduleRoutes, type PageResolver } from '@shell/core/ModuleRoutes'
+import { buildRegistry } from '@shell/core/registry'
 import ChangePasswordForm from '@elysium/shell-api/components/ChangePasswordForm'
 import LoginForm from '@elysium/shell-api/components/LoginForm'
 import type { CurrentUser } from '@elysium/shell-api/components/UserMenu'
@@ -10,8 +13,10 @@ import {
   getCurrentUser,
   getMyVisibleSchema,
   setGenerationChangeHandler,
-  getVisibleApps,
+  getModuleFeed,
   handleIfSessionExpired,
+  ApiError,
+  getErrorMessage,
 } from '@elysium/shell-api/api'
 // Blueprint's own CSS imported first, our own index.css second --
 // deliberate order: our own remaining, real customizations (see the
@@ -29,6 +34,7 @@ import '@elysium/shell-api/tokens.css'
 // tokens BEFORE index.css: index.css consumes the variables, and a
 // consumer loaded first would resolve them to nothing.
 import '@elysium/shell-api/index.css'
+import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 
 // Lazy-loaded, deliberately -- each sub-app's own code is no longer
@@ -64,6 +70,83 @@ const ObjectDetailPanel = lazy(() => import('@elysium/app-browse/ObjectDetailPan
 const AdminPanel = lazy(() => import('@elysium/app-admin/AdminPanel'))
 // The three inbox panels are lazy-loaded by the Inbox itself, one per tab.
 const InboxPanel = lazy(() => import('./InboxPanel'))
+
+// WHAT EACH BUILT-IN MODULE'S PAGES NEED FROM THE HOST, through a context
+// rather than props, so the page components below are defined ONCE: a
+// component created inside App on each render would be a new type every
+// time, and React would remount the page -- losing its state -- whenever
+// the schema or the session changed.
+interface PageNeeds {
+  visibleSchema: VisibleSchema | null
+  username: string
+  onSessionExpired: () => void
+}
+const PageNeedsContext = createContext<PageNeeds>({ visibleSchema: null, username: '', onSessionExpired: () => {} })
+
+function QueryPage() {
+  const needs = useContext(PageNeedsContext)
+  return <QueryPanel onSessionExpired={needs.onSessionExpired} />
+}
+function SchemaPage() {
+  const needs = useContext(PageNeedsContext)
+  return <SchemaPanel {...needs} />
+}
+function BrowsePage() {
+  const needs = useContext(PageNeedsContext)
+  return <ObjectSearchPanel {...needs} />
+}
+function ObjectPage() {
+  const needs = useContext(PageNeedsContext)
+  return <ObjectDetailPanel visibleSchema={needs.visibleSchema} onSessionExpired={needs.onSessionExpired} />
+}
+function AdminPage() {
+  const needs = useContext(PageNeedsContext)
+  return <AdminPanel onSessionExpired={needs.onSessionExpired} />
+}
+function InboxPage() {
+  const needs = useContext(PageNeedsContext)
+  return <InboxPanel onSessionExpired={needs.onSessionExpired} />
+}
+
+/**
+ * THE MODULES WHOSE CODE IS BUILT INTO THIS PAGE, by `module:page` as each
+ * module.json names them (BLOCKING.md item 3). Which of them a person is
+ * OFFERED, and where each is mounted, is the feed's to say; this only
+ * says where the code is. A page the feed names and this does not know
+ * is shown as "nothing loaded opens this page" by the shell.
+ */
+const BUILT_IN_PAGES: Record<string, ComponentType> = {
+  'query:query': QueryPage,
+  'schema:schema': SchemaPage,
+  'browse:search': BrowsePage,
+  'browse:object': ObjectPage,
+  'admin:admin': AdminPage,
+  'inbox:inbox': InboxPage,
+}
+/** A feed that could not be had, said in the words the failure came in. */
+interface FeedFailure {
+  failure: string
+}
+type FeedState = ModuleFeed | FeedFailure
+
+/** The feed, read through the contract's own check; module-level so it
+ *  is as stable as the api.ts functions useFetchOnLogin is given.
+ *
+ *  A FAILURE IS A VALUE, NOT A SILENCE. useFetchOnLogin leaves state at
+ *  its default on any error but an expired session, and for the feed
+ *  the default is "waiting" -- every page would say Loading for ever.
+ *  So a failure other than a 401 (which still signs the person out) is
+ *  returned, and the page says what went wrong instead. */
+async function fetchCheckedFeed(): Promise<FeedState> {
+  try {
+    return checkFeed(await getModuleFeed())
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) throw err
+    return { failure: getErrorMessage(err) }
+  }
+}
+
+const resolveBuiltIn: PageResolver = (moduleId, pageId) => BUILT_IN_PAGES[`${moduleId}:${pageId}`] ?? null
 
 // mustChangePassword: logged in, after an administrator's reset, and not
 // yet allowed anything but choosing a password. A STATE OF ITS OWN, not
@@ -158,7 +241,7 @@ async function resolveSession(): Promise<AuthStatus> {
 // fetchFn and setValue are both safe to omit from the effect's own
 // dependency array below, confirmed deliberately, not by oversight:
 // fetchFn is always one of api.ts's own module-level exports
-// (getMyVisibleSchema, getVisibleApps, getCurrentUser), which are
+// (getMyVisibleSchema, fetchCheckedFeed, getCurrentUser), which are
 // permanently stable references, never redefined; setValue is always
 // a useState setter, which React itself guarantees is stable across
 // every render of the component that created it. Neither can ever
@@ -184,7 +267,9 @@ function useFetchOnLogin<T>(
           if (!cancelled) onSessionExpired()
         })
         // Any other error: setValue simply never gets called, leaving
-        // whatever this piece of state's own default already is
+        // whatever this piece of state's own default already is (the
+        // module feed turns its failures into a value first, so this
+        // does not apply to it)
         // (null, or []). Every real consumer already treats that
         // default as a loading/empty state, not a crash -- see each
         // call site below for the specific reasoning.
@@ -201,7 +286,7 @@ function useFetchOnLogin<T>(
 export default function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>('checking')
   const [visibleSchema, setVisibleSchema] = useState<VisibleSchema | null>(null)
-  const [visibleApps, setVisibleApps] = useState<VisibleApp[]>([])
+  const [feed, setFeed] = useState<FeedState | null>(null)
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
 
   async function handleLoginSuccess() {
@@ -212,14 +297,14 @@ export default function App() {
     await logout()
     setAuthStatus('loggedOut')
     setVisibleSchema(null)
-    setVisibleApps([])
+    setFeed(null)
     setCurrentUser(null)
   }
 
   function handleSessionExpired() {
     setAuthStatus('loggedOut')
     setVisibleSchema(null)
-    setVisibleApps([])
+    setFeed(null)
     setCurrentUser(null)
   }
 
@@ -299,11 +384,15 @@ export default function App() {
   // matches how getMyVisibleSchema() was already its own independent
   // fetch before this -- one more, similarly-independent
   // useFetchOnLogin() call is consistent with that, not new
-  // complexity. Any error other than session-expiry: visibleApps
-  // stays []. Shell already renders an empty nav in that state, not a
-  // crash -- see its own docstring for why that's the deliberate
-  // default, not a gap.
-  useFetchOnLogin(authStatus, () => getVisibleApps() as Promise<VisibleApp[]>, setVisibleApps, handleSessionExpired)
+  // complexity. Any error other than session-expiry: the feed is
+  // fetched as a FAILURE VALUE rather than left at its default (see
+  // fetchCheckedFeed), because with the routes made from it, the
+  // default would be "Loading" on every page for ever.
+  // THE MODULE FEED (shell/README.md), which says which sub-apps this
+  // person is offered and what each contributes -- the rail and the routes
+  // both come from it. checkFeed refuses a feed in another contract
+  // version rather than half-reading it.
+  useFetchOnLogin(authStatus, fetchCheckedFeed, setFeed, handleSessionExpired)
 
   // A THIRD, similarly independent fetch -- same reasoning as
   // visibleApps' own comment above: "who is logged in" is a genuinely
@@ -331,7 +420,14 @@ export default function App() {
   useEffect(() => {
     setGenerationChangeHandler(() => {
       void (getMyVisibleSchema() as Promise<VisibleSchema>).then(setVisibleSchema).catch(() => {})
-      void (getVisibleApps() as Promise<VisibleApp[]>).then(setVisibleApps).catch(() => {})
+      // A FAILED REFETCH KEEPS THE RAIL IT HAD: the person was using
+      // it a moment ago, and an error page in its place for a passing
+      // network fault would be worse than a briefly stale rail.
+      void fetchCheckedFeed()
+        .then((next) => {
+          if (!('failure' in next)) setFeed(next)
+        })
+        .catch(() => {})
     })
   }, [])
 
@@ -385,6 +481,45 @@ export default function App() {
     )
   }
 
+  return (
+    <LoggedIn
+      feed={feed}
+      visibleSchema={visibleSchema}
+      currentUser={currentUser}
+      onLogout={handleLogout}
+      onSessionExpired={handleSessionExpired}
+    />
+  )
+}
+
+function LoggedIn({
+  feed,
+  visibleSchema,
+  currentUser,
+  onLogout,
+  onSessionExpired,
+}: {
+  feed: FeedState | null
+  visibleSchema: VisibleSchema | null
+  currentUser: CurrentUser | null
+  onLogout: () => void
+  onSessionExpired: () => void
+}) {
+  const registry = useMemo(() => (feed === null || 'failure' in feed ? null : buildRegistry(feed)), [feed])
+  const visibleApps: VisibleApp[] = useMemo(
+    () => (registry?.nav ?? []).map((entry) => ({ name: entry.title, path: entry.path, subject: entry.subject })),
+    [registry],
+  )
+  // WHAT THE REGISTRY COULD NOT HONOUR -- two modules claiming a path, a
+  // rail entry leading elsewhere -- said in the console until the module
+  // manager (BLOCKING.md item 3, step 1) has somewhere to show it.
+  useEffect(() => {
+    for (const problem of registry?.problems ?? []) console.warn(`[modules] ${problem}`)
+  }, [registry])
+  const needs = useMemo(
+    () => ({ visibleSchema, username: currentUser?.username ?? '', onSessionExpired }),
+    [visibleSchema, currentUser, onSessionExpired],
+  )
   // authStatus === 'loggedIn' from here on.
   //
   // Shell is now a real React Router LAYOUT route -- an element on
@@ -399,54 +534,41 @@ export default function App() {
   // fetching/routing wiring; Shell.jsx owns chrome; each routed panel
   // owns its own screen and nothing about any other route.
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route
-          element={
-            <Shell
-              visibleApps={visibleApps}
-              visibleSchema={visibleSchema}
-              currentUser={currentUser}
-              onLogout={handleLogout}
-            />
-          }
-        >
-          <Route path="/query" element={<QueryPanel onSessionExpired={handleSessionExpired} />} />
+    <PageNeedsContext.Provider value={needs}>
+      <BrowserRouter>
+        <Routes>
           <Route
-            path="/schema"
             element={
-              <SchemaPanel
+              <Shell
+                visibleApps={visibleApps}
                 visibleSchema={visibleSchema}
-                username={currentUser?.username ?? ''}
-                onSessionExpired={handleSessionExpired}
+                currentUser={currentUser}
+                onLogout={onLogout}
               />
             }
-          />
-          <Route
-            path="/browse"
-            element={
-              <ObjectSearchPanel
-                visibleSchema={visibleSchema}
-                username={currentUser?.username ?? ''}
-                onSessionExpired={handleSessionExpired}
+          >
+            {/* FROM THE FEED: each module's pages, its old addresses, and
+              home. UNTIL IT ARRIVES every address waits rather than being
+              sent home -- a bookmarked deep link must not be redirected
+              away before the shell knows whether anything opens it. */}
+            {feed !== null && 'failure' in feed ? (
+              <Route
+                path="*"
+                element={
+                  <ErrorState>
+                    The sub-apps could not be loaded: {feed.failure}. Reload the page to try again.
+                  </ErrorState>
+                }
               />
-            }
-          />
-          <Route
-            path="/objects/:objectType/:objectId"
-            element={<ObjectDetailPanel visibleSchema={visibleSchema} onSessionExpired={handleSessionExpired} />}
-          />
-          <Route path="/admin" element={<AdminPanel onSessionExpired={handleSessionExpired} />} />
-          <Route path="/inbox" element={<InboxPanel onSessionExpired={handleSessionExpired} />} />
-          {/* THE OLD PATHS LAND ON THEIR TAB, so a link anyone kept --
-              in a message, a bookmark, a notification -- still works. */}
-          <Route path="/approvals" element={<Navigate to="/inbox?tab=approvals" replace />} />
-          <Route path="/identity" element={<Navigate to="/inbox?tab=identity" replace />} />
-          <Route path="/notifications" element={<Navigate to="/inbox?tab=notifications" replace />} />
-          <Route path="*" element={<Navigate to="/query" replace />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+            ) : registry === null || feed === null ? (
+              <Route path="*" element={<LoadingState />} />
+            ) : (
+              moduleRoutes(registry, resolveBuiltIn, feed.home)
+            )}
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </PageNeedsContext.Provider>
   )
 }
 

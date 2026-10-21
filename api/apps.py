@@ -1,30 +1,21 @@
 """
-apps.py  (the registry backing GET /me/visible-apps)
+apps.py  (the rail entries backing GET /me/visible-apps)
 
-A small, static, hand-authored list -- deliberately NOT computed by
-scanning ui/src/ or anything else automatic. Every entry is a real,
-independent statement of "this app exists and this is what gates it,"
-matching this project's own established discipline of fully explicit
-authorization (see README.md's own section 3.5: "nothing is inherited
-from anything else").
+FROM THE MODULES, since 21 October (BLOCKING.md item 3): each sub-app's
+`module.json` declares its rail entry and the permission a person needs
+to be offered it, and core/modules.py loads them. This file only turns
+them into the rail's {name, path, subject} entries, in subject order --
+the shell's own feed (GET /api/shell/modules) carries the same modules
+in the contract's shape.
 
-gating_permission is None for an app available to every logged-in
-user with no additional grant required (Query, Browse today) -- NOT
-the same as "no check at all." authorize() is never called for a None
-entry; the check IS "are you authenticated," already enforced by
-get_current_user() on this route like every other one.
+A permission of None is "every signed-in person", NOT "no check at
+all": the route still requires a session.
 
-"path" exists so the frontend can render a real link -- not something
-explicitly requested, but the endpoint is not functionally complete
-without it: a nav entry with no URL to point to isn't usable. Kept as
-plain, hand-authored data alongside name/gating_permission, not a
-separate lookup the frontend maintains independently, which would
-risk silently drifting out of sync with this list.
-
-Used by: api/routes.py's my_visible_apps_route()
+Used by: api/routes.py's my_visible_apps_route() and the help assistant.
 """
 
-from core.intermediate_layer.auth import UserRecord, authorize
+from core.intermediate_layer.auth import UserRecord
+from core.modules import Modules, feed_for
 
 #: WHAT A PERSON IS WORKING ON, not which feature built the screen.
 #:
@@ -53,33 +44,25 @@ from core.intermediate_layer.auth import UserRecord, authorize
 #:              fine where it is."
 SUBJECTS: tuple[str, ...] = ("Objects", "Ontology", "Inbox", "Settings")
 
-VISIBLE_APPS: list[dict[str, str | None]] = [
-    {"name": "Browse", "path": "/browse", "subject": "Objects",
-     "gating_permission": None},
-    {"name": "Query", "path": "/query", "subject": "Objects",
-     "gating_permission": None},
-    {"name": "Schema", "path": "/schema", "subject": "Ontology",
-     "gating_permission": None},
-    # ONE INBOX, three tabs (decided 14 Oct): approvals, notifications and
-    # merge proposals are all "events that arrived", and three rail
-    # entries for one kind of thing is the by-feature decomposition 12
-    # names. /approvals, /notifications and /identity still resolve, to
-    # their tab, so a link anyone kept keeps working.
-    {"name": "Inbox", "path": "/inbox", "subject": "Inbox",
-     "gating_permission": None},
-    {"name": "Admin", "path": "/admin", "subject": "Settings",
-     "gating_permission": "manage:users"},
-]
+# THE APPS ARE MODULES NOW (BLOCKING.md item 3, 21 October): each
+# sub-app's `module.json` declares its rail entry and its permission, and
+# this reads them -- the hand-written list that lived here is gone, so
+# there is one declaration of an app rather than two to keep agreeing.
 
 
-def visible_apps_for(user_record: UserRecord, roles: dict) -> list[dict[str, str | None]]:
+def visible_apps_for(user_record: UserRecord, roles: dict,
+                     modules: "Modules | None") -> list[dict[str, str | None]]:
+    """The rail entries this person is offered, from the deployment's
+    modules (core/modules.py), each {name, path, subject}."""
+    if modules is None:
+        return []
+    feed = feed_for(modules, user_record, roles)
+    entries = [{"name": entry["title"], "path": entry["path"], "subject": entry.get("subject")}
+               for module in feed["modules"] for entry in module["contributes"].get("nav", [])]
     # ORDERED BY SUBJECT, so the rail groups rather than lists. The
     # order of SUBJECTS is the order a person meets them: the objects
     # they work on, the ontology those objects are instances of, the
-    # events that arrived, and the settings they rarely touch.
-    permitted = [
-        app for app in VISIBLE_APPS
-        if app["gating_permission"] is None
-        or authorize(user_record, roles, app["gating_permission"])
-    ]
-    return sorted(permitted, key=lambda app: SUBJECTS.index(str(app["subject"])))
+    # events that arrived, and the settings they rarely touch. A subject
+    # this list does not know goes after them, in the modules' order.
+    known = {subject: i for i, subject in enumerate(SUBJECTS)}
+    return sorted(entries, key=lambda app: known.get(str(app["subject"]), len(SUBJECTS)))

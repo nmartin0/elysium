@@ -406,7 +406,19 @@ ontology fragment is DATA, not code.
 the code level (tests importing it, its contracts in pyproject.toml,
 its controls in scripts/check_controls.py) waits until modules work.
 
-**Blocked on:** nothing; step 1 is next.
+**WHERE IT STANDS (21 October):** step 1's first part is built. `shell/`
+holds `@shell/core` -- the contract (shell/README.md), the registry and
+the routes -- and Elysium serves `GET /api/shell/session` and `GET
+/api/shell/modules` from a `module.json` beside each shipped sub-app,
+with `modules.yaml` choosing which load (core/modules.py). The rail and
+every route in `ui/src/App.tsx` now come from the feed; the code is
+still built into the page, found through `BUILT_IN_PAGES`. ONE CHANGE
+OF BEHAVIOUR, on purpose: someone without `manage:users` who opens
+/admin is now sent home, because the module is not in their feed --
+before, the route existed for everyone and the panel refused inside it.
+
+**Blocked on:** nothing; the Schema graph as a separately built module
+(bundle, import map, `activate`/`deactivate`) is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

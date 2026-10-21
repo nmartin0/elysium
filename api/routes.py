@@ -155,6 +155,7 @@ from core.mirror.quarantine_report import quarantine_for
 from core.mirror.source_record import agreement_shown
 from core.mirror.sync_attempts import SyncAttempts
 from core.mirror.sync_targets import resolve_sync_targets
+from core.modules import CONTRACT_VERSION, feed_for
 from core.ontology.action_types import automation_needs_another_approver
 from core.ontology.decimal_text import exact_decimals
 from core.ontology.mediator import SearchOutcome
@@ -1670,6 +1671,9 @@ class DeploymentConfigResponse(BaseModel):
     source_locales: dict[str, str | None] = {}
     #: ZOO-22: silos whose date columns may hold Excel serials.
     excel_date_silos: list[str] = []
+    #: BLOCKING item 3: the modules loaded, by id, in rail order. Ids,
+    #: never folders -- a folder is a path, and names-not-contents.
+    modules: list[str] = []
     # Silos whose 0000-00-00 dates are read as empty (`zero_dates_as_null`).
     zero_date_silos: list[str] = []
     #: R2: tables read by changed rows -- "silo.table" -> its cursor
@@ -4989,6 +4993,7 @@ def deployment_config_route(request: Request,
         "lineage_namespace": config.lineage.get("namespace") or "elysium",
         "source_locales": dict(config.source_locales),
         "excel_date_silos": sorted(config.excel_date_silos),
+        "modules": [m.id for m in config.modules.modules] if config.modules else [],
         "zero_date_silos": sorted(config.zero_date_silos),
         "incremental_tables": {
             f"{silo}.{table}": _describe_incremental(policy)
@@ -5881,6 +5886,47 @@ def _require_manage_users(request: Request, current_user: UserRecord) -> None:
         raise HTTPException(status_code=403, detail="Not authorized to manage users")
 
 
+# ---------------------------------------------------------------------------
+# THE SHELL'S CONTRACT (shell/README.md), version 1: the session and the
+# module feed. The shell in `shell/` reads only these and knows nothing
+# else about Elysium; the sub-apps it hosts are Elysium's modules
+# (core/modules.py, BLOCKING.md item 3).
+# ---------------------------------------------------------------------------
+
+
+@router.get("/shell/session", dependencies=[Depends(_no_store)])
+def shell_session_route(request: Request) -> dict:
+    """Who is signed in, and how to sign in. NOBODY IS AN ANSWER, not an
+    error: the contract's shell asks before it knows, and a 401 would
+    make every visit's first request a failure in the console."""
+    try:
+        user = get_current_user(request)
+    except HTTPException as refused:
+        if refused.status_code != 401:
+            raise
+        user = None
+    must_change = (user is not None
+                   and request.app.state.user_directory.must_change_password(user.user_id))
+    return {
+        "user": None if user is None else {"id": user.user_id, "name": user.user_id},
+        "sign_in": {"kind": "form", "submit": "/api/login"},
+        # ELYSIUM'S OWN, beside the contract's fields: an account an
+        # administrator reset may do nothing but choose a password.
+        "must_change_password": bool(must_change),
+    }
+
+
+@router.get("/shell/modules", dependencies=[Depends(_no_store)])
+def shell_modules_route(request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The module feed for the signed-in person: only the modules their
+    role may be offered (core/modules.py, feed_for)."""
+    config = _generation(request).config
+    if config.modules is None:
+        return {"contract": CONTRACT_VERSION, "home": "/", "modules": []}
+    return feed_for(config.modules, current_user, config.roles)
+
+
 @router.get("/me", dependencies=[Depends(_no_store)], response_model=ProfileResponse)
 def my_profile_route(request: Request,
                      current_user: UserRecord = Depends(get_current_user)) -> dict:
@@ -6412,11 +6458,11 @@ def my_visible_apps_route(request: Request, current_user: UserRecord = Depends(g
     # itself, just above, already excludes any app the caller can't
     # use at all), so the raw internal permission-STRING NAME gating
     # each entry (e.g. "manage:users") has no legitimate reason to
-    # travel to the browser at all. `gating_permission` stays a real,
-    # needed field on VISIBLE_APPS/visible_apps_for() itself, though
-    # -- that internal filtering logic genuinely reads it; only this
-    # HTTP-facing shape excludes it, same "filter at the boundary, not
-    # the shared internal source" pattern as both prior fixes.
+    # travel to the browser at all. The grant is now a module's
+    # `permission` in its module.json (core/modules.py), which
+    # feed_for reads to filter; neither this shape nor the module feed
+    # carries it -- "filter at the boundary, not the shared internal
+    # source", as both prior fixes.
     roles = _generation(request).config.roles
     # `subject` travels, `gating_permission` does not. The projection
     # above is deliberate -- it exists to keep the internal permission
@@ -6427,7 +6473,8 @@ def my_visible_apps_route(request: Request, current_user: UserRecord = Depends(g
     # `subject: None` on every entry, because this line still named two
     # keys.
     return [{"name": app["name"], "path": app["path"],
-             "subject": app.get("subject")} for app in visible_apps_for(current_user, roles)]
+             "subject": app.get("subject")}
+            for app in visible_apps_for(current_user, roles, _generation(request).config.modules)]
 
 
 @router.get("/me/visible-schema", dependencies=[Depends(_no_store)],
@@ -8006,7 +8053,7 @@ async def help_route(body: HelpRequest, request: Request,
 
     generation = _generation(request)
     roles = generation.config.roles
-    screens = visible_apps_for(current_user, roles)
+    screens = visible_apps_for(current_user, roles, generation.config.modules)
     visible = await asyncio.to_thread(generation.mediator.visible_schema, current_user)
     grants = (roles.get(current_user.role_name) or {}).get("allowed_actions") or ()
     screen = body.screen if body.screen in {app["name"] for app in screens} else None

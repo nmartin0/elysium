@@ -90,6 +90,16 @@ describe('DeploymentConfig', () => {
     expect(label.parentElement).toHaveTextContent(/none$/)
   })
 
+  it('names the modules loaded, in rail order', async () => {
+    // Which sub-apps a deployment loads is configuration (modules.yaml),
+    // so it is shown here with the rest.
+    getDeploymentConfig.mockResolvedValue({ ...BODY, modules: ['browse', 'query', 'admin'] })
+    render(<DeploymentConfig onSessionExpired={() => {}} />)
+
+    const label = await screen.findByText('Modules')
+    expect(label.parentElement).toHaveTextContent(/browse, query, admin$/)
+  })
+
   it('names silos and roles without describing them', async () => {
     /**
      * The endpoint deliberately sends NAMES only -- no silo connection

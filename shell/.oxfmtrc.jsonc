@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+
+  // 120, not oxfmt's own default of 100 -- matches the SAME, already-
+  // established line-length practice as the Python side (see
+  // pyproject.toml's own [tool.ruff] docstring: "line-length = 120").
+  // Confirmed against this project's own real, hand-written JS code
+  // before picking a number, not assumed: lines up to 146 characters
+  // already exist, several landing at exactly 120, suggesting a real,
+  // deliberate target that predates this config file, not a value
+  // invented for it.
+  "printWidth": 120,
+
+  // No semicolons, single quotes -- matches this project's own,
+  // already-established style throughout every hand-written JS/JSX
+  // file in this codebase (confirmed directly: oxfmt's own defaults
+  // disagree with both, and running it with no config against real
+  // project files would have reformatted all 23 of them purely
+  // cosmetically -- these two overrides make it agree with the
+  // existing code instead of fighting it).
+  "semi": false,
+  "singleQuote": true,
+
+  // trailingComma deliberately left at oxfmt's own default ("all")
+  // -- confirmed directly against real project code that this
+  // already matches existing practice, so no override needed here.
+}
