@@ -1009,21 +1009,17 @@ def build_llm_adapter(config: DeploymentConfig, model: str, *,
     )
 
 
-def _mirror_last_synced_at(config: DeploymentConfig, data_dir: Path) -> str | None:
+def _mirror_last_synced_at(config: DeploymentConfig, data_dir: Path,
+                           sync=None) -> str | None:
     # The OLDEST last-sync time across every mirrored table, not the
     # newest -- deliberately conservative: a write applied after ANY
     # table's own last sync may not be reflected in the mirror yet, so
     # taking the newest would silently drop the overlay for tables that
     # happen to lag behind. Returns None if nothing has synced at all,
     # which correctly means "overlay everything applied so far."
-    from core.mirror.iceberg_sync import IcebergMirrorSync
     from core.mirror.sync_targets import resolve_sync_targets
 
-    # WITH THE DEPLOYMENT'S STORAGE (PA001-F5, found again in the 14 Oct
-    # sweep). Without it an object-store mirror is opened as a local one
-    # and the very first read raises -- so a generation could not build.
-    sync = IcebergMirrorSync(data_dir / "mirror", {},
-                             storage=dict(config.mirror_storage or {}))
+    sync = sync or _mirror_for_reading(config, data_dir)
     timestamps = []
     for target in resolve_sync_targets({"object_types": config.schema}):
         synced_at = sync.last_synced_at(target.silo_name, target.table_name)
@@ -1033,6 +1029,30 @@ def _mirror_last_synced_at(config: DeploymentConfig, data_dir: Path) -> str | No
             continue
         timestamps.append(synced_at.isoformat())
     return min(timestamps) if timestamps else None
+
+
+def _mirror_for_reading(config: DeploymentConfig, data_dir: Path):
+    """The mirror, opened to read its records, with no sources."""
+    from core.mirror.iceberg_sync import IcebergMirrorSync
+
+    # WITH THE DEPLOYMENT'S STORAGE (PA001-F5, found again in the 14 Oct
+    # sweep). Without it an object-store mirror is opened as a local one
+    # and the very first read raises -- so a generation could not build.
+    return IcebergMirrorSync(data_dir / "mirror", {},
+                             storage=dict(config.mirror_storage or {}))
+
+
+def _gold_data_as_of(config: DeploymentConfig, data_dir: Path, sync=None) -> dict[str, str]:
+    """Each type's published gold's data time, where recorded."""
+    from core.mirror.gold import data_as_of
+
+    sync = sync or _mirror_for_reading(config, data_dir)
+    found = {}
+    for object_type in config.schema:
+        recorded = data_as_of(sync.catalog, object_type)
+        if recorded is not None:
+            found[object_type] = recorded
+    return found
 
 
 def build_live_read_adapters(runtime_paths: "RuntimePaths | None" = None,
@@ -2133,13 +2153,23 @@ def load_deployment_bundle(
     # The mirror's own last-sync time -- what bounds the read-your-writes
     # overlay (see DataMediator._read_field_with_log_check()). None for a
     # live deployment, which disables the overlay entirely.
-    mirror_synced_at = _mirror_last_synced_at(config, data_dir) if config.read_from_mirror else None
+    # ONE MIRROR OPENED FOR BOTH: it holds a catalog connection nothing
+    # closes, and opening it twice per generation doubled that.
+    mirror = _mirror_for_reading(config, data_dir) if config.read_from_mirror else None
+    mirror_synced_at = (_mirror_last_synced_at(config, data_dir, mirror)
+                        if config.read_from_mirror else None)
+    # AND EACH TYPE'S OWN, from its published gold (21 October): see
+    # core/mirror/gold.py, DATA_AS_OF_PROPERTY. A type with none recorded
+    # uses the deployment's, above.
+    synced_by_type = (_gold_data_as_of(config, data_dir, mirror)
+                      if config.read_from_mirror else {})
     read_schema, adapters, silo_for_type = _bind_reads_to_gold(
         config, adapters, silo_for_type, data_dir, serving=serving,
     )
     mediator = DataMediator(read_schema, adapters, silo_for_type, access_roles(config),
                              write_log=write_log, audit_log=audit_log,
                              mirror_synced_at=mirror_synced_at,
+                             mirror_synced_at_by_type=synced_by_type,
                              # The SOURCE binding travels with it, for the
                              # write path (D3) -- see DataMediator.__init__.
                              source_schema=config.schema,

@@ -370,12 +370,18 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
                retain_publications: int = DEFAULT_RETAINED_PUBLICATIONS,
                run_id: "str | None" = None,
                accept_deletions: bool = False,
-               inputs: "str | None" = None) -> GoldResult:
+               inputs: "str | None" = None,
+               data_as_of: "str | None" = None) -> GoldResult:
     """Conform, audit and -- only if it passes -- publish one type.
 
     `inputs` is the caller's fingerprint of everything this build is
     derived from (PA001-G11): when the current publication was built from
     the same fingerprint, nothing is read or written. None always builds.
+
+    `data_as_of`: when the oldest of this build's tables was read from its
+    source (ISO-8601, UTC) -- recorded on the publication, so the overlay
+    of Elysium's own writes runs from what THIS type serves rather than
+    from the oldest table in the whole deployment. See DATA_AS_OF_PROPERTY.
 
     A TABLE THAT ALREADY HAS A PUBLICATION is written on a branch, so
     what readers see does not move until the audit passes. A FIRST
@@ -385,6 +391,9 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
     """
     if inputs is not None and _published_from(catalog, object_type) == inputs:
         _confirm_current(catalog, f"{GOLD_NAMESPACE}.{object_type}", run_id)
+        # The same data, read again later and found the same: it is as of
+        # this read now.
+        _record_data_as_of(catalog, f"{GOLD_NAMESPACE}.{object_type}", data_as_of)
         return GoldResult(object_type, unchanged=True)
 
     from core.mirror.prediction_fill import COMPARTMENTS
@@ -545,6 +554,7 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
         _tag_publication(table)
         _record_run(catalog, identifier, run_id)
         _record_inputs(catalog, identifier, inputs)
+        _record_data_as_of(catalog, identifier, data_as_of)
         result.forgotten_publications = _forget_old_publications(
             catalog.load_table(identifier), retain_publications)
         result.published = True
@@ -582,6 +592,7 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
     _publish(table, audited)
     _record_run(catalog, identifier, run_id)
     _record_inputs(catalog, identifier, inputs)
+    _record_data_as_of(catalog, identifier, data_as_of)
     result.forgotten_publications = _forget_old_publications(
         catalog.load_table(identifier), retain_publications)
     result.published = True
@@ -873,6 +884,46 @@ def _record_run(catalog, identifier: str, run_id: "str | None") -> None:
 INPUTS_PROPERTY = "elysium.gold_inputs"
 #: When a build last found the publication still current (PA001-G11).
 CURRENT_AT_PROPERTY = "elysium.current_at"
+
+
+#: WHEN THE DATA THE CURRENT PUBLICATION WAS BUILT FROM WAS READ: the
+#: oldest of its tables' read times (21 October). The overlay of Elysium's
+#: own writes ran from ONE time for the whole deployment, the oldest of
+#: every table -- so a table behind, a standby with replay paused, held
+#: it back for everything, and in a type read from a current source a
+#: write Elysium made earlier was laid over a newer change made at the
+#: source. And from silver's times, not gold's: a gold build refused
+#: leaves gold older than its silver, and the overlay then began too
+#: late for what readers were actually shown.
+DATA_AS_OF_PROPERTY = "elysium.data_read_started_at"
+
+
+def _record_data_as_of(catalog, identifier: str, data_as_of: "str | None") -> None:
+    """Stamps a publication with when its data was read. AFTER the
+    publish, like _record_inputs; REMOVED when unknown, so an older stamp
+    never claims to describe a newer publication -- the reader then falls
+    back to the deployment's oldest table, the old and safe answer."""
+    table = catalog.load_table(identifier)
+    if data_as_of is None:
+        if DATA_AS_OF_PROPERTY in table.properties:
+            with table.transaction() as tx:
+                tx.remove_properties(DATA_AS_OF_PROPERTY)
+        return
+    if table.properties.get(DATA_AS_OF_PROPERTY) == data_as_of:
+        return                         # no metadata file for nothing
+    with table.transaction() as tx:
+        tx.set_properties({DATA_AS_OF_PROPERTY: data_as_of})
+
+
+def data_as_of(catalog, object_type: str) -> "str | None":
+    """When the data the published gold of `object_type` was built from
+    was read, or None when not recorded (a publication from before the
+    record, or none at all)."""
+    try:
+        table = catalog.load_table(f"{GOLD_NAMESPACE}.{object_type}")
+    except (NoSuchTableError, NoSuchNamespaceError, FileNotFoundError):
+        return None
+    return table.properties.get(DATA_AS_OF_PROPERTY)
 
 
 def _record_inputs(catalog, identifier: str, inputs: "str | None") -> None:

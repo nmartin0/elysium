@@ -674,6 +674,19 @@ def _gold_code_version() -> str:
     return digest.hexdigest()
 
 
+def _data_as_of(sync, needed: set) -> "str | None":
+    """The oldest read time of the tables one type is built from, or None
+    if any is unknown -- see core/mirror/gold.py, DATA_AS_OF_PROPERTY."""
+    times = []
+    for name in needed:
+        silo, _, table = name.partition(".")
+        read = sync.last_synced_at(silo, table)
+        if read is None:
+            return None
+        times.append(read.isoformat())
+    return min(times) if times else None
+
+
 def _gold_inputs(sync, type_def: dict, needed: set, approved, known: dict) -> "str | None":
     """Everything one type's gold is derived from, as one digest (PA001-G11).
 
@@ -886,7 +899,8 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
                                  run_id=run_id,
                                  accept_deletions=deletions_accepted_for(
                                      type_def, accepted or set()),
-                                 inputs=_gold_inputs(sync, type_def, needed, approved, known))
+                                 inputs=_gold_inputs(sync, type_def, needed, approved, known),
+                                 data_as_of=_data_as_of(sync, needed))
         except Exception as exc:  # noqa: BLE001 - per type, like a sync
             # PER TYPE, LIKE EVERY OTHER FAILURE IN THIS LOOP
             # (PA001-G5). Reading silver was already guarded a few

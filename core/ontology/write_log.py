@@ -213,7 +213,7 @@ from typing import Any
 
 from core.erased_ids import is_erased
 from core.internal_storage import InternalReadAdapter, InternalWriteAdapter
-from core.sqlite_connection import connection_with_schema
+from core.sqlite_connection import add_column_if_missing, connection_with_schema
 
 logger = logging.getLogger(__name__)
 
@@ -242,7 +242,9 @@ class WriteLogReader(InternalReadAdapter):
         user_id TEXT NOT NULL,
         description TEXT NOT NULL,
         created_at TEXT NOT NULL,
-        batch_id TEXT
+        batch_id TEXT,
+        -- WHEN IT REACHED THE SOURCE (21 October): see mark_applied.
+        applied_at TEXT
     );
 
     -- DERIVED INDEX, not a second source of truth. One row per
@@ -436,7 +438,7 @@ class WriteLogReader(InternalReadAdapter):
             # in the same order, for one object.
             rows = conn.execute(
                 "SELECT changes FROM write_log WHERE object_type = ? AND object_id = ? "
-                "AND status = 'applied' AND created_at > ? "
+                "AND status = 'applied' AND COALESCE(applied_at, created_at) > ? "
                 "ORDER BY created_at, id",
                 (object_type, str(object_id), since),
             ).fetchall()
@@ -458,7 +460,8 @@ class WriteLogReader(InternalReadAdapter):
         with self._connection() as conn:
             rows = conn.execute(
                 "SELECT object_type, object_id, changes FROM write_log "
-                "WHERE status = 'applied' AND created_at > ? ORDER BY created_at",
+                "WHERE status = 'applied' AND COALESCE(applied_at, created_at) > ? "
+                "ORDER BY created_at",
                 (since,),
             ).fetchall()
 
@@ -834,7 +837,8 @@ class WriteLogWriter(WriteLogReader, InternalWriteAdapter):
         # pair already has, just expressed here as an override rather
         # than two independent classes, since WriteLogWriter genuinely
         # inherits the read methods too (see this class's own docstring).
-        return connection_with_schema(self.db_path, self.SCHEMA)
+        return connection_with_schema(self.db_path, self.SCHEMA, migrations=(
+            add_column_if_missing("write_log", "applied_at", "TEXT"),))
 
     def log_pending_update(self, object_type: str, object_id: Any, changes: dict,
                             expected_current_values: dict, user_id: str, description: str,
@@ -1152,8 +1156,18 @@ class WriteLogWriter(WriteLogReader, InternalWriteAdapter):
             conn.commit()
 
     def mark_applied(self, log_id: str) -> None:
+        """Applied, and WHEN (21 October). The overlay of Elysium's own
+        writes compares a write's time with when a copy's source was read.
+        It compared `created_at`, the time the write was ASKED FOR -- and a
+        sync whose read began between asking and applying (the limiter's
+        wait, the storage writes, a crash recovered later) holds a copy
+        without the write yet counted as newer than it, so the write was
+        hidden until the next sync. Found in review when the overlay went
+        per type, which removed the deployment-wide hold-back that had
+        mostly masked it."""
         with self._connection() as conn:
-            conn.execute("UPDATE write_log SET status = 'applied' WHERE id = ?", (log_id,))
+            conn.execute("UPDATE write_log SET status = 'applied', applied_at = ? WHERE id = ?",
+                         (datetime.now(UTC).isoformat(), log_id))
             conn.commit()
 
     def log_pending_batch(self, sub_writes: list[dict], user_id: str, description: str) -> str:

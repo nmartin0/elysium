@@ -1305,17 +1305,26 @@ reach. Long reads cancelled by `max_standby_streaming_delay` are not
 provoked; a cancelled read is an ordinary failed read, keeping the
 last good copy.
 
-FOR THE OWNER, from review: the deployment's "synced at" is the OLDEST
-of its tables' (core/deployment_loader.py, `_mirror_last_synced_at`),
-and the overlay of Elysium's own writes runs from it. That predates
-this work, but a standby with replay paused now pins it for as long as
-replay stays paused. Then, in a table read from a current source, a
-write Elysium made earlier is laid over a newer change made directly at
-the source, and the newer value is hidden. Never a double application
--- a write sets values, it does not add to them -- but a stale value
-shown. Taking the overlay window per table rather than per deployment
-would end it; it is a change to how the overlay is scoped, so it is
-written down here rather than made in passing.
+THE OVERLAY RUNS PER TYPE since 21 October, with the owner. It ran
+from one time for the whole deployment, the oldest of every table's,
+so a standby with replay paused held it back for everything, and in a
+type read from a current source a write Elysium made earlier was laid
+over a newer change made at the source. Each gold publication now
+records when the data it was built from was read
+(core/mirror/gold.py, DATA_AS_OF_PROPERTY), and a type's overlay runs
+from that -- also right where silver's time was wrong, a refused gold
+build having left gold older than its silver. A publication from
+before the record uses the deployment's time, as before. And a write
+is now timed by when it was APPLIED, not asked for: a sync whose read
+began between the two held a copy without it yet counted as newer, so
+it was hidden until the next sync -- older than this change, but the
+deployment-wide hold-back had mostly masked it (found in review).
+
+One limit, conservative: a running server takes a type's new data
+time when its gold PUBLISHES. A build that finds gold unchanged moves
+the time forward without a new publication, and a running server only
+notices new publications, so until the next one or a restart that
+type's overlay runs wider than it need be -- never narrower.
 
 **Next in step 3:** the SQLite source, if the owner wants it.
 

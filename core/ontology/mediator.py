@@ -294,6 +294,7 @@ class DataMediator:
                  audit_log: AuditLog | None = None,
                  mirror_synced_at: str | None = None,
                  source_schema: dict | None = None,
+                 mirror_synced_at_by_type: "dict[str, str] | None" = None,
                  source_silo_for_type: dict[str, str] | None = None):
         self.schema = schema
         self.adapters = adapters
@@ -330,6 +331,10 @@ class DataMediator:
         # the overlay entirely (the live adapter already reads the
         # real, current value).
         self.mirror_synced_at = mirror_synced_at
+        # EACH TYPE'S OWN, where its published gold recorded one (21
+        # October): the overlay runs from what THAT type serves. See
+        # _overlay_since.
+        self.mirror_synced_at_by_type = dict(mirror_synced_at_by_type or {})
         self.write_log = write_log
         # UNLIKE write_log above, this is NEVER None -- audit logging is
         # a core security requirement this project treats as always-on,
@@ -1103,7 +1108,7 @@ class DataMediator:
             return {}
         pending = self.write_log.get_pending_changes(object_type, object_id) or {}
         applied = self.write_log.get_applied_changes_since(
-            object_type, object_id, self.mirror_synced_at) or {}
+            object_type, object_id, self._overlay_since(object_type)) or {}
         found = {}
         for field_name in field_names:
             if field_name in pending:
@@ -1111,6 +1116,22 @@ class DataMediator:
             elif field_name in applied:
                 found[field_name] = "unsynced"
         return found
+
+    def _overlay_since(self, object_type: str) -> "str | None":
+        """Where Elysium's own applied writes start being laid over what
+        `object_type` serves: when the data its published gold was built
+        from was read. A type with none recorded uses the deployment's
+        oldest table, and a live deployment (no mirror) overlays nothing.
+
+        PER TYPE (21 October). One time for the whole deployment, the
+        oldest of every table, meant one table behind -- a standby with
+        replay paused -- held it back for everything, and in a type read
+        from a current source a write Elysium made earlier was laid over
+        a newer change made directly at the source: a stale value shown.
+        """
+        if self.mirror_synced_at is None:
+            return None
+        return self.mirror_synced_at_by_type.get(object_type, self.mirror_synced_at)
 
     def _read_field_with_log_check(self, object_type: str, object_id: Any, field_name: str,
                                     adapter: ExternalReadAdapter, resolved_type_config: dict) -> Any:
@@ -1168,7 +1189,7 @@ class DataMediator:
             # reads the real, current value, so there is nothing to
             # overlay.
             applied = self.write_log.get_applied_changes_since(
-                object_type, object_id, self.mirror_synced_at
+                object_type, object_id, self._overlay_since(object_type)
             )
             if applied is not None and field_name in applied:
                 return applied[field_name]
@@ -1831,7 +1852,8 @@ class DataMediator:
         id_field = self._type_schema(object_type)["id_field"]
         applied = [
             {**entry, "operation": "create" if id_field in entry["changes"] else "update"}
-            for entry in self.write_log.get_all_applied_changes_since(self.mirror_synced_at)
+            for entry in self.write_log.get_all_applied_changes_since(
+                self._overlay_since(object_type))
         ]
         relevant_entries = [
             entry for entry in [*self.write_log.get_all_pending_writes(), *applied]

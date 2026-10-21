@@ -9,6 +9,7 @@ not hold -- where a renamed table's new name will be.
 """
 
 import sqlite3
+from contextlib import closing
 
 import pytest
 from sqlalchemy import text
@@ -28,7 +29,7 @@ class _NoWrites:
 
 def _sqlite(tmp_path, *tables):
     db = tmp_path / "s.db"
-    with sqlite3.connect(db) as conn:
+    with closing(sqlite3.connect(db)) as conn, conn:
         for name in tables:
             conn.execute(f"CREATE TABLE {name} (id TEXT, v TEXT)")
             conn.execute(f"INSERT INTO {name} VALUES ('1', 'x')")
@@ -38,7 +39,7 @@ def _sqlite(tmp_path, *tables):
 
 
 def _change(db, *statements):
-    with sqlite3.connect(db) as conn:
+    with closing(sqlite3.connect(db)) as conn, conn:
         for statement in statements:
             conn.execute(statement)
 
@@ -97,7 +98,7 @@ class TestOnSQLite:
 
     def test_the_reader_lists_tables_and_views(self, tmp_path):
         db = tmp_path / "s.db"
-        with sqlite3.connect(db) as conn:
+        with closing(sqlite3.connect(db)) as conn, conn:
             conn.execute("CREATE TABLE a (id TEXT)")
             conn.execute("CREATE VIEW b AS SELECT * FROM a")
 

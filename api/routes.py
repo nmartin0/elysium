@@ -5980,10 +5980,12 @@ def data_freshness_route(request: Request,
         # for a deployment reading several types: a caller comparing
         # two objects is only as current as the staler of them.
         #
-        # last_synced_at STAYS THE SOURCE-READ TIME, deliberately. It
-        # is what the write overlay is bounded by (F-29), and
-        # conflating the two would silently widen or narrow that
-        # window -- the exact bug patch 335 closed.
+        # last_synced_at STAYS THE SOURCE-READ TIME, deliberately: the
+        # oldest of every table's, which is what "as current as" means
+        # for the deployment. The write overlay no longer runs from it
+        # but from each type's own data time since 21 October
+        # (DataMediator._overlay_since); it remains that overlay's
+        # fallback for a type with none recorded.
         return {"source": "gold", "last_synced_at": mediator.mirror_synced_at,
                 "published_at": published,
                 "freshness": _freshness_verdicts(request, published)}

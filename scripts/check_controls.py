@@ -2345,9 +2345,9 @@ CONTROLS = [
     Control(
         describes="PA001-F5: the loader reads an object-store mirror's sync times with its storage",
         path="core/deployment_loader.py",
-        old=("    sync = IcebergMirrorSync(data_dir / \"mirror\", {},\n"
+        old=("    return IcebergMirrorSync(data_dir / \"mirror\", {},\n"
              "                             storage=dict(config.mirror_storage or {}))\n"),
-        new="    sync = IcebergMirrorSync(data_dir / \"mirror\", {})\n",
+        new="    return IcebergMirrorSync(data_dir / \"mirror\", {})\n",
         tests=["tests/unit/test_object_storage_can_be_served.py::TestEverySyncObjectIsGivenTheStorage::test_the_loaders_last_synced_time_reads_an_object_store_mirror"],
     ),
     Control(
@@ -6031,6 +6031,14 @@ CONTROLS = [
         new='            conn.execute("SELECT 1" if paused',
         tests=["sim/tests/test_replicas.py::"
                "test_paused_replay_is_lag_and_resumed_replay_catches_up"],
+    ),
+    Control(
+        describes="OVERLAY: Elysium's writes are laid over each type from that type's own data time",
+        path="core/ontology/mediator.py",
+        old="        return self.mirror_synced_at_by_type.get(object_type, self.mirror_synced_at)",
+        new="        return self.mirror_synced_at",
+        tests=["tests/unit/test_the_overlay_runs_per_type.py::TestTheOverlayRunsFromEachTypesData::"
+               "test_a_type_read_after_the_write_serves_its_own_data"],
     ),
     Control(
         describes="ENRICH: a classified field is never an input to a model",

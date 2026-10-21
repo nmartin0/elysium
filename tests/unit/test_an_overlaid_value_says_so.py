@@ -16,6 +16,7 @@ def _mediator(log, mirror_synced_at=SINCE):
     mediator = DataMediator.__new__(DataMediator)
     mediator.write_log = log
     mediator.mirror_synced_at = mirror_synced_at
+    mediator.mirror_synced_at_by_type = {}
     return mediator
 
 
