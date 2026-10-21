@@ -492,6 +492,59 @@ mock the API by hand. The layers:
    are "guaranteed to work with all the latest minor versions" so a
    plugin's tests need not track the host's markup.
 
+**COMMON BEHAVIOUR IS TESTED ONCE, BY DEFAULT, UNTIL OVERRIDDEN --
+agreed 21 October.** Measured first: the problem is less duplication
+than GAPS. Of the seven sub-app packages, three test an expired
+session, two a loading state, two an error state, four cleanup on
+unmount -- the same behaviours, tested in some sub-apps and not others.
+So the baseline is INHERITED, never copied: a template is copied once
+and drifts, while an inherited baseline carries every fix to every
+sub-app. A template (a generator, as Backstage's `new`) only STARTS a
+package. Three inherited layers:
+
+1. A CONFIG PRESET the provider ships -- environment, the non-UTC time
+   zone, the act-warning guard now in `ui/src/setupTests.ts`, the test
+   host -- which a sub-app's config extends in a few lines. Vitest's
+   projects are the mechanism: options "are merged with the project's
+   own options", and `setupFiles` "are concatenated, not overridden",
+   so a sub-app adds its setup to the provider's. Backstage's CLI is
+   the same shape: "a default configuration included in the CLI".
+2. A CONFORMANCE SUITE generated from each `module.json` and run on
+   EVERY PAGE IT DECLARES, ON BY DEFAULT -- Storybook's precedent, where
+   "a basic story is also a smoke test" and every story carries the
+   `test` tag implicitly. Candidate checks: renders in the test host;
+   a loading state while the API is pending; an announced error when it
+   fails; asks to sign out on an expired session; leaves nothing behind
+   when unmounted; automated accessibility checks; no global CSS; a
+   valid manifest.
+3. THE SUB-APP'S OWN LOCAL TESTS, for everything specific to it.
+
+OVERRIDES, from the same precedents. Each check is `error`, `todo` or
+`off` -- Storybook's accessibility test: "'todo': Run accessibility
+tests; violations return a warning", "'error': ... a failing test" --
+set for all sub-apps, one sub-app or one page, the NARROWEST WINNING
+(Storybook's tags cascade project, component, story, and `!` removes
+one). `todo` and `off` need a written reason. A sub-app may SUPPLY A
+CHECK'S INPUTS -- how to make its own API fail -- as RSpec's
+`it_behaves_like "auditable"` takes a block providing the subject; or
+REPLACE a check with a stronger test of its own, naming it, and the
+suite verifies the named test exists, so the behaviour stays covered.
+ONE REPORT lists every softened or replaced check and its reason, as
+WITHHELD_FROM_CONFIG_RESPONSE does for the config panel.
+
+THE SUITE IS TESTED ITSELF: a deliberately broken sample sub-app must
+fail each check, or a check that cannot fail passes every sub-app for
+ever. AND THE SAME SHAPE FOR ADD-ON SERVERS: Elysium ships a pytest
+plugin of its HTTP-contract checks (health, stop within the deadline,
+honouring the identity header) that an add-on runs against its own
+server in its own repository.
+
+ADOPTION, `todo` FIRST: the Schema graph adopts the preset and suite in
+step 1.2, the rest as they move in step 3. An existing sub-app that
+fails a check today starts with that check as `todo`, reason written,
+listed in the report -- so the suite runs from the first day and the
+list only shrinks. A NEW sub-app starts with every check at `error`.
+
 An ADD-ON'S SERVER is tested in its own repository; Elysium tests only
 the HTTP contract it offers add-ons. The Inbox, still in `ui/src`
 because it imports three sub-apps, becomes a package when slots exist.
