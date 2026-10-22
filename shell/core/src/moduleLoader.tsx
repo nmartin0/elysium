@@ -41,6 +41,7 @@
  */
 import { lazy, type ComponentType } from 'react'
 import type { ModuleEntry } from './contract'
+import { SAFE_MODE_ADDRESS } from './safeMode'
 import type { ModuleCode } from './activation'
 
 /** What a module's `activate` is given. Grows with the frame's requests
@@ -77,6 +78,13 @@ export function ModuleLoadFailed({ moduleId, reason }: { moduleId: string; reaso
     <div className="shell__module-load-failed" role="alert">
       <p>
         The module <code>{moduleId}</code> could not be loaded: {reason}
+      </p>
+      {/* A WAY OUT, OFFERED, NEVER TAKEN FOR THEM (the owner's choice,
+          22 October): a module that failed may have left the page in a
+          bad state, and safe mode reloads with none but the system's own. */}
+      <p>
+        If the page misbehaves, <a href={SAFE_MODE_ADDRESS}>reload it in safe mode</a>, which loads only the
+        system&apos;s own sub-apps.
       </p>
     </div>
   )

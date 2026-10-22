@@ -822,7 +822,22 @@ FOUND ON THE WAY: the Schema graph's API names asked for Blueprint 4's
 the browser's default monospace rather than IBM Plex Mono. theme.test.ts
 now refuses any variable a stylesheet reads that nothing defines.
 
-**Blocked on:** nothing; step 1.4b, safe mode, is next.
+**STEP 1.4b BUILT (22 October): SAFE MODE.** `@shell/core/safeMode`:
+the page with only the pinned modules, in THIS TAB, until left -- the
+switch is the tab's session storage, nothing on the server changes, and
+other tabs load everything. Entering and leaving reload the page,
+because a module's imported code stays until a reload (Firefox restarts
+for the same reason). Reached from the user menu ("Reload in safe
+mode"), the palette, a link in every "could not be loaded" message --
+never switched on by itself -- and `/?safe`, read once at load and taken
+out of the address. A strip above every page says so, with "Leave safe
+mode"; the Modules page marks what it left out. Someone offered no
+pinned module gets the frame and the way out. Checked in Chromium: the
+reload, the rail reduced to Modules, persistence across a reload, the
+way out, and a second tab unaffected.
+
+**Blocked on:** nothing; step 1.4c, the module manager changing the
+deployment, is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

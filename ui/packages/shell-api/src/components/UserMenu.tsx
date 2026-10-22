@@ -55,9 +55,20 @@ interface UserMenuProps {
    *  the menu offers no choice. */
   density?: Density
   onDensity?: (density: Density) => void
+  /** Offered when given: reload the page in safe mode, or leave it --
+   *  `safeMode` says which the item does. */
+  onSafeMode?: () => void
+  safeMode?: boolean
 }
 
-export default function UserMenu({ currentUser, onLogout, density, onDensity }: UserMenuProps) {
+export default function UserMenu({
+  currentUser,
+  onLogout,
+  density,
+  onDensity,
+  onSafeMode,
+  safeMode = false,
+}: UserMenuProps) {
   // CHANGING YOUR OWN PASSWORD, from the menu that already holds your
   // name. Two states: the form, then what happened -- how many OTHER
   // sessions were ended, because somebody securing their account wants
@@ -102,6 +113,14 @@ export default function UserMenu({ currentUser, onLogout, density, onDensity }: 
                   />
                 ))}
               </MenuItem>
+            )}
+            {onSafeMode && (
+              <MenuItem
+                text={safeMode ? 'Leave safe mode' : 'Reload in safe mode'}
+                icon="shield"
+                title={safeMode ? undefined : "Only the system's own sub-apps, in this tab, until you leave it"}
+                onClick={onSafeMode}
+              />
             )}
             <MenuItem text="Change password" onClick={() => setChanging(true)} />
             <MenuItem text="Log out" onClick={onLogout} />

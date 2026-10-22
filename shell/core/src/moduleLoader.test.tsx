@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { Suspense, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ModuleEntry } from './contract'
@@ -239,5 +239,14 @@ describe("a module's status, for the module manager", () => {
     stop()
     await loader.load(MODULE)
     expect(told).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('a module that could not be loaded', () => {
+  it('offers safe mode, as a link -- it never switches on by itself', async () => {
+    const loader = new ModuleLoader(async () => ({}))
+    show(loader, MODULE)
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getByRole('link', { name: 'reload it in safe mode' })).toHaveAttribute('href', '/?safe')
   })
 })

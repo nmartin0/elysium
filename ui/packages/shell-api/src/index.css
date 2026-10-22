@@ -3932,6 +3932,27 @@
     }
   }
 
+  /* SAFE MODE (@shell/core/safeMode, step 1.4b): a strip above every
+   * page while it lasts. The warning colour, not the danger red: nothing
+   * is wrong now, the page is just running with less. */
+  .shell__safe-mode {
+    display: flex;
+    align-items: center;
+    gap: var(--space-normal);
+    padding: var(--space-tight) var(--space-loose);
+    border-block-end: 1px solid var(--status-warning);
+    background: color-mix(in srgb, var(--status-warning) 14%, var(--surface-content));
+  }
+
+  .shell__safe-mode p {
+    margin: 0;
+  }
+
+  .shell__safe-mode-leave {
+    margin-inline-start: auto;
+    white-space: nowrap;
+  }
+
   /* THE MODULES PAGE (@shell/core/ModulesPage, the shell's system sub-app,
    * step 1.4). The id is the module's address in the feed, secondary to
    * its name; a failure reads as one. */

@@ -15,6 +15,7 @@ import { moduleRoutes, type PageResolver } from '@shell/core/ModuleRoutes'
 import { ModuleLoader } from '@shell/core/moduleLoader'
 import { buildRegistry } from '@shell/core/registry'
 import { ModulesPage } from '@shell/core/ModulesPage'
+import { safeFeed, safeModeAtLoad } from '@shell/core/safeMode'
 import type { FrameModules, ModuleCode } from '@shell/core/activation'
 import { publishHostValues, resetHostValues, stageHostValues } from '@elysium/shell-api/host'
 import ChangePasswordForm from '@elysium/shell-api/components/ChangePasswordForm'
@@ -117,8 +118,9 @@ function InboxPage() {
   return <InboxPanel onSessionExpired={needs.onSessionExpired} />
 }
 
-/** The feed, for the shell's system sub-app; null until it arrives. */
-const FeedContext = createContext<ModuleFeed | null>(null)
+/** Every module offered, for the shell's system sub-app, and whether the
+ *  page is in safe mode; null until the feed arrives. */
+const FeedContext = createContext<{ feed: ModuleFeed; safeMode: boolean } | null>(null)
 
 /**
  * THE SHELL'S SYSTEM SUB-APP (step 1.4): the shell's own Modules page,
@@ -126,8 +128,12 @@ const FeedContext = createContext<ModuleFeed | null>(null)
  * the server always loads and marks pinned.
  */
 function SystemModulesPage() {
-  const feed = useContext(FeedContext)
-  return feed === null ? <LoadingState /> : <ModulesPage feed={feed} loader={moduleLoader} />
+  const offered = useContext(FeedContext)
+  return offered === null ? (
+    <LoadingState />
+  ) : (
+    <ModulesPage feed={offered.feed} loader={moduleLoader} safeMode={offered.safeMode} />
+  )
 }
 
 /**
@@ -348,6 +354,10 @@ function useFetchOnLogin<T>(
 }
 
 export default function App() {
+  // SAFE MODE IS DECIDED ONCE, AT LOAD (@shell/core/safeMode): entering
+  // and leaving it reload the page, since a module's imported code stays
+  // until a reload.
+  const [safeMode] = useState(() => safeModeAtLoad())
   const [authStatus, setAuthStatus] = useState<AuthStatus>('checking')
   const [visibleSchema, setVisibleSchema] = useState<VisibleSchema | null>(null)
   const [feed, setFeed] = useState<FeedState | null>(null)
@@ -550,7 +560,8 @@ export default function App() {
 
   return (
     <LoggedIn
-      feed={feed}
+      offered={feed}
+      safeMode={safeMode}
       visibleSchema={visibleSchema}
       currentUser={currentUser}
       onLogout={handleLogout}
@@ -560,18 +571,28 @@ export default function App() {
 }
 
 function LoggedIn({
-  feed,
+  offered,
+  safeMode,
   visibleSchema,
   currentUser,
   onLogout,
   onSessionExpired,
 }: {
-  feed: FeedState | null
+  offered: FeedState | null
+  safeMode: boolean
   visibleSchema: VisibleSchema | null
   currentUser: CurrentUser | null
   onLogout: () => void
   onSessionExpired: () => void
 }) {
+  // WHAT LOADS: every module offered, or in safe mode the pinned ones
+  // alone -- for the routes, the rail, activation and the loader alike.
+  // The Modules page is given everything offered, to say what safe mode
+  // left out.
+  const feed = useMemo(
+    () => (safeMode && offered !== null && !('failure' in offered) ? safeFeed(offered) : offered),
+    [offered, safeMode],
+  )
   const registry = useMemo(() => (feed === null || 'failure' in feed ? null : buildRegistry(feed)), [feed])
   const visibleApps: VisibleApp[] = useMemo(
     () => (registry?.nav ?? []).map((entry) => ({ name: entry.title, path: entry.path, subject: entry.subject })),
@@ -632,12 +653,18 @@ function LoggedIn({
   // owns its own screen and nothing about any other route.
   return (
     <PageNeedsContext.Provider value={needs}>
-      <FeedContext.Provider value={feed === null || 'failure' in feed ? null : feed}>
+      <FeedContext.Provider value={offered === null || 'failure' in offered ? null : { feed: offered, safeMode }}>
         <BrowserRouter>
           <Routes>
             <Route
               element={
-                <Shell visibleApps={visibleApps} modules={modules} currentUser={currentUser} onLogout={onLogout} />
+                <Shell
+                  visibleApps={visibleApps}
+                  modules={modules}
+                  safeMode={safeMode}
+                  currentUser={currentUser}
+                  onLogout={onLogout}
+                />
               }
             >
               {/* FROM THE FEED: each module's pages, its old addresses, and

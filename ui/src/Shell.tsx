@@ -9,6 +9,7 @@ import LoadingState from '@elysium/shell-api/components/LoadingState'
 import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMenu'
 import { DENSITIES, type Density, isDensity } from '@elysium/shell-api/density'
 import type { FrameModules } from '@shell/core/activation'
+import { enterSafeMode, leaveSafeMode } from '@shell/core/safeMode'
 import HelpPanel from '@elysium/shell-api/components/HelpPanel'
 
 // Shell.tsx -- ELYSIUM'S COMPOSITION OF THE GENERIC FRAME.
@@ -36,6 +37,8 @@ interface ShellProps {
   visibleApps: VisibleApp[]
   /** The feed's modules, and how to activate one (@shell/core/activation). */
   modules?: FrameModules
+  /** Whether this page load is in safe mode (@shell/core/safeMode). */
+  safeMode?: boolean
   currentUser: CurrentUser | null
   onLogout: () => void
 }
@@ -44,7 +47,7 @@ interface ShellProps {
  *  state survives the move. */
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'elysium.sidebarCollapsed'
 
-export default function Shell({ visibleApps, modules, currentUser, onLogout }: ShellProps) {
+export default function Shell({ visibleApps, modules, safeMode = false, currentUser, onLogout }: ShellProps) {
   const location = useLocation()
   // THE HELP ASSISTANT, and which screen it is being asked from -- the
   // rail's own name for it, so "how do I filter this" has a referent.
@@ -125,6 +128,10 @@ export default function Shell({ visibleApps, modules, currentUser, onLogout }: S
       group: 'Shell',
       run: () => chooseDensity(choice.value),
     })),
+    // SAFE MODE (step 1.4b), by the user menu's own words.
+    safeMode
+      ? { id: 'shell:safe-mode', label: 'Leave safe mode', group: 'Shell', run: () => leaveSafeMode() }
+      : { id: 'shell:safe-mode', label: 'Reload in safe mode', group: 'Shell', run: () => enterSafeMode() },
     { id: 'shell:logout', label: 'Log out', group: 'Shell', run: onLogout },
   ]
   useEffect(() => {
@@ -153,7 +160,14 @@ export default function Shell({ visibleApps, modules, currentUser, onLogout }: S
             aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
             onClick={() => chooseTheme(!dark)}
           />
-          <UserMenu currentUser={currentUser} onLogout={onLogout} density={density} onDensity={chooseDensity} />
+          <UserMenu
+            currentUser={currentUser}
+            onLogout={onLogout}
+            density={density}
+            onDensity={chooseDensity}
+            safeMode={safeMode}
+            onSafeMode={() => (safeMode ? leaveSafeMode() : enterSafeMode())}
+          />
         </>
       }
       overlays={<HelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} screen={currentScreen} />}
@@ -161,6 +175,7 @@ export default function Shell({ visibleApps, modules, currentUser, onLogout }: S
       modules={modules}
       fallback={<LoadingState />}
       storageKey={SIDEBAR_COLLAPSED_STORAGE_KEY}
+      safeMode={safeMode ? { onLeave: () => leaveSafeMode() } : undefined}
     />
   )
 }

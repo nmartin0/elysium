@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { Classes } from '@blueprintjs/core'
-import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { lazy, type ComponentType } from 'react'
 import type { CurrentUser } from '@elysium/shell-api/components/UserMenu'
@@ -10,6 +10,7 @@ import { publishHostValues, resetHostValues } from '@elysium/shell-api/host'
 import { useBrowsePalette } from '@elysium/app-browse/palette'
 import type { FrameModules } from '@shell/core/activation'
 import { useInboxBadges } from './inbox/badges'
+import { enterSafeMode, leaveSafeMode } from '@shell/core/safeMode'
 
 /** Where the router is, for commands that navigate into Browse. */
 function BrowseProbe() {
@@ -21,6 +22,15 @@ import Shell, { type VisibleApp } from './Shell'
 // THE PALETTE FETCHES ON OPENING -- saved views and action types -- so
 // the API those come from is stubbed, and a test that opens it lets
 // the answers land (openPalette below) rather than ending mid-flight.
+// Entering and leaving safe mode reload the page, which jsdom cannot do:
+// the reload itself is the shell's, tested in @shell/core/safeMode; here,
+// only that Elysium's frame offers it.
+vi.mock('@shell/core/safeMode', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@shell/core/safeMode')>()),
+  enterSafeMode: vi.fn(),
+  leaveSafeMode: vi.fn(),
+}))
+
 vi.mock('@elysium/shell-api/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@elysium/shell-api/api')>()),
   getSavedViews: vi.fn().mockResolvedValue([]),
@@ -1026,7 +1036,9 @@ describe('Shell -- what the palette offers beyond the rail (DEV_UI 10.1)', () =>
     await openPalette({ key: 'k', metaKey: true })
     expect(options().join(' ')).not.toMatch(/Customer/)
     fireEvent.change(screen.getByLabelText('Search commands'), { target: { value: 'ada' } })
-    expect(screen.queryAllByRole('option')).toHaveLength(0)
+    // No SEARCH, which is Browse's: a shell command may still match the
+    // letters ("Reload in safe mode" holds a, d, a in order).
+    expect(options().join(' ')).not.toMatch(/Search/)
   })
 
   it('a search in the type, from whatever was typed', async () => {
@@ -1055,5 +1067,52 @@ describe('Shell -- what the palette offers beyond the rail (DEV_UI 10.1)', () =>
     await openPalette({ key: 'k', metaKey: true })
     fireEvent.click(screen.getAllByRole('option').find((node) => node.textContent === 'ShellSwitch to light theme')!)
     await waitFor(() => expect(document.body.classList.contains(Classes.DARK)).toBe(false))
+  })
+})
+
+describe('safe mode (step 1.4b)', () => {
+  function renderSafe(safeMode: boolean) {
+    return render(
+      <MemoryRouter initialEntries={['/query']}>
+        <Routes>
+          <Route
+            element={
+              <Shell
+                visibleApps={[{ name: 'Query', path: '/query' }]}
+                safeMode={safeMode}
+                currentUser={{ username: 'ada' } as CurrentUser}
+                onLogout={vi.fn()}
+              />
+            }
+          >
+            <Route path="/query" element={<p>query screen</p>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    )
+  }
+
+  it('is offered from the user menu, which reloads into it', async () => {
+    renderSafe(false)
+    fireEvent.click(screen.getByRole('button', { name: /ada/i }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Reload in safe mode' }))
+    expect(enterSafeMode).toHaveBeenCalled()
+  })
+
+  it('is offered from the palette, by the same words', async () => {
+    renderSafe(false)
+    await openPalette({ key: 'k', ctrlKey: true })
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toContain('ShellReload in safe mode')
+  })
+
+  it('in it, every page says so, and the banner, the menu and the palette all lead out', async () => {
+    vi.mocked(leaveSafeMode).mockClear()
+    renderSafe(true)
+    const banner = screen.getByText('Safe mode.').closest('[role="status"]') as HTMLElement
+    fireEvent.click(within(banner).getByRole('button', { name: 'Leave safe mode' }))
+    expect(leaveSafeMode).toHaveBeenCalledTimes(1)
+
+    await openPalette({ key: 'k', ctrlKey: true })
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toContain('ShellLeave safe mode')
   })
 })

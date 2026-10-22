@@ -14,7 +14,8 @@
     "./palette": "./src/palette.tsx",
     "./activation": "./src/activation.ts",
     "./badges": "./src/badges.tsx",
-    "./ModulesPage": "./src/ModulesPage.tsx"
+    "./ModulesPage": "./src/ModulesPage.tsx",
+    "./safeMode": "./src/safeMode.ts"
   },
   "peerDependencies": {
     "@blueprintjs/core": "^6.18.0",

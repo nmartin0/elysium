@@ -19,6 +19,7 @@ shell/
     src/palette.tsx      modules' palette commands
     src/badges.tsx       badges on modules' rail entries
     src/ModulesPage.tsx  the shell's system sub-app: every module, and its state
+    src/safeMode.ts      safe mode: this tab, pinned modules only, until left
   build/           @shell/build: build-time tooling
     src/sharedLibraries.ts  the shared-library registry, shims and import map
     src/moduleBuild.ts      a module's bundle; building modules with the page
@@ -102,7 +103,8 @@ dependency) inside stable class names -- `app-frame`,
 `app-frame--sidebar-collapsed`, `app__header`, `app__header-title`,
 `app__header-actions`, `app__sidebar`, `app__sidebar-toggle`,
 `app__nav`, `app__nav-subject`, `app__nav-label`, `app__nav-icon`,
-`app__nav-badge`, `app__content`,
+`app__nav-badge`, `app__content`, `shell__safe-mode`,
+`shell__safe-mode-leave`,
 `command-palette*` -- which the host's stylesheet draws. A baseline look
 every sub-app inherits is a later step.
 
@@ -204,6 +206,26 @@ why -- following the loader live (`loader.status(module)`,
 `loader.subscribe`). A host mounts it as the page of a module its
 backend marks `pinned`; Elysium's is `ui/src/system`, offered with
 `manage:deployment`.
+
+## Safe mode
+
+`@shell/core/safeMode`: the page loaded with only the PINNED modules,
+for when a module breaks it. Firefox's Troubleshoot Mode is the model --
+temporary, entered from a menu or at start.
+
+- THIS TAB, TEMPORARY: the switch is in the tab's session storage, so it
+  holds across the page's own navigation and reloads, ends when the tab
+  closes, and changes nothing on the server or in other tabs.
+- ENTERING AND LEAVING RELOAD THE PAGE (`enterSafeMode`,
+  `leaveSafeMode`): a module's imported code stays until a reload.
+- `/?safe` opens it when no menu can be reached; `safeModeAtLoad()`
+  reads it once, at load, and takes the marker out of the address.
+- `safeFeed(feed)` is the feed it loads: pinned modules only, home moved
+  to one of their pages if it was elsewhere.
+- The frame says so above every page (`<Frame safeMode={{ onLeave }}>`);
+  a module that fails to load offers a link to it, and never switches it
+  on by itself; the Modules page (`safeMode`) says which modules it left
+  out.
 
 ## A module's bundle
 

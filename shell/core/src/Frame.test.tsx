@@ -432,3 +432,19 @@ describe('badges on rail entries', () => {
     expect(screen.getByRole('menuitem', { name: 'Beta, 4 waiting' })).toBeInTheDocument()
   })
 })
+
+describe('safe mode', () => {
+  it('says so above every page, with the way out', () => {
+    const onLeave = vi.fn()
+    renderFrame({ safeMode: { onLeave } })
+    const banner = screen.getByRole('status')
+    expect(banner).toHaveTextContent('Safe mode.')
+    fireEvent.click(within(banner).getByRole('button', { name: 'Leave safe mode' }))
+    expect(onLeave).toHaveBeenCalled()
+  })
+
+  it('says nothing outside it', () => {
+    renderFrame()
+    expect(screen.queryByText('Safe mode.')).not.toBeInTheDocument()
+  })
+})

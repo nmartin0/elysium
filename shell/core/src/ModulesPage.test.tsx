@@ -66,3 +66,17 @@ describe('the Modules page', () => {
     expect(within(row('PAGE')).getByText(/loads when one of its pages opens/)).toBeInTheDocument()
   })
 })
+
+describe('the Modules page in safe mode', () => {
+  it('says which modules safe mode left out, and leaves the pinned ones as they are', () => {
+    render(
+      <ModulesPage
+        feed={feed([entry('sys', { pinned: true }), entry('b', { entry: '/b.js' })])}
+        loader={new ModuleLoader()}
+        safeMode
+      />,
+    )
+    expect(within(row('B')).getByText('Off in safe mode')).toBeInTheDocument()
+    expect(within(row('SYS')).getByText('Part of the page')).toBeInTheDocument()
+  })
+})

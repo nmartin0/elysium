@@ -74,6 +74,9 @@ export interface FrameProps {
   fallback: ReactNode
   /** Where the rail's collapsed state is remembered, per browser. */
   storageKey: string
+  /** Set when the page is in safe mode (safeMode.ts): the frame says so
+   *  above every page, with the way out. */
+  safeMode?: { onLeave: () => void }
 }
 
 /**
@@ -136,6 +139,7 @@ export function Frame({
   onPaletteOpen,
   fallback,
   storageKey,
+  safeMode,
 }: FrameProps) {
   const [collapsed, setCollapsed] = useState(() => resolveCollapsed(storageKey))
   const isMobile = useSyncExternalStore(subscribeToBreakpoint, isNarrowNow)
@@ -409,6 +413,20 @@ export function Frame({
           <Menu className="app__nav">{navItems}</Menu>
         </aside>
         <div className="app__content">
+          {safeMode && (
+            // ABOVE EVERY PAGE, not a notice that goes away: being in
+            // safe mode changes what every page can do, and the way out
+            // must be findable from wherever the person is.
+            <div className="shell__safe-mode" role="status">
+              <p>
+                <strong>Safe mode.</strong> Only the system&apos;s own sub-apps are loaded, in this tab, until you
+                leave it. Nothing has changed for anyone else.
+              </p>
+              <button type="button" className="shell__safe-mode-leave" onClick={safeMode.onLeave}>
+                Leave safe mode
+              </button>
+            </div>
+          )}
           <main>
             {/* Around the page alone, so the frame stays drawn and usable
                 while a page's code loads. */}

@@ -18,8 +18,12 @@ import { activatesOn, type ModuleEntry, type ModuleFeed } from './contract'
 import type { ModuleLoader, ModuleStatus } from './moduleLoader'
 
 export interface ModulesPageProps {
+  /** Every module offered -- in safe mode too, so the page can say
+   *  which ones safe mode left out. */
   feed: ModuleFeed
   loader: Pick<ModuleLoader, 'status' | 'subscribe' | 'snapshot'>
+  /** The page is in safe mode: modules not pinned are not loaded. */
+  safeMode?: boolean
 }
 
 /** How a status reads to a person. */
@@ -42,7 +46,7 @@ export function describeStatus(module: ModuleEntry, status: ModuleStatus): strin
   }
 }
 
-export function ModulesPage({ feed, loader }: ModulesPageProps) {
+export function ModulesPage({ feed, loader, safeMode = false }: ModulesPageProps) {
   useSyncExternalStore(loader.subscribe, loader.snapshot)
   return (
     <section className="modules-page">
@@ -77,7 +81,7 @@ export function ModulesPage({ feed, loader }: ModulesPageProps) {
                 <td>{module.version}</td>
                 <td>{module.entry === null ? 'Built into the page' : 'Its own bundle'}</td>
                 <td className={status.state === 'failed' ? 'modules-page__failed' : undefined}>
-                  {describeStatus(module, status)}
+                  {safeMode && !module.pinned ? 'Off in safe mode' : describeStatus(module, status)}
                 </td>
                 <td>{(module.contributes.nav ?? []).map((entry) => entry.title).join(', ') || '—'}</td>
               </tr>
