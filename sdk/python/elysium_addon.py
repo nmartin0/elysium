@@ -39,7 +39,9 @@ core/addons.py and api/addon_servers.py):
   with nobody to stop it.
 
   EVERY REQUEST CARRIES `X-Elysium-Identity`: a token saying who is
-  asking. `identity(headers, start_info)` checks it and gives the
+  asking -- `sub` -- and, in `permissions`, which of the permissions
+  your module.json declares they hold, as `module:<id>:<name>`
+  (`holds(claims, "operate")`). `identity(headers, start_info)` checks it and gives the
   claims, or raises NotSignedIn -- answer 401 then. Do NOT trust any
   other header to say who someone is; the proxy drops cookies and
   `Authorization` on the way in.
@@ -151,3 +153,9 @@ def identity(headers, start_info: dict, *, now: "float | None" = None) -> dict:
         raise NotSignedIn(f"no {settings['header']} header")
     return verify(token, secret=settings["secret"], audience=settings["audience"],
                   issuer=settings["issuer"], now=now)
+
+
+def holds(claims: dict, name: str) -> bool:
+    """Whether the person a token names holds this add-on's declared
+    permission `name` (as its module.json's `permissions` calls it)."""
+    return f"module:{claims.get('aud')}:{name}" in (claims.get("permissions") or [])

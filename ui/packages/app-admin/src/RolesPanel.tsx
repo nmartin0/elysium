@@ -127,7 +127,10 @@ export default function RolesPanel({ onSessionExpired }: RolesPanelProps) {
     })()
   }, [load])
 
-  const groups = useMemo(() => (view === null ? [] : groupGrants(view.grantable)), [view])
+  const groups = useMemo(
+    () => (view === null ? [] : groupGrants(view.grantable, view.module_permissions, view.unlisted)),
+    [view],
+  )
 
   // THE DRAFT STARTS AS WHAT THE ROLE HOLDS NOW, so an edit is a change
   // to something visible rather than a list typed from memory. Derived
@@ -282,7 +285,15 @@ export default function RolesPanel({ onSessionExpired }: RolesPanelProps) {
             {group.grants.map((grant) => (
               <Checkbox
                 key={grant}
-                label={grant}
+                labelElement={
+                  group.descriptions?.[grant] === undefined ? (
+                    grant
+                  ) : (
+                    <>
+                      {grant} <span className="roles__grant-description">— {group.descriptions[grant]}</span>
+                    </>
+                  )
+                }
                 checked={draft.has(grant)}
                 onChange={() =>
                   setEdited(() => {

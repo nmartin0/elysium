@@ -47,6 +47,45 @@ describe('groupGrants', () => {
   })
 })
 
+describe("groupGrants: a module's declared permissions (step 2.3)", () => {
+  const groups = groupGrants(
+    ['manage:users', 'tool:search', 'module:simulator:operate', 'read:Customer'],
+    [
+      {
+        grant: 'module:simulator:operate',
+        module: 'simulator',
+        module_name: 'Simulator',
+        description: 'Start, stop, pause and break the world',
+      },
+    ],
+    ['module:heliograph:trade'],
+  )
+
+  it('gives each module a group of its own, after the tools and before the types', () => {
+    expect(groups.map((group) => group.title)).toEqual([
+      'Administration',
+      'Tools',
+      'Module: Simulator',
+      'Customer',
+      'From modules no longer listed',
+    ])
+  })
+
+  it('says what each permission allows', () => {
+    const simulator = groups.find((group) => group.title === 'Module: Simulator')
+
+    expect(simulator?.grants).toEqual(['module:simulator:operate'])
+    expect(simulator?.descriptions?.['module:simulator:operate']).toBe('Start, stop, pause and break the world')
+  })
+
+  it('shows one held from a module no longer listed, saying it grants nothing', () => {
+    const gone = groups.at(-1)
+
+    expect(gone?.grants).toEqual(['module:heliograph:trade'])
+    expect(gone?.descriptions?.['module:heliograph:trade']).toBe('Grants nothing while its module is not listed.')
+  })
+})
+
 describe('summariseChange', () => {
   it('names only what is added and removed', () => {
     const summary = summariseChange(['read:A', 'read:B'], ['read:B', 'read:C'])

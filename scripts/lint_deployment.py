@@ -146,8 +146,21 @@ def _describe_position(raw_text: str, filename: str, key_path: list) -> str:
     return f" ({filename}, line {line})"
 
 
+def _module_permissions(config_dir) -> "dict | None":
+    """Each listed module's declared permissions, so a role's `module:`
+    grants are checked as loading checks them -- or None when modules.yaml
+    itself cannot be loaded, whose own error load_deployment reports."""
+    from core.modules import ModuleError, load_modules, permissions_by_module
+
+    try:
+        return permissions_by_module(load_modules(Path(config_dir)))
+    except (ModuleError, OSError, ValueError):
+        return None
+
+
 def _collect_action_type_and_role_errors(schema_raw: dict, policy_raw: dict, enabled_tools: list[str],
-                                          schema_text: str, policy_text: str) -> list[str]:
+                                          schema_text: str, policy_text: str,
+                                          modules: "dict | None" = None) -> list[str]:
     # Called ONLY once the more fundamental prerequisites (YAML
     # parses, every required key is present, every identifier is a
     # genuine string) are already confirmed sane -- validate_action_
@@ -237,7 +250,7 @@ def _collect_action_type_and_role_errors(schema_raw: dict, policy_raw: dict, ena
         for grant_index, grant in enumerate(grants):
             single_grant_role = {role_name: {**role_def, "allowed_actions": [grant]}}
             try:
-                validate_roles(single_grant_role, object_types, action_types, enabled_tools)
+                validate_roles(single_grant_role, object_types, action_types, enabled_tools, modules)
             except ValueError as e:
                 position = _describe_position(
                     policy_text, "policy.yaml", ["roles", role_name, "allowed_actions", grant_index]
@@ -326,7 +339,8 @@ def lint_deployment(config_dir: Path | None = None) -> bool:
 
         enabled_tools = config.get("tools", {}).get("enabled", [])
         collected = _collect_action_type_and_role_errors(
-            schema_raw, policy_raw, enabled_tools, schema_text, policy_text
+            schema_raw, policy_raw, enabled_tools, schema_text, policy_text,
+            _module_permissions(config_dir),
         )
         # collected re-derives the SAME underlying validate_action_
         # types()/validate_roles() calls load_deployment() itself just

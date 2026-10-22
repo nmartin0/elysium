@@ -611,3 +611,10 @@ addons
 # An autouse fixture (tests/integration/test_addon_lifecycle.py): pytest
 # applies it to every test in the file by itself, so nothing names it.
 quick_back_off
+
+# THE ROLE EDITOR'S REGISTRY (api/routes.py ModulePermission and
+# RolesResponse): response-model fields FastAPI serialises and the
+# editor reads (roleGrants.ts), never Python.
+module_name
+module_permissions
+unlisted

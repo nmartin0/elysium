@@ -73,6 +73,16 @@ different thing from a permission and is why the two were confused.
   - "read:<Type>" (no dot) -- Type must be real; the TYPE-level read
     grant gating schema visibility itself (core/ontology/mediator.py).
 
+  - "module:<module id>:<name>" -- a permission a MODULE DECLARES in
+    its module.json (core/modules.py, BLOCKING.md item 3, step 2.3), the
+    module's own to check: the simulator's panel is offered to
+    module:simulator:operate. For a module the deployment lists, on or
+    off, <name> must be one it declares. For a module it does NOT list
+    the grant is KEPT AND INERT -- removing a module must not make every
+    role holding its permission fail to load -- and the role editor
+    marks it "from a module no longer listed". Kubernetes' RBAC has the
+    same allowance: a rule may name a resource that does not exist.
+
 Anything that doesn't match ANY of these patterns is rejected
 outright, not silently accepted -- almost certainly a typo of one of
 those above (e.g. a stray colon, a misspelled prefix), and letting
@@ -87,10 +97,18 @@ correctness) from "does this grant reference something that exists,"
 which is the only thing checked here.
 """
 
-def validate_roles(roles: dict, object_types: dict, action_types: dict, enabled_tools: list[str]) -> None:
+import re
+from collections.abc import Collection, Iterable, Mapping
+
+
+def validate_roles(roles: dict, object_types: dict, action_types: dict, enabled_tools: list[str],
+                   modules: Mapping[str, Collection[str]] | None = None) -> None:
+    """`modules`: each listed module's declared permission names, by id
+    (core/modules.permissions_by_module). None knows no module, so every
+    well-formed module: grant is taken as one no longer listed."""
     for role_name, role_def in roles.items():
         for grant in role_def.get("allowed_actions", []):
-            _validate_one_grant(role_name, grant, object_types, action_types, enabled_tools)
+            _validate_one_grant(role_name, grant, object_types, action_types, enabled_tools, modules)
 
 
 def validate_role_coherence(roles: dict) -> None:
@@ -179,7 +197,8 @@ EXACT_GRANTS = (
 )
 
 
-def grantable(object_types: dict, action_types: dict, enabled_tools: list[str]) -> list[str]:
+def grantable(object_types: dict, action_types: dict, enabled_tools: list[str],
+              module_grants: Iterable[str] = ()) -> list[str]:
     """Every grant a role in this deployment could hold.
 
     DERIVED FROM THE ONTOLOGY, not listed, so it cannot fall behind it:
@@ -192,6 +211,9 @@ def grantable(object_types: dict, action_types: dict, enabled_tools: list[str]) 
     role that cannot be saved.
     """
     grants = list(EXACT_GRANTS)
+    # THE MODULES' DECLARED PERMISSIONS, after Elysium's own: the
+    # registry is both, worked out at each load (core/modules.py).
+    grants += list(module_grants)
     grants += [f"{LABEL_GRANT_PREFIX}{label}" for label in sorted(labels_in(object_types))]
     grants += [f"execute:{name}" for name in sorted(action_types)]
     grants += [f"tool:{name}" for name in sorted(enabled_tools)]
@@ -208,9 +230,28 @@ def grantable(object_types: dict, action_types: dict, enabled_tools: list[str]) 
     return grants
 
 
+#: A module's declared permission (core/modules.MODULE_GRANT_PREFIX).
+MODULE_GRANT_PREFIX = "module:"
+_MODULE_GRANT = re.compile(r"module:([A-Za-z0-9_.-]+):([a-z][a-z0-9_-]*)")
+
+
 def _validate_one_grant(role_name: str, grant: str, object_types: dict, action_types: dict,
-                         enabled_tools: list[str]) -> None:
+                         enabled_tools: list[str],
+                         modules: Mapping[str, Collection[str]] | None = None) -> None:
     if grant == "manage:users":
+        return
+
+    if grant.startswith(MODULE_GRANT_PREFIX):
+        shape = _MODULE_GRANT.fullmatch(grant)
+        if shape is None:
+            raise ValueError(f"Role {role_name!r}: grant {grant!r} is not module:<module id>:<permission>.")
+        module_id, name = shape.groups()
+        declared = (modules or {}).get(module_id)
+        if declared is not None and name not in declared:
+            raise ValueError(
+                f"Role {role_name!r}: grant {grant!r} names a permission module {module_id!r} does "
+                f"not declare. It declares: {sorted(declared) or 'none'}."
+            )
         return
 
     if grant == "discover:action_types":

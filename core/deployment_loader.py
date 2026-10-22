@@ -46,7 +46,7 @@ from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
 from adapters.vllm_adapter import VLLMAdapter
 from core.config import load_yaml
 from core.declared_triggers import load_declared_triggers
-from core.modules import Modules, load_modules
+from core.modules import Modules, load_modules, permissions_by_module
 from core.ontology.constraints import validate_constraints
 from core.secret_references import expand_secrets
 
@@ -891,7 +891,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # own, so a typo'd grant here would otherwise never fail loudly
     # anywhere, just silently never match.
     validate_roles(deployment_config.roles, deployment_config.schema, deployment_config.action_types,
-                    deployment_config.enabled_tools)
+                    deployment_config.enabled_tools, permissions_by_module(deployment_config.modules))
     # Cross-grant coherence, which validate_roles() deliberately does
     # not do -- see validate_role_coherence()'s own docstring for why
     # it cannot live inside a function the linter calls per grant.
@@ -2025,7 +2025,8 @@ def _with_effective_roles(config: DeploymentConfig, data_dir: Path) -> Deploymen
         return config
 
     roles = deep_freeze(_freeze_roles(stored))
-    validate_roles(roles, config.schema, config.action_types, config.enabled_tools)
+    validate_roles(roles, config.schema, config.action_types, config.enabled_tools,
+                   permissions_by_module(config.modules))
     validate_role_coherence(roles)
 
     if canonical(config.roles) != canonical(stored):

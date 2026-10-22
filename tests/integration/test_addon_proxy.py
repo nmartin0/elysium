@@ -18,6 +18,7 @@ import pytest
 
 import api.addon_servers as addon_servers
 from api.addon_servers import STATE_FILENAME, addon_directory
+from tests.conftest import with_roles
 from tests.integration.test_api import _csrf_headers, _login
 from tests.integration.test_editing_config_from_the_ui import config_dir  # noqa: F401
 
@@ -36,11 +37,13 @@ def write_modules(directory: Path, *extra: Path) -> None:
 
 
 def guarded_module(tmp_path: Path) -> Path:
-    """An add-on offered only to manage:deployment."""
+    """An add-on offered only to holders of the permission it declares."""
     folder = tmp_path / "guarded"
     folder.mkdir()
     (folder / "module.json").write_text(json.dumps({
-        "id": "guarded", "name": "Guarded", "version": "1", "permission": "manage:deployment",
+        "id": "guarded", "name": "Guarded", "version": "1", "permission": "module:guarded:use",
+        "permissions": [{"id": "use", "description": "Use the guarded add-on"},
+                        {"id": "tune", "description": "Change how it runs"}],
         "server": {"command": ["{python}", str(ECHO / "server.py")]}}))
     return folder
 
@@ -172,3 +175,20 @@ def test_a_server_not_running_is_a_503_saying_so(alice, state):
 
     assert response.status_code == 503
     assert "server" in response.json()["detail"]
+
+
+# --- a module's declared permissions (step 2.3) ----------------------------
+
+
+def test_a_declared_permission_offers_the_add_on_and_the_token_says_which_are_held(alice):
+    roles = alice.app.state.generation.config.roles
+    held = list(roles["customer_service"]["allowed_actions"])
+    with_roles(alice.app, customer_service={**roles["customer_service"],
+                                            "allowed_actions": [*held, "module:guarded:use"]})
+
+    seen = alice.get("/api/addons/guarded/whoami").json()
+
+    assert seen["user"] == "alice"
+    # ITS OWN, AND ONLY THOSE HELD: not `tune`, and none of Elysium's.
+    assert seen["claims"]["permissions"] == ["module:guarded:use"]
+    assert alice.get("/api/addons/echo/whoami").json()["claims"]["permissions"] == []

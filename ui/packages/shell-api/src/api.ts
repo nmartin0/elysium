@@ -1392,6 +1392,18 @@ export interface RolesView {
   roles: Record<string, string[]>
   /** Every grant a role in this deployment could hold. */
   grantable: string[]
+  /** The modules' part of the registry, described (step 2.3). */
+  module_permissions?: ModulePermission[]
+  /** Held by some role, from a module no longer listed: kept, inert. */
+  unlisted?: string[]
+}
+
+/** A permission a module declares, granted as module:<id>:<name>. */
+export interface ModulePermission {
+  grant: string
+  module: string
+  module_name: string
+  description: string
 }
 
 export interface RoleChange {

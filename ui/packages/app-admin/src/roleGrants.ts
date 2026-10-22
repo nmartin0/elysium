@@ -8,22 +8,43 @@
  * is shown as what it ADDS and what it REMOVES, and nothing else.
  */
 
+import type { ModulePermission } from '@elysium/shell-api/api'
+
 export interface GrantGroup {
   title: string
   grants: string[]
+  /** What a grant allows, where the registry says (a module's declared
+   *  permissions): shown beside the grant, which alone says little. */
+  descriptions?: Record<string, string>
 }
 
 /** Administration first: those are the grants that change who may do
- *  what, and they should be the first thing an editor sees. */
-export function groupGrants(grantable: string[]): GrantGroup[] {
+ *  what, and they should be the first thing an editor sees. Then each
+ *  MODULE'S DECLARED PERMISSIONS (BLOCKING.md item 3, step 2.3), a group
+ *  per module, described -- and last, any held from a module no longer
+ *  listed, so they can be seen and taken away. */
+export function groupGrants(
+  grantable: string[],
+  modulePermissions: ModulePermission[] = [],
+  unlisted: string[] = [],
+): GrantGroup[] {
   const administration: string[] = []
   const actions: string[] = []
   const tools: string[] = []
   const byType = new Map<string, string[]>()
+  const byModule = new Map<string, GrantGroup>()
+  const declared = new Map(modulePermissions.map((p) => [p.grant, p]))
 
   for (const grant of grantable) {
     const [verb, subject = ''] = grant.split(':', 2)
-    if (verb === 'manage' || grant === 'discover:action_types') {
+    if (verb === 'module') {
+      const permission = declared.get(grant)
+      const title = `Module: ${permission?.module_name ?? subject}`
+      const group = byModule.get(title) ?? { title, grants: [], descriptions: {} }
+      group.grants.push(grant)
+      if (permission !== undefined) group.descriptions![grant] = permission.description
+      byModule.set(title, group)
+    } else if (verb === 'manage' || grant === 'discover:action_types') {
       administration.push(grant)
     } else if (verb === 'execute') {
       actions.push(grant)
@@ -39,8 +60,18 @@ export function groupGrants(grantable: string[]): GrantGroup[] {
   if (administration.length > 0) groups.push({ title: 'Administration', grants: administration })
   if (actions.length > 0) groups.push({ title: 'Actions', grants: actions })
   if (tools.length > 0) groups.push({ title: 'Tools', grants: tools })
+  groups.push(...byModule.values())
   for (const [type, grants] of [...byType.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     groups.push({ title: type, grants })
+  }
+  if (unlisted.length > 0) {
+    groups.push({
+      title: 'From modules no longer listed',
+      grants: unlisted,
+      descriptions: Object.fromEntries(
+        unlisted.map((grant) => [grant, 'Grants nothing while its module is not listed.']),
+      ),
+    })
   }
   return groups
 }

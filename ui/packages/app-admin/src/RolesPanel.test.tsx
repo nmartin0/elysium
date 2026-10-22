@@ -293,3 +293,41 @@ describe('in access terms (DEV_UI 13.5)', () => {
     expect(previewRoleChange).not.toHaveBeenCalled()
   })
 })
+
+describe("a module's declared permissions (step 2.3)", () => {
+  it('offers one with what it allows, and proposes it like any grant', async () => {
+    vi.mocked(getRoles).mockResolvedValue({
+      source: 'policy.yaml',
+      roles: { reader: ['read:A', 'module:heliograph:trade'] },
+      grantable: ['read:A', 'module:simulator:operate'],
+      module_permissions: [
+        {
+          grant: 'module:simulator:operate',
+          module: 'simulator',
+          module_name: 'Simulator',
+          description: 'Start, stop, pause and break the world',
+        },
+      ],
+      unlisted: ['module:heliograph:trade'],
+    })
+    open()
+    fireEvent.change(await screen.findByLabelText('Role to change'), { target: { value: 'reader' } })
+
+    expect(await screen.findByRole('group', { name: 'Module: Simulator' })).toBeInTheDocument()
+    const operate = screen.getByLabelText(/module:simulator:operate/)
+    expect(operate.closest('label')).toHaveTextContent('Start, stop, pause and break the world')
+    // HELD FROM A MODULE NO LONGER LISTED: shown, ticked, removable.
+    expect(screen.getByLabelText(/module:heliograph:trade/)).toBeChecked()
+
+    fireEvent.click(operate)
+    fireEvent.click(screen.getByRole('button', { name: 'Propose' }))
+
+    await waitFor(() =>
+      expect(mockedPropose).toHaveBeenCalledWith('reader', [
+        'module:heliograph:trade',
+        'module:simulator:operate',
+        'read:A',
+      ]),
+    )
+  })
+})

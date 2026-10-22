@@ -73,6 +73,7 @@ someone opens its page, and the server stays up.
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -113,7 +114,7 @@ SHIPPED_HOME = "/query"
 SYSTEM_MODULES = ("ui/src/system",)
 
 _MANIFEST_KEYS = frozenset({"id", "name", "version", "permission", "contributes", "entry", "styles",
-                            "activationEvents", "server"})
+                            "activationEvents", "server", "permissions"})
 #: When a module's code runs besides its pages opening (contract.ts,
 #: ACTIVATION_EVENTS). REFUSED HERE when unknown, unlike in the shell: a
 #: misspelt event in a module.json is a mistake to say at load, while a
@@ -149,6 +150,9 @@ class Module:
     listed_as: str = ""
     #: Its own server (step 2, core/addons.py), or None: most have none.
     server: "ServerSpec | None" = None
+    #: The permissions it declares, (name, description): each a grant
+    #: `module:<id>:<name>` a role may hold (module_grant).
+    permissions: tuple[tuple[str, str], ...] = ()
 
     @property
     def bundle_directory(self) -> "Path | None":
@@ -217,6 +221,7 @@ def load_modules(config_dir: Path) -> Modules:
                               f"and that id is a system sub-app's")
         loaded.append(module)
     _check_slots(path, loaded + off)
+    _check_module_permissions(path, loaded + off)
     # HOME MUST OPEN SOMETHING. Every address nothing claims is sent
     # there, so a home no module mounts -- a modules.yaml that dropped
     # Query and kept the default -- would send every stray link to an
@@ -275,6 +280,18 @@ def load_addon_options(config_dir: Path, known: "list[Module]") -> Mapping:
         except ValueError as error:
             raise ModuleError(f"{path}: {error}") from None
     return MappingProxyType(options)
+
+
+def _check_module_permissions(path: Path, known: "list[Module]") -> None:
+    """A module offered to holders of a DECLARED permission must name one
+    that is declared: a misspelt `module:` grant there would offer the
+    module to nobody, and say nothing."""
+    declared = {module_grant(m.id, name) for m in known for name, _ in m.permissions}
+    for module in known:
+        if module.permission is not None and module.permission.startswith(MODULE_GRANT_PREFIX) \
+                and module.permission not in declared:
+            raise ModuleError(f"{module.folder}: is offered to {module.permission}, which no listed "
+                              f"module declares under `permissions`")
 
 
 def _check_slots(path: Path, known: "list[Module]") -> None:
@@ -342,13 +359,81 @@ def _load_manifest(folder: Path) -> Module:
     if unknown_events:
         raise ModuleError(f"{path}: knows no activation event called {unknown_events}; "
                           f"there are {sorted(_ACTIVATION_EVENTS)}")
+    permissions = _load_permissions(path, raw.get("permissions"))
     try:
         server = parse_server(path, raw.get("server"))
     except AddonError as error:
         raise ModuleError(str(error)) from None
     return Module(id=raw["id"], name=raw["name"], version=raw["version"],
                   permission=permission, contributes=contributes, entry=entry, folder=folder,
-                  styles=tuple(styles), activation_events=tuple(events), server=server)
+                  styles=tuple(styles), activation_events=tuple(events), server=server,
+                  permissions=permissions)
+
+
+#: A permission's name within its module: lower case, as grants are.
+_PERMISSION_NAME = re.compile(r"[a-z][a-z0-9_-]{0,47}")
+#: A module's declared permissions are granted as module:<id>:<name>.
+MODULE_GRANT_PREFIX = "module:"
+
+
+def module_grant(module_id: str, name: str) -> str:
+    """The grant a role holds for one of a module's declared permissions."""
+    return f"{MODULE_GRANT_PREFIX}{module_id}:{name}"
+
+
+def _load_permissions(path: Path, raw) -> "tuple[tuple[str, str], ...]":
+    """DECLARED PERMISSIONS (BLOCKING.md item 3, step 2.3): what a module
+    lets a role do, each named and described for the role editor,
+
+        "permissions": [{"id": "operate",
+                         "description": "Start, stop, pause and break the world"}]
+
+    and granted as `module:<module id>:<id>`. Grafana's plugins do the
+    same: a plugin may "insert a `roles` section into your `plugin.json`
+    file", its actions named after the plugin
+    (`grafana-appwithrbac-app.patents:read`), and a page carrying an
+    `action` "will only appear for users with the ... permission"."""
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ModuleError(f"{path}: `permissions` must be a list of {{id, description}}")
+    found: list[tuple[str, str]] = []
+    for item in raw:
+        if not isinstance(item, Mapping) or set(item) != {"id", "description"}:
+            raise ModuleError(f"{path}: each permission needs an `id` and a `description`, and nothing else")
+        name, description = item["id"], item["description"]
+        if not isinstance(name, str) or not _PERMISSION_NAME.fullmatch(name):
+            raise ModuleError(f"{path}: permission id {name!r} must be lower case letters, digits, "
+                              f"_ and -, starting with a letter, such as operate")
+        if not isinstance(description, str) or not description.strip():
+            raise ModuleError(f"{path}: permission {name} needs a description, said to whoever "
+                              f"grants it")
+        if name in (n for n, _ in found):
+            raise ModuleError(f"{path}: declares the permission {name} twice")
+        found.append((name, description.strip()))
+    return tuple(found)
+
+
+def declared_permissions(modules: "Modules | None") -> "list[dict]":
+    """THE MODULES' PART OF THE PERMISSIONS REGISTRY: every permission the
+    listed modules declare, on and off, as the role editor offers them.
+    Worked out from the manifests at each load, the owner's choice (22
+    October), so it cannot disagree with what is installed; Elysium's own
+    grants are worked out from the ontology the same way
+    (policy_validation.grantable)."""
+    if modules is None:
+        return []
+    return [{"grant": module_grant(m.id, name), "module": m.id, "module_name": m.name,
+             "description": description}
+            for m in [*modules.modules, *modules.off] for name, description in m.permissions]
+
+
+def permissions_by_module(modules: "Modules | None") -> "dict[str, frozenset[str]]":
+    """Each listed module's declared permission names, by module id: what
+    validates a role's `module:` grants (policy_validation)."""
+    if modules is None:
+        return {}
+    return {m.id: frozenset(name for name, _ in m.permissions) for m in [*modules.modules, *modules.off]}
 
 
 def _is_inside(relative: object) -> bool:

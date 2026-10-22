@@ -3625,6 +3625,11 @@
     padding: 0;
   }
 
+  /* What a module's declared permission allows, beside its grant. */
+  .roles__grant-description {
+    color: var(--text-secondary);
+  }
+
   /* HOW YOU GOT HERE, above a view reached by following a link. */
   .link-trail {
     display: flex;

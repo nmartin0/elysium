@@ -128,7 +128,7 @@ class Upstream:
 
 
 def forward(data_dir: Path, module_id: str, user_id: str, *, method: str, path: str, query: str,
-            headers, body: bytes) -> Upstream:
+            headers, body: bytes, permissions: "list[str] | None" = None) -> Upstream:
     """Send one request to an add-on's server, as `user_id`; see the
     module docstring. Unavailable when its server is not running, does
     not answer, or too many streams are open."""
@@ -136,7 +136,8 @@ def forward(data_dir: Path, module_id: str, user_id: str, *, method: str, path: 
     if state is None or state.get("state") != "running" or not state.get("url") or not state.get("secret"):
         raise Unavailable(f"the add-on's server is {'not started' if state is None else state.get('state')}")
     outgoing = request_headers(headers)
-    outgoing[IDENTITY_HEADER] = sign_identity(state["secret"], audience=module_id, user_id=user_id)
+    outgoing[IDENTITY_HEADER] = sign_identity(state["secret"], audience=module_id, user_id=user_id,
+                                              permissions=permissions or [])
     url = f"{state['url']}/{path}" + (f"?{query}" if query else "")
     try:
         response = _session.request(method, url, headers=outgoing, data=body or None, stream=True,

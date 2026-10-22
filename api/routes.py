@@ -161,8 +161,11 @@ from core.modules import (
     arranged,
     arrangement,
     bundle_file,
+    declared_permissions,
     feed_for,
+    module_grant,
     offered_to,
+    permissions_by_module,
     render_modules_yaml,
 )
 from core.ontology.action_types import automation_needs_another_approver
@@ -2716,6 +2719,14 @@ class MirrorStateResponse(BaseModel):
     problems: list[str]
 
 
+class ModulePermission(BaseModel):
+    """One permission a module declares (core/modules.declared_permissions)."""
+    grant: str
+    module: str
+    module_name: str
+    description: str
+
+
 class RolesResponse(BaseModel):
     # WHERE THE ROLES IN FORCE CAME FROM: "policy.yaml" until somebody
     # edits one, "role store" after. An editor saying which is how an
@@ -2723,6 +2734,8 @@ class RolesResponse(BaseModel):
     source: str
     roles: dict[str, list[str]]
     grantable: list[str]
+    module_permissions: list[ModulePermission] = []
+    unlisted: list[str] = []
 
 
 @router.get("/roles", dependencies=[Depends(_no_store)],
@@ -2750,6 +2763,9 @@ def roles_route(
         raise HTTPException(status_code=403, detail="Not authorized to manage roles")
 
     stored = RoleStore(request.app.state.runtime_paths.data_dir / "roles.db").load()
+    declared = declared_permissions(config.modules)
+    known_modules = permissions_by_module(config.modules)
+    held = {grant for role in config.roles.values() for grant in role.get("allowed_actions", ())}
     return {
         "source": "role store" if stored is not None else "policy.yaml",
         "roles": {
@@ -2758,7 +2774,15 @@ def roles_route(
         },
         "grantable": grantable(
             config.schema, config.action_types, config.enabled_tools,
+            module_grants=[p["grant"] for p in declared],
         ),
+        # THE MODULES' PART OF THE REGISTRY, described, so the editor
+        # says what each permission allows and which module brings it.
+        "module_permissions": declared,
+        # HELD, AND FROM A MODULE NO LONGER LISTED: kept and inert
+        # (policy_validation), shown so they can be seen and removed.
+        "unlisted": sorted(g for g in held if g.startswith("module:")
+                           and g.split(":")[1] not in known_modules),
     }
 
 
@@ -2957,7 +2981,8 @@ def _role_validator(config):
 
     def validate(result: dict) -> None:
         frozen = deep_freeze(_freeze_roles(result))
-        validate_roles(frozen, config.schema, config.action_types, config.enabled_tools)
+        validate_roles(frozen, config.schema, config.action_types, config.enabled_tools,
+                       permissions_by_module(config.modules))
         validate_role_coherence(frozen)
     return validate
 
@@ -6057,7 +6082,9 @@ async def addon_proxy_route(module_id: str, path: str, request: Request,
         upstream = await asyncio.to_thread(
             forward, request.app.state.runtime_paths.data_dir, module_id, current_user.user_id,
             method=request.method, path=sent_path, query=request.url.query,
-            headers=list(request.headers.items()), body=body)
+            headers=list(request.headers.items()), body=body,
+            permissions=[module_grant(module.id, name) for name, _ in module.permissions
+                         if authorize(current_user, config.roles, module_grant(module.id, name))])
     except Unavailable as unavailable:
         raise HTTPException(status_code=503, detail=str(unavailable)) from None
     headers = dict(upstream.headers)

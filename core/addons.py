@@ -33,7 +33,11 @@ made for that add-on each time its server starts, so
   - one copied out of a log is good for a minute (`exp`).
 
     {"iss": "elysium", "aud": "<module id>", "sub": "<user id>",
-     "name": "<user id>", "iat": ..., "exp": ...}
+     "name": "<user id>", "iat": ..., "exp": ...,
+     "permissions": ["module:<module id>:<name>", ...]}
+
+`permissions`: those of the add-on's own declared permissions this
+person holds (core/modules.py), and no other grant of Elysium's.
 
 A JWT and not a format of Elysium's own, so an add-on in any language
 verifies it with the library it already has. `sdk/python/
@@ -187,11 +191,16 @@ def _b64(data: bytes) -> str:
 _HEADER = _b64(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
 
 
-def sign_identity(secret: str, *, audience: str, user_id: str, now: "float | None" = None) -> str:
-    """A token saying that `user_id` is asking add-on `audience`."""
+def sign_identity(secret: str, *, audience: str, user_id: str, now: "float | None" = None,
+                  permissions: "Iterable[str]" = ()) -> str:
+    """A token saying that `user_id` is asking add-on `audience`, holding
+    `permissions` -- of the add-on's OWN declared permissions, those this
+    person holds (step 2.3), so an add-on with several can tell who may do
+    what without asking Elysium. Never Elysium's other grants: an add-on
+    has no business knowing who may read Customer."""
     issued = int(time.time() if now is None else now)
     claims = {"iss": ISSUER, "aud": audience, "sub": user_id, "name": user_id,
-              "iat": issued, "exp": issued + TOKEN_SECONDS}
+              "iat": issued, "exp": issued + TOKEN_SECONDS, "permissions": sorted(permissions)}
     body = _b64(json.dumps(claims, separators=(",", ":"), sort_keys=True).encode())
     signature = hmac.new(secret.encode(), f"{_HEADER}.{body}".encode(), hashlib.sha256).digest()
     return f"{_HEADER}.{body}.{_b64(signature)}"
