@@ -1,0 +1,64 @@
+/* The simulator's control panel (SimulatorPanel.tsx). The page's tokens
+ * (@elysium/shell-api/tokens.css) are already loaded by the page. */
+.simulator-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-normal);
+  max-width: 72rem;
+}
+
+.simulator-panel__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-normal);
+}
+
+/* Buttons and inputs of one height side by side: centred, not bottomed. */
+.simulator-panel__row--centred {
+  align-items: center;
+}
+
+.simulator-panel__heading {
+  margin: 0;
+  font-size: var(--type-label-size);
+  font-weight: var(--type-label-weight);
+}
+
+.simulator-panel__connection {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0 var(--space-tight);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--type-dense-size);
+}
+
+.simulator-panel__connection > div {
+  display: contents;
+}
+
+.simulator-panel__connection dt {
+  color: var(--text-secondary);
+}
+
+.simulator-panel__connection dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.simulator-panel__where {
+  color: var(--text-secondary);
+}
+
+.simulator-panel__log {
+  max-height: 24rem;
+  margin: 0;
+  padding: var(--space-snug);
+  overflow: auto;
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--type-dense-size);
+  white-space: pre-wrap;
+}

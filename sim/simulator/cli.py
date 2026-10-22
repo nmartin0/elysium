@@ -168,12 +168,16 @@ def _parser() -> argparse.ArgumentParser:
             command.add_argument("silo", help="the silo, as connections.json names it")
         if verb == "advance":
             command.add_argument("duration", help="as in 3d or 6h")
+        if verb == "speed":
+            command.add_argument("compression", type=float, help="as in 60: a minute a second")
         command.add_argument("--dir", type=Path, default=Path("var"),
                              help="the world's directory (default: ./var)")
     return parser
 
 
 _CONTROL_VERBS = {
+    "stop": "stop a running world from outside it, tidily, as Ctrl-C in its terminal would",
+    "speed": "set how many simulated seconds pass per real second while following",
     "pause": "stop a running world's clock",
     "resume": "start a paused world's clock again",
     "advance": "run a running world forward now, as in `advance 3d`",
@@ -193,6 +197,8 @@ def _control(arguments: argparse.Namespace) -> int:
         extra["silo"] = arguments.silo
     if arguments.command == "advance":
         extra["duration"] = arguments.duration
+    if arguments.command == "speed":
+        extra["compression"] = arguments.compression
     try:
         result = send(arguments.dir, arguments.command, **extra)
     except ControlError as error:
@@ -249,6 +255,15 @@ def _run(arguments: argparse.Namespace) -> int:
         return 1
 
     from simulator import resume as resuming
+    from simulator.control import ControlError, hold_run_lock
+
+    # HELD UNTIL THIS PROCESS ENDS: says a run is under way, building and
+    # tidying up included (simulator/control.py, hold_run_lock).
+    try:
+        _run_lock = hold_run_lock(arguments.dir)  # noqa: F841 -- held by being kept
+    except ControlError as error:
+        print(str(error), file=sys.stderr)
+        return 1
 
     if arguments.resume:
         print(f"Resuming {pack.name} from {arguments.dir}")
@@ -308,11 +323,12 @@ def _run(arguments: argparse.Namespace) -> int:
                 print("\nWorld is up. Type `help` for commands, `quit` to stop.")
                 Console(world=world).run()
             elif arguments.follow:
-                _follow(world, arguments.compression, arguments.tick, controller)
+                controller.compression = arguments.compression
+                _follow(world, arguments.tick, controller)
             else:
                 print("\nWorld is up. Press Ctrl-C to stop.")
                 while True:
-                    controller.serve()
+                    _serve(controller)
                     time.sleep(CONTROL_POLL_SECONDS)
     except _Interrupted:
         interrupted = True
@@ -337,23 +353,33 @@ def _run(arguments: argparse.Namespace) -> int:
     return 0
 
 
-def _follow(world: World, compression: float, tick_seconds: float, controller=None) -> None:
-    """Keep simulating in real time until interrupted.
+def _serve(controller) -> None:
+    """Carry out queued commands; a `stop` among them ends the run, through
+    the same teardown as Ctrl-C."""
+    controller.serve()
+    if controller.stop_requested:
+        raise _Interrupted
+
+
+def _follow(world: World, tick_seconds: float, controller) -> None:
+    """Keep simulating in real time until interrupted or stopped.
 
     The clock has always known how to do this and nothing had ever
-    asked it: `compression` says how many simulated seconds pass per
-    real second, so a day of trade can be watched in twenty minutes.
+    asked it: the controller's `compression` says how many simulated
+    seconds pass per real second, so a day of trade can be watched in
+    twenty minutes -- and `speed` changes it while the world runs.
     """
-    print(f"\nFollowing at {compression:g}x. Press Ctrl-C to stop.")
-    step = min(tick_seconds, FOLLOW_INTERVAL_SECONDS * compression)
+    print(f"\nFollowing at {controller.compression:g}x. Press Ctrl-C to stop.")
     while True:
-        if controller is not None:
-            controller.serve()
-            if controller.paused:
-                # Paused: no tick, so simulated time stands still; and no
-                # catching up afterwards -- the pause is not owed back.
-                time.sleep(CONTROL_POLL_SECONDS)
-                continue
+        # READ EACH ROUND, so `speed` takes effect at the next tick.
+        compression = controller.compression
+        step = min(tick_seconds, FOLLOW_INTERVAL_SECONDS * compression)
+        _serve(controller)
+        if controller.paused:
+            # Paused: no tick, so simulated time stands still; and no
+            # catching up afterwards -- the pause is not owed back.
+            time.sleep(CONTROL_POLL_SECONDS)
+            continue
         started = time.monotonic()
         runner.tick(world, step)
         # Sleep for what is left of the interval, so a slow tick
@@ -485,20 +511,28 @@ def _report(world: World, path: Path) -> None:
 
 
 class _interruptible:
-    """Turn Ctrl-C into an exception a finally block can act on.
+    """Turn Ctrl-C -- and SIGTERM -- into an exception a finally block can
+    act on.
 
     signal.pause() and time.sleep() both need the handler to raise for
     the teardown below to run at all; the default handler would raise
     KeyboardInterrupt, which works, but says "Traceback" to somebody
     who did exactly what the prompt told them to.
+
+    SIGTERM TOO (22 October): it is how systemd, a container runtime and
+    Elysium's add-on supervisor stop a process, and its default is to
+    die at once -- leaving the world's PostgreSQL and MariaDB servers
+    running, holding their ports, for the next run to collide with.
     """
 
     def __enter__(self) -> "_interruptible":
         self._previous = signal.signal(signal.SIGINT, self._raise)
+        self._previous_term = signal.signal(signal.SIGTERM, self._raise)
         return self
 
     def __exit__(self, *_: object) -> None:
         signal.signal(signal.SIGINT, self._previous)
+        signal.signal(signal.SIGTERM, self._previous_term)
 
     @staticmethod
     def _raise(_signal: int, _frame: FrameType | None) -> None:

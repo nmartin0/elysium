@@ -808,6 +808,25 @@ export async function saveModuleArrangement(change: ModuleArrangementChange): Pr
   return (await response.json()) as ModuleArrangement
 }
 
+/**
+ * A CALL TO AN ADD-ON'S OWN SERVER (BLOCKING.md item 3, step 2), for the
+ * add-on's pages: through Elysium's proxy at /api/addons/<id>/<path>, with
+ * this page's session and CSRF header like any call -- the proxy adds who
+ * is asking and keeps the session from the add-on. The answer is JSON; a
+ * refusal throws ApiError with the add-on's own `detail`.
+ */
+export async function addonRequest<T>(
+  moduleId: string,
+  path: string,
+  options: { method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown } = {},
+): Promise<T> {
+  const response = await apiFetchOrThrow(`/addons/${encodeURIComponent(moduleId)}/${path.replace(/^\//, '')}`, {
+    method: options.method ?? 'GET',
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+  })
+  return (await response.json()) as T
+}
+
 /** One add-on's own server, as the System page shows it (step 2.2). */
 export interface AddonServer {
   id: string

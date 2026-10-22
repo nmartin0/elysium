@@ -153,3 +153,13 @@ class TestWhatPasses:
         ])
 
         assert passed == {"Content-Type": "text/plain", "ETag": '"1"'}
+
+
+def test_the_simulators_copy_of_the_sdk_is_the_sdk():
+    # COPIED, NOT IMPORTED: the simulator may not import Elysium, so its
+    # panel carries the file (sim/panel/elysium_addon.py). A copy that
+    # drifted would verify tokens differently from the contract.
+    root = Path(__file__).resolve().parents[2]
+
+    assert (root / "sim" / "panel" / "elysium_addon.py").read_bytes() \
+        == (root / "sdk" / "python" / "elysium_addon.py").read_bytes()

@@ -85,15 +85,19 @@ VITE_API_PROXY_TARGET=http://localhost:9000 npm run dev
 
 ```bash
 npm test              # vitest -- the full suite, once
-npm run lint          # THE GATE: oxlint, tsc --noEmit, oxfmt, knip
+npm run lint          # THE GATE: oxlint, the add-ons' lint, tsc --noEmit, oxfmt, knip
 npm run typecheck     # tsc --noEmit alone
 npm run format:check  # oxfmt -- verify formatting without changing anything
 npm run format        # oxfmt -- fix formatting in place
 npm run knip          # unused files, exports, and dependencies
+npm run lint:addons   # oxlint and oxfmt over add-on pages kept outside ui/
 ```
 
-FOUR checks make up the gate, and the behavioural suite sits beside
-them: style and correctness (`oxlint`), do the types agree
+FIVE checks make up the gate, and the behavioural suite sits beside
+them: style and correctness (`oxlint`), the same two rules -- `oxlint`
+and `oxfmt` -- over add-on pages whose source lives outside this folder
+(`lint:addons`: the simulator's panel, ../sim/panel/web, which neither
+tool will reach by a path leaving the folder), do the types agree
 (`tsc --noEmit`), formatting (`oxfmt`), and does anything still use
 this file, export or dependency at all (`knip`) — on top of `vitest`,
 which exercises real user flows through React Testing Library rather
@@ -106,7 +110,7 @@ and the disagreement is what made it worth fixing: a count that
 contradicts its own list two lines later is the reader's first
 evidence that a document has stopped being maintained.
 
-**`npm run lint` runs all four**, in that order, and stops at the
+**`npm run lint` runs all five**, in that order, and stops at the
 first failure. It used to run only the first two, which is how 14
 unused imports, an undeclared runtime dependency and 57 unformatted
 files accumulated with the command reporting success the whole time.

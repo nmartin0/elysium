@@ -26,9 +26,18 @@ const API_PROXY_TARGET = process.env.VITE_API_PROXY_TARGET || 'http://localhost:
 // each after the page; `npm run dev` rebuilds each on save, so development
 // loads a module the way production does.
 const PACKAGES = join(import.meta.dirname, 'packages')
-const MODULE_BUILDS = readdirSync(PACKAGES)
-  .map((name) => join(PACKAGES, name, 'vite.config.ts'))
-  .filter((config) => existsSync(config))
+// AND ADD-ONS' BUNDLES whose source lives outside ui/ -- the simulator's
+// panel, in sim/panel -- each with a config here (addons/*.vite.config.ts),
+// built with this page's tools so the add-on carries no Node packages.
+const ADDONS = join(import.meta.dirname, 'addons')
+const MODULE_BUILDS = [
+  ...readdirSync(PACKAGES)
+    .map((name) => join(PACKAGES, name, 'vite.config.ts'))
+    .filter((config) => existsSync(config)),
+  ...readdirSync(ADDONS)
+    .filter((name) => name.endsWith('.vite.config.ts'))
+    .map((name) => join(ADDONS, name)),
+]
 // ...and those with tests configured by themselves: a vitest.config.ts.
 const MODULE_TESTS = readdirSync(PACKAGES)
   .filter((name) => existsSync(join(PACKAGES, name, 'vitest.config.ts')))
@@ -51,7 +60,18 @@ export default defineConfig({
   // and draws with it: a second copy would give the frame's dialogs
   // their own overlay stack and their own `Classes`, so the palette
   // would open beneath a page's dialog instead of above it.
-  resolve: { dedupe: ['react', 'react-dom', 'react-router-dom', '@blueprintjs/core'] },
+  //
+  // AND THE KIT AND THE SHELL, for an add-on's page whose source lives
+  // outside this folder (../sim/panel/web): a bare import is looked up
+  // above the importing file, and nothing above sim/ has node_modules, so
+  // these are found from here -- the same copies this page uses.
+  //
+  // `@simulator/panel` names the panel's source for its tests here
+  // (addons/), as tsconfig.json's `paths` does for the type-checker.
+  resolve: {
+    dedupe: ['react', 'react-dom', 'react-router-dom', '@blueprintjs/core', '@elysium/shell-api', '@shell/core'],
+    alias: { '@simulator/panel': join(import.meta.dirname, '..', 'sim', 'panel', 'web', 'src') },
+  },
   server: {
     // THE GENERIC SHELL LIVES BESIDE THIS PROJECT, in ../shell, linked in
     // by `file:`. Vite serves nothing outside its workspace by default,
@@ -98,7 +118,12 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'elysium',
-          include: ['src/**/*.test.{js,jsx,ts,tsx}', 'packages/*/src/**/*.test.{js,jsx,ts,tsx}'],
+          include: [
+            'src/**/*.test.{js,jsx,ts,tsx}',
+            'packages/*/src/**/*.test.{js,jsx,ts,tsx}',
+            // Add-ons' pages whose source lives outside ui/ (addons/).
+            'addons/**/*.test.{js,jsx,ts,tsx}',
+          ],
           exclude: [...configDefaults.exclude, ...MODULE_TESTS.map((folder) => `${folder}/**`)],
         },
       },

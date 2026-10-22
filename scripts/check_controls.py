@@ -5798,8 +5798,8 @@ CONTROLS = [
     Control(
         describes="SIM: a paused world does not tick",
         path="sim/simulator/cli.py",
-        old="                time.sleep(CONTROL_POLL_SECONDS)\n                continue",
-        new="                time.sleep(CONTROL_POLL_SECONDS)",
+        old="            time.sleep(CONTROL_POLL_SECONDS)\n            continue",
+        new="            time.sleep(CONTROL_POLL_SECONDS)",
         tests=["sim/tests/test_control.py::test_a_paused_world_does_not_tick"],
     ),
     Control(
@@ -6098,6 +6098,115 @@ CONTROLS = [
         new='            if False:',
         tests=["tests/unit/test_stop_reason_is_named.py::"
                "test_an_invented_count_is_answered_with_the_step_it_meant"],
+    ),
+    # -- ADD-ONS' OWN SERVERS AND DECLARED PERMISSIONS (BLOCKING.md item 3,
+    # step 2): the proxy, the lifecycle, the registry, the simulator panel.
+    Control(
+        describes="ADD-ON: the browser's cookie and a forged identity never reach an add-on",
+        path="core/addons.py",
+        old='    "accept", "accept-encoding", "accept-language", "cache-control",',
+        new='    "cookie", "x-elysium-identity", "accept", "accept-encoding", "accept-language", "cache-control",',
+        tests=["tests/integration/test_addon_proxy.py::test_the_add_on_is_told_who_is_asking_and_nothing_of_the_session"],
+    ),
+    Control(
+        describes="ADD-ON: an add-on cannot set a cookie on Elysium's origin",
+        path="core/addons.py",
+        old='    "cache-control", "content-disposition", "content-encoding", "content-language",',
+        new='    "set-cookie", "cache-control", "content-disposition", "content-encoding", "content-language",',
+        tests=["tests/integration/test_addon_proxy.py::test_no_cookie_and_no_loopback_address_come_back_and_what_does_is_sandboxed"],
+    ),
+    Control(
+        describes="ADD-ON: what an add-on answers is sandboxed",
+        path="api/app.py",
+        old="        if request.url.path.startswith(ADDON_PROXY_PREFIX):",
+        new="        if False:",
+        tests=["tests/integration/test_addon_proxy.py::test_no_cookie_and_no_loopback_address_come_back_and_what_does_is_sandboxed"],
+    ),
+    Control(
+        describes="ADD-ON: an add-on not offered to this person is a 404",
+        path="api/routes.py",
+        old="    module = next((m for m in offered if m.id == module_id and m.server is not None), None)",
+        new="    module = next((m for m in config.modules.modules if m.id == module_id), None)",
+        tests=["tests/integration/test_addon_proxy.py::test_what_this_person_may_not_reach_is_a_404_alike"],
+    ),
+    Control(
+        describes="ADD-ON: the token names only the add-on's own permissions this person holds",
+        path="api/routes.py",
+        old="                         if authorize(current_user, config.roles, module_grant(module.id, name))])",
+        new="                         ])",
+        tests=["tests/integration/test_addon_proxy.py::test_a_declared_permission_offers_the_add_on_and_the_token_says_which_are_held"],
+    ),
+    Control(
+        describes="ADD-ON: a server gets a bare environment, none of Elysium's secrets",
+        path="api/addon_servers.py",
+        old="        environment = {name: os.environ[name] for name in ENVIRONMENT_KEPT if name in os.environ}",
+        new="        environment = dict(os.environ)",
+        tests=["tests/integration/test_addon_lifecycle.py::test_it_starts_the_server_with_what_the_contract_promises"],
+    ),
+    Control(
+        describes="ADD-ON: a server ignoring SIGTERM is killed at its deadline",
+        path="api/addon_servers.py",
+        old="            self._signal(signal.SIGKILL)\n            status = self.process.wait()",
+        new="            status = None",
+        tests=["tests/integration/test_addon_lifecycle.py::test_one_ignoring_sigterm_is_killed_at_its_deadline"],
+    ),
+    Control(
+        describes="ADD-ON: one worker supervises each server",
+        path="api/addon_servers.py",
+        old="        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)",
+        new="        pass",
+        tests=["tests/integration/test_addon_lifecycle.py::test_one_worker_runs_it_and_another_takes_over_when_that_one_goes"],
+    ),
+    Control(
+        describes="ADD-ON: a server that left cleanly exits 0, not aborted by the SDK's stdin watcher",
+        path="sdk/python/elysium_addon.py",
+        old="            while os.read(0, 4096):",
+        new="            while __import__('sys').stdin.buffer.read(4096):",
+        tests=["tests/integration/test_addon_lifecycle.py::test_stopping_asks_politely_first"],
+    ),
+    Control(
+        describes="PERMISSIONS: a permission a listed module does not declare is refused",
+        path="core/intermediate_layer/policy_validation.py",
+        old="        if declared is not None and name not in declared:",
+        new="        if False:",
+        tests=["tests/unit/test_module_permissions.py::TestCheckingARole::"
+               "test_a_permission_a_listed_module_does_not_declare_is_refused"],
+    ),
+    Control(
+        describes="PERMISSIONS: one from a module no longer listed is kept, not refused",
+        path="core/intermediate_layer/policy_validation.py",
+        old="        declared = (modules or {}).get(module_id)",
+        new="        declared = (modules or {}).get(module_id, frozenset())",
+        tests=["tests/unit/test_module_permissions.py::TestCheckingARole::"
+               "test_one_from_a_module_no_longer_listed_is_kept_not_refused"],
+    ),
+    Control(
+        describes="SIM: SIGTERM ends a run through its teardown",
+        path="sim/simulator/cli.py",
+        old="        self._previous_term = signal.signal(signal.SIGTERM, self._raise)",
+        new="        self._previous_term = signal.getsignal(signal.SIGTERM)",
+        tests=["sim/tests/test_stopping.py::test_sigterm_ends_the_run_through_its_teardown_as_ctrl_c_does"],
+    ),
+    Control(
+        describes="SIM: `stop` ends the run",
+        path="sim/simulator/cli.py",
+        old="    if controller.stop_requested:\n        raise _Interrupted",
+        new="    pass",
+        tests=["sim/tests/test_stopping.py::test_stop_ends_the_loop_after_its_reply_is_given"],
+    ),
+    Control(
+        describes="SIM PANEL: a run building or tidying up reads as busy",
+        path="sim/panel/server.py",
+        old="        under_way = run_under_way(self.directory) or self._still_launching()",
+        new="        under_way = self._still_launching()",
+        tests=["sim/tests/test_panel.py::test_a_run_under_way_is_busy_even_before_it_answers"],
+    ),
+    Control(
+        describes="SIM PANEL: changing the world needs the operate permission",
+        path="sim/panel/server.py",
+        old='            if not elysium_addon.holds(who, "operate"):',
+        new="            if False:",
+        tests=["sim/tests/test_panel.py::test_changing_the_world_needs_the_operate_permission"],
     ),
 ]
 

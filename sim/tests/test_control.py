@@ -109,6 +109,7 @@ def test_a_paused_world_does_not_tick(running, monkeypatch):
 
     world, _, controller = running
     controller.paused = True
+    controller.compression = 3600.0
     ticked = []
     sleeps = []
     monkeypatch.setattr(cli.runner, "tick", lambda *a: ticked.append(a))
@@ -121,7 +122,7 @@ def test_a_paused_world_does_not_tick(running, monkeypatch):
     monkeypatch.setattr(cli.time, "sleep", sleep)
     try:
         with pytest.raises(KeyboardInterrupt):
-            cli._follow(world, 3600.0, 3600.0, controller)
+            cli._follow(world, 3600.0, controller)
     finally:
         controller.paused = False
 

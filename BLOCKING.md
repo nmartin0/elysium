@@ -938,8 +938,42 @@ Elysium. The System sub-app has an Add-on servers page: state, log,
 Restart (audited). Checked live under two uvicorn workers: one server,
 reached from both; the supervising worker killed with SIGKILL, the old
 server left by itself and the other worker started a new one; a
-graceful stop exited 0. **Blocked on:** nothing; 2.3, the simulator's
-panel, is next.
+graceful stop exited 0.
+
+**2.3 IS BUILT, the owner's two answers of 22 October with it.**
+
+PERMISSIONS A MODULE DECLARES: "loadable modules [should] have their
+own permissions that dynamically get added to Elysium's permissions
+list". A module.json lists `permissions` (`{id, description}`), granted
+as `module:<module id>:<id>`. One REGISTRY -- Elysium's own grants and
+every listed module's -- worked out from the manifests at each load (the
+owner chose that over a stored table), offered by the role editor in a
+group per module with each description. Checked as every grant is; one
+from a module no longer listed is kept, grants nothing, and is shown as
+such rather than stopping the load. An add-on's token says which of its
+own permissions the person holds.
+
+THE WORLD RUNS ON ITS OWN: Elysium "should be able to be probed as if
+it went offline while the remote resources continued on their
+functioning per normal". The panel's server (sim/panel/server.py)
+starts `simulator run --follow` in a session of its own and keeps
+nothing about it in memory; killing Elysium -- the panel's server's
+whole process group, SIGKILL -- leaves the world running, and the next
+panel finds it through control.json. It stops on Stop, `simulator
+stop`, or SIGTERM, each through the run's teardown. A run lock held for
+a run's whole life says "busy" while building or tidying up.
+
+THE PANEL (sim/panel, module `simulator`, offered to
+`module:simulator:operate`): start from a pack or resume the stopped
+world with its own pack, pause, move on, speed, take a database offline
+and restore it, each database's connection details to copy, the run's
+log, discard. Its page's source is in sim/panel/web, built by ui/'s
+build into sim/panel/dist; the simulator carries no Node packages and
+imports nothing of Elysium's (its copy of the SDK is checked identical).
+Drift from the panel waits, the owner's choice.
+
+**Blocked on:** nothing; 2.4 (posting to the Inbox for declared kinds,
+and the contract-version field) is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 
@@ -1715,8 +1749,12 @@ follows renames and drops (sim/simulator/lineage.py); and shared
 reference data is now declarable (`security: unrestricted`,
 SECURITY_ARCHITECTURE.md).
 
-**Blocked on:** item 3: the panel will be the simulator's sub-app, loaded as a
-module (step 2 there). Superseded wording below kept for its reasons:
+**THE PANEL IS BUILT** (item 3, step 2.3): sim/panel, loaded as a module,
+its server started by Elysium, the world running on its own.
+
+**Blocked on:** nothing but order: drift from the panel waits for item
+12's runs to show which changes an operator reaches for. Superseded
+wording below kept for its reasons:
 
 **Was blocked on:** nothing but order: the page comes after item 12, whose
 runs will show which controls an operator actually reaches for.

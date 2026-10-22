@@ -1,0 +1,19 @@
+{
+  "id": "simulator",
+  "name": "Simulator",
+  "version": "1",
+  "permission": "module:simulator:operate",
+  "permissions": [
+    {
+      "id": "operate",
+      "description": "Start, stop, pause, speed up and break the simulated world, and read its databases' connection details"
+    }
+  ],
+  "contributes": {
+    "pages": [{ "id": "panel", "path": "/simulator" }],
+    "nav": [{ "title": "Simulator", "path": "/simulator", "subject": "Testing" }]
+  },
+  "entry": "dist/index.js",
+  "styles": ["dist/index.css"],
+  "server": { "command": ["{python}", "server.py"], "health": "/health", "stopSeconds": 10 }
+}

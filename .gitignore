@@ -77,3 +77,7 @@ cookies.txt
 # is ever run in place rather than through scripts/mutation_test.py.
 .hypothesis/
 mutants/
+
+# THE SIMULATOR PANEL'S BUILT BUNDLE (BLOCKING.md item 3, step 2.3): built
+# by ui/'s `npm run build` from sim/panel/web, as ui/'s own dist is.
+sim/panel/dist/

@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "oxlint --deny-warnings && npm run typecheck && npm run format:check && npm run knip",
+    "lint": "oxlint --deny-warnings && npm run lint:addons && npm run typecheck && npm run format:check && npm run knip",
+    "lint:addons": "cd ../sim/panel/web && oxlint --deny-warnings -c ../../../ui/.oxlintrc.json src && oxfmt --check -c ../../../ui/.oxfmtrc.jsonc src",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "e2e": "playwright test",
@@ -61,5 +62,14 @@
   },
   "engines": {
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+  },
+  "knip": {
+    "workspaces": {
+      ".": {
+        "entry": [
+          "addons/*.vite.config.ts"
+        ]
+      }
+    }
   }
 }

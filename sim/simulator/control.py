@@ -30,6 +30,9 @@ Commands (POST /control, {"command": ..., ...}, bearer token):
   oracle                        every watched number's samples, as JSON
   pause_replay {"silo"} /       stop a streaming replica applying its
     resume_replay               source's changes, and start again
+  speed {"compression"}         simulated seconds per real second, while
+                                following the clock
+  stop                          end the run tidily, as Ctrl-C would
 """
 
 import json
@@ -55,6 +58,11 @@ REPLY_TIMEOUT_SECONDS = 120.0
 
 class ControlError(Exception):
     """A command that cannot be carried out, said in its own words."""
+
+
+class WorldBusy(ControlError):
+    """The world is running and did not answer in time: building, or
+    catching up on a backfill, when nothing serves its queue."""
 
 
 def apply_drift(world, operation: str, fields: dict[str, Any]):
@@ -88,6 +96,12 @@ class Controller:
         self.world = world
         self.paused = False
         self.out: set[str] = set()
+        #: Simulated seconds per real second while following; None when
+        #: the world is not following the wall clock.
+        self.compression: float | None = None
+        #: Set by `stop`: the loop running the world ends, through the
+        #: same teardown as Ctrl-C (cli._serve).
+        self.stop_requested = False
         self._queue: queue.Queue[tuple[str, dict, Future]] = queue.Queue()
 
     # -- the HTTP side ----------------------------------------------------
@@ -135,6 +149,7 @@ class Controller:
             "restore": self._cmd_restore, "oracle": self._cmd_oracle,
             "pause_replay": self._cmd_pause_replay,
             "resume_replay": self._cmd_resume_replay,
+            "stop": self._cmd_stop, "speed": self._cmd_speed,
         }
         handler = handlers.get(command)
         if handler is None:
@@ -154,11 +169,34 @@ class Controller:
             "clock": world.clock.now().isoformat(),
             "elapsed_days": round(world.clock.elapsed.total_seconds() / 86400, 3),
             "paused": self.paused,
+            "following": self.compression is not None,
+            "compression": self.compression,
             "silos": {name: {"kind": silo.kind,
                              "state": "out" if name in self.out
                              else ("up" if silo.is_reachable() else "down")}
                       for name, silo in sorted(world.silos.items())},
         }
+
+    def _cmd_stop(self, _arguments: dict) -> dict:
+        """End the run tidily -- outages restored, the clock saved, every
+        server stopped -- as Ctrl-C in its terminal would. For a world
+        nobody has a terminal on: one started by the control panel, which
+        runs on its own so it carries on while Elysium is offline."""
+        self.stop_requested = True
+        return {"stopping": True, "clock": self.world.clock.now().isoformat()}
+
+    def _cmd_speed(self, arguments: dict) -> dict:
+        if self.compression is None:
+            raise ControlError("this world is not following the clock (started without --follow); "
+                               "use advance to move it on")
+        try:
+            compression = float(arguments.get("compression", ""))
+        except (TypeError, ValueError):
+            raise ControlError("speed needs compression, a number such as 60") from None
+        if not 0 < compression <= 1_000_000:
+            raise ControlError("speed must be more than 0 and at most 1,000,000 simulated seconds a second")
+        self.compression = compression
+        return {"compression": compression}
 
     def _cmd_pause(self, _arguments: dict) -> dict:
         self.paused = True
@@ -300,9 +338,59 @@ def _jsonable(value: Any) -> Any:
     return str(value)
 
 
-def send(directory: Path, command: str, **arguments: Any) -> dict:
+#: Held, by flock, for as long as a `simulator run` is alive in a world's
+#: directory -- building, running or tidying up.
+RUN_LOCK_FILENAME = "run.lock"
+
+
+def hold_run_lock(directory: Path):
+    """Take the world's run lock for the life of this process, or raise
+    ControlError if another process holds it.
+
+    WHY A LOCK AND NOT control.json ALONE: control.json is written once
+    the world can answer and removed FIRST when it stops, so between the
+    two -- building, and tidying up -- nothing said a run was under way.
+    The control panel saw a world tidying up as stopped, and a Start then
+    built a second world into the directory the first was still saving
+    (found driving the panel, 22 October). A flock is released by the
+    kernel when the process ends, however it ends, so a crash cannot
+    leave it held."""
+    import fcntl
+
+    Path(directory).mkdir(parents=True, exist_ok=True)
+    handle = open(Path(directory) / RUN_LOCK_FILENAME, "a+")  # noqa: SIM115 -- held until exit
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        raise ControlError(f"another `simulator run` is using {directory}") from None
+    return handle
+
+
+def run_under_way(directory: Path) -> bool:
+    """Whether a `simulator run` holds this directory's run lock now."""
+    import fcntl
+
+    path = Path(directory) / RUN_LOCK_FILENAME
+    if not path.exists():
+        return False
+    with open(path, "a+") as handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return True
+        fcntl.flock(handle, fcntl.LOCK_UN)
+        return False
+
+
+def send(directory: Path, command: str, *, reply_timeout: "float | None" = None, **arguments: Any) -> dict:
     """The operator's side: one command to the world running in
-    `directory`. ControlError if none is running or the command fails."""
+    `directory`. ControlError if none is running or the command fails.
+
+    `reply_timeout`: how long to wait for the world's answer; by default
+    as long as the world itself waits for a moment between ticks. The
+    control panel asks with a few seconds, so a world busy catching up
+    reads as busy rather than holding the page."""
     import urllib.error
     import urllib.request
 
@@ -316,10 +404,14 @@ def send(directory: Path, command: str, **arguments: Any) -> dict:
         headers={"Authorization": f"Bearer {found['token']}",
                  "Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(request, timeout=REPLY_TIMEOUT_SECONDS + 5) as response:
+        wait = REPLY_TIMEOUT_SECONDS + 5 if reply_timeout is None else reply_timeout
+        with urllib.request.urlopen(request, timeout=wait) as response:
             return json.loads(response.read())["result"]
     except urllib.error.HTTPError as error:
         raise ControlError(json.loads(error.read() or b"{}").get("error", str(error))) from error
+    except TimeoutError as error:
+        raise WorldBusy(f"the world in {directory} did not answer within {wait:g} s; it is "
+                        f"probably busy building or catching up") from error
     except OSError as error:
         raise ControlError(f"the world in {directory} is not answering ({error}); if it "
                            f"stopped uncleanly, remove {CONTROL_FILENAME}") from error

@@ -98,7 +98,25 @@
     // directly -- installing it alone was not sufficient on its own,
     // the same real "Cannot find name 'fs'" error persisted until this
     // was added too) that actually makes tsc aware of it.
-    "types": ["@testing-library/jest-dom", "vite/client", "node"]
+    "types": ["@testing-library/jest-dom", "vite/client", "node"],
+
+    // FOR AN ADD-ON'S PAGE OUTSIDE THIS FOLDER (../sim/panel/web): a bare
+    // import is looked up in node_modules above the importing file, and
+    // there are none above sim/, so these say where the page's own copies
+    // are -- the same ones every file here already resolves to, so
+    // nothing here resolves differently. Relative to this file, which
+    // TypeScript allows without `baseUrl` (removed in 7.0, see above).
+    "paths": {
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "@blueprintjs/core": ["./node_modules/@blueprintjs/core"],
+      "@elysium/shell-api/*": ["./packages/shell-api/src/*"],
+      "@shell/core/*": ["../shell/core/src/*"],
+      // And the panel's own source by a name, for its tests here
+      // (addons/): imports reach other packages by name, never by a
+      // relative path into their src/ (.oxlintrc.json).
+      "@simulator/panel/*": ["../sim/panel/web/src/*"]
+    }
   },
   // e2e added alongside src/packages/*/src -- confirmed necessary
   // empirically, not assumed: e2e/shell.spec.ts existed as real
@@ -113,5 +131,10 @@
   // covered by "src"/"packages/*/src"/"e2e" (they're loose root-level
   // files), confirmed the same way (a real `tsc --listFiles` check,
   // not assumed from the pattern of the other three entries).
-  "include": ["src", "packages/*/src", "e2e", "vite.config.ts", "playwright.config.ts"]
+  // THE SIMULATOR PANEL'S SOURCE (../sim/panel/web) -- an add-on's page
+  // whose source lives with the add-on and builds with this page's tools.
+  // Its imports find this folder's packages through `paths` above, since
+  // nothing under sim/ has a node_modules. (Its build config, addons/, is
+  // left out as the packages' vite.config.ts files are.)
+  "include": ["src", "packages/*/src", "e2e", "vite.config.ts", "playwright.config.ts", "../sim/panel/web/src"]
 }

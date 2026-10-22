@@ -64,3 +64,48 @@ pip install -r requirements-dev.lock
 ./lint.sh
 python -m pytest tests/ -q
 ```
+
+## Operating a running world
+
+The consumer's rule above is unchanged: a consumer has only the
+databases. The *operator* has more. A running world answers its own
+control channel (`simulator/control.py`, loopback only, with a token in
+an owner-only `control.json`), and the command line sends to it:
+
+```sh
+python -m simulator run packs/probe.yaml --dir var --follow --compression 3600
+python -m simulator status --dir var
+python -m simulator speed 7200 --dir var      # while following
+python -m simulator outage ops --dir var      # and `restore ops`
+python -m simulator stop --dir var            # tidily, as Ctrl-C would
+```
+
+A run tidies up -- outages restored, the clock saved for `--resume`,
+every database server stopped -- on Ctrl-C, on `stop`, and on SIGTERM,
+which is how systemd and Elysium stop a process. It holds `run.lock` in
+its directory for its whole life, so another run cannot start there
+while it is building or tidying up.
+
+### The control panel
+
+`panel/` is the same, as a page: a module for Elysium's shell, offered
+to holders of `module:simulator:operate`, its server (`panel/server.py`)
+started by Elysium. List `sim/panel` in Elysium's `modules.yaml`, and
+say where the world lives in its `addons.yaml`:
+
+```yaml
+simulator:
+  options:
+    directory: /srv/sim/world
+```
+
+The world the panel starts **runs on its own**: Elysium stopping, or
+crashing, leaves it running and changing, as a customer's database would
+-- which is the point, since "what does Elysium do after an hour
+offline?" is one of the questions the simulator exists to ask. The panel
+finds the world again when Elysium is back.
+
+The panel's page is built by Elysium's UI build into `panel/dist`; the
+simulator carries no Node packages, and imports nothing of Elysium's
+(`panel/elysium_addon.py` is a copy of Elysium's add-on SDK, kept
+identical by Elysium's tests).

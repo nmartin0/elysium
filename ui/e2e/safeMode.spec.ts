@@ -22,7 +22,10 @@ const railNames = (page: Page) => page.locator('.app__nav').getByRole('menuitem'
 
 test('/?safe loads only the pinned modules, keeps doing so across a reload, and leaves cleanly', async ({ page }) => {
   await logIn(page, 'opsuser', 'opspass123')
-  expect(await railNames(page)).toContain('Schema')
+  // WAITED FOR, not read at once: the rail is drawn when the feed arrives,
+  // a moment after the frame -- read at once, it was sometimes empty
+  // (seen once in a full run, 22 October).
+  await expect(page.locator('.app__nav').getByRole('menuitem', { name: 'Schema' })).toBeVisible()
 
   await page.goto('/?safe')
 
