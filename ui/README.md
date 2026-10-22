@@ -31,7 +31,8 @@ added and not named here.
 ```
 ui/src/                    App.tsx (auth state, routing, what is
                             fetched once and passed down), Shell.tsx
-                            (header and nav chrome), main.tsx.
+                            (what Elysium hands the shell's frame --
+                            @shell/core/Frame), main.tsx.
 ui/packages/shell-api/     Everything shared across screens: api.ts
                             (the one place that knows about fetch,
                             session and CSRF), formatting, the design

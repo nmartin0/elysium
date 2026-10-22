@@ -24,7 +24,7 @@
  * the palette can reach can also be bookmarked.
  */
 
-import type { Command } from '@elysium/shell-api/commands'
+import type { Command } from '@shell/core/commands'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
 type Go = (to: string) => void

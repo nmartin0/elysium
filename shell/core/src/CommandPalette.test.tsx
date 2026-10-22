@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import CommandPalette from './CommandPalette'
-import type { Command } from '../commands'
+import type { Command } from './commands'
 
 /**
  * WHAT IS WORTH TESTING HERE, and what is not.

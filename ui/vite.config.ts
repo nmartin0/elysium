@@ -46,7 +46,12 @@ export default defineConfig({
   // different React -- and a different router context -- from the
   // page's, and every hook in them would throw. Shared libraries are
   // the page's, fixed once (the import-map decision in item 3).
-  resolve: { dedupe: ['react', 'react-dom', 'react-router-dom'] },
+  //
+  // AND ONE BLUEPRINT, since the frame moved into @shell/core (step 1.3)
+  // and draws with it: a second copy would give the frame's dialogs
+  // their own overlay stack and their own `Classes`, so the palette
+  // would open beneath a page's dialog instead of above it.
+  resolve: { dedupe: ['react', 'react-dom', 'react-router-dom', '@blueprintjs/core'] },
   server: {
     // THE GENERIC SHELL LIVES BESIDE THIS PROJECT, in ../shell, linked in
     // by `file:`. Vite serves nothing outside its workspace by default,

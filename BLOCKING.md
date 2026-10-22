@@ -718,8 +718,31 @@ arrive with step 1.3); per-sub-app browser fixtures; the add-on pytest
 plugin (step 2). The other sub-apps adopt as they become modules, in
 step 3.
 
-**Blocked on:** nothing; step 1.3 is next -- the frame into
-`@shell/core`, fixing the three violations.
+**STEP 1.3, IN THREE PARTS, agreed with the owner 21 October:** (a)
+the frame moves into `@shell/core`, looking and behaving exactly as it
+did; (b) a module SUPPLIES palette commands and search suggestions from
+its code, loading when the palette opens (VS Code's activation events),
+and Browse's move out of the shell -- which also ends the shell being
+handed the schema; (c) a rail entry declares a BADGE whose number the
+module's code supplies, loading at startup, and the Inbox's count
+becomes its badge. Decided: THE INBOX KEEPS NO HEADER BUTTON -- the rail
+is present at every width, so its badge is on every screen, and the
+header has no module slots at all; and Blueprint is the shell's peer
+dependency, being a library the page already shares.
+
+**STEP 1.3a BUILT (21 October): THE FRAME IS THE SHELL'S.**
+`@shell/core/Frame` draws the rail, the header and the command palette
+(the palette and its matching moved from Elysium's kit with it) and owns
+their behaviour: grouping by subject, collapsing and its narrow-screen
+rules, Ctrl/Cmd+B, Ctrl/Cmd+K, navigation commands. The host supplies
+the brand, the header's actions, overlays, icons, its commands, the
+loading fallback and the storage key. `ui/src/Shell.tsx` is now
+Elysium's composition of it; its 96 tests with App's pass unchanged,
+and the shell has 21 tests of its own for the frame, each behaviour
+with a control. Styled by the host for now, through the frame's stable
+class names.
+
+**Blocked on:** nothing; step 1.3b is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

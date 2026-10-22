@@ -13,6 +13,8 @@ shell/
     src/registry.ts      a feed -> pages, rail and redirects (pure)
     src/ModuleRoutes.tsx a registry -> react-router routes
     src/moduleLoader.tsx a module's bundle, stylesheets and lifecycle
+    src/Frame.tsx        the frame: rail, header and command palette
+    src/CommandPalette.tsx, src/commands.ts  the palette and its matching
   build/           @shell/build: build-time tooling
     src/sharedLibraries.ts  the shared-library registry, shims and import map
     src/moduleBuild.ts      a module's bundle; building modules with the page
@@ -26,9 +28,46 @@ cd shell && npm install && npx vitest run && npx tsc --noEmit
 ```
 
 A host depends on it by path (`"@shell/core": "file:../shell/core"`) and
-must give the bundle one React: Elysium's `ui/vite.config.ts` dedupes
-`react`, `react-dom` and `react-router-dom`, because a second copy would
-give the shell's routes a router context the page does not have.
+must give the bundle one React and one Blueprint: Elysium's
+`ui/vite.config.ts` dedupes `react`, `react-dom`, `react-router-dom` and
+`@blueprintjs/core`, because a second React would give the shell's routes
+a router context the page does not have, and a second Blueprint would
+give the frame's dialogs an overlay stack of their own.
+
+## The frame
+
+The shell owns the frame -- the rail, the header and the command palette
+-- and a sub-app owns everything inside the content area. `<Frame>` is a
+react-router layout route; pages mount in its outlet.
+
+```tsx
+<Frame
+  nav={feedNav}                 // rail entries: title, path, subject
+  brand="Product"               // the name in the header
+  actions={<UserMenu />}        // the header's actions, the host's own
+  overlays={<HelpDialog />}     // dialogs kept beside the frame
+  iconFor={(path) => icon}      // each rail entry's icon
+  commands={{ before, after }}  // the host's commands, around navigation
+  suggest={(query) => [...]}    // commands made from what was typed
+  onPaletteOpen={load}          // told on each opening
+  fallback={<Spinner />}        // while a page's code loads
+  storageKey="product.rail"     // where the collapsed state is remembered
+/>
+```
+
+What the frame does itself: groups the rail by subject; collapses it
+(the toggle, Ctrl/Cmd+B, remembered per browser; closed below 1100px
+without storing that, and the stored choice restored above it; closed on
+navigating while narrow); opens the palette on Ctrl/Cmd+K, even from a
+text field; offers every rail entry as a navigation command.
+
+STYLED BY THE HOST, for now. It draws Blueprint widgets (a peer
+dependency) inside stable class names -- `app-frame`,
+`app-frame--sidebar-collapsed`, `app__header`, `app__header-title`,
+`app__header-actions`, `app__sidebar`, `app__sidebar-toggle`,
+`app__nav`, `app__nav-subject`, `app__nav-label`, `app__content`,
+`command-palette*` -- which the host's stylesheet draws. A baseline look
+every sub-app inherits is a later step.
 
 ## The contract, version 1
 

@@ -10,6 +10,6 @@ export default defineConfig({
   plugins: [react()],
   // One React, as the page has (ui/vite.config.ts): @shell/core carries
   // its own copy for its own tests.
-  resolve: { dedupe: ['react', 'react-dom', 'react-router-dom'] },
+  resolve: { dedupe: ['react', 'react-dom', 'react-router-dom', '@blueprintjs/core'] },
   test: { name: 'app-schema', ...moduleTestConfig({ setupFiles: ['@elysium/testing/setup'] }) },
 })

@@ -90,8 +90,9 @@ ui/              The React + TypeScript frontend -- Query (ask a
                  shared concern, not one monolithic app:
                    ui/src/               App.tsx (auth state, routing,
                                          what's fetched once and passed
-                                         down), Shell.tsx (header/nav
-                                         chrome), main.tsx (entry point).
+                                         down), Shell.tsx (what Elysium
+                                         hands the shell's frame, in
+                                         shell/), main.tsx (entry point).
                    ui/packages/shell-api/  Shared across every screen:
                                          the one place that knows about
                                          fetch/session/CSRF (api.ts),

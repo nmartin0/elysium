@@ -29,7 +29,7 @@
 import { useMemo, useState } from 'react'
 import { Dialog, DialogBody } from '@blueprintjs/core'
 
-import { type Command, matchingInTiers } from '../commands'
+import { type Command, matchingInTiers } from './commands'
 
 export default function CommandPalette({
   commands,

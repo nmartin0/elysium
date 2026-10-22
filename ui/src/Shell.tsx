@@ -1,15 +1,14 @@
-import { Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import CommandPalette from '@elysium/shell-api/components/CommandPalette'
-import { mayFireGlobally, opensPalette } from '@elysium/shell-api/commands'
-import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Button, Classes, Menu, MenuItem } from '@blueprintjs/core'
+import { useEffect, useState } from 'react'
+import { Button, Classes } from '@blueprintjs/core'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { Frame } from '@shell/core/Frame'
+import type { Command } from '@shell/core/commands'
 import { iconForApp } from '@elysium/shell-api/appIcons'
 import { readPreference, writePreference } from '@elysium/shell-api/browserPreferences'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMenu'
 import { DENSITIES, type Density, isDensity } from '@elysium/shell-api/density'
 import { getSavedViews, getVisibleActionTypesCached } from '@elysium/shell-api/api'
-import type { Command } from '@elysium/shell-api/commands'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 import {
   actionCommands,
@@ -23,97 +22,26 @@ import {
 import { totalWaiting, useInboxCounts } from '@elysium/shell-api/useInboxCounts'
 import HelpPanel from '@elysium/shell-api/components/HelpPanel'
 
-// Shell.tsx  (the actual chrome -- a collapsible left sidebar, and
-// the route tree's own mount point)
+// Shell.tsx -- ELYSIUM'S COMPOSITION OF THE GENERIC FRAME.
 //
-// Deliberately a SEPARATE file from App.jsx, not more logic folded
-// into an already-large file. App.jsx's own job is auth state, what
-// gets fetched once and passed down, and the top-level Routes wiring
-// -- genuinely different concerns from "what does the persistent
-// chrome actually render." Rendered as a real React Router LAYOUT
-// route (an element with no path of its own, wrapping child routes
-// via <Outlet />) -- not a plain component App.jsx calls directly --
-// so every child route (Query, Browse, Admin, and eventually a real
-// sub-app) mounts INSIDE this shell's own content pane, sharing the
-// same sidebar without each route needing to render it itself.
+// The rail, the header and the command palette are the shell's
+// (@shell/core/Frame, BLOCKING.md item 3, step 1.3): it draws them and
+// owns how they behave -- collapsing, the narrow-screen rules, Ctrl+B,
+// Cmd-K, the navigation commands. This file supplies what is Elysium's:
+// the product's name, the header's actions (the Inbox, help, the theme,
+// the user menu), the theme and row density themselves, and the palette
+// commands that know Elysium's data.
 //
-// LEFT SIDEBAR, not the earlier top nav bar -- a deliberate structural
-// match to a real, established reference (confirmed directly against
-// that platform's own documentation, not assumed from memory): a
-// persistent left sidebar that's the constant, home-base starting
-// point for navigation, collapsible via an icon toggle and a keyboard
-// shortcut, collapsed state remembered across visits. Taken at the
-// right scale for what this app actually is, not copied at 1:1 scope
-// -- that reference sidebar organizes a whole suite of workspaces
-// into multiple named sections; this one organizes three sub-apps
-// into a single flat list, which is all today's real visibleApps
-// data supports or needs.
-//
-// Cmd/Ctrl+B, not Cmd/Ctrl+O -- the reference's own real shortcut is
-// Cmd/Ctrl+O, but that combination is the browser's own native "Open
-// File" shortcut in virtually every mainstream browser; fighting that
-// is a real, avoidable rough edge. Cmd/Ctrl+B is the actual, common
-// web-app convention for exactly this action (GitHub, VS Code,
-// Notion, Linear all use it) -- same underlying goal, the genuinely
-// idiomatic-for-the-web choice rather than a literal copy that
-// collides with existing browser behavior.
-//
-// COLLAPSED MEANS FULLY HIDDEN, not shrunk to an icon strip -- the
-// real reference's own collapsed state still shows one icon per
-// section; visibleApps (the rail entries of the module feed, GET
-// /api/shell/modules) carries no icon data today, only path/name (see
-// this file's own VisibleApp type below -- a module's `permission` is
-// what the backend uses to decide which modules to offer at all, and
-// is deliberately not in the feed, since nothing here needs the name
-// of what gates an app it can already see -- core/modules.py),
-// and adding an icon would be a real backend and type change outside
-// this specific step's own scope (a layout change only, no backend
-// change -- decided explicitly before starting this file). A future
-// icon-strip collapsed state is a real, deferred possibility once
-// that data exists, not forgotten -- see the AI-only notes at the
-// end of this file.
-//
-// Nav is DATA-DRIVEN from visibleApps (the module feed's rail) --
-// replaces three hardcoded <NavLink> entries that were ALWAYS shown
-// to every logged-in user regardless of what they could actually use
-// (Admin was visible in nav even to a role with no manage:users grant
-// at all -- every action inside it was already, separately, gated
-// server-side; the button itself just never reflected that). Matches
-// the exact same "never show something you can't actually use"
-// discipline already applied to action buttons (see discover:
-// action_types/"executable" on ObjectDetailPanel.jsx).
-//
-// visibleApps defaults to an empty array (see App.jsx) -- nav simply
-// shows no links for the brief moment before the fetch resolves,
-// rather than a flash of a hardcoded, possibly-wrong list. No loading
-// spinner: this loads near-instantly in practice, and an empty nav
-// for a split second is a safer default than showing something that
-// might be about to disappear.
-//
-// <Suspense> wraps ONLY <Outlet />, not the sidebar -- App.tsx's own
-// sub-app routes are lazy-loaded (see that file's own header
-// comment), so the FIRST time someone navigates to a given sub-app,
-// its code chunk is still in flight over the network for a brief
-// moment. This boundary is what shows a loading state during that
-// moment -- deliberately scoped to just the content pane, so the
-// persistent sidebar stays fully rendered and interactive throughout;
-// "persistent" would be a lie if the sidebar itself also disappeared
-// behind the same fallback.
+// TWO OF THOSE ARE THE VIOLATIONS STEP 1.3 REMOVES, and are here only
+// until then: Browse's commands (types, saved views, actions, searches)
+// become Browse's own declared commands, which also ends the frame being
+// handed the schema; and the Inbox's count becomes a badge on its rail
+// entry.
 
 export interface VisibleApp {
   path: string
   name: string
-  /**
-   * WHAT A PERSON IS WORKING ON, from api/apps.py.
-   *
-   * DEV_UI.md 12: six apps is "a decomposition BY FEATURE, the way
-   * software gets built, not BY WHAT THE USER IS WORKING ON. That is
-   * why moving between them feels like changing tools rather than
-   * changing view." The rail groups by this instead of listing apps.
-   *
-   * Optional because a server that predates the field sends none, and
-   * an ungrouped rail is the old behaviour rather than a broken one.
-   */
+  /** What a person is working on; the rail groups by it (FrameNavEntry). */
   subject?: string
 }
 
@@ -126,191 +54,17 @@ interface ShellProps {
   onLogout: () => void
 }
 
+/** Kept from before the frame moved, so a browser's remembered rail
+ *  state survives the move. */
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'elysium.sidebarCollapsed'
-// Below this width, default to collapsed on first load -- a real ~
-// 15rem sidebar would swallow most of a real phone-sized viewport.
-// A real, if basic, responsive floor -- see this project's own
-// frontend-design skill's "responsive down to mobile" quality-floor
-// requirement -- not a complete mobile redesign, which is real,
-// separate, deferred work (see the AI-only notes at the end of this
-// file). This same query now drives THREE real, live things below,
-// not just the one-time initial default it originally only decided:
-// resolveCollapsedFromStorageOrViewport()'s own reads (both at mount
-// AND again on exiting mobile), AND isMobile's own real, live
-// matchMedia listener, kept current for the whole session rather than
-// only at mount, which drives the two effects below: forcing the
-// sidebar closed on a resize INTO mobile, and auto-closing it on
-// navigation while there.
-//
-// It decides no RENDERING at all, though it used to. A single <aside>
-// renders at every width now; the conditional this once chose between
-// went away with the Drawer -- see the render body's own comment for
-// why a 56px rail removed the need for one.
-/**
- * The width below which three columns stop fitting, and the sidebar
- * auto-collapses to its rail.
- *
- * 1099px, MATCHING the CSS that makes an expanded sidebar overlay
- * rather than push. They used to disagree -- this was 640px while the
- * overlay began at 1100 -- so between those widths an expanded sidebar
- * floated over the content and nothing collapsed it. The Back button
- * and the left edge of every screen sat underneath it.
- *
- * One number, and the two behaviours that depend on it now change
- * together.
- */
-const MOBILE_BREAKPOINT_QUERY = '(max-width: 1099px)'
-
-// Read once, synchronously, as the real initial value -- not two
-// renders (one wrong, then corrected) -- React's own lazy useState
-// initializer form (a function, not a value) runs exactly once, on
-// the very first render, before anything ever paints.
-//
-// Reused a second time, well after mount, not just at the "initial"
-// moment its own name originally implied -- see the exiting-mobile
-// effect further down, which calls this same function again to
-// restore the real, persisted desktop preference once a live resize
-// crosses back OUT of mobile. That reuse is exactly why this function
-// was never named getInitialCollapsedState in the first place, or
-// renamed here rather than duplicated: the real, underlying logic --
-// "read the persisted choice; if there isn't one, fall back to a
-// live viewport check" -- is identical in both cases, not two
-// different concerns that only coincidentally share a shape.
-function resolveCollapsedFromStorageOrViewport(): boolean {
-  try {
-    const stored = window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)
-    if (stored !== null) return stored === 'true'
-  } catch {
-    // Private-browsing storage restrictions, a full quota, or a
-    // disabled localStorage entirely -- all real, if rare, possible
-    // failures. Falls through to the viewport-based default below
-    // rather than ever letting a storage failure break the sidebar
-    // itself from rendering at all.
-  }
-  return window.matchMedia(MOBILE_BREAKPOINT_QUERY).matches
-}
-
-// The one, real, shared implementation of "try to remember this
-// choice for next time" -- extracted here, module-level, after the
-// exact same try/localStorage.setItem/catch shape was found written
-// out twice, word for word, inside the component below
-// (setCollapsedPersisted() and toggleCollapsed()'s own updater) -- a
-// real, genuine DRY violation, not a stylistic nitpick: the same
-// key, the same String() conversion, the same silently-swallowed
-// failure reasoning, duplicated rather than shared. Module-level, not
-// an inner function, matching resolveCollapsedFromStorageOrViewport's
-// own -- this
-// doesn't close over any component-local state at all, just a plain
-// boolean argument and the one, shared storage key.
-function persistCollapsedChoice(value: boolean): void {
-  try {
-    window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(value))
-  } catch {
-    // A failed WRITE must never break the interaction that triggered
-    // it -- the caller's own in-memory state still updates regardless
-    // (this function's only job is the persistence attempt itself);
-    // the choice just won't be remembered for the next visit.
-  }
-}
-
-// subscribeToMobileBreakpoint/getIsMobileSnapshot -- module-level, not
-// defined inside the component, deliberately: useSyncExternalStore's
-// own real contract is that a NEW subscribe function identity on every
-// render causes React to unsubscribe and resubscribe on every single
-// render (confirmed directly against React's own docs), which would
-// mean creating and tearing down a real MediaQueryList and event
-// listener on every render -- wasteful, not just inelegant. Module-
-// level functions have a permanently stable identity across the whole
-// app's lifetime, avoiding that entirely.
-//
-// useSyncExternalStore, not useState+useEffect -- the real, current
-// React-recommended pattern specifically for subscribing to a value
-// that lives OUTSIDE React and can change on its own (confirmed
-// directly against React's own docs and a real, matching example
-// using this exact matchMedia use case) -- window.matchMedia is
-// exactly that: a real, external, mutable data source, not React
-// state. useSyncExternalStore is what guarantees a consistent value
-// is read even under concurrent rendering (the "tearing" problem a
-// plain useEffect-based subscription does not protect against), and
-// replaces what used to be a separate useState PLUS a separate
-// useEffect with one, more correct hook call.
-//
-// No getServerSnapshot (the third, optional argument) -- confirmed
-// directly this is genuinely optional for a fully client-rendered app
-// with no SSR at all, which this project is (a plain Vite + React SPA,
-// bootstrapped client-side in main.tsx) -- there is no server render
-// to reconcile against.
-function subscribeToMobileBreakpoint(onChange: () => void): () => void {
-  const mediaQueryList = window.matchMedia(MOBILE_BREAKPOINT_QUERY)
-  mediaQueryList.addEventListener('change', onChange)
-  return () => mediaQueryList.removeEventListener('change', onChange)
-}
-
-function getIsMobileSnapshot(): boolean {
-  return window.matchMedia(MOBILE_BREAKPOINT_QUERY).matches
-}
 
 export default function Shell({ visibleApps, visibleSchema = null, currentUser, onLogout }: ShellProps) {
-  const [collapsed, setCollapsed] = useState<boolean>(resolveCollapsedFromStorageOrViewport)
-  // useSyncExternalStore, not useState+useEffect -- see
-  // subscribeToMobileBreakpoint/getIsMobileSnapshot's own header
-  // comment above for the full reasoning. This one hook call replaces
-  // what used to be a separate useState (for the initial read) plus a
-  // separate useEffect (for the live subscription).
-  const isMobile = useSyncExternalStore(subscribeToMobileBreakpoint, getIsMobileSnapshot)
   const location = useLocation()
+  const navigate = useNavigate()
   // THE HELP ASSISTANT, and which screen it is being asked from -- the
   // rail's own name for it, so "how do I filter this" has a referent.
   const [helpOpen, setHelpOpen] = useState(false)
   const currentScreen = visibleApps.find((app) => location.pathname.startsWith(app.path))?.name ?? null
-  const navigate = useNavigate()
-
-  /**
-   * THE COMMAND PALETTE LIVES IN THE SHELL, which is what makes it
-   * available everywhere. DEV_UI.md 10.1 quotes Superhuman's own
-   * guidance to "make the palette available EVERYWHERE"; one that works
-   * on four screens out of seven is one people stop reaching for.
-   */
-  const [paletteOpen, setPaletteOpen] = useState(false)
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      // 10.1's first rule -- "never fire a global shortcut while the
-      // person is typing" -- asked of the registry rather than decided
-      // here, because the registry is where the next binding gets
-      // added. For a modifier-qualified one like this it answers yes
-      // inside a field, which is the whole reason Cmd/Ctrl-K was the
-      // binding chosen: Query takes focus into its question box on
-      // arrival, and a palette that will not open there is one people
-      // stop reaching for.
-      if (!mayFireGlobally(event, event.target)) return
-      if (!opensPalette(event)) return
-      event.preventDefault()
-      setPaletteOpen(true)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
-
-  /**
-   * NAVIGATION COMMANDS, FROM THE RAIL THE SERVER ALREADY SENT.
-   *
-   * Every one of these is a screen this caller may open, because
-   * `visibleApps` is already filtered per caller -- so none of them
-   * carries an `unavailable` reason. The field exists for the commands
-   * that come next: an action on an object type, which a reader may see
-   * and not be able to run.
-   */
-  const navigationCommands = useMemo(
-    () =>
-      visibleApps.map((app) => ({
-        id: `go:${app.path}`,
-        label: app.name,
-        group: app.subject ?? 'Go to',
-        run: () => navigate(app.path),
-      })),
-    [visibleApps, navigate],
-  )
 
   /**
    * WHAT THE PALETTE FETCHES, AND WHEN: the reader's saved views and the
@@ -326,8 +80,7 @@ export default function Shell({ visibleApps, visibleSchema = null, currentUser, 
    */
   const [paletteViews, setPaletteViews] = useState<PaletteView[]>([])
   const [paletteActions, setPaletteActions] = useState<Record<string, PaletteAction> | null>(null)
-  useEffect(() => {
-    if (!paletteOpen) return
+  const loadPaletteData = () => {
     void (async () => {
       try {
         setPaletteViews(await getSavedViews())
@@ -342,14 +95,13 @@ export default function Shell({ visibleApps, visibleSchema = null, currentUser, 
         setPaletteActions(null)
       }
     })()
-  }, [paletteOpen])
+  }
 
   const canBrowse = visibleApps.some((app) => app.path === '/browse')
   const scope = objectInScope(location.pathname)
   const browsingType = location.pathname.startsWith('/browse')
     ? new URLSearchParams(location.search).get('type')
     : (scope?.type ?? null)
-
   /**
    * Dark mode, which Blueprint provides per widget and nothing turned
    * on. Applied as a class on <body> rather than a parallel
@@ -404,8 +156,8 @@ export default function Shell({ visibleApps, visibleSchema = null, currentUser, 
 
   /**
    * THE PALETTE'S WHOLE LIST, in the order a person reaches for it:
-   * actions on what is in front of them, then places, types and their
-   * own views, then the shell's own settings. Rebuilt per render -- a
+   * actions on what is in front of them, then places (the frame's own
+   * navigation commands), types and their own views, then settings. Rebuilt per render -- a
    * few dozen objects -- because half of it depends on the location.
    *
    * THE SAME LABELS AS THE BUTTONS (DEV_UI 10.4): "Help", "Log out",
@@ -429,13 +181,14 @@ export default function Shell({ visibleApps, visibleSchema = null, currentUser, 
     })),
     { id: 'shell:logout', label: 'Log out', group: 'Shell', run: onLogout },
   ]
-  const commands: Command[] = [
-    ...actionCommands(scope, paletteActions, go),
-    ...navigationCommands,
-    ...(canBrowse ? typeCommands(visibleSchema, go) : []),
-    ...(canBrowse ? viewCommands(paletteViews, go) : []),
-    ...settingsCommands,
-  ]
+  const commands = {
+    before: actionCommands(scope, paletteActions, go),
+    after: [
+      ...(canBrowse ? typeCommands(visibleSchema, go) : []),
+      ...(canBrowse ? viewCommands(paletteViews, go) : []),
+      ...settingsCommands,
+    ],
+  }
   const suggest = (query: string) => (canBrowse ? searchSuggestions(query, visibleSchema, browsingType, go) : [])
 
   useEffect(() => {
@@ -450,442 +203,52 @@ export default function Shell({ visibleApps, visibleSchema = null, currentUser, 
     document.body.classList.toggle(Classes.DARK, dark)
   }, [dark])
 
-  // setCollapsed plus a localStorage write, for a change that should
-  // be REMEMBERED. The shared piece is persistCollapsedChoice() below
-  // it, which toggleCollapsed() also calls from inside its own
-  // updater -- so "the sidebar's own remembered state" means the same
-  // thing regardless of which path changed it.
-  //
-  // This wrapper itself has exactly ONE caller today, the
-  // auto-close-on-navigate effect below. It used to have more: the
-  // mobile Drawer's own dismissal paths (backdrop click, Escape) went
-  // through here too, and both went away with the Drawer. An expanded
-  // sidebar now overlays via a media query, which has no dismissal
-  // handler to route anywhere.
-  //
-  // Takes a plain boolean, not a computed toggle -- its caller always
-  // wants ONE fixed, known target value, never "whatever it currently
-  // isn't." That distinction matters: toggleCollapsed() below is the
-  // ONE caller that used to compute its own next value this way
-  // (`setCollapsedPersisted(!collapsed)`), and that specific pattern
-  // is what caused a real, confirmed bug -- see toggleCollapsed()'s
-  // own comment.
-  function setCollapsedPersisted(next: boolean) {
-    setCollapsed(next)
-    persistCollapsedChoice(next)
-  }
-
-  // A real, severe, previously-shipped bug, found and fixed here, not
-  // assumed correct just because a single press worked in existing
-  // tests -- confirmed directly with a real, repeated-press
-  // reproduction before writing this fix, not reasoned about in the
-  // abstract: this used to read `setCollapsedPersisted(!collapsed)`,
-  // computing the next value from `collapsed` captured in this
-  // render's own closure. That closure can be genuinely stale for two
-  // real, independent reasons -- either is enough on its own: (1) the
-  // keydown listener below is registered via a useEffect with an
-  // EMPTY dependency array, so it only ever closes over the
-  // toggleCollapsed from the very first render, forever, and (2) even
-  // ignoring that, two rapid, back-to-back calls within the same
-  // React batch both read the SAME pre-update `collapsed` value,
-  // since neither call has actually re-rendered yet when the second
-  // one fires. Confirmed directly, with real fireEvent presses, not
-  // hypothetically: three separate, discrete Cmd+B presses in a real
-  // test produced true -> false -> false -> false (should alternate
-  // true/false/true/false) -- the shortcut only ever worked once, then
-  // got permanently stuck, silently, since mount.
-  //
-  // Fixed with React's own functional updater form of setState, which
-  // is specifically designed to guarantee the true, latest queued
-  // state regardless of which render's closure a given call happens
-  // to have been made from -- this is what actually, robustly fixes
-  // the bug, not a change to the keydown effect's own dependency array
-  // (which would only address cause (1) above, not (2); this fixes
-  // both at the true source). localStorage's own write happens inside
-  // this same updater, deliberately -- it needs the real, resolved
-  // next value, which only exists inside the updater itself, not in
-  // this function's own outer scope. React 18 Strict Mode invokes
-  // updater functions twice in development specifically to surface
-  // impurities; persistCollapsedChoice() writing the same, idempotent
-  // value twice is harmless (identical end state), not a correctness
-  // bug -- this is the same accepted pattern widely-used localStorage-
-  // backed toggle hooks already rely on.
-  function toggleCollapsed() {
-    setCollapsed((prevCollapsed) => {
-      const next = !prevCollapsed
-      persistCollapsedChoice(next)
-      return next
-    })
-  }
-
-  // Forces the sidebar CLOSED specifically when a live resize crosses
-  // INTO mobile, deliberately -- a real, genuine UX gap this file's
-  // own live testing surfaced directly, not something caught in
-  // advance: without this, resizing a desktop session (open by
-  // default) down into mobile width carried that same "open" state
-  // straight into what was then a real Drawer, which meant its own
-  // real backdrop appeared and dimmed the whole screen from nothing
-  // more than a resize -- no deliberate tap from the person at all.
-  // The Drawer is gone, but this effect is not obsolete with it: an
-  // expanded sidebar still OVERLAYS the content below the breakpoint,
-  // now by media query, so the same resize still covers the screen
-  // without anyone asking it to. That's a
-  // genuinely different, lesser-consent action than actually choosing
-  // to open the sidebar, and it broke the same "closed by default,
-  // deliberately opened" pattern already governing both the initial
-  // mobile default (resolveCollapsedFromStorageOrViewport()) and the
-  // auto-close-on-navigate effect below. Fixed to match those, not
-  // left as its own, inconsistent third rule.
-  //
-  // setCollapsed, NOT setCollapsedPersisted -- deliberately does not
-  // write to localStorage. This is a real, viewport-driven default,
-  // not a deliberate choice the person actually made; persisting it
-  // would silently overwrite a real, separate desktop preference the
-  // next time this same browser loads at a normal width, for a resize
-  // that may have had nothing to do with any real intent about the
-  // sidebar at all.
-  //
-  // On the REVERSE transition (mobile back to desktop), restores the
-  // real, persisted desktop preference from storage -- a real,
-  // deliberate REVISION of this file's own earlier, explicit decision
-  // to leave collapsed exactly as it was on this exact transition,
-  // made directly in response to real, live testing, not an oversight
-  // corrected quietly: resizing down (auto-closing the sidebar above,
-  // correctly, silently) and then immediately back up left the
-  // sidebar hidden until a manual tap, even though the person never
-  // took any action of their own to close it in the first place --
-  // confirmed, directly, to read as genuinely surprising, not merely
-  // "a second, equally valid default." Restoring here is the one place
-  // in this whole file resolveCollapsedFromStorageOrViewport() gets
-  // called a SECOND time, well after mount -- deliberately reusing the
-  // exact same "read the persisted choice; fall back to a live
-  // viewport check" logic the initial mount already relies on, not a
-  // separate, duplicated rule: the force-close two paragraphs up
-  // deliberately never touches storage, precisely so the real,
-  // original desktop preference is still sitting there, untouched,
-  // whenever this moment comes to restore it.
-  //
-  // Reacts to a genuine TRANSITION either direction, not merely
-  // "isMobile is currently X" -- wasMobileRef holds the previous
-  // render's own isMobile value, read (and then updated) inside the
-  // effect itself. On the very first render, the ref's own
-  // initializer captures whatever isMobile already was at that exact
-  // moment, so the very first effect run always computes
-  // wasMobile === isMobile -- meaning NEITHER branch below can ever
-  // fire on mount, regardless of whether isMobile starts true or
-  // false. That's deliberate, not incidental: the initial mount-time
-  // state is resolveCollapsedFromStorageOrViewport()'s own, separate,
-  // already-correct responsibility; this effect must only ever react
-  // to a REAL, later change, the same real distinction the auto-
-  // close-on-navigate effect below also has to make, just via a
-  // different mechanism (that one guards the first run explicitly,
-  // this one derives it from comparing against a genuine previous
-  // value instead).
-  const wasMobileRef = useRef(isMobile)
-  useEffect(() => {
-    const wasMobile = wasMobileRef.current
-    wasMobileRef.current = isMobile
-    if (isMobile && !wasMobile) {
-      setCollapsed(true)
-    } else if (!isMobile && wasMobile) {
-      setCollapsed(resolveCollapsedFromStorageOrViewport())
-    }
-  }, [isMobile])
-
-  // Auto-closes the expanded mobile sidebar on navigation -- a real,
-  // genuine UX gap CONFIRMED to already exist even before this file
-  // touched the then-Drawer at all (live-verified against the CSS-only
-  // mobile overlay that predated it: tapping a nav link left the
-  // sidebar open, still covering the newly-navigated screen, requiring
-  // a separate, manual tap to dismiss) -- fixing this here, not just
-  // matching what was already there. The overlay is a media query
-  // again now rather than a Drawer, which changes nothing about why
-  // this effect exists: it is the covering, not the component, that
-  // made navigation feel stuck.
-  //
-  // Depends on [location.pathname] ONLY, deliberately -- reads the
-  // latest isMobile/collapsed via a ref, not as effect dependencies.
-  // Including collapsed itself as a dependency would be a genuine bug,
-  // not just unnecessary: EXPANDING the sidebar changes collapsed,
-  // which would immediately re-run this exact effect and re-close it
-  // before it could ever be seen open at all. This must react ONLY to
-  // a real path change, reading whatever isMobile/collapsed happen to
-  // be at
-  // that moment -- not re-run every time either of them changes for
-  // some unrelated reason.
-  //
-  // isFirstRunRef guards against a second, real, CONFIRMED bug, not a
-  // precaution taken on principle -- an effect keyed on
-  // [location.pathname] still runs once on the very first mount, not
-  // only on a genuine, later navigation. Without this guard, a stored
-  // "false" (explicitly OPEN) preference on a narrow viewport was
-  // immediately, incorrectly collapsed again the instant the page
-  // loaded -- caught directly by this file's own "a stored false
-  // preference overrides matchMedia" test, which failed with exactly
-  // that symptom before this guard existed, not reasoned about
-  // in the abstract.
-  const isFirstRunRef = useRef(true)
-  const latestStateRef = useRef({ isMobile, collapsed })
-  latestStateRef.current = { isMobile, collapsed }
-  useEffect(() => {
-    if (isFirstRunRef.current) {
-      isFirstRunRef.current = false
-      return
-    }
-    const { isMobile: currentlyMobile, collapsed: currentlyCollapsed } = latestStateRef.current
-    if (currentlyMobile && !currentlyCollapsed) {
-      setCollapsedPersisted(true)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname])
-
-  // Cmd/Ctrl+B toggles the sidebar from anywhere -- see this file's
-  // own header comment for why this specific combination, not the
-  // real reference's own Cmd/Ctrl+O. No guard against an input/
-  // textarea currently having focus: every real browser and OS
-  // already treats Cmd/Ctrl+<letter> as an application-level
-  // shortcut, never literal text input, regardless of focus --
-  // requiring the modifier key is what makes this safe.
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'b') {
-        event.preventDefault()
-        toggleCollapsed()
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
-
-  // Menu/MenuItem, not NavLink -- Blueprint's own real vocabulary for
-  // exactly this ("side navigation" isn't a distinct Blueprint
-  // component; a vertically-stacked Menu inside your own layout
-  // container IS the real, confirmed pattern -- Navbar has been a
-  // real, open Blueprint feature request for vertical orientation
-  // since 2016, never implemented). MenuItem has no router-aware
-  // "render as" mechanism of its own (confirmed directly, not
-  // assumed), so this uses the same real, standard pattern any
-  // non-router-aware link-like component needs (confirmed against a
-  // real, working MUI example doing the same integration): a real
-  // href for genuine semantics (right-click "open in new tab" etc.
-  // still works correctly), but the actual click is intercepted --
-  // preventDefault() stops MenuItem's own plain <a> from doing a full
-  // page reload, and react-router-dom's own navigate() does the real,
-  // client-side transition instead. active is computed by hand from
-  // useLocation(), since MenuItem has no idea routing exists at all.
-  /**
-   * Nav items carry an icon ALWAYS and a label that the rail hides
-   * visually rather than removing.
-   *
-   * NO aria-label, deliberately. The label is hidden with clip-path
-   * rather than display:none, so it stays in the accessibility tree
-   * and IS the accessible name -- a redundant aria-label would
-   * override real text and could drift from it. A control confirmed
-   * this: removing the attribute changed nothing, because it was
-   * never what provided the name.
-   *
-   * That is the whole reason for clip-path over display:none.
-   * Icon-only navigation is documented as the highest-failure sidebar
-   * pattern precisely because teams remove the accessible name along
-   * with the visible one -- "a link whose only content is an SVG
-   * announces as nothing useful". A tooltip covers the sighted user;
-   * the surviving text covers everyone else.
-   */
-  /**
-   * GROUPED, NOT LISTED. Apps arrive from the server already ordered by
-   * subject; this walks them in order and emits a heading whenever the
-   * subject changes, so the grouping needs no second pass and cannot
-   * disagree with the order.
-   *
-   * An app with no subject gets no heading, which is what an older
-   * server produces -- the rail degrades to the flat list it was.
-   */
-  let lastSubject: string | undefined
-  const navItems = visibleApps.flatMap((app) => {
-    const heading =
-      app.subject && app.subject !== lastSubject ? (
-        <li className="app__nav-subject" key={`subject-${app.subject}`} role="presentation">
-          {app.subject}
-        </li>
-      ) : null
-    lastSubject = app.subject
-    return [heading, renderNavItem(app)].filter(Boolean)
-  })
-
-  function renderNavItem(app: VisibleApp) {
-    return (
-      <MenuItem
-        key={app.path}
-        icon={iconForApp(app.path)}
-        text={<span className="app__nav-label">{app.name}</span>}
-        href={app.path}
-        active={location.pathname === app.path}
-        aria-current={location.pathname === app.path ? 'page' : undefined}
-        /**
-         * A NATIVE title, not a Blueprint <Tooltip> wrapper.
-         *
-         * Wrapping each MenuItem in a Tooltip put a popover target
-         * between the <ul> and its <li> children, which broke the list
-         * layout: all three items rendered at the same y, stacked on top
-         * of each other, so the rail appeared to contain one app.
-         *
-         * Confirmed from the live DOM -- every item reported top: 44 --
-         * after three rounds of guessing at CSS. jsdom never showed it
-         * because the tests render the EXPANDED state, where the wrapper
-         * is absent.
-         *
-         * title works in every browser, needs no wrapper, and the
-         * accessible name still comes from the label text that
-         * clip-path keeps in the tree.
-         */
-        title={collapsed ? app.name : undefined}
-        onClick={(event) => {
-          event.preventDefault()
-          navigate(app.path)
-        }}
-      />
-    )
-  }
-
-  /**
-   * The rail holds SUB-APP NAVIGATION and nothing else.
-   *
-   * Product name, theme and the user menu moved up into the global
-   * header. That is the documented division: a global header is
-   * "a mandatory element in every application", carrying "product
-   * name/logo, search bar, and global actions -- help, notifications,
-   * settings, user profile", while the rail carries only the
-   * top-level sections.
-   *
-   * It also fixes the ragged heights: with the header above
-   * everything, the rail and both sub-app panes start at the same y
-   * and run to the bottom together.
-   */
-  /**
-   * The collapse toggle lives INSIDE the rail, above the icons.
-   *
-   * It used to sit in the content area beside the sidebar, because a
-   * collapsed sidebar had width 0 and nothing inside it was reachable
-   * -- so the one control that could bring it back had to live
-   * somewhere always present.
-   *
-   * The rail removed that constraint. It is always present, so the
-   * control that operates it belongs to it. Outside, it occupied a
-   * bordered rectangle of its own in the canvas, which wasted the
-   * width and read as unrelated to the thing it changes.
-   */
-  const collapseToggle = (
-    <button
-      type="button"
-      className="app__sidebar-toggle"
-      onClick={toggleCollapsed}
-      aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-      aria-pressed={!collapsed}
-      title={`${collapsed ? 'Expand' : 'Collapse'} sidebar (Ctrl+B or \u2318B)`}
-    >
-      <svg viewBox="0 0 20 20" width="18" height="18" fill="none" aria-hidden="true">
-        <rect x="2.5" y="3.5" width="15" height="13" rx="2" stroke="currentColor" strokeWidth="1.4" />
-        <line x1="7.5" y1="3.5" x2="7.5" y2="16.5" stroke="currentColor" strokeWidth="1.4" />
-      </svg>
-    </button>
-  )
-
-  const sidebarContent = (
-    <>
-      {collapseToggle}
-      <Menu className="app__nav">{navItems}</Menu>
-    </>
-  )
-
-  /**
-   * The global header, spanning the full width above the rail.
-   *
-   * Above rather than beside, which is what the cloud consoles do and
-   * what makes the three columns below it align. Styled as chrome,
-   * like the rail, because it is furniture rather than content.
-   */
   const inboxCounts = useInboxCounts(location.pathname + location.search)
   const waiting = totalWaiting(inboxCounts)
 
-  const header = (
-    <header className={`app__header ${Classes.DARK}`}>
-      <h1 className="app__header-title">Elysium</h1>
-      <div className="app__header-actions">
-        {/* THE INBOX, PRESENT WITHOUT PROMPTING (DEV_UI 15.3): a number
-            on every screen and nothing that pops up. Decisions and
-            unread notices together; the Inbox's tabs say which. */}
-        <Button
-          minimal
-          icon="inbox"
-          className="app__inbox"
-          aria-label={waiting > 0 ? `Inbox, ${waiting} waiting` : 'Inbox'}
-          onClick={() => navigate('/inbox')}
-        >
-          {waiting > 0 && <span className="app__inbox-count">{waiting > 99 ? '99+' : waiting}</span>}
-        </Button>
-        <Button minimal icon="help" aria-label="Help" onClick={() => setHelpOpen(true)} />
-        <Button
-          minimal
-          icon={dark ? 'flash' : 'moon'}
-          aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
-          onClick={() => chooseTheme(!dark)}
-        />
-        <UserMenu currentUser={currentUser} onLogout={onLogout} density={density} onDensity={chooseDensity} />
-      </div>
-    </header>
-  )
-
   return (
-    <div className={collapsed ? 'app-frame app-frame--sidebar-collapsed' : 'app-frame'}>
-      {header}
-      <HelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} screen={currentScreen} />
-      <CommandPalette
-        commands={commands}
-        suggest={suggest}
-        isOpen={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
-      />
-      <div className="app">
-        {/* NO Drawer branch any more, and the rail is why.
-          
-          A Drawer existed because a 240px sidebar eats a narrow
-          screen, so below 640px it hid entirely and closing it left
-          no way back to the app switcher. A 56px rail does not eat
-          anything -- it fits a phone -- so the sidebar is now always
-          present at every width, and "expanded" is the only state
-          that needs to overlay. That overlay is a media query, not a
-          component.
-          
-          This is the point of a rail over a hideable sidebar: moving
-          between sub-apps never costs a step, at any size. */}
-        {
-          // Classes.DARK on the sidebar ALWAYS, not only in dark mode:
-          // it is dark chrome in both themes, and a Blueprint widget
-          // styles itself for whatever surface it is told it sits on.
-          // Without this the theme toggle and user menu rendered
-          // dark-on-dark and were effectively invisible.
-          // NO aria-hidden. It made sense when collapsing meant width
-          // 0 -- content off screen should not be announced. A rail IS
-          // on screen, so hiding it from assistive technology makes the
-          // navigation invisible to exactly the users the visible-label
-          // work was for.
-          <aside className={`app__sidebar ${Classes.DARK}`}>{sidebarContent}</aside>
-        }
-
-        <div className="app__content">
-          <main>
-            <Suspense fallback={<LoadingState />}>
-              <Outlet />
-            </Suspense>
-          </main>
-        </div>
-      </div>
-    </div>
+    <Frame
+      nav={visibleApps.map((app) => ({ title: app.name, path: app.path, subject: app.subject }))}
+      brand="Elysium"
+      iconFor={iconForApp}
+      actions={
+        <>
+          {/* THE INBOX, PRESENT WITHOUT PROMPTING (DEV_UI 15.3): a number
+        on every screen and nothing that pops up. Decisions and
+        unread notices together; the Inbox's tabs say which. */}
+          <Button
+            minimal
+            icon="inbox"
+            className="app__inbox"
+            aria-label={waiting > 0 ? `Inbox, ${waiting} waiting` : 'Inbox'}
+            onClick={() => navigate('/inbox')}
+          >
+            {waiting > 0 && <span className="app__inbox-count">{waiting > 99 ? '99+' : waiting}</span>}
+          </Button>
+          <Button minimal icon="help" aria-label="Help" onClick={() => setHelpOpen(true)} />
+          <Button
+            minimal
+            icon={dark ? 'flash' : 'moon'}
+            aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+            onClick={() => chooseTheme(!dark)}
+          />
+          <UserMenu currentUser={currentUser} onLogout={onLogout} density={density} onDensity={chooseDensity} />
+        </>
+      }
+      overlays={<HelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} screen={currentScreen} />}
+      commands={commands}
+      suggest={suggest}
+      onPaletteOpen={loadPaletteData}
+      fallback={<LoadingState />}
+      storageKey={SIDEBAR_COLLAPSED_STORAGE_KEY}
+    />
   )
 }
 
 // =============================================================================
-// AI-ONLY NOTES -- not user-facing. Context for a future AI session (or me,
+// AI-ONLY NOTES -- not user-facing. MOSTLY THE HISTORY OF THE FRAME, which
+// now lives in @shell/core/Frame.tsx (step 1.3); kept because the reasons
+// it records still hold there. Context for a future AI session (or me,
 // later) that lacks this conversation's history. Update this section
 // whenever something genuinely open, deferred, or rejected comes up here.
 // =============================================================================

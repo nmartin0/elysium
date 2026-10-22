@@ -7,9 +7,13 @@
     "./contract": "./src/contract.ts",
     "./registry": "./src/registry.ts",
     "./ModuleRoutes": "./src/ModuleRoutes.tsx",
-    "./moduleLoader": "./src/moduleLoader.tsx"
+    "./moduleLoader": "./src/moduleLoader.tsx",
+    "./Frame": "./src/Frame.tsx",
+    "./CommandPalette": "./src/CommandPalette.tsx",
+    "./commands": "./src/commands.ts"
   },
   "peerDependencies": {
+    "@blueprintjs/core": "^6.18.0",
     "react": "^19.2.8",
     "react-router-dom": "^7.18.3"
   }

@@ -380,7 +380,8 @@ describe('the breakpoint is one number', () => {
      * Read from both files, because a constant duplicated across a
      * stylesheet and a module is exactly the kind that drifts.
      */
-    const shell = readFileSync(path.resolve(__dirname, './Shell.tsx'), 'utf8')
+    // The frame, and its breakpoint, are the shell's since step 1.3.
+    const shell = readFileSync(path.resolve(__dirname, '../../shell/core/src/Frame.tsx'), 'utf8')
 
     // EVERY media query, not the first: there were three different
     // widths in this file, which is how they drifted apart.
@@ -501,6 +502,9 @@ function renderedClassNames(): Set<string> {
   }
   walk(path.resolve(__dirname, '..', 'packages'))
   walk(__dirname)
+  // THE FRAME RENDERS IN THE SHELL (step 1.3) and is styled here, so its
+  // markup counts as rendered: the rail, header and palette classes.
+  walk(path.resolve(__dirname, '..', '..', 'shell', 'core', 'src'))
   for (const match of readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8').matchAll(attribute)) {
     const blob = [match[1], match[2], match[3], match[4]].filter(Boolean).join(' ')
     for (const token of blob.match(/[a-zA-Z][\w-]*/g) ?? []) found.add(token)
