@@ -16,6 +16,7 @@ shell/
   build/           @shell/build: build-time tooling
     src/sharedLibraries.ts  the shared-library registry, shims and import map
     src/moduleBuild.ts      a module's bundle; building modules with the page
+    src/testPreset.ts       the test configuration every module inherits
 ```
 
 Its own npm project, with its own tests:
@@ -129,6 +130,23 @@ everything else bundled in. A deep import into a shared library
 private copy of part of something the page owns. A host adds
 `builtModules({ configs })` so that its own build builds the modules and
 its dev server rebuilds them on save.
+
+## A module's tests
+
+`@shell/build/testPreset` is the Vitest configuration a module's own
+`vitest.config.ts` spreads into its `test` options, and the host's too,
+so a fix reaches every module and the page at once:
+
+```ts
+test: { name: 'my-module', ...moduleTestConfig({ setupFiles: ['<the provider's setup>'] }) }
+```
+
+jsdom, a time zone that is not UTC (so date bugs show), threads, and
+timeouts sized for a slow machine, each with its measurement in the
+file. The host runs each module as a Vitest project of its own run.
+What a module is tested FOR -- the test host and the conformance suite
+-- is the provider's to ship, since it knows its own frame and API;
+Elysium's is `ui/packages/testing` (`@elysium/testing`).
 
 ## Shared libraries
 

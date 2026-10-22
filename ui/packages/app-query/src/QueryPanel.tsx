@@ -93,7 +93,7 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
      * CANCELLED ON UNMOUNT, which the first version was not and which
      * broke a test on a slower machine rather than on mine.
      *
-     * `setupTests.ts` throws on an act() warning from our own
+     * the test setup (`@elysium/testing/setup`) throws on an act() warning from our own
      * components -- "a state update landed after the test stopped
      * watching". QueryPanel's existing tests are synchronous: they
      * render, assert on the markup, and finish. This fetch then

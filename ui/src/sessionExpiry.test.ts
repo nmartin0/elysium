@@ -1,7 +1,7 @@
 // @vitest-environment node
 //
 // NO DOM IS TOUCHED HERE, so this file does not pay for one.
-// See src/setupTests.ts for the measurement.
+// See packages/testing/src/setup.ts for the measurement.
 /**
  * Every component that can be told the session expired must actually
  * tell someone.
@@ -62,6 +62,10 @@ const HANDLED_ANOTHER_WAY: Record<string, string> = {
     'query() again, as in QueryPanel: a raw Response, read as response.status === 401 directly. Its one catch is a network failure, which has no status to read.',
   'packages/app-schema/src/SchemaPanel.tsx':
     'One .catch(() => {}) on a cache warm-up whose result is never displayed. A failure here has no user-visible effect and the real fetch that follows reports its own.',
+  'packages/testing/src/samples.tsx':
+    "Pages built to FAIL the conformance suite, for the suite's own tests -- IgnoresSessionExpiryPage mishandles an expired session on purpose, so the `session-expired` check is shown to catch it.",
+  'packages/testing/src/conformance.tsx':
+    'Handles nothing: it is the check that a page calls onSessionExpired, and names it only to assert on it.',
 }
 
 describe('an expired session is recognised by status', () => {

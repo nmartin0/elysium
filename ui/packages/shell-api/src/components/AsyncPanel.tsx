@@ -63,7 +63,7 @@ export default function AsyncPanel<T>({ error, data, children }: AsyncPanelProps
    * A FIRST ATTEMPT DID THIS IN JAVASCRIPT and it was wrong. A hook
    * holding `setTimeout` for a reveal delay and a minimum visible time
    * lands a state update after a test has stopped watching, which
-   * setupTests.ts turns into a thrown act() warning -- three of them,
+   * the test setup (@elysium/testing/setup) turns into a thrown act() warning -- three of them,
    * in a race-condition test that deliberately leaves promises
    * unresolved across `waitFor`. Pushing timer-flushing into every
    * panel test to pay for a spinner is the wrong trade.
@@ -76,7 +76,17 @@ export default function AsyncPanel<T>({ error, data, children }: AsyncPanelProps
    * two-frame flash, which is worse", handled by never reaching full
    * opacity rather than by holding it on screen.
    */
-  if (error !== null) return <Callout intent="danger">{error}</Callout>
+  // ANNOUNCED, as ErrorState's is: role="alert", so a screen reader says
+  // the screen failed instead of leaving its user waiting on a spinner
+  // that is gone. Missing until the conformance suite's `error` check
+  // (@elysium/testing) ran on a page built from this panel, and every
+  // panel using it -- ten, across five sub-apps -- inherited the gap.
+  if (error !== null)
+    return (
+      <Callout intent="danger" role="alert">
+        {error}
+      </Callout>
+    )
   if (data === null || data === undefined) {
     return <LoadingState />
   }

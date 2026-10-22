@@ -38,6 +38,7 @@
     "react-router-dom": "^7.18.3"
   },
   "devDependencies": {
+    "@elysium/testing": "*",
     "@playwright/test": "^1.62.1",
     "@shell/build": "file:../shell/build",
     "@testing-library/dom": "^10.4.1",

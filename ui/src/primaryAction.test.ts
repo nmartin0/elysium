@@ -1,7 +1,7 @@
 // @vitest-environment node
 //
 // NO DOM IS TOUCHED HERE, so this file does not pay for one.
-// See src/setupTests.ts for the measurement.
+// See packages/testing/src/setup.ts for the measurement.
 import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'

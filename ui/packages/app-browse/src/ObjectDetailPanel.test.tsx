@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route, Link } from 'react-router-dom'
 
 // Partial mock via importOriginal, not a hand-duplicated module shape
@@ -397,16 +397,23 @@ describe('ObjectDetailPanel -- the real race-condition guard across navigation',
     fireEvent.click(screen.getByRole('link', { name: 'navigate away' }))
     await waitFor(() => expect(mockedGetObjectDetail).toHaveBeenCalledTimes(2))
 
-    // The SECOND object's response arrives first (faster).
-    resolveSecond!({ fields: { name: 'Second Object' } })
+    // The SECOND object's response arrives first (faster). Resolved
+    // INSIDE act, as is the late one below: resolved outside it, the
+    // update landed while nothing was watching, which the setup file
+    // turns into a thrown act() warning -- intermittently, by timing,
+    // and on most runs of this file alone (found 22 October, when the
+    // test kit moved and the suite was run file by file).
+    await act(async () => resolveSecond!({ fields: { name: 'Second Object' } }))
     await waitFor(() =>
       expect(screen.getByText('Second Object', { selector: '.object-detail__title' })).toBeInTheDocument(),
     )
 
     // The FIRST object's response finally arrives, late -- must be
     // silently discarded, never shown over the second object's data.
-    resolveFirst!({ fields: { name: 'First Object (stale)' } })
-    await new Promise((resolve) => setTimeout(resolve, 200))
+    await act(async () => {
+      resolveFirst!({ fields: { name: 'First Object (stale)' } })
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    })
 
     expect(screen.getByText('Second Object', { selector: '.object-detail__title' })).toBeInTheDocument()
     expect(screen.queryByText('First Object (stale)')).not.toBeInTheDocument()

@@ -503,7 +503,7 @@ sub-app. A template (a generator, as Backstage's `new`) only STARTS a
 package. Three inherited layers:
 
 1. A CONFIG PRESET the provider ships -- environment, the non-UTC time
-   zone, the act-warning guard now in `ui/src/setupTests.ts`, the test
+   zone, the act-warning guard (now `ui/packages/testing/src/setup.ts`), the test
    host -- which a sub-app's config extends in a few lines. Vitest's
    projects are the mechanism: options "are merged with the project's
    own options", and `setupFiles` "are concatenated, not overridden",
@@ -679,9 +679,47 @@ matters when bundles come from elsewhere -- add-on servers, step 2 --
 and is to be built then, with the map's `integrity` key (Chrome 127,
 Safari 18, Firefox 138) written by the server.
 
-**Blocked on:** nothing; part C is next -- the provider's test preset,
-the test host, the first conformance checks with the deliberately broken
-sample module, and the Schema graph's tests run alone.
+**STEP 1.2, PART C BUILT (22 October): THE TEST BASELINE.** Three
+inherited layers, as agreed. THE PRESET is `@shell/build/testPreset`
+(generic: environment, the New York time zone, threads, timeouts, with
+the measurements behind each moved there from `ui/vite.config.ts`); the
+page and the Schema graph both call it, as Vitest projects of one run --
+`npx vitest run --project app-schema` runs the module alone. THE KIT is
+a new package, `@elysium/testing`: the provider's setup file (the old
+`ui/src/setupTests.ts`, moved), the TEST HOST (`renderInTestHost`, the
+shell's frame with the host values published; `stubServer`, the server
+stubbed at `fetch` so one switch makes every call hang, fail or find the
+session expired) and the CONFORMANCE SUITE, `describeModule({ folder,
+activate })`: manifest, renders, loading, error, session-expired,
+unmount (no interval or listener left running) and layered-css, on every
+declared page. Overrides are `module.conformance.json`, levels todo /
+off / replaced with a reason, the narrowest winning; a todo that passes
+FAILS, so the list only shrinks; a replacement must name a test that
+exists. Each check is shown to fail a sample page built to fail it.
+`python -m scripts.conformance_report` lists every exception, and a
+Python test refuses a bundled module with no conformance test.
+
+THE SCHEMA GRAPH ADOPTED IT with two exceptions: `loading` replaced by
+its own spinner test (its schema is the host's to load), and `error` as
+todo -- its own reads (who can see each type, the descriptions) fail
+silently and the graph never says something is missing.
+
+FOUND BY THE SUITE ON ITS FIRST RUN, AND FIXED: the kit's `AsyncPanel`
+showed a failure WITHOUT `role="alert"`, so ten panels across five
+sub-apps never announced one. And a test that failed intermittently
+(ObjectDetailPanel's slow-response race) resolved its promises outside
+`act`; it failed on most runs of the file alone.
+
+NOT YET BUILT, of the agreed design: a sub-app SUPPLYING a check's
+inputs (the server is stubbed at `fetch`, which covers every sub-app
+today, so nothing needs it yet); automated accessibility checks; the
+fakes checked against the real shell (the frame calls they would fake
+arrive with step 1.3); per-sub-app browser fixtures; the add-on pytest
+plugin (step 2). The other sub-apps adopt as they become modules, in
+step 3.
+
+**Blocked on:** nothing; step 1.3 is next -- the frame into
+`@shell/core`, fixing the three violations.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

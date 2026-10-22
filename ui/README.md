@@ -57,6 +57,10 @@ ui/packages/app-notifications/
                            Notifications and the watch list.
 ui/packages/app-admin/     Users, roles, silos, mirror status, metrics
                             and read-only deployment config.
+ui/packages/testing/       The test kit every sub-app's tests use: the
+                            setup file, the test host (a page rendered
+                            in the shell's frame against a stubbed
+                            server), and the conformance suite.
 ```
 
 ## Development
@@ -111,6 +115,35 @@ Note the `--deny-warnings` on oxlint inside that script: **a bare
 `npx oxlint` exits 0 on warnings** and reports them anyway, so its
 exit code alone is not a signal. Read the count, or go through
 `npm run lint`.
+
+### What every module is held to by default
+
+A sub-app built as a MODULE (one with a `vitest.config.ts` of its own,
+today the Schema graph) runs as its own Vitest project, inheriting the
+same preset as the page (`@shell/build/testPreset`), and calls one
+line in its own tests:
+
+```ts
+describeModule({ folder: <its folder>, activate })   // @elysium/testing/conformance
+```
+
+That runs the conformance checks on every page its `module.json`
+declares: the manifest is valid and `activate` offers every page; the
+page renders; it says it is loading (`role="status"`); it announces a
+failure (`role="alert"`); an expired session hands over to sign-in; it
+leaves no interval or listener running once unmounted; its stylesheets
+keep every rule inside a layer.
+
+Exceptions live in `module.conformance.json` beside `module.json`, by
+check or `check@page`, the narrowest winning, and every one needs a
+reason: `todo` runs the check and reports a failure without failing
+(and FAILS once the check passes, so the list only shrinks), `off` does
+not run it, `replaced` names the module's own stronger test as
+`<file>::<test name>`. `python -m scripts.conformance_report` (from the repository root) lists every
+module's exceptions.
+
+The checks are tested themselves, against pages built to fail each one
+(`packages/testing/src/samples.tsx`).
 
 ## Production
 

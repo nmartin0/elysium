@@ -1,20 +1,15 @@
-/// <reference types="vitest/config" />
-// The triple-slash reference above is what makes TypeScript aware of
-// the `test` field below at all -- confirmed directly against
-// Vitest's own current, official docs, not assumed: defineConfig
-// imported from plain 'vite' itself (not 'vitest/config') only knows
-// about Vite's own real config shape on its own; this reference is
-// the documented way to extend it with Vitest's own `test` field
-// without switching the import itself. Vitest's own docs confirm the
-// OLDER `types="vitest"` variant of this same reference is what's
-// being phased out in Vitest 4, not this one -- genuinely current,
-// not a stopgap already due for replacement.
+// TypeScript knows the `test` field below from the `vitest/config` import
+// (configDefaults): importing the module brings its augmentation of
+// Vite's config with it. It used to need a triple-slash reference, which
+// oxlint refuses once a plain import does the same job.
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { builtModules } from '@shell/build/moduleBuild'
+import { moduleTestConfig } from '@shell/build/testPreset'
 import { sharedLibraries } from '@shell/build/sharedLibraries'
 import react from '@vitejs/plugin-react'
 import { defineConfig, searchForWorkspaceRoot } from 'vite'
+import { configDefaults } from 'vitest/config'
 import { SHARED_LIBRARIES, SHARED_PACKAGES } from '@elysium/shell-api/sharedLibraries'
 
 // During `npm run dev`, requests to any real API path are proxied
@@ -34,6 +29,10 @@ const PACKAGES = join(import.meta.dirname, 'packages')
 const MODULE_BUILDS = readdirSync(PACKAGES)
   .map((name) => join(PACKAGES, name, 'vite.config.ts'))
   .filter((config) => existsSync(config))
+// ...and those with tests configured by themselves: a vitest.config.ts.
+const MODULE_TESTS = readdirSync(PACKAGES)
+  .filter((name) => existsSync(join(PACKAGES, name, 'vitest.config.ts')))
+  .map((name) => `packages/${name}`)
 
 export default defineConfig({
   plugins: [
@@ -78,83 +77,28 @@ export default defineConfig({
   // across the whole workspace (root src/ AND every packages/*/src/)
   // in one run -- matches how this is still one build/one deploy, not
   // per-package test runs.
+  // THE SAME PRESET EVERY MODULE INHERITS (@shell/build/testPreset): the
+  // time zone, pool and timeouts, with the reasons for each, live there,
+  // so the page and its modules cannot drift apart. The setup file is
+  // the provider's (@elysium/testing/setup).
+  //
+  // PROJECTS, one run: the page and the sub-apps still inside it are one
+  // project; a sub-app with a vitest.config.ts of its own -- a MODULE,
+  // built and tested apart -- is its own project, configured by its own
+  // file and run alongside. `npx vitest run` still runs everything.
   test: {
-    environment: 'jsdom',
-    // A TIMEZONE THAT IS NOT UTC, deliberately.
-    //
-    // The container runs in UTC, where every timezone bug is
-    // invisible: `new Date('2026-01-01')` renders as 1 January, and a
-    // formatter that wrongly converts a date looks correct. In New
-    // York the same expression renders as 31 DECEMBER 2025 --
-    // somebody's birthday, moved a day.
-    //
-    // Two controls on formatTemporal failed to fire because of this,
-    // which is the "a control that cannot fail proves nothing"
-    // problem arriving through the environment rather than the test.
-    //
-    // New York specifically: it is behind UTC, so date slippage shows
-    // up, and it observes daylight saving, so a fixed-offset mistake
-    // shows up too.
-    env: { TZ: 'America/New_York' },
-    globals: true,
-    setupFiles: './src/setupTests.ts',
-    /**
-     * THREADS, NOT FORKS, measured rather than assumed: 208s against
-     * 215s on the same tree and machine, with the environment phase
-     * falling from 62s to 58s. A thread shares the process, so the
-     * per-file cost of standing up a jsdom is lower than forking for
-     * it.
-     *
-     * WHAT WAS TRIED AND REJECTED, so nobody spends the afternoon again:
-     *
-     *   isolate: false   TIMED OUT past 285s. In principle it reuses
-     *                    one environment across a worker's files; in
-     *                    practice this suite does not survive it, and
-     *                    the tests that lean on a clean DOM are the
-     *                    reason the isolation is there.
-     *
-     *   deps.optimizer   Failed to start. Pre-bundling Blueprint ought
-     *                    to help the 51s import phase, which is the
-     *                    single largest cost after the environments.
-     *                    Worth revisiting; it is not a config line.
-     *
-     * THE HONEST NUMBER IS ABOUT 6%. The suite is 85 files, 60 of which
-     * genuinely need a DOM, and standing those up is most of the run.
-     * No flag changes that -- only having fewer files that need one
-     * would, which is a design question rather than a config one.
-     */
-    pool: 'threads',
-    // TIMEOUTS SIZED FOR THE SLOWEST MACHINE THAT RUNS THIS, not the
-    // fastest, and these numbers come from measurement rather than
-    // taste.
-    //
-    // The owner's full run took 1,942 SECONDS where mine takes about
-    // 280 -- a seven-fold difference on the same tree. At that speed
-    // vitest's 5,000ms default failed `Shell.test.tsx`, which is a
-    // SYNCHRONOUS test: `renderShell()` then three `getByRole` calls,
-    // no await anywhere. A synchronous test can only exceed five
-    // seconds if the render itself did, which is a statement about the
-    // machine and not about the component. Both files passed in
-    // isolation in ten seconds.
-    //
-    // `testTimeout` is the whole-test budget; `hookTimeout` covers
-    // beforeEach, which does the same work under the same load.
-    // Testing Library's own `waitFor` default of 1,000ms is set
-    // separately in setupTests.ts, because it is RTL's knob and not
-    // vitest's -- that is what `SchemaPanel`'s debounced filter
-    // overran.
-    //
-    // RAISING A TIMEOUT HIDES A SLOW TEST, which is the objection worth
-    // answering: a test that genuinely hangs now takes 30 seconds to
-    // say so instead of 5. That is the price of a suite that does not
-    // fail differently on different machines, and a hang is still a
-    // hang. What this must NOT become is the first move whenever
-    // something goes red -- `roadmapClaims` earned its 20 seconds by
-    // measurement too, and that one turned out to be a real cost
-    // (reading a few hundred Python files), not a flake.
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
-    include: ['src/**/*.test.{js,jsx,ts,tsx}', 'packages/*/src/**/*.test.{js,jsx,ts,tsx}'],
+    ...moduleTestConfig({ setupFiles: ['@elysium/testing/setup'] }),
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'elysium',
+          include: ['src/**/*.test.{js,jsx,ts,tsx}', 'packages/*/src/**/*.test.{js,jsx,ts,tsx}'],
+          exclude: [...configDefaults.exclude, ...MODULE_TESTS.map((folder) => `${folder}/**`)],
+        },
+      },
+      ...MODULE_TESTS,
+    ],
   },
 })
 

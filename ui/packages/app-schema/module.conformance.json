@@ -1,0 +1,13 @@
+{
+  "checks": {
+    "loading@schema": {
+      "level": "replaced",
+      "reason": "The schema this page draws is loaded by the host, which publishes it; the page shows its spinner until it arrives, and the reads it makes itself only add detail to a page already drawn.",
+      "by": "src/SchemaPanel.test.tsx::shows a spinner while the shell is still loading the schema"
+    },
+    "error@schema": {
+      "level": "todo",
+      "reason": "Who can see each type and the type descriptions are read by the page itself, and a failure of either is swallowed: the graph draws without them and never says something is missing."
+    }
+  }
+}

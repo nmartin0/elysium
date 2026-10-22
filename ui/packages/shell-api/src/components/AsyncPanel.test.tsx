@@ -11,7 +11,7 @@ describe('AsyncPanel', () => {
       </AsyncPanel>,
     )
 
-    expect(screen.getByText('it broke')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('it broke')
     expect(screen.queryByText('content')).not.toBeInTheDocument()
   })
 

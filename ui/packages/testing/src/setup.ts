@@ -1,7 +1,11 @@
-// setupTests.ts -- runs once before every test file. Adds jest-dom's
-// own matchers (toBeInTheDocument, etc.) to Vitest's expect(), the
-// standard pairing confirmed directly against current (2026) docs
-// before adopting it, not assumed from memory.
+// @elysium/testing/setup -- the PROVIDER'S setup, run once before every test
+// file of Elysium's page AND of every module (BLOCKING.md item 3: "a
+// preset the provider ships, carrying today's act-warning guard"). It
+// was ui/src/setupTests.ts, the page's alone, until modules needed to
+// test on their own. Adds jest-dom's own matchers (toBeInTheDocument,
+// etc.) to Vitest's expect(), the standard pairing confirmed directly
+// against current (2026) docs before adopting it, not assumed from
+// memory.
 import { expect } from 'vitest'
 import '@testing-library/jest-dom'
 import { configure } from '@testing-library/dom'

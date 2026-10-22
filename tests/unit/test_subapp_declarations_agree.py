@@ -171,6 +171,36 @@ def test_each_bundled_module_builds_and_activates_every_page_it_declares(folder,
     assert declared <= offered, f"{folder} declares {sorted(declared - offered)} and activate does not offer them"
 
 
+@pytest.mark.parametrize("folder,manifest", _bundled(), ids=lambda v: v if isinstance(v, str) else "")
+def test_each_bundled_module_is_held_to_the_conformance_suite(folder, manifest):
+    """A module built apart is tested apart, and held to what every
+    module is held to (@elysium/testing/conformance; BLOCKING.md item 3:
+    adoption is ERROR for a new module). Its own vitest.config.ts makes
+    it a project of the page's run (ui/vite.config.ts), and the preset
+    gives it the same environment as the page's tests; one of its tests
+    calls describeModule. Without the config its tests would run in no
+    project at all -- the page's project excludes every module folder.
+    """
+    package = ROOT / folder
+    config = package / "vitest.config.ts"
+    assert config.is_file(), f"{folder} has a bundle and no vitest.config.ts, so its tests run nowhere"
+    assert "moduleTestConfig(" in config.read_text(), f"{folder}/vitest.config.ts does not use the shared preset"
+    callers = [p for p in (package / "src").rglob("*.test.ts*") if "describeModule(" in p.read_text()]
+    assert callers, f"{folder} has no test calling describeModule, so no conformance check runs on it"
+
+
+def test_every_conformance_exception_gives_a_reason():
+    """The report (scripts/conformance_report.py) reads these as data;
+    the suite refuses a malformed one when it runs, and this refuses it
+    without running a browser environment at all."""
+    for folder, _ in _bundled():
+        path = ROOT / folder / "module.conformance.json"
+        if not path.is_file():
+            continue
+        for key, override in json.loads(path.read_text()).get("checks", {}).items():
+            assert override.get("reason", "").strip(), f"{folder}: {key} has no reason"
+
+
 def test_no_page_code_is_left_for_a_page_no_module_contributes():
     # The reverse: code kept for a page whose manifest entry was renamed
     # or removed is dead, and says the table was not kept with them.

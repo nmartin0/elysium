@@ -571,7 +571,7 @@ you find another, it is a bug in this file.
 
 ## 8. The front end
 
-Eight packages under `ui/packages/` -- seven screens and `shell-api`, 45 components, each with its own
+Nine packages under `ui/packages/` -- seven screens, `shell-api` and `testing`, 45 components, each with its own
 test file:
 
 | package | what it is |
@@ -584,6 +584,7 @@ test file:
 | `app-notifications` | triggers and what they fired on |
 | `app-query` | ask a question, read the answer and its trace |
 | `shell-api` | fetch, session, CSRF, and the design tokens |
+| `testing` | the test kit every sub-app's tests use: setup, the test host, and the conformance suite each module is held to |
 
 `npm run lint` runs oxlint, `tsc --noEmit`, oxfmt and knip. The suite
 is vitest.

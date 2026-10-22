@@ -149,7 +149,8 @@ describe('Shell -- the collapsible sidebar', () => {
   // Shell.tsx's own live matchMedia listener (addEventListener/
   // removeEventListener, added for the mobile Drawer step) needs
   // BOTH of those methods present on whatever matchMedia() returns --
-  // setupTests.js's own global default already includes them; this
+  // the test setup's own global default (packages/testing/src/
+  // setup.ts) already includes them; this
   // helper is what keeps THIS file's own per-test overrides
   // (mockReturnValue) from silently dropping them again, the same
   // real TypeError caught directly the first time this file's own
