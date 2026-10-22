@@ -9,8 +9,10 @@
 // OLDER `types="vitest"` variant of this same reference is what's
 // being phased out in Vitest 4, not this one -- genuinely current,
 // not a stopgap already due for replacement.
+import { sharedLibraries } from '@shell/build/sharedLibraries'
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig, searchForWorkspaceRoot } from 'vite'
+import { SHARED_LIBRARIES, SHARED_PACKAGES } from './src/sharedLibraries.ts'
 
 // During `npm run dev`, requests to any real API path are proxied
 // straight through to the backend -- from the BROWSER's perspective,
@@ -22,7 +24,7 @@ import { defineConfig } from 'vite'
 const API_PROXY_TARGET = process.env.VITE_API_PROXY_TARGET || 'http://localhost:8000'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), sharedLibraries({ libraries: SHARED_LIBRARIES, packages: SHARED_PACKAGES })],
   // ONE REACT. `@shell/core` (../shell, BLOCKING.md item 3) is linked
   // in by `file:`, and its own node_modules holds a React for its own
   // tests; a second copy in the bundle would give the shell's routes a
@@ -31,6 +33,14 @@ export default defineConfig({
   // the page's, fixed once (the import-map decision in item 3).
   resolve: { dedupe: ['react', 'react-dom', 'react-router-dom'] },
   server: {
+    // THE GENERIC SHELL LIVES BESIDE THIS PROJECT, in ../shell, linked in
+    // by `file:`. Vite serves nothing outside its workspace by default,
+    // so `npm run dev` answered 403 for every @shell/* file and the app
+    // never loaded -- shipped that way in the commit adding @shell/core,
+    // because a production build reads the files directly and jsdom
+    // never asks the dev server. Found by requesting the file from a
+    // running dev server (21 October).
+    fs: { allow: [searchForWorkspaceRoot(process.cwd()), '../shell'] },
     proxy: {
       // ONE entry, deliberately -- every real backend path lives
       // under /api (see api/app.py's own include_router() call, and

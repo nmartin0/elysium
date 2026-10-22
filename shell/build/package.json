@@ -1,0 +1,12 @@
+{
+  "name": "@shell/build",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./sharedLibraries": "./src/sharedLibraries.ts"
+  },
+  "peerDependencies": {
+    "vite": "^8.2.2"
+  }
+}

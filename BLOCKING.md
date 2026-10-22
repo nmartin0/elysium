@@ -623,9 +623,28 @@ OF BEHAVIOUR, on purpose: someone without `manage:users` who opens
 /admin is now sent home, because the module is not in their feed --
 before, the route existed for everyone and the panel refused inside it.
 
-**Blocked on:** nothing; the Schema graph as a separately built module
-(bundle, import map, `activate`/`deactivate`, and the first sub-app
-tested alone against the provider's test host) is next.
+**STEP 1.2, PART A BUILT (22 October): THE SHARED LIBRARIES.** Decided
+with the owner on 21 October: Elysium serves a module's bundle from the
+module's folder; development loads the built bundle too (one path); the
+shared set is the kit's own dependencies. `@shell/build` registers the
+PAGE'S OWN copies (one instance, so the kit's module-level state is one)
+and serves a shim per library through the import map
+(shell/README.md). Proved in Chromium both ways: a separately built
+module renders with the page's React, router, Blueprint and kit; the
+same module with a private React throws and renders nothing
+(ui/e2e/sharedLibraries.spec.ts). MEASURED COST: the first load went
+from 131 KB to 229 KB compressed, because Blueprint's core and the
+router are shared whole; libraries load lazily, so ECharts costs
+nothing until a module asks; `@blueprintjs/icons` is NOT shared, since
+sharing it put 1.4 MB on every first load (ui/src/sharedLibraries.ts).
+FOUND ON THE WAY: `npm run dev` could not load @shell/core at all since
+the commit adding it -- Vite answered 403 for ../shell -- now allowed and
+tested against a real dev server (ui/src/devServer.test.ts).
+
+**Blocked on:** nothing; part B is next -- the Schema graph's own bundle,
+served from its folder, `activate`/`deactivate`, integrity, and its
+stylesheet in its own cascade layer, added on load and removed on
+unload.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

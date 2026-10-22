@@ -1,3 +1,7 @@
+// FIRST, before anything else runs: the page's copies of the shared
+// libraries, registered for every module built apart from it
+// (@shell/build/sharedLibraries).
+import 'virtual:shared-registry'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { OverlaysProvider } from '@blueprintjs/core'

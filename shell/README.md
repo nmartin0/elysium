@@ -12,6 +12,8 @@ shell/
     src/contract.ts      the feed's types, and checkFeed
     src/registry.ts      a feed -> pages, rail and redirects (pure)
     src/ModuleRoutes.tsx a registry -> react-router routes
+  build/           @shell/build: build-time tooling for a host page
+    src/sharedLibraries.ts  the shared-library registry, shims and import map
 ```
 
 Its own npm project, with its own tests:
@@ -97,10 +99,45 @@ it is. `moduleRoutes(registry, resolve, home)` asks
 `resolve(moduleId, pageId)` for a component; `null` mounts "nothing
 loaded opens this page" rather than failing.
 
+## Shared libraries
+
+A module is built apart from the page, with the libraries the page
+shares left as bare imports (`import { useState } from 'react'`). The
+host's Vite config names them:
+
+```ts
+sharedLibraries({ libraries: ['react', 'react-dom/client', ...], packages: ['@shell/core', ...] })
+```
+
+and the plugin does three things:
+
+1. **The registry.** `virtual:shared-registry`, which the page imports
+   first, puts a loader for each shared library on
+   `globalThis.__shellShared`. The loaders are the page's own imports, so
+   a module gets the page's instance: one React, one router, one copy of
+   any module-level state.
+2. **The shims.** `/shared/<name>.js` per library, listing its export
+   names and awaiting the page's copy. Libraries load lazily: a part the
+   page does not use itself is fetched only when a module imports it.
+3. **The import map**, first in `<head>`, sending each bare specifier to
+   its shim. A specifier not in it cannot resolve, so a module must
+   bundle anything the page does not promise.
+
+Names are read exactly: npm packages by importing them in Node, the
+host's own TypeScript packages by parsing them (an `export *` is
+refused, since a parse cannot see through it). A host should test that
+the names match the libraries; Elysium's `ui/src/sharedLibraries.test.ts`
+does.
+
+A shared library is available whole, because a module may use any part
+of it; see Elysium's `ui/src/sharedLibraries.ts` for what that cost and
+what it shares.
+
 ## Precedents
 
 Piral's feed (name, version, link), VS Code's static `contributes` with
 lazy activation, Backstage's extension ids and route references,
 single-spa's lifecycle and import maps, and JupyterLab's prebuilt
-extensions sharing singleton packages. The research is summarised in
-BLOCKING.md item 3.
+extensions sharing singleton packages; for shared libraries, Native
+Federation, which builds an import map from each remote's metadata. The
+research is summarised in BLOCKING.md item 3.
