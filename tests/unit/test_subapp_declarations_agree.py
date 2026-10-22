@@ -209,19 +209,25 @@ def test_no_page_code_is_left_for_a_page_no_module_contributes():
     assert not orphaned, f"App.tsx has code for {sorted(orphaned)}, which no module contributes"
 
 
-def test_a_module_the_page_supplies_palette_commands_for_activates_on_the_palette():
-    """App.tsx's BUILT_IN_PALETTES names the modules whose palette hook
-    the page supplies. The shell asks for one only when the module's
-    manifest names the `onPalette` activation event -- so without it,
-    the commands would silently never appear (step 1.3b)."""
+def _built_in_code(table: str) -> set[str]:
+    """The module ids an App.tsx table of built-in module code names."""
     source = (UI / "src" / "App.tsx").read_text()
-    table = source[source.index("const BUILT_IN_PALETTES"):]
-    table = table[:table.index("\n}")]
-    supplied = set(re.findall(r"^\s+([a-z-]+):", table, re.MULTILINE))
-    assert supplied, "found no palette in BUILT_IN_PALETTES; the parse is broken"
+    body = source[source.index(f"const {table}"):]
+    body = body[:body.index("\n}")]
+    found = set(re.findall(r"^\s+([a-z-]+):", body, re.MULTILINE))
+    assert found, f"found nothing in {table}; the parse is broken"
+    return found
+
+
+@pytest.mark.parametrize("table,event", [("BUILT_IN_PALETTES", "onPalette"), ("BUILT_IN_BADGES", "onStartup")])
+def test_code_the_page_supplies_for_a_module_is_asked_for_by_its_manifest(table, event):
+    """App.tsx's tables hold the code the shell asks of modules built into
+    the page -- palette commands, rail badges. The shell asks only on the
+    activation event the module's manifest names, so code without its
+    event would silently never run (step 1.3)."""
     by_id = {m["id"]: m for m in _manifests()}
-    missing = sorted(i for i in supplied if "onPalette" not in by_id[i].get("activationEvents", []))
-    assert not missing, f"{missing} supply palette commands and do not activate on the palette"
+    missing = sorted(i for i in _built_in_code(table) if event not in by_id[i].get("activationEvents", []))
+    assert not missing, f"{missing} have code in {table} and do not name {event}"
 
 
 def test_every_rail_entry_has_an_icon():

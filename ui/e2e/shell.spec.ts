@@ -140,7 +140,8 @@ test.describe('one Inbox, three tabs (decided 14 Oct)', () => {
   test('the rail has one Inbox entry, not three', async ({ page }) => {
     const nav = page.locator('.app__nav')
 
-    await expect(nav.getByRole('menuitem', { name: 'Inbox' })).toBeVisible()
+    // ^Inbox: with something waiting its name goes on ", 3 waiting".
+    await expect(nav.getByRole('menuitem', { name: /^Inbox/ })).toBeVisible()
     await expect(nav.getByRole('menuitem', { name: 'Approvals' })).toHaveCount(0)
     await expect(nav.getByRole('menuitem', { name: 'Notifications' })).toHaveCount(0)
   })
@@ -153,9 +154,49 @@ test.describe('one Inbox, three tabs (decided 14 Oct)', () => {
     await expect(page.getByRole('tab', { name: /Notifications/ })).toHaveAttribute('aria-selected', 'true')
   })
 
-  test('the header button opens the Inbox from anywhere', async ({ page }) => {
+  // THE COUNT IS A BADGE ON THE INBOX'S RAIL ENTRY (step 1.3c; the owner
+  // chose the rail as its only place). The counts are stubbed so the
+  // badge is certain to be there, and what is checked is what jsdom
+  // cannot see: that it is drawn, on top, inside the rail -- open and
+  // collapsed, where the rail clips whatever overflows it.
+  test('how much is waiting is on the rail, on any screen, and is not clipped', async ({ page }) => {
+    await page.route('**/api/me/inbox', (route) =>
+      route.fulfill({ json: { approvals: 3, notifications: 0, identity: 0 } }),
+    )
     await page.goto('/browse')
-    await page.getByRole('button', { name: /^Inbox/ }).click()
+    const inbox = page.locator('.app__nav').getByRole('menuitem', { name: 'Inbox, 3 waiting' })
+    const badge = inbox.locator('.app__nav-badge')
+    await expect(badge).toHaveText('3')
+
+    for (const state of ['open', 'collapsed']) {
+      if (state === 'collapsed') {
+        await page.keyboard.press('Control+b')
+        await expect(page.locator('.app-frame--sidebar-collapsed')).toHaveCount(1)
+      }
+      await expect(badge, `badge visible with the rail ${state}`).toBeVisible()
+      // Nothing covers it, and the rail does not clip it: the point at
+      // its centre hit-tests to the badge itself.
+      const onTop = await badge.evaluate((node) => {
+        const box = node.getBoundingClientRect()
+        const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+        return hit === node || node.contains(hit)
+      })
+      expect(onTop, `badge on top with the rail ${state}`).toBe(true)
+      const rail = await page.locator('.app__sidebar').boundingBox()
+      const box = await badge.boundingBox()
+      expect(box!.x + box!.width, `badge inside the rail when ${state}`).toBeLessThanOrEqual(rail!.x + rail!.width)
+      expect(box!.y, `badge inside the rail when ${state}`).toBeGreaterThanOrEqual(rail!.y)
+    }
+  })
+
+  test('the header holds no Inbox, and the rail entry opens it', async ({ page }) => {
+    await page.goto('/browse')
+    await expect(page.locator('header').getByRole('button', { name: /Inbox/ })).toHaveCount(0)
+
+    await page
+      .locator('.app__nav')
+      .getByRole('menuitem', { name: /^Inbox/ })
+      .click()
 
     await expect(page).toHaveURL(/\/inbox$/)
   })

@@ -1192,6 +1192,33 @@
     white-space: nowrap;
   }
 
+  /* A BADGE ON A RAIL ENTRY (@shell/core/badges, step 1.3c): how much is
+   * waiting -- today the Inbox's, which was a number in the header until
+   * the owner made the rail its only place (21 October). ON THE ICON's
+   * corner, so a collapsed rail, which hides the labels, still shows it.
+   * The accent, not the danger red -- a queue is work, not an alarm.
+   * The frame announces it in words, in the entry's name; the number
+   * itself is aria-hidden. */
+  .app__nav-icon {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .app__nav-badge {
+    position: absolute;
+    inset-block-start: -6px;
+    inset-inline-start: 6px;
+    min-width: 16px;
+    padding: 0 var(--space-hair);
+    border-radius: var(--radius-pill);
+    background: var(--accent-focus);
+    color: var(--surface-chrome);
+    font-size: var(--type-label-size);
+    line-height: 16px;
+    font-weight: var(--type-label-weight);
+    text-align: center;
+  }
+
   /* Below the three-column minimum an expanded sidebar OVERLAYS rather
  * than pushing, because pushing would leave the content unusable.
  * This is the "Auto" mode a mainstream enterprise component library
@@ -3903,21 +3930,6 @@
     .table-skeleton__cell {
       animation: none;
     }
-  }
-
-  /* THE INBOX BADGE: the number of things waiting, in the header on
-   * every screen (DEV_UI 15.3). The accent, not the danger red -- a
-   * queue is work, not an alarm. */
-  .app__inbox-count {
-    min-width: 18px;
-    padding: 0 var(--space-hair);
-    border-radius: var(--radius-pill);
-    background: var(--accent-focus);
-    color: var(--surface-chrome);
-    font-size: var(--type-label-size);
-    line-height: 18px;
-    font-weight: var(--type-label-weight);
-    text-align: center;
   }
 
   /* The Inbox's tabs sit at the top of the page, the panel under them. */

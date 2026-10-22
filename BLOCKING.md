@@ -757,7 +757,41 @@ Browse's routes, and the shell is no longer handed the schema -- Browse
 reads it from the host values like any module. A Python test refuses a
 module whose palette the page supplies without `onPalette`.
 
-**Blocked on:** nothing; step 1.3c is next.
+**STEP 1.3c BUILT (21 October): THE INBOX'S COUNT IS ITS RAIL BADGE.**
+A second activation event, `onStartup`, activates a module as soon as
+the frame is drawn; its code may return `useBadges()`, badges keyed by
+the paths of ITS OWN rail entries (a badge for another module's entry is
+ignored), each a count and words for a screen reader. The frame draws it
+on the entry's icon, so a collapsed rail shows it, announces it after
+the name ("Inbox, 3 waiting"), shows nothing for zero and "99+" above
+99. The header's Inbox button is gone (the owner's decision); the
+Inbox's manifest names onStartup and `ui/src/inbox/badges.ts` supplies
+the count. VIOLATION (b) IS GONE, AND WITH IT ALL THREE: `Shell.tsx`
+holds nothing of any sub-app.
+
+ONE WAY IN FOR BOTH: the host passes the frame the feed and an
+`activate(module)` (`@shell/core/activation`) -- its bundle's
+activation, or the host's own code for a module built into the page --
+and the shell decides when, by the events the manifest names, and reads
+`usePalette` or `useBadges`. This replaced 1.3b's palette-only prop
+before it shipped. Checked in Chromium: the badge is drawn, on top and
+inside the rail, open and collapsed.
+
+FOUND BY THAT BROWSER TEST, AND FIXED BEFORE SHIPPING: the count's words,
+first put in a visually hidden span, made Chrome name the entry
+"Inbox , 3 waiting" -- it computes an absolutely positioned element as a
+block of its own -- where jsdom gave "Inbox, 3 waiting". The entry now
+takes an aria-label built from its own title when it has a badge.
+
+AND IN THE PYTHON SUITE, which 1.3b's commit had not fully run: the API
+test freezing the feed's key set did not know `activationEvents`; fixed
+in that commit. A full run made while the browser tests and a build ran
+beside it failed 67 tests and errored 208; rerun alone, 248 of the 249
+it selected passed, the 249th being that key-set test -- load, not code.
+The Python suite is best not run beside other work.
+
+**Blocked on:** nothing; step 1.4 is next -- the shell's system sub-app,
+the module manager and safe mode.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

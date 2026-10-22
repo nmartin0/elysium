@@ -75,7 +75,7 @@ _MANIFEST_KEYS = frozenset({"id", "name", "version", "permission", "contributes"
 #: ACTIVATION_EVENTS). REFUSED HERE when unknown, unlike in the shell: a
 #: misspelt event in a module.json is a mistake to say at load, while a
 #: shell meeting a newer backend's event ignores it.
-_ACTIVATION_EVENTS = frozenset({"onPalette"})
+_ACTIVATION_EVENTS = frozenset({"onPalette", "onStartup"})
 _CONTRIBUTION_KEYS = frozenset({"pages", "nav", "redirects"})
 
 

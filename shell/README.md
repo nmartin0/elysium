@@ -15,7 +15,9 @@ shell/
     src/moduleLoader.tsx a module's bundle, stylesheets and lifecycle
     src/Frame.tsx        the frame: rail, header and command palette
     src/CommandPalette.tsx, src/commands.ts  the palette and its matching
-    src/palette.tsx      modules' palette commands, loaded on opening
+    src/activation.ts    activating modules on their manifests' events
+    src/palette.tsx      modules' palette commands
+    src/badges.tsx       badges on modules' rail entries
   build/           @shell/build: build-time tooling
     src/sharedLibraries.ts  the shared-library registry, shims and import map
     src/moduleBuild.ts      a module's bundle; building modules with the page
@@ -50,32 +52,43 @@ react-router layout route; pages mount in its outlet.
   iconFor={(path) => icon}      // each rail entry's icon
   commands={{ before, after }}  // the host's commands, around navigation
   suggest={(query) => [...]}    // commands made from what was typed
-  palettes={{ modules, resolve }} // modules whose code adds commands
+  modules={{ feed, activate }}  // modules whose code adds commands, badges
   onPaletteOpen={load}          // told on each opening
   fallback={<Spinner />}        // while a page's code loads
   storageKey="product.rail"     // where the collapsed state is remembered
 />
 ```
 
-MODULES ADD TO THE PALETTE FROM THEIR CODE. Pass
-`palettes={{ modules: feed.modules, resolve }}`, where `resolve(module)`
-returns the module's palette hook -- from its bundle's activation
-(`activate()` returning `usePalette`), or the host's own code for a
-module built into the page -- or a promise of it. The frame asks only
-for modules naming `onPalette`, the first time the palette opens, and
-mounts each hook in a component of its own:
+MODULES ADD TO THE FRAME FROM THEIR CODE: palette commands, and badges
+on their own rail entries. Pass `modules={{ feed: feed.modules, activate }}`,
+where `activate(module)` returns the module's code (or a promise of it)
+-- its bundle's activation, or the host's own code for a module built
+into the page. The frame activates each module on the events its
+manifest names (`@shell/core/activation`):
+
+- `onPalette`, the first time the palette opens: the frame reads
+  `usePalette`;
+- `onStartup`, as soon as the frame is drawn: it reads `useBadges`.
+
+Each is a React hook, mounted in a component of its own:
 
 ```ts
 export function usePalette({ open }: { open: boolean }): PaletteContribution {
   // hooks as usual: where the person is, data fetched when `open`...
   return { before: [...], after: [...], suggest: (query) => [...] }
 }
+export function useBadges(): Record<string, Badge | undefined> {
+  return { '/inbox': { count: 3, label: '3 waiting' } }   // its own entries only
+}
 ```
 
-`before` lists sit ahead of the frame's navigation commands, `after`
-behind them, each in feed order; suggestions follow every match. A
-module whose code fails to load adds nothing, and is asked again at the
-next opening; one the feed stops offering drops out.
+Palette `before` lists sit ahead of the frame's navigation commands,
+`after` behind them, each in feed order; suggestions follow every match.
+A badge shows on the entry's icon (so a collapsed rail shows it too),
+is announced after the entry's name, draws nothing for zero and "99+"
+above 99; a badge for another module's entry is ignored. A module whose
+code fails to activate adds nothing and is asked again the next time
+its event comes round; one the feed stops offering drops out.
 
 What the frame does itself: groups the rail by subject; collapses it
 (the toggle, Ctrl/Cmd+B, remembered per browser; closed below 1100px
@@ -87,7 +100,8 @@ STYLED BY THE HOST, for now. It draws Blueprint widgets (a peer
 dependency) inside stable class names -- `app-frame`,
 `app-frame--sidebar-collapsed`, `app__header`, `app__header-title`,
 `app__header-actions`, `app__sidebar`, `app__sidebar-toggle`,
-`app__nav`, `app__nav-subject`, `app__nav-label`, `app__content`,
+`app__nav`, `app__nav-subject`, `app__nav-label`, `app__nav-icon`,
+`app__nav-badge`, `app__content`,
 `command-palette*` -- which the host's stylesheet draws. A baseline look
 every sub-app inherits is a later step.
 
@@ -149,7 +163,9 @@ is absent, never sent and hidden.
 - `activationEvents` -- optional: when the module's code runs besides
   one of its pages opening, VS Code's activation events. `onPalette`:
   when the command palette first opens, so the commands its code
-  supplies are listed before any of its pages has been visited. A
+  supplies are listed before any of its pages has been visited.
+  `onStartup`: as soon as the frame is drawn, for a badge on its rail
+  entry. A
   shell ignores an event it does not know (a newer backend's), and the
   module still loads with its pages; Elysium refuses an unknown one in a
   `module.json` at load, since there it is a typo.

@@ -8,7 +8,8 @@ import type { VisibleSchema } from '@elysium/shell-api/types'
 import { getVisibleActionTypesCached } from '@elysium/shell-api/api'
 import { publishHostValues, resetHostValues } from '@elysium/shell-api/host'
 import { useBrowsePalette } from '@elysium/app-browse/palette'
-import type { ModulePalettes } from '@shell/core/palette'
+import type { FrameModules } from '@shell/core/activation'
+import { useInboxBadges } from './inbox/badges'
 
 /** Where the router is, for commands that navigate into Browse. */
 function BrowseProbe() {
@@ -37,17 +38,33 @@ async function openPalette(
 }
 
 /**
- * THE PALETTES AS APP.TSX GIVES THEM (step 1.3b): Browse's hook when the
- * feed offers Browse, which is what puts its commands in the palette. The
- * schema they need is what the host publishes, not a prop of the shell.
+ * THE MODULES AS APP.TSX GIVES THEM (step 1.3): Browse's palette hook,
+ * activated when the palette opens, and the Inbox's badge, activated at
+ * startup -- each only when the rail offers that sub-app, as the feed
+ * would. What Browse needs of the schema is what the host publishes, not
+ * a prop of the shell.
  */
-function palettesFor(visibleApps: VisibleApp[]): ModulePalettes | undefined {
-  if (!visibleApps.some((app) => app.path === '/browse')) return undefined
+function modulesFor(visibleApps: VisibleApp[]): FrameModules {
+  const offered = (path: string) => visibleApps.some((app) => app.path === path)
+  const entry = (id: string, path: string, events: string[]) => ({
+    id,
+    name: id,
+    version: '1',
+    contributes: { nav: [{ title: id, path }] },
+    entry: null,
+    activationEvents: events,
+  })
   return {
-    modules: [
-      { id: 'browse', name: 'Browse', version: '1', contributes: {}, entry: null, activationEvents: ['onPalette'] },
+    feed: [
+      ...(offered('/browse') ? [entry('browse', '/browse', ['onPalette'])] : []),
+      ...(offered('/inbox') ? [entry('inbox', '/inbox', ['onStartup'])] : []),
     ],
-    resolve: () => useBrowsePalette,
+    activate: (module) =>
+      module.id === 'browse'
+        ? { usePalette: useBrowsePalette }
+        : module.id === 'inbox'
+          ? { useBadges: useInboxBadges }
+          : undefined,
   }
 }
 
@@ -68,7 +85,7 @@ function renderShell(
           element={
             <Shell
               visibleApps={visibleApps}
-              palettes={palettesFor(visibleApps)}
+              modules={modulesFor(visibleApps)}
               currentUser={currentUser}
               onLogout={onLogout}
             />
@@ -613,19 +630,36 @@ describe('the inbox badge (DEV_UI 15.3)', () => {
     )
   }
 
+  // ON THE INBOX'S RAIL ENTRY, its own badge (step 1.3c): the owner chose
+  // the rail as its only place, present at every width.
+  const RAIL = [
+    { name: 'Query', path: '/query' },
+    { name: 'Inbox', path: '/inbox' },
+  ]
+
   it('shows how much is waiting, on every screen', async () => {
     answering({ approvals: 2, notifications: 1, identity: 1 })
-    renderShell([{ name: 'Query', path: '/query' }])
+    renderShell(RAIL)
 
-    expect(await screen.findByLabelText('Inbox, 4 waiting')).toHaveTextContent('4')
+    const inbox = await screen.findByRole('menuitem', { name: 'Inbox, 4 waiting' })
+    expect(inbox.querySelector('.app__nav-badge')).toHaveTextContent('4')
   })
 
   it('says nothing when nothing is waiting -- no zero badge', async () => {
     answering({ approvals: 0, notifications: 0, identity: 0 })
-    renderShell([{ name: 'Query', path: '/query' }])
+    renderShell(RAIL)
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
 
-    const button = await screen.findByLabelText('Inbox')
-    expect(button).not.toHaveTextContent('0')
+    expect(screen.getByRole('menuitem', { name: 'Inbox' })).toBeInTheDocument()
+    expect(document.querySelector('.app__nav-badge')).toBeNull()
+  })
+
+  it('is in the rail, not the header', async () => {
+    answering({ approvals: 1, notifications: 0, identity: 0 })
+    renderShell(RAIL)
+    await screen.findByRole('menuitem', { name: 'Inbox, 1 waiting' })
+
+    expect(document.querySelector('header')!.textContent).not.toMatch(/Inbox|1/)
   })
 })
 

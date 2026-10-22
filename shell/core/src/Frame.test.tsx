@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Command } from './commands'
 import type { ModuleEntry } from './contract'
 import type { PaletteHook } from './palette'
+import type { BadgeHook } from './badges'
 import { Frame, type FrameNavEntry, type FrameProps } from './Frame'
 
 const KEY = 'test.railCollapsed'
@@ -261,6 +262,14 @@ describe("modules' palette commands", () => {
     activationEvents: events,
   })
   const cmd = (label: string): Command => ({ id: label, label, group: 'Module', run: () => {} })
+  /** The host's activator for modules whose code is only a palette hook. */
+  const viaPalette = (feed: ModuleEntry[], resolve: (module: ModuleEntry) => unknown) => ({
+    feed,
+    activate: async (m: ModuleEntry) => {
+      const usePalette = (await resolve(m)) as PaletteHook | undefined
+      return usePalette && { usePalette }
+    },
+  })
   const openPalette = async () => {
     fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
     await act(async () => {})
@@ -273,7 +282,7 @@ describe("modules' palette commands", () => {
   it("loads a module's code only once the palette opens, then lists its commands around navigation", async () => {
     const resolve = vi.fn(() => (() => ({ before: [cmd('Act here')], after: [cmd('Module later')] })) as PaletteHook)
     renderFrame({
-      palettes: { modules: [module('m')], resolve },
+      modules: viaPalette([module('m')], resolve),
       commands: { before: [cmd('Host first')], after: [cmd('Host last')] },
     })
     expect(resolve).not.toHaveBeenCalled()
@@ -286,7 +295,7 @@ describe("modules' palette commands", () => {
 
   it('asks nothing of a module that does not activate on the palette', async () => {
     const resolve = vi.fn(() => (() => ({ before: [cmd('Never')] })) as PaletteHook)
-    renderFrame({ palettes: { modules: [module('m', [])], resolve } })
+    renderFrame({ modules: viaPalette([module('m', [])], resolve) })
     await openPalette()
     expect(resolve).not.toHaveBeenCalled()
     expect(labels().join(' ')).not.toContain('Never')
@@ -300,14 +309,14 @@ describe("modules' palette commands", () => {
       }, [open])
       return { after: loaded.map(cmd) }
     }
-    renderFrame({ palettes: { modules: [module('m')], resolve: () => usePalette } })
+    renderFrame({ modules: viaPalette([module('m')], () => usePalette) })
     await openPalette()
     expect(labels().join(' ')).toContain('Loaded on opening')
   })
 
   it('a module whose code fails to load leaves the palette working, and is asked again next time', async () => {
     const resolve = vi.fn(() => Promise.reject(new Error('no bundle')))
-    renderFrame({ palettes: { modules: [module('m')], resolve } })
+    renderFrame({ modules: viaPalette([module('m')], resolve) })
     await openPalette()
     expect(labels().join(' ')).toContain('Alpha')
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
@@ -318,7 +327,7 @@ describe("modules' palette commands", () => {
 
   it("adds a module's suggestions to what was typed", async () => {
     const usePalette: PaletteHook = () => ({ suggest: (query) => [cmd(`Find ${query}`)] })
-    renderFrame({ palettes: { modules: [module('m')], resolve: () => usePalette } })
+    renderFrame({ modules: viaPalette([module('m')], () => usePalette) })
     await openPalette()
     fireEvent.change(screen.getByLabelText('Search commands'), { target: { value: 'ada' } })
     expect(labels().join(' ')).toContain('Find ada')
@@ -327,7 +336,7 @@ describe("modules' palette commands", () => {
   it('drops the commands of a module the feed stops offering', async () => {
     const usePalette: PaletteHook = () => ({ after: [cmd('From m')] })
     const resolve = () => usePalette
-    const view = renderFrame({ palettes: { modules: [module('m')], resolve } })
+    const view = renderFrame({ modules: viaPalette([module('m')], resolve) })
     await openPalette()
     expect(labels().join(' ')).toContain('From m')
     view.rerender(
@@ -341,7 +350,7 @@ describe("modules' palette commands", () => {
                 iconFor={() => 'cube'}
                 fallback={null}
                 storageKey={KEY}
-                palettes={{ modules: [], resolve }}
+                modules={viaPalette([], resolve)}
               />
             }
           >
@@ -352,5 +361,74 @@ describe("modules' palette commands", () => {
     )
     await act(async () => {})
     expect(labels().join(' ')).not.toContain('From m')
+  })
+})
+
+describe('badges on rail entries', () => {
+  const inbox = (events: string[] = ['onStartup'], nav = [{ title: 'Beta', path: '/beta' }]): ModuleEntry => ({
+    id: 'b',
+    name: 'B',
+    version: '1',
+    contributes: { nav },
+    entry: null,
+    activationEvents: events,
+  })
+  const withBadges = (feed: ModuleEntry[], useBadges: BadgeHook) => ({ feed, activate: () => ({ useBadges }) })
+  const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+  const badgeOn = (name: RegExp) => screen.getByRole('menuitem', { name }).querySelector('.app__nav-badge')
+
+  it('draws the count a startup module gives its own entry, and announces it after the name', async () => {
+    renderFrame({ modules: withBadges([inbox()], () => ({ '/beta': { count: 3, label: '3 waiting' } })) })
+    await settle()
+    expect(screen.getByRole('menuitem', { name: 'Beta, 3 waiting' })).toBeInTheDocument()
+    expect(badgeOn(/Beta/)).toHaveTextContent('3')
+  })
+
+  it('without the palette ever opening -- it is there from the start', async () => {
+    const activate = vi.fn(() => ({ useBadges: () => ({ '/beta': { count: 1, label: '1 waiting' } }) }))
+    renderFrame({ modules: { feed: [inbox()], activate } })
+    await settle()
+    expect(activate).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('shows a large count as 99+', async () => {
+    renderFrame({ modules: withBadges([inbox()], () => ({ '/beta': { count: 140, label: '140 waiting' } })) })
+    await settle()
+    expect(badgeOn(/Beta/)).toHaveTextContent('99+')
+  })
+
+  it('draws nothing for zero', async () => {
+    renderFrame({ modules: withBadges([inbox()], () => ({ '/beta': { count: 0, label: 'none waiting' } })) })
+    await settle()
+    expect(screen.getByRole('menuitem', { name: 'Beta' })).toBeInTheDocument()
+    expect(document.querySelector('.app__nav-badge')).toBeNull()
+  })
+
+  it("ignores a badge for another module's entry", async () => {
+    renderFrame({ modules: withBadges([inbox()], () => ({ '/alpha': { count: 5, label: '5 waiting' } })) })
+    await settle()
+    expect(document.querySelector('.app__nav-badge')).toBeNull()
+  })
+
+  it('activates nothing for a module that does not name onStartup', async () => {
+    const activate = vi.fn(() => ({ useBadges: () => ({ '/beta': { count: 2, label: '2 waiting' } }) }))
+    renderFrame({ modules: { feed: [inbox([])], activate } })
+    await settle()
+    expect(activate).not.toHaveBeenCalled()
+    expect(document.querySelector('.app__nav-badge')).toBeNull()
+  })
+
+  it('follows the count as it changes', async () => {
+    let setCount: (n: number) => void = () => {}
+    const useBadges: BadgeHook = () => {
+      const [count, set] = useState(1)
+      setCount = set
+      return { '/beta': { count, label: `${count} waiting` } }
+    }
+    renderFrame({ modules: withBadges([inbox()], useBadges) })
+    await settle()
+    act(() => setCount(4))
+    expect(screen.getByRole('menuitem', { name: 'Beta, 4 waiting' })).toBeInTheDocument()
   })
 })

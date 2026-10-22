@@ -11,7 +11,9 @@
     "./Frame": "./src/Frame.tsx",
     "./CommandPalette": "./src/CommandPalette.tsx",
     "./commands": "./src/commands.ts",
-    "./palette": "./src/palette.tsx"
+    "./palette": "./src/palette.tsx",
+    "./activation": "./src/activation.ts",
+    "./badges": "./src/badges.tsx"
   },
   "peerDependencies": {
     "@blueprintjs/core": "^6.18.0",

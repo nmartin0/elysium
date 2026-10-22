@@ -59,13 +59,14 @@ export interface Contributions {
  * `activationEvents`, where an extension is "activated lazily" and says
  * on which events. `onPalette`: when the command palette opens, so the
  * commands its code supplies are there although none of its pages has
- * been opened yet.
+ * been opened yet. `onStartup`: when the frame is drawn, so a badge on
+ * its rail entry is on every screen (activation.ts).
  *
  * A FEED MAY NAME ONE THIS SHELL DOES NOT KNOW (a newer backend), and it
  * is ignored rather than refused: the module still loads when its page
  * opens, which is what a shell without the event would have done anyway.
  */
-export const ACTIVATION_EVENTS = ['onPalette'] as const
+export const ACTIVATION_EVENTS = ['onPalette', 'onStartup'] as const
 export type ActivationEvent = (typeof ACTIVATION_EVENTS)[number]
 
 export interface ModuleEntry {

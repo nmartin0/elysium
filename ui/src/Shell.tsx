@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button, Classes } from '@blueprintjs/core'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import { Frame } from '@shell/core/Frame'
 import type { Command } from '@shell/core/commands'
 import { iconForApp } from '@elysium/shell-api/appIcons'
@@ -8,8 +8,7 @@ import { readPreference, writePreference } from '@elysium/shell-api/browserPrefe
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMenu'
 import { DENSITIES, type Density, isDensity } from '@elysium/shell-api/density'
-import type { ModulePalettes } from '@shell/core/palette'
-import { totalWaiting, useInboxCounts } from '@elysium/shell-api/useInboxCounts'
+import type { FrameModules } from '@shell/core/activation'
 import HelpPanel from '@elysium/shell-api/components/HelpPanel'
 
 // Shell.tsx -- ELYSIUM'S COMPOSITION OF THE GENERIC FRAME.
@@ -18,14 +17,13 @@ import HelpPanel from '@elysium/shell-api/components/HelpPanel'
 // (@shell/core/Frame, BLOCKING.md item 3, step 1.3): it draws them and
 // owns how they behave -- collapsing, the narrow-screen rules, Ctrl+B,
 // Cmd-K, the navigation commands. This file supplies what is Elysium's:
-// the product's name, the header's actions (the Inbox, help, the theme,
-// the user menu), the theme and row density themselves, and the palette
-// commands that know Elysium's data.
+// the product's name, the header's actions (help, the theme, the user
+// menu), the theme and row density themselves, the shell's own settings
+// commands, and the feed's modules with how to activate one.
 //
-// ONE OF THOSE IS A VIOLATION STEP 1.3 REMOVES, and is here only until
-// then: the Inbox's count becomes a badge on its rail entry. Browse's
-// commands already moved to Browse (step 1.3b), which supplies them
-// through the feed's `palettes`; this file no longer sees the schema.
+// NOTHING OF ANY SUB-APP IS LEFT HERE (step 1.3): Browse's commands are
+// Browse's (its palette hook), the Inbox's count is the Inbox's (a badge
+// on its rail entry), and this file no longer sees the schema.
 
 export interface VisibleApp {
   path: string
@@ -36,8 +34,8 @@ export interface VisibleApp {
 
 interface ShellProps {
   visibleApps: VisibleApp[]
-  /** The modules whose code adds to the palette, and where that code is. */
-  palettes?: ModulePalettes
+  /** The feed's modules, and how to activate one (@shell/core/activation). */
+  modules?: FrameModules
   currentUser: CurrentUser | null
   onLogout: () => void
 }
@@ -46,9 +44,8 @@ interface ShellProps {
  *  state survives the move. */
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'elysium.sidebarCollapsed'
 
-export default function Shell({ visibleApps, palettes, currentUser, onLogout }: ShellProps) {
+export default function Shell({ visibleApps, modules, currentUser, onLogout }: ShellProps) {
   const location = useLocation()
-  const navigate = useNavigate()
   // THE HELP ASSISTANT, and which screen it is being asked from -- the
   // rail's own name for it, so "how do I filter this" has a referent.
   const [helpOpen, setHelpOpen] = useState(false)
@@ -142,9 +139,6 @@ export default function Shell({ visibleApps, palettes, currentUser, onLogout }: 
     document.body.classList.toggle(Classes.DARK, dark)
   }, [dark])
 
-  const inboxCounts = useInboxCounts(location.pathname + location.search)
-  const waiting = totalWaiting(inboxCounts)
-
   return (
     <Frame
       nav={visibleApps.map((app) => ({ title: app.name, path: app.path, subject: app.subject }))}
@@ -152,18 +146,6 @@ export default function Shell({ visibleApps, palettes, currentUser, onLogout }: 
       iconFor={iconForApp}
       actions={
         <>
-          {/* THE INBOX, PRESENT WITHOUT PROMPTING (DEV_UI 15.3): a number
-        on every screen and nothing that pops up. Decisions and
-        unread notices together; the Inbox's tabs say which. */}
-          <Button
-            minimal
-            icon="inbox"
-            className="app__inbox"
-            aria-label={waiting > 0 ? `Inbox, ${waiting} waiting` : 'Inbox'}
-            onClick={() => navigate('/inbox')}
-          >
-            {waiting > 0 && <span className="app__inbox-count">{waiting > 99 ? '99+' : waiting}</span>}
-          </Button>
           <Button minimal icon="help" aria-label="Help" onClick={() => setHelpOpen(true)} />
           <Button
             minimal
@@ -176,7 +158,7 @@ export default function Shell({ visibleApps, palettes, currentUser, onLogout }: 
       }
       overlays={<HelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} screen={currentScreen} />}
       commands={{ after: settingsCommands }}
-      palettes={palettes}
+      modules={modules}
       fallback={<LoadingState />}
       storageKey={SIDEBAR_COLLAPSED_STORAGE_KEY}
     />

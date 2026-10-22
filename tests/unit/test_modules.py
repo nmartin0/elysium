@@ -150,6 +150,13 @@ class TestActivationEvents:
 
         assert feed["modules"][0]["activationEvents"] == ["onPalette"]
 
+    def test_on_startup_is_one(self, tmp_path):
+        """For a badge on the rail from the first screen (step 1.3c)."""
+        one = _module(tmp_path / "one", activationEvents=["onStartup", "onPalette"])
+        feed = feed_for(load_modules(_deployment(tmp_path, [one])), _user("admin"), ROLES)
+
+        assert feed["modules"][0]["activationEvents"] == ["onStartup", "onPalette"]
+
     def test_a_module_naming_none_carries_an_empty_list(self, tmp_path):
         one = _module(tmp_path / "one")
         feed = feed_for(load_modules(_deployment(tmp_path, [one])), _user("admin"), ROLES)

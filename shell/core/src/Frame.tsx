@@ -18,12 +18,14 @@
  *
  * Rendered as a react-router LAYOUT route: pages mount in its <Outlet />.
  */
-import { Classes, Menu, MenuItem, type IconName, type MaybeElement } from '@blueprintjs/core'
+import { Classes, Icon, Menu, MenuItem, type IconName, type MaybeElement } from '@blueprintjs/core'
 import { Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import CommandPalette from './CommandPalette'
 import { type Command, mayFireGlobally, opensPalette } from './commands'
-import { PaletteSource, useContributions, useModulePalettes, type ModulePalettes } from './palette'
+import { useActivated, type FrameModules } from './activation'
+import { BadgeSource, badgeText, useBadgeReports, type Badge } from './badges'
+import { PaletteSource, useContributions } from './palette'
 
 /** One entry on the rail: a feed's `nav` contribution. */
 export interface FrameNavEntry {
@@ -58,12 +60,14 @@ export interface FrameProps {
   /** Commands made FROM what was typed, listed after every match. */
   suggest?: (query: string) => Command[]
   /**
-   * The modules whose code supplies palette commands, and how to get at
-   * that code (palette.tsx). Their commands sit inside the host's own:
-   * modules' `before`, the host's `before`, navigation, modules' `after`,
-   * the host's `after`.
+   * The feed's modules and how the host activates one (activation.ts).
+   * The frame activates them on the events their manifests name and
+   * reads their code: palette commands (palette.tsx), which sit inside
+   * the host's own -- modules' `before`, the host's `before`, navigation,
+   * modules' `after`, the host's `after` -- and badges on their own rail
+   * entries (badges.tsx).
    */
-  palettes?: ModulePalettes
+  modules?: FrameModules
   /** Told each time the palette opens, so a host can load what it lists. */
   onPaletteOpen?: () => void
   /** What the content area shows while a page's code loads. */
@@ -128,7 +132,7 @@ export function Frame({
   iconFor,
   commands,
   suggest,
-  palettes,
+  modules,
   onPaletteOpen,
   fallback,
   storageKey,
@@ -180,7 +184,9 @@ export function Frame({
       })),
     [nav, navigate],
   )
-  const sources = useModulePalettes(palettes, paletteOpen)
+  const sources = useActivated(modules, 'onPalette', paletteOpen).flatMap(({ module, code }) =>
+    code.usePalette ? [{ id: module.id, usePalette: code.usePalette }] : [],
+  )
   const [contributions, report] = useContributions()
   // In the feed's order, not the order their answers arrived in.
   const offered = sources.flatMap(({ id }) => contributions.get(id) ?? [])
@@ -271,6 +277,23 @@ export function Frame({
   }, [])
 
   /**
+   * BADGES, from the modules that activate at startup -- each only on
+   * its OWN rail entries, by the paths its manifest's `nav` declares.
+   */
+  const badgeSources = useActivated(modules, 'onStartup', true).flatMap(({ module, code }) =>
+    code.useBadges ? [{ module, useBadges: code.useBadges }] : [],
+  )
+  const [badgeReports, reportBadges] = useBadgeReports()
+  const badges = new Map<string, Badge>()
+  for (const { module } of badgeSources) {
+    const reported = badgeReports.get(module.id) ?? {}
+    for (const entry of module.contributes.nav ?? []) {
+      const badge = reported[entry.path]
+      if (badge !== undefined && badge.count > 0) badges.set(entry.path, badge)
+    }
+  }
+
+  /**
    * GROUPED, NOT LISTED: a heading wherever the subject changes, in the
    * feed's order, so the grouping cannot disagree with it.
    *
@@ -298,11 +321,35 @@ export function Frame({
       ) : null
     lastSubject = entry.subject
     const here = location.pathname === entry.path
+    const badge = badges.get(entry.path)
     const item = (
       <MenuItem
         key={entry.path}
-        icon={iconFor(entry.path)}
+        icon={
+          badge === undefined ? (
+            iconFor(entry.path)
+          ) : (
+            // ON THE ICON, so a collapsed rail shows it too; the number
+            // is decoration, the aria-label below is what is announced.
+            <span className="app__nav-icon">
+              <Icon icon={iconFor(entry.path)} />
+              <span className="app__nav-badge" aria-hidden="true">
+                {badgeText(badge.count)}
+              </span>
+            </span>
+          )
+        }
         text={<span className="app__nav-label">{entry.title}</span>}
+        /**
+         * WITH A BADGE, THE NAME SAYS IT: "Inbox, 3 waiting". An
+         * aria-label, built from the entry's own title so it cannot
+         * drift from the label: words in a visually hidden span came out
+         * as "Inbox , 3 waiting" in Chrome, which computes an absolutely
+         * positioned element as a block of its own -- jsdom did not, and
+         * only the browser test showed it. Without a badge, no
+         * aria-label: the label text is the name, as above.
+         */
+        aria-label={badge === undefined ? undefined : `${entry.title}, ${badge.label}`}
         href={entry.path}
         active={here}
         aria-current={here ? 'page' : undefined}
@@ -326,6 +373,9 @@ export function Frame({
         <div className="app__header-actions">{actions}</div>
       </header>
       {overlays}
+      {badgeSources.map(({ module, useBadges }) => (
+        <BadgeSource key={module.id} id={module.id} useBadges={useBadges} report={reportBadges} />
+      ))}
       {sources.map(({ id, usePalette }) => (
         <PaletteSource key={id} id={id} usePalette={usePalette} open={paletteOpen} report={report} />
       ))}

@@ -14,7 +14,7 @@ import { checkFeed, type ModuleEntry, type ModuleFeed } from '@shell/core/contra
 import { moduleRoutes, type PageResolver } from '@shell/core/ModuleRoutes'
 import { ModuleLoader } from '@shell/core/moduleLoader'
 import { buildRegistry } from '@shell/core/registry'
-import type { PaletteHook } from '@shell/core/palette'
+import type { FrameModules, ModuleCode } from '@shell/core/activation'
 import { publishHostValues, resetHostValues, stageHostValues } from '@elysium/shell-api/host'
 import ChangePasswordForm from '@elysium/shell-api/components/ChangePasswordForm'
 import LoginForm from '@elysium/shell-api/components/LoginForm'
@@ -131,20 +131,29 @@ const BUILT_IN_PAGES: Record<string, ComponentType> = {
   'inbox:inbox': InboxPage,
 }
 /**
- * THE PALETTE HOOKS OF THE MODULES BUILT INTO THE PAGE, by module id
- * (step 1.3b). Imported when the palette first opens, not with the page:
- * the shell asks only for modules whose manifest names `onPalette`, and
- * only then -- the same lazy activation a bundled module gets.
+ * THE CODE THE SHELL ASKS OF MODULES BUILT INTO THE PAGE, by module id
+ * (step 1.3): Browse's palette commands, the Inbox's badge. Imported when
+ * the shell asks -- on the activation events each manifest names, the
+ * palette first opening or the frame being drawn -- not with the page:
+ * the same lazy activation a bundled module gets.
+ *
+ * TWO TABLES, ONE PER KIND, so a test can hold each to its event: a
+ * palette without `onPalette`, or a badge without `onStartup`, would
+ * never be asked for (tests/unit/test_subapp_declarations_agree.py).
  */
-const BUILT_IN_PALETTES: Record<string, () => Promise<PaletteHook>> = {
-  browse: () => import('@elysium/app-browse/palette').then((code) => code.useBrowsePalette),
+const BUILT_IN_PALETTES: Record<string, () => Promise<ModuleCode>> = {
+  browse: () => import('@elysium/app-browse/palette').then((code) => ({ usePalette: code.useBrowsePalette })),
+}
+const BUILT_IN_BADGES: Record<string, () => Promise<ModuleCode>> = {
+  inbox: () => import('./inbox/badges').then((code) => ({ useBadges: code.useInboxBadges })),
 }
 
-/** Where a module's palette hook is: its bundle's activation, or this
- *  page's own table. */
-function paletteFor(module: ModuleEntry): Promise<PaletteHook | undefined> | undefined {
-  if (module.entry) return moduleLoader.load(module).then((activation) => activation.usePalette)
-  return BUILT_IN_PALETTES[module.id]?.()
+/** A module's code, as the shell asks for it: its bundle's activation, or
+ *  this page's own tables. */
+async function activate(module: ModuleEntry): Promise<ModuleCode | undefined> {
+  if (module.entry) return moduleLoader.load(module)
+  const [palette, badges] = await Promise.all([BUILT_IN_PALETTES[module.id]?.(), BUILT_IN_BADGES[module.id]?.()])
+  return palette || badges ? { ...palette, ...badges } : undefined
 }
 
 /** A feed that could not be had, said in the words the failure came in. */
@@ -576,8 +585,8 @@ function LoggedIn({
     publishHostValues(needs)
   }, [needs])
   const resolve = useMemo(() => (feed === null || 'failure' in feed ? null : resolverFor(feed)), [feed])
-  const palettes = useMemo(
-    () => (feed === null || 'failure' in feed ? undefined : { modules: feed.modules, resolve: paletteFor }),
+  const modules: FrameModules | undefined = useMemo(
+    () => (feed === null || 'failure' in feed ? undefined : { feed: feed.modules, activate }),
     [feed],
   )
   // A MODULE THE FEED NO LONGER OFFERS IS UNLOADED -- its stylesheets
@@ -612,7 +621,7 @@ function LoggedIn({
         <Routes>
           <Route
             element={
-              <Shell visibleApps={visibleApps} palettes={palettes} currentUser={currentUser} onLogout={onLogout} />
+              <Shell visibleApps={visibleApps} modules={modules} currentUser={currentUser} onLogout={onLogout} />
             }
           >
             {/* FROM THE FEED: each module's pages, its old addresses, and
