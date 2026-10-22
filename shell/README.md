@@ -21,6 +21,7 @@ shell/
     src/ModulesPage.tsx  the shell's system sub-app: every module, and its state
     src/safeMode.ts      safe mode: this tab, pinned modules only, until left
     src/ModuleArrangementEditor.tsx  the module manager: the arrangement for everyone
+    src/RailTabsDialog.tsx  one person's own rail tabs
   build/           @shell/build: build-time tooling
     src/sharedLibraries.ts  the shared-library registry, shims and import map
     src/moduleBuild.ts      a module's bundle; building modules with the page
@@ -92,6 +93,12 @@ is announced after the entry's name, draws nothing for zero and "99+"
 above 99; a badge for another module's entry is ignored. A module whose
 code fails to activate adds nothing and is asked again the next time
 its event comes round; one the feed stops offering drops out.
+
+ONE PERSON'S OWN RAIL: `hiddenPaths` leaves those entries off the rail
+and nowhere else -- the palette still offers them -- and
+`RailTabsDialog` is the shell's dialog for choosing them, a pinned
+module's entries never hideable. Where the choice is kept is the
+host's (Elysium: per user, in this browser, as the theme is).
 
 What the frame does itself: groups the rail by subject; collapses it
 (the toggle, Ctrl/Cmd+B, remembered per browser; closed below 1100px

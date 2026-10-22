@@ -16,7 +16,8 @@
     "./badges": "./src/badges.tsx",
     "./ModulesPage": "./src/ModulesPage.tsx",
     "./safeMode": "./src/safeMode.ts",
-    "./ModuleArrangementEditor": "./src/ModuleArrangementEditor.tsx"
+    "./ModuleArrangementEditor": "./src/ModuleArrangementEditor.tsx",
+    "./RailTabsDialog": "./src/RailTabsDialog.tsx"
   },
   "peerDependencies": {
     "@blueprintjs/core": "^6.18.0",

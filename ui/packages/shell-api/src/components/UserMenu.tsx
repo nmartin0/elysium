@@ -59,6 +59,8 @@ interface UserMenuProps {
    *  `safeMode` says which the item does. */
   onSafeMode?: () => void
   safeMode?: boolean
+  /** Offered when given: choose which tabs one's own rail shows. */
+  onChooseTabs?: () => void
 }
 
 export default function UserMenu({
@@ -68,6 +70,7 @@ export default function UserMenu({
   onDensity,
   onSafeMode,
   safeMode = false,
+  onChooseTabs,
 }: UserMenuProps) {
   // CHANGING YOUR OWN PASSWORD, from the menu that already holds your
   // name. Two states: the form, then what happened -- how many OTHER
@@ -114,6 +117,7 @@ export default function UserMenu({
                 ))}
               </MenuItem>
             )}
+            {onChooseTabs && <MenuItem text="Your rail tabs…" icon="menu" onClick={onChooseTabs} />}
             {onSafeMode && (
               <MenuItem
                 text={safeMode ? 'Leave safe mode' : 'Reload in safe mode'}

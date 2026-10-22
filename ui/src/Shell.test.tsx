@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { Classes } from '@blueprintjs/core'
-import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { lazy, type ComponentType } from 'react'
 import type { CurrentUser } from '@elysium/shell-api/components/UserMenu'
@@ -1114,5 +1114,68 @@ describe('safe mode (step 1.4b)', () => {
 
     await openPalette({ key: 'k', ctrlKey: true })
     expect(screen.getAllByRole('option').map((o) => o.textContent)).toContain('ShellLeave safe mode')
+  })
+})
+
+describe('your rail tabs (step 1.4d)', () => {
+  const APPS = [
+    { name: 'Query', path: '/query' },
+    { name: 'Schema', path: '/schema' },
+    { name: 'Modules', path: '/system/modules', subject: 'System' },
+  ]
+  const MODULES = {
+    feed: [
+      {
+        id: 'system',
+        name: 'System',
+        version: '1',
+        contributes: { nav: [{ title: 'Modules', path: '/system/modules' }] },
+        entry: null,
+        pinned: true,
+      },
+    ],
+    activate: () => undefined,
+  }
+  function renderAs(username: string) {
+    return render(
+      <MemoryRouter initialEntries={['/query']}>
+        <Routes>
+          <Route
+            element={
+              <Shell
+                visibleApps={APPS}
+                modules={MODULES}
+                currentUser={{ username } as CurrentUser}
+                onLogout={vi.fn()}
+              />
+            }
+          >
+            <Route path="/query" element={<p>query screen</p>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    )
+  }
+  const railNames = () => [...document.querySelectorAll('.app__nav .app__nav-label')].map((label) => label.textContent)
+
+  it('hides a tab from your rail when you untick it, and remembers it for you alone', async () => {
+    const first = renderAs('ada')
+    fireEvent.click(screen.getByRole('button', { name: /ada/i }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Your rail tabs…' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Schema' }))
+    expect(railNames()).toEqual(['Query', 'Modules'])
+    first.unmount()
+
+    renderAs('ada')
+    expect(railNames()).toEqual(['Query', 'Modules'])
+    cleanup()
+    renderAs('grace')
+    expect(railNames()).toEqual(['Query', 'Schema', 'Modules'])
+  })
+
+  it("cannot hide the system's own tab, even if the preference names it", () => {
+    window.localStorage.setItem('elysium.pref.hidden-tabs.ada', JSON.stringify(['/system/modules', '/schema']))
+    renderAs('ada')
+    expect(railNames()).toEqual(['Query', 'Modules'])
   })
 })

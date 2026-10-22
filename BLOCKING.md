@@ -861,7 +861,17 @@ saves an arrangement WRITES modules.yaml, so it runs only against a
 server on a copy of the configuration, opted into with
 E2E_MAY_WRITE_CONFIG=1, one test at a time.
 
-**Blocked on:** nothing; step 1.4d, hiding a tab for oneself, is next.
+**STEP 1.4d BUILT (22 October): YOUR OWN RAIL TABS.** Anyone can hide
+a tab from their own rail -- "Your rail tabs…" in the user menu, applied
+as ticked, remembered per person in this browser like the theme. The
+RAIL ONLY: the palette still offers a hidden tab's pages and their
+addresses still open them, so hiding never loses anything; pinned tabs
+cannot be hidden, even by a preference that names one. The frame takes
+the hidden paths (`hiddenPaths`) and the dialog is the shell's
+(`@shell/core/RailTabsDialog`). Per-person ORDER waits, as agreed.
+
+STEP 1.4 IS DONE. **Blocked on:** nothing; step 1.5, slots -- a module
+adding a tab or section inside another module's screen -- is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

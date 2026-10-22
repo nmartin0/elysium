@@ -77,6 +77,9 @@ export interface FrameProps {
   /** Set when the page is in safe mode (safeMode.ts): the frame says so
    *  above every page, with the way out. */
   safeMode?: { onLeave: () => void }
+  /** Rail entries this person has hidden (RailTabsDialog), by path: left
+   *  off the rail, still offered by the palette. */
+  hiddenPaths?: ReadonlySet<string>
 }
 
 /**
@@ -140,6 +143,7 @@ export function Frame({
   fallback,
   storageKey,
   safeMode,
+  hiddenPaths,
 }: FrameProps) {
   const [collapsed, setCollapsed] = useState(() => resolveCollapsed(storageKey))
   const isMobile = useSyncExternalStore(subscribeToBreakpoint, isNarrowNow)
@@ -316,7 +320,10 @@ export function Frame({
    * seemed to hold one app. jsdom never showed it.
    */
   let lastSubject: string | undefined
-  const navItems = nav.flatMap((entry) => {
+  // HIDDEN TABS LEAVE THE RAIL ONLY: the navigation commands above are
+  // made from the whole of `nav`, so the palette still reaches them.
+  const shown = hiddenPaths === undefined ? nav : nav.filter((entry) => !hiddenPaths.has(entry.path))
+  const navItems = shown.flatMap((entry) => {
     const heading =
       entry.subject && entry.subject !== lastSubject ? (
         <li className="app__nav-subject" key={`subject-${entry.subject}`} role="presentation">

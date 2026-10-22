@@ -10,6 +10,7 @@ import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMe
 import { DENSITIES, type Density, isDensity } from '@elysium/shell-api/density'
 import type { FrameModules } from '@shell/core/activation'
 import { enterSafeMode, leaveSafeMode } from '@shell/core/safeMode'
+import { RailTabsDialog } from '@shell/core/RailTabsDialog'
 import HelpPanel from '@elysium/shell-api/components/HelpPanel'
 
 // Shell.tsx -- ELYSIUM'S COMPOSITION OF THE GENERIC FRAME.
@@ -93,6 +94,26 @@ export default function Shell({ visibleApps, modules, safeMode = false, currentU
   // ROW DENSITY (DEV_UI 9.3), the same shape as the theme: the reader's,
   // remembered per user, middle until they choose. Applied as
   // data-density on <body>, which every DataTable's row height reads.
+  // ONE'S OWN RAIL TABS (step 1.4d): the paths this person has hidden,
+  // the same shape as the theme -- theirs, remembered per user in this
+  // browser, read every render for the reason given above it.
+  const [chosenHidden, setChosenHidden] = useState<{ username: string; paths: string[] } | null>(null)
+  const hiddenPaths =
+    chosenHidden !== null && chosenHidden.username === username
+      ? chosenHidden.paths
+      : readPreference<string[]>('hidden-tabs', username, [])
+  const chooseHidden = (paths: ReadonlySet<string>) => {
+    const next = [...paths]
+    setChosenHidden({ username, paths: next })
+    writePreference('hidden-tabs', username, next)
+  }
+  const [choosingTabs, setChoosingTabs] = useState(false)
+  // PINNED TABS STAY: the system's own tools, which safe mode keeps too.
+  const pinnedPaths = new Set(
+    (modules?.feed ?? []).filter((m) => m.pinned).flatMap((m) => (m.contributes.nav ?? []).map((e) => e.path)),
+  )
+  const hidden = new Set(hiddenPaths.filter((path) => !pinnedPaths.has(path)))
+
   const [chosenDensity, setChosenDensity] = useState<{ username: string; density: Density } | null>(null)
   const storedDensity = readPreference<string>('density', username, 'middle')
   const density: Density =
@@ -167,15 +188,28 @@ export default function Shell({ visibleApps, modules, safeMode = false, currentU
             onDensity={chooseDensity}
             safeMode={safeMode}
             onSafeMode={() => (safeMode ? leaveSafeMode() : enterSafeMode())}
+            onChooseTabs={() => setChoosingTabs(true)}
           />
         </>
       }
-      overlays={<HelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} screen={currentScreen} />}
+      overlays={
+        <>
+          <HelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} screen={currentScreen} />
+          <RailTabsDialog
+            isOpen={choosingTabs}
+            onClose={() => setChoosingTabs(false)}
+            tabs={visibleApps.map((app) => ({ title: app.name, path: app.path, pinned: pinnedPaths.has(app.path) }))}
+            hidden={hidden}
+            onChange={chooseHidden}
+          />
+        </>
+      }
       commands={{ after: settingsCommands }}
       modules={modules}
       fallback={<LoadingState />}
       storageKey={SIDEBAR_COLLAPSED_STORAGE_KEY}
       safeMode={safeMode ? { onLeave: () => leaveSafeMode() } : undefined}
+      hiddenPaths={hidden}
     />
   )
 }

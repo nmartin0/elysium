@@ -448,3 +448,17 @@ describe('safe mode', () => {
     expect(screen.queryByText('Safe mode.')).not.toBeInTheDocument()
   })
 })
+
+describe('tabs a person has hidden', () => {
+  it('leave the rail, and its heading with them when a subject is emptied', () => {
+    renderFrame({ hiddenPaths: new Set(['/gamma']) })
+    const items = [...rail().querySelectorAll('.app__nav > li')].map((li) => li.textContent)
+    expect(items).toEqual(['Work', 'Alpha', 'Beta'])
+  })
+
+  it('stay in the palette, so hiding never loses a page', () => {
+    renderFrame({ hiddenPaths: new Set(['/gamma']) })
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+    expect(within(screen.getByRole('dialog')).getByRole('option', { name: /Gamma/ })).toBeInTheDocument()
+  })
+})
