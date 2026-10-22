@@ -369,7 +369,7 @@ def _next_generation() -> int:
 # about what a deployment consists of -- the same reasoning as the step
 # vocabulary probe in tests/unit/test_step_vocabulary_consistency.py.
 CONFIG_FILENAMES = ["config.yaml", "ontology_schema.yaml", "source_bindings.yaml",
-                     "policy.yaml", "data_silos.yaml", "modules.yaml"]
+                     "policy.yaml", "data_silos.yaml", "modules.yaml", "addons.yaml"]
 
 
 def _source_digest(base_path: Path, filenames: list[str]) -> str:

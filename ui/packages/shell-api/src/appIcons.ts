@@ -40,6 +40,8 @@ const BY_PATH: Record<string, IconName> = {
   '/inbox': 'inbox',
   // The shell's system sub-app (step 1.4): the modules and how they load.
   '/system/modules': 'cube-add',
+  // Add-ons' own servers (step 2.2): started, watched, restarted.
+  '/system/addons': 'console',
 }
 
 /**

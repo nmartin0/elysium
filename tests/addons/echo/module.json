@@ -1,0 +1,7 @@
+{
+  "id": "echo",
+  "name": "Echo",
+  "version": "1",
+  "contributes": {},
+  "server": { "command": ["{python}", "server.py"], "health": "/health", "stopSeconds": 3 }
+}

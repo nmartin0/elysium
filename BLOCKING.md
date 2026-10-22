@@ -907,8 +907,39 @@ the rest stand. A Python test holds every declared contribution to its
 code and back. Moving the Inbox itself into a package -- the step this
 file said slots would allow -- is now possible and not yet done.
 
-STEP 1.5 IS DONE, and with it STEP 1. **Blocked on:** nothing; step 2,
-the simulator as an add-on with its own server, is next.
+STEP 1.5 IS DONE, and with it STEP 1.
+
+**STEP 2, AGREED WITH THE OWNER 22 October:** ELYSIUM STARTS an add-on's
+server (rather than a person starting it beside Elysium), A SIGNED TOKEN
+tells it who is asking (rather than trusting loopback), and the
+simulator's panel lives in `sim/`, its bundle served by Elysium like any
+module's. In four parts: 2.1 the proxy and who-is-asking, 2.2 the
+lifecycle, 2.3 the simulator's panel as a module, 2.4 posting to the
+Inbox and the contract-version field. WebSocket pass-through waits for
+an add-on that uses one.
+
+**2.1 AND 2.2 ARE BUILT.** A module may declare `server` in its
+manifest; `addons.yaml` gives each its options, `${VAR}` filled from the
+environment (core/modules.py, core/addons.py). Elysium starts it with a
+port, a start file and a bare environment, checks `/health`, restarts it
+with back-off (1 s doubling to 60 s), keeps its log, and stops it with
+SIGTERM then SIGKILL at its `stopSeconds`; one worker supervises each,
+by flock, and another takes over if that worker dies; standard input is
+a pipe whose closing tells the server Elysium has gone
+(api/addon_servers.py). `/api/addons/{id}/...` forwards to it for anyone
+the module is offered to, adding `X-Elysium-Identity`, an HS256 JWT made
+with a secret per add-on per start, good for a minute; cookies,
+`Authorization` and the CSRF token never reach it, `Set-Cookie` never
+comes back, and what comes back is served sandboxed. Event streams pass
+(at most 8 open per worker, each ended after 10 minutes, as /api/events
+does). `sdk/python/elysium_addon.py` is the contract and a verifier
+needing only the standard library, for an add-on that may not import
+Elysium. The System sub-app has an Add-on servers page: state, log,
+Restart (audited). Checked live under two uvicorn workers: one server,
+reached from both; the supervising worker killed with SIGKILL, the old
+server left by itself and the other worker started a new one; a
+graceful stop exited 0. **Blocked on:** nothing; 2.3, the simulator's
+panel, is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

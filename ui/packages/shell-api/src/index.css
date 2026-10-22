@@ -3971,6 +3971,39 @@
     margin-inline-start: var(--space-tight);
   }
 
+  /* ADD-ON SERVERS (ui/src/system/AddonServersPage, step 2.2): a table of
+   * servers, each with its log opening beneath it -- monospaced, kept to
+   * a height that leaves the table in view, scrolled from its end. */
+  .addon-servers {
+    width: 100%;
+  }
+
+  .addon-servers__actions {
+    white-space: nowrap;
+    text-align: end;
+  }
+
+  .addon-servers__asked {
+    color: var(--text-secondary);
+  }
+
+  .addon-servers__log {
+    max-height: 24rem;
+    margin: 0;
+    padding: var(--space-snug);
+    overflow: auto;
+    border-radius: var(--radius);
+    background: var(--surface-sunken);
+    font-family: var(--font-mono);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    white-space: pre-wrap;
+  }
+
+  .addon-servers__log-empty {
+    color: var(--text-secondary);
+  }
+
   /* The module manager's editor (@shell/core/ModuleArrangementEditor). */
   .modules-page__arrangement {
     margin-block-start: var(--space-section);

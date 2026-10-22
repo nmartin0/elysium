@@ -137,7 +137,7 @@ ignore_missing_imports = true
 
 [tool.vulture]
 paths = ["core", "api", "adapters", "scripts", "tests",
-         "sim/simulator", "sim/tests",
+         "sim/simulator", "sim/tests", "sdk",
          "vulture_whitelist.py"]
 min_confidence = 60
 
@@ -282,6 +282,10 @@ layers = [
     # exhaustive_ignores, which is for modules that sit outside the
     # hierarchy rather than beneath it.
     "secret_references",
+    # addons: an add-on server's declaration, its token and which
+    # headers pass (BLOCKING.md item 3, step 2). A leaf: the standard
+    # library only; api/addon_servers.py does the sockets and processes.
+    "addons",
     # config_editing is a leaf too: ruamel and the standard library, no
     # core module -- the route composes it with the loader and reload.
     "config_editing",
@@ -436,7 +440,7 @@ type = "layers"
 # and they are not.
 layers = [
     "app", "routes",
-    "apps | auth_dependency | generation_dependency | reload | csrf_middleware | request_size_limit_middleware | generation_header_middleware | request_metrics_middleware | live_updates | timer_service | trigger_checks | reminders",
+    "apps | auth_dependency | generation_dependency | reload | addon_servers | csrf_middleware | request_size_limit_middleware | generation_header_middleware | request_metrics_middleware | live_updates | timer_service | trigger_checks | reminders",
 ]
 containers = ["api"]
 exhaustive = true

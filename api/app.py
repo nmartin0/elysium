@@ -104,6 +104,8 @@ from api.live_updates import ChangeBus, watch_publications
 from api.reload import follow_publications, follow_reload_epoch, install_sighup_handler
 from api.request_metrics_middleware import RequestMetricsMiddleware
 from api.request_size_limit_middleware import RequestSizeLimitMiddleware
+from core.addons import PROXY_PREFIX as ADDON_PROXY_PREFIX
+from core.addons import SANDBOX_POLICY as ADDON_SANDBOX_POLICY
 from core.artifact_store import ArtifactStore
 from core.auth.credential_store import CredentialStore
 from core.auth.database import connection
@@ -315,7 +317,21 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
                 TRIGGER_WINDOW: window_timer, REMINDER: reminder_timer,
                 HOLD_KIND: hold_timer, SCHEDULE_KIND: schedule_timer,
             }))
+        # ADD-ONS' OWN SERVERS (BLOCKING.md item 3, step 2.2): started,
+        # watched and restarted by api/addon_servers.py, following the
+        # current generation's modules; stopped with their deadlines on
+        # the way out. Only where there is a deployment, like the timers.
+        supervisor = None
+        paths = getattr(_app.state, "runtime_paths", None)
+        if paths is not None and getattr(_app.state, "generation", None) is not None:
+            from api.addon_servers import Supervisor, wanted_from
+
+            supervisor = Supervisor(paths.data_dir, paths.log_dir,
+                                    lambda: wanted_from(_app.state.generation.config.modules))
+            supervisor.start()
         yield
+        if supervisor is not None:
+            await asyncio.to_thread(supervisor.close)
         if stop_announcing is not None:
             stop_announcing()
         if clock is not None:
@@ -443,6 +459,12 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
             "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; "
             "frame-ancestors 'none'" + import_map_script_src(UI_DIST_DIR / "index.html")
         )
+        # AN ADD-ON'S SERVER ANSWERS ON THIS ORIGIN (core/addons.py), so
+        # whatever it returns is SANDBOXED: HTML opened from there gets
+        # an origin of its own and runs no script, and cannot reach
+        # Elysium's session the way a page of Elysium's own could.
+        if request.url.path.startswith(ADDON_PROXY_PREFIX):
+            response.headers["Content-Security-Policy"] = ADDON_SANDBOX_POLICY
         # POWERFUL FEATURES, DENIED OUTRIGHT (E-05): nothing here uses a
         # camera, microphone, location, payment or USB device, so no page
         # -- nor anything injected into one -- may ask for them.

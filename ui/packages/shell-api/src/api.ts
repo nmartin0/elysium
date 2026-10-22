@@ -808,6 +808,39 @@ export async function saveModuleArrangement(change: ModuleArrangementChange): Pr
   return (await response.json()) as ModuleArrangement
 }
 
+/** One add-on's own server, as the System page shows it (step 2.2). */
+export interface AddonServer {
+  id: string
+  name: string
+  /** Turned on in modules.yaml: only then is its server run. */
+  enabled: boolean
+  state: 'not started' | 'starting' | 'running' | 'backing-off' | 'stopping' | 'stopped'
+  /** Seconds since the epoch, when it entered `state`. */
+  since: number | null
+  /** Times it failed and was started again. */
+  restarts: number
+  last_exit: number | null
+  /** While backing off: when it is started again. */
+  next_start_at: number | null
+}
+
+/** Each add-on's server and how it is doing (manage:deployment). */
+export async function getAddonServers(): Promise<AddonServer[]> {
+  const response = await apiFetchOrThrow('/system/addons')
+  return ((await response.json()) as { addons: AddonServer[] }).addons
+}
+
+/** The end of an add-on server's log. */
+export async function getAddonServerLog(id: string): Promise<string[]> {
+  const response = await apiFetchOrThrow(`/system/addons/${encodeURIComponent(id)}/log`)
+  return ((await response.json()) as { lines: string[] }).lines
+}
+
+/** Asks for an add-on's server to be restarted now; done within a second. */
+export async function restartAddonServer(id: string): Promise<void> {
+  await apiFetchOrThrow(`/system/addons/${encodeURIComponent(id)}/restart`, { method: 'POST' })
+}
+
 export interface SearchOptions {
   /** Opaque. Comes from a previous response's next_page_token and is
    *  never constructed here -- the server encodes what it needs and

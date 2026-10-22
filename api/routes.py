@@ -6021,6 +6021,135 @@ def save_module_arrangement_route(body: ModuleArrangementRequest, request: Reque
     return {**arranged(_generation(request).config.modules, body.home, body.modules), "digest": digest(proposed)}
 
 
+#: The methods an add-on's server is reached with. No CONNECT or TRACE,
+#: and no WebSocket upgrade (api/addon_servers.py).
+_ADDON_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]
+
+
+@router.api_route("/addons/{module_id}/{path:path}", methods=_ADDON_METHODS)
+async def addon_proxy_route(module_id: str, path: str, request: Request,
+                            current_user: UserRecord = Depends(get_current_user)) -> StreamingResponse:
+    """A request to an add-on's own server (BLOCKING.md item 3, step 2):
+    core/addons.py says what passes, api/addon_servers.py forwards it.
+
+    ONLY FOR SOMEONE THE MODULE IS OFFERED TO, and a 404 otherwise --
+    uniform denial, as for its bundle's files: a module this person may
+    not use, one with no server, and one that does not exist answer
+    alike. A server that is not running is a 503, said to someone who
+    may use it.
+
+    THE PATH AS THE BROWSER SENT IT, still percent-encoded: decoding it
+    here would turn an encoded slash in a name into a path separator at
+    the add-on.
+    """
+    from api.addon_servers import Unavailable, forward
+
+    config = _generation(request).config
+    offered = [] if config.modules is None else offered_to(config.modules, current_user, config.roles)
+    module = next((m for m in offered if m.id == module_id and m.server is not None), None)
+    if module is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    prefix = f"/api/addons/{module_id}/".encode()
+    raw_path = request.scope.get("raw_path") or request.url.path.encode()
+    sent_path = raw_path[len(prefix):].decode("latin-1") if raw_path.startswith(prefix) else path
+    body = await request.body()
+    try:
+        upstream = await asyncio.to_thread(
+            forward, request.app.state.runtime_paths.data_dir, module_id, current_user.user_id,
+            method=request.method, path=sent_path, query=request.url.query,
+            headers=list(request.headers.items()), body=body)
+    except Unavailable as unavailable:
+        raise HTTPException(status_code=503, detail=str(unavailable)) from None
+    headers = dict(upstream.headers)
+    # PRIVATE UNLESS THE ADD-ON SAYS OTHERWISE: what it answers is
+    # answered for this person.
+    if not any(name.lower() == "cache-control" for name in headers):
+        headers["Cache-Control"] = "no-store"
+    # An event stream must not wait in a buffering proxy in front.
+    headers["X-Accel-Buffering"] = "no"
+    return StreamingResponse(upstream.body(), status_code=upstream.status, headers=headers)
+
+
+class AddonServerRow(BaseModel):
+    id: str
+    name: str
+    #: Turned on in modules.yaml: only then is its server run.
+    enabled: bool
+    #: not started | starting | running | backing-off | stopping | stopped
+    state: str
+    since: float | None = None
+    restarts: int = 0
+    last_exit: int | None = None
+    next_start_at: float | None = None
+
+
+class AddonServersResponse(BaseModel):
+    addons: list[AddonServerRow]
+
+
+@router.get("/system/addons", dependencies=[Depends(_no_store)], response_model=AddonServersResponse)
+def addon_servers_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Each add-on's server and how it is doing (step 2.2), for the System
+    sub-app: for manage:deployment, the grant that turns modules on and
+    off. Read from the state file the supervising worker writes, so any
+    worker answers alike. NEVER ITS SECRET, ADDRESS OR PROCESS: what a
+    person deciding whether to restart it needs, and no more."""
+    from api.addon_servers import read_state
+
+    _require_manage_deployment(request, current_user)
+    modules = _generation(request).config.modules
+    data_dir = request.app.state.runtime_paths.data_dir
+    rows = []
+    if modules is not None:
+        on = {m.id for m in modules.modules}
+        for module in [*modules.modules, *modules.off]:
+            if module.server is None:
+                continue
+            state = read_state(data_dir, module.id) or {}
+            rows.append({"id": module.id, "name": module.name, "enabled": module.id in on,
+                         "state": state.get("state", "not started"), "since": state.get("since"),
+                         "restarts": state.get("restarts", 0), "last_exit": state.get("lastExit"),
+                         "next_start_at": state.get("nextStartAt")})
+    return {"addons": rows}
+
+
+def _addon_with_server(request: Request, module_id: str):
+    modules = _generation(request).config.modules
+    known = [] if modules is None else [*modules.modules, *modules.off]
+    module = next((m for m in known if m.id == module_id and m.server is not None), None)
+    if module is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return module
+
+
+@router.get("/system/addons/{module_id}/log", dependencies=[Depends(_no_store)])
+def addon_server_log_route(module_id: str, request: Request,
+                           current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The end of an add-on server's log: its own output, and Elysium's
+    lines about it (started, exited, restarting in...)."""
+    from api.addon_servers import log_tail
+
+    _require_manage_deployment(request, current_user)
+    _addon_with_server(request, module_id)
+    return {"lines": log_tail(request.app.state.runtime_paths.log_dir, module_id)}
+
+
+@router.post("/system/addons/{module_id}/restart", status_code=202)
+def restart_addon_server_route(module_id: str, request: Request,
+                               current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Ask for an add-on's server to be restarted now, back-off forgotten.
+    ASKED, NOT DONE HERE: the worker supervising it -- perhaps not this
+    one -- does it within a round. Audited, as the deployment's other
+    changes are."""
+    from api.addon_servers import request_restart
+
+    _require_manage_deployment(request, current_user)
+    module = _addon_with_server(request, module_id)
+    request_restart(request.app.state.runtime_paths.data_dir, module.id)
+    _generation(request).mediator.audit_log.log_addon_restart(current_user.user_id, module.id)
+    return {"status": "asked"}
+
+
 #: What a module's bundle directory may serve, by suffix. Anything else is
 #: absent rather than guessed at: a bundle is scripts, stylesheets, their
 #: source maps, and the fonts and images its stylesheet names.

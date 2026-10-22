@@ -490,6 +490,12 @@ class AuditLog:
             "detail": detail,
         })
 
+    def log_addon_restart(self, user_id: str, module_id: str) -> None:
+        """Someone asked for an add-on's server to be restarted (BLOCKING.md
+        item 3, step 2.2). Its work stops mid-way, so who asked is kept,
+        as for a reload."""
+        self._write({"stage": "addon_restart", "user_id": user_id, "module": module_id})
+
     def log_reload(self, user_id: str, outcome: str, from_generation: int,
                     to_generation: int | None, source_digest: str | None,
                     detail: str | None = None) -> None:

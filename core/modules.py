@@ -62,6 +62,9 @@ GET /api/modules/{id}/files/{path}). The feed turns them into those
 addresses. A module without `entry` is built into the page, as every
 sub-app was before modules.
 
+A MODULE WITH A SERVER OF ITS OWN (step 2) declares it under `server`;
+Elysium starts it and forwards /api/addons/{id}/... to it. core/addons.py.
+
 A BUNDLE NOT YET BUILT IS NOT A LOAD ERROR. The manifest is checked at
 startup, which in development and in the test suite comes before any
 `npm run build`; the shell says the module could not be loaded when
@@ -73,9 +76,12 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
+from types import MappingProxyType
 
+from core.addons import AddonError, ServerSpec, parse_server
 from core.config import load_yaml
 from core.intermediate_layer.auth import UserRecord, authorize
+from core.secret_references import expand_secrets
 
 #: The contract version the feed speaks (shell/core/src/contract.ts).
 CONTRACT_VERSION = 1
@@ -107,7 +113,7 @@ SHIPPED_HOME = "/query"
 SYSTEM_MODULES = ("ui/src/system",)
 
 _MANIFEST_KEYS = frozenset({"id", "name", "version", "permission", "contributes", "entry", "styles",
-                            "activationEvents"})
+                            "activationEvents", "server"})
 #: When a module's code runs besides its pages opening (contract.ts,
 #: ACTIVATION_EVENTS). REFUSED HERE when unknown, unlike in the shell: a
 #: misspelt event in a module.json is a mistake to say at load, while a
@@ -141,6 +147,8 @@ class Module:
     #: The folder as modules.yaml names it (or Elysium's default list),
     #: so the module manager can write it back as it was written.
     listed_as: str = ""
+    #: Its own server (step 2, core/addons.py), or None: most have none.
+    server: "ServerSpec | None" = None
 
     @property
     def bundle_directory(self) -> "Path | None":
@@ -157,6 +165,9 @@ class Modules:
     #: Every module modules.yaml lists, on and off, in its order: an off
     #: module keeps its place, to come back to it when turned on.
     order: tuple[str, ...] = ()
+    #: `addons.yaml`: each add-on server's options, by module id, its
+    #: ${VAR} references already filled from the environment.
+    addon_options: Mapping = MappingProxyType({})
 
 
 def load_modules(config_dir: Path) -> Modules:
@@ -213,7 +224,57 @@ def load_modules(config_dir: Path) -> Modules:
     mounted = {page["path"] for m in loaded for page in m.contributes.get("pages") or []}
     if loaded and home not in mounted:
         raise ModuleError(f"{path}: `home` is {home}, which no loaded module's page is at")
-    return Modules(home=home, modules=tuple(loaded), off=tuple(off), order=tuple(order))
+    options = load_addon_options(config_dir, loaded + off)
+    return Modules(home=home, modules=tuple(loaded), off=tuple(off), order=tuple(order),
+                   addon_options=options)
+
+
+def load_addon_options(config_dir: Path, known: "list[Module]") -> Mapping:
+    """ADDONS.YAML: what a deployment tells an add-on's server at start
+    (step 2.2). An add-on's MANIFEST says how to start it and travels with
+    its code; what differs between deployments -- which world, which
+    account, a password -- is the deployment's, beside its other files:
+
+        simulator:
+          options:
+            world: /srv/sim/world
+            token: ${SIM_TOKEN}
+
+    Home Assistant's split: an add-on declares its options, the person
+    installing it fills them in, and the add-on reads them at start.
+
+    ${VAR} IS FILLED FROM ELYSIUM'S ENVIRONMENT HERE, AT LOAD
+    (core/secret_references.py) -- a missing variable stops the load
+    with its name -- and A LITERAL PASSWORD IS REFUSED, as in every
+    other file. It is the one way a secret reaches an add-on: its
+    server is started with a bare environment, not Elysium's, which
+    holds every silo's credentials.
+
+    Absent, every add-on starts with no options. Naming a module that is
+    not listed, or has no server, is refused: it is a typo or a leftover.
+    """
+    path = config_dir / "addons.yaml"
+    if not path.exists():
+        return MappingProxyType({})
+    raw = load_yaml(path) or {}
+    if not isinstance(raw, Mapping):
+        raise ModuleError(f"{path}: must be a mapping of module ids to {{options: ...}}")
+    servers = {m.id for m in known if m.server is not None}
+    options: dict[str, Mapping] = {}
+    for module_id, block in raw.items():
+        if module_id not in servers:
+            raise ModuleError(f"{path}: {module_id!r} is not a listed module with a server of its own"
+                              + (f"; those are {sorted(servers)}" if servers else ""))
+        if not isinstance(block, Mapping) or set(block) - {"options"}:
+            raise ModuleError(f"{path}: {module_id} takes only `options:`, a mapping")
+        given = block.get("options") or {}
+        if not isinstance(given, Mapping):
+            raise ModuleError(f"{path}: {module_id}.options must be a mapping")
+        try:
+            options[module_id] = MappingProxyType(expand_secrets(dict(given), where=f"addons.yaml {module_id}.options"))
+        except ValueError as error:
+            raise ModuleError(f"{path}: {error}") from None
+    return MappingProxyType(options)
 
 
 def _check_slots(path: Path, known: "list[Module]") -> None:
@@ -281,9 +342,13 @@ def _load_manifest(folder: Path) -> Module:
     if unknown_events:
         raise ModuleError(f"{path}: knows no activation event called {unknown_events}; "
                           f"there are {sorted(_ACTIVATION_EVENTS)}")
+    try:
+        server = parse_server(path, raw.get("server"))
+    except AddonError as error:
+        raise ModuleError(str(error)) from None
     return Module(id=raw["id"], name=raw["name"], version=raw["version"],
                   permission=permission, contributes=contributes, entry=entry, folder=folder,
-                  styles=tuple(styles), activation_events=tuple(events))
+                  styles=tuple(styles), activation_events=tuple(events), server=server)
 
 
 def _is_inside(relative: object) -> bool:

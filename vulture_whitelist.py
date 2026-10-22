@@ -123,6 +123,10 @@ shell_modules_route
 module_file_route
 module_arrangement_route
 save_module_arrangement_route
+addon_servers_route
+addon_server_log_route
+restart_addon_server_route
+addon_proxy_route
 my_visible_apps_route
 my_visible_schema_route
 get_object_detail_route
@@ -588,3 +592,22 @@ text_fields  # MeaningResponse.text_fields, read by pydantic
 searchable_by_meaning  # VisibleObjectTypeResponse.searchable_by_meaning, read by pydantic
 # R51: a stored flag's time, read by the review queue.
 found_at
+
+# THE EXAMPLE ADD-ON'S SERVER (tests/addons/echo/server.py):
+# http.server calls do_<METHOD> by name, reads protocol_version and
+# close_connection off the handler.
+do_PUT
+do_PATCH
+do_DELETE
+do_HEAD
+protocol_version
+close_connection
+
+# ADD-ON SERVERS' STATUS (api/routes.py AddonServerRow and
+# AddonServersResponse): response-model fields, read by FastAPI to
+# serialise and by the System page, never by Python.
+next_start_at
+addons
+# An autouse fixture (tests/integration/test_addon_lifecycle.py): pytest
+# applies it to every test in the file by itself, so nothing names it.
+quick_back_off

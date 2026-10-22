@@ -1,5 +1,6 @@
-// system.spec.ts -- the shell's system sub-app (BLOCKING.md item 3, step
-// 1.4): the Modules page, pinned, offered only with manage:deployment.
+// system.spec.ts -- the system sub-app (BLOCKING.md item 3, steps 1.4 and
+// 2.2): the Modules and Add-on servers pages, pinned, offered only with
+// manage:deployment.
 //
 // SETUP: as the other specs, with the e2e users created afresh -- opsuser
 // was added for this file:
@@ -15,13 +16,17 @@ async function logIn(page: Page, username: string, password: string) {
   await expect(page.locator('.app__nav')).toBeVisible()
 }
 
-test('the Modules page is last on the rail, and lists every module with how it loads here', async ({ page }) => {
+test('the System pages are last on the rail, and Modules lists every module with how it loads here', async ({
+  page,
+}) => {
   await logIn(page, 'opsuser', 'opspass123')
   const rail = page.locator('.app__nav')
   const entries = rail.getByRole('menuitem')
-  await expect(entries.last()).toHaveAccessibleName('Modules')
+  await expect(entries.last()).toHaveAccessibleName('Add-on servers')
+  const modules = entries.nth((await entries.count()) - 2)
+  await expect(modules).toHaveAccessibleName('Modules')
 
-  await entries.last().click()
+  await modules.click()
   await expect(page).toHaveURL(/\/system\/modules$/)
   const row = (name: string) =>
     page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: new RegExp(name) }) })
@@ -43,4 +48,16 @@ test('someone without manage:deployment is not offered it', async ({ page }) => 
   await expect(page.locator('.app__nav').getByRole('menuitem', { name: 'Modules' })).toHaveCount(0)
   await page.goto('/system/modules')
   await expect(page.getByRole('table')).toHaveCount(0)
+})
+
+// ADD-ON SERVERS (step 2.2): the page is there for manage:deployment, and
+// says so when no module this deployment lists has a server -- the e2e
+// deployment lists none. Its servers starting, failing and restarting are
+// tests/integration/test_addon_lifecycle.py's, against real processes.
+test('the Add-on servers page says when no module has a server', async ({ page }) => {
+  await logIn(page, 'opsuser', 'opspass123')
+  await page.locator('.app__nav').getByRole('menuitem', { name: 'Add-on servers' }).click()
+  await expect(page).toHaveURL(/\/system\/addons$/)
+  await expect(page.getByRole('heading', { name: 'Add-on servers' })).toBeVisible()
+  await expect(page.getByText('No add-on servers')).toBeVisible()
 })

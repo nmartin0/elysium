@@ -23,6 +23,7 @@ import ChangePasswordForm from '@elysium/shell-api/components/ChangePasswordForm
 import LoginForm from '@elysium/shell-api/components/LoginForm'
 import type { CurrentUser } from '@elysium/shell-api/components/UserMenu'
 import Shell, { type VisibleApp } from './Shell'
+import AddonServersPage from './system/AddonServersPage'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 import {
   logout,
@@ -158,6 +159,12 @@ function SystemModulesPage() {
   )
 }
 
+/** Add-ons' own servers (step 2.2): Elysium's page in the System sub-app. */
+function SystemAddonServersPage() {
+  const { onSessionExpired } = useContext(PageNeedsContext)
+  return <AddonServersPage onSessionExpired={onSessionExpired} />
+}
+
 /**
  * THE MODULES WHOSE CODE IS BUILT INTO THIS PAGE, by `module:page` as each
  * module.json names them (BLOCKING.md item 3). Which of them a person is
@@ -172,6 +179,7 @@ const BUILT_IN_PAGES: Record<string, ComponentType> = {
   'admin:admin': AdminPage,
   'inbox:inbox': InboxPage,
   'system:modules': SystemModulesPage,
+  'system:addons': SystemAddonServersPage,
 }
 /**
  * THE CODE THE SHELL ASKS OF MODULES BUILT INTO THE PAGE, by module id

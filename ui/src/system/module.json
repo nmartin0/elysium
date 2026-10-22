@@ -4,7 +4,13 @@
   "version": "1",
   "permission": "manage:deployment",
   "contributes": {
-    "pages": [{ "id": "modules", "path": "/system/modules" }],
-    "nav": [{ "title": "Modules", "path": "/system/modules", "subject": "System" }]
+    "pages": [
+      { "id": "modules", "path": "/system/modules" },
+      { "id": "addons", "path": "/system/addons" }
+    ],
+    "nav": [
+      { "title": "Modules", "path": "/system/modules", "subject": "System" },
+      { "title": "Add-on servers", "path": "/system/addons", "subject": "System" }
+    ]
   }
 }
