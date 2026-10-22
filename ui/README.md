@@ -146,6 +146,18 @@ module's exceptions.
 The checks are tested themselves, against pages built to fail each one
 (`packages/testing/src/samples.tsx`).
 
+### Why `package.json` overrides `vitest`
+
+`"overrides": { "vitest": "^4.1.12" }` keeps every package on the
+project's own Vitest. Vite 8.2.4 and later name `@vitejs/devtools` as an
+optional peer, and its `@vitejs/devtools-vitest` accepts ANY Vitest, so
+npm resolved that peer to Vitest 5 -- a different major -- and npm 10's
+own peer resolution then crashed ("Cannot read properties of null
+(reading 'edgesOut')") on every install that touched Vite or Vitest.
+Found 22 October, upgrading Vite 8.2.2 -> 8.3.5 and Vitest 4.1.11 ->
+4.1.12 for the advisories `npm audit` reported. Raise the override with
+Vitest itself.
+
 ## Production
 
 ```bash
