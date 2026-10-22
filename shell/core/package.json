@@ -10,7 +10,8 @@
     "./moduleLoader": "./src/moduleLoader.tsx",
     "./Frame": "./src/Frame.tsx",
     "./CommandPalette": "./src/CommandPalette.tsx",
-    "./commands": "./src/commands.ts"
+    "./commands": "./src/commands.ts",
+    "./palette": "./src/palette.tsx"
   },
   "peerDependencies": {
     "@blueprintjs/core": "^6.18.0",

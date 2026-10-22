@@ -4,10 +4,12 @@
  * ui/src/Shell.test.tsx tests the frame as Elysium composes it.
  */
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
-import { lazy, type ComponentType } from 'react'
+import { lazy, useEffect, useState, type ComponentType } from 'react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Command } from './commands'
+import type { ModuleEntry } from './contract'
+import type { PaletteHook } from './palette'
 import { Frame, type FrameNavEntry, type FrameProps } from './Frame'
 
 const KEY = 'test.railCollapsed'
@@ -246,5 +248,109 @@ describe('while a page loads', () => {
     expect(within(document.querySelector('main')!).getByText('loading the page')).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Alpha' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Product' })).toBeInTheDocument()
+  })
+})
+
+describe("modules' palette commands", () => {
+  const module = (id: string, events: string[] = ['onPalette']): ModuleEntry => ({
+    id,
+    name: id,
+    version: '1',
+    contributes: {},
+    entry: null,
+    activationEvents: events,
+  })
+  const cmd = (label: string): Command => ({ id: label, label, group: 'Module', run: () => {} })
+  const openPalette = async () => {
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+    await act(async () => {})
+  }
+  const labels = () =>
+    within(screen.getByRole('dialog'))
+      .getAllByRole('option')
+      .map((option) => option.textContent ?? '')
+
+  it("loads a module's code only once the palette opens, then lists its commands around navigation", async () => {
+    const resolve = vi.fn(() => (() => ({ before: [cmd('Act here')], after: [cmd('Module later')] })) as PaletteHook)
+    renderFrame({
+      palettes: { modules: [module('m')], resolve },
+      commands: { before: [cmd('Host first')], after: [cmd('Host last')] },
+    })
+    expect(resolve).not.toHaveBeenCalled()
+
+    await openPalette()
+
+    expect(resolve).toHaveBeenCalledTimes(1)
+    expect(labels().join(' ')).toMatch(/Act here.*Host first.*Alpha.*Gamma.*Module later.*Host last/)
+  })
+
+  it('asks nothing of a module that does not activate on the palette', async () => {
+    const resolve = vi.fn(() => (() => ({ before: [cmd('Never')] })) as PaletteHook)
+    renderFrame({ palettes: { modules: [module('m', [])], resolve } })
+    await openPalette()
+    expect(resolve).not.toHaveBeenCalled()
+    expect(labels().join(' ')).not.toContain('Never')
+  })
+
+  it("tells a module's hook whether the palette is open, so it can load what it lists then", async () => {
+    const usePalette: PaletteHook = ({ open }) => {
+      const [loaded, setLoaded] = useState<string[]>([])
+      useEffect(() => {
+        if (open) setLoaded(['Loaded on opening'])
+      }, [open])
+      return { after: loaded.map(cmd) }
+    }
+    renderFrame({ palettes: { modules: [module('m')], resolve: () => usePalette } })
+    await openPalette()
+    expect(labels().join(' ')).toContain('Loaded on opening')
+  })
+
+  it('a module whose code fails to load leaves the palette working, and is asked again next time', async () => {
+    const resolve = vi.fn(() => Promise.reject(new Error('no bundle')))
+    renderFrame({ palettes: { modules: [module('m')], resolve } })
+    await openPalette()
+    expect(labels().join(' ')).toContain('Alpha')
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    await act(async () => {})
+    await openPalette()
+    expect(resolve).toHaveBeenCalledTimes(2)
+  })
+
+  it("adds a module's suggestions to what was typed", async () => {
+    const usePalette: PaletteHook = () => ({ suggest: (query) => [cmd(`Find ${query}`)] })
+    renderFrame({ palettes: { modules: [module('m')], resolve: () => usePalette } })
+    await openPalette()
+    fireEvent.change(screen.getByLabelText('Search commands'), { target: { value: 'ada' } })
+    expect(labels().join(' ')).toContain('Find ada')
+  })
+
+  it('drops the commands of a module the feed stops offering', async () => {
+    const usePalette: PaletteHook = () => ({ after: [cmd('From m')] })
+    const resolve = () => usePalette
+    const view = renderFrame({ palettes: { modules: [module('m')], resolve } })
+    await openPalette()
+    expect(labels().join(' ')).toContain('From m')
+    view.rerender(
+      <MemoryRouter initialEntries={['/alpha']}>
+        <Routes>
+          <Route
+            element={
+              <Frame
+                nav={NAV}
+                brand="Product"
+                iconFor={() => 'cube'}
+                fallback={null}
+                storageKey={KEY}
+                palettes={{ modules: [], resolve }}
+              />
+            }
+          >
+            <Route path="*" element={<Where />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    )
+    await act(async () => {})
+    expect(labels().join(' ')).not.toContain('From m')
   })
 })

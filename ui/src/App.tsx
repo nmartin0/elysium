@@ -10,10 +10,11 @@ import {
   type ComponentType,
 } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { checkFeed, type ModuleFeed } from '@shell/core/contract'
+import { checkFeed, type ModuleEntry, type ModuleFeed } from '@shell/core/contract'
 import { moduleRoutes, type PageResolver } from '@shell/core/ModuleRoutes'
 import { ModuleLoader } from '@shell/core/moduleLoader'
 import { buildRegistry } from '@shell/core/registry'
+import type { PaletteHook } from '@shell/core/palette'
 import { publishHostValues, resetHostValues, stageHostValues } from '@elysium/shell-api/host'
 import ChangePasswordForm from '@elysium/shell-api/components/ChangePasswordForm'
 import LoginForm from '@elysium/shell-api/components/LoginForm'
@@ -129,6 +130,23 @@ const BUILT_IN_PAGES: Record<string, ComponentType> = {
   'admin:admin': AdminPage,
   'inbox:inbox': InboxPage,
 }
+/**
+ * THE PALETTE HOOKS OF THE MODULES BUILT INTO THE PAGE, by module id
+ * (step 1.3b). Imported when the palette first opens, not with the page:
+ * the shell asks only for modules whose manifest names `onPalette`, and
+ * only then -- the same lazy activation a bundled module gets.
+ */
+const BUILT_IN_PALETTES: Record<string, () => Promise<PaletteHook>> = {
+  browse: () => import('@elysium/app-browse/palette').then((code) => code.useBrowsePalette),
+}
+
+/** Where a module's palette hook is: its bundle's activation, or this
+ *  page's own table. */
+function paletteFor(module: ModuleEntry): Promise<PaletteHook | undefined> | undefined {
+  if (module.entry) return moduleLoader.load(module).then((activation) => activation.usePalette)
+  return BUILT_IN_PALETTES[module.id]?.()
+}
+
 /** A feed that could not be had, said in the words the failure came in. */
 interface FeedFailure {
   failure: string
@@ -558,6 +576,10 @@ function LoggedIn({
     publishHostValues(needs)
   }, [needs])
   const resolve = useMemo(() => (feed === null || 'failure' in feed ? null : resolverFor(feed)), [feed])
+  const palettes = useMemo(
+    () => (feed === null || 'failure' in feed ? undefined : { modules: feed.modules, resolve: paletteFor }),
+    [feed],
+  )
   // A MODULE THE FEED NO LONGER OFFERS IS UNLOADED -- its stylesheets
   // removed, its `deactivate` called -- and on signing out, all of them:
   // the next person may be offered fewer.
@@ -590,12 +612,7 @@ function LoggedIn({
         <Routes>
           <Route
             element={
-              <Shell
-                visibleApps={visibleApps}
-                visibleSchema={visibleSchema}
-                currentUser={currentUser}
-                onLogout={onLogout}
-              />
+              <Shell visibleApps={visibleApps} palettes={palettes} currentUser={currentUser} onLogout={onLogout} />
             }
           >
             {/* FROM THE FEED: each module's pages, its old addresses, and

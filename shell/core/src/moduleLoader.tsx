@@ -41,6 +41,7 @@
  */
 import { lazy, type ComponentType } from 'react'
 import type { ModuleEntry } from './contract'
+import type { PaletteHook } from './palette'
 
 /** What a module's `activate` is given. Grows with the frame's requests
  *  (navigation, notices, full screen) in step 1.3. */
@@ -53,6 +54,9 @@ export interface ModuleContext {
  *  declares. */
 export interface ModuleActivation {
   pages: Record<string, ComponentType>
+  /** Its palette commands, for a module whose manifest names the
+   *  `onPalette` activation event (palette.tsx). */
+  usePalette?: PaletteHook
 }
 
 interface ModuleExports {

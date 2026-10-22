@@ -54,6 +54,20 @@ export interface Contributions {
 }
 
 /** One module, as the feed lists it for the signed-in user. */
+/**
+ * WHEN A MODULE'S CODE RUNS besides a page of it being opened -- VS Code's
+ * `activationEvents`, where an extension is "activated lazily" and says
+ * on which events. `onPalette`: when the command palette opens, so the
+ * commands its code supplies are there although none of its pages has
+ * been opened yet.
+ *
+ * A FEED MAY NAME ONE THIS SHELL DOES NOT KNOW (a newer backend), and it
+ * is ignored rather than refused: the module still loads when its page
+ * opens, which is what a shell without the event would have done anyway.
+ */
+export const ACTIVATION_EVENTS = ['onPalette'] as const
+export type ActivationEvent = (typeof ACTIVATION_EVENTS)[number]
+
 export interface ModuleEntry {
   id: string
   name: string
@@ -66,6 +80,9 @@ export interface ModuleEntry {
   /** Stylesheets the bundle needs, added when it loads and removed when
    *  it unloads. Optional, so a version-1 feed without it still reads. */
   styles?: string[]
+  /** When its code runs besides its pages opening. Optional: a feed
+   *  without it activates modules only by their pages. */
+  activationEvents?: string[]
 }
 
 /** GET {base}/modules */
@@ -117,6 +134,12 @@ export function checkFeed(raw: unknown): ModuleFeed {
     ) {
       throw new FeedError(`${module.id}: \`styles\` must be a list of addresses`)
     }
+    if (
+      module.activationEvents !== undefined &&
+      !(Array.isArray(module.activationEvents) && module.activationEvents.every((e) => typeof e === 'string'))
+    ) {
+      throw new FeedError(`${module.id}: \`activationEvents\` must be a list of event names`)
+    }
   }
   return feed as ModuleFeed
 }
@@ -126,4 +149,9 @@ export async function fetchFeed(base: string, init?: RequestInit): Promise<Modul
   const response = await fetch(`${base}/modules`, { credentials: 'same-origin', ...init })
   if (!response.ok) throw new FeedError(`the module feed answered ${response.status}`)
   return checkFeed(await response.json())
+}
+
+/** Whether a module asked to be activated on `event`. */
+export function activatesOn(module: ModuleEntry, event: ActivationEvent): boolean {
+  return module.activationEvents?.includes(event) ?? false
 }

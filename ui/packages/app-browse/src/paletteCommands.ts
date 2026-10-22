@@ -1,11 +1,17 @@
 /**
- * What the command palette offers beyond "go to" (DEV_UI 10.1).
+ * WHAT BROWSE OFFERS THE COMMAND PALETTE beyond "go to" (DEV_UI 10.1).
  *
  * "Elysium has object types, saved views, actions per type, admin
  * functions and an agent. A sidebar cannot hold that." These build the
- * commands for each, from data the shell already has or fetches when
- * the palette opens -- never per keystroke, because "the palette opens
- * in under 100ms or it will not be used".
+ * commands for each, from the schema the host publishes and from data
+ * fetched when the palette opens -- never per keystroke, because "the
+ * palette opens in under 100ms or it will not be used".
+ *
+ * BROWSE'S OWN, SUPPLIED TO THE SHELL (step 1.3b): they lived in
+ * Elysium's shell, which therefore knew Browse's routes and was handed
+ * the schema -- two of the three places the frame broke "a sub-app
+ * touches the frame only by declaring". useBrowsePalette (palette.ts)
+ * hands them to the shell's palette instead.
  *
  * SCOPED TO WHERE YOU ARE, from GitHub's palette: it "uses [your
  * location] as the scope for suggestions", and "pull request and issue
@@ -20,8 +26,8 @@
  *
  * EVERY COMMAND IS A LINK. Each one navigates to a URL the destination
  * already understands -- `?type=`, `?saved=`, `?action=`, `?q=` -- so
- * the shell imports nothing from the lazy-loaded apps, and anything
- * the palette can reach can also be bookmarked.
+ * the commands need none of Browse's screens loaded, and anything the
+ * palette can reach can also be bookmarked.
  */
 
 import type { Command } from '@shell/core/commands'

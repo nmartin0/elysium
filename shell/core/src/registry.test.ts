@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CONTRACT_VERSION, FeedError, checkFeed, type ModuleFeed } from './contract'
+import { CONTRACT_VERSION, FeedError, activatesOn, checkFeed, type ModuleFeed } from './contract'
 import { buildRegistry } from './registry'
 
 function feed(modules: ModuleFeed['modules']): ModuleFeed {
@@ -21,6 +21,18 @@ describe('checkFeed', () => {
     const module = { id: 'm', name: 'M', version: '1', contributes: {}, entry: null }
 
     expect(() => checkFeed({ contract: CONTRACT_VERSION, home: '/a', modules: [module, module] })).toThrow(FeedError)
+  })
+
+  it('reads activation events, ignoring one it does not know rather than refusing the feed', () => {
+    const module = { id: 'm', name: 'M', version: '1', contributes: {}, entry: null }
+    const read = checkFeed(feed([{ ...module, activationEvents: ['onPalette', 'onSomethingNewer'] }]))
+    expect(activatesOn(read.modules[0]!, 'onPalette')).toBe(true)
+    expect(activatesOn(checkFeed(feed([module])).modules[0]!, 'onPalette')).toBe(false)
+  })
+
+  it('refuses activation events that are not a list of names', () => {
+    const module = { id: 'm', name: 'M', version: '1', contributes: {}, entry: null }
+    expect(() => checkFeed(feed([{ ...module, activationEvents: 'onPalette' as never }]))).toThrow(/activationEvents/)
   })
 })
 

@@ -135,8 +135,35 @@ class TestTheFeed:
 
         assert feed["contract"] == CONTRACT_VERSION
         assert feed["home"] == "/one"
-        assert set(feed["modules"][0]) == {"id", "name", "version", "contributes", "entry", "styles"}
+        assert set(feed["modules"][0]) == {"id", "name", "version", "contributes", "entry", "styles",
+                                           "activationEvents"}
         assert str(tmp_path) not in json.dumps(feed)
+
+
+class TestActivationEvents:
+    """When a module's code runs besides its pages opening (step 1.3:
+    VS Code's activationEvents)."""
+
+    def test_the_feed_carries_them(self, tmp_path):
+        one = _module(tmp_path / "one", activationEvents=["onPalette"])
+        feed = feed_for(load_modules(_deployment(tmp_path, [one])), _user("admin"), ROLES)
+
+        assert feed["modules"][0]["activationEvents"] == ["onPalette"]
+
+    def test_a_module_naming_none_carries_an_empty_list(self, tmp_path):
+        one = _module(tmp_path / "one")
+        feed = feed_for(load_modules(_deployment(tmp_path, [one])), _user("admin"), ROLES)
+
+        assert feed["modules"][0]["activationEvents"] == []
+
+    @pytest.mark.parametrize("events", [["onPallete"], "onPalette", [3]])
+    def test_a_misspelt_or_malformed_one_is_refused_at_load(self, tmp_path, events):
+        """A typo in module.json is said when Elysium starts, rather than a
+        module whose commands silently never appear."""
+        folder = _module(tmp_path / "bad", activationEvents=events)
+
+        with pytest.raises(ModuleError, match="activation"):
+            load_modules(_deployment(tmp_path, [folder], home="/bad"))
 
 
 class TestBundles:

@@ -742,7 +742,22 @@ and the shell has 21 tests of its own for the frame, each behaviour
 with a control. Styled by the host for now, through the frame's stable
 class names.
 
-**Blocked on:** nothing; step 1.3b is next.
+**STEP 1.3b BUILT (21 October): BROWSE SUPPLIES ITS OWN COMMANDS.** A
+module's manifest may name ACTIVATION EVENTS (`onPalette`; VS Code's
+`activationEvents`), carried by the feed, refused by Elysium at load when
+misspelt and ignored by the shell when unknown. Its code may return a
+palette HOOK (`usePalette({ open })` -> commands before and after
+navigation, and suggestions), which the frame mounts in a component of
+its own the first time the palette opens. Browse's types, saved views,
+actions-in-scope and searches moved from `ui/src` into
+`packages/app-browse` (`palette.ts`), with the fetch-on-open; its
+manifest names `onPalette`, and App imports its hook only when the shell
+asks. VIOLATIONS (a) AND (c) ARE GONE: `Shell.tsx` no longer knows
+Browse's routes, and the shell is no longer handed the schema -- Browse
+reads it from the host values like any module. A Python test refuses a
+module whose palette the page supplies without `onPalette`.
+
+**Blocked on:** nothing; step 1.3c is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

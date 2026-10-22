@@ -69,7 +69,13 @@ SHIPPED_MODULES = ("ui/packages/app-browse", "ui/packages/app-query",
                    "ui/packages/app-admin")
 SHIPPED_HOME = "/query"
 
-_MANIFEST_KEYS = frozenset({"id", "name", "version", "permission", "contributes", "entry", "styles"})
+_MANIFEST_KEYS = frozenset({"id", "name", "version", "permission", "contributes", "entry", "styles",
+                            "activationEvents"})
+#: When a module's code runs besides its pages opening (contract.ts,
+#: ACTIVATION_EVENTS). REFUSED HERE when unknown, unlike in the shell: a
+#: misspelt event in a module.json is a mistake to say at load, while a
+#: shell meeting a newer backend's event ignores it.
+_ACTIVATION_EVENTS = frozenset({"onPalette"})
 _CONTRIBUTION_KEYS = frozenset({"pages", "nav", "redirects"})
 
 
@@ -91,6 +97,8 @@ class Module:
     folder: Path
     #: Stylesheets inside the bundle's directory.
     styles: tuple[str, ...] = ()
+    #: When its code runs besides its pages opening, e.g. onPalette.
+    activation_events: tuple[str, ...] = ()
 
     @property
     def bundle_directory(self) -> "Path | None":
@@ -175,9 +183,16 @@ def _load_manifest(folder: Path) -> Module:
     if entry is not None and any(Path(s).parent != Path(entry).parent for s in styles):
         raise ModuleError(f"{path}: `styles` must sit beside `entry`, in {Path(entry).parent}/ -- "
                           f"the one directory Elysium serves")
+    events = raw.get("activationEvents") or []
+    if not isinstance(events, list) or not all(isinstance(e, str) for e in events):
+        raise ModuleError(f"{path}: `activationEvents` must be a list of event names")
+    unknown_events = sorted(set(events) - _ACTIVATION_EVENTS)
+    if unknown_events:
+        raise ModuleError(f"{path}: knows no activation event called {unknown_events}; "
+                          f"there are {sorted(_ACTIVATION_EVENTS)}")
     return Module(id=raw["id"], name=raw["name"], version=raw["version"],
                   permission=permission, contributes=contributes, entry=entry, folder=folder,
-                  styles=tuple(styles))
+                  styles=tuple(styles), activation_events=tuple(events))
 
 
 def _is_inside(relative: object) -> bool:
@@ -266,7 +281,8 @@ def feed_for(modules: Modules, user: UserRecord, roles: dict) -> dict:
         "modules": [{"id": m.id, "name": m.name, "version": m.version,
                      "contributes": _plain(m.contributes),
                      "entry": None if m.entry is None else _address(m, m.entry),
-                     "styles": [_address(m, s) for s in m.styles]}
+                     "styles": [_address(m, s) for s in m.styles],
+                     "activationEvents": list(m.activation_events)}
                     for m in offered_to(modules, user, roles)],
     }
 

@@ -10,7 +10,8 @@
     "./ObjectSearchPanel": "./src/ObjectSearchPanel.tsx",
     "./Provenance": "./src/Provenance.tsx",
     "./PublishedHistory": "./src/PublishedHistory.tsx",
-    "./SetName": "./src/SetName.tsx"
+    "./SetName": "./src/SetName.tsx",
+    "./palette": "./src/palette.ts"
   },
   "dependencies": {
     "@elysium/shell-api": "*"

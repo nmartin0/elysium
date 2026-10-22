@@ -23,6 +23,7 @@ import { Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore, t
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import CommandPalette from './CommandPalette'
 import { type Command, mayFireGlobally, opensPalette } from './commands'
+import { PaletteSource, useContributions, useModulePalettes, type ModulePalettes } from './palette'
 
 /** One entry on the rail: a feed's `nav` contribution. */
 export interface FrameNavEntry {
@@ -56,6 +57,13 @@ export interface FrameProps {
   commands?: { before?: Command[]; after?: Command[] }
   /** Commands made FROM what was typed, listed after every match. */
   suggest?: (query: string) => Command[]
+  /**
+   * The modules whose code supplies palette commands, and how to get at
+   * that code (palette.tsx). Their commands sit inside the host's own:
+   * modules' `before`, the host's `before`, navigation, modules' `after`,
+   * the host's `after`.
+   */
+  palettes?: ModulePalettes
   /** Told each time the palette opens, so a host can load what it lists. */
   onPaletteOpen?: () => void
   /** What the content area shows while a page's code loads. */
@@ -120,6 +128,7 @@ export function Frame({
   iconFor,
   commands,
   suggest,
+  palettes,
   onPaletteOpen,
   fallback,
   storageKey,
@@ -171,7 +180,21 @@ export function Frame({
       })),
     [nav, navigate],
   )
-  const allCommands: Command[] = [...(commands?.before ?? []), ...navigationCommands, ...(commands?.after ?? [])]
+  const sources = useModulePalettes(palettes, paletteOpen)
+  const [contributions, report] = useContributions()
+  // In the feed's order, not the order their answers arrived in.
+  const offered = sources.flatMap(({ id }) => contributions.get(id) ?? [])
+  const allCommands: Command[] = [
+    ...offered.flatMap((c) => c.before ?? []),
+    ...(commands?.before ?? []),
+    ...navigationCommands,
+    ...offered.flatMap((c) => c.after ?? []),
+    ...(commands?.after ?? []),
+  ]
+  const allSuggestions = (query: string) => [
+    ...offered.flatMap((c) => c.suggest?.(query) ?? []),
+    ...(suggest?.(query) ?? []),
+  ]
 
   /**
    * THE FUNCTIONAL UPDATER IS THE FIX FOR A SHIPPED BUG: this read
@@ -303,9 +326,12 @@ export function Frame({
         <div className="app__header-actions">{actions}</div>
       </header>
       {overlays}
+      {sources.map(({ id, usePalette }) => (
+        <PaletteSource key={id} id={id} usePalette={usePalette} open={paletteOpen} report={report} />
+      ))}
       <CommandPalette
         commands={allCommands}
-        suggest={suggest}
+        suggest={allSuggestions}
         isOpen={paletteOpen}
         onClose={() => setPaletteOpen(false)}
       />

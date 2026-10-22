@@ -8,17 +8,7 @@ import { readPreference, writePreference } from '@elysium/shell-api/browserPrefe
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import UserMenu, { type CurrentUser } from '@elysium/shell-api/components/UserMenu'
 import { DENSITIES, type Density, isDensity } from '@elysium/shell-api/density'
-import { getSavedViews, getVisibleActionTypesCached } from '@elysium/shell-api/api'
-import type { VisibleSchema } from '@elysium/shell-api/types'
-import {
-  actionCommands,
-  objectInScope,
-  type PaletteAction,
-  type PaletteView,
-  searchSuggestions,
-  typeCommands,
-  viewCommands,
-} from './paletteCommands'
+import type { ModulePalettes } from '@shell/core/palette'
 import { totalWaiting, useInboxCounts } from '@elysium/shell-api/useInboxCounts'
 import HelpPanel from '@elysium/shell-api/components/HelpPanel'
 
@@ -32,11 +22,10 @@ import HelpPanel from '@elysium/shell-api/components/HelpPanel'
 // the user menu), the theme and row density themselves, and the palette
 // commands that know Elysium's data.
 //
-// TWO OF THOSE ARE THE VIOLATIONS STEP 1.3 REMOVES, and are here only
-// until then: Browse's commands (types, saved views, actions, searches)
-// become Browse's own declared commands, which also ends the frame being
-// handed the schema; and the Inbox's count becomes a badge on its rail
-// entry.
+// ONE OF THOSE IS A VIOLATION STEP 1.3 REMOVES, and is here only until
+// then: the Inbox's count becomes a badge on its rail entry. Browse's
+// commands already moved to Browse (step 1.3b), which supplies them
+// through the feed's `palettes`; this file no longer sees the schema.
 
 export interface VisibleApp {
   path: string
@@ -47,9 +36,8 @@ export interface VisibleApp {
 
 interface ShellProps {
   visibleApps: VisibleApp[]
-  /** For the palette's types and searches; null until it arrives, and
-   * the palette simply has fewer commands until then. */
-  visibleSchema?: VisibleSchema | null
+  /** The modules whose code adds to the palette, and where that code is. */
+  palettes?: ModulePalettes
   currentUser: CurrentUser | null
   onLogout: () => void
 }
@@ -58,7 +46,7 @@ interface ShellProps {
  *  state survives the move. */
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'elysium.sidebarCollapsed'
 
-export default function Shell({ visibleApps, visibleSchema = null, currentUser, onLogout }: ShellProps) {
+export default function Shell({ visibleApps, palettes, currentUser, onLogout }: ShellProps) {
   const location = useLocation()
   const navigate = useNavigate()
   // THE HELP ASSISTANT, and which screen it is being asked from -- the
@@ -66,42 +54,6 @@ export default function Shell({ visibleApps, visibleSchema = null, currentUser, 
   const [helpOpen, setHelpOpen] = useState(false)
   const currentScreen = visibleApps.find((app) => location.pathname.startsWith(app.path))?.name ?? null
 
-  /**
-   * WHAT THE PALETTE FETCHES, AND WHEN: the reader's saved views and the
-   * action types, each time it OPENS -- not per keystroke, and not on
-   * every page load for a palette most loads never open. The list it
-   * filters is in memory by the time anyone types (DEV_UI 10.1: "opens
-   * in under 100ms or it will not be used"); a view saved a minute ago
-   * is there next time it opens.
-   *
-   * A FAILURE IS FEWER COMMANDS, not an error in the palette: navigation
-   * and types still work, and a session that has expired is noticed by
-   * whatever the page itself asks next.
-   */
-  const [paletteViews, setPaletteViews] = useState<PaletteView[]>([])
-  const [paletteActions, setPaletteActions] = useState<Record<string, PaletteAction> | null>(null)
-  const loadPaletteData = () => {
-    void (async () => {
-      try {
-        setPaletteViews(await getSavedViews())
-      } catch {
-        setPaletteViews([])
-      }
-    })()
-    void (async () => {
-      try {
-        setPaletteActions((await getVisibleActionTypesCached()) as Record<string, PaletteAction>)
-      } catch {
-        setPaletteActions(null)
-      }
-    })()
-  }
-
-  const canBrowse = visibleApps.some((app) => app.path === '/browse')
-  const scope = objectInScope(location.pathname)
-  const browsingType = location.pathname.startsWith('/browse')
-    ? new URLSearchParams(location.search).get('type')
-    : (scope?.type ?? null)
   /**
    * Dark mode, which Blueprint provides per widget and nothing turned
    * on. Applied as a class on <body> rather than a parallel
@@ -155,16 +107,13 @@ export default function Shell({ visibleApps, visibleSchema = null, currentUser, 
   }
 
   /**
-   * THE PALETTE'S WHOLE LIST, in the order a person reaches for it:
-   * actions on what is in front of them, then places (the frame's own
-   * navigation commands), types and their own views, then settings. Rebuilt per render -- a
-   * few dozen objects -- because half of it depends on the location.
+   * THE SHELL'S OWN SETTINGS, last in the palette, after the frame's
+   * navigation and every module's commands.
    *
    * THE SAME LABELS AS THE BUTTONS (DEV_UI 10.4): "Help", "Log out",
    * "Switch to light theme" -- somebody who learnt the button finds the
    * command by the word they already know.
    */
-  const go = (to: string) => void navigate(to)
   const settingsCommands: Command[] = [
     { id: 'shell:help', label: 'Help', group: 'Shell', run: () => setHelpOpen(true) },
     {
@@ -181,16 +130,6 @@ export default function Shell({ visibleApps, visibleSchema = null, currentUser, 
     })),
     { id: 'shell:logout', label: 'Log out', group: 'Shell', run: onLogout },
   ]
-  const commands = {
-    before: actionCommands(scope, paletteActions, go),
-    after: [
-      ...(canBrowse ? typeCommands(visibleSchema, go) : []),
-      ...(canBrowse ? viewCommands(paletteViews, go) : []),
-      ...settingsCommands,
-    ],
-  }
-  const suggest = (query: string) => (canBrowse ? searchSuggestions(query, visibleSchema, browsingType, go) : [])
-
   useEffect(() => {
     document.body.dataset.density = density
   }, [density])
@@ -236,9 +175,8 @@ export default function Shell({ visibleApps, visibleSchema = null, currentUser, 
         </>
       }
       overlays={<HelpPanel isOpen={helpOpen} onClose={() => setHelpOpen(false)} screen={currentScreen} />}
-      commands={commands}
-      suggest={suggest}
-      onPaletteOpen={loadPaletteData}
+      commands={{ after: settingsCommands }}
+      palettes={palettes}
       fallback={<LoadingState />}
       storageKey={SIDEBAR_COLLAPSED_STORAGE_KEY}
     />

@@ -209,6 +209,21 @@ def test_no_page_code_is_left_for_a_page_no_module_contributes():
     assert not orphaned, f"App.tsx has code for {sorted(orphaned)}, which no module contributes"
 
 
+def test_a_module_the_page_supplies_palette_commands_for_activates_on_the_palette():
+    """App.tsx's BUILT_IN_PALETTES names the modules whose palette hook
+    the page supplies. The shell asks for one only when the module's
+    manifest names the `onPalette` activation event -- so without it,
+    the commands would silently never appear (step 1.3b)."""
+    source = (UI / "src" / "App.tsx").read_text()
+    table = source[source.index("const BUILT_IN_PALETTES"):]
+    table = table[:table.index("\n}")]
+    supplied = set(re.findall(r"^\s+([a-z-]+):", table, re.MULTILINE))
+    assert supplied, "found no palette in BUILT_IN_PALETTES; the parse is broken"
+    by_id = {m["id"]: m for m in _manifests()}
+    missing = sorted(i for i in supplied if "onPalette" not in by_id[i].get("activationEvents", []))
+    assert not missing, f"{missing} supply palette commands and do not activate on the palette"
+
+
 def test_every_rail_entry_has_an_icon():
     # appIcons.ts maps path to icon. A missing entry is cosmetic rather
     # than broken, which is exactly why it would survive review.

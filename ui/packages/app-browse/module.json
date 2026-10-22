@@ -2,11 +2,24 @@
   "id": "browse",
   "name": "Browse",
   "version": "1",
+  "activationEvents": ["onPalette"],
   "contributes": {
     "pages": [
-      { "id": "search", "path": "/browse" },
-      { "id": "object", "path": "/objects/:objectType/:objectId" }
+      {
+        "id": "search",
+        "path": "/browse"
+      },
+      {
+        "id": "object",
+        "path": "/objects/:objectType/:objectId"
+      }
     ],
-    "nav": [{ "title": "Browse", "path": "/browse", "subject": "Objects" }]
+    "nav": [
+      {
+        "title": "Browse",
+        "path": "/browse",
+        "subject": "Objects"
+      }
+    ]
   }
 }

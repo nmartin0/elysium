@@ -6,6 +6,9 @@ import { lazy, type ComponentType } from 'react'
 import type { CurrentUser } from '@elysium/shell-api/components/UserMenu'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 import { getVisibleActionTypesCached } from '@elysium/shell-api/api'
+import { publishHostValues, resetHostValues } from '@elysium/shell-api/host'
+import { useBrowsePalette } from '@elysium/app-browse/palette'
+import type { ModulePalettes } from '@shell/core/palette'
 
 /** Where the router is, for commands that navigate into Browse. */
 function BrowseProbe() {
@@ -28,7 +31,24 @@ async function openPalette(
   target: Window | Element = window,
 ) {
   fireEvent.keyDown(target, keys)
-  await act(async () => {})
+  // Opening loads the palette's modules (Browse's hook) and they fetch:
+  // a few turns of the event loop, not one.
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+}
+
+/**
+ * THE PALETTES AS APP.TSX GIVES THEM (step 1.3b): Browse's hook when the
+ * feed offers Browse, which is what puts its commands in the palette. The
+ * schema they need is what the host publishes, not a prop of the shell.
+ */
+function palettesFor(visibleApps: VisibleApp[]): ModulePalettes | undefined {
+  if (!visibleApps.some((app) => app.path === '/browse')) return undefined
+  return {
+    modules: [
+      { id: 'browse', name: 'Browse', version: '1', contributes: {}, entry: null, activationEvents: ['onPalette'] },
+    ],
+    resolve: () => useBrowsePalette,
+  }
 }
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'elysium.sidebarCollapsed'
@@ -40,6 +60,7 @@ function renderShell(
   currentUser: CurrentUser | null = null,
   visibleSchema: VisibleSchema | null = null,
 ) {
+  act(() => publishHostValues({ visibleSchema, username: currentUser?.username ?? '', onSessionExpired: () => {} }))
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <Routes>
@@ -47,7 +68,7 @@ function renderShell(
           element={
             <Shell
               visibleApps={visibleApps}
-              visibleSchema={visibleSchema}
+              palettes={palettesFor(visibleApps)}
               currentUser={currentUser}
               onLogout={onLogout}
             />
@@ -80,6 +101,7 @@ afterEach(() => {
   // tests fail from exactly this leak, then pass once this was
   // added.
   vi.restoreAllMocks()
+  act(() => resetHostValues())
 })
 
 describe('Shell', () => {

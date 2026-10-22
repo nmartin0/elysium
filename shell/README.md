@@ -15,6 +15,7 @@ shell/
     src/moduleLoader.tsx a module's bundle, stylesheets and lifecycle
     src/Frame.tsx        the frame: rail, header and command palette
     src/CommandPalette.tsx, src/commands.ts  the palette and its matching
+    src/palette.tsx      modules' palette commands, loaded on opening
   build/           @shell/build: build-time tooling
     src/sharedLibraries.ts  the shared-library registry, shims and import map
     src/moduleBuild.ts      a module's bundle; building modules with the page
@@ -49,11 +50,32 @@ react-router layout route; pages mount in its outlet.
   iconFor={(path) => icon}      // each rail entry's icon
   commands={{ before, after }}  // the host's commands, around navigation
   suggest={(query) => [...]}    // commands made from what was typed
+  palettes={{ modules, resolve }} // modules whose code adds commands
   onPaletteOpen={load}          // told on each opening
   fallback={<Spinner />}        // while a page's code loads
   storageKey="product.rail"     // where the collapsed state is remembered
 />
 ```
+
+MODULES ADD TO THE PALETTE FROM THEIR CODE. Pass
+`palettes={{ modules: feed.modules, resolve }}`, where `resolve(module)`
+returns the module's palette hook -- from its bundle's activation
+(`activate()` returning `usePalette`), or the host's own code for a
+module built into the page -- or a promise of it. The frame asks only
+for modules naming `onPalette`, the first time the palette opens, and
+mounts each hook in a component of its own:
+
+```ts
+export function usePalette({ open }: { open: boolean }): PaletteContribution {
+  // hooks as usual: where the person is, data fetched when `open`...
+  return { before: [...], after: [...], suggest: (query) => [...] }
+}
+```
+
+`before` lists sit ahead of the frame's navigation commands, `after`
+behind them, each in feed order; suggestions follow every match. A
+module whose code fails to load adds nothing, and is asked again at the
+next opening; one the feed stops offering drops out.
 
 What the frame does itself: groups the rail by subject; collapses it
 (the toggle, Ctrl/Cmd+B, remembered per browser; closed below 1100px
@@ -124,6 +146,13 @@ is absent, never sent and hidden.
   the page already has the code built in.
 - `styles` -- optional: stylesheets the bundle needs, added when it
   loads and removed when it unloads.
+- `activationEvents` -- optional: when the module's code runs besides
+  one of its pages opening, VS Code's activation events. `onPalette`:
+  when the command palette first opens, so the commands its code
+  supplies are listed before any of its pages has been visited. A
+  shell ignores an event it does not know (a newer backend's), and the
+  module still loads with its pages; Elysium refuses an unknown one in a
+  `module.json` at load, since there it is a typo.
 - `contributes` -- **static**: read without running any of the
   module's code, so the rail and routes exist before anything loads
   (VS Code's `contributes`, Backstage's extension data).
