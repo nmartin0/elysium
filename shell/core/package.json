@@ -17,7 +17,8 @@
     "./ModulesPage": "./src/ModulesPage.tsx",
     "./safeMode": "./src/safeMode.ts",
     "./ModuleArrangementEditor": "./src/ModuleArrangementEditor.tsx",
-    "./RailTabsDialog": "./src/RailTabsDialog.tsx"
+    "./RailTabsDialog": "./src/RailTabsDialog.tsx",
+    "./slots": "./src/slots.tsx"
   },
   "peerDependencies": {
     "@blueprintjs/core": "^6.18.0",

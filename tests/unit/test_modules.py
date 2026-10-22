@@ -435,3 +435,65 @@ class TestTheArrangement:
 
         assert written["modules"] == [str(one), str(two)]
         assert written["disabled"] == [str(one)]
+
+
+class TestSlots:
+    """A place a module's page offers to others (step 1.5)."""
+
+    def _owner(self, tmp_path, slots=None):
+        return _module(tmp_path / "owner", contributes={
+            "pages": [{"id": "main", "path": "/owner"}],
+            "slots": slots if slots is not None else [{"id": "owner.tabs", "order": ["b", "a"]}]})
+
+    def _contributor(self, tmp_path, name, into):
+        return _module(tmp_path / name, contributes={"into": into})
+
+    def test_a_contribution_to_a_declared_slot_loads_and_reaches_the_feed(self, tmp_path):
+        owner = self._owner(tmp_path)
+        giver = self._contributor(tmp_path, "giver", [{"slot": "owner.tabs", "id": "a", "title": "A"}])
+        modules = load_modules(_deployment(tmp_path, [owner, giver], home="/owner"))
+
+        feed = feed_for(modules, _user("admin"), ROLES)
+        by_id = {m["id"]: m for m in feed["modules"]}
+        assert by_id["owner"]["contributes"]["slots"] == [{"id": "owner.tabs", "order": ["b", "a"]}]
+        assert by_id["giver"]["contributes"]["into"] == [{"slot": "owner.tabs", "id": "a", "title": "A"}]
+
+    def test_a_contribution_to_a_slot_nobody_declares_is_refused_at_load(self, tmp_path):
+        """A typo in `into` is said at startup, not as a tab that never appears."""
+        owner = self._owner(tmp_path)
+        giver = self._contributor(tmp_path, "giver", [{"slot": "owner.tab", "id": "a", "title": "A"}])
+        with pytest.raises(ModuleError, match="no module declares"):
+            load_modules(_deployment(tmp_path, [owner, giver], home="/owner"))
+
+    def test_a_slot_declared_twice_is_refused(self, tmp_path):
+        owner = self._owner(tmp_path)
+        other = _module(tmp_path / "other", contributes={"slots": [{"id": "owner.tabs"}]})
+        with pytest.raises(ModuleError, match="declared by both"):
+            load_modules(_deployment(tmp_path, [owner, other], home="/owner"))
+
+    def test_a_contribution_needs_a_slot_an_id_and_a_title(self, tmp_path):
+        owner = self._owner(tmp_path)
+        giver = self._contributor(tmp_path, "giver", [{"slot": "owner.tabs", "id": "a"}])
+        with pytest.raises(ModuleError, match="needs a `slot`, an `id` and a `title`"):
+            load_modules(_deployment(tmp_path, [owner, giver], home="/owner"))
+
+    def test_one_module_cannot_declare_a_contribution_id_twice(self, tmp_path):
+        owner = self._owner(tmp_path)
+        giver = self._contributor(tmp_path, "giver", [{"slot": "owner.tabs", "id": "a", "title": "A"},
+                                                      {"slot": "owner.tabs", "id": "a", "title": "Again"}])
+        with pytest.raises(ModuleError, match="declared twice"):
+            load_modules(_deployment(tmp_path, [owner, giver], home="/owner"))
+
+    def test_a_slot_whose_owner_is_turned_off_still_takes_contributions(self, tmp_path):
+        """Known, not shown: they wait for the owner to come back."""
+        owner = self._owner(tmp_path)
+        home = _module(tmp_path / "home")
+        giver = self._contributor(tmp_path, "giver", [{"slot": "owner.tabs", "id": "a", "title": "A"}])
+        config = tmp_path / "config"
+        config.mkdir()
+        (config / "modules.yaml").write_text(json.dumps(
+            {"home": "/home", "modules": [str(home), str(owner), str(giver)], "disabled": [str(owner)]}))
+
+        modules = load_modules(config)
+
+        assert [m.id for m in modules.off] == ["owner"]

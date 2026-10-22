@@ -26,6 +26,7 @@ import { type Command, mayFireGlobally, opensPalette } from './commands'
 import { useActivated, type FrameModules } from './activation'
 import { BadgeSource, badgeText, useBadgeReports, type Badge } from './badges'
 import { PaletteSource, useContributions } from './palette'
+import { SlotsProvider } from './slots'
 
 /** One entry on the rail: a feed's `nav` contribution. */
 export interface FrameNavEntry {
@@ -438,7 +439,11 @@ export function Frame({
             {/* Around the page alone, so the frame stays drawn and usable
                 while a page's code loads. */}
             <Suspense fallback={fallback}>
-              <Outlet />
+              {/* Slots (slots.tsx): a page asks for the contributions to
+                  the places it offers, from these modules. */}
+              <SlotsProvider modules={modules}>
+                <Outlet />
+              </SlotsProvider>
             </Suspense>
           </main>
         </div>

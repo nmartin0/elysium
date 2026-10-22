@@ -870,8 +870,32 @@ cannot be hidden, even by a preference that names one. The frame takes
 the hidden paths (`hiddenPaths`) and the dialog is the shell's
 (`@shell/core/RailTabsDialog`). Per-person ORDER waits, as agreed.
 
-STEP 1.4 IS DONE. **Blocked on:** nothing; step 1.5, slots -- a module
-adding a tab or section inside another module's screen -- is next.
+STEP 1.4 IS DONE.
+
+**STEP 1.5, SLOTS, IN TWO PARTS, agreed with the owner 22 October:** (a)
+the mechanism; (b) the Inbox as the first slot owner, with Approvals,
+Notifications and Identity made modules of their own (the owner's
+choice), each contributing its tabs, so each can be turned off on its
+own and the Inbox stops importing them. The OWNER decides the order of
+its slot (the owner's choice: the Inbox keeps today's tab order), and a
+contribution it does not list follows in feed order. Precedent:
+Backstage's extension inputs and `attachTo`; Grafana's extension points,
+whose extensions must be listed in plugin.json.
+
+**STEP 1.5a BUILT (22 October): SLOTS.** A manifest declares the slots
+its pages offer (`slots: [{id, order?}]`) and its contributions to
+others' (`into: [{slot, id, title, icon?}]`), statically, so the shell
+and the module manager know every contribution without loading code.
+Elysium refuses at load a contribution to a slot no module declares, a
+slot declared twice, or a contribution declared twice by one module; a
+slot whose owner is turned off keeps its contributions, unshown. The
+owner draws its slot with `useSlot(id)` (`@shell/core/slots`), from the
+modules the feed offers -- permissions and safe mode applying untouched
+-- and each contribution's component comes from its module's code on
+first showing, inside an error boundary of its own, so a failing one
+says so in its place and leaves the page standing.
+
+**Blocked on:** nothing; step 1.5b, the Inbox on slots, is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

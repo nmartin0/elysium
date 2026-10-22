@@ -22,6 +22,7 @@ shell/
     src/safeMode.ts      safe mode: this tab, pinned modules only, until left
     src/ModuleArrangementEditor.tsx  the module manager: the arrangement for everyone
     src/RailTabsDialog.tsx  one person's own rail tabs
+    src/slots.tsx        slots: places a page offers other modules
   build/           @shell/build: build-time tooling
     src/sharedLibraries.ts  the shared-library registry, shims and import map
     src/moduleBuild.ts      a module's bundle; building modules with the page
@@ -196,6 +197,16 @@ is absent, never sent and hidden.
     pages. `subject` groups them: a subject's entries are drawn
     together, subjects in the order they first appear.
   - `redirects` -- old addresses kept, unless a page holds the path.
+  - `slots` -- places this module's pages offer to others (step 1.5):
+    `{ id, order? }`, `order` naming the contribution ids it wants
+    first, in that order; the rest follow in feed order.
+  - `into` -- this module's contributions to others' slots:
+    `{ slot, id, title, icon? }`, DECLARED so the shell knows them
+    without loading code (Grafana: "You must update your plugin.json
+    metadata to list any registered extensions"). The code comes from
+    `activate()` -> `contributions[id]`. Elysium refuses at load a
+    contribution to a slot no module declares, and a slot declared
+    twice.
 
 ### `GET` and `PUT {base}/modules/arrangement`
 
@@ -244,6 +255,23 @@ client), it also offers the ARRANGEMENT FOR EVERYONE
 up or down, where people land after signing in, saved as one with
 Discard beside it, and "Refresh modules" to fetch the feed again -- a
 bundle rebuilt since the page loaded then loads from its new address.
+
+## Slots
+
+`useSlot(id)` (`@shell/core/slots`) gives a page the contributions to a
+slot it offers, from the modules the feed offers this person -- so
+permissions and safe mode apply untouched -- in the owner's order. Each
+carries its `title`, `icon` and a ready `Component`, which the owner
+renders with the context the slot promises (props), inside its own
+Suspense. Backstage's extension inputs are the model: a child names the
+parent's input, and the parent receives "an array, where each
+individual item is an extension that attached itself".
+
+ONE MODULE CANNOT BREAK ANOTHER'S SCREEN: each contribution renders in
+an error boundary of its own, so one that fails to load or throws says
+"could not be loaded" -- with the safe-mode link -- in its own place,
+and the page and every other contribution stand. The frame provides the
+modules around every page (`SlotsProvider`).
 
 ## Safe mode
 

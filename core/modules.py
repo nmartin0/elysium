@@ -108,7 +108,7 @@ _MANIFEST_KEYS = frozenset({"id", "name", "version", "permission", "contributes"
 #: misspelt event in a module.json is a mistake to say at load, while a
 #: shell meeting a newer backend's event ignores it.
 _ACTIVATION_EVENTS = frozenset({"onPalette", "onStartup"})
-_CONTRIBUTION_KEYS = frozenset({"pages", "nav", "redirects"})
+_CONTRIBUTION_KEYS = frozenset({"pages", "nav", "redirects", "slots", "into"})
 
 
 class ModuleError(ValueError):
@@ -200,6 +200,7 @@ def load_modules(config_dir: Path) -> Modules:
             raise ModuleError(f"{module.folder}: a module called {module.id!r} is already loaded, "
                               f"and that id is a system sub-app's")
         loaded.append(module)
+    _check_slots(path, loaded + off)
     # HOME MUST OPEN SOMETHING. Every address nothing claims is sent
     # there, so a home no module mounts -- a modules.yaml that dropped
     # Query and kept the default -- would send every stray link to an
@@ -208,6 +209,26 @@ def load_modules(config_dir: Path) -> Modules:
     if loaded and home not in mounted:
         raise ModuleError(f"{path}: `home` is {home}, which no loaded module's page is at")
     return Modules(home=home, modules=tuple(loaded), off=tuple(off), order=tuple(order))
+
+
+def _check_slots(path: Path, known: "list[Module]") -> None:
+    """SLOTS (step 1.5) across the deployment's modules, on and off: each
+    slot declared once, and every contribution aimed at a slot some
+    module declares -- a typo in `into` is said at load, not as a tab
+    that silently never appears. A slot whose owner is turned off is
+    still known: its contributions wait, unshown, for it to come back."""
+    owners: dict[str, str] = {}
+    for module in known:
+        for slot in module.contributes.get("slots") or []:
+            if slot["id"] in owners:
+                raise ModuleError(f"{path}: the slot {slot['id']} is declared by both "
+                                  f"{owners[slot['id']]} and {module.id}")
+            owners[slot["id"]] = module.id
+    for module in known:
+        for item in module.contributes.get("into") or []:
+            if item["slot"] not in owners:
+                raise ModuleError(f"{module.folder}: contributes {item['id']} to the slot "
+                                  f"{item['slot']}, which no module declares")
 
 
 def _resolve(folder: str) -> Path:
@@ -293,6 +314,19 @@ def _check_contributions(path: Path, contributes) -> None:
         if not isinstance(redirect, Mapping) or not isinstance(redirect.get("from"), str) \
                 or not isinstance(redirect.get("to"), str):
             raise ModuleError(f"{path}: each redirect needs `from` and `to`")
+    for slot in contributes.get("slots") or []:
+        if not isinstance(slot, Mapping) or not isinstance(slot.get("id"), str) or not slot["id"] \
+                or not all(isinstance(o, str) for o in slot.get("order") or []):
+            raise ModuleError(f"{path}: each slot needs an `id`, and `order`, if given, a list of "
+                              f"contribution ids")
+    seen = set()
+    for item in contributes.get("into") or []:
+        if not isinstance(item, Mapping) or not all(isinstance(item.get(k), str) and item[k]
+                                                    for k in ("slot", "id", "title")):
+            raise ModuleError(f"{path}: each contribution in `into` needs a `slot`, an `id` and a `title`")
+        if item["id"] in seen:
+            raise ModuleError(f"{path}: the contribution {item['id']} is declared twice")
+        seen.add(item["id"])
 
 
 def arrangement(modules: Modules) -> dict:

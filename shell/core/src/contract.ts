@@ -47,10 +47,40 @@ export interface RedirectContribution {
   to: string
 }
 
+/**
+ * A PLACE A MODULE'S PAGE OFFERS TO OTHERS (step 1.5) -- Backstage's
+ * extension "input", Grafana's "extension point". The owner draws it,
+ * with `useSlot(id)` (slots.tsx); `order` lists the contribution ids it
+ * wants first, in that order, and any it does not list follow in feed
+ * order.
+ */
+export interface SlotDeclaration {
+  id: string
+  order?: string[]
+}
+
+/**
+ * A MODULE'S CONTRIBUTION TO ANOTHER'S SLOT, declared STATICALLY so the
+ * shell knows of it without loading any code -- Grafana's rule that
+ * "you must update your plugin.json metadata to list any registered
+ * extensions". The component comes from the module's code
+ * (`activate` -> `contributions[id]`) when the slot first shows it.
+ */
+export interface SlotContribution {
+  slot: string
+  /** Unique within the module; names the component in its code. */
+  id: string
+  title: string
+  /** A Blueprint icon name, for owners that draw one (a tab's). */
+  icon?: string
+}
+
 export interface Contributions {
   pages?: PageContribution[]
   nav?: NavContribution[]
   redirects?: RedirectContribution[]
+  slots?: SlotDeclaration[]
+  into?: SlotContribution[]
 }
 
 /** One module, as the feed lists it for the signed-in user. */

@@ -23,7 +23,7 @@
  * says so when opened -- and is asked again the next time its event
  * comes round.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ComponentType } from 'react'
 import { activatesOn, type ActivationEvent, type ModuleEntry } from './contract'
 import type { PaletteHook } from './palette'
 import type { BadgeHook } from './badges'
@@ -34,6 +34,9 @@ export interface ModuleCode {
   usePalette?: PaletteHook
   /** The badges on its own rail entries; read for one naming `onStartup`. */
   useBadges?: BadgeHook
+  /** Its contributions to other modules' slots, by the ids its manifest's
+   *  `into` declares (slots.tsx). */
+  contributions?: Record<string, ComponentType<never>>
 }
 
 /** The host's way to a module's code. `undefined`: it has none to give. */
