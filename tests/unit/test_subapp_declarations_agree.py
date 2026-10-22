@@ -237,6 +237,23 @@ def test_code_the_page_supplies_for_a_module_is_asked_for_by_its_manifest(table,
     assert not missing, f"{missing} have code in {table} and do not name {event}"
 
 
+def test_every_contribution_a_manifest_declares_has_code_and_no_code_is_undeclared():
+    """A built-in module's `into` (step 1.5) names contributions whose code
+    is its package's src/contributions.ts, which App.tsx's
+    BUILT_IN_CONTRIBUTIONS imports. A declared one with no code shows
+    "could not be loaded" in its slot; code nobody declared is never shown."""
+    table = _built_in_code("BUILT_IN_CONTRIBUTIONS")
+    by_id = {m["id"]: m for m in _manifests()}
+    folder_of = dict(zip([m["id"] for m in _manifests()], _folders(), strict=True))
+    declarers = {i for i, m in by_id.items() if not m.get("entry") and m["contributes"].get("into")}
+    assert declarers == table, f"BUILT_IN_CONTRIBUTIONS has {sorted(table)}, manifests declare {sorted(declarers)}"
+    for module_id in table:
+        declared = {item["id"] for item in by_id[module_id]["contributes"]["into"]}
+        source = (ROOT / folder_of[module_id] / "src" / "contributions.ts").read_text()
+        coded = set(re.findall(r"^\s+([a-z-]+): lazy\(", source, re.MULTILINE))
+        assert declared == coded, f"{module_id}: declares {sorted(declared)}, codes {sorted(coded)}"
+
+
 def test_every_rail_entry_has_an_icon():
     # appIcons.ts maps path to icon. A missing entry is cosmetic rather
     # than broken, which is exactly why it would survive review.

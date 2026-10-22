@@ -1,0 +1,33 @@
+{
+  "id": "approvals",
+  "name": "Approvals",
+  "version": "1",
+  "contributes": {
+    "into": [
+      {
+        "slot": "inbox.tabs",
+        "id": "approvals",
+        "title": "Approvals",
+        "icon": "inbox"
+      },
+      {
+        "slot": "inbox.tabs",
+        "id": "enrichment",
+        "title": "Enrichment",
+        "icon": "learning"
+      },
+      {
+        "slot": "inbox.tabs",
+        "id": "predictions",
+        "title": "Predictions",
+        "icon": "predictive-analysis"
+      },
+      {
+        "slot": "inbox.tabs",
+        "id": "unusual",
+        "title": "Unusual",
+        "icon": "scatter-plot"
+      }
+    ]
+  }
+}

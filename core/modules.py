@@ -86,6 +86,11 @@ ELYSIUM_ROOT = Path(__file__).resolve().parent.parent
 #: What a deployment with no modules.yaml loads, in rail order.
 SHIPPED_MODULES = ("ui/packages/app-browse", "ui/packages/app-query",
                    "ui/packages/app-schema", "ui/src/inbox",
+                   # The Inbox's queues (step 1.5b): no rail entry of their
+                   # own, a tab each in the Inbox's slot, and each
+                   # switchable alone in the module manager.
+                   "ui/packages/app-approvals", "ui/packages/app-notifications",
+                   "ui/packages/app-identity",
                    "ui/packages/app-admin")
 SHIPPED_HOME = "/query"
 

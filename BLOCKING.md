@@ -546,8 +546,9 @@ listed in the report -- so the suite runs from the first day and the
 list only shrinks. A NEW sub-app starts with every check at `error`.
 
 An ADD-ON'S SERVER is tested in its own repository; Elysium tests only
-the HTTP contract it offers add-ons. The Inbox, still in `ui/src`
-because it imports three sub-apps, becomes a package when slots exist.
+the HTTP contract it offers add-ons. The Inbox, still in `ui/src`,
+no longer imports its three queues (slots, step 1.5b) and can become a
+package.
 The Schema graph, the first separately built module (step 1.2), is
 the first sub-app to run its tests alone.
 
@@ -895,7 +896,19 @@ modules the feed offers -- permissions and safe mode applying untouched
 first showing, inside an error boundary of its own, so a failing one
 says so in its place and leaves the page standing.
 
-**Blocked on:** nothing; step 1.5b, the Inbox on slots, is next.
+**STEP 1.5b BUILT (22 October): THE INBOX'S TABS ARE A SLOT.** The Inbox
+declares `inbox.tabs`, with today's order; Approvals (four tabs:
+Approvals, Enrichment, Predictions, Unusual), Notifications and Identity
+are modules of their own -- shipped by default, no rail entry, each
+switchable alone in the module manager -- and contribute them, their
+code in each package's `contributions.ts`. The Inbox no longer imports
+any of them. A queue module turned off, or not offered, has no tab, and
+the rest stand. A Python test holds every declared contribution to its
+code and back. Moving the Inbox itself into a package -- the step this
+file said slots would allow -- is now possible and not yet done.
+
+STEP 1.5 IS DONE, and with it STEP 1. **Blocked on:** nothing; step 2,
+the simulator as an add-on with its own server, is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

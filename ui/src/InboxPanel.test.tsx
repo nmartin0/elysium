@@ -9,25 +9,48 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@elysium/shell-api/api')>()
   return { ...actual, getInboxCounts: () => getInboxCounts() }
 })
-vi.mock('@elysium/app-approvals/ApprovalsPanel', () => ({ default: () => <p>approvals panel</p> }))
-vi.mock('@elysium/app-notifications/NotificationsPanel', () => ({ default: () => <p>notifications panel</p> }))
-vi.mock('@elysium/app-identity/IdentityPanel', () => ({ default: () => <p>identity panel</p> }))
-vi.mock('@elysium/app-approvals/EnrichmentReview', () => ({ default: () => <p>enrichment review</p> }))
-vi.mock('@elysium/app-approvals/PredictionReview', () => ({ default: () => <p>prediction review</p> }))
-vi.mock('@elysium/app-approvals/UnusualReview', () => ({ default: () => <p>unusual review</p> }))
+// THE TABS ARE A SLOT (step 1.5b): rendered here as the app does, inside
+// the shell's SlotsProvider, from the three modules' real manifests --
+// so the titles, icons and order are what ships -- with each module's
+// code standing in for its panel.
+import type { FunctionComponent } from 'react'
+import type { ModuleEntry } from '@shell/core/contract'
+import { SlotsProvider } from '@shell/core/slots'
+import approvalsManifest from '../packages/app-approvals/module.json'
+import notificationsManifest from '../packages/app-notifications/module.json'
+import identityManifest from '../packages/app-identity/module.json'
+import inboxManifest from './inbox/module.json'
 
 const { default: InboxPanel } = await import('./InboxPanel')
+
+const feed = [inboxManifest, approvalsManifest, notificationsManifest, identityManifest].map(
+  (manifest) => ({ ...manifest, entry: null }) as ModuleEntry,
+)
+const panel = (text: string) => () => <p>{text}</p>
+const CODE: Record<string, Record<string, FunctionComponent>> = {
+  approvals: {
+    approvals: panel('approvals panel'),
+    enrichment: panel('enrichment review'),
+    predictions: panel('prediction review'),
+    unusual: panel('unusual review'),
+  },
+  notifications: { notifications: panel('notifications panel') },
+  identity: { identity: panel('identity panel') },
+}
 
 function show(
   url: string,
   counts: InboxCounts = { approvals: 0, notifications: 0, identity: 0, enrichment: 0, predictions: 0 },
+  offered: ModuleEntry[] = feed,
 ) {
   getInboxCounts.mockResolvedValue(counts)
   return render(
     <MemoryRouter initialEntries={[url]}>
-      <Routes>
-        <Route path="/inbox" element={<InboxPanel onSessionExpired={vi.fn()} />} />
-      </Routes>
+      <SlotsProvider modules={{ feed: offered, activate: (m) => ({ contributions: CODE[m.id] }) }}>
+        <Routes>
+          <Route path="/inbox" element={<InboxPanel onSessionExpired={vi.fn()} />} />
+        </Routes>
+      </SlotsProvider>
     </MemoryRouter>,
   )
 }
@@ -97,5 +120,25 @@ describe('the Inbox (DEV_UI 12, 15)', () => {
     expect(screen.getByRole('tab', { name: /Identity/ })).toHaveTextContent('1')
     // Nothing waiting says nothing -- not a zero.
     expect(screen.getByRole('tab', { name: /Notifications/ })).not.toHaveTextContent('0')
+  })
+})
+
+describe('the Inbox as a slot (step 1.5b)', () => {
+  const tabNames = () => screen.getAllByRole('tab').map((tab) => tab.textContent)
+
+  it("keeps the Inbox's own order, though its tabs come from three modules", async () => {
+    show('/inbox')
+    await screen.findByText('approvals panel')
+    expect(tabNames()).toEqual(['Approvals', 'Notifications', 'Identity', 'Enrichment', 'Predictions', 'Unusual'])
+  })
+
+  it('a queue module not offered -- turned off, say -- has no tab, and the rest stand', async () => {
+    show(
+      '/inbox',
+      undefined,
+      feed.filter((module) => module.id !== 'identity'),
+    )
+    await screen.findByText('approvals panel')
+    expect(tabNames()).toEqual(['Approvals', 'Notifications', 'Enrichment', 'Predictions', 'Unusual'])
   })
 })

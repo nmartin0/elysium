@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./NotificationsPanel": "./src/NotificationsPanel.tsx"
+    "./contributions": "./src/contributions.ts"
   },
   "dependencies": {
     "@elysium/shell-api": "*",

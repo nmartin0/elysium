@@ -14,78 +14,57 @@
  * old paths -- /approvals, /notifications, /identity -- land on theirs.
  *
  * EACH TAB SAYS HOW MUCH IS WAITING IN IT, from the same counts as the
- * header's badge, so the reader goes to the tab where the work is
+ * Inbox's rail badge, so the reader goes to the tab where the work is
  * rather than opening each to find out.
  */
 
-import { lazy, Suspense } from 'react'
+import { Suspense } from 'react'
 import { Tab, Tabs } from '@blueprintjs/core'
 import type { IconName } from '@blueprintjs/core'
 import { useLocation } from 'react-router-dom'
+import { useSlot } from '@shell/core/slots'
 
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import { useInboxCounts } from '@elysium/shell-api/useInboxCounts'
 import { useUrlValue } from '@elysium/shell-api/useUrlState'
 
-const ApprovalsPanel = lazy(() => import('@elysium/app-approvals/ApprovalsPanel'))
-const NotificationsPanel = lazy(() => import('@elysium/app-notifications/NotificationsPanel'))
-const IdentityPanel = lazy(() => import('@elysium/app-identity/IdentityPanel'))
-const EnrichmentReview = lazy(() => import('@elysium/app-approvals/EnrichmentReview'))
-const PredictionReview = lazy(() => import('@elysium/app-approvals/PredictionReview'))
-const UnusualReview = lazy(() => import('@elysium/app-approvals/UnusualReview'))
-
-export type InboxTab = 'approvals' | 'notifications' | 'identity' | 'enrichment' | 'predictions' | 'unusual'
-
-const TABS: readonly { id: InboxTab; title: string; icon: IconName }[] = [
-  { id: 'approvals', title: 'Approvals', icon: 'inbox' },
-  // A BELL, not an envelope: this is what the deployment told you, not
-  // mail somebody sent.
-  { id: 'notifications', title: 'Notifications', icon: 'notifications' },
-  // merge-columns: the tab is about deciding whether two records are
-  // ONE. A padlock would say "security" and mislead.
-  { id: 'identity', title: 'Identity', icon: 'merge-columns' },
-  // Rules a model wrote for an enriched field, waiting on a person
-  // (R41). learning: what the rules are is something a model learnt.
-  { id: 'enrichment', title: 'Enrichment', icon: 'learning' },
-  // A predicted field measured and waiting on a person (R48).
-  { id: 'predictions', title: 'Predictions', icon: 'predictive-analysis' },
-  // A value unusual for its kind, for someone who may edit the type to
-  // say whether it is expected (R51). A scatter plot: one point away
-  // from the rest. Not the eye, which is watching (WatchList).
-  { id: 'unusual', title: 'Unusual', icon: 'scatter-plot' },
-]
-
-function isTab(value: string): value is InboxTab {
-  return TABS.some((tab) => tab.id === value)
+/**
+ * THE INBOX'S TABS ARE A SLOT (step 1.5b), `inbox.tabs`: Approvals,
+ * Notifications and Identity are modules of their own and contribute
+ * them -- this file no longer imports any of them. The order is the
+ * Inbox's own (module.json, the owner's choice), so it reads as it
+ * always has; a tab from a module it does not list follows. A module the
+ * person is not offered, or one turned off, simply has no tab here.
+ *
+ * What each tab is given: `onSessionExpired`, the slot's whole context.
+ */
+interface InboxTabProps {
+  onSessionExpired: () => void
 }
 
 export default function InboxPanel({ onSessionExpired }: { onSessionExpired: () => void }) {
-  const [requested, setTab] = useUrlValue('tab', 'approvals')
-  const tab: InboxTab = isTab(requested) ? requested : 'approvals'
+  const tabs = useSlot<InboxTabProps>('inbox.tabs')
+  const [requested, setTab] = useUrlValue('tab', tabs[0]?.id ?? 'approvals')
+  const tab = tabs.some((t) => t.id === requested) ? requested : (tabs[0]?.id ?? requested)
   const location = useLocation()
-  const counts = useInboxCounts(location.search)
+  const counts = useInboxCounts(location.search) as Record<string, number | undefined> | null
 
   return (
     <div className="inbox">
       <Tabs id="inbox" selectedTabId={tab} onChange={(next) => setTab(String(next))} renderActiveTabPanelOnly large>
-        {TABS.map(({ id, title, icon }) => {
+        {tabs.map(({ id, title, icon, Component }) => {
           const waiting = counts?.[id] ?? 0
           return (
             <Tab
               key={id}
               id={id}
               title={title}
-              icon={icon}
+              icon={icon as IconName | undefined}
               tagContent={waiting > 0 ? waiting : undefined}
               tagProps={{ round: true, intent: id === 'notifications' ? 'none' : 'warning' }}
               panel={
                 <Suspense fallback={<LoadingState />}>
-                  {id === 'approvals' && <ApprovalsPanel onSessionExpired={onSessionExpired} />}
-                  {id === 'notifications' && <NotificationsPanel onSessionExpired={onSessionExpired} />}
-                  {id === 'identity' && <IdentityPanel onSessionExpired={onSessionExpired} />}
-                  {id === 'enrichment' && <EnrichmentReview onSessionExpired={onSessionExpired} />}
-                  {id === 'predictions' && <PredictionReview onSessionExpired={onSessionExpired} />}
-                  {id === 'unusual' && <UnusualReview onSessionExpired={onSessionExpired} />}
+                  <Component onSessionExpired={onSessionExpired} />
                 </Suspense>
               }
             />

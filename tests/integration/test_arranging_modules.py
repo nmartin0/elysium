@@ -70,10 +70,11 @@ def test_turning_one_off_and_reordering_writes_modules_yaml_and_changes_the_feed
     assert written["modules"][0] == "ui/src/inbox" and "ui/packages/app-schema" in written["modules"]
     assert written["disabled"] == ["ui/packages/app-schema"]
     feed = [m["id"] for m in deployer.get("/api/shell/modules").json()["modules"]]
-    assert feed == ["inbox", "browse", "query", "system"]
+    assert feed == ["inbox", "browse", "query", "approvals", "notifications", "identity", "system"]
     # Off, and in its place: it comes back there when turned on.
     rows = [(m["id"], m["enabled"]) for m in response.json()["modules"]]
-    assert rows == [("inbox", True), ("browse", True), ("query", True), ("schema", False), ("admin", True),
+    assert rows == [("inbox", True), ("browse", True), ("query", True), ("schema", False),
+                    ("approvals", True), ("notifications", True), ("identity", True), ("admin", True),
                     ("system", True)]
 
 

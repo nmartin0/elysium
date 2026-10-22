@@ -30,6 +30,12 @@
         "from": "/notifications",
         "to": "/inbox?tab=notifications"
       }
+    ],
+    "slots": [
+      {
+        "id": "inbox.tabs",
+        "order": ["approvals", "notifications", "identity", "enrichment", "predictions", "unusual"]
+      }
     ]
   }
 }

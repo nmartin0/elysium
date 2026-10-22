@@ -71,3 +71,26 @@ test('home must open something: an arrangement that would not load is refused, a
   await expect(page.getByRole('alert').filter({ hasText: 'Not saved' })).toContainText('would not load')
   await expect(rail(page).getByRole('menuitem', { name: 'Query' })).toBeVisible()
 })
+
+test('turning a queue module off takes its Inbox tab away, and the Inbox stands (slots, step 1.5b)', async ({
+  page,
+}) => {
+  await logIn(page)
+  await page.goto('/inbox')
+  await expect(page.getByRole('tab', { name: /Identity/ })).toBeVisible()
+
+  await page.goto('/system/modules')
+  await page.getByRole('checkbox', { name: 'Identity' }).click({ force: true })
+  await page.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible()
+
+  await page.goto('/inbox')
+  await expect(page.getByRole('tab', { name: /Approvals/ })).toBeVisible()
+  await expect(page.getByRole('tab', { name: /Identity/ })).toHaveCount(0)
+
+  // Back on, as it was found.
+  await page.goto('/system/modules')
+  await page.getByRole('checkbox', { name: 'Identity' }).click({ force: true })
+  await page.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible()
+})
