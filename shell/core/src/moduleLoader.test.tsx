@@ -197,3 +197,47 @@ describe('ModuleLoader', () => {
     expect(loader.page(MODULE, 'main')).not.toBe(failedPage)
   })
 })
+
+describe("a module's status, for the module manager", () => {
+  it('goes from not loaded, through loading, to loaded, telling subscribers each time', async () => {
+    let finish: (exports: unknown) => void = () => {}
+    const loader = new ModuleLoader(() => new Promise((resolve) => (finish = resolve)))
+    const told = vi.fn()
+    loader.subscribe(told)
+    expect(loader.status(MODULE)).toEqual({ state: 'not-loaded' })
+
+    const loading = loader.load(MODULE)
+    expect(loader.status(MODULE)).toEqual({ state: 'loading' })
+    finish(bundle().exports)
+    await loading
+
+    expect(loader.status(MODULE)).toEqual({ state: 'loaded' })
+    expect(told).toHaveBeenCalledTimes(2)
+  })
+
+  it('says why a load failed, until the feed is applied again', async () => {
+    const loader = new ModuleLoader(async () => ({}))
+    await loader.load(MODULE).catch(() => {})
+
+    expect(loader.status(MODULE)).toEqual({ state: 'failed', reason: 'its bundle does not export `activate`' })
+    loader.retain([MODULE.id])
+    expect(loader.status(MODULE)).toEqual({ state: 'not-loaded' })
+  })
+
+  it('a module with no bundle is part of the page', () => {
+    expect(new ModuleLoader().status({ ...MODULE, entry: null })).toEqual({ state: 'built-in' })
+  })
+
+  it('unloading is a change too, and a stopped subscriber hears nothing more', async () => {
+    const loader = new ModuleLoader(async () => bundle().exports)
+    await loader.load(MODULE)
+    const told = vi.fn()
+    const stop = loader.subscribe(told)
+    loader.unload(MODULE.id)
+    expect(told).toHaveBeenCalledTimes(1)
+    expect(loader.status(MODULE)).toEqual({ state: 'not-loaded' })
+    stop()
+    await loader.load(MODULE)
+    expect(told).toHaveBeenCalledTimes(1)
+  })
+})

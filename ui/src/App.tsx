@@ -14,6 +14,7 @@ import { checkFeed, type ModuleEntry, type ModuleFeed } from '@shell/core/contra
 import { moduleRoutes, type PageResolver } from '@shell/core/ModuleRoutes'
 import { ModuleLoader } from '@shell/core/moduleLoader'
 import { buildRegistry } from '@shell/core/registry'
+import { ModulesPage } from '@shell/core/ModulesPage'
 import type { FrameModules, ModuleCode } from '@shell/core/activation'
 import { publishHostValues, resetHostValues, stageHostValues } from '@elysium/shell-api/host'
 import ChangePasswordForm from '@elysium/shell-api/components/ChangePasswordForm'
@@ -116,6 +117,19 @@ function InboxPage() {
   return <InboxPanel onSessionExpired={needs.onSessionExpired} />
 }
 
+/** The feed, for the shell's system sub-app; null until it arrives. */
+const FeedContext = createContext<ModuleFeed | null>(null)
+
+/**
+ * THE SHELL'S SYSTEM SUB-APP (step 1.4): the shell's own Modules page,
+ * given this page's feed and loader. Its module (ui/src/system) is one
+ * the server always loads and marks pinned.
+ */
+function SystemModulesPage() {
+  const feed = useContext(FeedContext)
+  return feed === null ? <LoadingState /> : <ModulesPage feed={feed} loader={moduleLoader} />
+}
+
 /**
  * THE MODULES WHOSE CODE IS BUILT INTO THIS PAGE, by `module:page` as each
  * module.json names them (BLOCKING.md item 3). Which of them a person is
@@ -129,6 +143,7 @@ const BUILT_IN_PAGES: Record<string, ComponentType> = {
   'browse:object': ObjectPage,
   'admin:admin': AdminPage,
   'inbox:inbox': InboxPage,
+  'system:modules': SystemModulesPage,
 }
 /**
  * THE CODE THE SHELL ASKS OF MODULES BUILT INTO THE PAGE, by module id
@@ -617,34 +632,36 @@ function LoggedIn({
   // owns its own screen and nothing about any other route.
   return (
     <PageNeedsContext.Provider value={needs}>
-      <BrowserRouter>
-        <Routes>
-          <Route
-            element={
-              <Shell visibleApps={visibleApps} modules={modules} currentUser={currentUser} onLogout={onLogout} />
-            }
-          >
-            {/* FROM THE FEED: each module's pages, its old addresses, and
+      <FeedContext.Provider value={feed === null || 'failure' in feed ? null : feed}>
+        <BrowserRouter>
+          <Routes>
+            <Route
+              element={
+                <Shell visibleApps={visibleApps} modules={modules} currentUser={currentUser} onLogout={onLogout} />
+              }
+            >
+              {/* FROM THE FEED: each module's pages, its old addresses, and
               home. UNTIL IT ARRIVES every address waits rather than being
               sent home -- a bookmarked deep link must not be redirected
               away before the shell knows whether anything opens it. */}
-            {feed !== null && 'failure' in feed ? (
-              <Route
-                path="*"
-                element={
-                  <ErrorState>
-                    The sub-apps could not be loaded: {feed.failure}. Reload the page to try again.
-                  </ErrorState>
-                }
-              />
-            ) : registry === null || feed === null ? (
-              <Route path="*" element={<LoadingState />} />
-            ) : (
-              moduleRoutes(registry, resolve ?? (() => null), feed.home)
-            )}
-          </Route>
-        </Routes>
-      </BrowserRouter>
+              {feed !== null && 'failure' in feed ? (
+                <Route
+                  path="*"
+                  element={
+                    <ErrorState>
+                      The sub-apps could not be loaded: {feed.failure}. Reload the page to try again.
+                    </ErrorState>
+                  }
+                />
+              ) : registry === null || feed === null ? (
+                <Route path="*" element={<LoadingState />} />
+              ) : (
+                moduleRoutes(registry, resolve ?? (() => null), feed.home)
+              )}
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </FeedContext.Provider>
     </PageNeedsContext.Provider>
   )
 }

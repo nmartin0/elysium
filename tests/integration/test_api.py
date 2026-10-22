@@ -4351,6 +4351,25 @@ def test_shell_modules_includes_admin_for_an_administrator(client):
     assert "admin" in ids
 
 
+def test_shell_modules_offers_the_system_sub_app_only_to_who_may_manage_the_deployment(client):
+    """Step 1.4: the shell's Modules page is a pinned system sub-app,
+    offered with manage:deployment -- the grant that reloads and edits
+    the configuration -- and last on the rail."""
+    with_roles(client.app, ops={"allowed_actions": frozenset(["manage:deployment"])},
+               reader={"allowed_actions": frozenset()})
+    client.app.state.user_directory.create_user("olga", "ops-pw-123", None, "ops")
+    client.app.state.user_directory.create_user("rita", "reader-pw-123", None, "reader")
+
+    _login(client, "olga", "ops-pw-123")
+    ops = client.get("/api/shell/modules").json()["modules"]
+    _login(client, "rita", "reader-pw-123")
+    reader = client.get("/api/shell/modules").json()["modules"]
+
+    assert ops[-1]["id"] == "system" and ops[-1]["pinned"] is True
+    assert [m["id"] for m in ops if m["pinned"]] == ["system"]
+    assert "system" not in [m["id"] for m in reader]
+
+
 def test_shell_modules_carries_no_grant_and_no_folder(client):
     """THE KEY SET IS FROZEN, as for /me/visible-apps: a module's
     `permission` and its folder on the server are not the browser's."""
@@ -4361,7 +4380,7 @@ def test_shell_modules_carries_no_grant_and_no_folder(client):
     assert response.headers["cache-control"] == "no-store"
     for module in response.json()["modules"]:
         assert set(module) == {"id", "name", "version", "contributes", "entry", "styles",
-                               "activationEvents"}
+                               "activationEvents", "pinned"}
     assert "manage:users" not in response.text
     assert "/packages/" not in response.text
 

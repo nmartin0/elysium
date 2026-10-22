@@ -50,6 +50,11 @@ export interface ModuleContext {
   version: string
 }
 
+/** Where a module stands in this page (`ModuleLoader.status`). */
+export type ModuleStatus =
+  | { state: 'built-in' | 'not-loaded' | 'loading' | 'loaded' }
+  | { state: 'failed'; reason: string }
+
 /** What `activate` returns: the module's pages, by the ids its manifest
  *  declares. */
 export interface ModuleActivation extends ModuleCode {
@@ -94,9 +99,13 @@ class Cancelled extends Error {}
 export class ModuleLoader {
   private readonly loaded = new Map<string, Loaded>()
   private readonly pages = new Map<string, ComponentType>()
-  /** Modules whose last load failed: their pages stay as they are until
-   *  the feed is next applied. */
-  private readonly failed = new Set<string>()
+  /** Modules whose last load failed, with why: their pages stay as they
+   *  are until the feed is next applied. */
+  private readonly failed = new Map<string, string>()
+  /** Told whenever a module's status changes (`subscribe`). */
+  private readonly listeners = new Set<() => void>()
+  /** Bumped on every change, so a reader can tell a new state from an old. */
+  private version = 0
 
   constructor(
     private readonly importer: Importer = (address) => import(/* @vite-ignore */ address),
@@ -129,17 +138,21 @@ export class ModuleLoader {
         throw new Error('its `activate` did not return `pages`')
       }
       record.active = true
+      this.changed()
       return activation
     })()
-    record.activation.catch(() => {
+    record.activation.catch((error: unknown) => {
       // THE RECORD AND STYLESHEETS GO, so a later `load` tries again; the
       // failed PAGE stays until `retain` (see the class docstring).
       if (this.loaded.get(module.id) !== record) return
       this.loaded.delete(module.id)
       this.removeStyles(module.id)
-      this.failed.add(module.id)
+      this.failed.set(module.id, error instanceof Error ? error.message : String(error))
+      this.changed()
     })
+    this.failed.delete(module.id)
     this.loaded.set(module.id, record)
+    this.changed()
     return record.activation
   }
 
@@ -175,10 +188,11 @@ export class ModuleLoader {
   retain(ids: Iterable<string>): void {
     const keep = new Set(ids)
     for (const id of [...this.loaded.keys()]) if (!keep.has(id)) this.unload(id)
-    for (const id of [...this.failed]) {
+    for (const id of [...this.failed.keys()]) {
       this.failed.delete(id)
       this.dropPages(id)
     }
+    this.changed()
   }
 
   /** Removes a module's stylesheets and calls its `deactivate`; a load
@@ -191,11 +205,40 @@ export class ModuleLoader {
     this.dropPages(id)
     this.removeStyles(id)
     if (record.active) safely(() => record.exports?.deactivate?.())
+    this.changed()
   }
 
   /** Which modules are loaded, for the module manager and for tests. */
   loadedIds(): string[] {
     return [...this.loaded.keys()]
+  }
+
+  /**
+   * Where a module stands in this page, for the module manager: built
+   * into the page (no bundle), not loaded yet, loading, loaded, or
+   * failed and why.
+   */
+  status(module: ModuleEntry): ModuleStatus {
+    if (module.entry === null) return { state: 'built-in' }
+    const reason = this.failed.get(module.id)
+    if (reason !== undefined) return { state: 'failed', reason }
+    const record = this.loaded.get(module.id)
+    if (record === undefined || record.entry !== module.entry) return { state: 'not-loaded' }
+    return { state: record.active ? 'loaded' : 'loading' }
+  }
+
+  /** Calls `listener` whenever a status changes; returns how to stop.
+   *  With `snapshot`, the shape useSyncExternalStore takes. */
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+
+  snapshot = (): number => this.version
+
+  private changed(): void {
+    this.version += 1
+    for (const listener of [...this.listeners]) listener()
   }
 
   private dropPages(id: string): void {

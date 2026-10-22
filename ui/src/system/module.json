@@ -1,0 +1,10 @@
+{
+  "id": "system",
+  "name": "System",
+  "version": "1",
+  "permission": "manage:deployment",
+  "contributes": {
+    "pages": [{ "id": "modules", "path": "/system/modules" }],
+    "nav": [{ "title": "Modules", "path": "/system/modules", "subject": "System" }]
+  }
+}

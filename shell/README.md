@@ -18,6 +18,7 @@ shell/
     src/activation.ts    activating modules on their manifests' events
     src/palette.tsx      modules' palette commands
     src/badges.tsx       badges on modules' rail entries
+    src/ModulesPage.tsx  the shell's system sub-app: every module, and its state
   build/           @shell/build: build-time tooling
     src/sharedLibraries.ts  the shared-library registry, shims and import map
     src/moduleBuild.ts      a module's bundle; building modules with the page
@@ -160,6 +161,11 @@ is absent, never sent and hidden.
   the page already has the code built in.
 - `styles` -- optional: stylesheets the bundle needs, added when it
   loads and removed when it unloads.
+- `pinned` -- optional: a SYSTEM SUB-APP, decided by the backend (a
+  module cannot pin itself). The shell loads it in safe mode, and
+  nothing in the interface turns it off, so a broken module cannot take
+  away the tool that fixes it. Elysium pins its own system sub-apps and
+  always loads them, last.
 - `activationEvents` -- optional: when the module's code runs besides
   one of its pages opening, VS Code's activation events. `onPalette`:
   when the command palette first opens, so the commands its code
@@ -187,6 +193,17 @@ The shell decides **where** a page is mounted; the host decides **what**
 it is. `moduleRoutes(registry, resolve, home)` asks
 `resolve(moduleId, pageId)` for a component; `null` mounts "nothing
 loaded opens this page" rather than failing.
+
+## The shell's system sub-app
+
+`<ModulesPage feed={feed} loader={loader} />` lists every module the
+feed offers, in rail order: its version, whether its code is its own
+bundle or built into the page, and how it stands in this browser -- not
+loaded yet (and on what it will load), loading, loaded, or failed and
+why -- following the loader live (`loader.status(module)`,
+`loader.subscribe`). A host mounts it as the page of a module its
+backend marks `pinned`; Elysium's is `ui/src/system`, offered with
+`manage:deployment`.
 
 ## A module's bundle
 

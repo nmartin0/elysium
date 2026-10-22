@@ -1,4 +1,4 @@
-"""Creates the two users the browser tests log in as.
+"""Creates the three users the browser tests log in as.
 
 WHY A SCRIPT. ui/e2e/shell.spec.ts documented its users as a pair of
 `python3 -c "..."` one-liners naming a role -- `editor` -- that this
@@ -8,10 +8,15 @@ and the tests sat unrun long enough for nobody to notice.
 A command that can be run is the difference between a test suite and a
 description of one.
 
-TWO USERS, BECAUSE THE POINT IS THE DIFFERENCE BETWEEN THEM. The nav
-is supposed to show Admin to one and not the other, which is a claim
-about real grants rather than about rendering, and it cannot be made
-with a single account.
+SEVERAL USERS, BECAUSE THE POINT IS THE DIFFERENCE BETWEEN THEM. The
+nav is supposed to show Admin to one and not the other, which is a
+claim about real grants rather than about rendering, and it cannot be
+made with a single account.
+
+A THIRD, opsuser, for the shell's system sub-app (step 1.4), which is
+offered only with manage:deployment. In the development fixtures the
+one role holding that is `debug`, so opsuser has it -- a role with much
+else besides, which matters for nothing these tests ask.
 
 RUN FROM THE REPOSITORY ROOT:
 
@@ -36,6 +41,7 @@ from core.user_directory import UserDirectory
 USERS = [
     ("plainuser", "plainpass123", "us-west", "customer_service"),
     ("adminuser", "adminpass123", "us-west", "admin"),
+    ("opsuser", "opspass123", "us-west", "debug"),
 ]
 
 

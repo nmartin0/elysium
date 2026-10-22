@@ -3932,6 +3932,28 @@
     }
   }
 
+  /* THE MODULES PAGE (@shell/core/ModulesPage, the shell's system sub-app,
+   * step 1.4). The id is the module's address in the feed, secondary to
+   * its name; a failure reads as one. */
+  .modules-page > p {
+    max-width: 72ch;
+  }
+
+  .modules-page__id {
+    margin-inline-start: var(--space-hair);
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-weight: normal;
+  }
+
+  .modules-page__pinned {
+    margin-inline-start: var(--space-tight);
+  }
+
+  .modules-page__failed {
+    color: var(--status-danger);
+  }
+
   /* The Inbox's tabs sit at the top of the page, the panel under them. */
   .inbox .bp6-tab-list {
     margin-block-end: var(--space-loose);

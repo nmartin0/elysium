@@ -14,6 +14,7 @@ from core.modules import (
     CONTRACT_VERSION,
     SHIPPED_HOME,
     SHIPPED_MODULES,
+    SYSTEM_MODULES,
     ModuleError,
     bundle_file,
     feed_for,
@@ -50,7 +51,7 @@ class TestWhatLoads:
 
         assert modules.home == SHIPPED_HOME
         assert [m.folder for m in modules.modules] == [
-            Path(__file__).resolve().parents[2] / f for f in SHIPPED_MODULES]
+            Path(__file__).resolve().parents[2] / f for f in SHIPPED_MODULES + SYSTEM_MODULES]
 
     def test_modules_yaml_decides_which_and_in_what_order(self, tmp_path):
         two = _module(tmp_path / "two")
@@ -58,7 +59,7 @@ class TestWhatLoads:
 
         modules = load_modules(_deployment(tmp_path, [two, one]))
 
-        assert [m.id for m in modules.modules] == ["two", "one"]
+        assert [m.id for m in modules.modules] == ["two", "one", "system"]
         assert modules.home == "/one"
 
     def test_a_module_listed_twice_is_refused(self, tmp_path):
@@ -113,7 +114,51 @@ class TestWhatLoads:
 
     def test_every_shipped_manifest_loads(self, tmp_path):
         """THE MANIFESTS IN THIS REPOSITORY pass their own checks."""
-        assert len(load_modules(tmp_path).modules) == len(SHIPPED_MODULES)
+        assert len(load_modules(tmp_path).modules) == len(SHIPPED_MODULES) + len(SYSTEM_MODULES)
+
+
+class TestTheSystemSubApps:
+    """Always loaded, last, and pinned (step 1.4): safe mode exists for
+    when a module breaks the page, and a module must not be able to take
+    away the tool that fixes it."""
+
+    def test_they_load_after_every_module_and_are_pinned(self, tmp_path):
+        modules = load_modules(_deployment(tmp_path, [_module(tmp_path / "one")]))
+
+        assert [(m.id, m.pinned) for m in modules.modules] == [("one", False), ("system", True)]
+
+    def test_modules_yaml_cannot_list_one(self, tmp_path):
+        """So no edit to that file -- the module manager's included --
+        can drop it."""
+        config = tmp_path / "config"
+        config.mkdir()
+        (config / "modules.yaml").write_text(json.dumps({"home": "/system/modules", "modules": list(SYSTEM_MODULES)}))
+
+        with pytest.raises(ModuleError, match="system sub-app"):
+            load_modules(config)
+
+    def test_a_module_cannot_take_a_system_sub_apps_id(self, tmp_path):
+        imposter = _module(tmp_path / "imposter", id="system")
+
+        with pytest.raises(ModuleError, match="system sub-app"):
+            load_modules(_deployment(tmp_path, [imposter], home="/imposter"))
+
+    def test_a_module_cannot_pin_itself(self, tmp_path):
+        folder = _module(tmp_path / "bold", pinned=True)
+
+        with pytest.raises(ModuleError, match="does not understand"):
+            load_modules(_deployment(tmp_path, [folder], home="/bold"))
+
+    def test_the_feed_says_which_are_pinned_to_whoever_is_offered_them(self, tmp_path):
+        roles = {"ops": {"allowed_actions": frozenset({"manage:deployment"})},
+                 "reader": {"allowed_actions": frozenset()}}
+        modules = load_modules(_deployment(tmp_path, [_module(tmp_path / "one")]))
+
+        ops = feed_for(modules, _user("ops"), roles)["modules"]
+        reader = feed_for(modules, _user("reader"), roles)["modules"]
+
+        assert [(m["id"], m["pinned"]) for m in ops] == [("one", False), ("system", True)]
+        assert [m["id"] for m in reader] == ["one"]
 
 
 class TestTheFeed:
@@ -136,7 +181,7 @@ class TestTheFeed:
         assert feed["contract"] == CONTRACT_VERSION
         assert feed["home"] == "/one"
         assert set(feed["modules"][0]) == {"id", "name", "version", "contributes", "entry", "styles",
-                                           "activationEvents"}
+                                           "activationEvents", "pinned"}
         assert str(tmp_path) not in json.dumps(feed)
 
 

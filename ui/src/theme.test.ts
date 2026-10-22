@@ -649,3 +649,34 @@ describe('a collapsed rail shows icons, never half a word', () => {
     expect(CSS).toContain('.app-frame--sidebar-collapsed .app__nav-subject + li')
   })
 })
+
+describe('every variable a stylesheet reads is defined', () => {
+  /**
+   * AN UNDEFINED CUSTOM PROPERTY FAILS SILENTLY: `var(--x)` with no `--x`
+   * falls back, or makes the declaration invalid, and the element takes
+   * the inherited value with nothing logged. Two such bugs were found
+   * together (22 October): the Schema graph's API names asked for
+   * Blueprint 4's `--pt-font-family-monospace`, gone since Blueprint 6,
+   * and so rendered in the browser's default monospace rather than IBM
+   * Plex Mono; and a rule being written for the Modules page named
+   * tokens that do not exist.
+   *
+   * Ours are defined in our stylesheets; Blueprint's (`--bp-`) in its own.
+   */
+  const ours = RULE_STYLESHEETS.map((file) => readFileSync(path.resolve(__dirname, '..', file), 'utf8')).join('\n')
+  const blueprint = readFileSync(
+    path.resolve(__dirname, '..', 'node_modules', '@blueprintjs', 'core', 'lib', 'css', 'blueprint.css'),
+    'utf8',
+  )
+  const defined = new Set([...`${ours}\n${blueprint}`.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]))
+  const used = new Set([...ours.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]))
+
+  it('reads the variables, so an empty search cannot pass', () => {
+    expect(used.size).toBeGreaterThan(20)
+    expect(used.has('--font-mono')).toBe(true)
+  })
+
+  it('names none that nothing defines', () => {
+    expect([...used].filter((name) => !defined.has(name))).toEqual([])
+  })
+})

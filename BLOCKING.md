@@ -790,8 +790,39 @@ beside it failed 67 tests and errored 208; rerun alone, 248 of the 249
 it selected passed, the 249th being that key-set test -- load, not code.
 The Python suite is best not run beside other work.
 
-**Blocked on:** nothing; step 1.4 is next -- the shell's system sub-app,
-the module manager and safe mode.
+**STEP 1.4, IN FOUR PARTS, agreed with the owner 22 October.**
+Precedent: Firefox's Troubleshoot Mode, which disables add-ons and is
+temporary ("These changes are temporary"), entered from a menu or by
+holding Shift; VS Code's extension bisect, which "starts the first round
+by disabling all extensions"; Grafana, where installing a plugin is a
+server administrator's power apart from configuring one. (a) the
+shell's system sub-app, PINNED, with a Modules page; (b) SAFE MODE, this
+browser only and temporary, loading only pinned modules, reached from
+the user menu, from any "could not be loaded" message (a link -- it
+never switches on by itself, the owner's choice) and at `/?safe`; (c)
+the module manager CHANGES THE DEPLOYMENT -- on, off, order, home,
+refresh -- by writing modules.yaml through the existing validated,
+atomic, audited settings path, for manage:deployment; and (d) BOTH,
+SEPARATELY (the owner's choice): anyone may also hide a tab for
+themselves. The system sub-app sits LAST on the rail, under "System".
+Per-person tab ORDER and full screen wait until after slots.
+
+**STEP 1.4a BUILT (22 October): THE SYSTEM SUB-APP, PINNED.** Elysium
+always loads its system sub-apps (`SYSTEM_MODULES`, today
+`ui/src/system`), after every module modules.yaml names; modules.yaml
+cannot list one, a module cannot take one's id, and a manifest cannot
+pin itself -- the backend decides. The feed says `pinned`. The page is
+the shell's, generic (`@shell/core/ModulesPage`): every module offered,
+its version, its code (own bundle, or built into the page) and its
+state in this browser, live from the loader. Offered with
+manage:deployment; a browser-test user, `opsuser`, holds it.
+
+FOUND ON THE WAY: the Schema graph's API names asked for Blueprint 4's
+`--pt-font-family-monospace`, gone since Blueprint 6, and rendered in
+the browser's default monospace rather than IBM Plex Mono. theme.test.ts
+now refuses any variable a stylesheet reads that nothing defines.
+
+**Blocked on:** nothing; step 1.4b, safe mode, is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

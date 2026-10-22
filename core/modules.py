@@ -51,7 +51,7 @@ someone opens its page, and the server stays up.
 import hashlib
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from core.config import load_yaml
@@ -68,6 +68,18 @@ SHIPPED_MODULES = ("ui/packages/app-browse", "ui/packages/app-query",
                    "ui/packages/app-schema", "ui/src/inbox",
                    "ui/packages/app-admin")
 SHIPPED_HOME = "/query"
+
+#: THE SYSTEM SUB-APPS (BLOCKING.md item 3, step 1.4): always loaded,
+#: after every module `modules.yaml` names, and PINNED -- the shell
+#: loads them in safe mode and nothing in the interface turns them off,
+#: because safe mode exists for when a module breaks the page, and a
+#: module must not be able to take away the tool that fixes it. Not
+#: listable in modules.yaml, for the same reason: an edit to that file,
+#: the module manager's included, cannot drop them.
+#:
+#: The shell's own, today: the module manager. The server's (Elysium's
+#: configuration, silos, the mirror) joins it when Admin splits.
+SYSTEM_MODULES = ("ui/src/system",)
 
 _MANIFEST_KEYS = frozenset({"id", "name", "version", "permission", "contributes", "entry", "styles",
                             "activationEvents"})
@@ -99,6 +111,8 @@ class Module:
     styles: tuple[str, ...] = ()
     #: When its code runs besides its pages opening, e.g. onPalette.
     activation_events: tuple[str, ...] = ()
+    #: A system sub-app: loaded in safe mode, never turned off.
+    pinned: bool = False
 
     @property
     def bundle_directory(self) -> "Path | None":
@@ -129,11 +143,21 @@ def load_modules(config_dir: Path) -> Modules:
             raise ModuleError(f"{path}: `modules` must be a list of folders")
         if not isinstance(home, str) or not home.startswith("/"):
             raise ModuleError(f"{path}: `home` must be a path such as /query")
+    system = {_resolve(f) for f in SYSTEM_MODULES}
     loaded: list[Module] = []
     for folder in folders:
+        if _resolve(folder) in system:
+            raise ModuleError(f"{path}: {folder} is a system sub-app, always loaded and pinned; "
+                              f"leave it out of `modules`")
         module = _load_manifest(_resolve(folder))
         if any(other.id == module.id for other in loaded):
             raise ModuleError(f"{module.folder}: a module called {module.id!r} is already loaded")
+        loaded.append(module)
+    for folder in SYSTEM_MODULES:
+        module = replace(_load_manifest(_resolve(folder)), pinned=True)
+        if any(other.id == module.id for other in loaded):
+            raise ModuleError(f"{module.folder}: a module called {module.id!r} is already loaded, "
+                              f"and that id is a system sub-app's")
         loaded.append(module)
     # HOME MUST OPEN SOMETHING. Every address nothing claims is sent
     # there, so a home no module mounts -- a modules.yaml that dropped
@@ -282,7 +306,8 @@ def feed_for(modules: Modules, user: UserRecord, roles: dict) -> dict:
                      "contributes": _plain(m.contributes),
                      "entry": None if m.entry is None else _address(m, m.entry),
                      "styles": [_address(m, s) for s in m.styles],
-                     "activationEvents": list(m.activation_events)}
+                     "activationEvents": list(m.activation_events),
+                     "pinned": m.pinned}
                     for m in offered_to(modules, user, roles)],
     }
 

@@ -55,15 +55,20 @@ def _shell_dependencies() -> set[str]:
     }
 
 
+def _folders() -> tuple[str, ...]:
+    """Every module Elysium ships: the default set and the system
+    sub-apps it always loads (step 1.4)."""
+    from core.modules import SHIPPED_MODULES, SYSTEM_MODULES
+    return SHIPPED_MODULES + SYSTEM_MODULES
+
+
 def _manifests() -> list[dict]:
-    from core.modules import SHIPPED_MODULES
-    return [json.loads((ROOT / folder / "module.json").read_text()) for folder in SHIPPED_MODULES]
+    return [json.loads((ROOT / folder / "module.json").read_text()) for folder in _folders()]
 
 
 def _bundled() -> list[tuple[str, dict]]:
     """Shipped modules with bundles of their own, with their folders."""
-    from core.modules import SHIPPED_MODULES
-    return [(folder, m) for folder, m in zip(SHIPPED_MODULES, _manifests(), strict=True) if m.get("entry")]
+    return [(folder, m) for folder, m in zip(_folders(), _manifests(), strict=True) if m.get("entry")]
 
 
 def _manifest_pages() -> set[str]:
@@ -90,8 +95,10 @@ def _iconed_paths() -> set[str]:
     # hyphen, and the narrower pattern made such a path INVISIBLE to
     # these checks rather than absent from them. Found by a control
     # that should have failed and did not.
+    # And `/`, since the system sub-app's page is /system/modules: a
+    # nested path was invisible to these checks too (step 1.4).
     source = (UI / "packages" / "shell-api" / "src" / "appIcons.ts").read_text()
-    return set(re.findall(r"'/([a-z-]+)':", source))
+    return set(re.findall(r"'/([a-z/-]+)':", source))
 
 
 def _bundled_packages() -> set[str]:

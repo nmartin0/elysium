@@ -139,8 +139,10 @@ the wrong directory -- which it did, producing "No module named
     cd ~/elysium && python -m scripts.create_e2e_users \
                         --yes-this-is-development      (once)
         Refuses without the flag, deliberately: known passwords are a
-        back door. Creates plainuser and adminuser -- TWO, because the
-        nav is supposed to show Admin to one and not the other.
+        back door. Creates plainuser, adminuser and opsuser -- several,
+        because the nav is supposed to show Admin to one and not the
+        other, and the System sub-app only to opsuser. Re-run it when a
+        user is added; it replaces the ones it finds.
 
     cd ~/elysium && uvicorn api.app:app
         Serves the UI and the API together. LEAVE A RUNNING ONE ALONE:
@@ -249,9 +251,10 @@ Recovery:
   file was lost to a full disk or a power cut. Reports by default;
   repairs with `--write`. Needed because re-syncing CANNOT fix it, and
   deleting the mirror destroys the changelog.
-- `scripts/create_e2e_users.py` — `plainuser` and `adminuser`, the
-  two the browser tests log in as. Two, because the nav is supposed
-  to show Admin to one and not the other.
+- `scripts/create_e2e_users.py` — `plainuser`, `adminuser` and
+  `opsuser`, the users the browser tests log in as. Several, because
+  the nav is supposed to show Admin to one and not the other, and the
+  System sub-app (manage:deployment) only to opsuser.
 - `scripts/create_colleague_user.py` — adds `colleague` / `a` in the
   same role, for testing that shared things are shared.
 **For volume, `seed_dev_silos.py --bulk N`.** Without it the fixture

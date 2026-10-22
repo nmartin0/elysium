@@ -84,6 +84,13 @@ export interface ModuleEntry {
   /** When its code runs besides its pages opening. Optional: a feed
    *  without it activates modules only by their pages. */
   activationEvents?: string[]
+  /**
+   * A SYSTEM SUB-APP (step 1.4): loaded in safe mode, and nothing in the
+   * interface turns it off -- safe mode exists for when a module breaks
+   * the page, and a module must not be able to take away the tool that
+   * fixes it. The backend decides which; a module cannot pin itself.
+   */
+  pinned?: boolean
 }
 
 /** GET {base}/modules */
@@ -140,6 +147,9 @@ export function checkFeed(raw: unknown): ModuleFeed {
       !(Array.isArray(module.activationEvents) && module.activationEvents.every((e) => typeof e === 'string'))
     ) {
       throw new FeedError(`${module.id}: \`activationEvents\` must be a list of event names`)
+    }
+    if (module.pinned !== undefined && typeof module.pinned !== 'boolean') {
+      throw new FeedError(`${module.id}: \`pinned\` must be true or false`)
     }
   }
   return feed as ModuleFeed
