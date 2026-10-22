@@ -21,6 +21,26 @@ directory or absolute. ABSENT, the five sub-apps Elysium ships are
 loaded in their usual order -- so a deployment written before modules
 existed is unchanged, and listing them is how one is dropped.
 
+OFF, BUT KNOWN (step 1.4c): `disabled:` marks which of the modules
+`modules` lists are turned off. They are checked like the rest, loaded
+nowhere, and KEEP THEIR PLACE on the rail, to come back to it when the
+module manager turns them on again:
+
+    home: /query
+    modules:
+      - ui/packages/app-browse
+      - ui/packages/app-schema
+      ...
+    disabled:
+      - ui/packages/app-schema
+
+`disabled`, NOT `off`: YAML 1.1 reads a bare `off:` key as the boolean
+false, so a hand edit would have said nothing anyone meant. Found by the
+test of a written arrangement loading back.
+
+The module manager writes this file (`render_modules_yaml`) through the
+same validated, atomic, audited path as every configuration edit.
+
 CHECKED AT LOAD, like every other configuration file: a manifest that
 cannot be read, names a page twice, or declares a rail entry leading
 nowhere is refused with the file named, at startup or reload, rather
@@ -113,6 +133,9 @@ class Module:
     activation_events: tuple[str, ...] = ()
     #: A system sub-app: loaded in safe mode, never turned off.
     pinned: bool = False
+    #: The folder as modules.yaml names it (or Elysium's default list),
+    #: so the module manager can write it back as it was written.
+    listed_as: str = ""
 
     @property
     def bundle_directory(self) -> "Path | None":
@@ -124,38 +147,56 @@ class Module:
 class Modules:
     home: str
     modules: tuple[Module, ...]
+    #: Known and turned off (`disabled:` in modules.yaml): loaded nowhere.
+    off: tuple[Module, ...] = ()
+    #: Every module modules.yaml lists, on and off, in its order: an off
+    #: module keeps its place, to come back to it when turned on.
+    order: tuple[str, ...] = ()
 
 
 def load_modules(config_dir: Path) -> Modules:
     """The deployment's modules, checked; see the module docstring."""
     path = config_dir / "modules.yaml"
+    off_folders: list[str] = []
     if not path.exists():
         folders, home = list(SHIPPED_MODULES), SHIPPED_HOME
     else:
         raw = load_yaml(path) or {}
         if not isinstance(raw, Mapping):
             raise ModuleError(f"{path}: must be a mapping with `modules:`")
-        unknown = sorted(set(raw) - {"home", "modules"})
+        unknown = sorted(set(raw) - {"home", "modules", "disabled"}, key=str)
         if unknown:
             raise ModuleError(f"{path}: does not understand {unknown}")
         folders, home = raw.get("modules") or [], raw.get("home", SHIPPED_HOME)
         if not isinstance(folders, list) or not all(isinstance(f, str) for f in folders):
             raise ModuleError(f"{path}: `modules` must be a list of folders")
+        off_folders = raw.get("disabled") or []
+        if not isinstance(off_folders, list) or not all(isinstance(f, str) for f in off_folders):
+            raise ModuleError(f"{path}: `disabled` must be a list of folders")
         if not isinstance(home, str) or not home.startswith("/"):
             raise ModuleError(f"{path}: `home` must be a path such as /query")
     system = {_resolve(f) for f in SYSTEM_MODULES}
+    disabled = {_resolve(f) for f in off_folders}
+    listed = {_resolve(f) for f in folders}
+    strays = sorted(f for f in off_folders if _resolve(f) not in listed)
+    if strays:
+        raise ModuleError(f"{path}: `disabled` names {strays}, which `modules` does not list; "
+                          f"list it there, in its place on the rail, and here to turn it off")
     loaded: list[Module] = []
+    off: list[Module] = []
+    order: list[str] = []
     for folder in folders:
         if _resolve(folder) in system:
             raise ModuleError(f"{path}: {folder} is a system sub-app, always loaded and pinned; "
                               f"leave it out of `modules`")
-        module = _load_manifest(_resolve(folder))
-        if any(other.id == module.id for other in loaded):
-            raise ModuleError(f"{module.folder}: a module called {module.id!r} is already loaded")
-        loaded.append(module)
+        module = replace(_load_manifest(_resolve(folder)), listed_as=folder)
+        if module.id in order:
+            raise ModuleError(f"{module.folder}: a module called {module.id!r} is already listed")
+        order.append(module.id)
+        (off if _resolve(folder) in disabled else loaded).append(module)
     for folder in SYSTEM_MODULES:
-        module = replace(_load_manifest(_resolve(folder)), pinned=True)
-        if any(other.id == module.id for other in loaded):
+        module = replace(_load_manifest(_resolve(folder)), pinned=True, listed_as=folder)
+        if module.id in order:
             raise ModuleError(f"{module.folder}: a module called {module.id!r} is already loaded, "
                               f"and that id is a system sub-app's")
         loaded.append(module)
@@ -166,7 +207,7 @@ def load_modules(config_dir: Path) -> Modules:
     mounted = {page["path"] for m in loaded for page in m.contributes.get("pages") or []}
     if loaded and home not in mounted:
         raise ModuleError(f"{path}: `home` is {home}, which no loaded module's page is at")
-    return Modules(home=home, modules=tuple(loaded))
+    return Modules(home=home, modules=tuple(loaded), off=tuple(off), order=tuple(order))
 
 
 def _resolve(folder: str) -> Path:
@@ -252,6 +293,68 @@ def _check_contributions(path: Path, contributes) -> None:
         if not isinstance(redirect, Mapping) or not isinstance(redirect.get("from"), str) \
                 or not isinstance(redirect.get("to"), str):
             raise ModuleError(f"{path}: each redirect needs `from` and `to`")
+
+
+def arrangement(modules: Modules) -> dict:
+    """What the module manager shows (step 1.4c): EVERY module the
+    deployment knows -- on, in rail order, then off -- with whether each
+    is on and pinned, and the pages each holds, for choosing home.
+
+    NAMES, NEVER CONTENTS: no folder, no permission -- the same rule as
+    the feed. A holder of manage:deployment could read modules.yaml, but
+    an interface that never carries a path cannot leak one in a
+    screenshot."""
+    off = {m.id for m in modules.off}
+    return arranged(modules, modules.home, [(i, i not in off) for i in modules.order])
+
+
+def arranged(modules: Modules, home: str, order: "list[tuple[str, bool]]") -> dict:
+    """The arrangement `order` describes, in `arrangement`'s shape, from
+    the modules the deployment knows: what a save answers with, built
+    from what it wrote rather than read back from the configuration
+    now running -- which a route must not reach past its pinned
+    generation to see (tests/unit/test_generation_pin.py)."""
+    def row(module: Module, enabled: bool) -> dict:
+        return {"id": module.id, "name": module.name, "version": module.version,
+                "enabled": enabled, "pinned": module.pinned,
+                "pages": [page["path"] for page in module.contributes.get("pages") or []]}
+    known = {m.id: m for m in modules.modules + modules.off}
+    return {"home": home,
+            "modules": [row(known[i], enabled) for i, enabled in order]
+            + [row(m, True) for m in modules.modules if m.pinned]}
+
+
+def render_modules_yaml(modules: Modules, home: str, order: "list[tuple[str, bool]]") -> str:
+    """modules.yaml for a new arrangement: `order` is every module the
+    deployment knows, by id, each on or off, in the rail order wanted.
+
+    REFUSES rather than guesses: an id it does not know, one left out,
+    one twice, or a pinned one -- a system sub-app is always loaded and
+    always last, so it is neither listed nor switchable. Whether the
+    result LOADS (home opening something, manifests sound) is the
+    loader's to say, run on the candidate before anything is written."""
+    known = {m.id: m for m in modules.modules + modules.off if not m.pinned}
+    ids = [module_id for module_id, _ in order]
+    pinned = sorted({m.id for m in modules.modules if m.pinned} & set(ids))
+    if pinned:
+        raise ModuleError(f"{pinned} are system sub-apps: always on, always last, not arranged")
+    unknown = sorted(set(ids) - set(known))
+    if unknown:
+        raise ModuleError(f"no module called {unknown} is known here")
+    if len(set(ids)) != len(ids):
+        raise ModuleError("a module is listed twice")
+    missing = sorted(set(known) - set(ids))
+    if missing:
+        raise ModuleError(f"the arrangement leaves out {missing}; list every module, on or off")
+    listed = [known[i].listed_as for i, _ in order]
+    off = [known[i].listed_as for i, enabled in order if not enabled]
+    lines = ["# Which sub-apps this deployment loads, in rail order (core/modules.py).",
+             "# Written by the module manager; editing by hand is fine too.",
+             f"home: {json.dumps(home)}"]
+    lines += ["modules:"] + [f"  - {json.dumps(folder)}" for folder in listed] if listed else ["modules: []"]
+    if off:
+        lines += ["disabled:"] + [f"  - {json.dumps(folder)}" for folder in off]
+    return "\n".join(lines) + "\n"
 
 
 def offered_to(modules: Modules, user: UserRecord, roles: dict) -> list[Module]:

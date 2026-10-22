@@ -3971,6 +3971,49 @@
     margin-inline-start: var(--space-tight);
   }
 
+  /* The module manager's editor (@shell/core/ModuleArrangementEditor). */
+  .modules-page__arrangement {
+    margin-block-start: var(--space-section);
+    max-width: 40rem;
+  }
+
+  .modules-page__order {
+    margin: 0 0 var(--space-normal);
+    padding: 0;
+    list-style: none;
+  }
+
+  .modules-page__order > li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-normal);
+    padding-block: var(--space-hair);
+    border-block-end: 1px solid var(--border-subtle);
+  }
+
+  .modules-page__order > li .bp6-control {
+    margin: 0;
+  }
+
+  .modules-page__moves,
+  .modules-page__pinned-row > span {
+    margin-inline-start: auto;
+  }
+
+  .modules-page__pinned-row > span {
+    color: var(--text-secondary);
+  }
+
+  .modules-page__home {
+    display: block;
+    margin-block-end: var(--space-normal);
+  }
+
+  .modules-page__actions {
+    display: flex;
+    gap: var(--space-tight);
+  }
+
   .modules-page__failed {
     color: var(--status-danger);
   }

@@ -58,6 +58,8 @@
 // piece of work authoring a matching interface for every backend
 // response shape up front.
 
+import type { ModuleArrangement, ModuleArrangementChange } from '@shell/core/contract'
+
 export class ApiError extends Error {
   status: number
 
@@ -787,6 +789,23 @@ export async function getMyVisibleSchema(): Promise<unknown> {
 export async function getModuleFeed(): Promise<unknown> {
   const response = await apiFetchOrThrow('/shell/modules')
   return response.json()
+}
+
+/** Every module the deployment knows, on and off, for the module manager
+ *  (manage:deployment; step 1.4c). */
+export async function getModuleArrangement(): Promise<ModuleArrangement> {
+  const response = await apiFetchOrThrow('/shell/modules/arrangement')
+  return (await response.json()) as ModuleArrangement
+}
+
+/** Writes modules.yaml through the validated, atomic, audited path, and
+ *  reloads; refused (409) if the arrangement changed since it was read. */
+export async function saveModuleArrangement(change: ModuleArrangementChange): Promise<ModuleArrangement> {
+  const response = await apiFetchOrThrow('/shell/modules/arrangement', {
+    method: 'PUT',
+    body: JSON.stringify(change),
+  })
+  return (await response.json()) as ModuleArrangement
 }
 
 export interface SearchOptions {

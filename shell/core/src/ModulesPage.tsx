@@ -16,6 +16,7 @@ import { HTMLTable, Tag } from '@blueprintjs/core'
 import { useSyncExternalStore } from 'react'
 import { activatesOn, type ModuleEntry, type ModuleFeed } from './contract'
 import type { ModuleLoader, ModuleStatus } from './moduleLoader'
+import { ModuleArrangementEditor, type ModuleManager } from './ModuleArrangementEditor'
 
 export interface ModulesPageProps {
   /** Every module offered -- in safe mode too, so the page can say
@@ -24,6 +25,9 @@ export interface ModulesPageProps {
   loader: Pick<ModuleLoader, 'status' | 'subscribe' | 'snapshot'>
   /** The page is in safe mode: modules not pinned are not loaded. */
   safeMode?: boolean
+  /** Given to someone who may change the deployment's modules: the page
+   *  then offers the arrangement for everyone (ModuleArrangementEditor). */
+  manager?: ModuleManager
 }
 
 /** How a status reads to a person. */
@@ -46,7 +50,7 @@ export function describeStatus(module: ModuleEntry, status: ModuleStatus): strin
   }
 }
 
-export function ModulesPage({ feed, loader, safeMode = false }: ModulesPageProps) {
+export function ModulesPage({ feed, loader, safeMode = false, manager }: ModulesPageProps) {
   useSyncExternalStore(loader.subscribe, loader.snapshot)
   return (
     <section className="modules-page">
@@ -89,6 +93,7 @@ export function ModulesPage({ feed, loader, safeMode = false }: ModulesPageProps
           })}
         </tbody>
       </HTMLTable>
+      {manager && <ModuleArrangementEditor manager={manager} />}
     </section>
   )
 }

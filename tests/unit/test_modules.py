@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 
 import pytest
+import yaml
 
 from core.intermediate_layer.auth import UserRecord
 from core.modules import (
@@ -16,9 +17,11 @@ from core.modules import (
     SHIPPED_MODULES,
     SYSTEM_MODULES,
     ModuleError,
+    arrangement,
     bundle_file,
     feed_for,
     load_modules,
+    render_modules_yaml,
 )
 
 ROLES = {"admin": {"allowed_actions": frozenset({"manage:users"})}, "reader": {"allowed_actions": frozenset()}}
@@ -65,7 +68,7 @@ class TestWhatLoads:
     def test_a_module_listed_twice_is_refused(self, tmp_path):
         one = _module(tmp_path / "one")
 
-        with pytest.raises(ModuleError, match="already loaded"):
+        with pytest.raises(ModuleError, match="already listed"):
             load_modules(_deployment(tmp_path, [one, one]))
 
     def test_a_folder_without_a_manifest_is_refused_by_name(self, tmp_path):
@@ -324,3 +327,111 @@ class TestBundles:
 
         assert schema.entry == "dist/index.js"
         assert schema.styles == ("dist/index.css",)
+
+
+class TestTheArrangement:
+    """What the module manager reads and writes (step 1.4c)."""
+
+    def _config(self, tmp_path, on, off=(), home="/one"):
+        config = tmp_path / "config"
+        config.mkdir()
+        (config / "modules.yaml").write_text(json.dumps(
+            {"home": home, "modules": [str(f) for f in [*on, *off]], "disabled": [str(f) for f in off]}))
+        return config
+
+    def test_an_off_module_is_checked_known_and_loaded_nowhere(self, tmp_path):
+        one, two = _module(tmp_path / "one"), _module(tmp_path / "two")
+        modules = load_modules(self._config(tmp_path, [one], [two]))
+
+        assert [m.id for m in modules.modules] == ["one", "system"]
+        assert [m.id for m in modules.off] == ["two"]
+
+    def test_a_broken_off_module_is_refused_like_any_other(self, tmp_path):
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        with pytest.raises(ModuleError, match="has no module.json"):
+            load_modules(self._config(tmp_path, [_module(tmp_path / "one")], [empty]))
+
+    def test_disabled_names_only_modules_the_list_holds(self, tmp_path):
+        """`disabled` marks; `modules` places. A folder only in `disabled`
+        would have no place on the rail to come back to."""
+        one, two = _module(tmp_path / "one"), _module(tmp_path / "two")
+        config = tmp_path / "config"
+        config.mkdir()
+        (config / "modules.yaml").write_text(json.dumps(
+            {"home": "/one", "modules": [str(one)], "disabled": [str(two)]}))
+        with pytest.raises(ModuleError, match="does not list"):
+            load_modules(config)
+
+    def test_a_module_turned_off_keeps_its_place(self, tmp_path):
+        one, two, three = (_module(tmp_path / n) for n in ("one", "two", "three"))
+        config = tmp_path / "config"
+        config.mkdir()
+        (config / "modules.yaml").write_text(json.dumps(
+            {"home": "/one", "modules": [str(one), str(two), str(three)], "disabled": [str(two)]}))
+        modules = load_modules(config)
+
+        assert [m.id for m in modules.modules] == ["one", "three", "system"]
+        assert [(m["id"], m["enabled"]) for m in arrangement(modules)["modules"]] == [
+            ("one", True), ("two", False), ("three", True), ("system", True)]
+
+    def test_the_arrangement_lists_on_in_order_then_off_and_carries_no_folder(self, tmp_path):
+        one, two = _module(tmp_path / "one"), _module(tmp_path / "two")
+        shown = arrangement(load_modules(self._config(tmp_path, [one], [two])))
+
+        assert [(m["id"], m["enabled"], m["pinned"]) for m in shown["modules"]] == [
+            ("one", True, False), ("two", False, False), ("system", True, True)]
+        assert shown["modules"][0]["pages"] == ["/one"]
+        assert str(tmp_path) not in json.dumps(shown)
+
+    def test_a_rendered_arrangement_loads_back_as_it_was_asked(self, tmp_path):
+        one, two, three = (_module(tmp_path / n) for n in ("one", "two", "three"))
+        config = self._config(tmp_path, [one, two], [three])
+        modules = load_modules(config)
+
+        (config / "modules.yaml").write_text(
+            render_modules_yaml(modules, "/three", [("three", True), ("one", False), ("two", True)]))
+        again = load_modules(config)
+
+        assert [m.id for m in again.modules] == ["three", "two", "system"]
+        assert [m.id for m in again.off] == ["one"]
+        assert again.home == "/three"
+
+    def test_the_folders_are_written_back_as_they_were_written(self, tmp_path):
+        """A relative folder stays relative: the file must still mean the
+        same thing on another machine."""
+        modules = load_modules(tmp_path)
+        text = render_modules_yaml(modules, "/query", [(m.id, True) for m in modules.modules if not m.pinned])
+        assert '"ui/packages/app-browse"' in text
+        assert str(Path(__file__).resolve().parents[2]) not in text
+
+    @pytest.mark.parametrize("order,refusal", [
+        ([("one", True), ("two", True), ("system", True)], "system sub-apps"),
+        ([("one", True), ("two", True), ("ghost", True)], "no module called"),
+        ([("one", True), ("one", False), ("two", True)], "listed twice"),
+        ([("one", True)], "leaves out"),
+    ])
+    def test_it_refuses_rather_than_guesses(self, tmp_path, order, refusal):
+        one, two = _module(tmp_path / "one"), _module(tmp_path / "two")
+        modules = load_modules(self._config(tmp_path, [one, two]))
+
+        with pytest.raises(ModuleError, match=refusal):
+            render_modules_yaml(modules, "/one", order)
+
+    def test_a_hand_written_off_key_is_refused_not_misread(self, tmp_path):
+        """YAML 1.1 reads `off:` as false; refused by name rather than
+        ignored."""
+        config = tmp_path / "config"
+        config.mkdir()
+        (config / "modules.yaml").write_text("home: /query\noff:\n  - ui/packages/app-schema\n")
+        with pytest.raises(ModuleError, match="does not understand"):
+            load_modules(config)
+
+    def test_an_off_module_is_written_in_its_place_and_marked(self, tmp_path):
+        one, two = _module(tmp_path / "one"), _module(tmp_path / "two")
+        modules = load_modules(self._config(tmp_path, [one, two]))
+
+        written = yaml.safe_load(render_modules_yaml(modules, "/two", [("one", False), ("two", True)]))
+
+        assert written["modules"] == [str(one), str(two)]
+        assert written["disabled"] == [str(one)]

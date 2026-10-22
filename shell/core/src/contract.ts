@@ -166,3 +166,35 @@ export async function fetchFeed(base: string, init?: RequestInit): Promise<Modul
 export function activatesOn(module: ModuleEntry, event: ActivationEvent): boolean {
   return module.activationEvents?.includes(event) ?? false
 }
+
+/**
+ * WHAT THE MODULE MANAGER ARRANGES (step 1.4c): `GET {base}/modules/
+ * arrangement`, and `PUT` the same with the new order -- every module the
+ * deployment knows, on and off, for whoever may manage it. Pinned ones are
+ * listed, and never arranged: always on, always last.
+ */
+export interface ArrangedModule {
+  id: string
+  name: string
+  version: string
+  enabled: boolean
+  pinned: boolean
+  /** Its pages' paths, for choosing home. */
+  pages: string[]
+}
+
+export interface ModuleArrangement {
+  home: string
+  modules: ArrangedModule[]
+  /** Of the arrangement as read: a save names it, and the backend refuses
+   *  one made against an arrangement that has since changed. */
+  digest: string
+}
+
+/** A new arrangement: every arrangeable module, by id, on or off, in rail
+ *  order -- pinned ones left out. */
+export interface ModuleArrangementChange {
+  home: string
+  modules: [string, boolean][]
+  digest: string
+}

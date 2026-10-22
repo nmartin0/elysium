@@ -15,6 +15,7 @@ import { moduleRoutes, type PageResolver } from '@shell/core/ModuleRoutes'
 import { ModuleLoader } from '@shell/core/moduleLoader'
 import { buildRegistry } from '@shell/core/registry'
 import { ModulesPage } from '@shell/core/ModulesPage'
+import type { ModuleManager } from '@shell/core/ModuleArrangementEditor'
 import { safeFeed, safeModeAtLoad } from '@shell/core/safeMode'
 import type { FrameModules, ModuleCode } from '@shell/core/activation'
 import { publishHostValues, resetHostValues, stageHostValues } from '@elysium/shell-api/host'
@@ -29,6 +30,8 @@ import {
   getMyVisibleSchema,
   setGenerationChangeHandler,
   getModuleFeed,
+  getModuleArrangement,
+  saveModuleArrangement,
   handleIfSessionExpired,
   ApiError,
   getErrorMessage,
@@ -118,9 +121,9 @@ function InboxPage() {
   return <InboxPanel onSessionExpired={needs.onSessionExpired} />
 }
 
-/** Every module offered, for the shell's system sub-app, and whether the
- *  page is in safe mode; null until the feed arrives. */
-const FeedContext = createContext<{ feed: ModuleFeed; safeMode: boolean } | null>(null)
+/** Every module offered, for the shell's system sub-app; whether the page
+ *  is in safe mode; how to fetch the feed again. Null until it arrives. */
+const FeedContext = createContext<{ feed: ModuleFeed; safeMode: boolean; refresh: () => Promise<void> } | null>(null)
 
 /**
  * THE SHELL'S SYSTEM SUB-APP (step 1.4): the shell's own Modules page,
@@ -129,10 +132,29 @@ const FeedContext = createContext<{ feed: ModuleFeed; safeMode: boolean } | null
  */
 function SystemModulesPage() {
   const offered = useContext(FeedContext)
+  const { onSessionExpired } = useContext(PageNeedsContext)
+  // THE MODULE MANAGER (step 1.4c), through this page's client -- its
+  // session, its CSRF header, its error messages -- and an expired session
+  // hands over to sign-in as everywhere else. Stable per feed, so the
+  // editor reads the arrangement once rather than on every render.
+  const refresh = offered?.refresh
+  const manager: ModuleManager | undefined = useMemo(() => {
+    if (refresh === undefined) return undefined
+    const signedIn = <T,>(call: () => Promise<T>) =>
+      call().catch((err: unknown) => {
+        handleIfSessionExpired(err, onSessionExpired)
+        throw err
+      })
+    return {
+      read: () => signedIn(getModuleArrangement),
+      save: (change) => signedIn(() => saveModuleArrangement(change)),
+      refresh,
+    }
+  }, [refresh, onSessionExpired])
   return offered === null ? (
     <LoadingState />
   ) : (
-    <ModulesPage feed={offered.feed} loader={moduleLoader} safeMode={offered.safeMode} />
+    <ModulesPage feed={offered.feed} loader={moduleLoader} safeMode={offered.safeMode} manager={manager} />
   )
 }
 
@@ -362,6 +384,14 @@ export default function App() {
   const [visibleSchema, setVisibleSchema] = useState<VisibleSchema | null>(null)
   const [feed, setFeed] = useState<FeedState | null>(null)
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
+  // THE FEED, ASKED AGAIN on request (the module manager's Save and
+  // Refresh): a failure keeps the rail it had, as the generation handler
+  // below does, and is said by whoever asked.
+  const refreshFeed = useCallback(async () => {
+    const next = await fetchCheckedFeed()
+    if ('failure' in next) throw new Error(next.failure)
+    setFeed(next)
+  }, [])
 
   async function handleLoginSuccess() {
     setAuthStatus(await resolveSession())
@@ -561,6 +591,7 @@ export default function App() {
   return (
     <LoggedIn
       offered={feed}
+      onRefreshFeed={refreshFeed}
       safeMode={safeMode}
       visibleSchema={visibleSchema}
       currentUser={currentUser}
@@ -572,6 +603,7 @@ export default function App() {
 
 function LoggedIn({
   offered,
+  onRefreshFeed,
   safeMode,
   visibleSchema,
   currentUser,
@@ -579,6 +611,7 @@ function LoggedIn({
   onSessionExpired,
 }: {
   offered: FeedState | null
+  onRefreshFeed: () => Promise<void>
   safeMode: boolean
   visibleSchema: VisibleSchema | null
   currentUser: CurrentUser | null
@@ -621,6 +654,10 @@ function LoggedIn({
     publishHostValues(needs)
   }, [needs])
   const resolve = useMemo(() => (feed === null || 'failure' in feed ? null : resolverFor(feed)), [feed])
+  const systemNeeds = useMemo(
+    () => (offered === null || 'failure' in offered ? null : { feed: offered, safeMode, refresh: onRefreshFeed }),
+    [offered, safeMode, onRefreshFeed],
+  )
   const modules: FrameModules | undefined = useMemo(
     () => (feed === null || 'failure' in feed ? undefined : { feed: feed.modules, activate }),
     [feed],
@@ -653,7 +690,7 @@ function LoggedIn({
   // owns its own screen and nothing about any other route.
   return (
     <PageNeedsContext.Provider value={needs}>
-      <FeedContext.Provider value={offered === null || 'failure' in offered ? null : { feed: offered, safeMode }}>
+      <FeedContext.Provider value={systemNeeds}>
         <BrowserRouter>
           <Routes>
             <Route

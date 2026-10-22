@@ -121,6 +121,8 @@ my_profile_route
 shell_session_route
 shell_modules_route
 module_file_route
+module_arrangement_route
+save_module_arrangement_route
 my_visible_apps_route
 my_visible_schema_route
 get_object_detail_route

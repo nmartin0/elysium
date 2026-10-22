@@ -13,6 +13,12 @@ import { defineConfig } from '@playwright/test'
 // expects.
 export default defineConfig({
   testDir: './e2e',
+  // ONE AT A TIME when a spec may write the configuration
+  // (moduleManager.spec.ts, opted into with E2E_MAY_WRITE_CONFIG): every
+  // spec shares one server, and a module turned off by one test is gone
+  // for whichever test runs beside it -- seen, the safe-mode test failing
+  // on a Schema row the manager's test had just switched off.
+  workers: process.env.E2E_MAY_WRITE_CONFIG ? 1 : undefined,
   use: {
     // THE UVICORN SERVER, not Vite's dev server.
     //

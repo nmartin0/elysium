@@ -155,7 +155,16 @@ from core.mirror.quarantine_report import quarantine_for
 from core.mirror.source_record import agreement_shown
 from core.mirror.sync_attempts import SyncAttempts
 from core.mirror.sync_targets import resolve_sync_targets
-from core.modules import CONTRACT_VERSION, bundle_file, feed_for, offered_to
+from core.modules import (
+    CONTRACT_VERSION,
+    ModuleError,
+    arranged,
+    arrangement,
+    bundle_file,
+    feed_for,
+    offered_to,
+    render_modules_yaml,
+)
 from core.ontology.action_types import automation_needs_another_approver
 from core.ontology.decimal_text import exact_decimals
 from core.ontology.mediator import SearchOutcome
@@ -5925,6 +5934,91 @@ def shell_modules_route(request: Request,
     if config.modules is None:
         return {"contract": CONTRACT_VERSION, "home": "/", "modules": []}
     return feed_for(config.modules, current_user, config.roles)
+
+
+class ModuleArrangementRow(BaseModel):
+    id: str
+    name: str
+    version: str
+    enabled: bool
+    pinned: bool
+    pages: list[str]
+
+
+class ModuleArrangementResponse(BaseModel):
+    home: str
+    modules: list[ModuleArrangementRow]
+    #: Of modules.yaml as read: a save names it, and is refused if the
+    #: file has moved since -- the same no-merge rule as every editor.
+    digest: str
+
+
+class ModuleArrangementRequest(BaseModel):
+    home: str = Field(max_length=500)
+    #: Every module the deployment knows, in the rail order wanted.
+    modules: list[tuple[str, bool]] = Field(max_length=200)
+    digest: str = Field(max_length=64)
+
+
+def _modules_yaml_now(request: Request) -> str:
+    """modules.yaml as it stands -- or, while the deployment has none,
+    the file that says the same thing, so a failed save's undo writes
+    back an equivalent rather than an empty file."""
+    path = request.app.state.runtime_paths.config_dir / "modules.yaml"
+    if path.exists():
+        return path.read_text()
+    modules = _generation(request).config.modules
+    off = {m.id for m in modules.off}
+    return render_modules_yaml(modules, modules.home, [(i, i not in off) for i in modules.order])
+
+
+@router.get("/shell/modules/arrangement", dependencies=[Depends(_no_store)],
+            response_model=ModuleArrangementResponse)
+def module_arrangement_route(request: Request,
+                             current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Every module the deployment knows, on and off, for the module
+    manager (step 1.4c). For manage:deployment, the grant that edits and
+    reloads the configuration this changes."""
+    from core.config_editing import digest
+
+    _require_manage_deployment(request, current_user)
+    return {**arrangement(_generation(request).config.modules), "digest": digest(_modules_yaml_now(request))}
+
+
+@router.put("/shell/modules/arrangement", dependencies=[Depends(_no_store)],
+            response_model=ModuleArrangementResponse)
+def save_module_arrangement_route(body: ModuleArrangementRequest, request: Request,
+                                  current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Turns modules on and off, orders the rail and sets home, by
+    writing modules.yaml through _write_config_files: checked by loading
+    the candidate first, written atomically, reloaded, put back if the
+    reload fails, audited either way.
+
+    APPLIES AT ONCE, with no second person: turning a module on offers
+    pages whose every call the server still checks, so it widens nothing
+    anyone may read or run -- the rule core/config_proposals.py applies.
+    Every open page learns of it on its next request, which carries the
+    new generation, and fetches the feed again."""
+    from core.config_editing import digest
+
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        current = _modules_yaml_now(request)
+        if digest(current) != body.digest:
+            raise HTTPException(status_code=409, detail="The modules changed since you opened them. "
+                                                        "Reload the page to see the arrangement as it is now.")
+        try:
+            proposed = render_modules_yaml(_generation(request).config.modules, body.home, body.modules)
+        except ModuleError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        _write_config_file(request, current_user, "modules.yaml", current, proposed,
+                           {"home": body.home,
+                            "on": [i for i, enabled in body.modules if enabled],
+                            "off": [i for i, enabled in body.modules if not enabled]})
+    # THE ARRANGEMENT AS SAVED, from what was written: the generation this
+    # request is pinned to predates the save, and reading the new one off
+    # app.state would reach past the pin (tests/unit/test_generation_pin.py).
+    return {**arranged(_generation(request).config.modules, body.home, body.modules), "digest": digest(proposed)}
 
 
 #: What a module's bundle directory may serve, by suffix. Anything else is

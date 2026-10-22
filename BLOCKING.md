@@ -836,8 +836,32 @@ pinned module gets the frame and the way out. Checked in Chromium: the
 reload, the rail reduced to Modules, persistence across a reload, the
 way out, and a second tab unaffected.
 
-**Blocked on:** nothing; step 1.4c, the module manager changing the
-deployment, is next.
+**STEP 1.4c BUILT (22 October): THE MODULE MANAGER CHANGES THE
+DEPLOYMENT.** For manage:deployment, on the Modules page: each module
+on or off, up or down, where people land, saved as one -- through
+`GET`/`PUT /api/shell/modules/arrangement`, which writes modules.yaml by
+the same path as every configuration edit: the candidate loaded first
+(home opening nothing is refused, nothing written), written atomically,
+reloaded, put back if the reload fails, audited either way, and a save
+against an arrangement that has since changed refused rather than
+merged. It applies at once, with no second person: turning a module on
+widens nothing anyone may read or run, every call still being checked.
+Every open page notices on its next request (it carries the new
+generation) and fetches the feed again; "Refresh modules" does the same
+on request, which also loads a rebuilt bundle from its new address.
+modules.yaml gains `disabled:`, marking which of the listed modules are
+off -- in their place, so one turned on again comes back where it was.
+
+FOUND ON THE WAY: YAML 1.1 reads a bare `off:` key as the boolean
+false, so that name would have meant nothing in a hand edit -- the key
+is `disabled`, and `off:` is refused by name. And the first format kept
+turned-off modules in a list apart, so turning one off and on sent it to
+the end of the rail; seen in a screenshot, fixed. The browser test that
+saves an arrangement WRITES modules.yaml, so it runs only against a
+server on a copy of the configuration, opted into with
+E2E_MAY_WRITE_CONFIG=1, one test at a time.
+
+**Blocked on:** nothing; step 1.4d, hiding a tab for oneself, is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

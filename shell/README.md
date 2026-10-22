@@ -20,6 +20,7 @@ shell/
     src/badges.tsx       badges on modules' rail entries
     src/ModulesPage.tsx  the shell's system sub-app: every module, and its state
     src/safeMode.ts      safe mode: this tab, pinned modules only, until left
+    src/ModuleArrangementEditor.tsx  the module manager: the arrangement for everyone
   build/           @shell/build: build-time tooling
     src/sharedLibraries.ts  the shared-library registry, shims and import map
     src/moduleBuild.ts      a module's bundle; building modules with the page
@@ -189,6 +190,29 @@ is absent, never sent and hidden.
     together, subjects in the order they first appear.
   - `redirects` -- old addresses kept, unless a page holds the path.
 
+### `GET` and `PUT {base}/modules/arrangement`
+
+For the module manager (step 1.4c), and only for someone the backend
+lets change the deployment's modules. Every module the deployment knows
+-- on and off, in rail order, pinned ones last -- with the pages each
+holds and a `digest` of the arrangement as read:
+
+```json
+{ "home": "/query",
+  "modules": [{ "id": "schema", "name": "Schema", "version": "1",
+                "enabled": false, "pinned": false, "pages": ["/schema"] }],
+  "digest": "9f1c..." }
+```
+
+`PUT` takes `{ home, modules: [[id, enabled], ...], digest }` -- every
+module that is not pinned, in the order wanted -- and answers with the
+arrangement as saved. A `digest` the backend no longer has is refused
+(409) rather than merged; an arrangement that would not load (home
+opening nothing) is refused (400) with nothing changed. Pinned modules
+are never arranged. The feed changes for everyone; Elysium's pages
+notice on their next request, which carries the new configuration
+generation, and fetch the feed again.
+
 ### What the host supplies
 
 The shell decides **where** a page is mounted; the host decides **what**
@@ -206,6 +230,13 @@ why -- following the loader live (`loader.status(module)`,
 `loader.subscribe`). A host mounts it as the page of a module its
 backend marks `pinned`; Elysium's is `ui/src/system`, offered with
 `manage:deployment`.
+
+Given a `manager` (`read`, `save`, `refresh`, made from the host's own
+client), it also offers the ARRANGEMENT FOR EVERYONE
+(`ModuleArrangementEditor`): each module switched on or off and moved
+up or down, where people land after signing in, saved as one with
+Discard beside it, and "Refresh modules" to fetch the feed again -- a
+bundle rebuilt since the page loaded then loads from its new address.
 
 ## Safe mode
 
