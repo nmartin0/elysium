@@ -12,8 +12,10 @@ shell/
     src/contract.ts      the feed's types, and checkFeed
     src/registry.ts      a feed -> pages, rail and redirects (pure)
     src/ModuleRoutes.tsx a registry -> react-router routes
-  build/           @shell/build: build-time tooling for a host page
+    src/moduleLoader.tsx a module's bundle, stylesheets and lifecycle
+  build/           @shell/build: build-time tooling
     src/sharedLibraries.ts  the shared-library registry, shims and import map
+    src/moduleBuild.ts      a module's bundle; building modules with the page
 ```
 
 Its own npm project, with its own tests:
@@ -80,6 +82,8 @@ is absent, never sent and hidden.
   `home` that no loaded module's page is at.
 - `entry` -- the address of the module's code bundle, or `null` when
   the page already has the code built in.
+- `styles` -- optional: stylesheets the bundle needs, added when it
+  loads and removed when it unloads.
 - `contributes` -- **static**: read without running any of the
   module's code, so the rail and routes exist before anything loads
   (VS Code's `contributes`, Backstage's extension data).
@@ -98,6 +102,33 @@ The shell decides **where** a page is mounted; the host decides **what**
 it is. `moduleRoutes(registry, resolve, home)` asks
 `resolve(moduleId, pageId)` for a component; `null` mounts "nothing
 loaded opens this page" rather than failing.
+
+## A module's bundle
+
+An ES module exporting:
+
+```ts
+export function activate(context: ModuleContext): ModuleActivation  // { pages: { [pageId]: Component } }
+export function deactivate(): void                                    // optional
+```
+
+`activate` returns the pages its manifest declares, by id. The loader
+(`@shell/core/moduleLoader`) fetches the bundle when one of its pages is
+first opened, adds its `styles`, and hands the routes one component per
+page, the same object every time. A bundle that cannot be fetched, has no
+`activate`, or lacks the page asked for renders a sentence naming the
+module and the reason; the shell carries on. Unloading removes the
+stylesheets and calls `deactivate`; the browser keeps the code until the
+page reloads.
+
+A module builds its bundle with `moduleConfig` from
+`@shell/build/moduleBuild` in its own `vite.config.ts`: one `index.js`
+and one `index.css`, the page's shared libraries left as bare imports,
+everything else bundled in. A deep import into a shared library
+(`@blueprintjs/core/lib/...`) stops the build, since it would bundle a
+private copy of part of something the page owns. A host adds
+`builtModules({ configs })` so that its own build builds the modules and
+its dev server rebuilds them on save.
 
 ## Shared libraries
 
@@ -130,8 +161,12 @@ the names match the libraries; Elysium's `ui/src/sharedLibraries.test.ts`
 does.
 
 A shared library is available whole, because a module may use any part
-of it; see Elysium's `ui/src/sharedLibraries.ts` for what that cost and
-what it shares.
+of it; see Elysium's `ui/packages/shell-api/src/sharedLibraries.ts` for
+what that cost and what it shares.
+
+A host with a Content-Security-Policy must allow the import map: it is
+an inline script. Elysium allows it by its hash (`'sha256-...'`), never
+by `'unsafe-inline'` (api/app.py).
 
 ## Precedents
 

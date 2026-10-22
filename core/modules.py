@@ -30,8 +30,25 @@ THE FEED IS THE CONTRACT'S, not Elysium's: shell/README.md. What is
 Elysium's own here is `permission` -- the grant that decides whether a
 person is offered a module at all, which used to be api/apps.py's
 hand-written `gating_permission`.
+
+A MODULE WITH ITS OWN BUNDLE (step 1.2) names it in its manifest:
+
+    "entry": "dist/index.js",
+    "styles": ["dist/index.css"]
+
+paths inside its folder, both in ONE directory -- the bundle's -- which
+is all Elysium will serve of the folder (`bundle_file`, and the route
+GET /api/modules/{id}/files/{path}). The feed turns them into those
+addresses. A module without `entry` is built into the page, as every
+sub-app was before modules.
+
+A BUNDLE NOT YET BUILT IS NOT A LOAD ERROR. The manifest is checked at
+startup, which in development and in the test suite comes before any
+`npm run build`; the shell says the module could not be loaded when
+someone opens its page, and the server stays up.
 """
 
+import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -52,7 +69,7 @@ SHIPPED_MODULES = ("ui/packages/app-browse", "ui/packages/app-query",
                    "ui/packages/app-admin")
 SHIPPED_HOME = "/query"
 
-_MANIFEST_KEYS = frozenset({"id", "name", "version", "permission", "contributes", "entry"})
+_MANIFEST_KEYS = frozenset({"id", "name", "version", "permission", "contributes", "entry", "styles"})
 _CONTRIBUTION_KEYS = frozenset({"pages", "nav", "redirects"})
 
 
@@ -68,9 +85,17 @@ class Module:
     #: Who is offered it: None for every signed-in person.
     permission: "str | None"
     contributes: Mapping
-    #: A bundle's address, or None when the page supplies the code.
+    #: The bundle's path inside `folder`, or None when the page supplies
+    #: the code.
     entry: "str | None"
     folder: Path
+    #: Stylesheets inside the bundle's directory.
+    styles: tuple[str, ...] = ()
+
+    @property
+    def bundle_directory(self) -> "Path | None":
+        """The one directory of the folder Elysium serves, or None."""
+        return None if self.entry is None else (self.folder / self.entry).parent
 
 
 @dataclass(frozen=True)
@@ -139,10 +164,28 @@ def _load_manifest(folder: Path) -> Module:
     if permission is not None and not isinstance(permission, str):
         raise ModuleError(f"{path}: `permission` must be a grant such as manage:users, or absent")
     entry = raw.get("entry")
-    if entry is not None and not isinstance(entry, str):
-        raise ModuleError(f"{path}: `entry` must be a bundle's path, or absent")
+    if entry is not None and not _is_inside(entry):
+        raise ModuleError(f"{path}: `entry` must be a path inside the module's folder, such as "
+                          f"dist/index.js, or absent")
+    styles = raw.get("styles") or []
+    if not isinstance(styles, list) or not all(isinstance(s, str) and _is_inside(s) for s in styles):
+        raise ModuleError(f"{path}: `styles` must be a list of paths inside the module's folder")
+    if styles and entry is None:
+        raise ModuleError(f"{path}: `styles` belong to a bundle, and this module names no `entry`")
+    if entry is not None and any(Path(s).parent != Path(entry).parent for s in styles):
+        raise ModuleError(f"{path}: `styles` must sit beside `entry`, in {Path(entry).parent}/ -- "
+                          f"the one directory Elysium serves")
     return Module(id=raw["id"], name=raw["name"], version=raw["version"],
-                  permission=permission, contributes=contributes, entry=entry, folder=folder)
+                  permission=permission, contributes=contributes, entry=entry, folder=folder,
+                  styles=tuple(styles))
+
+
+def _is_inside(relative: object) -> bool:
+    """A relative path that stays inside the folder it is relative to."""
+    if not isinstance(relative, str) or not relative or "\\" in relative:
+        return False
+    candidate = Path(relative)
+    return not candidate.is_absolute() and ".." not in candidate.parts
 
 
 def _check_contributions(path: Path, contributes) -> None:
@@ -172,17 +215,78 @@ def _check_contributions(path: Path, contributes) -> None:
             raise ModuleError(f"{path}: each redirect needs `from` and `to`")
 
 
+def offered_to(modules: Modules, user: UserRecord, roles: dict) -> list[Module]:
+    """The modules one signed-in person may be offered."""
+    return [m for m in modules.modules
+            if m.permission is None or authorize(user, roles, m.permission)]
+
+
+#: Where a module's bundle files are served, under the API's prefix.
+FILES_ROUTE = "/api/modules/{id}/files/{path}"
+
+
+def _address(module: Module, relative: str) -> str:
+    """A bundle file's address, carrying a FINGERPRINT of its contents.
+
+    THE BROWSER IMPORTS A URL ONCE PER PAGE: a module at the same address
+    is the same module until the page reloads, whatever the server now
+    holds. A rebuilt bundle -- every save, in development -- must
+    therefore come at a NEW address, or the loader would `activate` the
+    old code after `deactivate` had torn it down. The fingerprint is the
+    file's own hash, so it changes exactly when the file does; the route
+    ignores the query.
+    """
+    address = FILES_ROUTE.format(id=module.id, path=relative)
+    fingerprint = _fingerprint(module.folder / relative)
+    return address if fingerprint is None else f"{address}?v={fingerprint}"
+
+
+#: Fingerprints by (path, mtime, size), so a feed request hashes a bundle
+#: only when it has changed.
+_fingerprints: dict[tuple[str, float, int], str] = {}
+
+
+def _fingerprint(path: Path) -> "str | None":
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    key = (str(path), stat.st_mtime, stat.st_size)
+    if key not in _fingerprints:
+        _fingerprints[key] = hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    return _fingerprints[key]
+
+
 def feed_for(modules: Modules, user: UserRecord, roles: dict) -> dict:
     """The module feed for one signed-in person: the contract's shape,
     holding only the modules they may be offered."""
-    offered = [m for m in modules.modules
-               if m.permission is None or authorize(user, roles, m.permission)]
     return {
         "contract": CONTRACT_VERSION,
         "home": modules.home,
         "modules": [{"id": m.id, "name": m.name, "version": m.version,
-                     "contributes": _plain(m.contributes), "entry": m.entry} for m in offered],
+                     "contributes": _plain(m.contributes),
+                     "entry": None if m.entry is None else _address(m, m.entry),
+                     "styles": [_address(m, s) for s in m.styles]}
+                    for m in offered_to(modules, user, roles)],
     }
+
+
+def bundle_file(module: Module, relative: str) -> "Path | None":
+    """The file `relative` names in the module's bundle directory, or None
+    -- for a module with no bundle, a path leaving that directory, or no
+    such file. The only files of a module Elysium serves."""
+    directory = module.bundle_directory
+    if directory is None or not _is_inside(relative):
+        return None
+    try:
+        candidate = (module.folder / relative).resolve()
+        if not candidate.is_relative_to(directory.resolve()) or not candidate.is_file():
+            return None
+    except (OSError, ValueError):
+        # A NAME NO FILE CAN HAVE -- an embedded NUL raises ValueError from
+        # the filesystem call -- is absent like any other, not a 500.
+        return None
+    return candidate
 
 
 def _plain(value):

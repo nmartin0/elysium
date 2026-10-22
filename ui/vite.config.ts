@@ -9,10 +9,13 @@
 // OLDER `types="vitest"` variant of this same reference is what's
 // being phased out in Vitest 4, not this one -- genuinely current,
 // not a stopgap already due for replacement.
+import { existsSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { builtModules } from '@shell/build/moduleBuild'
 import { sharedLibraries } from '@shell/build/sharedLibraries'
 import react from '@vitejs/plugin-react'
 import { defineConfig, searchForWorkspaceRoot } from 'vite'
-import { SHARED_LIBRARIES, SHARED_PACKAGES } from './src/sharedLibraries.ts'
+import { SHARED_LIBRARIES, SHARED_PACKAGES } from '@elysium/shell-api/sharedLibraries'
 
 // During `npm run dev`, requests to any real API path are proxied
 // straight through to the backend -- from the BROWSER's perspective,
@@ -23,8 +26,21 @@ import { SHARED_LIBRARIES, SHARED_PACKAGES } from './src/sharedLibraries.ts'
 // enters the picture in either mode.
 const API_PROXY_TARGET = process.env.VITE_API_PROXY_TARGET || 'http://localhost:8000'
 
+// THE SUB-APPS WITH BUNDLES OF THEIR OWN (BLOCKING.md item 3, step 1.2):
+// any package with a vite.config.ts of its own. `npm run build` builds
+// each after the page; `npm run dev` rebuilds each on save, so development
+// loads a module the way production does.
+const PACKAGES = join(import.meta.dirname, 'packages')
+const MODULE_BUILDS = readdirSync(PACKAGES)
+  .map((name) => join(PACKAGES, name, 'vite.config.ts'))
+  .filter((config) => existsSync(config))
+
 export default defineConfig({
-  plugins: [react(), sharedLibraries({ libraries: SHARED_LIBRARIES, packages: SHARED_PACKAGES })],
+  plugins: [
+    react(),
+    sharedLibraries({ libraries: SHARED_LIBRARIES, packages: SHARED_PACKAGES }),
+    builtModules({ configs: MODULE_BUILDS }),
+  ],
   // ONE REACT. `@shell/core` (../shell, BLOCKING.md item 3) is linked
   // in by `file:`, and its own node_modules holds a React for its own
   // tests; a second copy in the bundle would give the shell's routes a

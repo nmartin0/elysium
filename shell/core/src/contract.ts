@@ -60,8 +60,12 @@ export interface ModuleEntry {
   version: string
   contributes: Contributions
   /** Where the module's code is: a bundle's address, or null when the
-   *  host supplies the code itself (a module built into the page). */
+   *  host supplies the code itself (a module built into the page). The
+   *  bundle is an ES module exporting `activate` (module.ts). */
   entry: string | null
+  /** Stylesheets the bundle needs, added when it loads and removed when
+   *  it unloads. Optional, so a version-1 feed without it still reads. */
+  styles?: string[]
 }
 
 /** GET {base}/modules */
@@ -104,6 +108,15 @@ export function checkFeed(raw: unknown): ModuleFeed {
     if (typeof module?.id !== 'string' || module.id === '') throw new FeedError('a module in the feed has no id')
     if (seen.has(module.id)) throw new FeedError(`two modules in the feed are called ${module.id}`)
     seen.add(module.id)
+    if (module.entry !== null && typeof module.entry !== 'string') {
+      throw new FeedError(`${module.id}: \`entry\` must be an address or null`)
+    }
+    if (
+      module.styles !== undefined &&
+      !(Array.isArray(module.styles) && module.styles.every((s) => typeof s === 'string'))
+    ) {
+      throw new FeedError(`${module.id}: \`styles\` must be a list of addresses`)
+    }
   }
   return feed as ModuleFeed
 }

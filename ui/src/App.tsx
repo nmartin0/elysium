@@ -1,8 +1,20 @@
-import { createContext, lazy, useContext, useEffect, useMemo, useState, type ComponentType } from 'react'
+import {
+  createContext,
+  lazy,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  type ComponentType,
+} from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { checkFeed, type ModuleFeed } from '@shell/core/contract'
 import { moduleRoutes, type PageResolver } from '@shell/core/ModuleRoutes'
+import { ModuleLoader } from '@shell/core/moduleLoader'
 import { buildRegistry } from '@shell/core/registry'
+import { publishHostValues, resetHostValues, stageHostValues } from '@elysium/shell-api/host'
 import ChangePasswordForm from '@elysium/shell-api/components/ChangePasswordForm'
 import LoginForm from '@elysium/shell-api/components/LoginForm'
 import type { CurrentUser } from '@elysium/shell-api/components/UserMenu'
@@ -64,7 +76,6 @@ import LoadingState from '@elysium/shell-api/components/LoadingState'
 // this to be unambiguous), so this adds no second network request
 // and creates no eager reference to the module's own real code.
 const QueryPanel = lazy(() => import('@elysium/app-query/QueryPanel'))
-const SchemaPanel = lazy(() => import('@elysium/app-schema/SchemaPanel'))
 const ObjectSearchPanel = lazy(() => import('@elysium/app-browse/ObjectSearchPanel'))
 const ObjectDetailPanel = lazy(() => import('@elysium/app-browse/ObjectDetailPanel'))
 const AdminPanel = lazy(() => import('@elysium/app-admin/AdminPanel'))
@@ -86,10 +97,6 @@ const PageNeedsContext = createContext<PageNeeds>({ visibleSchema: null, usernam
 function QueryPage() {
   const needs = useContext(PageNeedsContext)
   return <QueryPanel onSessionExpired={needs.onSessionExpired} />
-}
-function SchemaPage() {
-  const needs = useContext(PageNeedsContext)
-  return <SchemaPanel {...needs} />
 }
 function BrowsePage() {
   const needs = useContext(PageNeedsContext)
@@ -117,7 +124,6 @@ function InboxPage() {
  */
 const BUILT_IN_PAGES: Record<string, ComponentType> = {
   'query:query': QueryPage,
-  'schema:schema': SchemaPage,
   'browse:search': BrowsePage,
   'browse:object': ObjectPage,
   'admin:admin': AdminPage,
@@ -146,7 +152,23 @@ async function fetchCheckedFeed(): Promise<FeedState> {
   }
 }
 
-const resolveBuiltIn: PageResolver = (moduleId, pageId) => BUILT_IN_PAGES[`${moduleId}:${pageId}`] ?? null
+/**
+ * THE MODULES WITH BUNDLES OF THEIR OWN (BLOCKING.md item 3, step 1.2),
+ * loaded when one of their pages is first opened. One loader for the
+ * page's life: a module's code, once imported, stays until the page
+ * reloads, and the loader hands out one component per page so React never
+ * remounts it.
+ */
+const moduleLoader = new ModuleLoader()
+
+/** Where a page's code is: the module's bundle, or this page's own table. */
+function resolverFor(feed: ModuleFeed): PageResolver {
+  return (moduleId, pageId) => {
+    const module = feed.modules.find((candidate) => candidate.id === moduleId)
+    if (module?.entry) return moduleLoader.page(module, pageId)
+    return BUILT_IN_PAGES[`${moduleId}:${pageId}`] ?? null
+  }
+}
 
 // mustChangePassword: logged in, after an administrator's reset, and not
 // yet allowed anything but choosing a password. A STATE OF ITS OWN, not
@@ -301,12 +323,15 @@ export default function App() {
     setCurrentUser(null)
   }
 
-  function handleSessionExpired() {
+  // STABLE FOR THE PAGE'S LIFE -- it only calls state setters, which
+  // React keeps stable. A new function each render changed the values
+  // published to module pages (@elysium/shell-api/host) every render.
+  const handleSessionExpired = useCallback(() => {
     setAuthStatus('loggedOut')
     setVisibleSchema(null)
     setFeed(null)
     setCurrentUser(null)
-  }
+  }, [])
 
   // THE initial "is there already a valid session" check -- runs
   // ONCE, on mount, and ONLY decides authStatus itself; deliberately
@@ -520,6 +545,32 @@ function LoggedIn({
     () => ({ visibleSchema, username: currentUser?.username ?? '', onSessionExpired }),
     [visibleSchema, currentUser, onSessionExpired],
   )
+  // STAGED NOW, so a module page rendering beneath this one in the same
+  // pass reads them; PUBLISHED below, once committed.
+  stageHostValues(needs)
+  // THE SAME VALUES, PUBLISHED FOR MODULES (@elysium/shell-api/host): a
+  // module built apart from this page reads them with a hook, since
+  // nothing here knows its pages to hand them props. In a LAYOUT effect:
+  // publishing during render would update the readers mid-render, which
+  // React forbids, and a layout effect still lands before the screen is
+  // painted.
+  useLayoutEffect(() => {
+    publishHostValues(needs)
+  }, [needs])
+  const resolve = useMemo(() => (feed === null || 'failure' in feed ? null : resolverFor(feed)), [feed])
+  // A MODULE THE FEED NO LONGER OFFERS IS UNLOADED -- its stylesheets
+  // removed, its `deactivate` called -- and on signing out, all of them:
+  // the next person may be offered fewer.
+  useEffect(() => {
+    if (feed !== null && !('failure' in feed)) moduleLoader.retain(feed.modules.map((module) => module.id))
+  }, [feed])
+  useEffect(
+    () => () => {
+      moduleLoader.retain([])
+      resetHostValues()
+    },
+    [],
+  )
   // authStatus === 'loggedIn' from here on.
   //
   // Shell is now a real React Router LAYOUT route -- an element on
@@ -563,7 +614,7 @@ function LoggedIn({
             ) : registry === null || feed === null ? (
               <Route path="*" element={<LoadingState />} />
             ) : (
-              moduleRoutes(registry, resolveBuiltIn, feed.home)
+              moduleRoutes(registry, resolve ?? (() => null), feed.home)
             )}
           </Route>
         </Routes>

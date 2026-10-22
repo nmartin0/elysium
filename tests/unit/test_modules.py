@@ -4,12 +4,21 @@ person is given (BLOCKING.md item 3, shell/README.md).
 """
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 
 from core.intermediate_layer.auth import UserRecord
-from core.modules import CONTRACT_VERSION, SHIPPED_HOME, SHIPPED_MODULES, ModuleError, feed_for, load_modules
+from core.modules import (
+    CONTRACT_VERSION,
+    SHIPPED_HOME,
+    SHIPPED_MODULES,
+    ModuleError,
+    bundle_file,
+    feed_for,
+    load_modules,
+)
 
 ROLES = {"admin": {"allowed_actions": frozenset({"manage:users"})}, "reader": {"allowed_actions": frozenset()}}
 
@@ -126,5 +135,113 @@ class TestTheFeed:
 
         assert feed["contract"] == CONTRACT_VERSION
         assert feed["home"] == "/one"
-        assert set(feed["modules"][0]) == {"id", "name", "version", "contributes", "entry"}
+        assert set(feed["modules"][0]) == {"id", "name", "version", "contributes", "entry", "styles"}
         assert str(tmp_path) not in json.dumps(feed)
+
+
+class TestBundles:
+    """A module with its own bundle (BLOCKING.md item 3, step 1.2)."""
+
+    def _bundled(self, tmp_path, **manifest):
+        folder = _module(tmp_path / "graph", entry="dist/index.js", styles=["dist/index.css"], **manifest)
+        (folder / "dist").mkdir()
+        (folder / "dist" / "index.js").write_text("export function activate() {}")
+        (folder / "dist" / "index.css").write_text("@layer components {}")
+        return folder
+
+    def test_the_feed_gives_addresses_elysium_serves_never_the_folder(self, tmp_path):
+        modules = load_modules(_deployment(tmp_path, [self._bundled(tmp_path)], home="/graph"))
+
+        entry = feed_for(modules, _user("reader"), ROLES)["modules"][0]
+
+        assert re.fullmatch(r"/api/modules/graph/files/dist/index\.js\?v=[0-9a-f]{12}", entry["entry"])
+        assert re.fullmatch(r"/api/modules/graph/files/dist/index\.css\?v=[0-9a-f]{12}", entry["styles"][0])
+        assert str(tmp_path) not in json.dumps(entry)
+
+    def test_a_rebuilt_bundle_comes_at_a_new_address(self, tmp_path):
+        """The browser imports an address once per page; a rebuilt bundle
+        at the old one would be the old code."""
+        folder = self._bundled(tmp_path)
+        modules = load_modules(_deployment(tmp_path, [folder], home="/graph"))
+        before = feed_for(modules, _user("reader"), ROLES)["modules"][0]["entry"]
+
+        (folder / "dist" / "index.js").write_text("export function activate() { /* rebuilt */ }")
+        after = feed_for(modules, _user("reader"), ROLES)["modules"][0]["entry"]
+
+        assert before != after
+        assert before.split("?")[0] == after.split("?")[0]
+
+    def test_a_bundle_not_built_has_an_address_without_a_fingerprint(self, tmp_path):
+        folder = _module(tmp_path / "graph", entry="dist/index.js")
+        modules = load_modules(_deployment(tmp_path, [folder], home="/graph"))
+
+        assert feed_for(modules, _user("reader"), ROLES)["modules"][0]["entry"] == \
+            "/api/modules/graph/files/dist/index.js"
+
+    def test_a_name_no_file_can_have_is_absent_not_an_error(self, tmp_path):
+        graph = load_modules(_deployment(tmp_path, [self._bundled(tmp_path)], home="/graph")).modules[0]
+
+        assert bundle_file(graph, "dist/a\x00.js") is None
+
+    def test_a_module_built_into_the_page_has_no_entry_and_no_styles(self, tmp_path):
+        modules = load_modules(_deployment(tmp_path, [_module(tmp_path / "one")]))
+
+        entry = feed_for(modules, _user("reader"), ROLES)["modules"][0]
+
+        assert entry["entry"] is None
+        assert entry["styles"] == []
+
+    @pytest.mark.parametrize("entry", ["../escape.js", "/etc/passwd", "dist/../../x.js", "dist\\\\index.js", ""])
+    def test_an_entry_leaving_the_folder_is_refused(self, tmp_path, entry):
+        folder = _module(tmp_path / "bad", entry=entry)
+
+        with pytest.raises(ModuleError, match="entry"):
+            load_modules(_deployment(tmp_path, [folder], home="/bad"))
+
+    def test_styles_without_a_bundle_are_refused(self, tmp_path):
+        folder = _module(tmp_path / "bad", styles=["dist/index.css"])
+
+        with pytest.raises(ModuleError, match="no `entry`"):
+            load_modules(_deployment(tmp_path, [folder], home="/bad"))
+
+    def test_styles_outside_the_bundles_directory_are_refused(self, tmp_path):
+        """The bundle's directory is all Elysium serves of a folder."""
+        folder = _module(tmp_path / "bad", entry="dist/index.js", styles=["styles/index.css"])
+
+        with pytest.raises(ModuleError, match="beside `entry`"):
+            load_modules(_deployment(tmp_path, [folder], home="/bad"))
+
+    def test_a_bundle_not_yet_built_still_loads(self, tmp_path):
+        """Startup comes before `npm run build` in development and in the
+        suite; the shell says so when the page is opened."""
+        folder = _module(tmp_path / "graph", entry="dist/index.js")
+
+        assert load_modules(_deployment(tmp_path, [folder], home="/graph")).modules[0].entry == "dist/index.js"
+
+    def test_bundle_file_serves_only_the_bundles_directory(self, tmp_path):
+        modules = load_modules(_deployment(tmp_path, [self._bundled(tmp_path)], home="/graph"))
+        graph = modules.modules[0]
+
+        assert bundle_file(graph, "dist/index.js") == (tmp_path / "graph" / "dist" / "index.js").resolve()
+        assert bundle_file(graph, "module.json") is None
+        assert bundle_file(graph, "dist/../module.json") is None
+        assert bundle_file(graph, "dist/missing.js") is None
+        assert bundle_file(graph, "/etc/passwd") is None
+
+    def test_bundle_file_refuses_a_link_leading_out_of_the_directory(self, tmp_path):
+        folder = self._bundled(tmp_path)
+        (folder / "dist" / "escape.js").symlink_to(folder / "module.json")
+        graph = load_modules(_deployment(tmp_path, [folder], home="/graph")).modules[0]
+
+        assert bundle_file(graph, "dist/escape.js") is None
+
+    def test_a_module_built_into_the_page_serves_nothing(self, tmp_path):
+        one = load_modules(_deployment(tmp_path, [_module(tmp_path / "one")])).modules[0]
+
+        assert bundle_file(one, "module.json") is None
+
+    def test_the_schema_graph_ships_as_a_bundle(self, tmp_path):
+        schema = next(m for m in load_modules(tmp_path).modules if m.id == "schema")
+
+        assert schema.entry == "dist/index.js"
+        assert schema.styles == ("dist/index.css",)

@@ -193,6 +193,15 @@ export function sharedLibraries(options: SharedLibrariesOptions): Plugin {
     resolveId(id) {
       return id === REGISTRY_MODULE ? `\0${REGISTRY_MODULE}` : null
     },
+    // THE BUNDLER WARNS, for every library the page also imports itself,
+    // that the registry's `import()` "will not move module into another
+    // chunk". That is the point: the page's own copy stays where it is,
+    // and the registry hands out that one instance. The warning is about
+    // the registry only and says nothing actionable, so it is dropped.
+    onLog(_level, log) {
+      if (log.code === 'INEFFECTIVE_DYNAMIC_IMPORT' && log.message.includes(REGISTRY_MODULE)) return false
+      return undefined
+    },
     load(id) {
       return id === `\0${REGISTRY_MODULE}` ? registrySource(specifiers) : null
     },

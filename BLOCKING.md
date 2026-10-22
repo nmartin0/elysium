@@ -641,10 +641,47 @@ FOUND ON THE WAY: `npm run dev` could not load @shell/core at all since
 the commit adding it -- Vite answered 403 for ../shell -- now allowed and
 tested against a real dev server (ui/src/devServer.test.ts).
 
-**Blocked on:** nothing; part B is next -- the Schema graph's own bundle,
-served from its folder, `activate`/`deactivate`, integrity, and its
-stylesheet in its own cascade layer, added on load and removed on
-unload.
+**STEP 1.2, PARTS B AND D BUILT (22 October): THE SCHEMA GRAPH IS A
+MODULE.** It builds its own bundle (packages/app-schema/vite.config.ts,
+`@shell/build/moduleBuild`), Elysium serves it at
+`/api/modules/schema/files/` -- only to someone the module is offered to,
+only from its bundle's directory, a uniform 404 otherwise -- and the
+shell's loader (`@shell/core/moduleLoader`) fetches it when /schema is
+first opened, adds its stylesheet and mounts the page its `activate`
+returns. Elysium's page no longer imports or depends on it; what it used
+to pass as props it PUBLISHES through the kit's host store
+(`@elysium/shell-api/host`), which a module reads with a hook. Checked in
+Chromium against the real server, signed in: all 26 browser tests pass,
+the ontology canvas's included.
+
+FOUND BY THAT TEST, AND FIXED: the import map had never worked against
+Elysium itself. It is an inline script, and the Content-Security-Policy
+(`default-src 'self'`) refused it, so no shared library resolved; part A's
+browser test used a static server that sends no policy. Now allowed by
+its hash, recomputed when the built page changes (api/app.py). Part A
+shipped with this -- harmless then, since nothing used the map, but every
+page load logged a CSP error.
+
+AND BY AN INDEPENDENT REVIEW, FIXED BEFORE SHIPPING: the browser imports
+an address once per page, so a rebuilt bundle at the same address would
+have been the old code -- the feed now adds a fingerprint of the file
+(`?v=`); a module unloaded while loading could be activated with no
+`deactivate` to follow -- now cancelled; a failed page retried and
+remounted on every render -- now it stays until the feed is next
+applied; module pages read empty host values in their first render --
+now staged during the page's render; `react-router` itself was not
+shared, so a module importing it would have had a second router.
+
+DEFERRED, ON PURPOSE: INTEGRITY. A bundle served by Elysium from its own
+disk gains nothing from an integrity check, and the import map is fixed
+at build, before the server knows which modules are installed. It
+matters when bundles come from elsewhere -- add-on servers, step 2 --
+and is to be built then, with the map's `integrity` key (Chrome 127,
+Safari 18, Firefox 138) written by the server.
+
+**Blocked on:** nothing; part C is next -- the provider's test preset,
+the test host, the first conformance checks with the deliberately broken
+sample module, and the Schema graph's tests run alone.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

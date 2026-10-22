@@ -53,6 +53,7 @@ import {
   getModuleFeed,
   ApiError,
 } from '@elysium/shell-api/api'
+import { useHostValues } from '@elysium/shell-api/host'
 import App from './App'
 
 const mockedLogout = vi.mocked(logout)
@@ -450,5 +451,61 @@ describe('App -- a module feed that cannot be had', () => {
     render(<App />)
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/contract 2/)
+  })
+})
+
+describe('App -- modules with bundles of their own', () => {
+  afterEach(() => window.history.pushState({}, '', '/'))
+
+  it('says which module could not be loaded when its bundle cannot be fetched, and keeps the rest', async () => {
+    // jsdom cannot import a bundle at all, which makes it a faithful
+    // stand-in for one that was never built or answered 404.
+    mockedGetModuleFeed.mockResolvedValue({
+      contract: 1,
+      home: '/query',
+      modules: [
+        {
+          id: 'query',
+          name: 'Query',
+          version: '1',
+          entry: null,
+          contributes: { pages: [{ id: 'query', path: '/query' }], nav: [{ title: 'Query', path: '/query' }] },
+        },
+        {
+          id: 'graph',
+          name: 'Graph',
+          version: '1',
+          entry: '/api/modules/graph/files/dist/index.js',
+          styles: [],
+          contributes: { pages: [{ id: 'main', path: '/graph' }], nav: [{ title: 'Graph', path: '/graph' }] },
+        },
+      ],
+    })
+    mockedGetMyVisibleSchema.mockResolvedValue({})
+    window.history.pushState({}, '', '/graph')
+    render(<App />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/graph could not be loaded/)
+    expect(screen.getByRole('menuitem', { name: 'Query' })).toBeInTheDocument()
+  })
+
+  it('publishes what pages need, for modules that cannot be handed props', async () => {
+    function Reader() {
+      const { username, visibleSchema } = useHostValues()
+      return (
+        <p>
+          published: {username} / {Object.keys(visibleSchema ?? {}).join(',')}
+        </p>
+      )
+    }
+    mockedGetMyVisibleSchema.mockResolvedValue({ Customer: { fields: {} } })
+    render(
+      <>
+        <App />
+        <Reader />
+      </>,
+    )
+
+    expect(await screen.findByText('published: testuser / Customer')).toBeInTheDocument()
   })
 })

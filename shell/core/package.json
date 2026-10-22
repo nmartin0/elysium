@@ -6,7 +6,8 @@
   "exports": {
     "./contract": "./src/contract.ts",
     "./registry": "./src/registry.ts",
-    "./ModuleRoutes": "./src/ModuleRoutes.tsx"
+    "./ModuleRoutes": "./src/ModuleRoutes.tsx",
+    "./moduleLoader": "./src/moduleLoader.tsx"
   },
   "peerDependencies": {
     "react": "^19.2.8",

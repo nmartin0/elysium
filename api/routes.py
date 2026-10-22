@@ -123,7 +123,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
 from api.apps import visible_apps_for
@@ -155,7 +155,7 @@ from core.mirror.quarantine_report import quarantine_for
 from core.mirror.source_record import agreement_shown
 from core.mirror.sync_attempts import SyncAttempts
 from core.mirror.sync_targets import resolve_sync_targets
-from core.modules import CONTRACT_VERSION, feed_for
+from core.modules import CONTRACT_VERSION, bundle_file, feed_for, offered_to
 from core.ontology.action_types import automation_needs_another_approver
 from core.ontology.decimal_text import exact_decimals
 from core.ontology.mediator import SearchOutcome
@@ -5925,6 +5925,45 @@ def shell_modules_route(request: Request,
     if config.modules is None:
         return {"contract": CONTRACT_VERSION, "home": "/", "modules": []}
     return feed_for(config.modules, current_user, config.roles)
+
+
+#: What a module's bundle directory may serve, by suffix. Anything else is
+#: absent rather than guessed at: a bundle is scripts, stylesheets, their
+#: source maps, and the fonts and images its stylesheet names.
+_BUNDLE_MEDIA_TYPES = {
+    ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
+    ".map": "application/json", ".svg": "image/svg+xml", ".png": "image/png",
+    ".woff2": "font/woff2", ".woff": "font/woff",
+}
+
+
+@router.get("/modules/{module_id}/files/{relative:path}")
+def module_file_route(module_id: str, relative: str, request: Request,
+                      current_user: UserRecord = Depends(get_current_user)) -> FileResponse:
+    """A file of a module's bundle (BLOCKING.md item 3, step 1.2).
+
+    ONLY TO SOMEONE THE MODULE IS OFFERED TO, and ONLY FROM ITS BUNDLE'S
+    DIRECTORY (core/modules.bundle_file). Anything else is a 404 --
+    uniform denial: a module this person may not use, one that does not
+    exist, a path leaving the directory and a file not built all answer
+    alike, so the answer says nothing about which.
+
+    REVALIDATED, NOT CACHED BLIND, and PRIVATE: a bundle's name does not
+    change when it is rebuilt -- in development, on every save -- so the
+    browser asks again each time. The feed's address carries a
+    fingerprint of the file (core/modules._address), which this route
+    ignores, so a rebuilt bundle is a new module to the page.
+    """
+    config = _generation(request).config
+    modules = [] if config.modules is None else offered_to(config.modules, current_user, config.roles)
+    module = next((m for m in modules if m.id == module_id), None)
+    path = None if module is None else bundle_file(module, relative)
+    media_type = None if path is None else _BUNDLE_MEDIA_TYPES.get(path.suffix)
+    if path is None or media_type is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    # PRIVATE: served only to someone signed in and offered the module,
+    # so no shared cache may keep it for anyone else.
+    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-cache"})
 
 
 @router.get("/me", dependencies=[Depends(_no_store)], response_model=ProfileResponse)

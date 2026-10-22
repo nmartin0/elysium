@@ -32,10 +32,6 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    // vite.config.ts is loaded by Node itself, which strips types but
-    // does not guess extensions: its import of src/sharedLibraries.ts
-    // must name the file. Allowed because nothing here emits.
-    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,

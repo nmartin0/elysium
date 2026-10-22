@@ -60,9 +60,17 @@ def _manifests() -> list[dict]:
     return [json.loads((ROOT / folder / "module.json").read_text()) for folder in SHIPPED_MODULES]
 
 
+def _bundled() -> list[tuple[str, dict]]:
+    """Shipped modules with bundles of their own, with their folders."""
+    from core.modules import SHIPPED_MODULES
+    return [(folder, m) for folder, m in zip(SHIPPED_MODULES, _manifests(), strict=True) if m.get("entry")]
+
+
 def _manifest_pages() -> set[str]:
-    """Every page the shipped modules contribute, as `module:page`."""
-    return {f"{m['id']}:{page['id']}" for m in _manifests() for page in m["contributes"].get("pages", [])}
+    """Every page the modules BUILT INTO THE PAGE contribute, as
+    `module:page`. A module with a bundle brings its own code."""
+    return {f"{m['id']}:{page['id']}" for m in _manifests() if not m.get("entry")
+            for page in m["contributes"].get("pages", [])}
 
 
 def _resolved_pages() -> set[str]:
@@ -86,6 +94,13 @@ def _iconed_paths() -> set[str]:
     return set(re.findall(r"'/([a-z-]+)':", source))
 
 
+def _bundled_packages() -> set[str]:
+    """Packages with a build of their own: modules the page loads from
+    their bundle and never imports, so they are not its dependencies."""
+    return {path.name.removeprefix("app-") for path in (UI / "packages").glob("app-*")
+            if (path / "vite.config.ts").is_file()}
+
+
 def test_every_package_is_a_shell_dependency():
     """THE ONE THAT WOULD HAVE CAUGHT THE WHITE SCREEN.
 
@@ -94,7 +109,7 @@ def test_every_package_is_a_shell_dependency():
     Only a real install needs the explicit dependency, and only a
     browser loads the result.
     """
-    missing = _packages_on_disk() - _shell_dependencies()
+    missing = _packages_on_disk() - _bundled_packages() - _shell_dependencies()
 
     assert not missing, (
         f"{sorted(missing)} exist as packages and are not in ui/package.json's "
@@ -113,6 +128,14 @@ def test_every_shell_dependency_exists_on_disk():
     assert not missing, f"ui/package.json depends on {sorted(missing)}, which do not exist"
 
 
+def test_no_bundled_module_is_imported_by_the_page():
+    """A module with its own bundle is loaded by the shell; a dependency on
+    it would let the page import it too, and ship its code twice."""
+    both = _bundled_packages() & _shell_dependencies()
+
+    assert not both, f"{sorted(both)} build their own bundles but ui/package.json still depends on them"
+
+
 def test_every_shipped_page_has_code():
     """A rail entry opening "nothing loaded opens this page".
 
@@ -124,6 +147,28 @@ def test_every_shipped_page_has_code():
     missing = _manifest_pages() - _resolved_pages()
 
     assert not missing, f"the modules contribute {sorted(missing)}, which App.tsx has no code for"
+
+
+@pytest.mark.parametrize("folder,manifest", _bundled(), ids=lambda v: v if isinstance(v, str) else "")
+def test_each_bundled_module_builds_and_activates_every_page_it_declares(folder, manifest):
+    """A bundled module's own code must offer each page its manifest
+    declares; otherwise the shell mounts "could not be loaded" there.
+
+    Read from the source because the bundle is not built in this suite:
+    the build config ui/vite.config.ts finds (a package's own
+    vite.config.ts), and the entry it builds, `src/module.tsx`, naming
+    each page id in `activate`'s pages. The loader's own tests prove what
+    happens at run time when one is missing.
+    """
+    package = ROOT / folder
+    assert (package / "vite.config.ts").is_file(), f"{folder} has an entry but no vite.config.ts to build it"
+    source = (package / "src" / "module.tsx").read_text()
+    assert "export function activate" in source, f"{folder}/src/module.tsx does not export activate"
+    pages = re.search(r"pages:\s*\{([^}]*)\}", source)
+    assert pages, f"{folder}/src/module.tsx's activate returns no pages"
+    offered = set(re.findall(r"([A-Za-z_][\w-]*)\s*:", pages.group(1)))
+    declared = {page["id"] for page in manifest["contributes"].get("pages", [])}
+    assert declared <= offered, f"{folder} declares {sorted(declared - offered)} and activate does not offer them"
 
 
 def test_no_page_code_is_left_for_a_page_no_module_contributes():

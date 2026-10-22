@@ -80,8 +80,11 @@ still runs correctly as a pure API backend; only a real install
 """
 
 import asyncio
+import base64
 import decimal
+import hashlib
 import logging
+import re
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -143,6 +146,45 @@ fastapi.encoders.ENCODERS_BY_TYPE[decimal.Decimal] = decimal_text
 logger = logging.getLogger(__name__)
 
 UI_DIST_DIR = Path(__file__).resolve().parent.parent / "ui" / "dist"
+
+
+#: The page's import map hashes, by the (mtime, size) of index.html they
+#: were read from -- see import_map_script_src.
+_import_map_hashes: dict[tuple[float, int], tuple[str, ...]] = {}
+_IMPORT_MAP = re.compile(r'<script type="importmap">(.*?)</script>', re.DOTALL)
+
+
+def import_map_script_src(index_html: Path) -> str:
+    """A `script-src` directive allowing the page's import map, and only it.
+
+    THE IMPORT MAP IS AN INLINE SCRIPT (BLOCKING.md item 3, step 1.2:
+    the page's shared libraries, @shell/build), and `default-src 'self'`
+    forbids inline scripts -- so the browser ignored it and no module
+    could resolve `react`. Found by the first browser test against this
+    server; the static server the earlier one used sends no policy.
+
+    ALLOWED BY ITS HASH, not by 'unsafe-inline': CSP Level 2's
+    `'sha256-...'` source admits exactly the script whose text hashes to
+    it, so the policy still refuses any other inline script, injected or
+    not. `script-src` then also needs 'self', which `default-src` gave.
+
+    READ FROM THE FILE BEING SERVED, and again whenever it changes: static
+    files are read per request, so a fresh `npm run build` is served
+    without a restart, and its map must be allowed without one too.
+    """
+    try:
+        stat = index_html.stat()
+    except OSError:
+        return ""
+    key = (stat.st_mtime, stat.st_size)
+    hashes = _import_map_hashes.get(key)
+    if hashes is None:
+        text = index_html.read_text(encoding="utf-8")
+        hashes = tuple("'sha256-" + base64.b64encode(hashlib.sha256(m.encode()).digest()).decode() + "'"
+                       for m in _IMPORT_MAP.findall(text))
+        _import_map_hashes.clear()
+        _import_map_hashes[key] = hashes
+    return f"; script-src 'self' {' '.join(hashes)}" if hashes else ""
 
 
 # The features denied by every response's Permissions-Policy (E-05); `()`
@@ -399,7 +441,7 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
         # widen what can execute; script-src stays 'self' by default.
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; "
-            "frame-ancestors 'none'"
+            "frame-ancestors 'none'" + import_map_script_src(UI_DIST_DIR / "index.html")
         )
         # POWERFUL FEATURES, DENIED OUTRIGHT (E-05): nothing here uses a
         # camera, microphone, location, payment or USB device, so no page

@@ -6,6 +6,10 @@
  * bundles itself. Adding a library here is a promise to every module;
  * removing one breaks the modules that use it.
  *
+ * IN THE KIT, so a module's own build reads it by name
+ * (`@elysium/shell-api/sharedLibraries`) -- Elysium's page and every
+ * module agree on one list, and no package reaches into another's files.
+ *
  * WHY THESE MUST BE SHARED, not merely may be: React and React DOM
  * because two copies cannot render one tree ("Invalid hook call"); the
  * router because a module's links and hooks must see the page's router;
@@ -34,6 +38,10 @@ export const SHARED_LIBRARIES = [
   'react-dom',
   'react-dom/client',
   'react-router-dom',
+  // react-router-dom re-exports this: a module importing it directly must
+  // get the page's router too, not a second copy whose hooks see no
+  // router at all.
+  'react-router',
   '@blueprintjs/core',
   'echarts/core',
   'echarts/charts',

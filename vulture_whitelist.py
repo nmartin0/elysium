@@ -120,6 +120,7 @@ search_objects_route
 my_profile_route
 shell_session_route
 shell_modules_route
+module_file_route
 my_visible_apps_route
 my_visible_schema_route
 get_object_detail_route

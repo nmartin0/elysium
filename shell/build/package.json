@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./sharedLibraries": "./src/sharedLibraries.ts"
+    "./sharedLibraries": "./src/sharedLibraries.ts",
+    "./moduleBuild": "./src/moduleBuild.ts"
   },
   "peerDependencies": {
     "vite": "^8.2.2"

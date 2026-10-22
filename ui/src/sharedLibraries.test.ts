@@ -11,7 +11,7 @@
 import { resolve } from 'node:path'
 import { expandSpecifiers, sharedNames } from '@shell/build/sharedLibraries'
 import { describe, expect, it, vi } from 'vitest'
-import { SHARED_LIBRARIES, SHARED_PACKAGES } from './sharedLibraries'
+import { SHARED_LIBRARIES, SHARED_PACKAGES } from '@elysium/shell-api/sharedLibraries'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const specifiers = expandSpecifiers(ROOT, { libraries: SHARED_LIBRARIES, packages: SHARED_PACKAGES })

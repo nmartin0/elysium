@@ -281,10 +281,19 @@ def test_security_headers_are_present_on_every_response(client):
         # CDN/external CSS reference -- all zero) that this app is
         # genuinely, fully self-contained before writing a policy this
         # strict -- see api/app.py's own comment for the full check.
-        assert response.headers["content-security-policy"] == (
+        assert response.headers["content-security-policy"].startswith(
             "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; "
             "frame-ancestors 'none'"
         )
+        # AND A script-src ONLY FOR THE IMPORT MAP, when a built page has
+        # one (api/app.py, import_map_script_src): 'self' and hashes,
+        # never 'unsafe-inline'.
+        script_src = dict(part.strip().split(" ", 1) for part in
+                          response.headers["content-security-policy"].split(";")).get("script-src")
+        if script_src is not None:
+            sources = script_src.split()
+            assert sources[0] == "'self'"
+            assert all(source.startswith("'sha256-") for source in sources[1:])
         # data: ONLY FOR IMAGES. Blueprint's checkbox tick is a data: SVG
         # background; a script must never be loadable that way.
         directives = dict(part.strip().split(" ", 1) for part in
@@ -4351,6 +4360,108 @@ def test_shell_modules_carries_no_grant_and_no_folder(client):
 
     assert response.headers["cache-control"] == "no-store"
     for module in response.json()["modules"]:
-        assert set(module) == {"id", "name", "version", "contributes", "entry"}
+        assert set(module) == {"id", "name", "version", "contributes", "entry", "styles"}
     assert "manage:users" not in response.text
     assert "/packages/" not in response.text
+
+
+# ---------------------------------------------------------------------------
+# A module's bundle, served (BLOCKING.md item 3, step 1.2).
+# ---------------------------------------------------------------------------
+
+
+def _with_bundled_modules(client, tmp_path):
+    """The running app, loading two bundled modules: `graph` for
+    everyone, `secret` for whoever may manage users."""
+    import dataclasses
+    import json
+
+    from core.modules import load_modules
+
+    folders = []
+    for module_id, permission in (("graph", None), ("secret", "manage:users")):
+        folder = tmp_path / module_id
+        (folder / "dist").mkdir(parents=True)
+        manifest = {"id": module_id, "name": module_id.title(), "version": "1",
+                    "entry": "dist/index.js", "styles": ["dist/index.css"],
+                    "contributes": {"pages": [{"id": "main", "path": f"/{module_id}"}]}}
+        if permission:
+            manifest["permission"] = permission
+        (folder / "module.json").write_text(json.dumps(manifest))
+        (folder / "dist" / "index.js").write_text("export function activate() { return { pages: {} } }")
+        (folder / "dist" / "index.css").write_text("@layer components {}")
+        (folder / "dist" / "notes.txt").write_text("not a bundle file")
+        folders.append(str(folder))
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "modules.yaml").write_text(json.dumps({"home": "/graph", "modules": folders}))
+    generation = client.app.state.generation
+    client.app.state.generation = dataclasses.replace(
+        generation, config=dataclasses.replace(generation.config, modules=load_modules(config_dir)))
+
+
+def test_a_modules_bundle_is_served_to_whoever_is_offered_it(client, tmp_path):
+    _with_bundled_modules(client, tmp_path)
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    _login(client, "alice", "correct-pw")
+
+    script = client.get("/api/modules/graph/files/dist/index.js")
+    style = client.get("/api/modules/graph/files/dist/index.css")
+
+    assert script.status_code == 200
+    assert script.headers["content-type"].startswith("text/javascript")
+    assert script.headers["cache-control"] == "private, no-cache"
+    assert "activate" in script.text
+    assert style.status_code == 200
+    assert style.headers["content-type"].startswith("text/css")
+
+
+def test_a_bundle_is_absent_for_someone_not_offered_the_module(client, tmp_path):
+    """UNIFORM DENIAL: the same 404 as a module that does not exist, so
+    the answer does not say the module is there."""
+    _with_bundled_modules(client, tmp_path)
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    _login(client, "alice", "correct-pw")
+
+    refused = client.get("/api/modules/secret/files/dist/index.js")
+    missing = client.get("/api/modules/nobody/files/dist/index.js")
+
+    assert refused.status_code == 404
+    assert missing.status_code == 404
+    assert refused.json() == missing.json()
+
+
+def test_a_bundle_is_served_to_an_administrator_when_the_module_needs_the_grant(client, tmp_path):
+    _with_bundled_modules(client, tmp_path)
+    _make_admin(client)
+
+    assert client.get("/api/modules/secret/files/dist/index.js").status_code == 200
+
+
+def test_only_the_bundles_directory_and_only_bundle_files_are_served(client, tmp_path):
+    _with_bundled_modules(client, tmp_path)
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    _login(client, "alice", "correct-pw")
+
+    for path in ("module.json", "dist/../module.json", "dist/%2e%2e/module.json", "dist/notes.txt",
+                 "dist/missing.js"):
+        assert client.get(f"/api/modules/graph/files/{path}").status_code == 404, path
+
+
+def test_a_servable_file_outside_the_bundles_directory_is_not_served(client, tmp_path):
+    """A SCRIPT, so its type alone would not refuse it: only the directory
+    rule does. Asked for directly and by a path that climbs out of dist/
+    (which the client tidies to the same request before sending)."""
+    _with_bundled_modules(client, tmp_path)
+    (tmp_path / "graph" / "secret.js").write_text("export const secret = 1")
+    client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "editor")
+    _login(client, "alice", "correct-pw")
+
+    assert client.get("/api/modules/graph/files/secret.js").status_code == 404
+    assert client.get("/api/modules/graph/files/dist/../secret.js").status_code == 404
+
+
+def test_a_bundle_needs_a_login(client, tmp_path):
+    _with_bundled_modules(client, tmp_path)
+
+    assert client.get("/api/modules/graph/files/dist/index.js").status_code in (401, 403)
