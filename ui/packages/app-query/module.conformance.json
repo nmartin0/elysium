@@ -1,0 +1,14 @@
+{
+  "checks": {
+    "loading@query": {
+      "level": "replaced",
+      "reason": "Nothing on the page waits: the question box is drawn at once, and the one read it makes on opening -- the example questions -- only adds to a page already usable, so there is no spinner to show.",
+      "by": "src/QueryPanel.test.tsx::renders a textarea and an Ask button"
+    },
+    "error@query": {
+      "level": "replaced",
+      "reason": "Its one read on opening, the example questions, fails silently on purpose: the examples are an aid, and a failure of them must not stand between someone and their question. A failure of a question asked is shown, and tested beside this.",
+      "by": "src/QueryPanel.test.tsx::says nothing and stays ready to ask when the examples fail"
+    }
+  }
+}

@@ -3,7 +3,20 @@
   "name": "Query",
   "version": "1",
   "contributes": {
-    "pages": [{ "id": "query", "path": "/query" }],
-    "nav": [{ "title": "Query", "path": "/query", "subject": "Objects" }]
-  }
+    "pages": [
+      {
+        "id": "query",
+        "path": "/query"
+      }
+    ],
+    "nav": [
+      {
+        "title": "Query",
+        "path": "/query",
+        "subject": "Objects"
+      }
+    ]
+  },
+  "entry": "dist/index.js",
+  "styles": ["dist/index.css"]
 }

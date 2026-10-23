@@ -10,7 +10,7 @@ import AnswerTrace from './AnswerTrace'
 import type { SubAppProps } from '@elysium/shell-api/types'
 import PendingWriteCard, { type PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
 import Workspace from '@elysium/shell-api/components/Workspace'
-import { getExampleQuestions } from '@elysium/shell-api/api'
+import { getExampleQuestions, handleIfSessionExpired } from '@elysium/shell-api/api'
 
 import { type AnswerDoor, ReadBack, WhereNext } from './AnswerContext'
 import AskedBefore from './AskedBefore'
@@ -88,6 +88,14 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
    */
   const [asked, setAsked] = useState<string[]>([])
 
+  // THE LATEST CALLBACK, READ THROUGH A REF, so the examples are fetched
+  // once on mount rather than again whenever the host hands over a new
+  // function -- as ApprovalsPanel does, for the same reason.
+  const latestSessionExpired = useRef(onSessionExpired)
+  useEffect(() => {
+    latestSessionExpired.current = onSessionExpired
+  })
+
   useEffect(() => {
     /**
      * CANCELLED ON UNMOUNT, which the first version was not and which
@@ -106,15 +114,21 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
      *
      * A deployment marking nothing for display gets an empty list and
      * renders no examples section. A failure must not stop somebody
-     * asking a question, so it is swallowed rather than shown.
+     * asking a question, so it is swallowed rather than shown -- EXCEPT
+     * AN EXPIRED SESSION, which would stop them anyway: it hands over to
+     * sign-in now rather than on their first question. Found when the
+     * page was moved into its own bundle (step 3) and the conformance
+     * suite first ran on it.
      */
     let cancelled = false
     getExampleQuestions()
       .then((questions) => {
         if (!cancelled) setExamples(questions)
       })
-      .catch(() => {
-        if (!cancelled) setExamples([])
+      .catch((caught: unknown) => {
+        if (cancelled) return
+        if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
+        setExamples([])
       })
     return () => {
       cancelled = true

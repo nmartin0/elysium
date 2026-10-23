@@ -40,7 +40,25 @@ vi.mock('@elysium/shell-api/components/LoginForm', () => ({
     </div>
   ),
 }))
-vi.mock('@elysium/app-query/QueryPanel', () => ({ default: () => <p>query screen</p> }))
+// QUERY HAS A BUNDLE OF ITS OWN (BLOCKING.md item 3, step 3), which jsdom
+// cannot import, so its bundle is stood in for: the loader is the real
+// one, given an importer that answers for Query's address and imports
+// anything else for real -- which in jsdom fails, as a bundle that was
+// never built would.
+const QUERY_BUNDLE = '/api/modules/query/files/dist/index.js'
+vi.mock('@shell/core/moduleLoader', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@shell/core/moduleLoader')>()
+  class StandIn extends real.ModuleLoader {
+    constructor() {
+      super((address) =>
+        address === '/api/modules/query/files/dist/index.js'
+          ? Promise.resolve({ activate: () => ({ pages: { query: () => <p>query screen</p> } }) })
+          : import(/* @vite-ignore */ address),
+      )
+    }
+  }
+  return { ...real, ModuleLoader: StandIn }
+})
 vi.mock('@elysium/app-browse/ObjectSearchPanel', () => ({ default: () => <p>browse screen</p> }))
 vi.mock('@elysium/app-browse/ObjectDetailPanel', () => ({ default: () => <p>object detail screen</p> }))
 vi.mock('@elysium/app-admin/AdminPanel', () => ({ default: () => <p>admin screen</p> }))
@@ -64,7 +82,7 @@ const mockedGetModuleFeed = vi.mocked(getModuleFeed)
 beforeEach(() => {
   vi.clearAllMocks()
   // The feed as the server sends it: the shell routes /query to the
-  // query module's page, which is mocked to "query screen" above.
+  // query module's page, from the bundle stood in for above.
   mockedGetModuleFeed.mockResolvedValue({
     contract: 1,
     home: '/query',
@@ -73,7 +91,8 @@ beforeEach(() => {
         id: 'query',
         name: 'Query',
         version: '1',
-        entry: null,
+        entry: QUERY_BUNDLE,
+        styles: [],
         contributes: { pages: [{ id: 'query', path: '/query' }], nav: [{ title: 'Query', path: '/query' }] },
       },
     ],
@@ -193,16 +212,19 @@ describe('App -- the screen and the username arrive separately', () => {
      * late, which failed identically on the commit BEFORE the change
      * that surfaced it -- so: a racy test, not a regression.
      *
-     * This keeps that delay, so the ordering is exercised on every run
-     * instead of depending on how loaded the machine is.
+     * HELD UNTIL THE SCREEN IS UP rather than delayed 120ms, since
+     * step 3: Query's page now comes from a bundle, a few more turns of
+     * the event loop than a page in this one, and a fixed delay is a race
+     * again. Held, the username cannot arrive first however slow the page.
+     * The FIRST call is the probe that says a session exists (App.tsx's
+     * /me), which gates everything, so it answers at once; the second is
+     * the user menu's own fetch, the one held.
      */
     mockedGetMyVisibleSchema.mockResolvedValue({})
-    mockedGetCurrentUser.mockImplementation(
-      () =>
-        new Promise((resolve) =>
-          setTimeout(() => resolve({ username: 'testuser', role_name: 'editor', mac_value: 'us-west' }), 120),
-        ),
-    )
+    let deliverUser: (user: { username: string; role_name: string; mac_value: string }) => void = () => {}
+    mockedGetCurrentUser
+      .mockResolvedValueOnce({ username: 'testuser', role_name: 'editor', mac_value: 'us-west' })
+      .mockImplementation(() => new Promise((resolve) => (deliverUser = resolve)))
     render(<App />)
 
     // The screen is up FIRST, with no username yet -- the state the
@@ -210,6 +232,7 @@ describe('App -- the screen and the username arrive separately', () => {
     await waitFor(() => expect(screen.getByText('query screen')).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: 'testuser' })).not.toBeInTheDocument()
 
+    deliverUser({ username: 'testuser', role_name: 'editor', mac_value: 'us-west' })
     // And the username follows.
     expect(await screen.findByRole('button', { name: 'testuser' })).toBeInTheDocument()
   })
@@ -468,7 +491,8 @@ describe('App -- modules with bundles of their own', () => {
           id: 'query',
           name: 'Query',
           version: '1',
-          entry: null,
+          entry: QUERY_BUNDLE,
+          styles: [],
           contributes: { pages: [{ id: 'query', path: '/query' }], nav: [{ title: 'Query', path: '/query' }] },
         },
         {

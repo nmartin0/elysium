@@ -4,10 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./AskedBefore": "./src/AskedBefore.tsx",
-    "./ExampleQuestions": "./src/ExampleQuestions.tsx",
-    "./QueryPanel": "./src/QueryPanel.tsx",
-    "./TraceSummary": "./src/TraceSummary.tsx"
+    "./module": "./src/module.tsx"
   },
   "dependencies": {
     "@elysium/shell-api": "*",

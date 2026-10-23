@@ -41,7 +41,9 @@ ui/packages/shell-api/     Everything shared across screens: api.ts
                             PendingWriteCard, Workspace, AsyncPanel,
                             Chart and the rest.
 ui/packages/app-query/     Query -- the agent question/answer screen,
-                            with the step trace.
+                            with the step trace. ITS OWN BUNDLE (step
+                            3): loaded when /query is first opened --
+                            on most deployments, straight after login.
 ui/packages/app-browse/    Browse -- search, per-object detail, direct
                             action invocation, charts, notes, history,
                             saved views, bulk actions, explore-related.

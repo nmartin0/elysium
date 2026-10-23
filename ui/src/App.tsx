@@ -82,7 +82,6 @@ import LoadingState from '@elysium/shell-api/components/LoadingState'
 // type` is fully erased at compile time (isolatedModules requires
 // this to be unambiguous), so this adds no second network request
 // and creates no eager reference to the module's own real code.
-const QueryPanel = lazy(() => import('@elysium/app-query/QueryPanel'))
 const ObjectSearchPanel = lazy(() => import('@elysium/app-browse/ObjectSearchPanel'))
 const ObjectDetailPanel = lazy(() => import('@elysium/app-browse/ObjectDetailPanel'))
 const AdminPanel = lazy(() => import('@elysium/app-admin/AdminPanel'))
@@ -101,10 +100,6 @@ interface PageNeeds {
 }
 const PageNeedsContext = createContext<PageNeeds>({ visibleSchema: null, username: '', onSessionExpired: () => {} })
 
-function QueryPage() {
-  const needs = useContext(PageNeedsContext)
-  return <QueryPanel onSessionExpired={needs.onSessionExpired} />
-}
 function BrowsePage() {
   const needs = useContext(PageNeedsContext)
   return <ObjectSearchPanel {...needs} />
@@ -173,7 +168,6 @@ function SystemAddonServersPage() {
  * is shown as "nothing loaded opens this page" by the shell.
  */
 const BUILT_IN_PAGES: Record<string, ComponentType> = {
-  'query:query': QueryPage,
   'browse:search': BrowsePage,
   'browse:object': ObjectPage,
   'admin:admin': AdminPage,

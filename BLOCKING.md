@@ -1033,7 +1033,18 @@ refuses any module that fills a slot without a bundle of its own.
 Approvals is the Inbox's first tab, so its bundle arrives when the Inbox
 opens rather than when a tab is clicked.
 
-**Blocked on:** nothing; Query is next.
+**QUERY MOVED (23 October)**, the first page rather than a tab: it reads
+the session hand-over from the host store, as Schema does. It is where a
+person lands, so its bundle is asked for straight after login. The suite
+running on it found one real fault, fixed: an expired session found
+while fetching the example questions was swallowed with every other
+failure of them, so the person learnt of it only on asking. Its other
+two exceptions are deliberate and replaced by tests of their own: the
+page waits on nothing, so has no spinner, and a failure of the examples
+is not shown, since it must not stand between someone and their
+question.
+
+**Blocked on:** nothing; the Inbox, into a package, is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

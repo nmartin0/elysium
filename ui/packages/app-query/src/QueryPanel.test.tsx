@@ -48,10 +48,11 @@ vi.mock('@elysium/shell-api/components/PendingWriteCard', () => ({
   ),
 }))
 
-import { query } from '@elysium/shell-api/api'
+import { ApiError, getExampleQuestions, query } from '@elysium/shell-api/api'
 import QueryPanel from './QueryPanel'
 
 const mockedQuery = vi.mocked(query)
+const mockedExamples = vi.mocked(getExampleQuestions)
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -94,6 +95,39 @@ describe('QueryPanel -- rendering', () => {
       </MemoryRouter>,
     )
     expect(screen.queryByTestId('pending-write-card')).not.toBeInTheDocument()
+  })
+})
+
+describe('QueryPanel -- when its examples cannot be had', () => {
+  // These tests DO let the examples fetch settle, so they wait for it.
+  it('says nothing and stays ready to ask when the examples fail', async () => {
+    mockedExamples.mockRejectedValueOnce(new ApiError(500, 'boom'))
+    const onSessionExpired = vi.fn()
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={onSessionExpired} />
+      </MemoryRouter>,
+    )
+    await waitFor(() => expect(mockedExamples).toHaveBeenCalled())
+    await act(async () => {})
+
+    // DELIBERATELY NO ALERT: the examples are an aid, and a failure of
+    // them must not stand between someone and their question.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ask' })).toBeEnabled()
+    expect(onSessionExpired).not.toHaveBeenCalled()
+  })
+
+  it('hands over to sign-in when fetching the examples finds the session expired', async () => {
+    mockedExamples.mockRejectedValueOnce(new ApiError(401, 'session expired'))
+    const onSessionExpired = vi.fn()
+    render(
+      <MemoryRouter>
+        <QueryPanel onSessionExpired={onSessionExpired} />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(onSessionExpired).toHaveBeenCalledOnce())
   })
 })
 

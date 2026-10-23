@@ -49,3 +49,29 @@ test("a module's page opened directly, as a bookmark, loads too", async ({ page 
   await expect(page.getByText('Customer').first()).toBeVisible()
   await expect(page).toHaveURL(/\/schema$/)
 })
+
+test('Query, where a person lands, comes from its own bundle and its own stylesheet draws it', async ({ page }) => {
+  // Moved in step 3. /query is the home page, so its bundle is asked for
+  // as the person lands -- and must be, or they land on nothing.
+  const fetched: string[] = []
+  page.on('request', (request) => fetched.push(new URL(request.url()).pathname))
+  await logIn(page)
+
+  const box = page.locator('.query-panel__input')
+  await expect(box).toBeVisible()
+  expect(fetched).toContain('/api/modules/query/files/dist/index.js')
+  expect(fetched).toContain('/api/modules/query/files/dist/index.css')
+  // ITS OWN RULE DREW IT: the textarea's padding and border are its
+  // stylesheet's, not those of a textarea nothing styles. (Border style
+  // alone could not tell: a browser's own textarea border is solid too,
+  // and a check on it passed with the stylesheet removed.)
+  const [styled, bare] = await box.evaluate((el) => {
+    const drawn = (of: Element) => `${getComputedStyle(of).paddingTop} ${getComputedStyle(of).borderTopLeftRadius}`
+    const plain = document.createElement('textarea')
+    document.body.appendChild(plain)
+    const unstyled = drawn(plain)
+    plain.remove()
+    return [drawn(el), unstyled]
+  })
+  expect(styled).not.toBe(bare)
+})

@@ -1,0 +1,148 @@
+/* THE QUERY MODULE'S OWN STYLES (BLOCKING.md item 3, step 3) -- the
+ * question box, the examples and history beside it, what comes with an
+ * answer and how it was found -- moved from the kit's stylesheet with
+ * the module into its own bundle, so they load with it and nowhere else.
+ * IN THE `components` LAYER -- see shell-api/src/index.css. */
+@layer components {
+  /* THE ONE PLAIN CONTROL LEFT IN THE APPLICATION: this textarea.
+   * Everything else is a Blueprint widget and styles itself, which is why
+   * the kit has no bare `input` or `button` rule -- as an element
+   * selector it styled every Blueprint InputGroup and TextArea too,
+   * fighting their own geometry. Scoped to its class, it can't. */
+  .query-panel__input {
+    padding: 0.5rem var(--space-tight);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--space-tight);
+    font-size: var(--type-body-size);
+    line-height: var(--type-body-line);
+    font-weight: var(--type-body-weight);
+    font-family: inherit;
+  }
+
+  /* --- The query screen's examples and history -------------------------
+   *
+   * THESE HAD NO STYLES AT ALL. The components carried class names from
+   * the day they were written and nothing matched them, so the examples
+   * rendered as a bare bullet list jammed against the Ask button. I
+   * never saw it because the tests assert behaviour and I had never
+   * opened the application.
+   */
+  .query__examples,
+  .query__history {
+    margin-top: 20px;
+  }
+
+  .query__examples-lede,
+  .query__history-lede {
+    margin: 0 0 var(--space-tight);
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-label-weight);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+  }
+
+  /* NO BULLETS AND NO NUMBERS. These are buttons; a marker beside each
+   * says "list of text" and invites reading rather than clicking. The
+   * ordered list in the history is ordered for the DOM's sake -- the
+   * order is meaning -- not to be rendered as 1. 2. 3. */
+  .query__examples ul,
+  .query__history ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  /* ---- WHAT COMES WITH AN ANSWER (app-query/AnswerContext) -----------
+   *
+   * The read-back is a quiet list ABOVE the answer: evidence, set in
+   * secondary text so the answer stays the thing being read. Doors and
+   * follow-ons sit below, where somebody finishing the answer goes next.
+   */
+  .answer-context__read-back {
+    margin: var(--space-normal) 0 var(--space-tight);
+    color: var(--text-secondary);
+  }
+
+  .answer-context__read-back summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .answer-context__read-back ol {
+    margin: var(--space-hair) 0 0;
+    padding-left: var(--space-loose);
+  }
+
+  .answer-context {
+    margin: var(--space-tight) 0 var(--space-normal);
+  }
+
+  .answer-context__lede {
+    margin: var(--space-tight) 0 var(--space-hair);
+    color: var(--text-secondary);
+  }
+
+  .answer-context__doors {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-tight);
+  }
+
+  .answer-context__doors .answer-context__lede {
+    margin: 0;
+  }
+
+  .answer-context__follow-ons {
+    margin: 0;
+    padding-left: var(--space-loose);
+  }
+
+  /* --- What the trace adds up to ---------------------------------------
+   *
+   * Above the table, because the counts are what a reader wants and the
+   * rows are what they consult afterwards.
+   */
+  .answer-trace__summary {
+    margin: 0 0 var(--space-snug);
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--space-tight);
+  }
+
+  .answer-trace__summary-note {
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
+    color: var(--text-secondary);
+  }
+
+  /* --- How an answer was found --------------------------------------
+   * Collapsed by default: the answer is what someone came for, the
+   * trace is the follow-up.
+   */
+  .answer-trace {
+    margin-top: var(--space-snug);
+  }
+
+  .answer-trace__table {
+    table-layout: fixed;
+    width: 100%;
+    margin-top: var(--space-tight);
+  }
+
+  .answer-trace__empty {
+    margin: var(--space-tight) 0 0;
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
+    color: var(--text-secondary);
+  }
+}

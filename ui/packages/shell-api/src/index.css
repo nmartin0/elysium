@@ -688,28 +688,10 @@
     font-weight: var(--type-body-weight);
   }
 
-  /* SCOPED to the plain controls that still exist, not every input in
- * the app. As a bare element selector this also styled every Blueprint
- * InputGroup and TextArea, fighting their own geometry -- the same
- * fault the `button` rule below had, just less visible because it set
- * borders and padding rather than colour.
- *
- * ONE plain control remains: QueryPanel's textarea. Everything else
- * is a Blueprint widget and styles itself.
- *
- * It said TWO until 09-S2-01. The other was ObjectSearchPanel's search
- * box, which became a Blueprint InputGroup -- so the rule kept naming
- * a control that had stopped existing, and the comment kept counting
- * it. */
-  .query-panel__input {
-    padding: 0.5rem var(--space-tight);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--space-tight);
-    font-size: var(--type-body-size);
-    line-height: var(--type-body-line);
-    font-weight: var(--type-body-weight);
-    font-family: inherit;
-  }
+  /* NO BARE `input` RULE, deliberately: as an element selector it styled
+   * every Blueprint InputGroup and TextArea, fighting their own geometry.
+   * The one plain control left, Query's textarea, is styled by its class
+   * in app-query's own stylesheet (step 3). */
 
   /* NO BARE `button` RULE, deliberately, and this is worth knowing
  * before anyone adds one back.
@@ -2161,111 +2143,6 @@
     font-style: italic;
   }
 
-  /* --- The query screen's examples and history -------------------------
-   *
-   * THESE HAD NO STYLES AT ALL. The components carried class names from
-   * the day they were written and nothing matched them, so the examples
-   * rendered as a bare bullet list jammed against the Ask button. I
-   * never saw it because the tests assert behaviour and I had never
-   * opened the application.
-   */
-  .query__examples,
-  .query__history {
-    margin-top: 20px;
-  }
-
-  .query__examples-lede,
-  .query__history-lede {
-    margin: 0 0 var(--space-tight);
-    font-size: var(--type-label-size);
-    line-height: var(--type-label-line);
-    font-weight: var(--type-label-weight);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-secondary);
-  }
-
-  /* NO BULLETS AND NO NUMBERS. These are buttons; a marker beside each
-   * says "list of text" and invites reading rather than clicking. The
-   * ordered list in the history is ordered for the DOM's sake -- the
-   * order is meaning -- not to be rendered as 1. 2. 3. */
-  .query__examples ul,
-  .query__history ol {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-  }
-
-  /* --- What the trace adds up to ---------------------------------------
-   *
-   * Above the table, because the counts are what a reader wants and the
-   * rows are what they consult afterwards.
-   */
-  /* ---- WHAT COMES WITH AN ANSWER (app-query/AnswerContext) -----------
-   *
-   * The read-back is a quiet list ABOVE the answer: evidence, set in
-   * secondary text so the answer stays the thing being read. Doors and
-   * follow-ons sit below, where somebody finishing the answer goes next.
-   */
-  .answer-context__read-back {
-    margin: var(--space-normal) 0 var(--space-tight);
-    color: var(--text-secondary);
-  }
-
-  .answer-context__read-back summary {
-    cursor: pointer;
-    font-weight: 600;
-  }
-
-  .answer-context__read-back ol {
-    margin: var(--space-hair) 0 0;
-    padding-left: var(--space-loose);
-  }
-
-  .answer-context {
-    margin: var(--space-tight) 0 var(--space-normal);
-  }
-
-  .answer-context__lede {
-    margin: var(--space-tight) 0 var(--space-hair);
-    color: var(--text-secondary);
-  }
-
-  .answer-context__doors {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--space-tight);
-  }
-
-  .answer-context__doors .answer-context__lede {
-    margin: 0;
-  }
-
-  .answer-context__follow-ons {
-    margin: 0;
-    padding-left: var(--space-loose);
-  }
-
-  .answer-trace__summary {
-    margin: 0 0 var(--space-snug);
-    display: flex;
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: var(--space-tight);
-  }
-
-  .answer-trace__summary-note {
-    font-size: var(--type-dense-size);
-    line-height: var(--type-dense-line);
-    font-weight: var(--type-dense-weight);
-    color: var(--text-secondary);
-  }
-
   /* DEV_UI 13.3: who can see a type, closed by default on its card. */
   .schema-panel__access {
     margin-top: var(--space-normal);
@@ -2387,28 +2264,6 @@
 
   .object-memories__explainer {
     margin-bottom: var(--space-tight);
-  }
-
-  /* --- How an answer was found --------------------------------------
- * Collapsed by default: the answer is what someone came for, the
- * trace is the follow-up.
- */
-  .answer-trace {
-    margin-top: var(--space-snug);
-  }
-
-  .answer-trace__table {
-    table-layout: fixed;
-    width: 100%;
-    margin-top: var(--space-tight);
-  }
-
-  .answer-trace__empty {
-    margin: var(--space-tight) 0 0;
-    font-size: var(--type-dense-size);
-    line-height: var(--type-dense-line);
-    font-weight: var(--type-dense-weight);
-    color: var(--text-secondary);
   }
 
   /* --- The Overview graph and its preview ---------------------------
