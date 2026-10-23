@@ -635,31 +635,7 @@ type = "forbidden"
 source_modules = ["simulator.silo"]
 forbidden_modules = ["simulator.silos"]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-# tests/consumer imports its own modules by name (test_connection), so
-# its directory has to be on sys.path. That is also the point: those
-# tests are a standalone client and must not reach into the package.
-# tests/ so test modules can import the shared scaffolding in
-# conftest by name; tests/consumer for the same reason, and
-# because those tests are a standalone client that must not
-# reach into the package.
-pythonpath = ["tests", "tests/consumer"]
-# Temporary directories for PASSING tests are removed immediately;
-# failures keep theirs so there is something to inspect.
-#
-# Not a tidiness preference. Every test that starts a silo initialises
-# a real PostgreSQL or MariaDB cluster, which is tens of megabytes, and
-# pytest's default is to retain the last three runs. Measured on this
-# suite: 6.1 GB of temporary data after a single run, and a second run
-# on a machine with less free space than that fails in fixture setup
-# with "No space left on device" -- 138 errors that look like a code
-# problem and are not.
-tmp_path_retention_policy = "failed"
-# Tests that need a real PostgreSQL binary on PATH are marked, so the
-# suite still runs somewhere without one and says what it skipped
-# rather than failing for an environmental reason.
-markers = [
-    "postgres: needs a real PostgreSQL installation (initdb, pg_ctl)",
-    "mariadb: needs a real MariaDB or MySQL installation (mariadbd)",
-]
+# NO [tool.pytest.ini_options] HERE: pytest.ini is the configuration, and
+# with it present pytest reads nothing of this file's -- it says
+# "ignoring pytest config in pyproject.toml!". A section here was ignored
+# for weeks (pytest.ini, tmp_path_retention_policy).

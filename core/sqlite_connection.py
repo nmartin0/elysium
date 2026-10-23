@@ -406,6 +406,16 @@ def connection_with_schema(db_path: Path, schema: str,
     # at once -- CREATE TABLE IF NOT EXISTS (and a well-written
     # migration) is safe to run twice; the lock just makes the COMMON
     # case avoid the redundant work, not guarantee exactly-once.
+    # A DATABASE NOT THERE YET IS NOT VERIFIED, whatever this process
+    # remembers: the set below is keyed by path, and a file deleted and
+    # made again at the same path -- a test's temporary directory, reused
+    # once pytest removes a passing test's; an operator removing a store
+    # to start it afresh -- would otherwise be opened empty with its
+    # tables skipped ("no such table: generation_sequence", 11 errors in
+    # test_api.py the day passing tests' directories began to be removed).
+    if not Path(db_path).exists():
+        with _schema_verified_lock:
+            _schema_verified.difference_update({key for key in _schema_verified if key[0] == db_path})
     conn = open_connection(db_path)
     try:
         # The lock is held ACROSS the check, the work and the add --
