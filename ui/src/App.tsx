@@ -85,8 +85,6 @@ import LoadingState from '@elysium/shell-api/components/LoadingState'
 const ObjectSearchPanel = lazy(() => import('@elysium/app-browse/ObjectSearchPanel'))
 const ObjectDetailPanel = lazy(() => import('@elysium/app-browse/ObjectDetailPanel'))
 const AdminPanel = lazy(() => import('@elysium/app-admin/AdminPanel'))
-// The three inbox panels are lazy-loaded by the Inbox itself, one per tab.
-const InboxPanel = lazy(() => import('./InboxPanel'))
 
 // WHAT EACH BUILT-IN MODULE'S PAGES NEED FROM THE HOST, through a context
 // rather than props, so the page components below are defined ONCE: a
@@ -111,10 +109,6 @@ function ObjectPage() {
 function AdminPage() {
   const needs = useContext(PageNeedsContext)
   return <AdminPanel onSessionExpired={needs.onSessionExpired} />
-}
-function InboxPage() {
-  const needs = useContext(PageNeedsContext)
-  return <InboxPanel onSessionExpired={needs.onSessionExpired} />
 }
 
 /** Every module offered, for the shell's system sub-app; whether the page
@@ -171,35 +165,27 @@ const BUILT_IN_PAGES: Record<string, ComponentType> = {
   'browse:search': BrowsePage,
   'browse:object': ObjectPage,
   'admin:admin': AdminPage,
-  'inbox:inbox': InboxPage,
   'system:modules': SystemModulesPage,
   'system:addons': SystemAddonServersPage,
 }
 /**
  * THE CODE THE SHELL ASKS OF MODULES BUILT INTO THE PAGE, by module id
- * (step 1.3): Browse's palette commands, the Inbox's badge. Imported when
- * the shell asks -- on the activation events each manifest names, the
- * palette first opening or the frame being drawn -- not with the page:
- * the same lazy activation a bundled module gets.
- *
- * TWO TABLES, ONE PER KIND, so a test can hold each to its event: a
- * palette without `onPalette`, or a badge without `onStartup`, would
- * never be asked for (tests/unit/test_subapp_declarations_agree.py).
+ * (step 1.3): Browse's palette commands. Imported when the shell asks --
+ * on the activation event its manifest names, the palette first opening
+ * -- not with the page: the same lazy activation a bundled module gets.
+ * A palette without `onPalette` would never be asked for
+ * (tests/unit/test_subapp_declarations_agree.py). The Inbox's badge was
+ * the other kind, until the Inbox brought it in its own bundle (step 3).
  */
 const BUILT_IN_PALETTES: Record<string, () => Promise<ModuleCode>> = {
   browse: () => import('@elysium/app-browse/palette').then((code) => ({ usePalette: code.useBrowsePalette })),
 }
-const BUILT_IN_BADGES: Record<string, () => Promise<ModuleCode>> = {
-  inbox: () => import('./inbox/badges').then((code) => ({ useBadges: code.useInboxBadges })),
-}
 
 /** A module's code, as the shell asks for it: its bundle's activation, or
- *  this page's own tables. */
+ *  this page's own table. */
 async function activate(module: ModuleEntry): Promise<ModuleCode | undefined> {
   if (module.entry) return moduleLoader.load(module)
-  const parts = await Promise.all([BUILT_IN_PALETTES, BUILT_IN_BADGES].map((table) => table[module.id]?.()))
-  const found = parts.filter((part) => part !== undefined)
-  return found.length > 0 ? Object.assign({}, ...found) : undefined
+  return BUILT_IN_PALETTES[module.id]?.()
 }
 
 /** A feed that could not be had, said in the words the failure came in. */

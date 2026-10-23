@@ -73,6 +73,7 @@ someone opens its page, and the server stays up.
 
 import hashlib
 import json
+import logging
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
@@ -92,7 +93,7 @@ ELYSIUM_ROOT = Path(__file__).resolve().parent.parent
 
 #: What a deployment with no modules.yaml loads, in rail order.
 SHIPPED_MODULES = ("ui/packages/app-browse", "ui/packages/app-query",
-                   "ui/packages/app-schema", "ui/src/inbox",
+                   "ui/packages/app-schema", "ui/packages/app-inbox",
                    # The Inbox's queues (step 1.5b): no rail entry of their
                    # own, a tab each in the Inbox's slot, and each
                    # switchable alone in the module manager.
@@ -100,6 +101,19 @@ SHIPPED_MODULES = ("ui/packages/app-browse", "ui/packages/app-query",
                    "ui/packages/app-identity",
                    "ui/packages/app-admin")
 SHIPPED_HOME = "/query"
+
+logger = logging.getLogger(__name__)
+
+#: SHIPPED MODULES THAT HAVE MOVED FOLDER, old to new. A modules.yaml
+#: naming the old folder -- the module manager writes the folders it read
+#: -- is read as naming the new one, with a warning saying which file to
+#: change; the module manager writes the new one on its next save. The
+#: owner's choice (23 October), over refusing the file: refusing would
+#: stop Elysium starting over a move it made itself.
+MOVED_MODULES = MappingProxyType({
+    # BLOCKING.md item 3, step 3: the Inbox into a package of its own.
+    "ui/src/inbox": "ui/packages/app-inbox",
+})
 
 #: THE SYSTEM SUB-APPS (BLOCKING.md item 3, step 1.4): always loaded,
 #: after every module `modules.yaml` names, and PINNED -- the shell
@@ -121,6 +135,18 @@ _MANIFEST_KEYS = frozenset({"id", "name", "version", "permission", "contributes"
 #: shell meeting a newer backend's event ignores it.
 _ACTIVATION_EVENTS = frozenset({"onPalette", "onStartup"})
 _CONTRIBUTION_KEYS = frozenset({"pages", "nav", "redirects", "slots", "into"})
+
+
+def _moved(path: Path, folder: str) -> str:
+    """`folder` as modules.yaml names it, or where it has moved to
+    (MOVED_MODULES), said in the log."""
+    for old, new in MOVED_MODULES.items():
+        if _resolve(folder) == _resolve(old):
+            logger.warning(f"{path}: {folder} has moved to {new}; read as {new}. "
+                           f"Change it in the file, or save the arrangement in System -> Modules, "
+                           f"which writes the new folder")
+            return new
+    return folder
 
 
 class ModuleError(ValueError):
@@ -195,6 +221,8 @@ def load_modules(config_dir: Path) -> Modules:
             raise ModuleError(f"{path}: `disabled` must be a list of folders")
         if not isinstance(home, str) or not home.startswith("/"):
             raise ModuleError(f"{path}: `home` must be a path such as /query")
+        folders = [_moved(path, folder) for folder in folders]
+        off_folders = [_moved(path, folder) for folder in off_folders]
     system = {_resolve(f) for f in SYSTEM_MODULES}
     disabled = {_resolve(f) for f in off_folders}
     listed = {_resolve(f) for f in folders}

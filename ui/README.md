@@ -56,6 +56,12 @@ ui/packages/app-approvals/ The write inbox -- review and decide a
                             prediction and unusual-value reviews. ITS
                             OWN BUNDLE (step 3): the Inbox's first four
                             tabs, loaded when the Inbox is first opened.
+ui/packages/app-inbox/     The Inbox: one page whose tabs the queue
+                           modules below fill, and the count of what is
+                           waiting on its rail entry. ITS OWN BUNDLE
+                           (step 3), loaded as the frame is drawn, since
+                           the count is on every screen. Was ui/src/inbox;
+                           a modules.yaml naming that is read as this.
 ui/packages/app-identity/  Proposed merges -- decide whether two
                            records are the same thing, on the agreement
                            pattern rather than on values the reviewer

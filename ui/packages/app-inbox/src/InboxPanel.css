@@ -1,0 +1,19 @@
+/* THE INBOX'S OWN STYLES (BLOCKING.md item 3, step 3): its tabs, over
+ * whatever each queue module draws under them -- moved from the kit's
+ * stylesheet with the module into its own bundle.
+ * IN THE `components` LAYER -- see shell-api/src/index.css. */
+@layer components {
+  /* The Inbox's tabs sit at the top of the page, the panel under them. */
+  .inbox .bp6-tab-list {
+    margin-block-end: var(--space-loose);
+  }
+
+  /* A TAB WHOSE PANEL IS A WORKSPACE (Approvals) takes the page edge to
+   * edge, and the shell stands its own padding down for it -- which left
+   * the tabs flush against the rail, seen in a browser. The tabs take
+   * the padding the shell gave up, and the workspace keeps its own. */
+  .inbox:has(.workspace, .workspace--single) .bp6-tab-list {
+    margin-block-end: 0;
+    padding: var(--space-normal) var(--space-loose) 0;
+  }
+}

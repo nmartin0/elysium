@@ -9,7 +9,6 @@ import { getVisibleActionTypesCached } from '@elysium/shell-api/api'
 import { publishHostValues, resetHostValues } from '@elysium/shell-api/host'
 import { useBrowsePalette } from '@elysium/app-browse/palette'
 import type { FrameModules } from '@shell/core/activation'
-import { useInboxBadges } from './inbox/badges'
 import { enterSafeMode, leaveSafeMode } from '@shell/core/safeMode'
 
 /** Where the router is, for commands that navigate into Browse. */
@@ -54,6 +53,15 @@ async function openPalette(
  * would. What Browse needs of the schema is what the host publishes, not
  * a prop of the shell.
  */
+/** THE INBOX'S BADGE, STOOD IN FOR: the Inbox brings its own in its
+ *  bundle (BLOCKING.md item 3, step 3), tested in its package
+ *  (app-inbox/src/badges.test.tsx). What is tested here is the frame
+ *  drawing whatever badge a module gives. */
+let waitingInTheInbox = 0
+function useStandInBadges() {
+  return { '/inbox': { count: waitingInTheInbox, label: `${waitingInTheInbox} waiting` } }
+}
+
 function modulesFor(visibleApps: VisibleApp[]): FrameModules {
   const offered = (path: string) => visibleApps.some((app) => app.path === path)
   const entry = (id: string, path: string, events: string[]) => ({
@@ -73,7 +81,7 @@ function modulesFor(visibleApps: VisibleApp[]): FrameModules {
       module.id === 'browse'
         ? { usePalette: useBrowsePalette }
         : module.id === 'inbox'
-          ? { useBadges: useInboxBadges }
+          ? { useBadges: useStandInBadges }
           : undefined,
   }
 }
@@ -625,21 +633,6 @@ describe('theme', () => {
 })
 
 describe('the inbox badge (DEV_UI 15.3)', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
-  function answering(counts: { approvals: number; notifications: number; identity: number }) {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) =>
-        String(url).endsWith('/me/inbox')
-          ? new Response(JSON.stringify(counts), { status: 200 })
-          : new Response('{}', { status: 404 }),
-      ),
-    )
-  }
-
   // ON THE INBOX'S RAIL ENTRY, its own badge (step 1.3c): the owner chose
   // the rail as its only place, present at every width.
   const RAIL = [
@@ -648,7 +641,7 @@ describe('the inbox badge (DEV_UI 15.3)', () => {
   ]
 
   it('shows how much is waiting, on every screen', async () => {
-    answering({ approvals: 2, notifications: 1, identity: 1 })
+    waitingInTheInbox = 4
     renderShell(RAIL)
 
     const inbox = await screen.findByRole('menuitem', { name: 'Inbox, 4 waiting' })
@@ -656,7 +649,7 @@ describe('the inbox badge (DEV_UI 15.3)', () => {
   })
 
   it('says nothing when nothing is waiting -- no zero badge', async () => {
-    answering({ approvals: 0, notifications: 0, identity: 0 })
+    waitingInTheInbox = 0
     renderShell(RAIL)
     await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
 
@@ -665,7 +658,7 @@ describe('the inbox badge (DEV_UI 15.3)', () => {
   })
 
   it('is in the rail, not the header', async () => {
-    answering({ approvals: 1, notifications: 0, identity: 0 })
+    waitingInTheInbox = 1
     renderShell(RAIL)
     await screen.findByRole('menuitem', { name: 'Inbox, 1 waiting' })
 

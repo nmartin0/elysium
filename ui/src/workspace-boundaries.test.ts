@@ -81,12 +81,15 @@ describe('the root package.json correctly declares the workspace', () => {
     )
   })
 
-  it('does not depend on a sub-app with a bundle of its own (BLOCKING.md item 3, step 3)', () => {
-    // The page loads it from its bundle; a dependency would let the page
-    // import it again, behind the loader's back.
-    const pkg = readPackageJson('.')
-    expect(Object.keys(pkg.dependencies || {})).not.toContain('@elysium/app-query')
-  })
+  it.each(['@elysium/app-query', '@elysium/app-inbox'])(
+    'does not depend on %s, which has a bundle of its own (BLOCKING.md item 3, step 3)',
+    (name) => {
+      // The page loads it from its bundle; a dependency would let the page
+      // import it again, behind the loader's back.
+      const pkg = readPackageJson('.')
+      expect(Object.keys(pkg.dependencies || {})).not.toContain(name)
+    },
+  )
 })
 
 describe('package layering', () => {

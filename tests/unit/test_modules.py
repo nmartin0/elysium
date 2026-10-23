@@ -120,6 +120,38 @@ class TestWhatLoads:
         assert len(load_modules(tmp_path).modules) == len(SHIPPED_MODULES) + len(SYSTEM_MODULES)
 
 
+class TestAModuleThatMoved:
+    """A shipped module whose folder moved (MOVED_MODULES): a modules.yaml
+    naming the old folder -- one the module manager wrote -- still loads,
+    says so, and is written with the new folder on the next save."""
+
+    SAVED = {"home": "/query",
+             "modules": ["ui/packages/app-query", "ui/src/inbox", "ui/packages/app-approvals",
+                         "ui/packages/app-notifications", "ui/packages/app-identity"],
+             "disabled": ["ui/src/inbox"]}
+
+    def _saved(self, tmp_path: Path) -> Path:
+        (tmp_path / "modules.yaml").write_text(json.dumps(self.SAVED))
+        return tmp_path
+
+    def test_the_old_folder_is_read_as_the_new_one_and_said(self, tmp_path, caplog):
+        modules = load_modules(self._saved(tmp_path))
+
+        inbox = next(m for m in modules.off if m.id == "inbox")
+        assert inbox.listed_as == "ui/packages/app-inbox"
+        assert "ui/src/inbox has moved to ui/packages/app-inbox" in caplog.text
+        assert str(tmp_path / "modules.yaml") in caplog.text
+
+    def test_the_next_save_writes_the_new_folder(self, tmp_path):
+        modules = load_modules(self._saved(tmp_path))
+        order = [(module_id, module_id != "inbox") for module_id in modules.order]
+
+        written = yaml.safe_load(render_modules_yaml(modules, modules.home, order))
+
+        assert "ui/packages/app-inbox" in written["modules"] and "ui/src/inbox" not in written["modules"]
+        assert written["disabled"] == ["ui/packages/app-inbox"]
+
+
 class TestTheSystemSubApps:
     """Always loaded, last, and pinned (step 1.4): safe mode exists for
     when a module breaks the page, and a module must not be able to take

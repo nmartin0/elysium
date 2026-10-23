@@ -3576,20 +3576,6 @@
     color: var(--status-danger);
   }
 
-  /* The Inbox's tabs sit at the top of the page, the panel under them. */
-  .inbox .bp6-tab-list {
-    margin-block-end: var(--space-loose);
-  }
-
-  /* A TAB WHOSE PANEL IS A WORKSPACE (Approvals) takes the page edge to
-   * edge, and the shell stands its own padding down for it -- which left
-   * the tabs flush against the rail, seen in a browser. The tabs take
-   * the padding the shell gave up, and the workspace keeps its own. */
-  .inbox:has(.workspace, .workspace--single) .bp6-tab-list {
-    margin-block-end: 0;
-    padding: var(--space-normal) var(--space-loose) 0;
-  }
-
   /* ASK ABOUT THIS SET (DEV_UI 5.4): a panel over Browse, so the set
    * stays in view while the question is asked about it. */
   .ask-panel__body {

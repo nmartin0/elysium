@@ -26,7 +26,7 @@ ECHO = Path(__file__).resolve().parents[1] / "addons" / "echo"
 sys.path.insert(0, str(ECHO))
 from server import make_server  # noqa: E402 -- the example add-on's own server
 
-SHIPPED = ["ui/packages/app-browse", "ui/packages/app-query", "ui/packages/app-schema", "ui/src/inbox",
+SHIPPED = ["ui/packages/app-browse", "ui/packages/app-query", "ui/packages/app-schema", "ui/packages/app-inbox",
            "ui/packages/app-approvals", "ui/packages/app-notifications", "ui/packages/app-identity",
            "ui/packages/app-admin"]
 

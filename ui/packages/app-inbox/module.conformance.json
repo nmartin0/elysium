@@ -1,0 +1,17 @@
+{
+  "checks": {
+    "loading@inbox": {
+      "level": "off",
+      "reason": "The Inbox draws no data of its own: under its tabs is each queue module's panel, which is held to this check in that module's own suite. The counts beside the tab titles are decoration, drawn when they arrive, with nothing waiting on them."
+    },
+    "error@inbox": {
+      "level": "replaced",
+      "reason": "Its one read, the counts beside the tab titles, is quiet on failure by design (useInboxCounts): a count that cannot be read is absent rather than an error over every tab. A failure in a tab is that tab's to show, and its module's suite checks it.",
+      "by": "src/InboxPanel.test.tsx::stands without its counts when they cannot be read, and says nothing of it"
+    },
+    "session-expired@inbox": {
+      "level": "off",
+      "reason": "Its one read, the counts, is quiet on any failure, an expired session included, because the same hook draws the rail badge on every screen and is polled each minute. Handing over to sign-in is the job of what the person is looking at: the tab under the Inbox, held to this check in its module's suite, and the shell's own reads."
+    }
+  }
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { InboxCounts } from '@elysium/shell-api/api'
 
@@ -16,10 +16,18 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
 import type { FunctionComponent } from 'react'
 import type { ModuleEntry } from '@shell/core/contract'
 import { SlotsProvider } from '@shell/core/slots'
-import approvalsManifest from '../packages/app-approvals/module.json'
-import notificationsManifest from '../packages/app-notifications/module.json'
-import identityManifest from '../packages/app-identity/module.json'
-import inboxManifest from './inbox/module.json'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+// THE OTHER MODULES' MANIFESTS READ AS DATA, from beside this package, as
+// Elysium's server reads them: this package does not depend on theirs,
+// and an import reaching into another package is refused (.oxlintrc.json).
+const manifest = (folder: string) =>
+  JSON.parse(readFileSync(join(import.meta.dirname, '..', '..', folder, 'module.json'), 'utf8')) as ModuleEntry
+const approvalsManifest = manifest('app-approvals')
+const notificationsManifest = manifest('app-notifications')
+const identityManifest = manifest('app-identity')
+const inboxManifest = manifest('app-inbox')
 
 const { default: InboxPanel } = await import('./InboxPanel')
 
@@ -40,10 +48,11 @@ const CODE: Record<string, Record<string, FunctionComponent>> = {
 
 function show(
   url: string,
-  counts: InboxCounts = { approvals: 0, notifications: 0, identity: 0, enrichment: 0, predictions: 0 },
+  counts: InboxCounts | Error = { approvals: 0, notifications: 0, identity: 0, enrichment: 0, predictions: 0 },
   offered: ModuleEntry[] = feed,
 ) {
-  getInboxCounts.mockResolvedValue(counts)
+  if (counts instanceof Error) getInboxCounts.mockRejectedValue(counts)
+  else getInboxCounts.mockResolvedValue(counts)
   return render(
     <MemoryRouter initialEntries={[url]}>
       <SlotsProvider modules={{ feed: offered, activate: (m) => ({ contributions: CODE[m.id] }) }}>
@@ -120,6 +129,17 @@ describe('the Inbox (DEV_UI 12, 15)', () => {
     expect(screen.getByRole('tab', { name: /Identity/ })).toHaveTextContent('1')
     // Nothing waiting says nothing -- not a zero.
     expect(screen.getByRole('tab', { name: /Notifications/ })).not.toHaveTextContent('0')
+  })
+
+  it('stands without its counts when they cannot be read, and says nothing of it', async () => {
+    show('/inbox', new Error('the server is away'))
+
+    expect(await screen.findByText('approvals panel')).toBeInTheDocument()
+    await waitFor(() => expect(getInboxCounts).toHaveBeenCalled())
+    // QUIET ON FAILURE, as the counts hook means (useInboxCounts): the
+    // counts are decoration, and the tabs under them are what matter.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('tab')).toHaveLength(6)
   })
 })
 

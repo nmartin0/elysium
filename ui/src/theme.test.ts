@@ -11,6 +11,7 @@ const TOKENS = readFileSync(path.resolve(__dirname, '../packages/shell-api/src/t
 const RULE_STYLESHEETS = [
   'packages/app-approvals/src/approvals.css',
   'packages/app-identity/src/IdentityPanel.css',
+  'packages/app-inbox/src/InboxPanel.css',
   'packages/app-notifications/src/NotificationsPanel.css',
   'packages/app-query/src/QueryPanel.css',
   'packages/app-schema/src/SchemaPanel.css',

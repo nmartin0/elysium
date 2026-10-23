@@ -773,8 +773,8 @@ ignored), each a count and words for a screen reader. The frame draws it
 on the entry's icon, so a collapsed rail shows it, announces it after
 the name ("Inbox, 3 waiting"), shows nothing for zero and "99+" above
 99. The header's Inbox button is gone (the owner's decision); the
-Inbox's manifest names onStartup and `ui/src/inbox/badges.ts` supplies
-the count. VIOLATION (b) IS GONE, AND WITH IT ALL THREE: `Shell.tsx`
+Inbox's manifest names onStartup and its `badges.ts` (now in
+ui/packages/app-inbox, step 3) supplies the count. VIOLATION (b) IS GONE, AND WITH IT ALL THREE: `Shell.tsx`
 holds nothing of any sub-app.
 
 ONE WAY IN FOR BOTH: the host passes the frame the feed and an
@@ -1044,7 +1044,20 @@ page waits on nothing, so has no spinner, and a failure of the examples
 is not shown, since it must not stand between someone and their
 question.
 
-**Blocked on:** nothing; the Inbox, into a package, is next.
+**THE INBOX MOVED (23 October)**, into a package of its own
+(ui/packages/app-inbox, from ui/src/inbox and ui/src/InboxPanel.tsx) and
+from there to its own bundle, with its badge. Its manifest names
+`onStartup`, since the count is on every screen, so the bundle comes as
+the frame is drawn; the tabs' code still waits for their own bundles.
+With it the page's table of built-in badges is gone. A modules.yaml
+naming the old folder is read as naming the new one, with a warning
+saying which file to change (the owner's choice, 23 October, over
+refusing the file); the module manager writes the new folder on its
+next save (core/modules.py, MOVED_MODULES). Its conformance exceptions
+are all its tabs': the Inbox draws no data of its own, and its counts
+are quiet on failure by design.
+
+**Blocked on:** nothing; Admin is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

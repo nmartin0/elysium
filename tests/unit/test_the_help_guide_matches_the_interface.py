@@ -10,8 +10,8 @@ from core.agent.help_assistant import SCREEN_GUIDE, SHELL_GUIDE, SHELL_GUIDE_WIT
 from core.intermediate_layer.auth import UserRecord
 from core.modules import load_modules
 
-# The packages AND the shell's own screens: the Inbox's tab labels live
-# in ui/src/InboxPanel.tsx, since the Inbox is the shell's (14 Oct).
+# The packages AND the page's own screens (ui/src): the System pages
+# live there, and the Inbox did until it became a package (step 3).
 UI_SOURCE = "\n".join(path.read_text() for root in ("ui/packages", "ui/src")
                       for path in Path(root).rglob("*.tsx") if ".test." not in path.name)
 

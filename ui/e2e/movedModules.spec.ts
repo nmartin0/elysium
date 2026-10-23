@@ -103,3 +103,22 @@ for (const moved of INBOX_TABS) {
     )
   })
 }
+
+test("the Inbox's own bundle comes as the frame is drawn, for its badge, and draws its page", async ({ page }) => {
+  // ITS MANIFEST NAMES onStartup: the count on its rail entry is on every
+  // screen, so the bundle carrying it is asked for at once, before the
+  // Inbox is opened -- and the page comes in the same bundle.
+  const asked = bundlesAskedFor(page)
+  await logIn(page)
+  await expect.poll(() => asked).toContain('/api/modules/inbox/files/dist/index.js')
+  expect(asked).toContain('/api/modules/inbox/files/dist/index.css')
+
+  await page.locator('.app__nav').getByRole('menuitem', { name: /Inbox/ }).click()
+  const tabs = page.locator('.inbox .bp6-tab-list').first()
+  await expect(tabs).toBeVisible()
+  // ITS OWN RULES: space under the tab list, or -- once the tab under it
+  // is a workspace (Approvals, the first) -- the padding the shell gave
+  // up. Blueprint's own tab list has neither.
+  const spacing = (el: Element) => `${getComputedStyle(el).marginBottom} ${getComputedStyle(el).paddingTop}`
+  expect(await tabs.evaluate(spacing)).not.toBe('0px 0px')
+})

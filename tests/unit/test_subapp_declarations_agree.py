@@ -226,10 +226,10 @@ def _built_in_code(table: str) -> set[str]:
     return found
 
 
-@pytest.mark.parametrize("table,event", [("BUILT_IN_PALETTES", "onPalette"), ("BUILT_IN_BADGES", "onStartup")])
+@pytest.mark.parametrize("table,event", [("BUILT_IN_PALETTES", "onPalette")])
 def test_code_the_page_supplies_for_a_module_is_asked_for_by_its_manifest(table, event):
     """App.tsx's tables hold the code the shell asks of modules built into
-    the page -- palette commands, rail badges. The shell asks only on the
+    the page -- palette commands, today. The shell asks only on the
     activation event the module's manifest names, so code without its
     event would silently never run (step 1.3)."""
     by_id = {m["id"]: m for m in _manifests()}
@@ -278,10 +278,10 @@ def test_each_package_exports_what_the_shell_imports(name):
     manifest = json.loads((UI / "packages" / f"app-{name}" / "package.json").read_text())
     exported = set(manifest.get("exports", {}))
 
-    # App.tsx AND InboxPanel.tsx: the three inbox panels are lazy-loaded
-    # by the Inbox, one per tab (14 Oct), so reading App.tsx alone would
-    # check nothing about them.
-    shell = "\n".join((UI / "src" / name_).read_text() for name_ in ("App.tsx", "InboxPanel.tsx"))
+    # App.tsx ALONE: what else imported a package by name -- the Inbox,
+    # its tabs' panels -- now takes them from the slot, and is a package
+    # of its own (step 3).
+    shell = (UI / "src" / "App.tsx").read_text()
     imported = set(re.findall(rf"from '@elysium/app-{name}/([A-Za-z]+)'", shell))
     imported |= set(re.findall(rf"import\('@elysium/app-{name}/([A-Za-z]+)'\)", shell))
 

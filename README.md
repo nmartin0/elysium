@@ -112,10 +112,11 @@ ui/              The React + TypeScript frontend -- Query (ask a
                                          disable/enable/delete users,
                                          inspect a user's own visible
                                          schema.
-                   ui/packages/app-schema/, app-approvals/,
-                   app-identity/, app-notifications/  -- the
-                                         other four screens; section 8
-                                         lists all eight packages.
+                   ui/packages/app-schema/, app-inbox/,
+                   app-approvals/, app-identity/,
+                   app-notifications/  -- the other five screens;
+                                         section 8 lists all ten
+                                         packages.
 scripts/         Runnable entry points.
 install/         install.sh (fresh-install script) and elysium.service
                  (systemd unit) for a real, running install.
@@ -572,7 +573,7 @@ you find another, it is a bug in this file.
 
 ## 8. The front end
 
-Nine packages under `ui/packages/` -- seven screens, `shell-api` and `testing`, 45 components, each with its own
+Ten packages under `ui/packages/` -- eight screens, `shell-api` and `testing`, 45 components, each with its own
 test file:
 
 | package | what it is |
@@ -580,6 +581,7 @@ test file:
 | `app-browse` | Object Explorer — search, filters, charts, bulk actions, saved views |
 | `app-admin` | users, roles, grants, deployment configuration |
 | `app-schema` | the visible schema, as the asking user may see it |
+| `app-inbox` | the Inbox: one page whose tabs the queue modules fill, and the count of what is waiting on its rail entry |
 | `app-approvals` | pending writes and the approval flow |
 | `app-identity` | proposed merges — decide whether two records are one, on the agreement pattern rather than on values the reviewer may not read |
 | `app-notifications` | triggers and what they fired on |
