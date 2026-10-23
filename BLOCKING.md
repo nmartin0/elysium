@@ -715,9 +715,16 @@ NOT YET BUILT, of the agreed design: a sub-app SUPPLYING a check's
 inputs (the server is stubbed at `fetch`, which covers every sub-app
 today, so nothing needs it yet); automated accessibility checks; the
 fakes checked against the real shell (the frame calls they would fake
-arrive with step 1.3); per-sub-app browser fixtures; the add-on pytest
-plugin (step 2). The other sub-apps adopt as they become modules, in
-step 3.
+arrive with step 1.3); per-sub-app browser fixtures. The other sub-apps
+adopt as they become modules, in step 3.
+
+THE ADD-ON CONTRACT CHECKS ARE BUILT (23 October), the "pytest plugin"
+of step 2: sdk/python/elysium_addon_checks.py, a class an add-on's tests
+subclass -- health; the identity token honoured and a good one taken;
+loopback only; SIGTERM ends it within its deadline with status 0;
+standard input closing ends it. Elysium runs it against the example
+add-on and against that add-on broken one way per check; the
+simulator's panel runs it from its own copy.
 
 **STEP 1.3, IN THREE PARTS, agreed with the owner 21 October:** (a)
 the frame moves into `@shell/core`, looking and behaving exactly as it
@@ -991,8 +998,17 @@ theirs by letting a person mute one, which Elysium has no use for) and
 a per-module contract version, moved to step 4 -- the feed already
 carries one, and versioning is designed when there is a version 2.
 
-**Blocked on:** nothing; step 3 -- the remaining sub-apps as modules,
-one at a time -- is next.
+STEP 2'S LAST AGREED PIECE, the add-on contract checks, followed on 23
+October (above, under the conformance suite).
+
+**STEP 3, AGREED WITH THE OWNER 23 October:** the remaining sub-apps
+move one per patch, smallest first -- Identity, Notifications,
+Approvals, Query, the Inbox (into a package), Admin, Browse -- each to
+its own bundle, its host values from the kit, its palette, badges and
+tabs from its own `activate()`, its own test project and the
+conformance suite (`todo` with a reason for what fails today).
+
+**Blocked on:** nothing; step 3's first, Identity, is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

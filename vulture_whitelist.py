@@ -618,3 +618,12 @@ quick_back_off
 module_name
 module_permissions
 unlisted
+
+# THE ADD-ON CONTRACT CHECKS (sdk/python/elysium_addon_checks.py and the
+# simulator's copy): test methods of a mixin, collected by pytest from
+# each subclass an add-on writes, and an `addon` fixture pytest passes.
+test_health_answers_200_once_started
+test_a_protected_path_refuses_who_it_cannot_verify_and_takes_who_it_can
+test_it_listens_on_loopback_only
+test_sigterm_ends_it_within_its_deadline_cleanly
+test_it_leaves_when_elysium_does

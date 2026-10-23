@@ -2,7 +2,8 @@
 elysium_addon.py  (for an add-on's server written in Python: who is
 asking, and the contract Elysium starts it under)
 
-COPY THIS FILE INTO YOUR ADD-ON. It needs nothing but Python's standard
+COPY THIS FILE INTO YOUR ADD-ON -- and, for its tests, elysium_addon_
+checks.py beside it: the checks Elysium's contract makes of your server. It needs nothing but Python's standard
 library and imports nothing of Elysium's, so an add-on that must not
 depend on Elysium -- the simulator, whose rule is that it "does not
 import [Elysium], depend on it, or know it exists" -- can carry it.

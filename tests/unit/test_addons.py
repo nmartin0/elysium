@@ -161,8 +161,8 @@ def test_the_simulators_copy_of_the_sdk_is_the_sdk():
     # drifted would verify tokens differently from the contract.
     root = Path(__file__).resolve().parents[2]
 
-    assert (root / "sim" / "panel" / "elysium_addon.py").read_bytes() \
-        == (root / "sdk" / "python" / "elysium_addon.py").read_bytes()
+    for name in ("elysium_addon.py", "elysium_addon_checks.py"):
+        assert (root / "sim" / "panel" / name).read_bytes() == (root / "sdk" / "python" / name).read_bytes(), name
 
 
 class TestTheOutbox:

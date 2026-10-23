@@ -22,6 +22,10 @@ Options (from the deployment's addons.yaml) that make it misbehave:
                             input closing, to be killed
     {"exit_after": 0.5}     exit with status 3 that many seconds after starting
     {"health": "never"}     never answer /health with 200
+    {"trust_anyone": true}  take a request with no good token, as anyone
+    {"refuse_all": true}    refuse every request but /health
+    {"bind_all": true}      listen on every address, not only 127.0.0.1
+    {"exit_status": 1}      leave with that status after SIGTERM
 """
 
 import json
@@ -66,10 +70,14 @@ def make_server(info: dict, port: int = 0) -> ThreadingHTTPServer:
             body = self.rfile.read(length) if length else b""
             if path == "/health":
                 return self._json(503 if options.get("health") == "never" else 200, {"ok": True})
+            if options.get("refuse_all"):
+                return self._json(401, {"error": "refuses everybody"})
             try:
                 who = elysium_addon.identity(self.headers, info)
             except elysium_addon.NotSignedIn as refused:
-                return self._json(401, {"error": str(refused)})
+                if not options.get("trust_anyone"):
+                    return self._json(401, {"error": str(refused)})
+                who = {"sub": "anyone"}
             if path.startswith("/whoami"):
                 return self._json(200, {"user": who["sub"], "claims": who, "method": self.command,
                                         "path": path, "query": query,
@@ -109,7 +117,7 @@ def make_server(info: dict, port: int = 0) -> ThreadingHTTPServer:
 
         do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = do_HEAD = _route
 
-    return ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    return ThreadingHTTPServer(("0.0.0.0" if options.get("bind_all") else "127.0.0.1", port), Handler)
 
 
 def main() -> None:
@@ -129,6 +137,8 @@ def main() -> None:
     print(f"echo listening on {server.server_address[1]}", flush=True)
     server.serve_forever()
     print("echo stopped cleanly", flush=True)
+    if "exit_status" in options:
+        sys.exit(int(options["exit_status"]))
 
 
 if __name__ == "__main__":
