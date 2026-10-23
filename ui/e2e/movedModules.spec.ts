@@ -25,23 +25,46 @@ function bundlesAskedFor(page: Page): string[] {
   return asked
 }
 
-test("the Identity tab's code comes from its own bundle, when the tab is first opened", async ({ page }) => {
-  const asked = bundlesAskedFor(page)
-  await logIn(page)
-  await page.locator('.app__nav').getByRole('menuitem', { name: /Inbox/ }).click()
-  await expect(page.getByRole('tab', { name: /Identity/ })).toBeVisible()
-  expect(asked.filter((path) => path.includes('/identity/'))).toEqual([])
+/** An Inbox tab moved into a bundle of its own: nothing of it fetched
+ *  until the tab is opened, then its code and stylesheet, and its own
+ *  styles drawing it. */
+const INBOX_TABS: { id: string; tab: RegExp; shows: RegExp; styled: string; subTab?: RegExp }[] = [
+  {
+    id: 'identity',
+    tab: /Identity/,
+    shows: /Pairs the matcher believes may be the same thing/,
+    styled: '.identity__lede',
+  },
+  // Its own sub-tab first: the reminders form is what its stylesheet lays out.
+  { id: 'notifications', tab: /Notifications/, shows: /Times are in/, styled: '.reminders', subTab: /Reminders/ },
+]
 
-  await page.getByRole('tab', { name: /Identity/ }).click()
+for (const moved of INBOX_TABS) {
+  test(`the ${moved.id} tab's code comes from its own bundle, when the tab is first opened`, async ({ page }) => {
+    const asked = bundlesAskedFor(page)
+    await logIn(page)
+    await page.locator('.app__nav').getByRole('menuitem', { name: /Inbox/ }).click()
+    await expect(page.getByRole('tab', { name: moved.tab })).toBeVisible()
+    expect(asked.filter((path) => path.includes(`/${moved.id}/`))).toEqual([])
 
-  await expect(page.getByText(/Pairs the matcher believes may be the same thing/)).toBeVisible()
-  expect(asked).toContain('/api/modules/identity/files/dist/index.js')
-  expect(asked).toContain('/api/modules/identity/files/dist/index.css')
-  // ITS OWN STYLES ARRIVED WITH IT: the lede is drawn in the secondary
-  // colour its stylesheet gives it, not the page's body colour.
-  const lede = page.locator('.identity__lede')
-  const body = page.locator('body')
-  expect(await lede.evaluate((el) => getComputedStyle(el).color)).not.toBe(
-    await body.evaluate((el) => getComputedStyle(el).color),
-  )
-})
+    await page.getByRole('tab', { name: moved.tab }).click()
+    if (moved.subTab) await page.getByRole('tab', { name: moved.subTab }).click()
+
+    await expect(page.getByText(moved.shows).first()).toBeVisible()
+    expect(asked).toContain(`/api/modules/${moved.id}/files/dist/index.js`)
+    expect(asked).toContain(`/api/modules/${moved.id}/files/dist/index.css`)
+    // ITS OWN STYLES ARRIVED WITH IT: an element its stylesheet styles is
+    // drawn differently from the same element unstyled.
+    const styled = page.locator(moved.styled).first()
+    await expect(styled).toBeVisible()
+    expect(await styled.evaluate((el) => getComputedStyle(el).display + getComputedStyle(el).color)).not.toBe(
+      await styled.evaluate((el) => {
+        const bare = document.createElement(el.tagName)
+        document.body.appendChild(bare)
+        const style = getComputedStyle(bare).display + getComputedStyle(bare).color
+        bare.remove()
+        return style
+      }),
+    )
+  })
+}

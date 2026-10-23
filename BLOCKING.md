@@ -1016,7 +1016,15 @@ with the context Elysium's slots give, `onSessionExpired` -- passing
 every check with no exceptions. The page no longer imports or depends
 on it.
 
-**Blocked on:** nothing; Notifications is next.
+**NOTIFICATIONS MOVED (23 October)**, the same way, passing every check.
+Breaking it on purpose found what the suite cannot see: it checks a tab
+as a whole, and this tab also mounts its Watching and Reminders panels,
+which hand over an expired session by themselves -- so a notification
+list that ignored one passed, hidden behind them. Its own test now
+covers its list alone. The suite's limit stands, said here: a check on a
+page is a check on everything the page mounts.
+
+**Blocked on:** nothing; Approvals is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

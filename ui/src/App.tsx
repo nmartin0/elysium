@@ -204,8 +204,6 @@ const BUILT_IN_BADGES: Record<string, () => Promise<ModuleCode>> = {
  *  drawn only by a page that is open. */
 const BUILT_IN_CONTRIBUTIONS: Record<string, () => Promise<ModuleCode>> = {
   approvals: () => import('@elysium/app-approvals/contributions').then(({ contributions }) => ({ contributions })),
-  notifications: () =>
-    import('@elysium/app-notifications/contributions').then(({ contributions }) => ({ contributions })),
 }
 
 /** A module's code, as the shell asks for it: its bundle's activation, or

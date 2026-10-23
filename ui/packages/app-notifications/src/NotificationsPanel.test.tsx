@@ -117,6 +117,20 @@ describe('when the request fails', () => {
 
     expect(await screen.findByText(/unreachable/)).toBeInTheDocument()
   })
+
+  it('hands over to sign-in when its own list finds the session expired', async () => {
+    /** ITS OWN, NOT ITS NEIGHBOURS'. The conformance suite checks the
+     *  tab as a whole, and the Watching and Reminders panels it also
+     *  mounts hand over by themselves -- so a list that ignored an
+     *  expired session would pass there, hidden behind them. Found by
+     *  breaking it on purpose when the tab became a module (step 3). */
+    const { ApiError } = await import('@elysium/shell-api/api')
+    mockedList.mockRejectedValue(new ApiError(401, 'Session expired'))
+    const onSessionExpired = vi.fn()
+    render(<NotificationsPanel onSessionExpired={onSessionExpired} />)
+
+    await waitFor(() => expect(onSessionExpired).toHaveBeenCalled())
+  })
 })
 
 describe('every row a door (DEV_UI 12)', () => {

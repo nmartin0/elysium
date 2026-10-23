@@ -1,0 +1,75 @@
+/* THE NOTIFICATIONS TAB'S OWN STYLES (BLOCKING.md item 3, step 3): moved
+ * from the kit's stylesheet with the module into its own bundle, so they
+ * load with it and nowhere else. IN THE `components` LAYER -- see
+ * shell-api/src/index.css. */
+@layer components {
+  /* WHAT THE DEPLOYMENT TOLD YOU. The head line carries the kind, the
+   time and the read control; the summary is the message itself, and
+   the detail is context rather than the point. */
+  /* STACKED, NOT A ROW. A Card that is CardList's direct child gets
+   * Blueprint's `display: flex; align-items: center` -- the same default
+   * .object-search__result overrides in the kit's stylesheet -- so the head, summary and
+   * detail sat side by side and the kind tag was cut to "Qu...". Seen in
+   * the browser with the first answered question (WIRED-2); it applied
+   * to every notification. */
+  .notifications__item {
+    display: block;
+  }
+
+  .notifications__head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-normal);
+  }
+
+  .notifications__when {
+    color: var(--text-secondary);
+  }
+
+  .notifications__summary {
+    margin-block: var(--space-tight) 0;
+  }
+
+  .notifications__detail {
+    margin-block-start: var(--space-tight);
+  }
+
+  /* Reminders (17 October): the form above the list, stacked. */
+  .reminders {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-normal);
+  }
+
+  .reminders__new {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-tight);
+  }
+
+  .reminders__when {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-hair);
+  }
+
+  .reminders__zone {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--type-dense-size);
+  }
+
+  /* A WATCHED CONDITION: the switch carries the name, the condition
+   sits beside it, and the remove control ends the row. */
+  .watch-list__item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-normal);
+  }
+
+  .watch-list__condition {
+    color: var(--text-secondary);
+    margin-inline-start: auto;
+  }
+}

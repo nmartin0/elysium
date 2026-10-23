@@ -58,7 +58,9 @@ ui/packages/app-identity/  Proposed merges -- decide whether two
                            (step 3): the Inbox's Identity tab, loaded
                            when the tab is first opened.
 ui/packages/app-notifications/
-                           Notifications and the watch list.
+                           Notifications and the watch list. ITS OWN
+                           BUNDLE (step 3): the Inbox's Notifications
+                           tab, loaded when the tab is first opened.
 ui/packages/app-admin/     Users, roles, silos, mirror status, metrics
                             and read-only deployment config.
 ui/packages/testing/       The test kit every sub-app's tests use: the
