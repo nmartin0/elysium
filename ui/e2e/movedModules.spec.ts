@@ -27,8 +27,31 @@ function bundlesAskedFor(page: Page): string[] {
 
 /** An Inbox tab moved into a bundle of its own: nothing of it fetched
  *  until the tab is opened, then its code and stylesheet, and its own
- *  styles drawing it. */
-const INBOX_TABS: { id: string; tab: RegExp; shows: RegExp; styled: string; subTab?: RegExp }[] = [
+ *  styles drawing it.
+ *
+ *  `first`: the Inbox's first tab, open as soon as the Inbox is, so
+ *  "until the tab is opened" is until the Inbox is.
+ *  `probe`: what the stylesheet styles is drawn only when there is work
+ *  waiting, which a fresh deployment may not have; an element of that
+ *  class is put in the tab, and the stylesheet must draw it. */
+const INBOX_TABS: {
+  id: string
+  tab: RegExp
+  shows: RegExp
+  styled: string
+  subTab?: RegExp
+  first?: boolean
+  probe?: boolean
+}[] = [
+  // ONE BUNDLE FOR FOUR TABS: Approvals, Enrichment, Predictions, Unusual.
+  {
+    id: 'approvals',
+    tab: /Approvals/,
+    shows: /Nothing waiting|Proposed by/,
+    styled: '.approvals__item',
+    first: true,
+    probe: true,
+  },
   {
     id: 'identity',
     tab: /Identity/,
@@ -43,9 +66,10 @@ for (const moved of INBOX_TABS) {
   test(`the ${moved.id} tab's code comes from its own bundle, when the tab is first opened`, async ({ page }) => {
     const asked = bundlesAskedFor(page)
     await logIn(page)
+    if (moved.first) expect(asked.filter((path) => path.includes(`/${moved.id}/`))).toEqual([])
     await page.locator('.app__nav').getByRole('menuitem', { name: /Inbox/ }).click()
     await expect(page.getByRole('tab', { name: moved.tab })).toBeVisible()
-    expect(asked.filter((path) => path.includes(`/${moved.id}/`))).toEqual([])
+    if (!moved.first) expect(asked.filter((path) => path.includes(`/${moved.id}/`))).toEqual([])
 
     await page.getByRole('tab', { name: moved.tab }).click()
     if (moved.subTab) await page.getByRole('tab', { name: moved.subTab }).click()
@@ -55,6 +79,17 @@ for (const moved of INBOX_TABS) {
     expect(asked).toContain(`/api/modules/${moved.id}/files/dist/index.css`)
     // ITS OWN STYLES ARRIVED WITH IT: an element its stylesheet styles is
     // drawn differently from the same element unstyled.
+    if (moved.probe) {
+      await page
+        .locator('[role="tabpanel"]')
+        .first()
+        .evaluate((panel, name) => {
+          const probe = document.createElement('div')
+          probe.className = name
+          probe.textContent = 'probe'
+          panel.appendChild(probe)
+        }, moved.styled.slice(1))
+    }
     const styled = page.locator(moved.styled).first()
     await expect(styled).toBeVisible()
     expect(await styled.evaluate((el) => getComputedStyle(el).display + getComputedStyle(el).color)).not.toBe(

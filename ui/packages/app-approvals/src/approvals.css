@@ -1,0 +1,161 @@
+/* THE APPROVALS MODULE'S OWN STYLES (BLOCKING.md item 3, step 3) -- its four
+ * Inbox tabs: approvals, enrichment, predictions, unusual -- moved from the
+ * kit's stylesheet with the module into its own bundle, so they load with
+ * it and nowhere else. IN THE `components` LAYER -- see
+ * shell-api/src/index.css. */
+@layer components {
+  /* ---- ENRICHMENT REVIEW (R41) -------------------------------------- */
+  .enrichment-recipe {
+    margin-bottom: var(--space-normal);
+    padding: var(--space-normal);
+    border-radius: 10px;
+    background: var(--surface-raised);
+    box-shadow: var(--elevate-raised);
+  }
+
+  .enrichment-recipe__head {
+    display: flex;
+    /* A long type and field name wraps the tag below it, rather than
+       squeezing it to "propo…" at phone width (seen 17 October). */
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-tight);
+  }
+
+  .enrichment-recipe__head > :last-child {
+    flex-shrink: 0;
+  }
+
+  .enrichment-recipe__head h3 {
+    margin: 0;
+  }
+
+  .enrichment-recipe__question {
+    margin: var(--space-tight) 0 var(--space-hair);
+    font-weight: 600;
+  }
+
+  .enrichment-recipe__meta,
+  .enrichment-recipe__provenance,
+  .enrichment-recipe__after,
+  .enrichment-review__none {
+    color: var(--text-secondary);
+  }
+
+  .enrichment-recipe__rules {
+    margin: 0 0 var(--space-tight);
+    padding-left: var(--space-loose);
+  }
+
+  /* One voting rule set: its weight above its rules, a rule between
+     sets so the members read as separate. */
+  .enrichment-recipe__set {
+    border-left: 2px solid var(--border-subtle);
+    padding-left: var(--space-tight);
+    margin-bottom: var(--space-tight);
+  }
+
+  .enrichment-recipe__set h5 {
+    margin: 0 0 var(--space-hair);
+    font-size: var(--type-dense-size);
+  }
+
+  .enrichment-recipe__score {
+    margin: 0 0 var(--space-hair);
+  }
+
+  .enrichment-recipe__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-tight);
+    margin-top: var(--space-tight);
+  }
+
+  .enrichment-review__decided h3 {
+    margin: var(--space-loose) 0 var(--space-tight);
+    color: var(--text-secondary);
+  }
+
+  /* --- The approvals card's scope -------------------------------------- */
+  .approvals__scope {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 4px 0 0;
+  }
+
+  .approvals__count {
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
+    color: var(--text-secondary);
+  }
+
+  /* --- Approvals: a queue of proposals awaiting a decision ------------
+   *
+   * Rows are read by someone scanning for what needs them, so the
+   * DESCRIPTION leads and everything else is secondary. The tags carry
+   * the two facts a reviewer sorts on -- is this mine to decide, or mine
+   * to wait on -- and both can be true at once.
+   */
+  .approvals__item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-tight);
+    align-items: stretch;
+  }
+
+  .approvals__description {
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .approvals__meta {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
+  }
+
+  .approvals__tags {
+    display: flex;
+    gap: var(--space-hair);
+  }
+
+  .approvals__actions {
+    display: flex;
+    gap: var(--space-hair);
+  }
+
+  /* The diff, revealed under a row rather than in a modal. A modal
+   * hides the queue behind it, and in analytic work the surrounding
+   * context is usually what the reader needs: drawers and popovers
+   * over modals. */
+  .write-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-tight);
+    border-top: 1px solid var(--border-subtle);
+    padding-top: var(--space-tight);
+  }
+
+  .write-detail__object-title {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--type-label-size);
+    line-height: var(--type-label-line);
+    font-weight: var(--type-label-weight);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .write-detail__changes {
+    width: 100%;
+    /* Values are ids, amounts and categories read side by side against
+       their proposed replacements -- tabular figures keep the two
+       columns comparable at a glance. */
+    font-variant-numeric: tabular-nums;
+  }
+}

@@ -908,7 +908,8 @@ declares `inbox.tabs`, with today's order; Approvals (four tabs:
 Approvals, Enrichment, Predictions, Unusual), Notifications and Identity
 are modules of their own -- shipped by default, no rail entry, each
 switchable alone in the module manager -- and contribute them, their
-code in each package's `contributions.ts`. The Inbox no longer imports
+code in each package's `contributions.ts` (since step 3, in each one's
+own bundle). The Inbox no longer imports
 any of them. A queue module turned off, or not offered, has no tab, and
 the rest stand. A Python test holds every declared contribution to its
 code and back. Moving the Inbox itself into a package -- the step this
@@ -1024,7 +1025,15 @@ list that ignored one passed, hidden behind them. Its own test now
 covers its list alone. The suite's limit stands, said here: a check on a
 page is a check on everything the page mounts.
 
-**Blocked on:** nothing; Approvals is next.
+**APPROVALS MOVED (23 October)**, its four Inbox tabs (Approvals,
+Enrichment, Predictions, Unusual) in one bundle, passing every check.
+It was the last sub-app whose slot code Elysium's page carried, so
+App.tsx's table of built-in contributions is gone, and a Python test now
+refuses any module that fills a slot without a bundle of its own.
+Approvals is the Inbox's first tab, so its bundle arrives when the Inbox
+opens rather than when a tab is clicked.
+
+**Blocked on:** nothing; Query is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

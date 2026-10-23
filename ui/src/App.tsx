@@ -198,21 +198,12 @@ const BUILT_IN_PALETTES: Record<string, () => Promise<ModuleCode>> = {
 const BUILT_IN_BADGES: Record<string, () => Promise<ModuleCode>> = {
   inbox: () => import('./inbox/badges').then((code) => ({ useBadges: code.useInboxBadges })),
 }
-/** Contributions to other modules' slots (step 1.5b): the Inbox's tabs,
- *  from the three modules that fill them, imported when the Inbox first
- *  shows one. Asked for whatever the module's events, since a slot is
- *  drawn only by a page that is open. */
-const BUILT_IN_CONTRIBUTIONS: Record<string, () => Promise<ModuleCode>> = {
-  approvals: () => import('@elysium/app-approvals/contributions').then(({ contributions }) => ({ contributions })),
-}
 
 /** A module's code, as the shell asks for it: its bundle's activation, or
  *  this page's own tables. */
 async function activate(module: ModuleEntry): Promise<ModuleCode | undefined> {
   if (module.entry) return moduleLoader.load(module)
-  const parts = await Promise.all(
-    [BUILT_IN_PALETTES, BUILT_IN_BADGES, BUILT_IN_CONTRIBUTIONS].map((table) => table[module.id]?.()),
-  )
+  const parts = await Promise.all([BUILT_IN_PALETTES, BUILT_IN_BADGES].map((table) => table[module.id]?.()))
   const found = parts.filter((part) => part !== undefined)
   return found.length > 0 ? Object.assign({}, ...found) : undefined
 }

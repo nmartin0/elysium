@@ -50,7 +50,10 @@ ui/packages/app-schema/    The ontology as a reference: object types,
                             graph. ITS OWN BUNDLE: loaded when /schema
                             is first opened; the page never imports it.
 ui/packages/app-approvals/ The write inbox -- review and decide a
-                            proposed write.
+                            proposed write -- and the enrichment,
+                            prediction and unusual-value reviews. ITS
+                            OWN BUNDLE (step 3): the Inbox's first four
+                            tabs, loaded when the Inbox is first opened.
 ui/packages/app-identity/  Proposed merges -- decide whether two
                            records are the same thing, on the agreement
                            pattern rather than on values the reviewer

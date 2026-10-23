@@ -29,5 +29,7 @@
         "icon": "scatter-plot"
       }
     ]
-  }
+  },
+  "entry": "dist/index.js",
+  "styles": ["dist/index.css"]
 }
