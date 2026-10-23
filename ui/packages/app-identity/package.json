@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./ProposalCard": "./src/ProposalCard.tsx",
-    "./contributions": "./src/contributions.ts"
+    "./module": "./src/module.tsx"
   },
   "dependencies": {
     "@elysium/shell-api": "*"

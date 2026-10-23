@@ -9,7 +9,12 @@
  *
  * and get every check below, on every page its module.json declares --
  * Storybook's precedent, where "a basic story is also a smoke test" and
- * every story is tested unless it opts out.
+ * every story is tested unless it opts out -- AND ON EVERY CONTRIBUTION
+ * IT PUTS IN ANOTHER MODULE'S SLOT (step 3): a tab in the Inbox is drawn
+ * like a page and owes the person the same, so it is checked the same,
+ * rendered as Elysium's slots render one -- given `onSessionExpired`,
+ * the context every slot of Elysium's promises. Keyed by its id, as a
+ * page is: `error@identity`.
  *
  * OVERRIDES, in `module.conformance.json` beside `module.json`:
  *
@@ -41,6 +46,7 @@ import { act, cleanup, waitFor, within } from '@testing-library/react'
 import type { ComponentType } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { unlayeredRules } from './css'
+import { useHostValues } from '@elysium/shell-api/host'
 import { renderInTestHost, resetTestHost, stubServer } from './host'
 
 /** Checks run once per module. */
@@ -153,6 +159,17 @@ async function manifestCheck(manifest: ModuleEntry, activation: ModuleActivation
   const declared = (manifest.contributes.pages ?? []).map((page) => page.id)
   const missing = declared.filter((id) => !(id in activation.pages))
   expect(missing, '`activate` does not offer these declared pages').toEqual([])
+  const into = (manifest.contributes.into ?? []).map((item) => item.id)
+  const uncoded = into.filter((id) => activation.contributions?.[id] === undefined)
+  expect(uncoded, '`activate` does not offer these declared contributions').toEqual([])
+}
+
+/** A contribution drawn as Elysium's slots draw one: with the context
+ *  every slot of Elysium's promises, from the host. */
+function asSlotted(Contribution: ComponentType<{ onSessionExpired: () => void }>): ComponentType {
+  return function Slotted() {
+    return <Contribution onSessionExpired={useHostValues().onSessionExpired} />
+  }
 }
 
 /** Every rule the module's own stylesheets author sits inside a layer. */
@@ -179,7 +196,7 @@ export const PAGE_CHECK_FUNCTIONS: Record<(typeof PAGE_CHECKS)[number], (Page: C
   'session-expired': sessionExpired,
   unmount,
 }
-export { manifestCheck, layeredCss }
+export { asSlotted, manifestCheck, layeredCss }
 
 // ---------------------------------------------------------------------------
 // Overrides
@@ -201,7 +218,7 @@ export function readOverrides(folder: string, pageIds: readonly string[]): Recor
     const [check, page] = key.split('@')
     if (!ALL_CHECKS.includes(check ?? '')) throw new Error(`module.conformance.json: no check called ${check}`)
     if (page !== undefined && !pageIds.includes(page)) {
-      throw new Error(`module.conformance.json: ${key} names a page the manifest does not declare`)
+      throw new Error(`module.conformance.json: ${key} names a page or contribution the manifest does not declare`)
     }
     if (!['todo', 'off', 'replaced'].includes(override.level)) {
       throw new Error(`module.conformance.json: ${key} has level ${override.level}; use todo, off or replaced`)
@@ -279,7 +296,8 @@ export interface ModuleUnderTest {
 export function describeModule(module: ModuleUnderTest): void {
   const manifest = JSON.parse(readFileSync(join(module.folder, 'module.json'), 'utf8')) as ModuleEntry
   const pageIds = (manifest.contributes.pages ?? []).map((page) => page.id)
-  const overrides = readOverrides(module.folder, pageIds)
+  const contributionIds = (manifest.contributes.into ?? []).map((item) => item.id)
+  const overrides = readOverrides(module.folder, [...pageIds, ...contributionIds])
 
   const define = (name: string, setting: Setting, run: () => Promise<void>) => {
     const body = atLevel(setting, run, { module: manifest.id, check: name, folder: module.folder })
@@ -309,6 +327,15 @@ export function describeModule(module: ModuleUnderTest): void {
           const Page = (await module.activate()).pages[pageId]
           if (Page === undefined) throw new Error(`activate offers no page called ${pageId}`)
           await PAGE_CHECK_FUNCTIONS[check](Page)
+        })
+      }
+    }
+    for (const id of contributionIds) {
+      for (const check of PAGE_CHECKS) {
+        define(`${check} @ ${id} (a contribution)`, levelFor(overrides, check, id), async () => {
+          const Contribution = (await module.activate()).contributions?.[id]
+          if (Contribution === undefined) throw new Error(`activate offers no contribution called ${id}`)
+          await PAGE_CHECK_FUNCTIONS[check](asSlotted(Contribution as ComponentType<{ onSessionExpired: () => void }>))
         })
       }
     }

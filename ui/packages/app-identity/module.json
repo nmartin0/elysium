@@ -11,5 +11,7 @@
         "icon": "merge-columns"
       }
     ]
-  }
+  },
+  "entry": "dist/index.js",
+  "styles": ["dist/index.css"]
 }

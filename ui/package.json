@@ -26,7 +26,6 @@
     "@elysium/app-admin": "*",
     "@elysium/app-approvals": "*",
     "@elysium/app-browse": "*",
-    "@elysium/app-identity": "*",
     "@elysium/app-notifications": "*",
     "@elysium/app-query": "*",
     "@elysium/shell-api": "*",

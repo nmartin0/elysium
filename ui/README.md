@@ -47,13 +47,16 @@ ui/packages/app-browse/    Browse -- search, per-object detail, direct
                             saved views, bulk actions, explore-related.
 ui/packages/app-schema/    The ontology as a reference: object types,
                             link types, action types, and the schema
-                            graph.
+                            graph. ITS OWN BUNDLE: loaded when /schema
+                            is first opened; the page never imports it.
 ui/packages/app-approvals/ The write inbox -- review and decide a
                             proposed write.
 ui/packages/app-identity/  Proposed merges -- decide whether two
                            records are the same thing, on the agreement
                            pattern rather than on values the reviewer
-                           may not be cleared to read.
+                           may not be cleared to read. ITS OWN BUNDLE
+                           (step 3): the Inbox's Identity tab, loaded
+                           when the tab is first opened.
 ui/packages/app-notifications/
                            Notifications and the watch list.
 ui/packages/app-admin/     Users, roles, silos, mirror status, metrics

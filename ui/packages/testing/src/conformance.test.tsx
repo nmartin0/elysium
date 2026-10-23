@@ -11,7 +11,18 @@ import type { ModuleEntry } from '@shell/core/contract'
 import { cleanup } from '@testing-library/react'
 import type { ComponentType } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { atLevel, layeredCss, levelFor, manifestCheck, PAGE_CHECK_FUNCTIONS, readOverrides } from './conformance'
+import { getCurrentUser } from '@elysium/shell-api/api'
+import { useFetchOnce } from '@elysium/shell-api/useFetchOnce'
+import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
+import {
+  asSlotted,
+  atLevel,
+  layeredCss,
+  levelFor,
+  manifestCheck,
+  PAGE_CHECK_FUNCTIONS,
+  readOverrides,
+} from './conformance'
 import { resetTestHost } from './host'
 import {
   BlankPage,
@@ -104,6 +115,46 @@ describe('manifest', () => {
   it('fails a manifest the registry cannot honour', async () => {
     const strayNav = { ...manifest, contributes: { ...manifest.contributes, nav: [{ title: 'X', path: '/nowhere' }] } }
     await expect(manifestCheck(strayNav, { pages: { main: GoodPage } })).rejects.toThrow(/could not honour/)
+  })
+})
+
+describe('a contribution to a slot (step 3) is checked as a page is', () => {
+  const contributing = {
+    id: 'm',
+    name: 'M',
+    version: '1',
+    entry: null,
+    contributes: { into: [{ slot: 'inbox.tabs', id: 'tab', title: 'Tab' }] },
+  } as unknown as ModuleEntry
+  it('fails when activate leaves out a declared contribution', async () => {
+    await expect(manifestCheck(contributing, { pages: {} })).rejects.toThrow(/declared contributions/)
+  })
+  it('passes when it offers it', async () => {
+    await manifestCheck(contributing, { pages: {}, contributions: { tab: GoodPage } })
+  })
+
+  /** A TAB AS ELYSIUM'S SLOTS DRAW ONE: told how to end the session by a
+   *  prop, not by the host values a page reads. */
+  function GoodTab({ onSessionExpired }: { onSessionExpired: () => void }) {
+    const { data, error } = useFetchOnce<unknown>(getCurrentUser, onSessionExpired)
+    return (
+      <AsyncPanel data={data} error={error}>
+        {() => <p>signed in</p>}
+      </AsyncPanel>
+    )
+  }
+  /** Given the slot's onSessionExpired, and deaf to it. */
+  const DeafTab: ComponentType<{ onSessionExpired: () => void }> = () => {
+    const { data, error } = useFetchOnce<unknown>(getCurrentUser, () => {})
+    return (
+      <AsyncPanel data={data} error={error}>
+        {() => <p>signed in</p>}
+      </AsyncPanel>
+    )
+  }
+  it("passes a tab that uses the slot's onSessionExpired, and fails one that ignores it", async () => {
+    expect(await outcome('session-expired', asSlotted(GoodTab))).toBe('pass')
+    expect(await outcome('session-expired', asSlotted(DeafTab))).toBe('fail')
   })
 })
 

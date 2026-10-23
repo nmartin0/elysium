@@ -1008,7 +1008,15 @@ its own bundle, its host values from the kit, its palette, badges and
 tabs from its own `activate()`, its own test project and the
 conformance suite (`todo` with a reason for what fails today).
 
-**Blocked on:** nothing; step 3's first, Identity, is next.
+**STEP 3, IDENTITY MOVED (23 October):** its own bundle, loaded when the
+Inbox first shows its tab; its styles out of the kit's stylesheet and
+into its own; its own test project; and the conformance suite, which
+now checks a module's slot CONTRIBUTIONS as it checks pages -- rendered
+with the context Elysium's slots give, `onSessionExpired` -- passing
+every check with no exceptions. The page no longer imports or depends
+on it.
+
+**Blocked on:** nothing; Notifications is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

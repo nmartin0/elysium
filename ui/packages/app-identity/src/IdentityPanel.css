@@ -1,0 +1,111 @@
+/* THE IDENTITY REVIEW'S OWN STYLES (BLOCKING.md item 3, step 3): moved
+ * from the kit's stylesheet with the module into its own bundle, so they
+ * load with it and nowhere else. IN THE `components` LAYER -- see
+ * shell-api/src/index.css. */
+@layer components {
+  /* The panel keeps its own lede because the page TITLE is the route's
+   * now and a one-line description of what a proposal IS belongs to
+   * the screen rather than to the frame. */
+  .identity__lede {
+    margin: 0 0 var(--space-loose);
+    max-width: 68ch;
+    color: var(--text-secondary);
+    font-size: var(--type-body-size);
+    line-height: var(--type-body-line);
+    font-weight: var(--type-body-weight);
+  }
+
+  .identity__proposal {
+    border: 1px solid var(--border-subtle, rgb(0 0 0 / 15%));
+    border-radius: var(--radius-panel);
+    padding: var(--space-normal);
+    margin-bottom: var(--space-normal);
+  }
+
+  .identity__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .identity__head h3 {
+    margin: 0;
+  }
+
+  /* THE BULK APPROVAL (WIRED-3): how many are ticked, and the one button
+   * that approves them. Above the list, because it acts on all of it. */
+  .identity__bulk {
+    display: flex;
+    align-items: center;
+    gap: var(--space-normal);
+    margin-bottom: var(--space-normal);
+    color: var(--text-secondary);
+  }
+
+  /* R57: one line per type saying whether pre-selection is calibrated.
+     Secondary, like the lede: it explains the ticks, it is not one. */
+  .identity__calibration {
+    margin: 0 0 var(--space-normal);
+    max-width: 68ch;
+    color: var(--text-secondary);
+    font-size: var(--type-body-size);
+    line-height: var(--type-body-line);
+  }
+
+  .identity__tags {
+    display: flex;
+    gap: 6px;
+  }
+
+  .identity__select {
+    margin: var(--space-snug) 0 0;
+  }
+
+  /* The pattern is what the reviewer decides on, so it is given its own
+   * line and set in mono -- it is read character by character. */
+  .identity__pattern {
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
+    color: var(--text-secondary);
+  }
+
+  .identity__fields {
+    width: 100%;
+    margin: var(--space-snug) 0;
+  }
+
+  .identity__actions {
+    display: flex;
+    gap: 8px;
+    margin-top: var(--space-snug);
+  }
+
+  .identity__decided {
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    font-weight: var(--type-dense-weight);
+    color: var(--text-secondary);
+    margin: var(--space-snug) 0 0;
+  }
+
+  /* --- What produced a merge proposal (R62) ------------------------- */
+  .identity__provenance {
+    margin-top: var(--space-tight);
+    font-size: var(--type-dense-size);
+    line-height: var(--type-dense-line);
+    color: var(--text-secondary);
+  }
+
+  .identity__provenance dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--space-hair) var(--space-snug);
+    margin: var(--space-tight) 0 0;
+  }
+
+  .identity__provenance dd {
+    margin: 0;
+  }
+}
