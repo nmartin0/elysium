@@ -105,6 +105,11 @@ crashing, leaves it running and changing, as a customer's database would
 offline?" is one of the questions the simulator exists to ask. The panel
 finds the world again when Elysium is back.
 
+It also TELLS whoever may operate the world, in Elysium's Inbox: when
+it has finished building and is running, when it stopped without tidying
+up (even if that happened while Elysium was down), and when it never got
+going. A stop somebody asked for says nothing.
+
 The panel's page is built by Elysium's UI build into `panel/dist`; the
 simulator carries no Node packages, and imports nothing of Elysium's
 (`panel/elysium_addon.py` is a copy of Elysium's add-on SDK, kept

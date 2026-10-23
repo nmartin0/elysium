@@ -325,9 +325,22 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
         paths = getattr(_app.state, "runtime_paths", None)
         if paths is not None and getattr(_app.state, "generation", None) is not None:
             from api.addon_servers import Supervisor, wanted_from
+            from core.intermediate_layer.auth import authorize
+            from core.notifications import NotificationStore
+
+            def offered_to(module) -> set[str]:
+                """Who the module is offered to NOW, by the current
+                configuration: an add-on's notice reaches nobody else."""
+                roles = _app.state.generation.config.roles
+                directory = _app.state.user_directory
+                return {u["username"] for u in directory.list_users() if not u["disabled"]
+                        and (module.permission is None
+                             or authorize(directory.get_user_record(u["username"]), roles, module.permission))}
 
             supervisor = Supervisor(paths.data_dir, paths.log_dir,
-                                    lambda: wanted_from(_app.state.generation.config.modules))
+                                    lambda: wanted_from(_app.state.generation.config.modules),
+                                    offered_to=offered_to,
+                                    store=NotificationStore(paths.data_dir / "notifications.db"))
             supervisor.start()
         yield
         if supervisor is not None:

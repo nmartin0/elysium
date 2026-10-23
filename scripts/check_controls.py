@@ -6208,6 +6208,41 @@ CONTROLS = [
         new="            if False:",
         tests=["sim/tests/test_panel.py::test_changing_the_world_needs_the_operate_permission"],
     ),
+    Control(
+        describes="OUTBOX: an add-on's notice reaches only people offered the module",
+        path="api/addon_servers.py",
+        old="[n for n in message.to if n in offered]",
+        new="list(message.to)",
+        tests=["tests/integration/test_addon_outbox.py::test_a_name_not_offered_the_module_is_dropped_and_counted_not_named"],
+    ),
+    Control(
+        describes="OUTBOX: a file read twice is delivered once",
+        path="api/addon_servers.py",
+        old="dedupe_key=outbox_dedupe_key(module.id, path.name, user_id)) is not None:",
+        new=") is not None:",
+        tests=["tests/integration/test_addon_outbox.py::test_a_file_read_twice_is_delivered_once"],
+    ),
+    Control(
+        describes="OUTBOX: a notice left while the server is down is still delivered",
+        path="api/addon_servers.py",
+        old="            if self._offered_to is not None and self._store is not None:",
+        new="            if self._offered_to is not None and self._store is not None and server.state == \"running\":",
+        tests=["tests/integration/test_addon_outbox.py::test_a_notice_left_while_the_server_is_down_is_still_delivered"],
+    ),
+    Control(
+        describes="SIM PANEL: operators are told a world crashed, even while Elysium was down",
+        path="sim/panel/server.py",
+        old="            return json.loads(self.path.read_text())",
+        new="            return None",
+        tests=["sim/tests/test_panel.py::test_a_crash_is_told_even_when_it_happened_while_elysium_was_down"],
+    ),
+    Control(
+        describes="SIM PANEL: a stop someone asked for is not told as a failure",
+        path="sim/panel/server.py",
+        old=' and not last.get("ran") and not asked:',
+        new=' and not last.get("ran"):',
+        tests=["sim/tests/test_panel.py::test_a_stop_someone_asked_for_tells_nobody_even_while_it_was_building"],
+    ),
 ]
 
 

@@ -52,6 +52,17 @@ describe('showing what arrived', () => {
     expect(await screen.findByText('A sync was refused')).toBeInTheDocument()
   })
 
+  it("tags an add-on's notice with its module's name, as the server labels it", async () => {
+    mockedList.mockResolvedValue({
+      notifications: [notification({ kind: 'module:simulator', label: 'Simulator', summary: 'The world is running' })],
+      unseen: 1,
+    })
+    render(<NotificationsPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText('Simulator')).toBeInTheDocument()
+    expect(screen.queryByText('module:simulator')).not.toBeInTheDocument()
+  })
+
   it('shows the detail when there is one', async () => {
     mockedList.mockResolvedValue({
       notifications: [notification({ detail: 'Admin -> Mirror shows each table.' })],

@@ -150,7 +150,7 @@ export default function NotificationsPanel({ onSessionExpired }: NotificationsPa
           <Card key={notification.notification_id} className="notifications__item">
             <div className="notifications__head">
               <StatusTag state={notification.seen ? 'neutral' : 'active'}>
-                {KIND_LABELS[notification.kind] ?? notification.kind}
+                {notification.label ?? KIND_LABELS[notification.kind] ?? notification.kind}
               </StatusTag>
               <span className="notifications__when">{formatTimestamp(notification.created_at)}</span>
               {!notification.seen && (

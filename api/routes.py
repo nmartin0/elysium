@@ -130,6 +130,7 @@ from api.apps import visible_apps_for
 from api.auth_dependency import get_current_user
 from api.generation_dependency import get_generation, latest_generation
 from api.reload import ReloadInProgress, reload_generation
+from core.addons import notification_kind
 from core.agent.agentic_loop import AgentLoop
 from core.artifact_store import note_kind
 from core.auth.auth_cookies import (
@@ -4353,6 +4354,10 @@ class NotificationResponse(BaseModel):
     #: objects an answer was built from, those the caller may STILL read,
     #: at most MAX_NOTIFICATION_DOORS.
     subjects: list[NotificationSubjectResponse] = []
+    #: WHAT TO CALL ITS KIND, where the server knows better than the
+    #: page: an add-on's notice (`module:<id>`, step 2.4) is labelled
+    #: with its module's name. None: the page labels it as it always has.
+    label: str | None = None
 
 
 #: How many objects one notification links to. An answer that read
@@ -4411,6 +4416,9 @@ def notifications_route(
     """
     store = _notification_store(request)
     _check_the_sync_is_running(request, current_user, store)
+    modules = _generation(request).config.modules
+    names = {} if modules is None else {
+        notification_kind(m.id): m.name for m in [*modules.modules, *modules.off]}
     return {
         "notifications": [
             {
@@ -4421,6 +4429,9 @@ def notifications_route(
                 "detail": n.detail,
                 "seen": n.seen,
                 "subjects": _doors(request, current_user, n.subjects),
+                # A module no longer listed keeps its notices, under its id.
+                "label": names.get(n.kind, n.kind.removeprefix("module:") if n.kind.startswith("module:")
+                                   else None),
             }
             for n in store.for_user(current_user.user_id)
         ],

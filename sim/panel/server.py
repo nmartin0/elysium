@@ -45,6 +45,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -64,6 +65,11 @@ ASK_SECONDS = 4.0
 COMMANDS = {"pause": (), "resume": (), "advance": ("duration",), "speed": ("compression",),
             "outage": ("silo",), "restore": ("silo",)}
 LOG_FILENAME = "run.log"
+#: What the watcher last saw, and that a stop was asked for.
+WATCHED_FILENAME = "watched.json"
+STOP_ASKED_FILENAME = "stop-asked"
+#: How often the watcher looks.
+WATCH_SECONDS = 5.0
 
 
 class Panel:
@@ -75,6 +81,9 @@ class Panel:
         self.directory = Path(options.get("directory") or data / "world").expanduser()
         self.packs = Path(options.get("packs") or SIM / "packs").expanduser()
         self.log = self.directory.parent / f"{self.directory.name}-{LOG_FILENAME}"
+        #: Where the watcher keeps what it last saw (Watcher).
+        self.data = data
+        self.stop_marker = data / STOP_ASKED_FILENAME
         #: The `simulator run` this server started, while it is starting:
         #: None once the world answers, or if another started it.
         self._launched: subprocess.Popen | None = None
@@ -199,6 +208,10 @@ class Panel:
         return {"started": True, "pid": self._launched.pid}
 
     def stop(self) -> dict:
+        # SAID ON DISK, not in memory, so a watcher in a panel started
+        # after Elysium restarts still knows this stop was asked for.
+        self.stop_marker.parent.mkdir(parents=True, exist_ok=True)
+        self.stop_marker.touch()
         try:
             return send(self.directory, "stop", reply_timeout=ASK_SECONDS)
         except WorldBusy:
@@ -237,8 +250,76 @@ class Panel:
         return {"discarded": True}
 
 
-def make_server(info: dict, port: int = 0) -> ThreadingHTTPServer:
-    panel = Panel(info)
+class Watcher:
+    """TELLS WHOEVER MAY OPERATE THE WORLD what they would want to know
+    without having the panel open (BLOCKING.md item 3, step 2.4; the
+    owner's choice, 23 October): through Elysium's Inbox, by a file in
+    the outbox Elysium gave this server (elysium_addon.post), so a notice
+    written while Elysium is offline arrives when it is back.
+
+      ready        it finished building, or resuming, and is running
+      crashed      it was running and stopped without tidying up
+      not started  it was building and stopped without ever running,
+                   and nobody asked it to
+
+    A STOP SOMEONE ASKED FOR SAYS NOTHING: they know. WHAT IT LAST SAW
+    IS ON DISK, so a crash while Elysium -- and so this server -- was
+    down is still told when it is back: the world was running, and now
+    is not answering."""
+
+    def __init__(self, panel: Panel, info: dict) -> None:
+        self.panel, self.info = panel, info
+        self.path = panel.data / WATCHED_FILENAME
+
+    def _last(self) -> "dict | None":
+        try:
+            return json.loads(self.path.read_text())
+        except (OSError, ValueError):
+            return None
+
+    def check(self) -> "str | None":
+        """One look; the notice posted, by its kind, or None."""
+        state = self.panel.state()
+        phase, last = state["phase"], self._last()
+        world = state["world"] or {}
+        pack = world.get("pack") or state.get("pack") or (last or {}).get("pack") or "the world"
+        ran = phase == "running" or bool(last and last.get("ran") and phase == "busy")
+        posted = None
+        if last is not None and last["phase"] != phase:
+            asked = self.panel.stop_marker.exists()
+            # FROM STOPPED TOO: a world that builds in less than one look
+            # is never seen busy (found in a full run, 23 October).
+            if phase == "running" and last["phase"] in ("busy", "stopped"):
+                posted = self._post("ready", f"The simulated world ({pack}) is running",
+                                    f"In {self.panel.directory}.")
+            elif phase == "not answering" and last["phase"] in ("running", "busy"):
+                posted = self._post("crashed", f"The simulated world ({pack}) stopped without tidying up",
+                                    "Its databases may still be running. Discard it from the Simulator "
+                                    "page to clean up, then start or resume another.")
+            elif phase == "stopped" and last["phase"] == "busy" and not last.get("ran") and not asked:
+                posted = self._post("not-started", f"The simulated world ({pack}) did not start",
+                                    "It stopped while building. Its log, on the Simulator page, says why.")
+        if phase == "stopped":
+            self.panel.stop_marker.unlink(missing_ok=True)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps({"phase": phase, "pack": pack, "ran": ran}))
+        return posted
+
+    def _post(self, kind: str, summary: str, detail: str) -> str:
+        elysium_addon.post(self.info, summary, detail=detail, name=f"{kind}-{time.time_ns()}")
+        return kind
+
+    def run(self) -> None:
+        while True:
+            try:
+                self.check()
+            except Exception as error:  # noqa: BLE001 -- watching outlives one bad look
+                print(f"watcher: {error}", flush=True)
+            time.sleep(WATCH_SECONDS)
+
+
+def make_server(info: dict, port: int = 0, shared: "Panel | None" = None) -> ThreadingHTTPServer:
+    panel = shared if shared is not None else Panel(info)
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -302,11 +383,14 @@ def make_server(info: dict, port: int = 0) -> ThreadingHTTPServer:
 
 def main() -> None:
     info = elysium_addon.start()
-    server = make_server(info, int(os.environ["PORT"]))
+    panel = Panel(info)
+    server = make_server(info, int(os.environ["PORT"]), panel)
+    if info.get("outbox"):
+        threading.Thread(target=Watcher(panel, info).run, name="watcher", daemon=True).start()
     # STOPPING THIS SERVER STOPS ONLY THIS SERVER. The world runs on.
     signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=server.shutdown).start())
     elysium_addon.exit_when_elysium_does()
-    print(f"simulator panel listening on {server.server_address[1]}, world in {Panel(info).directory}",
+    print(f"simulator panel listening on {server.server_address[1]}, world in {panel.directory}",
           flush=True)
     server.serve_forever()
 

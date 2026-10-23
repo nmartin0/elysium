@@ -56,8 +56,14 @@ import requests
 
 from core.addons import (
     IDENTITY_HEADER,
+    OUTBOX,
+    REFUSED,
+    AddonError,
     command_line,
     new_secret,
+    notification_kind,
+    outbox_dedupe_key,
+    parse_outbox_message,
     request_headers,
     response_headers,
     sign_identity,
@@ -322,6 +328,7 @@ class _Server:
     def spawn(self) -> None:
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         (self.directory / "data").mkdir(exist_ok=True, mode=0o700)
+        (self.directory / OUTBOX).mkdir(exist_ok=True, mode=0o700)
         self.log.parent.mkdir(parents=True, exist_ok=True)
         if self.log.exists() and self.log.stat().st_size > LOG_BYTES:
             self.log.replace(self.log.with_suffix(".log.1"))
@@ -332,6 +339,7 @@ class _Server:
             "identity": {"header": IDENTITY_HEADER, "secret": self.secret,
                          "issuer": "elysium", "audience": self.module.id},
             "options": _plain(self.options), "dataDir": str(self.directory / "data"),
+            "outbox": str(self.directory / OUTBOX),
         })
         environment = {name: os.environ[name] for name in ENVIRONMENT_KEPT if name in os.environ}
         environment.update({"PORT": str(self.port), "ELYSIUM_ADDON_START": str(start)})
@@ -510,11 +518,57 @@ def wanted_from(modules) -> "list[tuple[Any, Mapping]]":
     return [(m, modules.addon_options.get(m.id, {})) for m in modules.modules if m.server is not None]
 
 
-class Supervisor:
-    """Runs the add-on servers this worker holds the lock for; see above."""
+#: Who a module is offered to now: the user names (step 2.4).
+OfferedTo = Callable[[Any], "set[str]"]
+#: Files delivered from one outbox in one round; the rest wait for the next.
+OUTBOX_PER_ROUND = 50
 
-    def __init__(self, data_dir: Path, log_dir: Path, wanted: Wanted) -> None:
+
+def deliver_outbox(server: "_Server", offered_to: OfferedTo, store) -> int:
+    """POST TO THE INBOX what the add-on dropped in its outbox (core/addons.py,
+    the outbox): each file to the people it names who are offered the
+    module -- or all of them -- then removed. A file that cannot be read
+    as a notice is moved to outbox/refused/, with the reason in the
+    add-on's log. Returns how many notices were written."""
+    outbox = server.directory / OUTBOX
+    try:
+        files = sorted((f for f in outbox.glob("*.json") if f.is_file()), key=lambda f: f.stat().st_mtime)
+    except OSError:
+        return 0
+    written = 0
+    module = server.module
+    for path in files[:OUTBOX_PER_ROUND]:
+        try:
+            message = parse_outbox_message(path.read_bytes())
+        except (AddonError, OSError) as error:
+            refused = outbox / REFUSED
+            refused.mkdir(exist_ok=True, mode=0o700)
+            path.replace(refused / path.name)
+            server._say(f"outbox: {path.name} refused, moved to {OUTBOX}/{REFUSED}/: {error}")
+            continue
+        offered = offered_to(module)
+        recipients = sorted(offered) if message.to is None else [n for n in message.to if n in offered]
+        for user_id in recipients:
+            if store.notify(user_id, notification_kind(module.id), message.summary, message.detail,
+                            dedupe_key=outbox_dedupe_key(module.id, path.name, user_id)) is not None:
+                written += 1
+        dropped = 0 if message.to is None else len(message.to) - len(recipients)
+        if dropped:
+            # A COUNT, NOT THE NAMES: who exists is not the add-on's to learn.
+            server._say(f"outbox: {path.name}: {dropped} named are not offered this module; not sent to them")
+        path.unlink(missing_ok=True)
+    return written
+
+
+class Supervisor:
+    """Runs the add-on servers this worker holds the lock for; see above.
+    With `offered_to` and a notification `store`, it also delivers each
+    of their outboxes (deliver_outbox) every round."""
+
+    def __init__(self, data_dir: Path, log_dir: Path, wanted: Wanted,
+                 offered_to: "OfferedTo | None" = None, store=None) -> None:
         self.data_dir, self.log_dir, self._wanted = Path(data_dir), Path(log_dir), wanted
+        self._offered_to, self._store = offered_to, store
         self._servers: dict[str, _Server] = {}
         self._stopping = threading.Event()
         self._thread = threading.Thread(target=self._run, name="addon-supervisor", daemon=True)
@@ -551,6 +605,11 @@ class Supervisor:
         now = time.monotonic()
         for server in list(self._servers.values()):
             server.tick(now)
+            # DELIVERED BY THE WORKER SUPERVISING IT, so by one worker, and
+            # whether or not its server is up: a file it left before
+            # stopping still reaches the Inbox.
+            if self._offered_to is not None and self._store is not None:
+                deliver_outbox(server, self._offered_to, self._store)
 
     def close(self) -> None:
         """Stop every server this worker runs: all told at once, each given

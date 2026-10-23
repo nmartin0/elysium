@@ -52,9 +52,10 @@ def token(user="ada", permissions=("module:simulator:operate",), audience="simul
     return f"{header}.{body}.{_b64(signature)}"
 
 
-def info(directory: Path) -> dict:
+def info(directory: Path, outbox: "Path | None" = None) -> dict:
     return {"contract": 1, "id": "simulator", "options": {"directory": str(directory)},
             "dataDir": str(directory.parent / "data"),
+            **({} if outbox is None else {"outbox": str(outbox)}),
             "identity": {"header": "X-Elysium-Identity", "secret": SECRET, "issuer": "elysium",
                          "audience": "simulator"}}
 
@@ -164,11 +165,111 @@ def test_only_its_own_commands_pass_and_a_body_must_be_an_object(panel):
     assert ask("POST", "/command", [1, 2])[0] == 400
 
 
+# -- telling operators, through Elysium's Inbox ------------------------------
+
+class _Panel:
+    """The panel as the watcher sees it: a state, and where things live."""
+
+    def __init__(self, data: Path) -> None:
+        self.data, self.directory = data, data / "world"
+        self.stop_marker = data / panel_server.STOP_ASKED_FILENAME
+        self.phase, self.pack = "stopped", "probe"
+
+    def state(self) -> dict:
+        world = {"pack": self.pack} if self.phase == "running" else None
+        return {"phase": self.phase, "world": world, "pack": self.pack}
+
+
+@pytest.fixture
+def watching(tmp_path):
+    outbox = tmp_path / "outbox"
+    outbox.mkdir()
+    panel = _Panel(tmp_path / "data")
+
+    def watcher():
+        return panel_server.Watcher(panel, {"outbox": str(outbox)})
+
+    def posted() -> list[str]:
+        return sorted(json.loads(f.read_text())["summary"] for f in outbox.glob("*.json"))
+
+    return panel, watcher, posted
+
+
+def _through(panel, watcher, *phases):
+    for phase in phases:
+        panel.phase = phase
+        watcher.check()
+
+
+def test_the_first_look_tells_nobody_anything(watching):
+    panel, watcher, posted = watching
+    panel.phase = "running"
+
+    assert watcher().check() is None and posted() == []
+
+
+def test_a_world_that_finished_building_is_told_to_everyone_who_may_operate_it(watching):
+    panel, watcher, posted = watching
+    _through(panel, watcher(), "stopped", "busy", "running")
+
+    assert posted() == ["The simulated world (probe) is running"]
+    notice = json.loads(next((panel.data.parent / "outbox").glob("*.json")).read_text())
+    assert notice["to"] == "everyone"
+
+
+def test_a_world_built_between_two_looks_is_told_too(watching):
+    panel, watcher, posted = watching
+    _through(panel, watcher(), "stopped", "running")
+
+    assert posted() == ["The simulated world (probe) is running"]
+
+
+def test_a_crash_is_told_even_when_it_happened_while_elysium_was_down(watching):
+    panel, watcher, posted = watching
+    _through(panel, watcher(), "running")
+
+    # ELYSIUM, AND SO THIS SERVER, GONE; THE WORLD DIES; A NEW WATCHER.
+    _through(panel, watcher(), "not answering")
+
+    assert posted() == ["The simulated world (probe) stopped without tidying up"]
+
+
+def test_a_world_that_never_got_going_is_told(watching):
+    panel, watcher, posted = watching
+    _through(panel, watcher(), "stopped", "busy", "stopped")
+
+    assert posted() == ["The simulated world (probe) did not start"]
+
+
+def test_a_stop_someone_asked_for_tells_nobody_even_while_it_was_building(watching):
+    # STOPPED BEFORE IT EVER RAN, by somebody pressing Stop: without the
+    # marker this would read as a world that did not start.
+    panel, watcher, posted = watching
+    watcher_ = watcher()
+    _through(panel, watcher_, "stopped", "busy")
+    panel.stop_marker.parent.mkdir(parents=True, exist_ok=True)
+    panel.stop_marker.touch()
+
+    _through(panel, watcher_, "stopped")
+
+    assert posted() == [] and not panel.stop_marker.exists()
+
+
+def test_a_world_stopped_from_outside_after_running_tells_nobody(watching):
+    # SIGTERM from a terminal: whoever did it knows.
+    panel, watcher, posted = watching
+    _through(panel, watcher(), "running", "busy", "stopped")
+
+    assert posted() == []
+
+
 # -- a real world -------------------------------------------------------------
 
 def _serve(directory: Path):
     start = directory.parent / "start.json"
-    start.write_text(json.dumps(info(directory)))
+    outbox = directory.parent / "outbox"
+    outbox.mkdir(exist_ok=True)
+    start.write_text(json.dumps(info(directory, outbox)))
     process = subprocess.Popen(
         [sys.executable, str(PANEL / "server.py")], cwd=PANEL, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         # A SESSION OF ITS OWN, as Elysium starts it, so the test can do
@@ -223,6 +324,12 @@ def test_a_world_runs_on_while_the_panel_is_gone_and_is_found_again(world_direct
         assert ask("POST", "/command", {"command": "speed", "compression": 7200})[1] == {"compression": 7200.0}
         # ITS LOG AS IT GOES, not only once it stops: unbuffered.
         assert any("Following at" in line for line in ask("GET", "/log")[1]["lines"])
+        # AND ITS OPERATORS TOLD it is running, through Elysium's Inbox.
+        deadline = time.monotonic() + 3 * panel_server.WATCH_SECONDS
+        while time.monotonic() < deadline and not list((directory.parent / "outbox").glob("*.json")):
+            time.sleep(0.5)
+        [ready] = (directory.parent / "outbox").glob("*.json")
+        assert json.loads(ready.read_text())["summary"] == "The simulated world (probe) is running"
     finally:
         # ELYSIUM GOES, as hard as it can: SIGKILL to the panel server's
         # whole process group, as Elysium's supervisor sends at a deadline.

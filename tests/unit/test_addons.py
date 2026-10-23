@@ -163,3 +163,45 @@ def test_the_simulators_copy_of_the_sdk_is_the_sdk():
 
     assert (root / "sim" / "panel" / "elysium_addon.py").read_bytes() \
         == (root / "sdk" / "python" / "elysium_addon.py").read_bytes()
+
+
+class TestTheOutbox:
+    """A notice an add-on drops in its outbox (step 2.4), as read by Elysium."""
+
+    def test_to_everyone_or_to_names(self):
+        from core.addons import OutboxMessage, parse_outbox_message
+
+        assert parse_outbox_message(b'{"to": "everyone", "summary": " Ready "}') \
+            == OutboxMessage(to=None, summary="Ready", detail=None)
+        assert parse_outbox_message(b'{"to": ["ada", "bob", "ada"], "summary": "x", "detail": "y"}') \
+            == OutboxMessage(to=("ada", "bob"), summary="x", detail="y")
+
+    @pytest.mark.parametrize("raw, said", [
+        (b"not json", "not JSON"),
+        (b"[]", "must be an object"),
+        (b'{"to": "everyone", "summary": "x", "url": "y"}', "does not understand ['url']"),
+        (b'{"to": "all", "summary": "x"}', '"everyone" or a list'),
+        (b'{"to": [], "summary": "x"}', '"everyone" or a list'),
+        (b'{"to": [""], "summary": "x"}', '"everyone" or a list'),
+        (b'{"to": "everyone", "summary": "  "}', "1 to 200 characters"),
+        (b'{"to": "everyone", "summary": "' + b"x" * 201 + b'"}', "1 to 200 characters"),
+        (b'{"to": "everyone", "summary": "x", "detail": 3}', "`detail` must be text"),
+        (b"x" * 70000, "larger than"),
+    ])
+    def test_a_file_it_cannot_take_is_said(self, raw, said):
+        from core.addons import parse_outbox_message
+
+        with pytest.raises(AddonError) as refused:
+            parse_outbox_message(raw)
+        assert said in str(refused.value)
+
+    def test_the_sdk_writes_what_elysium_reads_never_half_a_file(self, tmp_path):
+        from core.addons import parse_outbox_message
+
+        name = elysium_addon.post({"outbox": str(tmp_path)}, "World ready", to=["ada"], detail="probe",
+                                  name="ready-1")
+
+        assert name == "ready-1.json" and sorted(p.name for p in tmp_path.iterdir()) == ["ready-1.json"]
+        assert parse_outbox_message((tmp_path / name).read_bytes()).to == ("ada",)
+        with pytest.raises(ValueError, match="name must be"):
+            elysium_addon.post({"outbox": str(tmp_path)}, "x", name="../escape")

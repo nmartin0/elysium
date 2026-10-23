@@ -972,8 +972,27 @@ build into sim/panel/dist; the simulator carries no Node packages and
 imports nothing of Elysium's (its copy of the SDK is checked identical).
 Drift from the panel waits, the owner's choice.
 
-**Blocked on:** nothing; 2.4 (posting to the Inbox for declared kinds,
-and the contract-version field) is next.
+**2.4 IS BUILT, AND WITH IT STEP 2 (23 October).** An add-on posts to
+the Inbox by dropping a file in an OUTBOX folder Elysium gives it (the
+owner's choice over an HTTP call: no new door, and a notice written
+while Elysium is offline arrives when it is back). Delivered only to
+people offered the module -- named, or "everyone" -- each notice tagged
+in the Inbox with the module's name; a file Elysium cannot take moved
+aside with the reason in the add-on's log; a file read twice delivered
+once, its name the dedupe key (api/addon_servers.deliver_outbox; the
+SDK's `post()`). The simulator's panel watches its world and tells
+everyone who may operate it when it is running, when it crashed (even
+while Elysium was down) and when it never got going; a stop someone
+asked for says nothing.
+
+DOUBLE-CHECKED WITH THE OWNER AND DROPPED: notification kinds declared
+in module.json (a label kept in two places; Android's channels earn
+theirs by letting a person mute one, which Elysium has no use for) and
+a per-module contract version, moved to step 4 -- the feed already
+carries one, and versioning is designed when there is a version 2.
+
+**Blocked on:** nothing; step 3 -- the remaining sub-apps as modules,
+one at a time -- is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

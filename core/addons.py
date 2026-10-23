@@ -217,3 +217,82 @@ def request_headers(incoming: Iterable[tuple[str, str]]) -> dict[str, str]:
 def response_headers(upstream: Iterable[tuple[str, str]]) -> dict[str, str]:
     """The add-on's headers that reach the browser (RESPONSE_HEADERS)."""
     return {name: value for name, value in upstream if name.lower() in RESPONSE_HEADERS}
+
+
+# --- the outbox (step 2.4) -------------------------------------------------
+#
+# AN ADD-ON POSTS TO THE INBOX BY DROPPING A FILE, the owner's choice of
+# 23 October over an HTTP call into Elysium: no new door into Elysium, and
+# a notice written while Elysium is offline -- the simulator's world
+# crashing, say -- is delivered when it is back. The spool-directory
+# pattern of mail systems (Postfix's maildrop, Maildir's tmp/new): the
+# writer writes under a temporary name and renames, so a reader never
+# sees half a file; the reader takes the whole file or none of it.
+#
+#     <add-on's directory>/outbox/<name>.json
+#     {"to": "everyone" | ["alice", ...], "summary": "...", "detail": "..."}
+#
+# DELIVERED ONLY TO PEOPLE THE MODULE IS OFFERED TO (the owner's choice):
+# "everyone" means them, and a name among them; any other name is
+# dropped, so an add-on can reach nobody who could not use it.
+#
+# THE FILE'S NAME IS THE DEDUPE KEY: a file delivered and not yet removed
+# when Elysium stopped is delivered again on its return, and ignored by
+# the notification store's dedupe key (core/notifications.py).
+
+OUTBOX = "outbox"
+#: Where a refused file is moved, its reason said in the add-on's log.
+REFUSED = "refused"
+MAX_OUTBOX_BYTES = 64 * 1024
+MAX_SUMMARY = 200
+MAX_DETAIL = 4000
+MAX_RECIPIENTS = 500
+
+
+@dataclass(frozen=True)
+class OutboxMessage:
+    """One notice an add-on asked for. `to` None: everyone it is offered to."""
+
+    to: "tuple[str, ...] | None"
+    summary: str
+    detail: "str | None"
+
+
+def parse_outbox_message(raw: bytes) -> OutboxMessage:
+    """A file from an add-on's outbox, checked; AddonError says what is wrong."""
+    if len(raw) > MAX_OUTBOX_BYTES:
+        raise AddonError(f"larger than {MAX_OUTBOX_BYTES} bytes")
+    try:
+        body = json.loads(raw)
+    except ValueError as error:
+        raise AddonError(f"not JSON ({error})") from None
+    if not isinstance(body, Mapping):
+        raise AddonError("must be an object with `to` and `summary`")
+    unknown = sorted(set(body) - {"to", "summary", "detail"})
+    if unknown:
+        raise AddonError(f"does not understand {unknown}")
+    to = body.get("to")
+    if to == "everyone":
+        recipients = None
+    elif isinstance(to, list) and to and len(to) <= MAX_RECIPIENTS and all(isinstance(n, str) and n for n in to):
+        recipients = tuple(dict.fromkeys(to))
+    else:
+        raise AddonError(f'`to` must be "everyone" or a list of up to {MAX_RECIPIENTS} user names')
+    summary = body.get("summary")
+    if not isinstance(summary, str) or not summary.strip() or len(summary) > MAX_SUMMARY:
+        raise AddonError(f"`summary` must be text of 1 to {MAX_SUMMARY} characters")
+    detail = body.get("detail")
+    if detail is not None and (not isinstance(detail, str) or len(detail) > MAX_DETAIL):
+        raise AddonError(f"`detail` must be text of at most {MAX_DETAIL} characters")
+    return OutboxMessage(to=recipients, summary=summary.strip(), detail=detail)
+
+
+def notification_kind(module_id: str) -> str:
+    """The kind an add-on's notice is stored under: shown in the Inbox as
+    the module's name (api/routes.py), so an add-on declares no kinds."""
+    return f"module:{module_id}"
+
+
+def outbox_dedupe_key(module_id: str, file_name: str, user_id: str) -> str:
+    """One notice per file per person, however often the file is read."""
+    return f"addon:{module_id}:{file_name}:{user_id}"

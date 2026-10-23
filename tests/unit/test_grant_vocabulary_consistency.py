@@ -46,6 +46,7 @@ NOT_GRANTS = {
     "dependency",  # sync_targets.py's key for a functional dependency (R29, across rows)
     "outliers",  # sync_targets.py's key for an unusual-value flag: f"outliers:{column}" (R30)
     "primary",  # match_evaluation.py's record id, as the matcher names rows: f"primary:{id}" (R59)
+    "addon",  # core/addons.py's outbox dedupe key: f"addon:{module}:{file}:{user}" (step 2.4)
 }
 
 # Every verb followed by a colon is a grant prefix. Kept as a set

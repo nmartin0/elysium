@@ -230,8 +230,6 @@ def grantable(object_types: dict, action_types: dict, enabled_tools: list[str],
     return grants
 
 
-#: A module's declared permission (core/modules.MODULE_GRANT_PREFIX).
-MODULE_GRANT_PREFIX = "module:"
 _MODULE_GRANT = re.compile(r"module:([A-Za-z0-9_.-]+):([a-z][a-z0-9_-]*)")
 
 
@@ -241,7 +239,10 @@ def _validate_one_grant(role_name: str, grant: str, object_types: dict, action_t
     if grant == "manage:users":
         return
 
-    if grant.startswith(MODULE_GRANT_PREFIX):
+    # A MODULE'S DECLARED PERMISSION (core/modules.MODULE_GRANT_PREFIX).
+    # The literal, not the constant: tests/unit/test_grant_vocabulary_
+    # consistency.py reads this file for the verbs it accepts.
+    if grant.startswith("module:"):
         shape = _MODULE_GRANT.fullmatch(grant)
         if shape is None:
             raise ValueError(f"Role {role_name!r}: grant {grant!r} is not module:<module id>:<permission>.")

@@ -1662,6 +1662,9 @@ export interface Notification {
   /** DOORS (DEV_UI 12): the objects an answer was built from that the
    *  caller may still read, at most five. Absent from older servers. */
   subjects?: { object_type: string; object_id: string }[]
+  /** What to call its kind, where the server knows: an add-on's notice
+   *  is labelled with its module's name (step 2.4). */
+  label?: string | null
 }
 
 /** What is waiting for the caller, by kind -- the Inbox badge (DEV_UI

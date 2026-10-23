@@ -38,6 +38,14 @@ core/addons.py and api/addon_servers.py):
   `exit_when_elysium_does()` watches it, so no server is left running
   with nobody to stop it.
 
+  POSTING TO SOMEONE'S INBOX: `post(start_info, "summary", to=...)`
+  drops a file in the outbox folder the start file names; Elysium
+  delivers it within a second -- or, if Elysium is offline, when it is
+  back -- to the people named who are offered your module, or to all of
+  them (`to="everyone"`), then removes it. The file's name is what makes
+  a second delivery of the same file a no-op; pass `name=` to make a
+  notice you might write twice (a retry) the same file.
+
   EVERY REQUEST CARRIES `X-Elysium-Identity`: a token saying who is
   asking -- `sub` -- and, in `permissions`, which of the permissions
   your module.json declares they hold, as `module:<id>:<name>`
@@ -159,3 +167,27 @@ def holds(claims: dict, name: str) -> bool:
     """Whether the person a token names holds this add-on's declared
     permission `name` (as its module.json's `permissions` calls it)."""
     return f"module:{claims.get('aud')}:{name}" in (claims.get("permissions") or [])
+
+
+def post(start_info: dict, summary: str, *, to="everyone", detail: "str | None" = None,
+         name: "str | None" = None) -> str:
+    """Ask Elysium to put a notice in people's Inbox (see the module
+    docstring): `to` is "everyone" the module is offered to, or a list of
+    user names. Written under a temporary name and renamed, so Elysium
+    never reads half of it. Returns the file's name."""
+    import re
+    import uuid
+
+    if name is None:
+        name = uuid.uuid4().hex
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", name):
+        raise ValueError("name must be 1 to 100 letters, digits, _ or -")
+    outbox = start_info["outbox"]
+    body = {"to": to if to == "everyone" else list(to), "summary": summary}
+    if detail is not None:
+        body["detail"] = detail
+    partial = os.path.join(outbox, f".{name}.part")
+    with open(partial, "w", encoding="utf-8") as handle:
+        json.dump(body, handle)
+    os.replace(partial, os.path.join(outbox, f"{name}.json"))
+    return f"{name}.json"
