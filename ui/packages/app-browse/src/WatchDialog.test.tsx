@@ -17,7 +17,7 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
     getVisibleActionTypes: vi.fn(),
     getCurrentUser: vi.fn(),
     getDataFreshness: vi.fn(),
-    getDeploymentConfig: vi.fn(),
+    getRoleNames: vi.fn(),
     getSavedViews: vi.fn(),
     getMyVisibleSchema: vi.fn(),
   }
@@ -28,7 +28,7 @@ import {
   createTrigger,
   getCurrentUser,
   getDataFreshness,
-  getDeploymentConfig,
+  getRoleNames,
   getMyVisibleSchema,
   getSavedViews,
   getVisibleActionTypes,
@@ -75,7 +75,7 @@ beforeEach(() => {
   // correctly treats as a FAILURE -- so every test ran under a failure
   // nobody asserted on. A mock that is not the real refusal hides
   // exactly the distinction being tested.
-  vi.mocked(getDeploymentConfig).mockRejectedValue(new ApiError(403, 'forbidden'))
+  vi.mocked(getRoleNames).mockRejectedValue(new ApiError(403, 'forbidden'))
   // NO DATE FIELD unless a test gives one, so the other tests see the
   // dialog as it was.
   vi.mocked(getMyVisibleSchema).mockResolvedValue({ Transaction: { fields: { amount: { data_type: 'number' } } } })
@@ -104,7 +104,7 @@ describe('recipients', () => {
   })
 
   it('offers every role to somebody who can see them all', async () => {
-    vi.mocked(getDeploymentConfig).mockResolvedValue({ role_names: ['analyst', 'reviewer'] })
+    vi.mocked(getRoleNames).mockResolvedValue(['analyst', 'reviewer'])
     open()
 
     expect(await screen.findByLabelText('reviewer')).toBeInTheDocument()
@@ -273,7 +273,7 @@ describe('what could not be loaded', () => {
   })
 
   it('does report any other failure of the role list', async () => {
-    vi.mocked(getDeploymentConfig).mockRejectedValue(new ApiError(500, 'broken'))
+    vi.mocked(getRoleNames).mockRejectedValue(new ApiError(500, 'broken'))
     open()
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/the list of roles/)

@@ -278,16 +278,21 @@ class TestTheModuleApiItNeeds:
         with pytest.raises(ModuleError, match=r"`api` must be the module API version it needs"):
             load_modules(_deployment(tmp_path, [folder], home="/bad"))
 
-    def test_every_shipped_module_needs_1_0(self, tmp_path):
-        # THE SAME NUMBER THE PAGE OFFERS (contract.ts MODULE_API_VERSION),
-        # read rather than remembered, so the two cannot drift apart.
+    def test_every_shipped_module_needs_one_the_page_offers(self, tmp_path):
+        # THE PAGE'S VERSION (contract.ts MODULE_API_VERSION), read rather
+        # than remembered: each shipped module's `^major.minor` is the same
+        # major and no newer a minor, or the page would leave it out.
         contract = (Path(__file__).resolve().parents[2] / "shell" / "core" / "src" / "contract.ts").read_text()
         offered = re.search(r"MODULE_API_VERSION = '(\d+)\.(\d+)'", contract)
         assert offered is not None
+        major, minor = int(offered[1]), int(offered[2])
 
         needs = {m.id: m.api for m in load_modules(tmp_path).modules}
 
-        assert needs and set(needs.values()) == {f"^{offered[1]}.{offered[2]}"}, needs
+        assert needs
+        for module_id, api in needs.items():
+            want = re.fullmatch(r"\^(\d+)\.(\d+)", api or "")
+            assert want and int(want[1]) == major and int(want[2]) <= minor, f"{module_id} needs {api}"
 
 
 class TestBundles:

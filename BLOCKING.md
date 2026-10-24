@@ -328,7 +328,9 @@ and code appends a note naming them to every such answer.
 
 **Statistical matching is done** (R56, R57, R59, R60, R63).
 
-**Blocked on:** nothing for the plugin API (item 3), which is next.
+**Blocked on:** nothing for engineering: the questions above are the
+owner's. (The plugin API this line used to say was next is item 3,
+done.)
 
 ## 3. Modules: a generic shell, and every sub-app an equal
 
@@ -1066,10 +1068,8 @@ the System sub-app's Server page (ui/src/system/ServerPage.tsx, at
 manage:deployment; Admin keeps Users and Roles. Before, the five sat in
 Admin, offered on manage:users, so an account administrator was shown
 Metrics, Mirror and Cleaning and refused by the server, and an operator
-was not shown them at all. THE SERVER'S CHECKS ARE UNCHANGED: /config
-and /silos still answer manage:users, the gate they took in August
-when it was the only administrative grant; tightening them is an API
-change, for step 4 or a patch of its own. A fresh install's `root`
+was not shown them at all. The server's checks followed the same day,
+in a patch of their own (below, after step 4). A fresh install's `root`
 (manage:users only) no longer sees these views; INSTALL.md, "Seeing
 the server's own pages", says how to give manage:deployment, and the
 installer says so when it finishes. ConfigProposals, used by both
@@ -1168,10 +1168,23 @@ the code that decides them.
 What item 3 offered and deferred is unchanged: WebSocket pass-through,
 jobs, timer callbacks, event subscriptions, time-series buckets, kit
 components (above, "GENERIC SERVICES FOR ADD-ONS"); drift from the
-simulator's panel; and tightening /config and /silos to
-manage:deployment, an API change of its own.
+simulator's panel.
 
-**Blocked on:** nothing; item 3 waits on the owner for what comes next.
+**/config AND /silos RE-GATED (24 October), with the owner:** both need
+manage:deployment, the grant the System sub-app's Server page is
+offered on, where they had kept manage:users from August, "the same
+grant Admin uses", when it was the only administrative grant. ONE THING
+DEPENDED ON THE OLD GATE: /config was how an account administrator
+learnt the roles' names, to put people in them and to name any as a
+Watch's recipient (core/triggers.recipient_problem). That is
+GET /roles/names now, names only, on manage:users; the Watch dialog
+reads it. Tests now hold the boundary itself -- an account-only role
+refused the server's state, an operator-only role refused the names --
+which the existing ones, using the debug role holding both, could not.
+
+**Blocked on:** nothing. Next, with the owner (24 October): item 12's
+SQLite source, then a full run; item 11's drift controls, proposed
+first; item 3's add-on services, as options.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

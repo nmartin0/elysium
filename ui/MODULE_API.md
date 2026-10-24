@@ -1,7 +1,7 @@
 # The module API
 
 For someone writing a module for Elysium: what it may rely on, and what
-Elysium promises about each part. **Version 1.0.**
+Elysium promises about each part. **Version 1.1.**
 
 There are two halves. The **names** a module may import, with their
 signatures, are in [`module-api.report.md`](module-api.report.md): a
@@ -13,7 +13,7 @@ holds this page's lists to the code.
 
 ## The version
 
-The page offers **module API 1.0** (`MODULE_API_VERSION` in
+The page offers **module API 1.1** (`MODULE_API_VERSION` in
 `shell/core/src/contract.ts`). A module says what it needs in its
 `module.json`:
 
@@ -38,7 +38,19 @@ loads.
 
 What raises which number is a judgement made in review. The report's
 diff is what shows it: a declaration added is an addition, one changed
-or gone is a change.
+or gone is a change. One exception: the report lists what modules USE,
+so a name can leave it because no module imports it any more. That
+takes nothing from a module, and raises nothing.
+
+A module asks for the oldest version it needs. Browse asks for `^1.1`,
+because it uses `getRoleNames`; the others still ask for `^1.0`.
+
+### What each version added
+
+| version | what changed                                                                                                                                                                            |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.1     | `getRoleNames` (`@elysium/shell-api/api`), the roles' names for someone who manages accounts. `/config`, which gave them before, needs `manage:deployment` now, and no module reads it. |
+| 1.0     | The API as the eight modules and the simulator's panel used it when it was first written down.                                                                                          |
 
 ## The manifest: `module.json`
 

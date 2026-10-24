@@ -627,3 +627,7 @@ test_a_protected_path_refuses_who_it_cannot_verify_and_takes_who_it_can
 test_it_listens_on_loopback_only
 test_sigterm_ends_it_within_its_deadline_cleanly
 test_it_leaves_when_elysium_does
+# GET /roles/names (24 October): a FastAPI route, called through its
+# decorator -- the role names an account administrator needs, which
+# /config gave until it became the server's.
+role_names_route

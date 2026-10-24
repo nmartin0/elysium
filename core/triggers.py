@@ -399,7 +399,7 @@ def recipient_problem(roles, existing_roles, creator_role: str | None,
     FOUNDRY'S RULE, TRANSLATED. Its recipient picker "will only display
     users and groups for which the person configuring the Action has
     adequate permissions". In Elysium a group is a ROLE, and role names
-    are visible only to `manage:users` holders, through /config.
+    are visible only to `manage:users` holders, through /roles/names.
 
     So anybody may name a role THEY HOLD, which they can plainly see,
     and a `manage:users` holder may name ANY role, which they already

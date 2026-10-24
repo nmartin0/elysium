@@ -2739,6 +2739,30 @@ class RolesResponse(BaseModel):
     unlisted: list[str] = []
 
 
+class RoleNamesResponse(BaseModel):
+    """Names only: what each role may do is /roles's, on manage:roles."""
+    names: list[str]
+
+
+@router.get("/roles/names", dependencies=[Depends(_no_store)], response_model=RoleNamesResponse)
+def role_names_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The roles that exist, by name, for somebody who manages accounts.
+
+    WHY IT EXISTS (24 October): an account administrator puts people in
+    roles, and may name any role as a Watch's recipient
+    (core/triggers.recipient_problem: "a manage:users holder may name ANY
+    role, which they already can"), so they need the names. They read
+    them in /config until /config became the server's, on
+    manage:deployment.
+
+    NAMES, NEVER CONTENTS -- the rule /config kept: the names answer
+    "what roles are there", the grants would answer "what could I
+    attack". The grants stay /roles's, on manage:roles.
+    """
+    _require_manage_users(request, current_user)
+    return {"names": sorted(_generation(request).config.roles)}
+
+
 @router.get("/roles", dependencies=[Depends(_no_store)],
             response_model=RolesResponse)
 def roles_route(
@@ -4981,11 +5005,18 @@ def deployment_config_route(request: Request,
                              current_user: UserRecord = Depends(get_current_user)) -> dict:
     """The deployment's own settings, for someone diagnosing behaviour.
 
-    GATED ON manage:users, the same grant Admin uses. Configuration
-    discloses deployment shape -- which silos exist, which models run,
-    how many object types there are -- and while none of that is
-    object DATA, it is the kind of thing an attacker maps a system
-    with. An ordinary user has no reason to need it.
+    GATED ON manage:deployment, the grant that runs the server (24
+    October, with the owner). It was manage:users from August, "the same
+    grant Admin uses", chosen when that was the only administrative
+    grant and the view sat in Admin; the view is the System sub-app's
+    now (System -> Server), offered on manage:deployment, and the gate
+    follows who the information is for. Configuration discloses
+    deployment shape -- which silos exist, which models run, how many
+    object types there are -- and while none of that is object DATA, it
+    is the kind of thing an attacker maps a system with.
+
+    ROLE NAMES, which an account administrator needs and used to read
+    here, are /roles/names's, on manage:users.
 
     WHAT IS DELIBERATELY ABSENT: llm_connection, silo connection
     details, and the users dict. The first two carry hosts, paths and
@@ -4997,7 +5028,7 @@ def deployment_config_route(request: Request,
     grants are not listed: the NAMES answer "what is configured", the
     contents would answer "what could I attack".
     """
-    _require_manage_users(request, current_user)
+    _require_manage_deployment(request, current_user)
     config = _generation(request).config
     return {
         "generation": config.generation,
@@ -5708,8 +5739,10 @@ def silos_route(request: Request,
     /health already reports reachability, but it is UNAUTHENTICATED and
     therefore deliberately says nothing about why -- a connection error
     routinely carries a host, a path or a username. This is the
-    authenticated counterpart, gated on manage:users like the rest of
-    Admin, and it can say more.
+    authenticated counterpart, gated on manage:deployment -- the server's
+    own state, for whoever runs the server (24 October, with the owner;
+    manage:users before, when it was a view of Admin) -- and it can say
+    more.
 
     MORE, BUT NOT THE MESSAGE. It reports a failure KIND from a closed
     list (core/source_health.FAILURE_KINDS: "not found", "refused
@@ -5723,7 +5756,7 @@ def silos_route(request: Request,
     is secret; it is that a UI which never carries it cannot leak it
     through a screenshot, a bug report, or a browser cache.
     """
-    _require_manage_users(request, current_user)
+    _require_manage_deployment(request, current_user)
     config = _generation(request).config
     # PRIMARY storage, from the declaration.
     # PRIMARY storage, from silo_for_type.

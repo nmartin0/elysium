@@ -2952,17 +2952,57 @@ def _admin_user(client, username):
     _login(client, username, "pw")
 
 
-def test_config_route_requires_manage_users(client):
+def test_config_route_requires_manage_deployment(client):
     """Configuration discloses deployment SHAPE -- which silos exist,
     which models run, how many object types there are.
 
     None of that is object data, but it is what an attacker maps a
     system with, and an ordinary user has no reason to need it. Gated
-    on the same grant Admin uses.
+    on manage:deployment, the grant that runs the server (24 October):
+    see the boundary tests below.
     """
     _filter_user(client, "cfgdenied")
 
     assert client.get("/api/config").status_code == 403
+
+
+def _holding(client, username, *grants):
+    """A logged-in caller in a role holding exactly `grants`."""
+    with_roles(client.app, **{f"only_{username}": {"allowed_actions": frozenset(grants)}})
+    client.app.state.user_directory.create_user(username, "pw", "us-west", f"only_{username}")
+    _login(client, username, "pw")
+
+
+@pytest.mark.parametrize("route", ["/api/config", "/api/silos"])
+def test_the_servers_own_state_is_for_whoever_runs_the_server(client, route):
+    """THE BOUNDARY, 24 October, with the owner: the server's own views
+    are manage:deployment's (System -> Server), not an account
+    administrator's. They were manage:users from August, "the same grant
+    Admin uses", when it was the only administrative grant. The debug
+    role the tests above use holds both, so they could not tell."""
+    _holding(client, "accounts", "manage:users")
+    assert client.get(route).status_code == 403
+
+    _holding(client, "operator", "manage:deployment")
+    assert client.get(route).status_code == 200
+
+
+def test_role_names_are_for_whoever_manages_accounts_and_only_names(client):
+    """An account administrator puts people in roles and may name any as
+    a Watch's recipient (core/triggers.recipient_problem), so needs the
+    names -- which /config gave until it became the server's. NAMES,
+    NEVER CONTENTS: what each role may do stays /roles's."""
+    _holding(client, "accounts2", "manage:users")
+    body = client.get("/api/roles/names").json()
+    assert set(body) == {"names"}
+    assert "customer_service" in body["names"] and body["names"] == sorted(body["names"])
+    assert "allowed_actions" not in client.get("/api/roles/names").text
+
+    _holding(client, "operator2", "manage:deployment")
+    assert client.get("/api/roles/names").status_code == 403
+
+    _filter_user(client, "plain_names")
+    assert client.get("/api/roles/names").status_code == 403
 
 
 def test_config_route_reports_the_running_settings(client):
@@ -3037,7 +3077,7 @@ def test_a_data_contract_for_no_such_type_is_404(client):
     assert client.get("/api/admin/contracts/Nope").status_code == 404
 
 
-def test_silos_route_requires_manage_users(client):
+def test_silos_route_requires_manage_deployment(client):
     _filter_user(client, "silodenied")
 
     assert client.get("/api/silos").status_code == 403

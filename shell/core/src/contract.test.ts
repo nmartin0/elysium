@@ -39,9 +39,11 @@ describe('whether a page can load a module', () => {
     expect(apiRefusal({ api })).toBe(`its module.json's \`api\` is "${api}", not a version such as "^1.0"`)
   })
 
-  it('this page offers 1.0, which every shipped module asks for', () => {
-    expect(MODULE_API_VERSION).toBe('1.0')
+  it('this page offers 1.1, so a module built for 1.0 still loads, and one for 1.2 does not', () => {
+    expect(MODULE_API_VERSION).toBe('1.1')
     expect(apiRefusal({ api: '^1.0' })).toBeNull()
+    expect(apiRefusal({ api: '^1.1' })).toBeNull()
+    expect(apiRefusal({ api: '^1.2' })).toMatch(/needs the module API \^1\.2/)
   })
 })
 

@@ -11,9 +11,11 @@
  * decision, 24 October. Before, these sat in Admin, offered on
  * manage:users, so an account administrator was shown Metrics, Mirror
  * and Cleaning and refused by the server, while an operator holding
- * manage:deployment was not shown them at all. The server's own checks
- * are unchanged: /config and /silos still answer manage:users, which
- * they took in August, when it was the only administrative grant.
+ * manage:deployment was not shown them at all. The server agrees since
+ * the same day: /config and /silos need manage:deployment too, where
+ * they had kept manage:users from August, when it was the only
+ * administrative grant. Role names, which an account administrator
+ * needs, are /roles/names's.
  *
  * PINNED, AS THE REST OF SYSTEM: loaded in safe mode, which is when
  * someone most needs to see the configuration and reload it.

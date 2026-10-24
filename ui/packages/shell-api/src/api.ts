@@ -1470,6 +1470,15 @@ export async function previewRoleChange(roleName: string, grants: string[] | nul
   return (await response.json()) as RoleImpact
 }
 
+/** The roles that exist, by name only -- for somebody who manages
+ *  accounts (manage:users), who may put people in any of them and name
+ *  any as a Watch's recipient. What each may do is getRoles's, on
+ *  manage:roles. */
+export async function getRoleNames(): Promise<string[]> {
+  const response = await apiFetchOrThrow('/roles/names')
+  return ((await response.json()) as { names: string[] }).names
+}
+
 export async function getRoles(): Promise<RolesView> {
   const response = await apiFetchOrThrow('/roles')
   return (await response.json()) as RolesView

@@ -4,8 +4,8 @@
      A change here is a change to what modules may rely on: review it as one
      (BLOCKING.md item 3, step 4). -->
 
-Module API version 1.0 (`MODULE_API_VERSION` in shell/core/src/contract.ts);
-a module asks for it as `"api": "^1.0"` in its module.json.
+Module API version 1.1 (`MODULE_API_VERSION` in shell/core/src/contract.ts);
+a module asks for it as `"api": "^1.1"` in its module.json.
 
 Every name below is one a module imports from the kit (`@elysium/shell-api`)
 or the shell (`@shell/core`), or a declaration one of those leads to.
@@ -309,8 +309,6 @@ export declare function getCurrentUser(): Promise<unknown>;
 
 export declare function getDataFreshness(): Promise<DataFreshness>;
 
-export declare function getDeploymentConfig(): Promise<unknown>;
-
 export declare function getEnrichmentRecipes(): Promise<EnrichmentRecipe[]>;
 
 export declare function getErrorMessage(err: unknown): string;
@@ -359,6 +357,8 @@ export declare function getReminders(): Promise<Reminder[]>;
 export declare function getRequestTrace(requestId: string): Promise<unknown>;
 
 export declare function getRoleChanges(): Promise<RoleChange[]>;
+
+export declare function getRoleNames(): Promise<string[]>;
 
 export declare function getRoles(): Promise<RolesView>;
 

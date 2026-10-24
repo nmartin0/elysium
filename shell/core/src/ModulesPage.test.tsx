@@ -1,6 +1,6 @@
 import { act, render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { CONTRACT_VERSION, type ModuleEntry, type ModuleFeed } from './contract'
+import { CONTRACT_VERSION, MODULE_API_VERSION, type ModuleEntry, type ModuleFeed } from './contract'
 import { ModuleLoader } from './moduleLoader'
 import { ModulesPage } from './ModulesPage'
 
@@ -91,7 +91,9 @@ describe('the Modules page and the module API (step 4)', () => {
         safeMode
       />,
     )
-    expect(within(row('NEW')).getByText('Not loaded: it needs the module API ^2.0, and this page offers 1.0'))
+    expect(
+      within(row('NEW')).getByText(`Not loaded: it needs the module API ^2.0, and this page offers ${MODULE_API_VERSION}`),
+    )
       .toBeInTheDocument()
     expect(within(row('OLD')).getByText(/Not loaded: it names no module API version/)).toBeInTheDocument()
     expect(within(row('FINE')).getByText('Off in safe mode')).toBeInTheDocument()

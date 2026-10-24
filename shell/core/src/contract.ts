@@ -38,7 +38,12 @@ export const CONTRACT_VERSION = 1
  * that the extension is compatible with", where "^0.10.5 indicates
  * compatibility with a minimum VS Code version of 0.10.5".
  */
-export const MODULE_API_VERSION = '1.0'
+export const MODULE_API_VERSION = '1.1'
+// WHAT EACH VERSION ADDED, newest first (and in ui/MODULE_API.md):
+//   1.1  getRoleNames, for the role names /config no longer gives an
+//        account administrator (24 October).
+//   1.0  the API as the eight modules and the simulator's panel used it
+//        when it was first written down (24 October).
 
 /** "^1.0", and only that form: a caret, a major, a minor. */
 const API_RANGE = /^\^(0|[1-9]\d*)\.(0|[1-9]\d*)$/

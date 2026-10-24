@@ -40,7 +40,7 @@ import {
   createTrigger,
   getCurrentUser,
   getDataFreshness,
-  getDeploymentConfig,
+  getRoleNames,
   getErrorMessage,
   getMyVisibleSchema,
   getSavedViews,
@@ -155,8 +155,9 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
       }
       let allRoles: string[] | null = null
       try {
-        const config = (await getDeploymentConfig()) as { role_names?: string[] }
-        allRoles = config.role_names ?? null
+        // NAMES ONLY, for an account administrator (/roles/names). It was
+        // /config until /config became the server's (24 October).
+        allRoles = await getRoleNames()
       } catch (caught: unknown) {
         // A 403 IS THE RULE WORKING, not a failure: without
         // manage:users a person may name only their own role, so it is
