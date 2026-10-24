@@ -14,7 +14,7 @@
  */
 import { HTMLTable, Tag } from '@blueprintjs/core'
 import { useSyncExternalStore } from 'react'
-import { activatesOn, type ModuleEntry, type ModuleFeed } from './contract'
+import { activatesOn, apiRefusal, type ModuleEntry, type ModuleFeed } from './contract'
 import type { ModuleLoader, ModuleStatus } from './moduleLoader'
 import { ModuleArrangementEditor, type ModuleManager } from './ModuleArrangementEditor'
 
@@ -72,6 +72,9 @@ export function ModulesPage({ feed, loader, safeMode = false, manager }: Modules
         <tbody>
           {feed.modules.map((module) => {
             const status = loader.status(module)
+            // NOT LOADABLE HERE AT ALL (step 4): the page leaves it out of
+            // the rail and the routes, and this is where it says why.
+            const refusal = apiRefusal(module)
             return (
               <tr key={module.id}>
                 <th scope="row">
@@ -84,8 +87,12 @@ export function ModulesPage({ feed, loader, safeMode = false, manager }: Modules
                 </th>
                 <td>{module.version}</td>
                 <td>{module.entry === null ? 'Built into the page' : 'Its own bundle'}</td>
-                <td className={status.state === 'failed' ? 'modules-page__failed' : undefined}>
-                  {safeMode && !module.pinned ? 'Off in safe mode' : describeStatus(module, status)}
+                <td className={status.state === 'failed' || refusal !== null ? 'modules-page__failed' : undefined}>
+                  {refusal !== null
+                    ? `Not loaded: ${refusal}`
+                    : safeMode && !module.pinned
+                      ? 'Off in safe mode'
+                      : describeStatus(module, status)}
                 </td>
                 <td>{(module.contributes.nav ?? []).map((entry) => entry.title).join(', ') || '—'}</td>
               </tr>

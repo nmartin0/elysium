@@ -4,10 +4,12 @@
      A change here is a change to what modules may rely on: review it as one
      (BLOCKING.md item 3, step 4). -->
 
-Every name below is one a module imports from the kit
-(`@elysium/shell-api`) or the shell (`@shell/core`), or a declaration one of
-those leads to. Anything else either exports is internal, and may change
-without notice.
+Module API version 1.0 (`MODULE_API_VERSION` in shell/core/src/contract.ts);
+a module asks for it as `"api": "^1.0"` in its module.json.
+
+Every name below is one a module imports from the kit (`@elysium/shell-api`)
+or the shell (`@shell/core`), or a declaration one of those leads to.
+Anything else either exports is internal, and may change without notice.
 
 194 names imported, from 38 entry points, by 9 modules;
 242 declarations public in all.
@@ -1392,6 +1394,7 @@ export interface ModuleEntry {
     entry: string | null;
     styles?: string[];
     activationEvents?: string[];
+    api?: string;
     pinned?: boolean;
 }
 

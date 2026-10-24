@@ -4379,8 +4379,10 @@ def test_shell_modules_carries_no_grant_and_no_folder(client):
 
     assert response.headers["cache-control"] == "no-store"
     for module in response.json()["modules"]:
+        # `api` ADDED ON PURPOSE (step 4): the module API version a module
+        # needs, which the shell compares with what the page offers.
         assert set(module) == {"id", "name", "version", "contributes", "entry", "styles",
-                               "activationEvents", "pinned"}
+                               "activationEvents", "pinned", "api"}
     assert "manage:users" not in response.text
     assert "/packages/" not in response.text
 

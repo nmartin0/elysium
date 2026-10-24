@@ -24,6 +24,41 @@
 /** The only contract version this shell speaks. */
 export const CONTRACT_VERSION = 1
 
+/**
+ * THE MODULE API THIS PAGE OFFERS (BLOCKING.md item 3, step 4): one
+ * version for everything a module may rely on -- the kit's and the
+ * shell's names in ui/module-api.report.md, the manifest, what
+ * `activate` returns, the host values, the tokens and the add-on
+ * contract. MAJOR.MINOR: an addition raises the minor, a change or a
+ * removal the major. Not the feed's CONTRACT_VERSION, which is what the
+ * BACKEND speaks to the shell; this is what the page offers its modules.
+ *
+ * A MODULE SAYS WHICH IT NEEDS, in module.json's `api`: "^1.0" is 1.0 or
+ * any later 1.x -- VS Code's `engines.vscode`, "the versions of VS Code
+ * that the extension is compatible with", where "^0.10.5 indicates
+ * compatibility with a minimum VS Code version of 0.10.5".
+ */
+export const MODULE_API_VERSION = '1.0'
+
+/** "^1.0", and only that form: a caret, a major, a minor. */
+const API_RANGE = /^\^(0|[1-9]\d*)\.(0|[1-9]\d*)$/
+
+/**
+ * Why this page cannot load `module`, or null when it can: the module
+ * names no API version, names one in a form not understood, or needs one
+ * this page does not offer. Said so a person can act on it, in the
+ * module manager, which lists the module with this beside it.
+ */
+export function apiRefusal(module: Pick<ModuleEntry, 'api'>, offered: string = MODULE_API_VERSION): string | null {
+  if (module.api === undefined) return 'it names no module API version: its module.json needs `"api": "^1.0"`'
+  const wanted = API_RANGE.exec(module.api)
+  if (wanted === null) return `its module.json's \`api\` is "${module.api}", not a version such as "^1.0"`
+  const [major, minor] = offered.split('.').map(Number) as [number, number]
+  const [needMajor, needMinor] = [Number(wanted[1]), Number(wanted[2])]
+  if (needMajor === major && needMinor <= minor) return null
+  return `it needs the module API ${module.api}, and this page offers ${offered}`
+}
+
 /** A page a module offers, at a route path the shell mounts. */
 export interface PageContribution {
   /** Unique within the module; names the page to the module's code. */
@@ -114,6 +149,11 @@ export interface ModuleEntry {
   /** When its code runs besides its pages opening. Optional: a feed
    *  without it activates modules only by their pages. */
   activationEvents?: string[]
+  /** The module API it needs, as module.json says: "^1.0" (see
+   *  MODULE_API_VERSION). Optional in the feed, so a backend that
+   *  predates it still reads -- and a module without one is not loaded
+   *  (apiRefusal), and says why. */
+  api?: string
   /**
    * A SYSTEM SUB-APP (step 1.4): loaded in safe mode, and nothing in the
    * interface turns it off -- safe mode exists for when a module breaks
@@ -178,11 +218,26 @@ export function checkFeed(raw: unknown): ModuleFeed {
     ) {
       throw new FeedError(`${module.id}: \`activationEvents\` must be a list of event names`)
     }
+    if (module.api !== undefined && typeof module.api !== 'string') {
+      throw new FeedError(`${module.id}: \`api\` must be a version such as "^1.0"`)
+    }
     if (module.pinned !== undefined && typeof module.pinned !== 'boolean') {
       throw new FeedError(`${module.id}: \`pinned\` must be true or false`)
     }
   }
   return feed as ModuleFeed
+}
+
+/**
+ * The feed as this page can load it: only the modules whose API it
+ * offers (apiRefusal). Home moves as safe mode moves it (safeFeed), to
+ * the first page left, if its own module is the one left out.
+ */
+export function compatibleFeed(feed: ModuleFeed, offered: string = MODULE_API_VERSION): ModuleFeed {
+  const modules = feed.modules.filter((module) => apiRefusal(module, offered) === null)
+  if (modules.length === feed.modules.length) return feed
+  const paths = modules.flatMap((module) => (module.contributes.pages ?? []).map((page) => page.path))
+  return { ...feed, modules, home: paths.includes(feed.home) ? feed.home : (paths[0] ?? feed.home) }
 }
 
 /** Reads the feed from a backend's contract base, e.g. `/api/shell`. */

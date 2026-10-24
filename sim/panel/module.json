@@ -2,6 +2,7 @@
   "id": "simulator",
   "name": "Simulator",
   "version": "1",
+  "api": "^1.0",
   "permission": "module:simulator:operate",
   "permissions": [
     {

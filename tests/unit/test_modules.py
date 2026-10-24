@@ -253,6 +253,43 @@ class TestActivationEvents:
             load_modules(_deployment(tmp_path, [folder], home="/bad"))
 
 
+class TestTheModuleApiItNeeds:
+    """`api` in module.json (BLOCKING.md item 3, step 4): the module API
+    version a module needs, "^1.0". Whether the page offers it is the
+    shell's to decide (shell/core/src/contract.ts, apiRefusal); a version
+    written wrong is said here, at load."""
+
+    def test_the_feed_carries_it(self, tmp_path):
+        one = _module(tmp_path / "one", api="^1.0")
+        feed = feed_for(load_modules(_deployment(tmp_path, [one])), _user("admin"), ROLES)
+
+        assert feed["modules"][0]["api"] == "^1.0"
+
+    def test_one_naming_none_is_carried_without_it_for_the_shell_to_refuse(self, tmp_path):
+        one = _module(tmp_path / "one")
+        feed = feed_for(load_modules(_deployment(tmp_path, [one])), _user("admin"), ROLES)
+
+        assert "api" not in feed["modules"][0]
+
+    @pytest.mark.parametrize("api", ["1.0", "^1", ">=1.0", "^1.0.0", 1, ["^1.0"]])
+    def test_one_written_wrong_is_refused_at_load(self, tmp_path, api):
+        folder = _module(tmp_path / "bad", api=api)
+
+        with pytest.raises(ModuleError, match=r"`api` must be the module API version it needs"):
+            load_modules(_deployment(tmp_path, [folder], home="/bad"))
+
+    def test_every_shipped_module_needs_1_0(self, tmp_path):
+        # THE SAME NUMBER THE PAGE OFFERS (contract.ts MODULE_API_VERSION),
+        # read rather than remembered, so the two cannot drift apart.
+        contract = (Path(__file__).resolve().parents[2] / "shell" / "core" / "src" / "contract.ts").read_text()
+        offered = re.search(r"MODULE_API_VERSION = '(\d+)\.(\d+)'", contract)
+        assert offered is not None
+
+        needs = {m.id: m.api for m in load_modules(tmp_path).modules}
+
+        assert needs and set(needs.values()) == {f"^{offered[1]}.{offered[2]}"}, needs
+
+
 class TestBundles:
     """A module with its own bundle (BLOCKING.md item 3, step 1.2)."""
 

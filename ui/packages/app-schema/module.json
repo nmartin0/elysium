@@ -2,6 +2,7 @@
   "id": "schema",
   "name": "Schema",
   "version": "1",
+  "api": "^1.0",
   "contributes": {
     "pages": [
       {

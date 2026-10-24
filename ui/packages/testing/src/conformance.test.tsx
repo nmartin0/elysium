@@ -101,6 +101,7 @@ const manifest: ModuleEntry = {
   id: 'sample',
   name: 'Sample',
   version: '1',
+  api: '^1.0',
   contributes: { pages: [{ id: 'main', path: '/sample' }], nav: [{ title: 'Sample', path: '/sample' }] },
   entry: null,
 }
@@ -111,6 +112,14 @@ describe('manifest', () => {
   })
   it('fails when activate leaves out a declared page', async () => {
     await expect(manifestCheck(manifest, { pages: {} })).rejects.toThrow(/does not offer/)
+  })
+  it('fails a manifest naming no module API, or one this page does not offer (step 4)', async () => {
+    await expect(manifestCheck({ ...manifest, api: undefined }, { pages: { main: GoodPage } })).rejects.toThrow(
+      /would not load/,
+    )
+    await expect(manifestCheck({ ...manifest, api: '^2.0' }, { pages: { main: GoodPage } })).rejects.toThrow(
+      /would not load/,
+    )
   })
   it('fails a manifest the registry cannot honour', async () => {
     const strayNav = { ...manifest, contributes: { ...manifest.contributes, nav: [{ title: 'X', path: '/nowhere' }] } }
@@ -123,6 +132,7 @@ describe('a contribution to a slot (step 3) is checked as a page is', () => {
     id: 'm',
     name: 'M',
     version: '1',
+    api: '^1.0',
     entry: null,
     contributes: { into: [{ slot: 'inbox.tabs', id: 'tab', title: 'Tab' }] },
   } as unknown as ModuleEntry

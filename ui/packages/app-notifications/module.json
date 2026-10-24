@@ -2,6 +2,7 @@
   "id": "notifications",
   "name": "Notifications",
   "version": "1",
+  "api": "^1.0",
   "contributes": {
     "into": [
       {

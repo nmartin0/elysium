@@ -128,12 +128,19 @@ MOVED_MODULES = MappingProxyType({
 SYSTEM_MODULES = ("ui/src/system",)
 
 _MANIFEST_KEYS = frozenset({"id", "name", "version", "permission", "contributes", "entry", "styles",
-                            "activationEvents", "server", "permissions"})
+                            "activationEvents", "server", "permissions", "api"})
 #: When a module's code runs besides its pages opening (contract.ts,
 #: ACTIVATION_EVENTS). REFUSED HERE when unknown, unlike in the shell: a
 #: misspelt event in a module.json is a mistake to say at load, while a
 #: shell meeting a newer backend's event ignores it.
 _ACTIVATION_EVENTS = frozenset({"onPalette", "onStartup"})
+#: The module API a module needs (step 4; shell/core/src/contract.ts,
+#: MODULE_API_VERSION): "^1.0" and only that form. REFUSED HERE when
+#: malformed, a mistake to say at load like a misspelt event. Whether the
+#: page OFFERS what a module needs -- or one names none -- is the shell's
+#: to decide, where the page's version is: it leaves the module out, and
+#: its module manager says why, rather than Elysium refusing to start.
+_API_RANGE = re.compile(r"\^(0|[1-9]\d*)\.(0|[1-9]\d*)")
 _CONTRIBUTION_KEYS = frozenset({"pages", "nav", "redirects", "slots", "into"})
 
 
@@ -179,6 +186,8 @@ class Module:
     #: The permissions it declares, (name, description): each a grant
     #: `module:<id>:<name>` a role may hold (module_grant).
     permissions: tuple[tuple[str, str], ...] = ()
+    #: The module API it needs, "^1.0", or None when it names none.
+    api: "str | None" = None
 
     @property
     def bundle_directory(self) -> "Path | None":
@@ -387,6 +396,10 @@ def _load_manifest(folder: Path) -> Module:
     if unknown_events:
         raise ModuleError(f"{path}: knows no activation event called {unknown_events}; "
                           f"there are {sorted(_ACTIVATION_EVENTS)}")
+    api = raw.get("api")
+    if api is not None and not (isinstance(api, str) and _API_RANGE.fullmatch(api)):
+        raise ModuleError(f"{path}: `api` must be the module API version it needs, such as \"^1.0\"; "
+                          f"it is {api!r}")
     permissions = _load_permissions(path, raw.get("permissions"))
     try:
         server = parse_server(path, raw.get("server"))
@@ -395,7 +408,7 @@ def _load_manifest(folder: Path) -> Module:
     return Module(id=raw["id"], name=raw["name"], version=raw["version"],
                   permission=permission, contributes=contributes, entry=entry, folder=folder,
                   styles=tuple(styles), activation_events=tuple(events), server=server,
-                  permissions=permissions)
+                  permissions=permissions, api=api)
 
 
 #: A permission's name within its module: lower case, as grants are.
@@ -627,6 +640,7 @@ def feed_for(modules: Modules, user: UserRecord, roles: dict) -> dict:
                      "entry": None if m.entry is None else _address(m, m.entry),
                      "styles": [_address(m, s) for s in m.styles],
                      "activationEvents": list(m.activation_events),
+                     **({} if m.api is None else {"api": m.api}),
                      "pinned": m.pinned}
                     for m in offered_to(modules, user, roles)],
     }

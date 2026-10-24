@@ -93,6 +93,7 @@ beforeEach(() => {
         id: 'query',
         name: 'Query',
         version: '1',
+        api: '^1.0',
         entry: QUERY_BUNDLE,
         styles: [],
         contributes: { pages: [{ id: 'query', path: '/query' }], nav: [{ title: 'Query', path: '/query' }] },
@@ -397,6 +398,39 @@ describe('App -- routes and rail come from the module feed', () => {
     expect(screen.queryByRole('menuitem', { name: 'Admin' })).not.toBeInTheDocument()
   })
 
+  it('leaves out a module needing a module API this page does not offer (step 4)', async () => {
+    mockedGetModuleFeed.mockResolvedValue({
+      contract: 1,
+      home: '/query',
+      modules: [
+        {
+          id: 'query',
+          name: 'Query',
+          version: '1',
+          api: '^1.0',
+          entry: QUERY_BUNDLE,
+          styles: [],
+          contributes: { pages: [{ id: 'query', path: '/query' }], nav: [{ title: 'Query', path: '/query' }] },
+        },
+        {
+          id: 'future',
+          name: 'Future',
+          version: '1',
+          api: '^2.0',
+          entry: '/api/modules/future/files/dist/index.js',
+          styles: [],
+          contributes: { pages: [{ id: 'main', path: '/future' }], nav: [{ title: 'Future', path: '/future' }] },
+        },
+      ],
+    })
+    mockedGetMyVisibleSchema.mockResolvedValue({})
+    render(<App />)
+
+    await screen.findByText('query screen')
+    expect(screen.getByRole('menuitem', { name: 'Query' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Future' })).not.toBeInTheDocument()
+  })
+
   it('holds a deep link until the feed arrives, rather than sending it home', async () => {
     /** BEFORE THE FEED the shell cannot know whether anything opens an
      *  address; redirecting then would lose every bookmark. */
@@ -417,6 +451,7 @@ describe('App -- routes and rail come from the module feed', () => {
           id: 'admin',
           name: 'Admin',
           version: '1',
+          api: '^1.0',
           entry: ADMIN_BUNDLE,
           styles: [],
           contributes: { pages: [{ id: 'admin', path: '/admin' }] },
@@ -437,6 +472,7 @@ describe('App -- routes and rail come from the module feed', () => {
           id: 'elsewhere',
           name: 'Elsewhere',
           version: '1',
+          api: '^1.0',
           entry: null,
           contributes: { pages: [{ id: 'main', path: '/elsewhere' }] },
         },
@@ -494,6 +530,7 @@ describe('App -- modules with bundles of their own', () => {
           id: 'query',
           name: 'Query',
           version: '1',
+          api: '^1.0',
           entry: QUERY_BUNDLE,
           styles: [],
           contributes: { pages: [{ id: 'query', path: '/query' }], nav: [{ title: 'Query', path: '/query' }] },
@@ -502,6 +539,7 @@ describe('App -- modules with bundles of their own', () => {
           id: 'graph',
           name: 'Graph',
           version: '1',
+          api: '^1.0',
           entry: '/api/modules/graph/files/dist/index.js',
           styles: [],
           contributes: { pages: [{ id: 'main', path: '/graph' }], nav: [{ title: 'Graph', path: '/graph' }] },

@@ -2,6 +2,7 @@
   "id": "inbox",
   "name": "Inbox",
   "version": "1",
+  "api": "^1.0",
   "activationEvents": ["onStartup"],
   "contributes": {
     "pages": [

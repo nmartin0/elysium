@@ -8,6 +8,7 @@ const entry = (id: string, extra: Partial<ModuleEntry> = {}): ModuleEntry => ({
   id,
   name: id.toUpperCase(),
   version: '2',
+  api: '^1.0',
   contributes: { nav: [{ title: `${id} rail`, path: `/${id}` }] },
   entry: null,
   ...extra,
@@ -78,5 +79,21 @@ describe('the Modules page in safe mode', () => {
     )
     expect(within(row('B')).getByText('Off in safe mode')).toBeInTheDocument()
     expect(within(row('SYS')).getByText('Part of the page')).toBeInTheDocument()
+  })
+})
+
+describe('the Modules page and the module API (step 4)', () => {
+  it("says why a module this page cannot load is not loaded, whatever else is true of it", () => {
+    render(
+      <ModulesPage
+        feed={feed([entry('new', { api: '^2.0' }), entry('old', { api: undefined }), entry('fine')])}
+        loader={new ModuleLoader()}
+        safeMode
+      />,
+    )
+    expect(within(row('NEW')).getByText('Not loaded: it needs the module API ^2.0, and this page offers 1.0'))
+      .toBeInTheDocument()
+    expect(within(row('OLD')).getByText(/Not loaded: it names no module API version/)).toBeInTheDocument()
+    expect(within(row('FINE')).getByText('Off in safe mode')).toBeInTheDocument()
   })
 })

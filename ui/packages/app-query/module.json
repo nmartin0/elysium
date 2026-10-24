@@ -2,6 +2,7 @@
   "id": "query",
   "name": "Query",
   "version": "1",
+  "api": "^1.0",
   "contributes": {
     "pages": [
       {

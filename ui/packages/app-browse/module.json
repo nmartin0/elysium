@@ -2,6 +2,7 @@
   "id": "browse",
   "name": "Browse",
   "version": "1",
+  "api": "^1.0",
   "activationEvents": ["onPalette"],
   "contributes": {
     "pages": [

@@ -1134,8 +1134,25 @@ Extractor itself: it bundles TypeScript 5.9 and drives the compiler
 through a JavaScript API TypeScript 7 does not have, and it reports
 whole entry points where the agreed surface is the names used.
 
-**Blocked on:** nothing; 4.2, the version each module declares, is
-next.
+**4.2, THE VERSION, BUILT (24 October):** the page offers module API
+1.0 (`MODULE_API_VERSION`, shell/core/src/contract.ts), MAJOR.MINOR --
+an addition raises the minor, a change or removal the major. Each
+module.json says what it needs, `"api": "^1.0"`, VS Code's `engines`
+form; every shipped one, the System sub-app's and the simulator's panel
+say ^1.0. A module needing one the page does not offer, or naming none,
+is left out of the routes, the rail and activation (compatibleFeed),
+and the Modules page lists it with why ("Not loaded: it needs the module
+API ^2.0, and this page offers 1.0") -- refused as a module, never as
+Elysium's start. The server refuses a version written wrong at load, as
+it does a misspelt activation event. The conformance suite requires a
+loadable `api`, and the report heads itself with the version.
+
+THE ADD-ON SERVER'S START FILE keeps its own `"contract": 1`, which the
+SDK checks: it is the wire format of one file, and the module's `api`
+already says which API its server was built for. Folding it in would
+change the SDK every add-on carries for no reader who needs it now.
+
+**Blocked on:** nothing; 4.3, the short guide, is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

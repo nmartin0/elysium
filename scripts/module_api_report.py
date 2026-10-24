@@ -370,6 +370,16 @@ def _entry_name(path: Path, out: Path) -> str:
     return "/".join(parts)
 
 
+def api_version() -> str:
+    """The module API version the page offers (contract.ts), read rather
+    than repeated, so the report says what the page says."""
+    contract = (ROOT / "shell" / "core" / "src" / "contract.ts").read_text()
+    match = re.search(r"export const MODULE_API_VERSION = '(\d+\.\d+)'", contract)
+    if match is None:
+        raise SystemExit("shell/core/src/contract.ts declares no MODULE_API_VERSION")
+    return match[1]
+
+
 def render(surface: Surface, used: dict[str, set[str]]) -> str:
     lines = [
         "# The module API, as used",
@@ -378,10 +388,12 @@ def render(surface: Surface, used: dict[str, set[str]]) -> str:
         "     A change here is a change to what modules may rely on: review it as one",
         "     (BLOCKING.md item 3, step 4). -->",
         "",
-        "Every name below is one a module imports from the kit",
-        "(`@elysium/shell-api`) or the shell (`@shell/core`), or a declaration one of",
-        "those leads to. Anything else either exports is internal, and may change",
-        "without notice.",
+        f"Module API version {api_version()} (`MODULE_API_VERSION` in shell/core/src/contract.ts);",
+        f"a module asks for it as `\"api\": \"^{api_version()}\"` in its module.json.",
+        "",
+        "Every name below is one a module imports from the kit (`@elysium/shell-api`)",
+        "or the shell (`@shell/core`), or a declaration one of those leads to.",
+        "Anything else either exports is internal, and may change without notice.",
         "",
         f"{sum(len(names) for names in used.values())} names imported, from {len(used)} entry points,"
         f" by {len(MODULE_SOURCES)} modules;",

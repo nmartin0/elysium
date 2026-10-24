@@ -2,6 +2,7 @@
   "id": "echo",
   "name": "Echo",
   "version": "1",
+  "api": "^1.0",
   "contributes": {},
   "server": { "command": ["{python}", "server.py"], "health": "/health", "stopSeconds": 3 }
 }

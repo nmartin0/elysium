@@ -39,7 +39,7 @@
  */
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { checkFeed, CONTRACT_VERSION, type ModuleEntry } from '@shell/core/contract'
+import { apiRefusal, checkFeed, CONTRACT_VERSION, type ModuleEntry } from '@shell/core/contract'
 import type { ModuleActivation } from '@shell/core/moduleLoader'
 import { buildRegistry } from '@shell/core/registry'
 import { act, cleanup, waitFor, within } from '@testing-library/react'
@@ -179,6 +179,10 @@ async function manifestCheck(manifest: ModuleEntry, activation: ModuleActivation
   const home = manifest.contributes.pages?.[0]?.path ?? '/'
   const feed = checkFeed({ contract: CONTRACT_VERSION, home, modules: [{ ...manifest, entry: null }] })
   expect(buildRegistry(feed).problems, 'the registry could not honour the manifest').toEqual([])
+  // THE MODULE API IT NEEDS (step 4): one this page offers, or the page
+  // leaves the module out and its manager says why -- named in the
+  // module's own suite before it ever ships.
+  expect(apiRefusal(manifest), 'the page would not load this module').toBeNull()
   const declared = (manifest.contributes.pages ?? []).map((page) => page.id)
   const missing = declared.filter((id) => !(id in activation.pages))
   expect(missing, '`activate` does not offer these declared pages').toEqual([])

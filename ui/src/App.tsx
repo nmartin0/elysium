@@ -10,7 +10,7 @@ import {
   type ComponentType,
 } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { checkFeed, type ModuleEntry, type ModuleFeed } from '@shell/core/contract'
+import { checkFeed, compatibleFeed, type ModuleEntry, type ModuleFeed } from '@shell/core/contract'
 import { moduleRoutes, type PageResolver } from '@shell/core/ModuleRoutes'
 import { ModuleLoader } from '@shell/core/moduleLoader'
 import { buildRegistry } from '@shell/core/registry'
@@ -597,10 +597,15 @@ function LoggedIn({
   // alone -- for the routes, the rail, activation and the loader alike.
   // The Modules page is given everything offered, to say what safe mode
   // left out.
-  const feed = useMemo(
-    () => (safeMode && offered !== null && !('failure' in offered) ? safeFeed(offered) : offered),
-    [offered, safeMode],
-  )
+  //
+  // AND ONLY WHAT THIS PAGE CAN LOAD: a module needing a module API the
+  // page does not offer, or naming none, is left out of all of it too
+  // (compatibleFeed, step 4), and the Modules page says why.
+  const feed = useMemo(() => {
+    if (offered === null || 'failure' in offered) return offered
+    const loadable = compatibleFeed(offered)
+    return safeMode ? safeFeed(loadable) : loadable
+  }, [offered, safeMode])
   const registry = useMemo(() => (feed === null || 'failure' in feed ? null : buildRegistry(feed)), [feed])
   const visibleApps: VisibleApp[] = useMemo(
     () => (registry?.nav ?? []).map((entry) => ({ name: entry.title, path: entry.path, subject: entry.subject })),

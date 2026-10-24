@@ -2,6 +2,7 @@
   "id": "system",
   "name": "System",
   "version": "1",
+  "api": "^1.0",
   "permission": "manage:deployment",
   "contributes": {
     "pages": [
