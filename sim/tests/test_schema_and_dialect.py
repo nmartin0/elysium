@@ -156,10 +156,11 @@ def test_insert_binds_values_and_quotes_names():
 def test_dialect_lookup_by_kind():
     assert dialect_for("postgresql").kind == "postgresql"
     assert dialect_for("mariadb").kind == "mariadb"
+    assert dialect_for("sqlite").kind == "sqlite"
     with pytest.raises(KeyError, match="no SQL dialect"):
-        # SqliteSilo exists but has no dialect yet, and the message
-        # should say which kinds do rather than raise a bare KeyError.
-        dialect_for("sqlite")
+        # A folder of files has no tables, and the message should say
+        # which kinds do rather than raise a bare KeyError.
+        dialect_for("filedrop")
 
 
 # -- executed against real engines -----------------------------------

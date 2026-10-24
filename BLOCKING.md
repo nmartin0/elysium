@@ -2165,6 +2165,17 @@ the time forward without a new publication, and a running server only
 notices new publications, so until the next one or a restart that
 type's overlay runs wider than it need be -- never narrower.
 
-**Next in step 3:** the SQLite source, if the owner wants it.
+**THE SIMULATOR'S SQLITE SOURCE HOLDS TABLES (24 October), with the
+owner:** a SQLite dialect and session in sim/, so a SQLite silo is
+provisioned, written, read back and drifted through the same relational
+layer as the servers. Written as an ordinary application writes (the
+owner's choice over STRICT tables): declared types as hints, money by
+NUMERIC affinity (19.99 a double, 20.00 the integer 20), booleans 1/0,
+times as ISO text in UTC; a retype is SQLite's documented rebuild, in
+one transaction; no accounts, so `withheld` is refused and `simulator
+verify` checks a read-only reader instead. Next, with the owner: a parts
+desk in the field-service pack, and Elysium run over it.
+
+**Next in step 3:** the parts desk, then a full run.
 
 **Blocked on:** nothing; in progress.

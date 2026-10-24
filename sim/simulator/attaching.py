@@ -50,5 +50,8 @@ def reach(name: str, details: dict, directory: Path) -> Any:
 
     kind = details["kind"]
     port = details.get("port") or details.get("base_url", "").rsplit(":", 1)[-1]
+    # A SQLite silo is reached by its file, named after its database.
+    options = ({"database": details["database"]}
+               if kind == "sqlite" and details.get("database") else None)
     return build_silo(kind=kind, name=name, data_dir=Path(directory) / name,
-                      port=int(port) if port else None)
+                      port=int(port) if port else None, options=options)

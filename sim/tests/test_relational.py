@@ -330,10 +330,12 @@ def test_a_large_batch_goes_in_one_statement(provisioned):
 # -- no-server checks ------------------------------------------------
 
 def test_a_non_relational_silo_has_no_dialect(tmp_path):
-    from simulator.silos.sqlite import SqliteSilo
+    # A folder of files has no tables. (SQLite was the example here until
+    # it gained a dialect, 24 October.)
+    from simulator.silos.filedrop import FileDropSilo
 
     with pytest.raises(KeyError, match="no SQL dialect"):
-        create_database(SqliteSilo(name="pos", data_dir=tmp_path), "anything")
+        create_database(FileDropSilo(name="drops", data_dir=tmp_path), "anything")
 
 
 # -- one connection held across a block ------------------------------

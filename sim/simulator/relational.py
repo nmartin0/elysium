@@ -40,9 +40,12 @@ from simulator.silo import Silo, SiloError
 def create_database(silo: Silo, name: str, seed: int = 1) -> None:
     """Create one database inside a relational silo's instance."""
     dialect = dialect_for(silo.kind)
-    with silo.connect(autocommit=True) as connection:  # type: ignore[attr-defined]
-        with connection.cursor() as cursor:
-            cursor.execute(dialect.create_database(name))
+    statement = dialect.create_database(name)
+    # None to run on SQLite, whose file is the database the silo made.
+    if statement:
+        with silo.connect(autocommit=True) as connection:  # type: ignore[attr-defined]
+            with connection.cursor() as cursor:
+                cursor.execute(statement)
     # Immediately, so a database never exists without its reader. On
     # PostgreSQL the ordering is load-bearing as well as tidy: default
     # privileges apply only to tables created after they are granted.
@@ -170,7 +173,7 @@ def adjust_column(silo: Silo, database: str, table: Table, column: str,
     dialect = dialect_for(silo.kind)
     quoted = dialect.quote(column)
     expression = (f"{quoted} + {dialect.placeholder}" if floor is None
-                  else f"GREATEST({quoted} + {dialect.placeholder}, {dialect.placeholder})")
+                  else dialect.greatest(f"{quoted} + {dialect.placeholder}", dialect.placeholder))
     parameters: list[Any] = [delta] if floor is None else [delta, floor]
 
     predicate = " AND ".join(
@@ -291,13 +294,15 @@ def catalogue_columns(silo: Silo, database: str, table_name: str) -> list[str]:
     rather than name order, because column order is observable through
     SELECT * and a consumer reading by position would see a change.
     """
-    rows = fetch_all(
-        silo, database,
-        "SELECT column_name FROM information_schema.columns "
-        "WHERE table_schema = %s AND table_name = %s ORDER BY ordinal_position",
-        (_catalogue_scope(silo, database), table_name),
-    )
-    return [str(row[0]) for row in rows]
+    dialect = dialect_for(silo.kind)
+    return [str(row["column_name"]) for row in dialect.catalogue_rows(
+        _fetcher(silo, database), _catalogue_scope(silo, database), table_name)]
+
+
+def _fetcher(silo: Silo, database: str):
+    """How a dialect asks the catalogue: a statement and its parameters
+    in, the rows out (dialect.py, table_names and the rest)."""
+    return lambda statement, parameters: fetch_all(silo, database, statement, parameters)
 
 
 def read_schema(silo: Silo, database: str) -> Schema:
@@ -320,35 +325,23 @@ def read_schema(silo: Silo, database: str) -> Schema:
     """
     dialect = dialect_for(silo.kind)
     scope = _catalogue_scope(silo, database)
-    keys = _primary_keys(silo, database, scope)
+    fetch = _fetcher(silo, database)
+    keys = dialect.primary_keys(fetch, scope)
 
     tables = []
-    for (table_name,) in fetch_all(
-        silo, database,
-        "SELECT table_name FROM information_schema.tables "
-        "WHERE table_schema = %s AND table_type = 'BASE TABLE' ORDER BY table_name",
-        (scope,),
-    ):
+    for table_name in dialect.table_names(fetch, scope):
         # The migration history is real and lives in the database on
         # purpose, but it is the simulator's bookkeeping rather than
         # part of the business, so a schema read back should not
         # suddenly contain it.
-        if str(table_name).startswith("_simulator"):
+        if table_name.startswith("_simulator"):
             continue
         columns = tuple(
-            _column_from_catalogue(
-                dialect, dict(zip(dialect.catalogue_fields, row, strict=True)),
-                keys.get(str(table_name)))
-            for row in fetch_all(
-                silo, database,
-                f"SELECT {', '.join(dialect.catalogue_fields)} "
-                f"FROM information_schema.columns "
-                f"WHERE table_schema = %s AND table_name = %s ORDER BY ordinal_position",
-                (scope, table_name),
-            )
+            _column_from_catalogue(dialect, reported, keys.get(table_name))
+            for reported in dialect.catalogue_rows(fetch, scope, table_name)
         )
         if columns:
-            tables.append(Table(name=str(table_name), columns=columns))
+            tables.append(Table(name=table_name, columns=columns))
     return Schema(tables=tuple(tables))
 
 
@@ -367,22 +360,6 @@ def _column_from_catalogue(dialect: Any, reported: Mapping[str, Any],
         scale=(int(reported["numeric_scale"])
                if column_type is ColumnType.DECIMAL else None),
     )
-
-
-def _primary_keys(silo: Silo, database: str, scope: str) -> dict[str, str]:
-    """Each table's primary key column, where it has a single one."""
-    rows = fetch_all(
-        silo, database,
-        "SELECT t.table_name, k.column_name "
-        "FROM information_schema.table_constraints t "
-        "JOIN information_schema.key_column_usage k "
-        "  ON k.constraint_name = t.constraint_name "
-        " AND k.table_schema = t.table_schema "
-        " AND k.table_name = t.table_name "
-        "WHERE t.table_schema = %s AND t.constraint_type = 'PRIMARY KEY'",
-        (scope,),
-    )
-    return {str(table): str(column) for table, column in rows}
 
 
 def verify_schema(silo: Silo, database: str, schema: Schema) -> None:
@@ -461,13 +438,8 @@ def all_table_names(silo: Silo, database: str) -> list[str]:
     without it a silo reports the catalogue of the server rather than
     of the database.
     """
-    rows = fetch_all(
-        silo, database,
-        "SELECT table_name FROM information_schema.tables "
-        "WHERE table_schema = %s ORDER BY table_name",
-        (_catalogue_scope(silo, database),),
-    )
-    return [str(row[0]) for row in rows]
+    return dialect_for(silo.kind).table_names(_fetcher(silo, database),
+                                              _catalogue_scope(silo, database))
 
 
 def _catalogue_scope(silo: Silo, database: str) -> str:
@@ -480,7 +452,9 @@ def _catalogue_scope(silo: Silo, database: str) -> str:
     there returns nothing at all -- silently, as an empty list, which
     is the failure a caller would misread as "no tables".
     """
-    return "public" if silo.kind == "postgresql" else database
+    # And on SQLite, a file with one schema of its own, `main`; its
+    # catalogue is asked by PRAGMA, which takes no scope at all.
+    return {"postgresql": "public", "sqlite": "main"}.get(silo.kind, database)
 
 
 def apply_and_verify(silo: Silo, database: str, schema: Schema) -> None:

@@ -30,10 +30,15 @@ property of the business being simulated.
 """
 
 import sqlite3
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from simulator.silo import ConnectionDescriptor, Silo, SiloError
+from simulator.silos.connection import SharedConnection
 
 #: The first sixteen bytes of every SQLite database file. Checking for
 #: it is the only way to tell a real database from a zero-byte file,
@@ -60,13 +65,21 @@ class SqliteSilo(Silo):
     #: No port, ever. This is the flag's whole reason for existing.
     requires_port: ClassVar[bool] = False
 
-    def __init__(self, name: str, data_dir: Path, filename: str | None = None) -> None:
+    def __init__(self, name: str, data_dir: Path, filename: str | None = None,
+                 database: str | None = None) -> None:
         super().__init__(name, data_dir)
-        #: Named after the silo by default, so a directory of them
-        #: reads as a list of systems rather than of files.
-        self.filename = filename or f"{name}.db"
+        #: The database a pack declares for it -- the file IS that
+        #: database, named after it, as a desktop application names its
+        #: company file. None for a silo holding no schema.
+        self.database = database
+        #: Named after its database, else after the silo, so a directory
+        #: of them reads as a list of systems rather than of files.
+        self.filename = filename or f"{database or name}.db"
         #: True while an outage has the file moved aside.
         self.offline = False
+        #: One connection held across a block, as the server silos hold
+        #: theirs (connection.py): a tick's writes commit together.
+        self._connections = SharedConnection(open=self._open)
 
     @property
     def home(self) -> Path:
@@ -149,9 +162,14 @@ class SqliteSilo(Silo):
             connection.close()
 
     def connection(self, database: str | None = None) -> ConnectionDescriptor:
-        _refuse_database(self.name, self.kind, database)
-        """A path, not a host and port. That is the point."""
-        return ConnectionDescriptor(kind=self.kind, details={"path": str(self.home)})
+        """A path, not a host and port. That is the point. No account
+        either: whoever can read the file reads every table."""
+        if database is not None and database != self.database:
+            _refuse_database(self.name, self.kind, database)
+        details: dict[str, Any] = {"path": str(self.home)}
+        if self.database is not None:
+            details["database"] = self.database
+        return ConnectionDescriptor(kind=self.kind, details=details)
 
     def driver_errors(self) -> tuple[type[Exception], ...]:
         # OSError as well as sqlite3.Error: a file-based silo fails at
@@ -172,20 +190,132 @@ class SqliteSilo(Silo):
         if self.path.exists():
             self.path.replace(self.path.with_suffix(self.path.suffix + TERMINATED_SUFFIX))
 
-    def connect(self) -> sqlite3.Connection:
-        """An open connection that refuses to create the file.
+    def session(self, database: str | None = None):
+        """Hold one connection open for a block. See connection.py."""
+        return self._connections.session(self._checked(database))
+
+    def connect(self, database: str | None = None, *, autocommit: bool = False):
+        """A connection for one piece of work, inside a session's if one is
+        open (connection.py). The same shape as the server silos', so
+        relational.py and drift.py drive this file as they drive them.
 
         `mode=rw` rather than a bare path, because sqlite3.connect()
         creates a missing database instead of failing -- which turns
         "the silo is gone" into "here is an empty database" silently,
         and defeats any check based on the file's existence.
         """
+        return self._connections.use(self._checked(database), autocommit=autocommit)
+
+    def _checked(self, database: str | None) -> str:
+        """The one database this file is, by whatever name it was asked for."""
+        if database is not None and self.database is not None and database != self.database:
+            raise SiloError(f"silo {self.name!r} is the {self.database!r} database; it holds no "
+                            f"database called {database!r}")
+        return self.database or self.name
+
+    @contextmanager
+    def _open(self, database: str, *, autocommit: bool) -> Iterator["SqliteConnection"]:
         try:
-            connection = sqlite3.connect(f"file:{self.path}?mode=rw", uri=True, timeout=10.0)
+            # `autocommit`, Python 3.12's PEP 249 control: False keeps a
+            # transaction open always, DDL included, so a retype's four
+            # statements (dialect.py) commit or roll back as one, as
+            # SQLite's documented procedure asks. sqlite3's older
+            # default opened one only before INSERT and the like.
+            raw = sqlite3.connect(f"file:{self.path}?mode=rw", uri=True, timeout=10.0,
+                                  autocommit=autocommit)
         except sqlite3.OperationalError as error:
             raise SiloError(f"{self.name}: cannot open {self.path}: {error}") from error
-        connection.row_factory = sqlite3.Row
-        return connection
+        raw.row_factory = sqlite3.Row
+        try:
+            yield SqliteConnection(raw)
+        finally:
+            raw.close()
+
+
+def as_written(value: Any) -> Any:
+    """A value as an ordinary application's database layer binds it.
+
+    The owner's choice (24 October): the simulated business writes as
+    typical software does, and SQLite does the rest (dialect.py,
+    SqliteDialect). Django's SQLite backend is the model:
+      - a timestamp as ISO text, "YYYY-MM-DD HH:MM:SS[.ffffff]", made
+        naive in UTC -- SQLite has no date type; its documentation's
+        first option is "TEXT as ISO8601 strings";
+      - a date as "YYYY-MM-DD";
+      - a Decimal as its text, which a DECIMAL column's NUMERIC affinity
+        then stores "as INTEGER or REAL" -- so 19.99 arrives as a double
+        and 20.00 as the integer 20, which is what a consumer meets;
+      - a boolean as 1 or 0, which sqlite3 does by itself.
+    Explicit, not sqlite3's default adapters, which Python 3.12
+    deprecated for dates.
+    """
+    if isinstance(value, datetime):
+        if value.tzinfo is not None:
+            value = value.astimezone(UTC).replace(tzinfo=None)
+        return str(value)
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return str(value)
+    return value
+
+
+class SqliteConnection:
+    """sqlite3's connection, with the PEP 249 shape the rest of the
+    simulator uses: cursors that work in a `with` block, as psycopg's
+    and PyMySQL's do, and values bound as an application binds them."""
+
+    def __init__(self, raw: sqlite3.Connection) -> None:
+        self.raw = raw
+
+    def cursor(self) -> "SqliteCursor":
+        return SqliteCursor(self.raw.cursor())
+
+    def execute(self, statement: str, parameters: Sequence[Any] = ()) -> sqlite3.Cursor:
+        """Straight through, for the few callers -- and tests -- that use
+        sqlite3's own connection-level execute."""
+        return self.raw.execute(statement, [as_written(v) for v in parameters])
+
+    def commit(self) -> None:
+        self.raw.commit()
+
+    def rollback(self) -> None:
+        self.raw.rollback()
+
+    def close(self) -> None:
+        self.raw.close()
+
+
+class SqliteCursor:
+    def __init__(self, raw: sqlite3.Cursor) -> None:
+        self.raw = raw
+
+    def __enter__(self) -> "SqliteCursor":
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.raw.close()
+
+    def execute(self, statement: str, parameters: Sequence[Any] = ()) -> "SqliteCursor":
+        self.raw.execute(statement, [as_written(v) for v in parameters])
+        return self
+
+    def executemany(self, statement: str, rows: Sequence[Sequence[Any]]) -> "SqliteCursor":
+        self.raw.executemany(statement, [[as_written(v) for v in row] for row in rows])
+        return self
+
+    # Tuples, as psycopg's and PyMySQL's cursors give: relational.py and
+    # its callers compare rows with tuples, and a sqlite3.Row equals none.
+    def fetchone(self) -> Any:
+        row = self.raw.fetchone()
+        return None if row is None else tuple(row)
+
+    def fetchall(self) -> list[Any]:
+        return [tuple(row) for row in self.raw.fetchall()]
+
+    @property
+    def rowcount(self) -> int:
+        return self.raw.rowcount
 
 
 # =============================================================================

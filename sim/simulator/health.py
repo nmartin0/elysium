@@ -185,9 +185,61 @@ def _rest_checks() -> list:
 
     return [("answering", answering), ("pages to the end", paging_works)]
 
+def _sqlite_checks() -> list:
+    """The SQL checks, for a file: no server to answer and no account to
+    refuse a write -- a reader opens the file read-only instead, as
+    Elysium does, and the file itself must refuse it."""
+    import sqlite3
+
+    from simulator.relational import fetch_all, read_schema
+
+    def reachable(name, details, directory):
+        silo = reach(name, details, directory)
+        if not silo.is_reachable():
+            raise RuntimeError(f"{details['path']} is not there, or is not a SQLite database")
+        return None
+
+    def tables_have_rows(name, details, directory):
+        silo = reach(name, details, directory)
+        schema = read_schema(silo, details["database"])
+        if not schema.tables:
+            raise RuntimeError("the database has no tables in it")
+        empty = [t.name for t in schema.tables
+                 if fetch_all(silo, details["database"], f'SELECT count(*) FROM "{t.name}"')[0][0] == 0]
+        if empty:
+            raise RuntimeError(f"these tables are empty: {sorted(empty)}")
+        return f"{len(schema.tables)} tables, all populated"
+
+    def every_table_has_a_key(name, details, directory):
+        missing = [t.name for t in read_schema(reach(name, details, directory), details["database"]).tables
+                   if not any(c.primary_key for c in t.columns)]
+        if missing:
+            raise RuntimeError(f"no primary key on {sorted(missing)}")
+        return None
+
+    def a_read_only_reader_cannot_write(name, details, directory):
+        table = read_schema(reach(name, details, directory), details["database"]).tables[0].name
+        reader = sqlite3.connect(f"file:{details['path']}?mode=ro", uri=True)
+        try:
+            reader.execute(f'DELETE FROM "{table}"')
+        except sqlite3.OperationalError as error:
+            if "readonly" not in str(error):
+                raise RuntimeError(f"the DELETE failed, but not because it was refused: {error}") from error
+            return "DELETE refused, as it should be"
+        finally:
+            reader.close()
+        raise RuntimeError("a reader that opened the file read-only was allowed to DELETE")
+
+    return [("reachable", reachable),
+            ("tables present and populated", tables_have_rows),
+            ("every table has a primary key", every_table_has_a_key),
+            ("a read-only reader cannot write", a_read_only_reader_cannot_write)]
+
+
 _CHECKS = {
     "postgresql": _sql_checks(),
     "mariadb": _sql_checks(),
+    "sqlite": _sqlite_checks(),
     "filedrop": _filedrop_checks(),
     "rest": _rest_checks(),
 }

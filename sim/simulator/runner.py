@@ -233,7 +233,10 @@ def _construct(pack: PackSpec, data_dir: Path, registry: PortRegistry) -> dict[s
             name=name,
             data_dir=data_dir / name,
             port=registry.ports.get(name),
-            options=spec.options,
+            # A SQLite silo's database is its file (silos/sqlite.py), so
+            # it is told the name; a server makes its databases later.
+            options=({**spec.options, "database": spec.database}
+                     if spec.kind == "sqlite" and spec.database is not None else spec.options),
         )
         for name, spec in pack.silos.items()
     }

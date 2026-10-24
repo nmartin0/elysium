@@ -47,6 +47,12 @@ def _load_withheld(raw: object, path: str, kind: str,
     if kind not in _relational_kinds() or database is None:
         raise PackError(
             path, f"a {kind!r} silo has no tables to withhold")
+    if kind == "sqlite":
+        # No accounts to withhold from: whoever can read the file reads
+        # every table in it, which is the real property of the thing.
+        raise PackError(
+            path, "a 'sqlite' silo is a file, and whoever can read it reads every table; "
+                  "there is no account to withhold a table from")
     if not isinstance(raw, list) or not raw:
         raise PackError(f"{path}.withheld", "must be a non-empty list of table names")
     names = []

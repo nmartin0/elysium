@@ -95,8 +95,8 @@ def test_a_file_that_is_not_a_database_is_not_reachable(silo):
 
 def test_connect_refuses_to_recreate_a_missing_file(silo):
     silo.path.unlink()
-    with pytest.raises(SiloError, match="cannot open"):
-        silo.connect()
+    with pytest.raises(SiloError, match="cannot open"), silo.connect():
+        pass
     assert not silo.path.exists()
 
 

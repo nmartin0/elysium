@@ -271,7 +271,10 @@ class ChangeColumnType(SchemaChange):
                 f"retyping {self.table}.{self.column} cannot also rename it to "
                 f"{self.new_column.name!r}; use RenameColumn for that"
             )
-        return [(dialect_for(silo.kind).change_column_type(self.table, self.new_column), [])]
+        # Steps, because SQLite has no ALTER for this and rebuilds the
+        # table instead (dialect.py); the server engines take one.
+        return [(statement, []) for statement in
+                dialect_for(silo.kind).change_column_type_steps(schema.table(self.table), self.new_column)]
 
     def revise(self, schema: Schema) -> Schema:
         table = schema.table(self.table)

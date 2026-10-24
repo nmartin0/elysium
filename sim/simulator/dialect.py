@@ -97,6 +97,44 @@ class SqlDialect(ABC):
     def render_type(self, column: Column) -> str:
         """This engine's spelling of a column's declared type."""
 
+    # -- reading the catalogue back -----------------------------------
+    #
+    # information_schema on the two server engines; SQLite has none and
+    # answers through PRAGMA instead, so how to ASK is the dialect's,
+    # and what to do with the answer stays in relational.py. `fetch`
+    # runs a statement with its parameters and returns the rows.
+
+    def table_names(self, fetch: Any, scope: str) -> list[str]:
+        """Every base table, sorted, the simulator's own included."""
+        return [str(row[0]) for row in fetch(
+            "SELECT table_name FROM information_schema.tables "
+            f"WHERE table_schema = {self.placeholder} AND table_type = 'BASE TABLE' "
+            "ORDER BY table_name", (scope,))]
+
+    def catalogue_rows(self, fetch: Any, scope: str, table: str) -> list[dict[str, Any]]:
+        """A table's columns in storage order, each a dict keyed by
+        `catalogue_fields` -- what column_type_for and the rest read."""
+        return [dict(zip(self.catalogue_fields, row, strict=True)) for row in fetch(
+            f"SELECT {', '.join(self.catalogue_fields)} FROM information_schema.columns "
+            f"WHERE table_schema = {self.placeholder} AND table_name = {self.placeholder} "
+            "ORDER BY ordinal_position", (scope, table))]
+
+    def primary_keys(self, fetch: Any, scope: str) -> dict[str, str]:
+        """Each table's primary key column, where it has a single one."""
+        return {str(table): str(column) for table, column in fetch(
+            "SELECT t.table_name, k.column_name "
+            "FROM information_schema.table_constraints t "
+            "JOIN information_schema.key_column_usage k "
+            "  ON k.constraint_name = t.constraint_name "
+            " AND k.table_schema = t.table_schema "
+            " AND k.table_name = t.table_name "
+            f"WHERE t.table_schema = {self.placeholder} AND t.constraint_type = 'PRIMARY KEY'",
+            (scope,))}
+
+    def greatest(self, left: str, right: str) -> str:
+        """The larger of two expressions: GREATEST on both server engines."""
+        return f"GREATEST({left}, {right})"
+
     def render_column(self, column: Column) -> str:
         parts = [self.quote(column.name), self.render_type(column)]
         if column.primary_key:
@@ -174,6 +212,14 @@ class SqlDialect(ABC):
     @abstractmethod
     def change_column_type(self, table_name: str, column: Column) -> str:
         """Retype an existing column, keeping what is already in it."""
+
+    def change_column_type_steps(self, table: Table, column: Column) -> list[str]:
+        """The statements that retype `column` of `table`, in order.
+
+        One, on the server engines. A list because SQLite has no way to
+        retype a column in place and documents a rebuild instead.
+        """
+        return [self.change_column_type(table.name, column)]
 
     def rescale_column(self, table_name: str, column_name: str) -> str:
         """Multiply every value in a column by a bound parameter.
@@ -356,6 +402,173 @@ class MariaDbDialect(SqlDialect):
         return f"ALTER TABLE {self.quote(table_name)} MODIFY COLUMN {definition}"
 
 
+class SqliteDialect(SqlDialect):
+    """SQLite, as an ordinary application's database layer writes it.
+
+    The owner's choice (24 October): ordinary tables, not STRICT ones,
+    because that is what the software small businesses run creates.
+    SQLite then does what it documents (sqlite.org/datatype3.html), and
+    a consumer meets it:
+
+      - a declared type is a hint. "VARCHAR(255)" has TEXT affinity and
+        "numeric arguments in parentheses ... are ignored"; DECIMAL,
+        BOOLEAN, DATE and DATETIME have NUMERIC affinity.
+      - money is a number of the engine's choosing: "When text data is
+        inserted into a NUMERIC column, the storage class of the text is
+        converted to INTEGER or REAL" -- so 19.99 is a double, and 20.00
+        is the integer 20.
+      - "SQLite does not have a separate Boolean storage class. Instead,
+        Boolean values are stored as integers 0 (false) and 1 (true)."
+      - a date or time is "TEXT as ISO8601 strings", which is what an
+        application writes (the session does it; silos/sqlite.py).
+
+    The names are what an application's layer declares -- Django's
+    SQLite backend writes `varchar(n)`, `integer`, `bigint`, `decimal`,
+    `bool`, `date` and `datetime` -- so they are read back as the pack
+    declared them: SQLite keeps the declared text, which is the only
+    record of what was meant.
+
+    There are no accounts and no databases. The file is the database,
+    made by the silo; whoever can read the file reads every table.
+    """
+
+    kind: ClassVar[str] = "sqlite"
+    quote_character: ClassVar[str] = '"'
+    #: sqlite3's qmark style; it does not take %s.
+    placeholder: ClassVar[str] = "?"
+    catalogue_fields: ClassVar[tuple[str, ...]] = (
+        "column_name", "data_type", "is_nullable",
+        "character_maximum_length", "numeric_precision", "numeric_scale",
+    )
+
+    def render_type(self, column: Column) -> str:
+        match column.type:
+            case ColumnType.TEXT:
+                return f"VARCHAR({column.length})" if column.length else "TEXT"
+            case ColumnType.INTEGER:
+                return "INTEGER"
+            case ColumnType.BIGINT:
+                return "BIGINT"
+            case ColumnType.DECIMAL:
+                return f"DECIMAL({column.precision}, {column.scale})"
+            case ColumnType.BOOLEAN:
+                return "BOOL"
+            case ColumnType.DATE:
+                return "DATE"
+            case ColumnType.TIMESTAMP:
+                return "DATETIME"
+        raise ValueError(f"unhandled column type {column.type}")
+
+    def create_database(self, name: str) -> str:
+        """Nothing to run: the file is the database, and the silo made it."""
+        return ""
+
+    def table_names(self, fetch: Any, scope: str) -> list[str]:
+        # sqlite_% are SQLite's own (sqlite_sequence, sqlite_stat1).
+        return [str(row[0]) for row in fetch(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' ORDER BY name", ())]
+
+    def catalogue_rows(self, fetch: Any, scope: str, table: str) -> list[dict[str, Any]]:
+        # PRAGMA table_info: cid, name, type, notnull, dflt_value, pk --
+        # in storage order, the declared type as it was written.
+        rows = []
+        for _cid, name, declared, notnull, _default, pk in fetch(
+                f"PRAGMA table_info({self.quote(table)})", ()):
+            numbers = _bracketed(declared)
+            base = _base(declared)
+            rows.append({
+                "column_name": name,
+                "data_type": declared,
+                # A PRIMARY KEY column in an ordinary table may hold NULL
+                # (a documented SQLite quirk), so it reports notnull = 0;
+                # it is no more nullable for that than on the servers.
+                "is_nullable": "NO" if (notnull or pk) else "YES",
+                "character_maximum_length": numbers[0] if base == "VARCHAR" else None,
+                "numeric_precision": numbers[0] if base in ("DECIMAL", "NUMERIC") else None,
+                "numeric_scale": numbers[1] if base in ("DECIMAL", "NUMERIC") else None,
+            })
+        return rows
+
+    def primary_keys(self, fetch: Any, scope: str) -> dict[str, str]:
+        keys = {}
+        for table in self.table_names(fetch, scope):
+            named = [row[1] for row in fetch(f"PRAGMA table_info({self.quote(table)})", ()) if row[5]]
+            if len(named) == 1:
+                keys[table] = str(named[0])
+        return keys
+
+    def greatest(self, left: str, right: str) -> str:
+        # SQLite's scalar max() takes two or more arguments; GREATEST is
+        # not a function there.
+        return f"max({left}, {right})"
+
+    def declared_length_for(self, reported: Mapping[str, Any]) -> int | None:
+        length = reported.get("character_maximum_length")
+        return int(length) if length else None
+
+    def column_type_for(self, reported: Mapping[str, Any]) -> ColumnType:
+        base = _base(str(reported["data_type"]))
+        mapping = {
+            "TEXT": ColumnType.TEXT, "VARCHAR": ColumnType.TEXT,
+            "INTEGER": ColumnType.INTEGER, "INT": ColumnType.INTEGER,
+            "BIGINT": ColumnType.BIGINT,
+            "DECIMAL": ColumnType.DECIMAL, "NUMERIC": ColumnType.DECIMAL,
+            "BOOL": ColumnType.BOOLEAN, "BOOLEAN": ColumnType.BOOLEAN,
+            "DATE": ColumnType.DATE,
+            "DATETIME": ColumnType.TIMESTAMP, "TIMESTAMP": ColumnType.TIMESTAMP,
+        }
+        if base not in mapping:
+            raise ValueError(f"SQLite declared type {reported['data_type']!r} has no declared equivalent")
+        return mapping[base]
+
+    def change_column_type(self, table_name: str, column: Column) -> str:
+        raise NotImplementedError(
+            "SQLite cannot retype a column in place; use change_column_type_steps")
+
+    def change_column_type_steps(self, table: Table, column: Column) -> list[str]:
+        """SQLite's documented rebuild (sqlite.org/lang_altertable.html,
+        "Making Other Kinds Of Table Schema Changes"): "the full 12-step
+        procedure ... is appropriate for ... changing the datatype for a
+        column". What applies to a table with no indexes, triggers,
+        views or foreign keys of its own, which is every table a pack
+        declares: create the new table under another name, copy the
+        rows, drop the old one, rename the new one into place -- in that
+        order, because renaming the old one first "might corrupt
+        references to that table". The caller holds them in one
+        transaction, as step 2 says.
+
+        Values are copied as they are. SQLite converts by the new
+        column's affinity as each row is inserted, which is what a real
+        application's migration gets too.
+        """
+        revised = Table(name=f"_new_{table.name}", columns=tuple(
+            column if c.name == column.name else c for c in table.columns))
+        names = ", ".join(self.quote(c.name) for c in table.columns)
+        return [
+            self.create_table(revised),
+            f"INSERT INTO {self.quote(revised.name)} ({names}) SELECT {names} FROM {self.quote(table.name)}",
+            self.drop_table(table.name),
+            self.rename_table(revised.name, table.name),
+        ]
+
+
+def _base(declared: str) -> str:
+    """A declared type's name without its bracketed numbers, upper-cased."""
+    return declared.split("(", 1)[0].strip().upper()
+
+
+def _bracketed(declared: str) -> tuple[int | None, int | None]:
+    """The numbers in a declared type's brackets: VARCHAR(40) -> (40,
+    None), DECIMAL(10, 2) -> (10, 2). SQLite ignores them; they are the
+    only record of what the application declared."""
+    if "(" not in declared:
+        return None, None
+    inside = declared.split("(", 1)[1].rstrip(") ").split(",")
+    numbers = [int(part) for part in (p.strip() for p in inside) if part.isdigit()]
+    return (numbers[0] if numbers else None, numbers[1] if len(numbers) > 1 else None)
+
+
 #: By silo kind, so a caller with a silo can find its dialect without
 #: a conditional. Explicit rather than discovered: two entries do not
 #: need a registry mechanism, and a greppable dict is what a reader
@@ -363,6 +576,7 @@ class MariaDbDialect(SqlDialect):
 DIALECTS: dict[str, SqlDialect] = {
     PostgresDialect.kind: PostgresDialect(),
     MariaDbDialect.kind: MariaDbDialect(),
+    SqliteDialect.kind: SqliteDialect(),
 }
 
 
@@ -415,11 +629,10 @@ def dialect_for(kind: str) -> SqlDialect:
 # small integer and only `column_type` distinguishes them. Every mapping here
 # was measured against a real instance rather than taken from documentation.
 #
-# DEFERRED (known, intentional, not yet built): no SQLite dialect, even though
-# SqliteSilo exists. SQLite's dynamic typing means the same declarations behave
-# differently enough that it is a design question rather than a third case
-# statement -- a column declared DECIMAL holds whatever is put in it. Worth
-# doing; not worth doing by analogy.
+# RESOLVED (24 October): the SQLite dialect exists, and the design question
+# this note deferred was answered with the owner rather than by analogy:
+# ordinary tables, as the software small businesses run creates them, with
+# SQLite's affinity left to do what it documents. See SqliteDialect.
 #
 # RESOLVED: ALTER rendering exists, and the engines diverge exactly where
 # predicted. PostgreSQL needs ALTER ... Type ... USING, because it refuses to

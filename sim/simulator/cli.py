@@ -257,7 +257,7 @@ def _run(arguments: argparse.Namespace) -> int:
     from simulator import resume as resuming
     from simulator.control import ControlError, hold_run_lock
 
-    # HELD UNTIL THIS PROCESS ENDS: says a run is under way, building and
+    # Held until this process ends: says a run is under way, building and
     # tidying up included (simulator/control.py, hold_run_lock).
     try:
         _run_lock = hold_run_lock(arguments.dir)  # noqa: F841 -- held by being kept
@@ -371,7 +371,7 @@ def _follow(world: World, tick_seconds: float, controller) -> None:
     """
     print(f"\nFollowing at {controller.compression:g}x. Press Ctrl-C to stop.")
     while True:
-        # READ EACH ROUND, so `speed` takes effect at the next tick.
+        # Read each round, so `speed` takes effect at the next tick.
         compression = controller.compression
         step = min(tick_seconds, FOLLOW_INTERVAL_SECONDS * compression)
         _serve(controller)
