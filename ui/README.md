@@ -51,6 +51,10 @@ ui/packages/app-query/     Query -- the agent question/answer screen,
 ui/packages/app-browse/    Browse -- search, per-object detail, direct
                             action invocation, charts, notes, history,
                             saved views, bulk actions, explore-related.
+                            ITS OWN BUNDLE (step 3): a small entry with
+                            its palette commands, asked for when the
+                            palette first opens, and each page a chunk
+                            of its own, fetched when first opened.
 ui/packages/app-schema/    The ontology as a reference: object types,
                             link types, action types, and the schema
                             graph. ITS OWN BUNDLE: loaded when /schema

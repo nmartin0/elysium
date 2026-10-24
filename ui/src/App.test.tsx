@@ -64,8 +64,6 @@ vi.mock('@shell/core/moduleLoader', async (importOriginal) => {
   }
   return { ...real, ModuleLoader: StandIn }
 })
-vi.mock('@elysium/app-browse/ObjectSearchPanel', () => ({ default: () => <p>browse screen</p> }))
-vi.mock('@elysium/app-browse/ObjectDetailPanel', () => ({ default: () => <p>object detail screen</p> }))
 
 import {
   logout,

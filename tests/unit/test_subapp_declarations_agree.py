@@ -216,25 +216,16 @@ def test_no_page_code_is_left_for_a_page_no_module_contributes():
     assert not orphaned, f"App.tsx has code for {sorted(orphaned)}, which no module contributes"
 
 
-def _built_in_code(table: str) -> set[str]:
-    """The module ids an App.tsx table of built-in module code names."""
-    source = (UI / "src" / "App.tsx").read_text()
-    body = source[source.index(f"const {table}"):]
-    body = body[:body.index("\n}")]
-    found = set(re.findall(r"^\s+([a-z-]+):", body, re.MULTILINE))
-    assert found, f"found nothing in {table}; the parse is broken"
-    return found
+def test_every_module_naming_an_activation_event_brings_its_own_bundle():
+    """A module's `activationEvents` (step 1.3) say when the shell asks it
+    for code besides its pages -- palette commands on `onPalette`, rail
+    badges on `onStartup`. Elysium's page no longer carries code for any
+    module (BLOCKING.md item 3, step 3: Browse's palette was the last), so
+    that code can only come from the module's own bundle. One built into
+    the page that named an event would be asked, and have nothing to give."""
+    without = sorted(m["id"] for m in _manifests() if m.get("activationEvents") and not m.get("entry"))
 
-
-@pytest.mark.parametrize("table,event", [("BUILT_IN_PALETTES", "onPalette")])
-def test_code_the_page_supplies_for_a_module_is_asked_for_by_its_manifest(table, event):
-    """App.tsx's tables hold the code the shell asks of modules built into
-    the page -- palette commands, today. The shell asks only on the
-    activation event the module's manifest names, so code without its
-    event would silently never run (step 1.3)."""
-    by_id = {m["id"]: m for m in _manifests()}
-    missing = sorted(i for i in _built_in_code(table) if event not in by_id[i].get("activationEvents", []))
-    assert not missing, f"{missing} have code in {table} and do not name {event}"
+    assert not without, f"{without} name activation events and have no bundle to bring the code"
 
 
 def test_every_module_that_fills_a_slot_brings_its_own_bundle():

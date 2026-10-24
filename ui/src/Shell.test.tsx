@@ -1,13 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { Classes } from '@blueprintjs/core'
 import { act, cleanup, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
-import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
+import { MemoryRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { lazy, type ComponentType } from 'react'
 import type { CurrentUser } from '@elysium/shell-api/components/UserMenu'
 import type { VisibleSchema } from '@elysium/shell-api/types'
-import { getVisibleActionTypesCached } from '@elysium/shell-api/api'
 import { publishHostValues, resetHostValues } from '@elysium/shell-api/host'
-import { useBrowsePalette } from '@elysium/app-browse/palette'
 import type { FrameModules } from '@shell/core/activation'
 import { enterSafeMode, leaveSafeMode } from '@shell/core/safeMode'
 
@@ -62,6 +60,29 @@ function useStandInBadges() {
   return { '/inbox': { count: waitingInTheInbox, label: `${waitingInTheInbox} waiting` } }
 }
 
+/** BROWSE'S PALETTE COMMANDS, STOOD IN FOR: Browse brings its own in its
+ *  bundle (BLOCKING.md item 3, step 3), tested in its package
+ *  (app-browse/src/palette.test.tsx, paletteCommands.test.ts). What is
+ *  tested here is the frame offering what a module's palette hook gives:
+ *  its commands before and after the rail's, and what it makes of typed
+ *  text -- each run when chosen. */
+function useStandInPalette({ open }: { open: boolean }) {
+  const navigate = useNavigate()
+  const command = (id: string, group: string, label: string, to: string) => ({
+    id,
+    group,
+    label,
+    run: () => navigate(to),
+  })
+  return {
+    before: open
+      ? [command('here', 'Actions · this Customer', 'Escalate', '/objects/Customer/c1?action=Escalate')]
+      : [],
+    after: [command('type', 'Browse', 'Browse Customer', '/browse?type=Customer')],
+    suggest: (query: string) => [command('search', 'Browse', 'Search Customer', `/browse?type=Customer&q=${query}`)],
+  }
+}
+
 function modulesFor(visibleApps: VisibleApp[]): FrameModules {
   const offered = (path: string) => visibleApps.some((app) => app.path === path)
   const entry = (id: string, path: string, events: string[]) => ({
@@ -79,7 +100,7 @@ function modulesFor(visibleApps: VisibleApp[]): FrameModules {
     ],
     activate: (module) =>
       module.id === 'browse'
-        ? { usePalette: useBrowsePalette }
+        ? { usePalette: useStandInPalette }
         : module.id === 'inbox'
           ? { useBadges: useStandInBadges }
           : undefined,
@@ -1013,29 +1034,28 @@ describe('Shell -- the command palette', () => {
 })
 
 describe('Shell -- what the palette offers beyond the rail (DEV_UI 10.1)', () => {
-  const SCHEMA: VisibleSchema = { Customer: { fields: {} } }
   const options = () => screen.getAllByRole('option').map((node) => node.textContent ?? '')
 
-  it('a type to browse, when Browse is a screen this reader has', async () => {
-    renderShell([{ name: 'Browse', path: '/browse' }], vi.fn(), '/query', null, SCHEMA)
+  it("a module's own commands, which run when chosen", async () => {
+    renderShell([{ name: 'Browse', path: '/browse' }])
     await openPalette({ key: 'k', metaKey: true })
 
     fireEvent.click(screen.getAllByRole('option').find((node) => node.textContent?.includes('Browse Customer'))!)
     expect(await screen.findByTestId('at')).toHaveTextContent('/browse?type=Customer')
   })
 
-  it('no types, and no searches, for a reader without Browse', async () => {
-    renderShell([{ name: 'Query', path: '/query' }], vi.fn(), '/query', null, SCHEMA)
+  it('nothing of a module the reader is not offered', async () => {
+    renderShell([{ name: 'Query', path: '/query' }])
     await openPalette({ key: 'k', metaKey: true })
     expect(options().join(' ')).not.toMatch(/Customer/)
     fireEvent.change(screen.getByLabelText('Search commands'), { target: { value: 'ada' } })
-    // No SEARCH, which is Browse's: a shell command may still match the
-    // letters ("Reload in safe mode" holds a, d, a in order).
+    // No SEARCH, which is the module's: a shell command may still match
+    // the letters ("Reload in safe mode" holds a, d, a in order).
     expect(options().join(' ')).not.toMatch(/Search/)
   })
 
-  it('a search in the type, from whatever was typed', async () => {
-    renderShell([{ name: 'Browse', path: '/browse' }], vi.fn(), '/query', null, SCHEMA)
+  it('what a module makes of whatever was typed', async () => {
+    renderShell([{ name: 'Browse', path: '/browse' }])
     await openPalette({ key: 'k', metaKey: true })
     fireEvent.change(screen.getByLabelText('Search commands'), { target: { value: 'ada' } })
 
@@ -1043,11 +1063,8 @@ describe('Shell -- what the palette offers beyond the rail (DEV_UI 10.1)', () =>
     expect(await screen.findByTestId('at')).toHaveTextContent('/browse?type=Customer&q=ada')
   })
 
-  it("the actions on the object in front of them, and only on that object's page", async () => {
-    vi.mocked(getVisibleActionTypesCached).mockResolvedValue({
-      Escalate: { affected_object_types: ['Customer'], executable: true },
-    })
-    renderShell([{ name: 'Browse', path: '/browse' }], vi.fn(), '/objects/Customer/c1', null, SCHEMA)
+  it("what a module lists before the rail's, first", async () => {
+    renderShell([{ name: 'Browse', path: '/browse' }], vi.fn(), '/objects/Customer/c1')
     await openPalette({ key: 'k', metaKey: true })
 
     expect(options()[0]).toBe('Actions · this CustomerEscalate')

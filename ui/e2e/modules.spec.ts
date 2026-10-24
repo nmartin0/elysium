@@ -98,3 +98,34 @@ test('Admin comes from its own bundle when first opened, and its own stylesheet 
   // ITS OWN RULE: a table nothing styles has separate borders.
   expect(await table.evaluate((el) => getComputedStyle(el).borderCollapse)).toBe('collapse')
 })
+
+test("Browse's palette commands come in a small bundle, and its pages in chunks of their own", async ({ page }) => {
+  // The last sub-app moved (step 3). Opening the palette anywhere asks
+  // Browse for its commands, which must not mean fetching all of Browse;
+  // its pages arrive when one is opened.
+  const fetched: string[] = []
+  page.on('request', (request) => fetched.push(new URL(request.url()).pathname))
+  await logIn(page)
+  const browse = (path: string) => path.startsWith('/api/modules/browse/')
+  expect(fetched.filter(browse)).toEqual([])
+
+  await page.keyboard.press('Control+k')
+  await expect(page.getByRole('option', { name: /Browse Customer/ })).toBeVisible()
+  expect(fetched.filter(browse)).toContain('/api/modules/browse/files/dist/index.js')
+  expect(fetched.filter(browse).some((path) => /ObjectSearchPanel-/.test(path))).toBe(false)
+  await page.keyboard.press('Escape')
+
+  await page.locator('.app__nav').getByRole('menuitem', { name: 'Browse' }).click()
+  // A result's link, drawn by Browse's own rule: in the row's colour, not
+  // Blueprint's blue for a link. (Not its missing underline: Blueprint
+  // draws links without one too, and a check on that passed with Browse's
+  // stylesheet removed.)
+  const link = page.locator('.object-search__link').first()
+  await expect(link).toBeVisible()
+  expect(fetched.filter(browse).some((path) => /ObjectSearchPanel-/.test(path))).toBe(true)
+  const [own, row] = await link.evaluate((el) => [
+    getComputedStyle(el).color,
+    getComputedStyle(el.closest('td') ?? el.parentElement!).color,
+  ])
+  expect(own).toBe(row)
+})

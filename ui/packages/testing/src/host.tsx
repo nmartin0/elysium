@@ -20,7 +20,7 @@
 import { OverlaysProvider } from '@blueprintjs/core'
 import { publishHostValues, resetHostValues, type HostValues } from '@elysium/shell-api/host'
 import { act, render, type RenderResult } from '@testing-library/react'
-import type { ReactElement } from 'react'
+import { Suspense, type ReactElement } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { vi, type Mock } from 'vitest'
 
@@ -36,7 +36,14 @@ export interface TestHost extends RenderResult {
   hostValues: HostValues & { onSessionExpired: Mock<() => void> }
 }
 
-/** Renders `ui` as the shell would mount a module's page. */
+/** What the frame shows while a page's code is still arriving -- a page
+ *  a module loads on demand (React's `lazy`), as Browse's are. No role,
+ *  so it is never mistaken for the page's own loading state or alert;
+ *  the conformance suite waits for it to go before checking anything. */
+export const SUSPENDED_ATTRIBUTE = 'data-test-host-suspended'
+
+/** Renders `ui` as the shell would mount a module's page: inside a
+ *  Suspense boundary, as the frame's own around its outlet. */
 export function renderInTestHost(ui: ReactElement, options: TestHostOptions = {}): TestHost {
   const hostValues = {
     visibleSchema: {},
@@ -49,7 +56,9 @@ export function renderInTestHost(ui: ReactElement, options: TestHostOptions = {}
   act(() => publishHostValues(hostValues))
   const result = render(
     <OverlaysProvider>
-      <MemoryRouter initialEntries={[options.route ?? '/']}>{ui}</MemoryRouter>
+      <MemoryRouter initialEntries={[options.route ?? '/']}>
+        <Suspense fallback={<span {...{ [SUSPENDED_ATTRIBUTE]: '' }} />}>{ui}</Suspense>
+      </MemoryRouter>
     </OverlaysProvider>,
   )
   return Object.assign(result, { hostValues })

@@ -47,7 +47,7 @@ import type { ComponentType } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { unlayeredRules } from './css'
 import { useHostValues } from '@elysium/shell-api/host'
-import { renderInTestHost, resetTestHost, stubServer } from './host'
+import { renderInTestHost, resetTestHost, stubServer, SUSPENDED_ATTRIBUTE, type TestHostOptions } from './host'
 
 /** Checks run once per module. */
 export const MODULE_CHECKS = ['manifest', 'layered-css'] as const
@@ -70,32 +70,55 @@ const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve
 // The checks. Each throws when the module fails it.
 // ---------------------------------------------------------------------------
 
-/** The page renders inside the shell's frame without throwing. */
-async function renders(Page: ComponentType) {
+/**
+ * A PAGE WHOSE CODE ARRIVES ON DEMAND (React's `lazy`, as Browse's pages
+ * do) is waited for before any check: rendered once until the frame's
+ * Suspense fallback goes, so its code is in, and every check after sees
+ * the page itself -- not the fallback, which would pass `renders` for
+ * being something and could pass nothing else for the right reason.
+ */
+async function codeArrived(Page: ComponentType, options: TestHostOptions = {}) {
   stubServer({ kind: 'pending' })
-  const host = renderInTestHost(<Page />)
+  const host = renderInTestHost(<Page />, options)
+  await waitFor(
+    () =>
+      expect(
+        host.container.querySelector(`[${SUSPENDED_ATTRIBUTE}]`),
+        "the page's code never arrived: it is still suspended",
+      ).toBeNull(),
+    { timeout: 5000 },
+  )
+  host.unmount()
+  resetTestHost()
+}
+
+/** The page renders inside the shell's frame without throwing. */
+async function renders(Page: ComponentType, options: TestHostOptions = {}) {
+  stubServer({ kind: 'pending' })
+  const host = renderInTestHost(<Page />, options)
   await settle()
   expect(host.container.innerHTML, 'the page rendered nothing at all').not.toBe('')
+  expect(host.container.querySelector(`[${SUSPENDED_ATTRIBUTE}]`), 'the page is still suspended').toBeNull()
 }
 
 /** While the server has not answered, the page says it is loading. */
-async function loading(Page: ComponentType) {
+async function loading(Page: ComponentType, options: TestHostOptions = {}) {
   stubServer({ kind: 'pending' })
-  const host = renderInTestHost(<Page />)
+  const host = renderInTestHost(<Page />, options)
   await within(host.container).findByRole('status', {}, { timeout: 2000 })
 }
 
 /** When the server fails, the page says so, announced as an alert. */
-async function error(Page: ComponentType) {
+async function error(Page: ComponentType, options: TestHostOptions = {}) {
   stubServer({ kind: 'status', status: 500 })
-  const host = renderInTestHost(<Page />)
+  const host = renderInTestHost(<Page />, options)
   await within(host.container).findByRole('alert', {}, { timeout: 2000 })
 }
 
 /** When the session has expired, the page hands over to sign-in. */
-async function sessionExpired(Page: ComponentType) {
+async function sessionExpired(Page: ComponentType, options: TestHostOptions = {}) {
   stubServer({ kind: 'status', status: 401 })
-  const host = renderInTestHost(<Page />)
+  const host = renderInTestHost(<Page />, options)
   await waitFor(() => expect(host.hostValues.onSessionExpired).toHaveBeenCalled(), { timeout: 2000 })
 }
 
@@ -105,7 +128,7 @@ async function sessionExpired(Page: ComponentType) {
  * silent since React 18, so it cannot be observed; what keeps running
  * can.)
  */
-async function unmount(Page: ComponentType) {
+async function unmount(Page: ComponentType, options: TestHostOptions = {}) {
   const intervals = new Set<unknown>()
   const listeners = new Map<string, number>()
   const realSet = window.setInterval.bind(window)
@@ -135,7 +158,7 @@ async function unmount(Page: ComponentType) {
     })
   }
   const server = stubServer({ kind: 'pending' })
-  const host = renderInTestHost(<Page />)
+  const host = renderInTestHost(<Page />, options)
   await settle()
   host.unmount()
   server.settle({ kind: 'status', status: 500 })
@@ -189,7 +212,10 @@ async function layeredCss(folder: string) {
 }
 
 /** The checks by id, for the suite and for its own tests. */
-export const PAGE_CHECK_FUNCTIONS: Record<(typeof PAGE_CHECKS)[number], (Page: ComponentType) => Promise<void>> = {
+export const PAGE_CHECK_FUNCTIONS: Record<
+  (typeof PAGE_CHECKS)[number],
+  (Page: ComponentType, options?: TestHostOptions) => Promise<void>
+> = {
   renders,
   loading,
   error,
@@ -291,6 +317,11 @@ export interface ModuleUnderTest {
   folder: string
   /** Its entry's `activate`. */
   activate: () => ModuleActivation | Promise<ModuleActivation>
+  /** What the host publishes to its pages, where the harmless default --
+   *  an empty schema -- would leave a page nothing to do: Browse's
+   *  search, with no type to look up, reads nothing, so it could fail
+   *  loading and error for having nothing to load. */
+  hostValues?: TestHostOptions['hostValues']
 }
 
 export function describeModule(module: ModuleUnderTest): void {
@@ -326,7 +357,9 @@ export function describeModule(module: ModuleUnderTest): void {
         define(`${check} @ ${pageId}`, levelFor(overrides, check, pageId), async () => {
           const Page = (await module.activate()).pages[pageId]
           if (Page === undefined) throw new Error(`activate offers no page called ${pageId}`)
-          await PAGE_CHECK_FUNCTIONS[check](Page)
+          const host = { hostValues: module.hostValues }
+          await codeArrived(Page, host)
+          await PAGE_CHECK_FUNCTIONS[check](Page, host)
         })
       }
     }
@@ -335,7 +368,10 @@ export function describeModule(module: ModuleUnderTest): void {
         define(`${check} @ ${id} (a contribution)`, levelFor(overrides, check, id), async () => {
           const Contribution = (await module.activate()).contributions?.[id]
           if (Contribution === undefined) throw new Error(`activate offers no contribution called ${id}`)
-          await PAGE_CHECK_FUNCTIONS[check](asSlotted(Contribution as ComponentType<{ onSessionExpired: () => void }>))
+          const Slotted = asSlotted(Contribution as ComponentType<{ onSessionExpired: () => void }>)
+          const host = { hostValues: module.hostValues }
+          await codeArrived(Slotted, host)
+          await PAGE_CHECK_FUNCTIONS[check](Slotted, host)
         })
       }
     }

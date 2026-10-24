@@ -82,14 +82,14 @@ import LoadingState from '@elysium/shell-api/components/LoadingState'
 // type` is fully erased at compile time (isolatedModules requires
 // this to be unambiguous), so this adds no second network request
 // and creates no eager reference to the module's own real code.
-const ObjectSearchPanel = lazy(() => import('@elysium/app-browse/ObjectSearchPanel'))
-const ObjectDetailPanel = lazy(() => import('@elysium/app-browse/ObjectDetailPanel'))
 // THE SERVER'S CONTROLS (step 3): the System sub-app's, so built into this
 // page and loaded in safe mode -- but on first opening, as Admin was.
 const ServerPage = lazy(() => import('./system/ServerPage'))
 
-// WHAT EACH BUILT-IN MODULE'S PAGES NEED FROM THE HOST, through a context
-// rather than props, so the page components below are defined ONCE: a
+// WHAT THE PAGES BUILT INTO THIS PAGE -- the System sub-app's, since step
+// 3 -- NEED FROM THE HOST, through a context rather than props, so the
+// page components below are defined ONCE; the same values are published
+// to bundled modules' pages through the kit's host store (below). A
 // component created inside App on each render would be a new type every
 // time, and React would remount the page -- losing its state -- whenever
 // the schema or the session changed.
@@ -99,15 +99,6 @@ interface PageNeeds {
   onSessionExpired: () => void
 }
 const PageNeedsContext = createContext<PageNeeds>({ visibleSchema: null, username: '', onSessionExpired: () => {} })
-
-function BrowsePage() {
-  const needs = useContext(PageNeedsContext)
-  return <ObjectSearchPanel {...needs} />
-}
-function ObjectPage() {
-  const needs = useContext(PageNeedsContext)
-  return <ObjectDetailPanel visibleSchema={needs.visibleSchema} onSessionExpired={needs.onSessionExpired} />
-}
 
 /** Every module offered, for the shell's system sub-app; whether the page
  *  is in safe mode; how to fetch the feed again. Null until it arrives. */
@@ -166,30 +157,21 @@ function SystemServerPage() {
  * is shown as "nothing loaded opens this page" by the shell.
  */
 const BUILT_IN_PAGES: Record<string, ComponentType> = {
-  'browse:search': BrowsePage,
-  'browse:object': ObjectPage,
   'system:modules': SystemModulesPage,
   'system:addons': SystemAddonServersPage,
   'system:server': SystemServerPage,
 }
 /**
- * THE CODE THE SHELL ASKS OF MODULES BUILT INTO THE PAGE, by module id
- * (step 1.3): Browse's palette commands. Imported when the shell asks --
- * on the activation event its manifest names, the palette first opening
- * -- not with the page: the same lazy activation a bundled module gets.
- * A palette without `onPalette` would never be asked for
- * (tests/unit/test_subapp_declarations_agree.py). The Inbox's badge was
- * the other kind, until the Inbox brought it in its own bundle (step 3).
+ * A module's code, as the shell asks for it: its bundle's activation.
+ *
+ * NOTHING OF A MODULE'S IS BUILT INTO THIS PAGE ANY MORE (BLOCKING.md
+ * item 3, step 3): Browse's palette commands were the last, in a table
+ * here beside the Inbox's badge, until each module brought its own in its
+ * bundle. The System sub-app's pages are the page's own, in
+ * BUILT_IN_PAGES above, and need no activation.
  */
-const BUILT_IN_PALETTES: Record<string, () => Promise<ModuleCode>> = {
-  browse: () => import('@elysium/app-browse/palette').then((code) => ({ usePalette: code.useBrowsePalette })),
-}
-
-/** A module's code, as the shell asks for it: its bundle's activation, or
- *  this page's own table. */
 async function activate(module: ModuleEntry): Promise<ModuleCode | undefined> {
-  if (module.entry) return moduleLoader.load(module)
-  return BUILT_IN_PALETTES[module.id]?.()
+  return module.entry ? moduleLoader.load(module) : undefined
 }
 
 /** A feed that could not be had, said in the words the failure came in. */

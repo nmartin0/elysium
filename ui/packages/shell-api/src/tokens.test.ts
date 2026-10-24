@@ -47,7 +47,21 @@ function readAll(): Array<[string, string]> {
 }
 
 const tokens = read('packages/shell-api/src/tokens.css')
-const stylesheets = ['packages/shell-api/src/index.css', 'packages/app-schema/src/SchemaPanel.css'].map(read)
+// EVERY STYLESHEET A PACKAGE AUTHORS, found rather than listed: the list
+// this replaced named the kit's and Schema's, and went stale as each
+// module took its rules into its own (BLOCKING.md item 3, step 3) -- a
+// token used only by Browse's rules read as unused the day they moved.
+const stylesheets = readdirSync(resolve(process.cwd(), 'packages'), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .flatMap((entry) =>
+    readdirSync(resolve(process.cwd(), 'packages', entry.name, 'src'), { recursive: true, encoding: 'utf8' })
+      .filter((name) => name.endsWith('.css'))
+      .map((name) => `packages/${entry.name}/src/${name}`),
+  )
+  // tokens.css IS the vocabulary, read as `tokens` above: where raw
+  // colours are meant to be, so not one of the stylesheets checked for them.
+  .filter((path) => path !== 'packages/shell-api/src/tokens.css')
+  .map(read)
 
 /** Declarations only, comments stripped, so prose about a colour is
  *  never mistaken for a colour. */
@@ -343,7 +357,6 @@ describe('identifiers are readable as identifiers', () => {
    * ids of equal length render different widths.
    */
   const tokens = read('packages/shell-api/src/tokens.css')
-  const shell = read('packages/shell-api/src/index.css')
 
   it('declares a monospace stack as a primitive', () => {
     // A PRIMITIVE, not an override. Blueprint ships no monospace
@@ -360,15 +373,18 @@ describe('identifiers are readable as identifiers', () => {
     expect(tokens).not.toMatch(/--font-mono:[^;]*url\(/)
   })
 
+  // Browse's, since its rules moved into its own stylesheet (step 3).
+  const browse = read('packages/app-browse/src/browse.css')
+
   it('renders the object id in it', () => {
-    expect(shell).toMatch(/\.object-detail__subtitle\s*\{[^}]*font-family:\s*var\(--font-mono\)/s)
+    expect(browse).toMatch(/\.object-detail__subtitle\s*\{[^}]*font-family:\s*var\(--font-mono\)/s)
   })
 
   it('makes one click select the whole id', () => {
     // THE COPY AFFORDANCE. An id is never usefully selected in part,
     // and a double-click otherwise stops at the underscore in
     // cust_001 -- giving "cust" and a silent mistake downstream.
-    expect(shell).toMatch(/\.object-detail__subtitle\s*\{[^}]*user-select:\s*all/s)
+    expect(browse).toMatch(/\.object-detail__subtitle\s*\{[^}]*user-select:\s*all/s)
   })
 })
 

@@ -1081,7 +1081,39 @@ own rules (the user table, the create-user form, the roles editor) moved
 with it; what it shares with the kit -- a role change's impact, the
 waiting configuration changes -- kept theirs there.
 
-**Blocked on:** nothing; Browse, the last and largest, is next.
+**BROWSE MOVED (24 October), AND WITH IT STEP 3 IS DONE.** Its own
+bundle: a small entry carrying its palette commands, which the shell
+asks for when the palette first opens, and each of its two pages a chunk
+of its own beside it (React's `lazy`), fetched when first opened -- so
+opening the palette on Query fetches 3 KB of Browse, not all of it, as
+when the page held it. Its 134 rules moved into browse.css; what it
+shares with the kit (data tables, field values, the filter bar) kept
+theirs. Elysium's page now carries no module's code: its tables of
+built-in pages and palettes hold only the System sub-app's pages, and a
+Python test refuses any module naming an activation event without a
+bundle.
+
+TWO THINGS THE MOVE FOUND, both fixed:
+- "Ask about this set" had drawn its subject line as a sunken box since
+  19 October, when the question-in-progress rules were pasted in between
+  `.ask-panel__subject,` and `.ask-panel__note {`. The pair is back
+  together, and the progress rules, which are the kit's QuestionProgress
+  component's, stayed in the kit.
+- The tokens test read only the kit's and Schema's stylesheets, so every
+  rule moved in step 3 had gone unchecked for raw colours and undefined
+  tokens. It now finds every package's stylesheet itself.
+
+THE CONFORMANCE SUITE NOW HANDLES A PAGE LOADED ON DEMAND: the test host
+renders inside a Suspense boundary, as the frame does, and each check
+first waits for the page's code to arrive, so no check sees the
+fallback and passes for it. And a module may give the suite its host
+values -- Browse gives a schema with one type, without which its search
+page reads nothing. Both of Browse's pages pass every check. The suite's
+known limit holds there too: breaking Search's own hand-over of an
+expired session did not fail its check, because the panels it mounts
+hand over themselves. Search's own test does catch it.
+
+**Blocked on:** nothing; step 4, the versioned API, is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 
