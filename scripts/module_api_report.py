@@ -394,6 +394,8 @@ def render(surface: Surface, used: dict[str, set[str]]) -> str:
         "Every name below is one a module imports from the kit (`@elysium/shell-api`)",
         "or the shell (`@shell/core`), or a declaration one of those leads to.",
         "Anything else either exports is internal, and may change without notice.",
+        "The manifest, `activate()`, host values, styles and the add-on server are",
+        "described in [MODULE_API.md](MODULE_API.md).",
         "",
         f"{sum(len(names) for names in used.values())} names imported, from {len(used)} entry points,"
         f" by {len(MODULE_SOURCES)} modules;",

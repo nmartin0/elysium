@@ -1152,7 +1152,26 @@ SDK checks: it is the wire format of one file, and the module's `api`
 already says which API its server was built for. Folding it in would
 change the SDK every add-on carries for no reader who needs it now.
 
-**Blocked on:** nothing; 4.3, the short guide, is next.
+**4.3, THE GUIDE, WRITTEN (24 October), AND WITH IT STEP 4 AND ITEM 3'S
+BUILD ORDER ARE DONE.** ui/MODULE_API.md, for someone writing a module:
+the version rules, the manifest's keys and what the server checks,
+`contributes`, activation events, what `activate()` returns, the host
+values, the shared libraries, styles (tokens, the `components` layer,
+a module's own stylesheet), building and testing with the conformance
+suite, and the add-on server's contract, pointing at the SDK's
+docstring for the whole of it. A GUIDE DRIFTS where a report does not,
+so tests/unit/test_the_module_api_guide_matches_the_code.py holds its
+LISTS -- manifest keys, contributions, events, what activate returns,
+host values, shared libraries, the version, every file it names -- to
+the code that decides them.
+
+What item 3 offered and deferred is unchanged: WebSocket pass-through,
+jobs, timer callbacks, event subscriptions, time-series buckets, kit
+components (above, "GENERIC SERVICES FOR ADD-ONS"); drift from the
+simulator's panel; and tightening /config and /silos to
+manage:deployment, an API change of its own.
+
+**Blocked on:** nothing; item 3 waits on the owner for what comes next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

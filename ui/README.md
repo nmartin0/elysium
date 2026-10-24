@@ -29,6 +29,10 @@ is right for a week. `ui/src/readme.test.ts` now fails if a package is
 added and not named here.
 
 ```
+MODULE_API.md              THE MODULE API'S GUIDE, for someone writing
+                           a module: the manifest, activate(), host
+                           values, styles, building and testing, the
+                           add-on server, and the version rules.
 module-api.report.md       THE PUBLIC MODULE API (BLOCKING.md item 3,
                            step 4): every name a module may rely on,
                            generated -- `python -m scripts.module_api_report`

@@ -10,6 +10,8 @@ a module asks for it as `"api": "^1.0"` in its module.json.
 Every name below is one a module imports from the kit (`@elysium/shell-api`)
 or the shell (`@shell/core`), or a declaration one of those leads to.
 Anything else either exports is internal, and may change without notice.
+The manifest, `activate()`, host values, styles and the add-on server are
+described in [MODULE_API.md](MODULE_API.md).
 
 194 names imported, from 38 entry points, by 9 modules;
 242 declarations public in all.
