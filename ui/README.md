@@ -29,6 +29,11 @@ is right for a week. `ui/src/readme.test.ts` now fails if a package is
 added and not named here.
 
 ```
+module-api.report.md       THE PUBLIC MODULE API (BLOCKING.md item 3,
+                           step 4): every name a module may rely on,
+                           generated -- `python -m scripts.module_api_report`
+                           -- and held current by a test. Not edited by
+                           hand.
 ui/src/                    App.tsx (auth state, routing, what is
                             fetched once and passed down), Shell.tsx
                             (what Elysium hands the shell's frame --

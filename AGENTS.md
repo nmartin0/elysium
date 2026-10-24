@@ -601,6 +601,12 @@ expanding there too, or it will blame the wrong file.
 
 ## Files you should not hand-edit
 
+`ui/module-api.report.md` is generated: the public module API, written
+down (BLOCKING.md item 3, step 4). `python -m scripts.module_api_report`
+rewrites it, and a test fails while it is stale -- so a change to what
+modules may rely on arrives as a diff of it, to be reviewed as an API
+change rather than regenerated without a look.
+
 `vulture_whitelist.py` is append-only, and each entry needs a comment
 saying why. Fixture schemas under `tests/integration/fixtures/` are
 one of three deployments that must change together.

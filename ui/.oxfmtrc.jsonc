@@ -21,6 +21,11 @@
   "semi": false,
   "singleQuote": true,
 
+  // GENERATED, so not formatted: scripts/module_api_report.py writes the
+  // public module API report, and a test compares it byte for byte with
+  // what the script makes -- formatted, it would read as stale.
+  "ignorePatterns": ["module-api.report.md"],
+
   // trailingComma deliberately left at oxfmt's own default ("all")
   // -- confirmed directly against real project code that this
   // already matches existing practice, so no override needed here.

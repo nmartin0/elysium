@@ -604,7 +604,7 @@ left behind.
 
 | suite | how to run | size |
 | --- | --- | --- |
-| unit | `pytest tests/unit` | 433 files |
+| unit | `pytest tests/unit` | 459 files |
 | integration | `pytest tests/integration` | 82 files |
 | controls | declared in CI | 490 |
 | front end | `cd ui && npm run test` | vitest |
