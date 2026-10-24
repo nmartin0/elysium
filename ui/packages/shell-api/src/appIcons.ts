@@ -42,6 +42,10 @@ const BY_PATH: Record<string, IconName> = {
   '/system/modules': 'cube-add',
   // Add-ons' own servers (step 2.2): started, watched, restarted.
   '/system/addons': 'console',
+  // Elysium's own server (step 3, split from Admin): its configuration,
+  // silos, metrics and mirror. `cog`, the glyph Admin's Deployment view
+  // had, since that is the view it opens on.
+  '/system/server': 'cog',
 }
 
 /**

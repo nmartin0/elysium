@@ -103,8 +103,8 @@ FOUR LAYERS, and only two of them matter to Elysium.
   app-approvals      the write inbox
   app-notifications  triggers and alerts
   app-schema         the ontology as a reference
-  app-admin          roles, metrics, mirror status, silos,
-                     deployment config (read-only)
+  app-admin          users and roles (the server's views moved to
+                     System -> Server, step 3)
   shell-api          the shell, auth, fetch-once hook
 
 So the apps are not the gap. Browse already holds four of the six

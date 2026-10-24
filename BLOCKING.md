@@ -1057,7 +1057,26 @@ next save (core/modules.py, MOVED_MODULES). Its conformance exceptions
 are all its tabs': the Inbox draws no data of its own, and its counts
 are quiet on failure by design.
 
-**Blocked on:** nothing; Admin is next.
+**ADMIN SPLIT (24 October)**, before it moves, as this file planned
+("much of today's Admin, which splits into the server and
+people-and-roles"). The owner's decision, after the analysis: the
+server's views -- Deployment, Silos, Metrics, Mirror, Cleaning -- are
+the System sub-app's Server page (ui/src/system/ServerPage.tsx, at
+/system/server, the view in `?view=`), pinned and offered on
+manage:deployment; Admin keeps Users and Roles. Before, the five sat in
+Admin, offered on manage:users, so an account administrator was shown
+Metrics, Mirror and Cleaning and refused by the server, and an operator
+was not shown them at all. THE SERVER'S CHECKS ARE UNCHANGED: /config
+and /silos still answer manage:users, the gate they took in August
+when it was the only administrative grant; tightening them is an API
+change, for step 4 or a patch of its own. A fresh install's `root`
+(manage:users only) no longer sees these views; INSTALL.md, "Seeing
+the server's own pages", says how to give manage:deployment, and the
+installer says so when it finishes. ConfigProposals, used by both
+sides, is the kit's now.
+
+**Blocked on:** nothing; Admin, now Users and Roles, moves to its own
+bundle next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 
@@ -1614,7 +1633,7 @@ restricted views enforce rows on Foundry's copy, at read time.
 
 **What was built instead:** the sync now asks PostgreSQL whether
 row-level security applies to its own account on each table, and warns
--- in the run and on Admin -> Mirror -- when it does, because PostgreSQL
+-- in the run and on System -> Server -> Mirror -- when it does, because PostgreSQL
 with no policy for that account "returns no rows without raising an
 error" and the copy would be silently partial.
 

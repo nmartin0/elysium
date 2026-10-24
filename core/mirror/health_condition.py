@@ -134,7 +134,7 @@ def notify_mirror_health(states: list[dict], recipients: list[str],
             user_id, "mirror_health", summary,
             detail=(
                 "Reads are served from the mirror, so this affects what "
-                "everybody sees. Admin -> Mirror shows each table, and "
+                "everybody sees. System -> Server -> Mirror shows each table, and "
                 "Sync now starts one."
             ),
         ):
@@ -203,7 +203,7 @@ def notify_sync_overdue(last_attempts: list, user_id: str, store,
     if not store.notify(
         user_id, "mirror_health", summary,
         detail=("Whatever starts the sync -- cron, a systemd timer -- has stopped. "
-                "Admin -> Mirror shows when each table last synced, and Sync now "
+                "System -> Server -> Mirror shows when each table last synced, and Sync now "
                 "starts one by hand."),
     ):
         return False

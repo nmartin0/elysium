@@ -167,6 +167,44 @@ sudo ./install/install.sh
 sudo systemctl start elysium.service
 ```
 
+### Seeing the server's own pages
+
+`root` is created in the `admin` role, which holds `manage:users` and
+nothing else: it manages accounts, under **Admin** (Users, Roles). The
+server's own pages -- **System → Server** (the configuration and
+reload, silos, metrics, the mirror, cleaning), **System → Modules** and
+**System → Add-on servers** -- are for whoever runs the server, and need
+`manage:deployment`. A fresh install gives that to nobody, on purpose.
+
+To turn them on, give `manage:deployment` to a role somebody holds --
+a role of its own for the people who run the server, rather than adding
+it to `admin`, or everyone ever made an administrator of accounts could
+reload the server too. In `/etc/elysium/policy.yaml`:
+
+```yaml
+roles:
+  operator:
+    allowed_actions:
+      - manage:deployment
+```
+
+Then restart the service and create an account in that role with the
+script the installer used for `root` -- it prints the new password
+once:
+
+```bash
+sudo systemctl restart elysium.service
+sudo su -s /bin/sh elysium -c "cd /opt/elysium && \
+  ELYSIUM_CONFIG_DIR=/etc/elysium ELYSIUM_DATA_DIR=/var/lib/elysium \
+  ./venv/bin/python3 -m scripts.bootstrap_root ops operator"
+```
+
+NOT FROM ADMIN: putting somebody in a role that carries a `manage:`
+grant needs holding that grant yourself (Kubernetes' rule, in
+`api/routes.py`'s `_refuse_escalation`), and `root` does not hold
+`manage:deployment`. An account holding both `manage:users` and
+`manage:deployment` can make more from Admin.
+
 ### Where this deviates from POSIX, explicitly
 
 This install script's **shell syntax** is POSIX `sh` throughout, but
@@ -249,7 +287,7 @@ A deleted row is invisible to that kind of read, so the table is still
 read in full on the schedule you set, and that full read is what
 removes deleted rows from the mirror. `python3 -m scripts.run_sync
 --full` does a full read of everything now. The sync prints how it
-read each table, and Admin → Configuration lists the declared tables.
+read each table, and System → Server → Deployment lists the declared tables.
 
 **It cannot write to your data.** The sync reads through the same
 structurally read-only connection described in the next section.

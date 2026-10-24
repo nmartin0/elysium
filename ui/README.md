@@ -32,7 +32,11 @@ added and not named here.
 ui/src/                    App.tsx (auth state, routing, what is
                             fetched once and passed down), Shell.tsx
                             (what Elysium hands the shell's frame --
-                            @shell/core/Frame), main.tsx.
+                            @shell/core/Frame), main.tsx, and system/:
+                            the System sub-app, pinned, for
+                            manage:deployment -- Modules, Add-on
+                            servers, and Server (configuration, silos,
+                            metrics, the mirror, cleaning).
 ui/packages/shell-api/     Everything shared across screens: api.ts
                             (the one place that knows about fetch,
                             session and CSRF), formatting, the design
@@ -72,8 +76,10 @@ ui/packages/app-notifications/
                            Notifications and the watch list. ITS OWN
                            BUNDLE (step 3): the Inbox's Notifications
                            tab, loaded when the tab is first opened.
-ui/packages/app-admin/     Users, roles, silos, mirror status, metrics
-                            and read-only deployment config.
+ui/packages/app-admin/     Users and roles. The server's own views --
+                            deployment configuration, silos, metrics,
+                            the mirror, cleaning -- moved to the System
+                            sub-app's Server page (ui/src/system, step 3).
 ui/packages/testing/       The test kit every sub-app's tests use: the
                             setup file, the test host (a page rendered
                             in the shell's frame against a stubbed

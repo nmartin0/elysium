@@ -33,7 +33,9 @@ test('/?safe loads only the pinned modules, keeps doing so across a reload, and 
   // Home moved to the one pinned module's page, and the marker left the
   // address, so a link copied now does not carry it.
   await expect(page).toHaveURL(/\/system\/modules$/)
-  expect(await railNames(page)).toEqual(['Modules', 'Add-on servers'])
+  // THE SERVER'S CONTROLS TOO (step 3): pinned, so in safe mode -- when
+  // someone most needs to see the configuration and reload it.
+  expect(await railNames(page)).toEqual(['Modules', 'Add-on servers', 'Server'])
   const schema = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: /Schema/ }) })
   await expect(schema.getByRole('cell').nth(2)).toHaveText('Off in safe mode')
 

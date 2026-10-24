@@ -6,11 +6,13 @@
   "contributes": {
     "pages": [
       { "id": "modules", "path": "/system/modules" },
-      { "id": "addons", "path": "/system/addons" }
+      { "id": "addons", "path": "/system/addons" },
+      { "id": "server", "path": "/system/server" }
     ],
     "nav": [
       { "title": "Modules", "path": "/system/modules", "subject": "System" },
-      { "title": "Add-on servers", "path": "/system/addons", "subject": "System" }
+      { "title": "Add-on servers", "path": "/system/addons", "subject": "System" },
+      { "title": "Server", "path": "/system/server", "subject": "System" }
     ]
   }
 }

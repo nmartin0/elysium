@@ -20,7 +20,7 @@ SUGGEST, NEVER INFER. This reads bronze -- the raw copy, before any
 declared cleaning -- counts values that look like disguised absences
 or implausible dates, and prints the exact YAML to declare. It changes
 no data and no configuration; since R31 it also records what it found
-for review (Admin -> Cleaning), so a person's dismissal is remembered. The 2024 VLDB evaluation of twelve
+for review (System -> Server -> Cleaning), so a person's dismissal is remembered. The 2024 VLDB evaluation of twelve
 automatic repair algorithms found most introduce more errors than they
 remove, which is the argument for stopping at a suggestion.
 
@@ -106,7 +106,7 @@ def main() -> int:
                 print(_suggestion(column, values))
 
     # AND REMEMBERED FOR REVIEW (R31): the findings on DECLARED fields go
-    # to Admin -> Cleaning, where a person accepts or dismisses each one
+    # to System -> Server -> Cleaning, where a person accepts or dismisses each one
     # and a dismissal is never raised again. The report above still
     # covers every bronze column, declared or not.
     from core.deployment_loader import load_deployment
@@ -116,7 +116,7 @@ def main() -> int:
     outcome = refresh(catalog, load_deployment(paths.config_dir).schema,
                       RuleSuggestionStore(Path(paths.data_dir) / "rule_suggestions.db"),
                       args.limit)
-    print(f"\nFor review in Admin -> Cleaning: {outcome['new']} new, {outcome['updated']} "
+    print(f"\nFor review in System -> Server -> Cleaning: {outcome['new']} new, {outcome['updated']} "
           f"still open, {outcome['declared']} already declared, {outcome['kept_dismissed']} "
           f"dismissed earlier and not raised again.")
 

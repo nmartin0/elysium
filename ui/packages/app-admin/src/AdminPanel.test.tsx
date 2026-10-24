@@ -18,6 +18,11 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
     // their own row. Unmocked, every test here made a real network
     // request for it, which failed and was swallowed.
     getCurrentUser: vi.fn().mockResolvedValue({ username: 'adminuser' }),
+    // THE ROLES VIEW'S READS, never settling: the tests that open it are
+    // about the pane swapping, not about roles (RolesPanel.test.tsx).
+    getRoles: vi.fn(() => new Promise(() => {})),
+    getRoleChanges: vi.fn(() => new Promise(() => {})),
+    getConfigProposals: vi.fn(() => new Promise(() => {})),
   }
 })
 
@@ -451,7 +456,7 @@ describe('AdminPanel -- CreateUserForm', () => {
 })
 
 describe('the configuration pane swaps with the view', () => {
-  it('hides Create user when the canvas is showing Deployment', async () => {
+  it('hides Create user when the canvas is showing Roles', async () => {
     /**
      * THE flaw, found by looking at it: the tabs were in the canvas
      * and Create user was pinned in the pane, so opening Deployment
@@ -462,12 +467,12 @@ describe('the configuration pane swaps with the view', () => {
      * changes are describing something else.
      */
     renderPanel()
-    await screen.findByRole('button', { name: /Deployment/ })
+    await screen.findByRole('button', { name: /Roles/ })
     // The HEADING, not the text: the form also has a submit button
     // reading "Create user", so a plain text query finds two.
     expect(screen.getByRole('heading', { name: 'Create user' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /Deployment/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Roles/ }))
 
     expect(screen.queryByRole('heading', { name: 'Create user' })).not.toBeInTheDocument()
   })
@@ -477,9 +482,16 @@ describe('the configuration pane swaps with the view', () => {
     // switch, or there is no way back.
     renderPanel()
 
-    fireEvent.click(screen.getByRole('button', { name: /Deployment/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Roles/ }))
 
     expect(screen.getByRole('button', { name: /Users/ })).toBeInTheDocument()
+  })
+
+  it("offers people and roles only: the server's views are the System sub-app's (step 3)", () => {
+    renderPanel()
+
+    const views = screen.getAllByRole('button', { name: /^(Users|Roles|Deployment|Silos|Metrics|Mirror|Cleaning)$/ })
+    expect(views.map((view) => view.textContent)).toEqual(['Users', 'Roles'])
   })
 })
 

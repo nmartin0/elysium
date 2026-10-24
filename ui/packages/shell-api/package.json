@@ -11,6 +11,7 @@
     "./components/AsyncPanel": "./src/components/AsyncPanel.tsx",
     "./components/ChangePasswordForm": "./src/components/ChangePasswordForm.tsx",
     "./components/Chart": "./src/components/Chart.tsx",
+    "./components/ConfigProposals": "./src/components/ConfigProposals.tsx",
     "./components/DataTable": "./src/components/DataTable.tsx",
     "./components/EmptyState": "./src/components/EmptyState.tsx",
     "./components/ErrorState": "./src/components/ErrorState.tsx",

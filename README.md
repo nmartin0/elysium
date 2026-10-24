@@ -579,7 +579,7 @@ test file:
 | package | what it is |
 | --- | --- |
 | `app-browse` | Object Explorer — search, filters, charts, bulk actions, saved views |
-| `app-admin` | users, roles, grants, deployment configuration |
+| `app-admin` | users, roles and grants; the deployment's own configuration, silos, metrics and mirror are the System sub-app's Server page |
 | `app-schema` | the visible schema, as the asking user may see it |
 | `app-inbox` | the Inbox: one page whose tabs the queue modules fill, and the count of what is waiting on its rail entry |
 | `app-approvals` | pending writes and the approval flow |

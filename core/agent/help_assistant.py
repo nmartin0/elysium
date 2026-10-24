@@ -92,11 +92,12 @@ SCREEN_GUIDE: Mapping[str, str] = {
         "they were not written from. An approved field is filled at the next sync."
     ),
     "Admin": (
-        "Users, roles and grants, and the configuration and data sources of this "
-        "deployment. Only people who manage users see this screen. Under 'Deployment', "
-        "someone who may change the deployment can alter a few settings in 'Change "
-        "settings': 'Review changes' shows the exact lines of config.yaml that will "
-        "change, and 'Apply and reload' writes them and reloads."
+        "Users, roles and grants. Only people who manage users see this screen. The "
+        "configuration, data sources, metrics and mirror of the deployment are not here: "
+        "they are on 'Server', under System, for someone who may change the "
+        "deployment. There, under 'Deployment', they can alter a few settings in "
+        "'Change settings': 'Review changes' shows the exact lines of config.yaml that "
+        "will change, and 'Apply and reload' writes them and reloads."
     ),
 }
 

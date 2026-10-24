@@ -39,7 +39,7 @@ import LoadingState from '@elysium/shell-api/components/LoadingState'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import RoleImpact from '@elysium/shell-api/components/RoleImpact'
-import ConfigProposals from './ConfigProposals'
+import ConfigProposals from '@elysium/shell-api/components/ConfigProposals'
 import { groupGrants, summariseChange } from './roleGrants'
 
 interface RolesPanelProps {

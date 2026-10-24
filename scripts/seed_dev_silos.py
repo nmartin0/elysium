@@ -150,7 +150,7 @@ def main() -> int:
         print(f"  built {db_path}")
 
     print(f"\nSilos are in {target}.")
-    print("Restart the server, then check Admin -> Silos: all three should be reachable.")
+    print("Restart the server, then check System -> Server -> Silos: all three should be reachable.")
     return 0
 
 

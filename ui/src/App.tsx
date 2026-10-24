@@ -85,6 +85,9 @@ import LoadingState from '@elysium/shell-api/components/LoadingState'
 const ObjectSearchPanel = lazy(() => import('@elysium/app-browse/ObjectSearchPanel'))
 const ObjectDetailPanel = lazy(() => import('@elysium/app-browse/ObjectDetailPanel'))
 const AdminPanel = lazy(() => import('@elysium/app-admin/AdminPanel'))
+// THE SERVER'S CONTROLS (step 3): the System sub-app's, so built into this
+// page and loaded in safe mode -- but on first opening, as Admin was.
+const ServerPage = lazy(() => import('./system/ServerPage'))
 
 // WHAT EACH BUILT-IN MODULE'S PAGES NEED FROM THE HOST, through a context
 // rather than props, so the page components below are defined ONCE: a
@@ -154,6 +157,12 @@ function SystemAddonServersPage() {
   return <AddonServersPage onSessionExpired={onSessionExpired} />
 }
 
+/** The server's controls (step 3), split out of Admin: the System sub-app's. */
+function SystemServerPage() {
+  const { onSessionExpired } = useContext(PageNeedsContext)
+  return <ServerPage onSessionExpired={onSessionExpired} />
+}
+
 /**
  * THE MODULES WHOSE CODE IS BUILT INTO THIS PAGE, by `module:page` as each
  * module.json names them (BLOCKING.md item 3). Which of them a person is
@@ -167,6 +176,7 @@ const BUILT_IN_PAGES: Record<string, ComponentType> = {
   'admin:admin': AdminPage,
   'system:modules': SystemModulesPage,
   'system:addons': SystemAddonServersPage,
+  'system:server': SystemServerPage,
 }
 /**
  * THE CODE THE SHELL ASKS OF MODULES BUILT INTO THE PAGE, by module id

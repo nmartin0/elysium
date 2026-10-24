@@ -187,3 +187,7 @@ fi
 
 echo ""
 echo "Install complete. Start the service with: systemctl start elysium.service"
+echo ""
+echo "root manages accounts (Admin). The server's own pages -- System -> Server,"
+echo "Modules, Add-on servers -- need manage:deployment, which no role holds yet;"
+echo "INSTALL.md, 'Seeing the server's own pages', says how to give it."
