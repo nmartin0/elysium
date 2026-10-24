@@ -4,7 +4,20 @@
   "version": "1",
   "permission": "manage:users",
   "contributes": {
-    "pages": [{ "id": "admin", "path": "/admin" }],
-    "nav": [{ "title": "Admin", "path": "/admin", "subject": "Settings" }]
-  }
+    "pages": [
+      {
+        "id": "admin",
+        "path": "/admin"
+      }
+    ],
+    "nav": [
+      {
+        "title": "Admin",
+        "path": "/admin",
+        "subject": "Settings"
+      }
+    ]
+  },
+  "entry": "dist/index.js",
+  "styles": ["dist/index.css"]
 }

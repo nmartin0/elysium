@@ -77,11 +77,11 @@ describe('the root package.json correctly declares the workspace', () => {
   it('depends on every sub-app built into the page, and shell-api, by name', () => {
     const pkg = readPackageJson('.')
     expect(Object.keys(pkg.dependencies || {})).toEqual(
-      expect.arrayContaining(['@elysium/shell-api', '@elysium/app-browse', '@elysium/app-admin']),
+      expect.arrayContaining(['@elysium/shell-api', '@elysium/app-browse']),
     )
   })
 
-  it.each(['@elysium/app-query', '@elysium/app-inbox'])(
+  it.each(['@elysium/app-query', '@elysium/app-inbox', '@elysium/app-admin'])(
     'does not depend on %s, which has a bundle of its own (BLOCKING.md item 3, step 3)',
     (name) => {
       // The page loads it from its bundle; a dependency would let the page

@@ -1075,8 +1075,13 @@ the server's own pages", says how to give manage:deployment, and the
 installer says so when it finishes. ConfigProposals, used by both
 sides, is the kit's now.
 
-**Blocked on:** nothing; Admin, now Users and Roles, moves to its own
-bundle next.
+**ADMIN MOVED (24 October)**, Users and Roles in its own bundle, loaded
+when /admin is first opened, passing every check with no exceptions. Its
+own rules (the user table, the create-user form, the roles editor) moved
+with it; what it shares with the kit -- a role change's impact, the
+waiting configuration changes -- kept theirs there.
+
+**Blocked on:** nothing; Browse, the last and largest, is next.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

@@ -75,3 +75,26 @@ test('Query, where a person lands, comes from its own bundle and its own stylesh
   })
   expect(styled).not.toBe(bare)
 })
+
+test('Admin comes from its own bundle when first opened, and its own stylesheet draws the user table', async ({
+  page,
+}) => {
+  // Moved in step 3, after the server's views were split out of it to
+  // System -> Server.
+  const fetched: string[] = []
+  page.on('request', (request) => fetched.push(new URL(request.url()).pathname))
+  await page.goto('/')
+  await page.getByLabel('Username').fill('adminuser')
+  await page.getByLabel('Password').fill('adminpass123')
+  await page.getByRole('button', { name: 'Log in' }).click()
+  const rail = page.locator('.app__nav')
+  await expect(rail.getByRole('menuitem', { name: 'Admin' })).toBeVisible()
+  expect(fetched.some((path) => path.startsWith('/api/modules/admin/'))).toBe(false)
+
+  await rail.getByRole('menuitem', { name: 'Admin' }).click()
+  const table = page.locator('.user-table').first()
+  await expect(table).toBeVisible()
+  expect(fetched).toContain('/api/modules/admin/files/dist/index.js')
+  // ITS OWN RULE: a table nothing styles has separate borders.
+  expect(await table.evaluate((el) => getComputedStyle(el).borderCollapse)).toBe('collapse')
+})

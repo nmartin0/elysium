@@ -76,7 +76,9 @@ ui/packages/app-notifications/
                            Notifications and the watch list. ITS OWN
                            BUNDLE (step 3): the Inbox's Notifications
                            tab, loaded when the tab is first opened.
-ui/packages/app-admin/     Users and roles. The server's own views --
+ui/packages/app-admin/     Users and roles. ITS OWN BUNDLE (step 3),
+                            loaded when /admin is first opened. The
+                            server's own views --
                             deployment configuration, silos, metrics,
                             the mirror, cleaning -- moved to the System
                             sub-app's Server page (ui/src/system, step 3).

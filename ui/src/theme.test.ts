@@ -9,6 +9,7 @@ const TOKENS = readFileSync(path.resolve(__dirname, '../packages/shell-api/src/t
 
 // THE STYLESHEETS THAT HOLD RULES, for the duplicate check below.
 const RULE_STYLESHEETS = [
+  'packages/app-admin/src/AdminPanel.css',
   'packages/app-approvals/src/approvals.css',
   'packages/app-identity/src/IdentityPanel.css',
   'packages/app-inbox/src/InboxPanel.css',

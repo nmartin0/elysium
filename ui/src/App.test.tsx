@@ -40,19 +40,24 @@ vi.mock('@elysium/shell-api/components/LoginForm', () => ({
     </div>
   ),
 }))
-// QUERY HAS A BUNDLE OF ITS OWN (BLOCKING.md item 3, step 3), which jsdom
-// cannot import, so its bundle is stood in for: the loader is the real
-// one, given an importer that answers for Query's address and imports
-// anything else for real -- which in jsdom fails, as a bundle that was
-// never built would.
+// QUERY AND ADMIN HAVE BUNDLES OF THEIR OWN (BLOCKING.md item 3, step 3),
+// which jsdom cannot import, so their bundles are stood in for: the loader
+// is the real one, given an importer that answers for their addresses and
+// imports anything else for real -- which in jsdom fails, as a bundle that
+// was never built would.
 const QUERY_BUNDLE = '/api/modules/query/files/dist/index.js'
+const ADMIN_BUNDLE = '/api/modules/admin/files/dist/index.js'
 vi.mock('@shell/core/moduleLoader', async (importOriginal) => {
   const real = await importOriginal<typeof import('@shell/core/moduleLoader')>()
+  const standIns: Record<string, Record<string, () => React.JSX.Element>> = {
+    '/api/modules/query/files/dist/index.js': { query: () => <p>query screen</p> },
+    '/api/modules/admin/files/dist/index.js': { admin: () => <p>admin screen</p> },
+  }
   class StandIn extends real.ModuleLoader {
     constructor() {
       super((address) =>
-        address === '/api/modules/query/files/dist/index.js'
-          ? Promise.resolve({ activate: () => ({ pages: { query: () => <p>query screen</p> } }) })
+        standIns[address]
+          ? Promise.resolve({ activate: () => ({ pages: standIns[address] }) })
           : import(/* @vite-ignore */ address),
       )
     }
@@ -61,7 +66,6 @@ vi.mock('@shell/core/moduleLoader', async (importOriginal) => {
 })
 vi.mock('@elysium/app-browse/ObjectSearchPanel', () => ({ default: () => <p>browse screen</p> }))
 vi.mock('@elysium/app-browse/ObjectDetailPanel', () => ({ default: () => <p>object detail screen</p> }))
-vi.mock('@elysium/app-admin/AdminPanel', () => ({ default: () => <p>admin screen</p> }))
 
 import {
   logout,
@@ -415,7 +419,8 @@ describe('App -- routes and rail come from the module feed', () => {
           id: 'admin',
           name: 'Admin',
           version: '1',
-          entry: null,
+          entry: ADMIN_BUNDLE,
+          styles: [],
           contributes: { pages: [{ id: 'admin', path: '/admin' }] },
         },
       ],

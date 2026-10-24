@@ -84,7 +84,6 @@ import LoadingState from '@elysium/shell-api/components/LoadingState'
 // and creates no eager reference to the module's own real code.
 const ObjectSearchPanel = lazy(() => import('@elysium/app-browse/ObjectSearchPanel'))
 const ObjectDetailPanel = lazy(() => import('@elysium/app-browse/ObjectDetailPanel'))
-const AdminPanel = lazy(() => import('@elysium/app-admin/AdminPanel'))
 // THE SERVER'S CONTROLS (step 3): the System sub-app's, so built into this
 // page and loaded in safe mode -- but on first opening, as Admin was.
 const ServerPage = lazy(() => import('./system/ServerPage'))
@@ -108,10 +107,6 @@ function BrowsePage() {
 function ObjectPage() {
   const needs = useContext(PageNeedsContext)
   return <ObjectDetailPanel visibleSchema={needs.visibleSchema} onSessionExpired={needs.onSessionExpired} />
-}
-function AdminPage() {
-  const needs = useContext(PageNeedsContext)
-  return <AdminPanel onSessionExpired={needs.onSessionExpired} />
 }
 
 /** Every module offered, for the shell's system sub-app; whether the page
@@ -173,7 +168,6 @@ function SystemServerPage() {
 const BUILT_IN_PAGES: Record<string, ComponentType> = {
   'browse:search': BrowsePage,
   'browse:object': ObjectPage,
-  'admin:admin': AdminPage,
   'system:modules': SystemModulesPage,
   'system:addons': SystemAddonServersPage,
   'system:server': SystemServerPage,

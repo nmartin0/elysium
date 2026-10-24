@@ -815,63 +815,6 @@
     color: var(--text-primary);
   }
 
-  /* No card of its own. It sits in the configuration pane now, which
- * already supplies a surface and a border -- a second box inside one
- * draws the same seam the header border did. */
-  .create-user-form {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-snug);
-  }
-
-  .create-user-form h3 {
-    margin-top: 0;
-    font-size: var(--type-body-size);
-    line-height: var(--type-body-line);
-    font-weight: var(--type-body-weight);
-  }
-
-  .user-table {
-    width: 100%;
-    border-collapse: collapse;
-    background: var(--surface-content);
-    border-radius: var(--radius-panel);
-    overflow: hidden;
-  }
-
-  .user-table th,
-  .user-table td {
-    text-align: left;
-    padding: 0.5rem var(--space-tight);
-    border-bottom: 1px solid var(--border-subtle);
-    font-size: var(--type-body-size);
-    line-height: var(--type-body-line);
-    font-weight: var(--type-body-weight);
-  }
-
-  .user-table__actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-tight);
-  }
-
-  .user-table__actions button {
-    padding: var(--space-hair) 0.5rem;
-    font-size: var(--type-dense-size);
-    line-height: var(--type-dense-line);
-    font-weight: var(--type-dense-weight);
-  }
-
-  .user-table pre {
-    background: var(--surface-sunken);
-    padding: var(--space-tight);
-    border-radius: var(--space-tight);
-    font-size: var(--type-dense-size);
-    line-height: var(--type-dense-line);
-    font-weight: var(--type-dense-weight);
-    overflow-x: auto;
-  }
-
   /* A muted FACT, not a warning. read_from_mirror is deployment-wide, so
  * this is present on every view when it is on -- and a permanent
  * warning is one people stop seeing. Secondary text, small, no icon. */
@@ -3044,29 +2987,10 @@
     margin-block-start: var(--space-tight);
   }
 
-  /* ROLES. A change reads as its DIFFERENCE -- added and removed grants,
-   each on its own line -- because an approver comparing two long lists
-   by eye misses the one line that matters. */
-  .roles > * + * {
-    margin-block-start: var(--space-normal);
-  }
-
-  .roles__change-head,
-  .roles__decide,
-  .roles__propose {
-    display: flex;
-    align-items: center;
-    gap: var(--space-normal);
-  }
-
-  .roles__by,
+  /* A list with nothing in it, under the waiting configuration changes
+   * (ConfigProposals, shown by Admin's Roles and by System -> Server). */
   .roles__empty {
     color: var(--text-secondary);
-  }
-
-  .roles__added,
-  .roles__removed {
-    font-family: var(--font-mono);
   }
 
   /* DEV_UI 13.5: a role change in access terms. GAINS carry the warning
@@ -3137,16 +3061,6 @@
     border-left-color: var(--status-warning);
   }
   .roles__impact li.roles__narrows {
-    color: var(--text-secondary);
-  }
-
-  .roles__group {
-    border: none;
-    padding: 0;
-  }
-
-  /* What a module's declared permission allows, beside its grant. */
-  .roles__grant-description {
     color: var(--text-secondary);
   }
 
