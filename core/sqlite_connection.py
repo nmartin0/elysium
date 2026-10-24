@@ -406,16 +406,6 @@ def connection_with_schema(db_path: Path, schema: str,
     # at once -- CREATE TABLE IF NOT EXISTS (and a well-written
     # migration) is safe to run twice; the lock just makes the COMMON
     # case avoid the redundant work, not guarantee exactly-once.
-    # A DATABASE NOT THERE YET IS NOT VERIFIED, whatever this process
-    # remembers: the set below is keyed by path, and a file deleted and
-    # made again at the same path -- a test's temporary directory, reused
-    # once pytest removes a passing test's; an operator removing a store
-    # to start it afresh -- would otherwise be opened empty with its
-    # tables skipped ("no such table: generation_sequence", 11 errors in
-    # test_api.py the day passing tests' directories began to be removed).
-    if not Path(db_path).exists():
-        with _schema_verified_lock:
-            _schema_verified.difference_update({key for key in _schema_verified if key[0] == db_path})
     conn = open_connection(db_path)
     try:
         # The lock is held ACROSS the check, the work and the add --
@@ -431,6 +421,26 @@ def connection_with_schema(db_path: Path, schema: str,
         # have warned anyone. Holding the lock costs a brief
         # serialization once per database and removes the trap.
         with _schema_verified_lock:
+            # A DATABASE WITH NO TABLES IS NOT VERIFIED, whatever this
+            # process remembers: the set is keyed by path, and a file
+            # deleted and made again at the same path -- a test's
+            # temporary directory, reused once pytest removes a passing
+            # test's; an operator removing a store to start it afresh --
+            # would otherwise be opened empty with its tables skipped ("no
+            # such table: generation_sequence", 11 errors in test_api.py
+            # the day passing tests' directories began to be removed).
+            #
+            # ASKED OF THE FILE, UNDER THE LOCK. The first version asked
+            # whether the file existed, before taking it: a thread that
+            # looked before another made the file then forgot the other's
+            # verification and ran the schema and every migration again
+            # -- test_store_concurrency's interleaving test, failing 7
+            # runs in 20 (measured 24 October). Here no other thread can
+            # be between the asking and the work.
+            if (db_path, schema) in _schema_verified and conn.execute(
+                "SELECT 1 FROM sqlite_master LIMIT 1"
+            ).fetchone() is None:
+                _schema_verified.discard((db_path, schema))
             if (db_path, schema) not in _schema_verified:
                 _enable_wal(conn, db_path)
                 conn.executescript(schema)
