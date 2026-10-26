@@ -1,0 +1,217 @@
+"""Totals by a fixed length, on a zone's clock (core/periods.py, BLOCKING.md
+item 3's time-series reads; the owner's choice of ISO 8601 durations,
+26 October, after Foundry's aggregate).
+
+Europe/London's clocks went forward at 01:00 UTC on 29 March 2026 and
+back at 01:00 UTC on 25 October 2026 -- the two nights these use."""
+
+import datetime
+import sqlite3
+
+import pytest
+
+from core.periods import MAX_PERIODS, Buckets, by_period, parse_duration, time_zone, with_gaps_filled
+
+D = datetime.date
+UTC = datetime.UTC
+LONDON = time_zone("Europe/London")
+
+
+def at(text: str) -> datetime.datetime:
+    return datetime.datetime.fromisoformat(text)
+
+
+class TestTheDuration:
+    @pytest.mark.parametrize("text, length", [
+        ("PT15M", datetime.timedelta(minutes=15)),
+        ("PT1H", datetime.timedelta(hours=1)),
+        ("P3D", datetime.timedelta(days=3)),
+        ("P1DT12H", datetime.timedelta(days=1, hours=12)),
+        ("PT30S", datetime.timedelta(seconds=30)),
+        ("pt5m", datetime.timedelta(minutes=5)),
+    ])
+    def test_days_hours_minutes_and_seconds(self, text, length):
+        assert parse_duration(text) == length
+
+    @pytest.mark.parametrize("text, said", [
+        ("P1W", "ask by period week"),
+        ("P1M", "ask by period month"),
+        ("P1Y", "not a fixed length"),
+        ("15m", "not ISO 8601"),
+        ("P", "not ISO 8601"),
+        ("PT", "not ISO 8601"),
+        ("P1DT", "not ISO 8601"),
+        ("PT0S", "no time at all"),
+    ])
+    def test_what_is_not_a_fixed_length_is_refused_saying_why(self, text, said):
+        with pytest.raises(ValueError, match=said):
+            parse_duration(text)
+
+    def test_an_unknown_zone_is_refused_with_an_example(self):
+        with pytest.raises(ValueError, match="IANA name such as Europe/London"):
+            time_zone("Mars/Olympus")
+
+
+class TestTheBuckets:
+    def test_a_quarter_hour_starts_on_the_quarter(self):
+        quarter = Buckets(length=parse_duration("PT15M"))
+        assert quarter.start(at("2026-10-14T10:07:00+00:00")) == at("2026-10-14T10:00:00+00:00")
+        assert quarter.start(at("2026-10-14T10:15:00+00:00")) == at("2026-10-14T10:15:00+00:00")
+
+    def test_days_are_counted_from_timescales_origin(self):
+        # Monday 3 January 2000: three-day buckets begin on the 3rd, the
+        # 6th, the 9th, whatever the data.
+        three = Buckets(length=parse_duration("P3D"), dated=True)
+        assert three.start(D(2000, 1, 8)) == D(2000, 1, 6)
+        assert three.start(D(2000, 1, 9)) == D(2000, 1, 9)
+        assert three.start(D(1999, 12, 31)) == D(1999, 12, 31)   # before it, too
+        # Seven days begin on a Monday, as the origin did; five on the
+        # 3rd and the 8th. (Three alone cannot tell this origin from the
+        # Unix epoch: the days between them divide by three.)
+        assert Buckets(length=parse_duration("P7D"), dated=True).start(D(2026, 10, 18)) == D(2026, 10, 12)
+        assert Buckets(length=parse_duration("P5D"), dated=True).start(D(2000, 1, 7)) == D(2000, 1, 3)
+
+    def test_a_day_is_the_zones_day(self):
+        # 23:30 UTC on the 14th is 00:30 on the 15th in London's summer.
+        late = at("2026-10-14T23:30:00+00:00")
+        assert Buckets(period="day").start(late) == D(2026, 10, 14)
+        assert Buckets(period="day", zone=LONDON).start(late) == D(2026, 10, 15)
+
+    def test_an_hour_is_named_on_the_zones_clock(self):
+        start = Buckets(length=parse_duration("PT1H"), zone=LONDON).start(at("2026-07-01T12:30:00+00:00"))
+        assert start.isoformat() == "2026-07-01T13:00:00+01:00"
+
+    def test_a_time_with_no_zone_is_not_moved_into_one(self):
+        # A wall-clock reading already: 10:07 is 10:00's, in any zone.
+        hour = Buckets(length=parse_duration("PT1H"), zone=LONDON)
+        assert hour.start(at("2026-07-01T10:07:00")) == at("2026-07-01T10:00:00")
+
+    def test_a_date_is_grouped_by_whole_days_only(self):
+        with pytest.raises(ValueError, match="whole days only"):
+            Buckets(length=parse_duration("PT1H"), dated=True)
+        with pytest.raises(ValueError, match="whole days only"):
+            Buckets(length=parse_duration("P1DT12H"), dated=True)
+
+
+class TestTheClocksChanging:
+    HOUR = Buckets(length=parse_duration("PT1H"), zone=LONDON)
+
+    def test_the_repeated_autumn_hour_holds_both(self):
+        # 00:30 UTC is 01:30 BST; 01:30 UTC is 01:30 GMT. One bucket, two.
+        rows = [(at("2026-10-25T00:30:00+00:00"), "a"), (at("2026-10-25T01:30:00+00:00"), "b")]
+        grouped = by_period(rows, self.HOUR)
+        assert list(grouped.values()) == [["a", "b"]]
+        assert [start.isoformat() for start in grouped] == ["2026-10-25T01:00:00+01:00"]
+
+    def test_the_hour_spring_skips_is_never_offered_even_empty(self):
+        # 00:30 UTC is 00:30 GMT; 01:30 UTC is 02:30 BST. 01:00 never was.
+        rows = [(at("2026-03-29T00:30:00+00:00"), 1), (at("2026-03-29T01:30:00+00:00"), 1)]
+        per = by_period(rows, self.HOUR)
+        filled = with_gaps_filled({start: len(values) for start, values in per.items()},
+                                  self.HOUR, "count")
+        assert [start.isoformat() for start in filled] == [
+            "2026-03-29T00:00:00+00:00", "2026-03-29T02:00:00+01:00"]
+
+    def test_an_empty_hour_between_two_is_zero(self):
+        rows = [(at("2026-07-01T09:10:00+00:00"), 1), (at("2026-07-01T11:10:00+00:00"), 1)]
+        per = by_period(rows, Buckets(length=parse_duration("PT1H")))
+        filled = with_gaps_filled({s: len(v) for s, v in per.items()},
+                                  Buckets(length=parse_duration("PT1H")), "count")
+        assert list(filled.values()) == [1, 0, 1]
+
+    def test_too_many_buckets_asks_for_a_longer_duration(self):
+        minute = Buckets(length=parse_duration("PT1M"))
+        totals = {at("2026-07-01T00:00:00+00:00"): 1, at("2026-07-02T00:00:00+00:00"): 1}
+        with pytest.raises(ValueError, match=f"more than {MAX_PERIODS} minutes.*longer duration"):
+            with_gaps_filled(totals, minute, "count")
+
+
+# -- through the mediator, under the caller's own access ------------------
+
+SCHEMA = {
+    "Reading": {
+        "storage": {"silo": "s", "table": "readings", "id_column": "reading_id"},
+        "id_field": "reading_id",
+        "security": {"field": "site"},
+        "fields": {
+            "reading_id": {"type": "data"},
+            "site": {"type": "data"},
+            "taken": {"type": "data", "data_type": "timestamptz"},
+            "day": {"type": "data", "data_type": "date"},
+            "value": {"type": "data", "data_type": "number"},
+        },
+    },
+}
+ROWS = [  # (id, site, taken, day, value)
+    ("r1", "north", "2026-07-01T09:05:00+00:00", "2026-07-01", 4.0),
+    ("r2", "north", "2026-07-01T09:20:00+00:00", "2026-07-01", 6.0),
+    ("r3", "north", "2026-07-01T09:50:00+00:00", "2026-07-02", 1.0),
+    ("r4", "south", "2026-07-01T09:25:00+00:00", "2026-07-02", 50.0),  # not north's
+]
+ALL = ["read:Reading", "read:Reading.reading_id", "read:Reading.site", "read:Reading.taken",
+       "read:Reading.day", "read:Reading.value"]
+
+
+def _mediator(tmp_path):
+    from adapters.sqlite_adapter import SQLiteWriteAdapter
+    from core.ontology.mediator import DataMediator
+
+    db = tmp_path / "readings.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE readings (reading_id TEXT PRIMARY KEY, site TEXT, taken TEXT, "
+                     "day TEXT, value REAL)")
+        conn.executemany("INSERT INTO readings VALUES (?, ?, ?, ?, ?)", ROWS)
+    roles = {"r": {"allowed_actions": frozenset(ALL)}}
+    return DataMediator(SCHEMA, {"s": SQLiteWriteAdapter({"path": db})}, {"Reading": "s"}, roles)
+
+
+def _north():
+    from core.intermediate_layer.auth import resolve_user_record
+
+    return resolve_user_record({"n": {"org_id": "north", "role": "r"}}, "n", "org_id")
+
+
+class TestThroughTheMediator:
+    def test_summed_by_the_quarter_hour_in_the_callers_zone(self, tmp_path):
+        totals = _mediator(tmp_path).aggregate_by_field(
+            _north(), "Reading", [], group_by="taken", aggregate="sum", field_name="value",
+            duration="PT15M", time_zone="Europe/London")
+        assert {start.isoformat(): total for start, total in totals.items()} == {
+            "2026-07-01T10:00:00+01:00": 4.0,
+            "2026-07-01T10:15:00+01:00": 6.0,
+            "2026-07-01T10:30:00+01:00": 0,
+            "2026-07-01T10:45:00+01:00": 1.0,
+        }
+
+    def test_a_date_by_whole_days(self, tmp_path):
+        totals = _mediator(tmp_path).aggregate_by_field(
+            _north(), "Reading", [], group_by="day", aggregate="count", duration="P1D")
+        assert totals == {D(2026, 7, 1): 2, D(2026, 7, 2): 1}
+
+    @pytest.mark.parametrize("arguments, said", [
+        ({"group_by": "day", "duration": "PT1H"}, "whole days only"),
+        ({"group_by": "taken", "duration": "PT1H", "period": "day"}, "one of them, not both"),
+        ({"group_by": "taken", "time_zone": "Europe/London"}, "ask for a period or a duration"),
+        ({"group_by": "site", "duration": "PT1H"}, "must name a date"),
+        ({"group_by": "taken", "duration": "PT1H", "time_zone": "Nowhere/At_All"}, "Unknown time zone"),
+    ])
+    def test_what_cannot_be_bucketed_says_why(self, tmp_path, arguments, said):
+        with pytest.raises(ValueError, match=said):
+            _mediator(tmp_path).aggregate_by_field(_north(), "Reading", [], aggregate="count",
+                                                   **arguments)
+
+
+class TestTheKeysTheRouteWrites:
+    def test_a_buckets_start_is_iso_8601_with_its_offset(self):
+        from api.routes import _aggregate_key
+
+        start = at("2026-07-01T10:15:00+01:00")
+        assert _aggregate_key(start, bucketed=True) == "2026-07-01T10:15:00+01:00"
+        assert _aggregate_key(D(2026, 7, 1), bucketed=True) == "2026-07-01"
+
+    def test_an_exact_value_keeps_the_key_it_always_had(self):
+        from api.routes import _aggregate_key
+
+        assert _aggregate_key(at("2026-07-01T10:15:00+01:00"), bucketed=False) == \
+            "2026-07-01 10:15:00+01:00"
+        assert _aggregate_key(None, bucketed=False) == ""

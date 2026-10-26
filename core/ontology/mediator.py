@@ -2294,7 +2294,9 @@ class DataMediator:
     def aggregate_by_field(self, user_record: UserRecord, object_type: str, conditions: list,
                             group_by: str | None, aggregate: str, field_name: str | None = None,
                             outcome: "SearchOutcome | None" = None,
-                            query_text: str = "", period: "str | None" = None) -> dict:
+                            query_text: str = "", period: "str | None" = None,
+                            duration: "str | None" = None,
+                            time_zone: "str | None" = None) -> dict:
         """Aggregates a field over the objects the caller can see.
 
         `period` (day, week or month) groups a DATE field by the period
@@ -2302,6 +2304,9 @@ class DataMediator:
         period's first day, with empty periods between the first and last
         filled in as 0 for a count or a sum (core/periods.py) -- a series
         over time, which is what a chart over time and a forecast need.
+        `duration` does the same by a fixed length, an ISO 8601 duration
+        such as PT15M, keyed by each bucket's start; `time_zone` counts
+        either on that zone's clock (core/periods.py says how).
 
         `aggregate` is one of count/sum/avg/min/max -- the same set
         Foundry's own aggregate API exposes. `field_name` is required
@@ -2360,17 +2365,28 @@ class DataMediator:
                     f"aggregate over the objects on the far side."
                 )
 
-        if period is not None:
-            from core.periods import PERIODS, TEMPORAL
+        bucketing = None
+        if period is not None or duration is not None or time_zone is not None:
+            from core.periods import PERIODS, TEMPORAL, Buckets, parse_duration
+            from core.periods import time_zone as zone_named
 
-            if period not in PERIODS:
+            if period is not None and duration is not None:
+                raise ValueError("Group by a period or by a duration -- one of them, not both.")
+            if period is None and duration is None:
+                raise ValueError("time_zone says which clock to count periods on; ask for a "
+                                 "period or a duration with it.")
+            if period is not None and period not in PERIODS:
                 raise ValueError(f"Unknown period {period!r} -- expected one of {list(PERIODS)}")
             declared = ((type_config.get("fields") or {}).get(group_by or "") or {}).get("data_type")
             if group_by is None or declared not in TEMPORAL:
                 raise ValueError(
-                    f"period groups by a date: group_by must name a date or timestamp field of "
-                    f"{object_type}; {group_by!r} is {declared or 'text'}."
+                    f"{'period' if period else 'duration'} groups by a date: group_by must name "
+                    f"a date or timestamp field of {object_type}; {group_by!r} is "
+                    f"{declared or 'text'}."
                 )
+            bucketing = Buckets(period=period,
+                                length=None if duration is None else parse_duration(duration),
+                                zone=zone_named(time_zone), dated=declared == "date")
 
         visible_ids = set(self._set_members(user_record, object_type, conditions, outcome, query_text))
         if not visible_ids:
@@ -2388,7 +2404,7 @@ class DataMediator:
 
         rows = self._read_fields_for_ids(user_record, object_type, visible_ids, wanted)
 
-        if period is not None:
+        if bucketing is not None:
             from core.periods import by_period, with_gaps_filled
 
             assert group_by is not None
@@ -2400,10 +2416,10 @@ class DataMediator:
                   row.get(field_name) if field_name is not None else object_id)
                  for object_id, row in rows.items()
                  if field_name is None or row.get(field_name) is not None),
-                period)
+                bucketing)
             return with_gaps_filled(
                 {start: _AGGREGATES[aggregate](values) for start, values in per.items()},
-                period, aggregate)
+                bucketing, aggregate)
 
         grouped: dict[Any, list] = {}
         for object_id, row in rows.items():

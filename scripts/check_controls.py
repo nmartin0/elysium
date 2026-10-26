@@ -4563,7 +4563,7 @@ CONTROLS = [
     Control(
         describes='PERIOD: an instant falls in its UTC day',
         path='core/periods.py',
-        old='            value = value.astimezone(datetime.UTC)',
+        old='            moment = moment.astimezone(zone or datetime.UTC)',
         new='            pass',
         tests=[
             'tests/unit/test_totals_by_period.py::TestThePeriods::test_each_value_falls_in_the_period_it_starts',

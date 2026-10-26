@@ -1165,7 +1165,7 @@ LISTS -- manifest keys, contributions, events, what activate returns,
 host values, shared libraries, the version, every file it names -- to
 the code that decides them.
 
-What item 3 offered and deferred is unchanged: WebSocket pass-through,
+What this item offered and deferred is unchanged: WebSocket pass-through,
 jobs, timer callbacks, event subscriptions, time-series buckets, kit
 components (above, "GENERIC SERVICES FOR ADD-ONS"); drift from the
 simulator's panel.
@@ -1182,9 +1182,23 @@ reads it. Tests now hold the boundary itself -- an account-only role
 refused the server's state, an operator-only role refused the names --
 which the existing ones, using the debug role holding both, could not.
 
-**Blocked on:** nothing. Next, with the owner (24 October): item 12's
-SQLite source, then a full run; item 11's drift controls, proposed
-first; item 3's add-on services, as options.
+**THE ADD-ON SERVICES, CHOSEN 26 October, with the owner:** time-series
+reads first, then the kit's time chart, then event subscriptions. Jobs,
+timer callbacks and WebSocket pass-through wait for an add-on that
+calls them. The time-series reads come in four parts, buckets written as
+ISO 8601 durations as Foundry's aggregate takes them (the owner's
+choice): (1) `duration` and `time_zone` on the aggregate; (2) first and
+last per bucket; (3) the assistant's aggregate step taking a period;
+(4) several measures in one request. A time property declared per type
+and a tail cursor wait for a caller.
+
+PART 1 IS BUILT: `duration` (PT15M, PT1H, P3D) beside `period`, and
+`time_zone` for either, aligned as TimescaleDB aligns its buckets --
+from midnight on 3 January 2000, in the zone asked for -- with the
+autumn's repeated hour holding both and the spring's skipped hour never
+offered (core/periods.py).
+
+**Blocked on:** nothing. Next: part 2, first and last.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

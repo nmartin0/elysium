@@ -731,6 +731,13 @@ class AggregateRequest(TextSetQueryRequest):
     #: value falls in (core/periods.py). Keys are the period's first day,
     #: ISO 8601; empty periods are 0 for a count or a sum.
     period: str | None = None
+    #: Or by a fixed length, an ISO 8601 duration -- PT15M, PT1H, P3D --
+    #: as Foundry's aggregate groups by one. Keys are each bucket's start,
+    #: ISO 8601, with its offset when the field is an instant.
+    duration: str | None = None
+    #: An IANA zone, such as Europe/London, whose clock the period or the
+    #: duration is counted on. UTC when absent.
+    time_zone: str | None = None
 
 
 class SearchAroundRequest(ObjectSetQueryRequest):
@@ -8763,6 +8770,20 @@ def count_objects_route(object_type: str, body: TextSetQueryRequest, request: Re
     return {"count": count, "scan_truncated": search_outcome.scan_truncated}
 
 
+def _aggregate_key(group: Any, bucketed: bool) -> str:
+    """A group value as a JSON object key. None -- "no grouping
+    requested" -- is "" rather than dropped. A bucket's start is ISO 8601:
+    str() of a time puts a space where the T goes. Only for buckets, so
+    an exact-value group keeps the key it always had."""
+    import datetime
+
+    if group is None:
+        return ""
+    if bucketed and isinstance(group, datetime.date):
+        return group.isoformat()
+    return str(group)
+
+
 @router.post("/objects/{object_type}/aggregate", response_model=AggregateResponse)
 def aggregate_objects_route(object_type: str, body: AggregateRequest, request: Request,
                              current_user: UserRecord = Depends(get_current_user)) -> dict:
@@ -8776,15 +8797,15 @@ def aggregate_objects_route(object_type: str, body: AggregateRequest, request: R
             _set_conditions(request, current_user, object_type, body),
             group_by=body.group_by, aggregate=body.aggregate, field_name=body.field,
             outcome=search_outcome, query_text=body.q, period=body.period,
+            duration=body.duration, time_zone=body.time_zone,
         )
     except ValueError as e:
         # An unknown aggregate name or a missing field is a caller
         # mistake, not a server fault.
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-    # Group values become strings for JSON object keys. None -- meaning
-    # "no grouping requested" -- becomes "" rather than being dropped.
-    return {"results": {("" if group is None else str(group)): metric
+    bucketed = body.period is not None or body.duration is not None
+    return {"results": {_aggregate_key(group, bucketed): metric
                         for group, metric in results.items()},
             "scan_truncated": search_outcome.scan_truncated}
 

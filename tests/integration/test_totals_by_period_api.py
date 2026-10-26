@@ -73,3 +73,21 @@ def test_a_period_on_text_is_a_400_that_says_why(client):
                            json={"aggregate": "count", "group_by": "category", "period": "week"},
                            headers=_csrf_headers(client))
     assert response.status_code == 400 and "must name a date" in response.text
+
+
+def test_counted_by_a_fixed_length_of_days(client):
+    # P7D counts from Monday 3 January 2000, so its weeks begin on Mondays
+    # too -- the same starts as period=week, by another road.
+    by_length = _aggregate(client, duration="P7D").json()["results"]
+    by_week = _aggregate(client, period="week").json()["results"]
+    assert by_length == by_week and by_length
+
+
+@pytest.mark.parametrize("body, said", [
+    ({"duration": "PT1H"}, "whole days only"),
+    ({"duration": "P1W"}, "ask by period week"),
+    ({"duration": "P1D", "time_zone": "Nowhere/At_All"}, "Unknown time zone"),
+])
+def test_a_duration_that_cannot_be_used_is_a_400_that_says_why(client, body, said):
+    response = _aggregate(client, **body)
+    assert response.status_code == 400 and said in response.text
