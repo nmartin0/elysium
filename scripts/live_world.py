@@ -307,9 +307,11 @@ def configure(tables: list[Table], connections: dict, config_dir: Path,
                            for t in mine}}}
     types, grants = {}, []
     for t in tables:
-        # MariaDB's DATETIME has no zone, and the world's MariaDB writes
-        # UTC: declared so, as Elysium's refusal of the bare type says to.
-        zoned = connections[t.silo]["kind"] == "mariadb"
+        # MariaDB's DATETIME has no zone, nor has SQLite's text, and the
+        # world writes both in UTC: declared so, as Elysium's refusal of
+        # the bare type says to. Found on SQLite by the first run over
+        # the parts desk, which refused every time column.
+        zoned = connections[t.silo]["kind"] in ("mariadb", "sqlite")
         fields = {c: {"type": "data", "data_type": DATA_TYPES[kind],
                       **({"timezone": "UTC"} if zoned and kind == "timestamp" else {})}
                   for c, kind in t.columns.items() if c != t.id_column}
@@ -319,7 +321,13 @@ def configure(tables: list[Table], connections: dict, config_dir: Path,
         grants += [f"read:{t.object_type}", f"read:{t.object_type}.{t.id_column}",
                    *(f"read:{t.object_type}.{c}" for c in fields)]
     base = REPOSITORY / "tests" / "integration" / "fixtures" / "other_deployment"
-    (config_dir / "config.yaml").write_text((base / "config.yaml").read_text())
+    # NO WRITES REACH THE WORLD. Without a `write_targets` line Elysium
+    # lets a confirmed write reach any SQLite silo, and says so at load;
+    # an operator pointing it at another program's database -- the parts
+    # desk's file -- declares that none may.
+    config = yaml.safe_load((base / "config.yaml").read_text())
+    config["write_targets"] = []
+    (config_dir / "config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
     (config_dir / "data_silos.yaml").write_text(yaml.safe_dump({"data_silos": silos}))
     (config_dir / "ontology_schema.yaml").write_text(yaml.safe_dump({"object_types": types}))
     (config_dir / "policy.yaml").write_text(yaml.safe_dump({

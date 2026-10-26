@@ -83,6 +83,7 @@ class TestTheDeploymentItWrites:
                   "client_id": "books-client", "client_secret": "api-secret"},
         "payroll": {"kind": "filedrop", "path": "/x", "format": "zip", "encoding": "cp1252",
                     "delimiter": ";"},
+        "desk": {"kind": "sqlite", "path": "/x/parts.db"},
     }
 
     def _write(self, tmp_path):
@@ -93,10 +94,13 @@ class TestTheDeploymentItWrites:
                   live.Table("books", "invoices", {"invoice_id": "text"}, "invoice_id",
                              collection="invoices"),
                   live.Table("payroll", "pay_lines", {"pay_line_id": "text"}, "pay_line_id",
-                             files="pay_lines_*.csv")]
+                             files="pay_lines_*.csv"),
+                  live.Table("desk", "parts_used", {"usage_id": "text", "used_at": "timestamp"},
+                             "usage_id")]
         env = live.configure(tables, self.CONNECTIONS, tmp_path)
         return env, {name: yaml.safe_load((tmp_path / name).read_text())
-                     for name in ("data_silos.yaml", "ontology_schema.yaml", "policy.yaml")}
+                     for name in ("data_silos.yaml", "ontology_schema.yaml", "policy.yaml",
+                                  "config.yaml")}
 
     def test_no_credential_is_written_down(self, tmp_path):
         env, files = self._write(tmp_path)
@@ -117,6 +121,22 @@ class TestTheDeploymentItWrites:
         assert silos["shop"]["zero_dates_as_null"] is True
         assert fields["placed_at"] == {"type": "data", "data_type": "timestamptz",
                                        "timezone": "UTC"}
+
+    def test_a_sqlite_time_is_declared_in_the_zone_the_world_writes(self, tmp_path):
+        # SQLite keeps a time as text with no zone, which Elysium refuses
+        # as an instant until the zone is declared -- found by the first
+        # run over the parts desk.
+        _, files = self._write(tmp_path)
+        fields = files["ontology_schema.yaml"]["object_types"]["DeskPartsUsed"]["fields"]
+
+        assert fields["used_at"]["timezone"] == "UTC"
+
+    def test_no_write_reaches_the_world(self, tmp_path):
+        # Another program's database, read and never written: without
+        # the line, Elysium lets a confirmed write reach a SQLite silo.
+        _, files = self._write(tmp_path)
+
+        assert files["config.yaml"]["write_targets"] == []
 
     def test_every_field_is_granted_to_the_reader(self, tmp_path):
         _, files = self._write(tmp_path)

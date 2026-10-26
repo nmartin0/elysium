@@ -2185,6 +2185,21 @@ fitted part keeps the cost it was fitted at. The tests reconcile every
 part's count against the shelf at the start, deliveries and usage
 (sim/tests/test_field_service.py).
 
-**Next in step 3:** a full run of Elysium over every source kind.
+**A FULL RUN OVER EVERY SOURCE KIND, 26 October.** Field service (two
+PostgreSQL servers, one a replica, a REST API, a CSV folder and the
+SQLite parts desk) and retail (MariaDB, PostgreSQL, a CSV folder), five
+rounds each with every realism option on: every table agrees, or is
+refused with its reason -- pay lines withheld from the reader, a weekly
+file not yet arrived. What the first run found was the harness's, not
+Elysium's, and Elysium's own refusal said how to fix it: SQLite keeps
+a time as text with no zone, refused as an instant until the zone is
+declared (`timezone: UTC`, as for MariaDB). It also showed that a
+deployment without `write_targets` lets a confirmed write reach any
+SQLite silo -- here another program's database. The harness declares
+`write_targets: []`; Elysium's default, kept deliberately and warned
+about at load, is unchanged.
 
-**Blocked on:** nothing; in progress.
+**Step 3 is done.** What is left of this item is item 11's drift
+controls on the panel, which these runs were to inform.
+
+**Blocked on:** nothing.
