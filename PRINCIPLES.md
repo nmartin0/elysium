@@ -130,6 +130,13 @@ rules that generalize past just the LLM boundary:
   decided (`executable`, computed server-side) — it is not itself
   where authorization happens, and must never become the only place
   a check exists.
+- **A question does not leave the VM** (the owner's decision, 26
+  October). No query, and nothing read to answer one, is escalated to
+  a hosted model, and Elysium does not fine-tune on its own traces,
+  which hold customers' data. A deployment may still run a whole
+  different model, which is that deployment's own choice and its own
+  risk; what is not built, and not to be built without the owner
+  reopening this, is a path that sends *one question* elsewhere.
 
 ## 5. Nothing ships without an honest account of what's still open.
 

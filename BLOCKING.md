@@ -119,9 +119,22 @@ disagreed: these rows are decisions only the owner can take, each
 verified still open, each with its evidence in its own row. Grouped so
 they can be answered together.
 
-**The model and where it runs**
+**DECIDED 26 OCTOBER, by the owner:**
+- `D3` and `AR-9` -- NO. A question never leaves the VM for a hosted
+  model, and no escalation path is built. A deployment may still run a
+  whole different model; that is its own choice. Recorded in
+  PRINCIPLES.md section 4.
+- `D6` and `AR-10` -- NO. Elysium does not fine-tune on its own
+  traces, which hold customers' data.
+- `E-21` -- left to the owner: the repository and the LICENSE stay as
+  they are, and the owner decides when to change either. Nothing
+  waits on it.
+- `Q1` -- GDPR and UK GDPR, and HIPAA. SOC 2 and ISO 27001 are not
+  declared. What this changes is in the compliance item below.
+
+**Still the owner's, and measurements rather than opinions**
 - `D1` -- switch phi4-mini to Qwen3-4B-Instruct after the bench? The
-  shipped config is still phi4-mini. NOW A MEASUREMENT (19 October):
+  shipped config is still phi4-mini. A MEASUREMENT (19 October):
   `python -m scripts.compare_models phi4-mini <other>` runs the bench's
   seven questions on each, answers included, and tabulates how many
   each got right and where a whole question's seconds went -- steps
@@ -131,27 +144,15 @@ they can be answered together.
   (AR-3) and speculative decoding (AR-8) need it -- llama.cpp's n-gram
   drafting (`--spec-type ngram-simple`) needs no second model, and
   suits replies that copy names and values out of their prompt. Run
-  compare_models once per server, with --config naming each.
-- `D3` and `AR-9` -- may a query leave the VM for a hosted model, and
-  if so on what policy? Today a deployment can swap the whole model,
-  never escalate one question.
-- `D6` and `AR-10` -- fine-tune a small model on Elysium's own traces?
+  compare_models once per server, with --config naming each. BOTH WAIT
+  ON A MACHINE with a capable model (the agent-loop item below).
 
 **Access, and what a person sees**
 - `R47` -- review of inferred special-category data (health, religion
-  and so on). The one part of D5 not decided.
+  and so on). The one part of D5 not decided. HIPAA and GDPR's special
+  categories, now declared under `Q1`, are the reason to decide it.
 
-**Smaller calls**
-- `E-21` -- the LICENSE says unpublished and proprietary; the
-  repository's visibility should match it.
-
-**Customers**
-- `Q1` -- which regulatory regimes apply (the compliance item below
-  waits on this). (`Q4`, which source databases come first, was
-  answered on 19 October: PostgreSQL and MariaDB, then CSV files, then
-  REST; see "The simulator as Elysium's live test" below.)
-
-**Blocked on:** answers. None blocks building anything else.
+**Blocked on:** `R47`, and the machine that `D1` and `D2` need. None blocks building anything else.
 
 # Blocked on a machine or a person running something
 
@@ -1896,6 +1897,15 @@ an audit is ever bought:
     backup verification      restore tested rather than assumed
 
 Months, not a patch.
+
+**THE REGIMES, ANSWERED 26 OCTOBER:** GDPR and UK GDPR, and HIPAA. SOC 2
+and ISO 27001 are not declared, so neither attestation is being bought.
+For GDPR the engineering is largely built (erasure, retention,
+encrypted storage and backups). For HIPAA it is the Security Rule
+safeguards above, which the operator carries, and a BAA, which is a
+contract and not a patch. The list's remaining rows are therefore not
+optional: key management, session controls, a password policy,
+access review, audit integrity and backup verification.
 
 ## 10. Owning the UI kit, and when to start
 
