@@ -151,6 +151,40 @@ def test_a_live_rename_is_followed_by_the_business_and_its_exports(running):
     assert recent > 0
 
 
+def test_the_schema_offers_what_exists_now(running):
+    # A column added a moment ago is offered: the panel can only ask a
+    # change of something that exists.
+    _, directory, _ = running
+    send(directory, "drift", operation="add_column", table="ops.readings",
+         column="offered", type="text", length=20)
+
+    shown = send(directory, "schema")
+
+    assert set(shown["silos"]) == {"ops", "shop"}, "the file drop and the API hold no tables"
+    readings = {c["name"]: c for c in shown["silos"]["ops"]["tables"]["readings"]}
+    assert readings["offered"] == {"name": "offered", "type": "text", "nullable": True,
+                                   "primary_key": False}
+    assert shown["silos"]["ops"]["kind"] == "postgresql"
+
+
+def test_the_schema_says_what_has_changed_and_what_breaks(running):
+    _, directory, _ = running
+    send(directory, "drift", operation="add_column", table="ops.readings",
+         column="remembered", type="integer")
+
+    shown = send(directory, "schema")
+
+    added = [c for c in shown["silos"]["ops"]["history"] if "remembered" in c["detail"]]
+    assert [(c["operation"], c["breaking"]) for c in added] == [("AddColumn", False)]
+    assert shown["silos"]["shop"]["history"] == [], "nothing drifted there"
+    operations = shown["operations"]
+    # Only the additions are safe: a rescale keeps the type and changes
+    # what every value means, which a consumer cannot see coming.
+    assert {name for name, breaking in operations.items() if not breaking} == {
+        "add_column", "add_table"}
+    assert len(operations) == 8
+
+
 # -- outages -----------------------------------------------------------
 
 def test_a_postgresql_outage_ends_open_sessions_and_refuses_new_ones(running):

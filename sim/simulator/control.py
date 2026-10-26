@@ -25,6 +25,8 @@ Commands (POST /control, {"command": ..., ...}, bearer token):
   advance {"duration": "3d"}    run time forward now, paused or not
   drift {"operation", fields}   a schema change, applied by the engine
                                 itself, so its model moves with it
+  schema                        what each silo a change may reach holds,
+                                the changes on offer, and its history
   outage {"silo"} / restore     cut a silo off from its reader, and back
                                 (simulator/outages.py)
   oracle                        every watched number's samples, as JSON
@@ -89,6 +91,26 @@ def apply_drift(world, operation: str, fields: dict[str, Any]):
     return change
 
 
+def _drift_operations() -> dict[str, bool]:
+    """Each change on offer, and whether it is breaking: read from the
+    change's own class, as the history table records it, so the panel
+    asks twice for exactly what the world calls breaking."""
+    from simulator import drift
+    from simulator.spec.migrations import MIGRATION_OPERATIONS
+
+    classes: dict[str, type[drift.SchemaChange]] = {"add_column": drift.AddColumn, "drop_column": drift.DropColumn,
+               "rename_column": drift.RenameColumn,
+               "change_column_type": drift.ChangeColumnType,
+               "add_table": drift.AddTable, "drop_table": drift.DropTable,
+               "rename_table": drift.RenameTable, "rescale_column": drift.RescaleColumn}
+    # One list of operations: a new one in the pack vocabulary without a
+    # class here is a mistake to find at once, not an option gone missing.
+    if set(classes) != set(MIGRATION_OPERATIONS):
+        raise RuntimeError(f"drift operations without a class here, or the reverse: "
+                           f"{sorted(set(MIGRATION_OPERATIONS) ^ set(classes))}")
+    return {name: change.is_breaking for name, change in classes.items()}
+
+
 class Controller:
     """The world's side: a queue, and what each command does."""
 
@@ -145,7 +167,8 @@ class Controller:
         handlers: dict[str, Callable[[dict], Any]] = {
             "status": self._cmd_status, "pause": self._cmd_pause,
             "resume": self._cmd_resume, "advance": self._cmd_advance,
-            "drift": self._cmd_drift, "outage": self._cmd_outage,
+            "drift": self._cmd_drift, "schema": self._cmd_schema,
+            "outage": self._cmd_outage,
             "restore": self._cmd_restore, "oracle": self._cmd_oracle,
             "pause_replay": self._cmd_pause_replay,
             "resume_replay": self._cmd_resume_replay,
@@ -220,6 +243,42 @@ class Controller:
             raise ControlError("drift needs an operation, as in drop_column")
         change = apply_drift(self.world, operation, fields)
         return {"applied": change.describe(), "breaking": change.is_breaking}
+
+    def _cmd_schema(self, _arguments: dict) -> dict:
+        """What a schema change may reach, for a page offering one.
+
+        THE SILOS A CHANGE IS MADE TO: those holding tables, and not a
+        replica -- a change to its source reaches it, by the WAL or the
+        next refresh, as a real one's would. Each table's columns as the
+        world now has them, so only what exists can be picked; and the
+        changes made so far, scheduled or not, from the history table
+        each database keeps (simulator/drift.py)."""
+        from simulator.drift import history
+        from simulator.silo import SiloError
+
+        world = self.world
+        silos = {}
+        for name in sorted(world.schemas):
+            spec = world.pack.silos.get(name)
+            if spec is None or getattr(spec, "replicates", None):
+                continue
+            silo = world.silo(name)
+            try:
+                changes = history(silo, world.database(name))
+            except SiloError:
+                changes = []         # nothing has drifted yet
+            silos[name] = {
+                "kind": silo.kind,
+                "tables": {table.name: [{"name": column.name, "type": column.type.value,
+                                         "nullable": column.nullable,
+                                         "primary_key": column.primary_key}
+                                        for column in table.columns]
+                           for table in world.schema(name).tables},
+                "history": [{"at": change["applied_at"], "operation": change["operation"],
+                             "detail": change["detail"], "breaking": change["breaking"]}
+                            for change in changes],
+            }
+        return {"silos": silos, "operations": _drift_operations()}
 
     def _cmd_outage(self, arguments: dict) -> dict:
         name, silo = self._silo(arguments)

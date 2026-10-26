@@ -1963,9 +1963,23 @@ SECURITY_ARCHITECTURE.md).
 **THE PANEL IS BUILT** (item 3, step 2.3): sim/panel, loaded as a module,
 its server started by Elysium, the world running on its own.
 
-**Blocked on:** nothing but order: drift from the panel waits for item
-12's runs to show which changes an operator reaches for. Superseded
-wording below kept for its reasons:
+**SCHEMA CHANGES FROM THE PANEL, 26 October, with the owner** (after
+item 12's runs, which used every kind): a database, a table and one of
+the eight changes the pack vocabulary has, its details, Apply; and the
+list of what has changed, scheduled or not, read from the history table
+each database keeps. Laid out as Gremlin lays out an experiment ("Select
+the type of target ... click on the experiment name ... Click Run
+Experiment", then "view reports of historical experiments"). Only what
+exists can be picked: the world's new `schema` command gives each
+silo's tables as they are now, a replica left out since its source's
+change reaches it. A breaking change asks twice, and which are breaking
+is the world's word, from each change's class -- every one but the two
+additions, a rescale included, because every value means something else
+after it. None can be undone; only discarding the world goes back.
+(sim/panel/web/src/SchemaChanges.tsx, sim/simulator/control.py.)
+
+**Blocked on:** nothing; built. Superseded wording below kept for its
+reasons:
 
 **Was blocked on:** nothing but order: the page comes after item 12, whose
 runs will show which controls an operator actually reaches for.
@@ -2199,7 +2213,7 @@ SQLite silo -- here another program's database. The harness declares
 `write_targets: []`; Elysium's default, kept deliberately and warned
 about at load, is unchanged.
 
-**Step 3 is done.** What is left of this item is item 11's drift
-controls on the panel, which these runs were to inform.
+**Step 3 is done**, and with it this item; item 11's drift controls,
+which these runs were to inform, are built.
 
 **Blocked on:** nothing.

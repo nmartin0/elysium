@@ -2,7 +2,8 @@
  * THE SIMULATOR'S CONTROL PANEL (BLOCKING.md items 11 and 3, step 2.3):
  * start a world from a pack, or resume the one stopped here; run it at a
  * speed; pause it, move it on, take a database offline and bring it back;
- * copy each database's connection details; stop it.
+ * change its schema (SchemaChanges.tsx); copy each database's connection
+ * details; stop it.
  *
  * EVERYTHING GOES THROUGH THE PANEL'S OWN SERVER (sim/panel/server.py),
  * reached through Elysium's proxy (`addonRequest`). The world itself runs
@@ -16,6 +17,7 @@ import { addonRequest, getErrorMessage, handleIfSessionExpired } from '@elysium/
 import AsyncPanel from '@elysium/shell-api/components/AsyncPanel'
 import Page from '@elysium/shell-api/components/Page'
 import StatusTag, { type TagState } from '@elysium/shell-api/components/StatusTag'
+import SchemaChanges from './SchemaChanges'
 
 const MODULE = 'simulator'
 const POLL_MS = 2000
@@ -144,7 +146,15 @@ export default function SimulatorPanel({ onSessionExpired }: { onSessionExpired:
               <p>You may see the world; changing it needs the Simulator&apos;s operate permission.</p>
             )}
             {shown.phase === 'running' && shown.world !== null ? (
-              <Databases state={shown} acting={acting} act={act} />
+              <>
+                <Databases state={shown} acting={acting} act={act} />
+                <SchemaChanges
+                  mayOperate={shown.may_operate}
+                  acting={acting}
+                  act={act}
+                  onSessionExpired={onSessionExpired}
+                />
+              </>
             ) : null}
             <Log />
             <p className="simulator-panel__where">The world lives in {shown.directory}.</p>
@@ -320,7 +330,7 @@ function Databases({ state, acting, act }: { state: PanelState; acting: boolean;
   return (
     <section aria-label="Databases">
       <h2 className="simulator-panel__heading">Its databases</h2>
-      <HTMLTable compact className="simulator-panel__silos">
+      <HTMLTable compact className="simulator-panel__silos" aria-label="Its databases">
         <thead>
           <tr>
             <th>Database</th>

@@ -47,6 +47,16 @@
   overflow-wrap: anywhere;
 }
 
+.simulator-panel__change {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tight);
+}
+
+.simulator-panel__note {
+  color: var(--text-secondary);
+}
+
 .simulator-panel__where {
   color: var(--text-secondary);
 }

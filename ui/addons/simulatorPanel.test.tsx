@@ -14,6 +14,7 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   return { ...actual, addonRequest: (...args: unknown[]) => addonRequest(...args) }
 })
 import SimulatorPanel, { type PanelState } from '@simulator/panel/SimulatorPanel'
+import type { WorldSchema } from '@simulator/panel/SchemaChanges'
 
 const PACKS = [
   { name: 'probe', description: "A world built to be read by somebody else's client." },
@@ -55,11 +56,49 @@ const RUNNING = state({
   },
 })
 
+/** As the world's `schema` command answers: which changes break is its
+ *  word, from each change's class (sim/simulator/control.py). */
+const SCHEMA: WorldSchema = {
+  silos: {
+    ops: {
+      kind: 'postgresql',
+      tables: {
+        readings: [
+          { name: 'reading_id', type: 'text', nullable: false, primary_key: true },
+          { name: 'quantity', type: 'integer', nullable: false, primary_key: false },
+          { name: 'note', type: 'text', nullable: true, primary_key: false },
+        ],
+        sites: [{ name: 'site_id', type: 'text', nullable: false, primary_key: true }],
+      },
+      history: [
+        {
+          at: '2026-01-02T03:00:00+00:00',
+          operation: 'AddColumn',
+          detail: 'added readings.note (text)',
+          breaking: false,
+        },
+      ],
+    },
+    shop: { kind: 'mariadb', tables: { orders: [] }, history: [] },
+  },
+  operations: {
+    add_column: false,
+    drop_column: true,
+    rename_column: true,
+    change_column_type: true,
+    rescale_column: true,
+    add_table: false,
+    drop_table: true,
+    rename_table: true,
+  },
+}
+
 /** The state the server answers with, and every POST answered with {}. */
-function serve(shown: PanelState) {
+function serve(shown: PanelState, schema: WorldSchema = SCHEMA) {
   addonRequest.mockImplementation((_module: string, path: string, options?: { method?: string }) => {
     if (options?.method === 'POST') return Promise.resolve({})
     if (path === 'log') return Promise.resolve({ lines: ['Following at 3600x.'] })
+    if (path === 'schema') return Promise.resolve(schema)
     return Promise.resolve(shown)
   })
 }
@@ -133,7 +172,7 @@ describe('the simulator panel', () => {
     serve(RUNNING)
     render(<SimulatorPanel onSessionExpired={() => {}} />)
 
-    const table = within(await screen.findByRole('table'))
+    const table = within(await screen.findByRole('table', { name: 'Its databases' }))
     const ops = table.getByText('ops').closest('tr')!
     expect(ops).toHaveTextContent('54321')
     expect(ops).toHaveTextContent('reader')
@@ -167,6 +206,118 @@ describe('the simulator panel', () => {
     expect(await screen.findByText(/changing it needs the Simulator's operate permission/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Take offline' })).not.toBeInTheDocument()
+  })
+
+  it('lists the schema changes made so far, additive or breaking', async () => {
+    serve(RUNNING)
+    render(<SimulatorPanel onSessionExpired={() => {}} />)
+
+    const history = within(await screen.findByRole('table', { name: 'Schema changes so far' }))
+    const row = history.getByText('added readings.note (text)').closest('tr')!
+    expect(row).toHaveTextContent('ops')
+    expect(row).toHaveTextContent('additive')
+  })
+
+  it("adds a column in one click, sending the change in the pack's own words", async () => {
+    serve(RUNNING)
+    render(<SimulatorPanel onSessionExpired={() => {}} />)
+
+    fireEvent.change(await screen.findByLabelText('New column'), { target: { value: 'remark' } })
+    fireEvent.change(screen.getByLabelText('Length'), { target: { value: '40' } })
+    await press(screen.getByRole('button', { name: 'Apply' }))
+
+    expect(sent()).toEqual([
+      [
+        'simulator',
+        'command',
+        {
+          command: 'drift',
+          operation: 'add_column',
+          table: 'ops.readings',
+          column: 'remark',
+          type: 'text',
+          length: 40,
+        },
+      ],
+    ])
+  })
+
+  it('asks twice before a breaking change, and a different choice disarms it', async () => {
+    serve(RUNNING)
+    render(<SimulatorPanel onSessionExpired={() => {}} />)
+
+    fireEvent.change(await screen.findByLabelText('Change'), { target: { value: 'drop_column' } })
+    fireEvent.change(screen.getByLabelText('Column'), { target: { value: 'note' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(sent()).toEqual([])
+    expect(screen.getByText(/Only discarding the world goes back/)).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Column'), { target: { value: 'quantity' } })
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    await press(screen.getByRole('button', { name: 'Apply it: this cannot be undone' }))
+
+    expect(sent()).toEqual([
+      [
+        'simulator',
+        'command',
+        { command: 'drift', operation: 'drop_column', table: 'ops.readings', column: 'quantity' },
+      ],
+    ])
+  })
+
+  it('rescales only a column that holds numbers, and asks twice', async () => {
+    serve(RUNNING)
+    render(<SimulatorPanel onSessionExpired={() => {}} />)
+
+    fireEvent.change(await screen.findByLabelText('Change'), { target: { value: 'rescale_column' } })
+    const offered = within(screen.getByLabelText('Column'))
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+    expect(offered).toEqual(['quantity (integer)'])
+
+    // Breaking by the world's word, though nothing is removed: every
+    // value means something else after it. So it asks twice.
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(sent()).toEqual([])
+    await press(screen.getByRole('button', { name: 'Apply it: this cannot be undone' }))
+    expect(sent()).toEqual([
+      [
+        'simulator',
+        'command',
+        { command: 'drift', operation: 'rescale_column', table: 'ops.readings', column: 'quantity', factor: '100' },
+      ],
+    ])
+  })
+
+  it('adds a table with a text key', async () => {
+    serve(RUNNING)
+    render(<SimulatorPanel onSessionExpired={() => {}} />)
+
+    fireEvent.change(await screen.findByLabelText('Change'), { target: { value: 'add_table' } })
+    fireEvent.change(screen.getByLabelText('New table'), { target: { value: 'visits' } })
+    await press(screen.getByRole('button', { name: 'Apply' }))
+
+    expect(sent()).toEqual([
+      [
+        'simulator',
+        'command',
+        {
+          command: 'drift',
+          operation: 'add_table',
+          table: 'ops.visits',
+          columns: { id: { type: 'text', length: 64, primary_key: true, nullable: false } },
+        },
+      ],
+    ])
+  })
+
+  it('shows what has changed, but offers no change, to someone who may not operate it', async () => {
+    serve({ ...RUNNING, may_operate: false })
+    render(<SimulatorPanel onSessionExpired={() => {}} />)
+
+    expect(await screen.findByRole('table', { name: 'Schema changes so far' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument()
   })
 
   it('says a busy world is building or tidying up, and offers nothing to press', async () => {

@@ -63,7 +63,12 @@ from simulator.resume import existing_world  # noqa: E402
 ASK_SECONDS = 4.0
 #: Commands the page may send, and the arguments each takes.
 COMMANDS = {"pause": (), "resume": (), "advance": ("duration",), "speed": ("compression",),
-            "outage": ("silo",), "restore": ("silo",)}
+            "outage": ("silo",), "restore": ("silo",),
+            # A schema change, in the pack's own words (sim/simulator/spec/
+            # migrations.py): the world's builder checks each field, and
+            # its refusal comes back as the page's.
+            "drift": ("operation", "table", "column", "to", "type", "length", "precision",
+                      "scale", "nullable", "factor", "columns")}
 LOG_FILENAME = "run.log"
 #: What the watcher last saw, and that a stop was asked for.
 WATCHED_FILENAME = "watched.json"
@@ -237,6 +242,10 @@ class Panel:
         arguments = {key: body[key] for key in COMMANDS[name] if key in body}
         return send(self.directory, name, reply_timeout=ASK_SECONDS * 4, **arguments)
 
+    def schema(self) -> dict:
+        """What a schema change may reach, read from the running world."""
+        return send(self.directory, "schema", reply_timeout=ASK_SECONDS * 4)
+
     def discard(self) -> dict:
         """The stopped world and its directory, so a different pack can be
         started. Refused while anything is running there."""
@@ -353,6 +362,11 @@ def make_server(info: dict, port: int = 0, shared: "Panel | None" = None) -> Thr
                 return self._reply(200, {**panel.state(), "may_operate": elysium_addon.holds(who, "operate")})
             if self.path == "/log":
                 return self._reply(200, {"lines": panel.log_tail()})
+            if self.path == "/schema":
+                try:
+                    return self._reply(200, panel.schema())
+                except ControlError as refused:
+                    return self._reply(409, {"detail": str(refused)})
             return self._reply(404, {"detail": "Not found"})
 
         def do_POST(self) -> None:  # noqa: N802

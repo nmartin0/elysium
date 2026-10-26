@@ -158,10 +158,19 @@ def test_a_start_it_cannot_do_is_said(panel, body, said):
     assert status == 409 and said in shown["detail"]
 
 
+def test_with_no_world_there_is_no_schema_to_change(panel):
+    ask, _ = panel
+
+    status, said = ask("GET", "/schema")
+    assert status == 409 and said["detail"]
+
+
 def test_only_its_own_commands_pass_and_a_body_must_be_an_object(panel):
     ask, _ = panel
 
-    assert "no command 'drift' here" in ask("POST", "/command", {"command": "drift"})[1]["detail"]
+    # A standby's replay is the terminal's to pause, not the page's.
+    assert "no command 'pause_replay' here" in \
+        ask("POST", "/command", {"command": "pause_replay"})[1]["detail"]
     assert ask("POST", "/command", [1, 2])[0] == 400
 
 
@@ -322,6 +331,23 @@ def test_a_world_runs_on_while_the_panel_is_gone_and_is_found_again(world_direct
         assert running["world"]["following"] is True
         assert set(running["connections"]["silos"]) == set(running["world"]["silos"])
         assert ask("POST", "/command", {"command": "speed", "compression": 7200})[1] == {"compression": 7200.0}
+        # A SCHEMA CHANGE FROM THE PAGE: its fields reach the world, the
+        # world's refusal comes back in its own words, and the change is
+        # in what the page reads next.
+        assert ask("POST", "/command", {"command": "drift", "operation": "add_column",
+                                        "table": "ops.readings", "column": "remark",
+                                        "type": "text", "length": 40})[1]["breaking"] is False
+        refused = ask("POST", "/command", {"command": "drift", "operation": "drop_column",
+                                           "table": "ops.nowhere", "column": "x"})
+        assert refused[0] == 409 and "nowhere" in refused[1]["detail"]
+        assert ask("POST", "/command", {
+            "command": "drift", "operation": "add_table", "table": "ops.visits",
+            "columns": {"visit_id": {"type": "text", "length": 64, "primary_key": True,
+                                     "nullable": False}}})[0] == 200
+        schema = ask("GET", "/schema")[1]
+        assert schema["silos"]["ops"]["tables"]["visits"][0]["name"] == "visit_id"
+        assert "remark" in {c["name"] for c in schema["silos"]["ops"]["tables"]["readings"]}
+        assert [c["operation"] for c in schema["silos"]["ops"]["history"]] == ["AddColumn", "AddTable"]
         # ITS LOG AS IT GOES, not only once it stops: unbuffered.
         assert any("Following at" in line for line in ask("GET", "/log")[1]["lines"])
         # AND ITS OPERATORS TOLD it is running, through Elysium's Inbox.

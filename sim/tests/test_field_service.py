@@ -952,3 +952,18 @@ def test_a_discontinued_part_is_marked_and_kept(world):
     marked = parts(world, "SELECT count(*) FROM parts WHERE discontinued")[0][0]
     assert marked >= 1
     assert parts(world, "SELECT count(*) FROM parts")[0][0] == 40
+
+
+@pytest.mark.postgres
+def test_a_change_is_offered_for_a_source_and_never_its_replica(world):
+    # The office copy follows dispatch, by its next refresh, as a real
+    # one would; a change made to the copy itself is not what an
+    # operator is testing. The parts desk is offered, with no history.
+    from simulator.control import Controller
+
+    shown = Controller(world)._do("schema", {})
+
+    assert {"dispatch", "parts_desk"} <= set(shown["silos"])
+    assert "office" not in shown["silos"]
+    assert shown["silos"]["parts_desk"]["history"] == []
+    assert "parts_received" in shown["silos"]["parts_desk"]["tables"]
