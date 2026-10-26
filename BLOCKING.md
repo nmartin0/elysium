@@ -1359,11 +1359,15 @@ one Inbox. Built so far, each checked in a real browser:
   code (core/role_impact.config_access_impact) says nothing widens,
   otherwise queued for a second person like a label. Decided: grants
   stay on the Roles screen (a pointer after the change, no bundled
-  grant); NO REMOVAL in the first version (gold drops the column, and
-  actions, grants and links may still name it); an existing field's
-  data type is refused with the `run_sync --rebuild` command spelled
-  out, as "put this version back" already does -- a type is chosen only
-  when a field is created. A field declared later is not empty history:
+  grant). REVISED 26 OCTOBER, by the owner: removing a field or type, and
+  changing an existing field's data type, are to be possible from the
+  same screens, not left to hand edits. Their design is still to be
+  agreed before building: a removal must say what still names the thing
+  (actions, grants, links, saved views, triggers) and refuse or take
+  those with it; a type change needs silver rebuilt from bronze
+  (`run_sync --rebuild`), which the screen would run knowingly, with
+  its cost stated, rather than leave to a person with a Python prompt.
+  A field declared later is not empty history:
   bronze keeps every column the source has. Order: add a field (built),
   then add a type with its binding picked from the source, then add a
   link. Still to check: whether "put this version back" refuses
@@ -1380,8 +1384,13 @@ are 40 apart and a taller box would land on its neighbour.
 
 Edges are routed AROUND the types in their way (a search over grid lines
 beside the nearby types, fewest bends first). WHAT THE CANVAS DOES NOT DO
-YET, buildable: the layout is per person, with no deployment-wide
-default -- small, and not yet asked for.
+YET, buildable and wanted (owner, 26 October): the layout is per
+person, so two people start from different pictures. Everyone should
+start from a similar one: a saved deployment-wide arrangement of all
+types, served to each person cut down to the types they may see, so a
+type sits in the same place for everyone who sees it. Care: the
+server must send positions only for visible types, or a gap would say
+a hidden type exists.
 
 **Blocked on:** nothing.
 
@@ -1745,8 +1754,24 @@ encryption are what stand in the way. Whether that is enough, or the
 lake's files need their own per-compartment protection, is the
 question.
 
-**Blocked on:** a decision about the threat -- who, beside Elysium,
-can reach that disk.
+**THE OWNER'S STATED TARGET, 26 October:** only Elysium reads the lake,
+and the lake is portable -- an administrator can copy it for a backup or
+a move to a new computer. The two pull against each other: files that
+only Elysium can read are files an administrator cannot simply copy.
+What exists: a dedicated service account with a 0700 directory, a
+volume-encryption check, and encrypted backups
+(`scripts/backup_deployment.py`, `restore_deployment.py`), which are the
+portable form. What cannot be had: protection from root on the running
+host, because Elysium must read the files to serve them. What could be
+built: Elysium-held encryption of the lake's own files (pyiceberg
+writes without table encryption, so this means encrypting around it),
+and a documented, tested migration (backup, restore elsewhere, verify)
+as the supported way to move.
+
+**Blocked on:** the owner choosing between "file permissions plus
+volume encryption plus encrypted backups" (built) and Elysium-held
+encryption of the lake itself (a project, and it makes copying the
+files useless without the key -- which is the point and the cost).
 
 ---
 
@@ -1847,8 +1872,13 @@ an audit is ever bought:
 
 Months, not a patch.
 
-**THE REGIMES, ANSWERED 26 OCTOBER:** GDPR and UK GDPR, and HIPAA. SOC 2
-and ISO 27001 are not declared, so neither attestation is being bought.
+**THE REGIMES, ANSWERED 26 OCTOBER:** GDPR and UK GDPR, and HIPAA. THE
+OWNER THEN ASKED FOR SOC 2, ISO 27001 AND A PENETRATION TEST TO BE
+ADDED to the plan (26 October, later the same day). What that makes
+mine: the technical controls below, the control mapping and evidence
+each audit asks for, and the policies as drafts. What stays the owner's:
+choosing a CPA firm, a certification body and an independent tester,
+the budget, and the observation window.
 For GDPR the engineering is largely built (erasure, retention,
 encrypted storage and backups). For HIPAA it is the Security Rule
 safeguards above, which the operator carries, and a BAA, which is a
