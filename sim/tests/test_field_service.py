@@ -26,6 +26,7 @@ PACK = pathlib.Path(__file__).resolve().parent.parent / "packs" / "field_service
 #: needs seven days' dwell after invoicing, without the suite paying
 #: for a month of ticks.
 SPAN_SECONDS = 21 * 86400
+SHELF_AT_START: dict[str, int] = {}
 
 
 @pytest.fixture(scope="module")
@@ -35,6 +36,10 @@ def world(tmp_path_factory, postgres_binaries):
     # rebuilding it.
     built = runner.build(load_pack(PACK), tmp_path_factory.mktemp("fs"), seed=12)
     runner.seed(built)
+    # What was on the shelf when the world began, which nothing in the
+    # desk's own file remembers, for the stock to be reconciled against.
+    SHELF_AT_START.update(fetch_all(built.silo("parts_desk"), "parts",
+                                    "SELECT part_id, on_hand FROM parts"))
     runner.run(built, total_seconds=SPAN_SECONDS, tick_seconds=3600)
     try:
         yield built
@@ -745,6 +750,7 @@ def test_the_pack_watches_the_numbers_the_firm_would_notice(world):
         "sum(dispatch.customers.balance_owed)",
         "sum(dispatch.pay_lines.amount)",
         "count(dispatch.work_orders.work_order_id)",
+        "sum(parts_desk.parts.on_hand)",
     }
     for watch in world.pack.watches:
         assert world.oracle.series.get(watch.name), watch.name
@@ -845,3 +851,104 @@ def test_a_report_off_the_copy_can_disagree_with_dispatch(world):
     # Over three simulated weeks with a four-hour refresh they will
     # rarely be equal, but equality is legitimate the tick after a
     # sync -- so what is asserted is the direction, not a gap.
+
+
+# -- the parts desk: SQLite on the office PC -------------------------
+#
+# The fifth system, and the first of its kind: a desktop stock program
+# whose database is a file. No accounts, typing by affinity, and its
+# only link to dispatch a work order id a person typed in.
+
+def parts(world, statement, parameters=()):
+    return fetch_all(world.silo("parts_desk"), "parts", statement, parameters)
+
+
+def stored(world, statement):
+    """What the file holds, read past the simulator's own connection --
+    SQLite's typeof() is the point of some of these."""
+    import sqlite3
+
+    connection = sqlite3.connect(f"file:{world.silo('parts_desk').path}?mode=ro", uri=True)
+    try:
+        return connection.execute(statement).fetchall()
+    finally:
+        connection.close()
+
+
+@pytest.mark.postgres
+def test_the_parts_desk_is_a_file_on_the_office_pc(world):
+    silo = world.silo("parts_desk")
+    assert silo.is_reachable()
+    assert silo.path.name == "parts.db"
+    assert str(world.connections()["parts_desk"].details["path"]).endswith("parts.db")
+
+
+@pytest.mark.postgres
+def test_every_part_fitted_is_booked_against_a_finished_job(world):
+    # The only link between the two systems is a work order id, by
+    # convention; nothing in SQLite knows dispatch exists. So the
+    # convention is what is checked, across the two databases.
+    used = {row[0] for row in parts(world, "SELECT DISTINCT work_order_id FROM parts_used")}
+    assert used, "no part was ever fitted"
+    states = dict(query(world, "SELECT work_order_id, status FROM work_orders "
+                               "WHERE work_order_id = ANY(%s)", (list(used),)))
+    assert set(states) == used, sorted(used - set(states))
+    assert not {s for s in states.values() if s in {"requested", "scheduled", "cancelled"}}
+
+
+@pytest.mark.postgres
+def test_a_job_books_out_a_part_the_desk_holds(world):
+    known = {row[0] for row in parts(world, "SELECT part_id FROM parts")}
+    fitted = {row[0] for row in parts(world, "SELECT part_id FROM parts_used")}
+    assert fitted and fitted <= known
+
+
+@pytest.mark.postgres
+def test_stock_never_goes_below_the_shelf(world):
+    assert parts(world, "SELECT count(*) FROM parts WHERE on_hand < 0") == [(0,)]
+
+
+@pytest.mark.postgres
+def test_the_shelf_reconciles_with_what_came_in_and_went_out(world):
+    # Every part: what it started with, plus what was delivered, less
+    # what was fitted -- or more than that, by exactly what the floor
+    # refused to take, and never more than start plus deliveries.
+    received = dict(parts(world, "SELECT part_id, sum(quantity) FROM parts_received GROUP BY part_id"))
+    used = dict(parts(world, "SELECT part_id, sum(quantity) FROM parts_used GROUP BY part_id"))
+    assert received and used, "no delivery, or no part fitted"
+    now = dict(parts(world, "SELECT part_id, on_hand FROM parts"))
+    assert set(now) == set(SHELF_AT_START)
+
+    wrong = {}
+    for part, held in now.items():
+        ceiling = SHELF_AT_START[part] + received.get(part, 0)
+        if not ceiling - used.get(part, 0) <= held <= ceiling:
+            wrong[part] = (SHELF_AT_START[part], received.get(part, 0), used.get(part, 0), held)
+    assert wrong == {}
+    # And the arithmetic is exact somewhere, or the bounds proved little.
+    assert any(held == SHELF_AT_START[p] + received.get(p, 0) - used.get(p, 0) != SHELF_AT_START[p]
+               for p, held in now.items())
+
+
+@pytest.mark.postgres
+def test_money_is_stored_as_the_desk_stores_it(world):
+    # DECIMAL in SQLite is NUMERIC affinity: 19.99 becomes a float and
+    # 20.00 the integer 20. A consumer reading this as money must not
+    # trust the column's declared type.
+    kinds = {kind for (kind,) in stored(world, "SELECT DISTINCT typeof(unit_cost) FROM parts")}
+    assert "real" in kinds and kinds <= {"real", "integer"}
+
+
+@pytest.mark.postgres
+def test_a_fitted_part_keeps_the_cost_it_was_fitted_at(world):
+    rows = parts(world, """
+        SELECT count(*) FROM parts_used u JOIN parts p ON p.part_id = u.part_id
+        WHERE u.unit_cost <> p.unit_cost""")
+    assert rows == [(0,)]
+
+
+@pytest.mark.postgres
+def test_a_discontinued_part_is_marked_and_kept(world):
+    marked = parts(world, "SELECT count(*) FROM parts WHERE discontinued")[0][0]
+    assert marked >= 1
+    assert parts(world, "SELECT count(*) FROM parts")[0][0] == 40

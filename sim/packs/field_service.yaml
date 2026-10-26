@@ -9,7 +9,7 @@
 # silos has to make work.
 
 pack: field_service
-description: A small plumbing and heating firm, across four systems.
+description: A small plumbing and heating firm, across five systems.
 
 silos:
   # The operational system: jobs, engineers, parts. On PostgreSQL
@@ -59,6 +59,19 @@ silos:
 
   payroll:
     kind: filedrop
+
+  # The parts desk: a desktop stock application on the office PC, which
+  # keeps its data in one SQLite file, as such software usually does.
+  # Nobody chose SQLite; somebody bought the package. Whoever can read
+  # the file reads all of it -- there are no accounts to withhold a
+  # table from -- and it stores what it is given as SQLite does: a cost
+  # of 19.99 is a floating-point number and 20.00 is the integer 20.
+  #
+  # What it shares with dispatch is the work order's id, typed in by
+  # whoever books the parts out. Another convention, not a foreign key.
+  parts_desk:
+    kind: sqlite
+    database: parts
 
 schemas:
   dispatch:
@@ -165,6 +178,36 @@ schemas:
           work_order_id: {type: text, length: 64, nullable: false}
           amount:        {type: decimal, precision: 19, scale: 4, nullable: false}
           earned_on:     {type: date, nullable: false}
+
+  parts_desk:
+    tables:
+      parts:
+        columns:
+          part_id:         {type: text, length: 32, primary_key: true, nullable: false}
+          description:     {type: text, length: 120, nullable: false}
+          unit_cost:       {type: decimal, precision: 10, scale: 2, nullable: false}
+          reorder_level:   {type: integer, nullable: false}
+          on_hand:         {type: integer, nullable: false}
+          last_counted_at: {type: timestamp}
+          discontinued:    {type: boolean, nullable: false}
+
+      # One row per part fitted, booked out against the job.
+      parts_used:
+        columns:
+          usage_id:      {type: text, length: 32, primary_key: true, nullable: false}
+          work_order_id: {type: text, length: 64, nullable: false}
+          part_id:       {type: text, length: 32, nullable: false}
+          quantity:      {type: integer, nullable: false}
+          unit_cost:     {type: decimal, precision: 10, scale: 2, nullable: false}
+          used_at:       {type: timestamp, nullable: false}
+
+      # One row per delivery line from the merchant.
+      parts_received:
+        columns:
+          receipt_id:  {type: text, length: 32, primary_key: true, nullable: false}
+          part_id:     {type: text, length: 32, nullable: false}
+          quantity:    {type: integer, nullable: false}
+          received_at: {type: timestamp, nullable: false}
 
 curves:
   # A trades firm's day: nothing overnight, calls from seven, a lull
@@ -350,6 +393,23 @@ seed:
       technician_id:       {generator: reference, from: subject.technician_id}
       skill_id:            {generator: reference, from: picked.skills.skill_id}
 
+  # What the parts desk holds when the world begins.
+  - table: parts_desk.parts
+    count: 40
+    columns:
+      part_id:         {generator: id, prefix: part}
+      description:
+        generator: choice
+        options: ["15mm compression elbow", "22mm compression tee", "Thermostatic radiator valve",
+                  "Lockshield valve", "Diverter valve cartridge", "Expansion vessel 8L",
+                  "Pressure relief valve", "Condensate trap", "Ignition electrode",
+                  "Flue gasket", "PTFE tape", "Fibre washer pack"]
+      unit_cost:       {generator: decimal, min: 0.5, max: 180, scale: 2}
+      reorder_level:   {generator: integer, min: 2, max: 10}
+      on_hand:         {generator: integer, min: 0, max: 60}
+      last_counted_at: {generator: now}
+      discontinued:    {generator: constant, value: false}
+
 events:
   # A customer calls. Jobs arrive on the working-day curve, per
   # customer, so a firm with more customers is busier.
@@ -406,6 +466,33 @@ events:
           work_order_id: {generator: reference, from: subject.work_order_id}
           amount:        {generator: decimal, min: 60, max: 420, scale: 4}
           earned_on:     {generator: now}
+      # The part the job is remembered by, booked out on the parts desk
+      # against the job's id -- one, because the stock it takes is
+      # deducted by name below, and an occurrence picks per row.
+      - table: parts_desk.parts_used
+        picks: [parts_desk.parts]
+        columns:
+          usage_id:      {generator: id, prefix: use}
+          work_order_id: {generator: reference, from: subject.work_order_id}
+          part_id:       {generator: reference, from: picked.parts.part_id}
+          quantity:      {generator: weighted, options: {1: 6, 2: 3, 3: 1}}
+          # What it cost when it was fitted, which a later price change
+          # on the part must not rewrite.
+          unit_cost:     {generator: reference, from: picked.parts.unit_cost}
+          used_at:       {generator: now}
+    effects:
+      # Off the shelf, and never below it: the desk would let nobody
+      # book out a part it shows none of, so the count stops at zero.
+      - adjust: parts_desk.parts.on_hand
+        by: {generator: expression,
+             expression: "-emitted.parts_desk.parts_used.sum.quantity"}
+        # The part the row above was booked against: `max` of one
+        # emitted row is that row, as retail's order lines name their
+        # order. An effect cannot see `picked`; it runs after the rows.
+        where:
+          part_id: {generator: reference,
+                    from: emitted.parts_desk.parts_used.max.part_id}
+        floor: 0
 
   # Invoiced. The customer's balance goes up by what they now owe.
   invoice_raised:
@@ -523,6 +610,37 @@ events:
         # from January 1,460 times.
         since: {column: issued_at, window: 90d}
 
+  # A delivery from the merchant: one line, booked in and put on the
+  # shelf.
+  parts_delivered:
+    every: 2d
+    emits:
+      - table: parts_desk.parts_received
+        picks: [parts_desk.parts]
+        columns:
+          receipt_id:  {generator: id, prefix: rcv}
+          part_id:     {generator: reference, from: picked.parts.part_id}
+          quantity:    {generator: integer, min: 10, max: 40}
+          received_at: {generator: now}
+    effects:
+      - adjust: parts_desk.parts.on_hand
+        by: {generator: expression,
+             expression: "emitted.parts_desk.parts_received.sum.quantity"}
+        where:
+          part_id: {generator: reference,
+                    from: emitted.parts_desk.parts_received.max.part_id}
+
+  # The merchant stops making something. Marked, not deleted: past jobs
+  # still name it, and the desk keeps what is on the shelf.
+  part_discontinued:
+    every: 14d
+    emits:
+      - update: parts_desk.parts
+        picks: [parts_desk.parts]
+        where: {part_id: {generator: reference, from: picked.parts.part_id}}
+        columns:
+          discontinued: {generator: constant, value: true}
+
   # The bookkeeper collects this weekly.
   payroll_export:
     every: 7d
@@ -548,3 +666,4 @@ watches:
   - {silo: dispatch, table: customers, column: balance_owed}
   - {silo: dispatch, table: pay_lines, column: amount}
   - {silo: dispatch, table: work_orders, column: work_order_id, aggregate: count}
+  - {silo: parts_desk, table: parts, column: on_hand}

@@ -2173,9 +2173,18 @@ owner's choice over STRICT tables): declared types as hints, money by
 NUMERIC affinity (19.99 a double, 20.00 the integer 20), booleans 1/0,
 times as ISO text in UTC; a retype is SQLite's documented rebuild, in
 one transaction; no accounts, so `withheld` is refused and `simulator
-verify` checks a read-only reader instead. Next, with the owner: a parts
-desk in the field-service pack, and Elysium run over it.
+verify` checks a read-only reader instead.
 
-**Next in step 3:** the parts desk, then a full run.
+**THE FIELD-SERVICE PACK HAS A PARTS DESK (26 October), with the
+owner:** its fifth system, a desktop stock program on the office PC,
+in SQLite. A finished job books out a part against its work order id
+-- the desk's only link to dispatch, by convention -- and takes it off
+the shelf, never below zero; a merchant delivery every two days puts a
+line back; a part is discontinued fortnightly, marked and kept. A
+fitted part keeps the cost it was fitted at. The tests reconcile every
+part's count against the shelf at the start, deliveries and usage
+(sim/tests/test_field_service.py).
+
+**Next in step 3:** a full run of Elysium over every source kind.
 
 **Blocked on:** nothing; in progress.
