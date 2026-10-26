@@ -2016,26 +2016,46 @@ export function getVisibleActionTypesCached(): Promise<unknown> {
 /** The periods a date can be counted by. */
 export type TimePeriod = 'day' | 'week' | 'month'
 
-export interface AggregateBody {
-  /** The object set to aggregate over, as filter conditions. */
-  conditions?: unknown[]
-  /** count, sum, avg, min or max. */
+/** One thing to compute per group, after Foundry's aggregation item. */
+export interface AggregateMeasure {
+  /** Yours, unique in the request, a plain identifier (lower-case letters,
+   *  digits, underscores): the answer is an object keyed by it. */
+  name: string
+  /** count, sum, avg, min or max -- and first or last over time buckets. */
   aggregate: string
   /** The field to aggregate. Omitted for count, which needs none. */
   field?: string
-  /** Bucket by this field. Omitted for a single statistic over the
-   *  whole set. */
-  group_by?: string
+}
+
+/** The object set an aggregate or a forecast runs over. */
+interface AggregateSet {
+  /** The object set to aggregate over, as filter conditions. */
+  conditions?: unknown[]
   /** A frozen set to aggregate within. See SearchOptions.frozenSet. */
   frozen_set?: string
-  /** day, week or month: group a DATE `group_by` by the period each value
-   *  falls in. Keys are the period's first day (ISO, UTC); an empty
-   *  period between the first and last is 0 for a count or a sum. */
-  period?: TimePeriod
   /** The search box's text, so a chart describes the same set the
    *  table does. Without it a donut beside "Transaction · 81" drew all
    *  five categories of all 404. */
   q?: string
+}
+
+export interface AggregateBody extends AggregateSet {
+  /** What to compute per group, all from one read of the set. */
+  measures: AggregateMeasure[]
+  /** Group by this field. Omitted for the whole set as one row. */
+  group_by?: string
+  /** day, week or month: group a DATE `group_by` by the period each value
+   *  falls in. Each group is the period's first day (ISO); an empty
+   *  period between the first and last is 0 for a count or a sum. */
+  period?: TimePeriod
+}
+
+/** A forecast is one count or total per period, and where it is heading. */
+export interface ForecastBody extends AggregateSet {
+  aggregate: string
+  field?: string
+  group_by: string
+  period: TimePeriod
 }
 
 /**
@@ -2053,16 +2073,35 @@ export interface AggregateBody {
  */
 export const MAX_SCAN_LABEL = '10,000'
 
+/** One group of an aggregate, with each measure's value by name. */
+export interface AggregateRow {
+  /** {group_by: value}, the value as it is (a number stays a number, a
+   *  bucket is its ISO 8601 start); {} when nothing was grouped. */
+  group: Record<string, unknown>
+  /** {measure name: value}; null for an average, minimum or maximum of
+   *  nothing, 0 for a count or total of nothing. */
+  metrics: Record<string, unknown>
+}
+
 /** What an aggregate came back as. */
 export interface AggregateResult {
-  /** {group: metric}, the group key stringified. "" is the ungrouped
-   *  single statistic, not a group called nothing. */
-  results: Record<string, unknown>
+  /** A LIST, in the order the server chose: a series has an order, and a
+   *  JSON object is reordered when its keys look like integers. */
+  rows: AggregateRow[]
   /** THE NUMBERS ARE FLOORS, NOT TOTALS. The set was cut off at the
    *  scan ceiling before anything was aggregated, so every metric
    *  here is at-least. It does NOT mean there is more for this caller
    *  to see -- see searchObjects' own note on the same flag. */
   scan_truncated: boolean
+}
+
+/** A count per group, for a chart that sorts its own groups: {label: n}.
+ *  `measure` names the count in the request; a group is labelled as the
+ *  text of its value. */
+export function countsByGroup(result: AggregateResult, groupBy: string, measure = 'n'): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const row of result.rows) counts[String(row.group[groupBy])] = Number(row.metrics[measure])
+  return counts
 }
 
 /** Where a total per period is heading (R68): the finished periods, the
@@ -2087,10 +2126,7 @@ export interface ForecastResult {
   scan_truncated?: boolean
 }
 
-export async function forecastObjects(
-  objectType: string,
-  body: Omit<AggregateBody, 'group_by' | 'period'> & { group_by: string; period: TimePeriod },
-): Promise<ForecastResult> {
+export async function forecastObjects(objectType: string, body: ForecastBody): Promise<ForecastResult> {
   const response = await apiFetchOrThrow(`/objects/${objectType}/forecast`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2099,13 +2135,13 @@ export async function forecastObjects(
   return (await response.json()) as ForecastResult
 }
 
-export async function aggregateObjects(objectType: string, body: AggregateBody): Promise<unknown> {
+export async function aggregateObjects(objectType: string, body: AggregateBody): Promise<AggregateResult> {
   const response = await apiFetchOrThrow(`/objects/${objectType}/aggregate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  return response.json()
+  return (await response.json()) as AggregateResult
 }
 
 /** The object set an operation runs over. ONE of `criteria` or

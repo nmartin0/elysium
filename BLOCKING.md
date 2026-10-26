@@ -1211,7 +1211,22 @@ named by the ISO date it starts on (JSON cannot key on a date), and the
 account of the work says "per week". It takes a period, not a
 duration: the model has been given the three words it can use well.
 
-**Blocked on:** nothing. Next: part 4, several measures in one request.
+PART 4 IS BUILT, and it broke `/aggregate` on purpose (no installation
+depends on it): `measures` -- a list of {name, aggregate, field}, up to
+eight, names unique plain identifiers -- replaces the single `aggregate`
+and `field`, and the answer is `rows`, each {group, metrics}, from ONE
+read of the set. After Foundry's aggregate (aggregation list in;
+`group` and `metrics` per row out), except that metrics are an object
+keyed by name rather than a list: a name is an identifier, so the object
+is never reordered. A LIST of rows rather than an object keyed by group,
+because JavaScript reorders integer-like keys (`{"b":1,"10":2,"2":3}`
+reads back 2, 10, b) and a year or a status code is one; and group values
+keep their types. The mediator's `aggregate_by_field` is the same code
+with one measure, so its callers are unchanged; the charts ask for one
+count and read it with `countsByGroup`. The assistant's step still takes
+one measure -- it gets more when something needs them.
+
+**Blocked on:** nothing. Next: the kit's shared time chart.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

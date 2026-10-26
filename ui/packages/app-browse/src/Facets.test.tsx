@@ -24,6 +24,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 
+import { answering } from './answering.testing'
+
 const aggregateObjects = vi.fn()
 
 vi.mock('@elysium/shell-api/api', async (importOriginal) => {
@@ -47,12 +49,12 @@ function renderFacet() {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  aggregateObjects.mockResolvedValue({ results: SPREAD, scan_truncated: false })
+  aggregateObjects.mockImplementation(answering(SPREAD))
 })
 
 describe('a facet whose distribution was cut off', () => {
   it('says the counts are floors', async () => {
-    aggregateObjects.mockResolvedValue({ results: SPREAD, scan_truncated: true })
+    aggregateObjects.mockImplementation(answering(SPREAD, true))
 
     renderFacet()
 
@@ -66,7 +68,7 @@ describe('a facet whose distribution was cut off', () => {
     // under the limit; hiding the pills because the counts are
     // imperfect takes that away and leaves them with a bare search
     // box.
-    aggregateObjects.mockResolvedValue({ results: SPREAD, scan_truncated: true })
+    aggregateObjects.mockImplementation(answering(SPREAD, true))
 
     renderFacet()
 
@@ -80,7 +82,7 @@ describe('a facet whose distribution was cut off', () => {
     // compartment, so "we stopped counting" is true and "there are
     // more" is a guess -- and the second is the one a person would
     // act on.
-    aggregateObjects.mockResolvedValue({ results: SPREAD, scan_truncated: true })
+    aggregateObjects.mockImplementation(answering(SPREAD, true))
 
     renderFacet()
     await screen.findByText(/At least/)
@@ -119,7 +121,7 @@ describe('an ordinary facet', () => {
     // this and the single-value case have few buckets, which is why a
     // ceiling alone let NAME and EMAIL through and a rendered pane
     // showed them with every count at 1.
-    aggregateObjects.mockResolvedValue({ results: { Ada: 1, Bram: 1, Chidi: 1 }, scan_truncated: false })
+    aggregateObjects.mockImplementation(answering({ Ada: 1, Bram: 1, Chidi: 1 }))
 
     renderFacet()
     await waitFor(() => expect(aggregateObjects).toHaveBeenCalledTimes(1))

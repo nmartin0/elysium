@@ -3,7 +3,9 @@ import {
   getVisibleActionTypesCached,
   resetVisibleActionTypesCache,
   ApiError,
+  aggregateObjects,
   countObjects,
+  countsByGroup,
   getErrorMessage,
   searchAround,
   login,
@@ -823,5 +825,36 @@ describe('query(), shown as it goes (19 October)', () => {
     await query('q')
 
     expect(fetchMock.mock.calls[0]?.[1].headers.Accept).toBeUndefined()
+  })
+})
+
+describe('aggregateObjects and countsByGroup', () => {
+  const answer = {
+    rows: [
+      { group: { year: 2026 }, metrics: { n: 3, total: 10 } },
+      { group: { year: 2 }, metrics: { n: 1, total: null } },
+    ],
+    scan_truncated: false,
+  }
+
+  it('posts the measures it was given and returns the rows as they came', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(answer))
+    vi.stubGlobal('fetch', fetchMock)
+    const body = { measures: [{ name: 'n', aggregate: 'count' }], group_by: 'year' }
+
+    expect(await aggregateObjects('Order', body)).toEqual(answer)
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toContain('/objects/Order/aggregate')
+    expect(JSON.parse(init.body as string)).toEqual(body)
+  })
+
+  it('takes a count per group, labelled as text, from the named measure', () => {
+    expect(countsByGroup(answer, 'year')).toEqual({ '2026': 3, '2': 1 })
+    expect(countsByGroup(answer, 'year', 'total')).toEqual({ '2026': 10, '2': 0 })
+  })
+
+  it('is empty when there are no rows', () => {
+    expect(countsByGroup({ rows: [], scan_truncated: false }, 'year')).toEqual({})
   })
 })

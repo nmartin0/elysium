@@ -125,10 +125,10 @@ def test_an_ordinary_aggregate_is_not_truncated(client):
     _as_customer_service(client)
 
     body = _post(client, "/api/objects/Transaction/aggregate",
-                 {"criteria": {}, "aggregate": "count", "group_by": "category"}).json()
+                 {"criteria": {}, "measures": [{"name": "n", "aggregate": "count"}], "group_by": "category"}).json()
 
     assert body["scan_truncated"] is False
-    assert body["results"], "the control needs a real aggregate, not an empty one"
+    assert body["rows"], "the control needs a real aggregate, not an empty one"
 
 
 def test_an_aggregate_that_hits_the_ceiling_says_so(client):
@@ -136,7 +136,7 @@ def test_an_aggregate_that_hits_the_ceiling_says_so(client):
 
     with patch.object(mediator_module, "MAX_SEARCH_SCAN", 1):
         body = _post(client, "/api/objects/Transaction/aggregate",
-                     {"criteria": {}, "aggregate": "count", "group_by": "category"}).json()
+                     {"criteria": {}, "measures": [{"name": "n", "aggregate": "count"}], "group_by": "category"}).json()
 
     assert body["scan_truncated"] is True
 
@@ -148,12 +148,12 @@ def test_a_truncated_aggregate_reports_fewer_than_the_whole(client):
     caller never set -- and before the flag, the two were
     indistinguishable in the response."""
     _as_customer_service(client)
-    body = {"criteria": {}, "aggregate": "count"}
+    body = {"criteria": {}, "measures": [{"name": "n", "aggregate": "count"}]}
 
     whole = _post(client, "/api/objects/Transaction/aggregate", body).json()
     with patch.object(mediator_module, "MAX_SEARCH_SCAN", 1):
         capped = _post(client, "/api/objects/Transaction/aggregate", body).json()
 
-    assert capped["results"][""] < whole["results"][""]
+    assert capped["rows"][0]["metrics"]["n"] < whole["rows"][0]["metrics"]["n"]
     assert whole["scan_truncated"] is False
     assert capped["scan_truncated"] is True

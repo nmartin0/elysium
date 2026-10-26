@@ -30,7 +30,7 @@
 
 import { useEffect, useState } from 'react'
 
-import { aggregateObjects, MAX_SCAN_LABEL, type AggregateResult } from '@elysium/shell-api/api'
+import { aggregateObjects, countsByGroup, MAX_SCAN_LABEL } from '@elysium/shell-api/api'
 import Action from '@elysium/shell-api/components/Action'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
 
@@ -113,28 +113,14 @@ export default function Facets({
       ],
       ...(frozenSet ? { frozen_set: frozenSet } : {}),
       ...(queryText.trim() ? { q: queryText } : {}),
-      aggregate: 'count',
+      measures: [{ name: 'n', aggregate: 'count' }],
       group_by: field,
     })
-      .then((rows) => {
+      .then((result) => {
         if (cancelled) return
         setFailed(false)
-        // AN OBJECT KEYED BY GROUP, not an array of rows -- the shape
-        // `AggregateResults` already declares and ChartsPanel already
-        // consumes. I assumed rows, the `.map` threw, and every facet
-        // rendered "Counts unavailable" while the request itself
-        // returned 200. Reading the existing type would have been
-        // faster than reading the screenshot.
-        // `{ results: AggregateResults }`, which ChartsPanel unwraps
-        // the same way. Two wrong guesses at this shape before reading
-        // the line next door: first an array of rows, then the bare
-        // object. Both rendered without erroring -- one as "Counts
-        // unavailable", one as a single row called "results" with a
-        // count of NaN -- which is why a screenshot caught what a
-        // passing typecheck did not.
-        const { results, scan_truncated } = rows as AggregateResult
-        setTruncated(scan_truncated === true)
-        const counts = results as Record<string, number>
+        setTruncated(result.scan_truncated === true)
+        const counts = countsByGroup(result, field)
         setBuckets(
           Object.entries(counts)
             .map(([value, count]) => ({ value, count: Number(count) }))

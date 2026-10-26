@@ -1960,6 +1960,11 @@ def test_two_users_get_genuinely_different_counts(client):
     assert west_count != east_count
 
 
+def _totals(response):
+    """{category: the 'total' measure} from an aggregate grouped by category."""
+    return {row["group"]["category"]: row["metrics"]["total"] for row in response.json()["rows"]}
+
+
 def test_aggregate_groups_and_sums(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
@@ -1967,10 +1972,11 @@ def test_aggregate_groups_and_sums(client):
     response = _post(
         client,
         "/api/objects/Transaction/aggregate",
-        {"criteria": {}, "aggregate": "sum", "field": "amount", "group_by": "category"},
+        {"criteria": {}, "measures": [{"name": "total", "aggregate": "sum", "field": "amount"}],
+         "group_by": "category"},
     )
 
-    results = response.json()["results"]
+    results = _totals(response)
     assert results["hardware"] == 199.0
     assert results["refund"] == -20.0
 
@@ -2007,14 +2013,15 @@ def test_two_users_in_different_compartments_aggregate_different_sets(client):
     """
     client.app.state.user_directory.create_user("west", "correct-pw", "us-west", "customer_service")
     client.app.state.user_directory.create_user("east", "correct-pw", "us-east", "customer_service")
-    body = {"criteria": {}, "aggregate": "sum", "field": "amount", "group_by": "category"}
+    body = {"criteria": {}, "measures": [{"name": "total", "aggregate": "sum", "field": "amount"}],
+            "group_by": "category"}
 
     _login(client, "west", "correct-pw")
-    west = _post(client, "/api/objects/Transaction/aggregate", body).json()["results"]
+    west = _totals(_post(client, "/api/objects/Transaction/aggregate", body))
     # A fresh login through the same client -- the new session cookie
     # replaces the old one.
     _login(client, "east", "correct-pw")
-    east = _post(client, "/api/objects/Transaction/aggregate", body).json()["results"]
+    east = _totals(_post(client, "/api/objects/Transaction/aggregate", body))
 
     assert west and east, "both compartments must hold transactions, or this proves nothing"
     assert west != east, "two callers in different compartments must not aggregate the same rows"
@@ -2027,16 +2034,16 @@ def test_two_users_in_different_compartments_aggregate_different_sets(client):
     assert east == _EAST_SUMS_BY_CATEGORY
 
 
-def test_aggregate_with_no_group_by_returns_one_result_under_an_empty_key(client):
+def test_aggregate_with_no_group_by_returns_one_row_with_no_group(client):
     # A caller asking for one aggregate over the whole set must get a
-    # result back. JSON object keys must be strings, so the None group
-    # becomes "" rather than being dropped.
+    # result back: one row, its group empty, rather than none.
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    response = _post(client, "/api/objects/Transaction/aggregate", {"criteria": {}, "aggregate": "count"})
+    response = _post(client, "/api/objects/Transaction/aggregate",
+                     {"criteria": {}, "measures": [{"name": "n", "aggregate": "count"}]})
 
-    assert response.json()["results"] == {"": 4}
+    assert response.json()["rows"] == [{"group": {}, "metrics": {"n": 4}}]
 
 
 def test_an_unknown_aggregate_is_a_400_not_a_500(client):
@@ -2048,7 +2055,7 @@ def test_an_unknown_aggregate_is_a_400_not_a_500(client):
     response = _post(
         client,
         "/api/objects/Transaction/aggregate",
-        {"criteria": {}, "aggregate": "median", "field": "amount"},
+        {"criteria": {}, "measures": [{"name": "m", "aggregate": "median", "field": "amount"}]},
     )
 
     assert response.status_code == 400
@@ -2059,7 +2066,8 @@ def test_an_aggregate_missing_its_field_is_a_400(client):
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
 
-    response = _post(client, "/api/objects/Transaction/aggregate", {"criteria": {}, "aggregate": "sum"})
+    response = _post(client, "/api/objects/Transaction/aggregate",
+                     {"criteria": {}, "measures": [{"name": "s", "aggregate": "sum"}]})
 
     assert response.status_code == 400
     assert "field_name" in response.json()["detail"]
@@ -2132,7 +2140,8 @@ def test_search_around_on_an_ungranted_field_returns_empty_not_an_error(client):
 def test_the_new_routes_require_authentication(client):
     for path, body in (
         ("/api/objects/Customer/count", {"criteria": {}}),
-        ("/api/objects/Customer/aggregate", {"criteria": {}, "aggregate": "count"}),
+        ("/api/objects/Customer/aggregate",
+         {"criteria": {}, "measures": [{"name": "n", "aggregate": "count"}]}),
         ("/api/objects/Customer/search-around", {"criteria": {}, "link_field": "x"}),
     ):
         response = client.post(path, json=body)

@@ -720,20 +720,33 @@ class TextSetQueryRequest(ObjectSetQueryRequest):
     q: str = ""
 
 
-class AggregateRequest(TextSetQueryRequest):
-    # Named to match Foundry's own vocabulary: an aggregation with an
-    # optional groupBy. `field` is required for every aggregate except
-    # count, which aggregates the set itself rather than a property.
+class AggregateMeasure(BaseModel):
+    """One thing to compute per group, after Foundry's aggregation item
+    ({type, field, name}). `field` is required for every aggregate except
+    count, which aggregates the set itself rather than a property."""
+
+    #: Yours to choose, unique in the request, and a plain identifier
+    #: (lower-case letters, digits, underscores): the answer is an object
+    #: keyed by it, and a key that looks like an integer is reordered by
+    #: JavaScript.
+    name: str
     aggregate: str
     field: str | None = None
+
+
+class AggregateRequest(TextSetQueryRequest):
+    # Named to match Foundry's own vocabulary: an aggregation with an
+    # optional groupBy, one or more measures to compute per group, all
+    # from ONE read of the set.
+    measures: list[AggregateMeasure]
     group_by: str | None = None
     #: day | week | month: group a DATE `group_by` by the period each
-    #: value falls in (core/periods.py). Keys are the period's first day,
-    #: ISO 8601; empty periods are 0 for a count or a sum.
+    #: value falls in (core/periods.py). Each group is the period's first
+    #: day, ISO 8601; empty periods are 0 for a count or a sum.
     period: str | None = None
     #: Or by a fixed length, an ISO 8601 duration -- PT15M, PT1H, P3D --
-    #: as Foundry's aggregate groups by one. Keys are each bucket's start,
-    #: ISO 8601, with its offset when the field is an instant.
+    #: as Foundry's aggregate groups by one. Each group is a bucket's
+    #: start, ISO 8601, with its offset when the field is an instant.
     duration: str | None = None
     #: An IANA zone, such as Europe/London, whose clock the period or the
     #: duration is counted on. UTC when absent.
@@ -755,12 +768,21 @@ class CountResponse(BaseModel):
     scan_truncated: bool = False
 
 
+class AggregateRow(BaseModel):
+    #: {group_by: value}, the value as it is (a number stays a number, a
+    #: bucket is its ISO 8601 start); {} when no group_by was asked, so
+    #: the whole set is one row. Null groups are not rows, as in Foundry.
+    group: dict[str, Any]
+    #: {measure name: value}. None for an average, minimum, maximum, first
+    #: or last of nothing; 0 for a count or sum of nothing.
+    metrics: dict[str, Any]
+
+
 class AggregateResponse(BaseModel):
-    # {group_value: metric}, with the group key stringified for JSON.
-    # A None group (no group_by requested) becomes the empty string
-    # rather than being dropped -- a caller asking for one aggregate
-    # over the whole set must get a result back, not an empty object.
-    results: dict[str, Any]
+    #: A LIST, because a series has an order: a JSON object is reordered
+    #: by JavaScript when its keys look like integers, which a year or a
+    #: status code does.
+    rows: list[AggregateRow]
     # SEE CountResponse. It matters more here: a truncated search shows
     # a short LIST, which looks short, while a truncated aggregate
     # shows a confident NUMBER -- nothing about a bar labelled 3,000
@@ -8770,18 +8792,15 @@ def count_objects_route(object_type: str, body: TextSetQueryRequest, request: Re
     return {"count": count, "scan_truncated": search_outcome.scan_truncated}
 
 
-def _aggregate_key(group: Any, bucketed: bool) -> str:
-    """A group value as a JSON object key. None -- "no grouping
-    requested" -- is "" rather than dropped. A bucket's start is ISO 8601:
-    str() of a time puts a space where the T goes. Only for buckets, so
-    an exact-value group keeps the key it always had."""
+def _aggregate_group(group: Any) -> Any:
+    """A group's value for the answer. Dates and instants are ISO 8601
+    (str() of a time puts a space where the T goes); everything else is
+    left as it is for the encoder, so a number stays a number."""
     import datetime
 
-    if group is None:
-        return ""
-    if bucketed and isinstance(group, datetime.date):
+    if isinstance(group, datetime.date):
         return group.isoformat()
-    return str(group)
+    return group
 
 
 @router.post("/objects/{object_type}/aggregate", response_model=AggregateResponse)
@@ -8792,10 +8811,12 @@ def aggregate_objects_route(object_type: str, body: AggregateRequest, request: R
     # short number does the most damage, because a bar reads as a fact.
     search_outcome = SearchOutcome()
     try:
-        results = mediator.aggregate_by_field(
+        grouped = mediator.aggregate_measures(
             current_user, object_type,
             _set_conditions(request, current_user, object_type, body),
-            group_by=body.group_by, aggregate=body.aggregate, field_name=body.field,
+            group_by=body.group_by,
+            measures=[{"name": m.name, "aggregate": m.aggregate, "field": m.field}
+                      for m in body.measures],
             outcome=search_outcome, query_text=body.q, period=body.period,
             duration=body.duration, time_zone=body.time_zone,
         )
@@ -8804,9 +8825,10 @@ def aggregate_objects_route(object_type: str, body: AggregateRequest, request: R
         # mistake, not a server fault.
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-    bucketed = body.period is not None or body.duration is not None
-    return {"results": {_aggregate_key(group, bucketed): metric
-                        for group, metric in results.items()},
+    return {"rows": [{"group": ({} if body.group_by is None
+                                else {body.group_by: _aggregate_group(group)}),
+                      "metrics": metrics}
+                     for group, metrics in grouped.items()],
             "scan_truncated": search_outcome.scan_truncated}
 
 

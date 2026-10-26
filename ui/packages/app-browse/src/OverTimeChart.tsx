@@ -34,7 +34,7 @@ import {
   getErrorMessage,
   handleIfSessionExpired,
   MAX_SCAN_LABEL,
-  type AggregateResult,
+  countsByGroup,
   type TimePeriod,
 } from '@elysium/shell-api/api'
 import Chart from '@elysium/shell-api/components/Chart'
@@ -132,14 +132,13 @@ export default function OverTimeChart({
       conditions: JSON.parse(conditionsKey) as unknown[],
       ...(frozenSet ? { frozen_set: frozenSet } : {}),
       ...(queryText.trim() ? { q: queryText } : {}),
-      aggregate: 'count',
+      measures: [{ name: 'n', aggregate: 'count' }],
       group_by: field,
       period,
     })
-      .then((body) => {
+      .then((result) => {
         if (cancelled) return
-        const result = body as AggregateResult
-        setResults(result.results as AggregateResults)
+        setResults(countsByGroup(result, field))
         setTruncated(result.scan_truncated === true)
       })
       .catch((err: unknown) => {

@@ -3,6 +3,8 @@ import { render, screen, waitFor } from '@testing-library/react'
 
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
+import { answering } from './answering.testing'
+
 const aggregateObjects = vi.fn()
 
 vi.mock('@elysium/shell-api/api', async (importOriginal) => {
@@ -35,7 +37,7 @@ const noop2 = () => {}
 
 beforeEach(() => {
   vi.clearAllMocks()
-  aggregateObjects.mockResolvedValue({ results: { 'us-west': 3, 'us-east': 1 } })
+  aggregateObjects.mockImplementation(answering({ 'us-west': 3, 'us-east': 1 }))
 })
 
 describe('which fields get a chart', () => {
@@ -88,7 +90,7 @@ describe('ChartsPanel', () => {
     await waitFor(() =>
       expect(aggregateObjects).toHaveBeenCalledWith(
         'Customer',
-        expect.objectContaining({ aggregate: 'count', group_by: 'region' }),
+        expect.objectContaining({ measures: [{ name: 'n', aggregate: 'count' }], group_by: 'region' }),
       ),
     )
   })
@@ -133,7 +135,7 @@ describe('ChartsPanel', () => {
   it('drops a field where every object shares one value', async () => {
     // One bar is not a distribution. Drawn, it would be a chart that
     // tells you nothing while looking like it should.
-    aggregateObjects.mockResolvedValue({ results: { 'us-west': 4 } })
+    aggregateObjects.mockImplementation(answering({ 'us-west': 4 }))
 
     render(
       <ChartsPanel
@@ -176,10 +178,7 @@ describe('ChartsPanel', () => {
     // count_objects and aggregate_by_field called search_object
     // without an outcome -- so the ceiling was recorded in a server
     // log and in no response at all.
-    aggregateObjects.mockResolvedValue({
-      results: { 'us-west': 3, 'us-east': 1 },
-      scan_truncated: true,
-    })
+    aggregateObjects.mockImplementation(answering({ 'us-west': 3, 'us-east': 1 }, true))
 
     render(
       <ChartsPanel
@@ -268,13 +267,11 @@ describe('a chart does not filter itself', () => {
      * and never exercised the loop where a selection becomes the
      * filter for the chart that produced it.
      */
-    aggregateObjects.mockImplementation((_type: string, body: { conditions?: unknown[] }) => {
+    aggregateObjects.mockImplementation((type: string, body: { conditions?: unknown[]; group_by?: string }) => {
       // A stand-in for the server: applying a region filter really does
       // leave one region.
       const filtered = (body.conditions ?? []).length > 0
-      return Promise.resolve({
-        results: filtered ? { 'us-west': 3 } : { 'us-west': 3, 'us-east': 1 },
-      })
+      return answering(filtered ? { 'us-west': 3 } : { 'us-west': 3, 'us-east': 1 })(type, body)
     })
 
     render(
@@ -365,7 +362,7 @@ describe('one chart failing does not destroy the rest', () => {
 
   it('still draws the charts that worked', async () => {
     aggregateObjects
-      .mockResolvedValueOnce({ results: { 'us-west': 3, 'us-east': 1 } })
+      .mockImplementationOnce(answering({ 'us-west': 3, 'us-east': 1 }))
       .mockRejectedValueOnce(new Error('cannot aggregate tier'))
     renderCharts()
 
@@ -377,7 +374,7 @@ describe('one chart failing does not destroy the rest', () => {
     // they are looking at. WHICH field is missing is the thing that
     // decides it.
     aggregateObjects
-      .mockResolvedValueOnce({ results: { 'us-west': 3, 'us-east': 1 } })
+      .mockImplementationOnce(answering({ 'us-west': 3, 'us-east': 1 }))
       .mockRejectedValueOnce(new Error('cannot aggregate tier'))
     renderCharts()
 
@@ -388,7 +385,7 @@ describe('one chart failing does not destroy the rest', () => {
   it('says nothing when every chart worked', async () => {
     // THE CONTROL. A notice that always appeared would train people to
     // ignore it, which is worse than not having one.
-    aggregateObjects.mockResolvedValue({ results: { 'us-west': 3, 'us-east': 1 } })
+    aggregateObjects.mockImplementation(answering({ 'us-west': 3, 'us-east': 1 }))
     renderCharts()
 
     await waitFor(() => expect(screen.getByText('Region')).toBeInTheDocument())
@@ -444,8 +441,8 @@ describe('a field has to have a distribution worth drawing', () => {
   it('drops a field whose every value is distinct', async () => {
     // Three customers, three names, one each. An identifier.
     aggregateObjects
-      .mockResolvedValueOnce({ results: { Ada: 1, Bram: 1, Chidi: 1 } })
-      .mockResolvedValueOnce({ results: { 'us-west': 2, 'us-east': 1 } })
+      .mockImplementationOnce(answering({ Ada: 1, Bram: 1, Chidi: 1 }))
+      .mockImplementationOnce(answering({ 'us-west': 2, 'us-east': 1 }))
     renderCharts()
 
     await waitFor(() => expect(screen.getByText('Region')).toBeInTheDocument())
@@ -456,8 +453,8 @@ describe('a field has to have a distribution worth drawing', () => {
     // THE CONTROL. A guard that dropped everything would empty the tab
     // and look exactly like an aggregation failure.
     aggregateObjects
-      .mockResolvedValueOnce({ results: { Ada: 1, Bram: 1, Chidi: 1 } })
-      .mockResolvedValueOnce({ results: { 'us-west': 2, 'us-east': 1 } })
+      .mockImplementationOnce(answering({ Ada: 1, Bram: 1, Chidi: 1 }))
+      .mockImplementationOnce(answering({ 'us-west': 2, 'us-east': 1 }))
     renderCharts()
 
     expect(await screen.findByText('Region')).toBeInTheDocument()
@@ -467,8 +464,8 @@ describe('a field has to have a distribution worth drawing', () => {
     // The original guard, retested because the two now share a
     // function and a change to one could quietly undo the other.
     aggregateObjects
-      .mockResolvedValueOnce({ results: { Ada: 1, Bram: 1, Chidi: 1 } })
-      .mockResolvedValueOnce({ results: { 'us-west': 3 } })
+      .mockImplementationOnce(answering({ Ada: 1, Bram: 1, Chidi: 1 }))
+      .mockImplementationOnce(answering({ 'us-west': 3 }))
     renderCharts()
 
     await waitFor(() => expect(aggregateObjects).toHaveBeenCalledTimes(2))
@@ -482,8 +479,8 @@ describe('a field has to have a distribution worth drawing', () => {
     // hide a real distribution that happened to be sparse. Four groups
     // over five objects is sparse and still real.
     aggregateObjects
-      .mockResolvedValueOnce({ results: { a: 1, b: 1, c: 1, d: 2 } })
-      .mockResolvedValueOnce({ results: { 'us-west': 2, 'us-east': 3 } })
+      .mockImplementationOnce(answering({ a: 1, b: 1, c: 1, d: 2 }))
+      .mockImplementationOnce(answering({ 'us-west': 2, 'us-east': 3 }))
     renderCharts()
 
     expect(await screen.findByText('Name')).toBeInTheDocument()

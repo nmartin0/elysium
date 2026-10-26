@@ -46,9 +46,15 @@ def client(tmp_path, monkeypatch):
 
 
 def _aggregate(client, **body):
+    measure = {"name": "v", "aggregate": body.pop("aggregate", "count"), "field": body.pop("field", None)}
     return client.post("/api/objects/Transaction/aggregate",
-                       json={"aggregate": "count", "group_by": "transaction_date", **body},
+                       json={"measures": [measure], "group_by": "transaction_date", **body},
                        headers=_csrf_headers(client))
+
+
+def _series(response):
+    """{group: the one measure's value}, in the order the rows came."""
+    return {row["group"]["transaction_date"]: row["metrics"]["v"] for row in response.json()["rows"]}
 
 
 def test_counted_by_month_with_the_empty_month_as_zero(client):
@@ -56,13 +62,13 @@ def test_counted_by_month_with_the_empty_month_as_zero(client):
     assert response.status_code == 200, response.text
     # us-west's four transactions (cust_001 and cust_002): May, two in
     # June, nothing in July, none after -- us-east's July is not theirs.
-    assert response.json()["results"] == {"2026-05-01": 2, "2026-06-01": 2}
+    assert _series(response) == {"2026-05-01": 2, "2026-06-01": 2}
 
 
 def test_summed_by_week(client):
     response = _aggregate(client, period="week", aggregate="sum", field="amount")
     assert response.status_code == 200, response.text
-    results = response.json()["results"]
+    results = _series(response)
     assert list(results) == sorted(results) and results["2026-04-27"] == pytest.approx(99.98)
     assert all(value == 0 for start, value in results.items()
                if start not in ("2026-04-27", "2026-06-01", "2026-06-08"))
@@ -70,7 +76,8 @@ def test_summed_by_week(client):
 
 def test_a_period_on_text_is_a_400_that_says_why(client):
     response = client.post("/api/objects/Transaction/aggregate",
-                           json={"aggregate": "count", "group_by": "category", "period": "week"},
+                           json={"measures": [{"name": "v", "aggregate": "count"}], "group_by": "category",
+                                 "period": "week"},
                            headers=_csrf_headers(client))
     assert response.status_code == 400 and "must name a date" in response.text
 
@@ -78,8 +85,8 @@ def test_a_period_on_text_is_a_400_that_says_why(client):
 def test_counted_by_a_fixed_length_of_days(client):
     # P7D counts from Monday 3 January 2000, so its weeks begin on Mondays
     # too -- the same starts as period=week, by another road.
-    by_length = _aggregate(client, duration="P7D").json()["results"]
-    by_week = _aggregate(client, period="week").json()["results"]
+    by_length = _series(_aggregate(client, duration="P7D"))
+    by_week = _series(_aggregate(client, period="week"))
     assert by_length == by_week and by_length
 
 
@@ -99,8 +106,50 @@ def test_first_and_last_through_the_api(client):
     first = _aggregate(client, period="month", aggregate="first", field="amount")
     last = _aggregate(client, period="month", aggregate="last", field="amount")
     assert first.status_code == 200 and last.status_code == 200, first.text
-    assert set(first.json()["results"]) == {"2026-05-01", "2026-06-01"}
+    assert set(_series(first)) == {"2026-05-01", "2026-06-01"}
     refused = client.post("/api/objects/Transaction/aggregate",
-                          json={"aggregate": "first", "field": "amount", "group_by": "category"},
+                          json={"measures": [{"name": "v", "aggregate": "first", "field": "amount"}],
+                                 "group_by": "category"},
                           headers=_csrf_headers(client))
     assert refused.status_code == 400 and "time bucket" in refused.text
+
+
+def test_several_measures_in_one_request_each_row_a_group_with_its_metrics(client):
+    response = client.post(
+        "/api/objects/Transaction/aggregate",
+        json={"measures": [{"name": "n", "aggregate": "count"},
+                           {"name": "total", "aggregate": "sum", "field": "amount"}],
+              "group_by": "transaction_date", "period": "month"},
+        headers=_csrf_headers(client))
+    assert response.status_code == 200, response.text
+    rows = response.json()["rows"]
+    # A LIST, in time order, each group naming its field: the answer a
+    # reader cannot reorder.
+    assert [row["group"] for row in rows] == [{"transaction_date": "2026-05-01"},
+                                              {"transaction_date": "2026-06-01"}]
+    assert [row["metrics"]["n"] for row in rows] == [2, 2]
+    assert all(set(row["metrics"]) == {"n", "total"} for row in rows)
+
+
+def test_the_set_with_no_group_by_is_one_row_with_an_empty_group(client):
+    response = client.post(
+        "/api/objects/Transaction/aggregate",
+        json={"measures": [{"name": "n", "aggregate": "count"}]}, headers=_csrf_headers(client))
+    assert response.json()["rows"] == [{"group": {}, "metrics": {"n": 4}}]
+
+
+@pytest.mark.parametrize("measures, said", [
+    ([{"name": "a", "aggregate": "count"}, {"name": "a", "aggregate": "count"}], "same name"),
+    ([{"name": "Total", "aggregate": "count"}], "must be lower-case"),
+    ([], "at least one measure"),
+])
+def test_measures_that_cannot_be_answered_are_a_400_that_says_why(client, measures, said):
+    response = client.post("/api/objects/Transaction/aggregate", json={"measures": measures},
+                           headers=_csrf_headers(client))
+    assert response.status_code == 400 and said in response.text
+
+
+def test_the_old_single_aggregate_body_is_gone(client):
+    response = client.post("/api/objects/Transaction/aggregate", json={"aggregate": "count"},
+                           headers=_csrf_headers(client))
+    assert response.status_code == 422

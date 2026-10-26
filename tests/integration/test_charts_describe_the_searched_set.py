@@ -39,9 +39,10 @@ class TestTheTextNarrowsTheNumbers:
         _login(client, "t2")
 
         grouped = _post(client, "/api/objects/Customer/aggregate",
-                        {"criteria": {}, "aggregate": "count", "group_by": "region", "q": "Ada"}).json()
+                        {"criteria": {}, "measures": [{"name": "n", "aggregate": "count"}],
+                         "group_by": "region", "q": "Ada"}).json()
 
-        assert grouped["results"] == {"us-west": 1}
+        assert grouped["rows"] == [{"group": {"region": "us-west"}, "metrics": {"n": 1}}]
 
     def test_without_text_nothing_changes(self, client):
         """THE CONTROL. A text query that leaked into ordinary requests

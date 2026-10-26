@@ -31,7 +31,7 @@ import {
   getErrorMessage,
   handleIfSessionExpired,
   MAX_SCAN_LABEL,
-  type AggregateResult,
+  countsByGroup,
 } from '@elysium/shell-api/api'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
@@ -175,7 +175,7 @@ export default function ChartsPanel({
     // charts that worked.
     Promise.allSettled(
       fields.map(async ({ field, label }) => {
-        const body = (await aggregateObjects(objectType, {
+        const body = await aggregateObjects(objectType, {
           // Every OTHER chart's selection, not this one's -- a chart
           // that filtered itself would drop to a single bar the moment
           // you clicked it.
@@ -190,13 +190,13 @@ export default function ChartsPanel({
           // charts REFETCHED on every keystroke and drew the same
           // unfiltered set each time.
           ...(queryText.trim() ? { q: queryText } : {}),
-          aggregate: 'count',
+          measures: [{ name: 'n', aggregate: 'count' }],
           group_by: field,
-        })) as AggregateResult
+        })
         return {
           field,
           label,
-          results: body.results as AggregateResults,
+          results: countsByGroup(body, field),
           truncated: body.scan_truncated === true,
         }
       }),

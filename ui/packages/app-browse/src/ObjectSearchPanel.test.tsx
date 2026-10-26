@@ -49,6 +49,8 @@ import {
 import ObjectSearchPanel, { type SearchResult } from './ObjectSearchPanel'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
+import { answering } from './answering.testing'
+
 vi.mock('@elysium/shell-api/components/Chart', () => ({
   default: ({ ariaLabel, onSelect }: { ariaLabel: string; onSelect?: (v: string) => void }) => (
     <div>
@@ -104,7 +106,7 @@ beforeEach(() => {
   // Column choices persist in localStorage now, which is what they are
   // FOR in a browser and exactly what makes tests interfere.
   window.localStorage.clear()
-  mockedAggregate.mockResolvedValue({ results: { 'us-west': 3, 'us-east': 1 } })
+  mockedAggregate.mockImplementation(answering({ 'us-west': 3, 'us-east': 1 }))
   // A default, because every test renders the panel and the panel asks.
   // Live rather than mirror, so the freshness note is absent unless a
   // test deliberately asks for it.

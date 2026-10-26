@@ -6353,6 +6353,27 @@ CONTROLS = [
         new="",
         tests=["tests/unit/test_aggregate_link_guard.py"],
     ),
+    Control(
+        describes="AGGREGATE ROUTE: a bucket's start is written as ISO 8601",
+        path="api/routes.py",
+        old="    if isinstance(group, datetime.date):\n        return group.isoformat()",
+        new="    if False:\n        return group",
+        tests=["tests/unit/test_totals_by_duration.py::TestTheGroupsTheRouteWrites"],
+    ),
+    Control(
+        describes="AGGREGATE ROUTE: the whole set is one row with an empty group",
+        path="api/routes.py",
+        old='{"group": ({} if body.group_by is None',
+        new='{"group": ({"": None} if body.group_by is None',
+        tests=["tests/integration/test_totals_by_period_api.py::test_the_set_with_no_group_by_is_one_row_with_an_empty_group"],
+    ),
+    Control(
+        describes="AGGREGATE ROUTE: each measure's field reaches the mediator",
+        path="api/routes.py",
+        old='"aggregate": m.aggregate, "field": m.field}',
+        new='"aggregate": m.aggregate, "field": None}',
+        tests=["tests/integration/test_totals_by_period_api.py::test_summed_by_week"],
+    ),
 ]
 
 

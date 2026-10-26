@@ -202,20 +202,18 @@ class TestThroughTheMediator:
                                                    **arguments)
 
 
-class TestTheKeysTheRouteWrites:
+class TestTheGroupsTheRouteWrites:
     def test_a_buckets_start_is_iso_8601_with_its_offset(self):
-        from api.routes import _aggregate_key
+        from api.routes import _aggregate_group
 
-        start = at("2026-07-01T10:15:00+01:00")
-        assert _aggregate_key(start, bucketed=True) == "2026-07-01T10:15:00+01:00"
-        assert _aggregate_key(D(2026, 7, 1), bucketed=True) == "2026-07-01"
+        assert _aggregate_group(at("2026-07-01T10:15:00+01:00")) == "2026-07-01T10:15:00+01:00"
+        assert _aggregate_group(D(2026, 7, 1)) == "2026-07-01"
 
-    def test_an_exact_value_keeps_the_key_it_always_had(self):
-        from api.routes import _aggregate_key
+    def test_anything_else_is_left_as_it_is(self):
+        from api.routes import _aggregate_group
 
-        assert _aggregate_key(at("2026-07-01T10:15:00+01:00"), bucketed=False) == \
-            "2026-07-01 10:15:00+01:00"
-        assert _aggregate_key(None, bucketed=False) == ""
+        assert _aggregate_group(2026) == 2026
+        assert _aggregate_group("north") == "north"
 
 
 class TestFirstAndLast:

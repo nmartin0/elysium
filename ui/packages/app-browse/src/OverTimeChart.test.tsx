@@ -3,6 +3,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import type { VisibleSchema } from '@elysium/shell-api/types'
 
+import { answering } from './answering.testing'
+
 const aggregateObjects = vi.fn()
 const forecastObjects = vi.fn()
 
@@ -46,7 +48,7 @@ function show(conditions: unknown[] = []) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  aggregateObjects.mockResolvedValue({ results: WEEKS })
+  aggregateObjects.mockImplementation(answering(WEEKS))
 })
 
 describe('a date field over time (R68)', () => {
@@ -56,7 +58,7 @@ describe('a date field over time (R68)', () => {
     expect(aggregateObjects).toHaveBeenCalledWith('Order', {
       conditions: [{ field: 'region', operator: 'equals', value: 'west' }],
       q: 'refund',
-      aggregate: 'count',
+      measures: [{ name: 'n', aggregate: 'count' }],
       group_by: 'placed',
       period: 'week',
     })
@@ -83,13 +85,13 @@ describe('a date field over time (R68)', () => {
   })
 
   it('one period is not a line, and says so', async () => {
-    aggregateObjects.mockResolvedValue({ results: { '2026-10-05': 4 } })
+    aggregateObjects.mockImplementation(answering({ '2026-10-05': 4 }))
     show()
     expect(await screen.findByText(/all fall|falls in the same week/)).toBeInTheDocument()
   })
 
   it('says each period is a floor when the set was cut off', async () => {
-    aggregateObjects.mockResolvedValue({ results: WEEKS, scan_truncated: true })
+    aggregateObjects.mockImplementation(answering(WEEKS, true))
     show()
     expect(await screen.findByText(/each week is at least what it says/)).toBeInTheDocument()
   })
@@ -140,8 +142,8 @@ describe('in the charts panel', () => {
         },
       },
     }
-    aggregateObjects.mockImplementation((_type: string, body: { period?: string }) =>
-      Promise.resolve({ results: body.period ? WEEKS : { west: 3, east: 1 } }),
+    aggregateObjects.mockImplementation((type: string, body: { period?: string; group_by?: string }) =>
+      answering(body.period ? WEEKS : { west: 3, east: 1 })(type, body),
     )
     render(
       <ChartsPanel
