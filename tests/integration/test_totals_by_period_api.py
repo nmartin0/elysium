@@ -91,3 +91,16 @@ def test_counted_by_a_fixed_length_of_days(client):
 def test_a_duration_that_cannot_be_used_is_a_400_that_says_why(client, body, said):
     response = _aggregate(client, **body)
     assert response.status_code == 400 and said in response.text
+
+
+def test_first_and_last_through_the_api(client):
+    # By month, us-west's two Mays and two Junes each have a first and a
+    # last; a first outside time buckets is refused.
+    first = _aggregate(client, period="month", aggregate="first", field="amount")
+    last = _aggregate(client, period="month", aggregate="last", field="amount")
+    assert first.status_code == 200 and last.status_code == 200, first.text
+    assert set(first.json()["results"]) == {"2026-05-01", "2026-06-01"}
+    refused = client.post("/api/objects/Transaction/aggregate",
+                          json={"aggregate": "first", "field": "amount", "group_by": "category"},
+                          headers=_csrf_headers(client))
+    assert refused.status_code == 400 and "time bucket" in refused.text

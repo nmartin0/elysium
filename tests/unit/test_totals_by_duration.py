@@ -152,15 +152,16 @@ ALL = ["read:Reading", "read:Reading.reading_id", "read:Reading.site", "read:Rea
        "read:Reading.day", "read:Reading.value"]
 
 
-def _mediator(tmp_path):
+def _mediator(tmp_path, rows=ROWS):
     from adapters.sqlite_adapter import SQLiteWriteAdapter
     from core.ontology.mediator import DataMediator
 
-    db = tmp_path / "readings.db"
+    # One file per call: a test may build two, to compare them.
+    db = tmp_path / f"readings-{len(list(tmp_path.glob('*.db')))}.db"
     with sqlite3.connect(db) as conn:
         conn.execute("CREATE TABLE readings (reading_id TEXT PRIMARY KEY, site TEXT, taken TEXT, "
                      "day TEXT, value REAL)")
-        conn.executemany("INSERT INTO readings VALUES (?, ?, ?, ?, ?)", ROWS)
+        conn.executemany("INSERT INTO readings VALUES (?, ?, ?, ?, ?)", rows)
     roles = {"r": {"allowed_actions": frozenset(ALL)}}
     return DataMediator(SCHEMA, {"s": SQLiteWriteAdapter({"path": db})}, {"Reading": "s"}, roles)
 
@@ -215,3 +216,65 @@ class TestTheKeysTheRouteWrites:
         assert _aggregate_key(at("2026-07-01T10:15:00+01:00"), bucketed=False) == \
             "2026-07-01 10:15:00+01:00"
         assert _aggregate_key(None, bucketed=False) == ""
+
+
+class TestFirstAndLast:
+    """The value at the earliest and the latest moment of each bucket --
+    TimescaleDB's first() and last() -- which with max and min make a
+    candlestick."""
+
+    def _per_hour(self, tmp_path, aggregate, rows=ROWS):
+        totals = _mediator(tmp_path, rows).aggregate_by_field(
+            _north(), "Reading", [], group_by="taken", aggregate=aggregate, field_name="value",
+            duration="PT1H")
+        return {start.isoformat(): value for start, value in totals.items()}
+
+    def test_an_hours_open_high_low_and_close(self, tmp_path):
+        # North's 09:05 4.0, 09:20 6.0, 09:50 1.0 -- not in that order by
+        # id or by value, so neither can stand in for time.
+        hour = "2026-07-01T09:00:00+00:00"
+        assert [self._per_hour(tmp_path, a)[hour] for a in ("first", "max", "min", "last")] == \
+            [4.0, 6.0, 1.0, 1.0]
+
+    def test_read_in_any_order_the_answer_is_the_same(self, tmp_path):
+        backwards = list(reversed(ROWS))
+        assert self._per_hour(tmp_path, "first", backwards) == self._per_hour(tmp_path, "first")
+        assert self._per_hour(tmp_path, "last", backwards) == self._per_hour(tmp_path, "last")
+
+    def test_two_at_one_moment_are_told_apart_by_id(self, tmp_path):
+        tied = [*ROWS, ("r0", "north", "2026-07-01T09:05:00+00:00", "2026-07-01", 9.0),
+                ("r9", "north", "2026-07-01T09:50:00+00:00", "2026-07-01", 7.0)]
+        hour = "2026-07-01T09:00:00+00:00"
+        assert self._per_hour(tmp_path, "first", tied)[hour] == 9.0    # r0 before r1
+        assert self._per_hour(tmp_path, "last", tied)[hour] == 7.0     # r9 after r3
+
+    def test_an_empty_bucket_has_no_first_rather_than_a_zero(self, tmp_path):
+        later = [*ROWS, ("r5", "north", "2026-07-01T11:30:00+00:00", "2026-07-01", 3.0)]
+        assert self._per_hour(tmp_path, "first", later) == {
+            "2026-07-01T09:00:00+00:00": 4.0, "2026-07-01T11:00:00+00:00": 3.0}
+
+    def test_a_null_value_is_never_the_first(self, tmp_path):
+        early_null = [*ROWS, ("r0", "north", "2026-07-01T09:01:00+00:00", "2026-07-01", None)]
+        assert self._per_hour(tmp_path, "first", early_null)["2026-07-01T09:00:00+00:00"] == 4.0
+
+    @pytest.mark.parametrize("aggregate", ["first", "last"])
+    def test_without_time_buckets_there_is_no_first_or_last(self, tmp_path, aggregate):
+        with pytest.raises(ValueError, match="needs one: group_by a date or timestamp field"):
+            _mediator(tmp_path).aggregate_by_field(_north(), "Reading", [], group_by="site",
+                                                   aggregate=aggregate, field_name="value")
+
+    def test_moments_written_in_other_offsets_are_ordered_as_instants(self, tmp_path):
+        # 10:04 at +01:00 is 09:04 UTC: a minute before r1, though it
+        # sorts after it as text.
+        offset = [*ROWS, ("r0", "north", "2026-07-01T10:04:00+01:00", "2026-07-01", 8.0)]
+        assert self._per_hour(tmp_path, "first", offset)["2026-07-01T09:00:00+00:00"] == 8.0
+
+    def test_the_tie_is_broken_by_id_and_not_by_the_order_read(self):
+        # Directly: the database hands rows back in id order, which would
+        # hide a rule that only took the first one it was given.
+        from core.ontology.mediator import _ORDERED
+
+        moment = (at("2026-07-01T09:05:00"),)
+        timed = [(moment, "r5", "five"), (moment, "r1", "one"), (moment, "r9", "nine")]
+        assert _ORDERED["first"](timed) == "one"
+        assert _ORDERED["last"](timed) == "nine"

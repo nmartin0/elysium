@@ -146,6 +146,18 @@ _AGGREGATES: dict[str, Callable[[list], Any]] = {
     "max": max,
 }
 
+#: ORDERED BY TIME: the value at the earliest, or the latest, moment in a
+#: bucket -- TimescaleDB's first() and last(), "the first value in one
+#: column when rows are ordered by another". With min and max, a bucket's
+#: first, max, min and last are a candlestick. Only over time buckets,
+#: where there is a time to order by. Each value arrives as (moment,
+#: object id, value): two at one moment are told apart by id, so the
+#: answer does not depend on the order rows were read in.
+_ORDERED: dict[str, Callable[[list], Any]] = {
+    "first": lambda timed: min(timed, key=lambda entry: entry[:2])[2],
+    "last": lambda timed: max(timed, key=lambda entry: entry[:2])[2],
+}
+
 
 # Sentinel for "absent from the cache", distinct from a cached None --
 # which is a real security value meaning the object has none.
@@ -2332,8 +2344,14 @@ class DataMediator:
         otherwise see in full, and SearchOutcome for why the flag is an
         out-parameter rather than a return shape.
         """
-        if aggregate not in _AGGREGATES:
-            raise ValueError(f"Unknown aggregate {aggregate!r} -- expected one of {sorted(_AGGREGATES)}")
+        if aggregate not in _AGGREGATES and aggregate not in _ORDERED:
+            raise ValueError(f"Unknown aggregate {aggregate!r} -- expected one of "
+                             f"{sorted({*_AGGREGATES, *_ORDERED})}")
+        if aggregate in _ORDERED and period is None and duration is None:
+            raise ValueError(
+                f"{aggregate} is the value at the {'earliest' if aggregate == 'first' else 'latest'} "
+                f"moment of each time bucket, so it needs one: group_by a date or timestamp "
+                f"field with a period or a duration.")
         if aggregate != "count" and field_name is None:
             raise ValueError(f"aggregate {aggregate!r} requires a field_name")
 
@@ -2411,6 +2429,17 @@ class DataMediator:
             # A RECORD THE CALLER MAY NOT READ THE DATE OF is in no
             # period -- _read_fields_for_ids returns nothing for a field
             # they lack read on, exactly as a null group is dropped below.
+            if aggregate in _ORDERED:
+                from core.periods import moment_order
+
+                per = by_period(
+                    ((row.get(group_by), (moment_order(row.get(group_by)), str(object_id),
+                                          row.get(field_name)))
+                     for object_id, row in rows.items() if row.get(field_name) is not None),
+                    bucketing)
+                return with_gaps_filled(
+                    {start: _ORDERED[aggregate](timed) for start, timed in per.items()},
+                    bucketing, aggregate)
             per = by_period(
                 ((row.get(group_by),
                   row.get(field_name) if field_name is not None else object_id)

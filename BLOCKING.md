@@ -1198,7 +1198,12 @@ from midnight on 3 January 2000, in the zone asked for -- with the
 autumn's repeated hour holding both and the spring's skipped hour never
 offered (core/periods.py).
 
-**Blocked on:** nothing. Next: part 2, first and last.
+PART 2 IS BUILT: `first` and `last`, the value at the earliest and
+the latest moment of each time bucket, as TimescaleDB's are; two at one
+moment told apart by id, so the answer does not depend on read order;
+refused outside time buckets, where there is no time to order by.
+
+**Blocked on:** nothing. Next: part 3, the assistant's period.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

@@ -223,6 +223,19 @@ def _moment(value: Any) -> "datetime.date | datetime.datetime | None":
     return None
 
 
+def moment_order(value: Any) -> tuple:
+    """A key putting moments in time order within one bucket: an instant
+    by its UTC time, a wall-clock reading or a date as itself. Values
+    that are no moment at all are never in a bucket, so never reach here."""
+    moment = _moment(value)
+    if isinstance(moment, datetime.datetime):
+        if moment.tzinfo is not None:
+            return (moment.astimezone(datetime.UTC).replace(tzinfo=None),)
+        return (moment,)
+    assert moment is not None
+    return (datetime.datetime.combine(moment, datetime.time()),)
+
+
 def next_period(start: datetime.date, period: str) -> datetime.date:
     if period == "day":
         return start + datetime.timedelta(days=1)
