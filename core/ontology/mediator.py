@@ -105,6 +105,7 @@ Used by: scripts/run_deployment.py (via core/deployment_loader.py),
 
 import decimal
 import logging
+import re
 import threading
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -137,6 +138,10 @@ from core.ontology.semantic_search import semantic_search_of
 from core.ontology.unrestricted import UNRESTRICTED, is_unrestricted
 from core.ontology.write_log import WriteLogReader
 from core.request_context import RequestContext
+
+#: Measures in one aggregate request (aggregate_measures).
+MAX_MEASURES = 8
+_MEASURE_NAME = re.compile(r"[a-z_][a-z0-9_]*")
 
 _AGGREGATES: dict[str, Callable[[list], Any]] = {
     "count": len,
@@ -2344,16 +2349,65 @@ class DataMediator:
         otherwise see in full, and SearchOutcome for why the flag is an
         out-parameter rather than a return shape.
         """
-        if aggregate not in _AGGREGATES and aggregate not in _ORDERED:
-            raise ValueError(f"Unknown aggregate {aggregate!r} -- expected one of "
-                             f"{sorted({*_AGGREGATES, *_ORDERED})}")
-        if aggregate in _ORDERED and period is None and duration is None:
-            raise ValueError(
-                f"{aggregate} is the value at the {'earliest' if aggregate == 'first' else 'latest'} "
-                f"moment of each time bucket, so it needs one: group_by a date or timestamp "
-                f"field with a period or a duration.")
-        if aggregate != "count" and field_name is None:
-            raise ValueError(f"aggregate {aggregate!r} requires a field_name")
+        measured = self.aggregate_measures(
+            user_record, object_type, conditions, group_by,
+            [{"name": "value", "aggregate": aggregate, "field": field_name}],
+            outcome=outcome, query_text=query_text, period=period, duration=duration,
+            time_zone=time_zone)
+        return {group: metrics["value"] for group, metrics in measured.items()}
+
+    def aggregate_measures(self, user_record: UserRecord, object_type: str, conditions: list,
+                           group_by: str | None, measures: list[dict],
+                           outcome: "SearchOutcome | None" = None, query_text: str = "",
+                           period: "str | None" = None, duration: "str | None" = None,
+                           time_zone: "str | None" = None) -> dict:
+        """SEVERAL MEASURES OVER ONE READ: {group: {name: value}}.
+
+        Each measure is {"name", "aggregate", "field"} and is exactly what
+        aggregate_by_field() computes for it alone -- aggregate_by_field
+        is this with one measure, and every rule in its docstring holds
+        for each measure here. What several add is that the set is
+        resolved and READ ONCE, so the measures of one chart cannot
+        disagree about which rows they saw, and the cost of a second
+        measure is its arithmetic, not another scan.
+
+        A group is present when ANY measure has a value in it. A measure
+        with none there is 0 for a count or a sum, as an empty period is,
+        and None for the others -- there is no average of nothing.
+
+        Foundry's aggregate takes a list of {type, field, name} and
+        answers each group with its metrics by name; names are the
+        caller's, unique, and plain identifiers so that an object keyed
+        by them is never reordered by a reader (a key that looks like an
+        integer is, in JavaScript).
+        """
+        from core.periods import ZERO_WHEN_EMPTY
+
+        if not measures:
+            raise ValueError("Ask for at least one measure.")
+        if len(measures) > MAX_MEASURES:
+            raise ValueError(f"At most {MAX_MEASURES} measures in one request; got {len(measures)}.")
+        names = [str(measure.get("name") or "") for measure in measures]
+        for name in names:
+            if not _MEASURE_NAME.fullmatch(name):
+                raise ValueError(f"A measure's name must be lower-case letters, digits and "
+                                 f"underscores, starting with a letter or underscore; "
+                                 f"{name!r} is not.")
+        if len(set(names)) != len(names):
+            raise ValueError("Two measures have the same name; each needs its own.")
+        for measure in measures:
+            aggregate = measure.get("aggregate")
+            field_name = measure.get("field")
+            if aggregate not in _AGGREGATES and aggregate not in _ORDERED:
+                raise ValueError(f"Unknown aggregate {aggregate!r} -- expected one of "
+                                 f"{sorted({*_AGGREGATES, *_ORDERED})}")
+            if aggregate in _ORDERED and period is None and duration is None:
+                raise ValueError(
+                    f"{aggregate} is the value at the {'earliest' if aggregate == 'first' else 'latest'} "
+                    f"moment of each time bucket, so it needs one: group_by a date or timestamp "
+                    f"field with a period or a duration.")
+            if aggregate != "count" and field_name is None:
+                raise ValueError(f"aggregate {aggregate!r} requires a field_name")
 
         # NEITHER group_by NOR field_name MAY NAME A LINK. A link is
         # not a column -- it is resolved through the link machinery --
@@ -2372,7 +2426,8 @@ class DataMediator:
         # this is the enforcing side: the agent is one caller among
         # several, and a link is not aggregatable for anyone.
         type_config = self.schema.get(object_type) or {}
-        for argument_name, candidate in (("group_by", group_by), ("field_name", field_name)):
+        for argument_name, candidate in (("group_by", group_by),
+                                         *(("field_name", m.get("field")) for m in measures)):
             if candidate is None:
                 continue
             field_info = (type_config.get("fields") or {}).get(candidate)
@@ -2410,18 +2465,32 @@ class DataMediator:
         if not visible_ids:
             return {}
 
-        wanted = [name for name in (group_by, field_name) if name is not None]
-        if not wanted:
-            # count over the whole set, with no grouping and no field:
-            # the answer is the size of the authorized set itself, and
-            # there is genuinely nothing to read. Without this, the
-            # bulk read is asked for zero columns, returns nothing, and
-            # the count comes back empty -- a real bug caught by
-            # testing the no-field count path.
-            return {None: len(visible_ids)}
+        fields = [name for name in dict.fromkeys(
+            [group_by, *(measure.get("field") for measure in measures)]) if name is not None]
+        if not fields:
+            # Counts over the whole set, with no grouping and no field:
+            # the size of the authorized set itself, and nothing to read
+            # (a bulk read of zero columns returns nothing, and the count
+            # would come back empty -- a real bug, caught by testing it).
+            return {None: {measure["name"]: len(visible_ids) for measure in measures}}
 
-        rows = self._read_fields_for_ids(user_record, object_type, visible_ids, wanted)
+        rows = self._read_fields_for_ids(user_record, object_type, visible_ids, fields)
 
+        per_measure = {measure["name"]: self._measured(rows, group_by, measure, bucketing)
+                       for measure in measures}
+        groups = list(dict.fromkeys(group for result in per_measure.values() for group in result))
+        if bucketing is not None:
+            groups.sort()
+        return {group: {measure["name"]: per_measure[measure["name"]].get(
+                            group, 0 if measure["aggregate"] in ZERO_WHEN_EMPTY else None)
+                        for measure in measures}
+                for group in groups}
+
+    @staticmethod
+    def _measured(rows: dict, group_by: str | None, measure: dict, bucketing) -> dict:
+        """One measure over rows already read: {group: value}."""
+        aggregate = measure["aggregate"]
+        field_name = measure.get("field")
         if bucketing is not None:
             from core.periods import by_period, with_gaps_filled
 
@@ -2462,6 +2531,7 @@ class DataMediator:
             grouped.setdefault(group_value, []).append(value)
 
         return {group: _AGGREGATES[aggregate](values) for group, values in grouped.items()}
+
 
     def _read_fields_for_ids(self, user_record: UserRecord, object_type: str,
                               object_ids: set, field_names: list[str]) -> dict:

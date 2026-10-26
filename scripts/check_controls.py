@@ -6296,6 +6296,63 @@ CONTROLS = [
         new="                by += \"\"",
         tests=["tests/unit/test_the_assistant_asks_by_period.py::test_the_account_of_the_work_says_per_what"],
     ),
+    Control(
+        describes="SEVERAL MEASURES: the set is read once, not once per measure",
+        path="core/ontology/mediator.py",
+        old="self._measured(rows, group_by, measure, bucketing)",
+        new=("self._measured(self._read_fields_for_ids(user_record, object_type, "
+             "visible_ids, fields), group_by, measure, bucketing)"),
+        tests=["tests/unit/test_several_measures.py::TestOneRequest::test_the_set_is_read_once_however_many_are_asked"],
+    ),
+    Control(
+        describes="SEVERAL MEASURES: a measure with nothing in a group is 0 or None by kind",
+        path="core/ontology/mediator.py",
+        old='group, 0 if measure["aggregate"] in ZERO_WHEN_EMPTY else None)',
+        new="group, 0)",
+        tests=["tests/unit/test_several_measures.py::TestAGroupWithNoValueForOneMeasure"],
+    ),
+    Control(
+        describes="SEVERAL MEASURES: a group is present when any measure has a value in it",
+        path="core/ontology/mediator.py",
+        old="groups = list(dict.fromkeys(group for result in per_measure.values() for group in result))",
+        new="groups = list(list(per_measure.values())[-1])",
+        tests=["tests/unit/test_several_measures.py::TestAGroupWithNoValueForOneMeasure"],
+    ),
+    Control(
+        describes="SEVERAL MEASURES: time buckets come back in time order",
+        path="core/ontology/mediator.py",
+        old="            groups.sort()",
+        new="            pass",
+        tests=["tests/unit/test_several_measures.py::TestOverTime::test_the_quarter_hours_are_every_one_between_for_every_measure"],
+    ),
+    Control(
+        describes="SEVERAL MEASURES: two measures may not share a name",
+        path="core/ontology/mediator.py",
+        old="if len(set(names)) != len(names):",
+        new="if False:",
+        tests=["tests/unit/test_several_measures.py::TestWhatIsRefused"],
+    ),
+    Control(
+        describes="SEVERAL MEASURES: a name must be a plain identifier",
+        path="core/ontology/mediator.py",
+        old='_MEASURE_NAME = re.compile(r"[a-z_][a-z0-9_]*")',
+        new='_MEASURE_NAME = re.compile(r".*")',
+        tests=["tests/unit/test_several_measures.py::TestWhatIsRefused"],
+    ),
+    Control(
+        describes="SEVERAL MEASURES: no more than the ceiling in one request",
+        path="core/ontology/mediator.py",
+        old="if len(measures) > MAX_MEASURES:",
+        new="if False:",
+        tests=["tests/unit/test_several_measures.py::TestWhatIsRefused"],
+    ),
+    Control(
+        describes="SEVERAL MEASURES: a measure's field may not be a link",
+        path="core/ontology/mediator.py",
+        old='*(("field_name", m.get("field")) for m in measures)',
+        new="",
+        tests=["tests/unit/test_aggregate_link_guard.py"],
+    ),
 ]
 
 
