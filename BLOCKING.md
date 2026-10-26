@@ -1355,10 +1355,10 @@ published, nothing for exempt), and from 1.5x its fields, the key
 first, in place of the summary -- the box keeps its size, because rows
 are 40 apart and a taller box would land on its neighbour.
 
-WHAT THE CANVAS DOES NOT DO YET, each buildable: edges are not routed
-AROUND other types, so two types dragged far apart can draw a line
-across a third ("Auto-layout" undoes it); and the layout is per person,
-with no deployment-wide default -- small, and not yet asked for.
+Edges are routed AROUND the types in their way (a search over grid lines
+beside the nearby types, fewest bends first). WHAT THE CANVAS DOES NOT DO
+YET, buildable: the layout is per person, with no deployment-wide
+default -- small, and not yet asked for.
 
 **Blocked on:** nothing.
 

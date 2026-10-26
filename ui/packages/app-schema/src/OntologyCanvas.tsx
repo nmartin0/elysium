@@ -532,7 +532,11 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
                 const from = placed[edge.source]
                 const to = placed[edge.target]
                 if (!from || !to) return null
-                const points = routeEdge(from, to, laneOf[index] ?? 0)
+                // The other types, which an edge goes round rather than through.
+                const others = Object.entries(placed)
+                  .filter(([name]) => name !== edge.source && name !== edge.target)
+                  .map(([, centre]) => centre)
+                const points = routeEdge(from, to, laneOf[index] ?? 0, others)
                 const at = labelPoint(points)
                 const security = edge.kind === 'security'
                 const faded = dimmed(edge.source) || dimmed(edge.target)
