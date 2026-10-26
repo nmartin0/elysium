@@ -1,5 +1,5 @@
 /**
- * SCHEMA CHANGES FROM THE PANEL (BLOCKING.md item 11, the owner's
+ * SCHEMA CHANGES FROM THE PANEL (BLOCKING.md item 10, the owner's
  * approval of 26 October): change a running world's structure -- a
  * column added, dropped, renamed, retyped or rescaled, a table added,
  * dropped or renamed -- and see what has changed so far.

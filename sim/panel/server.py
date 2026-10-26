@@ -1,7 +1,7 @@
 """
 server.py  (the simulator's control panel, as an Elysium add-on's server)
 
-BLOCKING.md item 3, step 2.3, and item 11's "control panel served by the
+BLOCKING.md item 3, step 2.3, and item 10's "control panel served by the
 simulator itself". Elysium starts this (its module.json's `server`) and
 forwards the panel page's calls to it; this, in turn, operates a world
 through the channel the simulator already has (simulator/control.py).

@@ -177,4 +177,4 @@ def restore_leftovers(world) -> dict[str, str]:
 # a real share is unmounted under an open file on most systems, so it is left.
 #
 # DEFERRED: slow responses and transient 5xx on demand (REAL_SOURCES R3) are
-# realism options, step 2 of BLOCKING item 12.
+# realism options, step 2 of BLOCKING item 11.

@@ -546,7 +546,7 @@ class PostgresSilo(Silo):
 # reported by PortRegistry.verify_available(), which names the port, but a
 # `simulator stop --all` reading ports.json would be kinder.
 #
-# RESOLVED (20 October, item 12 step 2): the server's time zone is pinned (UTC
+# RESOLVED (20 October, item 11 step 2): the server's time zone is pinned (UTC
 # by default, `timezone` to change it) rather than copied from the host by
 # initdb. Untestable on a UTC host, where the two agree; said in
 # tests/test_database_realism.py. The reader's limits, default privileges and

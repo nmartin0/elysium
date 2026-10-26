@@ -484,7 +484,7 @@ class MariaDbSilo(Silo):
 # accepts one. Changing it means a CREATE user after initialisation, which is
 # real work for a cosmetic gain.
 #
-# RESOLVED (20 October, item 12 step 2): the server's zone is pinned
+# RESOLVED (20 October, item 11 step 2): the server's zone is pinned
 # (+00:00 by default, `time_zone` to change it; offsets only, because named
 # zones need the time zone tables loaded). Consumer accounts' wait_timeout and
 # max_statement_time are set through init_connect, which the server skips for

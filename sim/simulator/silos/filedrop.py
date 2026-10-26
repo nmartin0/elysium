@@ -480,7 +480,7 @@ def as_excel_saves(value: object) -> str:
 # simulated year leaves 365 files, which is fine; one publishing per tick would
 # not be. Whichever pack does that first should bring the policy with it.
 #
-# RESOLVED (20 October, item 12 step 2): realism options, every one off unless a
+# RESOLVED (20 October, item 11 step 2): realism options, every one off unless a
 # pack sets it -- encoding, delimiter, decimal_comma, excel_conversions,
 # reorder_columns, zipped, atomic_writes, duplicate_rate, late_rate/
 # late_seconds, keep_last. Late and half-written files need the world's

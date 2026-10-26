@@ -599,7 +599,7 @@ class RestSilo(Silo):
 # run is one process; the moment a world is resumed across processes this needs
 # the same treatment the other silos get from their own storage.
 #
-# RESOLVED (20 October, item 12 step 2): realism options, every one off unless
+# RESOLVED (20 October, item 11 step 2): realism options, every one off unless
 # a pack sets it -- token_lifetime_seconds (client credentials, as Xero's
 # custom connections), fault_rate/fault_statuses and latency_ms/jitter (as
 # Toxiproxy), modified_since_field (Xero's If-Modified-Since). Faults and

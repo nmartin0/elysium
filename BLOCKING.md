@@ -1235,7 +1235,7 @@ one measure -- it gets more when something needs them.
 
 **Blocked on:** nothing. Next: the kit's shared time chart.
 
-## 5. What the interface should be
+## 4. What the interface should be
 
 `DEV_UI.md`, written after the owner said the interface is BOTH
 unfinished and disjointed. **Its diagnosis is the part worth keeping**,
@@ -1362,7 +1362,7 @@ with no deployment-wide default -- small, and not yet asked for.
 
 **Blocked on:** nothing.
 
-## 6. Agent-loop efficiency, which needs a machine with a model
+## 5. Agent-loop efficiency, which needs a machine with a model
 
 `IDEAS.md`'s open investigations all need traces from a real model on
 real hardware. The measurements already taken are kept because
@@ -1640,7 +1640,7 @@ and nudge of the baseline regression, which is what diagnosing it needs.
 Beyond that, nothing on this hardware: a GPU, or a larger model, would
 reopen plan mode and constrained decoding.
 
-## 7. Context rot, and a 10,000-id search behind it
+## 6. Context rot, and a 10,000-id search behind it
 
 `UI_ROADMAP.md` calls this "a risk to what already exists, not a
 feature", and it is the only part of that file that is not front-end
@@ -1696,7 +1696,7 @@ that matters: told its limit was 20 when given 32 ids, a real model
 one object at a time until the duplicate guard stopped it". A cap
 chosen without measuring is how that happens again.
 
-## 8. Who can read Elysium's copied data without going through Elysium
+## 7. Who can read Elysium's copied data without going through Elysium
 
 **REWRITTEN 19 October, with the owner.** This item was "PostgreSQL
 row-level security for MAC": push the row check into the customer's
@@ -1776,7 +1776,7 @@ files reference the SQLite adapter, most of them tests using it as the
 cheap real database, and the write path is where a mistake reaches a
 customer's database. Days, not hours -- but no decision, so not here.
 
-## 9. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
+## 8. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
 
 **Blocked on:** the owner, and on money and calendar time rather than
 engineering.
@@ -1833,7 +1833,7 @@ contract and not a patch. The list's remaining rows are therefore not
 optional: key management, session controls, a password policy,
 access review, audit integrity and backup verification.
 
-## 10. Owning the UI kit, and when to start
+## 9. Owning the UI kit, and when to start
 
 **Blocked on:** nothing. This is a DECISION ALREADY TAKEN, recorded
 here so the next person does not reopen it from scratch.
@@ -1883,11 +1883,11 @@ When either fires, the wrappers are already the call-site layer: the
 implementation changes underneath them and the 97 call sites do not
 move.
 
-## 11. The simulator as Elysium's live test, and five kinds of source
+## 10. The simulator as Elysium's live test, and five kinds of source
 
 **AGREED WITH THE OWNER, 19 October.** Mostly built since: Elysium reads
 all five kinds, and a running world can be operated from outside it
-(item 12, step 1). What is left is the control panel as a page.
+(item 11, step 1). What is left is the control panel as a page.
 
 **THE SIMULATOR STAYS OUTSIDE ELYSIUM.** `sim/` operates real
 PostgreSQL, MariaDB, SQLite, CSV-folder and REST sources for a
@@ -1942,7 +1942,7 @@ SECURITY_ARCHITECTURE.md).
 its server started by Elysium, the world running on its own.
 
 **SCHEMA CHANGES FROM THE PANEL, 26 October, with the owner** (after
-item 12's runs, which used every kind): a database, a table and one of
+item 11's runs, which used every kind): a database, a table and one of
 the eight changes the pack vocabulary has, its details, Apply; and the
 list of what has changed, scheduled or not, read from the history table
 each database keeps. Laid out as Gremlin lays out an experiment ("Select
@@ -1959,10 +1959,10 @@ after it. None can be undone; only discarding the world goes back.
 **Blocked on:** nothing; built. Superseded wording below kept for its
 reasons:
 
-**Was blocked on:** nothing but order: the page comes after item 12, whose
+**Was blocked on:** nothing but order: the page comes after item 11, whose
 runs will show which controls an operator actually reaches for.
 
-## 12. Make the simulator's sources behave like real ones, then run Elysium over it
+## 11. Make the simulator's sources behave like real ones, then run Elysium over it
 
 **AGREED WITH THE OWNER, 19 October.** Next up once the item above
 (five kinds of source: CSV and REST still to build) is complete. Two
@@ -2191,7 +2191,7 @@ SQLite silo -- here another program's database. The harness declares
 `write_targets: []`; Elysium's default, kept deliberately and warned
 about at load, is unchanged.
 
-**Step 3 is done**, and with it this item; item 11's drift controls,
+**Step 3 is done**, and with it this item; item 10's drift controls,
 which these runs were to inform, are built.
 
 **Blocked on:** nothing.
