@@ -11,6 +11,10 @@
  * THE PERIOD IS THE READER'S: a week by default, the grain most
  * operational questions are asked at; a day or a month one click away.
  *
+ * THE KIT'S TIME CHART draws it (shell-api/src/timeChart.ts), on a time axis
+ * with zoom; what this file adds is which lines: the counts, and on request
+ * the forecast.
+ *
  * ITS OWN REQUEST, beside the distribution charts', over the same set:
  * the same conditions, frozen set and search text, so the line counts
  * exactly what the table beside it lists.
@@ -34,16 +38,16 @@ import {
   getErrorMessage,
   handleIfSessionExpired,
   MAX_SCAN_LABEL,
-  countsByGroup,
+  type AggregateResult,
   type TimePeriod,
 } from '@elysium/shell-api/api'
-import Chart from '@elysium/shell-api/components/Chart'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
 import LoadingState from '@elysium/shell-api/components/LoadingState'
 import Notice from '@elysium/shell-api/components/Notice'
-import { useEffect, useState } from 'react'
+import TimeChart from '@elysium/shell-api/components/TimeChart'
+import { useEffect, useMemo, useState } from 'react'
 
-import { type AggregateResults, forecastOption, overTimeOption } from './aggregateCharts'
+import { countSeries, forecastSeries } from './aggregateCharts'
 
 const PERIODS: { id: TimePeriod; label: string }[] = [
   { id: 'day', label: 'Day' },
@@ -89,7 +93,7 @@ export default function OverTimeChart({
   onSessionExpired,
 }: OverTimeChartProps) {
   const [period, setPeriod] = useState<TimePeriod>('week')
-  const [results, setResults] = useState<AggregateResults | null>(null)
+  const [answer, setAnswer] = useState<AggregateResult | null>(null)
   const [truncated, setTruncated] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [projecting, setProjecting] = useState(false)
@@ -126,7 +130,7 @@ export default function OverTimeChart({
 
   useEffect(() => {
     let cancelled = false
-    setResults(null)
+    setAnswer(null)
     setError(null)
     aggregateObjects(objectType, {
       conditions: JSON.parse(conditionsKey) as unknown[],
@@ -138,7 +142,7 @@ export default function OverTimeChart({
     })
       .then((result) => {
         if (cancelled) return
-        setResults(countsByGroup(result, field))
+        setAnswer(result)
         setTruncated(result.scan_truncated === true)
       })
       .catch((err: unknown) => {
@@ -152,7 +156,10 @@ export default function OverTimeChart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [objectType, field, conditionsKey, frozenSet, queryText, period])
 
-  const periods = results === null ? 0 : Object.keys(results).length
+  const periods = answer === null ? 0 : answer.rows.length
+  // Built once per answer, so the chart is not redrawn by every render.
+  const counts = useMemo(() => (answer === null ? [] : countSeries(answer, field, period)), [answer, field, period])
+  const projected = useMemo(() => (forecast === null ? [] : forecastSeries(forecast)), [forecast])
 
   return (
     <section className="charts-panel__chart charts-panel__chart--over-time" aria-label={`${label} over time`}>
@@ -174,7 +181,7 @@ export default function OverTimeChart({
       </header>
       {error ? (
         <ErrorState>{error}</ErrorState>
-      ) : results === null ? (
+      ) : answer === null ? (
         <LoadingState />
       ) : periods < 2 ? (
         <Notice state="neutral">
@@ -191,12 +198,13 @@ export default function OverTimeChart({
             </Notice>
           )}
           {projecting && forecast?.points.length ? (
-            <Chart
+            <TimeChart
               ariaLabel={`${label}: records per ${period}, with a forecast`}
-              option={forecastOption(forecast, period)}
+              series={projected}
+              grain={period}
             />
           ) : (
-            <Chart ariaLabel={`${label}: records per ${period}`} option={overTimeOption(results, period)} />
+            <TimeChart ariaLabel={`${label}: records per ${period}`} series={counts} grain={period} />
           )}
           {projecting &&
             (forecastError ? (

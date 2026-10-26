@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import type { VisibleSchema } from '@elysium/shell-api/types'
@@ -17,19 +17,38 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
   }
 })
 
-// A canvas jsdom cannot read: the option is what is checked, so the
-// stand-in prints the x-axis it was given.
-vi.mock('@elysium/shell-api/components/Chart', () => ({
-  default: ({ ariaLabel, option }: { ariaLabel: string; option: { xAxis?: { data?: string[] } } }) => (
+// A canvas jsdom cannot read. The time chart's stand-in prints the lines
+// it was given, a hollow (unfinished) point starred; the others print
+// their name.
+vi.mock('@elysium/shell-api/components/TimeChart', () => ({
+  default: ({
+    ariaLabel,
+    series,
+    grain,
+  }: {
+    ariaLabel: string
+    series: { name: string; dashed?: boolean; points: { at: string; value: number | null; partial?: boolean }[] }[]
+    grain?: string
+  }) => (
     <div>
-      {ariaLabel}: {(option.xAxis?.data ?? []).join(' | ')}
+      {ariaLabel} ({grain}):{' '}
+      {series
+        .map(
+          (line) =>
+            `${line.name}${line.dashed ? ' dashed' : ''}[${line.points.map((p) => `${p.at}=${p.value}${p.partial ? '*' : ''}`).join(' ')}]`,
+        )
+        .join(' ')}
     </div>
   ),
+}))
+vi.mock('@elysium/shell-api/components/Chart', () => ({
+  default: ({ ariaLabel }: { ariaLabel: string }) => <div>{ariaLabel}</div>,
 }))
 
 const { default: OverTimeChart } = await import('./OverTimeChart')
 const { default: ChartsPanel } = await import('./ChartsPanel')
-const { forecastOption, overTimeOption, periodLabel } = await import('./aggregateCharts')
+const { countSeries, forecastSeries, unfinished } = await import('./aggregateCharts')
+const { timeChartOption } = await import('@elysium/shell-api/timeChart')
 
 const WEEKS = { '2026-10-05': 2, '2026-10-12': 0, '2026-10-19': 1 }
 
@@ -47,8 +66,16 @@ function show(conditions: unknown[] = []) {
 }
 
 beforeEach(() => {
+  // A DATE THAT IS NOT TODAY'S: which period is still running depends on
+  // it, and a test that read the real date would pass on some days.
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2027-01-01T12:00:00Z'))
   vi.clearAllMocks()
   aggregateObjects.mockImplementation(answering(WEEKS))
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('a date field over time (R68)', () => {
@@ -66,12 +93,9 @@ describe('a date field over time (R68)', () => {
 
   it('draws the periods in order, the empty week included', async () => {
     show()
-    // In the reader's own locale and against today's date, so built the
-    // same way here.
-    const option = overTimeOption(WEEKS, 'week') as { xAxis: { data: string[] } }
-    const axis = option.xAxis.data.join(' | ')
-    expect(await screen.findByText(`Placed: records per week: ${axis}`)).toBeInTheDocument()
-    expect(axis).toMatch(/^Week of .*5.*\| Week of .*12.*\| Week of .*19/)
+    expect(
+      await screen.findByText('Placed: records per week (week): Recorded[2026-10-05=2 2026-10-12=0 2026-10-19=1]'),
+    ).toBeInTheDocument()
   })
 
   it('counts by day or month when asked', async () => {
@@ -96,39 +120,27 @@ describe('a date field over time (R68)', () => {
     expect(await screen.findByText(/each week is at least what it says/)).toBeInTheDocument()
   })
 
-  it('marks the period still running as so far, so its drop is not read as a fall', async () => {
-    const { unfinished } = await import('./aggregateCharts')
+  it('marks the period still running as so far, so its drop is not read as a fall', () => {
     expect(unfinished('2026-10-12', 'week', '2026-10-14')).toBe(true)
     expect(unfinished('2026-10-12', 'week', '2026-10-19')).toBe(false)
     expect(unfinished('2026-10-01', 'month', '2026-10-31')).toBe(true)
-    const option = overTimeOption(WEEKS, 'week', '2026-10-21') as {
-      xAxis: { data: string[] }
-      series: { data: unknown[] }[]
-    }
-    expect(option.xAxis.data.at(-1)).toMatch(/\(so far\)$/)
-    expect(option.xAxis.data.slice(0, -1).some((label) => label.includes('so far'))).toBe(false)
-    // ITS OWN POINT, hollow and NOT JOINED to the line: a line down to half
-    // a week's count reads as a fall.
-    expect(option.series[0]!.data).toEqual([2, 0, null])
-    expect(option.series[1]).toMatchObject({
-      name: 'So far',
-      symbol: 'emptyCircle',
-      showSymbol: true,
-      showAllSymbol: true,
+    const rows = (counts: Record<string, number>) => ({
+      rows: Object.entries(counts).map(([at, n]) => ({ group: { placed: at }, metrics: { n } })),
+      scan_truncated: false,
     })
-    expect(option.series[1]!.data).toEqual([null, null, 1])
-    const finished = overTimeOption(WEEKS, 'week', '2027-01-01') as { series: unknown[] }
-    expect(finished.series).toHaveLength(1)
+    const [running] = countSeries(rows(WEEKS), 'placed', 'week', '2026-10-21')
+    // ITS OWN POINT, which the chart draws hollow and does not join to the
+    // line: a line down to half a week's count reads as a fall.
+    expect(running!.points.map((point) => point.partial === true)).toEqual([false, false, true])
+    const [finished] = countSeries(rows(WEEKS), 'placed', 'week', '2027-01-01')
+    expect(finished!.points.some((point) => point.partial)).toBe(false)
   })
 
-  it('names periods at their own precision, in UTC', () => {
-    expect(periodLabel('2026-10-01', 'month')).toMatch(/Oct 2026/)
-    expect(periodLabel('2026-10-12', 'week')).toBe(`Week of ${periodLabel('2026-10-12', 'day')}`)
-    // IN TIME ORDER whatever order the keys arrive in.
-    const option = overTimeOption({ '2026-10-19': 1, '2026-10-05': 2, '2026-10-12': 0 }, 'week', '2027-01-01') as {
-      series: { data: number[] }[]
-    }
-    expect(option.series[0]!.data).toEqual([2, 0, 1])
+  it('is drawn with the period it was asked for, on its first line the recorded counts', async () => {
+    show()
+    await screen.findByText(/records per week \(week\)/)
+    fireEvent.click(screen.getByRole('button', { name: 'Month' }))
+    expect(await screen.findByText(/records per month \(month\)/)).toBeInTheDocument()
   })
 })
 
@@ -184,7 +196,7 @@ describe('a forecast on the chart (R68)', () => {
   it('is asked for only when switched on, for the same set and period', async () => {
     forecastObjects.mockResolvedValue(FORECAST)
     show()
-    await screen.findByText(/records per week:/)
+    await screen.findByText(/records per week \(week\)/)
     expect(forecastObjects).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('checkbox', { name: 'Forecast' }))
     expect(await screen.findByText(/records per week, with a forecast/)).toBeInTheDocument()
@@ -200,7 +212,7 @@ describe('a forecast on the chart (R68)', () => {
   it('says how it was tested and against what', async () => {
     forecastObjects.mockResolvedValue(FORECAST)
     show()
-    await screen.findByText(/records per week:/)
+    await screen.findByText(/records per week \(week\)/)
     fireEvent.click(screen.getByRole('checkbox', { name: 'Forecast' }))
     expect(
       await screen.findByText(
@@ -212,27 +224,50 @@ describe('a forecast on the chart (R68)', () => {
   it('one that did not beat the naive forecast is not drawn, and says why', async () => {
     forecastObjects.mockResolvedValue({ ...FORECAST, points: [], refusal: 'it missed by as much as carrying on.' })
     show()
-    await screen.findByText(/records per week:/)
+    await screen.findByText(/records per week \(week\)/)
     fireEvent.click(screen.getByRole('checkbox', { name: 'Forecast' }))
     expect(await screen.findByText('No forecast: it missed by as much as carrying on.')).toBeInTheDocument()
     expect(screen.queryByText(/with a forecast/)).not.toBeInTheDocument()
   })
 
-  it('dashed, anchored on the last finished period, with the band as its two edges', () => {
-    const option = forecastOption(FORECAST, 'week') as {
-      oneColour: boolean
-      series: { name: string; data: unknown[]; lineStyle?: { type?: string } }[]
-      tooltip: { formatter: (params: { dataIndex: number; axisValueLabel: string }[]) => string }
+  it('draws the recorded counts, and the forecast dashed beside them', async () => {
+    forecastObjects.mockResolvedValue(FORECAST)
+    show()
+    await screen.findByText(/records per week \(week\):/)
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Forecast' }))
+    expect(
+      await screen.findByText(
+        'Placed: records per week, with a forecast (week): ' +
+          'Recorded[2026-09-28=40 2026-10-05=50 2026-10-12=32*] ' +
+          'Forecast dashed[2026-10-05=50 2026-10-12=45 2026-10-19=46]',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('is one quantity: dashed, in the recorded colour, anchored on the last finished period', () => {
+    const [recorded, forecast] = forecastSeries(FORECAST)
+    expect(forecast).toMatchObject({ dashed: true, sameColourAs: recorded!.name, band: '80% range' })
+    // ANCHORED, so the dashes leave the line rather than starting beside it.
+    expect(forecast!.points[0]).toEqual({ at: '2026-10-05', value: 50, low: 50, high: 50 })
+    expect(forecast!.points.slice(1)).toEqual([
+      { at: '2026-10-12', value: 45, low: 40, high: 50 },
+      { at: '2026-10-19', value: 46, low: 39, high: 53 },
+    ])
+    expect(recorded!.points.at(-1)).toEqual({ at: '2026-10-12', value: 32, partial: true })
+  })
+
+  it('tells the running period, its forecast and the range as the two edges', () => {
+    const option = timeChartOption(forecastSeries(FORECAST), { colors: ['#000'], grain: 'week' }) as unknown as {
+      tooltip: { formatter: (params: unknown[]) => string }
     }
-    const byName = Object.fromEntries(option.series.map((series) => [series.name, series]))
-    expect(option.oneColour).toBe(true)
-    expect(byName['Recorded']!.data).toEqual([40, 50, null, null])
-    expect(byName['So far']!.data).toEqual([null, null, 32, null])
-    expect(byName['Forecast']!.data).toEqual([null, 50, 45, 46])
-    expect(byName['Forecast']!.lineStyle?.type).toBe('dashed')
-    expect(byName['80% range floor']!.data).toEqual([null, 50, 40, 39])
-    expect(byName['80% range']!.data).toEqual([null, 0, 10, 14])
-    const tip = option.tooltip.formatter([{ dataIndex: 2, axisValueLabel: 'Week of 12 Oct' }])
-    expect(tip).toBe('Week of 12 Oct<br/>So far: 32<br/>Forecast: 45<br/>80% range: 40 to 50')
+    const at = Date.parse('2026-10-12')
+    const tip = option.tooltip.formatter([
+      { seriesName: 'Recorded so far', axisValue: at, value: [at, 32] },
+      { seriesName: 'Forecast', axisValue: at, value: [at, 45] },
+      { seriesName: '80% range floor', axisValue: at, value: [at, 40] },
+      { seriesName: '80% range', axisValue: at, value: [at, 10] },
+    ])
+    expect(tip).toContain('Recorded so far: 32<br/>Forecast: 45<br/>80% range: 40 to 50')
+    expect(tip).toMatch(/^Week of /)
   })
 })
