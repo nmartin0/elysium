@@ -6351,7 +6351,7 @@ CONTROLS = [
         path="core/ontology/mediator.py",
         old='*(("field_name", m.get("field")) for m in measures)',
         new="",
-        tests=["tests/unit/test_aggregate_link_guard.py"],
+        tests=["tests/unit/test_aggregate_link_guard.py::test_aggregating_over_a_link_is_refused"],
     ),
     Control(
         describes="AGGREGATE ROUTE: a bucket's start is written as ISO 8601",

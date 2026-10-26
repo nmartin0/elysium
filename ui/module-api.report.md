@@ -14,7 +14,7 @@ The manifest, `activate()`, host values, styles and the add-on server are
 described in [MODULE_API.md](MODULE_API.md).
 
 194 names imported, from 38 entry points, by 9 modules;
-242 declarations public in all.
+247 declarations public in all.
 
 ## `@elysium/shell-api/api`
 
@@ -32,21 +32,35 @@ export declare function addonRequest<T>(moduleId: string, path: string, options?
     body?: unknown;
 }): Promise<T>;
 
-export interface AggregateBody {
-    conditions?: unknown[];
-    aggregate: string;
-    field?: string;
+export interface AggregateBody extends AggregateSet {
+    measures: AggregateMeasure[];
     group_by?: string;
-    frozen_set?: string;
     period?: TimePeriod;
-    q?: string;
 }
 
-export declare function aggregateObjects(objectType: string, body: AggregateBody): Promise<unknown>;
+export interface AggregateMeasure {
+    name: string;
+    aggregate: string;
+    field?: string;
+}
+
+export declare function aggregateObjects(objectType: string, body: AggregateBody): Promise<AggregateResult>;
 
 export interface AggregateResult {
-    results: Record<string, unknown>;
+    rows: AggregateRow[];
     scan_truncated: boolean;
+}
+
+export interface AggregateRow {
+    group: Record<string, unknown>;
+    metrics: Record<string, unknown>;
+}
+
+// not exported: reached from a public declaration
+interface AggregateSet {
+    conditions?: unknown[];
+    frozen_set?: string;
+    q?: string;
 }
 
 export declare class ApiError extends Error {
@@ -88,6 +102,8 @@ export declare function combineSets(objectType: string, left: SetReference, righ
 export declare function compareSets(objectType: string, left: SetReference, right: SetReference): Promise<SetComparison>;
 
 export declare function confirmWrite(writeId: string, approved: boolean): Promise<unknown>;
+
+export declare function countsByGroup(result: AggregateResult, groupBy: string, measure?: string): Record<string, number>;
 
 export declare function createObjectNote(objectType: string, objectId: string, text: string): Promise<unknown>;
 
@@ -238,10 +254,14 @@ export interface FieldChange {
     proposed_value: unknown;
 }
 
-export declare function forecastObjects(objectType: string, body: Omit<AggregateBody, 'group_by' | 'period'> & {
+export interface ForecastBody extends AggregateSet {
+    aggregate: string;
+    field?: string;
     group_by: string;
     period: TimePeriod;
-}): Promise<ForecastResult>;
+}
+
+export declare function forecastObjects(objectType: string, body: ForecastBody): Promise<ForecastResult>;
 
 export interface ForecastResult {
     history: Record<string, number>;
