@@ -25,6 +25,7 @@ const mockedApply = vi.mocked(applyOntologyDescriptions)
 const DESCRIPTIONS: OntologyDescriptions = {
   digest: 'd1',
   label_enforcement: false,
+  data_types: ['string', 'integer'],
   types: {
     Customer: {
       display_name: 'Customer',

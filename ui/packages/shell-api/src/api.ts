@@ -2338,6 +2338,8 @@ export interface OntologyDescriptions {
   types: Record<string, DescribedType>
   /** Whether labels decide who reads a field here, or only say what it holds. */
   label_enforcement: boolean
+  /** The data types a new field may be given: the mirror's own list. */
+  data_types: string[]
 }
 
 /** One key changed. field null describes the type; value null removes the key. */
@@ -2425,10 +2427,62 @@ export async function applyLabels(
   return (await response.json()) as LabelEditResult
 }
 
+/** A data field to add to a type. Its data type is chosen here and never changed
+ *  here: the lake cannot change a column's type in place. */
+export interface NewField {
+  object_type: string
+  name: string
+  data_type?: string | null
+  display_name?: string | null
+  description?: string | null
+  labels?: string[]
+  /** The source column, when it is not named like the field. */
+  column?: string | null
+}
+
+/** What adding one field means beyond the lines that change. */
+export interface NewFieldConsequence {
+  object_type: string
+  field: string
+  /** The source column it reads. */
+  column: string
+  /** Null when the source cannot be asked, or did not answer. */
+  source_has_column: boolean | null
+}
+
+export interface NewFieldsPreview {
+  diff: string[]
+  impact: AccessImpact
+  /** Someone could read more afterwards, so it waits for a role manager. */
+  needs_approval: boolean
+  fields: NewFieldConsequence[]
+}
+
+export async function previewNewFields(digest: string, fields: NewField[]): Promise<NewFieldsPreview> {
+  const response = await apiFetchOrThrow('/admin/ontology/fields/preview', {
+    method: 'POST',
+    body: JSON.stringify({ digest, fields }),
+  })
+  return (await response.json()) as NewFieldsPreview
+}
+
+/** Adds the fields now, or -- when anyone could read more -- proposes them, with the reason. */
+export async function applyNewFields(
+  digest: string,
+  fields: NewField[],
+  reason: string | null,
+): Promise<LabelEditResult> {
+  const response = await apiFetchOrThrow('/admin/ontology/fields', {
+    method: 'PUT',
+    body: JSON.stringify({ digest, fields, reason }),
+  })
+  return (await response.json()) as LabelEditResult
+}
+
 /** A configuration change waiting for a role manager who did not propose it. */
 export interface ConfigProposal {
   proposal_id: string
-  kind: 'labels' | 'restore'
+  kind: 'labels' | 'restore' | 'shape'
   summary: string
   reason: string
   proposed_by: string

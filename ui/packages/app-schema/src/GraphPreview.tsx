@@ -76,6 +76,7 @@ interface GraphPreviewProps {
   onDescribe?: (objectType: string) => void
   /** Its fields' access labels (DEV_UI 13.7): present only for manage:deployment. */
   onLabels?: (objectType: string) => void
+  onAddField?: (objectType: string) => void
 }
 
 export default function GraphPreview({
@@ -87,6 +88,7 @@ export default function GraphPreview({
   onSelect,
   onDescribe,
   onLabels,
+  onAddField,
 }: GraphPreviewProps) {
   // One control, rendered by every branch. A panel that opens and
   // cannot be closed leaves part of the graph covered with no way to
@@ -248,6 +250,11 @@ export default function GraphPreview({
       {onLabels && (
         <Button minimal small icon="tag" onClick={() => onLabels(selection.name)}>
           Labels
+        </Button>
+      )}
+      {onAddField && (
+        <Button minimal small icon="add" onClick={() => onAddField(selection.name)}>
+          Add field
         </Button>
       )}
     </div>

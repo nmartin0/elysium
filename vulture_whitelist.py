@@ -579,6 +579,10 @@ config_proposals_route
 approve_config_proposal_route
 reject_config_proposal_route
 needs_approval  # LabelPreviewResponse.needs_approval, read by pydantic
+# The ontology's shape, adding a field: routes reached by HTTP.
+preview_new_fields_route
+apply_new_fields_route
+source_has_column  # NewFieldConsequence, read by the browser
 # DEV_UI 13.7, putting an earlier version back: routes reached by HTTP.
 preview_restore_route
 restore_route

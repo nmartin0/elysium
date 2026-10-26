@@ -3,8 +3,9 @@
 WHICH ONES WAIT. A change to the configuration files that would let
 anyone read, know of or run something they could not before -- asked of
 the permission code, not of the edit's direction
-(core/role_impact.config_access_impact). Two kinds arrive here: a field's
-access labels (`classification:`), and an earlier version put back.
+(core/role_impact.config_access_impact). Three kinds arrive here: a field's
+access labels (`classification:`), an earlier version put back, and a new
+field (which cannot widen access on its own, but is asked all the same).
 Everything else applies at once.
 
 WHO DECIDES. A holder of manage:roles who is not the proposer: the
@@ -38,7 +39,8 @@ from core.sqlite_connection import connection_with_schema
 
 LABELS = "labels"
 RESTORE = "restore"
-KINDS = (LABELS, RESTORE)
+SHAPE = "shape"
+KINDS = (LABELS, RESTORE, SHAPE)
 
 #: The most a reason may say. It is read by a person deciding.
 MAX_REASON = 500

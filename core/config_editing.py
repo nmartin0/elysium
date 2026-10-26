@@ -39,6 +39,7 @@ undo" with a validation in front.
 
 import difflib
 import hashlib
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from ruamel.yaml import YAML
@@ -458,7 +459,7 @@ def _render_text(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
-def _meaning_checked(edited: str, expected) -> str:
+def _meaning_checked(edited: str, expected, filename: str = "") -> str:
     """`edited`, if it means exactly `expected`; refused otherwise. The
     net under every line edit: one that went wrong is caught here, never
     written."""
@@ -468,8 +469,9 @@ def _meaning_checked(edited: str, expected) -> str:
         means = plain_yaml.safe_load(edited)
     except plain_yaml.YAMLError:
         means = None
+    file = filename or ONTOLOGY_FILE
     if means != expected:
-        raise ConfigEditError(f"That change could not be made without disturbing the rest of {ONTOLOGY_FILE}.")
+        raise ConfigEditError(f"That change could not be made without disturbing the rest of {file}.")
     return edited
 
 
@@ -553,14 +555,31 @@ def _render_labels(labels: list[str]) -> str:
     return labels[0] if len(labels) == 1 else "[" + ", ".join(labels) + "]"
 
 
+def _checked_labels(where: str, labels) -> list[str]:
+    """A field's labels, as the loader will judge them: a list of
+    lowercase identifier-like words, without repeats."""
+    import re
+
+    if not isinstance(labels, list) or not all(isinstance(label, str) for label in labels):
+        raise ConfigEditError(f"{where}'s labels are a list of words.")
+    labels = list(dict.fromkeys(label.strip() for label in labels))
+    if len(labels) > MAX_LABELS_PER_FIELD:
+        raise ConfigEditError(f"{where} carries at most {MAX_LABELS_PER_FIELD} labels.")
+    for label in labels:
+        if not re.match(r"^[a-z][a-z0-9_]*$", label):
+            raise ConfigEditError(
+                f"{label!r} is not a label: lowercase letters, digits and underscores, "
+                f"starting with a letter -- 'pii', not 'PII' -- so one label cannot be "
+                f"spelled three ways.")
+    return labels
+
+
 def apply_labels(text: str, changes: list) -> str:
     """ontology_schema.yaml with these fields' labels set. Each change is
     {object_type, field, labels}; an empty list removes the key. The
     label's SHAPE is checked here as the loader checks it -- lowercase,
     identifier-like -- and the loader judges the rest (a grant naming a
     label no field carries any more is refused at load)."""
-    import re
-
     import yaml as plain_yaml
 
     if not isinstance(changes, list) or not changes:
@@ -571,8 +590,6 @@ def apply_labels(text: str, changes: list) -> str:
     types = expected.get("object_types") if isinstance(expected, dict) else None
     if not isinstance(types, dict):
         raise ConfigEditError(f"{ONTOLOGY_FILE} declares no object_types.")
-    shape = re.compile(r"^[a-z][a-z0-9_]*$")
-
     edited, seen = text, set()
     for change in changes:
         object_type, field_name, labels = change.get("object_type"), change.get("field"), change.get("labels")
@@ -586,17 +603,7 @@ def apply_labels(text: str, changes: list) -> str:
         if (object_type, field_name) in seen:
             raise ConfigEditError(f"{where}'s labels are changed twice.")
         seen.add((object_type, field_name))
-        if not isinstance(labels, list) or not all(isinstance(label, str) for label in labels):
-            raise ConfigEditError(f"{where}'s labels are a list of words.")
-        labels = list(dict.fromkeys(label.strip() for label in labels))
-        if len(labels) > MAX_LABELS_PER_FIELD:
-            raise ConfigEditError(f"{where} carries at most {MAX_LABELS_PER_FIELD} labels.")
-        for label in labels:
-            if not shape.match(label):
-                raise ConfigEditError(
-                    f"{label!r} is not a label: lowercase letters, digits and underscores, "
-                    f"starting with a letter -- 'pii', not 'PII' -- so one label cannot be "
-                    f"spelled three ways.")
+        labels = _checked_labels(where, labels)
         path = ["object_types", object_type, "fields", field_name, "classification"]
         edited = _edit_line(edited, path, _render_labels(labels) if labels else None,
                             ONTOLOGY_FILE, after=("type", "data_type", *FIELD_KEYS))
@@ -606,6 +613,189 @@ def apply_labels(text: str, changes: list) -> str:
             declared.pop("classification", None)
 
     return _meaning_checked(edited, expected)
+
+
+# ---------------------------------------------------------------------------
+# NEW FIELDS (the ontology's shape, designed and agreed 26 October): the
+# first of three operations -- add a field, add a type, add a link. A
+# request is a list of OPERATIONS, never free YAML: this renders the
+# lines, keeps every comment, and the loader judges the result before
+# it lands, as for descriptions.
+#
+# TWO FILES, ONE CHANGE. A field's data lives in the source column of
+# its own name unless it says otherwise, and `column:` is a BINDING --
+# source_bindings.yaml when the deployment has one, the field's own
+# block when it does not (the loader's old single-file form).
+#
+# WHAT THIS CANNOT DO, on purpose: remove a field (gold drops the
+# column, and actions, grants and links may still name it) and change
+# an existing field's data type (Iceberg refuses it in place; the
+# remedy is `run_sync --rebuild`, which a person runs knowingly). A
+# type is chosen only when the field is born.
+# ---------------------------------------------------------------------------
+
+MAX_NEW_FIELDS = 20
+BINDINGS_FILE = "source_bindings.yaml"
+NEW_FIELD_KEYS = ("object_type", "name", "data_type", "display_name", "description", "labels", "column")
+
+
+def _last_line(lines: list[str], key_line: int) -> int:
+    """The last line of content belonging to the key on `key_line`."""
+    key_indent = _indent_of(lines[key_line])
+    last = key_line
+    for index in range(key_line + 1, len(lines)):
+        if _is_content(lines[index]):
+            if _indent_of(lines[index]) <= key_indent:
+                break
+            last = index
+    return last
+
+
+def _child_indent(lines: list[str], key_line: int) -> str:
+    """How deep the key's children sit: as its first child does, else
+    two further than the key."""
+    key_indent = _indent_of(lines[key_line])
+    for index in range(key_line + 1, len(lines)):
+        if _is_content(lines[index]):
+            if _indent_of(lines[index]) > key_indent:
+                return " " * _indent_of(lines[index])
+            break
+    return " " * (key_indent + 2)
+
+
+def _append_child(text: str, parents: list[str], name: str, body: list[str]) -> str:
+    """`name:` and its `body` lines, added as the LAST child of the block
+    at `parents` -- after that block's last line of content, so the
+    comments that follow it stay where they were. The innermost parent is
+    created when it is missing (a type with no bound fields has no
+    `fields:` in the bindings); any other must exist."""
+    lines = text.splitlines(keepends=True)
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+    node, key_line = _yaml().load(text) or CommentedMap(), None
+    for position, part in enumerate(parents):
+        child = node.get(part) if isinstance(node, CommentedMap) else None
+        if child is None and part not in (node if isinstance(node, CommentedMap) else {}):
+            if position != len(parents) - 1 or key_line is None:
+                raise ConfigEditError(f"{'.'.join(parents[:position + 1])} is not in the file.")
+            at = _last_line(lines, key_line)
+            lines.insert(at + 1, f"{_child_indent(lines, key_line)}{part}:\n")
+            key_line, node = at + 1, CommentedMap()
+            break
+        if not isinstance(child, CommentedMap):
+            raise ConfigEditError(f"{'.'.join(parents[:position + 1])} is not a block of keys.")
+        key_line, node = node.lc.key(part)[0], child
+    if key_line is None:
+        raise ConfigEditError("Nowhere to add it.")
+    indent = _child_indent(lines, key_line)
+    block = [f"{indent}{name}:\n"] + [f"{indent}  {line}\n" for line in body]
+    at = _last_line(lines, key_line)
+    lines[at + 1:at + 1] = block
+    return "".join(lines)
+
+
+def _checked_column(where: str, column) -> "str | None":
+    if column is None:
+        return None
+    if not isinstance(column, str) or not column.strip():
+        raise ConfigEditError(f"{where}'s source column is a name.")
+    column = column.strip()
+    if len(column) > 128 or any(ord(c) < 32 or ord(c) == 127 for c in column):
+        raise ConfigEditError(f"{where}'s source column is one line of at most 128 characters.")
+    return column
+
+
+def apply_new_fields(ontology: str, bindings: "str | None", additions: list,
+                     data_types: "Iterable[str]") -> tuple[str, "str | None"]:
+    """(ontology_schema.yaml, source_bindings.yaml) with these data
+    fields added. Each addition is {object_type, name, data_type,
+    display_name, description, labels, column}, all but the first two
+    optional. `bindings` None means the deployment keeps its bindings in
+    the ontology file, and `column` goes there. `data_types` is the list
+    a field may be given -- the mirror's, which the caller holds: this
+    module does not import the ontology.
+
+    Refuses a type that does not exist, a name that is taken (a field or
+    the type's own id), a data type off the list, and any result that
+    does not mean exactly the old files with these fields added."""
+    import re
+
+    import yaml as plain_yaml
+
+    data_types = tuple(data_types)
+    if not isinstance(additions, list) or not additions:
+        raise ConfigEditError("Nothing to add.")
+    if len(additions) > MAX_NEW_FIELDS:
+        raise ConfigEditError(f"At most {MAX_NEW_FIELDS} fields at once.")
+    expected = plain_yaml.safe_load(ontology) or {}
+    types = expected.get("object_types") if isinstance(expected, dict) else None
+    if not isinstance(types, dict):
+        raise ConfigEditError(f"{ONTOLOGY_FILE} declares no object_types.")
+    expected_bindings: dict = (plain_yaml.safe_load(bindings) or {}) if bindings is not None else {}
+
+    edited, edited_bindings = ontology, bindings or ""
+    for addition in additions:
+        unknown = sorted(set(addition) - set(NEW_FIELD_KEYS))
+        if unknown:
+            raise ConfigEditError(f"{', '.join(unknown)} cannot be set on a new field here.")
+        object_type, name = addition.get("object_type"), addition.get("name")
+        type_def = types.get(object_type) if isinstance(object_type, str) else None
+        if not isinstance(type_def, dict):
+            raise ConfigEditError(f"There is no object type {object_type!r}.")
+        if not isinstance(name, str) or not re.match(r"^[a-z][a-z0-9_]{0,62}$", name):
+            raise ConfigEditError(
+                f"{name!r} is not a field name: lowercase letters, digits and underscores, "
+                f"starting with a letter.")
+        where = f"{object_type}.{name}"
+        fields = type_def.get("fields")
+        if not isinstance(fields, dict):
+            raise ConfigEditError(f"{object_type} has no `fields:` block to add to.")
+        if name in fields or name == type_def.get("id_field"):
+            raise ConfigEditError(f"{where} is already a field of {object_type}.")
+
+        data_type = addition.get("data_type") or "string"
+        if data_type not in data_types:
+            raise ConfigEditError(f"{where}'s data type is one of {', '.join(data_types)}.")
+        declared: dict = {"type": "data"}
+        body = ["type: data"]
+        if data_type != "string":
+            declared["data_type"] = data_type
+            body.append(f"data_type: {data_type}")
+        for key in ("display_name", "description"):
+            value = _checked_text(where, key, addition.get(key), FIELD_KEYS[key])
+            if value is not None:
+                declared[key] = value
+                body.append(f"{key}: {_render_text(value)}")
+        labels = _checked_labels(where, addition.get("labels") or [])
+        if labels:
+            declared["classification"] = labels[0] if len(labels) == 1 else labels
+            body.append(f"classification: {_render_labels(labels)}")
+        column = _checked_column(where, addition.get("column"))
+        if column is not None and column == name:
+            column = None
+        if column is not None and bindings is None:
+            declared["column"] = column
+            body.append(f"column: {_render_text(column)}")
+
+        edited = _append_child(edited, ["object_types", object_type, "fields"], name, body)
+        # Recorded in the expected texts AND in `fields`, so a second
+        # addition of the same name finds it taken.
+        fields[name] = declared
+        if column is not None and bindings is not None:
+            if object_type not in (expected_bindings.get("object_types") or {}):
+                raise ConfigEditError(f"{BINDINGS_FILE} does not bind {object_type}.")
+            edited_bindings = _append_child(
+                edited_bindings, ["object_types", object_type, "fields"], name,
+                [f"column: {_render_text(column)}"])
+            bound = expected_bindings["object_types"][object_type]
+            bound.setdefault("fields", {})[name] = {"column": column}
+
+    edited = _meaning_checked(edited, expected)
+    if bindings is None:
+        return edited, None
+    if edited_bindings != bindings:
+        edited_bindings = _meaning_checked(edited_bindings, expected_bindings, BINDINGS_FILE)
+    return edited, edited_bindings
 
 
 # ---------------------------------------------------------------------------

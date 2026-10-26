@@ -13,8 +13,8 @@ Anything else either exports is internal, and may change without notice.
 The manifest, `activate()`, host values, styles and the add-on server are
 described in [MODULE_API.md](MODULE_API.md).
 
-194 names imported, from 38 entry points, by 9 modules;
-247 declarations public in all.
+202 names imported, from 40 entry points, by 9 modules;
+259 declarations public in all.
 
 ## `@elysium/shell-api/api`
 
@@ -69,6 +69,8 @@ export declare class ApiError extends Error {
 }
 
 export declare function applyLabels(digest: string, changes: LabelChange[], reason: string | null): Promise<LabelEditResult>;
+
+export declare function applyNewFields(digest: string, fields: NewField[], reason: string | null): Promise<LabelEditResult>;
 
 export declare function applyOntologyDescriptions(digest: string, changes: DescriptionChange[]): Promise<{
     diff: string[];
@@ -513,6 +515,30 @@ export interface ModulePermission {
     description: string;
 }
 
+export interface NewField {
+    object_type: string;
+    name: string;
+    data_type?: string | null;
+    display_name?: string | null;
+    description?: string | null;
+    labels?: string[];
+    column?: string | null;
+}
+
+export interface NewFieldConsequence {
+    object_type: string;
+    field: string;
+    column: string;
+    source_has_column: boolean | null;
+}
+
+export interface NewFieldsPreview {
+    diff: string[];
+    impact: AccessImpact;
+    needs_approval: boolean;
+    fields: NewFieldConsequence[];
+}
+
 export interface Notification {
     notification_id: string;
     created_at: string;
@@ -572,6 +598,7 @@ export interface OntologyDescriptions {
     digest: string;
     types: Record<string, DescribedType>;
     label_enforcement: boolean;
+    data_types: string[];
 }
 
 export interface PendingFor {
@@ -629,6 +656,8 @@ export interface PredictionProposal {
 }
 
 export declare function previewLabels(digest: string, changes: LabelChange[]): Promise<LabelPreview>;
+
+export declare function previewNewFields(digest: string, fields: NewField[]): Promise<NewFieldsPreview>;
 
 export declare function previewOntologyDescriptions(digest: string, changes: DescriptionChange[]): Promise<string[]>;
 
@@ -1199,6 +1228,20 @@ interface TableSkeletonProps {
 }
 ```
 
+## `@elysium/shell-api/components/TimeChart`
+
+```ts
+export default function TimeChart({ series, grain, axisNames, height, ariaLabel }: TimeChartProps): import("react").JSX.Element;
+
+export interface TimeChartProps {
+    series: TimeSeries[];
+    grain?: TimeChartOptions['grain'];
+    axisNames?: TimeChartOptions['axisNames'];
+    height?: number;
+    ariaLabel: string;
+}
+```
+
 ## `@elysium/shell-api/components/ViewSelector`
 
 ```ts
@@ -1277,6 +1320,44 @@ export declare function useChangedSince(objectType: string | null): {
     changed: boolean;
     acknowledge: () => void;
 };
+```
+
+## `@elysium/shell-api/timeChart`
+
+```ts
+export declare function seriesFromRows(result: AggregateResult, groupBy: string, measures: {
+    name: string;
+    label: string;
+    axis?: 'left' | 'right';
+}[]): TimeSeries[];
+
+export interface TimeChartOptions {
+    colors: readonly string[];
+    grain?: TimeGrain;
+    axisNames?: {
+        left?: string;
+        right?: string;
+    };
+}
+
+export type TimeGrain = 'day' | 'week' | 'month';
+
+export interface TimePoint {
+    at: string;
+    value: number | null;
+    low?: number;
+    high?: number;
+    partial?: boolean;
+}
+
+export interface TimeSeries {
+    name: string;
+    points: TimePoint[];
+    dashed?: boolean;
+    axis?: 'left' | 'right';
+    band?: string;
+    sameColourAs?: string;
+}
 ```
 
 ## `@elysium/shell-api/types`

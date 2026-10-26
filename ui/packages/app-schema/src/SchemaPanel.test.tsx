@@ -9,11 +9,17 @@ import SchemaPanel from './SchemaPanel'
 // updating state after a test has finished. WhoCanSee.test.tsx tests it.
 // DESCRIBING (DEV_UI 13.7) is fetched on mount the same way, and a test
 // that is about it says what the server answers.
-const describing = vi.hoisted(() => ({ answer: (): Promise<unknown> => new Promise(() => {}) }))
+const describing = vi.hoisted(() => ({
+  answer: (): Promise<unknown> => new Promise(() => {}),
+  preview: (): Promise<unknown> => new Promise(() => {}),
+  apply: (): Promise<unknown> => new Promise(() => {}),
+}))
 vi.mock('@elysium/shell-api/api', async (original) => ({
   ...(await original<typeof import('@elysium/shell-api/api')>()),
   getSchemaAccess: () => new Promise(() => {}),
   getOntologyDescriptions: () => describing.answer(),
+  previewNewFields: () => describing.preview(),
+  applyNewFields: () => describing.apply(),
 }))
 
 /** The panel keeps its tab and filter in the URL, so it needs a
@@ -418,6 +424,7 @@ describe('describing a type (DEV_UI 13.7)', () => {
         fields: {},
       },
     },
+    data_types: ['string', 'integer'],
   }
 
   it('offers Describe to someone the server lets read the descriptions, and opens it', async () => {
@@ -441,6 +448,70 @@ describe('describing a type (DEV_UI 13.7)', () => {
 
     await waitFor(() => expect(refused).toBe(true))
     expect(screen.queryByRole('button', { name: 'Describe' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add field' })).not.toBeInTheDocument()
     describing.answer = () => new Promise(() => {})
+  })
+})
+
+describe('adding a field to a type', () => {
+  const DESCRIBED = {
+    digest: 'd1',
+    types: {},
+    data_types: ['string', 'integer'],
+    label_enforcement: false,
+  }
+  const PREVIEW = {
+    diff: ['+      nickname:'],
+    impact: { widens: false, roles: [] },
+    needs_approval: false,
+    fields: [{ object_type: 'Customer', field: 'nickname', column: 'nickname', source_has_column: true }],
+  }
+
+  async function addNickname() {
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+    fireEvent.click(await screen.findByRole('button', { name: 'Add field' }))
+    fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'nickname' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }))
+    return await screen.findByRole('button', { name: 'Apply and reload' })
+  }
+
+  it('opens the form for the type whose card it was on', async () => {
+    describing.answer = () => Promise.resolve(DESCRIBED)
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add field' }))
+
+    expect(await screen.findByRole('dialog', { name: 'Add a field to Customer' })).toBeInTheDocument()
+  })
+
+  it('says the deployment reloaded, once it is applied', async () => {
+    describing.answer = () => Promise.resolve(DESCRIBED)
+    describing.preview = () => Promise.resolve(PREVIEW)
+    describing.apply = () => Promise.resolve({ status: 'applied', diff: [], to_generation: 12 })
+
+    // The click is in the test, not the helper: its result must arrive
+    // while a findBy is waiting, or React reports it outside act().
+    fireEvent.click(await addNickname())
+
+    expect(await screen.findByText(/reloaded as generation 12/)).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('says it is waiting, when a grant already names the field', async () => {
+    describing.answer = () => Promise.resolve(DESCRIBED)
+    describing.preview = () => Promise.resolve({ ...PREVIEW, needs_approval: true })
+    describing.apply = () => Promise.resolve({ status: 'waiting', diff: [], proposal_id: 'p1' })
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+    fireEvent.click(await screen.findByRole('button', { name: 'Add field' }))
+    fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'nickname' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }))
+    fireEvent.change(await screen.findByLabelText(/Why/), { target: { value: 'We hold nicknames.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Propose for approval' }))
+
+    expect(await screen.findByText('Waiting for approval')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })

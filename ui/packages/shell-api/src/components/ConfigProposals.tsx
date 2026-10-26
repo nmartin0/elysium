@@ -1,7 +1,7 @@
 /**
  * Configuration changes waiting for a second person (decided 16
- * October): access labels that would let anyone read more, and earlier
- * versions put back that would.
+ * October): access labels that would let anyone read more, earlier
+ * versions put back that would, and new fields a grant already names.
  *
  * FOR THE APPROVER, everything they are agreeing to in one card: what it
  * is, who asked and WHY (in their words), what it does to every role it
@@ -33,7 +33,7 @@ import { ConfigImpact } from '@elysium/shell-api/components/RoleImpact'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
 import { useEffect, useRef, useState } from 'react'
 
-const KIND = { labels: 'access labels', restore: 'earlier version' } as const
+const KIND = { labels: 'access labels', restore: 'earlier version', shape: 'new field' } as const
 
 export default function ConfigProposals({
   onSessionExpired,

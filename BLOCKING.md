@@ -1343,8 +1343,31 @@ one Inbox. Built so far, each checked in a real browser:
   data type going back (the lake cannot follow without a rebuild), a
   file that would have to be added or deleted, or nothing to do. Roles
   in the role store are in no version, and it says so.
-- STILL TO DESIGN: the ontology's shape (a new type or field, a data
-  type), which also touches bindings and the mirror.
+- EDITING THE ONTOLOGY'S SHAPE, designed and agreed 26 October, built
+  in pieces. The request is a list of OPERATIONS (add a field, add a
+  type, add a link), never free YAML: the server renders the lines,
+  keeps every comment, and the loader judges the result before it lands,
+  as 13.7's descriptions do. A change touching both ontology_schema.yaml
+  and source_bindings.yaml is one generation, so history and "put this
+  version back" need no change. What the preview says besides the diff:
+  which gold tables rebuild at the next sync (a changed column set
+  rebuilds the type's gold table from silver; publication tags restart
+  and the first build records no history), whether the source column
+  exists (asked of the adapter where it can say -- SQL only), and that
+  NOBODY CAN READ A NEW FIELD OR TYPE until policy.yaml grants it, which
+  is why adding is access-neutral. Applied at once when the permission
+  code (core/role_impact.config_access_impact) says nothing widens,
+  otherwise queued for a second person like a label. Decided: grants
+  stay on the Roles screen (a pointer after the change, no bundled
+  grant); NO REMOVAL in the first version (gold drops the column, and
+  actions, grants and links may still name it); an existing field's
+  data type is refused with the `run_sync --rebuild` command spelled
+  out, as "put this version back" already does -- a type is chosen only
+  when a field is created. A field declared later is not empty history:
+  bronze keeps every column the source has. Order: add a field (built),
+  then add a type with its binding picked from the source, then add a
+  link. Still to check: whether "put this version back" refuses
+  dropping a field or type that holds data.
 
 THE NODE NOW CARRIES 14.5's COUNT AND HEALTH, and properties at close
 zoom (16 October): how many objects of the type the reader can see

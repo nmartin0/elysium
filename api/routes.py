@@ -2058,6 +2058,9 @@ class OntologyDescriptionsResponse(BaseModel):
     # Whether labels decide who reads a field here, or only say what it
     # holds -- the editor says which, because it changes what a label is.
     label_enforcement: bool = False
+    # The data types a new field may be given -- the mirror's own list,
+    # so the form offers what the server will accept and nothing else.
+    data_types: list[str] = []
 
 
 class DescriptionChange(BaseModel):
@@ -2117,11 +2120,13 @@ def ontology_descriptions_route(request: Request,
     they are about to describe. Names and descriptions, never storage.
     """
     from core.config_editing import ONTOLOGY_FILE, current_descriptions, digest
+    from core.ontology.field_types import FIELD_DATA_TYPES
 
     _require_manage_deployment(request, current_user)
     text = (request.app.state.runtime_paths.config_dir / ONTOLOGY_FILE).read_text()
     return {"digest": digest(text), "types": current_descriptions(text),
-            "label_enforcement": bool(_generation(request).config.label_enforcement)}
+            "label_enforcement": bool(_generation(request).config.label_enforcement),
+            "data_types": list(FIELD_DATA_TYPES)}
 
 
 @router.post("/admin/ontology/descriptions/preview", dependencies=[Depends(_no_store)],
@@ -2277,6 +2282,153 @@ def apply_labels_route(body: LabelEditRequest, request: Request,
             detail=f"proposal {proposal_id}: {reason}"[:500])
         return {"status": "waiting", "diff": diff(current, proposed, ONTOLOGY_FILE),
                 "proposal_id": proposal_id}
+
+
+# ---- New fields (the ontology's shape, designed and agreed 26 October) ----
+
+class NewFieldRequest(BaseModel):
+    object_type: str
+    name: str
+    # One of the data types the mirror knows; absent is "string". Chosen
+    # here and never changed here: Iceberg will not change a column's
+    # type in place.
+    data_type: str | None = None
+    display_name: str | None = None
+    description: str | None = None
+    labels: list[str] = []
+    # The source column when it is not named like the field.
+    column: str | None = None
+
+
+class NewFieldsRequest(BaseModel):
+    digest: str
+    fields: list[NewFieldRequest]
+    # Required only if the change would widen access, when it waits.
+    reason: str | None = None
+
+
+class NewFieldConsequence(BaseModel):
+    object_type: str
+    field: str
+    column: str
+    # Whether the source table has that column: null when the source
+    # cannot be asked (only SQL sources can) or did not answer.
+    source_has_column: bool | None = None
+
+
+class NewFieldsPreviewResponse(BaseModel):
+    diff: list[str]
+    impact: dict
+    needs_approval: bool
+    fields: list[NewFieldConsequence]
+
+
+class NewFieldsResponse(BaseModel):
+    # "applied", or "waiting" for a second person.
+    status: str
+    diff: list[str]
+    to_generation: int | None = None
+    proposal_id: str | None = None
+
+
+def _proposed_new_fields(request: Request, body: NewFieldsRequest) -> "dict[str, tuple[str, str]]":
+    """{filename: (now, proposed)} for the files these fields change."""
+    from core.config_editing import BINDINGS_FILE, ONTOLOGY_FILE, ConfigEditError, apply_new_fields
+    from core.ontology.field_types import FIELD_DATA_TYPES
+
+    current = _ontology_as_read(request, body.digest)
+    bindings_path = request.app.state.runtime_paths.config_dir / BINDINGS_FILE
+    bindings = bindings_path.read_text() if bindings_path.exists() else None
+    try:
+        proposed, proposed_bindings = apply_new_fields(
+            current, bindings, [f.model_dump(exclude_none=True) for f in body.fields], FIELD_DATA_TYPES)
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    files = {ONTOLOGY_FILE: (current, proposed)}
+    if bindings is not None and proposed_bindings != bindings:
+        files[BINDINGS_FILE] = (bindings, proposed_bindings or "")
+    return files
+
+
+def _source_has_column(request: Request, object_type: str, column: str) -> "bool | None":
+    """Whether the type's source table has this column, or None when the
+    source cannot say. Asked of the adapter the way the sync asks it, and
+    an adapter that does not know, or does not answer, is not a fault
+    here: the preview says "not checked"."""
+    # THE SOURCE-SHAPED SCHEMA AND THE SOURCE ADAPTERS, not the mediator's:
+    # when reads come from gold the mediator's storage says "gold", which
+    # has every column by construction and answers nothing about the source.
+    storage = (_generation(request).config.schema.get(object_type) or {}).get("storage") or {}
+    adapter = live_source_adapters(request).get(storage.get("silo"))
+    probe = getattr(adapter, "columns_present", None)
+    if probe is None or not storage.get("table"):
+        return None
+    try:
+        present = probe(storage["table"])
+    except Exception:  # noqa: BLE001 - a source that is down is not this change's fault
+        return None
+    return column in present if present else None
+
+
+@router.post("/admin/ontology/fields/preview", dependencies=[Depends(_no_store)],
+             response_model=NewFieldsPreviewResponse)
+def preview_new_fields_route(body: NewFieldsRequest, request: Request,
+                             current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The lines that would be added, what that does to access (nothing,
+    unless a grant already names the field), whether the source has the
+    column, and whether it would wait for a second person. Nothing written."""
+    from core.config_editing import shown_diff
+
+    _require_manage_deployment(request, current_user)
+    files = _proposed_new_fields(request, body)
+    _candidate, impact = _access_impact(request, {name: proposed for name, (_, proposed) in files.items()})
+    return {
+        "diff": [line for name, (before, after) in files.items() for line in shown_diff(name, before, after)],
+        "impact": impact, "needs_approval": impact["widens"],
+        "fields": [{"object_type": f.object_type, "field": f.name, "column": f.column or f.name,
+                    "source_has_column": _source_has_column(request, f.object_type, f.column or f.name)}
+                   for f in body.fields],
+    }
+
+
+@router.put("/admin/ontology/fields", dependencies=[Depends(_no_store)],
+            response_model=NewFieldsResponse)
+def apply_new_fields_route(body: NewFieldsRequest, request: Request,
+                           current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Adds the fields now, or -- if anyone could read more afterwards --
+    proposes them for a holder of manage:roles to approve.
+
+    A NEW FIELD CANNOT NORMALLY WIDEN ACCESS: nobody reads a field that
+    no grant names, so it applies at once and the screen says that nobody
+    can read it yet. The question is still asked of the permission code
+    rather than answered from that reasoning, because a policy may
+    already grant a field that did not exist when it was written.
+    """
+    from core.config_editing import digest, shown_diff
+    from core.config_proposals import SHAPE
+
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        files = _proposed_new_fields(request, body)
+        proposed = {name: text for name, (_, text) in files.items()}
+        _candidate, impact = _access_impact(request, proposed)
+        changes = {f"{f.object_type}.{f.name}": f.data_type or "string" for f in body.fields}
+        if not impact["widens"]:
+            written = _write_config_files(request, current_user, files, changes)
+            return {"status": "applied", "diff": written["diff"], "to_generation": written["to_generation"]}
+
+        reason = _reason(body.reason)
+        summary = "; ".join(f"new field {key} ({kind})" for key, kind in changes.items())
+        proposal_id = _proposals(request).propose(
+            SHAPE, summary, proposed, {name: digest(before) for name, (before, _) in files.items()},
+            reason, current_user.user_id)
+        audit = _generation(request).mediator.audit_log
+        for name, (before, after) in files.items():
+            audit.log_config_edit(current_user.user_id, "proposed", name, changes, digest(before),
+                                  digest(after), detail=f"proposal {proposal_id}: {reason}"[:500])
+        return {"status": "waiting", "proposal_id": proposal_id,
+                "diff": [line for name, (before, after) in files.items()
+                         for line in shown_diff(name, before, after)]}
 
 
 def _reason(text: "str | None") -> str:

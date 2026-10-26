@@ -74,6 +74,23 @@ describe('GraphPreview -- an object type', () => {
   })
 })
 
+describe('GraphPreview -- adding a field', () => {
+  it('offers it for the selected type, to whoever may', () => {
+    const onAddField = vi.fn()
+    render(<GraphPreview {...props} onAddField={onAddField} selection={{ kind: 'object', name: 'Customer' }} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add field' }))
+
+    expect(onAddField).toHaveBeenCalledWith('Customer')
+  })
+
+  it('offers nothing to anyone else', () => {
+    render(<GraphPreview {...props} selection={{ kind: 'object', name: 'Customer' }} />)
+
+    expect(screen.queryByRole('button', { name: 'Add field' })).not.toBeInTheDocument()
+  })
+})
+
 describe('GraphPreview -- the actions on a type (DEV_UI 14.3)', () => {
   it('lists them, since the canvas carries only their count, and opens one here', () => {
     const onSelect = vi.fn()

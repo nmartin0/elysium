@@ -49,6 +49,7 @@ import Discover from './Discover'
 import { recordVisit } from './discoverStorage'
 import LinkTypes from './LinkTypes'
 import WhoCanSee from './WhoCanSee'
+import AddFields from './AddFields'
 import DescribeType from './DescribeType'
 import LabelFields from './LabelFields'
 import './SchemaPanel.css'
@@ -199,6 +200,7 @@ function ObjectTypeCard({
   access,
   onDescribe,
   onLabels,
+  onAddField,
   onOpenObjectType,
   onOpenLinkType,
 }: {
@@ -210,6 +212,8 @@ function ObjectTypeCard({
   onDescribe?: (objectType: string) => void
   /** Its fields' access labels: present only for manage:deployment. */
   onLabels?: (objectType: string) => void
+  /** Adding a field: present only for manage:deployment. */
+  onAddField?: (objectType: string) => void
   onOpenObjectType: (objectType: string) => void
   onOpenLinkType: (linkType: string) => void
 }) {
@@ -244,6 +248,11 @@ function ObjectTypeCard({
       {onLabels && (
         <Button small minimal icon="tag" onClick={() => onLabels(apiName)}>
           Labels
+        </Button>
+      )}
+      {onAddField && (
+        <Button small minimal icon="add" onClick={() => onAddField(apiName)}>
+          Add field
         </Button>
       )}
 
@@ -311,11 +320,13 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
   const { data: describable } = useFetchOnce<OntologyDescriptions>(getOntologyDescriptions, onSessionExpired)
   const [describing, setDescribing] = useState<string | null>(null)
   const [labelling, setLabelling] = useState<string | null>(null)
+  const [adding, setAdding] = useState<string | null>(null)
   // What the last edit did: applied as a generation, or waiting for a
   // second person (a label that lets anyone read more).
   const [edited, setEdited] = useState<{ generation: number } | 'waiting' | null>(null)
   const onDescribe = describable ? (objectType: string) => setDescribing(objectType) : undefined
   const onLabels = describable ? (objectType: string) => setLabelling(objectType) : undefined
+  const onAddField = describable ? (objectType: string) => setAdding(objectType) : undefined
   // NAVIGATION STATE LIVES IN THE URL, not in component state.
   //
   // Following a reference is one click -- a link's target, a link tag,
@@ -509,6 +520,22 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
           onSessionExpired={onSessionExpired}
         />
       )}
+      {adding !== null && (
+        <AddFields
+          objectType={adding}
+          shownAs={schema[adding]?.display_name ?? adding}
+          onClose={() => setAdding(null)}
+          onApplied={(generation) => {
+            setAdding(null)
+            setEdited({ generation })
+          }}
+          onProposed={() => {
+            setAdding(null)
+            setEdited('waiting')
+          }}
+          onSessionExpired={onSessionExpired}
+        />
+      )}
       {/* Three resource kinds, matching how the reference
           implementation splits its own ontology browser: object types,
           link types and action types are separately navigable rather
@@ -548,6 +575,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
                 access={access?.[apiName]}
                 onDescribe={onDescribe}
                 onLabels={onLabels}
+                onAddField={onAddField}
                 onOpenObjectType={openObjectType}
                 onOpenLinkType={openLinkType}
               />
@@ -574,6 +602,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
               actionTypes={graphActionTypes}
               onDescribe={onDescribe}
               onLabels={onLabels}
+              onAddField={onAddField}
               // An action is listed on its type (DEV_UI 14.3) and opens
               // here, in the same panel, rather than as a node.
               onSelect={(next) => setSelection(next)}

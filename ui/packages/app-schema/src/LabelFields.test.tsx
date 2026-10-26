@@ -27,6 +27,7 @@ const field = (labels: string[]) => ({ display_name: null, description: null, ki
 const DESCRIPTIONS: OntologyDescriptions = {
   digest: 'd1',
   label_enforcement: true,
+  data_types: ['string', 'integer'],
   types: {
     Customer: {
       display_name: 'Customer',
