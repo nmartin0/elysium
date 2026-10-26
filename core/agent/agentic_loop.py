@@ -322,7 +322,7 @@ def check_step_values(step: dict, features: AgentFeatures = OFF_FEATURES) -> Non
             raise ValueError(
                 f"{name} must be a single value, not {type(value).__name__}: {value!r}")
 
-    for key in ("object_id", "field_name", "link_field", "group_by", "aggregate"):
+    for key in ("object_id", "field_name", "link_field", "group_by", "aggregate", "period"):
         if key in step:
             scalar(key, step[key])
     for key in ("object_ids", "field_names"):
@@ -380,7 +380,8 @@ def _step_signature(step: dict):
     if step["step"] == "aggregate_object":
         return ("aggregate_object", step["object_type"],
                 _hashable_filter(step), step["aggregate"],
-                _hashable(step.get("field_name")), _hashable(step.get("group_by")))
+                _hashable(step.get("field_name")), _hashable(step.get("group_by")),
+                _hashable(step.get("period")))
     if step["step"] == "search_around":
         return ("search_around", step["object_type"], _hashable_filter(step),
                 _hashable(step["link_field"]))
@@ -1072,7 +1073,12 @@ class AgentLoop:
             aggregate=step["aggregate"],
             field_name=step.get("field_name"),
             outcome=outcome,
+            period=step.get("period"),
         )
+        if step.get("period") and isinstance(grouped, dict):
+            # Each period by the ISO date it starts on: a date is not a
+            # key JSON can write, and the model reads the result as JSON.
+            grouped = {start.isoformat(): total for start, total in grouped.items()}
         if outcome.scan_truncated:
             grouped = _what_a_truncated_aggregate_may_say(step, grouped)
         # AN UNGROUPED AGGREGATE IS ONE NUMBER, AND NOW LOOKS LIKE ONE.

@@ -37,6 +37,7 @@ from core.functions.interface import Function
 from core.llm.agent_features import OFF as OFF_FEATURES
 from core.llm.agent_features import AgentFeatures
 from core.ontology.schema import is_searchable_field
+from core.periods import PERIODS
 
 AGGREGATES = ("count", "sum", "avg", "min", "max")
 
@@ -132,6 +133,11 @@ def _steps_for_type(object_type: str, definition: dict, in_plan: bool = False) -
         # group_by "customer_id" because this once admitted it.
         aggregate["field_name"] = _enum(data)
         aggregate["group_by"] = _enum(data)
+        if any(str(fields[name].get("data_type") or "").partition("@")[0] in _TEMPORAL_TYPES
+               for name in data):
+            # A TOTAL PER PERIOD, for a type with a date to group by
+            # (BLOCKING.md item 3's time-series reads, part 3).
+            aggregate["period"] = _enum(PERIODS)
     steps.append(_step("aggregate_object", aggregate, ["object_type", "aggregate"]))
     if links:
         steps.append(_step("search_around", {"object_type": this_type,

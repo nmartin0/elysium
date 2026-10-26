@@ -1203,7 +1203,15 @@ the latest moment of each time bucket, as TimescaleDB's are; two at one
 moment told apart by id, so the answer does not depend on read order;
 refused outside time buckets, where there is no time to order by.
 
-**Blocked on:** nothing. Next: part 3, the assistant's period.
+PART 3 IS BUILT: the assistant's aggregate step takes a `period`
+(day, week or month) for a type with a date, so a trend is one step
+rather than one per period. The grammar offers it only where there is a
+date, the parser finishes on a period it does not know, each period is
+named by the ISO date it starts on (JSON cannot key on a date), and the
+account of the work says "per week". It takes a period, not a
+duration: the model has been given the three words it can use well.
+
+**Blocked on:** nothing. Next: part 4, several measures in one request.
 
 ## 4. Triggers: both questions answered and built, 16 October
 

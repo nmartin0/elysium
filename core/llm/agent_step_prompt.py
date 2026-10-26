@@ -634,7 +634,9 @@ To COUNT or TOTAL across many objects -- always prefer this over
 reading each object one at a time, which is slower and may run out of
 steps on a large set. Aggregate is one of: count, sum, avg, min, max.
 "field_name" is required for every aggregate except count, and
-"group_by" is optional:
+"group_by" is optional. With a date "group_by", "period" (day, week or
+month) gives one total per period -- for a trend, ask this once rather
+than once per period:
 
   {{"step": "aggregate_object", "object_type": "<type>", "filter": {{}},
    "aggregate": "sum", "field_name": "<field>", "group_by": "<field>"}}
@@ -957,6 +959,14 @@ def validated_step(parsed: dict, allow_handles: bool = False,
         for optional in ("field_name", "group_by"):
             if parsed.get(optional):
                 validated[optional] = parsed[optional]
+        if parsed.get("period"):
+            from core.periods import PERIODS
+
+            if parsed["period"] not in PERIODS:
+                logger.warning(f"malformed aggregate_object step (unknown period "
+                               f"{parsed['period']!r}), finishing")
+                return _finish_step(fallback=MALFORMED_STEP)
+            validated["period"] = parsed["period"]
         return validated
 
     if step == "search_around":

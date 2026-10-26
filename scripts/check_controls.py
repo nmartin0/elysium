@@ -6254,6 +6254,48 @@ CONTROLS = [
         new=' and not last.get("ran"):',
         tests=["sim/tests/test_panel.py::test_a_stop_someone_asked_for_tells_nobody_even_while_it_was_building"],
     ),
+    Control(
+        describes="ASSISTANT PERIOD: the grammar offers a period for a type with a date",
+        path="core/llm/step_schema.py",
+        old='            aggregate["period"] = _enum(PERIODS)',
+        new='            pass',
+        tests=["tests/unit/test_the_assistant_asks_by_period.py::TestTheGrammar"],
+    ),
+    Control(
+        describes="ASSISTANT PERIOD: the parser refuses a period that is not one of ours",
+        path="core/llm/agent_step_prompt.py",
+        old="            if parsed[\"period\"] not in PERIODS:",
+        new="            if False:",
+        tests=["tests/unit/test_the_assistant_asks_by_period.py::TestTheParser::test_an_unknown_period_finishes_rather_than_guessing"],
+    ),
+    Control(
+        describes="ASSISTANT PERIOD: the period reaches the mediator",
+        path="core/agent/agentic_loop.py",
+        old="            period=step.get(\"period\"),\n        )",
+        new="        )",
+        tests=["tests/unit/test_the_assistant_asks_by_period.py::TestTheLoop::test_the_period_reaches_the_mediator_and_each_period_is_named_by_its_date"],
+    ),
+    Control(
+        describes="ASSISTANT PERIOD: each period is named by its ISO date",
+        path="core/agent/agentic_loop.py",
+        old="grouped = {start.isoformat(): total for start, total in grouped.items()}",
+        new="pass",
+        tests=["tests/unit/test_the_assistant_asks_by_period.py::TestTheLoop::test_the_period_reaches_the_mediator_and_each_period_is_named_by_its_date"],
+    ),
+    Control(
+        describes="ASSISTANT PERIOD: two periods are two different steps, not a repeat",
+        path="core/agent/agentic_loop.py",
+        old="                _hashable(step.get(\"period\")))",
+        new="                None)",
+        tests=["tests/unit/test_the_assistant_asks_by_period.py::TestTheLoop::test_two_periods_are_two_different_steps"],
+    ),
+    Control(
+        describes="ASSISTANT PERIOD: the account of the work says per what",
+        path="core/agent/answer_context.py",
+        old="                by += f\", per {entry['period']}\"",
+        new="                by += \"\"",
+        tests=["tests/unit/test_the_assistant_asks_by_period.py::test_the_account_of_the_work_says_per_what"],
+    ),
 ]
 
 

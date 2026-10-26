@@ -187,6 +187,8 @@ def read_back(real_data: list[dict], schema: dict) -> list[str]:
             measured = (f" {field_label(fields, entry['field_name'])} across"
                         if entry.get("field_name") and entry.get("aggregate") != "count" else "")
             by = f", by {field_label(fields, entry['group_by'])}" if entry.get("group_by") else ""
+            if entry.get("period"):
+                by += f", per {entry['period']}"
             sentences.append(f"{verb}{measured} {_type_label(schema, object_type)}"
                              f"{_where(schema, object_type, entry.get('filter'))}{by}")
         elif step == "use_tool":
