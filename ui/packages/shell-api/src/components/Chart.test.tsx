@@ -43,6 +43,7 @@ vi.mock('echarts/core', async () => {
 // import error rather than a failure about the thing under test.
 vi.mock('echarts/charts', () => ({ BarChart: {}, GraphChart: {}, LineChart: {}, PieChart: {} }))
 vi.mock('echarts/components', () => ({
+  DataZoomComponent: {},
   GridComponent: {},
   LegendComponent: {},
   TitleComponent: {},
@@ -112,6 +113,15 @@ describe('Chart', () => {
       const [applied] = setOption.mock.calls[0] as [Record<string, unknown>]
       expect(applied.color).toHaveLength(1)
       expect('oneColour' in applied).toBe(false)
+    })
+
+    it('themes every axis of a list, so a second value axis is not left bare', () => {
+      render(<Chart option={{ ...OPTION, yAxis: [{ type: 'value' }, { type: 'value' }] }} ariaLabel="Two scales" />)
+
+      const [applied] = setOption.mock.calls[0] as [Record<string, unknown>]
+      const axes = applied.yAxis as Record<string, unknown>[]
+      expect(axes).toHaveLength(2)
+      expect(axes.every((axis) => axis.axisLabel !== undefined && axis.splitLine !== undefined)).toBe(true)
     })
 
     it('themes axes the caller declared, and invents none', () => {

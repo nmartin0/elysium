@@ -26,7 +26,7 @@ import { Classes } from '@blueprintjs/core'
 import { useEffect, useRef } from 'react'
 import * as echarts from 'echarts/core'
 import { BarChart, GraphChart, LineChart, PieChart } from 'echarts/charts'
-import { GridComponent, LegendComponent, TitleComponent, TooltipComponent } from 'echarts/components'
+import { DataZoomComponent, GridComponent, LegendComponent, TitleComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 
 import { chartTheme } from '../chartColors'
@@ -44,6 +44,9 @@ echarts.use([
   // which bars broken into a hundred columns are not.
   LineChart,
   PieChart,
+  // DataZoom for a time series: the wheel and a drag inside the plot,
+  // and a slider under it (TimeChart).
+  DataZoomComponent,
   GridComponent,
   LegendComponent,
   TitleComponent,
@@ -116,10 +119,10 @@ function withTheme(option: Record<string, unknown>): Record<string, unknown> {
     ...rest,
   }
 
-  for (const axis of ['xAxis', 'yAxis'] as const) {
-    if (option[axis] === undefined) continue
-    const declared = option[axis] as Record<string, unknown>
-    themed[axis] = {
+  // An axis may be one object or a list of them (a second value axis).
+  const themeAxis = (axis: unknown): unknown => {
+    const declared = axis as Record<string, unknown>
+    return {
       ...declared,
       axisLabel: { color: theme.axisLabel, ...(declared.axisLabel as object) },
       splitLine: {
@@ -127,6 +130,11 @@ function withTheme(option: Record<string, unknown>): Record<string, unknown> {
         ...(declared.splitLine as object),
       },
     }
+  }
+  for (const axis of ['xAxis', 'yAxis'] as const) {
+    const declared = option[axis]
+    if (declared === undefined) continue
+    themed[axis] = Array.isArray(declared) ? declared.map(themeAxis) : themeAxis(declared)
   }
   return themed
 }
