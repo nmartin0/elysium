@@ -192,7 +192,9 @@ integer, decimal, date); rules are context words plus a fixed shape the
 model picks but never writes, the value is always a span of the row, and
 numbers and dates are typed by the source's declared locale. Dates
 relative to something, times of day, and dates or numbers written in
-words each wait for their own decision. SEARCH BY MEANING (R45, 17
+words are NOT BUILT, BY THE OWNER'S CHOICE (26 October): each needs its
+own rule on what "relative to" means and how wrong it may be, and
+nothing asks for them. SEARCH BY MEANING (R45, 17
 October): a type declares `semantic_search: {from: [fields]}`; the sync
 embeds changed rows with `llm.embedding_model` through the local Ollama,
 within a time budget, versioned by the model's digest; Browse shows
@@ -228,8 +230,9 @@ COMPARTMENT (the owner, 17 October): a guess must not be shaped by
 records its reader cannot see -- Foundry's "mandatory controls propagate
 through derivation" -- so each is learned from one compartment, fills
 only it, and is approved by someone in it. Learning across compartments
-would be a deliberate, per-field owner opt-in; not built, and worth it
-only if a compartment proves too small. Once approved, gold trains the
+is NOT BUILT, BY THE OWNER'S CHOICE (26 October): the rule stays
+absolute, to be reopened only if a compartment proves too small to
+learn from. Once approved, gold trains the
 model again whenever it is rebuilt -- and only then -- measures it again,
 and fills the field only if the skill is above 0 and within 0.05 of the
 approved one (a judgement, not a measurement); otherwise it stays empty
@@ -267,9 +270,9 @@ type, the number and every field it was compared within, in the
 compartment it was judged in; decided in the Inbox's Unusual tab by
 someone who may also edit the type -- "expected" clears the marker for
 everyone until the value changes, "worth a look" keeps it -- each
-decision audited. What is left needs a person: LLM-WRITTEN RULES, the
-other half of R51, need a decision on what a rule may say and who
-approves one. A calibrated cut-off
+decision audited. LLM-WRITTEN RULES, the other half of R51, are
+NOT BUILT, BY THE OWNER'S CHOICE (26 October): the measured score
+stays. A calibrated cut-off
 (conformal, as the merge thresholds are) needs records known to be
 normal; people's "expected" decisions will be that set.
 
@@ -287,12 +290,13 @@ change that:
   declared table nears a million rows, or several processes each hold
   a large copy.
 - AN MCP SERVER, letting outside language models call Elysium's search
-  as a tool. Waits on D3 -- whether Elysium's data may reach a model
-  outside this machine at all -- since that is its whole purpose. If
-  built: every call as the asking person, under the same access checks
-  as the routes; MCP's own record (tool poisoning, CVE-2025-6514, the
-  NSA's May 2026 note that its spread "outpaced the development of its
-  security model") is the reason to start from that rule.
+  as a tool. DECIDED NO (26 October, with D3: a question does not leave
+  the VM), since reaching an outside model is its whole purpose. If the
+  owner ever reopens D3: every call as the asking person, under the same
+  access checks as the routes; MCP's own record (tool poisoning,
+  CVE-2025-6514, the NSA's May 2026 note that its spread "outpaced the
+  development of its security model") is the reason to start from that
+  rule.
 
 **STATISTICAL MATCHING HAS ITS YARDSTICK** (R59, 15 October):
 `scripts/evaluate_matching.py` measures the matcher against synthetic
@@ -329,9 +333,10 @@ and code appends a note naming them to every such answer.
 
 **Statistical matching is done** (R56, R57, R59, R60, R63).
 
-**Blocked on:** nothing for engineering: the questions above are the
-owner's. (The plugin API this line used to say was next is item 3,
-done.)
+**Blocked on:** nothing. Every question this item held is answered
+(26 October); what remains unmeasured is on a real deployment's records,
+which is a machine and data rather than a decision. (The plugin API this
+line used to say was next is item 3, done.)
 
 ## 3. Modules: a generic shell, and every sub-app an equal
 
