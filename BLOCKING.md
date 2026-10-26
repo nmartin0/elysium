@@ -68,6 +68,7 @@ because failed logins count for usernames that do not exist yet.
 | `GOLD_MIGRATION_SURVEY.md` | every file it named was reworked; its proposed shape IS `build_gold_view`. Its parity test exists and passes (42) |
 | `ACCESS_CONTROL_PROPOSAL.md` | not built, and a change to what a grant MEANS. Below |
 | `CONFIG_ROUND_TRIP_AND_UI_KIT.md` | not built; needs a dependency decision and product direction. Below |
+| `Triggers` (item 4) | all of it built, 14-17 October: four-eyes per action (`owner_may_approve_automation`), evaluation after each sync and at a date window's crossing, one durable timer service, reminders with how-late-is-too-late, combined triggers, queue flooding. Checked 26 October against `core/timers.py`, `core/trigger_windows.py`, `core/trigger_states.py` and `api/timer_service.py`, which already carry the precedent (Temporal, Quartz, Prometheus, Foundry Automate, GitHub's four-eyes loophole). Nothing was open |
 | `OBJECT_EXPLORER_PLAN.md` | phases 1 and 2 (backend) built, and the blocker they existed to remove is gone -- `in` and `not_in` are in the filter vocabulary. Phases 3-5 are frontend; below |
 | `THIRD_PARTY_EXTENSIONS.md` | a design, unbuilt. Its finding about module federation kept below, because it is the kind of thing a later reader would otherwise rediscover the hard way |
 | `TRIAGE.md` | fully absorbed: its 45 ids are CSV rows, its mutation sweep is the 70 declared controls in `scripts/check_controls.py`, its reachability sweep is the `WIRED-` rows |
@@ -1233,86 +1234,6 @@ count and read it with `countsByGroup`. The assistant's step still takes
 one measure -- it gets more when something needs them.
 
 **Blocked on:** nothing. Next: the kit's shared time chart.
-
-## 4. Triggers: both questions answered and built, 16 October
-
-Kept as the record of what was decided, with the precedent.
-
-**Four-eyes against an automation -- EACH ACTION DECIDES.** An
-automation proposes as its owner, so under a four-eyes rule the owner
-cannot approve it, and that stays the default: GitHub closed the same
-loophole after people used their automations to "satisfy the 'Required
-approvals'" rule with code "that no other person reviewed". An action
-declaring `owner_may_approve_automation: true` lets the owner's review
-suffice for what a condition proposed (the automation stands as the
-proposer for the user_id comparison only; role and compartment stay
-the owner's). Refused beside `automatable: false`. The Watch dialog
-says, while an action is being chosen, when each proposal will need
-someone else.
-
-**Evaluation cadence -- WHEN WHAT IT COUNTS CAN HAVE CHANGED.**
-Revised twice the same day with the owner. A count changes when its
-data changes or when a record crosses the edge of a date window, so:
-every trigger after each sync; the triggers watching the types a saved
-change wrote, straight after it; a new trigger when it is made; and a
-date-filtered trigger at the moment a record next crosses its window,
-by a TIMER it sets after every evaluation (core/trigger_windows.py).
-Foundry's live monitoring runs "within minutes of an object change
-appearing in the Ontology" and cannot monitor "relative time
-conditions", which fall back to a schedule; a timer at the crossing is
-sooner than any schedule and idle in between. The fifteen-minute clock
-of the first two versions is gone, and its settings are refused.
-
-**Timers -- ONE SERVICE, decided with the owner 16 October.** Anything
-that must act AT a time registers "call me back then" (core/timers.py)
-rather than growing its own loop; one loop in the server fires them
-(api/timer_service.py), persisted, keyed, at least once, retried then
-dropped -- Temporal's durable timer at the size of one table. This
-reverses, for this one purpose, the project's two refusals of a
-standing loop in the API process for RARE work: proposal expiry,
-session expiry and "the sync has not run" stay checked on read, where
-noticing late loses nothing. A notification written in the server now
-also reaches its recipient's open tabs at once, as a data-free "your
-inbox changed" signal on the live-updates stream.
-
-**Timers people make -- REMINDERS, decided with the owner 17 October.**
-Once, or repeating (every N minutes, or weekdays at a time in the
-owner's zone, staying on their clock across a daylight-saving change;
-optionally until a moment), listed and cancelled by their owner alone,
-in Inbox -> Notifications -> Reminders. Each timer carries HOW LATE IS
-TOO LATE (Quartz's misfire instructions, Kubernetes'
-startingDeadlineSeconds): a reminder more than an hour late, by default,
-is reported missed rather than delivered as if on time, and a repeating
-one catches up at most once -- the latest occurrence still in time is
-delivered, the earlier ones counted. Trigger timers fire however late,
-because they re-check current state. Each occurrence carries a key, and
-the notice it writes uses it, so a firing delivered twice is one
-notice. 100 per person; repeats no more often than every 5 minutes.
-
-**Combined triggers -- built 17 October** (core/trigger_states.py):
-all or any of up to ten conditions, each one of the owner's views above
-or at most a count (Datadog's composite monitors, no nesting); true for
-at least a while (Prometheus' `for`), on time by a hold timer; or
-checked only on a schedule and told every time it is true then (Foundry
-Automate's combined time and object conditions), a missed check said.
-Conditions are STATES: gaining and losing stay single. Each person's
-own state and latch -- fires once when it becomes true, a baseline when
-made. Notify only for now: which objects an action would receive from
-several views is not decided -- REVERSED the same day: they propose
-too. The maker names which condition's view supplies the objects (its
-own by default), Foundry's "the type of the action parameter needs to
-align with the type of the exposed condition effect input"; proposed as
-the owner when the owner's state fires, less what already waits.
-Declared triggers in config.yaml do all of it too (`also:`, `combine:`,
-`hold_minutes:`, `schedule:` with `timezone:`, `action: objects_from:`),
-checked at load by the same rules; their schedules are set at start and
-after each reload, and cancelled when removed.
-
-**Queue flooding (R50)** was decided and built 14 October, and the cap
-on how many objects one proposal may name is bulk actions' (256 unless
-a deployment says, 1,024 at most).
-
-**Blocked on:** nothing.
 
 ## 5. What the interface should be
 
