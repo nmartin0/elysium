@@ -39,6 +39,7 @@ guarantee has been rewritten.
 
 import argparse
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -547,9 +548,19 @@ CONTROLS = [
     Control(
         describes="verify notices a table with no primary key",
         path="sim/simulator/health.py",
-        old='            raise RuntimeError(f"no primary key on {sorted(missing)}")',
-        new="            pass",
+        # The server's check, by the line before it: SQLite's says the same.
+        old=('                   if t.name not in keyed]\n        if missing:\n'
+             '            raise RuntimeError(f"no primary key on {sorted(missing)}")'),
+        new="                   if t.name not in keyed]\n        if missing:\n            pass",
         tests=["sim/tests/test_cli.py::test_verify_notices_a_table_with_no_primary_key"],
+    ),
+    Control(
+        describes="verify notices a SQLite table with no primary key",
+        path="sim/simulator/health.py",
+        old=('                   if not any(c.primary_key for c in t.columns)]\n        if missing:\n'
+             '            raise RuntimeError(f"no primary key on {sorted(missing)}")'),
+        new="                   if not any(c.primary_key for c in t.columns)]\n        if missing:\n            pass",
+        tests=["sim/tests/test_sqlite_relational.py::test_simulator_verify_notices_a_table_with_no_key"],
     ),
 
     # ------------------------------------------------------------
@@ -6299,9 +6310,16 @@ def apply(control: Control) -> str:
 
 def run(control: Control) -> tuple[bool, str]:
     """Run the control's tests, expecting them to fail."""
+    # NO BYTECODE WRITTEN FROM BROKEN CODE. Python trusts a cached .pyc
+    # whose source has the same size and the same whole-second mtime, so
+    # two breaks of one file that change it by the same number of bytes,
+    # a second apart, ran the FIRST break's code under the second's name
+    # -- a control reported silent that fires on its own (found 26
+    # October: health.py's two "no primary key" checks).
     result = subprocess.run(
         [sys.executable, "-m", "pytest", *control.tests, "-q", "--no-header", "-x"],
         cwd=ROOT, capture_output=True, text=True,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
     )
     return result.returncode != 0, (result.stdout or result.stderr).strip()
 

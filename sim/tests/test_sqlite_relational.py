@@ -309,6 +309,28 @@ def test_simulator_verify_checks_it_as_a_consumer_would(tmp_path):
     assert notes == [None, "1 tables, all populated", None, "DELETE refused, as it should be"]
 
 
+def test_simulator_verify_notices_a_table_with_no_key(tmp_path):
+    # A desktop program's table made without one, as some are: a consumer
+    # has nothing to tell its rows apart by, and verify says which.
+    from simulator.health import _CHECKS
+
+    path = tmp_path / "parts.yaml"
+    path.write_text(PACK)
+    world = runner.build(load_pack(path), tmp_path / "var", seed=7)
+    try:
+        runner.seed(world)
+        silo = world.silos["parts_desk"]
+        with sqlite3.connect(silo.path) as connection:
+            connection.execute("CREATE TABLE notes (body TEXT)")
+            connection.execute("INSERT INTO notes VALUES ('reorder washers')")
+        details = silo.connection().details | {"kind": "sqlite"}
+        [keyed] = [check for name, check in _CHECKS["sqlite"] if name == "every table has a primary key"]
+        with pytest.raises(RuntimeError, match=r"no primary key on \['notes'\]"):
+            keyed("parts_desk", details, tmp_path / "var")
+    finally:
+        runner.stop(world)
+
+
 def test_a_pack_may_not_withhold_a_table_in_a_file(tmp_path):
     path = tmp_path / "parts.yaml"
     path.write_text(PACK.replace("{kind: sqlite, database: parts}",
