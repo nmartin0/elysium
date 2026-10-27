@@ -38,7 +38,7 @@ function expectedWithin(staleness: TypeFreshness): string {
   return whole === 1 ? 'hour' : `${whole} hours`
 }
 import StatusTag from '@elysium/shell-api/components/StatusTag'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   getDataFreshness,
   publicationTime,
@@ -300,6 +300,26 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
    */
   const [frozenSet] = useUrlValue('frozen', '')
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  /**
+   * A NEW TYPE STARTS CLEAN. What was typed, filtered, sorted and
+   * selected is about the old type's fields, and sent to the new one it
+   * is refused: Transaction's "category in subscription" and "sort by
+   * amount" sent to Customer were two 400s, "Invalid search criteria"
+   * where the rows go, "Counts unavailable" beside them and the old
+   * type's columns still listed -- found by using it. ONE navigation
+   * (each setter navigates, and the second discards the first); the
+   * view (table, charts, graph) is kept, because it is not about a type.
+   */
+  const switchType = (next: string) => {
+    setBarFilters([])
+    setSelectedIds(new Set())
+    setPageToken(null)
+    const updated = new URLSearchParams(searchParams)
+    for (const key of ['q', 'sort', 'filters', 'from']) updated.delete(key)
+    updated.set('type', next)
+    setSearchParams(updated, { replace: true })
+  }
   const [frozenName, setFrozenName] = useState<string | null>(null)
 
   // Whether the user narrowed anything, which is what separates "your
@@ -610,7 +630,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                 // the second discards the first.
                 frozenSet
                   ? navigate({ search: `?${new URLSearchParams({ type: event.target.value }).toString()}` })
-                  : setSelectedType(event.target.value)
+                  : switchType(event.target.value)
               }
             >
               {/* selectedType itself still starts as null -- the effect

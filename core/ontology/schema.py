@@ -39,6 +39,21 @@ def sort_key(value):
     return (type(value).__name__, value)
 
 
+def id_sort_key(value):
+    """The order ids are listed in when nobody has chosen one.
+
+    sort_key's, except that an id made only of digits sorts as the number
+    it is. The mirror hands every id over as text, so 1, 2 ... 10 came
+    out 1, 10, 100, 101 ... 2 -- found in a browser, on Transaction --
+    which is the order a computer finds natural and nobody reading a
+    list does. Ties (a "7" and a "07") fall back to the text, so the
+    order stays total and a page boundary never moves.
+    """
+    if isinstance(value, str) and value.isascii() and value.isdecimal():
+        return ("int", int(value), value)
+    return sort_key(value)
+
+
 def humanize(name: str) -> str:
     """A readable label from an identifier, for when none is declared.
 

@@ -371,14 +371,13 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # withholds from every caller (the help route learned this first).
     # Logged in full for the operator. Routes that handle it themselves
     # -- help, the cancelled-query 499 -- never reach this.
+    from api.routes import MODEL_UNAVAILABLE_DETAIL
     from core.llm.interface import LLMUnavailable
 
     @app.exception_handler(LLMUnavailable)
     async def model_unavailable(request: Request, exc: LLMUnavailable):
         logger.warning("model unavailable during %s: %s", request.url.path, exc)
-        return JSONResponse(status_code=503, content={
-            "detail": "The assistant cannot reach its model right now. Try again shortly, "
-                      "or ask an administrator to check it."})
+        return JSONResponse(status_code=503, content={"detail": MODEL_UNAVAILABLE_DETAIL})
 
     @app.exception_handler(RequestValidationError)
     async def validation_errors_without_values(request: Request, exc: RequestValidationError):

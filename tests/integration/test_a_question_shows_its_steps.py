@@ -205,3 +205,35 @@ def test_an_event_watched_after_leaving_is_set_at_once():
     progress.watch(late)
 
     assert late.is_set()
+
+
+def test_a_model_that_cannot_be_reached_is_the_last_line_not_a_crash(client):
+    """No model running (found in a browser, 26 October). The stream's 200
+    is already sent, so the 503 the plain route gives cannot be: the
+    question's status is the last line. It used to escape the task, be
+    raised again in the generator and cut the response, so the screen read
+    "Could not reach the server" and the server logged a traceback."""
+    import requests
+
+    _login(client)
+    with patch("adapters.http_transport.post",
+               side_effect=requests.ConnectionError("http://localhost:11434 refused")):
+        response = client.post("/api/query", json={"query": "What is Ada's email?"},
+                               headers={**_csrf(client), "Accept": "application/x-ndjson"})
+    assert response.status_code == 200
+    events = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+    done = events[-1]
+    assert done["type"] == "done" and done["status"] == 503
+    assert "cannot reach its model" in done["body"]["detail"]
+    # THE KIND, NOT THE MESSAGE: no host or port.
+    assert "11434" not in json.dumps(events) and "localhost" not in json.dumps(events)
+    # And it is what the plain route says.
+    plain = _plain_unreachable(client)
+    assert plain.status_code == 503 and plain.json()["detail"] == done["body"]["detail"]
+
+
+def _plain_unreachable(client):
+    import requests
+
+    with patch("adapters.http_transport.post", side_effect=requests.ConnectionError("refused")):
+        return client.post("/api/query", json={"query": "What is Ada's email?"}, headers=_csrf(client))

@@ -172,7 +172,7 @@ from core.modules import (
 from core.ontology.action_types import automation_needs_another_approver
 from core.ontology.decimal_text import exact_decimals
 from core.ontology.mediator import SearchOutcome
-from core.ontology.schema import get_display_name, get_field_column, sort_key
+from core.ontology.schema import get_display_name, get_field_column, id_sort_key, sort_key
 from core.ontology.submission_criteria import SubmissionCriteriaViolation
 from core.ontology.write_mediator import MAX_BULK_OBJECTS, WriteMediator
 from core.pending_write_store import PendingWriteStore
@@ -7185,7 +7185,7 @@ def _sorted_by_field(mediator, user_record, object_type: str, object_ids: list,
     # deterministic order across pages rather than drifting.
     return sorted(
         object_ids,
-        key=lambda object_id: (sort_key(values[object_id]), sort_key(object_id)),
+        key=lambda object_id: (sort_key(values[object_id]), id_sort_key(object_id)),
         reverse=descending,
     )
 
@@ -7836,7 +7836,7 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
     # while SQLite happens to return primary-key order today, that is
     # an implementation detail -- verified directly, and not something
     # paging should rest on.
-    matching_ids = sorted(matching_ids, key=sort_key)
+    matching_ids = sorted(matching_ids, key=id_sort_key)
     if order_by:
         matching_ids = _sorted_by_field(
             mediator, current_user, object_type, matching_ids, order_by
@@ -8316,12 +8316,20 @@ class _QueryProgress:
         self._send({"type": "answering", "lines": read_back(real_data, self._schema)})
 
 
+#: What a person is told when the model cannot be reached, by the plain
+#: route (api/app.py's handler) and the streamed one alike.
+MODEL_UNAVAILABLE_DETAIL = ("The assistant cannot reach its model right now. Try again shortly, "
+                            "or ask an administrator to check it.")
+
+
 def _streamed_query(body: QueryRequest, request: Request, current_user: UserRecord):
     """The query, as NDJSON: progress lines, then {"type": "done",
     "status", "body"} -- the status and body the plain route returns.
     NDJSON because Ollama streams the same way, and a POST cannot be read
     by an EventSource. The stream's own status is 200; the question's is
     in its last line."""
+    from core.llm.interface import LLMUnavailable
+
     queue: asyncio.Queue = asyncio.Queue()
     progress = _QueryProgress(asyncio.get_running_loop(), queue)
 
@@ -8330,6 +8338,22 @@ def _streamed_query(body: QueryRequest, request: Request, current_user: UserReco
             answered = await _answer_query(body, request, current_user, progress)
         except HTTPException as e:
             return {"type": "done", "status": e.status_code, "body": {"detail": e.detail}}
+        except LLMUnavailable as e:
+            # THE STREAM'S 200 IS ALREADY SENT, so app.py's handler for
+            # this (a 503) cannot run: the exception escaped the task,
+            # was raised again inside the generator, and the person was
+            # told "Could not reach the server" -- found in a browser
+            # with no model running -- while the server logged a
+            # traceback. It is the question's own status in the last
+            # line, as for every other outcome. THE KIND, NOT THE
+            # MESSAGE: it names the model's host and port.
+            logger.warning("model unavailable during /query: %s", e)
+            return {"type": "done", "status": 503, "body": {"detail": MODEL_UNAVAILABLE_DETAIL}}
+        except Exception:
+            # Anything else, for the same reason: after the first byte
+            # there is no 500 to send, only a last line to write.
+            logger.exception("streamed /query failed")
+            return {"type": "done", "status": 500, "body": {"detail": "Internal Server Error"}}
         if isinstance(answered, Response):
             return {"type": "done", "status": answered.status_code,
                     "body": json.loads(bytes(answered.body))}

@@ -190,6 +190,76 @@ describe('ObjectSearchPanel -- type selection', () => {
   })
 })
 
+describe('ObjectSearchPanel -- switching type starts clean', () => {
+  const typeSelect = () => screen.getByRole('combobox', { name: 'Object type' })
+  const callsFor = (type: string) => mockedSearchObjects.mock.calls.filter((call) => call[0] === type)
+
+  it('sends nothing the old type was sorted, searched or filtered by to the new one', async () => {
+    // Found in a browser: Transaction filtered by category and sorted by
+    // amount, then Customer chosen -- both sent to Customer, which refused
+    // them ("Invalid search criteria") with Transaction's columns still up.
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    const filters = encodeURIComponent(JSON.stringify([{ field: 'region', values: ['us-west'], mode: 'keep' }]))
+    renderPanel(CUSTOMER_SCHEMA, vi.fn(), `/browse?type=Customer&q=ada&sort=name%3Adesc&filters=${filters}`)
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        'ada',
+        expect.objectContaining({ orderBy: 'name:desc' }),
+      ),
+    )
+    mockedSearchObjects.mockClear()
+
+    fireEvent.change(typeSelect(), { target: { value: 'Account' } })
+
+    await waitFor(() => expect(callsFor('Account').length).toBeGreaterThan(0))
+    for (const [, text, options] of callsFor('Account')) {
+      expect(text).toBe('')
+      expect(options?.orderBy).toBeUndefined()
+      expect(options?.conditions ?? []).toEqual([])
+    }
+    expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveValue('')
+  })
+
+  it('drops a filter built in the filter bar as well', async () => {
+    const schema: VisibleSchema = {
+      Customer: { fields: { balance: { type: 'number' } } },
+      Account: { fields: { balance: { type: 'number' } } },
+    }
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    renderPanel(schema)
+    fireEvent.change(screen.getByLabelText('Field to filter'), { target: { value: 'balance' } })
+    fireEvent.change(screen.getByLabelText('Operator'), { target: { value: 'range' } })
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '1' } })
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '9' } })
+    fireEvent.click(screen.getByRole('button', { name: /Add/ }))
+    await waitFor(() =>
+      expect(mockedSearchObjects).toHaveBeenCalledWith(
+        'Customer',
+        '',
+        expect.objectContaining({ conditions: [{ field: 'balance', operator: 'range', value: ['1', '9'] }] }),
+      ),
+    )
+    mockedSearchObjects.mockClear()
+
+    fireEvent.change(typeSelect(), { target: { value: 'Account' } })
+
+    await waitFor(() => expect(callsFor('Account').length).toBeGreaterThan(0))
+    for (const [, , options] of callsFor('Account')) expect(options?.conditions ?? []).toEqual([])
+  })
+
+  it('keeps the view, because a view is not about a type', async () => {
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    renderPanel(CUSTOMER_SCHEMA, vi.fn(), '/browse?type=Customer&view=charts')
+    await waitFor(() => expect(mockedSearchObjects).toHaveBeenCalled())
+
+    fireEvent.change(typeSelect(), { target: { value: 'Account' } })
+
+    await waitFor(() => expect(callsFor('Account').length).toBeGreaterThan(0))
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+})
+
 describe('ObjectSearchPanel -- debouncing', () => {
   it('does not call searchObjects immediately on keystroke -- only after the debounce delay', async () => {
     mockedSearchObjects.mockResolvedValue(searchResult([]))

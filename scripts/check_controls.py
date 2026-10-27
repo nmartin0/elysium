@@ -6609,6 +6609,28 @@ CONTROLS = [
         new='    store = _canvas_store(request)\n    store.clear_shared()',
         tests=['tests/integration/test_the_ontology_canvas.py::test_only_a_manager_may_clear_it'],
     ),
+    Control(
+        describes='STREAMED QUERY: a model that cannot be reached is the last line, not a crash',
+        path='api/routes.py',
+        old="        except LLMUnavailable as e:\n            # THE STREAM'S 200",
+        new="        except ZeroDivisionError as e:\n            # THE STREAM'S 200",
+        tests=['tests/integration/test_a_question_shows_its_steps.py::'
+               'test_a_model_that_cannot_be_reached_is_the_last_line_not_a_crash'],
+    ),
+    Control(
+        describes='DEFAULT ORDER: ids made of digits are listed as numbers',
+        path='api/routes.py',
+        old='    matching_ids = sorted(matching_ids, key=id_sort_key)\n    if order_by:',
+        new='    matching_ids = sorted(matching_ids, key=sort_key)\n    if order_by:',
+        tests=['tests/integration/test_api.py::test_ids_made_of_digits_are_listed_as_numbers'],
+    ),
+    Control(
+        describes='DEFAULT ORDER: a digit-only id is a number',
+        path='core/ontology/schema.py',
+        old='    if isinstance(value, str) and value.isascii() and value.isdecimal():',
+        new='    if False:',
+        tests=['tests/unit/test_schema_helpers.py::test_ids_of_digits_sort_as_the_numbers_they_are'],
+    ),
 ]
 
 

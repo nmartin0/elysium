@@ -2267,6 +2267,29 @@ def test_paging_returns_every_result_exactly_once(client):
     assert len(seen) == len(set(seen)), "a result appeared on more than one page"
 
 
+def test_ids_made_of_digits_are_listed_as_numbers(client):
+    # Found in a browser: Transaction read 1, 10, 100, 101 ... because the
+    # mirror hands ids over as text and the default order was the text's.
+    directory = client.app.state.user_directory
+    directory.create_user("alice", "correct-pw", "us-west", "customer_service")
+    _login(client, "alice", "correct-pw")
+    paths = client.app.state.runtime_paths
+    conn = sqlite3.connect(paths.data_dir / "dev_fixtures" / "mediator.db")
+    conn.executemany(
+        "INSERT INTO transactions (customer_id, amount, currency, category, transaction_date) "
+        "VALUES (?, ?, ?, ?, ?)",
+        [("cust_001", 5.0 + i, "USD", "bulk", "2026-08-01") for i in range(15)],
+    )
+    conn.commit()
+    conn.close()
+    _resync(client)
+
+    ids = [row["id"] for row in client.get("/api/objects/Transaction/search?page_size=500").json()["results"]]
+
+    assert len(ids) > 12
+    assert ids == sorted(ids, key=int)
+
+
 def test_the_last_page_has_no_next_token(client):
     # Foundry's contract: "the presence of the nextPageToken field
     # indicates that there are more results." Absent, not empty.
