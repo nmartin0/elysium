@@ -1383,14 +1383,19 @@ first, in place of the summary -- the box keeps its size, because rows
 are 40 apart and a taller box would land on its neighbour.
 
 Edges are routed AROUND the types in their way (a search over grid lines
-beside the nearby types, fewest bends first). WHAT THE CANVAS DOES NOT DO
-YET, buildable and wanted (owner, 26 October): the layout is per
-person, so two people start from different pictures. Everyone should
-start from a similar one: a saved deployment-wide arrangement of all
-types, served to each person cut down to the types they may see, so a
-type sits in the same place for everyone who sees it. Care: the
-server must send positions only for visible types, or a gap would say
-a hidden type exists.
+beside the nearby types, fewest bends first).
+
+THE SHARED STARTING ARRANGEMENT (built 27 October, owner's wish of 26
+October: everyone starts from a similar picture). Someone who manages the
+deployment arranges the types and chooses "Start everyone here" (after a
+confirmation, since it moves where everybody starts); it is stored once
+for the deployment (`canvas_shared`, positions only) and served to each
+person cut down to the types they may see, so a type sits in the same
+place for everyone who sees it and a gap reveals nothing. A person's own
+moves lie over it, and Auto-layout returns them to it. A manager who sees
+fewer types merges rather than erases the others' places. "Clear shared
+start" returns everyone to the automatic layout. Not done: a type that
+nobody who manages the deployment can see stays automatically placed.
 
 **Blocked on:** nothing.
 

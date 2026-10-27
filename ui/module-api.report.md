@@ -13,8 +13,8 @@ Anything else either exports is internal, and may change without notice.
 The manifest, `activate()`, host values, styles and the add-on server are
 described in [MODULE_API.md](MODULE_API.md).
 
-202 names imported, from 40 entry points, by 9 modules;
-259 declarations public in all.
+204 names imported, from 40 entry points, by 9 modules;
+261 declarations public in all.
 
 ## `@elysium/shell-api/api`
 
@@ -98,6 +98,8 @@ export interface AwaitingWrite {
 }
 
 export declare function cancelReminder(reminderId: string): Promise<void>;
+
+export declare function clearSharedOntologyCanvas(): Promise<OntologyCanvasLayout>;
 
 export declare function combineSets(objectType: string, left: SetReference, right: SetReference, region: SetRegion, name: string): Promise<FrozenSet>;
 
@@ -592,6 +594,11 @@ export interface OntologyCanvasLayout {
         field: string;
         target?: string;
     }[];
+    shared_positions?: Record<string, {
+        x: number;
+        y: number;
+    }>;
+    can_set_shared?: boolean;
 }
 
 export interface OntologyDescriptions {
@@ -780,6 +787,11 @@ export declare function saveSavedView(body: {
     presentation?: Record<string, unknown>;
     origin?: Record<string, unknown>;
 }): Promise<string>;
+
+export declare function saveSharedOntologyCanvas(positions: Record<string, {
+    x: number;
+    y: number;
+}>): Promise<OntologyCanvasLayout>;
 
 export declare function searchObjects(objectType: string, queryText: string, options?: SearchOptions): Promise<unknown>;
 

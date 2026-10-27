@@ -1853,6 +1853,11 @@ export interface OntologyCanvasLayout {
   /** How each type gets its security value. Present only for someone
    *  who may change roles; absent, not empty, for everyone else. */
   security_chains?: { type: string; kind: 'via' | 'field'; field: string; target?: string }[]
+  /** The arrangement everyone starts from, cut to the types this person may
+   *  see; their own `positions` lie over it. */
+  shared_positions?: Record<string, { x: number; y: number }>
+  /** Present (true) only for someone who may save the shared arrangement. */
+  can_set_shared?: boolean
 }
 
 export async function getOntologyCanvas(): Promise<OntologyCanvasLayout> {
@@ -1865,6 +1870,24 @@ export async function saveOntologyCanvas(
   layout: Pick<OntologyCanvasLayout, 'positions' | 'areas'>,
 ): Promise<OntologyCanvasLayout> {
   const response = await apiFetchOrThrow('/me/ontology-canvas', { method: 'PUT', body: JSON.stringify(layout) })
+  return (await response.json()) as OntologyCanvasLayout
+}
+
+/** Saves these positions as the arrangement everyone starts from (merged over
+ *  what is saved). manage:deployment. */
+export async function saveSharedOntologyCanvas(
+  positions: Record<string, { x: number; y: number }>,
+): Promise<OntologyCanvasLayout> {
+  const response = await apiFetchOrThrow('/admin/ontology-canvas-default', {
+    method: 'PUT',
+    body: JSON.stringify({ positions }),
+  })
+  return (await response.json()) as OntologyCanvasLayout
+}
+
+/** Forgets the shared arrangement: everyone starts from the automatic layout. */
+export async function clearSharedOntologyCanvas(): Promise<OntologyCanvasLayout> {
+  const response = await apiFetchOrThrow('/admin/ontology-canvas-default', { method: 'DELETE' })
   return (await response.json()) as OntologyCanvasLayout
 }
 

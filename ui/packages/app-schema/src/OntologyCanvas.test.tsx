@@ -11,16 +11,26 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@elysium/shell-api/api')>()),
   getOntologyCanvas: vi.fn(),
   saveOntologyCanvas: vi.fn(),
+  saveSharedOntologyCanvas: vi.fn(),
+  clearSharedOntologyCanvas: vi.fn(),
   getVisibleActionTypesCached: vi.fn(),
   getTypeCounts: () => counts(),
   getDataFreshness: () => freshness(),
 }))
 
-import { getOntologyCanvas, getVisibleActionTypesCached, saveOntologyCanvas } from '@elysium/shell-api/api'
+import {
+  clearSharedOntologyCanvas,
+  getOntologyCanvas,
+  getVisibleActionTypesCached,
+  saveOntologyCanvas,
+  saveSharedOntologyCanvas,
+} from '@elysium/shell-api/api'
 import OntologyCanvas from './OntologyCanvas'
 
 const mockedGet = vi.mocked(getOntologyCanvas)
 const mockedSave = vi.mocked(saveOntologyCanvas)
+const mockedShare = vi.mocked(saveSharedOntologyCanvas)
+const mockedUnshare = vi.mocked(clearSharedOntologyCanvas)
 const mockedActions = vi.mocked(getVisibleActionTypesCached)
 
 /**
@@ -281,5 +291,104 @@ describe('counts, health and close zoom (DEV_UI 14.5)', () => {
     // THE KEY FIRST, even though it is not a declared field.
     expect(fields).toEqual(['customer_id', 'region'])
     expect(node('Customer').querySelector('.ontology-canvas__field--key')?.textContent).toBe('customer_id')
+  })
+})
+
+describe('the arrangement everyone starts from', () => {
+  it('starts from the shared arrangement when the person has moved nothing', async () => {
+    mockedGet.mockResolvedValue({ positions: {}, areas: [], shared_positions: { Ticket: { x: 1000, y: 2000 } } })
+    renderCanvas()
+    await waitFor(() => expect(translateOf('Ticket').x).toBe(1000 - 94))
+  })
+
+  it('lets a personal move win over the shared one', async () => {
+    mockedGet.mockResolvedValue({
+      positions: { Ticket: { x: 300, y: 400 } },
+      areas: [],
+      shared_positions: { Ticket: { x: 1000, y: 2000 } },
+    })
+    renderCanvas()
+    await waitFor(() => expect(translateOf('Ticket').x).toBe(300 - 94))
+  })
+
+  it('falls back to the shared arrangement, not the automatic one, on auto-layout', async () => {
+    mockedGet.mockResolvedValue({
+      positions: { Ticket: { x: 300, y: 400 } },
+      areas: [],
+      shared_positions: { Ticket: { x: 1000, y: 2000 } },
+    })
+    renderCanvas()
+    await waitFor(() => expect(translateOf('Ticket').x).toBe(300 - 94))
+    fireEvent.click(screen.getByRole('button', { name: 'Auto-layout' }))
+    await waitFor(() => expect(translateOf('Ticket').x).toBe(1000 - 94))
+  })
+
+  it('offers the buttons only to someone who may set it', async () => {
+    renderCanvas()
+    await waitFor(() => expect(node('Ticket')).toBeTruthy())
+    expect(screen.queryByRole('button', { name: 'Start everyone here' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear shared start' })).not.toBeInTheDocument()
+  })
+
+  it('asks before changing where everyone starts, then sends every placed type', async () => {
+    mockedGet.mockResolvedValue({ positions: {}, areas: [], can_set_shared: true })
+    mockedShare.mockImplementation(async (positions) => ({
+      positions: {},
+      areas: [],
+      shared_positions: positions,
+      can_set_shared: true,
+    }))
+    renderCanvas()
+    await waitFor(() => expect(node('Ticket')).toBeTruthy())
+    expect(screen.queryByRole('button', { name: 'Clear shared start' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start everyone here' }))
+    expect(mockedShare).not.toHaveBeenCalled()
+    fireEvent.click(await screen.findByRole('button', { name: 'Use this arrangement' }))
+
+    await waitFor(() => expect(mockedShare).toHaveBeenCalledTimes(1))
+    expect(Object.keys(mockedShare.mock.calls[0]![0]).sort()).toEqual(['Customer', 'Ticket', 'Transaction'])
+    expect(await screen.findByText('Everyone now starts from this arrangement')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Clear shared start' })).toBeInTheDocument()
+  })
+
+  it('does nothing when the confirmation is cancelled', async () => {
+    mockedGet.mockResolvedValue({ positions: {}, areas: [], can_set_shared: true })
+    renderCanvas()
+    await waitFor(() => expect(node('Ticket')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Start everyone here' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+    expect(mockedShare).not.toHaveBeenCalled()
+  })
+
+  it('clears the shared start after asking, and the button goes', async () => {
+    mockedGet.mockResolvedValue({
+      positions: {},
+      areas: [],
+      can_set_shared: true,
+      shared_positions: { Ticket: { x: 1000, y: 2000 } },
+    })
+    mockedUnshare.mockResolvedValue({ positions: {}, areas: [], shared_positions: {}, can_set_shared: true })
+    renderCanvas()
+    await waitFor(() => expect(translateOf('Ticket').x).toBe(1000 - 94))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear shared start' }))
+    expect(mockedUnshare).not.toHaveBeenCalled()
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear it' }))
+
+    await waitFor(() => expect(mockedUnshare).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('Everyone now starts from the automatic layout')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear shared start' })).not.toBeInTheDocument()
+    expect(translateOf('Ticket').x).not.toBe(1000 - 94)
+  })
+
+  it('says so when setting it fails', async () => {
+    mockedGet.mockResolvedValue({ positions: {}, areas: [], can_set_shared: true })
+    mockedShare.mockRejectedValue(new Error('not allowed'))
+    renderCanvas()
+    await waitFor(() => expect(node('Ticket')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Start everyone here' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Use this arrangement' }))
+    expect(await screen.findByText(/Not saved: not allowed/)).toBeInTheDocument()
   })
 })

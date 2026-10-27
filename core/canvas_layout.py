@@ -11,9 +11,17 @@ what a type MEANS, and ontology_schema.yaml never acquires a coordinate
 or a grouping.
 
 PER PERSON, decided 14 October. "Two people can hold different views of
-the same ontology", which BPMN supports by design. A deployment-wide
-default belongs with editing configuration from the UI, and can be laid
-underneath this without changing it.
+the same ontology", which BPMN supports by design.
+
+AND A SHARED STARTING ARRANGEMENT UNDERNEATH IT, asked for by the owner
+on 26 October: left alone, two people start from different pictures,
+because each is laid out from only the types they may see. A person who
+manages the deployment can save the arrangement they are looking at as
+the one everybody starts from; it holds positions only, merges into
+what is already saved (a manager who sees fewer types than the last one
+does not erase theirs), and a person's own moves lie over it. It is
+cut to the types each reader may see on the way out, as their own is,
+so the gaps in a picture say nothing a name would not.
 
 WHAT IT HOLDS:
   positions   {type: {x, y}} for the types a person has MOVED. A type
@@ -53,6 +61,12 @@ CREATE TABLE IF NOT EXISTS canvas_layouts (
     owner_user_id TEXT PRIMARY KEY,
     document TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS canvas_shared (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    document TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT NOT NULL
 );
 """
 
@@ -162,6 +176,38 @@ class CanvasLayoutStore:
                 "document = excluded.document, updated_at = excluded.updated_at",
                 (owner_user_id, json.dumps(document), datetime.now(UTC).isoformat()),
             )
+            conn.commit()
+
+
+    def get_shared(self) -> dict:
+        """The shared starting positions {type: {x, y}}, not yet cut to
+        what a reader may see -- the route does that, with their schema."""
+        try:
+            with self._connection() as conn:
+                row = conn.execute("SELECT document FROM canvas_shared WHERE id = 1").fetchone()
+            document = json.loads(row["document"]) if row else {}
+        except Exception as e:  # noqa: BLE001 - a layout is a convenience
+            logger.warning("could not read the shared canvas layout: %s", e)
+            return {}
+        return document if isinstance(document, dict) else {}
+
+    def merge_shared(self, positions: dict, user_id: str) -> dict:
+        """Saves these positions over the shared ones, keeping the types
+        they do not mention. Returns what is now shared."""
+        merged = {**self.get_shared(), **positions}
+        with self._connection() as conn:
+            conn.execute(
+                "INSERT INTO canvas_shared (id, document, updated_at, updated_by) VALUES (1, ?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET document = excluded.document, "
+                "updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+                (json.dumps(merged), datetime.now(UTC).isoformat(), user_id),
+            )
+            conn.commit()
+        return merged
+
+    def clear_shared(self) -> None:
+        with self._connection() as conn:
+            conn.execute("DELETE FROM canvas_shared WHERE id = 1")
             conn.commit()
 
 

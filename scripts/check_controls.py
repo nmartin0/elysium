@@ -6541,6 +6541,74 @@ CONTROLS = [
         new='            "data_types": ["string"]}',
         tests=['tests/integration/test_new_fields_from_the_ui.py::TestWhatTheFormOffers::test_the_data_types_are_the_mirrors_own_list'],
     ),
+    Control(
+        describes='SHARED LAYOUT: a reader is sent positions only of the types they may see',
+        path='api/routes.py',
+        old='clean_layout(\n            {"positions": _canvas_store(request).get_shared()}, visible)["positions"]',
+        new='{"positions": _canvas_store(request).get_shared()}["positions"]',
+        tests=['tests/integration/test_the_ontology_canvas.py::test_someone_who_cannot_see_a_type_is_not_sent_where_it_sits'],
+    ),
+    Control(
+        describes='SHARED LAYOUT: saving merges over what is saved',
+        path='core/canvas_layout.py',
+        old='merged = {**self.get_shared(), **positions}',
+        new='merged = dict(positions)',
+        tests=['tests/integration/test_the_ontology_canvas.py::test_a_manager_who_sees_fewer_types_does_not_erase_the_others'],
+    ),
+    Control(
+        describes='SHARED LAYOUT: only a manager is offered it',
+        path='api/routes.py',
+        old=('    if authorize(current_user, generation.config.roles, "manage:deployment"):\n'
+             '        layout["can_set_shared"] = True'),
+        new='    if True:\n        layout["can_set_shared"] = True',
+        tests=['tests/integration/test_the_ontology_canvas.py::test_only_someone_who_manages_the_deployment_is_offered_it_or_may_do_it'],
+    ),
+    Control(
+        describes='SHARED LAYOUT: only a manager may save it',
+        path='api/routes.py',
+        old=('    _require_manage_deployment(request, current_user)\n'
+             '    visible = _generation(request).mediator.visible_schema(current_user)\n'
+             '    try:\n        cleaned = clean_layout({"positions"'),
+        new=('    visible = _generation(request).mediator.visible_schema(current_user)\n'
+             '    try:\n        cleaned = clean_layout({"positions"'),
+        tests=['tests/integration/test_the_ontology_canvas.py::test_only_someone_who_manages_the_deployment_is_offered_it_or_may_do_it'],
+    ),
+    Control(
+        describes='SHARED LAYOUT: only the types the caller may place are taken',
+        path='api/routes.py',
+        old='for k, v in body.positions.items()}}, visible)',
+        new='for k, v in body.positions.items()}}, list(body.positions))',
+        tests=['tests/integration/test_the_ontology_canvas.py::test_nothing_they_can_place_is_a_refusal_not_a_silent_save'],
+    ),
+    Control(
+        describes='SHARED LAYOUT: nothing to place is refused',
+        path='api/routes.py',
+        old='    if not cleaned["positions"]:\n        raise HTTPException(status_code=400, detail="None of those',
+        new='    if False:\n        raise HTTPException(status_code=400, detail="None of those',
+        tests=['tests/integration/test_the_ontology_canvas.py::test_nothing_they_can_place_is_a_refusal_not_a_silent_save'],
+    ),
+    Control(
+        describes='SHARED LAYOUT: a coordinate is checked as a personal one is',
+        path='api/routes.py',
+        old='clean_layout({"positions": {k: v.model_dump() for k, v in body.positions.items()}}, visible)',
+        new='{"positions": {k: v.model_dump() for k, v in body.positions.items() if k in visible}}',
+        tests=['tests/integration/test_the_ontology_canvas.py::test_a_coordinate_that_is_not_a_number_is_refused'],
+    ),
+    Control(
+        describes='SHARED LAYOUT: clearing forgets it',
+        path='api/routes.py',
+        old='    store.clear_shared()\n',
+        new='    pass\n',
+        tests=['tests/integration/test_the_ontology_canvas.py::test_clearing_it_sends_everyone_back_to_the_automatic_layout'],
+    ),
+    Control(
+        describes='SHARED LAYOUT: only a manager may clear it',
+        path='api/routes.py',
+        old=('    _require_manage_deployment(request, current_user)\n    store = _canvas_store(request)\n'
+             '    store.clear_shared()'),
+        new='    store = _canvas_store(request)\n    store.clear_shared()',
+        tests=['tests/integration/test_the_ontology_canvas.py::test_only_a_manager_may_clear_it'],
+    ),
 ]
 
 

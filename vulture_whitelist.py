@@ -635,3 +635,11 @@ test_it_leaves_when_elysium_does
 # decorator -- the role names an account administrator needs, which
 # /config gave until it became the server's.
 role_names_route
+
+# PUT/DELETE /admin/ontology-canvas-default (27 October): FastAPI routes,
+# called through their decorators -- where everybody's canvas starts. The
+# two response fields are read by the UI, not by Python.
+save_shared_ontology_canvas_route
+clear_shared_ontology_canvas_route
+shared_positions
+can_set_shared

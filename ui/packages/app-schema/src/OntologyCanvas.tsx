@@ -19,14 +19,16 @@
  * the zoom controls are buttons.
  */
 
-import { Button, Checkbox, Dialog, DialogBody, DialogFooter, InputGroup, Switch } from '@blueprintjs/core'
+import { Alert, Button, Checkbox, Dialog, DialogBody, DialogFooter, InputGroup, Switch } from '@blueprintjs/core'
 import {
   getErrorMessage,
+  clearSharedOntologyCanvas,
   getOntologyCanvas,
   getVisibleActionTypesCached,
   handleIfSessionExpired,
   type OntologyCanvasLayout,
   saveOntologyCanvas,
+  saveSharedOntologyCanvas,
   getDataFreshness,
   getTypeCounts,
   type DataFreshness,
@@ -63,7 +65,7 @@ interface OntologyCanvasProps {
 
 type Layout = OntologyCanvasLayout
 
-const EMPTY: Layout = { positions: {}, areas: [] }
+const EMPTY: Layout = { positions: {}, areas: [], shared_positions: {} }
 const HEIGHT = 560
 /** How far an arrow key moves a type, and with Shift. */
 const NUDGE = 16
@@ -128,7 +130,7 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
   const [layout, setLayout] = useState<Layout>(EMPTY)
   const [loaded, setLoaded] = useState(false)
   const [saveState, setSaveState] = useState<
-    { kind: 'idle' | 'saving' | 'saved' } | { kind: 'failed'; message: string }
+    { kind: 'idle' | 'saving' | 'saved' | 'shared' | 'unshared' } | { kind: 'failed'; message: string }
   >({ kind: 'idle' })
   const [moving, setMoving] = useState<{ name: string; point: Point } | null>(null)
   const [view, setView] = useState<View | null>(null)
@@ -140,6 +142,7 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
   const { data: counts } = useFetchOnce<Record<string, TypeCount>>(getTypeCounts, onSessionExpired ?? noop)
   const { data: freshness } = useFetchOnce<DataFreshness>(getDataFreshness, onSessionExpired ?? noop)
   const [areaDialog, setAreaDialog] = useState<{ original: string | null } | null>(null)
+  const [confirmingShared, setConfirmingShared] = useState<'set' | 'clear' | null>(null)
   const [width, setWidth] = useState(900)
 
   const latestSessionExpired = useRef(onSessionExpired)
@@ -160,7 +163,13 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
     getOntologyCanvas()
       .then((body) => {
         if (cancelled) return
-        setLayout({ positions: body.positions ?? {}, areas: body.areas ?? [], security_chains: body.security_chains })
+        setLayout({
+          positions: body.positions ?? {},
+          areas: body.areas ?? [],
+          security_chains: body.security_chains,
+          shared_positions: body.shared_positions ?? {},
+          can_set_shared: body.can_set_shared,
+        })
         setLoaded(true)
       })
       .catch((err: unknown) => {
@@ -194,9 +203,10 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
       placeNodes(
         model.types.map((type) => type.name),
         model.links,
-        moving ? { ...layout.positions, [moving.name]: moving.point } : layout.positions,
+        // THE SHARED STARTING ARRANGEMENT UNDERNEATH, their own moves over it.
+        { ...layout.shared_positions, ...layout.positions, ...(moving ? { [moving.name]: moving.point } : {}) },
       ),
-    [model, layout.positions, moving],
+    [model, layout.positions, layout.shared_positions, moving],
   )
 
   const chains = layout.security_chains
@@ -265,6 +275,39 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
     if (!undoPositions) return
     persist({ positions: undoPositions, areas: layout.areas })
     setUndoPositions(null)
+  }
+
+  // THE SHARED STARTING ARRANGEMENT (manage:deployment). It changes where
+  // types START for everybody who has not moved them, so it is confirmed
+  // first. Every placed type is sent, moved or automatic, because the
+  // point is that the picture is the same for the next person; the server
+  // keeps only the types this person may see and leaves the others alone.
+  const shareArrangement = () => {
+    setConfirmingShared(null)
+    setSaveState({ kind: 'saving' })
+    saveSharedOntologyCanvas(
+      Object.fromEntries(Object.entries(placed).map(([name, point]) => [name, { x: point.x, y: point.y }])),
+    )
+      .then((kept) => {
+        setLayout((current) => ({ ...current, shared_positions: kept.shared_positions ?? {} }))
+        setSaveState({ kind: 'shared' })
+      })
+      .catch(sharedFailed)
+  }
+  const clearShared = () => {
+    setConfirmingShared(null)
+    setSaveState({ kind: 'saving' })
+    clearSharedOntologyCanvas()
+      .then(() => {
+        setLayout((current) => ({ ...current, shared_positions: {} }))
+        setSaveState({ kind: 'unshared' })
+      })
+      .catch(sharedFailed)
+  }
+  const sharedFailed = (err: unknown) => {
+    const expired = latestSessionExpired.current
+    if (expired && handleIfSessionExpired(err, expired)) return
+    setSaveState({ kind: 'failed', message: `Not saved: ${getErrorMessage(err)}` })
   }
 
   // ---- pointer gestures -------------------------------------------------
@@ -412,6 +455,18 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
             Undo auto-layout
           </Button>
         )}
+        {layout.can_set_shared && (
+          <>
+            <Button small minimal icon="people" onClick={() => setConfirmingShared('set')}>
+              Start everyone here
+            </Button>
+            {Object.keys(layout.shared_positions ?? {}).length > 0 && (
+              <Button small minimal icon="reset" onClick={() => setConfirmingShared('clear')}>
+                Clear shared start
+              </Button>
+            )}
+          </>
+        )}
         {chains && (
           <Switch
             className="ontology-canvas__security-switch"
@@ -425,11 +480,15 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
             ? 'Saving…'
             : saveState.kind === 'saved'
               ? 'Arrangement saved'
-              : saveState.kind === 'failed'
-                ? saveState.message
-                : !loaded
-                  ? 'Loading your arrangement…'
-                  : ''}
+              : saveState.kind === 'shared'
+                ? 'Everyone now starts from this arrangement'
+                : saveState.kind === 'unshared'
+                  ? 'Everyone now starts from the automatic layout'
+                  : saveState.kind === 'failed'
+                    ? saveState.message
+                    : !loaded
+                      ? 'Loading your arrangement…'
+                      : ''}
         </span>
       </div>
 
@@ -723,6 +782,25 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
         </div>
       </div>
 
+      <Alert
+        isOpen={confirmingShared !== null}
+        confirmButtonText={confirmingShared === 'clear' ? 'Clear it' : 'Use this arrangement'}
+        cancelButtonText="Cancel"
+        onConfirm={confirmingShared === 'clear' ? clearShared : shareArrangement}
+        onCancel={() => setConfirmingShared(null)}
+      >
+        {confirmingShared === 'clear' ? (
+          <p>
+            Everyone who has not moved a type themselves will see the automatic layout again. What people have moved
+            stays where they put it.
+          </p>
+        ) : (
+          <p>
+            Everyone who has not moved a type themselves will start from where the types are now. Each person sees only
+            the types they may see, in these places. What people have moved stays where they put it.
+          </p>
+        )}
+      </Alert>
       {areaDialog && (
         <AreaDialog
           types={model.types.map((type) => ({ name: type.name, label: type.label }))}

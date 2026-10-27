@@ -3956,6 +3956,11 @@ class OntologyCanvasResponse(BaseModel):
     # ABSENT, not empty, for a caller who may not see the permission
     # model: an empty list would read as "nothing here is secured".
     security_chains: list[SecurityChainResponse] | None = None
+    # The arrangement everyone starts from, cut to the types this person
+    # may see; theirs in `positions` lie over it.
+    shared_positions: dict[str, CanvasPosition] = {}
+    # Present (true) only for someone who may save the shared arrangement.
+    can_set_shared: bool | None = None
 
 
 def _canvas_store(request: Request):
@@ -3977,6 +3982,13 @@ def _canvas_response(request: Request, current_user: UserRecord, document: dict)
         layout = {"positions": {}, "areas": []}
     if authorize(current_user, generation.config.roles, "manage:roles"):
         layout["security_chains"] = security_chains(generation.config.schema, visible)
+    try:
+        layout["shared_positions"] = clean_layout(
+            {"positions": _canvas_store(request).get_shared()}, visible)["positions"]
+    except ValueError:
+        layout["shared_positions"] = {}
+    if authorize(current_user, generation.config.roles, "manage:deployment"):
+        layout["can_set_shared"] = True
     return layout
 
 
@@ -4014,6 +4026,53 @@ def save_my_ontology_canvas_route(
         raise HTTPException(status_code=400, detail=str(e)) from e
     _canvas_store(request).put(current_user.user_id, cleaned)
     return _canvas_response(request, current_user, cleaned)
+
+
+class SharedCanvasRequest(BaseModel):
+    positions: dict[str, CanvasPosition]
+
+
+@router.put("/admin/ontology-canvas-default", dependencies=[Depends(_no_store)],
+            response_model=OntologyCanvasResponse, response_model_exclude_none=True)
+def save_shared_ontology_canvas_route(
+    body: SharedCanvasRequest,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Saves where the types are, as the arrangement everyone starts from.
+
+    manage:deployment. Only the types the caller may see are taken (the
+    rest are dropped, not refused), and they are merged over what is
+    saved, so a manager who sees fewer types does not erase the
+    placement of the others. A person's own moves lie over this.
+    """
+    from core.canvas_layout import CanvasLayoutError, clean_layout
+
+    _require_manage_deployment(request, current_user)
+    visible = _generation(request).mediator.visible_schema(current_user)
+    try:
+        cleaned = clean_layout({"positions": {k: v.model_dump() for k, v in body.positions.items()}}, visible)
+    except CanvasLayoutError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if not cleaned["positions"]:
+        raise HTTPException(status_code=400, detail="None of those types are ones you can place.")
+    store = _canvas_store(request)
+    store.merge_shared(cleaned["positions"], current_user.user_id)
+    return _canvas_response(request, current_user, store.get(current_user.user_id))
+
+
+@router.delete("/admin/ontology-canvas-default", dependencies=[Depends(_no_store)],
+               response_model=OntologyCanvasResponse, response_model_exclude_none=True)
+def clear_shared_ontology_canvas_route(
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Forgets the shared arrangement: everyone's picture goes back to the
+    automatic layout under their own moves."""
+    _require_manage_deployment(request, current_user)
+    store = _canvas_store(request)
+    store.clear_shared()
+    return _canvas_response(request, current_user, store.get(current_user.user_id))
 
 
 @router.get("/saved-views", dependencies=[Depends(_no_store)],

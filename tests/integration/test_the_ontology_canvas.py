@@ -94,3 +94,127 @@ class TestTheSecurityLayer:
         """An empty list would read as "nothing here is secured"."""
         _as(client, "alice", "customer_service")
         assert "security_chains" not in client.get("/api/me/ontology-canvas").json()
+
+
+# ---- the arrangement everyone starts from (26 October) ----------------------
+
+from tests.conftest import with_roles  # noqa: E402
+
+
+def _roles(client):
+    with_roles(
+        client.app,
+        sees_customer={"allowed_actions": frozenset(["read:Customer"])},
+        sees_both={"allowed_actions": frozenset(["read:Customer", "read:Account"])},
+        placer={"allowed_actions": frozenset(["manage:deployment", "read:Customer", "read:Account"])},
+        placer_of_account={"allowed_actions": frozenset(["manage:deployment", "read:Account"])},
+    )
+
+
+def _shared(client, positions):
+    return client.put("/api/admin/ontology-canvas-default", json={"positions": positions},
+                      headers=_csrf_headers(client))
+
+
+def _switch(client, username, role):
+    client.cookies.clear()
+    _as(client, username, role)
+
+
+CUSTOMER_AT = {"x": 10.0, "y": 20.0}
+ACCOUNT_AT = {"x": 300.0, "y": 40.0}
+
+
+def test_what_a_manager_saves_is_what_everyone_starts_from(client):
+    _roles(client)
+    _as(client, "pat", "placer")
+    assert _shared(client, {"Customer": CUSTOMER_AT, "Account": ACCOUNT_AT}).status_code == 200
+
+    _switch(client, "sam", "sees_both")
+
+    body = client.get("/api/me/ontology-canvas").json()
+    assert body["shared_positions"] == {"Customer": CUSTOMER_AT, "Account": ACCOUNT_AT}
+    assert body["positions"] == {}
+
+
+def test_someone_who_cannot_see_a_type_is_not_sent_where_it_sits(client):
+    """The gap in their picture must say nothing a name would not."""
+    _roles(client)
+    _as(client, "pat", "placer")
+    _shared(client, {"Customer": CUSTOMER_AT, "Account": ACCOUNT_AT})
+
+    _switch(client, "cat", "sees_customer")
+
+    assert client.get("/api/me/ontology-canvas").json()["shared_positions"] == {"Customer": CUSTOMER_AT}
+
+
+def test_a_manager_who_sees_fewer_types_does_not_erase_the_others(client):
+    _roles(client)
+    _as(client, "pat", "placer")
+    _shared(client, {"Customer": CUSTOMER_AT, "Account": ACCOUNT_AT})
+
+    _switch(client, "quin", "placer_of_account")
+    _shared(client, {"Account": {"x": 999.0, "y": 1.0}, "Customer": {"x": 5.0, "y": 5.0}})
+
+    _switch(client, "sam", "sees_both")
+    assert client.get("/api/me/ontology-canvas").json()["shared_positions"] == {
+        "Customer": CUSTOMER_AT, "Account": {"x": 999.0, "y": 1.0}}
+
+
+def test_their_own_moves_do_not_touch_the_shared_arrangement(client):
+    _roles(client)
+    _as(client, "pat", "placer")
+    _shared(client, {"Customer": CUSTOMER_AT})
+
+    _switch(client, "sam", "sees_both")
+    _put(client, {"positions": {"Customer": {"x": 77, "y": 88}}, "areas": []})
+
+    body = client.get("/api/me/ontology-canvas").json()
+    assert body["positions"] == {"Customer": {"x": 77.0, "y": 88.0}}
+    assert body["shared_positions"] == {"Customer": CUSTOMER_AT}
+
+
+def test_only_someone_who_manages_the_deployment_is_offered_it_or_may_do_it(client):
+    _roles(client)
+    _as(client, "sam", "sees_both")
+
+    assert "can_set_shared" not in client.get("/api/me/ontology-canvas").json()
+    assert _shared(client, {"Customer": CUSTOMER_AT}).status_code == 403
+
+    _switch(client, "pat", "placer")
+    assert client.get("/api/me/ontology-canvas").json()["can_set_shared"] is True
+
+
+def test_nothing_they_can_place_is_a_refusal_not_a_silent_save(client):
+    _roles(client)
+    _as(client, "quin", "placer_of_account")
+
+    response = _shared(client, {"Customer": CUSTOMER_AT})
+
+    assert response.status_code == 400
+
+
+def test_a_coordinate_that_is_not_a_number_is_refused(client):
+    _roles(client)
+    _as(client, "pat", "placer")
+
+    assert _shared(client, {"Customer": {"x": 1e12, "y": 0}}).status_code == 400
+
+
+def test_clearing_it_sends_everyone_back_to_the_automatic_layout(client):
+    _roles(client)
+    _as(client, "pat", "placer")
+    _shared(client, {"Customer": CUSTOMER_AT})
+
+    cleared = client.delete("/api/admin/ontology-canvas-default", headers=_csrf_headers(client))
+
+    assert cleared.status_code == 200 and cleared.json()["shared_positions"] == {}
+    _switch(client, "sam", "sees_both")
+    assert client.get("/api/me/ontology-canvas").json()["shared_positions"] == {}
+
+
+def test_only_a_manager_may_clear_it(client):
+    _roles(client)
+    _as(client, "sam", "sees_both")
+
+    assert client.delete("/api/admin/ontology-canvas-default", headers=_csrf_headers(client)).status_code == 403
