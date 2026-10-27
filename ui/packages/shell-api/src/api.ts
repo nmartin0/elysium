@@ -2581,6 +2581,66 @@ export async function applyNewType(digest: string, type: NewType, reason: string
   return (await response.json()) as LabelEditResult
 }
 
+/** An object type a link can join, and the source it is built over. */
+export interface LinkableType {
+  name: string
+  display_name: string | null
+  silo: string | null
+}
+
+export async function getLinkableTypes(): Promise<LinkableType[]> {
+  const response = await apiFetchOrThrow('/admin/ontology/linkable-types')
+  return ((await response.json()) as { types: LinkableType[] }).types
+}
+
+/** The columns of the table a type is built over, or null when the source cannot say. */
+export async function getLinkableTypeColumns(objectType: string): Promise<string[] | null> {
+  const response = await apiFetchOrThrow(`/admin/ontology/linkable-types/${encodeURIComponent(objectType)}/columns`)
+  return ((await response.json()) as { columns: string[] | null }).columns
+}
+
+export type LinkCardinality = 'one_to_one' | 'one_to_many' | 'many_to_many'
+
+/** A link type to add. A foreign-key link names the column of the TARGET's
+ *  table that holds the source's id; a many-to-many link names a join table. */
+export interface NewLink {
+  name: string
+  display_name?: string
+  description?: string
+  source: { object_type: string; api_name: string }
+  target: { object_type: string; api_name: string }
+  cardinality: LinkCardinality
+  foreign_key_column?: string
+  join_table?: { table: string; source_column: string; target_column: string }
+}
+
+export interface NewLinkPreview {
+  diff: string[]
+  impact: AccessImpact
+  needs_approval: boolean
+  /** What the source lacks, in words: a column, a join table. */
+  problems: string[]
+  /** False when the source could not be asked. */
+  checked: boolean
+}
+
+export async function previewNewLink(digest: string, link: NewLink): Promise<NewLinkPreview> {
+  const response = await apiFetchOrThrow('/admin/ontology/links/preview', {
+    method: 'POST',
+    body: JSON.stringify({ digest, ...link }),
+  })
+  return (await response.json()) as NewLinkPreview
+}
+
+/** Adds the link now, or -- when anyone could read more -- proposes it, with the reason. */
+export async function applyNewLink(digest: string, link: NewLink, reason: string | null): Promise<LabelEditResult> {
+  const response = await apiFetchOrThrow('/admin/ontology/links', {
+    method: 'PUT',
+    body: JSON.stringify({ digest, ...link, reason }),
+  })
+  return (await response.json()) as LabelEditResult
+}
+
 /** A configuration change waiting for a role manager who did not propose it. */
 export interface ConfigProposal {
   proposal_id: string

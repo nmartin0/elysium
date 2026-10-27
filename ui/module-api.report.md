@@ -13,8 +13,8 @@ Anything else either exports is internal, and may change without notice.
 The manifest, `activate()`, host values, styles and the add-on server are
 described in [MODULE_API.md](MODULE_API.md).
 
-212 names imported, from 40 entry points, by 9 modules;
-270 declarations public in all.
+220 names imported, from 40 entry points, by 9 modules;
+278 declarations public in all.
 
 ## `@elysium/shell-api/api`
 
@@ -71,6 +71,8 @@ export declare class ApiError extends Error {
 export declare function applyLabels(digest: string, changes: LabelChange[], reason: string | null): Promise<LabelEditResult>;
 
 export declare function applyNewFields(digest: string, fields: NewField[], reason: string | null): Promise<LabelEditResult>;
+
+export declare function applyNewLink(digest: string, link: NewLink, reason: string | null): Promise<LabelEditResult>;
 
 export declare function applyNewType(digest: string, type: NewType, reason: string | null): Promise<LabelEditResult>;
 
@@ -345,6 +347,10 @@ export declare function getFrozenSet(setId: string): Promise<FrozenSetDetail>;
 
 export declare function getFrozenSets(): Promise<FrozenSet[]>;
 
+export declare function getLinkableTypeColumns(objectType: string): Promise<string[] | null>;
+
+export declare function getLinkableTypes(): Promise<LinkableType[]>;
+
 export declare function getLinkCounts(objectType: string, objectId: string): Promise<Record<string, LinkCount>>;
 
 export declare function getMergeProposals(decision?: string): Promise<MergeProposal[]>;
@@ -444,6 +450,14 @@ export interface LabelPreview {
     needs_approval: boolean;
     label_enforcement: boolean;
 }
+
+export interface LinkableType {
+    name: string;
+    display_name: string | null;
+    silo: string | null;
+}
+
+export type LinkCardinality = 'one_to_one' | 'one_to_many' | 'many_to_many';
 
 export interface LinkCount {
     target: string;
@@ -547,6 +561,35 @@ export interface NewFieldsPreview {
     impact: AccessImpact;
     needs_approval: boolean;
     fields: NewFieldConsequence[];
+}
+
+export interface NewLink {
+    name: string;
+    display_name?: string;
+    description?: string;
+    source: {
+        object_type: string;
+        api_name: string;
+    };
+    target: {
+        object_type: string;
+        api_name: string;
+    };
+    cardinality: LinkCardinality;
+    foreign_key_column?: string;
+    join_table?: {
+        table: string;
+        source_column: string;
+        target_column: string;
+    };
+}
+
+export interface NewLinkPreview {
+    diff: string[];
+    impact: AccessImpact;
+    needs_approval: boolean;
+    problems: string[];
+    checked: boolean;
 }
 
 export interface NewType {
@@ -713,6 +756,8 @@ export interface PredictionProposal {
 export declare function previewLabels(digest: string, changes: LabelChange[]): Promise<LabelPreview>;
 
 export declare function previewNewFields(digest: string, fields: NewField[]): Promise<NewFieldsPreview>;
+
+export declare function previewNewLink(digest: string, link: NewLink): Promise<NewLinkPreview>;
 
 export declare function previewNewType(digest: string, type: NewType): Promise<NewTypePreview>;
 

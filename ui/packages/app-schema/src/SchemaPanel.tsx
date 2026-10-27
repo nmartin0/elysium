@@ -50,6 +50,7 @@ import { recordVisit } from './discoverStorage'
 import LinkTypes from './LinkTypes'
 import WhoCanSee from './WhoCanSee'
 import AddFields from './AddFields'
+import AddLink from './AddLink'
 import AddType from './AddType'
 import DescribeType from './DescribeType'
 import LabelFields from './LabelFields'
@@ -323,6 +324,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
   const [labelling, setLabelling] = useState<string | null>(null)
   const [adding, setAdding] = useState<string | null>(null)
   const [addingType, setAddingType] = useState(false)
+  const [addingLink, setAddingLink] = useState(false)
   // What the last edit did: applied as a generation, or waiting for a
   // second person (a label that lets anyone read more).
   const [edited, setEdited] = useState<{ generation: number } | 'waiting' | null>(null)
@@ -484,6 +486,11 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
           Add object type
         </Button>
       )}
+      {describable && (
+        <Button small minimal icon="link" onClick={() => setAddingLink(true)}>
+          Add link
+        </Button>
+      )}
       {/* THE NEW NAMES ARRIVE BY THEMSELVES: the reload changes the
           configuration epoch every response carries, and the shell
           refetches the schema when it moves. */}
@@ -536,6 +543,20 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
           }}
           onProposed={() => {
             setAddingType(false)
+            setEdited('waiting')
+          }}
+          onSessionExpired={onSessionExpired}
+        />
+      )}
+      {addingLink && (
+        <AddLink
+          onClose={() => setAddingLink(false)}
+          onApplied={(generation) => {
+            setAddingLink(false)
+            setEdited({ generation })
+          }}
+          onProposed={() => {
+            setAddingLink(false)
             setEdited('waiting')
           }}
           onSessionExpired={onSessionExpired}
