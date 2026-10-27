@@ -84,6 +84,7 @@ from core.ontology.mediator import DataMediator
 from core.ontology.object_type_validation import validate_object_types
 from core.ontology.predicted_fields import fill_predicted_types, validate_predicted_fields
 from core.ontology.semantic_search import validate_semantic_search
+from core.ontology.silo_security import resolve_inherited_security
 from core.ontology.submission_criteria import validate_action_type_criteria
 from core.ontology.unrestricted import normalise_security_blocks
 from core.ontology.unusual_checks import validate_unusual_checks
@@ -650,6 +651,10 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     normalise_security_blocks(schema_raw)
     policy_raw = load_yaml(base_path / "policy.yaml")
     data_silos_raw = load_yaml(base_path / "data_silos.yaml")
+    # `security: inherit` becomes its silo's declared rule, so a reload
+    # after editing the silo changes every type that follows it
+    # (core/ontology/silo_security.py).
+    resolve_inherited_security(schema_raw, data_silos_raw)
 
     validate_identifier_types(schema_raw, policy_raw)
     _refuse_reserved_silo_names(data_silos_raw)

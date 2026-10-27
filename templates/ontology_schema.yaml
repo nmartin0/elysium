@@ -46,6 +46,9 @@ object_types:
                                      # declaring it here only says WHICH field
                                      # would be the title, never makes its own
                                      # value visible on its own.
+    # A type may instead write `security: inherit`, taking the row rule its
+    # silo declares in data_silos.yaml (live: change the silo, reload).
+    # A silo that declares no rule refuses it at load.
     security:
       field: department             # MAC boundary -- this object type carries
                                      # its own boundary value directly. The

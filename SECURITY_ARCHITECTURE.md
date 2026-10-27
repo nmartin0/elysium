@@ -45,6 +45,21 @@ because the destination is readable by every role that reads the type. The decis
 the row check is made once, in check_access, through the mediator's
 has_no_row_check.
 
+## A type may follow its silo's row rule
+
+**27 October, with the owner.** A silo may declare `security:
+unrestricted` or `security: {field: <name>}` in data_silos.yaml, and a
+type over it may write `security: inherit` (Foundry: an object type's
+permissions come from where its backing datasource lives). It is
+resolved at load into the silo's ordinary block, so every check above
+sees a block it already knew, and the inheritance is live: edit the
+silo, reload, every following type changes. `inherit` over a silo with
+no rule, or on a type with no storage, is refused at load -- inheritance
+never becomes "everyone sees every row" by omission, and a missing block
+on any other type is still an error. A resolved unrestricted rule meets
+the same refusals as a written one (a via_field chain may not end at it).
+core/ontology/silo_security.py; tests/unit/test_silo_security.py.
+
 ## CLOSED: Elysium used to enforce half of MAC
 
 **CLOSED (E-18).** What follows is kept because the reasoning is the

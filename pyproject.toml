@@ -487,8 +487,10 @@ layers = [
     "value_types",
     # unrestricted (19 October) is a leaf: the declaration, its sentinel
     # and is_unrestricted, read by validation, the mediator, the write
-    # mediator and who_can_see; it imports nothing.
-    "field_types | link_types | classifications | value_checks | unrestricted",
+    # mediator and who_can_see; it imports nothing. silo_security (27
+    # October) is a leaf beside it: the loader resolves `security: inherit`
+    # with it, and it imports nothing.
+    "field_types | link_types | classifications | value_checks | unrestricted | silo_security",
     # Below field_types, which reads locale-written text through it
     # (DEP-1). It imports nothing from this package.
     "localised_values",

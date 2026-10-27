@@ -91,6 +91,7 @@ from core.intermediate_layer.policy_validation import validate_role_coherence, v
 from core.ontology.action_types import validate_action_types
 from core.ontology.link_types import expand_link_types, validate_link_types
 from core.ontology.object_type_validation import validate_object_types
+from core.ontology.silo_security import resolve_inherited_security
 from core.ontology.submission_criteria import validate_action_type_criteria
 from core.ontology.unrestricted import normalise_security_blocks
 
@@ -333,6 +334,9 @@ def lint_deployment(config_dir: Path | None = None) -> bool:
             # first, or this re-check refuses the word and the full error
             # list is lost (found in review, 19 October).
             normalise_security_blocks(schema_raw)
+            resolve_inherited_security(
+                schema_raw,
+                yaml.safe_load((config_dir / "data_silos.yaml").read_text()))
             validate_identifier_types(schema_raw, policy_raw)
         except (OSError, yaml.YAMLError, ValueError):
             return _report_invalid(config_dir, [str(e)])

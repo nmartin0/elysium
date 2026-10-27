@@ -14,6 +14,14 @@
 
 data_silos:
   primary_sql:
+    # OPTIONAL: the row rule for the types in this silo that say
+    # `security: inherit` in ontology_schema.yaml. Either the word
+    # `unrestricted`, or {field: <a field the type has>}. A type that
+    # inherits follows this rule live: change it here, reload, and every
+    # such type changes. A type that says `inherit` over a silo with no
+    # rule here is refused at load -- inheritance never turns into
+    # "everyone sees every row" by omission.
+    # security: {field: region}
     adapter: sqlite                 # see adapters/ for what's built in;
                                      # register a new one in
                                      # core/deployment_loader.py's

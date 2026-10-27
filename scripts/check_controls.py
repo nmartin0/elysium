@@ -6673,6 +6673,66 @@ CONTROLS = [
         new='    if False:',
         tests=['tests/unit/test_discoverable_types.py::TestValidation::test_anything_but_a_boolean_is_refused_with_the_value_shown'],
     ),
+    Control(
+        describes='SILO SECURITY: inherit takes the silo rule',
+        path='core/ontology/silo_security.py',
+        old='        type_def["security"] = dict(rules[silo])',
+        new='        pass',
+        tests=[
+            ('tests/unit/test_silo_security.py::'
+             'TestInheriting::test_the_type_takes_the_silos_rule_and_says_from_where'),
+        ],
+    ),
+    Control(
+        describes='SILO SECURITY: a silo with no rule refuses inherit',
+        path='core/ontology/silo_security.py',
+        old='        if silo not in rules:',
+        new='        if False:',
+        tests=[
+            ('tests/unit/test_silo_security.py::'
+             'TestInheriting::test_a_silo_with_no_rule_refuses_inherit'),
+        ],
+    ),
+    Control(
+        describes='SILO SECURITY: a type with no source cannot inherit',
+        path='core/ontology/silo_security.py',
+        old='        if not silo:',
+        new='        if False:',
+        tests=[
+            ('tests/unit/test_silo_security.py::'
+             'TestInheriting::test_a_type_with_no_source_cannot_inherit'),
+        ],
+    ),
+    Control(
+        describes='SILO SECURITY: only unrestricted or a field is a silo rule',
+        path='core/ontology/silo_security.py',
+        old='        elif (isinstance(declared, dict) and set(declared) == {"field"}',
+        new='        elif (isinstance(declared, dict) and "field" in declared',
+        tests=[
+            ('tests/unit/test_silo_security.py::'
+             'TestTheSiloRule::test_anything_else_is_refused'),
+        ],
+    ),
+    Control(
+        describes='SILO SECURITY: the type records where its rule came from',
+        path='core/ontology/silo_security.py',
+        old='        type_def[INHERITED_FROM] = silo',
+        new='        pass',
+        tests=[
+            ('tests/unit/test_silo_security.py::'
+             'TestInheriting::test_the_type_takes_the_silos_rule_and_says_from_where'),
+        ],
+    ),
+    Control(
+        describes='SILO SECURITY: the loader resolves inherit before anything reads it',
+        path='core/deployment_loader.py',
+        old='    resolve_inherited_security(schema_raw, data_silos_raw)',
+        new='    pass',
+        tests=[
+            ('tests/unit/test_silo_security.py::'
+             'TestTheLoaderDoesIt::test_a_deployment_whose_silo_says_nothing_does_not_load'),
+        ],
+    ),
 ]
 
 
