@@ -1768,10 +1768,52 @@ writes without table encryption, so this means encrypting around it),
 and a documented, tested migration (backup, restore elsewhere, verify)
 as the supported way to move.
 
-**Blocked on:** the owner choosing between "file permissions plus
-volume encryption plus encrypted backups" (built) and Elysium-held
-encryption of the lake itself (a project, and it makes copying the
-files useless without the key -- which is the point and the cost).
+**DECIDED 27 OCTOBER, by the owner:** Elysium-held encryption of the
+lake's own files, with a key that only Elysium holds AND that can be
+moved, so an installation can move and still read its lake while a
+copied lake is useless without the key.
+
+**THE SPIKE (27 October) says it can be done, and cheaply.** Every byte
+pyiceberg 0.12 reads or writes goes through `FileIO.new_input(...).open()`
+and `new_output(...).create()`, and a FileIO is a configuration property
+(`py-io-impl`), which `open_mirror_catalog` already passes through
+(`mirror.storage`). A prototype FileIO encrypting each file in 64 KiB
+AES-256-GCM chunks (a per-file key wrapped by the master key, chunk
+number in the nonce, a last-chunk flag against truncation) ran a real
+table: 2,000,000 rows appended, scanned and filtered correctly;
+data files, manifests and metadata JSON were all ciphertext, and a
+unique email address appeared nowhere on disk, catalog.db included;
+a wrong key, a flipped byte and a truncated file were each refused.
+Cost on that table: write 0.49s against 0.42s, full read 0.16s against
+0.12s. The prototype lives only in the session's scratch space; the build
+is a proper module, not that file.
+
+**THE SHAPE TO BUILD:** a master key held by Elysium outside the data
+directory (a 0400 file, a KMS later), never in a backup beside the
+data; a header per file holding that file's wrapped key, so ROTATING
+the master key rewrites headers and not data; `export-key` and
+`import-key` carrying the master key under a passphrase, which is the
+portability; a migration (backup, restore elsewhere with the key,
+verify) as the supported move; and Elysium refusing to start when
+encryption is configured and the key is absent, rather than writing
+plaintext.
+
+**WHAT MUST BE SAID PLAINLY, and decided with the owner before the
+build:** (1) LOSING THE KEY LOSES THE LAKE, and the changelog and bronze
+are systems of record -- a source holds "now", not last March -- so the
+setup REQUIRES a second copy of the key (a recovery key shown once,
+checked back) before it will encrypt anything. (2) Root on the running
+host can still read the key from the file or the process; this guards
+copied files, stolen disks, backups and other accounts, not a hostile
+administrator of the live machine. (3) TURNING IT ON FOR A LAKE THAT
+EXISTS means rewriting every table through pyiceberg, because
+manifests record file sizes; scripts that read lake files directly
+(repair_catalog, the orphan-file remover) need the key too. (4) catalog.db
+holds table names and file locations, not values; it stays a plain file
+with the other private files.
+
+**Blocked on:** the owner agreeing the two points above (the required
+recovery key; the limit against a hostile administrator). Nothing else.
 
 ---
 
