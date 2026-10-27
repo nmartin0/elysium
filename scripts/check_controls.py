@@ -6887,6 +6887,16 @@ CONTROLS = [
             ('tests/unit/test_new_type.py::test_a_frozen_silo_map_is_read_like_a_plain_one'),
         ],
     ),
+    Control(
+        describes='NEW TYPE: the source\'s own bookkeeping tables are not offered',
+        path='api/routes.py',
+        old='if not t.startswith("sqlite_")',
+        new='if True',
+        tests=[
+            ('tests/integration/test_new_type_from_the_ui.py::'
+             'TestWhatTheFormOffers::test_the_tables_and_columns_a_source_holds'),
+        ],
+    ),
 ]
 
 

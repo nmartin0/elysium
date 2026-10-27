@@ -20,6 +20,7 @@ vi.mock('@elysium/shell-api/api', async (original) => ({
   getOntologyDescriptions: () => describing.answer(),
   previewNewFields: () => describing.preview(),
   applyNewFields: () => describing.apply(),
+  getNewTypeSources: () => new Promise(() => {}),
 }))
 
 /** The panel keeps its tab and filter in the URL, so it needs a
@@ -513,5 +514,30 @@ describe('adding a field to a type', () => {
 
     expect(await screen.findByText('Waiting for approval')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+})
+
+describe('adding an object type', () => {
+  it('is offered to a manager of the deployment, and opens its own dialog', async () => {
+    describing.answer = () =>
+      Promise.resolve({ digest: 'd1', types: {}, data_types: ['string'], label_enforcement: false })
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add object type' }))
+
+    expect(await screen.findByRole('dialog', { name: 'Add an object type' })).toBeInTheDocument()
+  })
+
+  it('is not offered to anyone the server refuses', async () => {
+    let refused = false
+    describing.answer = () => {
+      refused = true
+      return Promise.reject(new Error('refused'))
+    }
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+
+    await waitFor(() => expect(refused).toBe(true))
+    expect(screen.queryByRole('button', { name: 'Add object type' })).not.toBeInTheDocument()
+    describing.answer = () => new Promise(() => {})
   })
 })

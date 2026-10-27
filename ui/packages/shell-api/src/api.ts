@@ -2502,6 +2502,85 @@ export async function applyNewFields(
   return (await response.json()) as LabelEditResult
 }
 
+/** A source a new type can be built over, and the row rule it declares:
+ *  `{unrestricted: true}`, `{field: name}`, or null for none. */
+export interface NewTypeSource {
+  silo: string
+  rule: { unrestricted?: boolean; field?: string } | null
+}
+
+export async function getNewTypeSources(): Promise<NewTypeSource[]> {
+  const response = await apiFetchOrThrow('/admin/ontology/sources')
+  return ((await response.json()) as { silos: NewTypeSource[] }).silos
+}
+
+/** The tables a source holds, or null when it cannot say (the form then takes a name). */
+export async function getSourceTables(silo: string): Promise<string[] | null> {
+  const response = await apiFetchOrThrow(`/admin/ontology/sources/${encodeURIComponent(silo)}/tables`)
+  return ((await response.json()) as { tables: string[] | null }).tables
+}
+
+/** The columns of one table, or null when the source cannot say. */
+export async function getSourceColumns(silo: string, table: string): Promise<string[] | null> {
+  const response = await apiFetchOrThrow(
+    `/admin/ontology/sources/${encodeURIComponent(silo)}/columns?table=${encodeURIComponent(table)}`,
+  )
+  return ((await response.json()) as { columns: string[] | null }).columns
+}
+
+/** A field of a new type: its name, the source column when it is named
+ *  otherwise, and its data type (chosen now, never changed here). */
+export interface NewTypeField {
+  name: string
+  column?: string
+  data_type?: string
+}
+
+/** A type to add. Its row rule is never defaulted: "inherit" (follow the
+ *  source), "unrestricted", or {field: one of its fields}. */
+export interface NewType {
+  name: string
+  display_name?: string
+  description?: string
+  silo: string
+  table: string
+  id_column: string
+  id_field?: string
+  id_type?: string
+  fields: NewTypeField[]
+  title_field?: string
+  security: 'inherit' | 'unrestricted' | { field: string }
+  /** List it to everyone by name: they learn it exists, nothing more. */
+  discoverable?: boolean
+}
+
+export interface NewTypePreview {
+  diff: string[]
+  impact: AccessImpact
+  needs_approval: boolean
+  /** Null when the source cannot be asked. */
+  source_has_table: boolean | null
+  columns_missing: string[]
+  columns_checked: boolean
+}
+
+export async function previewNewType(digest: string, type: NewType): Promise<NewTypePreview> {
+  const response = await apiFetchOrThrow('/admin/ontology/types/preview', {
+    method: 'POST',
+    body: JSON.stringify({ digest, ...type }),
+  })
+  return (await response.json()) as NewTypePreview
+}
+
+/** Adds the type now, or -- when listing it to everyone -- proposes it, with the reason. */
+export async function applyNewType(digest: string, type: NewType, reason: string | null): Promise<LabelEditResult> {
+  const response = await apiFetchOrThrow('/admin/ontology/types', {
+    method: 'PUT',
+    body: JSON.stringify({ digest, ...type, reason }),
+  })
+  return (await response.json()) as LabelEditResult
+}
+
 /** A configuration change waiting for a role manager who did not propose it. */
 export interface ConfigProposal {
   proposal_id: string

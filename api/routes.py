@@ -2542,7 +2542,10 @@ def source_tables_route(silo: str, request: Request,
         present = probe() if probe else None
     except Exception:  # noqa: BLE001 - a source that is down is not an error to show
         present = None
-    return {"tables": sorted(present) if present else None}
+    # SQLite keeps its own bookkeeping tables beside the data (sqlite_sequence):
+    # not something anyone builds an object type over.
+    tables = sorted(t for t in (present or ()) if not t.startswith("sqlite_"))
+    return {"tables": tables or None}
 
 
 @router.get("/admin/ontology/sources/{silo}/columns", dependencies=[Depends(_no_store)],

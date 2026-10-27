@@ -50,6 +50,7 @@ import { recordVisit } from './discoverStorage'
 import LinkTypes from './LinkTypes'
 import WhoCanSee from './WhoCanSee'
 import AddFields from './AddFields'
+import AddType from './AddType'
 import DescribeType from './DescribeType'
 import LabelFields from './LabelFields'
 import './SchemaPanel.css'
@@ -321,6 +322,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
   const [describing, setDescribing] = useState<string | null>(null)
   const [labelling, setLabelling] = useState<string | null>(null)
   const [adding, setAdding] = useState<string | null>(null)
+  const [addingType, setAddingType] = useState(false)
   // What the last edit did: applied as a generation, or waiting for a
   // second person (a label that lets anyone read more).
   const [edited, setEdited] = useState<{ generation: number } | 'waiting' | null>(null)
@@ -477,6 +479,11 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
       <Button minimal small icon="arrow-left" aria-label="Back" onClick={() => navigate(-1)}>
         Back
       </Button>
+      {describable && (
+        <Button small minimal icon="add" onClick={() => setAddingType(true)}>
+          Add object type
+        </Button>
+      )}
       {/* THE NEW NAMES ARRIVE BY THEMSELVES: the reload changes the
           configuration epoch every response carries, and the shell
           refetches the schema when it moves. */}
@@ -515,6 +522,20 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
           }}
           onProposed={() => {
             setLabelling(null)
+            setEdited('waiting')
+          }}
+          onSessionExpired={onSessionExpired}
+        />
+      )}
+      {addingType && (
+        <AddType
+          onClose={() => setAddingType(false)}
+          onApplied={(generation) => {
+            setAddingType(false)
+            setEdited({ generation })
+          }}
+          onProposed={() => {
+            setAddingType(false)
             setEdited('waiting')
           }}
           onSessionExpired={onSessionExpired}

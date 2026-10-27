@@ -66,6 +66,7 @@ class TestWhatTheFormOffers:
                                params={"table": "customers"}).json()["columns"]
 
         assert "customers" in tables and "transactions" in tables
+        assert not [t for t in tables if t.startswith("sqlite_")]
         assert {"customer_id", "name", "region"} <= set(columns)
 
     def test_a_source_that_cannot_be_asked_says_null_so_the_form_takes_it_by_hand(self, deployer, monkeypatch):
