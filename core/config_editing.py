@@ -39,7 +39,7 @@ undo" with a validation in front.
 
 import difflib
 import hashlib
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
 from ruamel.yaml import YAML
@@ -639,14 +639,20 @@ BINDINGS_FILE = "source_bindings.yaml"
 NEW_FIELD_KEYS = ("object_type", "name", "data_type", "display_name", "description", "labels", "column")
 
 
-def _last_line(lines: list[str], key_line: int) -> int:
-    """The last line of content belonging to the key on `key_line`."""
+def _last_line(lines: list[str], key_line: int, comments: bool = False) -> int:
+    """The last line of content belonging to the key on `key_line`. With
+    `comments`, an indented comment after it counts too -- for a block
+    added as a SIBLING of what precedes, whose trailing comments belong
+    to that block and must stay with it (a field's, by contrast, goes
+    before the note the previous field's block ends with)."""
     key_indent = _indent_of(lines[key_line])
     last = key_line
     for index in range(key_line + 1, len(lines)):
         if _is_content(lines[index]):
             if _indent_of(lines[index]) <= key_indent:
                 break
+            last = index
+        elif comments and lines[index].strip() and _indent_of(lines[index]) > key_indent:
             last = index
     return last
 
@@ -663,7 +669,8 @@ def _child_indent(lines: list[str], key_line: int) -> str:
     return " " * (key_indent + 2)
 
 
-def _append_child(text: str, parents: list[str], name: str, body: list[str]) -> str:
+def _append_child(text: str, parents: list[str], name: str, body: list[str],
+                  after_comments: bool = False) -> str:
     """`name:` and its `body` lines, added as the LAST child of the block
     at `parents` -- after that block's last line of content, so the
     comments that follow it stay where they were. The innermost parent is
@@ -689,7 +696,7 @@ def _append_child(text: str, parents: list[str], name: str, body: list[str]) -> 
         raise ConfigEditError("Nowhere to add it.")
     indent = _child_indent(lines, key_line)
     block = [f"{indent}{name}:\n"] + [f"{indent}  {line}\n" for line in body]
-    at = _last_line(lines, key_line)
+    at = _last_line(lines, key_line, after_comments)
     lines[at + 1:at + 1] = block
     return "".join(lines)
 
@@ -796,6 +803,198 @@ def apply_new_fields(ontology: str, bindings: "str | None", additions: list,
     if edited_bindings != bindings:
         edited_bindings = _meaning_checked(edited_bindings, expected_bindings, BINDINGS_FILE)
     return edited, edited_bindings
+
+
+# ---------------------------------------------------------------------------
+# A NEW TYPE (27 October): the second of the three operations. One type,
+# bound to ONE table of ONE source, with the fields the person kept from
+# that table's columns. What it cannot do, on purpose: a type with no
+# source (nothing exists yet to store its objects), links (the third
+# operation), and a type that is born readable -- nobody can read it
+# until a role is granted it, and the first grant of anything is
+# manage:escalation's.
+#
+# ITS ROW RULE IS NEVER LEFT TO A DEFAULT. The person chooses: follow the
+# source (`inherit`, offered only when the source declares a rule),
+# `unrestricted`, or the rows tagged by one of the type's own fields. A
+# type with none of those is refused here, as the loader refuses one.
+# ---------------------------------------------------------------------------
+
+MAX_FIELDS_ON_A_NEW_TYPE = 200
+NEW_TYPE_KEYS = ("name", "display_name", "plural_display_name", "description", "silo", "table",
+                 "id_column", "id_field", "id_type", "fields", "title_field", "security",
+                 "discoverable")
+NEW_TYPE_FIELD_KEYS = ("name", "column", "data_type")
+
+
+def _checked_name(what: str, value, pattern: str) -> str:
+    import re
+
+    if not isinstance(value, str) or not re.match(pattern, value):
+        raise ConfigEditError(what)
+    return value
+
+
+def apply_new_type(ontology: str, bindings: "str | None", addition: dict,
+                   data_types: "Iterable[str]",
+                   silos: "Mapping[str, object]") -> tuple[str, "str | None"]:
+    """(ontology_schema.yaml, source_bindings.yaml) with this type added.
+
+    `addition` is {name, silo, table, id_column, fields, security} and
+    optionally display_name, plural_display_name, description, id_field
+    (the id's property name; the column's name when not given), id_type,
+    title_field, discoverable. `fields` is a list of {name, column,
+    data_type}, column and data_type optional. `silos` maps every silo
+    that exists to the row rule it declares (None for no rule): this
+    module does not read data_silos.yaml, and it is how `inherit` is
+    judged.
+
+    As for fields, `bindings` None means the deployment keeps its
+    bindings in the ontology file.
+    """
+    import yaml as plain_yaml
+
+    data_types = tuple(data_types)
+    if not isinstance(addition, dict):
+        raise ConfigEditError("Nothing to add.")
+    unknown = sorted(set(addition) - set(NEW_TYPE_KEYS))
+    if unknown:
+        raise ConfigEditError(f"{', '.join(unknown)} cannot be set on a new type here.")
+    expected = plain_yaml.safe_load(ontology) or {}
+    types = expected.get("object_types") if isinstance(expected, dict) else None
+    if not isinstance(types, dict):
+        raise ConfigEditError(f"{ONTOLOGY_FILE} declares no object_types.")
+    expected_bindings: dict = (plain_yaml.safe_load(bindings) or {}) if bindings is not None else {}
+
+    name = _checked_name(
+        f"{addition.get('name')!r} is not a type name: letters and digits, starting with a capital.",
+        addition.get("name"), r"^[A-Z][A-Za-z0-9]{0,62}$")
+    if name in types:
+        raise ConfigEditError(f"There is already an object type {name!r}.")
+
+    silo = addition.get("silo")
+    if not isinstance(silo, str) or silo not in silos:
+        raise ConfigEditError(f"There is no source {silo!r}.")
+    table = _checked_column(f"{name}'s table", addition.get("table"))
+    id_column = _checked_column(f"{name}'s id column", addition.get("id_column"))
+    if table is None or id_column is None:
+        raise ConfigEditError(f"{name} needs a table and an id column.")
+    id_field = addition.get("id_field") or id_column
+    id_field = _checked_name(
+        f"{id_field!r} cannot be the id's name: lowercase letters, digits and underscores, "
+        f"starting with a letter. Give it another.", id_field, r"^[a-z][a-z0-9_]{0,62}$")
+    id_type = addition.get("id_type")
+    if id_type is not None and id_type not in data_types:
+        raise ConfigEditError(f"{name}'s id type is one of {', '.join(data_types)}.")
+
+    listed = addition.get("fields")
+    if not isinstance(listed, list) or not listed:
+        raise ConfigEditError(f"{name} needs at least one field.")
+    if len(listed) > MAX_FIELDS_ON_A_NEW_TYPE:
+        raise ConfigEditError(f"At most {MAX_FIELDS_ON_A_NEW_TYPE} fields on a new type.")
+    declared_fields: dict = {}
+    bound_fields: dict = {}
+    field_lines: list[str] = []
+    for item in listed:
+        if not isinstance(item, dict) or set(item) - set(NEW_TYPE_FIELD_KEYS):
+            raise ConfigEditError(f"A field is {{name, column, data_type}}; got {item!r}.")
+        fname = _checked_name(
+            f"{item.get('name')!r} is not a field name: lowercase letters, digits and "
+            f"underscores, starting with a letter.", item.get("name"), r"^[a-z][a-z0-9_]{0,62}$")
+        if fname in declared_fields or fname == id_field:
+            raise ConfigEditError(f"{name}.{fname} is named twice (the id is {id_field!r}).")
+        data_type = item.get("data_type") or "string"
+        if data_type not in data_types:
+            raise ConfigEditError(f"{name}.{fname}'s data type is one of {', '.join(data_types)}.")
+        column = _checked_column(f"{name}.{fname}", item.get("column"))
+        if column == fname:
+            column = None
+        declared: dict = {"type": "data"}
+        field_lines.append(f"  {fname}:")
+        field_lines.append("    type: data")
+        if data_type != "string":
+            declared["data_type"] = data_type
+            field_lines.append(f"    data_type: {data_type}")
+        if column is not None:
+            if bindings is None:
+                declared["column"] = column
+                field_lines.append(f"    column: {_render_text(column)}")
+            else:
+                bound_fields[fname] = {"column": column}
+        declared_fields[fname] = declared
+
+    title_field = addition.get("title_field")
+    if title_field is not None and title_field not in declared_fields and title_field != id_field:
+        raise ConfigEditError(f"{name}'s title column {title_field!r} is not one of its fields.")
+
+    security = addition.get("security")
+    if security == "inherit":
+        if silos.get(silo) is None:
+            raise ConfigEditError(
+                f"{silo} declares no row rule for its types to follow. Choose {name}'s own.")
+        security_value: str | dict = "inherit"
+        security_lines = ["security: inherit"]
+    elif security == "unrestricted":
+        security_value = "unrestricted"
+        security_lines = ["security: unrestricted"]
+    elif isinstance(security, dict) and set(security) == {"field"} and security["field"] in declared_fields:
+        security_lines = ["security:", f"  field: {security['field']}"]
+        security_value = {"field": security["field"]}
+    else:
+        raise ConfigEditError(
+            f"Choose who may see {name}'s rows: follow the source, everyone whose role reads "
+            f"it, or the rows tagged by one of its fields.")
+
+    body = [f"id_field: {id_field}"]
+    declared_type: dict = {"id_field": id_field}
+    for key in ("display_name", "plural_display_name", "description"):
+        value = _checked_text(name, key, addition.get(key), TYPE_KEYS[key])
+        if value is not None:
+            declared_type[key] = value
+            body.append(f"{key}: {_render_text(value)}")
+    if title_field is not None:
+        declared_type["title_field"] = title_field
+        body.append(f"title_field: {title_field}")
+    discoverable = addition.get("discoverable", False)
+    if discoverable not in (True, False):
+        raise ConfigEditError("Listing a type to everyone is on or off.")
+    if discoverable:
+        declared_type["discoverable"] = True
+        body.append("discoverable: true")
+    body += security_lines
+    declared_type["security"] = security_value
+
+    storage = {"silo": silo, "table": table, "id_column": id_column}
+    storage_lines = [f"  silo: {_render_text(silo)}", f"  table: {_render_text(table)}",
+                     f"  id_column: {_render_text(id_column)}"]
+    if id_type is not None and id_type != "string":
+        storage["id_type"] = id_type
+        storage_lines.append(f"  id_type: {id_type}")
+
+    body.append("fields:")
+    body += field_lines
+    declared_type["fields"] = declared_fields
+    if bindings is None:
+        # THE DEPLOYMENT KEEPS ITS BINDINGS IN THIS FILE: storage sits first.
+        body = body[:1] + ["storage:"] + storage_lines + body[1:]
+        declared_type["storage"] = storage
+    edited = _meaning_checked(_append_child(ontology, ["object_types"], name, body, after_comments=True),
+                              {**expected, "object_types": {**types, name: declared_type}})
+    if bindings is None:
+        return edited, None
+
+    bound_type: dict = {"storage": storage}
+    bound_lines = ["storage:"] + storage_lines
+    if bound_fields:
+        bound_type["fields"] = bound_fields
+        bound_lines.append("fields:")
+        for fname, bound in bound_fields.items():
+            bound_lines += [f"  {fname}:", f"    column: {_render_text(bound['column'])}"]
+    if not isinstance(expected_bindings.get("object_types"), dict):
+        raise ConfigEditError(f"{BINDINGS_FILE} binds no object types to add to.")
+    edited_bindings = _append_child(bindings, ["object_types"], name, bound_lines, after_comments=True)
+    expected_bindings["object_types"][name] = bound_type
+    return edited, _meaning_checked(edited_bindings, expected_bindings, BINDINGS_FILE)
 
 
 # ---------------------------------------------------------------------------

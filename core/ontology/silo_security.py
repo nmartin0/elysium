@@ -32,6 +32,8 @@ The type's own `storage.silo` decides; `additional_storage` (a property
 borrowed from another silo) never does.
 """
 
+from collections.abc import Mapping
+
 INHERIT = "inherit"
 INHERITED_FROM = "security_inherited_from"
 
@@ -40,12 +42,12 @@ def silo_rules(data_silos_raw: dict) -> dict[str, dict]:
     """{silo: normalised block} for the silos that declare one."""
     rules: dict[str, dict] = {}
     for name, silo in ((data_silos_raw or {}).get("data_silos") or {}).items():
-        if not isinstance(silo, dict) or "security" not in silo:
+        if not isinstance(silo, Mapping) or "security" not in silo:
             continue
         declared = silo["security"]
         if declared == "unrestricted":
             rules[name] = {"unrestricted": True}
-        elif (isinstance(declared, dict) and set(declared) == {"field"}
+        elif (isinstance(declared, Mapping) and set(declared) == {"field"}
               and isinstance(declared["field"], str) and declared["field"]):
             rules[name] = {"field": declared["field"]}
         else:

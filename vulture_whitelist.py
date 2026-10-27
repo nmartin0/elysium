@@ -583,6 +583,14 @@ needs_approval  # LabelPreviewResponse.needs_approval, read by pydantic
 preview_new_fields_route
 apply_new_fields_route
 source_has_column  # NewFieldConsequence, read by the browser
+new_type_sources_route
+source_tables_route
+source_columns_route
+preview_new_type_route
+apply_new_type_route
+source_has_table  # NewTypePreviewResponse, read by the browser
+columns_missing  # NewTypePreviewResponse, read by the browser
+columns_checked  # NewTypePreviewResponse, read by the browser
 # DEV_UI 13.7, putting an earlier version back: routes reached by HTTP.
 preview_restore_route
 restore_route

@@ -6733,6 +6733,160 @@ CONTROLS = [
              'TestTheLoaderDoesIt::test_a_deployment_whose_silo_says_nothing_does_not_load'),
         ],
     ),
+    Control(
+        describes='NEW TYPE: inherit needs a source that declares a rule',
+        path='core/config_editing.py',
+        old='        if silos.get(silo) is None:',
+        new='        if False:',
+        tests=[
+            ('tests/unit/test_new_type.py::TestItsRowRuleIsAlwaysChosen::test_inherit_needs_a_source_that_declares_one'),
+        ],
+    ),
+    Control(
+        describes='NEW TYPE: a field rule must name one of its fields',
+        path='core/config_editing.py',
+        old=' and security["field"] in declared_fields:',
+        new=':',
+        tests=[
+            ('tests/unit/test_new_type.py::TestItsRowRuleIsAlwaysChosen::test_a_field_rule_must_be_one_of_the_fields'),
+        ],
+    ),
+    Control(
+        describes='NEW TYPE: its row rule has no default',
+        path='core/config_editing.py',
+        old='    elif security == "unrestricted":',
+        new='    elif security == "unrestricted" or security is None:',
+        tests=[
+            ('tests/unit/test_new_type.py::TestItsRowRuleIsAlwaysChosen::test_there_is_no_default'),
+        ],
+    ),
+    Control(
+        describes='NEW TYPE: a taken name is refused',
+        path='core/config_editing.py',
+        old='    if name in types:',
+        new='    if False:',
+        tests=[
+            ('tests/unit/test_new_type.py::TestWhatItRefuses::test_it_refuses'),
+        ],
+    ),
+    Control(
+        describes='NEW TYPE: the source must exist',
+        path='core/config_editing.py',
+        old='    if not isinstance(silo, str) or silo not in silos:',
+        new='    if False:',
+        tests=[
+            ('tests/unit/test_new_type.py::TestWhatItRefuses::test_it_refuses'),
+        ],
+    ),
+    Control(
+        describes="NEW TYPE: no field may take the id's name",
+        path='core/config_editing.py',
+        old='        if fname in declared_fields or fname == id_field:',
+        new='        if fname in declared_fields:',
+        tests=[
+            ('tests/unit/test_new_type.py::TestWhatItRefuses::test_it_refuses'),
+        ],
+    ),
+    Control(
+        describes='NEW TYPE: the title must be one of its fields',
+        path='core/config_editing.py',
+        old='    if title_field is not None and title_field not in declared_fields and title_field != id_field:',
+        new='    if False:',
+        tests=[
+            ('tests/unit/test_new_type.py::TestWhatItRefuses::test_it_refuses'),
+        ],
+    ),
+    Control(
+        describes='NEW TYPE: it is listed to everyone only when asked',
+        path='core/config_editing.py',
+        old='    if discoverable:\n        declared_type',
+        new='    if True:\n        declared_type',
+        tests=[
+            ('tests/unit/test_new_type.py::TestTheLinesItWrites::test_a_type_is_not_listed_unless_asked'),
+        ],
+    ),
+    Control(
+        describes='NEW TYPE: with no bindings file the source sits in the type',
+        path='core/config_editing.py',
+        old='        body = body[:1] + ["storage:"] + storage_lines + body[1:]',
+        new='        pass',
+        tests=[
+            ('tests/unit/test_new_type.py::TestTheLinesItWrites::test_with_no_bindings_file_the_source_sits_in_the_type'),
+        ],
+    ),
+    Control(
+        describes="NEW TYPE: it lands after the previous type's own trailing note",
+        path='core/config_editing.py',
+        old='name, body, after_comments=True)',
+        new='name, body, after_comments=False)',
+        tests=[
+            ('tests/unit/test_new_type.py::TestWhereItLands::test_the_comment_that_ends_the_previous_type_stays_with_it'),
+        ],
+    ),
+    Control(
+        describes='NEW TYPE: a column named like its field is not bound',
+        path='core/config_editing.py',
+        old='        if column == fname:\n            column = None',
+        new='        pass',
+        tests=[
+            ('tests/unit/test_new_type.py::TestTheLinesItWrites::test_a_column_named_like_its_field_is_not_bound_twice'),
+        ],
+    ),
+    Control(
+        describes='NEW TYPE: the apply route waits only when access widens',
+        path='api/routes.py',
+        old='        changes = {body.name: "new type"}\n        if not impact["widens"]:',
+        new='        changes = {body.name: "new type"}\n        if True:',
+        tests=[
+            ('tests/integration/test_new_type_from_the_ui.py::TestListingItToEveryone::test_it_says_the_type_exists_so_it_waits_with_a_reason'),
+        ],
+    ),
+    Control(
+        describes='NEW TYPE: the preview says which columns the source lacks',
+        path='api/routes.py',
+        old='[c for c in wanted if c not in present_columns] if present_columns else []',
+        new='[]',
+        tests=[
+            ('tests/integration/test_new_type_from_the_ui.py::TestThePreview::test_it_says_whether_the_source_has_the_table_and_columns'),
+        ],
+    ),
+    Control(
+        describes='NEW TYPE: the preview says whether the source has the table',
+        path='api/routes.py',
+        old='(body.table in present_tables) if present_tables else None',
+        new='True',
+        tests=[
+            ('tests/integration/test_new_type_from_the_ui.py::TestThePreview::test_it_says_whether_the_source_has_the_table_and_columns'),
+        ],
+    ),
+    Control(
+        describes='NEW TYPE: the apply route needs manage:deployment',
+        path='api/routes.py',
+        old=('    _require_manage_deployment(request, current_user)\n'
+             '    with _config_edit_lock:\n        files = _proposed_new_type'),
+        new='    with _config_edit_lock:\n        files = _proposed_new_type',
+        tests=[
+            ('tests/integration/test_new_type_from_the_ui.py::TestWhatTheFormOffers::test_only_a_manager_of_the_deployment_is_offered_any_of_it'),
+        ],
+    ),
+    Control(
+        describes='NEW TYPE: the source list needs manage:deployment',
+        path='api/routes.py',
+        old='    _require_manage_deployment(request, current_user)\n    return {"silos"',
+        new='    return {"silos"',
+        tests=[
+            ('tests/integration/test_new_type_from_the_ui.py::TestWhatTheFormOffers::test_only_a_manager_of_the_deployment_is_offered_any_of_it'),
+        ],
+    ),
+    Control(
+        describes='SILO SECURITY: a frozen silo map is read like a plain one',
+        path='core/ontology/silo_security.py',
+        old='if not isinstance(silo, Mapping) or "security" not in silo:',
+        new='if not isinstance(silo, dict) or "security" not in silo:',
+        tests=[
+            ('tests/unit/test_new_type.py::test_a_frozen_silo_map_is_read_like_a_plain_one'),
+        ],
+    ),
 ]
 
 

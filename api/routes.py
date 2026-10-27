@@ -2431,6 +2431,207 @@ def apply_new_fields_route(body: NewFieldsRequest, request: Request,
                          for line in shown_diff(name, before, after)]}
 
 
+class NewTypeFieldRequest(BaseModel):
+    name: str
+    column: str | None = None
+    data_type: str | None = None
+
+
+class NewTypeRequest(BaseModel):
+    digest: str
+    name: str
+    display_name: str | None = None
+    plural_display_name: str | None = None
+    description: str | None = None
+    silo: str
+    table: str
+    id_column: str
+    id_field: str | None = None
+    # "string" when absent. Integer ids come from sources keyed by number.
+    id_type: str | None = None
+    fields: list[NewTypeFieldRequest]
+    title_field: str | None = None
+    # "inherit", "unrestricted" or {"field": <one of the fields>}: never
+    # defaulted, because a type's row rule is a decision.
+    security: str | dict | None = None
+    # List the type to everyone by name (no ids, no counts, no data).
+    discoverable: bool = False
+    reason: str | None = None
+
+
+class NewTypeSourceResponse(BaseModel):
+    # The silos a type can be built over, each with the row rule it
+    # declares ("unrestricted", {"field": ...}) or null for none.
+    silos: list[dict]
+
+
+class SourceTablesResponse(BaseModel):
+    # Null when the source cannot be asked (a folder, an API, a failure):
+    # the form then takes the name by hand.
+    tables: list[str] | None = None
+
+
+class SourceColumnsResponse(BaseModel):
+    columns: list[str] | None = None
+
+
+class NewTypePreviewResponse(BaseModel):
+    diff: list[str]
+    impact: dict
+    needs_approval: bool
+    # Null when the source cannot be asked.
+    source_has_table: bool | None = None
+    columns_missing: list[str] = []
+    columns_checked: bool = False
+
+
+def _silo_rules_in_force(request: Request) -> "dict[str, dict | None]":
+    """{silo: the row rule it declares, or None} for every silo."""
+    from core.ontology.silo_security import silo_rules
+
+    silos = _generation(request).config.silo_configs
+    rules = silo_rules({"data_silos": silos})
+    return {name: rules.get(name) for name in silos}
+
+
+def _proposed_new_type(request: Request, body: NewTypeRequest) -> "dict[str, tuple[str, str]]":
+    """{filename: (now, proposed)} for the files this type changes."""
+    from core.config_editing import BINDINGS_FILE, ONTOLOGY_FILE, ConfigEditError, apply_new_type
+    from core.ontology.field_types import FIELD_DATA_TYPES
+
+    current = _ontology_as_read(request, body.digest)
+    bindings_path = request.app.state.runtime_paths.config_dir / BINDINGS_FILE
+    bindings = bindings_path.read_text() if bindings_path.exists() else None
+    addition = body.model_dump(exclude_none=True, exclude={"digest", "reason"})
+    addition["fields"] = [f.model_dump(exclude_none=True) for f in body.fields]
+    try:
+        proposed, proposed_bindings = apply_new_type(
+            current, bindings, addition, FIELD_DATA_TYPES, _silo_rules_in_force(request))
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    files = {ONTOLOGY_FILE: (current, proposed)}
+    if bindings is not None and proposed_bindings != bindings:
+        files[BINDINGS_FILE] = (bindings, proposed_bindings or "")
+    return files
+
+
+def _source_adapter(request: Request, silo: str):
+    return live_source_adapters(request).get(silo)
+
+
+@router.get("/admin/ontology/sources", dependencies=[Depends(_no_store)],
+            response_model=NewTypeSourceResponse)
+def new_type_sources_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The sources a type can be built over, and the row rule each declares.
+    Names and rules, never where a source is or how it is reached."""
+    _require_manage_deployment(request, current_user)
+    return {"silos": [{"silo": name, "rule": dict(rule) if rule else None}
+                      for name, rule in sorted(_silo_rules_in_force(request).items())]}
+
+
+@router.get("/admin/ontology/sources/{silo}/tables", dependencies=[Depends(_no_store)],
+            response_model=SourceTablesResponse)
+def source_tables_route(silo: str, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The tables a source holds, or null when it cannot say."""
+    _require_manage_deployment(request, current_user)
+    if silo not in _generation(request).config.silo_configs:
+        raise HTTPException(status_code=404, detail="Not found")
+    probe = getattr(_source_adapter(request, silo), "tables_present", None)
+    try:
+        present = probe() if probe else None
+    except Exception:  # noqa: BLE001 - a source that is down is not an error to show
+        present = None
+    return {"tables": sorted(present) if present else None}
+
+
+@router.get("/admin/ontology/sources/{silo}/columns", dependencies=[Depends(_no_store)],
+            response_model=SourceColumnsResponse)
+def source_columns_route(silo: str, table: str, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The columns of one table, or null when the source cannot say."""
+    _require_manage_deployment(request, current_user)
+    if silo not in _generation(request).config.silo_configs:
+        raise HTTPException(status_code=404, detail="Not found")
+    probe = getattr(_source_adapter(request, silo), "columns_present", None)
+    try:
+        present = probe(table) if probe else None
+    except Exception:  # noqa: BLE001
+        present = None
+    return {"columns": sorted(present) if present else None}
+
+
+@router.post("/admin/ontology/types/preview", dependencies=[Depends(_no_store)],
+             response_model=NewTypePreviewResponse)
+def preview_new_type_route(body: NewTypeRequest, request: Request,
+                           current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The lines that would be added, whether the source has the table and
+    columns, what it does to access (nothing, unless the type is listed to
+    everyone), and whether it would wait for a second person."""
+    from core.config_editing import shown_diff
+
+    _require_manage_deployment(request, current_user)
+    files = _proposed_new_type(request, body)
+    _candidate, impact = _access_impact(request, {name: proposed for name, (_, proposed) in files.items()})
+    tables = getattr(_source_adapter(request, body.silo), "tables_present", None)
+    try:
+        present_tables = tables() if tables else None
+    except Exception:  # noqa: BLE001
+        present_tables = None
+    columns = getattr(_source_adapter(request, body.silo), "columns_present", None)
+    try:
+        present_columns = columns(body.table) if columns else None
+    except Exception:  # noqa: BLE001
+        present_columns = None
+    wanted = [body.id_column] + [f.column or f.name for f in body.fields]
+    return {
+        "diff": [line for name, (before, after) in files.items() for line in shown_diff(name, before, after)],
+        "impact": impact, "needs_approval": impact["widens"],
+        "source_has_table": (body.table in present_tables) if present_tables else None,
+        "columns_checked": bool(present_columns),
+        "columns_missing": [c for c in wanted if c not in present_columns] if present_columns else [],
+    }
+
+
+@router.put("/admin/ontology/types", dependencies=[Depends(_no_store)],
+            response_model=NewFieldsResponse)
+def apply_new_type_route(body: NewTypeRequest, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Adds the type now, or -- if anyone could read more afterwards, which
+    only listing it to everyone does -- proposes it for a holder of
+    manage:roles to approve.
+
+    A NEW TYPE CANNOT NORMALLY WIDEN ACCESS: no role is granted it, so
+    nobody reads it until someone with manage:escalation grants it. The
+    question is still asked of the permission code, as for a field.
+    """
+    from core.config_editing import digest, shown_diff
+    from core.config_proposals import SHAPE
+
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        files = _proposed_new_type(request, body)
+        proposed = {name: text for name, (_, text) in files.items()}
+        _candidate, impact = _access_impact(request, proposed)
+        changes = {body.name: "new type"}
+        if not impact["widens"]:
+            written = _write_config_files(request, current_user, files, changes)
+            return {"status": "applied", "diff": written["diff"], "to_generation": written["to_generation"]}
+
+        reason = _reason(body.reason)
+        proposal_id = _proposals(request).propose(
+            SHAPE, f"new type {body.name}, listed to everyone by name", proposed,
+            {name: digest(before) for name, (before, _) in files.items()},
+            reason, current_user.user_id)
+        audit = _generation(request).mediator.audit_log
+        for name, (before, after) in files.items():
+            audit.log_config_edit(current_user.user_id, "proposed", name, changes, digest(before),
+                                  digest(after), detail=f"proposal {proposal_id}: {reason}"[:500])
+        return {"status": "waiting", "proposal_id": proposal_id,
+                "diff": [line for name, (before, after) in files.items()
+                         for line in shown_diff(name, before, after)]}
+
+
 def _reason(text: "str | None") -> str:
     from core.config_proposals import MAX_REASON
 
