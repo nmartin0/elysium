@@ -805,6 +805,10 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
 
       <Alert
         isOpen={confirmingShared !== null}
+        // A decision, not a warning: the one button that does it is the
+        // primary one (it was plain grey beside Cancel -- found in a
+        // browser).
+        intent="primary"
         confirmButtonText={confirmingShared === 'clear' ? 'Clear it' : 'Use this arrangement'}
         cancelButtonText="Cancel"
         onConfirm={confirmingShared === 'clear' ? clearShared : shareArrangement}

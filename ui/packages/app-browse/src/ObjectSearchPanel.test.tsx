@@ -2211,3 +2211,34 @@ describe('an inferred column (R41, R38)', () => {
     expect(within(table).getByText('(inferred)', { exact: false })).toHaveClass('visually-hidden')
   })
 })
+
+describe('what each sort direction is called', () => {
+  it('says low to high for a number and oldest first for a date, and A-Z only for text', async () => {
+    // FOUND IN A BROWSER: "Risk Score (A-Z)" for a number reads as a sort
+    // by letters. The words follow the DECLARED type, never a sniffed value.
+    const schema: VisibleSchema = {
+      Customer: {
+        title_field: 'name',
+        fields: {
+          name: { type: 'data', data_type: 'string' },
+          risk_score: { type: 'data', data_type: 'integer', display_name: 'Risk Score' },
+          price: { type: 'data', data_type: 'decimal@38,9', display_name: 'Price' },
+          joined: { type: 'data', data_type: 'date', display_name: 'Joined' },
+        },
+      },
+    }
+    mockedSearchObjects.mockResolvedValue(searchResult([{ id: 'cust_001', fields: { name: 'Ada Okafor' } }]))
+    renderPanel(schema)
+    await screen.findByText('Ada Okafor', { selector: '.object-search__result-title' })
+
+    const labels = Array.from(screen.getByRole('combobox', { name: 'Sort by' }).querySelectorAll('option')).map(
+      (option) => option.textContent,
+    )
+    expect(labels).toContain('Risk Score (low to high)')
+    expect(labels).toContain('Risk Score (high to low)')
+    expect(labels).toContain('Price (low to high)')
+    expect(labels).toContain('Joined (oldest first)')
+    expect(labels).toContain('Joined (newest first)')
+    expect(labels).toContain('name (A-Z)')
+  })
+})

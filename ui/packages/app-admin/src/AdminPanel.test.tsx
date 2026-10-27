@@ -20,6 +20,9 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
     getCurrentUser: vi.fn().mockResolvedValue({ username: 'adminuser' }),
     // THE ROLES VIEW'S READS, never settling: the tests that open it are
     // about the pane swapping, not about roles (RolesPanel.test.tsx).
+    // The create-user form's role list: unsettled here, so the box stays
+    // free text; the tests of the dropdown set it.
+    getRoleNames: vi.fn(() => new Promise(() => {})),
     getRoles: vi.fn(() => new Promise(() => {})),
     getRoleChanges: vi.fn(() => new Promise(() => {})),
     getConfigProposals: vi.fn(() => new Promise(() => {})),
@@ -34,6 +37,7 @@ import {
   deleteUser,
   logoutAllForUser,
   getVisibleSchema,
+  getRoleNames,
   ApiError,
 } from '@elysium/shell-api/api'
 import AdminPanel, { type User } from './AdminPanel'
@@ -522,5 +526,47 @@ describe('AdminPanel -- resetting a password', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Reset password' }))
 
     expect(await screen.findByText(/Every session of editoruser's ends now/)).toBeInTheDocument()
+  })
+})
+
+describe('AdminPanel -- choosing a role for a new account', () => {
+  beforeEach(() => {
+    mockedListUsers.mockResolvedValue([])
+  })
+
+  it('offers the roles that exist, rather than a box to type one into', async () => {
+    vi.mocked(getRoleNames).mockResolvedValue(['debug', 'support'])
+    renderPanel()
+
+    const select = await screen.findByRole('combobox', { name: 'Role' })
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['Choose a role…', 'debug', 'support'])
+    expect(select).toHaveValue('')
+    expect(select).toBeRequired()
+  })
+
+  it('creates the account with the role chosen', async () => {
+    vi.mocked(getRoleNames).mockResolvedValue(['debug', 'support'])
+    mockedCreateUser.mockResolvedValue(undefined)
+    renderPanel()
+
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Role' }), { target: { value: 'support' } })
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'newuser' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw123456' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create user' }))
+
+    await waitFor(() => expect(mockedCreateUser).toHaveBeenCalledWith('newuser', 'pw123456', '', 'support'))
+  })
+
+  it('stays a text box when the roles cannot be read, so an account can still be made', async () => {
+    vi.mocked(getRoleNames).mockRejectedValue(new Error('forbidden'))
+    renderPanel()
+    await waitFor(() => expect(mockedListUsers).toHaveBeenCalled())
+
+    await waitFor(() => expect(vi.mocked(getRoleNames)).toHaveBeenCalled())
+    expect(screen.getByLabelText('Role').tagName).toBe('INPUT')
   })
 })

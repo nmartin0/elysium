@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { Alert, Button, FormGroup, InputGroup } from '@blueprintjs/core'
+import { Alert, Button, FormGroup, HTMLSelect, InputGroup } from '@blueprintjs/core'
 import {
   listUsers,
   createUser,
@@ -9,6 +9,7 @@ import {
   deleteUser,
   logoutAllForUser,
   getVisibleSchema,
+  getRoleNames,
   getErrorMessage,
   handleIfSessionExpired,
 } from '@elysium/shell-api/api'
@@ -314,6 +315,22 @@ function CreateUserForm({ onCreated, onError, onSessionExpired }: CreateUserForm
   const [macValue, setMacValue] = useState('')
   const [roleName, setRoleName] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  // THE ROLES THAT EXIST, so a role is chosen rather than typed (a typo
+  // was a 400 after the fact). Until they arrive, or if they cannot be
+  // read, the box stays free text: creating an account must never depend
+  // on a lookup that failed.
+  const [roleNames, setRoleNames] = useState<string[] | null>(null)
+  useEffect(() => {
+    let current = true
+    getRoleNames()
+      .then((names) => {
+        if (current) setRoleNames(names)
+      })
+      .catch(() => {})
+    return () => {
+      current = false
+    }
+  }, [])
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -363,7 +380,18 @@ function CreateUserForm({ onCreated, onError, onSessionExpired }: CreateUserForm
         <InputGroup id="create-user-mac" value={macValue} onChange={(e) => setMacValue(e.target.value)} />
       </FormGroup>
       <FormGroup label="Role" labelFor="create-user-role">
-        <InputGroup id="create-user-role" value={roleName} onChange={(e) => setRoleName(e.target.value)} required />
+        {roleNames && roleNames.length > 0 ? (
+          <HTMLSelect
+            fill
+            id="create-user-role"
+            value={roleName}
+            onChange={(e) => setRoleName(e.target.value)}
+            required
+            options={[{ value: '', label: 'Choose a role…' }, ...roleNames]}
+          />
+        ) : (
+          <InputGroup id="create-user-role" value={roleName} onChange={(e) => setRoleName(e.target.value)} required />
+        )}
       </FormGroup>
       {/* loading, not a separate disabled prop -- confirmed directly
           against Button's own real type definition: loading ALREADY

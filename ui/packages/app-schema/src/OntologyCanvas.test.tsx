@@ -354,7 +354,9 @@ describe('the arrangement everyone starts from', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Start everyone here' }))
     expect(mockedShare).not.toHaveBeenCalled()
-    fireEvent.click(await screen.findByRole('button', { name: 'Use this arrangement' }))
+    const confirm = await screen.findByRole('button', { name: 'Use this arrangement' })
+    expect(confirm).toHaveClass('bp6-intent-primary')
+    fireEvent.click(confirm)
 
     await waitFor(() => expect(mockedShare).toHaveBeenCalledTimes(1))
     expect(Object.keys(mockedShare.mock.calls[0]![0]).sort()).toEqual(['Customer', 'Ticket', 'Transaction'])

@@ -625,7 +625,9 @@
   .app__pre-auth {
     max-width: 640px;
     margin: 0 auto;
-    padding: 2rem 1rem;
+    /* Sits a little above the middle rather than hard against the top,
+     * where a sign-in form read as unfinished. */
+    padding: clamp(2rem, 12vh, 7rem) 1rem 2rem;
   }
 
   .app__pre-auth-header {
@@ -2398,6 +2400,15 @@
    * its name; a failure reads as one. */
   .modules-page > p {
     max-width: 72ch;
+  }
+
+  /* THE STRIPE REACHES THE FIRST CELL. Blueprint shades only `td`, and a
+   * row's name is a <th scope="row"> (right for a screen reader), so the
+   * shading started one column in -- found in a browser. A share of the
+   * text colour, so it is a tint in either theme with no colour literal
+   * (theme.test.ts). */
+  .modules-page__table tbody tr:nth-child(odd) th[scope='row'] {
+    background: color-mix(in srgb, currentColor 6%, transparent);
   }
 
   .modules-page__id {

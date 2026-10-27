@@ -130,6 +130,19 @@ const BROWSE_VIEWS: readonly ViewOption[] = [
   { id: 'graph', label: 'Graph', icon: 'graph' },
 ]
 
+/**
+ * WHAT TO CALL EACH DIRECTION, by the field's declared type. "Risk Score
+ * (A-Z)" for a number reads as a sort by letters -- found in a browser --
+ * so a number says low to high and a date says oldest first; only text is
+ * A-Z. The type is the declared one, never sniffed from a value.
+ */
+function sortWords(dataType: string | undefined): { up: string; down: string } {
+  const base = (dataType ?? '').split('@')[0] ?? ''
+  if (['integer', 'number', 'decimal'].includes(base)) return { up: 'low to high', down: 'high to low' }
+  if (['date', 'timestamp', 'timestamptz'].includes(base)) return { up: 'oldest first', down: 'newest first' }
+  return { up: 'A-Z', down: 'Z-A' }
+}
+
 export default function ObjectSearchPanel({ visibleSchema, username, onSessionExpired }: ObjectSearchPanelProps) {
   // THE VIEW LIVES IN THE URL, so it can be shared, bookmarked and
   // found again in history. The object type, the search text, the
@@ -466,7 +479,11 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           // Nor a field they may not read: every value would sort as
           // null, an order that looks applied and means nothing.
           .filter(([, field]) => field.type !== 'link' && field.readable !== false)
-          .map(([name, field]) => ({ name, label: field.display_name ?? name }))
+          .map(([name, field]) => ({
+            name,
+            label: field.display_name ?? name,
+            ...sortWords(field.data_type),
+          }))
       : []
 
   useEffect(() => {
@@ -735,8 +752,12 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                 <option value="">Default</option>
                 {sortableFields.map((field) => (
                   <Fragment key={field.name}>
-                    <option value={field.name}>{field.label} (A-Z)</option>
-                    <option value={`${field.name}:desc`}>{field.label} (Z-A)</option>
+                    <option value={field.name}>
+                      {field.label} ({field.up})
+                    </option>
+                    <option value={`${field.name}:desc`}>
+                      {field.label} ({field.down})
+                    </option>
                   </Fragment>
                 ))}
               </HTMLSelect>
