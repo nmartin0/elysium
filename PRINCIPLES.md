@@ -332,3 +332,36 @@ invent a new pattern from scratch, without checking real precedent
 or getting real authorization first; and never modify a third-party
 dependency's own source, ever, without treating it as a rare,
 serious decision in its own right.
+
+## 12. Powerful and plain: hide steps, not concepts.
+
+Decided 27 October, by the owner: Elysium should be fully capable and
+should not feel like rocket science. Both, not a trade. These are the
+rules that follow, each already true somewhere in the code.
+
+1. **Four ideas, one name each.** Things (objects), relationships
+   (links), doing (actions), watching (triggers); permissions answer
+   "who". A screen or an error uses these words and no others for them.
+2. **One flow everywhere:** pick from what exists, read a plain-English
+   preview, apply. Add-a-field, add-a-type and add-a-link are the
+   pattern. A preview also says what the change affects and who.
+3. **One engine, a simple door and a full door.** The guided builder
+   writes the same configuration an expert would write; "show the
+   lines" reveals it. Nothing is lost by being simple, because nothing
+   else is underneath.
+4. **Reduce steps, never merge concepts.** Merging a link with a grant
+   would make adding a link a permission change (it is access-neutral
+   today, which is why it applies at once). Shortcuts and chained
+   guidance, not fused meanings.
+5. **Permissions as questions.** "Who can see this?" and "What can
+   she do?" are answered directly, and every grant reads as a sentence.
+   Impact is shown before a change applies.
+6. **Mistakes are cheap.** Preview, history to put a version back, a
+   second person for anything that widens, and "used by" before any
+   removal. A trigger shows how often it would have fired.
+7. **Say the next step.** After a type is added: "Nobody can see this
+   yet. Who should?" Recipes ("notify me when...") fill in an ordinary
+   trigger and action; they are never a second engine.
+8. **Measure it.** A written first-hour walkthrough (connect a source,
+   make a type, link it, grant access, add a trigger, using only the
+   screens). Where someone stalls is the next thing to fix.
