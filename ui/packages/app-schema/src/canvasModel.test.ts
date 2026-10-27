@@ -29,6 +29,19 @@ const SCHEMA: VisibleSchema = {
   },
 }
 
+describe('a type the caller can see exists but not open', () => {
+  it('is marked locked, and a readable one, or one that says nothing, is not', () => {
+    const model = buildCanvasModel({
+      Account: { display_name: 'Account', readable: false, fields: {} },
+      Customer: { display_name: 'Customer', readable: true, fields: {} },
+      Tag: { display_name: 'Tag', fields: {} },
+    })
+    const locked = Object.fromEntries(model.types.map((type) => [type.name, type.locked]))
+
+    expect(locked).toEqual({ Account: true, Customer: false, Tag: false })
+  })
+})
+
 describe('what the canvas draws', () => {
   it('a type per visible type, counting data fields and links apart', () => {
     const { types } = buildCanvasModel(SCHEMA)

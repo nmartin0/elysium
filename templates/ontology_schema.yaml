@@ -72,6 +72,15 @@ object_types:
       id_column: project_id
     id_field: project_id
     title_field: name
+    # OPTIONAL, and absent means false. `discoverable: true` lists this
+    # type BY NAME to every role, even one with no grant on it: a person
+    # sees that Project exists and not what it holds. It is
+    # `discover:Project` given to everyone, and no more -- no ids, no
+    # search, no counts, and no fields unless a role holds
+    # discover:Project.<field>. read: is still granted as before.
+    # Leave it out to keep the type invisible to anyone without a grant,
+    # which is the safe default. Must be true or false, not a string.
+    # discoverable: true
     security:
       field: department
     fields:

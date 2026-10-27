@@ -136,6 +136,48 @@ describe('the ontology canvas (DEV_UI 14)', () => {
   })
 })
 
+describe('a type that can be seen and not opened', () => {
+  it('is drawn view-only: an orange outline, a padlock, and the words for a screen reader', async () => {
+    renderCanvas({ schema: { ...SCHEMA, Ticket: { readable: false, fields: {} } } })
+    await waitFor(() => expect(node('Ticket')).toBeTruthy())
+    // Settled, so the saved layout arriving later is not an update the
+    // test did not wait for.
+    await waitFor(() => expect(mockedGet).toHaveBeenCalled())
+
+    expect(node('Ticket').classList.contains('ontology-canvas__node--locked')).toBe(true)
+    expect(node('Ticket').querySelector('.ontology-canvas__lock')).not.toBeNull()
+    expect(node('Ticket').getAttribute('aria-label')).toBe(
+      'Ticket: view only, you can see it exists, not what it holds',
+    )
+    // It says nothing it was not shown: no "0 fields", no "read-only".
+    expect(node('Ticket').textContent).toContain('View only')
+    expect(node('Ticket').textContent).not.toMatch(/field|link|read-only|action/)
+    // THE CONTROL: a readable type carries none of it.
+    expect(node('Customer').classList.contains('ontology-canvas__node--locked')).toBe(false)
+    expect(node('Customer').querySelector('.ontology-canvas__lock')).toBeNull()
+    expect(node('Customer').getAttribute('aria-label')).not.toMatch(/view only/)
+  })
+})
+
+describe('a view-only type is given no counts and no data health', () => {
+  it('says nothing about data the caller was not shown', async () => {
+    counts = () => Promise.resolve({ Ticket: { count: 7, scan_truncated: false } })
+    freshness = () =>
+      Promise.resolve({
+        source: 'gold',
+        last_synced_at: null,
+        freshness: { Ticket: { state: 'fresh' }, Transaction: { state: 'fresh' } },
+      })
+    renderCanvas({ schema: { ...SCHEMA, Ticket: { readable: false, fields: {} } } })
+
+    // The readable one gets its dot, so the data has arrived and the
+    // absence on the locked one is a decision rather than a wait.
+    await waitFor(() => expect(node('Transaction').querySelector('.ontology-canvas__health--fresh')).not.toBeNull())
+    expect(node('Ticket').querySelector('.ontology-canvas__health')).toBeNull()
+    expect(node('Ticket').querySelector('.ontology-canvas__count')).toBeNull()
+  })
+})
+
 describe('a moved type stays where it was put (14.1)', () => {
   it('honours a saved position', async () => {
     mockedGet.mockResolvedValue({ positions: { Ticket: { x: 1000, y: 2000 } }, areas: [] })

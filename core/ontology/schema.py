@@ -79,6 +79,27 @@ def humanize(name: str) -> str:
     return " ".join(word if word != word.lower() else word.capitalize() for word in words) or name
 
 
+def is_discoverable(type_def: dict) -> bool:
+    """Whether a type is LISTED TO EVERYONE, by name, whatever their role.
+
+    An opt-in, declared on the type (`discoverable: true`) and absent
+    means no: a type nobody has granted you does not exist as far as you
+    are concerned, which is the safe default and what every existing
+    deployment already does. Foundry is the precedent for the default --
+    a type is invisible until some grant or marking says otherwise.
+
+    IT IS EXACTLY `discover:{type}` GIVEN TO EVERY ROLE, and no more: the
+    type's name and nothing under it. No ids, no search, no counts, and
+    no fields unless a role holds `discover:{type}.{field}` for them.
+    Anything stronger -- `read:` -- still has to be granted.
+
+    `is True`, not truthiness: the loader refuses a non-boolean, but this
+    is the question that decides what a stranger may know, so a stray
+    "false" string must never answer yes.
+    """
+    return type_def.get("discoverable") is True
+
+
 def get_display_name(definition: dict, fallback_name: str) -> str:
     """The declared display_name, or a humanized fallback."""
     return definition.get("display_name") or humanize(fallback_name)

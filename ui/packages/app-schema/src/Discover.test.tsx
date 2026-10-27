@@ -93,3 +93,25 @@ describe('Discover', () => {
     expect(screen.getByText(/will appear here/)).toBeInTheDocument()
   })
 })
+
+describe('Discover -- what you can work with and what you can only see', () => {
+  const MIXED = {
+    Customer: { display_name: 'Customer', status: 'active', readable: true, fields: {} },
+    Account: { display_name: 'Account', status: 'active', readable: false, fields: {} },
+  }
+
+  it('shows a readable type in blue and a view-only one in orange with a padlock and a reason', () => {
+    render(<Discover {...props} schema={MIXED} />)
+    const open = screen.getAllByRole('button', { name: 'Customer' })[0]!
+    const locked = screen.getAllByRole('button', { name: 'Account' })[0]!
+
+    expect(open).toHaveClass('bp6-intent-primary')
+    expect(locked).toHaveClass('bp6-intent-warning')
+    // NOT THE COLOUR ALONE: the padlock and the words are what survive
+    // colour blindness.
+    expect(locked.querySelector('[data-icon="lock"]')).not.toBeNull()
+    expect(locked).toHaveAttribute('title', expect.stringMatching(/exists, not what it holds/))
+    expect(open.querySelector('[data-icon="lock"]')).toBeNull()
+    expect(open).not.toHaveAttribute('title')
+  })
+})

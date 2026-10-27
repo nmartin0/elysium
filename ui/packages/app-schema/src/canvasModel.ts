@@ -48,6 +48,10 @@ export interface CanvasType {
   /** The author's grouping from the ontology, if any (a ready-made
    *  subject area, 14.4). */
   group: string | null
+  /** The caller may know this type exists and not open it: its name is
+   *  listed to them (by a discover grant, or because its owner listed it
+   *  to everyone) and `readable` is false. Drawn as view-only. */
+  locked: boolean
 }
 
 interface CanvasLink {
@@ -105,6 +109,7 @@ export function buildCanvasModel(schema: VisibleSchema, actionTypes: Record<stri
       linkCount: fields.filter((field) => field.type === 'link').length,
       actions: [...(actionsByType.get(name) ?? [])].sort((a, b) => a.localeCompare(b)),
       group: schema[name]?.group ?? null,
+      locked: schema[name]?.readable === false,
     }
   })
 

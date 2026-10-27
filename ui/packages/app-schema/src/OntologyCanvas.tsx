@@ -673,15 +673,23 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
                 const at = placed[type.name]
                 if (!at) return null
                 const chain = chains ? chainByType.get(type.name) : undefined
-                const actionText =
-                  type.actions.length === 0 ? 'read-only' : pluralise(type.actions.length, 'action', 'actions')
+                // A LOCKED TYPE IS NOT "read-only" (that says you may read
+                // it), and says nothing of its fields, links, counts or
+                // data health: "0 fields" would be a claim about contents
+                // the caller was not shown, and a freshness dot is news
+                // about data they cannot see.
+                const actionText = type.locked
+                  ? ''
+                  : type.actions.length === 0
+                    ? 'read-only'
+                    : pluralise(type.actions.length, 'action', 'actions')
                 const securityText = chain
                   ? chain.kind === 'via'
                     ? `secured via ${chain.target}`
                     : `secured by ${chain.field}`
                   : null
-                const counted = countText(counts?.[type.name])
-                const healthState = freshness?.freshness?.[type.name]?.state
+                const counted = type.locked ? '' : countText(counts?.[type.name])
+                const healthState = type.locked ? undefined : freshness?.freshness?.[type.name]?.state
                 // EXEMPT IS UNJUDGED, so it gets no dot rather than a
                 // reassuring one.
                 const health = healthState && healthState !== 'exempt' ? healthState : null
@@ -693,17 +701,20 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
                       'ontology-canvas__node' +
                       (selectedType === type.name ? ' ontology-canvas__node--selected' : '') +
                       (dimmed(type.name) ? ' ontology-canvas__node--dimmed' : '') +
+                      (type.locked ? ' ontology-canvas__node--locked' : '') +
                       (moving?.name === type.name ? ' ontology-canvas__node--moving' : '')
                     }
                     transform={`translate(${at.x - NODE_WIDTH / 2} ${at.y - NODE_HEIGHT / 2})`}
                     role="button"
                     tabIndex={0}
                     aria-label={
-                      `${type.label}: ${pluralise(type.fieldCount, 'field', 'fields')}, ` +
-                      `${pluralise(type.linkCount, 'link', 'links')}, ${actionText}` +
-                      (securityText ? `, ${securityText}` : '') +
-                      (counted ? `, ${counted} you can see` : '') +
-                      (health ? `, data ${HEALTH_WORDS[health]}` : '')
+                      type.locked
+                        ? `${type.label}: view only, you can see it exists, not what it holds`
+                        : `${type.label}: ${pluralise(type.fieldCount, 'field', 'fields')}, ` +
+                          `${pluralise(type.linkCount, 'link', 'links')}, ${actionText}` +
+                          (securityText ? `, ${securityText}` : '') +
+                          (counted ? `, ${counted} you can see` : '') +
+                          (health ? `, data ${HEALTH_WORDS[health]}` : '')
                     }
                     aria-pressed={selectedType === type.name}
                     data-type={type.name}
@@ -720,8 +731,18 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
                     <title>{type.label}</title>
                     <rect className="ontology-canvas__box" width={NODE_WIDTH} height={NODE_HEIGHT} rx={6} />
                     <text className="ontology-canvas__name" x={12} y={22}>
-                      {shorten(type.label, counted ? LABEL_BESIDE_COUNT : MAX_LABEL)}
+                      {shorten(type.label, counted || type.locked ? LABEL_BESIDE_COUNT : MAX_LABEL)}
                     </text>
+                    {type.locked && (
+                      // A PADLOCK, NOT ONLY A COLOUR: orange also means a
+                      // security edge on this canvas, and hue alone fails
+                      // for 8% of men.
+                      <g className="ontology-canvas__lock" transform={`translate(${NODE_WIDTH - 28} 8)`}>
+                        <title>View only: you can see that it exists, not what it holds</title>
+                        <rect x={0} y={6} width={11} height={8} rx={1.5} />
+                        <path d="M2.5 6 V4.5 a3 3 0 0 1 6 0 V6" />
+                      </g>
+                    )}
                     {counted && (
                       <text
                         className="ontology-canvas__count"
@@ -772,7 +793,9 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
                     ) : (
                       <>
                         <text className="ontology-canvas__meta" x={12} y={40}>
-                          {pluralise(type.fieldCount, 'field', 'fields')} · {pluralise(type.linkCount, 'link', 'links')}
+                          {type.locked
+                            ? 'View only'
+                            : `${pluralise(type.fieldCount, 'field', 'fields')} · ${pluralise(type.linkCount, 'link', 'links')}`}
                         </text>
                         <text
                           className={

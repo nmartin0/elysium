@@ -48,7 +48,15 @@ class TestWhatItSays:
         impact = _preview(client, "customer_service", grants).json()
 
         assert impact["types_gained"] == [{"type": "Account", "from": None, "to": "read"}]
-        assert impact["fields_gained"] == []
+        # THE NEW TYPE'S OWN FIELDS ARE NOT LISTED: it is said once.
+        assert [gained for gained in impact["fields_gained"] if gained["type"] == "Account"] == []
+        # BUT A LINK TO IT, in a type they already read, now appears -- and
+        # that is true, not noise. Before this grant Customer.accounts named
+        # a type the role was not told about, so the schema withheld it
+        # (the link used to be served naming Account regardless, a leak).
+        # An administrator widening a role should be told the link opens too.
+        assert impact["fields_gained"] == [
+            {"type": "Customer", "from": None, "to": "read", "field": "accounts"}]
 
     def test_actions_and_administration(self, client):
         _as(client, "dana")

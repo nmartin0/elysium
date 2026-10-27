@@ -100,3 +100,35 @@ describe('before a type is chosen', () => {
     expect(container.innerHTML).toBe('')
   })
 })
+
+describe('a frozen set is not "pending", and is not orange', () => {
+  it('shows neutral with a snowflake: orange now means a type you can only see', () => {
+    render(
+      <MemoryRouter>
+        <SetName objectType="Customer" filterCount={0} total={40} frozen="Bulk zero" />
+      </MemoryRouter>,
+    )
+    const badge = screen.getByText('Frozen').closest('.bp6-tag') as HTMLElement
+
+    expect(badge.className).not.toMatch(/bp6-intent-warning/)
+    expect(badge.className).not.toMatch(/bp6-intent-primary/)
+    expect(badge.querySelector('[data-icon="snowflake"]')).not.toBeNull()
+  })
+})
+
+describe('a type that can be seen and not searched has no set to name', () => {
+  it('says View only, in place of a count, a Live badge and the verbs that act on a set', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <SetName objectType="Account" filterCount={0} total={0} viewOnly actions={<button>Export</button>} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText('View only')).toBeInTheDocument()
+    // "0" would say the set is empty; the truth is that they may not see it.
+    expect(container.textContent).not.toMatch(/0/)
+    expect(screen.queryByText('Live')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Export' })).toBeNull()
+    expect(screen.queryByText(/Ask about this set/)).toBeNull()
+  })
+})

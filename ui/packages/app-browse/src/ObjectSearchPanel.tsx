@@ -665,7 +665,10 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
               objectTypes[0] is always safe here. */}
               {objectTypes.map((type) => (
                 <option key={type} value={type}>
+                  {/* A native option cannot carry an icon or a hue, so the
+                      state is said in words. */}
                   {type}
+                  {visibleSchema?.[type]?.readable === false ? ' (view only)' : ''}
                 </option>
               ))}
             </select>
@@ -805,6 +808,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
         conditions={setConditions}
         text={queryText}
         onSessionExpired={onSessionExpired}
+        viewOnly={!searchable}
         actions={
           <>
             <ExportSet
@@ -1044,7 +1048,10 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
         </Notice>
       )}
 
-      {publishedAt !== null ? (
+      {/* NO DATA IS SHOWN FOR A VIEW-ONLY TYPE, so no claim about when it was
+          published (nor whether that is late): that is news about data the
+          caller was not given. */}
+      {publishedAt !== null && searchable ? (
         /* AND WHETHER THAT IS LATE, which the timestamp alone cannot
            say. DEV_UI.md 16.6: "a freshness number without a threshold
            is trivia" -- a reader told "published 30 hours ago" has no

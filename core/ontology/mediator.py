@@ -124,6 +124,7 @@ from core.ontology.derived_fields import compute, derivation_of, finished
 from core.ontology.enriched_fields import enrichment_of
 from core.ontology.field_types import coerce
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
+from core.ontology.link_types import is_reverse_link
 from core.ontology.predicted_fields import prediction_of
 from core.ontology.schema import (
     get_column_for_field,
@@ -131,6 +132,7 @@ from core.ontology.schema import (
     get_field_storage_name,
     get_link_target,
     get_plural_display_name,
+    is_discoverable,
     is_link_field,
     is_searchable_field,
 )
@@ -962,9 +964,45 @@ class DataMediator:
         # is a menu of what it can DO, and a type it cannot search is
         # an item it can only fail on: prompt tokens every hop, and
         # steps the mediator then denies.
+        #
+        # A TYPE IS KNOWN TO THIS PERSON when a grant says so OR its owner
+        # listed it to everyone (`discoverable: true`, schema.
+        # is_discoverable). Worked out first, for every type, because a
+        # link field has to be judged by whether ITS TARGET is known.
+        known = {
+            name for name, definition in self.schema.items()
+            if is_discoverable(definition)
+            or authorize(user_record, self.roles, f"discover:{name}")
+        }
+
+        def _without_unknown_target(field_info: dict) -> dict:
+            # A LINK NAMES ITS TARGET, so a link to a type this person is
+            # not told about would tell them. count_links' docstring has
+            # always said so ("naming it would say the deployment holds
+            # something they were not told about") and the schema served
+            # here did it anyway: a role with no access to Customer saw
+            # Transaction's field naming Customer as its target -- found
+            # while building discoverable types, by asking the real
+            # mediator, not by reading it.
+            #
+            # A FORWARD link keeps its value (an id the person is granted
+            # in their own type) and becomes plain data: no target, no
+            # relationship, nothing to follow. A reverse one is computed
+            # from the other table, so with the target unknown there is
+            # nothing left of it and it goes.
+            if field_info.get("type") != "link" or field_info.get("target") in known:
+                return field_info
+            if is_reverse_link(field_info):
+                return {}
+            return {
+                **{key: value for key, value in field_info.items()
+                   if key not in ("target", "cardinality", "via_table")},
+                "type": "data",
+            }
+
         visible = {}
         for object_type, type_def in self.schema.items():
-            if not authorize(user_record, self.roles, f"discover:{object_type}"):
+            if object_type not in known:
                 continue
 
             # READABLE IS A SEPARATE QUESTION, and only it permits
@@ -975,7 +1013,7 @@ class DataMediator:
 
             visible_fields = {
                 field_name: {
-                    **field_info,
+                    **redacted,
                     "display_name": get_display_name(field_info, field_name),
                     "visibility": field_info.get("visibility", "normal"),
                     "status": field_info.get("status", "active"),
@@ -1014,6 +1052,7 @@ class DataMediator:
                 }
                 for field_name, field_info in type_def["fields"].items()
                 if authorize(user_record, self.roles, f"discover:{object_type}.{field_name}")
+                if (redacted := _without_unknown_target(field_info))
             }
 
             if for_agent:

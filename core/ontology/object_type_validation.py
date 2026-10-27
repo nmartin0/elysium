@@ -124,6 +124,7 @@ def validate_object_types(object_types: dict, only: str | None = None) -> None:
         _validate_id_types(object_type_name, type_def)
         _validate_display_metadata(object_type_name, type_def)
         _validate_ui_metadata(object_type_name, type_def)
+        _validate_discoverable(object_type_name, type_def)
         for field_name, field_info in (type_def.get("fields") or {}).items():
             validate_field_classification(object_type_name, field_name, field_info)
 
@@ -142,6 +143,22 @@ STATUSES = ("active", "experimental", "deprecated")
 # here for the same reason: all three are things the ontology author
 # knows and an application cannot infer.
 MAX_DECIMAL_PLACES = 10
+
+
+def _validate_discoverable(object_type_name: str, type_def: dict) -> None:
+    """`discoverable`, when present, is true or false -- nothing else.
+
+    NOT COSMETIC, unlike the hints beside it: it decides whether people
+    with no grant on the type are told it exists. A YAML `"false"` (a
+    quoted string) is truthy in Python, so a loose reader would list a
+    type its owner meant to keep hidden. Refused at load, with the value
+    shown, rather than guessed at.
+    """
+    value = type_def.get("discoverable")
+    if value is not None and not isinstance(value, bool):
+        raise ValueError(
+            f"Object type {object_type_name!r}: discoverable must be true or false, got {value!r}"
+        )
 
 
 def _validate_ui_metadata(object_type_name: str, type_def: dict) -> None:

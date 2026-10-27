@@ -51,7 +51,18 @@ function TypeList({
     <div className="schema-panel__discover-list">
       {names.map((name) => (
         <span key={name} className="schema-panel__discover-item">
-          <Button minimal small onClick={() => onOpen(name)}>
+          <Button
+            minimal
+            small
+            // BLUE: you can work with it. ORANGE WITH A PADLOCK: you can see
+            // that it exists and not what it holds -- never the colour alone.
+            intent={schema[name]?.readable === false ? 'warning' : 'primary'}
+            icon={schema[name]?.readable === false ? 'lock' : undefined}
+            title={
+              schema[name]?.readable === false ? 'View only: you can see that it exists, not what it holds' : undefined
+            }
+            onClick={() => onOpen(name)}
+          >
             {schema[name]?.display_name ?? name}
           </Button>
           <Button

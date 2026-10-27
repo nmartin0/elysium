@@ -48,6 +48,7 @@ export default function SetName({
   conditions,
   text,
   onSessionExpired,
+  viewOnly = false,
 }: {
   objectType: string | null
   /** The frozen set's name when the set on screen is frozen. DEV_UI
@@ -69,8 +70,24 @@ export default function SetName({
   conditions?: unknown[]
   text?: string
   onSessionExpired?: () => void
+  /** The caller may know this type exists and not search it. There is no
+   *  set to name: no count ("0" would say it is empty), no Live badge,
+   *  no export, freeze, compare or question about it -- each acts on a
+   *  set of objects they cannot have. */
+  viewOnly?: boolean
 }) {
   if (!objectType) return null
+
+  if (viewOnly) {
+    return (
+      <p className="set-name">
+        <span className="set-name__type">{objectType}</span>
+        <StatusTag state="pending" icon="lock">
+          View only
+        </StatusTag>
+      </p>
+    )
+  }
 
   return (
     <p className="set-name">
@@ -94,7 +111,7 @@ export default function SetName({
         </>
       )}
       {frozen ? (
-        <StatusTag state="pending" icon="snowflake">
+        <StatusTag state="neutral" icon="snowflake">
           Frozen
         </StatusTag>
       ) : (

@@ -6638,6 +6638,41 @@ CONTROLS = [
         new='    words = stem.split("_")',
         tests=['tests/unit/test_display_metadata.py::test_humanize_separates_camel_case_and_keeps_capitals'],
     ),
+    Control(
+        describes='DISCOVERABLE: a type its owner lists is known to everyone, by name',
+        path='core/ontology/mediator.py',
+        old='            if is_discoverable(definition)\n            or authorize(',
+        new='            if False\n            or authorize(',
+        tests=['tests/unit/test_discoverable_types.py::test_a_listed_type_is_a_name_and_nothing_else'],
+    ),
+    Control(
+        describes='DISCOVERABLE: a link to a type the person is not told about is not named',
+        path='core/ontology/mediator.py',
+        old='            if field_info.get("type") != "link" or field_info.get("target") in known:',
+        new='            if True:',
+        tests=['tests/unit/test_discoverable_types.py::TestALinkNamesItsTarget::test_a_forward_link_to_an_unknown_type_becomes_plain_data'],
+    ),
+    Control(
+        describes='DISCOVERABLE: a reverse link to an unknown type goes, not just its name',
+        path='core/ontology/mediator.py',
+        old='            if is_reverse_link(field_info):\n                return {}',
+        new='            if False:\n                return {}',
+        tests=['tests/unit/test_discoverable_types.py::TestALinkNamesItsTarget::test_a_reverse_link_to_an_unknown_type_goes_altogether'],
+    ),
+    Control(
+        describes='DISCOVERABLE: only a real boolean lists a type',
+        path='core/ontology/schema.py',
+        old='    return type_def.get("discoverable") is True',
+        new='    return bool(type_def.get("discoverable"))',
+        tests=['tests/unit/test_discoverable_types.py::test_discoverable_is_exactly_true_and_nothing_loosely_true'],
+    ),
+    Control(
+        describes='DISCOVERABLE: a non-boolean is refused when the ontology loads',
+        path='core/ontology/object_type_validation.py',
+        old='    if value is not None and not isinstance(value, bool):',
+        new='    if False:',
+        tests=['tests/unit/test_discoverable_types.py::TestValidation::test_anything_but_a_boolean_is_refused_with_the_value_shown'],
+    ),
 ]
 
 

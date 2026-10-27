@@ -2242,3 +2242,43 @@ describe('what each sort direction is called', () => {
     expect(labels).toContain('name (A-Z)')
   })
 })
+
+describe('a type you can see exists and not open', () => {
+  it('says so in the type list, in words, since an option cannot carry a colour', () => {
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    renderPanel({
+      Customer: { fields: { name: { type: 'data' } }, readable: true },
+      Account: { fields: {}, readable: false },
+    })
+
+    expect(screen.getByRole('option', { name: 'Account (view only)' })).toBeInTheDocument()
+    // THE CONTROL: the one they can open is not marked.
+    expect(screen.getByRole('option', { name: 'Customer' })).toBeInTheDocument()
+  })
+
+  it('names no set for it: View only, not a count of nothing, and no verbs on a set', async () => {
+    mockedSearchObjects.mockResolvedValue(searchResult([]))
+    // A publish time EXISTS, so its absence below is a decision and not
+    // the default mock's null (which made this assertion pass vacuously).
+    mockedGetDataFreshness.mockResolvedValue({
+      source: 'gold',
+      last_synced_at: null,
+      published_at: { Customer: '2026-10-26T09:00:00Z', Account: '2026-10-26T09:00:00Z' },
+    })
+    renderPanel({
+      Customer: { fields: { name: { type: 'data' } }, readable: true },
+      Account: { fields: {}, readable: false },
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: /Export/ })).toBeInTheDocument())
+    // The control: the readable type DOES say when its data was published.
+    expect(await screen.findByText(/Showing data published/)).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Object type' }), { target: { value: 'Account' } })
+
+    expect(await screen.findByText('View only')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Export/ })).toBeNull()
+    expect(screen.queryByText('Live')).toBeNull()
+    // Nor when it was published: that is news about data they were not given.
+    expect(screen.queryByText(/Showing data published/)).toBeNull()
+  })
+})

@@ -1640,6 +1640,23 @@
     stroke-width: 1;
   }
 
+  /* A TYPE THE CALLER CAN SEE EXISTS BUT NOT OPEN: orange outline and a
+   * padlock. Before the selected rule, which must still win. */
+  .ontology-canvas__node--locked .ontology-canvas__box {
+    stroke: var(--status-warning);
+    stroke-width: 1.5;
+  }
+
+  .ontology-canvas__lock rect {
+    fill: var(--status-warning);
+  }
+
+  .ontology-canvas__lock path {
+    fill: none;
+    stroke: var(--status-warning);
+    stroke-width: 1.5;
+  }
+
   .ontology-canvas__node:focus-visible .ontology-canvas__box,
   .ontology-canvas__node--selected .ontology-canvas__box {
     stroke: var(--accent-focus);
