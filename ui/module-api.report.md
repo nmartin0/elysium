@@ -13,8 +13,8 @@ Anything else either exports is internal, and may change without notice.
 The manifest, `activate()`, host values, styles and the add-on server are
 described in [MODULE_API.md](MODULE_API.md).
 
-204 names imported, from 40 entry points, by 9 modules;
-261 declarations public in all.
+212 names imported, from 40 entry points, by 9 modules;
+270 declarations public in all.
 
 ## `@elysium/shell-api/api`
 
@@ -71,6 +71,8 @@ export declare class ApiError extends Error {
 export declare function applyLabels(digest: string, changes: LabelChange[], reason: string | null): Promise<LabelEditResult>;
 
 export declare function applyNewFields(digest: string, fields: NewField[], reason: string | null): Promise<LabelEditResult>;
+
+export declare function applyNewType(digest: string, type: NewType, reason: string | null): Promise<LabelEditResult>;
 
 export declare function applyOntologyDescriptions(digest: string, changes: DescriptionChange[]): Promise<{
     diff: string[];
@@ -349,6 +351,8 @@ export declare function getMergeProposals(decision?: string): Promise<MergePropo
 
 export declare function getMyVisibleSchema(): Promise<unknown>;
 
+export declare function getNewTypeSources(): Promise<NewTypeSource[]>;
+
 export declare function getNotifications(): Promise<{
     notifications: Notification[];
     unseen: number;
@@ -389,6 +393,10 @@ export declare function getRoles(): Promise<RolesView>;
 export declare function getSavedViews(): Promise<ServerSavedView[]>;
 
 export declare function getSchemaAccess(): Promise<Record<string, TypeAccess>>;
+
+export declare function getSourceColumns(silo: string, table: string): Promise<string[] | null>;
+
+export declare function getSourceTables(silo: string): Promise<string[] | null>;
 
 export declare function getTriggers(): Promise<Trigger[]>;
 
@@ -541,6 +549,46 @@ export interface NewFieldsPreview {
     fields: NewFieldConsequence[];
 }
 
+export interface NewType {
+    name: string;
+    display_name?: string;
+    description?: string;
+    silo: string;
+    table: string;
+    id_column: string;
+    id_field?: string;
+    id_type?: string;
+    fields: NewTypeField[];
+    title_field?: string;
+    security: 'inherit' | 'unrestricted' | {
+        field: string;
+    };
+    discoverable?: boolean;
+}
+
+export interface NewTypeField {
+    name: string;
+    column?: string;
+    data_type?: string;
+}
+
+export interface NewTypePreview {
+    diff: string[];
+    impact: AccessImpact;
+    needs_approval: boolean;
+    source_has_table: boolean | null;
+    columns_missing: string[];
+    columns_checked: boolean;
+}
+
+export interface NewTypeSource {
+    silo: string;
+    rule: {
+        unrestricted?: boolean;
+        field?: string;
+    } | null;
+}
+
 export interface Notification {
     notification_id: string;
     created_at: string;
@@ -665,6 +713,8 @@ export interface PredictionProposal {
 export declare function previewLabels(digest: string, changes: LabelChange[]): Promise<LabelPreview>;
 
 export declare function previewNewFields(digest: string, fields: NewField[]): Promise<NewFieldsPreview>;
+
+export declare function previewNewType(digest: string, type: NewType): Promise<NewTypePreview>;
 
 export declare function previewOntologyDescriptions(digest: string, changes: DescriptionChange[]): Promise<string[]>;
 

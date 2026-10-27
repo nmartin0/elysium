@@ -882,7 +882,7 @@ def apply_new_type(ontology: str, bindings: "str | None", addition: dict,
     id_field = addition.get("id_field") or id_column
     id_field = _checked_name(
         f"{id_field!r} cannot be the id's name: lowercase letters, digits and underscores, "
-        f"starting with a letter. Give it another.", id_field, r"^[a-z][a-z0-9_]{0,62}$")
+        f"starting with a letter. Give it another.", id_field, r"^[a-z][a-z0-9_]{0,62}\Z")
     id_type = addition.get("id_type")
     if id_type is not None and id_type not in data_types:
         raise ConfigEditError(f"{name}'s id type is one of {', '.join(data_types)}.")
@@ -900,11 +900,11 @@ def apply_new_type(ontology: str, bindings: "str | None", addition: dict,
             raise ConfigEditError(f"A field is {{name, column, data_type}}; got {item!r}.")
         fname = _checked_name(
             f"{item.get('name')!r} is not a field name: lowercase letters, digits and "
-            f"underscores, starting with a letter.", item.get("name"), r"^[a-z][a-z0-9_]{0,62}$")
+            f"underscores, starting with a letter.", item.get("name"), r"^[a-z][a-z0-9_]{0,62}\Z")
         if fname in declared_fields or fname == id_field:
             raise ConfigEditError(f"{name}.{fname} is named twice (the id is {id_field!r}).")
-        data_type = item.get("data_type") or "string"
-        if data_type not in data_types:
+        chosen = item.get("data_type") or "string"
+        if chosen not in data_types:
             raise ConfigEditError(f"{name}.{fname}'s data type is one of {', '.join(data_types)}.")
         column = _checked_column(f"{name}.{fname}", item.get("column"))
         if column == fname:
@@ -912,9 +912,9 @@ def apply_new_type(ontology: str, bindings: "str | None", addition: dict,
         declared: dict = {"type": "data"}
         field_lines.append(f"  {fname}:")
         field_lines.append("    type: data")
-        if data_type != "string":
-            declared["data_type"] = data_type
-            field_lines.append(f"    data_type: {data_type}")
+        if chosen != "string":
+            declared["data_type"] = chosen
+            field_lines.append(f"    data_type: {chosen}")
         if column is not None:
             if bindings is None:
                 declared["column"] = column

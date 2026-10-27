@@ -6377,7 +6377,7 @@ CONTROLS = [
     Control(
         describes="NEW FIELD: it goes after the block's last line, not at its top",
         path='core/config_editing.py',
-        old='    at = _last_line(lines, key_line)\n    lines[at + 1:at + 1] = block',
+        old='    at = _last_line(lines, key_line, after_comments)\n    lines[at + 1:at + 1] = block',
         new='    lines[key_line + 1:key_line + 1] = block',
         tests=['tests/unit/test_new_fields.py::TestTheLinesItWrites::test_a_field_goes_after_the_last_one_and_before_what_follows_it'],
     ),
@@ -6462,9 +6462,11 @@ CONTROLS = [
     Control(
         describes='NEW FIELD: a field widening access waits for a second person',
         path='api/routes.py',
-        old=('        if not impact["widens"]:\n'
+        old=('        changes = {f"{f.object_type}.{f.name}": f.data_type or "string" for f in body.fields}\n'
+             '        if not impact["widens"]:\n'
              '            written = _write_config_files(request, current_user, files, changes)'),
-        new=('        if True:\n'
+        new=('        changes = {f"{f.object_type}.{f.name}": f.data_type or "string" for f in body.fields}\n'
+             '        if True:\n'
              '            written = _write_config_files(request, current_user, files, changes)'),
         tests=['tests/integration/test_new_fields_from_the_ui.py::TestWhenAGrantAlreadyNamesIt::test_it_waits_with_a_reason'],
     ),
@@ -6513,9 +6515,20 @@ CONTROLS = [
     Control(
         describes='NEW FIELD: the bindings file is written when a column needs it',
         path='api/routes.py',
-        old='    if bindings is not None and proposed_bindings != bindings:',
-        new='    if False:',
-        tests=['tests/integration/test_new_fields_from_the_ui.py::TestTheBindings::test_the_column_is_bound_in_the_bindings_file_in_the_same_generation'],
+        old=('            current, bindings, [f.model_dump(exclude_none=True) for f in body.fields], '
+             'FIELD_DATA_TYPES)\n'
+             '    except ConfigEditError as e:\n'
+             '        raise HTTPException(status_code=400, detail=str(e)) from e\n'
+             '    files = {ONTOLOGY_FILE: (current, proposed)}\n'
+             '    if bindings is not None and proposed_bindings != bindings:'),
+        new=('            current, bindings, [f.model_dump(exclude_none=True) for f in body.fields], '
+             'FIELD_DATA_TYPES)\n'
+             '    except ConfigEditError as e:\n'
+             '        raise HTTPException(status_code=400, detail=str(e)) from e\n'
+             '    files = {ONTOLOGY_FILE: (current, proposed)}\n'
+             '    if False:'),
+        tests=['tests/integration/test_new_fields_from_the_ui.py::TestTheBindings::'
+               'test_the_column_is_bound_in_the_bindings_file_in_the_same_generation'],
     ),
     Control(
         describes='NEW FIELD: the preview is for a manager of the deployment',
@@ -6706,8 +6719,8 @@ CONTROLS = [
     Control(
         describes='SILO SECURITY: only unrestricted or a field is a silo rule',
         path='core/ontology/silo_security.py',
-        old='        elif (isinstance(declared, dict) and set(declared) == {"field"}',
-        new='        elif (isinstance(declared, dict) and "field" in declared',
+        old='        elif (isinstance(declared, Mapping) and set(declared) == {"field"}',
+        new='        elif (isinstance(declared, Mapping) and "field" in declared',
         tests=[
             ('tests/unit/test_silo_security.py::'
              'TestTheSiloRule::test_anything_else_is_refused'),
