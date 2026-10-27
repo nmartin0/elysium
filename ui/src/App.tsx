@@ -21,6 +21,7 @@ import type { FrameModules, ModuleCode } from '@shell/core/activation'
 import { publishHostValues, resetHostValues, stageHostValues } from '@elysium/shell-api/host'
 import ChangePasswordForm from '@elysium/shell-api/components/ChangePasswordForm'
 import LoginForm from '@elysium/shell-api/components/LoginForm'
+import Logo from '@elysium/shell-api/components/Logo'
 import type { CurrentUser } from '@elysium/shell-api/components/UserMenu'
 import Shell, { type VisibleApp } from './Shell'
 import AddonServersPage from './system/AddonServersPage'
@@ -528,7 +529,10 @@ export default function App() {
     return (
       <div className="app__pre-auth">
         <header className="app__pre-auth-header">
-          <h1>Elysium</h1>
+          <h1 className="brand">
+            <Logo size={28} />
+            Elysium
+          </h1>
         </header>
         <main>
           <LoadingState />
@@ -541,7 +545,10 @@ export default function App() {
     return (
       <div className="app__pre-auth">
         <header className="app__pre-auth-header">
-          <h1>Elysium</h1>
+          <h1 className="brand">
+            <Logo size={28} />
+            Elysium
+          </h1>
         </header>
         <main>
           <ChangePasswordForm required onChanged={() => setAuthStatus('loggedIn')} onLogout={handleLogout} />
@@ -554,7 +561,10 @@ export default function App() {
     return (
       <div className="app__pre-auth">
         <header className="app__pre-auth-header">
-          <h1>Elysium</h1>
+          <h1 className="brand">
+            <Logo size={28} />
+            Elysium
+          </h1>
         </header>
         <main>
           <LoginForm onSuccess={handleLoginSuccess} />

@@ -84,4 +84,16 @@ describe('index.html', () => {
     expect(svg).toMatch(/<\/svg>/)
     expect(svg).toMatch(/<(rect|path|circle|polygon)\b/)
   })
+  it('ships an icon that is well-formed XML, or the browser shows none', () => {
+    // FOUND IN A BROWSER, NOT BY THE TEST ABOVE: the file existed and was
+    // served as image/svg+xml, and Chrome refused it -- an XML comment may
+    // not contain a double hyphen, and the header comment was written in
+    // prose with " -- " in it. A tab with no icon, and no error anywhere.
+    // Existing on disk is not the same as being a valid image.
+    const text = readFileSync(path.join(uiRoot, 'public', 'favicon.svg'), 'utf8')
+    const parsed = new DOMParser().parseFromString(text, 'image/svg+xml')
+
+    expect(parsed.querySelector('parsererror')).toBeNull()
+    expect(parsed.documentElement.tagName).toBe('svg')
+  })
 })

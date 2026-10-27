@@ -1,44 +1,39 @@
 <!--
-  favicon.svg -- a mark, not a logo.
+  favicon.svg - the Elysium mark: the bee skep, as on the website.
 
-  10-S2-02: there was no icon link at all, so every page load issued a
-  browser-initiated request for /favicon.ico and got a 404. Reproduced
-  against the real serving path rather than reasoned about: FastAPI's
-  app.frontend(fallback="index.html") answers a NAVIGATION with the
-  SPA shell, but a favicon request carries an image Accept header, so
-  the fallback correctly declines it and the 404 stands.
+  This replaces the stand-in E that stopped the /favicon.ico 404 while
+  the brand question was open (it said a real mark should replace it
+  whenever that was answered; it has been). The drawing is
+  site/img/logo.svg's; kept as a text SVG so the repository stays free
+  of binary assets and a patch can show the change.
 
-  DELIBERATELY NOT BRANDING. UI_ROADMAP records that this project has
-  no logo -- zero SVGs in ui/ before this one -- and that splash
-  screens, export lockups and marketing marks are a brand-asset
-  project rather than a usability one. That judgement stands; this is
-  the smallest thing that stops a 404 on every load, and a real mark
-  should replace it whenever the brand question is actually answered.
+  IT FOLLOWS THE BROWSER'S THEME, which a raster icon cannot: dark ink
+  on a light tab strip, light on a dark one - the website's two inks.
+  The entrance is a hole (a mask), so it shows the tab through it.
 
-  SVG RATHER THAN .ICO so the repository stays free of binary assets:
-  a text file can be read, reviewed and diffed in a patch, and this one
-  can carry its own reasoning, which an .ico cannot.
-
-  IT FOLLOWS THE BROWSER'S THEME. An SVG favicon may carry its own
-  <style>, including a prefers-color-scheme query -- which a raster
-  icon cannot. The navy reads on a light tab strip and the light blue
-  reads on a dark one; a single fixed colour would disappear into one
-  of them. Colours are the accent pair from DEV_UI 8.3 (#1762b6 light,
-  #5fa1f3 dark), not new values.
+  Clean, not glitched: a 16px tab cannot carry a three-coil slip.
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Elysium">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 112 116" role="img" aria-label="Elysium">
   <style>
-    .mark { fill: #1762b6; }
-    .glyph { fill: #f8fafd; }
+    .skep { fill: #080c14; }
     @media (prefers-color-scheme: dark) {
-      .mark { fill: #5fa1f3; }
-      .glyph { fill: #0c1723; }
+      .skep { fill: #f7f6f3; }
     }
   </style>
-  <rect class="mark" width="32" height="32" rx="7" />
-  <!-- An E in three bars: legible at 16px, where a letterform with
-       thin strokes turns to mush. -->
-  <rect class="glyph" x="9" y="8" width="14" height="3.5" rx="1.25" />
-  <rect class="glyph" x="9" y="14.25" width="11" height="3.5" rx="1.25" />
-  <rect class="glyph" x="9" y="20.5" width="14" height="3.5" rx="1.25" />
+  <mask id="entrance">
+    <rect width="112" height="116" fill="white" />
+    <path d="M 47 114 a 9 12 0 0 1 18 0 z" fill="black" />
+  </mask>
+  <g class="skep" mask="url(#entrance)">
+    <rect x="2.0" y="105.1" width="108.0" height="9.2" rx="4.6" />
+    <rect x="2.0" y="94.9" width="108.0" height="9.2" rx="4.6" />
+    <rect x="2.1" y="84.7" width="107.8" height="9.2" rx="4.6" />
+    <rect x="2.5" y="74.5" width="107.0" height="9.2" rx="4.6" />
+    <rect x="3.3" y="64.2" width="105.3" height="9.2" rx="4.6" />
+    <rect x="4.9" y="54.0" width="102.2" height="9.2" rx="4.6" />
+    <rect x="7.6" y="43.8" width="96.7" height="9.2" rx="4.6" />
+    <rect x="12.3" y="33.6" width="87.5" height="9.2" rx="4.6" />
+    <rect x="20.6" y="23.3" width="70.9" height="9.2" rx="4.6" />
+    <path d="M 20.0 27.9 a 36 22.32 0 0 1 72 0 z" />
+  </g>
 </svg>

@@ -22,6 +22,7 @@
     "./components/HelpPanel": "./src/components/HelpPanel.tsx",
     "./components/LoadingState": "./src/components/LoadingState.tsx",
     "./components/LoginForm": "./src/components/LoginForm.tsx",
+    "./components/Logo": "./src/components/Logo.tsx",
     "./components/Notice": "./src/components/Notice.tsx",
     "./components/Page": "./src/components/Page.tsx",
     "./components/PendingWriteCard": "./src/components/PendingWriteCard.tsx",

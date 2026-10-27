@@ -203,6 +203,20 @@
     letter-spacing: 0.01em;
   }
 
+  /* The mark beside the name, in the frame and on the sign-in screens. */
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .brand .logo {
+    flex: none;
+    /* Optically centred: the skep's mass sits below its box's middle
+     * because the crown is narrow (as on the website). */
+    margin-top: -1px;
+  }
+
   .app__header-actions {
     display: flex;
     align-items: center;

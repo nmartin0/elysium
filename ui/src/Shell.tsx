@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Classes } from '@blueprintjs/core'
 import { useLocation } from 'react-router-dom'
+import Logo from '@elysium/shell-api/components/Logo'
 import { Frame } from '@shell/core/Frame'
 import type { Command } from '@shell/core/commands'
 import { iconForApp } from '@elysium/shell-api/appIcons'
@@ -170,7 +171,12 @@ export default function Shell({ visibleApps, modules, safeMode = false, currentU
   return (
     <Frame
       nav={visibleApps.map((app) => ({ title: app.name, path: app.path, subject: app.subject }))}
-      brand="Elysium"
+      brand={
+        <span className="brand">
+          <Logo />
+          Elysium
+        </span>
+      }
       iconFor={iconForApp}
       actions={
         <>
