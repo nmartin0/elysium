@@ -591,6 +591,12 @@ apply_new_type_route
 source_has_table  # NewTypePreviewResponse, read by the browser
 columns_missing  # NewTypePreviewResponse, read by the browser
 columns_checked  # NewTypePreviewResponse, read by the browser
+linkable_types_route
+linkable_type_columns_route
+preview_new_link_route
+apply_new_link_route
+problems  # NewLinkPreviewResponse, read by the browser
+checked  # NewLinkPreviewResponse, read by the browser
 # DEV_UI 13.7, putting an earlier version back: routes reached by HTTP.
 preview_restore_route
 restore_route

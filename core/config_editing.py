@@ -998,6 +998,151 @@ def apply_new_type(ontology: str, bindings: "str | None", addition: dict,
 
 
 # ---------------------------------------------------------------------------
+# A NEW LINK (27 October): the third of the three operations. One link
+# type, which both of its types read -- the two directions come from this
+# one declaration (core/ontology/link_types.py), so they cannot drift.
+#
+# FOUNDRY'S SHAPE, which link_types.py adopted: a foreign-key link
+# (one-to-one, one-to-many) names the column on the TARGET's table that
+# holds the source's id; a many-to-many link names a join table and the
+# two columns of key pairs in it. Nothing else is asked of the person.
+#
+# Only the ontology file changes: a link's columns are written in the link
+# type itself, not in source_bindings.yaml.
+#
+# WHAT IT CANNOT DO, on purpose: a link between a type and itself under
+# one name (each side needs its own), and anything that takes a name
+# some field or link of that type already has -- the loader would refuse
+# the result, and says why here first.
+# ---------------------------------------------------------------------------
+
+NEW_LINK_KEYS = ("name", "display_name", "description", "source", "target", "cardinality",
+                 "foreign_key_column", "join_table")
+LINK_CARDINALITIES = ("one_to_one", "one_to_many", "many_to_many")
+
+
+def _link_name(what: str, value) -> "str | None":
+    """A table or column name in a link, or None when it was left out."""
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str) or len(value) > 128 or any(ord(c) < 32 or ord(c) == 127 for c in value):
+        raise ConfigEditError(f"{what} is a name: one line of at most 128 characters.")
+    return value.strip() or None
+
+
+def _link_side(name: str, which: str, side, types: dict, taken: dict) -> tuple[str, str]:
+    if not isinstance(side, dict) or set(side) != {"object_type", "api_name"}:
+        raise ConfigEditError(f"{name}'s {which} is {{object_type, api_name}}.")
+    object_type = side["object_type"]
+    if not isinstance(object_type, str) or object_type not in types:
+        raise ConfigEditError(f"There is no object type {object_type!r} for {name}'s {which}.")
+    api_name = _checked_name(
+        f"{side['api_name']!r} is not a name for the link on {object_type}: lowercase letters, digits "
+        f"and underscores, starting with a letter.", side["api_name"], r"^[a-z][a-z0-9_]{0,62}\Z")
+    if api_name in taken.setdefault(object_type, set()):
+        raise ConfigEditError(
+            f"{object_type} already has a field or link called {api_name!r}. Call this one something else.")
+    taken[object_type].add(api_name)
+    return object_type, api_name
+
+
+def apply_new_link(ontology: str, addition: dict) -> str:
+    """ontology_schema.yaml with this link type added. `addition` is {name,
+    source, target, cardinality} -- source and target each {object_type,
+    api_name}, the name that side's type gives the link -- with
+    `foreign_key_column` for a one-to-one or one-to-many link, or
+    `join_table` {table, source_column, target_column} for many-to-many,
+    and optionally display_name and description.
+
+    Refuses a taken link name, a type that does not exist, a name either
+    type already uses, a cardinality off the list, the wrong backing for
+    it, and any result that does not mean exactly the old file with this
+    link added."""
+    import yaml as plain_yaml
+
+    if not isinstance(addition, dict):
+        raise ConfigEditError("Nothing to add.")
+    unknown = sorted(set(addition) - set(NEW_LINK_KEYS))
+    if unknown:
+        raise ConfigEditError(f"{', '.join(unknown)} cannot be set on a new link here.")
+    expected = plain_yaml.safe_load(ontology) or {}
+    types = expected.get("object_types") if isinstance(expected, dict) else None
+    if not isinstance(types, dict):
+        raise ConfigEditError(f"{ONTOLOGY_FILE} declares no object_types.")
+    links = expected.get("link_types")
+    if links is not None and not isinstance(links, dict):
+        raise ConfigEditError(f"{ONTOLOGY_FILE}'s link_types is not a block of links.")
+
+    name = _checked_name(
+        f"{addition.get('name')!r} is not a link name: letters and digits, starting with a capital.",
+        addition.get("name"), r"^[A-Z][A-Za-z0-9]{0,62}\Z")
+    if name in (links or {}):
+        raise ConfigEditError(f"There is already a link type {name!r}.")
+
+    # The names each type already answers to: its fields, and the links
+    # already declared on it (which become fields at load).
+    taken: dict = {object_type: set((definition or {}).get("fields") or {})
+                   for object_type, definition in types.items()}
+    for existing in (links or {}).values():
+        for side in ("source", "target"):
+            owner = (existing.get(side) or {}).get("object_type")
+            if owner in taken:
+                taken[owner].add((existing.get(side) or {}).get("api_name"))
+    source = _link_side(name, "source", addition.get("source"), types, taken)
+    target = _link_side(name, "target", addition.get("target"), types, taken)
+
+    cardinality = addition.get("cardinality")
+    if cardinality not in LINK_CARDINALITIES:
+        raise ConfigEditError(f"{name}'s relationship is one of {', '.join(LINK_CARDINALITIES)}.")
+    declared: dict = {}
+    lines: list[str] = []
+    for key in ("display_name", "description"):
+        value = _checked_text(name, key, addition.get(key), TYPE_KEYS[key])
+        if value is not None:
+            declared[key] = value
+            lines.append(f"  {key}: {_render_text(value)}")
+    declared["source"] = {"object_type": source[0], "api_name": source[1]}
+    declared["target"] = {"object_type": target[0], "api_name": target[1]}
+    lines.append(f"  source: {{object_type: {source[0]}, api_name: {source[1]}}}")
+    lines.append(f"  target: {{object_type: {target[0]}, api_name: {target[1]}}}")
+    declared["cardinality"] = cardinality
+    lines.append(f"  cardinality: {cardinality}")
+
+    if cardinality == "many_to_many":
+        if "foreign_key_column" in addition:
+            raise ConfigEditError(f"{name} is many to many, so it is backed by a join table, not a column.")
+        join = addition.get("join_table")
+        if not isinstance(join, dict) or set(join) != {"table", "source_column", "target_column"}:
+            raise ConfigEditError(f"{name} needs a join table: {{table, source_column, target_column}}.")
+        named: dict[str, str] = {}
+        for key in ("table", "source_column", "target_column"):
+            given = _link_name(f"{name}'s join table {key.replace('_', ' ')}", join[key])
+            if given is None:
+                raise ConfigEditError(f"{name}'s join table needs a table and both columns.")
+            named[key] = given
+        declared["join_table"] = named
+        lines.append("  join_table:")
+        lines += [f"    {key}: {_render_text(value)}" for key, value in named.items()]
+    else:
+        if "join_table" in addition:
+            raise ConfigEditError(
+                f"{name} is {cardinality.replace('_', ' to ')}, so it is backed by a column, not a join table.")
+        column = _link_name(f"{name}'s foreign key column", addition.get("foreign_key_column"))
+        if column is None:
+            raise ConfigEditError(f"{name} needs the column that holds {source[0]}'s id.")
+        declared["foreign_key_column"] = column
+        lines.append(f"  foreign_key_column: {_render_text(column)}")
+
+    if links is None:
+        edited = ontology if ontology.endswith("\n") or not ontology else ontology + "\n"
+        edited += f"\nlink_types:\n  {name}:\n" + "".join(f"  {line}\n" for line in lines)
+    else:
+        edited = _append_child(ontology, ["link_types"], name, [line[2:] for line in lines],
+                               after_comments=True)
+    return _meaning_checked(edited, {**expected, "link_types": {**(links or {}), name: declared}})
+
+
+# ---------------------------------------------------------------------------
 # WHICH FILES' LINES THE INTERFACE SHOWS. A change to any configuration
 # file can reach the screen now -- an earlier version put back touches
 # them all -- and the rule for what may is older than this editor:

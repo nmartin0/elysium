@@ -2635,6 +2635,185 @@ def apply_new_type_route(body: NewTypeRequest, request: Request,
                          for line in shown_diff(name, before, after)]}
 
 
+class NewLinkSide(BaseModel):
+    object_type: str
+    api_name: str
+
+
+class NewLinkRequest(BaseModel):
+    digest: str
+    name: str
+    display_name: str | None = None
+    description: str | None = None
+    source: NewLinkSide
+    target: NewLinkSide
+    cardinality: str
+    # One-to-one and one-to-many: the column of the TARGET's table that holds
+    # the source's id.
+    foreign_key_column: str | None = None
+    # Many-to-many: {table, source_column, target_column}.
+    join_table: dict | None = None
+    reason: str | None = None
+
+
+class LinkableType(BaseModel):
+    name: str
+    display_name: str | None = None
+    silo: str | None = None
+
+
+class LinkableTypesResponse(BaseModel):
+    types: list[LinkableType]
+
+
+class NewLinkPreviewResponse(BaseModel):
+    diff: list[str]
+    impact: dict
+    needs_approval: bool
+    # What the source says about the columns and table named, in words;
+    # empty when all is as written or the source could not be asked.
+    problems: list[str] = []
+    checked: bool = False
+
+
+def _proposed_new_link(request: Request, body: NewLinkRequest) -> "dict[str, tuple[str, str]]":
+    """{filename: (now, proposed)} for the file this link changes."""
+    from core.config_editing import ONTOLOGY_FILE, ConfigEditError, apply_new_link
+
+    current = _ontology_as_read(request, body.digest)
+    addition = body.model_dump(exclude_none=True, exclude={"digest", "reason"})
+    try:
+        proposed = apply_new_link(current, addition)
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {ONTOLOGY_FILE: (current, proposed)}
+
+
+def _storage_of(request: Request, object_type: str) -> dict:
+    schema = _generation(request).config.schema
+    return (schema.get(object_type) or {}).get("storage") or {}
+
+
+def _ask_source(adapter, method: str, *given):
+    """What the source says, or None when it cannot or does not answer."""
+    probe = getattr(adapter, method, None)
+    try:
+        return probe(*given) if probe else None
+    except Exception:  # noqa: BLE001 - a source that is down just answers nothing
+        return None
+
+
+@router.get("/admin/ontology/linkable-types", dependencies=[Depends(_no_store)],
+            response_model=LinkableTypesResponse)
+def linkable_types_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The object types a link can join, and the source each is built over."""
+    _require_manage_deployment(request, current_user)
+    schema = _generation(request).config.schema
+    return {"types": [{"name": name, "display_name": definition.get("display_name"),
+                       "silo": (definition.get("storage") or {}).get("silo")}
+                      for name, definition in sorted(schema.items())]}
+
+
+@router.get("/admin/ontology/linkable-types/{object_type}/columns", dependencies=[Depends(_no_store)],
+            response_model=SourceColumnsResponse)
+def linkable_type_columns_route(object_type: str, request: Request,
+                                current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The columns of the table a type is built over, or null when the
+    source cannot say. A person choosing the column that joins two types
+    is offered what that type's table holds, without being told where it is."""
+    _require_manage_deployment(request, current_user)
+    if object_type not in _generation(request).config.schema:
+        raise HTTPException(status_code=404, detail="Not found")
+    storage = _storage_of(request, object_type)
+    present = _ask_source(live_source_adapters(request).get(storage.get("silo")), "columns_present",
+                          storage.get("table"))
+    return {"columns": sorted(present) if present else None}
+
+
+def _link_problems(request: Request, body: NewLinkRequest) -> tuple[list[str], bool]:
+    """(what the source lacks, in words, whether it could be asked)."""
+    adapters = live_source_adapters(request)
+    problems: list[str] = []
+    checked = False
+    if body.cardinality == "many_to_many":
+        join = body.join_table or {}
+        silo = _storage_of(request, body.source.object_type).get("silo")
+        table = join.get("table")
+        adapter = adapters.get(silo)
+        tables = _ask_source(adapter, "tables_present")
+        if tables:
+            checked = True
+            if table not in tables:
+                problems.append(f"The source has no table {table}.")
+        columns = _ask_source(adapter, "columns_present", table) if table else None
+        if columns:
+            checked = True
+            for key in ("source_column", "target_column"):
+                if join.get(key) not in columns:
+                    problems.append(f"The table {table} has no column {join.get(key)}.")
+    else:
+        storage = _storage_of(request, body.target.object_type)
+        columns = _ask_source(adapters.get(storage.get("silo")), "columns_present", storage.get("table"))
+        if columns:
+            checked = True
+            if body.foreign_key_column not in columns:
+                problems.append(f"The table {storage.get('table')} has no column {body.foreign_key_column}.")
+    return problems, checked
+
+
+@router.post("/admin/ontology/links/preview", dependencies=[Depends(_no_store)],
+             response_model=NewLinkPreviewResponse)
+def preview_new_link_route(body: NewLinkRequest, request: Request,
+                           current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The lines that would be added, whether the source has the column or
+    table named, what it does to access, and whether it would wait for a
+    second person. Nothing written."""
+    from core.config_editing import shown_diff
+
+    _require_manage_deployment(request, current_user)
+    files = _proposed_new_link(request, body)
+    _candidate, impact = _access_impact(request, {name: proposed for name, (_, proposed) in files.items()})
+    problems, checked = _link_problems(request, body)
+    return {
+        "diff": [line for name, (before, after) in files.items() for line in shown_diff(name, before, after)],
+        "impact": impact, "needs_approval": impact["widens"], "problems": problems, "checked": checked,
+    }
+
+
+@router.put("/admin/ontology/links", dependencies=[Depends(_no_store)], response_model=NewFieldsResponse)
+def apply_new_link_route(body: NewLinkRequest, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Adds the link now, or -- if anyone could read more afterwards --
+    proposes it for a holder of manage:roles to approve. A new link adds a
+    field to each type that nobody is granted yet, so it normally applies
+    at once; the permission code is asked all the same."""
+    from core.config_editing import digest, shown_diff
+    from core.config_proposals import SHAPE
+
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        files = _proposed_new_link(request, body)
+        proposed = {name: text for name, (_, text) in files.items()}
+        _candidate, impact = _access_impact(request, proposed)
+        changes = {body.name: "new link"}
+        if not impact["widens"]:
+            written = _write_config_files(request, current_user, files, changes)
+            return {"status": "applied", "diff": written["diff"], "to_generation": written["to_generation"]}
+
+        reason = _reason(body.reason)
+        proposal_id = _proposals(request).propose(
+            SHAPE, f"new link {body.name}", proposed,
+            {name: digest(before) for name, (before, _) in files.items()},
+            reason, current_user.user_id)
+        audit = _generation(request).mediator.audit_log
+        for name, (before, after) in files.items():
+            audit.log_config_edit(current_user.user_id, "proposed", name, changes, digest(before),
+                                  digest(after), detail=f"proposal {proposal_id}: {reason}"[:500])
+        return {"status": "waiting", "proposal_id": proposal_id,
+                "diff": [line for name, (before, after) in files.items()
+                         for line in shown_diff(name, before, after)]}
+
+
 def _reason(text: "str | None") -> str:
     from core.config_proposals import MAX_REASON
 

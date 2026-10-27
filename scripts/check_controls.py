@@ -6910,6 +6910,125 @@ CONTROLS = [
              'TestWhatTheFormOffers::test_the_tables_and_columns_a_source_holds'),
         ],
     ),
+    Control(
+        describes='NEW LINK: a taken link name is refused',
+        path='core/config_editing.py',
+        old='    if name in (links or {}):',
+        new='    if False:',
+        tests=[
+            ('tests/unit/test_new_link.py::TestWhatItRefuses::test_it_refuses_a_join_link'),
+        ],
+    ),
+    Control(
+        describes='NEW LINK: a name either type already uses is refused',
+        path='core/config_editing.py',
+        old='    if api_name in taken.setdefault(object_type, set()):',
+        new='    if False:',
+        tests=[
+            ('tests/unit/test_new_link.py::TestWhatItRefuses::test_it_refuses_a_join_link'),
+        ],
+    ),
+    Control(
+        describes='NEW LINK: both types must exist',
+        path='core/config_editing.py',
+        old='    if not isinstance(object_type, str) or object_type not in types:',
+        new='    if False:',
+        tests=[
+            ('tests/unit/test_new_link.py::TestWhatItRefuses::test_it_refuses_a_join_link'),
+        ],
+    ),
+    Control(
+        describes='NEW LINK: the relationship must be one of the three',
+        path='core/config_editing.py',
+        old='    if cardinality not in LINK_CARDINALITIES:',
+        new='    if False:',
+        tests=[
+            ('tests/unit/test_new_link.py::TestWhatItRefuses::test_it_refuses_a_join_link'),
+        ],
+    ),
+    Control(
+        describes='NEW LINK: many to many is not backed by a column',
+        path='core/config_editing.py',
+        old='        if "foreign_key_column" in addition:',
+        new='        if False:',
+        tests=[
+            ('tests/unit/test_new_link.py::TestWhatItRefuses::test_it_refuses_a_join_link'),
+        ],
+    ),
+    Control(
+        describes='NEW LINK: a column-backed link has no join table',
+        path='core/config_editing.py',
+        old='        if "join_table" in addition:',
+        new='        if False:',
+        tests=[
+            ('tests/unit/test_new_link.py::TestWhatItRefuses::test_it_refuses_a_foreign_key_link'),
+        ],
+    ),
+    Control(
+        describes="NEW LINK: it lands after the previous link's trailing note",
+        path='core/config_editing.py',
+        old='[line[2:] for line in lines],\n                               after_comments=True)',
+        new='[line[2:] for line in lines],\n                               after_comments=False)',
+        tests=[
+            ('tests/unit/test_new_link.py::TestTheLinesItWrites::test_a_link_goes_after_the_last_one_and_its_trailing_note'),
+        ],
+    ),
+    Control(
+        describes='NEW LINK: a file with no links yet gets the block',
+        path='core/config_editing.py',
+        old='    if links is None:',
+        new='    if False:',
+        tests=[
+            ('tests/unit/test_new_link.py::TestTheLinesItWrites::test_a_file_with_no_links_yet_gets_the_block'),
+        ],
+    ),
+    Control(
+        describes='NEW LINK: the preview says when the column is not in the table',
+        path='api/routes.py',
+        old='            if body.foreign_key_column not in columns:',
+        new='            if False:',
+        tests=[
+            ('tests/integration/test_new_link_from_the_ui.py::TestThePreview::test_it_says_when_the_column_is_not_in_the_table'),
+        ],
+    ),
+    Control(
+        describes='NEW LINK: the preview says when the join table is not there',
+        path='api/routes.py',
+        old='            if table not in tables:',
+        new='            if False:',
+        tests=[
+            ('tests/integration/test_new_link_from_the_ui.py::TestThePreview::test_it_says_when_the_join_table_or_its_columns_are_not_there'),
+        ],
+    ),
+    Control(
+        describes='NEW LINK: the preview says when a join column is not there',
+        path='api/routes.py',
+        old='                if join.get(key) not in columns:',
+        new='                if False:',
+        tests=[
+            ('tests/integration/test_new_link_from_the_ui.py::TestThePreview::test_it_says_when_the_join_table_or_its_columns_are_not_there'),
+        ],
+    ),
+    Control(
+        describes='NEW LINK: the apply route needs manage:deployment',
+        path='api/routes.py',
+        old=('    _require_manage_deployment(request, current_user)\n'
+             '    with _config_edit_lock:\n        files = _proposed_new_link'),
+        new='    with _config_edit_lock:\n        files = _proposed_new_link',
+        tests=[
+            ('tests/integration/test_new_link_from_the_ui.py::TestWhatTheFormOffers::test_only_a_manager_of_the_deployment_is_offered_any_of_it'),
+        ],
+    ),
+    Control(
+        describes='NEW LINK: the type list needs manage:deployment',
+        path='api/routes.py',
+        old=('    _require_manage_deployment(request, current_user)\n'
+             '    schema = _generation(request).config.schema\n    return {"types"'),
+        new='    schema = _generation(request).config.schema\n    return {"types"',
+        tests=[
+            ('tests/integration/test_new_link_from_the_ui.py::TestWhatTheFormOffers::test_only_a_manager_of_the_deployment_is_offered_any_of_it'),
+        ],
+    ),
 ]
 
 
