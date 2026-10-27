@@ -119,6 +119,41 @@ describe('routing the edges', () => {
     expect(pathOf(points)).toBe('M0 0 L10 0 L10 20 L30 20')
     expect(labelPoint(points)).toEqual({ x: 10, y: 10 })
   })
+
+  it('puts the label on the run into the target, not on a trunk other edges share', () => {
+    // Several edges leave one type along one vertical trunk; labels on
+    // it were struck through by the line (found in a browser).
+    const points = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 200 },
+      { x: 200, y: 200 },
+    ]
+    expect(labelPoint(points)).toEqual({ x: 150, y: 200 })
+  })
+
+  it('puts the label beside a run that comes down into the target, not on it', () => {
+    const points = [
+      { x: 0, y: 0 },
+      { x: 0, y: 40 },
+      { x: 50, y: 40 },
+      { x: 50, y: 200 },
+    ]
+    const at = labelPoint(points)
+    expect(at.x).toBeGreaterThan(50 + 10)
+    expect(at.y).toBeGreaterThan(40 + 80 - 20)
+    expect(at.y).toBeLessThan(200)
+  })
+
+  it('falls back to the middle when the run into the target is too short for a label', () => {
+    const points = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 200 },
+      { x: 130, y: 200 },
+    ]
+    expect(labelPoint(points)).toEqual({ x: 100, y: 100 })
+  })
 })
 
 describe('routing round the types in the way', () => {

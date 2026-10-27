@@ -16,7 +16,19 @@ vi.mock('@elysium/shell-api/api', async (importOriginal) => {
 // own tests; here it is replaced by something a query can see, so
 // these assert WHICH charts were built rather than how they look.
 vi.mock('@elysium/shell-api/components/Chart', () => ({
-  default: ({ ariaLabel }: { ariaLabel: string }) => <div>{ariaLabel}</div>,
+  default: ({
+    ariaLabel,
+    option,
+    onSelect,
+  }: {
+    ariaLabel: string
+    option: unknown
+    onSelect?: (value: string) => void
+  }) => (
+    <div data-clickable={String(Boolean(onSelect))} data-option={JSON.stringify(option)}>
+      {ariaLabel}
+    </div>
+  ),
 }))
 
 const { default: ChartsPanel, chartableFields } = await import('./ChartsPanel')
@@ -525,5 +537,55 @@ describe('the charts describe the SEARCHED set', () => {
 
     await waitFor(() => expect(aggregateObjects).toHaveBeenCalled())
     expect(aggregateObjects.mock.calls[0]![1]).not.toHaveProperty('q')
+  })
+})
+
+describe('a number is a distribution, not a list of values', () => {
+  const NUMBERS: VisibleSchema = {
+    Transaction: {
+      fields: { amount: { type: 'data', visibility: 'prominent', data_type: 'decimal@2', display_name: 'Amount' } },
+    },
+    Plain: { fields: { code: { type: 'data', visibility: 'prominent', display_name: 'Code' } } },
+  }
+  // 30 distinct amounts, 1 to 30, one object each -- plus one repeated so it is worth charting.
+  const many = Object.fromEntries([...Array(30)].map((_, i) => [String(i + 1), i === 0 ? 2 : 1]))
+
+  const chartFor = async (type: string, counts: Record<string, number>) => {
+    aggregateObjects.mockImplementation(answering(counts))
+    render(
+      <ChartsPanel
+        objectType={type}
+        visibleSchema={NUMBERS}
+        queryText=""
+        filters={[]}
+        onSelect={noop}
+        onSessionExpired={noop2}
+      />,
+    )
+    const label = type === 'Transaction' ? 'Amount distribution' : 'Code distribution'
+    return await screen.findByText(label)
+  }
+
+  it('folds many values into ranges, in numeric order', async () => {
+    const chart = await chartFor('Transaction', many)
+    const option = JSON.parse(chart.getAttribute('data-option')!)
+    // Top-down, smallest first: the axis is drawn bottom-up, so reversed.
+    const labels: string[] = [...option.yAxis.data].reverse()
+    expect(labels).toHaveLength(10)
+    expect(labels[0]).toMatch(/^1\u2013/)
+    expect(labels[9]).toMatch(/\u201330$/)
+    const total = option.series[0].data.reduce((sum: number, d: { value: number }) => sum + d.value, 0)
+    expect(total).toBe(31)
+  })
+
+  it('does not pretend a range is a value that can be clicked', async () => {
+    const chart = await chartFor('Transaction', many)
+    expect(chart).toHaveAttribute('data-clickable', 'false')
+  })
+
+  it('leaves a value list alone for a field not declared a number', async () => {
+    const chart = await chartFor('Plain', many)
+    expect(chart).toHaveAttribute('data-clickable', 'true')
+    expect(JSON.parse(chart.getAttribute('data-option')!).yAxis.data).toContain('Other (18)')
   })
 })

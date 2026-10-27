@@ -12,7 +12,10 @@
  *
  * REVIEW SAYS WHAT ELSE ADDING A FIELD DOES, not only which lines
  * change: whether the source has the column (asked of the source, where
- * it can say), that nobody can read the field until a grant names it,
+ * it can say), that nobody can read the field until a grant names it --
+ * and that the FIRST such grant needs manage:escalation, because nobody
+ * holds a new field (found by doing it end to end: a deployment whose
+ * roles lacked it could add a field and never let anyone see it),
  * and that the type's table in the lake is rebuilt at the next sync.
  *
  * THE SECOND PERSON IS THE PERMISSION CODE'S CALL, as for labels. A new
@@ -238,7 +241,9 @@ export default function AddFields({
               ))}
               <li>
                 Nobody can read {preview.fields.length === 1 ? 'it' : 'them'} until a grant names{' '}
-                {preview.fields.length === 1 ? 'it' : 'each'} (Admin → Roles).
+                {preview.fields.length === 1 ? 'it' : 'each'} (Admin → Roles). Nobody holds a new field yet, so the
+                first grant of {preview.fields.length === 1 ? 'it' : 'each'} has to come from someone holding
+                manage:escalation; a role cannot be given what its proposer does not hold.
               </li>
               <li>
                 At the next sync the lake’s {shownAs} table is rebuilt to include{' '}

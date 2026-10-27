@@ -79,7 +79,10 @@ describe('Chart', () => {
     // around them, which is why this asserts containment rather than
     // equality -- it used to assert equality, and that broke the
     // moment a default was supplied.
-    expect(setOption).toHaveBeenCalledWith(expect.objectContaining(OPTION), true)
+    expect(setOption).toHaveBeenCalledWith(
+      expect.objectContaining({ series: [expect.objectContaining(OPTION.series[0]!)] }),
+      true,
+    )
   })
 
   describe('the palette', () => {
@@ -210,7 +213,10 @@ describe('Chart', () => {
 
     // Containment, not equality: the palette is added around the
     // caller's option. Same reason as the first test above.
-    expect(setOption).toHaveBeenLastCalledWith(expect.objectContaining(next), true)
+    expect(setOption).toHaveBeenLastCalledWith(
+      expect.objectContaining({ series: [expect.objectContaining(next.series[0]!)] }),
+      true,
+    )
     // ...without building a second chart for the same div.
     expect(init).toHaveBeenCalledTimes(1)
   })
@@ -279,5 +285,31 @@ describe('a click on an edge, not just a node', () => {
     clickHandler?.({ name: 'Customer', dataType: 'node' })
 
     expect(onSelect).toHaveBeenCalledWith('Customer', 'node', undefined)
+  })
+})
+
+describe('Chart labels', () => {
+  it('draws series labels without an outline, in the theme text colour', () => {
+    // Found in a browser: a graph's node names were smeared by ECharts'
+    // default halo on the dark surface.
+    render(
+      <Chart
+        ariaLabel="graph"
+        option={{ series: [{ type: 'graph', label: { show: true, fontSize: 10 } }, { type: 'pie' }] }}
+      />,
+    )
+    const option = setOption.mock.calls.at(-1)![0] as { series: { label: Record<string, unknown> }[] }
+    for (const series of option.series) {
+      expect(series.label.textBorderWidth).toBe(0)
+      expect(typeof series.label.color).toBe('string')
+    }
+    // A caller's own settings are kept.
+    expect(option.series[0]!.label).toMatchObject({ show: true, fontSize: 10 })
+  })
+
+  it('lets a caller choose its own label colour', () => {
+    render(<Chart ariaLabel="pie" option={{ series: [{ type: 'pie', label: { color: '#123456' } }] }} />)
+    const option = setOption.mock.calls.at(-1)![0] as { series: { label: Record<string, unknown> }[] }
+    expect(option.series[0]!.label.color).toBe('#123456')
   })
 })

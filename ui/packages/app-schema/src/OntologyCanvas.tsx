@@ -425,6 +425,16 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
     })),
   ]
   const laneOf = lanes(drawn)
+  // An edge's route, round the other types rather than through them.
+  const routeOfEdge = (edge: (typeof drawn)[number], index: number) => {
+    const from = placed[edge.source]
+    const to = placed[edge.target]
+    if (!from || !to) return null
+    const others = Object.entries(placed)
+      .filter(([name]) => name !== edge.source && name !== edge.target)
+      .map(([, centre]) => centre)
+    return routeEdge(from, to, laneOf[index] ?? 0, others)
+  }
   const dimmed = (name: string) => members !== null && !members.has(name)
   const selectedType = selection?.kind === 'object' ? selection.name : null
   const selectedLink = selection?.kind === 'link' ? selection.name : null
@@ -588,15 +598,8 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
             </defs>
             <g transform={`translate(${shownView.x} ${shownView.y}) scale(${shownView.scale})`}>
               {drawn.map((edge, index) => {
-                const from = placed[edge.source]
-                const to = placed[edge.target]
-                if (!from || !to) return null
-                // The other types, which an edge goes round rather than through.
-                const others = Object.entries(placed)
-                  .filter(([name]) => name !== edge.source && name !== edge.target)
-                  .map(([, centre]) => centre)
-                const points = routeEdge(from, to, laneOf[index] ?? 0, others)
-                const at = labelPoint(points)
+                const points = routeOfEdge(edge, index)
+                if (!points) return null
                 const security = edge.kind === 'security'
                 const faded = dimmed(edge.source) || dimmed(edge.target)
                 return (
@@ -639,12 +642,30 @@ export default function OntologyCanvas({ schema, selection, onSelect, onSessionE
                       // "security", the node's badge says from where, and the
                       // sentence is here for whoever hovers.
                       <title>{edge.label}</title>
-                    ) : (
-                      <text className="ontology-canvas__edge-label" x={at.x} y={at.y - 4} textAnchor="middle">
-                        {edge.label}
-                      </text>
-                    )}
+                    ) : null}
                   </g>
+                )
+              })}
+              {/* THE LABELS LAST, in a pass of their own. Drawn with their
+                  edge, a later edge's line crossed an earlier edge's label
+                  and its halo could not help. */}
+              {drawn.map((edge, index) => {
+                if (edge.kind === 'security') return null
+                const points = routeOfEdge(edge, index)
+                if (!points) return null
+                const at = labelPoint(points)
+                const faded = dimmed(edge.source) || dimmed(edge.target)
+                return (
+                  <text
+                    key={`label:${edge.name}:${edge.source}:${edge.target}`}
+                    className={'ontology-canvas__edge-label' + (faded ? ' ontology-canvas__edge-label--dimmed' : '')}
+                    x={at.x}
+                    y={at.y - 4}
+                    textAnchor="middle"
+                    pointerEvents="none"
+                  >
+                    {edge.label}
+                  </text>
                 )
               })}
 

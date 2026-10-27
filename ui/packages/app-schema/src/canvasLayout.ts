@@ -355,8 +355,32 @@ export function pathOf(points: Point[]): string {
   return points.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x} ${point.y}`).join(' ')
 }
 
-/** Where an edge's label sits: the middle of its middle segment. */
+/** The least room a label needs along a straight run: "many" is about 32px. */
+const LABEL_ROOM = 44
+
+/** How far to the side of a vertical line its label is centred: half "many", and a gap. */
+const LABEL_BESIDE = 22
+
+/**
+ * Where an edge's label sits: on the short run INTO its target when that
+ * is straight and long enough, else the middle of its middle segment.
+ *
+ * Several edges leaving one type share a vertical trunk, and the middle
+ * segment IS that trunk -- every label sat on it and was struck through
+ * ("ma|ny"), found in a browser. The run into the target is the one part
+ * of the route that is each edge's own.
+ */
 export function labelPoint(points: Point[]): Point {
+  const last = points.at(-1)
+  const before = points.at(-2)
+  if (last && before && before.y === last.y && Math.abs(last.x - before.x) >= LABEL_ROOM) {
+    return { x: (before.x + last.x) / 2, y: last.y }
+  }
+  // A RUN DOWN INTO THE TARGET: beside the line, not on it. The label is
+  // drawn centred and a little above the point it is given.
+  if (last && before && before.x === last.x && Math.abs(last.y - before.y) >= LABEL_ROOM) {
+    return { x: last.x + LABEL_BESIDE, y: (before.y + last.y) / 2 + 8 }
+  }
   const at = Math.max(0, Math.floor((points.length - 1) / 2))
   const a = points[at]!
   const b = points[Math.min(at + 1, points.length - 1)]!

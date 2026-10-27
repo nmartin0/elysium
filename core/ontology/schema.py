@@ -17,7 +17,7 @@ Used by: core/ontology/mediator.py, and core/llm/agent_step_prompt.py
          (specifically is_searchable_field() -- see its own docstring)
 """
 
-
+import re
 
 
 def sort_key(value):
@@ -69,7 +69,14 @@ def humanize(name: str) -> str:
     every deployment to label every field before its UI is usable.
     """
     stem = name[:-3] if name.endswith("_id") and len(name) > 3 else name
-    return " ".join(word.capitalize() for word in stem.split("_")) or name
+    # WORDS RUN TOGETHER IN CAMEL CASE ARE SEPARATED, and a word that
+    # already carries a capital is left as written. A type named
+    # SupportTicket read "Supportticket" on the canvas and in Discover
+    # (capitalize() lowercases the rest of the word), while the page that
+    # lists its fields read "SupportTicket" -- found in a browser. An
+    # all-lowercase word is capitalized, as before; "SKU" stays "SKU".
+    words = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", stem).split("_")
+    return " ".join(word if word != word.lower() else word.capitalize() for word in words) or name
 
 
 def get_display_name(definition: dict, fallback_name: str) -> str:

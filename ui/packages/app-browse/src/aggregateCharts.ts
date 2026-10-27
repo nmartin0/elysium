@@ -87,6 +87,60 @@ export function valueCountsOption(
   }
 }
 
+/** How many ranges a number's distribution is folded into. */
+const HISTOGRAM_BINS = 10
+
+function tidy(n: number): string {
+  return String(Number(n.toPrecision(3)))
+}
+
+/**
+ * A NUMBER'S COUNTS BY VALUE, FOLDED INTO EQUAL RANGES, in numeric order.
+ *
+ * Counting a number value by value is a list of distinct values, not a
+ * distribution: 190 amounts became "199, 49.99, 10, 11, 12 ... Other
+ * (190)" -- found in a browser. Null when there is nothing to fold (no
+ * number, or one value), so the caller keeps the plain chart. A value
+ * that is not a number (a missing one) is counted apart, as "No value",
+ * rather than dropped, so the bars still add up to the set.
+ */
+export function binnedCounts(
+  results: AggregateResults,
+  bins = HISTOGRAM_BINS,
+): { label: string; count: number }[] | null {
+  const numeric: [number, number][] = []
+  let missing = 0
+  for (const [key, count] of Object.entries(results)) {
+    const n = Number(key)
+    if (key.trim() === '' || !Number.isFinite(n)) missing += count
+    else numeric.push([n, count])
+  }
+  if (numeric.length === 0) return null
+  const values = numeric.map(([n]) => n)
+  const low = Math.min(...values)
+  const high = Math.max(...values)
+  if (low === high) return null
+  const width = (high - low) / bins
+  const counts = Array.from({ length: bins }, () => 0)
+  for (const [n, count] of numeric) counts[Math.min(bins - 1, Math.floor((n - low) / width))]! += count
+  const ranges = counts.map((count, index) => ({
+    label: `${tidy(low + index * width)}\u2013${tidy(low + (index + 1) * width)}`,
+    count,
+  }))
+  return missing > 0 ? [...ranges, { label: 'No value', count: missing }] : ranges
+}
+
+/** The folded counts as horizontal bars, smallest range first, top-down. */
+export function binnedOption(ranges: { label: string; count: number }[]): Record<string, unknown> {
+  return {
+    grid: { left: 8, right: 16, top: 8, bottom: 8, containLabel: true },
+    xAxis: { type: 'value' },
+    yAxis: { type: 'category', data: ranges.map(({ label }) => label).reverse() },
+    tooltip: { trigger: 'item' },
+    series: [{ type: 'bar', data: ranges.map(({ label, count }) => ({ name: label, value: count })).reverse() }],
+  }
+}
+
 export function histogramOption(results: AggregateResults): Record<string, unknown> {
   // The field's OWN order, not by count -- a histogram over buckets
   // that mean something in sequence (dates, amounts) is unreadable
@@ -109,7 +163,13 @@ export function pieOption(results: AggregateResults): Record<string, unknown> {
     series: [
       {
         type: 'pie',
-        radius: ['40%', '70%'],
+        // A SMALLER RING AND NO LABEL ON A SLICE TOO THIN TO HOLD ONE.
+        // Three thin slices put three names on top of each other and over
+        // the legend; the legend and the tooltip name every slice anyway.
+        radius: ['35%', '60%'],
+        center: ['50%', '45%'],
+        minShowLabelAngle: 12,
+        labelLayout: { hideOverlap: true },
         data: entries.map(([name, value]) => ({ name, value })),
       },
     ],

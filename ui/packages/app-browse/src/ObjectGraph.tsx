@@ -151,7 +151,7 @@ export default function ObjectGraph({
         // spend "up to 25 percent of their time on manual layout
         // adjustments".
         force: { repulsion: 260, edgeLength: 110, layoutAnimation: false },
-        label: { show: true, position: 'right', fontSize: 10 },
+        label: { show: true, position: 'right', fontSize: 12 },
         labelLayout: { hideOverlap: true },
         emphasis: { focus: 'adjacency' },
         edgeSymbol: ['none', 'arrow'],
@@ -171,7 +171,7 @@ export default function ObjectGraph({
           // have not looked" are different facts, and a canvas that
           // drew them alike is one people stop trusting.
           symbolSize: node.key === selected ? 26 : 18,
-          itemStyle: node.expanded ? {} : { opacity: 0.55 },
+          itemStyle: node.expanded ? {} : { opacity: 0.75 },
         })),
         links: graph.edges.map((edge) => ({
           source: edge.source,

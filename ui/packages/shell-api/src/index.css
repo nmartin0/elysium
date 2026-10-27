@@ -1736,6 +1736,10 @@
     cursor: pointer;
   }
 
+  .ontology-canvas__edge-label--dimmed {
+    opacity: 0.35;
+  }
+
   .ontology-canvas__edge-label {
     fill: var(--text-secondary);
     font-size: 11px;

@@ -39,6 +39,9 @@ import OverTimeChart from './OverTimeChart'
 import {
   type AggregateResults,
   type ChartFilter,
+  MAX_BARS,
+  binnedCounts,
+  binnedOption,
   pieOption,
   conditionsExcluding,
   selectionFor,
@@ -69,6 +72,8 @@ interface FieldChart {
   field: string
   label: string
   results: AggregateResults
+  /** A number: with many values it is folded into ranges, not listed. */
+  numeric: boolean
   /** The set was cut off at the scan ceiling before these were
    *  counted, so every value is a floor. Carried per chart rather
    *  than per panel: each field is its own request over its own
@@ -80,10 +85,13 @@ interface FieldChart {
 /** The data types a field is charted over time for, not counted by value. */
 const TEMPORAL = new Set(['date', 'timestamp', 'timestamptz'])
 
+/** The declared types that are numbers; a scale suffix (decimal@2) is ignored. */
+const NUMERIC = new Set(['integer', 'number', 'decimal'])
+
 export function chartableFields(
   objectType: string,
   visibleSchema: VisibleSchema | null,
-): { field: string; label: string; overTime: boolean }[] {
+): { field: string; label: string; overTime: boolean; numeric: boolean }[] {
   const fields = visibleSchema?.[objectType]?.fields ?? {}
   const usable = Object.entries(fields).filter(([, field]) => field.type !== 'link')
   const prominent = usable.filter(([, field]) => field.visibility === 'prominent')
@@ -93,6 +101,7 @@ export function chartableFields(
     label: field.display_name ?? name,
     // A DATE IS DRAWN OVER TIME (R68), not counted value by value.
     overTime: TEMPORAL.has(field.data_type ?? ''),
+    numeric: NUMERIC.has(String(field.data_type ?? '').split('@')[0] ?? ''),
   }))
 }
 
@@ -174,7 +183,7 @@ export default function ChartsPanel({
     // reporting success. So the failures are NAMED below, beside the
     // charts that worked.
     Promise.allSettled(
-      fields.map(async ({ field, label }) => {
+      fields.map(async ({ field, label, numeric }) => {
         const body = await aggregateObjects(objectType, {
           // Every OTHER chart's selection, not this one's -- a chart
           // that filtered itself would drop to a single bar the moment
@@ -197,6 +206,7 @@ export default function ChartsPanel({
           field,
           label,
           results: countsByGroup(body, field),
+          numeric,
           truncated: body.scan_truncated === true,
         }
       }),
@@ -299,20 +309,29 @@ export default function ChartsPanel({
                   onSessionExpired={onSessionExpired}
                 />
               ))}
-              {charts.map((chart) => (
-                <section key={chart.field} className="charts-panel__chart">
-                  <h4>{chart.label}</h4>
-                  <Chart
-                    ariaLabel={`${chart.label} distribution`}
-                    onSelect={(value) => onSelect(chart.field, value)}
-                    option={
-                      suitsAPie(chart.results)
-                        ? pieOption(chart.results)
-                        : valueCountsOption(chart.results, selectionFor(filters, chart.field))
-                    }
-                  />
-                </section>
-              ))}
+              {charts.map((chart) => {
+                // A NUMBER WITH MANY VALUES IS FOLDED INTO RANGES. A range
+                // is not a value, so a click on one filters nothing: the
+                // table's own filter bar takes a range.
+                const ranges =
+                  chart.numeric && Object.keys(chart.results).length > MAX_BARS ? binnedCounts(chart.results) : null
+                return (
+                  <section key={chart.field} className="charts-panel__chart">
+                    <h4>{chart.label}</h4>
+                    <Chart
+                      ariaLabel={`${chart.label} distribution`}
+                      onSelect={ranges ? undefined : (value) => onSelect(chart.field, value)}
+                      option={
+                        ranges
+                          ? binnedOption(ranges)
+                          : suitsAPie(chart.results)
+                            ? pieOption(chart.results)
+                            : valueCountsOption(chart.results, selectionFor(filters, chart.field))
+                      }
+                    />
+                  </section>
+                )
+              })}
             </div>
           )
         }

@@ -6631,6 +6631,13 @@ CONTROLS = [
         new='    if False:',
         tests=['tests/unit/test_schema_helpers.py::test_ids_of_digits_sort_as_the_numbers_they_are'],
     ),
+    Control(
+        describes='DISPLAY NAME: camel-case words are separated, not run together',
+        path='core/ontology/schema.py',
+        old='    words = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", stem).split("_")',
+        new='    words = stem.split("_")',
+        tests=['tests/unit/test_display_metadata.py::test_humanize_separates_camel_case_and_keeps_capitals'],
+    ),
 ]
 
 

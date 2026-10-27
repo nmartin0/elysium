@@ -131,6 +131,16 @@ function withTheme(option: Record<string, unknown>): Record<string, unknown> {
       },
     }
   }
+  // LABELS DRAWN WITHOUT ECHARTS' OUTLINE, in the theme's text colour. A
+  // graph's and a pie's labels carry a heavy halo by default, which on the
+  // dark surface turned every node's name into a smear -- found in a
+  // browser. A caller's own label settings win.
+  if (Array.isArray(option.series)) {
+    themed.series = option.series.map((entry: Record<string, unknown>) => ({
+      ...entry,
+      label: { color: theme.axisLabel, textBorderWidth: 0, ...(entry.label as object) },
+    }))
+  }
   for (const axis of ['xAxis', 'yAxis'] as const) {
     const declared = option[axis]
     if (declared === undefined) continue

@@ -209,3 +209,13 @@ def test_a_parameter_without_a_description_is_described_as_before():
 
     assert "amount (number, required)" in described
     assert "--" not in described.split("\n")[0]
+
+
+def test_humanize_separates_camel_case_and_keeps_capitals():
+    # Found in a browser: a type named SupportTicket read "Supportticket"
+    # on the canvas and in Discover, "SupportTicket" on the fields page.
+    assert humanize("SupportTicket") == "Support Ticket"
+    assert humanize("Customer") == "Customer"
+    assert humanize("SKU") == "SKU"
+    assert humanize("customer_SKU_code") == "Customer SKU Code"
+    assert get_display_name({}, "SupportTicket") == "Support Ticket"

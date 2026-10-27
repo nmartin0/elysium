@@ -181,6 +181,8 @@ describe('what review says besides the lines', () => {
   it('says nobody can read it yet, and that the lake rebuilds the type', async () => {
     await review()
     expect(screen.getByText(/Nobody can read it until a grant names it/)).toBeInTheDocument()
+    // WHO CAN MAKE THE FIRST GRANT, said, because nobody holds a new field.
+    expect(screen.getByText(/first grant of it has to come from someone holding manage:escalation/)).toBeInTheDocument()
     expect(screen.getByText(/lake’s Customer table is rebuilt to include it/)).toBeInTheDocument()
     expect(screen.getByText(/records no history of changes/)).toBeInTheDocument()
   })

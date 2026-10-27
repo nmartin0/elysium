@@ -107,6 +107,16 @@ describe('the ontology canvas (DEV_UI 14)', () => {
     expect(document.querySelectorAll('[data-edge="cust_tx"]')).toHaveLength(1)
   })
 
+  it('draws every link label after every line, so no line can cross one', async () => {
+    renderCanvas()
+    await waitFor(() => expect(node('Customer')).toBeTruthy())
+    const everything = [...document.querySelectorAll('.ontology-canvas__line, .ontology-canvas__edge-label')]
+    const lastLine = everything.map((el) => el.classList.contains('ontology-canvas__line')).lastIndexOf(true)
+    const firstLabel = everything.findIndex((el) => el.classList.contains('ontology-canvas__edge-label'))
+    expect(firstLabel).toBeGreaterThan(lastLine)
+    expect(document.querySelectorAll('.ontology-canvas__edge-label').length).toBeGreaterThan(0)
+  })
+
   it('selecting a type is a click, or Enter on its focus -- the keyboard reaches everything', async () => {
     const { onSelect } = renderCanvas()
     await waitFor(() => expect(node('Customer')).toBeTruthy())

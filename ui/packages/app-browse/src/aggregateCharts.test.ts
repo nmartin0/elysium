@@ -6,6 +6,7 @@ import {
   asConditions,
   selectionFor,
   PIE_MAX_SLICES,
+  binnedCounts,
   histogramOption,
   pieOption,
   suitsAPie,
@@ -243,5 +244,31 @@ describe('asChartFilters -- conditions back into the URL vocabulary', () => {
 
   it('renders values as strings, since a URL has no other type', () => {
     expect(asChartFilters([{ field: 'n', operator: 'in', value: [1, 2] }])[0]?.values).toEqual(['1', '2'])
+  })
+})
+
+describe('binnedCounts', () => {
+  it('folds values into equal ranges and keeps every object', () => {
+    const ranges = binnedCounts({ '0': 1, '5': 2, '10': 3, '99.5': 1, '100': 4 }, 10)!
+    expect(ranges).toHaveLength(10)
+    expect(ranges.reduce((sum, r) => sum + r.count, 0)).toBe(11)
+    // The top value lands in the last range, not off the end of it.
+    expect(ranges[9]!.count).toBe(5)
+    expect(ranges[0]!.label).toBe('0\u201310')
+  })
+
+  it('counts a missing value apart rather than dropping it', () => {
+    const ranges = binnedCounts({ '1': 1, '9': 1, None: 3 })!
+    expect(ranges.at(-1)).toEqual({ label: 'No value', count: 3 })
+  })
+
+  it('has nothing to fold for one value or no numbers', () => {
+    expect(binnedCounts({ '5': 3 })).toBeNull()
+    expect(binnedCounts({ a: 1, b: 2 })).toBeNull()
+  })
+
+  it('names ranges in numbers a person can read', () => {
+    const ranges = binnedCounts({ '0': 1, '1': 1 }, 3)!
+    expect(ranges.map((r) => r.label)).toEqual(['0\u20130.333', '0.333\u20130.667', '0.667\u20131'])
   })
 })
