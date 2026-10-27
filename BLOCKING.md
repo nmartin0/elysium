@@ -1361,12 +1361,32 @@ one Inbox. Built so far, each checked in a real browser:
   stay on the Roles screen (a pointer after the change, no bundled
   grant). REVISED 26 OCTOBER, by the owner: removing a field or type, and
   changing an existing field's data type, are to be possible from the
-  same screens, not left to hand edits. Their design is still to be
-  agreed before building: a removal must say what still names the thing
-  (actions, grants, links, saved views, triggers) and refuse or take
-  those with it; a type change needs silver rebuilt from bronze
-  (`run_sync --rebuild`), which the screen would run knowingly, with
-  its cost stated, rather than leave to a person with a Python prompt.
+  same screens, not left to hand edits. DESIGN AGREED 27 OCTOBER
+  (Foundry: an active resource cannot be deleted, and a breaking change
+  waits for a migration -- object-edits/schema-migrations and
+  ontology-manager/cleanup in their docs): (1) a "used by" report first,
+  BUILT 27 October (core/ontology/used_by.py; "Used by" on the Schema
+  screens) -- configuration references only, saved views, frozen sets,
+  recipes, proposals and notes still to be listed; (2) DEPRECATE FIRST:
+  only a deprecated field, link or type may be removed, with a reason and
+  an optional replacement; (3) REMOVAL IS BLOCKED while anything names the
+  thing, the dialog listing each place for its owner to change -- it does
+  not strip other people's grants and actions; (4) removal never drops
+  lake data (erasure stays its own feature) and applies at once, since it
+  cannot widen; (5) A TYPE CHANGE REBUILDS FROM THE EARLIEST LAYER IT
+  TOUCHES rather than adding a new field: a field added or removed
+  restarts gold from silver (already so), a data type change restarts
+  silver from bronze with the old table serving until the new one swaps
+  in and a count of rows that will not convert, a changed source column or
+  table restarts from the source and states that cost first; (6) AN OBJECT
+  HAS A STATE, live, rebuilding or unavailable, shown on screens and in
+  answers ("data as of 14:02, rebuilding"); writes proposed meanwhile are
+  held and re-checked against the new shape when released; a rebuild is
+  never a change event, so triggers and history do not fire for it; an
+  object whose state cannot be told counts as unavailable. STILL TO CHECK
+  before the retype patch: what the history tables do when a field is
+  retyped or removed. Order: used by (built), deprecate, remove a field or
+  link, remove a type, retype with rebuild.
   A field declared later is not empty history:
   bronze keeps every column the source has. Order: add a field (built),
   then add a type with its binding picked from the source, then add a

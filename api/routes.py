@@ -2703,6 +2703,64 @@ def _ask_source(adapter, method: str, *given):
         return None
 
 
+class UsedByRow(BaseModel):
+    kind: str
+    place: str
+    says: str
+
+
+class UsedByResponse(BaseModel):
+    referrers: list[UsedByRow]
+    # What this report does not look at, in words, so an empty list is
+    # never read as "nothing anywhere names it".
+    not_listed: str
+
+
+# Things kept beside the configuration, whose references are rows in
+# databases rather than lines in files (core/ontology/used_by.py).
+_USED_BY_NOT_LISTED = ("Saved views, frozen sets, enrichment recipes, proposals and notes that "
+                       "refer to it are not listed here yet.")
+
+
+@router.get("/admin/ontology/used-by", dependencies=[Depends(_no_store)],
+            response_model=UsedByResponse)
+def used_by_route(request: Request, object_type: str | None = None, field: str | None = None,
+                  link: str | None = None,
+                  current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Everything in the configuration that names a type, a field or a link.
+
+    Exactly one of: `object_type` (a type), `object_type` with `field`
+    (a field), or `link` (a link type). Read-only. An unknown name is
+    "Not found" and says nothing more, as everywhere else here.
+    """
+    from core.ontology.used_by import used_by_field, used_by_link, used_by_type
+
+    _require_manage_deployment(request, current_user)
+    config = _generation(request).config
+    schema = config.schema
+    shared = (schema, config.roles, config.action_types, config.declared_triggers)
+    if link is not None and object_type is None and field is None:
+        known = any(item.get("link_type") == link
+                    for definition in schema.values()
+                    for item in (definition.get("fields") or {}).values())
+        found = used_by_link(*shared, link) if known else None
+    elif object_type is not None and link is None:
+        definition = schema.get(object_type)
+        if definition is None:
+            found = None
+        elif field is None:
+            found = used_by_type(*shared, object_type)
+        elif field in (definition.get("fields") or {}) or field == definition.get("id_field"):
+            found = used_by_field(*shared, object_type, field)
+        else:
+            found = None
+    else:
+        raise HTTPException(status_code=400, detail="Ask for a type, a type's field, or a link.")
+    if found is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"referrers": [item.as_dict() for item in found], "not_listed": _USED_BY_NOT_LISTED}
+
+
 @router.get("/admin/ontology/linkable-types", dependencies=[Depends(_no_store)],
             response_model=LinkableTypesResponse)
 def linkable_types_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:

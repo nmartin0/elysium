@@ -591,6 +591,9 @@ apply_new_type_route
 source_has_table  # NewTypePreviewResponse, read by the browser
 columns_missing  # NewTypePreviewResponse, read by the browser
 columns_checked  # NewTypePreviewResponse, read by the browser
+used_by_route
+referrers  # UsedByResponse, read by the browser
+not_listed  # UsedByResponse, read by the browser
 linkable_types_route
 linkable_type_columns_route
 preview_new_link_route

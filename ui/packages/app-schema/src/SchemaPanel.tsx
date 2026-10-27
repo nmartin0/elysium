@@ -53,6 +53,7 @@ import AddFields from './AddFields'
 import AddLink from './AddLink'
 import AddType from './AddType'
 import DescribeType from './DescribeType'
+import UsedByDialog, { type UsedByTarget } from './UsedBy'
 import LabelFields from './LabelFields'
 import './SchemaPanel.css'
 import DataTable from '@elysium/shell-api/components/DataTable'
@@ -110,10 +111,13 @@ function FieldTable({
   fields,
   onOpenObjectType,
   onOpenLinkType,
+  onUsedBy,
 }: {
   fields: [string, SchemaField][]
   onOpenObjectType: (objectType: string) => void
   onOpenLinkType: (linkType: string) => void
+  /** What names this field: present only for manage:deployment. */
+  onUsedBy?: (field: string) => void
 }) {
   if (fields.length === 0) return null
   return (
@@ -134,6 +138,11 @@ function FieldTable({
                   and is worth showing -- but only when it differs from
                   the label, or it is the same word twice. */}
               {apiName !== (field.display_name ?? apiName) && <div className="schema-panel__api-name">{apiName}</div>}
+              {onUsedBy && (
+                <Button small minimal icon="search-around" onClick={() => onUsedBy(apiName)}>
+                  Used by <span className="visually-hidden">{field.display_name ?? apiName}</span>
+                </Button>
+              )}
             </td>
             <td>
               {field.type === 'link' ? (
@@ -203,6 +212,7 @@ function ObjectTypeCard({
   onDescribe,
   onLabels,
   onAddField,
+  onUsedBy,
   onOpenObjectType,
   onOpenLinkType,
 }: {
@@ -216,6 +226,8 @@ function ObjectTypeCard({
   onLabels?: (objectType: string) => void
   /** Adding a field: present only for manage:deployment. */
   onAddField?: (objectType: string) => void
+  /** What names the type or one of its fields: present only for manage:deployment. */
+  onUsedBy?: (target: UsedByTarget) => void
   onOpenObjectType: (objectType: string) => void
   onOpenLinkType: (linkType: string) => void
 }) {
@@ -257,15 +269,30 @@ function ObjectTypeCard({
           Add field
         </Button>
       )}
+      {onUsedBy && (
+        <Button small minimal icon="search-around" onClick={() => onUsedBy({ objectType: apiName })}>
+          Used by
+        </Button>
+      )}
 
       {prominent.length > 0 && (
         <>
           <h4>Prominent</h4>
-          <FieldTable fields={prominent} onOpenObjectType={onOpenObjectType} onOpenLinkType={onOpenLinkType} />
+          <FieldTable
+            fields={prominent}
+            onOpenObjectType={onOpenObjectType}
+            onOpenLinkType={onOpenLinkType}
+            onUsedBy={onUsedBy && ((field) => onUsedBy({ objectType: apiName, field }))}
+          />
         </>
       )}
       <h4>Properties</h4>
-      <FieldTable fields={normal} onOpenObjectType={onOpenObjectType} onOpenLinkType={onOpenLinkType} />
+      <FieldTable
+        fields={normal}
+        onOpenObjectType={onOpenObjectType}
+        onOpenLinkType={onOpenLinkType}
+        onUsedBy={onUsedBy && ((field) => onUsedBy({ objectType: apiName, field }))}
+      />
       {entries.length === 0 && <Notice state="neutral">No fields are visible to you on this object type.</Notice>}
       {access && <WhoCanSee objectType={apiName} access={access} />}
     </section>
@@ -325,12 +352,14 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
   const [adding, setAdding] = useState<string | null>(null)
   const [addingType, setAddingType] = useState(false)
   const [addingLink, setAddingLink] = useState(false)
+  const [usedBy, setUsedBy] = useState<UsedByTarget | null>(null)
   // What the last edit did: applied as a generation, or waiting for a
   // second person (a label that lets anyone read more).
   const [edited, setEdited] = useState<{ generation: number } | 'waiting' | null>(null)
   const onDescribe = describable ? (objectType: string) => setDescribing(objectType) : undefined
   const onLabels = describable ? (objectType: string) => setLabelling(objectType) : undefined
   const onAddField = describable ? (objectType: string) => setAdding(objectType) : undefined
+  const onUsedBy = describable ? (target: UsedByTarget) => setUsedBy(target) : undefined
   // NAVIGATION STATE LIVES IN THE URL, not in component state.
   //
   // Following a reference is one click -- a link's target, a link tag,
@@ -534,6 +563,9 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
           onSessionExpired={onSessionExpired}
         />
       )}
+      {usedBy !== null && (
+        <UsedByDialog target={usedBy} onClose={() => setUsedBy(null)} onSessionExpired={onSessionExpired} />
+      )}
       {addingType && (
         <AddType
           onClose={() => setAddingType(false)}
@@ -618,6 +650,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
                 onDescribe={onDescribe}
                 onLabels={onLabels}
                 onAddField={onAddField}
+                onUsedBy={onUsedBy}
                 onOpenObjectType={openObjectType}
                 onOpenLinkType={openLinkType}
               />
@@ -662,7 +695,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
       )}
       {selectedTab === 'link-types' && (
         <>
-          <LinkTypes schema={schema} filter={linkFilter} onOpenObjectType={openObjectType} />
+          <LinkTypes schema={schema} filter={linkFilter} onOpenObjectType={openObjectType} onUsedBy={onUsedBy} />
         </>
       )}
       {selectedTab === 'action-types' && (

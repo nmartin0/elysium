@@ -13,8 +13,8 @@ Anything else either exports is internal, and may change without notice.
 The manifest, `activate()`, host values, styles and the add-on server are
 described in [MODULE_API.md](MODULE_API.md).
 
-220 names imported, from 40 entry points, by 9 modules;
-278 declarations public in all.
+223 names imported, from 40 entry points, by 9 modules;
+281 declarations public in all.
 
 ## `@elysium/shell-api/api`
 
@@ -411,6 +411,13 @@ export declare function getTypeCounts(): Promise<Record<string, TypeCount>>;
 export declare function getUnusualFor(objectType: string, ids: string[]): Promise<Record<string, UnusualValue[]>>;
 
 export declare function getUnusualReview(): Promise<UnusualReview>;
+
+export declare function getUsedBy(target: {
+    objectType: string;
+    field?: string;
+} | {
+    link: string;
+}): Promise<UsedBy>;
 
 export declare function getVisibleActionTypes(): Promise<unknown>;
 
@@ -1012,6 +1019,17 @@ export interface UnusualValue {
     value: number;
     reason: string;
     decision?: string | null;
+}
+
+export interface UsedBy {
+    referrers: UsedByRow[];
+    not_listed: string;
+}
+
+export interface UsedByRow {
+    kind: string;
+    place: string;
+    says: string;
 }
 
 export interface ValueConflict {

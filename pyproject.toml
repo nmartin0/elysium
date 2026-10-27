@@ -451,8 +451,11 @@ type = "layers"
 layers = [
     # Who can see a type (DEV_UI 13.3) asks the mediator it is HANDED
     # once per role, and imports nothing from this package: on top, so
-    # it may only ever look down.
-    "who_can_see",
+    # it may only ever look down. The "used by" report (27 October) sits
+    # beside it for the same reason: it reads the parsers of rules,
+    # derived, enriched, predicted and unusual declarations, and nothing
+    # reads it back.
+    "who_can_see | used_by",
     "write_mediator",
     "mediator",
     # Rules between two fields (R29) compare through constraints, so

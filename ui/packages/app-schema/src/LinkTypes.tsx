@@ -54,9 +54,11 @@ interface LinkTypesProps {
   /** Opens an object type -- one end of a relationship is a thing you
    *  usually want to look at next. */
   onOpenObjectType: (objectType: string) => void
+  /** What names a link: present only for manage:deployment. */
+  onUsedBy?: (target: { link: string }) => void
 }
 
-export default function LinkTypes({ schema, filter, onOpenObjectType }: LinkTypesProps) {
+export default function LinkTypes({ schema, filter, onOpenObjectType, onUsedBy }: LinkTypesProps) {
   const grouped = groupLinkTypes(schema)
   if (grouped.size === 0) {
     return <p>No link types are visible to you.</p>
@@ -92,6 +94,11 @@ export default function LinkTypes({ schema, filter, onOpenObjectType }: LinkType
           <tr key={linkType}>
             <td>
               <strong>{linkType}</strong>
+              {onUsedBy && (
+                <Button small minimal icon="search-around" onClick={() => onUsedBy({ link: linkType })}>
+                  Used by <span className="visually-hidden">{linkType}</span>
+                </Button>
+              )}
               {sides.length === 1 && <div className="schema-panel__api-name">one side visible to you</div>}
             </td>
             {sides.slice(0, 2).map((side) => (

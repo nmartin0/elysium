@@ -7029,6 +7029,97 @@ CONTROLS = [
             ('tests/integration/test_new_link_from_the_ui.py::TestWhatTheFormOffers::test_only_a_manager_of_the_deployment_is_offered_any_of_it'),
         ],
     ),
+    Control(
+        describes='USED BY: a role holding a grant that names the thing is listed',
+        path='core/ontology/used_by.py',
+        old='            if (not name and whole_type and matches(owner, None)) or (name and matches(owner, name)):',
+        new='            if False:',
+        tests=[
+            ('tests/unit/test_used_by.py::test_a_field_lists_each_block_that_reads_it'),
+            ('tests/unit/test_used_by_is_complete.py::test_whatever_the_loader_refuses_the_report_lists'),
+        ],
+    ),
+    Control(
+        describes='USED BY: a type that borrows its row rule through the thing is listed',
+        path='core/ontology/used_by.py',
+        old='        for hop_type, hop_field in _rule_end(schema, owner)[1:]:',
+        new='        for hop_type, hop_field in _rule_end(schema, owner)[2:]:',
+        tests=[
+            ('tests/unit/test_used_by.py::test_other_types_that_borrow_a_row_rule_are_listed_with_what_they_borrow'),
+            ('tests/unit/test_used_by_is_complete.py::test_whatever_the_loader_refuses_the_report_lists'),
+        ],
+    ),
+    Control(
+        describes='USED BY: a derived field that is calculated from the field is listed',
+        path='core/ontology/used_by.py',
+        old='        if field in derivation.inputs:',
+        new='        if False:',
+        tests=['tests/unit/test_used_by.py::test_a_field_lists_each_block_that_reads_it'],
+    ),
+    Control(
+        describes='USED BY: an action that sets the field is listed',
+        path='core/ontology/used_by.py',
+        old='                if (mutation.get("set") or {}).get("property") == field:',
+        new='                if False:',
+        tests=[
+            ('tests/unit/test_used_by.py::test_a_field_lists_each_block_that_reads_it'),
+            ('tests/unit/test_used_by_is_complete.py::test_whatever_the_loader_refuses_the_report_lists'),
+        ],
+    ),
+    Control(
+        describes='USED BY: the links of a type are listed',
+        path='core/ontology/used_by.py',
+        old='    for name in sorted(names):',
+        new='    for name in []:',
+        tests=[
+            ('tests/unit/test_used_by.py::test_a_type_lists_grants_links_actions_and_triggers_but_not_its_own_blocks'),
+            ('tests/unit/test_used_by_is_complete.py::test_whatever_the_loader_refuses_the_report_lists'),
+        ],
+    ),
+    Control(
+        describes='USED BY: a role with several grants is still one row',
+        path='core/ontology/used_by.py',
+        old='            found.append(Referrer("grant", f"role {role}", ',
+        new='            found.extend(Referrer("grant", f"role {role}", f"{g}") for g in named)  # ',
+        tests=['tests/unit/test_used_by.py::test_a_role_is_one_row_however_many_grants_it_has'],
+    ),
+    Control(
+        describes='USED BY: the route needs manage:deployment',
+        path='api/routes.py',
+        old=('    _require_manage_deployment(request, current_user)\n'
+             '    config = _generation(request).config\n    schema = config.schema\n    shared'),
+        new='    config = _generation(request).config\n    schema = config.schema\n    shared',
+        tests=[
+            ('tests/integration/test_used_by_from_the_ui.py::TestWhoMayAskAndWhatIsRefused::test_only_a_manager_of_the_deployment_may_ask'),
+        ],
+    ),
+    Control(
+        describes='USED BY: an unknown field is not found',
+        path='api/routes.py',
+        old='        elif field in (definition.get("fields") or {}) or field == definition.get("id_field"):',
+        new='        elif True:',
+        tests=[
+            ('tests/integration/test_used_by_from_the_ui.py::TestWhoMayAskAndWhatIsRefused::test_an_unknown_name_is_not_found'),
+        ],
+    ),
+    Control(
+        describes='USED BY: an unknown link is not found',
+        path='api/routes.py',
+        old='        known = any(item.get("link_type") == link',
+        new='        known = True or any(item.get("link_type") == link',
+        tests=[
+            ('tests/integration/test_used_by_from_the_ui.py::TestWhoMayAskAndWhatIsRefused::test_an_unknown_name_is_not_found'),
+        ],
+    ),
+    Control(
+        describes='USED BY: an unclear question is refused',
+        path='api/routes.py',
+        old='        raise HTTPException(status_code=400, detail="Ask for a type, a type\'s field, or a link.")',
+        new='        found = []',
+        tests=[
+            ('tests/integration/test_used_by_from_the_ui.py::TestWhoMayAskAndWhatIsRefused::test_an_unclear_question_is_refused'),
+        ],
+    ),
 ]
 
 

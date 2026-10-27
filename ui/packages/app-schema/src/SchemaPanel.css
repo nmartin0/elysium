@@ -102,4 +102,22 @@
     font-weight: normal;
     padding-block-start: 0.5rem;
   }
+
+  /* THE "USED BY" LISTS (27 October): one table per group, and each would
+     size its own columns, so the second column wandered from group to
+     group. Fixed widths keep "who" and "what it says" in line down the
+     dialog. */
+  .used-by__table {
+    table-layout: fixed;
+    width: 100%;
+  }
+
+  .used-by__table td:first-child {
+    width: 48%;
+    overflow-wrap: break-word;
+  }
+
+  .used-by__note {
+    margin-top: 16px;
+  }
 }

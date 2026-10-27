@@ -116,3 +116,20 @@ describe('LinkTypes -- filtering and navigation', () => {
     expect(onOpenObjectType).toHaveBeenCalledWith('Customer')
   })
 })
+
+describe('what names a link', () => {
+  it('is offered beside each link type, for that link', () => {
+    const onUsedBy = vi.fn()
+    render(<LinkTypes schema={SCHEMA} filter="" onOpenObjectType={vi.fn()} onUsedBy={onUsedBy} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Used by CustomerTransactions' }))
+
+    expect(onUsedBy).toHaveBeenCalledWith({ link: 'CustomerTransactions' })
+  })
+
+  it('is not offered when the caller cannot manage the deployment', () => {
+    render(<LinkTypes schema={SCHEMA} filter="" onOpenObjectType={vi.fn()} />)
+
+    expect(screen.queryByRole('button', { name: /Used by/ })).not.toBeInTheDocument()
+  })
+})

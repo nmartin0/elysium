@@ -22,6 +22,7 @@ vi.mock('@elysium/shell-api/api', async (original) => ({
   applyNewFields: () => describing.apply(),
   getNewTypeSources: () => new Promise(() => {}),
   getLinkableTypes: () => new Promise(() => {}),
+  getUsedBy: () => new Promise(() => {}),
 }))
 
 /** The panel keeps its tab and filter in the URL, so it needs a
@@ -564,6 +565,45 @@ describe('adding a link', () => {
 
     await waitFor(() => expect(refused).toBe(true))
     expect(screen.queryByRole('button', { name: 'Add link' })).not.toBeInTheDocument()
+    describing.answer = () => new Promise(() => {})
+  })
+})
+
+describe('what names a type or a field', () => {
+  const describable = () =>
+    Promise.resolve({ digest: 'd1', types: {}, data_types: ['string'], label_enforcement: false })
+
+  it('is offered on a type and opens for that type', async () => {
+    describing.answer = describable
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Used by' }))
+
+    expect(await screen.findByRole('dialog', { name: 'Used by: Customer' })).toBeInTheDocument()
+  })
+
+  it('is offered on each field and opens for that field', async () => {
+    describing.answer = describable
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Used by Email/ }))
+
+    expect(await screen.findByRole('dialog', { name: 'Used by: Customer.email' })).toBeInTheDocument()
+  })
+
+  it('is not offered to anyone the server refuses', async () => {
+    let refused = false
+    describing.answer = () => {
+      refused = true
+      return Promise.reject(new Error('refused'))
+    }
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    await waitFor(() => expect(refused).toBe(true))
+    expect(screen.queryByRole('button', { name: /Used by/ })).not.toBeInTheDocument()
     describing.answer = () => new Promise(() => {})
   })
 })

@@ -2593,6 +2593,31 @@ export async function getLinkableTypes(): Promise<LinkableType[]> {
   return ((await response.json()) as { types: LinkableType[] }).types
 }
 
+/** One place in the configuration that names a type, a field or a link. */
+export interface UsedByRow {
+  kind: string
+  place: string
+  says: string
+}
+
+export interface UsedBy {
+  referrers: UsedByRow[]
+  /** What the report does not look at, so an empty list is not read as "nothing anywhere". */
+  not_listed: string
+}
+
+/** What names a type, one of its fields, or a link: `{objectType}`, `{objectType, field}` or `{link}`. */
+export async function getUsedBy(target: { objectType: string; field?: string } | { link: string }): Promise<UsedBy> {
+  const params = new URLSearchParams()
+  if ('link' in target) params.set('link', target.link)
+  else {
+    params.set('object_type', target.objectType)
+    if (target.field !== undefined) params.set('field', target.field)
+  }
+  const response = await apiFetchOrThrow(`/admin/ontology/used-by?${params.toString()}`)
+  return (await response.json()) as UsedBy
+}
+
 /** The columns of the table a type is built over, or null when the source cannot say. */
 export async function getLinkableTypeColumns(objectType: string): Promise<string[] | null> {
   const response = await apiFetchOrThrow(`/admin/ontology/linkable-types/${encodeURIComponent(objectType)}/columns`)
