@@ -7120,6 +7120,107 @@ CONTROLS = [
             ('tests/integration/test_used_by_from_the_ui.py::TestWhoMayAskAndWhatIsRefused::test_an_unclear_question_is_refused'),
         ],
     ),
+    Control(
+        describes='DEPRECATION: a block on something not deprecated is refused',
+        path='core/ontology/deprecation.py',
+        old='    if definition.get("status") != "deprecated":',
+        new='    if False:',
+        tests=[
+            ('tests/unit/test_deprecation.py::TestTheBlockOnAField::test_a_block_on_anything_not_deprecated_is_refused'),
+        ],
+    ),
+    Control(
+        describes='DEPRECATION: a reason is required',
+        path='core/ontology/deprecation.py',
+        old='    if not isinstance(reason, str) or not reason.strip():',
+        new='    if False:',
+        tests=[
+            ('tests/unit/test_deprecation.py::TestTheBlockOnAField::test_each_mistake_is_refused_and_names_the_field'),
+        ],
+    ),
+    Control(
+        describes='DEPRECATION: a replacement must exist',
+        path='core/ontology/deprecation.py',
+        old='    if not isinstance(replacement, str) or replacement not in siblings:',
+        new='    if False:',
+        tests=[
+            ('tests/unit/test_deprecation.py::TestTheBlockOnAField::test_each_mistake_is_refused_and_names_the_field'),
+        ],
+    ),
+    Control(
+        describes='DEPRECATION: a thing is not its own replacement',
+        path='core/ontology/deprecation.py',
+        old='    if replacement == name:',
+        new='    if False:',
+        tests=[
+            ('tests/unit/test_deprecation.py::TestTheBlockOnAField::test_each_mistake_is_refused_and_names_the_field'),
+        ],
+    ),
+    Control(
+        describes='DEPRECATION: a replacement may not itself be deprecated',
+        path='core/ontology/deprecation.py',
+        old='    if (siblings[replacement] or {}).get("status") == "deprecated":',
+        new='    if False:',
+        tests=[
+            ('tests/unit/test_deprecation.py::TestTheBlockOnAField::test_a_replacement_that_is_itself_deprecated_is_refused'),
+        ],
+    ),
+    Control(
+        describes='DEPRECATION: a date must be a date',
+        path='core/ontology/deprecation.py',
+        old='        date.fromisoformat(when)',
+        new='        str(when)',
+        tests=[
+            ('tests/unit/test_deprecation.py::TestTheBlockOnAField::test_each_mistake_is_refused_and_names_the_field'),
+        ],
+    ),
+    Control(
+        describes='DEPRECATION: the most restrictive status wins',
+        path='core/ontology/deprecation.py',
+        old='    return max((status or "active" for status in statuses), key=STATUSES.index)',
+        new='    return min((status or "active" for status in statuses), key=STATUSES.index)',
+        tests=[
+            ('tests/unit/test_deprecation.py::TestALinkTakesTheMostRestrictiveStatus::test_a_deprecated_type_deprecates_its_links_and_says_which_type'),
+            ('tests/unit/test_deprecation.py::TestALinkTakesTheMostRestrictiveStatus::test_the_strictest_of_three_wins_and_the_first_such_type_is_named'),
+        ],
+    ),
+    Control(
+        describes='DEPRECATION: a link carries its effective status on both ends',
+        path='core/ontology/link_types.py',
+        old='            "status": None if status == "active" else status,',
+        new='            "status": None,',
+        tests=[
+            ('tests/unit/test_deprecation.py::TestALinkTakesTheMostRestrictiveStatus::test_a_deprecated_type_deprecates_its_links_and_says_which_type'),
+        ],
+    ),
+    Control(
+        describes='DEPRECATION: types are checked at load',
+        path='core/ontology/object_type_validation.py',
+        old=('        validate_deprecation(f"Object type {object_type_name!r}", object_type_name, type_def,\n'
+             '                             object_types, "object type")'),
+        new='        pass',
+        tests=[
+            ('tests/unit/test_deprecation.py::TestTheBlockOnATypeAndALink::test_a_type_names_only_a_type_that_exists'),
+        ],
+    ),
+    Control(
+        describes='DEPRECATION: link types are checked at load',
+        path='core/ontology/link_types.py',
+        old='    validate_deprecation(f"Link type {name!r}", name, link, link_types, "link type")',
+        new='    pass',
+        tests=[
+            ('tests/unit/test_deprecation.py::TestTheBlockOnATypeAndALink::test_a_link_names_only_a_link_that_exists'),
+        ],
+    ),
+    Control(
+        describes='USED BY: a type named as a replacement is listed',
+        path='core/ontology/used_by.py',
+        old='              if name != object_type and _replaced_by(definition) == object_type]',
+        new='              if False]',
+        tests=[
+            ('tests/unit/test_used_by.py::test_a_deprecated_thing_that_names_a_replacement_is_a_reference_to_it'),
+        ],
+    ),
 ]
 
 

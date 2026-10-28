@@ -30,6 +30,7 @@ const GROUPS: [string, string[]][] = [
   ['Links', ['link']],
   ['Row security', ['security']],
   ['Triggers', ['trigger']],
+  ['Replacements', ['replacement']],
 ]
 const INSIDE = 'Inside the type'
 

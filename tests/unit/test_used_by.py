@@ -127,3 +127,25 @@ def test_inherited_security_names_the_silo_it_came_from():
     found = used_by_field(schema, {}, {}, [], "Order", "region")
     own = [item for item in found if item.place == "type Order, row rule"][0]
     assert "inherited from silo main" in own.says
+
+
+def test_a_deprecated_thing_that_names_a_replacement_is_a_reference_to_it():
+    schema = _schema()
+    schema["Order"]["fields"]["cost"].update(status="deprecated", deprecation={"reason": "x", "replaced_by": "price"})
+    schema["Line"]["status"] = "deprecated"
+    schema["Line"]["deprecation"] = {"reason": "x", "replaced_by": "Order"}
+    schema["Line"]["fields"]["order"]["status"] = "deprecated"
+    schema["Line"]["fields"]["order"]["deprecation"] = {"reason": "x", "replaced_by": "lines"}
+
+    assert ("replacement", "type Order, field cost") in _rows(used_by_field(schema, {}, {}, [], "Order", "price"))
+    assert ("replacement", "type Line") in _rows(used_by_type(schema, {}, {}, [], "Order"))
+    # Its own replacement is not a reference to the link itself.
+    assert ("replacement", "link OrderLines") not in _rows(used_by_link(schema, {}, {}, [], "OrderLines"))
+
+
+def test_a_link_that_names_another_link_as_its_replacement_is_listed_under_that_link():
+    schema = _schema()
+    schema["Order"]["fields"]["newer"] = {"type": "link", "link_type": "OrderLinesV2", "target": "Line"}
+    schema["Order"]["fields"]["lines"]["deprecation"] = {"reason": "x", "replaced_by": "OrderLinesV2"}
+
+    assert ("replacement", "link OrderLines") in _rows(used_by_link(schema, {}, {}, [], "OrderLinesV2"))

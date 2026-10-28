@@ -18,7 +18,7 @@ the two would drift.
 
 WHAT IT COVERS, and what it does not.
 
-  Covered: role grants, action types (the types they touch, the fields
+  Covered: a deprecated thing's named replacement, role grants, action types (the types they touch, the fields
   they set, the fields their criteria read), links, row-security chains
   (including inherited ones), identifiers and title fields, field
   rules, dependencies, derived, enriched and predicted inputs, unusual
@@ -73,6 +73,9 @@ def used_by_type(schema: Mapping, roles: Mapping, action_types: Mapping, trigger
     found += _security_chains(schema, lambda owner, _field: owner == object_type, exclude=object_type)
     found += _actions(action_types, schema, object_type, None)
     found += _triggers(triggers, object_type, None)
+    found += [Referrer("replacement", f"type {name}", f"is deprecated and names {object_type} as its replacement")
+              for name, definition in sorted(schema.items())
+              if name != object_type and _replaced_by(definition) == object_type]
     return _ordered(found)
 
 
@@ -104,8 +107,20 @@ def used_by_link(schema: Mapping, roles: Mapping, action_types: Mapping, trigger
     found: list[Referrer] = []
     for owner, name in _link_ends(schema, link_type):
         found += used_by_field(schema, roles, action_types, triggers, owner, name)
+    named_as_replacement = {
+        item.get("link_type"): item for definition in schema.values()
+        for item in (definition.get("fields") or {}).values()
+        if item.get("type") == "link" and item.get("link_type") != link_type
+        and _replaced_by(item) == link_type}
+    found += [Referrer("replacement", f"link {name}", f"is deprecated and names {link_type} as its replacement")
+              for name in sorted(named_as_replacement)]
     # Both ends were listed with "one end of it"; say that once, not twice.
     return _ordered([item for item in found if item.kind != "link"])
+
+
+def _replaced_by(definition: Mapping) -> "str | None":
+    """What a deprecated thing says replaces it (core/ontology/deprecation.py)."""
+    return (definition.get("deprecation") or {}).get("replaced_by")
 
 
 def _ordered(found: list[Referrer]) -> list[Referrer]:
@@ -231,6 +246,9 @@ def _inside_the_type(type_def: Mapping, object_type: str, field: str) -> list[Re
     unusual = unusual_of(type_def)
     if unusual and (field in unusual[0] or field in unusual[1]):
         add("unusual", "unusual-records check", "reads it")
+    for name, other in (type_def.get("fields") or {}).items():
+        if name != field and _replaced_by(other) == field:
+            add("replacement", f"field {name}", "is deprecated and names it as its replacement")
     return found
 
 

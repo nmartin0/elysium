@@ -52,6 +52,20 @@ describe('what names a field', () => {
     expect(within(screen.getByTestId('used-by-Inside the type')).getByText('type Customer')).toBeInTheDocument()
   })
 
+  it('lists a deprecated thing that names it as its replacement under its own heading', async () => {
+    vi.mocked(getUsedBy).mockResolvedValue({
+      referrers: [
+        { kind: 'replacement', place: 'type Order, field cost', says: 'is deprecated and names it as its replacement' },
+      ],
+      not_listed: NOT_LISTED,
+    })
+    renderDialog()
+
+    const replacements = await screen.findByTestId('used-by-Replacements')
+    expect(within(replacements).getByText('type Order, field cost')).toBeInTheDocument()
+    expect(screen.queryByTestId('used-by-Inside the type')).not.toBeInTheDocument()
+  })
+
   it('counts the places', async () => {
     vi.mocked(getUsedBy).mockResolvedValue(REPORT)
     renderDialog()

@@ -49,16 +49,21 @@ handles well.
 """
 
 
+from core.ontology.deprecation import DEPRECATION, STATUSES, link_status, validate_deprecation
+
 CARDINALITIES = ("one_to_one", "one_to_many", "many_to_many")
 
 
 def validate_link_types(link_types: dict, object_types: dict) -> None:
     """Checks every link type against the ontology, at load time."""
     for name, link in (link_types or {}).items():
-        _validate_one(name, link, object_types)
+        _validate_one(name, link, object_types, link_types)
 
 
-def _validate_one(name: str, link: dict, object_types: dict) -> None:
+def _validate_one(name: str, link: dict, object_types: dict, link_types: dict) -> None:
+    if link.get("status") is not None and link["status"] not in STATUSES:
+        raise ValueError(f"Link type {name!r}: status must be one of {list(STATUSES)}, got {link['status']!r}")
+    validate_deprecation(f"Link type {name!r}", name, link, link_types, "link type")
     for side in ("source", "target"):
         if side not in link:
             raise ValueError(f"Link type {name!r}: missing {side!r}.")
@@ -137,11 +142,19 @@ def expand_link_types(link_types: dict, object_types: dict) -> dict:
     for name, link in (link_types or {}).items():
         source, target = link["source"], link["target"]
         cardinality = link["cardinality"]
+        # A LINK TAKES THE MOST RESTRICTIVE STATUS of itself and its two
+        # types (core/ontology/deprecation.py). "active" is left out, as
+        # it is everywhere, so an ordinary link is unchanged.
+        status, inherited_from = link_status(link, expanded[source["object_type"]],
+                                             expanded[target["object_type"]])
         shared = {
             "type": "link",
             "link_type": name,
             "display_name": link.get("display_name"),
             "description": link.get("description"),
+            "status": None if status == "active" else status,
+            "status_inherited_from": inherited_from,
+            DEPRECATION: link.get(DEPRECATION),
         }
 
         if cardinality == "many_to_many":

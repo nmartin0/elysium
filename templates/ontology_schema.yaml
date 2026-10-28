@@ -122,6 +122,23 @@ object_types:
       status:
         type: data
 
+# DEPRECATING a type, a field or a link type (28 October). Any of them
+# may say `status: experimental` or `status: deprecated` (the default is
+# active). A deprecated one may also say why, and what to use instead:
+#
+#       status: deprecated
+#       deprecation:
+#         reason: Replaced by a single address field.    # required, in words
+#         replaced_by: address        # optional; must exist, must not itself
+#                                     # be deprecated (a field of the same type,
+#                                     # another type, or another link type)
+#         remove_after: 2027-03-31    # optional; information only
+#
+# Nothing about the data or who may read it changes. The `deprecation`
+# block is an error on anything whose status is not deprecated. A LINK
+# takes the most restrictive status of itself and its two types, so a
+# deprecated type's links read as deprecated too.
+
 # NAMED ACTION TYPES -- the ONLY way an LLM-driven agent may ever
 # change data (see write_mediator.py's own module docstring). Each
 # action is a NAMED, independently-governed operation with its own

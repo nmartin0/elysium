@@ -80,6 +80,7 @@ place.
 import zoneinfo
 
 from core.ontology.classifications import validate_field_classification
+from core.ontology.deprecation import STATUSES, validate_deprecation
 from core.ontology.field_types import FIELD_DATA_TYPES
 from core.ontology.link_types import is_reverse_link
 from core.ontology.unrestricted import is_unrestricted
@@ -125,12 +126,15 @@ def validate_object_types(object_types: dict, only: str | None = None) -> None:
         _validate_display_metadata(object_type_name, type_def)
         _validate_ui_metadata(object_type_name, type_def)
         _validate_discoverable(object_type_name, type_def)
-        for field_name, field_info in (type_def.get("fields") or {}).items():
+        validate_deprecation(f"Object type {object_type_name!r}", object_type_name, type_def,
+                             object_types, "object type")
+        fields = type_def.get("fields") or {}
+        for field_name, field_info in fields.items():
             validate_field_classification(object_type_name, field_name, field_info)
+            validate_deprecation(f"{object_type_name}.{field_name}", field_name, field_info, fields, "field")
 
 
 VISIBILITIES = ("prominent", "normal", "hidden")
-STATUSES = ("active", "experimental", "deprecated")
 
 # HOW MANY DECIMAL PLACES a numeric field is worth showing. Declared on
 # the PROPERTY, not chosen by the UI, because the UI cannot know: the

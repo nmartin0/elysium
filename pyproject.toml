@@ -494,6 +494,10 @@ layers = [
     # October) is a leaf beside it: the loader resolves `security: inherit`
     # with it, and it imports nothing.
     "field_types | link_types | classifications | value_checks | unrestricted | silo_security",
+    # Below link_types, which checks a link's own block with it, and
+    # below object_type_validation, which checks a type's and a field's.
+    # deprecation (28 October) imports nothing.
+    "deprecation",
     # Below field_types, which reads locale-written text through it
     # (DEP-1). It imports nothing from this package.
     "localised_values",
