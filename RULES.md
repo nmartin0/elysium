@@ -124,6 +124,19 @@ work.
 
 ---
 
+### Have someone who has not seen the work review it
+
+The author cannot see its own blind spots. Before committing, give a
+fresh reader (a second agent with no memory of the work, or a person)
+the diff and the agreed design, and ask for correctness gaps only,
+style skipped. Check each finding yourself before acting on it.
+
+### A rule with no exceptions is a script
+
+Prose is guidance and is skipped under pressure. If a step must never
+be skipped (the commit count, the trailers, the dry-run), put it in a
+script that refuses, and test the script with a control.
+
 ## 4. Measure before and after, and report both
 
 **"This is faster" is not a finding. "858ms and 66MB became 49ms and

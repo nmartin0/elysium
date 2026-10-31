@@ -365,3 +365,51 @@ rules that follow, each already true somewhere in the code.
 8. **Measure it.** A written first-hour walkthrough (connect a source,
    make a type, link it, grant access, add a trigger, using only the
    screens). Where someone stalls is the next thing to fix.
+
+## 13. How the AI and the engineer work together.
+
+Written 31 October 2026 after reading what the people who build these
+tools, and the people who measure them, say works. Each point is here
+because it matches a mistake this project already made, or fixes one.
+
+1. **Give the AI a way to check itself, and ask for the evidence.** A
+   pass/fail check (a test, a command, a script) is the single
+   highest-leverage thing, and the answer to "is it done" is the
+   command and its output, never "I believe so". Anthropic's own
+   best-practices guide says this first
+   (https://code.claude.com/docs/en/best-practices).
+2. **Test first, and watch the test fail before the code exists.**
+   A test that was never seen failing may not test anything. This is
+   Willison's red/green rule
+   (https://simonwillison.net/guides/agentic-engineering-patterns/red-green-tdd/)
+   and is why every guarantee here has a negative control.
+3. **A second reader that has not seen the work reviews it.** The
+   author is the worst judge of its own change. Review is done by a
+   fresh agent given the diff and the agreed design, told to report
+   correctness gaps only and to skip style (practitioner pipeline:
+   https://dev.to/teppana88/how-i-validate-quality-when-ai-agents-write-my-code-481c).
+4. **A rule that has no exceptions is a script or a hook, not a
+   sentence.** Prose in CLAUDE.md is guidance and gets skipped under
+   pressure; a script refuses. `scripts/make_patch.sh` and
+   `scripts/apply_patch.sh` exist because the patch rules were prose
+   and four rounds were lost to them.
+5. **Keep the instructions short.** Anthropic recommends a CLAUDE.md
+   of under about 200 lines holding only what cannot be learned from
+   the repository; long files make the important lines get ignored.
+6. **Small batches, frequent commits.** DORA's 2025 findings: AI
+   raises throughput and also raises instability unless the batches
+   stay small and the tests stay strong
+   (https://www.infoq.com/news/2025/09/dora-state-of-ai-in-dev-2025).
+7. **Write the spec, then build from it, in notes that outlive the
+   conversation.** `BLOCKING.md` holds agreed designs. A compacted
+   conversation summary is a claim to re-check against the code, not a
+   fact (https://anthropic.com/engineering/effective-harnesses-for-long-running-agents).
+8. **End-to-end over mocks.** Mocked tests pass while the screen is
+   wrong; the browser tests and a person clicking have found what the
+   unit suites could not.
+9. **AI amplifies the practice it finds.** Good tests and small
+   changes get faster; none of them gets faster without. Speed claims
+   are mixed: METR measured experienced developers 19 per cent slower
+   in 2025 and called its 2026 follow-up unreliable
+   (https://metr.org/blog/2026-02-24-uplift-update/). So this project
+   measures quality and rework, not typing speed.

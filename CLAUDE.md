@@ -42,32 +42,32 @@ something on its own.
 You have no credentials. The user applies everything.
 
 ```
-git format-patch origin/dev..HEAD --stdout \
-  > /mnt/user-data/outputs/<name>-<date><suffix>.patch
+scripts/make_patch.sh <name>-<date><suffix> <number-of-commits>
 ```
 
-Then `present_files` it. Suffixes run `da`, `db`, `dc`… so successive
-patches sort and never collide.
+It clears old patches, refuses a wrong commit count, missing
+`Co-Authored-By` / `Claude-Session` trailers or a dirty tree, and
+dry-runs the patch on a throwaway branch from `origin/dev`, printing
+`DRYRUN_OK`. Then `SendUserFile` it. Suffixes run `da`, `db`, `dc`...
+(next is `dl`) so successive patches sort and never collide. Why a
+script: these checks were paragraphs here, and a paragraph gets
+skipped (PRINCIPLES.md section 13). The manual form, if the script is
+unavailable, is `git format-patch origin/dev..HEAD --stdout`, a
+`grep -c '^From '` count and a dry-run `git am` on a branch.
 
-**Always dry-run before presenting:**
-
-```
-git branch -D vfy -q 2>/dev/null; git checkout -q -B vfy origin/dev
-git am <patch> && git checkout -q dev && git branch -D vfy -q
-```
-
-**Clear old patches before generating** — `rm -f
-/mnt/user-data/outputs/*.patch`. Otherwise the outputs folder holds
-several and the user can apply a stale one.
-
-**Give the user the commands, every time.** They should not have to
-remember them:
+**Give the user the command, every time.** They should not have to
+remember it:
 
 ```bash
-cd ~/elysium
-git checkout dev && git pull
-git am ~/Downloads/<the-patch-file>.patch && git push
+cd ~/elysium && scripts/apply_patch.sh ~/Downloads/<the-patch-file>.patch
 ```
+
+`scripts/apply_patch.sh` stops at a leftover `.git/rebase-apply`
+(which blocked four rounds on 28 October) and proves at the end that
+the remote has the commits. Until the user has the script, the plain
+form is `git checkout dev && git pull && git am <patch> && git push`
+after `git am --abort` if an earlier apply was interrupted. Always
+confirm with `git ls-remote origin dev` before believing "pushed".
 
 **And say whether the server needs restarting.** A patch touching
 `api/` or `core/` needs `uvicorn` restarted; a frontend-only patch
@@ -320,11 +320,27 @@ is how the mistakes below happen.
    new unused export in `shell-api/src/format.ts` passes; the same
    export in `app-schema/src/SchemaGraph.tsx` fails.
 
-7. **Verify each factual claim** the commit message makes, with a
+   **Done means evidence**: the command and its output, quoted. "I
+   believe it works" is not done.
+
+7. **Have a fresh reader review the change before the commit.** Start
+   a subagent that has not seen the work, give it the diff and the
+   agreed design (the `BLOCKING.md` paragraph), and tell it to report
+   correctness gaps only and to skip style. Check each finding against
+   the code yourself; fix the real ones. The author cannot see its own
+   blind spots (PRINCIPLES.md section 13). Skip it only for a change
+   with no behaviour (a typo, a comment) and say that you did.
+   **A rule with no exceptions is a script, not a sentence**: if you
+   catch yourself adding "always" to this file, write the script or
+   hook and a test for it instead.
+   **Build from the written design, not from memory.** After a context
+   compaction, re-check any claim in the summary against the code
+   before relying on it.
+8. **Verify each factual claim** the commit message makes, with a
    command, before writing it. This has caught wrong claims about
    parallelism, about enforcement, and about a script that did not
    exist.
-8. **Generate the patch, dry-run it, present it**, and say what to
+9. **Make the patch with `scripts/make_patch.sh`, present it**, and say what to
    look at in the browser.
 
 **Numbers in a commit message are measurements, not estimates.** If
