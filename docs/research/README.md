@@ -15,4 +15,5 @@ should be re-checked before relying on them.
 | [adapters.md](adapters.md) | Elysium's adapters, other engines' interfaces, data sources and their terms |
 | [libraries.md](libraries.md) | Library and trading-firm open-source evaluations behind the choices |
 | [testing.md](testing.md) | How Elysium and trading engines test, which tools fit, and how our suite measures |
+| [agentic-practice.md](agentic-practice.md) | How AI and engineer work best together on code, and what we adopted |
 | [elysium.md](elysium.md) | Running Heliograph as a module of Elysium: what exists, what is deferred |

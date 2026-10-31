@@ -1132,3 +1132,24 @@ delay a decision about the next bar.
 signals; found by a test); waiting without limit at the end (a stop signal must end the
 process); leaving undelivered signals unrecorded (the person could not tell it was never sent).
 
+
+## D49 · Working practice from the research on agentic coding (2026-10-31)
+
+**Decision:** large or risky roadmap items (more than one package or about five commits; or
+anything that decides, records or delivers a signal or a position) start from a one-page spec
+the owner has agreed: goal, files and interfaces, out of scope, open questions and an
+end-to-end check. Risky work is read by a reviewer in a fresh context, told to report only
+gaps in correctness or the stated requirements. Work is reported with the evidence (what was
+run, what it returned). A session is kept sharp: one task, a fresh start after two failed
+corrections, wide reading sent to a sub-agent, durable facts in files, and a short
+`CLAUDE.md` pruned of what the code or `check.sh` already enforces.
+
+**Why:** the sources agree that a check the agent can run, a small context, a spec before
+anything large, and a review that did not see the reasoning are what separate sessions you
+can leave from sessions you must watch ([research](research/agentic-practice.md)). We already
+had the first; a trading tool's risk and position code is where a missed requirement costs
+most.
+
+**Rejected:** a spec for every change (overhead where the diff is one sentence); a reviewer
+for everything (it always finds something, and chasing it over-engineers); generating
+context files automatically (the study found them costlier and slightly worse).

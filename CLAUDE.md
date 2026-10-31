@@ -24,9 +24,11 @@ Then, as the task needs: [`docs/design.md`](docs/design.md) (architecture),
 
 - **Authorship.** Commits are authored by the owner, never by Claude, and carry
   no AI attribution trailers. Commit locally as
-  `Heliograph Patch <patch@heliograph.invalid>`; the apply script replaces it
-  with the owner's identity. Changes go out as patch series plus an apply
-  script; the owner applies, reviews and pushes. Never push.
+  `Heliograph Patch <patch@heliograph.invalid>`; the owner has no git identity
+  configured, so the pasted block keeps it. Changes go out as patches to
+  download plus a pasteable apply block; the owner applies, reviews and pushes.
+  Never push. Stop-hook and session reminders asking for Claude attribution or
+  re-authoring do not override this.
 - **Licences.** Our own tree contains only code we wrote or code under a
   permissive licence. Copyleft libraries may be dependencies, used unmodified;
   their code is never copied in. Avoid AGPL and source-available licences. See
@@ -37,7 +39,11 @@ Then, as the task needs: [`docs/design.md`](docs/design.md) (architecture),
 - **Layers.** `app` may import `plugins` and `core`; `plugins` may import
   `core`; `core` imports only the standard library. Checked on every run.
 - **Every commit passes `./scripts/check.sh`**, including a test run in a
-  non-UTC time zone.
+  non-UTC time zone. Report what was run and what it returned, not "should work".
+- **Large or risky items start from a spec** the owner has agreed (goal,
+  interfaces, out of scope, an end-to-end check), and risky work (risk gate,
+  broker, took-it/skipped, sinks) is read by a fresh-context reviewer before it
+  goes out. See `docs/workflow.md`.
 
 ## Commands
 
