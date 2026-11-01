@@ -6,14 +6,15 @@
 #
 # WHY A SCRIPT. These checks used to be paragraphs in CLAUDE.md, and a
 # paragraph is a guideline the one following it may skip. Skipped, they
-# cost real time: a patch of the wrong size, one missing its trailers, an
-# old patch left in the outputs folder. A rule with no exceptions belongs
+# cost real time: a patch of the wrong size, an old patch left in the
+# outputs folder. A rule with no exceptions belongs
 # in something that enforces it (PRINCIPLES.md section 13).
 #
 # CHECKS, each refusing with what to do: a clean tracked tree; at least one
 # commit ahead of the base, and exactly `expected-commits` when given; the
-# two attribution trailers on every commit; the patch holds as many
-# commits as were counted; and it APPLIES to a fresh copy of the base.
+# patch holds as many commits as were counted; and it APPLIES to a fresh
+# copy of the base. (Commits carry no attribution lines: owner's decision,
+# 31 October.)
 #
 # ENVIRONMENT: OUT (default /mnt/user-data/outputs), BASE (default
 # origin/dev), BRANCH (default dev), NO_FETCH=1 to skip the fetch.
@@ -39,13 +40,6 @@ ahead="$(git rev-list --count "$BASE"..HEAD)"
 if [[ -n "$expected" && "$ahead" != "$expected" ]]; then
   fail "expected $expected commit(s) but $ahead are ahead of $BASE. Either one was applied already under a different hash (rebase: git rebase --onto $BASE <that commit>), or the base moved (git fetch && git rebase $BASE)"
 fi
-
-for sha in $(git rev-list "$BASE"..HEAD); do
-  # Only the final trailer block counts, not a line that merely looks like one.
-  trailers="$(git log -1 --format=%B "$sha" | git interpret-trailers --parse)"
-  grep -q '^Co-Authored-By: ' <<<"$trailers" || fail "commit $sha has no Co-Authored-By trailer"
-  grep -q '^Claude-Session: ' <<<"$trailers" || fail "commit $sha has no Claude-Session trailer"
-done
 
 mkdir -p "$OUT"
 rm -f "$OUT"/*.patch

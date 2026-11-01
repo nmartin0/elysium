@@ -45,11 +45,10 @@ You have no credentials. The user applies everything.
 scripts/make_patch.sh <name>-<date><suffix> <number-of-commits>
 ```
 
-It clears old patches, refuses a wrong commit count, missing
-`Co-Authored-By` / `Claude-Session` trailers or a dirty tree, and
+It clears old patches, refuses a wrong commit count or a dirty tree, and
 dry-runs the patch on a throwaway branch from `origin/dev`, printing
 `DRYRUN_OK`. Then `SendUserFile` it. Suffixes run `da`, `db`, `dc`...
-(next is `dl`) so successive patches sort and never collide. Why a
+(next is `dn`) so successive patches sort and never collide. Why a
 script: these checks were paragraphs here, and a paragraph gets
 skipped (PRINCIPLES.md section 13). The manual form, if the script is
 unavailable, is `git format-patch origin/dev..HEAD --stdout`, a

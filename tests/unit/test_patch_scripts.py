@@ -12,10 +12,6 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 MAKE = REPO / "scripts" / "make_patch.sh"
 APPLY = REPO / "scripts" / "apply_patch.sh"
-TRAILERS = (
-    "\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\n"
-    "Claude-Session: https://claude.ai/code/session_test\n"
-)
 
 
 def git(cwd, *args):
@@ -32,10 +28,10 @@ def run(script, cwd, *args, **env):
     return subprocess.run(["bash", str(script), *args], cwd=cwd, capture_output=True, text=True, env=full)
 
 
-def commit(clone, name, trailers=True):
+def commit(clone, name):
     (clone / name).write_text(name)
     git(clone, "add", name)
-    git(clone, "commit", "-q", "-m", f"add {name}" + (TRAILERS if trailers else ""))
+    git(clone, "commit", "-q", "-m", f"add {name}")
 
 
 @pytest.fixture
@@ -82,12 +78,6 @@ def test_make_patch_refuses_nothing_to_send(world):
     assert "nothing is ahead" in result.stderr
 
 
-def test_make_patch_refuses_missing_trailers(world):
-    commit(world["work"], "naked.txt", trailers=False)
-    result = make(world, "naked")
-    assert result.returncode != 0
-    assert "no Co-Authored-By trailer" in result.stderr
-
 
 def test_make_patch_refuses_a_dirty_tree(world):
     commit(world["work"], "one.txt")
@@ -111,7 +101,7 @@ def test_make_patch_refuses_a_patch_that_will_not_apply(world):
     git(world["work"].parent, "clone", "-q", "-b", "dev", str(world["bare"]), str(other))
     (other / "one.txt").write_text("conflict")
     git(other, "add", "one.txt")
-    git(other, "commit", "-q", "-m", "conflict" + TRAILERS)
+    git(other, "commit", "-q", "-m", "conflict")
     git(other, "push", "-q", "origin", "dev")
     result = make(world, "clash")
     assert result.returncode != 0
@@ -177,19 +167,10 @@ def test_apply_patch_does_not_call_a_push_that_did_not_land_a_success(world):
 def test_a_message_line_starting_with_from_does_not_inflate_the_count(world):
     (world["work"] / "f.txt").write_text("f")
     git(world["work"], "add", "f.txt")
-    git(world["work"], "commit", "-q", "-m", "subject\n\nFrom the start this was wrong." + TRAILERS)
+    git(world["work"], "commit", "-q", "-m", "subject\n\nFrom the start this was wrong.")
     result = make(world, "from", "1")
     assert result.returncode == 0, result.stderr
 
-
-def test_make_patch_refuses_trailers_that_are_not_the_final_block(world):
-    (world["work"] / "t.txt").write_text("t")
-    git(world["work"], "add", "t.txt")
-    git(world["work"], "commit", "-q", "-m",
-        "subject" + TRAILERS + "\nmore text, so those were not trailers")
-    result = make(world, "tr")
-    assert result.returncode != 0
-    assert "trailer" in result.stderr
 
 
 def test_make_patch_refuses_a_merge_and_leaves_no_patch(world):
@@ -198,7 +179,7 @@ def test_make_patch_refuses_a_merge_and_leaves_no_patch(world):
     commit(work, "s.txt")
     git(work, "checkout", "-q", "dev")
     commit(work, "d.txt")
-    git(work, "merge", "-q", "--no-ff", "-m", "merge" + TRAILERS, "side")
+    git(work, "merge", "-q", "--no-ff", "-m", "merge", "side")
     result = make(world, "m")
     assert result.returncode != 0
     assert "merge commit" in result.stderr

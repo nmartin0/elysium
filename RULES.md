@@ -134,7 +134,7 @@ style skipped. Check each finding yourself before acting on it.
 ### A rule with no exceptions is a script
 
 Prose is guidance and is skipped under pressure. If a step must never
-be skipped (the commit count, the trailers, the dry-run), put it in a
+be skipped (the commit count, the dry-run), put it in a
 script that refuses, and test the script with a control.
 
 ## 4. Measure before and after, and report both

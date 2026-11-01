@@ -7222,13 +7222,6 @@ CONTROLS = [
         ],
     ),
     Control(
-        describes="a patch is refused when a commit lacks the attribution trailer",
-        path="scripts/make_patch.sh",
-        old='grep -q \'^Co-Authored-By: \' <<<"$trailers" ||',
-        new='true ||',
-        tests=["tests/unit/test_patch_scripts.py::test_make_patch_refuses_missing_trailers"],
-    ),
-    Control(
         describes="a patch is refused when the commit count is not the one expected",
         path="scripts/make_patch.sh",
         old='"$ahead" != "$expected"',
@@ -7262,13 +7255,6 @@ CONTROLS = [
         old='[[ "$behind_ahead" == $\'0\\t0\' ]] ||',
         new='true ||',
         tests=["tests/unit/test_patch_scripts.py::test_apply_patch_does_not_call_a_push_that_did_not_land_a_success"],
-    ),
-    Control(
-        describes="only the final trailer block counts as trailers",
-        path="scripts/make_patch.sh",
-        old='git interpret-trailers --parse',
-        new='cat',
-        tests=["tests/unit/test_patch_scripts.py::test_make_patch_refuses_trailers_that_are_not_the_final_block"],
     ),
     Control(
         describes="a message line starting with From does not inflate the patch count",
