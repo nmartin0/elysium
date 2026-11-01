@@ -110,6 +110,8 @@ packages = ["src/heliograph"]
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
+# A verbatim copy of Elysium's file (see its PROVENANCE note): not ours to reformat.
+extend-exclude = ["tests/integrations/elysium_addon_checks.py"]
 
 [tool.ruff.lint]
 select = [
@@ -260,3 +262,8 @@ parallel = true
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
+
+[[tool.mypy.overrides]]
+# Elysium's file, copied verbatim (see its PROVENANCE note): not ours to type.
+module = ["tests.integrations.elysium_addon_checks"]
+ignore_errors = true
