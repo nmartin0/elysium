@@ -368,13 +368,14 @@ replaced or switched off in one place.
 
 ## Open questions
 
-1. **Which aircraft and ship feeds**, given their terms: settled by the
-   feeds table in Phase 0.
+1. **Which basemap**: Esri's keyless imagery is not clearly permitted
+   and may not be stored; a properly licensed one is being researched.
 2. **Whether their screen runs in a sandboxed frame** without large
    changes: settled by the Phase 1 spike (R1).
 
 Settled: where the screen's data layer runs (R1); patches for this
-branch (R9).
+branch (R9); which feeds, and what each drops at the door
+(`docs/feeds.md`, owner's choices of 1 November).
 
 ## Sources
 
