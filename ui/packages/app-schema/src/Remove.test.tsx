@@ -187,16 +187,39 @@ describe('a name something still names', () => {
 
 describe('when the file has changed or the name is gone', () => {
   it('says a stale file needs loading again, and loading again previews again', async () => {
-    vi.mocked(applyRemoval).mockRejectedValue(new ApiError(409, 'The file changed since you read it.', { detail: 'x' }))
+    vi.mocked(applyRemoval).mockRejectedValue(
+      new ApiError(
+        409,
+        'ontology_schema.yaml has changed since you opened it. Load it again to see the new version before changing it.',
+        { detail: 'x' },
+      ),
+    )
     renderDialog()
     fireEvent.click(await removeButton())
 
-    expect(await screen.findByText('The file changed since you read it.')).toBeInTheDocument()
+    expect(await screen.findByText(/has changed since you opened it/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Remove it and reload' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Load the file again' }))
 
     await waitFor(() => expect(previewRemoval).toHaveBeenCalledTimes(2))
     expect(await removeButton()).toBeEnabled()
+  })
+
+  it("shows the server's sentence for a widening or an unloadable plan, and does not offer to load again", async () => {
+    const sentence =
+      'This would let someone read more than they can now, which a removal never should. Nothing was changed.'
+    vi.mocked(applyRemoval).mockRejectedValue(new ApiError(409, sentence, { detail: sentence }))
+    renderDialog()
+    fireEvent.click(await removeButton())
+
+    expect(await screen.findByText(sentence)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Load the file again' })).not.toBeInTheDocument()
+  })
+
+  it('says comments stay, when it can go', async () => {
+    renderDialog()
+
+    expect(await screen.findByText(/comments in the file stay where they are/)).toBeInTheDocument()
   })
 
   it('shows "Not found" as it is, and offers no removal', async () => {

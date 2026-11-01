@@ -64,6 +64,12 @@ function refusalOf(caught: unknown): RemovalRefusal | null {
     : null
 }
 
+// The one 409 that loading again cures: the server's "ontology_schema.yaml has
+// changed since you opened it" (_ontology_as_read). The other 409s -- a
+// widening, a configuration that would not load -- carry no blockers, and
+// loading again would show the same; their sentence is what the person needs.
+const FILE_CHANGED = /changed since you opened it/
+
 function Blockers({ rows, hidden, notListed }: { rows: UsedByRow[]; hidden: number; notListed: string }) {
   return (
     <>
@@ -146,7 +152,7 @@ export default function RemoveDialog({
           setPreview({ ...preview, ...refusal, can_remove: false, impact: null })
           setProblem(getErrorMessage(caught))
         } else {
-          setStale(caught instanceof ApiError && caught.status === 409)
+          setStale(caught instanceof ApiError && caught.status === 409 && FILE_CHANGED.test(getErrorMessage(caught)))
           setProblem(getErrorMessage(caught))
         }
       })
@@ -181,7 +187,7 @@ export default function RemoveDialog({
               <>
                 <p className="config-dialog__lede">
                   Nothing in the configuration names {name}. Removing it deletes its lines from the ontology and changes
-                  nothing else.
+                  nothing else; comments in the file stay where they are.
                 </p>
                 <h4 className="config-dialog__heading">What happens to the data already stored</h4>
                 <ul className="add-fields__consequences">
