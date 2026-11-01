@@ -43,10 +43,11 @@ class Engine:
         *args: str,
         env: dict[str, str] | None = None,
         cwd: Path | None = None,
+        stdin: int = subprocess.DEVNULL,
     ) -> None:
         self.process = subprocess.Popen(
             [str(COMMAND), "serve", *args],
-            stdin=subprocess.DEVNULL,
+            stdin=stdin,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -93,7 +94,9 @@ class Engine:
         self.port = int(self.wait_for("listening")["port"])
         return self
 
-    def request(self, method: str, path: str, body: Any = None) -> tuple[int, Any]:
+    def request(
+        self, method: str, path: str, body: Any = None, headers: dict[str, str] | None = None
+    ) -> tuple[int, Any]:
         """The status and JSON body of ``method path``."""
         data = (
             None
@@ -101,7 +104,7 @@ class Engine:
             else (body if isinstance(body, bytes) else json.dumps(body).encode())
         )
         request = urllib.request.Request(
-            f"http://127.0.0.1:{self.port}{path}", data=data, method=method
+            f"http://127.0.0.1:{self.port}{path}", data=data, method=method, headers=headers or {}
         )
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
@@ -154,7 +157,7 @@ class Engine:
     def wait(self, timeout: float = 30.0) -> int:
         code = self.process.wait(timeout)
         self._reader.join(timeout)
-        for pipe in (self.process.stdout, self.process.stderr):
+        for pipe in (self.process.stdin, self.process.stdout, self.process.stderr):
             if pipe is not None:
                 pipe.close()
         return code

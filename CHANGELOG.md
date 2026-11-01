@@ -264,6 +264,12 @@ All notable changes to Heliograph are recorded here. The format follows
 - The Wizard can start empty and add data: a dialog asks for a data source (with
   the settings form its schema draws), the instrument, the span and the bars to
   build; a stream nothing reads can be removed.
+- Heliograph runs as an Elysium add-on (D50). Started by Elysium, `heliograph serve` takes its
+  port from `PORT`, its data from the folder Elysium gives it, refuses every request without a
+  good signed `X-Elysium-Identity` (the health check apart; reading needs the module permission
+  `use`, changing anything `operate`), listens on this computer only, leaves when Elysium's pipe
+  closes, and drops an Inbox notice in Elysium's outbox when a backtest ends, the run's id its
+  name. Without `ELYSIUM_ADDON_START` nothing changes.
 
 ### Fixed
 

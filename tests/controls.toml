@@ -2921,8 +2921,8 @@ tests = ["tests/plugins/test_store.py::test_a_download_that_stopped_paging_halfw
 [[control]]
 describes = "the engine listens on this computer only by default"
 path = "src/heliograph/app/server.py"
-old = "        host=host or environ.get(\"HELIOGRAPH_HOST\", \"127.0.0.1\"),\n"
-new = "        host=host or environ.get(\"HELIOGRAPH_HOST\", \"0.0.0.0\"),\n"
+old = "    host = host or environ.get(\"HELIOGRAPH_HOST\", \"127.0.0.1\")\n"
+new = "    host = host or environ.get(\"HELIOGRAPH_HOST\", \"0.0.0.0\")\n"
 tests = ["tests/process/test_engine_process.py::test_the_engine_listens_on_this_computer_only_and_says_where"]
 
 [[control]]
@@ -4733,3 +4733,54 @@ path = "src/heliograph/app/dispatch.py"
 old = "            if on_outcome is not None:\n                on_outcome(outcome)\n"
 new = "            pass\n"
 tests = ["tests/app/test_dispatch.py::test_each_outcome_is_told_the_moment_its_sink_is_done_even_if_another_never_is"]
+
+[[control]]
+describes = "an add-on request is refused unless its token's signature is Elysium's"
+path = "src/heliograph/app/addon.py"
+old = "    if not hmac.compare_digest(signature, expected):\n"
+new = "    if False:\n"
+tests = [
+    "tests/app/test_addon.py::test_a_forged_token_is_refused",
+]
+
+[[control]]
+describes = "a token made for another add-on is refused"
+path = "src/heliograph/app/addon.py"
+old = "    if claims.get(\"aud\") != start.audience:\n"
+new = "    if False:\n"
+tests = ["tests/app/test_addon.py::test_a_token_that_is_not_elysiums_for_this_add_on_now_is_refused"]
+
+[[control]]
+describes = "only the health check is answered without a token"
+path = "src/heliograph/app/addon.py"
+old = "        if method == \"GET\" and path == HEALTH:\n"
+new = "        if path == HEALTH:\n"
+tests = ["tests/app/test_addon.py::test_a_post_to_the_health_path_is_not_the_exempt_request"]
+
+[[control]]
+describes = "changing anything takes the operate permission, not only use"
+path = "src/heliograph/app/addon.py"
+old = "    return USE if method in (\"GET\", \"HEAD\") else OPERATE\n"
+new = "    return USE\n"
+tests = ["tests/app/test_addon.py::test_reading_takes_the_use_permission_and_changing_takes_operate"]
+
+[[control]]
+describes = "add-on mode listens on this computer only"
+path = "src/heliograph/app/addon.py"
+old = "    if host not in LOOPBACK:\n"
+new = "    if False:\n"
+tests = ["tests/app/test_addon.py::test_add_on_mode_listens_on_this_computer_only"]
+
+[[control]]
+describes = "a finished backtest drops a notice named by its run id"
+path = "src/heliograph/app/server.py"
+old = "        if self.finished is None or self._stop.is_set():\n"
+new = "        if True:\n"
+tests = ["tests/process/test_addon_process.py::test_a_finished_backtest_drops_one_notice_in_the_inbox_outbox"]
+
+[[control]]
+describes = "the server leaves when Elysium's pipe closes"
+path = "src/heliograph/app/server.py"
+old = "            exit_when_elysium_does(lambda: os.kill(os.getpid(), signal.SIGTERM))\n"
+new = "            pass\n"
+tests = ["tests/process/test_addon_process.py::test_the_server_leaves_with_status_0_when_elysium_goes"]

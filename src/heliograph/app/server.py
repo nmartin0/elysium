@@ -89,12 +89,20 @@ from typing import Any
 import uvicorn
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
+from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from heliograph import __version__
 from heliograph.app import charts
+from heliograph.app.addon import (
+    AddonStart,
+    IdentityGuard,
+    Outbox,
+    exit_when_elysium_does,
+    refuse_open_host,
+)
 from heliograph.app.charts import NotInRunError
 from heliograph.app.config import (
     GRAPH_KINDS,
@@ -144,6 +152,8 @@ class Settings:
     port: int = DEFAULT_PORT
     stop_deadline: float = STOP_DEADLINE
     """Seconds from a stop signal within which the process promises to have exited."""
+    addon: AddonStart | None = None
+    """Set when Elysium started the process (decision D43): requests must be signed."""
 
 
 # -- logging ---------------------------------------------------------------------------
@@ -224,6 +234,9 @@ class Backtests:
 
     runs: Path
     clock: Clock
+    finished: Callable[[str, str | None], None] | None = None
+    """Told a backtest's id and error (``None``: it finished) once it has ended, unless the
+    process is stopping. A failure of its own is logged and the worker goes on."""
     _queue: "queue.Queue[_Job | object]" = field(default_factory=queue.Queue)
     _jobs: dict[str, _Job] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
@@ -318,12 +331,23 @@ class Backtests:
             except HeliographError as exc:
                 self._done(job, str(exc))
                 _event("backtest failed", logging.WARNING, id=job.id, error=job.error)
+                self._announce(job)
             except Exception as exc:  # a bug: logged with its traceback, the worker goes on
                 self._done(job, f"{type(exc).__name__}: {exc}")
                 _log.exception("backtest crashed", extra={"fields": {"id": job.id}})
+                self._announce(job)
             else:
                 self._done(job, None)
                 _event("backtest finished", id=job.id, inputs=summary.delivered)
+                self._announce(job)
+
+    def _announce(self, job: _Job) -> None:
+        if self.finished is None or self._stop.is_set():
+            return
+        try:
+            self.finished(job.id, job.error)
+        except Exception:  # a notice that cannot be left must not stop the worker
+            _log.exception("backtest notice failed", extra={"fields": {"id": job.id}})
 
     def _done(self, job: _Job, error: str | None) -> None:
         # A chart read as the run closed may have kept its journal from becoming one
@@ -737,8 +761,14 @@ def make_app(settings: Settings, clock: Clock, backtests: Backtests) -> Starlett
         )
         return _error(500, f"a bug: {type(exc).__name__}: {exc}")
 
+    guard = (
+        [Middleware(IdentityGuard, start=settings.addon, clock=clock)]
+        if settings.addon is not None
+        else []
+    )
     return Starlette(
         routes=routes,
+        middleware=guard,
         exception_handlers={404: not_found, 405: not_allowed, Exception: crashed},
     )
 
@@ -758,14 +788,22 @@ def settings_from(
     Raises:
         ConfigError: if there is no data folder, or the port is not a port number.
     """
+    addon = AddonStart.from_environment(environ)
     data = data or environ.get("HELIOGRAPH_DATA")
+    if not data and addon is not None:
+        data = str(addon.options.get("data") or addon.data_dir)
     if not data:
         raise ConfigError("give a data folder: --data, or HELIOGRAPH_DATA")
     configs = configs or environ.get("HELIOGRAPH_CONFIGS") or None
+    if not configs and addon is not None:
+        configs = str(addon.options.get("configs") or "") or None
     if port is None:
-        text = environ.get("HELIOGRAPH_PORT", str(DEFAULT_PORT))
+        name, text = "HELIOGRAPH_PORT", environ.get("HELIOGRAPH_PORT")
+        if text is None and addon is not None:  # the port Elysium assigned
+            name, text = "PORT", environ.get("PORT", str(addon.port))
+        text = str(DEFAULT_PORT) if text is None else text
         if not text.isdigit():
-            raise ConfigError(f"HELIOGRAPH_PORT must be a port number, not {text!r}")
+            raise ConfigError(f"{name} must be a port number, not {text!r}")
         port = int(text)
     if not 0 <= port <= 65535:
         raise ConfigError(f"the port must be from 0 to 65535, not {port}")
@@ -778,12 +816,16 @@ def settings_from(
         raise ConfigError(
             f"HELIOGRAPH_STOP_DEADLINE must be a number of seconds above 0, not {deadline_text!r}"
         )
+    host = host or environ.get("HELIOGRAPH_HOST", "127.0.0.1")
+    if addon is not None:
+        refuse_open_host(host)
     return Settings(
         data=Path(data),
         configs=Path(configs) if configs else None,
-        host=host or environ.get("HELIOGRAPH_HOST", "127.0.0.1"),
+        host=host,
         port=port,
         stop_deadline=stop_deadline,
+        addon=addon,
     )
 
 
@@ -847,7 +889,14 @@ def serve(settings: Settings) -> int:
         raise ConfigError(f"configurations folder {settings.configs} is not a folder")
     if settings.data.exists() and not settings.data.is_dir():
         raise ConfigError(f"data folder {settings.data} is not a folder")
-    backtests = Backtests(settings.data / "runs", clock)
+    outbox = (
+        None
+        if settings.addon is None or settings.addon.outbox is None
+        else Outbox(settings.addon.outbox)
+    )
+    backtests = Backtests(
+        settings.data / "runs", clock, None if outbox is None else outbox.backtest_finished
+    )
     listener = _listen(settings.host, settings.port)
     try:
         backtests.start()
@@ -861,7 +910,11 @@ def serve(settings: Settings) -> int:
         )
         server = stopping.server = _Server(config, stopping)
         host, port = listener.getsockname()[:2]
-        _event("listening", host=host, port=port, data=str(settings.data), pid=os.getpid())
+        extra: dict[str, Any] = {} if settings.addon is None else {"addon": settings.addon.id}
+        _event("listening", host=host, port=port, data=str(settings.data), pid=os.getpid(), **extra)
+        if settings.addon is not None:
+            # Elysium's pipe closing means it is gone: stop as for SIGTERM.
+            exit_when_elysium_does(lambda: os.kill(os.getpid(), signal.SIGTERM))
         if stopping.since is None:  # a signal already came: no need to start
             server.run(sockets=[listener])
     finally:

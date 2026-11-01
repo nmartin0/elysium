@@ -336,10 +336,15 @@ def test_one_failing_step_fails_the_script_and_is_named() -> None:
 
 # -- 6. the engine's process is tested from outside ----------------------------------
 
-OUTSIDE = [*sorted((TESTS / "process").rglob("*.py")), TESTS / "support" / "engine.py"]
-"""The tests of the engine's process, and the client they share (decision D18)."""
+OUTSIDE = [
+    *sorted((TESTS / "process").rglob("*.py")),
+    TESTS / "support" / "engine.py",
+    TESTS / "support" / "elysium.py",
+]
+"""The tests of the engine's process, the client they share (decision D18) and the
+stand-in for Elysium they sign requests with."""
 
-ALLOWED_SUPPORT = {"tests.support.engine"}
+ALLOWED_SUPPORT = {"tests.support.engine", "tests.support.elysium"}
 
 
 def inside_imports(tree: ast.AST) -> list[int]:
