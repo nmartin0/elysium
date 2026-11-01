@@ -13,8 +13,8 @@ Anything else either exports is internal, and may change without notice.
 The manifest, `activate()`, host values, styles and the add-on server are
 described in [MODULE_API.md](MODULE_API.md).
 
-229 names imported, from 40 entry points, by 9 modules;
-287 declarations public in all.
+234 names imported, from 40 entry points, by 9 modules;
+292 declarations public in all.
 
 ## `@elysium/shell-api/api`
 
@@ -65,7 +65,8 @@ interface AggregateSet {
 
 export declare class ApiError extends Error {
     status: number;
-    constructor(status: number, message: string);
+    body: unknown;
+    constructor(status: number, message: string, body?: unknown);
 }
 
 export declare function applyLabels(digest: string, changes: LabelChange[], reason: string | null): Promise<LabelEditResult>;
@@ -81,6 +82,8 @@ export declare function applyOntologyDescriptions(digest: string, changes: Descr
     digest: string;
     to_generation: number;
 }
+
+export declare function applyRemoval(digest: string, target: RemovalTarget): Promise<LabelEditResult>;
 
 export declare function applyStatus(digest: string, change: StatusChange): Promise<LabelEditResult>;
 
@@ -772,6 +775,8 @@ export declare function previewNewType(digest: string, type: NewType): Promise<N
 
 export declare function previewOntologyDescriptions(digest: string, changes: DescriptionChange[]): Promise<string[]>;
 
+export declare function previewRemoval(digest: string, target: RemovalTarget): Promise<RemovalPreview>;
+
 export declare function previewRoleChange(roleName: string, grants: string[] | null): Promise<RoleImpact>;
 
 export declare function previewStatus(digest: string, change: StatusChange): Promise<StatusPreview>;
@@ -821,6 +826,33 @@ export interface Reminder {
     repeats: string | null;
     late_after_minutes: number | null;
 }
+
+export interface RemovalPreview {
+    diff: string[];
+    impact: AccessImpact | null;
+    can_remove: boolean;
+    deprecated: boolean;
+    remove_after: string | null;
+    blockers: UsedByRow[];
+    hidden_blockers: number;
+    not_listed: string;
+    stored_data: string[];
+}
+
+export interface RemovalRefusal {
+    deprecated: boolean;
+    blockers: UsedByRow[];
+    hidden_blockers: number;
+}
+
+export type RemovalTarget = {
+    kind: 'field';
+    object_type: string;
+    field: string;
+} | {
+    kind: 'link';
+    link: string;
+};
 
 export declare function resetUserPassword(username: string, newPassword: string): Promise<void>;
 

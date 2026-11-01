@@ -23,6 +23,7 @@ vi.mock('@elysium/shell-api/api', async (original) => ({
   getNewTypeSources: () => new Promise(() => {}),
   getLinkableTypes: () => new Promise(() => {}),
   getUsedBy: () => new Promise(() => {}),
+  previewRemoval: () => new Promise(() => {}),
 }))
 
 /** The panel keeps its tab and filter in the URL, so it needs a
@@ -700,6 +701,58 @@ describe('deprecating a type or a field', () => {
 
     await waitFor(() => expect(refused).toBe(true))
     expect(screen.queryByRole('button', { name: /Deprecat/ })).not.toBeInTheDocument()
+    describing.answer = () => new Promise(() => {})
+  })
+})
+
+describe('removing a field', () => {
+  const describable = () =>
+    Promise.resolve({ digest: 'd1', types: {}, data_types: ['string'], label_enforcement: false })
+  const withEmail = (status: string) => ({
+    ...CUSTOMER,
+    fields: { ...CUSTOMER.fields, email: { ...CUSTOMER.fields.email, status } },
+  })
+
+  it('is offered on a stored field but cannot be used until the field is deprecated', async () => {
+    describing.answer = describable
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    expect(await screen.findByRole('button', { name: /Remove Email/ })).toBeDisabled()
+  })
+
+  it('opens the removal for a deprecated field', async () => {
+    describing.answer = describable
+    renderPanel(
+      <SchemaPanel visibleSchema={{ Customer: withEmail('deprecated') }} username="alice" onSessionExpired={noop} />,
+    )
+    openObjectTypes()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Remove Email/ }))
+
+    expect(await screen.findByRole('dialog', { name: 'Remove Customer.Email' })).toBeInTheDocument()
+  })
+
+  it('is not offered on a link field, which goes with its link type', async () => {
+    describing.answer = describable
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    await screen.findByRole('button', { name: /Remove Email/ })
+    expect(screen.queryByRole('button', { name: /Remove Transactions/ })).not.toBeInTheDocument()
+  })
+
+  it('is not offered to anyone the server refuses', async () => {
+    let refused = false
+    describing.answer = () => {
+      refused = true
+      return Promise.reject(new Error('refused'))
+    }
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    await waitFor(() => expect(refused).toBe(true))
+    expect(screen.queryByRole('button', { name: /Remove/ })).not.toBeInTheDocument()
     describing.answer = () => new Promise(() => {})
   })
 })

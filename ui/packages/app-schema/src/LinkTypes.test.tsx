@@ -187,3 +187,44 @@ describe('deprecating a link', () => {
     expect(screen.getByRole('button', { name: 'Deprecate CustomerTransactions' })).toBeInTheDocument()
   })
 })
+
+describe('removing a link type', () => {
+  const status = (status: string, inherited: string | null = null) => ({
+    ...SCHEMA,
+    Customer: {
+      ...SCHEMA.Customer,
+      fields: {
+        transactions: { ...SCHEMA.Customer.fields.transactions, status, status_inherited_from: inherited },
+      },
+    },
+  })
+
+  it('is offered beside each link type but cannot be used while it is active', () => {
+    render(<LinkTypes schema={SCHEMA} filter="" onOpenObjectType={vi.fn()} onRemove={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: 'Remove CustomerTransactions' })).toBeDisabled()
+  })
+
+  it('can be used once the link reads as deprecated, and removes that link', () => {
+    const onRemove = vi.fn()
+    render(<LinkTypes schema={status('deprecated')} filter="" onOpenObjectType={vi.fn()} onRemove={onRemove} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove CustomerTransactions' }))
+
+    expect(onRemove).toHaveBeenCalledWith({ link: 'CustomerTransactions' })
+  })
+
+  it('can be used when the link took its deprecation from a type', () => {
+    render(
+      <LinkTypes schema={status('deprecated', 'Customer')} filter="" onOpenObjectType={vi.fn()} onRemove={vi.fn()} />,
+    )
+
+    expect(screen.getByRole('button', { name: 'Remove CustomerTransactions' })).toBeEnabled()
+  })
+
+  it('is not offered when the caller cannot manage the deployment', () => {
+    render(<LinkTypes schema={status('deprecated')} filter="" onOpenObjectType={vi.fn()} />)
+
+    expect(screen.queryByRole('button', { name: /Remove/ })).not.toBeInTheDocument()
+  })
+})

@@ -62,10 +62,13 @@ import type { ModuleArrangement, ModuleArrangementChange } from '@shell/core/con
 
 export class ApiError extends Error {
   status: number
+  /** The whole reply, for a refusal that carries more than its sentence (a removal's blockers). */
+  body: unknown
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, body?: unknown) {
     super(message)
     this.status = status
+    this.body = body
   }
 }
 
@@ -326,7 +329,7 @@ async function apiFetchOrThrow(path: string, options: RequestInit = {}): Promise
   const response = await apiFetch(path, options)
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => ({}))
-    throw new ApiError(response.status, messageFromErrorBody(body) ?? `Request failed (${response.status})`)
+    throw new ApiError(response.status, messageFromErrorBody(body) ?? `Request failed (${response.status})`, body)
   }
   return response
 }
@@ -2700,6 +2703,50 @@ export async function applyStatus(digest: string, change: StatusChange): Promise
   const response = await apiFetchOrThrow('/admin/ontology/status', {
     method: 'PUT',
     body: JSON.stringify({ digest, ...change }),
+  })
+  return (await response.json()) as LabelEditResult
+}
+
+/** What to remove: a stored field, or a link type. (A type is not removed from here.) */
+export type RemovalTarget = { kind: 'field'; object_type: string; field: string } | { kind: 'link'; link: string }
+
+export interface RemovalPreview {
+  diff: string[]
+  /** Null while something blocks it: the candidate configuration would not load. */
+  impact: AccessImpact | null
+  can_remove: boolean
+  deprecated: boolean
+  /** The day the deprecation planned removal after, as text, if it said one. */
+  remove_after: string | null
+  /** What names it, as far as this person may see. */
+  blockers: UsedByRow[]
+  /** How many more name something this person cannot discover. */
+  hidden_blockers: number
+  not_listed: string
+  /** What becomes of the data already stored, one sentence each. */
+  stored_data: string[]
+}
+
+/** What a refused removal (409) carries beside its sentence. */
+export interface RemovalRefusal {
+  deprecated: boolean
+  blockers: UsedByRow[]
+  hidden_blockers: number
+}
+
+export async function previewRemoval(digest: string, target: RemovalTarget): Promise<RemovalPreview> {
+  const response = await apiFetchOrThrow('/admin/ontology/removal/preview', {
+    method: 'POST',
+    body: JSON.stringify({ digest, ...target }),
+  })
+  return (await response.json()) as RemovalPreview
+}
+
+/** Removes it now. Judged again on the server: a 409 says what still blocks it. */
+export async function applyRemoval(digest: string, target: RemovalTarget): Promise<LabelEditResult> {
+  const response = await apiFetchOrThrow('/admin/ontology/removal', {
+    method: 'PUT',
+    body: JSON.stringify({ digest, ...target }),
   })
   return (await response.json()) as LabelEditResult
 }

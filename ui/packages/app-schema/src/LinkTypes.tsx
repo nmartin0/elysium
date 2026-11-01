@@ -65,9 +65,18 @@ interface LinkTypesProps {
   onUsedBy?: (target: { link: string }) => void
   /** Deprecating a link: present only for manage:deployment. */
   onDeprecate?: (target: { link: string }) => void
+  /** Removing a link type: present only for manage:deployment; enabled once it reads as deprecated. */
+  onRemove?: (target: { link: string }) => void
 }
 
-export default function LinkTypes({ schema, filter, onOpenObjectType, onUsedBy, onDeprecate }: LinkTypesProps) {
+export default function LinkTypes({
+  schema,
+  filter,
+  onOpenObjectType,
+  onUsedBy,
+  onDeprecate,
+  onRemove,
+}: LinkTypesProps) {
   const grouped = groupLinkTypes(schema)
   if (grouped.size === 0) {
     return <p>No link types are visible to you.</p>
@@ -125,6 +134,17 @@ export default function LinkTypes({ schema, filter, onOpenObjectType, onUsedBy, 
                 <Button small minimal icon="warning-sign" onClick={() => onDeprecate({ link: linkType })}>
                   {sides[0]?.status === 'deprecated' && !sides[0].inheritedFrom ? 'Deprecation' : 'Deprecate'}{' '}
                   <span className="visually-hidden">{linkType}</span>
+                </Button>
+              )}
+              {onRemove && (
+                <Button
+                  small
+                  minimal
+                  icon="trash"
+                  disabled={sides[0]?.status !== 'deprecated'}
+                  onClick={() => onRemove({ link: linkType })}
+                >
+                  Remove <span className="visually-hidden">{linkType}</span>
                 </Button>
               )}
               {sides.length === 1 && <div className="schema-panel__api-name">one side visible to you</div>}
