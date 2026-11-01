@@ -72,14 +72,21 @@ def test_a_field_goes_and_nothing_else_changes():
     assert meaning(after) == before
 
 
-def test_its_own_lines_go_with_a_comment_directly_above_it_and_not_the_one_after():
+def test_a_comment_above_a_removed_field_stays_because_it_may_belong_to_something_else():
+    """OWNER DECISION (fix round): comment lines are NEVER deleted. A
+    section header or a commented-out neighbour above the entry is not the
+    entry's."""
     after, _ = removed(SMALL, field("A", "x"))
-    assert "# about x" not in after and "x:" not in after
-    assert "# the header" in after
+    assert "x:" not in after
+    assert "# about x" in after and "# the header" in after
 
     after, _ = removed(SMALL, field("A", "z"))
-    assert "# a note that belongs to z" not in after
+    assert "# a note that belongs to z" in after
     assert "# a note after the last field" in after
+
+    section = SMALL.replace("      # about x\n", "      # --- identifiers ---\n      # old_x: {type: data}\n")
+    after, _ = removed(section, field("A", "x"))
+    assert "# --- identifiers ---" in after and "# old_x: {type: data}" in after
 
 
 def test_a_field_written_over_several_lines_goes_whole_with_its_inline_comment():
@@ -97,11 +104,11 @@ def test_every_other_comment_in_the_file_survives():
     assert all(line in after.splitlines() for line in kept if line not in gone)
 
 
-def test_a_link_type_goes_with_the_comment_above_it():
+def test_a_link_type_goes_and_the_comment_above_it_stays():
     after, _ = removed(SMALL, {"kind": "link", "link": "M"})
 
     assert meaning(after)["link_types"].keys() == {"L"}
-    assert "# the second" not in after
+    assert "# the second" in after
 
 
 def test_the_last_link_type_takes_link_types_with_it():
@@ -225,3 +232,45 @@ object_types:
 
         with pytest.raises(ConfigEditError, match="inside a"):
             removed(self.BOUND, field("Account", "currency"), braced)
+
+
+MERGED = """\
+object_types:
+  A:
+    id_field: id
+    fields:
+      <<: &shared
+        stamp: {type: data}
+      own: {type: data}
+      other: {type: data}
+  B:
+    id_field: id
+    fields:
+      <<: *shared
+      mine: {type: data}
+"""
+
+
+class TestWhatComesInThroughAMerge:
+    def test_a_field_that_arrives_through_a_merge_key_is_refused_not_a_500(self):
+        """Reproduced: KeyError out of node.lc.key (HTTP 500)."""
+        with pytest.raises(ConfigEditError, match="merge") as e:
+            removed(MERGED, field("B", "stamp"))
+        assert "where it is defined" in str(e.value)
+
+    def test_an_own_key_beside_a_merge_still_goes(self):
+        after, _ = removed(MERGED, field("B", "mine"))
+        assert "mine" not in meaning(after)["object_types"]["B"]["fields"]
+
+    def test_a_binding_that_arrives_through_a_merge_is_refused_too(self):
+        bindings = ("object_types:\n  Account:\n    storage: {t: 1}\n    fields:\n      <<: &s\n"
+                    "        currency: {column: c}\n      balance: {column: b}\n"
+                    "  Tag:\n    storage: {t: 2}\n    fields:\n      <<: *s\n      label: {column: m}\n")
+        with pytest.raises(ConfigEditError, match="source_bindings.yaml.*merge|merge.*source_bindings.yaml"):
+            removed(TEXT, field("Account", "currency"), bindings)
+
+    def test_the_only_key_of_the_root_is_refused_not_an_index_error(self):
+        """Reproduced: IndexError when the chain of only-children reaches the root."""
+        only = "A:\n  fields:\n    x:\n      column: c\n"
+        with pytest.raises(ConfigEditError, match="only"):
+            removed(TEXT, field("Account", "currency"), only.replace("A:", "Account:").replace("x:", "currency:"))

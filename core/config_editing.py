@@ -759,9 +759,9 @@ def apply_status(text: str, change: dict, check) -> str:
 # ---------------------------------------------------------------------------
 # REMOVING (the removal design, agreed 28 October): the last of the three
 # steps, deprecate -> wait -> remove. A stored field or a link type is
-# DELETED from the file, with the comment lines directly above it that
-# describe it, and its binding in source_bindings.yaml when the deployment
-# keeps one -- a binding for a field the ontology no longer declares is a
+# DELETED from the file (its own lines; a comment above it stays), and its
+# binding in source_bindings.yaml when the deployment keeps one -- a binding
+# for a field the ontology no longer declares is a
 # load error (merge_bindings), so the two files change together or not at
 # all. Nothing else is touched: whether it is deprecated, whether anything
 # still names it and what becomes of stored data are the caller's to judge
@@ -780,23 +780,43 @@ REMOVAL_KEYS = ("kind", "object_type", "field", "link")
 
 
 def _delete_entry(text: str, path: list[str], filename: str, where: str, drop_empty_parent: bool) -> str:
-    """`text` without the entry at `path`: its lines, the comment lines
-    directly above it at its own depth, and -- when `drop_empty_parent` and
-    it was the only child -- the parent's line too."""
+    """`text` without the entry at `path`: its own lines and -- when
+    `drop_empty_parent` and it was the only child -- the parent's line too.
+    NEVER A COMMENT LINE (owner decision, fix round): one above the entry
+    may be a section header or a neighbour's commented-out copy, and a
+    comment is the one thing this cannot tell whose it is."""
+    if not path:
+        raise ConfigEditError(f"{where} is the only thing in {filename}, and cannot be taken out "
+                              f"without leaving it empty.")
     lines = text.splitlines(keepends=True)
     if lines and not lines[-1].endswith("\n"):
         lines[-1] += "\n"
     node = _yaml().load(text) or CommentedMap()
     chain = [node]
+
+    def own(parent, key) -> bool:
+        # A key a `<<: *anchor` merge brings in is IN the mapping but has
+        # no line of its own here; its position is where it was defined.
+        return key in parent.lc.data
+
+    def through_a_merge() -> ConfigEditError:
+        return ConfigEditError(
+            f"{where} comes in through a `<<:` merge in {filename}, not as a line of its own, and must be "
+            f"removed where it is defined.")
+
     for part in path[:-1]:
         child = node.get(part) if isinstance(node, CommentedMap) else None
         if not isinstance(child, CommentedMap):
             raise ConfigEditError(f"{where} is not in {filename}.")
+        if not own(node, part):
+            raise through_a_merge()
         node = child
         chain.append(node)
     leaf = path[-1]
     if leaf not in node:
         raise ConfigEditError(f"{where} is not in {filename}.")
+    if not own(node, leaf):
+        raise through_a_merge()
     if any(parent.fa.flow_style() for parent in chain):
         raise ConfigEditError(
             f"{where} is written inside a {{...}} on one line, and cannot be taken out without rewriting "
@@ -808,9 +828,6 @@ def _delete_entry(text: str, path: list[str], filename: str, where: str, drop_em
         return _delete_entry(text, path[:-1], filename, where, drop_empty_parent=True)
     first = node.lc.key(leaf)[0]
     last = _last_line(lines, first)
-    indent = _indent_of(lines[first])
-    while first > 0 and lines[first - 1].strip().startswith("#") and _indent_of(lines[first - 1]) == indent:
-        first -= 1
     del lines[first:last + 1]
     return "".join(lines)
 
