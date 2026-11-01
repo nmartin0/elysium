@@ -3841,8 +3841,8 @@ CONTROLS = [
     Control(
         describes="CONFIG-EDIT: a failed reload puts the old file back",
         path="api/routes.py",
-        old="            staged.write_text(files[filename][0])\n            os.replace(staged, path)\n",
-        new="",
+        old="    except Exception as e:\n        failed = put_back(written)\n",
+        new="    except Exception as e:\n        failed = []\n",
         tests=["tests/integration/test_editing_config_from_the_ui.py::test_a_reload_that_fails_puts_the_old_file_back"],
     ),
     Control(
@@ -7688,8 +7688,8 @@ CONTROLS = [
     Control(
         describes="a field written over several lines is removed whole",
         path="core/config_editing.py",
-        old='    last = _last_line(lines, first)\n    indent = _indent_of(lines[first])',
-        new='    last = first\n    indent = _indent_of(lines[first])',
+        old='    last = _last_line(lines, first)\n    del lines[first:last + 1]',
+        new='    last = first\n    del lines[first:last + 1]',
         tests=[f"{E}::test_a_field_written_over_several_lines_goes_whole_with_its_inline_comment"],
     ),
     Control(
