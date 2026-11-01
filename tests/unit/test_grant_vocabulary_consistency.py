@@ -38,6 +38,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # explicitly so adding one is a decision rather than a silent
 # widening of the probe.
 NOT_GRANTS = {
+    "link",  # used_by.py's Referrer.subjects name: f"link:{name}" is a link type, not a grant
     "note",  # api/routes.py's note cache key: f"note:{type}:{id}"
     "classification",  # data_contracts.py's ODCS tag: f"classification:{label}" (R16)
     "urn",  # data_contracts.py's contract id: f"urn:{namespace}:contract:{type}" (R16)

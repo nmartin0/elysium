@@ -455,6 +455,11 @@ layers = [
     # beside it for the same reason: it reads the parsers of rules,
     # derived, enriched, predicted and unusual declarations, and nothing
     # reads it back.
+    #
+    # What blocks a removal (29 October) sits above both: it composes the
+    # "used by" report with the write log's pending writes, and nothing
+    # reads it back but the route.
+    "removal",
     "who_can_see | used_by",
     "write_mediator",
     "mediator",

@@ -757,6 +757,140 @@ def apply_status(text: str, change: dict, check) -> str:
 
 
 # ---------------------------------------------------------------------------
+# REMOVING (the removal design, agreed 28 October): the last of the three
+# steps, deprecate -> wait -> remove. A stored field or a link type is
+# DELETED from the file, with the comment lines directly above it that
+# describe it, and its binding in source_bindings.yaml when the deployment
+# keeps one -- a binding for a field the ontology no longer declares is a
+# load error (merge_bindings), so the two files change together or not at
+# all. Nothing else is touched: whether it is deprecated, whether anything
+# still names it and what becomes of stored data are the caller's to judge
+# (core/ontology/removal.py); this judges only that the edit is exact.
+#
+# LINES AGAIN, AND ONE REFUSAL. A block-style entry is a run of lines and
+# goes as one, even when its own body is written {...} on one line. An
+# entry INSIDE a {...} mapping is not a line of its own, so it is refused
+# with a message, as deprecating is. A parent left with nothing in it is
+# refused for `fields:` (a type with no fields is not the same type) and
+# taken out with its last child for `link_types:` and a binding's `fields:`.
+# ---------------------------------------------------------------------------
+
+REMOVAL_KINDS = ("field", "link")
+REMOVAL_KEYS = ("kind", "object_type", "field", "link")
+
+
+def _delete_entry(text: str, path: list[str], filename: str, where: str, drop_empty_parent: bool) -> str:
+    """`text` without the entry at `path`: its lines, the comment lines
+    directly above it at its own depth, and -- when `drop_empty_parent` and
+    it was the only child -- the parent's line too."""
+    lines = text.splitlines(keepends=True)
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+    node = _yaml().load(text) or CommentedMap()
+    chain = [node]
+    for part in path[:-1]:
+        child = node.get(part) if isinstance(node, CommentedMap) else None
+        if not isinstance(child, CommentedMap):
+            raise ConfigEditError(f"{where} is not in {filename}.")
+        node = child
+        chain.append(node)
+    leaf = path[-1]
+    if leaf not in node:
+        raise ConfigEditError(f"{where} is not in {filename}.")
+    if any(parent.fa.flow_style() for parent in chain):
+        raise ConfigEditError(
+            f"{where} is written inside a {{...}} on one line, and cannot be taken out without rewriting "
+            f"it to span several lines first.")
+    if len(node) == 1:
+        if not drop_empty_parent:
+            raise ConfigEditError(f"{where} is the only entry under `{path[-2]}:`, and cannot be taken out "
+                                  f"without leaving it empty.")
+        return _delete_entry(text, path[:-1], filename, where, drop_empty_parent=True)
+    first = node.lc.key(leaf)[0]
+    last = _last_line(lines, first)
+    indent = _indent_of(lines[first])
+    while first > 0 and lines[first - 1].strip().startswith("#") and _indent_of(lines[first - 1]) == indent:
+        first -= 1
+    del lines[first:last + 1]
+    return "".join(lines)
+
+
+def apply_removal(ontology: str, bindings: "str | None", change: dict) -> tuple[str, "str | None"]:
+    """(ontology_schema.yaml, source_bindings.yaml) with one stored field
+    or one link type taken out. `change` is {kind: field, object_type,
+    field} or {kind: link, link}. `bindings` None means the deployment
+    keeps its bindings in the ontology file, and the field's own block
+    carries its column.
+
+    Refuses a name that is not written in the file (a field a link made
+    goes with its link type), a field that is the type's identifier, an
+    entry written inside a {...}, and any result that does not mean
+    exactly the old files without it."""
+    import yaml as plain_yaml
+
+    if not isinstance(change, dict):
+        raise ConfigEditError("Nothing to remove.")
+    unknown = sorted(set(change) - set(REMOVAL_KEYS))
+    if unknown:
+        raise ConfigEditError(f"{', '.join(unknown)} cannot be set here.")
+    kind = change.get("kind")
+    if kind not in REMOVAL_KINDS:
+        raise ConfigEditError(f"What is removed is one of {', '.join(REMOVAL_KINDS)}. A type is not removed here.")
+    expected = plain_yaml.safe_load(ontology) or {}
+    types = expected.get("object_types") if isinstance(expected, dict) else None
+    if not isinstance(types, dict):
+        raise ConfigEditError(f"{ONTOLOGY_FILE} declares no object_types.")
+    expected_bindings = (plain_yaml.safe_load(bindings) or {}) if bindings is not None else None
+
+    if kind == "link":
+        link = change.get("link")
+        links = expected.get("link_types")
+        if not isinstance(links, dict) or not isinstance(link, str) or not isinstance(links.get(link), dict):
+            raise ConfigEditError(f"There is no link type {link!r}.")
+        if change.get("object_type") is not None or change.get("field") is not None:
+            raise ConfigEditError("A link type is named by `link` alone.")
+        edited = _delete_entry(ontology, ["link_types", link], ONTOLOGY_FILE, link, drop_empty_parent=True)
+        del links[link]
+        if not links:
+            del expected["link_types"]
+        return _meaning_checked(edited, expected), bindings
+
+    object_type, field_name = change.get("object_type"), change.get("field")
+    type_def = types.get(object_type) if isinstance(object_type, str) else None
+    if not isinstance(type_def, dict):
+        raise ConfigEditError(f"There is no object type {object_type!r}.")
+    fields = type_def.get("fields") or {}
+    where = f"{object_type}.{field_name}"
+    if not isinstance(field_name, str) or not isinstance(fields.get(field_name), dict):
+        raise ConfigEditError(
+            f"{object_type} has no field {field_name!r} written in {ONTOLOGY_FILE}. A field that a link "
+            f"made is removed by removing the link type.")
+    if fields[field_name].get("type") == "link":
+        raise ConfigEditError(f"{where} is a link. Remove the link type instead.")
+    if field_name == type_def.get("id_field"):
+        raise ConfigEditError(f"{where} is the type's identifier, and cannot be removed.")
+    if change.get("link") is not None:
+        raise ConfigEditError("A field is named by `object_type` and `field`.")
+    edited = _delete_entry(ontology, ["object_types", str(object_type), "fields", field_name], ONTOLOGY_FILE,
+                           where, drop_empty_parent=False)
+    del fields[field_name]
+    edited = _meaning_checked(edited, expected)
+    if expected_bindings is None:
+        return edited, None
+
+    bound = ((expected_bindings.get("object_types") or expected_bindings).get(object_type) or {})
+    if field_name not in (bound.get("fields") or {}):
+        return edited, bindings
+    root = ["object_types"] if "object_types" in expected_bindings else []
+    edited_bindings = _delete_entry(bindings or "", [*root, str(object_type), "fields", field_name],
+                                    BINDINGS_FILE, where, drop_empty_parent=True)
+    del bound["fields"][field_name]
+    if not bound["fields"]:
+        del bound["fields"]
+    return edited, _meaning_checked(edited_bindings, expected_bindings, BINDINGS_FILE)
+
+
+# ---------------------------------------------------------------------------
 # NEW FIELDS (the ontology's shape, designed and agreed 26 October): the
 # first of three operations -- add a field, add a type, add a link. A
 # request is a list of OPERATIONS, never free YAML: this renders the

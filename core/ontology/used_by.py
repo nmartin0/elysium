@@ -40,7 +40,7 @@ the loader would trip over and this report missed fails that test.
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from core.ontology.derived_fields import derived_fields
 from core.ontology.enriched_fields import enriched_fields
@@ -59,6 +59,14 @@ class Referrer:
     kind: str   # grant, action, link, security, identifier, rule, dependency, derived, enriched, ...
     place: str  # where it is written, in the words a screen would use
     says: str   # what it does with the name
+    #: THE TYPES, FIELDS AND LINK TYPES THIS ROW NAMES besides the thing
+    #: asked about -- "Customer", "Customer.email", "link:CustomerTags" --
+    #: so a screen can show a row only to someone who may discover every
+    #: one of them (removal.visible_to). Not part of what a screen
+    #: receives. A row that names a name here and does not list it leaks
+    #: it; test_used_by_subjects.py reads every row of the fixture
+    #: configuration for names it did not list.
+    subjects: "tuple[str, ...]" = ()
 
     def as_dict(self) -> dict:
         return {"kind": self.kind, "place": self.place, "says": self.says}
@@ -73,10 +81,11 @@ def used_by_type(schema: Mapping, roles: Mapping, action_types: Mapping, trigger
     found += _security_chains(schema, lambda owner, _field: owner == object_type, exclude=object_type)
     found += _actions(action_types, schema, object_type, None)
     found += _triggers(triggers, object_type, None)
-    found += [Referrer("replacement", f"type {name}", f"is deprecated and names {object_type} as its replacement")
+    found += [Referrer("replacement", f"type {name}", f"is deprecated and names {object_type} as its replacement",
+                       (name,))
               for name, definition in sorted(schema.items())
               if name != object_type and _replaced_by(definition) == object_type]
-    return _ordered(found)
+    return _ordered(found, object_type)
 
 
 def used_by_field(schema: Mapping, roles: Mapping, action_types: Mapping, triggers,
@@ -98,7 +107,7 @@ def used_by_field(schema: Mapping, roles: Mapping, action_types: Mapping, trigge
     if declared.get("type") == "link":
         found.append(Referrer("link", f"link {declared.get('link_type')}",
                               f"{object_type}.{field} is one end of it; removing the link removes both ends"))
-    return _ordered(found)
+    return _ordered(found, f"{object_type}.{field}")
 
 
 def used_by_link(schema: Mapping, roles: Mapping, action_types: Mapping, triggers,
@@ -112,10 +121,12 @@ def used_by_link(schema: Mapping, roles: Mapping, action_types: Mapping, trigger
         for item in (definition.get("fields") or {}).values()
         if item.get("type") == "link" and item.get("link_type") != link_type
         and _replaced_by(item) == link_type}
-    found += [Referrer("replacement", f"link {name}", f"is deprecated and names {link_type} as its replacement")
+    found += [Referrer("replacement", f"link {name}", f"is deprecated and names {link_type} as its replacement",
+                       (f"link:{name}",))
               for name in sorted(named_as_replacement)]
     # Both ends were listed with "one end of it"; say that once, not twice.
-    return _ordered([item for item in found if item.kind != "link"])
+    return _ordered([item for item in found if item.kind != "link"],
+                    *(f"{owner}.{name}" for owner, name in _link_ends(schema, link_type)))
 
 
 def _replaced_by(definition: Mapping) -> "str | None":
@@ -123,8 +134,18 @@ def _replaced_by(definition: Mapping) -> "str | None":
     return (definition.get("deprecation") or {}).get("replaced_by")
 
 
-def _ordered(found: list[Referrer]) -> list[Referrer]:
-    unique = {(item.kind, item.place, item.says): item for item in found}
+def _subject_of(grant: str) -> str:
+    """"Customer.email" or "Customer" from `read:Customer.email`."""
+    return grant.partition(":")[2]
+
+
+def _ordered(found: list[Referrer], *asked_about: str) -> list[Referrer]:
+    """The rows once each, in order, with the names ASKED ABOUT taken out of
+    every row's subjects: the person asking has named them already, and a
+    row that names only them must not depend on whether they may discover
+    them (a manager reads every name in the declaration)."""
+    unique = {(item.kind, item.place, item.says): replace(
+        item, subjects=tuple(name for name in item.subjects if name not in asked_about)) for item in found}
     return [unique[key] for key in sorted(unique)]
 
 
@@ -152,7 +173,8 @@ def _grants(roles: Mapping, matches, whole_type: bool = False) -> list[Referrer]
             shown = ", ".join(named[:_GRANTS_SHOWN])
             more = f" and {len(named) - _GRANTS_SHOWN} more" if len(named) > _GRANTS_SHOWN else ""
             noun = "grant" if len(named) == 1 else "grants"
-            found.append(Referrer("grant", f"role {role}", f"has {len(named)} {noun} naming it: {shown}{more}"))
+            found.append(Referrer("grant", f"role {role}", f"has {len(named)} {noun} naming it: {shown}{more}",
+                                  tuple(sorted({_subject_of(grant) for grant in named}))))
     return found
 
 
@@ -165,7 +187,8 @@ def _links_of_type(schema: Mapping, object_type: str) -> list[Referrer]:
     found = []
     for name in sorted(names):
         ends = " and ".join(f"{owner}.{end}" for owner, end in sorted(_link_ends(schema, name)))
-        found.append(Referrer("link", f"link {name}", f"joins {ends}"))
+        found.append(Referrer("link", f"link {name}", f"joins {ends}",
+                              tuple(f"{owner}.{end}" for owner, end in sorted(_link_ends(schema, name)))))
     return found
 
 
@@ -203,7 +226,8 @@ def _security_chains(schema: Mapping, matches, exclude: str) -> list[Referrer]:
         for hop_type, hop_field in _rule_end(schema, owner)[1:]:
             if matches(hop_type, hop_field):
                 found.append(Referrer("security", f"{owner} row rule",
-                                      f"borrows its rule through {hop_type}.{hop_field}"))
+                                      f"borrows its rule through {hop_type}.{hop_field}",
+                                      (owner, f"{hop_type}.{hop_field}")))
                 break
     return found
 
@@ -213,8 +237,13 @@ def _inside_the_type(type_def: Mapping, object_type: str, field: str) -> list[Re
     found: list[Referrer] = []
     where = f"type {object_type}"
 
-    def add(kind: str, place: str, says: str) -> None:
-        found.append(Referrer(kind, f"{where}, {place}" if place else where, says))
+    def add(kind: str, place: str, says: str, *names: "str | None") -> None:
+        # `names`: the type's other fields the row mentions -- by its
+        # place, its words, or both -- so none is shown to someone who
+        # cannot discover it. The field asked about is not listed.
+        found.append(Referrer(kind, f"{where}, {place}" if place else where, says,
+                              tuple(sorted({f"{object_type}.{name}" for name in names
+                                            if name and name != field}))))
 
     if type_def.get("id_field") == field:
         add("identifier", "", "uses it as its identifier")
@@ -229,26 +258,29 @@ def _inside_the_type(type_def: Mapping, object_type: str, field: str) -> list[Re
                                          else f"borrows its rule from the type this links to{source}"))
     for rule in rules_for(type_def):
         if field in (rule.field, rule.other):
-            add("rule", f"rule {rule.name}", f"checks {rule.describe()}")
+            add("rule", f"rule {rule.name}", f"checks {rule.describe()}", rule.field, rule.other)
     for dependency in dependencies_for(type_def):
         if field == dependency.dependent or field in dependency.determinant:
-            add("dependency", f"dependency {dependency.name}", dependency.describe())
+            add("dependency", f"dependency {dependency.name}", dependency.describe(),
+                dependency.dependent, *dependency.determinant)
     for name, derivation in derived_fields(type_def).items():
         if field in derivation.inputs:
-            add("derived", f"field {name}", f"is calculated from it: {derivation.describe()}")
+            add("derived", f"field {name}", f"is calculated from it: {derivation.describe()}",
+                name, *derivation.inputs)
     for name, enrichment in enriched_fields(type_def).items():
         if field in enrichment.inputs:
-            add("enriched", f"field {name}", f"is {enrichment.describe()}")
+            add("enriched", f"field {name}", f"is {enrichment.describe()}", name, *enrichment.inputs)
     for name, prediction in predicted_fields(type_def).items():
         if field == prediction.target or field in prediction.inputs:
             add("predicted", f"field {name}", prediction.describe()
-                if field in prediction.inputs else f"predicts {prediction.target}")
+                if field in prediction.inputs else f"predicts {prediction.target}",
+                name, prediction.target, *prediction.inputs)
     unusual = unusual_of(type_def)
     if unusual and (field in unusual[0] or field in unusual[1]):
-        add("unusual", "unusual-records check", "reads it")
+        add("unusual", "unusual-records check", "reads it", *unusual[0], *unusual[1])
     for name, other in (type_def.get("fields") or {}).items():
         if name != field and _replaced_by(other) == field:
-            add("replacement", f"field {name}", "is deprecated and names it as its replacement")
+            add("replacement", f"field {name}", "is deprecated and names it as its replacement", name)
     return found
 
 

@@ -1,0 +1,144 @@
+"""Removing a field or a link type: what blocks it, and what it leaves behind
+(29 October, owner-agreed design; BLOCKING.md, "Editing the ontology's shape").
+
+THE SEQUENCE IS ALWAYS deprecate -> wait -> remove. Only a name that is
+already deprecated can be removed, and removal is refused while anything
+still names it. "Names it" is core/ontology/used_by.py's answer, the same
+list Schema shows under "Used by" -- one source, so the screen that says
+what names a thing and the rule that refuses to remove it cannot disagree.
+This adds the one thing that report does not read, because it is not in
+the configuration: PENDING WRITES. A write proposed against a field and not
+yet decided can only be applied to a field that exists, so removing the
+field would leave it in the queue forever (core/mirror/drift_policy.py makes
+the same distinction for a column the source dropped, after Foundry: an
+applied edit is history, a pending one is an obligation). When there is no
+write log to ask, the answer is "cannot tell", which refuses -- the drift
+policy's rule too: a check that did not happen must not look like a check
+that passed.
+
+REMOVING DELETES THE FIELD (OR LINK TYPE) FROM THE ONTOLOGY AND NOTHING
+ELSE. No data is touched. What the pipeline then does with the data it
+already holds was measured, not assumed, by syncing a copy of the fixture
+configuration before and after removing a field (tests/integration/
+test_removal_from_the_ui.py::TestWhatHappensToStoredData runs it again on
+every test run, so the words below cannot drift from the code):
+
+  SOURCE   never written to; Elysium only reads it.
+  BRONZE   still holds the raw column. With `ingest_undeclared_columns:
+           false` the next sync empties it in bronze's current copy; any
+           other setting keeps the values as an undeclared column.
+  SILVER   keeps the column in its table, every value empty from the next
+           sync (Iceberg widens a schema, never narrows it). Earlier
+           snapshots still hold the old values until they expire. A
+           silver rebuild (`--rebuild silo.table`) drops the column.
+  GOLD     rebuilt without the column at the next sync, which restarts the
+           type's publication tags (gold.py, _columns_changed).
+  READS    use the declared fields only, so nothing serves the column from
+           the moment the configuration reloads, before any sync.
+
+A FOREIGN-KEY LINK's stored column (on the type that holds the key) goes
+the same way as a field; a MANY-TO-MANY LINK's join table stops being
+synced and its bronze, silver and gold tables stay where they were,
+no longer refreshed.
+
+Nothing here refuses because of the pipeline: removing a declared field
+does not break a sync or a rebuild (both measured). What would break one is
+a name something still depends on, and that is what the blockers are.
+"""
+
+from collections.abc import Callable, Mapping
+
+from core.ontology.used_by import Referrer, used_by_field, used_by_link
+
+PENDING_WRITE = "pending write"
+
+
+def link_ends(schema: Mapping, link_type: str) -> list[tuple[str, str]]:
+    """[(type, field)] for the one or two fields a link type made."""
+    return [(owner, name)
+            for owner, type_def in schema.items()
+            for name, field in (type_def.get("fields") or {}).items()
+            if field.get("type") == "link" and field.get("link_type") == link_type]
+
+
+def field_blockers(schema: Mapping, roles: Mapping, action_types: Mapping, triggers, write_log,
+                   object_type: str, field: str) -> list[Referrer]:
+    """Everything that stops one stored field being removed."""
+    found = used_by_field(schema, roles, action_types, triggers, object_type, field)
+    return [*found, *_pending_writes(write_log, [(object_type, field)])]
+
+
+def link_blockers(schema: Mapping, roles: Mapping, action_types: Mapping, triggers, write_log,
+                  link_type: str) -> list[Referrer]:
+    """Everything that stops one link type being removed."""
+    found = used_by_link(schema, roles, action_types, triggers, link_type)
+    return [*found, *_pending_writes(write_log, link_ends(schema, link_type))]
+
+
+def _pending_writes(write_log, fields: "list[tuple[str, str]]") -> list[Referrer]:
+    if write_log is None:
+        return [Referrer(PENDING_WRITE, "write log",
+                         "cannot be asked, so whether a write is waiting on it cannot be told")]
+    found = []
+    for object_type, field in fields:
+        waiting = write_log.edits_touching_field(object_type, field).get("pending", 0)
+        if waiting:
+            found.append(Referrer(
+                PENDING_WRITE, f"{object_type}.{field}",
+                f"{waiting} proposed write(s) are waiting to set it, and could never be applied once it "
+                f"is gone: decide them first"))
+    return found
+
+
+def applied_writes(write_log, fields: "list[tuple[str, str]]") -> int:
+    """How many applied edits set these fields: history that stays in the
+    write log when they go. 0 when there is no log to ask."""
+    if write_log is None:
+        return 0
+    return sum(write_log.edits_touching_field(object_type, field).get("applied", 0)
+               for object_type, field in fields)
+
+
+def visible_to(blockers: list[Referrer], knows: Callable[[str], bool]) -> "tuple[list[Referrer], int]":
+    """(the blockers this person may be shown, how many they may not).
+
+    A row is shown only when every name it carries (Referrer.subjects) is
+    one the person could find in Schema. The rest are counted, never
+    described: that something they cannot discover names this is a fact
+    about the thing they asked about, which they may know, and the count
+    stops the list reading as shorter than it is."""
+    shown = [item for item in blockers if all(knows(subject) for subject in item.subjects)]
+    return shown, len(blockers) - len(shown)
+
+
+_UNTOUCHED = "Nothing is deleted from your source: Elysium only reads it."
+_SILVER = ("Silver keeps the column in its table but empties it at the next sync; its earlier snapshots "
+           "still hold the old values until they expire. Rebuilding that table (run_sync --rebuild) drops "
+           "the column for good.")
+_BRONZE = ("Bronze still holds the raw column: with ingest_undeclared_columns set to false it is emptied at "
+           "the next sync, otherwise its values stay.")
+_GOLD = "Gold is rebuilt without the column at the next sync, which restarts that type's publication tags."
+
+
+def stored_data(kind: str, cardinality: "str | None", applied: int) -> list[str]:
+    """What removal leaves behind, one sentence each, for the confirmation
+    dialog. `kind` is "field" or "link"; `cardinality` the link's, so a
+    join table is described as one. Each sentence is pinned by a test that
+    syncs before and after (see the module docstring)."""
+    if kind == "link" and cardinality == "many_to_many":
+        notes = [_UNTOUCHED,
+                 "The join table stops being synced. Its bronze, silver and gold tables stay as they were "
+                 "and are no longer refreshed.",
+                 "Nothing serves the link from the moment this applies."]
+    elif kind == "link":
+        notes = [_UNTOUCHED,
+                 "The foreign key column is no longer a field of the type that holds it, so it goes the way "
+                 "a removed field's column does.",
+                 _SILVER, _BRONZE, _GOLD,
+                 "Nothing serves the link from the moment this applies."]
+    else:
+        notes = [_UNTOUCHED, _SILVER, _BRONZE, _GOLD,
+                 "Nothing serves the column from the moment this applies, before any sync runs."]
+    if applied:
+        notes.append(f"{applied} edit(s) already applied to it stay in the write log as history.")
+    return notes
