@@ -1,4 +1,4 @@
-import { isEmbedded } from '../app/embed.js';
+import { isEmbedded } from '../embedFlag.js';
 
 const ERROR_LOG_LIMIT = 30;
 

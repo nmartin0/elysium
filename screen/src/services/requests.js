@@ -1,4 +1,4 @@
-import { isEmbedded } from '../app/embed.js';
+import { isEmbedded } from '../embedFlag.js';
 import { isUnavailableCapability } from '../sources/capability.js';
 import { createOverpassFeatureSource } from '../sources/overpassFeatures.js';
 /** Parse bounded retry information from a service response. */

@@ -13,6 +13,7 @@
 
 import * as Cesium from 'cesium';
 import { announceNavigationAuthority } from '../navigationPolicy.js';
+import { isEmbedded, isEmbeddedInline } from '../embedFlag.js';
 import { annotationsFromParams, createView } from '../view/index.js';
 
 const EMBED_VIEW_MESSAGE = 'gev:view';
@@ -28,22 +29,7 @@ const FOLLOW_ATTEMPTS = 20;
 const FOLLOW_RETRY_MS = 1000;
 const FLIGHT_SECONDS = 2;
 
-/**
- * Whether this page shows the app embedded: `?embed=1` when another page
- * frames it, or inline when a panel page loads the app into itself and sets
- * `globalThis.GEV_EMBED_INLINE` first.
- */
-export function isEmbedded(location = globalThis.location) {
-  return (
-    isEmbeddedInline() ||
-    new URLSearchParams(location?.search || '').get('embed') === '1'
-  );
-}
-
-/** Whether a panel page loaded the app into itself. */
-export function isEmbeddedInline() {
-  return globalThis.GEV_EMBED_INLINE === true;
-}
+export { isEmbedded, isEmbeddedInline } from '../embedFlag.js';
 
 /**
  * `doc`'s visibility for work that pauses in a hidden page. A panel's host

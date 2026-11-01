@@ -24,11 +24,24 @@ below (file, what, why). A change that is not listed here is a bug.
 | `screen/src/services/requests.js` | `summary.configured()` resolves `false` in embed mode, without a request. | It probed `/api/openai/hud-summary/status`; `false` means the app never offers a summary and never calls `/api/openai/hud-summary`. |
 | `screen/src/layers/localAdsb/feeds.js` | The feed's `request()` throws "local receiver route unavailable" in embed mode, before any fetch. | It polled `/api/local-receivers/aircraft`. A missing route already leads to the same state (`configured: false`, not polling), so behaviour is the same without the request. |
 
-Embed mode is the existing flag `isEmbedded()` in `screen/src/app/embed.js`
-(`?embed=1`, or `globalThis.GEV_EMBED_INLINE`). None of the gates changes
-anything when the flag is off. `/api/google/nearby-places` is never called at
+Embed mode is the existing flag `isEmbedded()` (`?embed=1`, or
+`globalThis.GEV_EMBED_INLINE`, which the inline panel runtime sets and whose
+host answers `/api/*` itself, so the gates also apply there). It now lives in
+`screen/src/embedFlag.js`, a module with no imports, and `app/embed.js`
+re-exports it; the gated modules import the light module so that Cesium is not
+pulled into them (`app/embed.js` imports `cesium`). It sits outside the
+renderer directories because `services/requests.js` is a portable entry that
+`check-import-directions` keeps away from them. `screen/scripts/package-boundaries.json`
+lists `src/embedFlag.js` in six groups and `src/app/opaqueOrigin.js` in
+`application-components`. With the flag off, none of the gates changes anything. `/api/google/nearby-places` is never called at
 startup; it is only reached by a user action (the search and tools code), so it
 is not gated yet.
+
+Not gated, and not yet checked: any layer a view or share link switches on
+(flights, vessels, FIRMS, launches, cyclones, transit, earthquakes, weather
+and others) calls the app's own host `/api` when it loads; the embed-mode
+default layer set is not established. Replacing those routes is the data
+adapters' job.
 
 Note for whoever adds an adapter next: these gates stop the app calling its own
 host. The data adapters that replace its routes (R1) are a separate change.
@@ -63,9 +76,10 @@ without handling all four stops the app starting.
    resulting objects are passed to `src/ui/applicationShell.js` as
    `services.<role>` (destructured at lines 98-107) and then to cockpit,
    layer panels, voice and context code, which call methods on them without
-   null checks (for example `cockpitContext.js:30`,
-   `cockpitTrackingController.js:14,44,92`, `locationNavigation.js:176-188`
-   calls `trafficLayer.beginWorldJump` / `endWorldJump`).
+   null checks on the layer object itself (for example `cockpitContext.js:30`,
+   `cockpitTrackingController.js:14,44,92`; `locationNavigation.js:176-188`
+   calls `trafficLayer.beginWorldJump?.()` / `endWorldJump?.()`, optional
+   method calls on an object that is not itself checked).
 2. `src/app/sourceComposition.js:8-45` `CATALOG_SOURCE_CONTRACTS` lists the
    layer ids each source feeds; `createAvailabilityLookup` (line 99) throws
    `Missing source consumer: <id>` if a listed id is not registered. Entries
@@ -107,7 +121,7 @@ a follow target).
   `scripts/military-names-*`, `server/providers/aircraft/`, `/api/military`
   calls at `src/sources/live/standalone.js:133,143` and
   `src/tools/services.js:55`.
-- Hard-required: yes, checks 1, 2 and 3 above (`catalog.js:5`,
+- Hard-required: yes, checks 1, 2 and 3 above (`catalog.js:4`,
   `sourceComposition.js:15`, `layerState.js:626`, `constructCatalog.js:91-96`).
   Stub, do not delete.
 - What else depends on it:
@@ -136,7 +150,7 @@ a follow target).
   `src/data/installationFeedback.js`, `server/providers/military-installations*`,
   `/api/military-installations` at `src/layers/installations/source.js:215`
   and `/api/google/text-search` at line 261, `scripts/qa-installation-*.mjs`.
-- Hard-required: yes, checks 1, 2 and 3 (`catalog.js:12`,
+- Hard-required: yes, checks 1, 2 and 3 (`catalog.js:13`,
   `sourceComposition.js:33-36`, `layerState.js:637`,
   `constructCatalog.js:101-104,153`). Stub.
 - Imported by: `src/standalone/layerSources.js:14,49`,
