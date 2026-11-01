@@ -368,12 +368,26 @@ replaced or switched off in one place.
 
 ## Open questions
 
-1. **Which basemap**: Esri's keyless imagery is not clearly permitted
-   and may not be stored; a properly licensed one is being researched.
-2. **Whether their screen runs in a sandboxed frame** without large
-   changes: settled by the Phase 1 spike (R1).
+1. **Which basemap** (researched 1 November; owner to choose). Fully
+   open and commercial-safe: Natural Earth at low zoom, ESA WorldCover
+   2021 Sentinel-2 imagery (CC BY 4.0, 10 m, no tile service, so we tile
+   and host it), Mapterhorn terrain self-hosted (Terrarium tiles need
+   cesium-martini or a custom height provider). Quick but non-commercial:
+   EOxCloudless 2018+ free WMTS (CC BY-NC-SA) with hosted Mapterhorn.
+   EOxCloudless 2016 is CC BY and usable commercially, but dated, and the
+   2017 post says CC BY-SA for the raw tiles (conflict). A paid EOX
+   licence is 6,000 EUR per year's mosaic and forbids redistribution.
+   Vector styles (OpenFreeMap, Protomaps) are not native to Cesium and
+   would be rasterised server-side. Could not verify: Mapterhorn fair
+   use, GIBS resolutions, Copernicus licence wording on commercial use.
 
-Settled: where the screen's data layer runs (R1); patches for this
+Settled: whether their screen runs in a sandboxed frame (yes, with
+two changes: the asset host sends `Access-Control-Allow-Origin: *`,
+and a small startup shim makes Cesium load same-host images with
+`crossOrigin`; the frame's content policy needs `wasm-unsafe-eval`,
+not `unsafe-eval`; storage fails but the app absorbs it; a `srcdoc`
+frame does not work; builds on Node 22; dist is 46 MB, see R1 and R8);
+where the screen's data layer runs (R1); patches for this
 branch (R9); which feeds, and what each drops at the door
 (`docs/feeds.md`, owner's choices of 1 November).
 
