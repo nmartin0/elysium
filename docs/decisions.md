@@ -167,7 +167,8 @@ the add-on launch contract, identity for add-on servers, the proxy, and add-on
 Inbox, timers and jobs. Allowed now: a draft manifest
 (`integrations/elysium/module.json`) and, optionally, publishing low-rate
 records (signals, simulated fills, daily equity) to a separate SQLite file
-that Elysium reads as a silo by configuration alone. How Heliograph's screens
+that Elysium reads as a silo by configuration alone. (Superseded in part by D50: the
+add-on contract exists and is built.) How Heliograph's screens
 appear inside Elysium (a React module over our API, NiceGUI in an iframe, or
 data only) is decided at the start of Phase 3. See
 [research/elysium.md](research/elysium.md).
@@ -1153,3 +1154,31 @@ most.
 **Rejected:** a spec for every change (overhead where the diff is one sentence); a reviewer
 for everything (it always finds something, and chasing it over-engineers); generating
 context files automatically (the study found them costlier and slightly worse).
+
+## D50 · Heliograph runs as an Elysium add-on, read-only first (2026-11-01)
+
+**Decision:** `heliograph serve` is an add-on server of Elysium (its step 2 contract, checked
+against Elysium `dev` at `348414e0`). Elysium starts it from `integrations/elysium` with
+`heliograph serve`, a port in `PORT` and a start file in `ELYSIUM_ADDON_START`; the presence of
+that variable is add-on mode, and without it nothing changes. In add-on mode every request but
+`GET /api/health` must carry a good `X-Elysium-Identity` token (HS256, this run's secret, issuer
+`elysium`, audience `heliograph`), the module's declared permission `use` reads and `operate`
+changes anything, the engine listens on loopback only, and it stops when its standard input
+closes. A backtest that ends drops one notice in Elysium's outbox, named by the run's id so a
+repeat is a no-op. The page is one hand-written ES module (no Node tooling) over the shared
+libraries Elysium's import map offers. Supersedes D20's "not until Elysium defines it", which it
+now has. The owner settled the shape of the rest on 2026-11-01: a signal is an Elysium object
+made by Heliograph as a source, "took it" and "skipped" are Elysium actions on it, paper
+accounts and positions are Elysium objects, the journals and the equity history stay here, and
+Elysium governs access to market data while the bars stay in Parquet.
+What that still needs from Elysium is in
+[research/elysium-slice1.md](research/elysium-slice1.md).
+
+**Why:** the owner's decision to make Heliograph part of Elysium; the contract is now built and
+the cheapest slice that proves it end to end is the read-only one.
+
+**Rejected:** copying Elysium's SDK file (written from its contract instead, and checked
+against tokens Elysium itself signs); trusting loopback alone (any program on the machine could
+then claim to be anyone); a JSX bundle with its own build (a Node toolchain for one page);
+honouring `PORT` outside add-on mode (a stray variable would change a standalone engine).
+

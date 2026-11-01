@@ -343,3 +343,15 @@ within each section.
   code is right.
 - TradingView's `lookahead_on` without a `[1]` offset leaks the future on
   historical bars only, so history and live disagree.
+
+## Elysium integration
+
+- `.gitignore` ignored `dist/`, and Elysium serves a module's bundle from its `dist/`
+  directory, so the hand-written page was invisible to `git add` until the folder was
+  un-ignored. Check that a new deliverable is not ignored with `git check-ignore -v`.
+- A page handed a new function on every render (Elysium's host values may be) loops forever
+  if an effect lists that function as a dependency. Found by rendering the page against
+  stubs; the page reads the latest handler through a ref instead.
+- An Elysium token made at the real time is expired for a test clock set elsewhere; the
+  guard's tests make tokens at the simulated clock's time.
+

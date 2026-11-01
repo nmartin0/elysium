@@ -387,7 +387,7 @@ engine runs in its own supervisable process (D18), `heliograph serve`,
 whose API app/server.py lists (D37); a run's chart series come from its
 journal (D38). The window (`heliograph gui`, D39) imports nothing else of
 Heliograph and learns what exists by asking the engine. Times cross the API as
-ISO 8601 strings (D19). Elysium may host these screens later (D20,
+ISO 8601 strings (D19). Elysium hosts the first of them as an add-on (D50, D20,
 [research/elysium.md](research/elysium.md)). Chart zoom and crosshair stay client-side.
 The view is a function of state; changes go through actions (Jane Street's
 Bonsai idea).
@@ -406,8 +406,8 @@ Libraries per view are in [licensing.md](licensing.md).
 
 ## Open questions
 
-- How Heliograph's screens appear inside Elysium, if they do: a React module
-  over our API, NiceGUI in an iframe, or data only (D20). Decide at Phase 3.
+- How the rest of Heliograph's screens appear inside Elysium: the first is a hand-written
+  React module over our API (D50); charts, the Wizard and the Tester are not moved yet.
 - Series indexing style in the SDK (`latest`/`previous` versus an index).
 - Whether Point72's ccflow suits Wizard-composed configuration.
 

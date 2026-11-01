@@ -1,9 +1,14 @@
 # Heliograph and Elysium's module system
 
-Heliograph can become an add-on module of Elysium, the owner's other project,
-but the parts it would need (add-on servers, identity, a proxy) are not built
-yet. Heliograph stays standalone, keeps every screen behind its own JSON API,
-and integrates when Elysium's module API settles (decision D20).
+Heliograph can become an add-on module of Elysium, the owner's other project.
+When this page was written the parts it needs (add-on servers, identity, a
+proxy) were not built; by 2026-11-01 they are (Elysium `348414e0`), and the
+first slice runs: Heliograph is a read-only add-on (decision D50, and
+[elysium-slice1.md](elysium-slice1.md), which also says what Elysium still
+lacks for signals as objects and took-it/skipped as actions). Heliograph stays
+usable standalone, with every screen behind its own JSON API (D20). The text
+below is the state of things on 2026-10-21 to 2026-10-22; the "Deferred" table
+is superseded for everything slice 1 built.
 
 Exchanged 2026-10-21: our request document "Generic platform features
 Heliograph needs from Elysium" (<https://claude.ai/artifact/1FUjSNjE7FnDCD9xHDkQWk>)

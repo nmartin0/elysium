@@ -194,8 +194,9 @@ hand-checked scenario (D4c), and the kit's broken sample plug-ins (D2).
       signals sent and refused, fills and equity, from its journal, with
       ISO times and milliseconds; a running backtest's progress. Streaming
       progress waits for live sessions (Phase 4).
-- Decide how the screens could appear inside Elysium (D20), once Elysium's
-  module bundles (its step 1.2) exist.
+- [x] Heliograph runs as an Elysium add-on, read-only (D50): module manifest, page and the
+  guarded, supervisable server. Objects and actions (signals, took-it/skipped, paper accounts)
+  wait for Elysium; see [research/elysium-slice1.md](research/elysium-slice1.md).
 
 - [x] The window (D39): `heliograph gui`, NiceGUI, a client of the API only;
       the Workspace screen with a Lightweight Charts element (candles, volume,
