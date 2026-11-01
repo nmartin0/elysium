@@ -2347,3 +2347,30 @@ objects or only a published SQLite read as a silo; is market data
 governed by Elysium or kept local. Heliograph today has no sign-in (its
 `serve` binds 127.0.0.1 with no authentication); behind the proxy it
 must verify `X-Elysium-Identity`.
+
+**DECIDED WITH THE OWNER (1 November), for Heliograph and Astrolabe.**
+(1) A signal is an Elysium object a source creates; "took it" and
+"skipped" are Elysium actions on it, so approval, audit and who decided
+belong to Elysium (Foundry's action log is the precedent: a submission is
+data, linked to what it edited, and only action edits are logged);
+Heliograph keeps its journal for replay. (2) Accounts, positions, signals
+and decisions are objects; the equity history is a time series that
+references the account (needs the observations feature) and until then
+Heliograph publishes low-rate current-state records, which today means a
+SQLite file the deployment declares as a silo. (3) Elysium governs ACCESS
+to market data (who may open a dataset, its licence terms as data, an
+audit of access) and does not hold the bars: exchange practice entitles
+and logs every user and treats an output the inputs can be rebuilt from as
+the input. (4) An add-on copies Elysium's `elysium_addon_checks.py` into
+its own tests, as that file's header says, with a provenance note.
+(5) `PORT` is honoured only in add-on mode.
+WHAT HELIOGRAPH'S FIRST SLICE FOUND ELYSIUM LACKS (it runs read-only as
+an add-on today): a manifest key for an ontology fragment (object, link
+and action types, namespaced by module id); a way to put objects in
+(idempotency key, retract); delivery of a confirmed action back to the
+add-on; `user.user_id` and the approver as a mutation value so
+`decided_by` can be stored; a single-step action for low-risk
+single-user actions (`auto_execute` exists but only the agent loop reads
+it, and it is refused when a mutation uses `parameter.*`); a module
+declaring a gated resource and asking whether a person may open it, the
+answer audited. Time series later.
