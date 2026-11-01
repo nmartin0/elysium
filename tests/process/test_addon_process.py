@@ -110,7 +110,7 @@ def test_it_stops_on_sigterm_with_status_0_as_elysium_stops_it(started: Engine) 
 def test_standalone_still_ignores_port_and_asks_for_no_token(tmp_path: Path) -> None:
     engine = Engine(
         "--data", str(tmp_path / "d"), "--port", "0",
-        env={"PORT": "1", "ELYSIUM_ADDON_START": ""},
+        env={"PORT": "1"},
         cwd=ROOT,
     ).started()  # fmt: skip
     try:

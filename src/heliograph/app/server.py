@@ -449,14 +449,16 @@ def make_app(settings: Settings, clock: Clock, backtests: Backtests) -> Starlett
     """
 
     async def health(request: Request) -> Response:
-        return JSONResponse(
-            {
-                "status": "ok",
-                "version": __version__,
-                "time": to_iso(clock.now()),
-                "running": backtests.running(),
-            }
-        )
+        body: dict[str, Any] = {
+            "status": "ok",
+            "version": __version__,
+            "time": to_iso(clock.now()),
+        }
+        if settings.addon is None:
+            # Under Elysium this answer is the one thing served without a
+            # token, so it names no run.
+            body["running"] = backtests.running()
+        return JSONResponse(body)
 
     def plugins_() -> Response:
         registry = Registry.installed(installed_kinds())

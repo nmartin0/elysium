@@ -125,6 +125,14 @@ def test_a_token_that_is_not_elysiums_for_this_add_on_now_is_refused(
         verify(candidate, start, now=NOW)
 
 
+def test_a_token_nested_deep_enough_to_exhaust_the_parser_is_refused_as_not_a_token(
+    start: AddonStart,
+) -> None:
+    deep = base64.urlsafe_b64encode(b"[" * 100_000).rstrip(b"=").decode()
+    with pytest.raises(NotSignedInError, match="not a token"):
+        verify(f"{deep}.{deep}.{deep}", start, now=NOW)
+
+
 def test_a_token_said_to_need_no_signature_is_refused(start: AddonStart) -> None:
     def part(value: object) -> str:
         return base64.urlsafe_b64encode(json.dumps(value).encode()).rstrip(b"=").decode()
@@ -150,6 +158,10 @@ def test_health_answers_without_a_token_so_the_supervisor_can_ask(
     tmp_path: Path, start: AddonStart
 ) -> None:
     assert ask(tmp_path, start, "/api/health").status_code == 200
+
+
+def test_the_open_health_answer_does_not_name_a_run(tmp_path: Path, start: AddonStart) -> None:
+    assert "running" not in ask(tmp_path, start, "/api/health").json()
 
 
 def test_everything_else_is_refused_without_a_token(tmp_path: Path, start: AddonStart) -> None:
@@ -209,7 +221,11 @@ def test_standalone_asks_for_no_token(tmp_path: Path) -> None:
 
 def test_no_start_variable_is_no_add_on_mode() -> None:
     assert AddonStart.from_environment({}) is None
-    assert AddonStart.from_environment({addon.START_VARIABLE: ""}) is None
+
+
+def test_a_start_variable_set_but_empty_stops_the_server_rather_than_leaving_it_open() -> None:
+    with pytest.raises(ConfigError, match="set but empty"):
+        AddonStart.from_environment({addon.START_VARIABLE: ""})
 
 
 def test_a_start_file_that_is_not_the_contract_is_said_so(tmp_path: Path) -> None:

@@ -130,7 +130,11 @@ route) rather than its `forward()`; Inbox delivery of a notice by a running Elys
 6. **Single-step execution for low-risk actions.** `POST /actions/...` then `/writes/{id}/
    confirm` is two calls and an Approvals item. For a single-user "took it", an action
    declared `confirmation: none` (audit still written, `origin: human`) would make it one
-   click; the audit trail is the reason Elysium owns it, so it must stay.
+   click; the audit trail is the reason Elysium owns it, so it must stay. Elysium already
+   has an `auto_execute` flag on action types (`core/ontology/action_types.py`), but only the
+   agent loop reads it; `POST /actions/{name}` for a person never does, so for people the
+   propose-then-confirm round trip holds. It is also refused at load when any mutation uses
+   `parameter.*`, which a Decision action would.
 7. **Dataset access as data.** A way for a module to declare a gated resource (a dataset id,
    licence terms as fields) and ask Elysium "may this person open it", with the answer
    audited. Needed for decision 3.

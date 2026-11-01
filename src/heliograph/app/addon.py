@@ -104,9 +104,13 @@ class AddonStart:
             ConfigError: if the file cannot be read, is not what the contract
                 describes, or is for another module.
         """
-        path = environ.get(START_VARIABLE)
-        if not path:
+        if START_VARIABLE not in environ:
             return None
+        path = environ[START_VARIABLE]
+        if not path:
+            # Set but empty is not "outside Elysium": a wrapper that lost the
+            # path must stop the server, not leave it open.
+            raise ConfigError(f"{START_VARIABLE} is set but empty")
         try:
             raw = json.loads(Path(path).read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
@@ -174,7 +178,7 @@ def verify(token: str, start: AddonStart, now: float) -> Identity:
         header = json.loads(_unbase64(header_part))
         claims = json.loads(_unbase64(body_part))
         signature = _unbase64(signature_part)
-    except (ValueError, TypeError, binascii.Error) as exc:
+    except (ValueError, TypeError, binascii.Error, RecursionError) as exc:
         raise NotSignedInError("not a token") from exc
     if not isinstance(header, dict) or header.get("alg") != "HS256":
         raise NotSignedInError("not signed with HS256")
