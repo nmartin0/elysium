@@ -1,0 +1,25 @@
+/* Every rule sits in the components layer: a rule outside every layer would beat
+   Blueprint's (Elysium's module API, "Styles"). Colour and space come from its tokens. */
+@layer components {
+  .heliograph-runs {
+    width: 100%;
+  }
+  .heliograph-run {
+    all: unset;
+    cursor: pointer;
+    font-family: var(--font-mono, monospace);
+    color: var(--text-primary, inherit);
+  }
+  .heliograph-run:focus-visible {
+    outline: 2px solid var(--focus-ring, currentColor);
+  }
+  .heliograph-report {
+    margin-top: var(--space-4, 16px);
+  }
+  .heliograph-report-text {
+    margin-top: var(--space-3, 12px);
+    overflow-x: auto;
+    font-family: var(--font-mono, monospace);
+    font-size: 12px;
+  }
+}

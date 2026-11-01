@@ -2,16 +2,27 @@
   "id": "heliograph",
   "name": "Heliograph",
   "version": "0.1.0",
-  "permission": "heliograph:use",
-  "entry": null,
+  "api": "^1.0",
+  "permission": "module:heliograph:use",
+  "permissions": [
+    {
+      "id": "use",
+      "description": "Open Heliograph and read its backtests, reports, charts, plug-ins and configurations"
+    },
+    {
+      "id": "operate",
+      "description": "Submit backtests to the engine and keep run configurations"
+    }
+  ],
   "contributes": {
-    "pages": [
-      { "id": "workspace", "path": "/heliograph" },
-      { "id": "signals", "path": "/heliograph/signals" },
-      { "id": "tester", "path": "/heliograph/tester" }
-    ],
-    "nav": [
-      { "title": "Heliograph", "path": "/heliograph", "subject": "Trading" }
-    ]
+    "pages": [{ "id": "workspace", "path": "/heliograph" }],
+    "nav": [{ "title": "Heliograph", "path": "/heliograph", "subject": "Trading" }]
+  },
+  "entry": "dist/index.js",
+  "styles": ["dist/index.css"],
+  "server": {
+    "command": ["heliograph", "serve"],
+    "health": "/api/health",
+    "stopSeconds": 15
   }
 }

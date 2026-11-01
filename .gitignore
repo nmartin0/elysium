@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 build/
 dist/
+# Heliograph's page for Elysium is written by hand, so it is kept.
+!/integrations/elysium/dist/
 *.egg-info/
 
 # Virtual environments

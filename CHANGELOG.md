@@ -270,6 +270,8 @@ All notable changes to Heliograph are recorded here. The format follows
   `use`, changing anything `operate`), listens on this computer only, leaves when Elysium's pipe
   closes, and drops an Inbox notice in Elysium's outbox when a backtest ends, the run's id its
   name. Without `ELYSIUM_ADDON_START` nothing changes.
+- `integrations/elysium`: the module manifest in Elysium's current keys and a hand-written page
+  (no build step) listing the backtests and showing a run's report through Elysium's proxy.
 
 ### Fixed
 
