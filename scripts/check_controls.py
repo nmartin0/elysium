@@ -70,6 +70,9 @@ class Control:
     tests: list[str] = field(default_factory=list)
 
 
+R = "tests/integration/test_removal_from_the_ui.py"
+E = "tests/unit/test_remove_edit.py"
+
 CONTROLS = [
     Control(
         describes="a schema change that did not take effect is caught",
@@ -7336,8 +7339,8 @@ CONTROLS = [
     Control(
         describes="a field a link made is deprecated as its link type, not as a field",
         path="core/config_editing.py",
-        old='if not isinstance(field_name, str) or not isinstance(fields.get(field_name), dict):',
-        new='if False:',
+        old='\n            if not isinstance(field_name, str) or not isinstance(fields.get(field_name), dict):',
+        new='\n            if False:',
         tests=["tests/unit/test_deprecate_edit.py::test_a_field_a_link_made_is_not_in_the_file_so_the_link_type_is_the_thing_to_deprecate"],
     ),
     Control(
@@ -7357,12 +7360,12 @@ CONTROLS = [
         old=(
             '        if impact["widens"]:\n'
             '            raise HTTPException(status_code=409, detail=(\n'
-            '                "This would let someone read more'
+            '                "This would let someone read more than they can now, which a status never'
         ),
         new=(
             '        if False:\n'
             '            raise HTTPException(status_code=409, detail=(\n'
-            '                "This would let someone read more'
+            '                "This would let someone read more than they can now, which a status never'
         ),
         tests=["tests/integration/test_deprecate_from_the_ui.py::TestAStatusNeverWidensAccess::test_if_the_permission_code_says_it_would_the_edit_is_refused_and_nothing_is_written"],
     ),
@@ -7442,6 +7445,291 @@ CONTROLS = [
             '        raise _never'
         ),
         tests=["tests/unit/test_deprecate_edit.py::test_a_flow_style_body_is_refused_rather_than_breaking_the_file"],
+    ),
+    # ---- removing a field or a link type (29 October) ----
+    Control(
+        describes="only a deprecated name is removed",
+        path="api/routes.py",
+        old='    deprecated = bool(marks) and all(mark.get("status") == "deprecated" for mark in marks)',
+        new='    deprecated = True',
+        tests=[f"{R}::TestOnlyWhatIsDeprecated::test_an_active_field_is_refused_and_told_what_to_do_first",
+               f"{R}::TestOnlyWhatIsDeprecated::test_a_link_nobody_deprecated_is_refused_too"],
+    ),
+    Control(
+        describes="a removal is refused while anything names the thing, judged again on apply",
+        path="api/routes.py",
+        old='    elif plan.blockers or plan.hidden:\n        reason = f"Something still names',
+        new='    elif False:\n        reason = f"Something still names',
+        tests=[f"{R}::TestWhatBlocks::test_a_name_still_used_is_refused_with_what_uses_it",
+               f"{R}::TestWhatBlocks::test_a_reference_made_after_the_preview_is_found_when_it_is_applied"],
+    ),
+    Control(
+        describes="what only blockers the person cannot see name still refuses the removal",
+        path="api/routes.py",
+        old='    elif plan.blockers or plan.hidden:\n        reason = f"Something still names',
+        new='    elif plan.blockers:\n        reason = f"Something still names',
+        tests=[f"{R}::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_a_removal_blocked_only_by_what_they_cannot_discover_still_cannot_go",
+               f"{R}::TestWhenOnlyWhatTheyCannotSeeBlocksIt::test_the_apply_refuses_and_changes_nothing"],
+    ),
+    Control(
+        describes="the preview says it cannot go when only hidden blockers remain",
+        path="api/routes.py",
+        old='    ready = plan.deprecated and not plan.blockers and not plan.hidden',
+        new='    ready = plan.deprecated and not plan.blockers',
+        tests=[f"{R}::TestWhenOnlyWhatTheyCannotSeeBlocksIt::test_the_preview_says_it_cannot_go_and_how_many_it_will_not_name"],
+    ),
+    Control(
+        describes="apply does not trust the preview: it judges the blockers itself",
+        path="api/routes.py",
+        old='        blocked = _blocked_answer(plan)\n        if blocked is not None:\n            return blocked\n',
+        new='',
+        tests=[f"{R}::TestWhatBlocks::test_a_reference_made_after_the_preview_is_found_when_it_is_applied",
+               f"{R}::TestOnlyWhatIsDeprecated::test_an_active_field_is_refused_and_told_what_to_do_first"],
+    ),
+    Control(
+        describes="a removal that would widen access is refused rather than applied",
+        path="api/routes.py",
+        old=(
+            '        if impact["widens"]:\n'
+            '            raise HTTPException(status_code=409, detail=(\n'
+            '                "This would let someone read more than they can now, which a removal never should.'
+        ),
+        new=(
+            '        if False:\n'
+            '            raise HTTPException(status_code=409, detail=(\n'
+            '                "This would let someone read more than they can now, which a removal never should.'
+        ),
+        tests=[f"{R}::TestRemoving::test_if_the_permission_code_says_it_would_widen_access_nothing_is_written"],
+    ),
+    Control(
+        describes="a configuration the loader refuses is reported without what the loader said",
+        path="api/routes.py",
+        old=(
+            '            _candidate, impact = _access_impact(request, {name: text for name, (_, text) in files.items()})\n'  # noqa: E501
+            '        except HTTPException as e:\n'
+            '            raise _unloadable(plan) from e'
+        ),
+        new=(
+            '            _candidate, impact = _access_impact(request, {name: text for name, (_, text) in files.items()})\n'  # noqa: E501
+            '        except HTTPException:\n'
+            '            raise'
+        ),
+        tests=[f"{R}::TestRemoving::test_the_loader_has_the_last_word"],
+    ),
+    Control(
+        describes="a reload that fails after the write is reported without what the loader said",
+        path="api/routes.py",
+        old='            if e.status_code == 400:\n                raise _unloadable(plan) from e',
+        new='            if False:\n                raise _unloadable(plan) from e',
+        tests=[f"{R}::TestWhenTheReloadFails::test_the_old_file_is_put_back_and_the_reply_names_nothing_the_loader_said"],
+    ),
+    Control(
+        describes="a name the deployment does not have is Not found, not a reply that depends on what it is",
+        path="api/routes.py",
+        old='        if field not in (running.get(object_type) or {}).get("fields", {}):\n            raise _not_found()',  # noqa: E501
+        new='        if False:\n            raise _not_found()',
+        tests=[f"{R}::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_a_name_the_deployment_does_not_have_is_not_found_on_preview_and_apply"],
+    ),
+    Control(
+        describes="a link type the deployment does not have is Not found",
+        path="api/routes.py",
+        old='        ends = link_ends(running, link)\n        if not ends:\n            raise _not_found()',
+        new='        ends = link_ends(running, link)\n        if False:\n            raise _not_found()',
+        tests=[f"{R}::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_a_name_the_deployment_does_not_have_is_not_found_on_preview_and_apply"],
+    ),
+    Control(
+        describes="only a manager of the deployment may preview a removal",
+        path="api/routes.py",
+        old=(
+            '    _require_manage_deployment(request, current_user)\n'
+            '    plan = _planned_removal(request, current_user, body)\n'
+            '    ready ='
+        ),
+        new='    plan = _planned_removal(request, current_user, body)\n    ready =',
+        tests=[f"{R}::TestWhoMay::test_only_a_manager_of_the_deployment"],
+    ),
+    Control(
+        describes="only a manager of the deployment may remove",
+        path="api/routes.py",
+        old=(
+            '    _require_manage_deployment(request, current_user)\n'
+            '    with _config_edit_lock:\n'
+            '        plan = _planned_removal'
+        ),
+        new='    with _config_edit_lock:\n        plan = _planned_removal',
+        tests=[f"{R}::TestWhoMay::test_only_a_manager_of_the_deployment"],
+    ),
+    Control(
+        describes="source_bindings.yaml is written with the ontology when a binding goes",
+        path="api/routes.py",
+        old=(
+            '        proposed, proposed_bindings = apply_removal(current, bindings, change)\n'
+            '    except ConfigEditError as e:\n'
+            '        raise HTTPException(status_code=400, detail=str(e)) from e\n'
+            '    files = {ONTOLOGY_FILE: (current, proposed)}\n'
+            '    if bindings is not None and'
+        ),
+        new=(
+            '        proposed, proposed_bindings = apply_removal(current, bindings, change)\n'
+            '    except ConfigEditError as e:\n'
+            '        raise HTTPException(status_code=400, detail=str(e)) from e\n'
+            '    files = {ONTOLOGY_FILE: (current, proposed)}\n'
+            '    if False and'
+        ),
+        tests=[f"{R}::TestItsBindingGoesWithIt::test_the_binding_is_taken_out_of_source_bindings_too"],
+    ),
+    Control(
+        describes="a binding goes with its field",
+        path="core/config_editing.py",
+        old='    root = ["object_types"] if "object_types" in expected_bindings else []\n',
+        new='    return edited, bindings\n    root = ["object_types"] if "object_types" in expected_bindings else []\n',
+        tests=[f"{E}::TestBindings::test_the_binding_goes_with_its_field",
+               f"{E}::TestBindings::test_the_last_binding_takes_the_empty_fields_block_with_it"],
+    ),
+    Control(
+        describes="an entry inside a braced mapping is refused, not edited",
+        path="core/config_editing.py",
+        old='    if any(parent.fa.flow_style() for parent in chain):',
+        new='    if False:',
+        tests=[f"{E}::test_an_entry_inside_a_braced_mapping_is_refused_with_a_message",
+               f"{E}::TestBindings::test_a_binding_inside_a_braced_mapping_is_refused"],
+    ),
+    Control(
+        describes="the only field of a type is not removed, leaving `fields:` empty",
+        path="core/config_editing.py",
+        old='    if len(node) == 1:\n        if not drop_empty_parent:',
+        new='    if False:\n        if not drop_empty_parent:',
+        tests=[f"{E}::test_the_only_field_of_a_type_is_refused"],
+    ),
+    Control(
+        describes="the last link type takes link_types: with it",
+        path="core/config_editing.py",
+        old='        return _delete_entry(text, path[:-1], filename, where, drop_empty_parent=True)',
+        new='        raise ConfigEditError("emptied")',
+        tests=[f"{E}::test_the_last_link_type_takes_link_types_with_it"],
+    ),
+    Control(
+        describes="a comment directly above a removed field goes with it",
+        path="core/config_editing.py",
+        old='    while first > 0 and lines[first - 1].strip().startswith("#")',
+        new='    while False and lines[first - 1].strip().startswith("#")',
+        tests=[f"{E}::test_its_own_lines_go_with_a_comment_directly_above_it_and_not_the_one_after"],
+    ),
+    Control(
+        describes="a field written over several lines is removed whole",
+        path="core/config_editing.py",
+        old='    last = _last_line(lines, first)\n    indent = _indent_of(lines[first])',
+        new='    last = first\n    indent = _indent_of(lines[first])',
+        tests=[f"{E}::test_a_field_written_over_several_lines_goes_whole_with_its_inline_comment"],
+    ),
+    Control(
+        describes="a field a link made is removed as its link type, not as a field",
+        path="core/config_editing.py",
+        old='\n    if not isinstance(field_name, str) or not isinstance(fields.get(field_name), dict):\n        raise ConfigEditError(\n            f"{object_type} has no field {field_name!r} written in',  # noqa: E501
+        new='\n    if False:\n        raise ConfigEditError(\n            f"{object_type} has no field {field_name!r} written in',  # noqa: E501
+        tests=[f"{E}::TestWhatIsRefused::test_it_says_why"],
+    ),
+    Control(
+        describes="a field written as a link is sent to its link type",
+        path="core/config_editing.py",
+        old='    if fields[field_name].get("type") == "link":',
+        new='    if False:',
+        tests=[f"{E}::TestWhatIsRefused::test_a_field_written_as_a_link_is_sent_to_its_link_type"],
+    ),
+    Control(
+        describes="a type's identifier is never removed as a field",
+        path="core/config_editing.py",
+        old='    if field_name == type_def.get("id_field"):',
+        new='    if False:',
+        tests=[f"{E}::TestWhatIsRefused::test_the_identifier_is_never_removed_even_when_the_file_lists_it_as_a_field"],
+    ),
+    Control(
+        describes="a type is not removed through the field-and-link route",
+        path="core/config_editing.py",
+        old='    if kind not in REMOVAL_KINDS:',
+        new='    if False:',
+        tests=[f"{E}::TestWhatIsRefused::test_it_says_why"],
+    ),
+    Control(
+        describes="a pending write on a field blocks its removal",
+        path="core/ontology/removal.py",
+        old='        if waiting:\n',
+        new='        if False:\n',
+        tests=[f"{R}::TestWhatBlocks::test_a_proposed_write_waiting_on_it_blocks_and_an_applied_one_does_not",
+               "tests/unit/test_removal.py::test_a_proposed_write_is_a_blocker_and_an_applied_one_is_not"],
+    ),
+    Control(
+        describes="a check that could not be made (no write log) blocks rather than passes",
+        path="core/ontology/removal.py",
+        old='    if write_log is None:\n        return [Referrer(PENDING_WRITE, "write log",',
+        new='    if write_log is None:\n        return []\n    if False:\n        return [Referrer(PENDING_WRITE, "write log",',  # noqa: E501
+        tests=["tests/unit/test_removal.py::test_without_a_write_log_it_cannot_be_told_and_that_blocks"],
+    ),
+    Control(
+        describes="a blocker is shown only if every name it carries is one the person could find",
+        path="core/ontology/removal.py",
+        old='    shown = [item for item in blockers if all(knows(subject) for subject in item.subjects)]',
+        new='    shown = list(blockers)',
+        tests=["tests/unit/test_removal.py::TestWhatThePersonMaySee::test_a_row_naming_one_unknown_name_is_counted_and_not_shown",
+               f"{R}::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_blockers_naming_what_they_cannot_discover_are_counted_not_named"],
+    ),
+    Control(
+        describes="a row-security blocker lists the type whose rule borrows through the thing",
+        path="core/ontology/used_by.py",
+        old='                                      (owner, f"{hop_type}.{hop_field}")))',
+        new='                                      ()))',
+        tests=[f"{R}::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_blockers_naming_what_they_cannot_discover_are_counted_not_named",
+               "tests/unit/test_used_by_subjects.py::test_every_row_the_fixture_configuration_produces_lists_what_it_mentions"],
+    ),
+    Control(
+        describes="a derived field's row lists the fields it is calculated from",
+        path="core/ontology/used_by.py",
+        old='                name, *derivation.inputs)',
+        new='                name)',
+        tests=["tests/unit/test_used_by_subjects.py::test_every_kind_of_row_in_the_hand_built_schema_lists_what_it_mentions"],
+    ),
+    Control(
+        describes="a link row lists the ends it joins",
+        path="core/ontology/used_by.py",
+        old='                              tuple(f"{owner}.{end}" for owner, end in sorted(_link_ends(schema, name)))))',  # noqa: E501
+        new='                              ()))',
+        tests=["tests/unit/test_used_by_subjects.py::test_every_row_the_fixture_configuration_produces_lists_what_it_mentions"],
+    ),
+    Control(
+        describes="the name asked about is not counted among the names a row hides behind",
+        path="core/ontology/used_by.py",
+        old='        item, subjects=tuple(name for name in item.subjects if name not in asked_about)) for item in found}',  # noqa: E501
+        new='        item, subjects=item.subjects) for item in found}',
+        tests=[f"{R}::TestRemoving::test_a_deprecated_field_nothing_names_is_deleted_and_the_deployment_reloaded",
+               f"{R}::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_the_names_they_can_discover_are_shown_and_only_those"],
+    ),
+    Control(
+        describes="a type listed to everyone is known without a grant, and its fields are not",
+        path="core/ontology/mediator.py",
+        old='                is_discoverable(definition) or authorize(user_record, self.roles, f"discover:{object_type}")):',  # noqa: E501
+        new='                authorize(user_record, self.roles, f"discover:{object_type}")):',
+        tests=["tests/unit/test_mediator_knows.py::test_it_answers_as_the_visible_schema_would"],
+    ),
+    Control(
+        describes="a field is known only if the person may discover that field",
+        path="core/ontology/mediator.py",
+        old='            and authorize(user_record, self.roles, f"discover:{object_type}.{field_name}"))\n\n    def visible_schema',  # noqa: E501
+        new='            )\n\n    def visible_schema',
+        tests=["tests/unit/test_mediator_knows.py::test_it_answers_as_the_visible_schema_would"],
+    ),
+    Control(
+        describes="a field is known only through its type being known",
+        path="core/ontology/mediator.py",
+        old='        if definition is None or not (\n                is_discoverable(definition)',
+        new='        if definition is None or False and not (\n                is_discoverable(definition)',
+        tests=["tests/unit/test_mediator_knows.py::test_it_answers_as_the_visible_schema_would"],
+    ),
+    Control(
+        describes="a gold table is rebuilt when a field leaves its type (what the dialog says about gold)",
+        path="core/mirror/gold.py",
+        old='    if set(published) != set(arrow_schema.names):\n        return True',
+        new='    if False:\n        return True',
+        tests=[f"{R}::TestWhatHappensToStoredData::test_gold_is_rebuilt_without_the_column_and_its_publication_tags_restart"],
     ),
 ]
 

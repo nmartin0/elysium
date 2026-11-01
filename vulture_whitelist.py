@@ -606,6 +606,10 @@ deprecation  # SchemaFieldResponse / VisibleObjectTypeResponse, read by the brow
 status_inherited_from  # SchemaFieldResponse, read by the browser
 replaced_by  # DeprecationResponse and StatusRequest, read by the browser
 remove_after  # DeprecationResponse and StatusRequest, read by the browser
+preview_removal_route
+apply_removal_route
+can_remove  # RemovalPreviewResponse, read by the browser
+hidden_blockers  # RemovalPreviewResponse, read by the browser
 # DEV_UI 13.7, putting an earlier version back: routes reached by HTTP.
 preview_restore_route
 restore_route

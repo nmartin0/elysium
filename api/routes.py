@@ -2958,6 +2958,216 @@ def apply_status_route(body: StatusRequest, request: Request,
         return {"status": "applied", "diff": written["diff"], "to_generation": written["to_generation"]}
 
 
+# ---- Removing a field or a link type, core/ontology/removal.py ----
+
+class RemovalRequest(BaseModel):
+    digest: str
+    # "field" or "link"; object_type and field say which field, link says
+    # which link type. A type is not removed here.
+    kind: str
+    object_type: str | None = None
+    field: str | None = None
+    link: str | None = None
+
+
+class RemovalPreviewResponse(BaseModel):
+    diff: list[str]
+    # What it does to access; None while something blocks it, because the
+    # candidate configuration would not load and its reason names things.
+    impact: dict | None = None
+    can_remove: bool
+    # Whether it is deprecated now -- removal is only ever the last of
+    # deprecate, wait, remove.
+    deprecated: bool
+    # The day the deprecation planned removal after, if it said one.
+    remove_after: str | None = None
+    # What would block it, as far as this person may see.
+    blockers: list[UsedByRow]
+    # How many more block it that name something they cannot discover.
+    hidden_blockers: int = 0
+    not_listed: str
+    # What becomes of the data already stored, in words.
+    stored_data: list[str]
+
+
+@dataclasses.dataclass
+class _Removal:
+    files: "dict[str, tuple[str, str]]"
+    deprecated: bool
+    remove_after: "str | None"
+    blockers: list
+    hidden: int
+    stored_data: list[str]
+    #: How a screen names it ("Customer.email", "link CustomerTags") and
+    #: how the audit log keys it ("Customer.email", "CustomerTags").
+    what: str
+    audited_as: str
+
+
+def _not_found() -> HTTPException:
+    # ONE ANSWER for a name that does not exist and one this person cannot
+    # discover, in the words the Used by report already uses.
+    return HTTPException(status_code=404, detail="Not found")
+
+
+def _planned_removal(request: Request, current_user: UserRecord, body: RemovalRequest) -> _Removal:
+    """Everything a removal needs to be judged, in one place for the
+    preview and the apply. A stale file is refused first (it says nothing
+    about any name); a name the deployment does not have is "Not found",
+    as in the Used by report; only then is the file edited and its blockers
+    worked out.
+
+    THE NAME ASKED ABOUT IS NOT GATED ON DISCOVERY, AND THE ROWS THAT STOP
+    IT ARE. A manager of the deployment reads every name in the declaration
+    (the descriptions route says so), and could not otherwise remove
+    anything: a field is discoverable only through a grant that names it,
+    and a grant naming it is what blocks its removal. What would be new
+    information is what ELSE names it -- another type's row rule, a rule
+    over a field they cannot discover -- so each blocker is shown only if
+    every name it carries is one they could find in Schema, and the rest
+    are counted."""
+    from core.config_editing import BINDINGS_FILE, ONTOLOGY_FILE, ConfigEditError, apply_removal
+    from core.ontology.deprecation import shown_deprecation
+    from core.ontology.removal import applied_writes, field_blockers, link_blockers, link_ends, stored_data, visible_to
+
+    current = _ontology_as_read(request, body.digest)
+    mediator = _generation(request).mediator
+    running = mediator.schema
+    object_type, field, link = body.object_type or "", body.field or "", body.link or ""
+    if body.kind == "field":
+        if not object_type or not field:
+            raise HTTPException(status_code=400, detail="A field is named by its type and its name.")
+        ends = [(object_type, field)]
+        if field not in (running.get(object_type) or {}).get("fields", {}):
+            raise _not_found()
+        change = {"kind": "field", "object_type": object_type, "field": field}
+        what = audited_as = f"{object_type}.{field}"
+    elif body.kind == "link":
+        ends = link_ends(running, link)
+        if not ends:
+            raise _not_found()
+        change = {"kind": "link", "link": link}
+        what, audited_as = f"link {link}", link
+    else:
+        raise HTTPException(status_code=400, detail="What is removed is a field or a link type.")
+
+    bindings_path = request.app.state.runtime_paths.config_dir / BINDINGS_FILE
+    bindings = bindings_path.read_text() if bindings_path.exists() else None
+    try:
+        proposed, proposed_bindings = apply_removal(current, bindings, change)
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    files = {ONTOLOGY_FILE: (current, proposed)}
+    if bindings is not None and proposed_bindings != bindings:
+        files[BINDINGS_FILE] = (bindings, proposed_bindings or "")
+
+    # THE FILE ON DISK NOW, not the running generation: it is what a reload
+    # after this edit would start from (see _access_impact).
+    config = _load_candidate(request, {})
+    schema = config.schema
+    shared = (schema, config.roles, config.action_types, config.declared_triggers,
+              mediator.write_log)
+    if body.kind == "field":
+        marks = [schema[object_type]["fields"][field]]
+        found = field_blockers(*shared, object_type, field)
+    else:
+        marks = [schema[owner]["fields"][name] for owner, name in link_ends(schema, link)]
+        found = link_blockers(*shared, link)
+    # A link follows its types (core/ontology/deprecation.link_status), so
+    # it may be removed once either it or a type it joins is deprecated.
+    deprecated = bool(marks) and all(mark.get("status") == "deprecated" for mark in marks)
+    block = shown_deprecation(marks[0].get("deprecation")) if marks else None
+    shown, hidden = visible_to(found, lambda subject: mediator.knows(current_user, subject))
+    return _Removal(
+        files=files, deprecated=deprecated, remove_after=block["remove_after"] if block else None,
+        blockers=shown, hidden=hidden,
+        stored_data=stored_data(body.kind, "many_to_many" if any("via_target_column" in mark for mark in marks)
+                                else None, applied_writes(mediator.write_log, ends)),
+        what=what, audited_as=audited_as)
+
+
+def _blocked_answer(plan: _Removal) -> "JSONResponse | None":
+    """The 409 for a removal that must wait, or None when nothing does."""
+    if not plan.deprecated:
+        reason = (f"{plan.what} is not deprecated. Deprecate it first, say why, and remove it later: "
+                  f"removing is always the last of three steps.")
+    elif plan.blockers or plan.hidden:
+        reason = f"Something still names {plan.what}. Nothing was changed."
+    else:
+        return None
+    return JSONResponse(status_code=409, content={
+        "detail": reason, "deprecated": plan.deprecated,
+        "blockers": [item.as_dict() for item in plan.blockers], "hidden_blockers": plan.hidden})
+
+
+@router.post("/admin/ontology/removal/preview", dependencies=[Depends(_no_store)],
+             response_model=RemovalPreviewResponse)
+def preview_removal_route(body: RemovalRequest, request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The lines that would go, whether it may go, and if not, what stops
+    it. Nothing written. The answer for a name this person cannot discover
+    is the answer for one that does not exist."""
+    from core.config_editing import shown_diff
+
+    _require_manage_deployment(request, current_user)
+    plan = _planned_removal(request, current_user, body)
+    ready = plan.deprecated and not plan.blockers and not plan.hidden
+    impact = None
+    if ready:
+        try:
+            _candidate, impact = _access_impact(request, {name: after for name, (_, after) in plan.files.items()})
+        except HTTPException as e:
+            raise _unloadable(plan) from e
+    return {
+        "diff": [line for name, (before, after) in plan.files.items() for line in shown_diff(name, before, after)],
+        "impact": impact, "can_remove": ready, "deprecated": plan.deprecated, "remove_after": plan.remove_after,
+        "blockers": [item.as_dict() for item in plan.blockers], "hidden_blockers": plan.hidden,
+        "not_listed": _USED_BY_NOT_LISTED, "stored_data": plan.stored_data,
+    }
+
+
+def _unloadable(plan: _Removal) -> HTTPException:
+    """A removal the loader refuses although nothing listed blocked it: the
+    Used by report missed a reference. What the loader says names the
+    reference, which may be something this person cannot discover, so they
+    are told only that it cannot be done."""
+    return HTTPException(status_code=409, detail=(
+        f"Removing {plan.what} would leave the configuration unable to load, which the list of what names it "
+        f"should have said. Nothing was changed."))
+
+
+@router.put("/admin/ontology/removal", dependencies=[Depends(_no_store)], response_model=NewFieldsResponse)
+def apply_removal_route(body: RemovalRequest, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> Any:
+    """Removes it now, if it is deprecated and nothing names it -- judged
+    again here, not trusted from the preview. 409 with the blockers they may
+    see when something does. No data is touched, and nobody gains access: if
+    the permission code says anyone could read more afterwards, something is
+    wrong with the edit and it is refused."""
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        plan = _planned_removal(request, current_user, body)
+        blocked = _blocked_answer(plan)
+        if blocked is not None:
+            return blocked
+        files = plan.files
+        try:
+            _candidate, impact = _access_impact(request, {name: text for name, (_, text) in files.items()})
+        except HTTPException as e:
+            raise _unloadable(plan) from e
+        if impact["widens"]:
+            raise HTTPException(status_code=409, detail=(
+                "This would let someone read more than they can now, which a removal never should. "
+                "Nothing was changed."))
+        try:
+            written = _write_config_files(request, current_user, files, {plan.audited_as: "removed"})
+        except HTTPException as e:
+            if e.status_code == 400:
+                raise _unloadable(plan) from e
+            raise
+        return {"status": "applied", "diff": written["diff"], "to_generation": written["to_generation"]}
+
+
 def _reason(text: "str | None") -> str:
     from core.config_proposals import MAX_REASON
 

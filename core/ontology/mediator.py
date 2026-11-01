@@ -959,6 +959,34 @@ class DataMediator:
         # sentinel equals no user's value -- which is the safe direction.
         return security_value is not None and security_value == requesting_user_security_value
 
+    def knows(self, user_record: UserRecord, subject: str) -> bool:
+        """Whether this person may know a name exists, by the rule
+        visible_schema applies: "Customer" is a type, "Customer.email" a
+        field of a type they know, "link:CustomerTags" a link type with
+        at least one end they can discover on a type they know.
+
+        ASKED BY THE REMOVAL SCREEN, which names things (what would block
+        a removal) and must name only what the person could already find
+        in Schema. A name that is not in the schema is not known, so a
+        name that does not exist and one the person cannot discover
+        answer alike.
+        """
+        if subject.startswith("link:"):
+            link_type = subject[len("link:"):]
+            return any(
+                field_info.get("type") == "link" and field_info.get("link_type") == link_type
+                and self.knows(user_record, f"{owner}.{field_name}")
+                for owner, owner_def in self.schema.items()
+                for field_name, field_info in owner_def["fields"].items())
+        object_type, _, field_name = subject.partition(".")
+        definition = self.schema.get(object_type)
+        if definition is None or not (
+                is_discoverable(definition) or authorize(user_record, self.roles, f"discover:{object_type}")):
+            return False
+        return not field_name or (
+            field_name in definition["fields"]
+            and authorize(user_record, self.roles, f"discover:{object_type}.{field_name}"))
+
     def visible_schema(self, user_record: UserRecord, *, for_agent: bool = False) -> dict:
         # THE single source of truth for "what does this user get to
         # know exists." A type is included whenever discover:{type} is
