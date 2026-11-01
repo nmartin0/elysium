@@ -2315,3 +2315,35 @@ about at load, is unchanged.
 which these runs were to inform, are built.
 
 **Blocked on:** nothing.
+
+**JOINT REQUESTS FROM ASTROLABE AND HELIOGRAPH (1 November), read from
+both sub-apps' code and plans, with file evidence in the analysis the
+reader returned.** The owner decided to develop Elysium, Astrolabe and
+Heliograph together so that what is generic lands here and what is
+domain stays in each. Where BOTH ask, that is the strong signal; one
+asking is weak evidence and waits. Both ask for: live push of records to
+screens through the add-on proxy (Elysium keeps SSE for itself and the
+proxy refuses WebSocket upgrades); time series / observations beside the
+lake (Elysium has refused a historian so far); triggers and event
+subscription on arriving data with a dedupe per condition; large
+results (paging, spans, compact transfer); source terms and feed health
+as data (Heliograph's `personal_only` / `non_commercial` flags and
+`health_check` are the same shape as Astrolabe's E8, E9); audit per
+subscription, not per row (E13); a large non-React app hosted in a
+module page (Heliograph's NiceGUI cannot sit behind the proxy because it
+uses WebSockets); provider secrets kept in Elysium. Only Heliograph:
+jobs (long backtests; this item waited for a caller and has one now),
+timer callbacks for add-on kinds, forms from JSON Schema. Only
+Astrolabe: geography (E5), map layers that are not objects (E12), one
+permission check for objects and live data (E11), rules at the door
+(E3). Ranked for design, in this order: (1) live push through the
+proxy, (2) the kit's time-series chart (OHLC, zoom, several series),
+(3) event subscription and triggers on arriving data, (4) audit for live
+data, (5) jobs, (6) source terms and feed health, (7) large results, (8)
+secret references and add-on data under backup. Open questions for the
+owner: are Heliograph's "took it / skipped" answers Elysium actions
+(approval, audit) or local; are paper positions and equity Elysium
+objects or only a published SQLite read as a silo; is market data
+governed by Elysium or kept local. Heliograph today has no sign-in (its
+`serve` binds 127.0.0.1 with no authentication); behind the proxy it
+must verify `X-Elysium-Identity`.
