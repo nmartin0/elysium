@@ -413,6 +413,36 @@ class TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName:
         assert _blocked_answer(plan) is None
 
 
+class TestWhatASearchByMeaningReadsBlocksItsRemoval:
+    @pytest.fixture
+    def searched(self, config_dir, request):
+        _prepared(config_dir)
+        # Seen only by someone who may discover every name the row carries.
+        policy = yaml.safe_load((config_dir / "policy.yaml").read_text())
+        policy["roles"]["remover"]["allowed_actions"] += ["discover:SupportTicket", "discover:SupportTicket.subject"]
+        (config_dir / "policy.yaml").write_text(yaml.safe_dump(policy, sort_keys=False))
+        schema = yaml.safe_load((config_dir / FILE).read_text())
+        schema["object_types"]["SupportTicket"]["semantic_search"] = {"from": ["subject", "status"]}
+        (config_dir / FILE).write_text(yaml.safe_dump(schema, sort_keys=False))
+        config = yaml.safe_load((config_dir / "config.yaml").read_text())
+        config["llm"]["embedding_model"] = "nomic-embed-text"
+        (config_dir / "config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
+        client = request.getfixturevalue("client")
+        _login_as(client, "ops", "remover")
+        return client
+
+    def test_the_blocker_is_shown_rather_than_a_generic_unloadable_409(self, searched, config_dir):
+        what = {"kind": "field", "object_type": "SupportTicket", "field": "status"}
+        _deprecate(searched, what)
+        before = (config_dir / FILE).read_text()
+
+        for response in (_remove(searched, what, preview=True), _remove(searched, what)):
+            body = response.json()
+            assert any(row["kind"] == "semantic_search" and "searched by meaning" in row["says"]
+                       for row in body["blockers"]), body
+        assert (config_dir / FILE).read_text() == before
+
+
 class TestWhenOnlyWhatTheyCannotSeeBlocksIt:
     """The route's own handling of a removal that nothing visible blocks and
     something hidden does -- with the blockers stubbed, since which row is
@@ -459,6 +489,133 @@ class TestWhenTheReloadFails:
         assert response.status_code == 409 and "unable to load" in response.json()["detail"]
         assert "secret_role" not in response.text and "Hidden" not in response.text
         assert (config_dir / FILE).read_text() == before
+
+
+class TestTheTwoFilesGoTogetherOrNotAtAll:
+    """_write_config_files: the pair is staged, then renamed bindings-first
+    (a binding for a field the ontology lacks stops the NEXT restart; a
+    field without its binding loads), and a failure never leaves a half pair."""
+
+    @staticmethod
+    def _failing(monkeypatch, config_dir, fails):
+        """Makes os.replace raise for the n-th rename onto a named file:
+        `fails` is {filename: {n, ...}} (1 = its first rename). Returns the
+        list of (filename, n) renames attempted, in order."""
+        import os
+
+        real, seen, attempted = os.replace, {}, []
+
+        def replace(source, target, *given, **asked):
+            name = target.name if hasattr(target, "name") else os.path.basename(target)
+            seen[name] = seen.get(name, 0) + 1
+            attempted.append((name, seen[name]))
+            if seen[name] in fails.get(name, ()) and os.path.dirname(os.fspath(target)) == str(config_dir):
+                raise OSError(28, "No space left on device")
+            return real(source, target, *given, **asked)
+
+        monkeypatch.setattr("api.routes.os.replace", replace)
+        return attempted
+
+    def _both_unchanged(self, config_dir, before):
+        for name, text in before.items():
+            assert (config_dir / name).read_text() == text
+        assert [p.name for p in config_dir.iterdir() if "elysium-edit" in p.name] == []
+
+    def _before(self, config_dir):
+        return {FILE: (config_dir / FILE).read_text(), BINDINGS: (config_dir / BINDINGS).read_text()}
+
+    def test_the_bindings_are_renamed_first(self, two_files, config_dir, monkeypatch):
+        _deprecate(two_files)
+        attempted = self._failing(monkeypatch, config_dir, {})
+
+        assert _remove(two_files).status_code == 200
+
+        assert [name for name, _ in attempted][:2] == [BINDINGS, FILE]
+
+    def test_the_state_between_the_two_renames_is_one_the_loader_accepts(self, two_files, config_dir, tmp_path):
+        """Bindings renamed, ontology not yet (a crash right there) loads;
+        the other order would be 'binds field(s) ... does not declare'."""
+        from core.deployment_loader import load_deployment
+
+        _deprecate(two_files)
+        old_ontology = (config_dir / FILE).read_text()
+        assert _remove(two_files).status_code == 200
+        half = tmp_path / "half"
+        shutil.copytree(config_dir, half)
+        (half / FILE).write_text(old_ontology)
+
+        assert "currency" in load_deployment(half).schema["Account"]["fields"]
+
+        wrong = tmp_path / "wrong"
+        shutil.copytree(config_dir, wrong)
+        (wrong / BINDINGS).write_text((half / BINDINGS).read_text().replace(
+            "  Account:\n", "  Account:\n    fields:\n      currency: {column: x}\n", 1))
+        (wrong / FILE).write_text((config_dir / FILE).read_text())
+        with pytest.raises(ValueError, match="does not declare"):
+            load_deployment(wrong)
+
+    def test_a_failure_on_the_second_rename_puts_the_first_back_and_is_a_clean_error(
+            self, two_files, config_dir, monkeypatch):
+        _deprecate(two_files)
+        before = self._before(config_dir)
+        self._failing(monkeypatch, config_dir, {FILE: {1}})
+
+        response = _remove(two_files)
+
+        assert response.status_code == 500 and "Nothing was changed" in response.json()["detail"]
+        assert "No space left" not in response.text
+        self._both_unchanged(config_dir, before)
+
+    def test_a_failure_staging_the_second_file_writes_neither(self, two_files, config_dir, monkeypatch):
+        _deprecate(two_files)
+        before = self._before(config_dir)
+        real = type(config_dir).write_text
+
+        def write_text(path, text, *given, **asked):
+            if path.name == f".{BINDINGS}.elysium-edit":
+                raise OSError(28, "No space left on device")
+            return real(path, text, *given, **asked)
+
+        monkeypatch.setattr(type(config_dir), "write_text", write_text)
+
+        response = _remove(two_files)
+
+        assert response.status_code == 500 and "Nothing was changed" in response.json()["detail"]
+        monkeypatch.undo()
+        self._both_unchanged(config_dir, before)
+
+    def test_when_the_restore_fails_too_it_names_both_files_and_what_to_do(self, two_files, config_dir, monkeypatch):
+        _deprecate(two_files)
+        before = self._before(config_dir)
+        self._failing(monkeypatch, config_dir, {FILE: {1}, BINDINGS: {2}})
+
+        response = _remove(two_files)
+
+        detail = response.json()["detail"]
+        assert response.status_code == 500
+        assert FILE in detail and BINDINGS in detail and "before you restart" in detail
+        assert str(config_dir / BINDINGS) in detail and str(config_dir / FILE) in detail
+        # The honest state: bindings changed, ontology not -- what the message says.
+        assert (config_dir / FILE).read_text() == before[FILE]
+        assert (config_dir / BINDINGS).read_text() != before[BINDINGS]
+
+    def test_after_a_failed_reload_every_file_is_tried_even_when_one_restore_fails(
+            self, two_files, config_dir, monkeypatch):
+        _deprecate(two_files)
+        before = self._before(config_dir)
+
+        def failing(*given, **asked):
+            raise RuntimeError("would not build")
+
+        monkeypatch.setattr("api.routes.reload_generation", failing)
+        # Renames: bindings 1, ontology 1 (apply); the undo goes ontology first
+        # (its 2nd rename fails), and the bindings must still be put back.
+        self._failing(monkeypatch, config_dir, {FILE: {2}})
+
+        response = _remove(two_files)
+
+        assert response.status_code == 500 and str(config_dir / FILE) in response.json()["detail"]
+        assert (config_dir / BINDINGS).read_text() == before[BINDINGS]
 
 
 class TestWhoMay:

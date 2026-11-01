@@ -111,6 +111,7 @@ loop for meaningfully longer than intended.
 
 import asyncio
 import base64
+import contextlib
 import dataclasses
 import functools
 import json
@@ -1950,7 +1951,8 @@ def _write_config_file(request: Request, current_user: UserRecord, filename: str
 
 
 def _write_config_files(request: Request, current_user: UserRecord,
-                        files: "dict[str, tuple[str, str]]", changes: dict) -> dict:
+                        files: "dict[str, tuple[str, str]]", changes: dict,
+                        first: "tuple[str, ...]" = ()) -> dict:
     """Puts each proposed text in place of its file and reloads. Called
     holding _config_edit_lock, after the caller has checked the files
     are still what was read. `files` is {filename: (current, proposed)}.
@@ -1963,8 +1965,15 @@ def _write_config_files(request: Request, current_user: UserRecord,
 
     ATOMIC PER FILE: each is written beside itself and renamed over it,
     so a crash mid-write leaves the old file or the new one, never half.
-    Several files are not one rename; a crash between two leaves a mix,
-    which the next load judges like any hand edit.
+    Several files are not one rename, so ALL are staged before the first
+    is renamed (a full disk shows up while nothing has changed), they are
+    renamed with `first` leading (else in the order `files` gives), and a rename that fails puts the
+    ones already renamed back from their saved text. If that fails too the
+    error names the files and what to do. A crash between two renames
+    leaves a mix, which the next load judges like any hand edit -- so the
+    caller orders them for the intermediate state to load (a removal puts
+    the bindings first: a binding for an undeclared field is a load error,
+    a declared field without a binding is not).
 
     AUDITED EITHER WAY, one entry per file, with the values -- each
     editor's allowlist makes them numbers, switches, fixed choices,
@@ -1986,21 +1995,77 @@ def _write_config_files(request: Request, current_user: UserRecord,
     except HTTPException as e:
         raise refused(e.status_code, e.detail) from e
 
-    written = []
-    for filename, (_, proposed) in files.items():
+    def staged_beside(filename: str) -> Path:
         path = config_dir / filename
-        staged = path.with_name(f".{path.name}.elysium-edit")
-        staged.write_text(proposed)
-        os.replace(staged, path)
-        written.append(filename)
+        return path.with_name(f".{path.name}.elysium-edit")
+
+    def drop_staged(names) -> None:
+        for name in names:
+            with contextlib.suppress(OSError):
+                staged_beside(name).unlink()
+
+    def put(filename: str, text: str) -> None:
+        staged = staged_beside(filename)
+        staged.write_text(text)
+        os.replace(staged, config_dir / filename)
+
+    def put_back(names) -> "list[str]":
+        """Every name is tried, whatever happens to the one before; the
+        ones that could not be put back are returned."""
+        failed = []
+        for name in reversed(list(names)):
+            try:
+                put(name, files[name][0])
+            except OSError:
+                drop_staged([name])
+                failed.append(name)
+        return failed
+
+    def stuck(failed: "list[str]", why: str):
+        """The state a restore could not repair: say which files hold the
+        NEW text, where they are, and what to do. A pair in different
+        generations stops the next restart ('binds field(s) not declared')."""
+        new_text = ", ".join(str(config_dir / name) for name in failed)
+        old_text = ", ".join(str(config_dir / name) for name in files if name not in failed) or "the other file"
+        return refused(500, (
+            f"The change was not applied, but {why} could not be undone: {new_text} holds the new text and "
+            f"{old_text} the old. Put the files back in step before you restart -- copy the old text of "
+            f"{new_text} back from your backup or version control -- or the next start will refuse to load."))
+
+    # ONE AFTER THE OTHER, IN THE ORDER THE CALLER GAVE: bindings first
+    # for a removal (a binding for a field the ontology no longer has
+    # stops the loader, a field without its binding loads), so a crash
+    # between the two renames leaves a pair the next start accepts.
+    # Both are staged before either is renamed, so a full disk or a
+    # permission error is found while nothing has changed.
+    order = sorted(files, key=lambda name: name not in first)
+    staged_names: list[str] = []
+    try:
+        for filename, (_, proposed) in files.items():
+            staged_names.append(filename)
+            staged_beside(filename).write_text(proposed)
+    except OSError as e:
+        drop_staged(staged_names)
+        raise refused(500, "The change was not applied: a file could not be written beside the "
+                           "configuration. Nothing was changed.") from e
+    written: list[str] = []
+    try:
+        for filename in order:
+            os.replace(staged_beside(filename), config_dir / filename)
+            written.append(filename)
+    except OSError as e:
+        drop_staged(files)
+        failed = put_back(written)
+        if failed:
+            raise stuck(failed, "a failed rename") from e
+        raise refused(500, "The change was not applied: a file could not be put in place. "
+                           "Nothing was changed.") from e
     try:
         new = reload_generation(request.app, requested_by=current_user.user_id)
     except Exception as e:
-        for filename in written:
-            path = config_dir / filename
-            staged = path.with_name(f".{path.name}.elysium-edit")
-            staged.write_text(files[filename][0])
-            os.replace(staged, path)
+        failed = put_back(written)
+        if failed:
+            raise stuck(failed, "a failed reload") from e
         if isinstance(e, ReloadInProgress):
             raise refused(409, str(e)) from e
         raise refused(400, f"The change was not applied: the configuration would not reload ({e}).") from e
@@ -3144,6 +3209,8 @@ def apply_removal_route(body: RemovalRequest, request: Request,
     see when something does. No data is touched, and nobody gains access: if
     the permission code says anyone could read more afterwards, something is
     wrong with the edit and it is refused."""
+    from core.config_editing import BINDINGS_FILE
+
     _require_manage_deployment(request, current_user)
     with _config_edit_lock:
         plan = _planned_removal(request, current_user, body)
@@ -3160,7 +3227,8 @@ def apply_removal_route(body: RemovalRequest, request: Request,
                 "This would let someone read more than they can now, which a removal never should. "
                 "Nothing was changed."))
         try:
-            written = _write_config_files(request, current_user, files, {plan.audited_as: "removed"})
+            written = _write_config_files(request, current_user, files, {plan.audited_as: "removed"},
+                                          first=(BINDINGS_FILE,))
         except HTTPException as e:
             if e.status_code == 400:
                 raise _unloadable(plan) from e
