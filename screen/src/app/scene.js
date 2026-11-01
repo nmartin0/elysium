@@ -14,6 +14,7 @@ import {
   governorRequestRender,
 } from '../renderGovernor.js';
 import { describeError } from './errors.js';
+import { installOpaqueOriginImageLoading } from './opaqueOrigin.js';
 import { t } from '../i18n/index.js';
 
 /** Construct the application globe using the caller's local configuration. */
@@ -43,6 +44,7 @@ export async function createApplicationScene({
       else window.__GOOGLE_MAPS_API_KEY__ = previousKey;
     });
   }
+  installOpaqueOriginImageLoading(Cesium);
   loaderStatus.textContent = t('Configuring viewer...');
   // Provider attribution stays visible, including clean-view and recording.
   const creditContainer = document.createElement('div');

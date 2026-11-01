@@ -9,6 +9,7 @@ import { createStandaloneTools } from './tools.js';
 import { resolveLocale, applyDocumentLanguage } from '../i18n/locale.js';
 import { applyDocumentTranslations, setLocale } from '../i18n/index.js';
 import { createGoogleTokenSource } from '../maps/googleTokens.js';
+import { isEmbedded } from '../app/embed.js';
 
 // The existing controls and layer catalog contain page-scoped state.
 let constructed = false;
@@ -54,7 +55,9 @@ export function createStandaloneApplication({
         googleApiKey,
         // Without a key, Google 3D can still load with tokens from the
         // app's server when it offers them.
-        googleTokens: googleApiKey ? null : createGoogleTokenSource(),
+        // Fork: an embedded globe does not ask its own host for tokens.
+        googleTokens:
+          googleApiKey || isEmbedded() ? null : createGoogleTokenSource(),
         cesiumToken,
         loaderStatus,
       });

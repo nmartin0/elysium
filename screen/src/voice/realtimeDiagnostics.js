@@ -1,3 +1,5 @@
+import { isEmbedded } from '../app/embed.js';
+
 const ERROR_LOG_LIMIT = 30;
 
 const ERROR_STORAGE_KEY = 'gev-realtime-errors';
@@ -10,6 +12,8 @@ function createDebugSessionId() {
 }
 
 export function postDebugLog(record) {
+  // Fork: an embedded globe sends no beacon to its own host.
+  if (isEmbedded()) return;
   try {
     const body = JSON.stringify(record);
     if (navigator.sendBeacon) {

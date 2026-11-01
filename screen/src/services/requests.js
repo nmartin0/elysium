@@ -1,3 +1,4 @@
+import { isEmbedded } from '../app/embed.js';
 import { isUnavailableCapability } from '../sources/capability.js';
 import { createOverpassFeatureSource } from '../sources/overpassFeatures.js';
 /** Parse bounded retry information from a service response. */
@@ -179,6 +180,8 @@ export function createApplicationRequestServices({
       // The capability probe, asked once per page: true or false from a
       // server that answers it, null (unknown) from one that does not.
       configured() {
+        // Fork: an embedded globe has no AI summary and does not ask.
+        if (isEmbedded()) return Promise.resolve(false);
         summaryCapability ??= request(`${urls.summary}/status`, {
           signal: AbortSignal.timeout(3000),
         }).then(

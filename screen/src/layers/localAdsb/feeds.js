@@ -1,3 +1,4 @@
+import { isEmbedded } from '../../app/embed.js';
 import {
   localAdsbRecordIsLive,
   localAdsbRecordIsNewer,
@@ -101,6 +102,9 @@ export function createLocalReceiverFeeds({
 
   /** One route request with a deadline through the body, abortable by stop. */
   async function request() {
+    // Fork: an embedded globe does not ask its own host; same outcome as
+    // a route that is not there.
+    if (isEmbedded()) throw new Error('local receiver route unavailable');
     const controller = new AbortController();
     inFlight.add(controller);
     const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
