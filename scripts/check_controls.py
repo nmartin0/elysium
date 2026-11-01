@@ -7609,11 +7609,81 @@ CONTROLS = [
         tests=[f"{E}::test_the_last_link_type_takes_link_types_with_it"],
     ),
     Control(
-        describes="a comment directly above a removed field goes with it",
+        describes="a removal never deletes a comment line (a header or a neighbour's commented-out entry stays)",
         path="core/config_editing.py",
-        old='    while first > 0 and lines[first - 1].strip().startswith("#")',
-        new='    while False and lines[first - 1].strip().startswith("#")',
-        tests=[f"{E}::test_its_own_lines_go_with_a_comment_directly_above_it_and_not_the_one_after"],
+        old='    del lines[first:last + 1]\n    return "".join(lines)',
+        new=(
+            '    while first > 0 and lines[first - 1].strip().startswith("#"):\n'
+            '        first -= 1\n'
+            '    del lines[first:last + 1]\n    return "".join(lines)'
+        ),
+        tests=[f"{E}::test_a_comment_above_a_removed_field_stays_because_it_may_belong_to_something_else",
+               f"{E}::test_a_link_type_goes_and_the_comment_above_it_stays"],
+    ),
+    Control(
+        describes="a field that arrives through a merge key is refused cleanly, not a KeyError",
+        path="core/config_editing.py",
+        old='        return key in parent.lc.data',
+        new='        return True',
+        tests=[f"{E}::TestWhatComesInThroughAMerge::test_a_field_that_arrives_through_a_merge_key_is_refused_not_a_500",
+               f"{E}::TestWhatComesInThroughAMerge::test_a_binding_that_arrives_through_a_merge_is_refused_too"],
+    ),
+    Control(
+        describes="the only key of the root is refused, not an IndexError",
+        path="core/config_editing.py",
+        old='    if not path:\n        raise ConfigEditError(f"{where} is the only thing in',
+        new='    if False:\n        raise ConfigEditError(f"{where} is the only thing in',
+        tests=[f"{E}::TestWhatComesInThroughAMerge::test_the_only_key_of_the_root_is_refused_not_an_index_error"],
+    ),
+    Control(
+        describes="a removal renames source_bindings.yaml before the ontology",
+        path="api/routes.py",
+        old='                                          first=(BINDINGS_FILE,))',
+        new='                                          first=())',
+        tests=["tests/integration/test_removal_from_the_ui.py::TestTheTwoFilesGoTogetherOrNotAtAll::test_the_bindings_are_renamed_first"],
+    ),
+    Control(
+        describes="a rename that fails puts the file already renamed back",
+        path="api/routes.py",
+        old='        drop_staged(files)\n        failed = put_back(written)',
+        new='        drop_staged(files)\n        failed = []',
+        tests=["tests/integration/test_removal_from_the_ui.py::TestTheTwoFilesGoTogetherOrNotAtAll::test_a_failure_on_the_second_rename_puts_the_first_back_and_is_a_clean_error"],
+    ),
+    Control(
+        describes="both files are staged before either is renamed, and the staging is cleaned up",
+        path="api/routes.py",
+        old='        drop_staged(staged_names)\n        raise refused(500, "The change was not applied: a file could not be written',  # noqa: E501
+        new='        raise refused(500, "The change was not applied: a file could not be written',  # noqa: E501
+        tests=["tests/integration/test_removal_from_the_ui.py::TestTheTwoFilesGoTogetherOrNotAtAll::test_a_failure_staging_the_second_file_writes_neither"],
+    ),
+    Control(
+        describes="a restore that fails too names both files and what to do",
+        path="api/routes.py",
+        old='            raise stuck(failed, "a failed rename") from e',
+        new='            raise refused(500, "failed") from e',
+        tests=["tests/integration/test_removal_from_the_ui.py::TestTheTwoFilesGoTogetherOrNotAtAll::test_when_the_restore_fails_too_it_names_both_files_and_what_to_do"],
+    ),
+    Control(
+        describes="after a failed reload every file is restored even when one restore raises",
+        path="api/routes.py",
+        old='                drop_staged([name])\n                failed.append(name)',
+        new='                drop_staged([name])\n                failed.append(name)\n                break',
+        tests=["tests/integration/test_removal_from_the_ui.py::TestTheTwoFilesGoTogetherOrNotAtAll::test_after_a_failed_reload_every_file_is_tried_even_when_one_restore_fails"],
+    ),
+    Control(
+        describes="a field a type is searched by meaning from is listed as a blocker",
+        path="core/ontology/used_by.py",
+        old='    if searched and field in searched.inputs:',
+        new='    if False:',
+        tests=["tests/unit/test_used_by_is_complete.py::test_a_field_a_type_is_searched_by_is_listed",
+               f"{R}::TestWhatASearchByMeaningReadsBlocksItsRemoval::test_the_blocker_is_shown_rather_than_a_generic_unloadable_409"],
+    ),
+    Control(
+        describes="an f-string link: grant call is not silently excluded from the grant probe",
+        path="core/ontology/used_by.py",
+        old='(LINK_SUBJECT + name,))',
+        new='(f"link:{name}",))',
+        tests=["tests/unit/test_grant_vocabulary_consistency.py::test_every_verb_the_code_asks_for_can_be_granted"],
     ),
     Control(
         describes="a field written over several lines is removed whole",

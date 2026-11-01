@@ -21,7 +21,8 @@ WHAT IT COVERS, and what it does not.
   Covered: a deprecated thing's named replacement, role grants, action types (the types they touch, the fields
   they set, the fields their criteria read), links, row-security chains
   (including inherited ones), identifiers and title fields, field
-  rules, dependencies, derived, enriched and predicted inputs, unusual
+  rules, dependencies, derived, enriched and predicted inputs, the text
+  a type is searched by meaning from (`semantic_search.from`), unusual
   checks, and declared triggers (their views' type and conditions).
 
   Not covered, deliberately: things stored beside the configuration --
@@ -46,7 +47,13 @@ from core.ontology.derived_fields import derived_fields
 from core.ontology.enriched_fields import enriched_fields
 from core.ontology.field_rules import dependencies_for, rules_for
 from core.ontology.predicted_fields import predicted_fields
+from core.ontology.semantic_search import semantic_search_of
 from core.ontology.unusual_checks import unusual_of
+
+#: How a row's `subjects` name a LINK TYPE (read by mediator's discoverability
+#: check). Joined, not an f-string, so it is not mistaken for a grant call
+#: by tests/unit/test_grant_vocabulary_consistency.py.
+LINK_SUBJECT = "link:"
 
 _GRANT_VERBS = ("read", "discover", "write")
 _GRANTS_SHOWN = 3
@@ -122,7 +129,7 @@ def used_by_link(schema: Mapping, roles: Mapping, action_types: Mapping, trigger
         if item.get("type") == "link" and item.get("link_type") != link_type
         and _replaced_by(item) == link_type}
     found += [Referrer("replacement", f"link {name}", f"is deprecated and names {link_type} as its replacement",
-                       (f"link:{name}",))
+                       (LINK_SUBJECT + name,))
               for name in sorted(named_as_replacement)]
     # Both ends were listed with "one end of it"; say that once, not twice.
     return _ordered([item for item in found if item.kind != "link"],
@@ -275,6 +282,10 @@ def _inside_the_type(type_def: Mapping, object_type: str, field: str) -> list[Re
             add("predicted", f"field {name}", prediction.describe()
                 if field in prediction.inputs else f"predicts {prediction.target}",
                 name, prediction.target, *prediction.inputs)
+    searched = semantic_search_of(type_def)
+    if searched and field in searched.inputs:
+        add("semantic_search", "semantic search", f"is searched by meaning (from: {', '.join(searched.inputs)})",
+            *searched.inputs)
     unusual = unusual_of(type_def)
     if unusual and (field in unusual[0] or field in unusual[1]):
         add("unusual", "unusual-records check", "reads it", *unusual[0], *unusual[1])

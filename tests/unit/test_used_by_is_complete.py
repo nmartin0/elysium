@@ -123,3 +123,48 @@ def test_whatever_the_loader_refuses_the_report_lists(tmp_path, kind, type_name,
         assert [row for row in found if row.kind == "grant"], (
             f"removing {what} makes the loader refuse only because of a grant, and the used-by "
             f"report lists no grant")
+
+
+def _with_semantic_search(tmp_path: Path, type_name: str, inputs: list[str], drop: str) -> bool:
+    """Does the loader accept the fixture with `type_name` searched by
+    meaning from `inputs`, and `drop` removed from the type?"""
+    copy = tmp_path / "semantic"
+    if copy.exists():
+        shutil.rmtree(copy)
+    shutil.copytree(FIXTURES, copy)
+    raw = yaml.safe_load((FIXTURES / "ontology_schema.yaml").read_text())
+    raw["object_types"][type_name]["semantic_search"] = {"from": inputs}
+    if drop:
+        del raw["object_types"][type_name]["fields"][drop]
+    (copy / "ontology_schema.yaml").write_text(yaml.safe_dump(raw, sort_keys=False))
+    policy = yaml.safe_load((copy / "policy.yaml").read_text())
+    for role in policy["roles"].values():
+        role["allowed_actions"] = [grant for grant in role.get("allowed_actions") or []
+                                   if not drop or not _names(grant, "field", type_name, drop)]
+    (copy / "policy.yaml").write_text(yaml.safe_dump(policy, sort_keys=False))
+    config = yaml.safe_load((copy / "config.yaml").read_text())
+    config["llm"]["embedding_model"] = "nomic-embed-text"
+    (copy / "config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
+    try:
+        load_deployment(copy)
+    except (ValueError, KeyError):
+        return False
+    return True
+
+
+def test_a_field_a_type_is_searched_by_is_listed(tmp_path):
+    """`semantic_search.from` naming a missing field is refused at load
+    (validate_semantic_search), so the report must list it -- with the
+    other inputs among the names the row hides behind."""
+    type_name, inputs = "SupportTicket", ["subject", "status"]
+    raw = yaml.safe_load((FIXTURES / "ontology_schema.yaml").read_text())
+    assert set(inputs) <= set(raw["object_types"][type_name]["fields"]), "the fixture changed"
+    assert _with_semantic_search(tmp_path, type_name, inputs, ""), "the fixture variant must load"
+    assert not _with_semantic_search(tmp_path, type_name, inputs, "status"), "the loader no longer refuses"
+
+    schema = dict(CONFIG.schema)
+    schema[type_name] = {**schema[type_name], "semantic_search": {"from": inputs}}
+    found = used_by_field(schema, CONFIG.roles, CONFIG.action_types, CONFIG.declared_triggers, type_name, "status")
+
+    rows = [row for row in found if row.kind == "semantic_search"]
+    assert len(rows) == 1 and rows[0].subjects == (f"{type_name}.subject",)
