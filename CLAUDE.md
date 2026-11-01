@@ -54,6 +54,27 @@ skipped (PRINCIPLES.md section 13). The manual form, if the script is
 unavailable, is `git format-patch origin/dev..HEAD --stdout`, a
 `grep -c '^From '` count and a dry-run `git am` on a branch.
 
+**Bundles, when work piles up across branches.** Elysium's `dev` and
+each sub-app's branch (`astrolabe`, `heliograph`) are developed
+together, each in its own worktree: `/home/claude/elysium`,
+`../elysium-globe`, `../elysium-heliograph`. Only the Elysium lane edits
+core; a sub-app that needs something generic files a request in
+`BLOCKING.md` and waits. If the user has not applied the last patches,
+make ONE bundle of everything not yet applied instead of more patches:
+
+```
+scripts/make_bundle.sh <name> dev=<dir>:origin/dev astrolabe=<dir>:<base> heliograph=<dir>:<base>
+```
+
+Lanes with nothing new are left out; Elysium comes first so a sub-app
+change that needs it applies after it. The user runs
+`scripts/apply_bundle.sh ~/Downloads/<name>.tar` from their Elysium
+clone; it checks every lane's directory first, then applies and pushes
+each lane through `apply_patch.sh`. The base for a lane is what the user
+has: `origin/<lane>` once pushed, else the commit they were given.
+A lane's first-time setup (a worktree, `import_upstream.sh`) is done by
+hand once, with the steps in the message that introduces it.
+
 **Give the user the command, every time.** They should not have to
 remember it:
 
