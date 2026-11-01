@@ -432,6 +432,11 @@ class SchemaFieldResponse(BaseModel):
     # reading it -- field-level RBAC is the only thing that does.
     visibility: str = "normal"
     status: str = "active"
+    #: Why it is deprecated and what replaces it (core/ontology/deprecation.py);
+    #: None when it is not, or when the file gave no reason.
+    deprecation: "DeprecationResponse | None" = None
+    #: A link that took its status from a type: which one.
+    status_inherited_from: str | None = None
     #: What the field's VALUES are -- `pii`, `financial` (R12). Labels,
     #: never grants; always a list here, though the ontology may write
     #: one label bare.
@@ -441,6 +446,12 @@ class SchemaFieldResponse(BaseModel):
     @classmethod
     def _one_label_is_a_list(cls, value):
         return [value] if isinstance(value, str) else (value or [])
+
+
+class DeprecationResponse(BaseModel):
+    reason: str | None = None
+    replaced_by: str | None = None
+    remove_after: str | None = None
 
 
 class VisibleObjectTypeResponse(BaseModel):
@@ -466,6 +477,7 @@ class VisibleObjectTypeResponse(BaseModel):
     icon: str | None = None
     color: str | None = None
     status: str = "active"
+    deprecation: DeprecationResponse | None = None
     # A label for filtering and browsing a large ontology. Purely
     # organisational -- it groups nothing structurally.
     group: str | None = None
@@ -2870,6 +2882,80 @@ def apply_new_link_route(body: NewLinkRequest, request: Request,
         return {"status": "waiting", "proposal_id": proposal_id,
                 "diff": [line for name, (before, after) in files.items()
                          for line in shown_diff(name, before, after)]}
+
+
+class StatusRequest(BaseModel):
+    digest: str
+    # "type", "field" or "link"; object_type (and field) say which type or
+    # field, link says which link type.
+    kind: str
+    object_type: str | None = None
+    field: str | None = None
+    link: str | None = None
+    # "deprecated", or "active" to put it back.
+    status: str
+    # Why it is deprecated: required to deprecate, in words. This is the
+    # deprecation's reason, not the approval reason other edits carry.
+    reason: str | None = None
+    replaced_by: str | None = None
+    remove_after: str | None = None
+
+
+class StatusPreviewResponse(BaseModel):
+    diff: list[str]
+    impact: dict
+    needs_approval: bool
+
+
+def _proposed_status(request: Request, body: StatusRequest) -> "dict[str, tuple[str, str]]":
+    from core.config_editing import ONTOLOGY_FILE, ConfigEditError, apply_status
+    from core.ontology.deprecation import validate_deprecation
+
+    current = _ontology_as_read(request, body.digest)
+    change = body.model_dump(exclude_none=True, exclude={"digest"})
+    try:
+        proposed = apply_status(current, change, validate_deprecation)
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {ONTOLOGY_FILE: (current, proposed)}
+
+
+@router.post("/admin/ontology/status/preview", dependencies=[Depends(_no_store)],
+             response_model=StatusPreviewResponse)
+def preview_status_route(body: StatusRequest, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The lines that would be written to deprecate (or restore) a type,
+    a field or a link type, and what it does to access -- nothing, and the
+    permission code is asked rather than assumed. Nothing written."""
+    from core.config_editing import shown_diff
+
+    _require_manage_deployment(request, current_user)
+    files = _proposed_status(request, body)
+    _candidate, impact = _access_impact(request, {name: proposed for name, (_, proposed) in files.items()})
+    return {
+        "diff": [line for name, (before, after) in files.items() for line in shown_diff(name, before, after)],
+        "impact": impact, "needs_approval": impact["widens"],
+    }
+
+
+@router.put("/admin/ontology/status", dependencies=[Depends(_no_store)], response_model=NewFieldsResponse)
+def apply_status_route(body: StatusRequest, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Deprecates (or restores) now. A status changes no data and no
+    grant, so it never waits for a second person; if the permission code
+    says anyone could read more afterwards, something is wrong with the
+    edit and it is refused rather than proposed."""
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        files = _proposed_status(request, body)
+        _candidate, impact = _access_impact(request, {name: text for name, (_, text) in files.items()})
+        if impact["widens"]:
+            raise HTTPException(status_code=409, detail=(
+                "This would let someone read more than they can now, which a status never should. "
+                "Nothing was changed."))
+        what = body.link or (f"{body.object_type}.{body.field}" if body.field else body.object_type)
+        written = _write_config_files(request, current_user, files, {f"{what}.status": body.status})
+        return {"status": "applied", "diff": written["diff"], "to_generation": written["to_generation"]}
 
 
 def _reason(text: "str | None") -> str:

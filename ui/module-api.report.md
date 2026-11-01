@@ -13,8 +13,8 @@ Anything else either exports is internal, and may change without notice.
 The manifest, `activate()`, host values, styles and the add-on server are
 described in [MODULE_API.md](MODULE_API.md).
 
-223 names imported, from 40 entry points, by 9 modules;
-281 declarations public in all.
+229 names imported, from 40 entry points, by 9 modules;
+287 declarations public in all.
 
 ## `@elysium/shell-api/api`
 
@@ -81,6 +81,8 @@ export declare function applyOntologyDescriptions(digest: string, changes: Descr
     digest: string;
     to_generation: number;
 }
+
+export declare function applyStatus(digest: string, change: StatusChange): Promise<LabelEditResult>;
 
 export declare function approveRoleChange(changeId: string): Promise<void>;
 
@@ -772,6 +774,8 @@ export declare function previewOntologyDescriptions(digest: string, changes: Des
 
 export declare function previewRoleChange(roleName: string, grants: string[] | null): Promise<RoleImpact>;
 
+export declare function previewStatus(digest: string, change: StatusChange): Promise<StatusPreview>;
+
 export declare function proposeAction(actionTypeName: string, parameters: Record<string, unknown>): Promise<unknown>;
 
 export declare function proposeRoleChange(roleName: string, grants: string[] | null): Promise<string>;
@@ -936,6 +940,31 @@ export type SetRegion = 'left_only' | 'both' | 'right_only' | 'either';
 export declare function setTriggerEnabled(triggerId: string, enabled: boolean): Promise<void>;
 
 export declare function similarObjects(objectType: string, objectId: string, k?: number): Promise<MeaningResults>;
+
+export type StatusChange = StatusTarget & {
+    status: 'deprecated' | 'active';
+    reason?: string;
+    replaced_by?: string;
+    remove_after?: string;
+};
+
+export interface StatusPreview {
+    diff: string[];
+    impact: AccessImpact;
+    needs_approval: boolean;
+}
+
+export type StatusTarget = {
+    kind: 'type';
+    object_type: string;
+} | {
+    kind: 'field';
+    object_type: string;
+    field: string;
+} | {
+    kind: 'link';
+    link: string;
+};
 
 export type TimePeriod = 'day' | 'week' | 'month';
 
@@ -1488,6 +1517,12 @@ export interface TimeSeries {
 ## `@elysium/shell-api/types`
 
 ```ts
+export interface Deprecation {
+    reason: string | null;
+    replaced_by: string | null;
+    remove_after: string | null;
+}
+
 export interface FieldSchema {
     type: string;
     readable?: boolean;
@@ -1500,6 +1535,8 @@ export interface FieldSchema {
     data_type?: string;
     visibility?: string;
     status?: string;
+    deprecation?: Deprecation | null;
+    status_inherited_from?: string | null;
     classification?: string[];
     derived?: string | null;
     inferred?: string | null;
@@ -1519,6 +1556,7 @@ export interface TypeSchema {
     icon?: string | null;
     color?: string | null;
     status?: string;
+    deprecation?: Deprecation | null;
     group?: string | null;
     id_field?: string | null;
 }

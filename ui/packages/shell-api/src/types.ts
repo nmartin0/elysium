@@ -91,6 +91,10 @@ export interface FieldSchema {
   data_type?: string
   visibility?: string
   status?: string
+  /** Why it is deprecated and what replaces it; null when not. */
+  deprecation?: Deprecation | null
+  /** A link that took its status from a type: which one. */
+  status_inherited_from?: string | null
   /** What the field's VALUES are -- `pii`, `financial` (R12). A label
    *  carried to every table holding the values; never a grant. */
   classification?: string[]
@@ -102,6 +106,14 @@ export interface FieldSchema {
    *  subject": its values are chosen by approved rules a model wrote,
    *  not recorded. Every such value is marked where it is shown. */
   inferred?: string | null
+}
+
+/** Why something is deprecated (core/ontology/deprecation.py). */
+export interface Deprecation {
+  reason: string | null
+  replaced_by: string | null
+  /** A date, as text: information only. */
+  remove_after: string | null
 }
 
 export interface TypeSchema {
@@ -124,6 +136,7 @@ export interface TypeSchema {
   icon?: string | null
   color?: string | null
   status?: string
+  deprecation?: Deprecation | null
   group?: string | null
   id_field?: string | null
 }

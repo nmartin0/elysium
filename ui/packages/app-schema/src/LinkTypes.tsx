@@ -18,8 +18,9 @@
 
 import { Button } from '@blueprintjs/core'
 import StatusTag from '@elysium/shell-api/components/StatusTag'
-import type { VisibleSchema } from '@elysium/shell-api/types'
+import type { Deprecation, VisibleSchema } from '@elysium/shell-api/types'
 import DataTable from '@elysium/shell-api/components/DataTable'
+import DeprecationNote from './DeprecationNote'
 
 // Not exported: used only within this file. Exporting a type nothing
 // imports is a second, unused public surface to keep correct.
@@ -28,6 +29,9 @@ interface LinkSide {
   apiName: string
   target: string
   cardinality: string
+  status: string
+  deprecation: Deprecation | null
+  inheritedFrom: string | null
 }
 
 export function groupLinkTypes(schema: VisibleSchema): Map<string, LinkSide[]> {
@@ -41,6 +45,9 @@ export function groupLinkTypes(schema: VisibleSchema): Map<string, LinkSide[]> {
         apiName,
         target: field.target ?? '?',
         cardinality: field.cardinality ?? 'one',
+        status: field.status ?? 'active',
+        deprecation: field.deprecation ?? null,
+        inheritedFrom: field.status_inherited_from ?? null,
       })
       grouped.set(field.link_type, sides)
     }
@@ -56,9 +63,11 @@ interface LinkTypesProps {
   onOpenObjectType: (objectType: string) => void
   /** What names a link: present only for manage:deployment. */
   onUsedBy?: (target: { link: string }) => void
+  /** Deprecating a link: present only for manage:deployment. */
+  onDeprecate?: (target: { link: string }) => void
 }
 
-export default function LinkTypes({ schema, filter, onOpenObjectType, onUsedBy }: LinkTypesProps) {
+export default function LinkTypes({ schema, filter, onOpenObjectType, onUsedBy, onDeprecate }: LinkTypesProps) {
   const grouped = groupLinkTypes(schema)
   if (grouped.size === 0) {
     return <p>No link types are visible to you.</p>
@@ -94,9 +103,28 @@ export default function LinkTypes({ schema, filter, onOpenObjectType, onUsedBy }
           <tr key={linkType}>
             <td>
               <strong>{linkType}</strong>
+              {sides[0]?.status !== undefined && sides[0].status !== 'active' && (
+                <>
+                  {' '}
+                  <StatusTag state={sides[0].status === 'deprecated' ? 'refused' : 'pending'}>
+                    {sides[0].status}
+                  </StatusTag>
+                </>
+              )}
+              <DeprecationNote
+                status={sides[0]?.status}
+                deprecation={sides[0]?.deprecation}
+                inheritedFrom={sides[0]?.inheritedFrom}
+              />
               {onUsedBy && (
                 <Button small minimal icon="search-around" onClick={() => onUsedBy({ link: linkType })}>
                   Used by <span className="visually-hidden">{linkType}</span>
+                </Button>
+              )}
+              {onDeprecate && (
+                <Button small minimal icon="warning-sign" onClick={() => onDeprecate({ link: linkType })}>
+                  {sides[0]?.status === 'deprecated' && !sides[0].inheritedFrom ? 'Deprecation' : 'Deprecate'}{' '}
+                  <span className="visually-hidden">{linkType}</span>
                 </Button>
               )}
               {sides.length === 1 && <div className="schema-panel__api-name">one side visible to you</div>}

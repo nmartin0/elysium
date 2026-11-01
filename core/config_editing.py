@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
+from ruamel.yaml.error import YAMLError as RuamelYAMLError
 
 
 class ConfigEditError(ValueError):
@@ -612,6 +613,146 @@ def apply_labels(text: str, changes: list) -> str:
         else:
             declared.pop("classification", None)
 
+    return _meaning_checked(edited, expected)
+
+
+# ---------------------------------------------------------------------------
+# DEPRECATING (the removal design, agreed 28 October): the second of the
+# steps before anything is removed. A type, a field or a link type is
+# marked `status: deprecated` with WHY, and optionally what replaces it
+# and the day an operator will be asked to approve its removal; marking
+# it active again takes both lines out. Nothing about the data or about
+# who may read it changes, so this never needs a second person.
+#
+# THE BLOCK IS WRITTEN AS ONE LINE, `deprecation: {reason: "...", ...}`.
+# The line editor changes a scalar's line and nothing else; a flow
+# mapping on one line is the one shape that stays a single replaceable
+# line, whether the file had the block form before or nothing at all.
+# ---------------------------------------------------------------------------
+
+DEPRECATION = "deprecation"
+STATUS_KINDS = ("type", "field", "link")
+STATUS_CHANGE_KEYS = ("kind", "object_type", "field", "link", "status", "reason", "replaced_by", "remove_after")
+_STATUS_AFTER = {"type": ("display_name", "plural_display_name", "description"),
+                 "field": ("type", "data_type", "display_name", "description", "classification"),
+                 "link": ("display_name", "description", "source", "target", "cardinality",
+                          "foreign_key_column", "join_table")}
+
+
+def apply_status(text: str, change: dict, check) -> str:
+    """ontology_schema.yaml with one type, field or link type deprecated
+    or made active again. `change` is {kind: type|field|link, status:
+    deprecated|active} with `object_type` (and `field`) for a type or a
+    field, `link` for a link type; and, when deprecating, `reason`
+    (required) with optional `replaced_by` and `remove_after` (a date).
+
+    Refuses a name that is not in the file (a field a link made is not:
+    deprecate the link type), a reason that is empty or too long, and a
+    replacement or date the loader would refuse; and any result that does
+    not mean exactly the old file with this one change.
+
+    `check` is the loader's own judge of a deprecation block --
+    core.ontology.deprecation.validate_deprecation(owner, name, definition,
+    siblings, kind), raising ValueError -- handed in because this module
+    imports nothing from core (see pyproject's layering). It is required,
+    not defaulted: a caller that forgot it would silently skip the checks."""
+    import datetime
+    import json
+
+    import yaml as plain_yaml
+
+    if not isinstance(change, dict):
+        raise ConfigEditError("Nothing to change.")
+    unknown = sorted(set(change) - set(STATUS_CHANGE_KEYS))
+    if unknown:
+        raise ConfigEditError(f"{', '.join(unknown)} cannot be set here.")
+    kind, status = change.get("kind"), change.get("status")
+    if kind not in STATUS_KINDS:
+        raise ConfigEditError(f"What is being deprecated is one of {', '.join(STATUS_KINDS)}.")
+    if status not in ("deprecated", "active"):
+        raise ConfigEditError("A thing is made deprecated, or active again.")
+    expected = plain_yaml.safe_load(text) or {}
+    types = expected.get("object_types") if isinstance(expected, dict) else None
+    if not isinstance(types, dict):
+        raise ConfigEditError(f"{ONTOLOGY_FILE} declares no object_types.")
+
+    if kind == "link":
+        link_name = change.get("link")
+        links = expected.get("link_types")
+        if not isinstance(links, dict) or not isinstance(link_name, str) or not isinstance(links.get(link_name), dict):
+            raise ConfigEditError(f"There is no link type {link_name!r}.")
+        name, siblings, declared, path, where = link_name, links, links[link_name], ["link_types", link_name], link_name
+    else:
+        object_type = change.get("object_type")
+        type_def = types.get(object_type) if isinstance(object_type, str) else None
+        if not isinstance(type_def, dict):
+            raise ConfigEditError(f"There is no object type {object_type!r}.")
+        if kind == "type":
+            name, siblings, declared = str(object_type), types, type_def
+            path, where = ["object_types", str(object_type)], str(object_type)
+        else:
+            field_name = change.get("field")
+            fields = type_def.get("fields") or {}
+            if not isinstance(field_name, str) or not isinstance(fields.get(field_name), dict):
+                raise ConfigEditError(
+                    f"{object_type} has no field {field_name!r} written in {ONTOLOGY_FILE}. A field that "
+                    f"a link made is deprecated by deprecating the link type.")
+            name, siblings, declared = field_name, fields, fields[field_name]
+            path, where = ["object_types", str(object_type), "fields", field_name], f"{object_type}.{field_name}"
+
+    if "deprecation" in change:
+        raise ConfigEditError("The reason is given as `reason`.")
+    edited = text
+    if status == "active":
+        for key in ("replaced_by", "remove_after", "reason"):
+            if change.get(key) is not None:
+                raise ConfigEditError(f"{key} goes with deprecating, not with making {where} active.")
+        edited = _edit_line(edited, [*path, DEPRECATION], None, ONTOLOGY_FILE)
+        edited = _edit_line(edited, [*path, "status"], None, ONTOLOGY_FILE)
+        declared.pop(DEPRECATION, None)
+        declared.pop("status", None)
+        return _meaning_checked(edited, expected)
+
+    reason = change.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ConfigEditError(f"Say why {where} is deprecated, in words, for whoever reads it later.")
+    block: dict = {"reason": reason.strip()}
+    pieces = [f"reason: {json.dumps(block['reason'], ensure_ascii=False)}"]
+    replacement = change.get("replaced_by")
+    if replacement not in (None, ""):
+        if not isinstance(replacement, str):
+            raise ConfigEditError("What replaces it is a name.")
+        block["replaced_by"] = replacement
+        pieces.append(f"replaced_by: {json.dumps(replacement, ensure_ascii=False)}")
+    when = change.get("remove_after")
+    if when not in (None, ""):
+        try:
+            block["remove_after"] = when if isinstance(when, datetime.date) else datetime.date.fromisoformat(when)
+        except (TypeError, ValueError):
+            raise ConfigEditError("The removal date is a date, like 2027-03-31.") from None
+        pieces.append(f"remove_after: {block['remove_after'].isoformat()}")
+    declared["status"] = "deprecated"
+    declared[DEPRECATION] = block
+    try:
+        check(where, name, declared, siblings, "link type" if kind == "link" else kind)
+    except ValueError as e:
+        raise ConfigEditError(str(e)) from e
+    after = _STATUS_AFTER[kind]
+    try:
+        edited = _edit_line(edited, [*path, "status"], "deprecated", ONTOLOGY_FILE, after=after)
+        edited = _edit_line(edited, [*path, DEPRECATION], "{" + ", ".join(pieces) + "}", ONTOLOGY_FILE,
+                            after=("status",))
+    except RuamelYAMLError:
+        # A child line cannot be added under `where`'s own line when
+        # THAT line is written in flow style ("id: {type: string}") --
+        # there is nowhere a block-style `status:` could go under a
+        # mapping that closes on the same line. Caught here rather than
+        # written and left broken: `_edit_line` parses the text it is
+        # about to edit next, and this is the one case that parse can
+        # fail (confirmed by an independent review, 31 October).
+        raise ConfigEditError(
+            f"{where} is written as {{...}} on one line, and cannot be deprecated without rewriting "
+            f"it to span several lines first.") from None
     return _meaning_checked(edited, expected)
 
 

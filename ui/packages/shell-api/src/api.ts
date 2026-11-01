@@ -2666,6 +2666,44 @@ export async function applyNewLink(digest: string, link: NewLink, reason: string
   return (await response.json()) as LabelEditResult
 }
 
+/** What to deprecate (or make active again): a type, one of its fields, or a link type. */
+export type StatusTarget =
+  | { kind: 'type'; object_type: string }
+  | { kind: 'field'; object_type: string; field: string }
+  | { kind: 'link'; link: string }
+
+export type StatusChange = StatusTarget & {
+  status: 'deprecated' | 'active'
+  /** Required to deprecate: why, in words. */
+  reason?: string
+  replaced_by?: string
+  /** A date, 2027-03-31: information only. */
+  remove_after?: string
+}
+
+export interface StatusPreview {
+  diff: string[]
+  impact: AccessImpact
+  needs_approval: boolean
+}
+
+export async function previewStatus(digest: string, change: StatusChange): Promise<StatusPreview> {
+  const response = await apiFetchOrThrow('/admin/ontology/status/preview', {
+    method: 'POST',
+    body: JSON.stringify({ digest, ...change }),
+  })
+  return (await response.json()) as StatusPreview
+}
+
+/** Deprecates (or restores) now: a status never waits for a second person. */
+export async function applyStatus(digest: string, change: StatusChange): Promise<LabelEditResult> {
+  const response = await apiFetchOrThrow('/admin/ontology/status', {
+    method: 'PUT',
+    body: JSON.stringify({ digest, ...change }),
+  })
+  return (await response.json()) as LabelEditResult
+}
+
 /** A configuration change waiting for a role manager who did not propose it. */
 export interface ConfigProposal {
   proposal_id: string

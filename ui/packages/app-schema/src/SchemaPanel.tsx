@@ -54,6 +54,8 @@ import AddLink from './AddLink'
 import AddType from './AddType'
 import DescribeType from './DescribeType'
 import UsedByDialog, { type UsedByTarget } from './UsedBy'
+import DeprecateDialog, { type DeprecateTarget } from './Deprecate'
+import DeprecationNote from './DeprecationNote'
 import LabelFields from './LabelFields'
 import './SchemaPanel.css'
 import DataTable from '@elysium/shell-api/components/DataTable'
@@ -112,12 +114,15 @@ function FieldTable({
   onOpenObjectType,
   onOpenLinkType,
   onUsedBy,
+  onDeprecate,
 }: {
   fields: [string, SchemaField][]
   onOpenObjectType: (objectType: string) => void
   onOpenLinkType: (linkType: string) => void
   /** What names this field: present only for manage:deployment. */
   onUsedBy?: (field: string) => void
+  /** Deprecating a stored field (a link field is deprecated as its link type). */
+  onDeprecate?: (field: string) => void
 }) {
   if (fields.length === 0) return null
   return (
@@ -141,6 +146,12 @@ function FieldTable({
               {onUsedBy && (
                 <Button small minimal icon="search-around" onClick={() => onUsedBy(apiName)}>
                   Used by <span className="visually-hidden">{field.display_name ?? apiName}</span>
+                </Button>
+              )}
+              {onDeprecate && field.type !== 'link' && (
+                <Button small minimal icon="warning-sign" onClick={() => onDeprecate(apiName)}>
+                  {field.status === 'deprecated' ? 'Deprecation' : 'Deprecate'}{' '}
+                  <span className="visually-hidden">{field.display_name ?? apiName}</span>
                 </Button>
               )}
             </td>
@@ -197,7 +208,14 @@ function FieldTable({
                 </span>
               ))}
             </td>
-            <td>{field.description ?? ''}</td>
+            <td>
+              {field.description ?? ''}
+              <DeprecationNote
+                status={field.status}
+                deprecation={field.deprecation}
+                inheritedFrom={field.status_inherited_from}
+              />
+            </td>
           </tr>
         ))}
       </tbody>
@@ -213,6 +231,7 @@ function ObjectTypeCard({
   onLabels,
   onAddField,
   onUsedBy,
+  onDeprecate,
   onOpenObjectType,
   onOpenLinkType,
 }: {
@@ -228,6 +247,8 @@ function ObjectTypeCard({
   onAddField?: (objectType: string) => void
   /** What names the type or one of its fields: present only for manage:deployment. */
   onUsedBy?: (target: UsedByTarget) => void
+  /** Deprecating this type or one of its stored fields: present only for manage:deployment. */
+  onDeprecate?: (target: DeprecateTarget) => void
   onOpenObjectType: (objectType: string) => void
   onOpenLinkType: (linkType: string) => void
 }) {
@@ -254,6 +275,7 @@ function ObjectTypeCard({
       </h3>
       {apiName !== (type.display_name ?? apiName) && <div className="schema-panel__api-name">{apiName}</div>}
       {type.description && <p>{type.description}</p>}
+      <DeprecationNote status={type.status} deprecation={type.deprecation} />
       {onDescribe && (
         <Button small minimal icon="edit" onClick={() => onDescribe(apiName)}>
           Describe
@@ -274,6 +296,11 @@ function ObjectTypeCard({
           Used by
         </Button>
       )}
+      {onDeprecate && (
+        <Button small minimal icon="warning-sign" onClick={() => onDeprecate({ objectType: apiName })}>
+          {type.status === 'deprecated' ? 'Deprecation' : 'Deprecate'}
+        </Button>
+      )}
 
       {prominent.length > 0 && (
         <>
@@ -283,6 +310,7 @@ function ObjectTypeCard({
             onOpenObjectType={onOpenObjectType}
             onOpenLinkType={onOpenLinkType}
             onUsedBy={onUsedBy && ((field) => onUsedBy({ objectType: apiName, field }))}
+            onDeprecate={onDeprecate && ((field) => onDeprecate({ objectType: apiName, field }))}
           />
         </>
       )}
@@ -292,6 +320,7 @@ function ObjectTypeCard({
         onOpenObjectType={onOpenObjectType}
         onOpenLinkType={onOpenLinkType}
         onUsedBy={onUsedBy && ((field) => onUsedBy({ objectType: apiName, field }))}
+        onDeprecate={onDeprecate && ((field) => onDeprecate({ objectType: apiName, field }))}
       />
       {entries.length === 0 && <Notice state="neutral">No fields are visible to you on this object type.</Notice>}
       {access && <WhoCanSee objectType={apiName} access={access} />}
@@ -353,6 +382,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
   const [addingType, setAddingType] = useState(false)
   const [addingLink, setAddingLink] = useState(false)
   const [usedBy, setUsedBy] = useState<UsedByTarget | null>(null)
+  const [deprecating, setDeprecating] = useState<DeprecateTarget | null>(null)
   // What the last edit did: applied as a generation, or waiting for a
   // second person (a label that lets anyone read more).
   const [edited, setEdited] = useState<{ generation: number } | 'waiting' | null>(null)
@@ -360,6 +390,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
   const onLabels = describable ? (objectType: string) => setLabelling(objectType) : undefined
   const onAddField = describable ? (objectType: string) => setAdding(objectType) : undefined
   const onUsedBy = describable ? (target: UsedByTarget) => setUsedBy(target) : undefined
+  const onDeprecate = describable ? (target: DeprecateTarget) => setDeprecating(target) : undefined
   // NAVIGATION STATE LIVES IN THE URL, not in component state.
   //
   // Following a reference is one click -- a link's target, a link tag,
@@ -566,6 +597,18 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
       {usedBy !== null && (
         <UsedByDialog target={usedBy} onClose={() => setUsedBy(null)} onSessionExpired={onSessionExpired} />
       )}
+      {deprecating !== null && (
+        <DeprecateDialog
+          schema={schema}
+          target={deprecating}
+          onClose={() => setDeprecating(null)}
+          onApplied={(generation) => {
+            setDeprecating(null)
+            setEdited({ generation })
+          }}
+          onSessionExpired={onSessionExpired}
+        />
+      )}
       {addingType && (
         <AddType
           onClose={() => setAddingType(false)}
@@ -651,6 +694,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
                 onLabels={onLabels}
                 onAddField={onAddField}
                 onUsedBy={onUsedBy}
+                onDeprecate={onDeprecate}
                 onOpenObjectType={openObjectType}
                 onOpenLinkType={openLinkType}
               />
@@ -695,7 +739,13 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
       )}
       {selectedTab === 'link-types' && (
         <>
-          <LinkTypes schema={schema} filter={linkFilter} onOpenObjectType={openObjectType} onUsedBy={onUsedBy} />
+          <LinkTypes
+            schema={schema}
+            filter={linkFilter}
+            onOpenObjectType={openObjectType}
+            onUsedBy={onUsedBy}
+            onDeprecate={onDeprecate}
+          />
         </>
       )}
       {selectedTab === 'action-types' && (

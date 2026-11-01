@@ -29,6 +29,13 @@
     font-family: var(--font-mono);
   }
 
+  .schema-panel__deprecation {
+    font-size: 0.85em;
+    margin-top: 4px;
+    opacity: 0.75;
+    overflow-wrap: anywhere;
+  }
+
   .schema-panel__discover-list {
     display: flex;
     flex-wrap: wrap;

@@ -326,6 +326,10 @@ def test_visible_schema_never_leaks_internal_storage_or_security_config(mediator
         "display_name", "plural_display_name", "description",
         # UI rendering hints for the ontology browser.
         "icon", "color", "status", "group",
+        # Why it is deprecated and what replaces it (28 October); None
+        # for this active type. "replaced_by" is shown only when it
+        # names something itself discoverable to the caller.
+        "deprecation",
         # Whether this type can be SEARCHED, as opposed to merely
         # known about. A permission OUTCOME rather than infrastructure
         # -- the opposite of storage/security, which describe how the

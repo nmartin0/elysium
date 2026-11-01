@@ -7298,6 +7298,130 @@ CONTROLS = [
         new='true',
         tests=["tests/unit/test_patch_scripts.py::test_apply_patch_refuses_to_publish_unrelated_local_commits"],
     ),
+    Control(
+        describes="a deprecation without a reason is refused",
+        path="core/config_editing.py",
+        old='    if not isinstance(reason, str) or not reason.strip():\n        raise ConfigEditError(f"Say why',
+        new='    if False:\n        raise ConfigEditError(f"Say why',
+        tests=["tests/unit/test_deprecate_edit.py::test_a_refusal_says_why"],
+    ),
+    Control(
+        describes="a deprecation's replacement is checked as the loader checks it",
+        path="core/config_editing.py",
+        old='        check(where, name, declared, siblings,',
+        new='        (lambda *a: None)(where, name, declared, siblings,',
+        tests=["tests/unit/test_deprecate_edit.py::test_a_refusal_says_why"],
+    ),
+    Control(
+        describes="a field a link made is deprecated as its link type, not as a field",
+        path="core/config_editing.py",
+        old='if not isinstance(field_name, str) or not isinstance(fields.get(field_name), dict):',
+        new='if False:',
+        tests=["tests/unit/test_deprecate_edit.py::test_a_field_a_link_made_is_not_in_the_file_so_the_link_type_is_the_thing_to_deprecate"],
+    ),
+    Control(
+        describes="restoring takes the status line out too",
+        path="core/config_editing.py",
+        old=(
+            '        edited = _edit_line(edited, [*path, "status"], None, '
+            'ONTOLOGY_FILE)\n'
+            '        declared.pop(DEPRECATION, None)'
+        ),
+        new='        declared.pop(DEPRECATION, None)',
+        tests=["tests/unit/test_deprecate_edit.py::test_making_it_active_again_takes_both_lines_out"],
+    ),
+    Control(
+        describes="a status that would widen access is refused rather than applied",
+        path="api/routes.py",
+        old=(
+            '        if impact["widens"]:\n'
+            '            raise HTTPException(status_code=409, detail=(\n'
+            '                "This would let someone read more'
+        ),
+        new=(
+            '        if False:\n'
+            '            raise HTTPException(status_code=409, detail=(\n'
+            '                "This would let someone read more'
+        ),
+        tests=["tests/integration/test_deprecate_from_the_ui.py::TestAStatusNeverWidensAccess::test_if_the_permission_code_says_it_would_the_edit_is_refused_and_nothing_is_written"],
+    ),
+    Control(
+        describes="a deprecation's date reaches a reader as text",
+        path="core/ontology/deprecation.py",
+        old='when.isoformat() if isinstance(when, date) else str(when)',
+        new='when',
+        tests=["tests/integration/test_deprecate_from_the_ui.py::TestWhatAReaderSees::test_a_field_carries_its_reason_replacement_and_date_as_text"],
+    ),
+    Control(
+        describes="a link's inherited status reaches a reader",
+        path="core/ontology/mediator.py",
+        old='"status_inherited_from": redacted.get("status_inherited_from"),',
+        new='"status_inherited_from": None,',
+        tests=["tests/integration/test_deprecate_from_the_ui.py::TestWhatAReaderSees::test_a_type_carries_its_reason_and_its_links_say_which_type_they_took_it_from"],
+    ),
+    Control(
+        describes="only a manager of the deployment may deprecate",
+        path="api/routes.py",
+        old=(
+            '    _require_manage_deployment(request, current_user)\n'
+            '    files = _proposed_status(request, body)\n'
+            '    _candidate, impact = _access_impact(request, {name: proposed for '
+            'name, (_, proposed) in files.items()})\n'
+            '    return {'
+        ),
+        new=(
+            '    files = _proposed_status(request, body)\n'
+            '    _candidate, impact = _access_impact(request, {name: proposed for '
+            'name, (_, proposed) in files.items()})\n'
+            '    return {'
+        ),
+        tests=["tests/integration/test_deprecate_from_the_ui.py::TestWhoMay::test_only_a_manager_of_the_deployment"],
+    ),
+    Control(
+        describes="a link's reset status reads from the redacted field, not the original",
+        path="core/ontology/mediator.py",
+        old='"status": redacted.get("status") or "active",',
+        new='"status": field_info.get("status") or "active",',
+        tests=["tests/integration/test_deprecate_from_the_ui.py::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_a_links_inherited_status_is_hidden_when_the_other_type_is_not_discoverable"],
+    ),
+    Control(
+        describes="a link's reset status_inherited_from reads from the redacted field, not the original",
+        path="core/ontology/mediator.py",
+        old='"status_inherited_from": redacted.get("status_inherited_from"),',
+        new='"status_inherited_from": field_info.get("status_inherited_from"),',
+        tests=["tests/integration/test_deprecate_from_the_ui.py::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_a_links_inherited_status_is_hidden_when_the_other_type_is_not_discoverable"],
+    ),
+    Control(
+        describes="a type's replacement is hidden when it is not itself discoverable",
+        path="core/ontology/mediator.py",
+        old='"deprecation": _visible_replacement(shown_deprecation(type_def.get("deprecation")), known),',
+        new='"deprecation": shown_deprecation(type_def.get("deprecation")),',
+        tests=["tests/integration/test_deprecate_from_the_ui.py::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_a_types_replacement_is_hidden_when_it_is_not_discoverable"],
+    ),
+    Control(
+        describes="a field's or link's replacement is hidden when it is not itself discoverable",
+        path="core/ontology/mediator.py",
+        old=(
+            '"deprecation": _visible_replacement(\n'
+            '                        '
+            'shown_deprecation(redacted.get("deprecation")),\n'
+            '                        discoverable_link_types if '
+            'field_info.get("type") == "link" else discoverable_fields),'
+        ),
+        new='"deprecation": shown_deprecation(redacted.get("deprecation")),',
+        tests=["tests/integration/test_deprecate_from_the_ui.py::TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName::test_a_fields_replacement_is_hidden_when_it_is_not_discoverable"],
+    ),
+    Control(
+        describes="a flow-style body is refused rather than crashing the route",
+        path="core/config_editing.py",
+        old='    except RuamelYAMLError:',
+        new=(
+            '    except Exception as _never:  # noqa: BLE001 - deliberately never '
+            'matches, for the control\n'
+            '        raise _never'
+        ),
+        tests=["tests/unit/test_deprecate_edit.py::test_a_flow_style_body_is_refused_rather_than_breaking_the_file"],
+    ),
 ]
 
 

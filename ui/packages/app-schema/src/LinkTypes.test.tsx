@@ -133,3 +133,57 @@ describe('what names a link', () => {
     expect(screen.queryByRole('button', { name: /Used by/ })).not.toBeInTheDocument()
   })
 })
+
+describe('deprecating a link', () => {
+  const deprecated = (overrides: Record<string, unknown> = {}) => ({
+    ...SCHEMA,
+    Customer: {
+      ...SCHEMA.Customer,
+      fields: {
+        transactions: {
+          ...SCHEMA.Customer.fields.transactions,
+          status: 'deprecated',
+          deprecation: { reason: 'Use orders.', replaced_by: null, remove_after: null },
+          ...overrides,
+        },
+      },
+    },
+  })
+
+  it('is offered beside each link type, for that link', () => {
+    const onDeprecate = vi.fn()
+    render(<LinkTypes schema={SCHEMA} filter="" onOpenObjectType={vi.fn()} onDeprecate={onDeprecate} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deprecate CustomerTransactions' }))
+
+    expect(onDeprecate).toHaveBeenCalledWith({ link: 'CustomerTransactions' })
+  })
+
+  it('is not offered when the caller cannot manage the deployment', () => {
+    render(<LinkTypes schema={SCHEMA} filter="" onOpenObjectType={vi.fn()} />)
+
+    expect(screen.queryByRole('button', { name: /Deprecat/ })).not.toBeInTheDocument()
+  })
+
+  it('shows the tag and the reason, and the button reads Deprecation', () => {
+    render(<LinkTypes schema={deprecated()} filter="" onOpenObjectType={vi.fn()} onDeprecate={vi.fn()} />)
+
+    expect(screen.getByText('deprecated')).toBeInTheDocument()
+    expect(screen.getByText('Deprecated: Use orders.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Deprecation CustomerTransactions' })).toBeInTheDocument()
+  })
+
+  it('says which type a link took its status from, and still offers a deprecation of its own', () => {
+    render(
+      <LinkTypes
+        schema={deprecated({ deprecation: null, status_inherited_from: 'Customer' })}
+        filter=""
+        onOpenObjectType={vi.fn()}
+        onDeprecate={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('Deprecated because Customer is.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Deprecate CustomerTransactions' })).toBeInTheDocument()
+  })
+})

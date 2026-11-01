@@ -114,3 +114,14 @@ def link_status(link: Mapping, source_type: Mapping, target_type: Mapping) -> "t
         if (owner.get("status") or "active") == effective:
             return effective, link[side]["object_type"]
     return effective, None
+
+
+def shown_deprecation(block: "Mapping | None") -> "dict | None":
+    """A deprecation block as a screen receives it: the same three keys,
+    the date as text (YAML reads an unquoted one as a date), None when
+    there is no block."""
+    if not isinstance(block, Mapping):
+        return None
+    when = block.get("remove_after")
+    return {"reason": block.get("reason"), "replaced_by": block.get("replaced_by"),
+            "remove_after": None if when is None else (when.isoformat() if isinstance(when, date) else str(when))}

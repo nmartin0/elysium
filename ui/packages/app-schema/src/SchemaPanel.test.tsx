@@ -607,3 +607,99 @@ describe('what names a type or a field', () => {
     describing.answer = () => new Promise(() => {})
   })
 })
+
+describe('deprecating a type or a field', () => {
+  const describable = () =>
+    Promise.resolve({ digest: 'd1', types: {}, data_types: ['string'], label_enforcement: false })
+
+  it('is offered on a type and opens for that type', async () => {
+    describing.answer = describable
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Deprecate' }))
+
+    expect(await screen.findByRole('dialog', { name: 'Deprecate Customer' })).toBeInTheDocument()
+  })
+
+  it('is offered on a stored field and opens for that field', async () => {
+    describing.answer = describable
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Deprecate Email/ }))
+
+    expect(await screen.findByRole('dialog', { name: 'Deprecate Customer.Email' })).toBeInTheDocument()
+  })
+
+  it('is not offered on a link field, which is deprecated as its link type', async () => {
+    describing.answer = describable
+    const withLink = {
+      ...CUSTOMER,
+      fields: {
+        ...CUSTOMER.fields,
+        orders: {
+          type: 'link',
+          display_name: 'Orders',
+          target: 'Order',
+          link_type: 'CustomerOrders',
+          status: 'active',
+        },
+      },
+    }
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: withLink }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    await screen.findByRole('button', { name: /Deprecate Email/ })
+    expect(screen.queryByRole('button', { name: /Deprecate Orders/ })).not.toBeInTheDocument()
+  })
+
+  it('shows the reason beside a deprecated field, and the button reads Deprecation', async () => {
+    describing.answer = describable
+    const withDeprecated = {
+      ...CUSTOMER,
+      fields: {
+        ...CUSTOMER.fields,
+        email: {
+          ...CUSTOMER.fields.email,
+          status: 'deprecated',
+          deprecation: { reason: 'Replaced by name.', replaced_by: 'name', remove_after: null },
+        },
+      },
+    }
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: withDeprecated }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    expect(await screen.findByText('Deprecated: Replaced by name. Use name instead.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Deprecation Email/ })).toBeInTheDocument()
+  })
+
+  it('shows the reason under a deprecated type', async () => {
+    describing.answer = describable
+    const retired = {
+      ...CUSTOMER,
+      status: 'deprecated',
+      deprecation: { reason: 'Customers are moving.', replaced_by: null, remove_after: '2027-01-01' },
+    }
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: retired }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    expect(
+      await screen.findByText('Deprecated: Customers are moving. Removal planned after 2027-01-01.'),
+    ).toBeInTheDocument()
+  })
+
+  it('is not offered to anyone the server refuses', async () => {
+    let refused = false
+    describing.answer = () => {
+      refused = true
+      return Promise.reject(new Error('refused'))
+    }
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    await waitFor(() => expect(refused).toBe(true))
+    expect(screen.queryByRole('button', { name: /Deprecat/ })).not.toBeInTheDocument()
+    describing.answer = () => new Promise(() => {})
+  })
+})

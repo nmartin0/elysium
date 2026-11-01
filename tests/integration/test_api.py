@@ -572,6 +572,19 @@ def test_visible_schema_never_leaks_per_field_internals(client):
                 "visibility",
                 "status",
                 "link_type",
+                # WHY it is deprecated and what replaces it (28 October)
+                # -- words the deployment's managers wrote about a name
+                # the caller can already discover, never a value and
+                # never a path. `replaced_by` names another field, type
+                # or link type only when THAT name is itself discoverable
+                # to this caller (core.ontology.mediator._visible_replacement).
+                "deprecation",
+                # A link that took its status from one of its two types
+                # (most-restrictive-wins): which type. Names a type the
+                # caller can already discover -- stripped by
+                # _without_unknown_target when it cannot (R67b's own
+                # leak guard, extended 31 October).
+                "status_inherited_from",
                 # data_type, added deliberately and NOT physical layout
                 # despite having been grouped with it. "number" says
                 # nothing about where a column lives; it is what the

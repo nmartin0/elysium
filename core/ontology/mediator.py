@@ -120,6 +120,7 @@ from core.filters import FieldFilter, resolved, row_matches, validate_filter
 from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.auth import UserRecord, authorize
+from core.ontology.deprecation import shown_deprecation
 from core.ontology.derived_fields import compute, derivation_of, finished
 from core.ontology.enriched_fields import enrichment_of
 from core.ontology.field_types import coerce
@@ -305,6 +306,21 @@ def _all_readable(visible_fields: dict, search) -> bool:
     if search is None:
         return False
     return all((visible_fields.get(name) or {}).get("readable") is True for name in search.inputs)
+
+
+def _visible_replacement(block: "dict | None", discoverable: "set[str]") -> "dict | None":
+    """`block` (shown_deprecation's output) with `replaced_by` kept only
+    when that name is itself discoverable to this caller -- otherwise
+    None. Deprecation's `reason` is free text the deployment's managers
+    wrote about a name this caller may already discover (deliberate,
+    per the mediator's own module docstring); `replaced_by` is a NAME,
+    and showing one the caller cannot discover is exactly the leak
+    `target` is already stripped from a link for (see
+    _without_unknown_target, above)."""
+    if block is None or block["replaced_by"] is None or block["replaced_by"] in discoverable:
+        return block
+    return {**block, "replaced_by": None}
+
 
 class DataMediator:
     def __init__(self, schema: dict, adapters: dict[str, ExternalReadAdapter],
@@ -974,6 +990,19 @@ class DataMediator:
             if is_discoverable(definition)
             or authorize(user_record, self.roles, f"discover:{name}")
         }
+        # WHICH LINK TYPES ARE DISCOVERABLE: a link's own `replaced_by`
+        # names another link type, not a field, so it is judged against
+        # this rather than a type's fields (see _visible_replacement's
+        # two call sites, below). A link type counts once any one of its
+        # two sides is discoverable -- the same "either side is enough"
+        # a caller already relies on to find the relationship at all.
+        discoverable_link_types = {
+            field_info["link_type"]
+            for owner, owner_def in self.schema.items()
+            for field_name, field_info in owner_def["fields"].items()
+            if field_info.get("type") == "link" and field_info.get("link_type")
+            and authorize(user_record, self.roles, f"discover:{owner}.{field_name}")
+        }
 
         def _without_unknown_target(field_info: dict) -> dict:
             # A LINK NAMES ITS TARGET, so a link to a type this person is
@@ -998,6 +1027,13 @@ class DataMediator:
                 **{key: value for key, value in field_info.items()
                    if key not in ("target", "cardinality", "via_table")},
                 "type": "data",
+                # status_inherited_from NAMES THE TYPE this link borrowed
+                # its status from -- exactly the name "target" above is
+                # stripped for. "deprecated" is itself a hint about a
+                # type this caller cannot see, so the status it never
+                # declared on its own is dropped with it.
+                "status": field_info.get("status") if field_info.get("status_inherited_from") is None else "active",
+                "status_inherited_from": None,
             }
 
         visible = {}
@@ -1011,12 +1047,37 @@ class DataMediator:
             if for_agent and not readable:
                 continue
 
+            # WHICH OF THIS TYPE'S OWN FIELDS ARE DISCOVERABLE, worked
+            # out before building any one field's entry: `replaced_by`
+            # names a sibling field, and showing a name this caller
+            # cannot discover would be the exact leak target's own
+            # stripping above exists to prevent.
+            discoverable_fields = {
+                name for name in type_def["fields"]
+                if authorize(user_record, self.roles, f"discover:{object_type}.{name}")
+            }
+
             visible_fields = {
                 field_name: {
                     **redacted,
                     "display_name": get_display_name(field_info, field_name),
                     "visibility": field_info.get("visibility", "normal"),
-                    "status": field_info.get("status", "active"),
+                    # FROM `redacted`, NOT `field_info`: a link whose
+                    # target is unknown has already had its inherited
+                    # status reset there (_without_unknown_target), and
+                    # reading the original here would undo exactly that
+                    # (the bug an independent review found, 31 October).
+                    "status": redacted.get("status") or "active",
+                    # WHY it is deprecated, what replaces it, and -- for
+                    # a link that took its type's status -- which type.
+                    # Words the deployment's managers wrote about a name
+                    # this caller may already discover; `replaced_by` is
+                    # shown only when the name it gives is itself
+                    # discoverable to this caller, for the same reason.
+                    "status_inherited_from": redacted.get("status_inherited_from"),
+                    "deprecation": _visible_replacement(
+                        shown_deprecation(redacted.get("deprecation")),
+                        discoverable_link_types if field_info.get("type") == "link" else discoverable_fields),
                     # HOW MANY DECIMAL PLACES this field is worth
                     # showing, if the ontology says. Absent means the
                     # UI shows the value as it arrived -- there is no
@@ -1129,7 +1190,11 @@ class DataMediator:
                 "group": type_def.get("group"),
                 "icon": type_def.get("icon"),
                 "color": type_def.get("color"),
-                "status": type_def.get("status", "active"),
+                "status": type_def.get("status") or "active",
+                # `replaced_by` names another type; shown only when
+                # this caller can discover that type (see
+                # _visible_replacement, beside the link case above).
+                "deprecation": _visible_replacement(shown_deprecation(type_def.get("deprecation")), known),
                 # SEARCH BY MEANING (R45): declared, and every field its
                 # text is made from READABLE -- knowing a field exists is
                 # not reading it. The one answer Browse, the agent's

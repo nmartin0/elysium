@@ -600,6 +600,12 @@ preview_new_link_route
 apply_new_link_route
 problems  # NewLinkPreviewResponse, read by the browser
 checked  # NewLinkPreviewResponse, read by the browser
+preview_status_route
+apply_status_route
+deprecation  # SchemaFieldResponse / VisibleObjectTypeResponse, read by the browser
+status_inherited_from  # SchemaFieldResponse, read by the browser
+replaced_by  # DeprecationResponse and StatusRequest, read by the browser
+remove_after  # DeprecationResponse and StatusRequest, read by the browser
 # DEV_UI 13.7, putting an earlier version back: routes reached by HTTP.
 preview_restore_route
 restore_route
