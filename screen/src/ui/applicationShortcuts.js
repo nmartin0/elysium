@@ -1,8 +1,5 @@
 const STYLE_KEYS = Object.freeze({
   1: 'normal',
-  2: 'retro',
-  3: 'surveillance',
-  4: 'thermal',
   5: 'anime',
   6: 'noir',
 });

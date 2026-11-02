@@ -12,33 +12,6 @@ import {
 import { VisualSettings } from './visualSettings.js';
 import { STYLES } from './visualPresets.js';
 
-test('CCTV and Context keep their headers outside Cyber-only scroll bodies', () => {
-  for (const file of ['layer-panels.html', 'context.html']) {
-    const markup = readFileSync(
-      new URL(`./templates/${file}`, import.meta.url),
-      'utf8',
-    );
-    assert.match(markup, /class="cyber-panel-body" data-rail-scroller/);
-    assert.ok(
-      markup.indexOf('class="panel-header"') <
-        markup.indexOf('class="cyber-panel-body"'),
-    );
-  }
-  const shared = readFileSync(
-    new URL('./styles/controls.css', import.meta.url),
-    'utf8',
-  );
-  const cyber = readFileSync(
-    new URL('./styles/cyber.css', import.meta.url),
-    'utf8',
-  );
-  assert.match(shared, /\.cyber-panel-body\s*\{\s*display: contents;/);
-  assert.match(
-    cyber,
-    /:root\[data-ui-theme='cyber'\] \.cyber-panel-body\s*\{[^}]*overflow-y: auto;[^}]*overscroll-behavior: contain;/,
-  );
-});
-
 function styleOwner(t, initialVariant = 'cyber') {
   const previous = { document: globalThis.document, window: globalThis.window };
   const root = { dataset: {} };
@@ -97,14 +70,7 @@ function styleOwner(t, initialVariant = 'cyber') {
 
 test('visual styles retain Cyber through real preset application without dropping other defaults', (t) => {
   const { owner, hud, root, calls } = styleOwner(t);
-  for (const style of [
-    'surveillance',
-    'normal',
-    'noir',
-    'anime',
-    'thermal',
-    'retro',
-  ]) {
+  for (const style of ['noir', 'anime', 'normal']) {
     owner.setStyle(style);
     assert.equal(owner.activeStyle, style);
     assert.equal(hud.getVariant(), 'cyber');
@@ -112,17 +78,8 @@ test('visual styles retain Cyber through real preset application without droppin
     assert.equal(owner._hudLayoutSelect.value, 'cyber');
     assert.deepEqual(calls.at(-1), ['share', 'cyber']);
   }
-  assert.equal(owner.stages.thermal.uniforms.sensitivity, 0.85);
-  assert.equal(calls.filter(([name]) => name === 'detection').length, 3);
-  assert.equal(
-    calls.filter(([name, value]) => name === 'bloom' && value === false).length,
-    3,
-  );
-  assert.equal(
-    calls.filter(([name, value]) => name === 'sharpen' && value === true)
-      .length,
-    3,
-  );
+  // No look carries a preset any more, so none changes detection or post.
+  assert.equal(calls.filter(([name]) => name === 'detection').length, 0);
 });
 
 test('non-Cyber style presets and explicit HUD choices remain authoritative', (t) => {
@@ -132,8 +89,8 @@ test('non-Cyber style presets and explicit HUD choices remain authoritative', (t
     assert.equal(hud.getVariant(), variant);
     assert.equal(root.dataset.uiTheme, undefined);
     owner.setStyle('normal');
-    owner.setStyle('surveillance');
-    assert.equal(hud.getVariant(), 'tactical');
+    owner.setStyle('noir');
+    assert.equal(hud.getVariant(), variant);
   }
 });
 
@@ -142,7 +99,7 @@ test('leaving Cyber without a preset choice restores the prior visual preset', (
   owner.setStyle('noir');
 
   owner._setHudVariant('cyber', { applyVisualDefaults: true });
-  assert.equal(owner.activeStyle, 'thermal');
+  assert.equal(owner.activeStyle, 'normal');
   assert.equal(owner._preCyberStyle, 'noir');
   assert.equal(owner._cyberStyleUserSelected, false);
 
@@ -174,22 +131,22 @@ test('a preset explicitly selected in Cyber survives exit and resets for re-entr
 
   // A later untouched Cyber round trip restores the new pre-Cyber preset.
   owner._setHudVariant('cyber', { applyVisualDefaults: true });
-  assert.equal(owner.activeStyle, 'thermal');
+  assert.equal(owner.activeStyle, 'normal');
   assert.equal(owner._preCyberStyle, 'anime');
   owner._setHudVariant('minimal', { applyVisualDefaults: true });
   assert.equal(owner.activeStyle, 'anime');
 });
 
-test('an explicit same-value FLIR choice is preserved on Cyber exit', (t) => {
+test('an explicit same-value Normal choice is preserved on Cyber exit', (t) => {
   const { owner } = styleOwner(t, 'tactical');
   owner.setStyle('noir');
   owner._setHudVariant('cyber', { applyVisualDefaults: true });
 
-  owner.setStyle('thermal', { userInitiated: true });
-  assert.equal(owner.activeStyle, 'thermal');
+  owner.setStyle('normal', { userInitiated: true });
+  assert.equal(owner.activeStyle, 'normal');
   assert.equal(owner._cyberStyleUserSelected, true);
   owner._setHudVariant('minimal', { applyVisualDefaults: true });
-  assert.equal(owner.activeStyle, 'thermal');
+  assert.equal(owner.activeStyle, 'normal');
 });
 
 test('an authoritative same-Cyber reset clears local preset ownership', (t) => {
@@ -250,55 +207,48 @@ test('scene and share HUD transitions do not restore a local pre-Cyber preset', 
   owner.setStyle('anime', { userInitiated: true });
   assert.equal(owner._cyberStyleUserSelected, true);
 
-  await owner.applyVisualState({ style: 'retro', hud: { variant: 'cyber' } });
+  await owner.applyVisualState({ style: 'noir', hud: { variant: 'cyber' } });
   assert.equal(hud.getVariant(), 'cyber');
-  assert.equal(owner.activeStyle, 'retro');
+  assert.equal(owner.activeStyle, 'noir');
   assert.equal(owner._preCyberStyle, null);
   assert.equal(owner._cyberStyleUserSelected, false);
   owner._setHudVariant('minimal', { applyVisualDefaults: true });
-  assert.equal(owner.activeStyle, 'retro');
+  assert.equal(owner.activeStyle, 'noir');
 
-  owner.setStyle('surveillance');
+  owner.setStyle('anime');
   owner._setHudVariant('cyber', { applyVisualDefaults: true });
-  assert.equal(owner._preCyberStyle, 'surveillance');
+  assert.equal(owner._preCyberStyle, 'anime');
   owner.setStyle('anime', { userInitiated: true });
   await owner.restoreShareState({
-    style: 'thermal',
+    style: 'noir',
     hudVariant: 'cyber',
   });
   assert.equal(hud.getVariant(), 'cyber');
-  assert.equal(owner.activeStyle, 'thermal');
+  assert.equal(owner.activeStyle, 'noir');
   assert.equal(owner._preCyberStyle, null);
   assert.equal(owner._cyberStyleUserSelected, false);
   owner._setHudVariant('tactical', { applyVisualDefaults: true });
-  assert.equal(owner.activeStyle, 'thermal');
+  assert.equal(owner.activeStyle, 'noir');
   assert.equal(owner._preCyberStyle, null);
 });
 
-test('scene and share restoration override Cyber and preserve restored Cyber parameters', async (t) => {
+test('scene and share restoration override Cyber', async (t) => {
   const { owner, hud } = styleOwner(t);
-  await owner.applyVisualState({ style: 'retro', hud: { variant: 'minimal' } });
+  await owner.applyVisualState({ style: 'noir', hud: { variant: 'minimal' } });
   assert.equal(hud.getVariant(), 'minimal');
   owner._setHudVariant('cyber');
   await owner.restoreShareState({
-    style: 'surveillance',
+    style: 'anime',
     hudVariant: 'operator',
   });
   // A link saved with the retired Operator layout restores as Tactical.
   assert.equal(hud.getVariant(), 'tactical');
   await owner.restoreShareState({
-    style: 'thermal',
+    style: 'noir',
     hudVariant: 'cyber',
-    styleParams: { palette: 0.73 },
   });
   assert.equal(hud.getVariant(), 'cyber');
-  assert.equal(owner.activeStyle, 'thermal');
-  assert.equal(owner.stages.thermal.uniforms.palette, 0.73);
-  owner._setHudVariant('cyber', { applyVisualDefaults: true });
-  assert.equal(owner.stages.thermal.uniforms.palette, 0.73);
-  owner._setHudVariant('tactical');
-  owner._setHudVariant('cyber', { applyVisualDefaults: true });
-  assert.equal(owner.stages.thermal.uniforms.palette, 0.42);
+  assert.equal(owner.activeStyle, 'noir');
 });
 
 const read = (relative) =>
@@ -522,11 +472,8 @@ test('the Cyber HUD owns the global shell skin and leaving it restores defaults'
   assert.equal(root.dataset.unrelated, 'preserved');
 });
 
-test('an explicit transition into Cyber selects FLIR with Ironbow 0.42 once', () => {
-  assert.deepEqual(CYBER_VISUAL_DEFAULTS, {
-    style: 'thermal',
-    ironbow: 0.42,
-  });
+test('an explicit transition into Cyber selects Normal once', () => {
+  assert.deepEqual(CYBER_VISUAL_DEFAULTS, { style: 'normal' });
   assert.equal(
     cyberVisualDefaultsForHudTransition('tactical', 'cyber', {
       explicit: true,
@@ -548,16 +495,13 @@ test('an explicit transition into Cyber selects FLIR with Ironbow 0.42 once', ()
   );
 });
 
-test('Cyber visual defaults update the style, thermal palette and render state', () => {
+test('Cyber visual defaults update the style and render state', () => {
   const calls = [];
   const owner = {
-    stages: { thermal: { uniforms: { palette: 0 } } },
     services: {
       governorRequestRender: (reason) => calls.push(['render', reason]),
     },
     setStyle: (style, options) => calls.push(['style', style, options]),
-    _updateSliderPanel: (style, options) =>
-      calls.push(['sliders', style, options]),
   };
 
   VisualSettings.prototype._applyCyberVisualDefaults.call(
@@ -565,18 +509,16 @@ test('Cyber visual defaults update the style, thermal palette and render state',
     CYBER_VISUAL_DEFAULTS,
   );
 
-  assert.equal(owner.stages.thermal.uniforms.palette, 0.42);
   assert.deepEqual(calls, [
     [
       'style',
-      'thermal',
+      'normal',
       {
         applyPreset: false,
         revealParameters: false,
         preserveCyberRestore: true,
       },
     ],
-    ['sliders', 'thermal', { reveal: false }],
     ['render', 'cyber-visual-defaults'],
   ]);
 });

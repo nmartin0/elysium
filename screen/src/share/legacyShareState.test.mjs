@@ -120,7 +120,7 @@ test('links from earlier long-form versions keep their historical meaning', () =
     'lat=37.7749&lon=-122.4194&alt=800&heading=0&pitch=-35&style=nvg&bloom=1&bi=84&sharpen=0&si=65&hud=tactical&hv=1&dm=BALANCED&dd=50&da=elastic&kf=16&ko=0&cr=0&map=photoreal',
     'v=2&lat=1&lon=2&l=f&lo=f.m.a',
     'v=2&lat=1&lon=2&l=',
-    'v=2&lat=1&lon=2&l=k.r&lo=r.f.g-jazz_r.v.35',
+    'v=2&lat=1&lon=2&l=e.k',
     'v=2&lat=1&lon=2&ui=v.c.0',
     'v=2&lat=1&lon=2&style=crt&sp=p.500_d.25_i.100',
     'v=2&lat=1&lon=2&sce=0&scf=999&dm=GOD&dd=10&at=1767225600',
@@ -154,11 +154,6 @@ test('a tracking selection becomes a thing view and back', () => {
     flights.state.layerState.options.flights.selectedFlightsTrackingId,
     null,
   );
-  const military = assertLegacyRoundTrip('v=2&lat=1&lon=2&l=m&lo=f.u.~ae1234');
-  assert.deepEqual(military.state.view.entity, {
-    kind: 'military_aircraft',
-    id: '~ae1234',
-  });
   const satellite = assertLegacyRoundTrip('v=2&lat=1&lon=2&l=s&lo=s.t.25544');
   assert.deepEqual(satellite.state.view.entity, {
     kind: 'satellite',

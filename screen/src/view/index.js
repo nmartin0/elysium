@@ -16,9 +16,6 @@ import { RETIRED_STYLES } from '../visualStylePolicy.js';
 /** Visual styles by internal name, with the name share links use. */
 export const STYLE_URL_NAMES = Object.freeze({
   normal: 'normal',
-  retro: 'crt',
-  surveillance: 'nvg',
-  thermal: 'flir',
   anime: 'anime',
   noir: 'noir',
 });
@@ -117,8 +114,7 @@ export const VIEW_PROPERTIES = Object.freeze({
   style: Object.freeze({
     type: 'string',
     enum: [...VIEW_STYLES],
-    description:
-      'Visual style: retro is CRT, surveillance is night vision, thermal is FLIR.',
+    description: 'Visual style: normal, anime or noir.',
   }),
   map: Object.freeze({
     type: 'string',

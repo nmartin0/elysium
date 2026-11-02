@@ -131,38 +131,36 @@ test('share-link serialization emits the current celestial state', () => {
 test('generated links are v2 and include deterministic layers, options, style params, and panels', () => {
   const manager = makeManager();
   const layers = createDefaultLayerState();
-  layers.enabledLayerIds = ['cctv', 'radio'];
-  layers.options.cctv = { coverageMode: 'viewshed', showProjection: false, autoHop: true };
-  layers.options.radio = { filter: 'news', volume: 0.45 };
+  layers.enabledLayerIds = ['earthquakes', 'wind'];
   manager.setLayerStateProvider(() => layers);
   manager.setPanelStateProvider(() => ({ specs: [
     { id: 'control-panel', collapsed: false, pinned: true },
     { id: 'param-slider-panel', collapsed: true },
   ] }));
   manager.setStyleParamStateProvider(() => ({
-    sensitivity: 0.82, bloom: 0.37, mode: 1, pixelation: 2.6, palette: 1,
+    contrastAmt: 1.2, grainAmt: 0.37, vignetteAmt: 0.5,
   }));
-  manager.onStyleChange('thermal');
+  manager.onStyleChange('noir');
   clearTimeout(manager._debounceTimer);
   manager._updateHash();
   const params = new URLSearchParams(window.location.hash.slice(1));
   assert.equal(params.get('v'), '2');
-  assert.equal(params.get('l'), 'c.r');
-  assert.equal(params.get('sp'), 's.82_b.37_m.100_p.260_a.100');
+  assert.equal(params.get('l'), 'e.k');
+  assert.equal(params.get('sp'), 'c.120_g.37_v.50');
   assert.equal(params.get('ui'), 'c.c.0_c.p.1_m.c.1');
 });
 
 test('visual parameters, explicit empty layers, and panel state are v2-only', () => {
   const parsed = makeManager(
-    '#v=2&lat=10&lon=20&style=flir&l=&sp=s.82_b.37_p.260&ui=c.c.0_c.p.1_d.c.1_d.p.1',
+    '#v=2&lat=10&lon=20&style=noir&l=&sp=c.120_g.37_v.50&ui=c.c.0_c.p.1_d.c.1_d.p.1',
   ).parseInitialHash();
   assert.deepEqual(parsed.layerState.enabledLayerIds, []);
-  assert.deepEqual(parsed.styleParams, { sensitivity: 0.82, bloom: 0.37, pixelation: 2.6 });
+  assert.deepEqual(parsed.styleParams, { contrastAmt: 1.2, grainAmt: 0.37, vignetteAmt: 0.5 });
   assert.deepEqual(parsed.panelState, { specs: [
     { id: 'control-panel', collapsed: false, pinned: true },
     { id: 'data-panel', collapsed: true, pinned: null },
   ] });
-  const legacy = makeManager('#v=1&lat=10&lon=20&style=flir&l=&sp=s.82&ui=c.c.0')
+  const legacy = makeManager('#v=1&lat=10&lon=20&style=noir&l=&sp=c.120&ui=c.c.0')
     .parseInitialHash();
   assert.equal(legacy.layerState, null);
   assert.equal(legacy.styleParams, null);
@@ -268,10 +266,10 @@ test('non-finite camera coordinates fail closed without reserving restoration', 
 });
 
 test('incoming state suppresses premature hash replacement until restoration', () => {
-  const manager = makeManager('#v=2&lat=10&lon=20&l=e&style=nvg');
+  const manager = makeManager('#v=2&lat=10&lon=20&l=e&style=noir');
   manager.parseInitialHash();
   manager._updateHash();
-  assert.equal(window.location.hash, '#v=2&lat=10&lon=20&l=e&style=nvg');
+  assert.equal(window.location.hash, '#v=2&lat=10&lon=20&l=e&style=noir');
 });
 
 test('a shared view reserves its own camera without cancelling its saved Follow', () => {
@@ -472,17 +470,17 @@ test('newer navigation suppresses delayed share camera while non-camera state st
   });
   const applied = await manager.applyState({
     lat: 40, lon: -74, alt: 500, heading: 0, pitch: -30, roll: 0,
-    style: 'thermal', panelState: { specs: [] },
+    style: 'noir', panelState: { specs: [] },
   }, { navigationToken: 4 });
   assert.equal(applied.succeeded, true);
   assert.equal(flights, 0);
-  assert.equal(restored.style, 'thermal');
+  assert.equal(restored.style, 'noir');
 });
 
 test('newer visual, map, and individual panel actions suppress only their owned restore lanes', async () => {
   let restored = null;
   const manager = makeManager(
-    '#v=2&lat=40&lon=-74&style=flir&map=osm&ui=c.c.0_d.c.0',
+    '#v=2&lat=40&lon=-74&style=noir&map=osm&ui=c.c.0_d.c.0',
   );
   manager._onRestore = (state) => { restored = state; };
   manager._isNavigationCurrent = () => false;
@@ -510,7 +508,7 @@ test('every explicit visual UI gesture claims restore authority before it mutate
   const initUi = sourceBlock('  _initUI() {', '  _initMapStackControl() {');
   const gestureRoutes = [
     ['toggleHud: () => {', 'toggleOrbit: () =>', 'this.hud.toggle()', 'HUD hotkey'],
-    ['cycleDetection: () => {', 'toggleCctv: () =>', 'cycleDetectionMode()', 'detection hotkey'],
+    ['cycleDetection: () => {', 'syncScopeControls(', 'cycleDetectionMode()', 'detection hotkey'],
     ['toggleBloom:', 'setBloomIntensity:', 'this._setBloomEnabled(', 'toggleBloom control'],
     ['setBloomIntensity:', 'toggleSharpen:', 'this._setBloomIntensity(', 'setBloomIntensity control'],
     ['toggleSharpen:', 'setScopeEnabled:', 'this._setSharpenEnabled(', 'toggleSharpen control'],

@@ -4,12 +4,9 @@ import { readFileSync } from 'node:fs';
 import { getTransitFeed } from '../data/transitFeeds.js';
 import {
   chooseLiveCities,
-  selectStyle,
   detectOn,
 } from '../../scripts/qa-transit-controls.mjs';
-import { createStyleParameters } from '../ui/styleParameters.js';
 import { bindDisplayControls } from '../ui/displayControls.js';
-import { thermalShader } from '../styles/thermal.js';
 import {
   cycleMode,
   setMode,
@@ -124,56 +121,6 @@ test('live visual cities follow local operating hours in summer and winter', () 
       assert.ok(local >= 6 && local < 22);
     }
   }
-});
-
-test('thermal controls wait for activation and use the real generated parameter rows', async (t) => {
-  const { page, document, elements } = pageFixture(t);
-  const container = new Element();
-  container.ownerDocument = document;
-  elements.set('param-sliders', container);
-  const parameters = createStyleParameters({ container });
-  t.after(() => parameters.destroy());
-  const values = Object.fromEntries(
-    Object.entries(thermalShader.uniforms).map(([key, meta]) => [
-      key,
-      meta.default,
-    ]),
-  );
-  window.__godsEyeView = {
-    styleManager: {
-      setPanelCollapsed() {},
-      setStyle(name) {
-        document.documentElement.dataset.gevStyle = name;
-        parameters.render({
-          uniforms: thermalShader.uniforms,
-          readValue: (key) => values[key],
-          writeValue: (key, value) => {
-            values[key] = value;
-          },
-          onChange() {},
-        });
-      },
-    },
-  };
-  // A swallowed click resolves normally; the helper must notice no activation.
-  page.$eval = async (selector, fn, ...args) => {
-    if (selector.startsWith('.style-btn')) return fn(new Element(), ...args);
-    const label = selector.match(/aria-label="([^"]+)"/)[1];
-    const slider = container.children
-      .flatMap((row) => row.children)
-      .find((el) => el.getAttribute('aria-label') === label);
-    assert.ok(slider);
-    return fn(slider, ...args);
-  };
-  const how = await selectStyle(
-    page,
-    'thermal',
-    { 'WHOT/BHOT': 1, Ironbow: 1 },
-    pause,
-  );
-  assert.match(how, /button did not activate/);
-  assert.equal(values.mode, 1);
-  assert.equal(values.palette, 1);
 });
 
 test('DETECT uses the real OFF/restore button and density input to reach DENSE', async (t) => {

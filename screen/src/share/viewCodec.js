@@ -97,9 +97,9 @@ export const SHARE_VIEW_ENUMS = Object.freeze({
   viewKind: Object.freeze(['place', 'thing']),
   style: Object.freeze([
     'normal',
-    'retro',
-    'surveillance',
-    'thermal',
+    'retro', // retired (RETIRED_STYLES): decodes as Normal
+    'surveillance', // retired (RETIRED_STYLES): decodes as Normal
+    'thermal', // retired (RETIRED_STYLES): decodes as Normal
     'anime',
     'noir',
     'snow', // retired (RETIRED_STYLES): decodes as Normal

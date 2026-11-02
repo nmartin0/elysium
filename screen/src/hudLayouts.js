@@ -8,8 +8,7 @@ export const DEFAULT_HUD_LAYOUT = 'tactical';
 
 /** Visual treatment applied only when an operator explicitly enters Cyber. */
 export const CYBER_VISUAL_DEFAULTS = Object.freeze({
-  style: 'thermal',
-  ironbow: 0.42,
+  style: 'normal',
 });
 
 const HUD_LAYOUT_SET = new Set(HUD_LAYOUTS);
@@ -28,7 +27,7 @@ export function normalizeHudLayout(value) {
 /**
  * Resolve the opt-in visual defaults for an explicit layout transition.
  * Restores and repeated Cyber selections return null so they never overwrite
- * a shared link or a user's subsequent FLIR tuning.
+ * a shared link or a user's subsequent style choice.
  */
 export function cyberVisualDefaultsForHudTransition(
   previousLayout,

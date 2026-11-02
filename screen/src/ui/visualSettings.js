@@ -572,16 +572,12 @@ export class VisualSettings {
     this._scheduleAdaptivePanelLayout({ settle: true });
   }
 
-  _applyCyberVisualDefaults({ style, ironbow }) {
+  _applyCyberVisualDefaults({ style }) {
     this.setStyle(style, {
       applyPreset: false,
       revealParameters: false,
       preserveCyberRestore: true,
     });
-    const thermalUniforms = this.stages?.thermal?.uniforms;
-    if (!thermalUniforms || thermalUniforms.palette === undefined) return;
-    thermalUniforms.palette = ironbow;
-    this._updateSliderPanel('thermal', { reveal: false });
     this.services.governorRequestRender('cyber-visual-defaults');
   }
 

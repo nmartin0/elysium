@@ -134,7 +134,8 @@ function viewBandLabel(band) {
 }
 
 /** Shader modes that automatically show the HUD overlay. */
-const MILITARY_STYLES = new Set(['retro', 'surveillance', 'thermal']);
+// Fork: the military-sensor styles were removed, so no style auto-shows it.
+const MILITARY_STYLES = new Set();
 
 const HUD_SUMMARY_INTERVAL_MS = 15000;
 

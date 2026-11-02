@@ -18,12 +18,12 @@ test('a view round-trips through share-link parameters', () => {
       pitch_deg: -45,
     },
     layers: ['earthquakes', 'ais-live-vessels'],
-    style: 'retro',
+    style: 'noir',
     map: 'osm',
     follow: { kind: 'aircraft', id: 'AE1234' },
   });
   const params = viewToParams(view);
-  assert.equal(params.get('style'), 'crt');
+  assert.equal(params.get('style'), 'noir');
   assert.equal(params.get('map'), 'osm');
   assert.deepEqual(viewFromParams(params), view);
   assert.deepEqual(view.layers, ['ais-live-vessels', 'earthquakes', 'flights']);
@@ -75,7 +75,7 @@ test('views use the same style names as the app share links', async () => {
     fs.readFile(new URL('../sharelink.js', import.meta.url), 'utf8'),
   );
   assert.match(source, /const STYLE_TO_URL = STYLE_URL_NAMES;/);
-  assert.equal(STYLE_URL_NAMES.retro, 'crt');
+  assert.equal(STYLE_URL_NAMES.noir, 'noir');
 });
 
 test('annotations travel in the link, keeping only what the app draws', async () => {

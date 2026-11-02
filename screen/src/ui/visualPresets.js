@@ -1,8 +1,5 @@
-import { retroShader } from '../styles/retro.js';
 import { animeShader } from '../styles/anime.js';
 import { noirShader } from '../styles/noir.js';
-import { nightVisionShader } from '../styles/surveillance.js';
-import { thermalShader } from '../styles/thermal.js';
 import { BLOOM_INTENSITY_DEFAULT } from '../bloom.js';
 import { msg } from '../i18n/marker.js';
 
@@ -10,9 +7,6 @@ import { msg } from '../i18n/marker.js';
 export const TRANSITION_DURATION_MS = 500;
 /** Map of style name to its GLSL shader module for post-process stages. */
 export const STYLES = {
-  retro: retroShader,
-  surveillance: nightVisionShader,
-  thermal: thermalShader,
   anime: animeShader,
   noir: noirShader,
 };
@@ -64,53 +58,9 @@ export const GLOBAL_POST_DEFAULTS = {
   celestialRing: false,
 };
 
-// Tactical style defaults applied when users select military style presets.
-export const STYLE_PRESET_DEFAULTS = {
-  retro: {
-    bloom: { enabled: false, intensity: BLOOM_INTENSITY_DEFAULT },
-    sharpen: { enabled: true, intensity: 49 },
-    styleParams: {
-      retro: {
-        pixelation: 1.0,
-        distortion: 0,
-        instability: 0.42,
-      },
-    },
-    hudVariant: 'tactical',
-    hudVisible: true,
-    detection: MILITARY_DETECTION_PRESET,
-  },
-  surveillance: {
-    bloom: { enabled: false, intensity: BLOOM_INTENSITY_DEFAULT },
-    sharpen: { enabled: true, intensity: 49 },
-    styleParams: {
-      surveillance: {
-        gain: 0.18,
-        bloom: 0.22,
-        scanlineStr: 0.96,
-        pixelation: 1.0,
-      },
-    },
-    hudVariant: 'tactical',
-    hudVisible: true,
-    detection: MILITARY_DETECTION_PRESET,
-  },
-  thermal: {
-    bloom: { enabled: false, intensity: BLOOM_INTENSITY_DEFAULT },
-    sharpen: { enabled: true, intensity: 49 },
-    styleParams: {
-      thermal: {
-        sensitivity: 0.85,
-        bloom: 0.2,
-        mode: 0.33,
-        pixelation: 1.0,
-      },
-    },
-    hudVariant: 'tactical',
-    hudVisible: true,
-    detection: MILITARY_DETECTION_PRESET,
-  },
-};
+// Fork: the military-sensor style presets were removed, so no style carries
+// preset defaults.
+export const STYLE_PRESET_DEFAULTS = {};
 
 /**
  * GLSL fragment shader implementing an unsharp-mask sharpening filter.
@@ -149,9 +99,6 @@ export const SHARPEN_SHADER = /* glsl */ `
  */
 export const STYLE_STATUS_LABELS = {
   normal: msg('NORMAL'),
-  retro: msg('CRT'),
-  surveillance: msg('NVG'),
-  thermal: msg('FLIR'),
   anime: msg('ANIME'),
   noir: msg('NOIR'),
 };

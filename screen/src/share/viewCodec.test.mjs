@@ -278,20 +278,10 @@ test('invalid style parameters keep the style’s own value', () => {
 
 test('every registered field round-trips at once', () => {
   const layerState = createDefaultLayerState();
-  layerState.enabledLayerIds = [
-    'flights',
-    'satellites',
-    'radio',
-    'recent-imagery',
-    'street-level',
-  ];
+  layerState.enabledLayerIds = ['flights', 'satellites', 'recent-imagery'];
   Object.assign(layerState.options.flights, {
     models3d: true,
     models3dMode: 'all',
-  });
-  Object.assign(layerState.options.radio, {
-    filter: 'genre:jazz & blues',
-    volume: 0.35,
   });
   Object.assign(layerState.options['recent-imagery'], {
     west: -12345678,
@@ -303,11 +293,6 @@ test('every registered field round-trips at once', () => {
     mode: 2,
     split: 37,
     viirs: true,
-  });
-  Object.assign(layerState.options['street-level'], {
-    mapillary: false,
-    providerSwitches: 'abc-1*def-0',
-    sinceDays: 365,
   });
   const state = {
     view: {
@@ -327,13 +312,11 @@ test('every registered field round-trips at once', () => {
     heading: 270,
     pitch: -12,
     roll: 2,
-    style: 'thermal',
+    style: 'noir',
     styleParams: {
-      sensitivity: 0.42,
-      bloom: 1,
-      mode: 0,
-      pixelation: 3.5,
-      palette: 0.25,
+      contrastAmt: 1.4,
+      grainAmt: 0.25,
+      vignetteAmt: 0.75,
     },
     bloom: true,
     sharpen: false,
@@ -451,7 +434,16 @@ test('defaults travel as frozen meanings that match today’s app defaults', () 
     [...HUD_LAYOUTS],
   );
   // Snow is retired; its code stays reserved (see the retired-style test).
-  assert.deepEqual(SHARE_VIEW_ENUMS.style, [...VIEW_STYLES, 'snow']);
+  assert.deepEqual(SHARE_VIEW_ENUMS.style, [
+    'normal',
+    'retro',
+    'surveillance',
+    'thermal',
+    'anime',
+    'noir',
+    'snow',
+  ]);
+  assert.deepEqual([...VIEW_STYLES], ['normal', 'anime', 'noir']);
   assert.deepEqual(SHARE_VIEW_ENUMS.mapStack, [...VIEW_MAPS]);
   assert.deepEqual(SHARE_VIEW_ENUMS.detectionAllocation, [
     ...ALLOCATION_STRATEGIES,
@@ -532,29 +524,6 @@ test('the field registry is well formed and permanent', () => {
   };
   assert.deepEqual(JSON.parse(JSON.stringify(SHARE_VIEW_STYLE_DEFAULTS)), {
     normal: { ...common, styleParams: null },
-    retro: {
-      ...common,
-      styleParams: { pixelation: 1, distortion: 0, instability: 0.42 },
-    },
-    surveillance: {
-      ...common,
-      styleParams: {
-        gain: 0.18,
-        bloom: 0.22,
-        scanlineStr: 0.96,
-        pixelation: 1,
-      },
-    },
-    thermal: {
-      ...common,
-      styleParams: {
-        sensitivity: 0.85,
-        bloom: 0.2,
-        mode: 0.33,
-        pixelation: 1,
-        palette: 0,
-      },
-    },
     anime: { ...common, styleParams: { saturation: 1, edgeThick: 0.5 } },
     noir: {
       ...common,
@@ -589,6 +558,7 @@ test('the panel table agrees with the long form’s panel tokens', () => {
 
 test('the style parameter table agrees with the long form’s `sp` codec', () => {
   for (const [style, specs] of Object.entries(SHARE_VIEW_STYLE_PARAMS)) {
+    if (!VIEW_STYLES.includes(style)) continue; // retired looks decode as Normal
     const values = Object.fromEntries(
       specs.map((s, i) => [s.key, s.min + ((s.max - s.min) * (i + 1)) / 7]),
     );
@@ -775,24 +745,6 @@ test('last-known time is stored relative to the created-at time when there is on
   );
 });
 
-test('tracking selections in layer options become a thing view', () => {
-  const layerState = createDefaultLayerState();
-  layerState.enabledLayerIds = ['military'];
-  layerState.options.flights.selectedMilitaryTrackingId = 'AE1234';
-  const state = normalizeShareViewState({ layerState });
-  assert.deepEqual(state.view, {
-    kind: 'thing',
-    entity: { kind: 'military_aircraft', id: 'ae1234' },
-    offset: { ...SHARE_VIEW_FOLLOW_OFFSET_DEFAULT },
-    lastKnown: null,
-  });
-  assert.equal(
-    state.layerState.options.flights.selectedMilitaryTrackingId,
-    null,
-  );
-  assertRoundTrip({ layerState });
-});
-
 test('a created-at time in the future is dropped, like the long form’s `at`', () => {
   const hash = encodeShareView({ sharedAtMs: NOW_MS + 60_000 });
   assert.equal(decode(hash).state.sharedAtMs, null);
@@ -965,7 +917,7 @@ test('enum names outside the code tables travel as text', () => {
   const style = new WireWriter();
   style.bytes.push(1);
   style.textField(14, 'thermal');
-  assert.equal(decodeOk(hashOf(style.finish())).state.style, 'thermal');
+  assert.equal(decodeOk(hashOf(style.finish())).state.style, 'normal');
   const unknownStyle = new WireWriter();
   unknownStyle.bytes.push(1);
   unknownStyle.textField(14, 'sepia');
@@ -1305,7 +1257,7 @@ test('future panel values and style tokens are skipped, not applied', () => {
 
   const style = new WireWriter();
   style.bytes.push(1);
-  style.uintField(14, 3); // thermal
+  style.uintField(14, 4); // anime
   style.bytesField(
     27,
     new WireWriter().varint(36).varint(5).varint(37).varint(6).finish(),
@@ -1314,27 +1266,7 @@ test('future panel values and style tokens are skipped, not applied', () => {
   // Unknown tokens change nothing: the style keeps its own parameters.
   assert.deepEqual(
     styleResult.state.styleParams,
-    SHARE_VIEW_STYLE_DEFAULTS.thermal.styleParams,
+    SHARE_VIEW_STYLE_DEFAULTS.anime.styleParams,
   );
   assert.equal(styleResult.unknownFields.length, 2);
-});
-
-test('a layer option filed under a mirror layer is ignored', () => {
-  const writer = new WireWriter();
-  writer.bytes.push(1);
-  const military = layerTokenNumber('m');
-  writer.bytesField(10, [0, 0, 0b01000000]); // m = 22
-  writer.bytesField(
-    11,
-    new WireWriter()
-      .varint(military)
-      .varint(layerTokenNumber('m') * 2) // option `m` (models3dMode) as integer
-      .varint(0)
-      .finish(),
-  );
-  const result = decodeOk(hashOf(writer.finish()));
-  assert.deepEqual(result.state.layerState.enabledLayerIds, ['military']);
-  assert.deepEqual(result.unknownFields, [
-    { scope: 'layer-option', code: `${military}.${layerTokenNumber('m')}` },
-  ]);
 });

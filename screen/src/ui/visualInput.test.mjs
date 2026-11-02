@@ -58,7 +58,6 @@ function shortcuts() {
     'toggleCleanView',
     'toggleLayers',
     'cycleDetection',
-    'toggleCctv',
   ];
   const actions = Object.fromEntries(
     names.map((name) => [name, (...args) => calls.push([name, ...args])]),
@@ -73,21 +72,19 @@ function shortcuts() {
   return { documentRef, searchInput, calls, controller, press };
 }
 
-test('number keys retain the six style mappings', () => {
+test('number keys retain the remaining style mappings', () => {
   const f = shortcuts();
   for (const key of ['1', '2', '3', '4', '5', '6', '7', '8', 'Space'])
     f.press(key);
   assert.deepEqual(
     f.calls,
-    ['normal', 'retro', 'surveillance', 'thermal', 'anime', 'noir'].map(
-      (style) => ['setStyle', style],
-    ),
+    ['normal', 'anime', 'noir'].map((style) => ['setStyle', style]),
   );
 });
 
 test('letter shortcuts retain uppercase handling and existing actions', () => {
   const f = shortcuts();
-  for (const key of ['H', 'o', 'V', 'f', 'D', 'c']) f.press(key);
+  for (const key of ['H', 'o', 'V', 'f', 'D']) f.press(key);
   assert.deepEqual(
     f.calls,
     [
@@ -96,7 +93,6 @@ test('letter shortcuts retain uppercase handling and existing actions', () => {
       'toggleCleanView',
       'toggleLayers',
       'cycleDetection',
-      'toggleCctv',
     ].map((name) => [name]),
   );
 });

@@ -53,7 +53,7 @@ test('a view is applied through the app actions in order', async () => {
   const view = createView({
     camera: { lat: 25, lon: 121, altitude_m: 300000, pitch_deg: -40 },
     layers: ['ais-live-vessels'],
-    style: 'thermal',
+    style: 'noir',
     map: 'osm',
     annotations: [{ type: 'pin', target: 'Taipei 101' }],
   });
@@ -69,7 +69,7 @@ test('a view is applied through the app actions in order', async () => {
       args.enabled ?? null,
     ]),
     [
-      ['set_visual_style', 'thermal', null],
+      ['set_visual_style', 'noir', null],
       ['set_map_stack', 'osm', null],
       ['set_layer_visibility', 'earthquakes', false],
       ['set_layer_visibility', 'ais-live-vessels', true],

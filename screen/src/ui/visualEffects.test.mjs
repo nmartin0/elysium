@@ -5,7 +5,6 @@ import { MILKY_WAY_INTENSITY, StarrySky } from '../sky/starrySky.js';
 import {
   GLOBAL_POST_DEFAULTS,
   STYLE_PRESET_DEFAULTS,
-  MILITARY_DETECTION_PRESET,
 } from './visualPresets.js';
 
 function fixture() {
@@ -77,7 +76,7 @@ test('construction is inert and initialization creates one owned pipeline', () =
   assert.equal(f.frames.size, 0);
   f.effects.initStyles();
   f.effects.initPostProcess();
-  assert.equal(f.stages.size, 6);
+  assert.equal(f.stages.size, 3);
   assert.ok(
     Object.values(f.effects.stages).every(
       (stage) => !stage.enabled && stage.uniforms.intensity === 0,
@@ -85,7 +84,7 @@ test('construction is inert and initialization creates one owned pipeline', () =
   );
   f.effects.initStyles();
   f.effects.initPostProcess();
-  assert.equal(f.stages.size, 6);
+  assert.equal(f.stages.size, 3);
   f.effects.destroy();
 });
 
@@ -132,32 +131,15 @@ test('a superseding transition starts from the current rendered intensity', () =
   f.effects.destroy();
 });
 
-test('only visible animated stages keep the animation clock and render hold alive', () => {
-  const f = fixture();
-  f.effects.initStyles();
-  const animated = f.effects.stages.retro;
-  assert.notEqual(animated.uniforms.time, undefined);
-  f.effects.setStageIntensity(animated, 1);
-  f.tick(1000);
-  assert.equal(animated.uniforms.time, 1);
-  assert.equal(f.frames.size, 1);
-  assert.equal(f.holds.size, 1);
-  f.effects.setStageIntensity(animated, 0);
-  f.tick(1100);
-  assert.equal(f.frames.size, 0);
-  assert.equal(f.holds.size, 0);
-  f.effects.destroy();
-});
-
 test('direct Cockpit intensity writes are reconciled before rendering', () => {
   const f = fixture();
   f.effects.initStyles();
-  f.effects.stages.thermal.uniforms.intensity = 1;
+  f.effects.stages.noir.uniforms.intensity = 1;
   f.effects.syncStagesEnabledFromIntensity();
-  assert.equal(f.effects.stages.thermal.enabled, true);
-  f.effects.stages.thermal.uniforms.intensity = 0;
+  assert.equal(f.effects.stages.noir.enabled, true);
+  f.effects.stages.noir.uniforms.intensity = 0;
   f.effects.syncStagesEnabledFromIntensity();
-  assert.equal(f.effects.stages.thermal.enabled, false);
+  assert.equal(f.effects.stages.noir.enabled, false);
   f.effects.destroy();
 });
 
@@ -167,7 +149,7 @@ test('the anime stage fades the Milky Way out with its own intensity', () => {
   const glow = () => sky._milkyWayUniforms.u_intensity();
   f.effects.viewer.scene.skyBox = sky;
   f.effects.initStyles();
-  f.effects.setStageIntensity(f.effects.stages.thermal, 1);
+  f.effects.setStageIntensity(f.effects.stages.noir, 1);
   assert.equal(glow(), MILKY_WAY_INTENSITY, 'other styles keep the glow');
   f.effects.setStageIntensity(f.effects.stages.anime, 0.25);
   assert.equal(glow(), MILKY_WAY_INTENSITY * 0.75);
@@ -246,21 +228,21 @@ test('stop revokes pending work immediately but retains stages until final destr
   const f = fixture();
   f.effects.initStyles();
   f.effects.initPostProcess();
-  f.effects.startTransition('retro', 0, 1);
+  f.effects.startTransition('noir', 0, 1);
   const staleFrame = [...f.frames.values()][0];
   f.effects.stop();
   assert.equal(f.frames.size, 0);
   assert.equal(
     f.stages.size,
-    6,
+    3,
     'Context and Cockpit may still be releasing these stages',
   );
-  const intensity = f.effects.stages.retro.uniforms.intensity;
+  const intensity = f.effects.stages.noir.uniforms.intensity;
   staleFrame();
-  f.effects.startTransition('retro', 0, 1);
-  f.effects.setStageIntensity(f.effects.stages.retro, 1);
+  f.effects.startTransition('noir', 0, 1);
+  f.effects.setStageIntensity(f.effects.stages.noir, 1);
   assert.equal(f.frames.size, 0);
-  assert.equal(f.effects.stages.retro.uniforms.intensity, intensity);
+  assert.equal(f.effects.stages.noir.uniforms.intensity, intensity);
   f.effects.destroy();
   assert.equal(f.stages.size, 0);
   assert.deepEqual(
@@ -276,27 +258,22 @@ test('destroying one instance does not remove another pipeline or clock', () => 
   const b = fixture();
   for (const f of [a, b]) {
     f.effects.initStyles();
-    f.effects.startTransition('retro', 0, 1);
+    f.effects.startTransition('noir', 0, 1);
   }
   a.effects.destroy();
   b.tick(250);
   assert.equal(a.stages.size, 0);
-  assert.equal(b.stages.size, 5);
-  assert.equal(b.effects.stages.retro.uniforms.intensity, 0.5);
+  assert.equal(b.stages.size, 2);
+  assert.equal(b.effects.stages.noir.uniforms.intensity, 0.5);
   b.effects.destroy();
 });
 
-test('existing baseline and military presets keep one detection default', () => {
+test('the baseline keeps one detection default and no look overrides it', () => {
   assert.equal(GLOBAL_POST_DEFAULTS.detectionMode, 'DENSE');
   assert.equal(GLOBAL_POST_DEFAULTS.detectionDensity, 75);
   assert.equal(GLOBAL_POST_DEFAULTS.sharpen.intensity, 49);
   assert.equal(GLOBAL_POST_DEFAULTS.detectionFadePct, 7);
   assert.equal(GLOBAL_POST_DEFAULTS.detectionOutsideOpacityPct, 1);
-  for (const name of ['retro', 'surveillance', 'thermal']) {
-    assert.equal(
-      STYLE_PRESET_DEFAULTS[name].detection,
-      MILITARY_DETECTION_PRESET,
-    );
-  }
+  assert.deepEqual(STYLE_PRESET_DEFAULTS, {}, 'no look carries a preset');
   assert.equal(STYLE_PRESET_DEFAULTS.normal, undefined);
 });

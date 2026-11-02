@@ -668,9 +668,9 @@ test('detection cannot resurrect a private canvas, listener, matrix, resize, cle
     'the tactical detection default is still Dense @ 75%',
   );
   assert.equal(
-    uiSource.match(/detection: MILITARY_DETECTION_PRESET,/g)?.length,
-    3,
-    'CRT, NVG, and FLIR retain their Dense auto-enable defaults',
+    uiSource.match(/detection: MILITARY_DETECTION_PRESET,/g)?.length ?? 0,
+    0,
+    'the CRT, NVG and FLIR looks that carried the preset are retired',
   );
   assert.match(uiSource, /preset\.detection && !this\._detectionUserOverridden/);
 });

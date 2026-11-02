@@ -121,13 +121,13 @@ test('activating Contacts lands on the tactical preset, not the last profile use
   assert.equal(getDetectionTuning().densityPct, MILITARY_PRESET.densityPct);
 });
 
-test('the Contacts preset is the very object the military styles apply', () => {
+test('the Contacts preset is the one object the Contacts force-on applies', () => {
   // Reading the numbers out of ui.js is the point: if a style preset changes,
   // Contacts follows it rather than keeping a stale copy.
   assert.equal(MILITARY_PRESET.mode, 'DENSE');
   assert.equal(MILITARY_PRESET.densityPct, 75);
   const styles = uiSource.match(/detection: MILITARY_DETECTION_PRESET,/g) || [];
-  assert.equal(styles.length, 3, 'retro, surveillance and thermal all share the one preset object');
+  assert.equal(styles.length, 0, 'the CRT, NVG and FLIR looks that shared the preset are retired');
   assert.doesNotMatch(
     uiSource,
     /detection: \{ mode: 'dense'/,
@@ -296,14 +296,6 @@ test('detection is wired to the Contacts transaction, and cockpit no longer touc
     'called from _syncContextModeButtons, the funnel every _contextMode mutation routes through',
   );
   assert.match(uiSource, /syncDetection: \(\) => this\._syncContactsDetection\(\)/);
-  // The cockpit vision hook — the old trigger — must be out of the detection
-  // business entirely, or leaving the cockpit turns detections off again.
-  const visionHook = uiSource.slice(
-    uiSource.indexOf('_setCockpitVision(mode, active, { revealParameters = false } = {}) {'),
-    uiSource.indexOf('_syncIrBoost() {'),
-  );
-  assert.ok(visionHook.length > 0, 'the cockpit vision hook is present in the UI shell source');
-  assert.doesNotMatch(visionHook, /etection/, 'cockpit transitions must not touch detection');
 });
 
 // ---------------------------------------------------------------------------

@@ -272,13 +272,9 @@ test('detection-on-by-default is a default, not an operator override', () => {
 
   // Style-switch semantics are unchanged: Normal is still not a preset owner,
   // so switching TO Normal does not re-apply or clear anything.
-  const stylePresets = uiBlock('const STYLE_PRESET_DEFAULTS = {', '\n};');
-  for (const style of ['retro', 'surveillance', 'thermal']) {
-    assert.match(stylePresets, new RegExp(`\\n  ${style}: \\{`),
-      `${style} still carries its own preset`);
-  }
-  assert.doesNotMatch(stylePresets, /\n  normal: \{/,
-    'Normal gained a default, not a style preset — switching to it still touches nothing');
+  // The CRT, NVG and FLIR looks were the only preset owners; none is left.
+  assert.match(uiSource, /const STYLE_PRESET_DEFAULTS = \{\};/,
+    'no style carries a preset any more');
 });
 
 test('a share link that carries detection OFF still restores OFF', () => {

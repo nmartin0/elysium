@@ -538,7 +538,11 @@ test('long links and hash navigation are unaffected by a share code start', asyn
   // A long link still opens from the hash.
   const long = openPage(t, 'http://localhost/#v=2&lat=10&lon=20&style=nvg');
   await restore(long);
-  assert.equal(long.restores[0].style, 'surveillance');
+  assert.equal(
+    long.restores[0].style,
+    'normal',
+    'a retired look opens as Normal',
+  );
   assert.equal(long.restores[0].shareView, undefined);
   long.manager._updateHash();
   assert.equal(long.location.pathname, '/');
