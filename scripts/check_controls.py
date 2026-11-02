@@ -7947,31 +7947,32 @@ CONTROLS = [
     Control(
         describes="retype: the reply lists the tables whose silver must now be rebuilt",
         path="api/routes.py",
-        old='                "rebuild": _tables_needing_rebuild(request, _load_candidate(request, {}).schema)}',
-        new='                "rebuild": []}',
+        old='            owed, unknown = _tables_needing_rebuild(request, request.app.state.generation.config.schema), False',  # noqa: E501
+        new='            owed, unknown = [], False',
         tests=[f"{T}::TestRetyping::test_the_reply_lists_the_silver_table_that_now_needs_a_rebuild",
                f"{T}::TestWhatHappensToStoredData::test_the_preview_names_the_table_and_the_reply_lists_it_to_rebuild"],
     ),
     Control(
         describes="retype: places naming the field that the person cannot discover are counted, not shown",
         path="api/routes.py",
-        old='    shown, hidden = visible_to(found, lambda subject: mediator.knows(current_user, subject))\n    return ({ONTOLOGY_FILE',  # noqa: E501
-        new='    shown, hidden = found, 0\n    return ({ONTOLOGY_FILE',
+        old='    shown, hidden = visible_to(found, lambda subject: mediator.knows(current_user, subject))\n    # WHAT THE LAKE HOLDS NOW',  # noqa: E501
+        new='    shown, hidden = found, 0\n    # WHAT THE LAKE HOLDS NOW',
         tests=[f"{T}::TestWhatNamesTheField::test_places_naming_what_the_person_cannot_discover_are_counted_not_named"],
     ),
     Control(
         describes="retype: the sync takes only rebuild names that need a rebuild right now",
         path="api/routes.py",
-        old='            if name not in needed:\n                raise HTTPException(status_code=400',
-        new='            if False:\n                raise HTTPException(status_code=400',
+        old='            if name not in needed:\n                raise refused(400,',
+        new='            if False:\n                raise refused(400,',
         tests=[f"{T}::TestSyncRebuildNames::test_a_name_that_needs_no_rebuild_is_refused_by_name_and_nothing_starts"],
     ),
     Control(
         describes="retype: the rebuild names reach the sync thread",
         path="api/routes.py",
-        old='        thread_factory(target=functools.partial(_run_sync_in_background, set(rebuild)), daemon=True).start()',  # noqa: E501
-        new='        thread_factory(target=_run_sync_in_background, daemon=True).start()',
-        tests=[f"{T}::TestWhatHappensToStoredData::test_the_rebuild_is_still_owed_after_a_refused_sync_because_it_is_derived_not_remembered"],
+        old='    thread_factory(target=functools.partial(_run_sync_in_background, set(rebuild) or None), daemon=True).start()',  # noqa: E501
+        new='    thread_factory(target=_run_sync_in_background, daemon=True).start()',
+        tests=[f"{T}::TestSyncRebuildNames::test_the_route_hands_the_names_it_checked_to_the_thread",
+               f"{T}::TestWhatHappensToStoredData::test_the_rebuild_is_still_owed_after_a_refused_sync_because_it_is_derived_not_remembered"],  # noqa: E501
     ),
     Control(
         describes="retype: the background sync passes the rebuild names to run_sync",
@@ -7981,18 +7982,107 @@ CONTROLS = [
         tests=[f"{T}::TestSyncRebuildNames::test_the_names_reach_the_sync_and_no_names_start_it_as_it_always_ran"],
     ),
     Control(
-        describes="retype: a sync with no names runs as it always did",
+        describes="retype: a sync with no names calls run_sync as it always did, with no argument",
         path="api/routes.py",
-        old='    if rebuild:\n        thread_factory(target=functools.partial(',
-        new='    if True:\n        thread_factory(target=functools.partial(',
-        tests=[f"{T}::TestSyncRebuildNames::test_with_no_body_it_is_the_sync_it_always_was"],
+        old='        if rebuild:\n            run_sync(rebuild=rebuild)',
+        new='        if True:\n            run_sync(rebuild=rebuild)',
+        tests=[f"{T}::TestSyncRebuildNames::test_with_no_body_it_is_the_sync_it_always_was",
+               f"{T}::TestSyncRebuildNames::test_an_empty_list_is_the_same_as_no_body",
+               f"{T}::TestSyncRebuildNames::test_the_names_reach_the_sync_and_no_names_start_it_as_it_always_ran"],
     ),
     Control(
         describes="retype: the rebuild names are audited",
         path="api/routes.py",
-        old='            current_user.user_id, "_mirror", rebuild, "rebuild", None, True,\n',
-        new='            current_user.user_id, "_mirror", "_sync", "start", None, True,\n',
+        old='        audit_log.log_access(current_user.user_id, "_mirror", rebuild, "rebuild", True, True)',
+        new='        audit_log.log_access(current_user.user_id, "_mirror", "_sync", "start", True, True)',
         tests=[f"{T}::TestWhatHappensToStoredData::test_the_rebuild_names_are_in_the_audit_log"],
+    ),
+    Control(
+        describes="retype: the audit entry for a rebuild says it was allowed",
+        path="api/routes.py",
+        old='        audit_log.log_access(current_user.user_id, "_mirror", rebuild, "rebuild", True, True)',
+        new='        audit_log.log_access(current_user.user_id, "_mirror", rebuild, "rebuild", None, True)',
+        tests=[f"{T}::TestSyncRebuildNames::test_a_rebuild_is_audited_as_allowed_and_so_is_the_start"],
+    ),
+    Control(
+        describes="retype: a refused rebuild is audited",
+        path="api/routes.py",
+        old='        audit_log.log_access(current_user.user_id, "_mirror", rebuild, "rebuild_refused", False, True)',
+        new='        pass',
+        tests=[f"{T}::TestSyncRebuildNames::test_a_name_that_needs_no_rebuild_is_refused_by_name_and_nothing_starts"],
+    ),
+    Control(
+        describes="retype: a rebuild is not started while another sync holds the lock",
+        path="api/routes.py",
+        old='            if not free:\n                raise refused(409,',
+        new='            if False:\n                raise refused(409,',
+        tests=[f"{T}::TestSyncRebuildNames::test_while_another_sync_holds_the_lock_the_rebuild_is_refused_and_not_dropped_silently"],  # noqa: E501
+    ),
+    Control(
+        describes="retype: a mirror that cannot be read refuses the rebuild in words, not with a traceback",
+        path="api/routes.py",
+        old='        except _MirrorUnreadable:\n            raise refused(503,',
+        new='        except ZeroDivisionError:\n            raise refused(503,',
+        tests=[f"{T}::TestSyncRebuildNames::test_a_mirror_that_cannot_be_read_is_a_clear_refusal_and_not_a_traceback"],
+    ),
+    Control(
+        describes="retype: an edit that has landed is not failed by a mirror that cannot be read",
+        path="api/routes.py",
+        old='        except _MirrorUnreadable:\n            owed, unknown = [], True',
+        new='        except ZeroDivisionError:\n            owed, unknown = [], True',
+        tests=[f"{T}::TestRetyping::test_a_mirror_that_cannot_be_read_does_not_fail_an_edit_that_has_landed"],
+    ),
+    Control(
+        describes="retype: the reply separates this field's tables from every table owed a rebuild",
+        path="api/routes.py",
+        old='                "tables": tables, "rebuild": owed, "rebuild_unknown": unknown}',
+        new='                "tables": owed, "rebuild": owed, "rebuild_unknown": unknown}',
+        tests=[f"{T}::TestRetyping::test_the_reply_says_which_tables_are_this_fields_and_which_are_owed_overall"],
+    ),
+    Control(
+        describes="retype: a column the source lost is not compared, as the sync does not",
+        path="core/ontology/retype.py",
+        old='        columns = [column for column in target.columns if present is None or column in present]',
+        new='        columns = list(target.columns)',
+        tests=["tests/unit/test_retype.py::TestWhichSilverTablesNeedARebuild::test_a_column_the_source_no_longer_has_is_not_compared_as_the_sync_does_not",  # noqa: E501
+               f"{T}::TestTheRebuildListIsTheSyncsOwn::test_a_column_the_source_no_longer_has_makes_no_rebuild_owed"],
+    ),
+    Control(
+        describes="retype: the dialog says what quarantine does when that is the setting",
+        path="core/ontology/retype.py",
+        old='    said.append((_QUARANTINE if on_type_mismatch == "quarantine" else _REFUSE).format(new=new_type))',
+        new='    said.append(_REFUSE.format(new=new_type))',
+        tests=[f"{T}::TestWhatTheDialogSaysForEachMode::test_quarantine_sets_rows_aside_at_each_sync",
+               "tests/unit/test_retype.py::TestWhatItSaysAboutStoredData::test_under_quarantine_such_rows_are_set_aside_at_each_sync"],  # noqa: E501
+    ),
+    Control(
+        describes="retype: the dialog says what refuse does when that is the setting",
+        path="core/ontology/retype.py",
+        old='    said.append((_QUARANTINE if on_type_mismatch == "quarantine" else _REFUSE).format(new=new_type))',
+        new='    said.append(_QUARANTINE.format(new=new_type))',
+        tests=[f"{T}::TestWhatTheDialogSaysForEachMode::test_refuse_stops_the_sync_and_the_rebuild_until_the_data_or_the_type_is_fixed",  # noqa: E501
+               "tests/unit/test_retype.py::TestWhatItSaysAboutStoredData::test_under_refuse_a_value_that_cannot_convert_stops_the_sync_until_the_data_or_the_type_is_fixed"],  # noqa: E501
+    ),
+    Control(
+        describes="retype: a shared table says that gold of every type on it is skipped and rebuilt",
+        path="core/ontology/retype.py",
+        old='    if len(types) > 1:',
+        new='    if False:',
+        tests=["tests/unit/test_retype.py::TestWhatItSaysAboutStoredData::test_a_shared_table_names_every_type_whose_gold_is_skipped_and_rebuilt"],  # noqa: E501
+    ),
+    Control(
+        describes="retype: tables not owed a rebuild are not described as rebuilt",
+        path="core/ontology/retype.py",
+        old='        mine = [name for name in tables if name in owed]',
+        new='        mine = list(tables)',
+        tests=["tests/unit/test_retype.py::TestWhatItSaysAboutStoredData::test_a_table_not_built_or_already_matching_is_said_not_to_be_rebuilt_and_nothing_is_refused"],  # noqa: E501
+    ),
+    Control(
+        describes="retype: only a manager of the deployment may ask what is owed a rebuild",
+        path="api/routes.py",
+        old='    _require_manage_deployment(request, current_user)\n    try:\n        return {"rebuild"',
+        new='    try:\n        return {"rebuild"',
+        tests=[f"{T}::TestWhatIsOwedAsked::test_only_a_manager_of_the_deployment_may_ask"],
     ),
     Control(
         describes="retype: a link field is not retyped",
@@ -8154,7 +8244,7 @@ CONTROLS = [
     Control(
         describes="retype: silver is judged against the lake, not remembered",
         path="core/ontology/retype.py",
-        old='        if changed_column_types(have, schema_for_columns(list(target.columns), target.column_types)):',
+        old='        if changed_column_types(have, schema_for_columns(columns, target.column_types)):',
         new='        if True:',
         tests=[f"{TR}::TestWhichSilverTablesNeedARebuild::test_a_table_that_matches_is_not_listed"],
     ),

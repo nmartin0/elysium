@@ -104,6 +104,34 @@ class TestRetyping:
     def test_the_reply_lists_the_silver_table_that_now_needs_a_rebuild(self, retyper):
         assert _retype(retyper).json()["rebuild"] == [SILVER]
 
+    def test_the_reply_says_which_tables_are_this_fields_and_which_are_owed_overall(self, retyper):
+        what = {**AMOUNT, "field": "transaction_date", "data_type": "date"}
+
+        body = _retype(retyper, what).json()
+        assert body["tables"] == [SILVER] and body["rebuild"] == [SILVER] and body["rebuild_unknown"] is False
+        # A second field of another table: this field's tables are its own, the owed ones are all of them.
+        other = {"object_type": "Account", "field": "currency", "data_type": "integer"}
+        body = _retype(retyper, other).json()
+        assert body["tables"] == ["primary_sql.accounts"]
+        assert body["rebuild"] == ["primary_sql.accounts", SILVER]
+
+    def test_a_mirror_that_cannot_be_read_does_not_fail_an_edit_that_has_landed(
+            self, retyper, config_dir, broken_catalog):
+
+        response = _retype(retyper)
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["status"] == "applied" and body["rebuild"] == [] and body["rebuild_unknown"] is True
+        assert "data_type: decimal" in (config_dir / FILE).read_text()
+
+    def test_the_preview_of_a_retype_still_answers_when_the_mirror_cannot_be_read(self, retyper, broken_catalog):
+
+        response = _retype(retyper, preview=True)
+
+        assert response.status_code == 200
+        assert any("could not be read just now" in line for line in response.json()["stored_data"])
+
     def test_where_silver_was_never_built_there_is_nothing_to_rebuild(self, retyper):
         from core.mirror.catalog import open_mirror_catalog
 
@@ -279,18 +307,40 @@ def _post_sync(client, **body):
     return client.post("/api/admin/mirror/sync", headers=_csrf_headers(client), **({"json": body} if body else {}))
 
 
+@pytest.fixture
+def broken_catalog(monkeypatch):
+    """Any catalog error after the deployment has started (the loader itself
+    refuses to START on a catalog whose metadata file is gone, so an edit
+    cannot be applied to one; what is left is a catalog that fails when the
+    routes read it later)."""
+    def broken(request):
+        raise RuntimeError("the catalog cannot be read")
+
+    monkeypatch.setattr("api.routes._mirror_catalog_for", broken)
+
+
 class TestSyncRebuildNames:
-    def test_with_no_body_it_is_the_sync_it_always_was(self, retyper, captured):
-        from api.routes import _run_sync_in_background
+    @staticmethod
+    def _run(target, monkeypatch):
+        """What the thread the route started would call run_sync with."""
+        import scripts.run_sync
 
+        calls = []
+        monkeypatch.setattr(scripts.run_sync, "run_sync", lambda *given, **asked: calls.append((given, asked)))
+        target()
+        return calls
+
+    def test_with_no_body_it_is_the_sync_it_always_was(self, retyper, captured, monkeypatch):
         assert _post_sync(retyper).status_code == 200
-        assert captured.started == [_run_sync_in_background]
 
-    def test_an_empty_list_is_the_same_as_no_body(self, retyper, captured):
-        from api.routes import _run_sync_in_background
+        (target,) = captured.started
+        assert self._run(target, monkeypatch) == [((), {})]
 
+    def test_an_empty_list_is_the_same_as_no_body(self, retyper, captured, monkeypatch):
         assert _post_sync(retyper, rebuild=[]).status_code == 200
-        assert captured.started == [_run_sync_in_background]
+
+        (target,) = captured.started
+        assert self._run(target, monkeypatch) == [((), {})]
 
     @pytest.mark.parametrize("name", [SILVER, "primary_sql.nope", "nonsense", ""])
     def test_a_name_that_needs_no_rebuild_is_refused_by_name_and_nothing_starts(self, retyper, captured, name):
@@ -301,8 +351,10 @@ class TestSyncRebuildNames:
 
         assert response.status_code == 400 and name in response.json()["detail"]
         assert captured.started == []
-        assert not [e for e in read_audit_log(retyper.app.state.runtime_paths.log_dir)
-                    if e.get("action") in ("start", "rebuild")]
+        entries = read_audit_log(retyper.app.state.runtime_paths.log_dir)
+        assert not [e for e in entries if e.get("action") in ("start", "rebuild")]
+        (refusal,) = [e for e in entries if e.get("action") == "rebuild_refused"]
+        assert refusal["object_id"] == [name] and refusal["user_id"] == "ops" and refusal["allowed"] is False
 
     def test_the_guard_comes_first_and_says_nothing_about_names(self, retyper, captured):
         retyper.cookies.clear()
@@ -315,16 +367,64 @@ class TestSyncRebuildNames:
         assert captured.started == []
 
     def test_the_names_reach_the_sync_and_no_names_start_it_as_it_always_ran(self, monkeypatch):
-        import scripts.run_sync
         from api.routes import _run_sync_in_background
 
-        calls = []
-        monkeypatch.setattr(scripts.run_sync, "run_sync", lambda *given, **asked: calls.append((given, asked)))
+        assert self._run(_run_sync_in_background, monkeypatch) == [((), {})]
+        assert self._run(lambda: _run_sync_in_background({SILVER}), monkeypatch) == [((), {"rebuild": {SILVER}})]
 
-        _run_sync_in_background()
-        _run_sync_in_background({SILVER})
+    def test_the_route_hands_the_names_it_checked_to_the_thread(self, retyper, captured, monkeypatch):
+        _retype(retyper)
 
-        assert calls == [((), {}), ((), {"rebuild": {SILVER}})]
+        assert _post_sync(retyper, rebuild=[SILVER, SILVER]).status_code == 200
+
+        (target,) = captured.started
+        assert self._run(target, monkeypatch) == [((), {"rebuild": {SILVER}})]
+
+    def test_a_rebuild_is_audited_as_allowed_and_so_is_the_start(self, retyper, captured):
+        _retype(retyper)
+
+        _post_sync(retyper, rebuild=[SILVER])
+
+        entries = read_audit_log(retyper.app.state.runtime_paths.log_dir)
+        (rebuild,) = [e for e in entries if e.get("action") == "rebuild"]
+        (start,) = [e for e in entries if e.get("action") == "start"]
+        assert rebuild["allowed"] is True and start["allowed"] is True and rebuild["object_id"] == [SILVER]
+
+    def test_while_another_sync_holds_the_lock_the_rebuild_is_refused_and_not_dropped_silently(
+            self, retyper, captured):
+        from core.mirror.sync_lock import single_writer
+
+        _retype(retyper)
+        lock = retyper.app.state.runtime_paths.data_dir / "sync.lock"
+
+        with single_writer(lock) as taken:
+            assert taken
+            response = _post_sync(retyper, rebuild=[SILVER])
+
+        assert response.status_code == 409 and "the rebuild was not started" in response.json()["detail"]
+        assert captured.started == []
+        entries = read_audit_log(retyper.app.state.runtime_paths.log_dir)
+        assert not [e for e in entries if e.get("action") == "rebuild"]
+        assert [e for e in entries if e.get("action") == "rebuild_refused"]
+        # Free again, the same request starts.
+        assert _post_sync(retyper, rebuild=[SILVER]).status_code == 200
+
+    def test_a_sync_with_no_names_is_not_held_back_by_the_lock_check(self, retyper, captured):
+        from core.mirror.sync_lock import single_writer
+
+        with single_writer(retyper.app.state.runtime_paths.data_dir / "sync.lock"):
+            assert _post_sync(retyper).status_code == 200
+        assert len(captured.started) == 1
+
+    def test_a_mirror_that_cannot_be_read_is_a_clear_refusal_and_not_a_traceback(
+            self, retyper, captured, broken_catalog):
+
+        response = _post_sync(retyper, rebuild=[SILVER])
+
+        assert response.status_code == 503 and "could not be read" in response.json()["detail"]
+        assert "Traceback" not in response.text and captured.started == []
+        assert [e for e in read_audit_log(retyper.app.state.runtime_paths.log_dir)
+                if e.get("action") == "rebuild_refused"]
 
     def test_a_body_that_is_not_a_list_of_names_is_a_validation_error(self, retyper, captured):
         assert _post_sync(retyper, rebuild="primary_sql.transactions").status_code == 422
@@ -704,3 +804,76 @@ class TestARefusalRestsOnTheLoadedSchemaAndTheColumn:
         response = _retype(client, {"object_type": "Customer", "field": "doubled", "data_type": "integer"},
                            preview=True)
         assert response.status_code == 400 and "what its rule produces" in response.json()["detail"]
+
+
+class TestWhatTheDialogSaysForEachMode:
+    """What a value that will not convert does depends on on_type_mismatch
+    (config.yaml): the sentences say the one that is true."""
+
+    @staticmethod
+    def _preview(config_dir, request, setting):
+        _prepared(config_dir)
+        if setting:
+            path = config_dir / "config.yaml"
+            path.write_text(path.read_text() + f"\non_type_mismatch: {setting}\n")
+        client = request.getfixturevalue("client")
+        _login_as(client, "ops", "remover")
+        response = _retype(client, preview=True)
+        assert response.status_code == 200, response.text
+        return " ".join(response.json()["stored_data"])
+
+    @pytest.mark.parametrize("setting", [None, "refuse"])
+    def test_refuse_stops_the_sync_and_the_rebuild_until_the_data_or_the_type_is_fixed(
+            self, config_dir, request, setting):
+        said = self._preview(config_dir, request, setting)
+
+        assert "stops with an error naming it, and so does the rebuild" in said
+        assert "until the data at the source or the type is fixed" in said and "set aside" not in said
+
+    def test_quarantine_sets_rows_aside_at_each_sync(self, config_dir, request):
+        said = self._preview(config_dir, request, "quarantine")
+
+        assert "set aside in the quarantine table at every sync" in said and "stops with an error" not in said
+
+    def test_the_dialogs_text_does_not_claim_nothing_is_lost_by_waiting(self, config_dir, request):
+        said = self._preview(config_dir, request, None)
+
+        assert "nothing is lost by waiting" not in said
+
+
+class TestWhatIsOwedAsked:
+    def test_the_list_is_what_the_sync_would_accept_and_is_empty_once_rebuilt_by_hand(self, retyper):
+        assert retyper.get("/api/admin/mirror/rebuild-owed").json() == {"rebuild": [], "unknown": False}
+        _retype(retyper)
+        assert retyper.get("/api/admin/mirror/rebuild-owed").json() == {"rebuild": [SILVER], "unknown": False}
+
+    def test_a_mirror_that_cannot_be_read_is_unknown_not_an_error(self, retyper, broken_catalog):
+        response = retyper.get("/api/admin/mirror/rebuild-owed")
+
+        assert response.status_code == 200 and response.json() == {"rebuild": [], "unknown": True}
+
+    def test_only_a_manager_of_the_deployment_may_ask(self, retyper):
+        retyper.cookies.clear()
+        retyper.app.state.user_directory.create_user("pat", "correct-pw", "us-west", "customer_service")
+        _login(retyper, "pat", "correct-pw")
+
+        assert retyper.get("/api/admin/mirror/rebuild-owed").status_code == 403
+
+
+class TestTheRebuildListIsTheSyncsOwn:
+    def test_a_column_the_source_no_longer_has_makes_no_rebuild_owed(self, retyper):
+        """The sync drops a column the source lost before it compares, so a
+        rebuild for it would discard history for nothing: the route reads the
+        columns bronze recorded at the last sync."""
+        from core.mirror.catalog import open_mirror_catalog
+        from core.mirror.iceberg_sync import SOURCE_COLUMNS_PROPERTY
+
+        bronze = open_mirror_catalog(retyper.app.state.runtime_paths.data_dir / "mirror").load_table(
+            "bronze_primary_sql.transactions")
+        recorded = set(json.loads(bronze.properties[SOURCE_COLUMNS_PROPERTY]))
+        assert "amount" in recorded
+        with bronze.transaction() as change:
+            change.set_properties({SOURCE_COLUMNS_PROPERTY: json.dumps(sorted(recorded - {"amount"}))})
+
+        assert _retype(retyper).json()["rebuild"] == []
+        assert _post_sync(retyper, rebuild=[SILVER]).status_code == 400

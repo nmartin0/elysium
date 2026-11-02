@@ -47,14 +47,23 @@ from core.ontology.used_by import Referrer, used_by_field
 
 _UNTOUCHED = "Nothing is deleted from your source: Elysium only reads it."
 _BRONZE = "Bronze is not touched: it keeps every raw value as text, which is what silver is rebuilt from."
-_GOLD = ("Gold of {type} is rebuilt from the new silver at the sync that follows, which restarts its "
-         "publication tags from the first. Its changelog and its history of publications are kept; entries "
-         "already in them keep the values they had, in the old type, and the first publication afterwards "
+_GOLD = ("Gold of {types}, if it was built, is rebuilt from the new silver at the sync that follows, which "
+         "restarts its publication tags from the first. Its changelog and its history of publications are kept; "
+         "entries already in them keep the values they had, in the old type, and the first publication afterwards "
          "records no difference, because there is nothing of the new shape to compare it with.")
-_NOT_COUNTED = ("How many stored values will not convert to the new type is not counted yet, so it is not "
-                "shown here.")
-_BEFORE_REBUILD = ("Until the rebuild, the sync refuses silver for the table and gold of this type is left "
-                   "as it was; nothing is lost by waiting.")
+_SHARED = ("{tables} {is_are} shared by {types}: the sync skips gold of every one of them while silver is "
+           "refused, and rebuilds every one of them afterwards, not only {own}.")
+_BEFORE_REBUILD = ("Until the rebuild, the sync refuses silver for the table: no change at the source reaches "
+                   "silver or gold of {types}, which keep what they hold, in the old type.")
+_REFUSE = ("If a stored value cannot be read as {new}, the sync of that table stops with an error naming it, and "
+           "so does the rebuild, until the data at the source or the type is fixed. How many values that is "
+           "is not counted yet.")
+_QUARANTINE = ("If a stored value cannot be read as {new}, its row is set aside in the quarantine table at every "
+               "sync, while silver is refused as well as after the rebuild, and the other rows are synced. How "
+               "many values that is is not counted yet.")
+_NO_TABLE = ("The type the sync gives this field's column does not change, so no silver or gold is rebuilt. "
+             "(Two types that declare the same column of one shared table get one type between them: the later "
+             "declaration is the one used.)")
 
 
 def changed_tables(before: Iterable, after: Iterable) -> list[str]:
@@ -70,19 +79,47 @@ def changed_tables(before: Iterable, after: Iterable) -> list[str]:
                   if name in was and was[name] != types)
 
 
-def stored_data(tables: Sequence[str], gold_type: str) -> list[str]:
+def stored_data(tables: Sequence[str], types: Sequence[str], new_type: str, *,
+                owed: "Sequence[str] | None", on_type_mismatch: "str | None" = None) -> list[str]:
     """What a retype does to the data already stored, one sentence each,
-    for the confirmation dialog. `tables` are the tables it touches
-    (changed_tables), `gold_type` the object type whose gold is rebuilt."""
+    for the confirmation dialog.
+
+    `tables` are the tables it touches (changed_tables) and `types` every
+    object type stored in them (gold of each is skipped and rebuilt, not
+    only the one retyped). `owed` is which of ALL tables hold silver of a
+    different type right now (tables_needing_rebuild, run on the proposed
+    schema), or None when the mirror could not be read. `on_type_mismatch`
+    is the deployment's setting (config.yaml), which decides what a value
+    that does not convert does at every sync."""
     if not tables:
-        return [_UNTOUCHED,
-                "No table is read for this field yet, so there is no silver or gold to rebuild.",
-                _BRONZE]
-    one = len(tables) == 1
-    silver = (f"Silver of {', '.join(tables)} cannot take the new type in place, so the sync refuses "
-              f"{'it' if one else 'them'} until you rebuild: silver is then rebuilt from bronze, and its "
-              f"snapshot history is discarded.")
-    return [_UNTOUCHED, silver, _BRONZE, _GOLD.format(type=gold_type), _BEFORE_REBUILD, _NOT_COUNTED]
+        return [_UNTOUCHED, _NO_TABLE, _BRONZE]
+    listed = ", ".join(tables)
+    types_named = ", ".join(types)
+    said = [_UNTOUCHED]
+    if owed is None:
+        said.append(f"The mirror could not be read just now, so this cannot say whether silver of {listed} still "
+                    f"has the old type. Where it does, the sync refuses it until it is rebuilt from bronze, and "
+                    f"rebuilding discards that table's snapshot history.")
+    else:
+        mine = [name for name in tables if name in owed]
+        rest = [name for name in tables if name not in owed]
+        if mine:
+            one = len(mine) == 1
+            said.append(f"Silver of {', '.join(mine)} cannot take the new type in place, so the sync refuses "
+                        f"{'it' if one else 'them'} until you rebuild: silver is then rebuilt from bronze, and "
+                        f"its snapshot history is discarded.")
+        if rest:
+            said.append(f"Silver of {', '.join(rest)} is not built yet or already has the new type, so nothing "
+                        f"there is rebuilt.")
+    said.append(_BRONZE)
+    if len(types) > 1:
+        said.append(_SHARED.format(tables=listed, is_are="is" if len(tables) == 1 else "are", types=types_named,
+                                   own="the type you are changing"))
+    said.append(_GOLD.format(types=types_named))
+    if owed is None or any(name in owed for name in tables):
+        said.append(_BEFORE_REBUILD.format(types=types_named))
+    said.append((_QUARANTINE if on_type_mismatch == "quarantine" else _REFUSE).format(new=new_type))
+    return said
 
 
 def _storage_of(type_def: dict, field_config: dict) -> dict:
@@ -171,26 +208,38 @@ def places_naming(schema, roles, action_types, triggers, object_type: str, field
     return used_by_field(schema, roles, action_types, triggers, object_type, field)
 
 
-def tables_needing_rebuild(targets: Iterable, silver_schema_of: Callable[[str], "pa.Schema | None"]) -> list[str]:
+def tables_needing_rebuild(targets: Iterable, silver_schema_of: Callable[[str], "pa.Schema | None"],
+                           source_columns_of: "Callable[[str], set[str] | None] | None" = None) -> list[str]:
     """The "silo.table" names whose SILVER column types differ from what the
-    ontology declares now: exactly the tables the sync refuses until they are
-    rebuilt. `targets` are the sync targets of the running configuration;
+    ontology declares now: exactly the tables the sync refuses until they
+    are rebuilt. `targets` are the sync targets of the running configuration;
     `silver_schema_of("silo.table")` is the table's Arrow schema as the lake
     holds it, or None when it was never built (nothing to rebuild).
 
     THE COMPARISON IS THE SYNC'S OWN (field_types.schema_for_columns for
-    what is declared, changed_column_types for the spelling rules), so a
-    table listed here is one the sync would refuse and one not listed is
-    one it would not -- a rebuild of anything else discards snapshot
-    history for nothing. A column on one side only is not a type change.
-    One difference, on purpose: a column the SOURCE no longer has is left
-    out of the sync's comparison and is in this one."""
+    what is declared, changed_column_types for the spelling rules). A column
+    on one side only is not a type change.
+
+    A COLUMN THE SOURCE NO LONGER HAS IS NOT COMPARED, as in the sync, which
+    drops it before it compares (iceberg_sync, "columns = [column for
+    column in columns if column not in missing]") -- or refuses the table for
+    the vanished column and never reaches the comparison. A rebuild listed
+    for it would discard history for nothing. WHAT THIS CANNOT KNOW without
+    reading the source is which columns it has now: `source_columns_of
+    ("silo.table")` answers with the columns the source had at the LAST
+    sync (bronze records them, iceberg_sync.SOURCE_COLUMNS_PROPERTY), or
+    None when none were recorded (then every declared column is compared,
+    as before). A column that vanished since the last sync is therefore still
+    compared here and not by the next sync; the sync's own verdict on it
+    stands, and the table is listed until a sync has recorded the loss."""
     needing = []
     for target in targets:
         identifier = f"{target.silo_name}.{target.table_name}"
         have = silver_schema_of(identifier)
         if have is None:
             continue
-        if changed_column_types(have, schema_for_columns(list(target.columns), target.column_types)):
+        present = source_columns_of(identifier) if source_columns_of else None
+        columns = [column for column in target.columns if present is None or column in present]
+        if changed_column_types(have, schema_for_columns(columns, target.column_types)):
             needing.append(identifier)
     return sorted(set(needing))

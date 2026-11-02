@@ -1421,8 +1421,23 @@ one Inbox. Built so far, each checked in a real browser:
   rebuilds gold from the old-typed silver nor fails it, so gold keeps its
   old column type, tags and changelog while reads already use the new
   declared type. Not retypable from the screen, on purpose: a link field, a
-  type's identifier, and the field its row security reads (comparing its
-  value as text decides who sees a row). tests/integration/
+  computed field (derived, enriched or predicted: its type is what its
+  rule produces), a type's identifier, and the field its row security
+  reads (comparing its value as text decides who sees a row). THE LAST
+  THREE ARE JUDGED ON THE LOADED SCHEMA AND PER COLUMN, not on the file's
+  words and field names (core/ontology/retype.refusal): `security:
+  inherit` is only a word in the file, and storage is per column, so a
+  field stored in a column that is any sync target's id or security column,
+  or that a link joins on, is refused whatever it is called and whichever
+  type declares it. After review (2 November): the screen's edits read and
+  write the bytes of the file, so CRLF stays CRLF; the apply never fails for
+  want of a readable mirror (`rebuild_unknown`); a rebuild is refused with
+  409 while another sync holds the lock, and a refused one is audited; the
+  tables owed leave out a column the source lost, as far as the last sync
+  recorded (it cannot know the source's columns now without reading it); and
+  the dialog says what a value that will not convert does under the
+  deployment's `on_type_mismatch` (refuse stops the sync and the rebuild;
+  quarantine sets the row aside at every sync). tests/integration/
   test_retype_from_the_ui.py runs a real sync before and after.
   A field declared later is not empty history:
   bronze keeps every column the source has. Order: add a field (built),

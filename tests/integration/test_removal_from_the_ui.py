@@ -569,14 +569,15 @@ class TestTheTwoFilesGoTogetherOrNotAtAll:
     def test_a_failure_staging_the_second_file_writes_neither(self, two_files, config_dir, monkeypatch):
         _deprecate(two_files)
         before = self._before(config_dir)
-        real = type(config_dir).write_text
+        real = type(config_dir).write_bytes
 
-        def write_text(path, text, *given, **asked):
+        # The routes stage the file's own bytes (api/routes._put_exact_text).
+        def write_bytes(path, data):
             if path.name == f".{BINDINGS}.elysium-edit":
                 raise OSError(28, "No space left on device")
-            return real(path, text, *given, **asked)
+            return real(path, data)
 
-        monkeypatch.setattr(type(config_dir), "write_text", write_text)
+        monkeypatch.setattr(type(config_dir), "write_bytes", write_bytes)
 
         response = _remove(two_files)
 

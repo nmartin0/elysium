@@ -3312,21 +3312,45 @@ class RetypeResponse(BaseModel):
     status: str
     diff: list[str]
     to_generation: int | None = None
-    # The "silo.table" names whose silver now differs from the declared type
-    # and is refused by the sync until rebuilt: [] when silver was never
+    # The tables THIS FIELD is stored in whose declared type changed.
+    tables: list[str] = []
+    # EVERY "silo.table" in the deployment whose silver now differs from the
+    # declared type and is refused by the sync until rebuilt, this field's or
+    # not (an earlier retype may have left some): [] when silver was never
     # built. The names POST /admin/mirror/sync takes as `rebuild`.
     rebuild: list[str] = []
+    # True when the mirror could not be read, so `rebuild` is [] because
+    # nobody can tell, not because nothing is owed. The edit has been applied.
+    rebuild_unknown: bool = False
+
+
+class _MirrorUnreadable(Exception):
+    """The lake could not be read to say which silver tables are owed a rebuild."""
 
 
 def _tables_needing_rebuild(request: Request, schema: dict) -> list[str]:
     """Silver tables whose column types differ from what `schema` declares,
-    read from the lake as it is now. Derived each time, no marker."""
+    read from the lake as it is now. Derived each time, no marker.
+
+    Raises _MirrorUnreadable when the lake cannot be read at all (a catalog
+    whose metadata file is gone -- scripts/repair_catalog.py's case -- or
+    any other catalog error): the callers differ in what they do about it,
+    and none may answer 500 for it, least of all after an edit has landed.
+    A table or namespace that does not exist is an answer, not a failure:
+    it was never built."""
     from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
+    from core.mirror.iceberg_sync import SOURCE_COLUMNS_PROPERTY
     from core.mirror.sync_targets import resolve_sync_targets
     from core.ontology.retype import tables_needing_rebuild
 
-    catalog = _mirror_catalog_for(request)
+    def source_columns_of(identifier: str):
+        silo, _, table = identifier.partition(".")
+        try:
+            recorded = catalog.load_table(f"bronze_{silo}.{table}").properties.get(SOURCE_COLUMNS_PROPERTY)
+        except (NoSuchTableError, NoSuchNamespaceError):
+            return None
+        return set(json.loads(recorded)) if recorded else None
 
     def silver_schema_of(identifier: str):
         try:
@@ -3334,7 +3358,13 @@ def _tables_needing_rebuild(request: Request, schema: dict) -> list[str]:
         except (NoSuchTableError, NoSuchNamespaceError):
             return None
 
-    return tables_needing_rebuild(resolve_sync_targets({"object_types": schema}), silver_schema_of)
+    try:
+        catalog = _mirror_catalog_for(request)
+        return tables_needing_rebuild(resolve_sync_targets({"object_types": schema}), silver_schema_of,
+                                      source_columns_of)
+    except Exception as e:
+        logger.warning("the mirror could not be read to find the tables owed a rebuild: %s", type(e).__name__)
+        raise _MirrorUnreadable() from e
 
 
 def _planned_retype(request: Request, current_user: UserRecord, body: RetypeRequest):
@@ -3380,8 +3410,18 @@ def _planned_retype(request: Request, current_user: UserRecord, body: RetypeRequ
     found = places_naming(after.schema, after.roles, after.action_types, after.declared_triggers,
                           body.object_type, body.field)
     shown, hidden = visible_to(found, lambda subject: mediator.knows(current_user, subject))
+    # WHAT THE LAKE HOLDS NOW against the proposed declaration, so the
+    # sentences say which of the tables are really owed a rebuild; None
+    # when the mirror cannot be read, which they say.
+    try:
+        owed: list[str] | None = _tables_needing_rebuild(request, after.schema)
+    except _MirrorUnreadable:
+        owed = None
+    sharing = sorted({name for target in resolve_sync_targets({"object_types": after.schema})
+                      if f"{target.silo_name}.{target.table_name}" in tables for name in target.object_types})
     return ({ONTOLOGY_FILE: (current, proposed)}, declared.get("data_type", DEFAULT_FIELD_DATA_TYPE), tables,
-            stored_data(tables, body.object_type), shown, hidden)
+            stored_data(tables, sharing or [body.object_type], body.data_type, owed=owed,
+                        on_type_mismatch=_generation(request).config.on_type_mismatch), shown, hidden)
 
 
 @router.post("/admin/ontology/retype/preview", dependencies=[Depends(_no_store)],
@@ -3408,17 +3448,27 @@ def apply_retype_route(body: RetypeRequest, request: Request,
                        current_user: UserRecord = Depends(get_current_user)) -> Any:
     """Changes the field's data type now, judged again here and not trusted
     from the preview (stale file: 409). No data is touched: the reply lists
-    the tables whose silver must now be rebuilt (`rebuild`), which the sync
+    the tables this field is stored in (`tables`) and every table whose
+    silver must now be rebuilt (`rebuild`), which the sync
     refuses until a person names them to POST /admin/mirror/sync. The new
     file is staged and renamed over the old one and the deployment reloaded,
     or put back (_write_config_files)."""
     _require_manage_deployment(request, current_user)
     with _config_edit_lock:
-        files, _from, _tables, _stored, _shown, _hidden = _planned_retype(request, current_user, body)
+        files, _from, tables, _stored, _shown, _hidden = _planned_retype(request, current_user, body)
         written = _write_config_files(request, current_user, files,
                                       {f"{body.object_type}.{body.field}.data_type": body.data_type})
+        # THE EDIT HAS LANDED: nothing after this may fail the request. If
+        # the mirror cannot be read the answer is success with the list
+        # unknown, which the dialog says.
+        try:
+            # The generation the reload just made, not the one this request is
+            # pinned to (that is the one before the edit).
+            owed, unknown = _tables_needing_rebuild(request, request.app.state.generation.config.schema), False
+        except _MirrorUnreadable:
+            owed, unknown = [], True
         return {"status": "applied", "diff": written["diff"], "to_generation": written["to_generation"],
-                "rebuild": _tables_needing_rebuild(request, _load_candidate(request, {}).schema)}
+                "tables": tables, "rebuild": owed, "rebuild_unknown": unknown}
 
 
 def _reason(text: "str | None") -> str:
@@ -5765,7 +5815,10 @@ def admin_mirror_sync_route(
     tables_needing_rebuild, i.e. its silver column types differ from the
     declaration -- else 400 naming it and nothing starts: a name that merely
     exists is refused, because a rebuild nobody needs destroys history for
-    nothing. The names are audited.
+    nothing. The names are audited, and so is a refusal (action
+    "rebuild_refused"). If the mirror cannot be read to check them: 503, and
+    nothing starts. If another sync holds the lock: 409, "the rebuild was not
+    started" (the lock is tried and let go before the thread starts).
 
     **NOTHING NEW REPORTS THE RESULT.** `run_sync()` already records
     every attempt in `sync_attempts.db`, and the mirror panel already
@@ -5791,32 +5844,55 @@ def admin_mirror_sync_route(
         )
 
     rebuild = sorted(set(body.rebuild)) if body else []
+    audit_log = generation.mediator.audit_log
+
+    def refused(status: int, detail: str) -> HTTPException:
+        # A REFUSED REBUILD IS AUDITED TOO: someone asked to discard
+        # snapshot history and was told no. mac_allowed False: the
+        # request was not allowed to proceed (the access check has no
+        # MAC step of its own here, so this is the one honest way to
+        # record that allowed is False).
+        audit_log.log_access(current_user.user_id, "_mirror", rebuild, "rebuild_refused", False, True)
+        return HTTPException(status_code=status, detail=detail)
+
     if rebuild:
-        needed = set(_tables_needing_rebuild(request, generation.config.schema))
+        try:
+            needed = set(_tables_needing_rebuild(request, generation.config.schema))
+        except _MirrorUnreadable:
+            raise refused(503, (
+                "The mirror could not be read, so it cannot be checked which tables need a rebuild. Nothing was "
+                "started. Look at the Mirror panel, or run scripts/repair_catalog.py, then try again.")) from None
         for name in rebuild:
             if name not in needed:
-                raise HTTPException(status_code=400, detail=(
+                raise refused(400, (
                     f"{name} does not need a rebuild: its silver matches what the ontology declares (or is not "
                     f"built). Rebuilding it would discard its snapshot history for nothing. Nothing was started."))
+        # IS ANOTHER SYNC RUNNING? run_sync takes the lock and, finding it
+        # held, prints "another sync is already running" and returns 0 --
+        # after this route answered 200 and audited, the names would vanish
+        # without a word. Tried and let go at once, so the thread's own
+        # attempt follows; a sync that starts in between is the one case
+        # left, and it is the sync's own to report.
+        from core.mirror.sync_lock import single_writer
+
+        with single_writer(request.app.state.runtime_paths.data_dir / "sync.lock") as free:
+            if not free:
+                raise refused(409, "A sync is running; the rebuild was not started. Wait for it to finish, then "
+                                   "rebuild.")
 
     # A LIVE DEPLOYMENT USED TO BE REFUSED A SYNC HERE. There is no
     # such deployment since GOLD-9: every deployment fills the mirror,
     # because that is the only thing reads come from.
 
-    generation.mediator.audit_log.log_access(
-        current_user.user_id, "_mirror", "_sync", "start", None, True,
-    )
+    # mac_allowed True: there is no row-level check on starting a sync,
+    # and None would be recorded as allowed False.
+    audit_log.log_access(current_user.user_id, "_mirror", "_sync", "start", True, True)
     if rebuild:
-        generation.mediator.audit_log.log_access(
-            current_user.user_id, "_mirror", rebuild, "rebuild", None, True,
-        )
+        audit_log.log_access(current_user.user_id, "_mirror", rebuild, "rebuild", True, True)
 
     thread_factory = getattr(request.app.state, "sync_thread_factory",
                              threading.Thread)
-    if rebuild:
-        thread_factory(target=functools.partial(_run_sync_in_background, set(rebuild)), daemon=True).start()
-    else:
-        thread_factory(target=_run_sync_in_background, daemon=True).start()
+    thread_factory(target=functools.partial(_run_sync_in_background, set(rebuild) or None), daemon=True).start()
 
     return {
         "started": True,
@@ -5825,6 +5901,26 @@ def admin_mirror_sync_route(
             "last-attempt column."
         ),
     }
+
+
+class RebuildOwedResponse(BaseModel):
+    rebuild: list[str]
+    # True when the mirror could not be read: `rebuild` is [] because nobody
+    # can tell, not because nothing is owed.
+    unknown: bool
+
+
+@router.get("/admin/mirror/rebuild-owed", dependencies=[Depends(_no_store)], response_model=RebuildOwedResponse)
+def admin_mirror_rebuild_owed_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The "silo.table" names whose silver is owed a rebuild right now: the
+    list POST /admin/mirror/sync accepts as `rebuild`, derived from the lake
+    each time. The retype dialog asks it again after a refused rebuild rather
+    than retry a set that has gone stale. manage:deployment, as the sync."""
+    _require_manage_deployment(request, current_user)
+    try:
+        return {"rebuild": _tables_needing_rebuild(request, _generation(request).config.schema), "unknown": False}
+    except _MirrorUnreadable:
+        return {"rebuild": [], "unknown": True}
 
 
 def _run_sync_in_background(rebuild: "set[str] | None" = None) -> None:

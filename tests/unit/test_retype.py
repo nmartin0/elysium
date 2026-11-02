@@ -74,6 +74,21 @@ class TestWhichSilverTablesNeedARebuild:
         assert tables_needing_rebuild(
             [target(columns=("id", "at"), types={"at": "timestamptz@Europe/Paris"})], lake(s__t=silver)) == []
 
+    def test_a_column_the_source_no_longer_has_is_not_compared_as_the_sync_does_not(self):
+        """The sync drops a vanished column before it compares, so listing
+        the table would discard history for a refusal the sync never makes."""
+        silver = pa.schema([("id", pa.string()), ("amount", pa.float64())])
+        gone = [target(types={"amount": "decimal"})]
+
+        assert tables_needing_rebuild(gone, lake(s__t=silver), lambda _: {"id"}) == []
+        assert tables_needing_rebuild(gone, lake(s__t=silver), lambda _: {"id", "amount"}) == ["s.t"]
+
+    def test_nothing_recorded_about_the_source_columns_compares_every_declared_column(self):
+        silver = pa.schema([("id", pa.string()), ("amount", pa.float64())])
+
+        assert tables_needing_rebuild([target(types={"amount": "decimal"})], lake(s__t=silver),
+                                      lambda _: None) == ["s.t"]
+
     def test_only_the_tables_that_differ_are_listed_and_sorted(self):
         targets = [target(table="b", types={"amount": "decimal"}), target(table="a", types={"amount": "integer"}),
                    target(table="c")]
@@ -111,30 +126,65 @@ class TestTheSharedComparison:
 
 class TestWhatItSaysAboutStoredData:
     def test_what_changes_and_what_stays(self):
-        said = stored_data(["silo.table"], "Transaction")
+        said = stored_data(["silo.table"], ["Transaction"], "decimal", owed=["silo.table"])
 
         text = " ".join(said)
         assert said[0].startswith("Nothing is deleted from your source")
         assert "Silver of silo.table cannot take the new type in place" in text
         assert "rebuilt from bronze" in text and "snapshot history is discarded" in text
         assert "Bronze is not touched" in text
-        assert "Gold of Transaction is rebuilt from the new silver" in text
+        assert "Gold of Transaction, if it was built, is rebuilt from the new silver" in text
         assert "publication tags from the first" in text
         assert "changelog and its history of publications are kept" in text
         assert "keep the values they had, in the old type" in text
         assert "first publication afterwards records no difference" in text
-        assert "not counted yet" in text
+        assert "Until the rebuild, the sync refuses silver" in text
 
     def test_several_tables_are_all_named(self):
-        text = " ".join(stored_data(["a.x", "b.y"], "T"))
+        text = " ".join(stored_data(["a.x", "b.y"], ["T"], "date", owed=["a.x", "b.y"]))
 
         assert "Silver of a.x, b.y cannot" in text and "refuses them until" in text
 
-    def test_with_no_table_read_it_says_there_is_nothing_to_rebuild(self):
-        said = stored_data([], "T")
+    def test_with_no_table_changed_it_does_not_claim_that_no_table_is_read(self):
+        said = stored_data([], ["T"], "date", owed=[])
 
-        assert any("no silver or gold to rebuild" in line for line in said)
-        assert not any("Gold of" in line for line in said)
+        assert any("does not change, so no silver or gold is rebuilt" in line for line in said)
+        assert "shared table" in " ".join(said) and "later declaration" in " ".join(said)
+        assert not any("No table is read" in line or "Gold of" in line for line in said)
+
+    def test_a_table_not_built_or_already_matching_is_said_not_to_be_rebuilt_and_nothing_is_refused(self):
+        said = " ".join(stored_data(["a.x", "b.y"], ["T"], "date", owed=["b.y"]))
+
+        assert "Silver of b.y cannot take the new type" in said
+        assert "Silver of a.x is not built yet or already has the new type, so nothing there is rebuilt" in said
+        none = " ".join(stored_data(["a.x"], ["T"], "date", owed=[]))
+        assert "Until the rebuild" not in none and "cannot take the new type" not in none
+
+    def test_when_the_mirror_could_not_be_read_it_says_so_and_does_not_guess(self):
+        said = " ".join(stored_data(["a.x"], ["T"], "date", owed=None))
+
+        assert "could not be read" in said and "cannot say whether silver of a.x" in said
+
+    def test_a_shared_table_names_every_type_whose_gold_is_skipped_and_rebuilt(self):
+        said = " ".join(stored_data(["s.t"], ["Customer", "Vip"], "integer", owed=["s.t"]))
+
+        assert "s.t is shared by Customer, Vip" in said and "gold of every one of them" in said
+        assert "Gold of Customer, Vip" in said
+        assert "shared by" not in " ".join(stored_data(["s.t"], ["Customer"], "integer", owed=["s.t"]))
+
+    def test_under_refuse_a_value_that_cannot_convert_stops_the_sync_until_the_data_or_the_type_is_fixed(self):
+        for mode in ("refuse", None):
+            said = " ".join(stored_data(["s.t"], ["T"], "integer", owed=["s.t"], on_type_mismatch=mode))
+
+            assert "stops with an error naming it" in said and "and so does the rebuild" in said
+            assert "until the data at the source or the type is fixed" in said
+            assert "set aside" not in said and "nothing is lost by waiting" not in said
+
+    def test_under_quarantine_such_rows_are_set_aside_at_each_sync(self):
+        said = " ".join(stored_data(["s.t"], ["T"], "integer", owed=["s.t"], on_type_mismatch="quarantine"))
+
+        assert "its row is set aside in the quarantine table at every sync" in said
+        assert "stops with an error" not in said and "nothing is lost by waiting" not in said
 
 
 def test_the_places_that_name_a_field_are_the_used_by_report_and_no_second_reading():

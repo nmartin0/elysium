@@ -674,3 +674,8 @@ save_shared_ontology_canvas_route
 clear_shared_ontology_canvas_route
 shared_positions
 can_set_shared
+
+# Retype R1 review fixes (2 November).
+admin_mirror_rebuild_owed_route  # GET /admin/mirror/rebuild-owed: a FastAPI route, reached by HTTP
+rebuild_unknown  # RetypeResponse.rebuild_unknown, read by the browser
+broken_catalog  # a pytest fixture taken as a parameter for its effect (tests/integration/test_retype_from_the_ui.py)
