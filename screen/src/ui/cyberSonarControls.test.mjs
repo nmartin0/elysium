@@ -87,10 +87,8 @@ test('requires Cyber and preserves off state and every omitted setting', () => {
   assert.deepEqual(f.calls, [['rings', 12]]);
 });
 
-test('reports inactive map effects in Cockpit, hidden HUD, unsupported and uninitialized GPU', () => {
+test('reports inactive map effects with hidden HUD, unsupported and uninitialized GPU', () => {
   const f = fixture();
-  f.flags.add('cockpit-mode');
-  assert.equal(getCyberSonarControlState(f.doc).mapSweepActive, false);
   f.flags.clear();
   f.hudFlags.clear();
   assert.equal(getCyberSonarControlState(f.doc).contactSweepActive, false);

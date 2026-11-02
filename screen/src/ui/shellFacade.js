@@ -241,18 +241,6 @@ export class ShellFacade {
     this._locationNavigation._orbitIndicator = value;
   }
 
-  get cockpitView() {
-    return this._cockpitCoordinator?.cockpitView;
-  }
-
-  get _cockpitDisplayPortal() {
-    return this._cockpitCoordinator?._cockpitDisplayPortal;
-  }
-
-  set _cockpitDisplayPortal(value) {
-    this._cockpitCoordinator._cockpitDisplayPortal = value;
-  }
-
   get _navigationGeneration() {
     return this._navigation._navigationGeneration;
   }
@@ -461,22 +449,6 @@ export class ShellFacade {
     this._panelChrome._cancelMapSourceFocus = value;
   }
 
-  get _cockpitContextCollapsedForDataPanel() {
-    return this._panelChrome._cockpitContextCollapsedForDataPanel;
-  }
-
-  set _cockpitContextCollapsedForDataPanel(value) {
-    this._panelChrome._cockpitContextCollapsedForDataPanel = value;
-  }
-
-  get _cockpitPanelRestore() {
-    return this._panelChrome._cockpitPanelRestore;
-  }
-
-  set _cockpitPanelRestore(value) {
-    this._panelChrome._cockpitPanelRestore = value;
-  }
-
   get _panelPosition() {
     return this._panelChrome._panelPosition;
   }
@@ -570,13 +542,9 @@ export class ShellFacade {
   /**
    * Re-sync every stage's `enabled` flag from its CURRENT intensity.
    *
-   * The cockpit-vision policy helpers (src/cockpitVisionPolicy.js) are pure
-   * intensity math — they write `uniforms.intensity` directly and know
-   * nothing about the enabled/intensity lockstep _setStageIntensity owns.
-   * Without this sweep a stage the policy raised to 1 would stay DISABLED
-   * and cockpit NVG/FLIR/CRT would render nothing at all. (Inert while the
-   * chain is permanently enabled; load-bearing again once the explicit
-   * scope frees the zero-intensity stages — see _initStages.)
+   * Code that writes `uniforms.intensity` directly knows nothing about the
+   * enabled/intensity lockstep _setStageIntensity owns; this sweep puts the
+   * two back in step. (Inert while the chain is permanently enabled.)
    * @returns {void}
    */
   _syncStagesEnabledFromIntensity() {
@@ -584,14 +552,11 @@ export class ShellFacade {
   }
 
   /**
-   * Contacts-scoped detection (owner playtest 2026-08-18: "when you click on
-   * Contacts, detections should just turn on, and they should stay on in
-   * Cockpit or in third-person tracking inside Contacts").
+   * Contacts-scoped detection: when Contacts is selected, detections turn on
+   * and stay on while tracking inside it.
    *
-   * The scope is the CONTACTS SESSION, not Cockpit. Cockpit enter/exit and
-   * third-person tracking are moves WITHIN that session and deliberately do not
-   * touch detection — an earlier build hooked this to cockpit enter/exit, which
-   * is exactly what turned detections off when the owner left the cockpit.
+   * The scope is the CONTACTS SESSION. Third-person tracking is a move WITHIN
+   * that session and deliberately does not touch detection.
    *
    * Called from `_syncContextModeButtons`, the single funnel every
    * `_contextMode` mutation routes through, and gated on the transaction having
@@ -606,14 +571,11 @@ export class ShellFacade {
   /** IR hot-target boost (owner playtest 2026-08-16): under the luminance-
    *  mapped NVG/FLIR looks the 3D fleets flip to flat white so contacts read
    *  HOT instead of vanishing mid-gray; restored when the look exits. The
-   *  EFFECTIVE look is Cockpit's vision override while Cockpit is active
-   *  ('nvg'/'thermal', which can differ from the map preset in BOTH
-   *  directions), otherwise the map preset ('surveillance'/'thermal'). */
+   *  look is the map preset ('surveillance'/'thermal'). */
   _syncIrBoost() {
     return this._visualSettings._syncIrBoost(...arguments);
   }
 
-  /** Keep Cockpit's exit restore target aligned with the active map preset. */
   /**
    * Configures Cesium's built-in bloom stage and adds a custom unsharp-mask
    * sharpen stage to the post-process pipeline. Both start disabled.
@@ -725,7 +687,7 @@ export class ShellFacade {
   }
 
   /**
-   * Keeps both responsive panel lanes and Cockpit's utility strip on the same
+   * Keeps both responsive panel lanes on the same
    * measured layout commit. HUD visibility transitions can outlive the first
    * animation frame, so variant changes receive one bounded settling pass.
    * @param {{settle?: boolean}} [options] Whether to remeasure after transitions.
@@ -751,8 +713,7 @@ export class ShellFacade {
    *
    * Deliberately does NOT consult `_detectionUserOverridden` — the CALLER owns
    * that decision. The style path checks it (an explicit Sparse/Off must
-   * survive a style switch); Cockpit entry does not (owner: detection is on in
-   * the cockpit "regardless").
+   * survive a style switch).
    * @param {{mode?: string, densityPct?: number}} det Preset detection config.
    * @returns {void}
    */
@@ -1050,54 +1011,12 @@ export class ShellFacade {
    * @param {Function|null} [options.isCurrent]
    * @param {boolean} [options.claimVisualAuthority] Whether this request is a
    *   genuine operator/voice Context intent that should take the visual restore
-   *   lane. Cockpit choreography calls this facade INTERNALLY for its own
-   *   enter/rollback steps; those transitions are not a Context request by the
-   *   operator and must stay inert, so they pass `false`.
+   *   lane. Internal transitions are not a Context request by the operator
+   *   and must stay inert, so they pass `false`.
    * @returns {Promise<{ok:boolean, mode:'flights'|'space-missions'|null, active:boolean, action:string, error?:string}>}
    */
   setContextMode(...args) {
     return this._contextControls?.setContextMode(...args);
-  }
-
-  /**
-   * Returns cockpit status for voice/state sync and navigation operations.
-   * @returns {{active:boolean, entryAllowed:boolean, visionMode:string, subject:{id:string,layerId:string}|null, navigation:{canPrevious:boolean,canNext:boolean,canFocus:boolean}|null, awareness?: object}|null}
-   */
-  getCockpitState(...args) {
-    return this._cockpitCoordinator.getCockpitState(...args);
-  }
-
-  /**
-   * Point Cockpit entry at a requested contact layer before it enters.
-   *
-   * Reuses the filtered Context navigation NEXT already uses, so "cockpit in
-   * that military helicopter" lands on the same contact "next military
-   * helicopter" would. Cockpit flies aircraft only; vessel and installation
-   * layers are refused by name rather than silently ignored.
-   * @param {object} options Retarget request.
-   * @param {string} options.targetLayer Requested contact layer.
-   * @param {string|null} options.aircraftClass Optional class filter.
-   * @param {{layerId: string}|null} options.currentTarget Current tracker.
-   * @param {{layerId: string}|null} options.selectedTarget Pending selection.
-   * @returns {{ok: boolean, retargeted?: boolean, error?: string}} Outcome.
-   */
-  _retargetCockpitEntryLayer(...args) {
-    return this._cockpitCoordinator._retargetCockpitEntryLayer(...args);
-  }
-
-  /**
-   * Controls cockpit entry/exit and context navigation.
-   * @param {'enter'|'exit'|'next'|'previous'|'status'} action - Cockpit action.
-   * @param {object} [options]
-   * @param {string|Symbol|null} [options.notificationToken]
-   * @param {'flights'|'military'|'ais-live-vessels'|'military-installations'|null} [options.targetLayer]
-   * @param {string|null} [options.aircraftClass]
-   * @param {{layerId:'flights'|'military',id:string}|null} [options.selectedTarget]
-   * @param {{layerId:'flights'|'military',id:string}|null} [options.rollbackTarget]
-   * @returns {{ok:boolean, action:string, error?:string, state?:object}}
-   */
-  controlCockpit(...args) {
-    return this._cockpitCoordinator.controlCockpit(...args);
   }
 
   /**
@@ -1327,38 +1246,6 @@ export class ShellFacade {
 
   _syncModels3dButtonState(...args) {
     return this._aircraftDisplay._syncModels3dButtonState(...args);
-  }
-
-  /**
-   * Reuses the production Display controls inside Cockpit without cloning
-   * stateful inputs or event listeners. Comment anchors preserve each group's
-   * exact home in the standard Display panel for exit and teardown.
-   * @returns {void}
-   */
-  _initCockpitDisplayPortal(...args) {
-    return this._cockpitCoordinator._initCockpitDisplayPortal(...args);
-  }
-
-  /**
-   * Moves the shared HUD, Detection, Parameters, and 3D controls into or out
-   * of Cockpit.
-   * @param {boolean} active Whether Cockpit owns the Display control groups.
-   * @returns {void}
-   */
-  _setCockpitDisplayPortalActive(...args) {
-    return this._cockpitCoordinator._setCockpitDisplayPortalActive(...args);
-  }
-
-  get _cockpitDisplayPortalActive() {
-    return this._cockpitCoordinator._cockpitDisplayPortalActive;
-  }
-
-  get _displayPortalScrollRestoreOwner() {
-    return this._cockpitCoordinator._displayPortalScrollRestoreOwner;
-  }
-
-  get _standardDisplayScrollTop() {
-    return this._cockpitCoordinator._standardDisplayScrollTop;
   }
 
   /**

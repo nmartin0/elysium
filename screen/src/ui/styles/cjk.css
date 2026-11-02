@@ -37,9 +37,8 @@ html:lang(ja) .gev-segment {
   white-space: nowrap;
 }
 
-/* Keep unit symbols in their catalog case, including the cockpit readouts. */
-html:is(:lang(zh), :lang(ja)) #intel-hud *,
-html:is(:lang(zh), :lang(ja)) #cockpit-hud * {
+/* Keep unit symbols in their catalog case, including the HUD readouts. */
+html:is(:lang(zh), :lang(ja)) #intel-hud * {
   text-transform: none;
 }
 

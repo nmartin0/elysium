@@ -105,11 +105,9 @@ export function createState({ services }) {
   state._detectCache = null;
   /**
    * Active post-FX style the sprites are drawn for. Read from the document
-   * at init and followed through the style and cockpit-vision events; a
-   * cockpit override wins over the map style while it lasts.
+   * at init and followed through the style and vision events.
    */
   state._stylePreset = 'normal';
-  state._cockpitVision = false;
   /** @type {Array<[string, EventListener]>} window listeners to remove on destroy. */
   state._styleListeners = [];
   /** @type {{ refreshLayerStats?: () => void }|null} */

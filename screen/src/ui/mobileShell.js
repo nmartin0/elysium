@@ -24,7 +24,7 @@ export const MOBILE_SHEET_ATTR = 'data-mobile-sheet';
  */
 export const MOBILE_SHEET_PANELS = Object.freeze({
   layers: Object.freeze(['data-panel']),
-  cameras: Object.freeze(['recent-imagery-panel']),
+  imagery: Object.freeze(['recent-imagery-panel']),
   context: Object.freeze(['global-context-panel']),
   search: Object.freeze(['location-bar']),
   more: Object.freeze(['control-panel', 'pp-toggles']),
@@ -32,7 +32,7 @@ export const MOBILE_SHEET_PANELS = Object.freeze({
 
 export const MOBILE_TABS = Object.freeze([
   Object.freeze({ sheet: 'layers', label: msg('Layers'), icon: 'layers' }),
-  Object.freeze({ sheet: 'cameras', label: msg('Cameras'), icon: 'videocam' }),
+  Object.freeze({ sheet: 'imagery', label: msg('Imagery'), icon: 'public' }),
   Object.freeze({ sheet: 'context', label: msg('Context'), icon: 'radar' }),
   Object.freeze({ sheet: 'search', label: msg('Search'), icon: 'search' }),
   Object.freeze({ sheet: 'more', label: msg('More'), icon: 'more_horiz' }),
@@ -125,8 +125,6 @@ function buildChrome(documentRef) {
  * @param {(callback: () => void) => number} [input.requestFrame]
  * @param {() => void} [input.onSheetsClosed] Runs after the last sheet closes
  *   and its panels are put back (e.g. to refresh the share link).
- * @param {(sheet: string) => void} [input.onTabOpened] Runs only when the user
- *   opens a sheet from its tab, never on close or programmatic presentation.
  * @returns {{ destroy: () => void, setSheet: (sheet: string|null) => void, getSheet: () => string|null, sharedCollapsed: (panelId: string) => boolean|undefined }}
  */
 export function initMobileShell({
@@ -137,7 +135,6 @@ export function initMobileShell({
   ResizeObserverImpl = globalThis.ResizeObserver,
   requestFrame = globalThis.requestAnimationFrame?.bind(globalThis),
   onSheetsClosed = () => {},
-  onTabOpened = () => {},
 } = {}) {
   const body = documentRef.body;
   const { backdrop, tabBar } = buildChrome(documentRef);
@@ -353,7 +350,6 @@ export function initMobileShell({
     // Closing from the tab bar returns focus to the tab that was pressed.
     if (!sheet) returnFocus = button;
     setSheet(sheet);
-    if (sheet && currentSheetOf(body) === sheet) onTabOpened(sheet);
   });
   listen(backdrop, 'click', () => setSheet(null));
   // Touch events let native scrolling continue until a downward pull at the

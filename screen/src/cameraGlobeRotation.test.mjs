@@ -682,22 +682,6 @@ test('navigation callback never releases tracking for globe rotation', (t) => {
   assert.equal(viewer.trackedEntity, tracked);
   samePose(camera, before);
 });
-test('direct globe request refuses Cockpit before navigation mutation', (t) => {
-  const { viewer, camera } = harness(t);
-  initCameraVerbs(viewer, null, { isCockpitActive: () => true });
-  const before = pose(camera);
-  let calls = 0;
-  assert.equal(
-    moveCamera({ motion: 'rotate_globe' }, () => {
-      calls++;
-    }).ok,
-    false,
-  );
-  assert.equal(calls, 0);
-  samePose(camera, before);
-  assert.equal(hasRenderHold(), false);
-});
-
 test('navigation handoff preserves the original world pose even when it levels a rolled camera', (t) => {
   const { camera, tick } = harness(t, {
     latitude: 50,
@@ -794,7 +778,6 @@ test('new UI navigation intent stops globe motion before its destination and sta
       return interruptCameraMotion(reason);
     },
     interruptGlobeRotation,
-    isCockpitActive: () => false,
     cancelOrientation() {},
     clearLocation() {},
     cancelShareSelection: () => false,

@@ -412,33 +412,6 @@ export function contextRestoreLayerIds(snapshot = {}) {
 }
 
 /**
- * Cockpit entry belongs to the operational Contacts context bundle. A tracked
- * aircraft alone is not sufficient: both observed-flight feeds must still be
- * active so the cockpit's surrounding-contact picture is not presented as a
- * complete context view when one source is disabled.
- *
- * @param {object} input Current context and dependency visibility.
- * @param {string|null} input.contextMode Active Context mode.
- * @param {boolean} input.contextModeChanging Whether the Context transaction is unsettled.
- * @param {boolean} input.flightsEnabled Whether Live Flights is enabled.
- * @param {boolean} input.militaryEnabled Whether Military Flights is enabled.
- * @returns {boolean} Whether cockpit entry may be offered or activated.
- */
-export function cockpitEntryAllowed({
-  contextMode,
-  contextModeChanging,
-  flightsEnabled,
-  militaryEnabled,
-}) {
-  return (
-    contextMode === 'flights' &&
-    !contextModeChanging &&
-    Boolean(flightsEnabled) &&
-    Boolean(militaryEnabled)
-  );
-}
-
-/**
  * Internal context-mode id → the word the voice tools accept for it.
  *
  * `set_context_mode` takes 'contacts'; the mode's internal id is 'flights'.

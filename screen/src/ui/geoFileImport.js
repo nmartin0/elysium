@@ -217,8 +217,8 @@ export function initGeoFileImport({
   };
 
   /**
-   * Fly the camera to one imported file: an immediate navigation, so Cockpit
-   * can refuse it and the current follow/track owner is released first.
+   * Fly the camera to one imported file: an immediate navigation, so the
+   * current follow/track owner is released first.
    */
   function flyTo(id) {
     const item = find(id);

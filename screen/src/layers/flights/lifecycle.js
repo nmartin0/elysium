@@ -97,18 +97,6 @@ export function createLifecycle({
       flightState._trackedIcao = null;
       parts.tracking._resetTrackedSelectionState();
       flightState._trackedEntity = null;
-      flightState._cockpitSubjectId = null;
-      flightState._cockpitContactMode =
-        document.body.classList.contains('cockpit-mode');
-      flightState._cockpitNearContacts = new Set();
-      if (!flightState._cockpitModeListener) {
-        flightState._cockpitModeListener = (event) =>
-          parts.tracking._applyCockpitState(event?.detail);
-        window.addEventListener(
-          'gev:cockpit-mode-changed',
-          flightState._cockpitModeListener,
-        );
-      }
       // Fresh session — full bucket, anchor re-seeded on the first sweep.
       flightState._enrichAmbientBudget =
         parts.enrichment._ambientBudgetKnobs().ceil;
@@ -139,9 +127,6 @@ export function createLifecycle({
       holdContinuousRender('flights'); // per-frame animator (perf wave 2)
       if (flightState._modelCollection)
         flightState._modelCollection.show = true;
-      parts.tracking._setCockpitContactMode(
-        document.body.classList.contains('cockpit-mode'),
-      );
       // Height-datum fix: warm the geoid grid once per layer-enable. The poll loop
       // only reads geoidHeight() synchronously after this resolves (guarded by
       // _geoidReady) — never awaited per-aircraft, never blocking a poll tick.
@@ -261,13 +246,6 @@ export function createLifecycle({
         flightState._milActiveChangeUnsub = null;
       }
       document.removeEventListener('keydown', parts.tracking._onKeyDown);
-      if (flightState._cockpitModeListener) {
-        window.removeEventListener(
-          'gev:cockpit-mode-changed',
-          flightState._cockpitModeListener,
-        );
-        flightState._cockpitModeListener = null;
-      }
       unregisterPickOwner('flights');
       if (flightState._preRenderRemove) {
         flightState._preRenderRemove();
@@ -320,9 +298,6 @@ export function createLifecycle({
       flightState._focusEvidenceIds.clear();
       flightState.feed._count = 0;
       flightState.feed._lastUpdate = null;
-      flightState._cockpitContactMode = false;
-      flightState._cockpitNearContacts = new Set();
-      flightState._cockpitSubjectId = null;
       flightState.feed._trackingRefreshEpoch += 1;
       flightState.feed._lastTrackingRefreshOutcome = {
         epoch: flightState.feed._trackingRefreshEpoch,

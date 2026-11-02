@@ -62,7 +62,6 @@ test('Context transition state preserves focus and Tab availability until settle
     _contextModeStandby: {},
     _contextFlightsView: {},
     _contextMissionsView: {},
-    cockpitView: { syncEntry() {} },
     _syncContactsDetection() {},
     _scheduleRightPanelLayout() {},
   };

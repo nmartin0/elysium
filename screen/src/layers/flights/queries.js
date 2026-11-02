@@ -347,10 +347,6 @@ export function createQueries({
       ) {
         // The next fleet tick re-derives the eligible set under the new cap and releases the overflow.
         flightState._models3dMode = params.models3dMode;
-        if (flightState._cockpitContactMode) {
-          parts.tracking._refreshCockpitNearContacts();
-          flightState._lastFleetTickMs = 0;
-        }
       }
       if (
         typeof params.irBoost === 'boolean' &&
@@ -444,11 +440,6 @@ export function createQueries({
         const shouldTake = (idx - start) % stride === 0;
         idx++;
         if (!shouldTake) continue;
-        if (
-          flightState._cockpitContactMode &&
-          icao24.toLowerCase() === flightState._cockpitSubjectId
-        )
-          continue;
         const isTracked = icao24 === flightState._trackedIcao;
         // Keep planes rendered as a 3D model (billboard hidden) so the detection box
         // doesn't vanish on the 2D→3D handoff; bb.position stays current while hidden.
@@ -833,7 +824,6 @@ export function createQueries({
     refocusTrackedById(icao24, { origin = 'programmatic' } = {}) {
       if (
         !icao24 ||
-        flightState._cockpitContactMode ||
         !flightState._viewer ||
         !flightState._trackedEntity
       )

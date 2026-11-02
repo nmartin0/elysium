@@ -156,15 +156,6 @@ test('the sonar activates only for a visible Cyber map HUD with motion enabled',
   assert.equal(
     isCyberSonarActive({
       root,
-      body: { classList: classes('cockpit-mode') },
-      hud: { classList: classes('active') },
-      reducedMotion: false,
-    }),
-    false,
-  );
-  assert.equal(
-    isCyberSonarActive({
-      root,
       body: { classList: classes() },
       hud: { classList: classes('active') },
       reducedMotion: true,

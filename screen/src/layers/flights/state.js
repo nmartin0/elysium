@@ -162,22 +162,6 @@ export function createFlightState({ source, services }) {
 
   flightState._viewer = null;
 
-  /** Cockpit presentation switches ambient AIR contacts between near aircraft and far dots. */
-
-  flightState._cockpitContactMode = false;
-
-  /** AIR contacts inside the selected Display range; independent from model admission/load/cap. */
-
-  flightState._cockpitNearContacts = new Set();
-
-  /** Normalized ICAO24 of the active Cockpit subject, omitted from detection candidates. */
-
-  flightState._cockpitSubjectId = null;
-
-  /** @type {((event: CustomEvent) => void)|null} */
-
-  flightState._cockpitModeListener = null;
-
   /** @type {{setPositions: Function, clear: Function, destroy: Function}|null} Shared fading-trail renderer */
 
   flightState._trail = null;

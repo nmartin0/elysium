@@ -81,21 +81,14 @@ const PAINT_LANE_INDEX = new Map(
  *
  * These rectangles are a PLACEMENT policy, never a paint mask. Every element
  * listed here composites ABOVE the overlay host — map chrome sits at z90–z1000
- * and the cockpit HUD at z145, against this host's z5/z6 — so the browser
+ * against this host's z5/z6 — so the browser
  * already keeps overlay pixels off it and no canvas needs clipping. What the
  * inventory buys is readability: a card placed under solid chrome is simply
  * lost, so the solver PREFERS placements clear of it. When nothing is clear the
  * entry still renders and the chrome covers it, exactly as it did before the
  * host existed.
  *
- * The list therefore holds only chrome dense enough to swallow a card. The
- * cockpit's thin translucent line art — rims, arcs, rails, tapes, toplines,
- * readouts — is deliberately ABSENT under the owner's AR-HUD ruling:
- * world-space overlay content renders beneath the cockpit's screen-space HUD,
- * which paints over it by z-order. Those elements are also enormous (the
- * altitude rim is keyhole-tall, the topline viewport-wide), and excluding them
- * suppressed essentially the entire cockpit view. Only the two solid,
- * backdrop-filled cockpit windows survive as exclusions.
+ * The list therefore holds only chrome dense enough to swallow a card.
  */
 export const WORLD_OVERLAY_OCCLUDER_SELECTORS = Object.freeze([
   '#title-bar',
@@ -117,11 +110,6 @@ export const WORLD_OVERLAY_OCCLUDER_SELECTORS = Object.freeze([
   '#space-mission-panel',
   '#space-mission-panel-host',
   '#military-awareness-panel',
-  // Cockpit: solid backdrop-filled windows only (both bounded to
-  // `min(340px, 28vw)` wide and `min(42vh, 410px)` tall, both `hidden` until
-  // toggled). Every other cockpit selector was removed — see the block comment.
-  '#cockpit-context',
-  '#cockpit-signal-stream',
 ]);
 
 /** @typedef {{x:number,y:number,w:number,h:number}} OverlayRect */
@@ -137,7 +125,6 @@ export const WORLD_OVERLAY_OCCLUDER_SELECTORS = Object.freeze([
 /**
  * @typedef {object} WorldOverlaySourceOptions
  * @property {boolean} [visible=true]
- * @property {boolean} [hideInCockpit=false]
  * @property {number} [alpha=1]
  * @property {number} [cohortLimit=256] Ambient surplus retained per domain.
  * @property {number} [collisionCapacity=96] Shared domain paint budget.
@@ -175,9 +162,7 @@ let _mutationObserver = null;
 let _observedOccluderElements = new WeakSet();
 let _occluderRefreshTimer = null;
 let _sonarRenderTimer = null;
-let _cockpitModeHandler = null;
 let _windowResizeHandler = null;
-let _cockpitActive = false;
 /**
  * Set by `destroyWorldOverlay` when it actually tore a host down, and cleared
  * by `initWorldOverlay`. A torn-down host must not be resurrected by a late
@@ -677,10 +662,6 @@ function normalizeSourceOptions(options = {}, previous = {}) {
       options.visible !== undefined
         ? options.visible !== false
         : previous.visible !== false,
-    hideInCockpit:
-      options.hideInCockpit !== undefined
-        ? options.hideInCockpit === true
-        : previous.hideInCockpit === true,
     alpha: clamp01(options.alpha, previous.alpha ?? 1),
     cohortLimit: Math.max(
       1,
@@ -762,9 +743,7 @@ export function selectBoundedOverlayCohort(
 }
 
 function sourceActive(source) {
-  return (
-    source.options.visible && !(_cockpitActive && source.options.hideInCockpit)
-  );
+  return source.options.visible;
 }
 
 function getOrCreateDomain(domainId) {
@@ -2682,12 +2661,6 @@ export function initWorldOverlay(viewer) {
     Cesium.Ellipsoid.WGS84,
     viewer.camera?.positionWC || new Cesium.Cartesian3(),
   );
-  _cockpitActive = !!document.body?.classList?.contains('cockpit-mode');
-  _cockpitModeHandler = (event) => {
-    _cockpitActive = event?.detail?.active === true;
-    invalidateHost();
-  };
-  window.addEventListener('gev:cockpit-mode-changed', _cockpitModeHandler);
   _removePostRender =
     viewer.scene.postRender.addEventListener(drawWorldOverlay);
   if (viewer.camera?.moveEnd?.addEventListener) {
@@ -2720,10 +2693,6 @@ export function destroyWorldOverlay() {
   _removePostRender = null;
   _removeMoveEnd?.();
   _removeMoveEnd = null;
-  if (_cockpitModeHandler && typeof window !== 'undefined') {
-    window.removeEventListener('gev:cockpit-mode-changed', _cockpitModeHandler);
-  }
-  _cockpitModeHandler = null;
   if (_windowResizeHandler && typeof window !== 'undefined') {
     window.removeEventListener('resize', _windowResizeHandler);
   }
@@ -2799,7 +2768,6 @@ export function destroyWorldOverlay() {
   _keyholeHeight = -1;
   _keyholeFadeRatio = Number.NaN;
   _keyholeOutsideOpacity = Number.NaN;
-  _cockpitActive = false;
   _resizeDirty = true;
   _occludersDirty = true;
   _solveDirty = true;

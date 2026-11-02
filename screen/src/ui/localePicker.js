@@ -537,7 +537,7 @@ export function mountLocalePicker({
     button.setAttribute('aria-expanded', 'true');
     render();
     // Window capture runs before the document-level shortcut handlers
-    // (cockpit, hotkeys, push-to-talk), so keys typed in the list stay here.
+    // (hotkeys), so keys typed in the list stay here.
     windowRef?.addEventListener('keydown', onWindowKeyDown, true);
     documentRef.addEventListener('pointerdown', onDocumentPointerDown, true);
     focusTarget().focus({ preventScroll: true });

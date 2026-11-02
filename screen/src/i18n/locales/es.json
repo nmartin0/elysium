@@ -1382,5 +1382,6 @@
   "More": "Más",
   "Panels": "Paneles",
   "routing busy — too many routes at once": "servicio de rutas ocupado: demasiadas rutas a la vez",
-  "route proxy error": "error del proxy de rutas"
+  "route proxy error": "error del proxy de rutas",
+  "Imagery": "Imágenes"
 }

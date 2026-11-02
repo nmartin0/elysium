@@ -1363,5 +1363,6 @@
   "Cyclone request timed out": "Zeitüberschreitung bei der Wirbelsturm-Abfrage",
   "Malformed cyclone snapshot": "Fehlerhafter Wirbelsturm-Snapshot",
   "routing busy — too many routes at once": "Routing-Dienst ausgelastet – zu viele Routen gleichzeitig",
-  "route proxy error": "Fehler des Routen-Proxys"
+  "route proxy error": "Fehler des Routen-Proxys",
+  "Imagery": "Bilder"
 }

@@ -28,8 +28,6 @@ export const _pendingFlightTrackingRestoreForTest =
   flightsLayer.testing._pendingFlightTrackingRestoreForTest;
 export const _applyPendingFlightTrackingRestoreForTest =
   flightsLayer.testing._applyPendingFlightTrackingRestoreForTest;
-export const _setCockpitDetectionSubjectForTest =
-  flightsLayer.testing._setCockpitDetectionSubjectForTest;
 export const _trackedModelRegimeActiveForTest =
   flightsLayer.testing._trackedModelRegimeActiveForTest;
 export const _updateTrackedModelForTest =

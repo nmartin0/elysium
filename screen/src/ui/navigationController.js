@@ -15,7 +15,6 @@ export class NavigationController {
     searchInput,
     interruptCameraMotion,
     interruptGlobeRotation = () => {},
-    isCockpitActive,
     clearLocation,
     cancelShareSelection,
     getDataManager,
@@ -29,8 +28,7 @@ export class NavigationController {
       searchInput,
       interruptCameraMotion,
       interruptGlobeRotation,
-      isCockpitActive,
-      clearLocation,
+        clearLocation,
       cancelShareSelection,
       getDataManager,
       stopOrbit,
@@ -199,9 +197,6 @@ export class NavigationController {
   _runExplicitNavigation(noun, navigate, releaseOptions = undefined) {
     return runExplicitNavigation({
       disposed: this._disposed,
-      cockpitActive: this.isCockpitActive(),
-      noun,
-      showToast: (text) => this.showToast(text),
       stamp: () => this._stampNavigation(),
       release: () => this._releaseFollowCamera(releaseOptions),
       navigate,
@@ -212,9 +207,6 @@ export class NavigationController {
   runOrientation(noun, navigate) {
     return runExplicitNavigation({
       disposed: this._disposed,
-      cockpitActive: this.isCockpitActive(),
-      noun,
-      showToast: (text) => this.showToast(text),
       stamp: () =>
         this._stampNavigation({
           cancelPendingSelection: false,
@@ -235,9 +227,6 @@ export class NavigationController {
   ) {
     return beginDeferredNavigation({
       disposed: this._disposed,
-      cockpitActive: this.isCockpitActive(),
-      noun,
-      showToast: (text) => this.showToast(text),
       // The searched-location readout survives the STAMP; only a flight that
       // actually starts invalidates it (see the release hook below).
       stamp: () =>
@@ -252,12 +241,10 @@ export class NavigationController {
     return reassertNavigationHandoff({
       generation,
       currentGeneration: this._navigationGeneration,
-      cockpitActive: this.isCockpitActive(),
       disposed: this._disposed,
-      showToast: (text) => this.showToast(text),
       // Reached only once the handoff is granted, immediately before the
-      // deferred flight starts — so a lookup that failed, was superseded, or
-      // was refused by the cockpit leaves the old readout standing.
+      // deferred flight starts — so a lookup that failed or was superseded
+      // leaves the old readout standing.
       release: () => {
         this.clearLocation();
         return this._releaseFollowCamera({ trackingOrigin });

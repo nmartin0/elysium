@@ -59,7 +59,6 @@ function styleOwner(t, initialVariant = 'cyber') {
     '_updateSliderPanel',
     '_updateHudButtonState',
     '_syncIrBoost',
-    '_syncCockpitInheritedStyle',
     '_syncCyberSonarControl',
     '_scheduleAdaptivePanelLayout',
     '_applyDetectionFadeFromUi',
@@ -366,42 +365,19 @@ test('shared panel hooks affect only opted-in rail surfaces without overriding d
   );
 });
 
-test('Cyber clipped expand controls retain an inset keyboard-focus outline in map and cockpit', () => {
+test('Cyber clipped expand controls retain an inset keyboard-focus outline', () => {
   assert.match(
     cyberStyles,
-    /:root\[data-ui-theme='cyber'\]\s+:is\(\s*\.panel-collapse-btn,\s*body\.cockpit-mode \.cockpit-utility-glyph\s*\):focus-visible\s*\{[^}]*outline: 2px solid var\(--cyber-red-bright\) !important;[^}]*outline-offset: -3px;[^}]*box-shadow: none;/,
+    /:root\[data-ui-theme='cyber'\]\s+\.panel-collapse-btn:focus-visible\s*\{[^}]*outline: 2px solid var\(--cyber-red-bright\) !important;[^}]*outline-offset: -3px;[^}]*box-shadow: none;/,
   );
   assert.match(
     cyberStyles,
-    /:root\[data-ui-theme='cyber'\]\s+:is\(\.panel-collapse-btn, body\.cockpit-mode \.cockpit-utility-glyph\):is\(\s*:hover,\s*:focus-visible\s*\)\s*\{[^}]*border-color: var\(--cyber-red-bright\);/,
+    /:root\[data-ui-theme='cyber'\]\s+\.panel-collapse-btn:is\(:hover, :focus-visible\)\s*\{[^}]*border-color: var\(--cyber-red-bright\);/,
   );
 });
 
 test('Cyber Radio retains upstream nested Context ownership', () => {
   assert.doesNotMatch(cyberStyles, /#right-context-rail\s*>\s*#radio-panel/);
-});
-
-test('Cyber cockpit launchers share Data Layers frame and expand-control treatment', () => {
-  assert.match(
-    cyberStyles,
-    /:is\(\.panel-collapse-btn, body\.cockpit-mode \.cockpit-utility-glyph\)/,
-  );
-  assert.match(
-    cyberStyles,
-    /body\.cockpit-mode \.cockpit-utility-launcher \{[^}]*width: var\(--cyber-panel-width\);[^}]*min-height: 60px;[^}]*clip-path: var\(--cyber-panel-frame\);/,
-  );
-  assert.match(
-    cyberStyles,
-    /\.cockpit-utility-glyph::after \{\s*content: '\+';/,
-  );
-  assert.match(
-    cyberStyles,
-    /\.cockpit-utility-glyph\[aria-expanded='true'\]::after \{\s*content: '−';/,
-  );
-  assert.match(
-    cyberStyles,
-    /\.cockpit-utility-control\.is-expanded\s+\.cockpit-utility-launcher \{[^}]*width: 100%;[^}]*clip-path: none;/,
-  );
 });
 
 test('Cyber side panels share one width and one framed surface material', () => {
@@ -415,27 +391,11 @@ test('Cyber side panels share one width and one framed surface material', () => 
   );
   assert.match(
     cyberStyles,
-    /\.cockpit-utility-control\.is-expanded \{[\s\S]*?width: var\(--cyber-right-panel-width\);[\s\S]*?background-color: var\(--cyber-panel-surface\);[\s\S]*?background-image: var\(--cyber-panel-surface-detail\);[\s\S]*?clip-path: var\(--cyber-panel-frame\);/,
-  );
-  assert.match(
-    cyberStyles,
-    /\.cockpit-utility-control\.is-expanded::after \{[\s\S]*?width: 36px;[\s\S]*?border-top: 1px solid rgba\(225, 102, 102, 0\.84\);/,
-  );
-  assert.match(
-    cyberStyles,
-    /#global-context-panel #radio-panel\.collapsed \{\s*width: 100%;/,
-  );
-  assert.match(
-    cyberStyles,
     /#left-panel-stack\s*> :is\(#data-panel, #scene-panel\)\.collapsed \{\s*width: var\(--cyber-panel-collapsed-width\);/,
   );
   assert.match(
     cyberStyles,
     /:is\(#data-panel, #scene-panel\)\.collapsed\s+:is\(\.data-panel-inner, \.scene-panel-inner\) \{[\s\S]*?height: 50px;[\s\S]*?min-height: 50px;/,
-  );
-  assert.match(
-    cyberStyles,
-    /\.cockpit-utility-control:not\(\.is-expanded\)\s+\.cockpit-utility-launcher \{\s*width: var\(--cyber-panel-collapsed-width\);/,
   );
   assert.match(
     cyberStyles,
@@ -448,11 +408,6 @@ test('Cyber side panels share one width and one framed surface material', () => 
   assert.match(
     cyberStyles,
     /#right-context-rail[\s\S]*?:is\(\s*#cctv-panel,\s*#weather-panel,\s*#recent-imagery-panel,\s*#street-level-panel,\s*#global-context-panel\s*\)\.collapsed[\s\S]*?> \.panel-header \{[\s\S]*?height: 48px;[\s\S]*?padding: 0 10px 0 14px;/,
-  );
-  assert.doesNotMatch(
-    cyberStyles,
-    /\.cockpit-utility-control\.is-expanded\s*\{[^}]*order:/,
-    'expanded Cockpit utilities must retain Display-then-Radio DOM order',
   );
 });
 
@@ -537,43 +492,6 @@ test('Cyber voice telemetry renders a live scan scope without replacing audio ow
   assert.match(
     cyberStyles,
     /prefers-reduced-motion: reduce[\s\S]*?gev-voice-visualizer::after[\s\S]*?animation: none/,
-  );
-});
-
-test('Cyber Cockpit Display uses the released briefing lane instead of the legacy viewport cap', () => {
-  assert.match(
-    cyberStyles,
-    /body\.cockpit-mode\s+#cockpit-display-panel\s*\{[\s\S]*?max-height:\s*calc\(var\(--cockpit-utility-expanded-max-height, 72vh\) - 62px\)/,
-  );
-  assert.match(
-    cyberStyles,
-    /#cockpit-hud:has\(\.cockpit-utility-control\.is-expanded\)[\s\S]*?\.cockpit-signal-window\[data-collapsed='true'\][\s\S]*?bottom: 80px;[\s\S]*?visibility:\s*visible/,
-  );
-});
-
-test('Cyber Cockpit keeps Data Layers inside its bounded rail', () => {
-  assert.match(
-    cyberStyles,
-    /body:not\(\.cockpit-mode\)\s+#left-panel-stack:has\([\s\S]*?max-height:\s*none;/,
-  );
-  assert.match(
-    cyberStyles,
-    /body\.cockpit-mode #left-panel-stack > #data-panel \{[\s\S]*?max-height: min\(64vh, 610px\);/,
-  );
-});
-
-test('Cyber desktop cockpit collapsed utility frames match the 50px Data Layers frame', () => {
-  const desktop = cyberStyles.slice(
-    cyberStyles.indexOf('@media (min-width: 961px) and (min-height: 650px)'),
-    cyberStyles.indexOf('@media (max-width: 720px)'),
-  );
-  assert.match(
-    desktop,
-    /:root\[data-ui-theme='cyber'\]\s+body\.cockpit-mode\s+\.cockpit-utility-control:not\(\.is-expanded\)\s+\.cockpit-utility-launcher\s*\{\s*height: 50px;\s*min-height: 50px;\s*padding: 9px 18px 9px 24px;/,
-  );
-  assert.match(
-    desktop,
-    /\.cockpit-utility-control:not\(\.is-expanded\)\s+\.cockpit-utility-launcher::after\s*\{\s*bottom: 6px;/,
   );
 });
 

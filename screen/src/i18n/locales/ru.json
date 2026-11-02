@@ -1401,5 +1401,6 @@
   "More": "Ещё",
   "Panels": "Панели",
   "routing busy — too many routes at once": "сервис маршрутов занят: слишком много маршрутов одновременно",
-  "route proxy error": "ошибка прокси маршрутов"
+  "route proxy error": "ошибка прокси маршрутов",
+  "Imagery": "Снимки"
 }

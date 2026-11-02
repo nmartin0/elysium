@@ -152,7 +152,6 @@ export function connectContextManager(manager) {
         if (this.destroyed || !this._contextSessionSnapshot) return;
         await runWithContextModeChanging(this, async () => {
           this._contextMode = null;
-          this.cockpitView?.exit({ restoreTracking: false });
           this._syncContextModeButtons();
           await this._restoreContextSession({
             excludeLayerIds: layerId ? [layerId] : [],

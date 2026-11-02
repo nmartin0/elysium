@@ -57,13 +57,6 @@ export function readShellElements(document = globalThis.document) {
     _cleanViewBtn: document.getElementById('clean-view-toggle'),
     _cleanViewExitBtn: document.getElementById('clean-view-exit'),
     _dataPanel: document.getElementById('data-panel'),
-    _cockpitUtilityControls: document.getElementById(
-      'cockpit-utility-controls',
-    ),
-    _cockpitDisplayToggleBtn: document.getElementById(
-      'cockpit-display-toggle-btn',
-    ),
-    _cockpitDisplayPanel: document.getElementById('cockpit-display-panel'),
     _globalContextFlightsBtn: document.getElementById(
       'global-context-flights-btn',
     ),
@@ -82,7 +75,6 @@ export function readShellElements(document = globalThis.document) {
     _globalLoadingLabel: document.getElementById('global-loading-label'),
     _globalLoadingDetail: document.getElementById('global-loading-detail'),
     _resetGlobeBtn: document.getElementById('reset-globe-view'),
-    _cockpitResetGlobeBtn: document.getElementById('cockpit-reset-globe'),
     _styleButtons: document.getElementById('style-buttons'),
     _trafficSyncChip: document.getElementById('traffic-sync-chip'),
     _trafficSyncLabel: document.getElementById('traffic-sync-label'),

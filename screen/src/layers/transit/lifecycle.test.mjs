@@ -388,10 +388,10 @@ function harness(
         new CustomEvent('gev:style-change', { detail: { style: name } }),
       );
     },
-    /** What the style manager dispatches after every sync, cockpit included. */
-    vision(style, cockpit) {
+    /** What the style manager dispatches after every sync. */
+    vision(style) {
       globalThis.window.dispatchEvent(
-        new CustomEvent('gev:vision-change', { detail: { style, cockpit } }),
+        new CustomEvent('gev:vision-change', { detail: { style } }),
       );
     },
     /** Move the camera's view rectangle, the way a real camera move would. */
@@ -2211,44 +2211,6 @@ test('under FLIR and NVG every sprite is white-hot with a dark halo, and selecti
   assert.equal(bus.marker.image, plainImage);
 });
 
-test('a cockpit vision override wins over the map style while it lasts, and destroy stops listening', async (t) => {
-  const app = harness(t);
-  app.serve('mbta', () => ({
-    status: 200,
-    body: snapshot('mbta', 'MBTA', [vehicle('b', 42.36, -71.06, reported())], {
-      fetchedAt: Date.now(),
-    }),
-  }));
-  app.layer.enable(app.viewer);
-  await app.layer.update();
-  app.settle();
-  const entry = app.vehicles()[0];
-  const plain = entry.marker.image;
-  app.vision('nvg', true);
-  assert.ok(
-    Cesium.Color.equals(entry.marker.color, Cesium.Color.WHITE),
-    'cockpit NVG restyles',
-  );
-  app.style('normal');
-  assert.ok(
-    Cesium.Color.equals(entry.marker.color, Cesium.Color.WHITE),
-    'the map style cannot undo a live cockpit override',
-  );
-  app.vision('normal', false);
-  assert.equal(
-    entry.marker.image,
-    plain,
-    'leaving the cockpit restores the map style',
-  );
-  assert.equal(app.state()._styleListeners.length, 2);
-  app.layer.destroy(app.viewer);
-  assert.equal(app.state()._styleListeners.length, 0, 'listeners removed');
-  assert.doesNotThrow(
-    () => app.style('thermal'),
-    "and a later event is nobody's business",
-  );
-});
-
 test('DETECT contacts carry a bracket tier per mode, keyed or keyless alike', async (t) => {
   const app = harness(t);
   app.serve('mbta', () => ({
@@ -2841,11 +2803,11 @@ test('every styling path retains the mode palette and exact unpadded size', asyn
   check('#FFFFFF', 39);
   parts.selection.clearSelection();
   check('#FFFFFF', 26);
-  app.vision('nvg', true);
+  app.vision('nvg');
   check('#FFFFFF', 26);
   parts.selection.selectVehicle(entry.key);
   check('#FFFFFF', 39);
-  app.vision('normal', false);
+  app.vision('normal');
   check('#FF4538', 30);
   parts.selection.clearSelection();
   check('#FF4538', 20);

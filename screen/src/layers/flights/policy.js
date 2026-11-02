@@ -87,9 +87,6 @@ export const MODEL_PROX_ADD_M = 150000;
 export const MODEL_PROX_KEEP_M = 185000;
 // proximity: KEEP modeled planes out to 185 km
 
-export const COCKPIT_MODEL_MAX = 60;
-// max concurrent GLBs in cockpit (never raises the map cap)
-
 export const MODEL_ALL_ADD_M = 400000;
 // all: model NEW planes within 400 km (~to the horizon)
 
@@ -113,11 +110,6 @@ export const MODEL_COLOR_BLEND_AMOUNT = 0.94;
 export const MODEL_BELLY_OFFSET_NATIVE = 6.719;
 
 export const CYAN_TRANSPARENT = Cesium.Color.CYAN.withAlpha(0);
-
-export const COCKPIT_CONTACT_SIZE_PX = 6;
-
-export const COCKPIT_CIVILIAN_COLOR =
-  Cesium.Color.fromCssColorString('#DCEEFF');
 
 export const TRACKED_BILLBOARD_SCALE_BY_DISTANCE = new Cesium.NearFarScalar(
   1000,

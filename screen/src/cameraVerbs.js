@@ -30,7 +30,6 @@ import {
   releaseContinuousRender,
 } from './renderGovernor.js';
 
-let _isCockpitActive = null;
 /** °/s by speed word — orbit; pan uses fractions of view height/s. */
 const ORBIT_DEG_S = { slow: 2, normal: 6, fast: 15 };
 const TILT_DEG_S = { slow: 4, normal: 10, fast: 20 };
@@ -1194,7 +1193,6 @@ function onTick() {
         if (
           _viewer.scene.mode !== Cesium.SceneMode.SCENE3D ||
           _viewer.trackedEntity ||
-          _isCockpitActive?.() ||
           !Cesium.Matrix4.equals(cam.transform, Cesium.Matrix4.IDENTITY)
         ) {
           interruptCameraMotion('globe-camera-owner-changed');
@@ -1394,7 +1392,6 @@ export function interruptGlobeRotation(reason = 'camera-intent') {
 export function initCameraVerbs(
   viewer,
   getViewTargetCartesian = null,
-  { isCockpitActive } = {},
 ) {
   const nextTarget =
     typeof getViewTargetCartesian === 'function'
@@ -1402,16 +1399,12 @@ export function initCameraVerbs(
       : null;
   if (_viewer === viewer) {
     if (nextTarget) _getTarget = nextTarget;
-    if (typeof isCockpitActive === 'function')
-      _isCockpitActive = isCockpitActive;
     return;
   }
   // A globe motion belongs to the viewer whose world pose it captured.
   if (_active?.kind === 'rotate_globe')
     interruptCameraMotion('viewer-replaced');
   _getTarget = nextTarget;
-  _isCockpitActive =
-    typeof isCockpitActive === 'function' ? isCockpitActive : null;
   _viewer = viewer;
   if (_tickRemover) _tickRemover();
   _tickRemover = viewer.clock.onTick.addEventListener(onTick);
@@ -1558,13 +1551,6 @@ export function moveCamera(args = {}, runNavigation = null) {
       up: Cesium.Cartesian3.normalize(cam.upWC, new Cesium.Cartesian3()),
       right: Cesium.Cartesian3.clone(cam.rightWC),
     };
-    if (_isCockpitActive?.())
-      return {
-        ok: false,
-        action: 'move_camera',
-        reason: 'camera-owned',
-        error: 'Exit Cockpit before rotating the globe.',
-      };
     const ellipsoid = _viewer.scene.globe?.ellipsoid ?? Cesium.Ellipsoid.WGS84;
     if (!(
       Number.isFinite(ellipsoid.minimumRadius) &&

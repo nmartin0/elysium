@@ -13,7 +13,6 @@ import { setSplitFlapText } from '../splitFlap.js';
 import { UiLifetime } from './uiLifetime.js';
 import { RecordingControls } from './recordingControls.js';
 import { readShellElements } from './shellElements.js';
-import { createInertCockpit } from './inertCockpit.js';
 import { ContextControls } from './context.js';
 import { LocationNavigation } from './locationNavigation.js';
 import { bindClearLayersControl } from './layers.js';
@@ -37,9 +36,7 @@ import {
 import {
   describeUnsavedWork,
   getLocale,
-  msg,
   persistLocaleAndReload,
-  registerUnsavedWork,
   t,
 } from '../i18n/index.js';
 import { applyLocaleChoice, mountLocalePicker } from './localePicker.js';
@@ -112,11 +109,8 @@ export class StyleManager extends ShellFacade {
         _showToast: (...args) => this._showToast(...args),
       },
       readHud: () => this.hud,
-      readCockpit: () => this.cockpitView,
       readShareLinks: () => this.shareLinkManager,
       readInitialShare: () => this._initialShareState,
-      readScrollRestoreOwner: () => this._displayPortalScrollRestoreOwner,
-      readDisplayScrollTop: () => this._standardDisplayScrollTop,
       readSharedCollapsed: (panelId) =>
         this._mobileShell?.sharedCollapsed(panelId),
     });
@@ -140,7 +134,6 @@ export class StyleManager extends ShellFacade {
       searchInput: this._locationSearch,
       interruptCameraMotion: services.interruptCameraMotion,
       interruptGlobeRotation: services.interruptGlobeRotation,
-      isCockpitActive: () => !!this.cockpitView?.active,
       clearLocation: () => this.clearSearchedLocation(),
       cancelShareSelection: () => this._shareRestoration.cancelSelection(),
       getDataManager: () => this._dataManager,
@@ -191,7 +184,6 @@ export class StyleManager extends ShellFacade {
         _bloomSliderRow: this._bloomSliderRow,
         _bloomSliderValue: this._bloomSliderValue,
         _celestialBtn: this._celestialBtn,
-        _cockpitDisplayToggleBtn: this._cockpitDisplayToggleBtn,
         _detectionAllocationRow: this._detectionAllocationRow,
         _detectionBtn: this._detectionBtn,
         _detectionDensitySlider: this._detectionDensitySlider,
@@ -237,7 +229,6 @@ export class StyleManager extends ShellFacade {
           this._scheduleAdaptivePanelLayout(...args),
         _scheduleRightPanelLayout: (...args) =>
           this._scheduleRightPanelLayout(...args),
-        _setCockpitDisclosure: (...args) => this._setCockpitDisclosure(...args),
         _setMapStack: (...args) => this._setMapStack(...args),
         _syncPanelCollapseButton: (...args) =>
           this._syncPanelCollapseButton(...args),
@@ -245,13 +236,11 @@ export class StyleManager extends ShellFacade {
         setPanelCollapsed: (...args) => this.setPanelCollapsed(...args),
       },
       readHud: () => this.hud,
-      readCockpit: () => this.cockpitView,
       readDataManager: () => this._dataManager,
       readShareLinks: () => this.shareLinkManager,
       readCelestialRing: () => this.celestialRing,
       readContextMode: () => this._contextMode,
       readContextChanging: () => this._contextModeChanging,
-      readDisplayPortalActive: () => this._cockpitDisplayPortalActive,
     });
 
     this._layerBindings = new LayerBindings({
@@ -292,13 +281,10 @@ export class StyleManager extends ShellFacade {
 
     this._mapStackChangeHandler = null;
 
-    this._cockpitDisplayModeHandler = null;
-
     this._locationNavigation = new LocationNavigation({
       viewer,
       placeSearch,
       navigation: this._navigation,
-      readCockpit: () => this.cockpitView,
       services: {
         CITY_POIS: services.CITY_POIS,
         searchAndFlyTo: services.searchAndFlyTo,
@@ -328,7 +314,6 @@ export class StyleManager extends ShellFacade {
         _locationSearchError: this._locationSearchError,
         _searchToggle: this._searchToggle,
         _resetGlobeBtn: this._resetGlobeBtn,
-        _cockpitResetGlobeBtn: this._cockpitResetGlobeBtn,
         _locationMiniCity: this._locationMiniCity,
         _locationMiniPoi: this._locationMiniPoi,
       },
@@ -352,7 +337,6 @@ export class StyleManager extends ShellFacade {
     // Intel HUD
     this.hud = new IntelHUD(viewer);
     this._recording.hud = this.hud;
-    this._cockpitCoordinator = createInertCockpit();
 
     // Full-globe sun/moon ring. It is a crisp screen-space overlay above the
     // Cesium canvas but below the HUD/detection/readout z ladder.
@@ -563,7 +547,7 @@ export class StyleManager extends ShellFacade {
     this._layerBindings.observeCamera();
   }
 
-  // Compatibility reads for existing controls, scene snapshots and Cockpit.
+  // Compatibility reads for existing controls and scene snapshots.
 
   /** Advance camera authority and settle any older search UI immediately. */
   _stampNavigation({
@@ -620,11 +604,6 @@ export class StyleManager extends ShellFacade {
     return this._runExplicitNavigation(detail?.kind || 'target', fly);
   }
 
-  /** Return the aircraft tracker owned before a multi-step Cockpit transaction. */
-  getAircraftTrackingTarget() {
-    return null;
-  }
-
   /**
    * Sets the bloom intensity, updates the slider UI, and applies the value.
    * @param {number} intensity - Raw intensity percentage.
@@ -653,13 +632,8 @@ export class StyleManager extends ShellFacade {
    * @returns {void}
    */
   _initLocaleSelector() {
-    // Work this shell can see that a reload drops. Other modules register
-    // their own (registerUnsavedWork in src/i18n/index.js).
-    this._unsavedWorkChecks = [
-      registerUnsavedWork(() =>
-        this.cockpitView?.active ? msg('the open cockpit') : null,
-      ),
-    ];
+    // Work that a reload drops is registered by the modules that own it
+    // (registerUnsavedWork in src/i18n/index.js).
     const root = globalThis.document?.getElementById?.('locale-picker');
     if (!root) return;
     this._localePicker = mountLocalePicker({
@@ -768,11 +742,6 @@ export class StyleManager extends ShellFacade {
         ),
       );
     }
-    // Leading space after the live dot, as showBriefPage writes it.
-    const briefKicker = document.querySelector('#cockpit-brief-kicker');
-    if (briefKicker) {
-      this._setHeaderText(briefKicker, ` ${t('LIVE SIGNALS')}`);
-    }
   }
 
   /**
@@ -785,36 +754,7 @@ export class StyleManager extends ShellFacade {
       setPanelCollapsed: (panelId, collapsed, options) =>
         this._panelChrome.setPanelCollapsed(panelId, collapsed, options),
       onSheetsClosed: () => this._syncShareState(),
-      onTabOpened: (sheet) => {
-        void this._onMobileTabOpened(sheet);
-      },
     });
-  }
-
-  /** Reveal a tracked aircraft through Contacts when its phone tab is opened. */
-  async _onMobileTabOpened(sheet) {
-    const context = this.getContextModeState();
-    if (
-      sheet !== 'context' ||
-      this._disposed ||
-      !context ||
-      context.mode ||
-      context.changing ||
-      context.entering ||
-      !this.getAircraftTrackingTarget()
-    )
-      return false;
-    try {
-      const result = await this.setContextMode('contacts');
-      if (result?.ok) return true;
-      if (result?.cancelled || this._disposed) return false;
-    } catch {
-      if (this._disposed) return false;
-    }
-    this._showToast(
-      t('Contacts could not complete the requested transition; try again'),
-    );
-    return false;
   }
 
   /**
@@ -917,7 +857,6 @@ export class StyleManager extends ShellFacade {
         _contextMissionsView: this._contextMissionsView,
       },
       actions: {
-        getCockpit: () => this.cockpitView,
         claimVisualAuthority: () =>
           this.shareLinkManager?.claimRestoreLane?.('visual'),
         syncDetection: () => this._syncContactsDetection(),
@@ -1302,7 +1241,6 @@ export class StyleManager extends ShellFacade {
    */
   beginLocationNavigation() {
     this._stampNavigation();
-    this.cockpitView?.exit({ restoreTracking: false });
     return this._releaseFollowCamera({ preserveVesselSelection: false });
   }
 
@@ -1392,12 +1330,6 @@ export class StyleManager extends ShellFacade {
     this.hud.setMode('on');
     this._updateHudButtonState();
 
-    this._lifetime.listen(this._cockpitDisplayToggleBtn, 'click', () => {
-      const open =
-        this._cockpitDisplayToggleBtn.getAttribute('aria-expanded') === 'true';
-      this._setCockpitDisclosure?.('display', !open);
-    });
-    this._initCockpitDisplayPortal();
   }
 
   /** Terminal result for the complete initial share restoration. */
@@ -1426,8 +1358,6 @@ export class StyleManager extends ShellFacade {
     this._shareState.destroy();
     this._locationNavigation.destroy();
     this._lifetime.destroy();
-    for (const unregister of this._unsavedWorkChecks?.splice(0) ?? [])
-      unregister();
     this._localePicker?.destroy();
     this._localePicker = null;
     this._recording.destroy();
@@ -1439,7 +1369,6 @@ export class StyleManager extends ShellFacade {
     this._mapSourceControls?.destroy();
     this._cameraOrientationControls?.destroy();
     this._clearLayersControl?.destroy();
-    this._cockpitCoordinator.stop();
     this._visualSettings.stop();
     this.shareLinkManager?.destroy();
     this._layerBindings.stop();
@@ -1458,7 +1387,6 @@ export class StyleManager extends ShellFacade {
     // un-boost both aircraft layers so a surviving viewer or replacement
     // manager doesn't inherit sensor state (review P2, 2026-08-16).
     this._visualSettings.releaseIrBoost();
-    this._cockpitCoordinator.destroy();
     this._contextControls.disconnect();
     this._layerBindings.disconnect();
 

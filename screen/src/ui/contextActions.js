@@ -88,7 +88,7 @@ export async function setContextMode(
     if (!mode || mode === 'off') {
       // Validated explicit transition — Context owns detection, so take the
       // visual lane before a delayed shared restore can reclaim it. Internal
-      // Cockpit choreography opts out: it is not an operator Context request.
+      // transitions opt out: they are not an operator Context request.
       if (claimVisualAuthority) this._claimContextVisualAuthority();
       const result = await this._selectContextMode(null, {
         notificationToken,
@@ -123,7 +123,7 @@ export async function setContextMode(
     const priorMode = this._contextMode;
     // Claimed only after the mode enum validates above, so a rejected request
     // takes no authority and leaves the shared visual state eligible. Internal
-    // Cockpit choreography opts out: it is not an operator Context request.
+    // transitions opt out: they are not an operator Context request.
     if (claimVisualAuthority) this._claimContextVisualAuthority();
     const transitioned = await this._selectContextMode(canonical, {
       notificationToken,

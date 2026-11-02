@@ -1,7 +1,6 @@
 import * as Cesium from 'cesium';
 import { formatNumber, t } from '../../i18n/index.js';
 import { unitLabel } from '../../ui/unitLabels.js';
-import { nextCockpitNearContacts } from '../../data/cockpitAirLod.js';
 import { trackedModelZoomActive } from '../../data/trackedModelRegime.js';
 import {
   screenProjectedRotation,
@@ -143,80 +142,6 @@ export function createTracking({
     return origin === 'user' || origin === 'voice' || origin === 'tool';
   }
 
-  /**
-   * Refresh the Cockpit AIR near/far band without consulting model state.
-   * Near contacts keep their 2D aircraft silhouette when 3D is off, loading, or
-   * capped; only a ready admitted model may take that silhouette over later.
-   */
-
-  function _refreshCockpitNearContacts() {
-    if (
-      !flightState._cockpitContactMode ||
-      !flightState._viewer?.camera?.positionWC
-    ) {
-      if (flightState._cockpitNearContacts.size)
-        flightState._cockpitNearContacts = new Set();
-      return;
-    }
-    const previous = flightState._cockpitNearContacts;
-    const distancesSquared = [];
-    for (const [icao24, bb] of flightState._billboards) {
-      if (icao24 === flightState._trackedIcao || !bb?.position) continue;
-      distancesSquared.push([
-        icao24,
-        Cesium.Cartesian3.distanceSquared(
-          flightState._viewer.camera.positionWC,
-          bb.position,
-        ),
-      ]);
-    }
-    const next = nextCockpitNearContacts(
-      previous,
-      distancesSquared,
-      parts.rendering._modelAddDistM(),
-      parts.rendering._modelKeepDistM(),
-    );
-    flightState._cockpitNearContacts = next;
-    let presentationChanged = false;
-    for (const [icao24, bb] of flightState._billboards) {
-      if (previous.has(icao24) === next.has(icao24)) continue;
-      parts.rendering._applyFleetBillboardPresentation(icao24, bb);
-      presentationChanged = true;
-    }
-    if (presentationChanged) flightState._lastCamPoseSig = '';
-  }
-
-  /** Switch all current and future ambient contacts between silhouettes and cockpit pips. */
-
-  function _setCockpitContactMode(active) {
-    const next = active === true;
-    if (flightState._cockpitContactMode === next) return;
-    flightState._cockpitContactMode = next;
-    if (next) _refreshCockpitNearContacts();
-    else flightState._cockpitNearContacts = new Set();
-    // The collection stays visible in cockpit. Near AIR contacts retain their
-    // aircraft silhouette until a ready model takes over; far contacts are pips.
-    // Never destroy on entry: tearing down hundreds of live glTF instances
-    // synchronously blocked Chrome's renderer into Page Unresponsive.
-    if (flightState._modelCollection) flightState._modelCollection.show = true;
-    flightState._trail?.setVisible(!next);
-    if (flightState._trailHeadEntity) flightState._trailHeadEntity.show = !next;
-    for (const [icao24, bb] of flightState._billboards)
-      parts.rendering._applyFleetBillboardPresentation(icao24, bb);
-    flightState._lastCamPoseSig = '';
-    flightState._lastFleetTickMs = 0;
-  }
-
-  function _applyCockpitState(detail = {}) {
-    const active = detail?.active === true;
-    flightState._cockpitSubjectId = active
-      ? String(detail?.subjectId || '')
-          .trim()
-          .toLowerCase() || null
-      : null;
-    _setCockpitContactMode(active);
-  }
-
   /** Clear every per-SELECTION tracked-model latch: the zoom hysteresis band and
    *  the load-failure bound. Called from each path that changes which contact is
    *  selected — deselect, re-track, cross-layer handoff, init, destroy.
@@ -280,10 +205,6 @@ export function createTracking({
    * hand back only above TRACKED_MODEL_EXIT_ALT_M, so orbiting AT the boundary
    * cannot flap billboard↔model. See that module's header for why the tracked
    * contact now goes 3D closer in than the fleet does.
-   *
-   * In cockpit you are sitting 7 m behind and 2.6 m above your own aircraft's
-   * origin, so its ~26 m airframe would fill the visor. First-person means your
-   * own airframe is not drawn.
    */
 
   function _trackedModelRegimeActive() {
@@ -297,11 +218,7 @@ export function createTracking({
     // A converted TR-3B has no 3D asset — suppressing the regime keeps its
     // tracked billboard fully opaque (the colour callback reads this too), so
     // the triangle stays the visual all the way in.
-    if (
-      !flightState._trackedIcao ||
-      flightState._cockpitContactMode ||
-      isTr3b(flightState._trackedIcao)
-    ) {
+    if (!flightState._trackedIcao || isTr3b(flightState._trackedIcao)) {
       flightState._trackedZoomLatched = false;
       return false;
     }
@@ -401,7 +318,7 @@ export function createTracking({
         width: 2.5,
       });
     }
-    flightState._trail?.setVisible(!flightState._cockpitContactMode);
+    flightState._trail?.setVisible(true);
     // Live head segment: last fix → current dead-reckoned icon, updated every frame via
     // a CallbackProperty (Cesium updates entity-polyline positions cheaply, unlike the
     // trail primitive which fully rebuilds on setPositions). Keeps the head glued to the
@@ -411,7 +328,6 @@ export function createTracking({
         // 'gev-trail' namespace (round 6): claimed by trailRenderer's pick
         // owner so a click on the head segment never reads as empty space.
         id: `gev-trail:fl-head-${++flightState._trailHeadSeq}`,
-        show: !flightState._cockpitContactMode,
         polyline: {
           positions: new Cesium.CallbackProperty(() => {
             // Need ≥2 accumulated points: the body draws all-but-newest, so the head must
@@ -1174,10 +1090,6 @@ export function createTracking({
       // select/switch contacts; the destructive empty-space branch below applies
       // the full travel + duration click classifier.
       if (!isTrackingSelectionGesture(gesture)) return;
-      // Cockpit mode owns the camera and keeps the current aircraft as its
-      // first-person reference. A globe click must not fall through to the
-      // normal empty-space deselection path; cockpit has explicit exit controls.
-      if (document.body.classList.contains('cockpit-mode')) return;
       const picked = pickContact
         ? pickContact(viewer.scene, click.position)
         : viewer.scene.pick(click.position);
@@ -1249,9 +1161,6 @@ export function createTracking({
     _publishTrackedSelection,
     _contextSubjectMetadata,
     _isExplicitTrackingOrigin,
-    _refreshCockpitNearContacts,
-    _setCockpitContactMode,
-    _applyCockpitState,
     _resetTrackedSelectionState,
     _trackedModelLoadAllowed,
     _noteTrackedModelLoadFailure,

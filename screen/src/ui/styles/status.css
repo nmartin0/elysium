@@ -260,10 +260,8 @@ html:not([lang='en']) #global-loading-detail {
    freely while the aria-live region sees only one characterData
    change per label update.
 
-   Motion matches the cockpit odometer roll (.cockpit-roll-token):
-   same cubic-bezier, same reduced-motion treatment. Only the
-   left-to-right stagger is new — that cascade is what makes it read
-   as a Solari board rather than a counter.
+   The left-to-right stagger is what makes it read as a Solari board
+   rather than a counter.
    ------------------------------------------------------------------ */
 /* While the flaps play, the real text is clipped out of view but stays in
    the DOM and in the accessibility tree — same clipped-but-present treatment
@@ -372,7 +370,7 @@ html:not([lang='en']) #global-loading-detail {
     opacity: 1;
   }
 }
-/* Matches the .cockpit-roll-track treatment: collapse the duration rather
+/* Collapse the duration rather
    than dropping the animation, so the final frame still lands the glyph.
    src/splitFlap.js also checks the query and takes the instant path, so
    this is the belt to that braces. */

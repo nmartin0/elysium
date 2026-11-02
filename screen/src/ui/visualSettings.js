@@ -176,26 +176,22 @@ export class VisualSettings {
     operations,
     mapStackController,
     readHud,
-    readCockpit,
     readDataManager,
     readShareLinks,
     readCelestialRing,
     readContextMode,
     readContextChanging,
-    readDisplayPortalActive,
   }) {
     Object.assign(this, elements, operations, {
       viewer,
       services,
       mapStackController,
       readHud,
-      readCockpit,
       readDataManager,
       readShareLinks,
       readCelestialRing,
       readContextMode,
       readContextChanging,
-      readDisplayPortalActive,
     });
     this._lifetime = new UiLifetime();
     this._visualEffects = new VisualEffects({
@@ -228,9 +224,6 @@ export class VisualSettings {
   get hud() {
     return this.readHud();
   }
-  get cockpitView() {
-    return this.readCockpit();
-  }
   get _dataManager() {
     return this.readDataManager();
   }
@@ -245,9 +238,6 @@ export class VisualSettings {
   }
   get _contextModeChanging() {
     return this.readContextChanging();
-  }
-  get _cockpitDisplayPortalActive() {
-    return this.readDisplayPortalActive();
   }
   get stages() {
     return this._visualEffects.stages;
@@ -333,20 +323,18 @@ export class VisualSettings {
     this._dataManager?.setLayerParams('flights', { irBoost });
     this._dataManager?.setLayerParams('military', { irBoost });
     // Layers whose in-scene sprites restyle for a sensor preset need the
-    // EFFECTIVE style — a cockpit vision override sets no map style, so the
-    // map's own style event never fires for it.
+    // EFFECTIVE style.
     window.dispatchEvent(
       new CustomEvent('gev:vision-change', {
         detail: {
           style: effective,
-          cockpit: false,
         },
       }),
     );
     // Fog blends distant geometry toward an effectively-BLACK color in this
     // app (the Cesium globe is hidden), so beyond ~100 km every 3D aircraft
-    // fogs to a black silhouette — lighting and shaders can't reach past it
-    // (owner cockpit-FLIR field rounds, 2026-08-16). IR sensors see through
+    // fogs to a black silhouette — lighting and shaders can't reach past it.
+    // IR sensors see through
     // haze, so the boost styles simply turn fog off; the prior state restores
     // on exit. Transition-guarded so repeated syncs don't clobber the saved value.
     const scene = this.viewer?.scene;
@@ -1433,7 +1421,6 @@ export class VisualSettings {
 
   _revealStyleParameters() {
     if (!this._sliderPanel?.classList.contains('active')) return;
-    if (this._cockpitDisplayPortalActive) return;
     this._sliderPanel.classList.remove('collapsed');
     this._syncPanelCollapseButton(this._sliderPanel);
     this.setPanelCollapsed('pp-toggles', false, { explicit: true });

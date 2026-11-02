@@ -323,7 +323,6 @@ export function createTesting({ state, parts }) {
     _transitStylingForTest() {
       return {
         stylePreset: state._stylePreset,
-        cockpitVision: state._cockpitVision,
         iconCacheSize: transitIconCacheSize(),
       };
     },

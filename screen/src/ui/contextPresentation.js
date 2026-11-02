@@ -36,7 +36,6 @@ export function _syncContextModeButtons() {
     this._contextFlightsView.hidden = !flightsActive;
   if (this._contextMissionsView)
     this._contextMissionsView.hidden = !missionsActive;
-  this.cockpitView?.syncEntry();
   // Every _contextMode mutation funnels through here; the sync no-ops until
   // the transaction settles, so this is the activation/deactivation edge.
   this.actions.syncDetection();

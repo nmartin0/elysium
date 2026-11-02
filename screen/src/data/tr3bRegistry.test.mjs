@@ -230,7 +230,7 @@ test('both flight layers keep a converted contact 2D and visible (render invaria
     // (2026-08-19), so the suppression moved from a conjunct on
     // `_modelRegimeActive()` to an explicit early return. The invariant is
     // unchanged: a converted contact never reaches the model handoff.
-    assert.match(source, /if\s*\(\s*!(?:flightState\.)?_trackedIcao\s*\|\|\s*(?:flightState\.)?_cockpitContactMode\s*\|\|\s*isTr3b\(\s*(?:flightState\.)?_trackedIcao,?\s*\),?\s*\)\s*\{/,
+    assert.match(source, /if\s*\(\s*!(?:flightState\.)?_trackedIcao\s*\|\|\s*isTr3b\(\s*(?:flightState\.)?_trackedIcao,?\s*\),?\s*\)\s*\{/,
       `${name}: the standalone tracked model is suppressed for a converted contact`);
 
     // 2. The billboard is never hidden by that suppression — it must keep

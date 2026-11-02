@@ -35,7 +35,7 @@ function location(t) {
       suspendDetection() { calls.push('suspend'); },
       resumeDetection() { calls.push('resume'); },
     },
-    elements: {}, navigation: {}, readCockpit: () => null,
+    elements: {}, navigation: {},
     operations: {
       _stampNavigation() {}, _updateTrafficSyncChip() {},
       _runExplicitNavigation(_noun, run) { return run(); },

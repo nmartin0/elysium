@@ -109,10 +109,9 @@ test('removed CSS mode cannot disable GPU contacts; unsupported adapters fail cl
 test('native owner colors remain untouched and scene teardown releases listeners', () => {
   const previous = globalThis.document;
   const root = { dataset: { uiTheme: 'cyber', cyberSonar: 'on' } };
-  let cockpit = false;
   globalThis.document = {
     documentElement: root,
-    body: { classList: { contains: () => cockpit } },
+    body: { classList: { contains: () => false } },
     getElementById: () => ({ classList: { contains: () => true } }),
   };
   const primitives = new Cesium.PrimitiveCollection();
@@ -169,7 +168,6 @@ test('native owner colors remain untouched and scene teardown releases listeners
       globalThis.setTimeout = previousTimeout;
       globalThis.clearTimeout = previousClear;
     }
-    cockpit = true;
     scene.postUpdate.raiseEvent();
     scene.preRender.raiseEvent();
     root.dataset.uiTheme = 'tactical';

@@ -53,9 +53,8 @@ export function createLifecycle({ state, services, parts }) {
 
   /**
    * Follow the active post-FX style so the sprites can be restyled for it.
-   * The map style arrives on `gev:style-change`; a cockpit vision override
-   * (NVG/thermal inside the cockpit view, which sets no map style) arrives on
-   * `gev:vision-change` with the effective style and wins while it lasts.
+   * The map style arrives on `gev:style-change`; the effective style arrives
+   * on `gev:vision-change`.
    * Bound once per instance and removed on destroy. Read the document's
    * current style first: a persisted style restores before layers register.
    */
@@ -66,11 +65,9 @@ export function createLifecycle({ state, services, parts }) {
       document?.documentElement?.dataset?.gevStyle || 'normal',
     );
     const onStyle = (event) => {
-      if (state._cockpitVision) return;
       parts.rendering.setStylePreset(event?.detail?.style);
     };
     const onVision = (event) => {
-      state._cockpitVision = event?.detail?.cockpit === true;
       parts.rendering.setStylePreset(event?.detail?.style);
     };
     window.addEventListener('gev:style-change', onStyle);
@@ -87,7 +84,6 @@ export function createLifecycle({ state, services, parts }) {
       window.removeEventListener(name, listener);
     }
     state._styleListeners.length = 0;
-    state._cockpitVision = false;
   }
 
   let visibilityDocument = null,

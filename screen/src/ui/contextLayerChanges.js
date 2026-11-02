@@ -1,7 +1,6 @@
 import { t, translateKnown } from '../i18n/index.js';
 import {
   SPACE_MISSIONS_LAYER_BLOCK_REASON,
-  cockpitEntryAllowed,
   isExplicitUserIntentOrigin,
   parseContextLayerBlockReason,
   recordContextRestoreExplicitChange,
@@ -244,17 +243,6 @@ export function _handleContextLayerChange(change) {
         ),
       );
     }
-  }
-  if (
-    this.cockpitView?.active &&
-    !cockpitEntryAllowed({
-      contextMode: this._contextMode,
-      contextModeChanging: this._contextModeChanging,
-      flightsEnabled: !!this._dataManager?.isEnabled('flights'),
-      militaryEnabled: !!this._dataManager?.isEnabled('military'),
-    })
-  ) {
-    this.cockpitView.exit({ restoreTracking: false });
   }
   this._syncContextModeButtons();
 }

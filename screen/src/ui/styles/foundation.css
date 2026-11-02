@@ -33,8 +33,6 @@
   --left-stack-gap: 72px;
   --left-collapsed-width: 176px;
   --display-panel-expanded-width: 272px;
-  --cockpit-radio-collapsed-width: 148px;
-  --cockpit-radio-expanded-width: 232px;
 }
 
 * {
@@ -176,28 +174,6 @@ body {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
-}
-
-/* ── Source-backed cockpit weather ─────────────
-   Low-resolution GPU cloud pass composited only inside the cockpit keyhole. */
-#cockpit-cloud-effects {
-  position: fixed;
-  inset: 0;
-  z-index: 7;
-  display: none;
-  width: 100vw;
-  height: 100vh;
-  opacity: 0;
-  pointer-events: none;
-  clip-path: circle(min(40vw, 52vh) at 50% 50%);
-  filter: blur(0.7px) saturate(0.72) contrast(1.08);
-  transform: translateZ(0);
-  transition: opacity 900ms ease;
-}
-
-body.cockpit-mode #cockpit-cloud-effects.active {
-  display: block;
-  opacity: 0.86;
 }
 
 /* ── Full-globe celestial keyhole ring ─────── */

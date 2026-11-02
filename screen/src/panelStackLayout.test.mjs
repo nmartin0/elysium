@@ -165,7 +165,10 @@ test('desktop panel lanes use per-panel allocations and presentation-only auto-c
     /panel\.id === preferredPanelId[\s\S]*?\[\s*preferredExpandedPanel,\s*\.\.\.expandedPanelsInDomOrder/,
     'the latest explicitly opened right panel must receive primary allocation',
   );
-  assert.match(ui, /panelId === 'radio-panel'[\s\S]*?document\.getElementById\('global-context-panel'\)/);
+  assert.match(
+    readFileSync(new URL('./ui/panelLayoutController.js', import.meta.url), 'utf8'),
+    /stack\.insertBefore\(panel, globalContextPanel\)/,
+  );
   assert.match(rightRail, /focusedExpandedPanel = expandedPanelsInDomOrder\.find\(\s*\(panel\) =>\s*panel\.contains\(documentRef\.activeElement\),?\s*\)/);
   assert.match(ui, /setAttribute\('aria-expanded', String\(!collapsed\)\)/);
   assert.match(leftRail, /--left-panel-allocated-height/);
@@ -220,7 +223,7 @@ test('parameterized Display presets keep one stable scroll owner', () => {
   const css = readStylesheet(new URL('../style.css', import.meta.url));
 
   assert.match(css, /#pp-toggles:not\(\.collapsed\) > \.pp-panel-body > #param-slider-panel\.active\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?max-height:\s*none;[\s\S]*?overflow-y:\s*visible;/);
-  assert.match(ui, /readDisplayScrollTop: \(\) =>\s*this\._displayPortalScrollRestoreOwner === 'standard'[\s\S]*?this\._standardDisplayScrollTop[\s\S]*?displayPanelScroller\(this\._ppToggles\)\?\.scrollTop \|\| 0/);
+  assert.match(ui, /readDisplayScrollTop: \(\) =>\s*displayPanelScroller\(this\._ppToggles\)\?\.scrollTop \|\| 0/);
   assert.match(rightRail, /scroller\.scrollTop = Math\.min\(displayScrollTop, maxScrollTop\);/);
   assert.match(
     ui,

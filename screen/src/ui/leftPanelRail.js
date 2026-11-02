@@ -290,11 +290,6 @@ export function layoutLeftPanelRail({
   ).toFixed(2);
   stack.dataset.expandedCount = String(expandedPanels.length);
 
-  // Cockpit Display/Radio live in the opposite margin and no longer borrow
-  // this corridor: the left accordion's top is solved against left-lane
-  // obstacles, which put the strip straight through the briefing card.
-  // CockpitView.syncSignalLayout() owns `--cockpit-utility-top` instead.
-
   for (const panel of panels) {
     const hiddenSibling = shouldFocus && panel.classList.contains('collapsed');
     if (hiddenSibling) panel.setAttribute('aria-hidden', 'true');

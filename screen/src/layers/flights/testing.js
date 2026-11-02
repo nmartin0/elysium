@@ -149,12 +149,6 @@ export function createTesting({
     return parts.tracking._applyPendingTrackingRestore();
   }
 
-  /** Set the exact Cockpit subject through the production state transition for focused tests. */
-
-  function _setCockpitDetectionSubjectForTest(active, subjectId = null) {
-    parts.tracking._applyCockpitState({ active, subjectId });
-  }
-
   /** Evaluate the TRACKED contact's zoom regime through the production predicate.
    *  The decision is latch-bearing (default-on, hysteretic, cockpit/TR-3B-suppressed)
    *  and otherwise only observable through a live scene, so tests drive it here. */
@@ -206,7 +200,6 @@ export function createTesting({
     _armFlightTrackingRestoreForTest,
     _pendingFlightTrackingRestoreForTest,
     _applyPendingFlightTrackingRestoreForTest,
-    _setCockpitDetectionSubjectForTest,
     _trackedModelRegimeActiveForTest,
     _updateTrackedModelForTest,
     _trackedBillboardColorForTest,

@@ -11,21 +11,11 @@ import {
   readCatalog,
   shippedLocales,
 } from '../../scripts/i18n.mjs';
-import { setLocale } from '../i18n/index.js';
-import {
-  beginDeferredNavigation,
-  reassertNavigationHandoff,
-  runExplicitNavigation,
-} from '../navigationPolicy.js';
 
 const KEYS = [
   'Tilted view',
   'Straight-down view',
   'North up',
-  'Exit cockpit to fly to a camera',
-  'Exit cockpit to fly to a location',
-  'Exit cockpit to fly to a photo',
-  'Exit cockpit to fly to a shared view',
   'Detailed outline unavailable',
 ];
 
@@ -62,38 +52,3 @@ test('no bare literal reaches showToast in the orientation and navigation code',
     );
   }
 });
-
-test.afterEach(() => setLocale('en'));
-
-test('the Cockpit refusal keeps its English wording per noun', () => {
-  setLocale('en');
-  const log = [];
-  const showToast = (text) => log.push(text);
-  runExplicitNavigation({ cockpitActive: true, noun: 'camera', showToast });
-  beginDeferredNavigation({ cockpitActive: true, showToast });
-  reassertNavigationHandoff({
-    generation: 1,
-    currentGeneration: 1,
-    cockpitActive: true,
-    showToast,
-  });
-  assert.deepEqual(log, [
-    'Exit cockpit to fly to a camera',
-    'Exit cockpit to fly to a location',
-    'Exit cockpit to fly to a location',
-  ]);
-});
-
-for (const locale of ['es', 'ru']) {
-  test(`${locale}: the Cockpit refusal is translated`, () => {
-    setLocale(locale);
-    const log = [];
-    runExplicitNavigation({
-      cockpitActive: true,
-      noun: 'camera',
-      showToast: (text) => log.push(text),
-    });
-    assert.equal(log.length, 1);
-    assert.doesNotMatch(log[0], /Exit cockpit/);
-  });
-}

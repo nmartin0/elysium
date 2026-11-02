@@ -762,22 +762,6 @@
 .global-context-actions:has(#installations-search-btn) {
   grid-template-columns: minmax(0, 1fr);
 }
-.global-context-actions:has(#cockpit-entry:not([hidden])) {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.global-context-actions:has(#cockpit-entry[hidden]) {
-  grid-template-columns: 1fr;
-}
-/* TR-3B reclassify toggle rides an `auto` trailing column so the chip never
-   resizes the COCKPIT / SEARCH buttons beside it. */
-.global-context-actions:has(#tr3b-toggle:not([hidden])) {
-  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
-}
-.global-context-actions:has(#cockpit-entry[hidden]):has(
-    #tr3b-toggle:not([hidden])
-  ) {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
 .tr3b-toggle {
   width: 26px;
   min-height: 30px;
@@ -935,23 +919,6 @@
   padding: 6px 8px;
   font-size: 10px;
   letter-spacing: 0.06em;
-}
-#global-context-panel #cockpit-entry {
-  position: static;
-  z-index: auto;
-  width: 100%;
-  min-height: 32px;
-  padding: 5px 8px;
-  border-radius: 5px;
-  justify-content: center;
-  font-size: 10px;
-  box-shadow: none;
-}
-#global-context-panel #cockpit-entry .material-symbols-outlined {
-  font-size: 15px;
-}
-#global-context-panel #cockpit-entry kbd {
-  padding: 2px 4px;
 }
 
 body.ui-clean-view #right-context-rail,

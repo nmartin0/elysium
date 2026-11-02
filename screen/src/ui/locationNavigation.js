@@ -11,12 +11,11 @@ export class LocationNavigation {
     services,
     elements,
     navigation,
-    readCockpit,
     operations,
   }) {
     Object.assign(
       this,
-      { viewer, placeSearch, services, navigation, readCockpit },
+      { viewer, placeSearch, services, navigation },
       elements,
       operations,
     );
@@ -40,9 +39,6 @@ export class LocationNavigation {
       ({ state, change }) => this._handleLocationSearchState(state, change),
       { emitCurrent: false },
     );
-  }
-  get cockpitView() {
-    return this.readCockpit();
   }
   get _navigationGeneration() {
     return this.navigation._navigationGeneration;
@@ -158,7 +154,7 @@ export class LocationNavigation {
         divider: this._locationBarDivider,
         search: this._locationSearch,
         searchToggle: this._searchToggle,
-        resetButtons: [this._resetGlobeBtn, this._cockpitResetGlobeBtn],
+        resetButtons: [this._resetGlobeBtn],
         statusCity: this._locationMiniCity,
         statusPoi: this._locationMiniPoi,
       },
@@ -345,7 +341,6 @@ export class LocationNavigation {
     this._stampNavigation();
     interruptCameraMotion('reset-globe');
     this._stopOrbit();
-    this.cockpitView?.exit({ restoreTracking: false });
     try {
       militaryAwarenessLayer.releaseCameraOwnership?.({ origin: 'tool' });
     } catch {
@@ -408,10 +403,6 @@ export class LocationNavigation {
         'aria-label',
         t('Reset to full globe view'),
       );
-      this._cockpitResetGlobeBtn?.setAttribute(
-        'aria-label',
-        t('Reset cockpit to full globe view'),
-      );
       this._globeResetPromise = null;
       this._cancelGlobeReset = null;
       resolveReset(result);
@@ -427,10 +418,6 @@ export class LocationNavigation {
     this._resetGlobeBtn?.setAttribute(
       'aria-label',
       t('Resetting to full globe view'),
-    );
-    this._cockpitResetGlobeBtn?.setAttribute(
-      'aria-label',
-      t('Resetting cockpit to full globe view'),
     );
     const target = flyToGlobeView(this.viewer, {
       onComplete: () => finish(false),

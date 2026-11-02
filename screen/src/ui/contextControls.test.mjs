@@ -21,7 +21,6 @@ function fixture(t, elements = {}) {
     elements,
     installations: {},
     actions: {
-      getCockpit: () => null,
       claimVisualAuthority: () => calls.push('claim'),
       showToast: () => calls.push('notice'),
       setClearBusy: () => {},

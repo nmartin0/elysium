@@ -23,9 +23,7 @@ export const STYLES = {
  *
  * ONE object, shared by the first-load baseline below, by every military style,
  * AND by the Contacts context mode (which OWNS detection while active and
- * restores the prior state on exit — see contactsDetectionPolicy.js). Cockpit
- * deliberately does NOT touch detection: entering it with SPARSE selected leaves
- * SPARSE. Declared ahead of GLOBAL_POST_DEFAULTS because that baseline now reads
+ * restores the prior state on exit — see contactsDetectionPolicy.js). Declared ahead of GLOBAL_POST_DEFAULTS because that baseline now reads
  * from it.
  */
 export const MILITARY_DETECTION_PRESET = Object.freeze({
@@ -94,7 +92,7 @@ export const SHARPEN_SHADER = /* glsl */ `
 `;
 
 /**
- * Stable display labels for the active style and inherited Cockpit vision.
+ * Stable display labels for the active style.
  * English source text: render through t().
  */
 export const STYLE_STATUS_LABELS = {

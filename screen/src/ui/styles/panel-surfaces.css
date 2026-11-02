@@ -217,8 +217,7 @@ dialog[data-panel-surface]:not([open]) {
   display: none !important;
 }
 
-/* Conforming additions follow the same concealment policy as existing chrome.
-   Cockpit continues to own rail/dock placement and exclusions in cockpit.css. */
+/* Conforming additions follow the same concealment policy as existing chrome. */
 body:is(.ui-clean-view, .recording-mode)
   :is([data-panel-surface], [data-panel-popup]),
 body:is(.ui-clean-view, .recording-mode)

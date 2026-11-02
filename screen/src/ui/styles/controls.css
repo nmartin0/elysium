@@ -1049,8 +1049,8 @@ body.gev-geo-import-drag #cesiumContainer {
   color: #000;
 }
 
-/* These controls also move into Cockpit Display; keep focus on the control
-   itself and inside clipped button groups, independent of selection color. */
+/* Keep focus on the control itself and inside clipped button groups,
+   independent of selection color. */
 .pp-toggle-btn:focus-visible,
 .pp-select:focus-visible,
 .pp-mode-btn:focus-visible {

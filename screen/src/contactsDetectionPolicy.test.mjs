@@ -292,7 +292,7 @@ test('detection is wired to the Contacts transaction, and cockpit no longer touc
   );
   assert.match(
     _syncContextModeButtons.toString(),
-    /this\.cockpitView\?\.syncEntry\(\);[\s\S]{0,220}?this\.actions\.syncDetection\(\);/,
+    /this\._contextMissionsView\.hidden = !missionsActive;[\s\S]{0,220}?this\.actions\.syncDetection\(\);/,
     'called from _syncContextModeButtons, the funnel every _contextMode mutation routes through',
   );
   assert.match(uiSource, /syncDetection: \(\) => this\._syncContactsDetection\(\)/);

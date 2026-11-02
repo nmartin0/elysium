@@ -368,8 +368,8 @@
   width: 58px;
 }
 
-:root[data-ui-theme='cyber']
-  :is(.panel-collapse-btn, body.cockpit-mode .cockpit-utility-glyph) {
+/* Panel expand/collapse tag, chamfered. */
+:root[data-ui-theme='cyber'] .panel-collapse-btn {
   display: grid;
   width: var(--cyber-panel-control-size);
   min-width: var(--cyber-panel-control-size);
@@ -428,14 +428,11 @@
 /* Clip the Display surface, not its shared calibration accent. Data Layers
    already separates its inner frame from the outer accent in the same way. */
 :root[data-ui-theme='cyber']
-  body:not(.cockpit-mode)
+  body
   #pp-toggles:not(.collapsed),
 :root[data-ui-theme='cyber']
   #global-context-panel.panel-collapsible
-  .global-context-panel-inner,
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-utility-control.is-expanded:has([data-cockpit-launcher='display']) {
+  .global-context-panel-inner {
   isolation: isolate;
   clip-path: none;
   background: none;
@@ -446,16 +443,11 @@
 }
 
 :root[data-ui-theme='cyber']
-  body:not(.cockpit-mode)
+  body
   #pp-toggles:not(.collapsed)::before,
 :root[data-ui-theme='cyber']
   #global-context-panel.panel-collapsible
-  .global-context-panel-inner::before,
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-utility-control.is-expanded:has(
-    [data-cockpit-launcher='display']
-  )::before {
+  .global-context-panel-inner::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -800,22 +792,14 @@
 }
 
 /* These controls are clipped to a chamfered tag. Keep focus inside that shape;
-   an outside outline/shadow is clipped away, including in cockpit launchers. */
-:root[data-ui-theme='cyber']
-  :is(.panel-collapse-btn, body.cockpit-mode .cockpit-utility-glyph):is(
-    :hover,
-    :focus-visible
-  ) {
+   an outside outline/shadow is clipped away. */
+:root[data-ui-theme='cyber'] .panel-collapse-btn:is(:hover, :focus-visible) {
   border-color: var(--cyber-red-bright);
   color: var(--text-primary);
   background-color: rgba(64, 45, 46, 0.94);
 }
 
-:root[data-ui-theme='cyber']
-  :is(
-    .panel-collapse-btn,
-    body.cockpit-mode .cockpit-utility-glyph
-  ):focus-visible {
+:root[data-ui-theme='cyber'] .panel-collapse-btn:focus-visible {
   outline: 2px solid var(--cyber-red-bright) !important;
   outline-offset: -3px;
   box-shadow: none;
@@ -1532,10 +1516,6 @@
   display: none;
 }
 
-:root[data-ui-theme='cyber'] body.cockpit-mode .hud-sonar {
-  display: none;
-}
-
 @media (prefers-reduced-motion: reduce) {
   #intel-hud[data-variant='cyber'] .hud-sonar::after {
     display: none;
@@ -1654,7 +1634,7 @@
   }
 
   :root[data-ui-theme='cyber']
-    body:not(.cockpit-mode)
+    body
     #left-panel-stack:has(> [data-panel-id]:not(.collapsed))
     > :is(#data-panel, #cctv-panel, #scene-panel):not(.collapsed) {
     flex: 1 1 auto;
@@ -1692,26 +1672,13 @@
     overflow: hidden;
   }
 
-  /* Match the collapsed Data Layers frame without shrinking expanded headers
-     or changing the compact-screen cockpit layout. */
-  :root[data-ui-theme='cyber']
-    body.cockpit-mode
-    .cockpit-utility-control:not(.is-expanded)
-    .cockpit-utility-launcher {
-    height: 50px;
-    min-height: 50px;
-    padding: 9px 18px 9px 24px;
-  }
+  
+  
+
+  
 
   :root[data-ui-theme='cyber']
-    body.cockpit-mode
-    .cockpit-utility-control:not(.is-expanded)
-    .cockpit-utility-launcher::after {
-    bottom: 6px;
-  }
-
-  :root[data-ui-theme='cyber']
-    body:not(.cockpit-mode)
+    body
     :is(#data-panel, #scene-panel)
     .panel-collapse-btn {
     width: var(--cyber-panel-control-size);
@@ -1873,965 +1840,31 @@
   }
 }
 
-/* Cyber cockpit
-   The map shell becomes a purpose-built sensor visor in first person. The
-   concentric scanner is line-only so the optical center and target labels stay
-   readable; controls and source-backed telemetry remain at the perimeter. */
-:root[data-ui-theme='cyber'] body.cockpit-mode #cockpit-hud {
-  --cockpit-accent: #69cbd1;
-  --cockpit-caution: #c45454;
-  --cockpit-side-panel-width: min(294px, 23vw);
-  color: #e9f2f2;
-  text-shadow: none;
-  background:
-    linear-gradient(
-      90deg,
-      rgba(4, 24, 29, 0.38),
-      transparent 18% 82%,
-      rgba(4, 24, 29, 0.38)
-    ),
-    linear-gradient(
-      180deg,
-      rgba(2, 13, 16, 0.5),
-      transparent 24% 78%,
-      rgba(2, 13, 16, 0.44)
-    );
-  box-shadow:
-    inset 0 0 0 1px rgba(105, 203, 209, 0.18),
-    inset 0 0 96px rgba(0, 0, 0, 0.42);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode #cockpit-hud::before {
-  content: '';
-  position: absolute;
-  z-index: 0;
-  inset: 18px 20px 24px;
-  pointer-events: none;
-  opacity: 0.58;
-  background:
-    linear-gradient(var(--cockpit-accent), var(--cockpit-accent)) 0 72px / 76px
-      1px no-repeat,
-    linear-gradient(var(--cockpit-caution), var(--cockpit-caution)) 76px 72px /
-      42px 1px no-repeat,
-    linear-gradient(var(--cockpit-accent), var(--cockpit-accent)) 100% 72px /
-      76px 1px no-repeat,
-    linear-gradient(var(--cockpit-caution), var(--cockpit-caution))
-      calc(100% - 76px) 72px / 42px 1px no-repeat,
-    linear-gradient(var(--cockpit-accent), var(--cockpit-accent)) 0
-      calc(100% - 54px) / 122px 1px no-repeat,
-    linear-gradient(var(--cockpit-accent), var(--cockpit-accent)) 100%
-      calc(100% - 54px) / 122px 1px no-repeat;
-  border-right: 1px solid rgba(105, 203, 209, 0.16);
-  border-left: 1px solid rgba(105, 203, 209, 0.16);
-  clip-path: polygon(
-    0 0,
-    34% 0,
-    36% 8px,
-    64% 8px,
-    66% 0,
-    100% 0,
-    100% 100%,
-    68% 100%,
-    66% calc(100% - 8px),
-    34% calc(100% - 8px),
-    32% 100%,
-    0 100%
-  );
-}
-
-/* Cyber cockpit has its own complete telemetry hierarchy. Suppress the map-mode
-   intelligence cards so they cannot compete with the scanner or duplicate the
-   source-backed cockpit rails. */
-:root[data-ui-theme='cyber'] body.cockpit-mode #intel-hud.active {
-  opacity: 0;
-  visibility: hidden;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-visor-shell {
-  inset: clamp(76px, 10vh, 104px) clamp(20px, 3vw, 48px) clamp(40px, 6vh, 64px);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-visor-shell::before,
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-visor-shell::after {
-  display: none;
-}
-
 /* Native instrument geometry is hidden in every other HUD theme. */
-.cockpit-scan-array,
-.cockpit-frame-lines {
-  display: none;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-frame-lines {
-  display: block;
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  color: rgba(105, 203, 209, 0.38);
-  stroke-width: 0.8;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-frame-warning {
-  stroke: rgba(196, 84, 84, 0.65);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-frame-meter {
-  stroke: rgba(105, 203, 209, 0.9);
-  stroke-width: 4;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-scan-array {
-  display: block;
-  position: absolute;
-  z-index: 1;
-  top: 46%;
-  left: 50%;
-  /* Grow into the clear center lane without reaching the side panels/readouts. */
-  width: min(48vw, 60vh);
-  aspect-ratio: 1;
-  pointer-events: none;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    rgba(3, 13, 19, 0.42) 0 28%,
-    rgba(3, 13, 19, 0.14) 58%,
-    transparent 70%
-  );
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-target-geometry {
-  display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  stroke: rgba(186, 212, 220, 0.45);
-  stroke-width: 1;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-target-hairline {
-  stroke: rgba(105, 203, 209, 0.4);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-target-side-arcs {
-  stroke: rgba(211, 225, 230, 0.58);
-  stroke-width: 16;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-target-ticks {
-  stroke: rgba(213, 233, 237, 0.75);
-  stroke-width: 6;
-  stroke-dasharray: 1 9;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-target-dots {
-  stroke: rgba(105, 203, 209, 0.8);
-  stroke-width: 3;
-  stroke-dasharray: 2 13;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-target-warning-dots {
-  stroke: rgba(196, 84, 84, 0.88);
-  stroke-width: 4;
-  stroke-dasharray: 2 14;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-target-core {
-  stroke: rgba(206, 222, 230, 0.5);
-  stroke-width: 1;
-}
 
 /* Decorative motion only: the sight, attitude references and telemetry stay
    fixed. Transform/opacity animations add no Cesium render loop or JS timer. */
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  :is(
-    .cockpit-target-rotor,
-    .cockpit-target-drift,
-    .cockpit-target-ticks,
-    .cockpit-target-orbit,
-    .cockpit-target-dots,
-    .cockpit-target-warning-dots
-  ) {
-  transform-box: view-box;
-  transform-origin: 50% 50%;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-target-rotor {
-  transform: rotate(9deg);
-  animation: cockpit-instrument-rotate 24s linear infinite;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-target-drift {
-  animation: cockpit-instrument-drift 48s linear infinite;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-target-ticks {
-  animation: cockpit-instrument-trim 8s ease-in-out infinite alternate;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-target-side-arcs {
-  animation: cockpit-instrument-breathe 4.8s ease-in-out infinite alternate;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-target-orbit {
-  animation: cockpit-instrument-drift 36s linear infinite;
-}
 
 /* Small opposing sweeps preserve the open sides of the instrument. */
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-target-dots {
-  animation: cockpit-instrument-band 10s ease-in-out infinite alternate;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-target-warning-dots {
-  animation: cockpit-instrument-band 13s ease-in-out infinite alternate-reverse;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-target-spokes {
-  animation: cockpit-instrument-support 6s ease-in-out infinite alternate;
-}
-
-@keyframes cockpit-instrument-band {
-  from {
-    transform: rotate(-5deg);
-  }
-  to {
-    transform: rotate(5deg);
-  }
-}
-
-@keyframes cockpit-instrument-support {
-  from {
-    opacity: 0.45;
-  }
-  to {
-    opacity: 0.9;
-  }
-}
-
-@keyframes cockpit-instrument-rotate {
-  from {
-    transform: rotate(9deg);
-  }
-  to {
-    transform: rotate(369deg);
-  }
-}
-
-@keyframes cockpit-instrument-drift {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(-360deg);
-  }
-}
-
-@keyframes cockpit-instrument-trim {
-  from {
-    transform: rotate(-3deg);
-  }
-  to {
-    transform: rotate(3deg);
-  }
-}
-
-@keyframes cockpit-instrument-breathe {
-  from {
-    opacity: 0.68;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :root[data-ui-theme='cyber']
-    body.cockpit-mode
-    :is(
-      .cockpit-target-rotor,
-      .cockpit-target-drift,
-      .cockpit-target-ticks,
-      .cockpit-target-side-arcs,
-      .cockpit-target-orbit,
-      .cockpit-target-dots,
-      .cockpit-target-warning-dots,
-      .cockpit-target-spokes
-    ) {
-    animation: none;
-  }
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-roll-arc {
-  top: 12px;
-  width: min(560px, 44vw);
-  height: 82px;
-  transform: translateX(-50%);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-roll-arc::before {
-  content: 'TARGET SCANNING  //  LIVE VECTOR';
-  position: absolute;
-  top: -30px;
-  left: 50%;
-  width: max-content;
-  padding: 0 12px 8px;
-  border: 0;
-  color: rgba(231, 241, 241, 0.84);
-  background: none;
-  font-size: 7px;
-  font-weight: 700;
-  letter-spacing: 0.28em;
-  text-align: center;
-  white-space: nowrap;
-  transform: translateX(-50%);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-roll-arc::after {
-  inset: 20px 8% 0;
-  border-color: rgba(105, 203, 209, 0.52);
-  border-radius: 50% 50% 0 0;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-roll-arc span {
-  color: rgba(205, 225, 226, 0.5);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-roll-arc span::after {
-  background: rgba(105, 203, 209, 0.72);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-roll-arc span.active {
-  color: #f1f6f6;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-topline {
-  top: 24px;
-  left: 30px;
-  right: 30px;
-  align-items: start;
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-topline
-  > div:first-child,
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-topline::after {
-  width: min(252px, 24vw);
-  box-sizing: border-box;
-  padding: 8px 12px 7px;
-  border-top: 1px solid rgba(105, 203, 209, 0.46);
-  border-bottom: 1px solid rgba(105, 203, 209, 0.16);
-  background: linear-gradient(90deg, rgba(10, 27, 31, 0.72), transparent);
-  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-topline::after {
-  content: 'SYS 06  //  SENSOR FUSION  //  READY';
-  grid-column: 3;
-  justify-self: end;
-  color: rgba(205, 225, 226, 0.6);
-  background: linear-gradient(270deg, rgba(10, 27, 31, 0.72), transparent);
-  font-size: 7px;
-  letter-spacing: 0.16em;
-  text-align: right;
-  clip-path: polygon(12px 0, 100% 0, 100% 100%, 0 100%, 0 12px);
-}
-
-/* The universal loading/status feed normally sits at 74px with the map shell.
-   That puts it underneath this cockpit's target-scan rail (z145). Give it the
-   narrow protected slot below the vision selector and promote only this live
-   status surface above the visor. */
-:root[data-ui-theme='cyber'] body.cockpit-mode #global-loading-status {
-  top: 60px;
-  z-index: 146;
-  max-width: min(430px, calc(100vw - 40px));
-  padding: 3px 10px;
-  border-color: rgba(105, 203, 209, 0.46);
-  border-radius: 1px;
-  background: rgba(5, 18, 22, 0.94);
-  color: rgba(220, 238, 239, 0.94);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.42);
-  clip-path: polygon(
-    6px 0,
-    calc(100% - 6px) 0,
-    100% 6px,
-    100% 100%,
-    0 100%,
-    0 6px
-  );
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode #global-loading-detail {
-  color: var(--cockpit-accent);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-kicker,
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-readout-label {
-  color: var(--cockpit-accent);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode #cockpit-callsign {
-  font-size: 16px;
-  letter-spacing: 0.16em;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-aircraft-meta {
-  color: rgba(205, 225, 226, 0.48);
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-aircraft-meta.emergency {
-  color: var(--cyber-red-bright);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-vision-controls {
-  margin-top: 0;
-  border-color: rgba(105, 203, 209, 0.38);
-  border-radius: 1px;
-  background: rgba(6, 20, 24, 0.78);
-  box-shadow: none;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-vision-controls button {
-  border-radius: 0;
-  background: transparent;
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-vision-controls
-  .cockpit-vision-current {
-  border-color: rgba(196, 84, 84, 0.7);
-  background: rgba(196, 84, 84, 0.12);
-  box-shadow: inset 0 -2px 0 rgba(196, 84, 84, 0.82);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-reticle {
-  z-index: 6;
-  display: grid;
-  width: 18px;
-  height: 18px;
-  place-items: center;
-  border: 0;
-  border-radius: 0;
-  color: transparent;
-  background:
-    linear-gradient(rgba(231, 241, 241, 0.86), rgba(231, 241, 241, 0.86)) 50%
-      0 / 1px 11px no-repeat,
-    linear-gradient(rgba(231, 241, 241, 0.86), rgba(231, 241, 241, 0.86)) 50%
-      100% / 1px 11px no-repeat,
-    linear-gradient(90deg, rgba(231, 241, 241, 0.86), rgba(231, 241, 241, 0.86))
-      0 50% / 11px 1px no-repeat,
-    linear-gradient(90deg, rgba(231, 241, 241, 0.86), rgba(231, 241, 241, 0.86))
-      100% 50% / 11px 1px no-repeat;
-  font-size: 0;
-  opacity: 0.92;
-  box-shadow: none;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-reticle::before,
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-reticle::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-reticle::before {
-  width: 5px;
-  height: 5px;
-  border: 1px solid rgba(231, 241, 241, 0.86);
-  transform: translate(-50%, -50%);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-reticle::after {
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: rgba(196, 84, 84, 0.96);
-  box-shadow: 0 0 8px rgba(196, 84, 84, 0.8);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-horizon-guide {
-  display: none;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-route-direction {
-  top: 74%;
-  filter: none;
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-route-direction
-  .cockpit-route-chevron {
-  width: 26px;
-  height: 26px;
-  filter: none;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-horizon-guide small {
-  padding: 3px 8px;
-  border: 1px solid rgba(196, 84, 84, 0.62);
-  color: #eef4f4;
-  background: rgba(8, 22, 26, 0.58);
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  :is(.cockpit-altitude-rim, .cockpit-speed-rim) {
-  color: var(--cockpit-accent);
-  opacity: 0.72;
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-altitude-rim-rail::before {
-  border: 0;
-  box-shadow: none;
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-altitude-rim-scale
-  > span
-  b {
-  border-radius: 0;
-  background: rgba(4, 18, 22, 0.38);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-compass {
-  bottom: clamp(34px, 5vh, 52px);
-  width: min(650px, 56vw);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-readout {
-  min-width: 104px;
-  padding: 5px 10px 6px;
-  border-top-color: rgba(105, 203, 209, 0.48);
-  border-bottom-color: rgba(196, 84, 84, 0.34);
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(6, 22, 26, 0.56),
-    transparent
-  );
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-readout strong {
-  font-size: clamp(26px, 3vw, 40px);
-  letter-spacing: -0.03em;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-heading-value {
-  min-width: 66px;
-  color: #f0f5f5;
-  font-size: 29px;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-compass-tape::before {
-  border-color: rgba(105, 203, 209, 0.54);
-  background: transparent;
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-compass-tape
-  span::before {
-  background: rgba(105, 203, 209, 0.66);
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  :is(.cockpit-context-window, .cockpit-signal-window) {
-  top: var(--cockpit-context-top, clamp(255px, 28vh, 300px));
-  bottom: auto;
-  max-height: min(44vh, 410px);
-  border-color: rgba(105, 203, 209, 0.34);
-  border-top-color: rgba(196, 84, 84, 0.82);
-  border-radius: 0;
-  background:
-    linear-gradient(135deg, rgba(105, 203, 209, 0.07), transparent 38%),
-    rgba(8, 23, 27, 0.78);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.025),
-    0 12px 30px rgba(0, 0, 0, 0.24);
-  text-shadow: none;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-context-window {
-  left: 30px;
-  transform: none;
-  clip-path: polygon(
-    0 0,
-    calc(100% - 14px) 0,
-    100% 14px,
-    100% 100%,
-    14px 100%,
-    0 calc(100% - 14px)
-  );
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-signal-window {
-  top: var(--cockpit-signal-top, clamp(255px, 28vh, 300px));
-  max-height: min(44vh, 410px, var(--cockpit-signal-max-height, 410px));
-  right: 30px;
-  transform: none;
-  clip-path: polygon(
-    14px 0,
-    100% 0,
-    100% calc(100% - 14px),
-    calc(100% - 14px) 100%,
-    0 100%,
-    0 14px
-  );
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  :is(.cockpit-context-header, .cockpit-signal-header) {
-  border-bottom-color: rgba(105, 203, 209, 0.25);
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  :is(.cockpit-context-kicker, .cockpit-signal-kicker, .cockpit-route-kicker) {
-  color: var(--cockpit-caution);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-context-cohorts > div,
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-signal-list li {
-  border-color: rgba(105, 203, 209, 0.16);
-  border-radius: 0;
-  background: rgba(7, 19, 23, 0.42);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-utility-controls {
-  top: var(--cockpit-utility-top, clamp(164px, 19vh, 204px));
-  right: 30px;
-  width: var(--cyber-right-panel-width);
-  gap: var(--cyber-panel-gap);
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  #cockpit-hud:has(.cockpit-utility-control.is-expanded)
-  .cockpit-signal-window[data-collapsed='true'] {
-  top: auto;
-  bottom: 80px;
-  visibility: visible;
-  pointer-events: auto;
-  z-index: 12;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-utility-launcher {
-  position: relative;
-  box-sizing: border-box;
-  width: var(--cyber-panel-width);
-  min-height: 60px;
-  padding: 14px 18px 20px 24px;
-  gap: 9px;
-  border-color: var(--glass-border);
-  border-radius: 0;
-  background-color: var(--cyber-panel-surface);
-  background-image: var(--cyber-panel-surface-detail);
-  box-shadow: var(--cyber-panel-shadow);
-  clip-path: var(--cyber-panel-frame);
-  color: var(--cyber-red-bright);
-  font-size: 8px;
-  font-weight: 600;
-  letter-spacing: 1.8px;
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-utility-control:not(.is-expanded)
-  .cockpit-utility-launcher {
-  width: var(--cyber-panel-collapsed-width);
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-utility-launcher::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: calc(50% - 25px);
-  width: 50px;
-  height: 6px;
-  background: rgba(196, 84, 84, 0.22);
-  pointer-events: none;
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-utility-launcher::after {
-  content: '';
-  position: absolute;
-  right: 16px;
-  bottom: 12px;
-  left: 16px;
-  border-bottom: 1px solid rgba(206, 222, 226, 0.08);
-  pointer-events: none;
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-utility-launcher
-  > span:first-child {
-  position: relative;
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-utility-launcher
-  > span:first-child::before {
-  position: absolute;
-  top: 50%;
-  left: -8px;
-  width: 3px;
-  height: 11px;
-  background: var(--cyber-red);
-  clip-path: polygon(0 0, 100% 2px, 100% calc(100% - 2px), 0 100%);
-  content: '';
-  transform: translateY(-50%);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-utility-divider {
-  background: linear-gradient(
-    90deg,
-    rgba(196, 84, 84, 0.62),
-    rgba(206, 222, 226, 0.08)
-  );
-  box-shadow: none;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-utility-glyph {
-  border-color: rgba(206, 222, 226, 0.22);
-  border-radius: 0;
-  background: rgba(255, 255, 255, 0.03);
-  color: #f2f5f4;
-  font-size: 0;
-}
 
 /* Keep the existing button labels/expanded semantics; match Data Layers' glyph. */
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-utility-glyph::after {
-  content: '+';
-  font-size: 13px;
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-utility-glyph[aria-expanded='true']::after {
-  content: '−';
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-utility-control.is-expanded
-  .cockpit-utility-launcher {
-  width: 100%;
-  min-height: 42px;
-  padding: 6px 2px 8px 14px;
-  clip-path: none;
-  background: transparent;
-  box-shadow: none;
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-utility-control.is-expanded
-  .cockpit-utility-launcher::before,
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-utility-control.is-expanded
-  .cockpit-utility-launcher::after {
-  display: none;
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-utility-control.is-expanded {
-  position: relative;
-  width: var(--cyber-right-panel-width);
-  padding: 8px;
-  border-color: rgba(105, 203, 209, 0.34);
-  border-radius: 0;
-  background-color: var(--cyber-panel-surface);
-  background-image: var(--cyber-panel-surface-detail);
-  box-shadow: var(--cyber-panel-shadow);
-  clip-path: var(--cyber-panel-frame);
-}
-
-/* Expanded utility panels are full panel surfaces, not floating popovers.
-   Reuse the same centered calibration tab as Data Layers so Display and Radio
-   read as equal members of the cockpit rail. */
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-utility-control.is-expanded::after {
-  position: absolute;
-  z-index: 4;
-  top: 0;
-  left: 50%;
-  width: 36px;
-  height: 6px;
-  border-top: 1px solid rgba(225, 102, 102, 0.84);
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(196, 84, 84, 0.22) 18% 82%,
-    transparent
-  );
-  clip-path: polygon(0 0, 7px 100%, calc(100% - 7px) 100%, 100% 0);
-  content: '';
-  pointer-events: none;
-  transform: translateX(-50%);
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-utility-control.is-expanded:has([data-cockpit-launcher='display']),
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-utility-control.is-expanded:has([data-cockpit-launcher='radio']) {
-  width: var(--cyber-right-panel-width);
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  .cockpit-utility-control.is-expanded:has([data-cockpit-launcher='display']) {
-  overflow: hidden;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode #cockpit-display-panel {
-  max-height: calc(var(--cockpit-utility-expanded-max-height, 72vh) - 62px);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode #left-panel-stack {
-  top: clamp(164px, 19vh, 204px) !important;
-  bottom: auto;
-  left: 30px;
-  width: var(--cyber-panel-width);
-  padding-left: 0;
-  border-left: 0;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode #left-panel-stack > #data-panel {
-  --panel-expanded-width: var(--cyber-panel-width);
-  width: var(--cyber-panel-width);
-  max-height: min(64vh, 610px);
-}
-
-:root[data-ui-theme='cyber']
-  body.cockpit-mode
-  #left-panel-stack
-  > #data-panel.collapsed {
-  width: var(--cyber-panel-collapsed-width);
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-position-readout,
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-help {
-  bottom: 24px;
-  color: rgba(205, 225, 226, 0.54);
-  font-size: 8px;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-position-readout {
-  right: 30px;
-  /* Clears the language picker row it shares the corner with, as in the
-     other themes (locale-picker.css). */
-  bottom: 3.5rem;
-}
-
-:root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-help {
-  left: 30px;
-}
-
-@media (min-width: 761px) and (max-height: 820px) {
-  :root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-roll-arc::before {
-    top: -18px;
-  }
-}
 
 /* Both expanded side panels occupy the same slot; footers clear the frame. */
-@media (min-width: 761px) {
-  :root[data-ui-theme='cyber']
-    body.cockpit-mode
-    #left-panel-stack
-    > #data-panel:not(.collapsed) {
-    flex: 0 0 var(--cyber-cockpit-panel-height, 40vh);
-    height: var(--cyber-cockpit-panel-height, 40vh);
-    max-height: var(--cyber-cockpit-panel-height, 40vh);
-  }
-
-  :root[data-ui-theme='cyber']
-    body.cockpit-mode
-    .cockpit-utility-control.is-expanded {
-    height: var(--cyber-cockpit-panel-height, 40vh);
-    max-height: var(--cyber-cockpit-panel-height, 40vh);
-  }
-
-  :root[data-ui-theme='cyber']
-    body.cockpit-mode
-    #cockpit-hud:has(.cockpit-utility-control.is-expanded)
-    .cockpit-signal-window[data-collapsed='true'] {
-    top: var(--cockpit-signal-top);
-    bottom: auto;
-  }
-}
-
-@media (max-width: 960px), (max-height: 700px) {
-  :root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-topline::after {
-    display: none;
-  }
-
-  :root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-scan-array {
-    width: min(54vw, 58vh);
-  }
-}
 
 @media (max-width: 760px) {
-  :root[data-ui-theme='cyber'] body.cockpit-mode #cockpit-hud::before {
-    inset: 10px;
-  }
+  
 
-  :root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-topline {
-    top: 14px;
-    right: 14px;
-    left: 14px;
-  }
+  
 
-  :root[data-ui-theme='cyber']
-    body.cockpit-mode
-    .cockpit-topline
-    > div:first-child {
-    width: min(210px, 50vw);
-    padding: 6px 8px;
-  }
+  
 
-  :root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-roll-arc {
-    top: 44px;
-    width: 78vw;
-  }
+  
 
-  :root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-roll-arc::before {
-    display: none;
-  }
+  
 
-  :root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-scan-array {
-    width: min(76vw, 52vh);
-  }
+  
 
-  :root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-compass {
-    width: 94vw;
-  }
+  
 
   :root[data-ui-theme='cyber'] #pp-toggles > .pp-panel-body {
     max-height: min(48vh, 440px);
@@ -2841,18 +1874,7 @@
     max-height: min(48vh, 440px);
   }
 
-  :root[data-ui-theme='cyber'] body.cockpit-mode .cockpit-utility-controls {
-    top: 92px !important;
-    right: 12px;
-    bottom: auto;
-  }
+  
 
-  :root[data-ui-theme='cyber']
-    body.cockpit-mode
-    .cockpit-utility-control:not(.is-expanded)
-    .cockpit-utility-launcher {
-    width: min(150px, calc((100vw - 32px) / 2));
-    min-height: 54px;
-    padding: 10px 12px 18px 18px;
-  }
+  
 }

@@ -53,9 +53,6 @@ export class ContextControls {
   setClearBusy(...args) {
     if (!this.destroyed) this.actions.setClearBusy(...args);
   }
-  get cockpitView() {
-    return this.actions.getCockpit();
-  }
   listen(target, type, callback, options = {}) {
     target?.addEventListener(type, callback, {
       ...options,

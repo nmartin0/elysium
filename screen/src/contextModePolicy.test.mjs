@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  cockpitEntryAllowed,
   contextAllowedLayerIds,
   contextLayerEnableBlockReason,
   contextRestoreLayerIds,
@@ -398,39 +397,6 @@ test('explicit layer intent finishing during restore overrides the stale queued 
     assert.equal(restoreState.enabledLayerIds.has('cctv'), false);
     assert.deepEqual([...restoreState.explicitLayerStates], [['cctv', false]]);
   }
-});
-
-test('cockpit entry requires Contacts context with both aircraft feeds enabled', () => {
-  assert.equal(cockpitEntryAllowed({
-    contextMode: 'flights',
-    contextModeChanging: false,
-    flightsEnabled: true,
-    militaryEnabled: true,
-  }), true);
-  assert.equal(cockpitEntryAllowed({
-    contextMode: 'flights',
-    contextModeChanging: true,
-    flightsEnabled: true,
-    militaryEnabled: true,
-  }), false, 'Cockpit remains unavailable until Contacts activation settles');
-  assert.equal(cockpitEntryAllowed({
-    contextMode: null,
-    contextModeChanging: false,
-    flightsEnabled: true,
-    militaryEnabled: true,
-  }), false, 'ordinary layer selection is not an operational Contacts context');
-  assert.equal(cockpitEntryAllowed({
-    contextMode: 'flights',
-    contextModeChanging: false,
-    flightsEnabled: true,
-    militaryEnabled: false,
-  }), false, 'the military contact feed is required');
-  assert.equal(cockpitEntryAllowed({
-    contextMode: 'flights',
-    contextModeChanging: false,
-    flightsEnabled: false,
-    militaryEnabled: true,
-  }), false, 'the civilian contact feed is required');
 });
 
 test('context teardown guard restores coordination state after success and failure', async () => {

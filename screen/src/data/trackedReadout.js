@@ -18,7 +18,6 @@ export const TRACKED_OVERLAY_SOURCE_OPTIONS = Object.freeze({
   collisionCapacity: 0,
   moving: true,
   solveIntervalMs: 0,
-  hideInCockpit: true,
 });
 const TRACKED_BILLBOARD_SCALE = Object.freeze({
   near: 1000,

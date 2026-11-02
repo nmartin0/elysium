@@ -18,9 +18,6 @@ export async function _selectContextMode(
   this._contextModeChanging = true;
   this._syncContextModeButtons();
   try {
-    if (mode !== 'flights' && this.cockpitView?.active) {
-      this.cockpitView.exit({ restoreTracking: false });
-    }
     if (!mode) {
       this._contextMode = null;
       this._syncContextModeButtons();
@@ -46,7 +43,7 @@ export async function _selectContextMode(
     this._syncContextModeButtons();
     // Replay isolation must settle before Space Missions starts. Contacts
     // keeps its non-dependency teardown in the background so slow source
-    // shutdown does not delay cockpit entry.
+    // shutdown does not delay its entry.
     try {
       await this._clearLayersOutsideContextMode(mode, {
         notificationToken,
@@ -220,8 +217,6 @@ export async function _deactivateContextForLayerChange({
   this._contextMode = null;
   this._contextModeEntryIntent = null;
   this._contextModeReplacementIntent = null;
-  if (this.cockpitView?.active)
-    this.cockpitView.exit({ restoreTracking: false });
   this._syncContextModeButtons();
   try {
     await this._restoreContextSession({ notificationToken });

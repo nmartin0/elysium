@@ -4,7 +4,6 @@ import { selectModelEligible } from '../../data/modelEligibility.js';
 import { civilAircraftModelSpec } from './modelSpec.js';
 import { CLASS_SCALE_2D } from '../../data/aircraftClass.js';
 import { isEmergency } from '../../data/aircraftEmergency.js';
-import { cockpitContactDotImage } from '../../data/cockpitContactDot.js';
 import { aircraftIcon, TRACKED_ICON_PX } from '../../data/aircraftIcons.js';
 import {
   cameraPoseSignature,
@@ -17,12 +16,9 @@ import {
   MIL_TINT,
   EMERGENCY_TINT,
   GROUND_SCALE,
-  COCKPIT_CONTACT_SIZE_PX,
-  COCKPIT_CIVILIAN_COLOR,
   MODEL_ALT_CEIL_M,
   MODEL_MAX_ALL,
   MODEL_MAX,
-  COCKPIT_MODEL_MAX,
   MODEL_ALL_ADD_M,
   MODEL_PROX_ADD_M,
   MODEL_ALL_KEEP_M,
@@ -77,16 +73,6 @@ export function createRendering({
     return isMilitaryIcao(icao24) ? MIL_TINT : Cesium.Color.WHITE;
   }
 
-  /** Cockpit far-contact dot tint: the emergency red outranks the category tint. */
-
-  function _cockpitContactColor(
-    icao24,
-    info = flightState.records.data.get(icao24),
-  ) {
-    if (_isEmergency(icao24, info)) return EMERGENCY_TINT;
-    return isMilitaryIcao(icao24) ? MIL_TINT : COCKPIT_CIVILIAN_COLOR;
-  }
-
   /** Fleet billboard scale: per-class scale, ×GROUND_SCALE while grounded. */
 
   function _fleetBillboardScale(icao24, klass) {
@@ -126,10 +112,6 @@ export function createRendering({
     return new Cesium.NearFarScalar(1000, 3.0, 8000000, 0.5);
   }
 
-  function _cockpitBillboardScaleByDistance() {
-    return new Cesium.NearFarScalar(1000, 1.15, 8000000, 0.65);
-  }
-
   /** Sprite kind for one contact's billboard. Identity for every aircraft except
    *  the ones the operator converted into a TR-3B (Easter egg), which draw the
    *  black-triangle glyph — its thermal-reactive variant while an IR style owns
@@ -139,27 +121,11 @@ export function createRendering({
   const _iconKind = (icao24, klass) =>
     tr3bIconKind(icao24, klass, { hot: flightState._irBoost });
 
-  /** Apply the current normal/cockpit visual contract to one owned fleet billboard. */
+  /** Apply the visual contract to one owned fleet billboard. */
 
   function _applyFleetBillboardPresentation(icao24, bb) {
     if (!bb) return;
     const limbScale = flightState._billboardLimbScale.get(bb) ?? 1;
-    const isCockpitContact =
-      flightState._cockpitContactMode && icao24 !== flightState._trackedIcao;
-    const isCockpitNear =
-      isCockpitContact && flightState._cockpitNearContacts.has(icao24);
-    if (isCockpitContact && !isCockpitNear) {
-      const freshnessAlpha = cyberSonarBaseAlpha(bb);
-      bb.image = cockpitContactDotImage();
-      bb.width = COCKPIT_CONTACT_SIZE_PX;
-      bb.height = COCKPIT_CONTACT_SIZE_PX;
-      bb.scale = limbScale;
-      bb.scaleByDistance = _cockpitBillboardScaleByDistance();
-      bb.color = _cockpitContactColor(icao24).withAlpha(freshnessAlpha);
-      bb.rotation = 0;
-      return;
-    }
-
     const meta = flightState.records.data.get(icao24);
     bb.image = aircraftIcon(
       _iconKind(icao24, meta?.klass),
@@ -211,14 +177,7 @@ export function createRendering({
    *  at the lower MODEL_MAX, silently degrading 'all' to 'proximity'. */
 
   function _modelCap() {
-    const mapCap =
-      flightState._models3dMode === 'all' ? MODEL_MAX_ALL : MODEL_MAX;
-    // `Math.min` on purpose: cockpit may only ever LOWER the GLB budget. Cockpit is
-    // already the heaviest mode (20 Hz camera setView ahead of scene update, photoreal
-    // retraversal, the cloud pass) and every model is its own draw call.
-    return flightState._cockpitContactMode
-      ? Math.min(COCKPIT_MODEL_MAX, mapCap)
-      : mapCap;
+    return flightState._models3dMode === 'all' ? MODEL_MAX_ALL : MODEL_MAX;
   }
 
   /** Active ADD radius (m) — new planes inside this range get a model. Mode-aware: 'all' reaches far. */
@@ -871,11 +830,7 @@ export function createRendering({
     );
 
     _drainIrReloadQueue(); // bounded per-tick slice of any pending boost-flip reload
-    if (flightState._cockpitContactMode)
-      parts.tracking._refreshCockpitNearContacts();
     const poseSig = cameraPoseSignature(camera);
-    // Only the nearby Cockpit silhouettes need projected course; far dots are
-    // rotation-free. The per-contact gate below keeps the pip path cheap.
     const doRotations =
       poseSig !== flightState._lastCamPoseSig ||
       nowMs - flightState._lastRotPassMs >= ROTATION_REFRESH_MS;
@@ -1044,20 +999,10 @@ export function createRendering({
         (bb.width || 20) * (bb.scale || 1) * distanceScale * 0.5,
         (bb.height || 20) * (bb.scale || 1) * distanceScale * 0.5,
       );
-      const isCockpitNear =
-        flightState._cockpitContactMode &&
-        flightState._cockpitNearContacts.has(icao24);
-      const layerBaseColor =
-        flightState._cockpitContactMode && !isCockpitNear
-          ? _cockpitContactColor(icao24, info)
-          : _fleetBillboardColor(icao24, info);
-      const baseColor = layerBaseColor;
+      const baseColor = _fleetBillboardColor(icao24, info);
       const treatment = applyAircraftBillboardTreatment({
         billboard: bb,
-        baseScale:
-          flightState._cockpitContactMode && !isCockpitNear
-            ? 1
-            : _fleetBillboardScale(icao24, info?.klass),
+        baseScale: _fleetBillboardScale(icao24, info?.klass),
         baseAlpha: flightState.records.missingPolls.get(icao24) ? 0.45 : 1,
         baseColor,
         focusFactor: focus.factor,
@@ -1071,20 +1016,18 @@ export function createRendering({
       // raster and the 192 px close raster on the billboard's ACTUAL on-screen
       // size — post-treatment bb.scale, so focus/limb recession counts — with
       // hysteresis so zoom oscillation never thrashes the atlas.
-      if (!flightState._cockpitContactMode || isCockpitNear) {
-        const glyphDevPx =
-          (bb.width || 20) *
-          (bb.scale || 1) *
-          distanceScale *
-          (globalThis.devicePixelRatio || 1);
-        const wantLarge = bb._gevIconLarge ? glyphDevPx > 56 : glyphDevPx > 76;
-        if (wantLarge !== !!bb._gevIconLarge) {
-          bb._gevIconLarge = wantLarge;
-          bb.image = aircraftIcon(
-            _iconKind(icao24, info?.klass),
-            wantLarge ? TRACKED_ICON_PX : undefined,
-          );
-        }
+      const glyphDevPx =
+        (bb.width || 20) *
+        (bb.scale || 1) *
+        distanceScale *
+        (globalThis.devicePixelRatio || 1);
+      const wantLarge = bb._gevIconLarge ? glyphDevPx > 56 : glyphDevPx > 76;
+      if (wantLarge !== !!bb._gevIconLarge) {
+        bb._gevIconLarge = wantLarge;
+        bb.image = aircraftIcon(
+          _iconKind(icao24, info?.klass),
+          wantLarge ? TRACKED_ICON_PX : undefined,
+        );
       }
 
       // Smoothed display course: the path direction _deadReckon just reported
@@ -1149,10 +1092,7 @@ export function createRendering({
         if (ownsVisual) continue; // skip billboard rotation
       }
 
-      if (
-        (!flightState._cockpitContactMode || isCockpitNear) &&
-        (doRotations || revealed)
-      ) {
+      if (doRotations || revealed) {
         const rot = screenProjectedRotation(
           scene,
           bb.position,
@@ -1171,7 +1111,6 @@ export function createRendering({
     _groundDepthDistance,
     _modelSpec,
     _normalBillboardScaleByDistance,
-    _cockpitBillboardScaleByDistance,
     _iconKind,
     _applyFleetBillboardPresentation,
     _modelColor,

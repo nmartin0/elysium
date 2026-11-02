@@ -170,8 +170,7 @@ export function createFlightSnapshotRenderer({
         }
         if (
           prevMeta?.klass !== meta.klass ||
-          groundFlipped ||
-          flightState._cockpitContactMode
+          groundFlipped
         ) {
           rendering._applyFleetBillboardPresentation(icao24, bb);
         }

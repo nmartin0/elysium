@@ -48,24 +48,13 @@ test('desktop Display participates in Tactical exclusivity without changing mobi
   assert.match(css, /#right-context-rail\.layout-exclusive > \[data-panel-id\]\.collapsed \{/);
 });
 
-test('explicit Contacts, Space Missions, and Cockpit actions expand Global Context after success', () => {
-  for (const action of ['contacts', 'space-missions', 'cockpit']) {
+test('explicit Contacts and Space Missions actions expand Global Context after success', () => {
+  for (const action of ['contacts', 'space-missions']) {
     assert.equal(shouldExpandGlobalContextPanel({
       action,
       explicitUserAction: true,
       succeeded: true,
     }), true, `${action} should reveal its supporting context`);
-  }
-});
-
-test('Cockpit expansion is independent of whether a track was already selected', () => {
-  for (const selectedTrack of [null, 'UAL649']) {
-    assert.equal(shouldExpandGlobalContextPanel({
-      action: 'cockpit',
-      explicitUserAction: true,
-      succeeded: true,
-      selectedTrack,
-    }), true);
   }
 });
 

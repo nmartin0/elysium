@@ -112,7 +112,6 @@ const PANEL_IDS = [...new Set(Object.values(MOBILE_SHEET_PANELS).flat())];
 function fixture({
   mobile = true,
   expanded = [],
-  onTabOpened = () => {},
 } = {}) {
   const document = new EventTarget();
   document.ids = new Map();
@@ -174,7 +173,6 @@ function fixture({
   }
   const shell = initMobileShell({
     documentRef: document,
-    onTabOpened,
     matchMedia: () => media,
     MutationObserverImpl: FakeMutationObserver,
     ResizeObserverImpl: null,
@@ -267,13 +265,13 @@ test('sheets borrow panels and put them back exactly as they were', () => {
   // The user left Data Layers and Presets open on desktop.
   const kept = ['data-panel', 'control-panel'];
   const { calls, press, collapsed } = fixture({ expanded: kept });
-  press('cameras');
+  press('imagery');
   assert.equal(collapsed('recent-imagery-panel'), false);
   press('search');
   assert.equal(
     collapsed('recent-imagery-panel'),
     true,
-    'Cameras put back on switch',
+    'Imagery put back on switch',
   );
   assert.equal(collapsed('location-bar'), false);
   press('search');
@@ -292,10 +290,10 @@ test('sheets borrow panels and put them back exactly as they were', () => {
 
 test('a panel the user changes inside a sheet stays as they left it', () => {
   const { press, collapsed, document } = fixture();
-  press('cameras');
+  press('imagery');
   // The user collapses Imagery inside the sheet (their own, persisted choice).
   document.getElementById('recent-imagery-panel').classList.add('collapsed');
-  press('cameras');
+  press('imagery');
   assert.equal(
     collapsed('recent-imagery-panel'),
     true,
@@ -377,9 +375,9 @@ test('share state and restores follow the preference, not layout collapse', () =
   // Layout collapsed Imagery only for space; the user left it open.
   const street = document.getElementById('recent-imagery-panel');
   street.classList.add('layout-auto-collapsed');
-  press('cameras');
+  press('imagery');
   assert.equal(shell.sharedCollapsed('recent-imagery-panel'), false);
-  press('cameras');
+  press('imagery');
   assert.equal(
     collapsed('recent-imagery-panel'),
     false,
@@ -391,11 +389,11 @@ test('layout settling after a sheet opens is part of opening', () => {
   const { press, runFrames, collapsed, document } = fixture({
     expanded: ['recent-imagery-panel'],
   });
-  press('cameras');
+  press('imagery');
   // A rail layout pass on the next frame collapses Imagery.
   document.getElementById('recent-imagery-panel').classList.add('collapsed');
   runFrames();
-  press('cameras');
+  press('imagery');
   assert.equal(collapsed('recent-imagery-panel'), false, 'put back as it was');
 });
 
@@ -409,7 +407,7 @@ test('the backdrop closes the open sheet', () => {
 });
 
 test('surfaces that own the screen close sheets; scene playback does not', () => {
-  for (const mode of ['cockpit-mode', 'recording-mode', 'ui-clean-view']) {
+  for (const mode of ['recording-mode', 'ui-clean-view']) {
     const { shell, press, setBodyClass, collapsed } = fixture();
     press('layers');
     setBodyClass(mode);
@@ -437,7 +435,7 @@ test('desktop widths never see the shell; crossing to desktop restores it', () =
 
   const phone = fixture({ expanded: ['recent-imagery-panel'] });
   assert.match(phone.viewport.getAttribute('content'), /viewport-fit=cover$/);
-  phone.press('cameras');
+  phone.press('imagery');
   phone.resize(false);
   assert.equal(phone.shell.getSheet(), null);
   assert.equal(phone.document.body.classList.contains('mobile-shell'), false);
@@ -486,7 +484,7 @@ test('the phone shell keeps the required attribution visible', () => {
     );
   const z = (block) => Number(/z-index: (\d+);/.exec(block)?.[1]);
   const idleCredit = rule(
-    'body.mobile-shell:not(.recording-mode):not(.cockpit-mode):not(.ui-clean-view) #cesium-credits',
+    'body.mobile-shell:not(.recording-mode):not(.ui-clean-view) #cesium-credits',
   );
   const dock = rule('body.mobile-shell #command-dock');
   const voice = rule('body.mobile-shell #command-dock #gev-voice-control');
@@ -501,7 +499,7 @@ test('the phone shell keeps the required attribution visible', () => {
   );
   // Open sheet: above everything the sheet covers, drawn above the sheets.
   const sheetCredit = rule(
-    'body.mobile-shell[data-mobile-sheet]:not(.recording-mode):not(.cockpit-mode):not(.ui-clean-view) #cesium-credits',
+    'body.mobile-shell[data-mobile-sheet]:not(.recording-mode):not(.ui-clean-view) #cesium-credits',
   );
   assert.match(
     sheetCredit,
@@ -686,77 +684,6 @@ test('touches outside the active sheet and destroyed listeners cannot dismiss or
   );
   touchEvent(document, 'touchend', panel, { y: 120 });
   assert.equal(shell.getSheet(), null);
-});
-
-test('the tab-open callback reports only a successful manual opening', () => {
-  const opened = [];
-  const phone = fixture({ onTabOpened: (sheet) => opened.push(sheet) });
-  phone.shell.setSheet('context');
-  assert.deepEqual(opened, []);
-  phone.press('context');
-  assert.deepEqual(opened, [], 'closing is not a new context request');
-  phone.press('context');
-  assert.deepEqual(opened, ['context']);
-  phone.setBodyClass('cockpit-mode');
-  phone.press('context');
-  assert.deepEqual(
-    opened,
-    ['context'],
-    'blocked sheets cannot activate a mode',
-  );
-  phone.shell.destroy();
-});
-
-test('manual Context respects Space Missions, busy transitions, missing tracks and disposal', async () => {
-  for (const state of [
-    { mode: 'space-missions' },
-    { mode: 'flights' },
-    { changing: true },
-    { entering: 'space-missions' },
-    { noTrack: true },
-    { disposed: true },
-    { sheet: 'layers' },
-  ]) {
-    const shell = {
-      _disposed: state.disposed,
-      getContextModeState: () => state,
-      getAircraftTrackingTarget: () =>
-        state.noTrack ? null : { layerId: 'flights', id: 'abc123' },
-      setContextMode: () =>
-        assert.fail('guarded tab must not mutate Context or tracking'),
-    };
-    assert.equal(
-      await StyleManager.prototype._onMobileTabOpened.call(
-        shell,
-        state.sheet || 'context',
-      ),
-      false,
-    );
-  }
-});
-
-test('failed mobile Contacts entry uses the existing notice and cancelled/disposed entries stay quiet', async () => {
-  for (const outcome of ['failure', 'throw', 'cancelled', 'disposed']) {
-    const notices = [];
-    const shell = {
-      getContextModeState: () => ({ mode: null }),
-      getAircraftTrackingTarget: () => ({ layerId: 'flights', id: 'abc123' }),
-      setContextMode: async () => {
-        if (outcome === 'throw') throw new Error('source unavailable');
-        if (outcome === 'disposed') shell._disposed = true;
-        return { ok: false, cancelled: outcome === 'cancelled' };
-      },
-      _showToast: (message) => notices.push(message),
-    };
-    assert.equal(
-      await StyleManager.prototype._onMobileTabOpened.call(shell, 'context'),
-      false,
-    );
-    assert.equal(
-      notices.length,
-      ['failure', 'throw'].includes(outcome) ? 1 : 0,
-    );
-  }
 });
 
 test('a slow downward pull is claimed before Android native scroll takes ownership', () => {

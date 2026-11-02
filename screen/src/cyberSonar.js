@@ -483,7 +483,6 @@ export function setCyberSonarEnabled(
 /** Whether the map-mode sweep should alter flight presentation. */
 export function isCyberSonarActive({
   root = globalThis.document?.documentElement,
-  body = globalThis.document?.body,
   hud,
   reducedMotion,
 } = {}) {
@@ -499,22 +498,19 @@ export function isCyberSonarActive({
     root?.dataset?.uiTheme === 'cyber' &&
     isCyberSonarEnabled(root) &&
     hud?.classList?.contains?.('active') &&
-    !body?.classList?.contains?.('cockpit-mode') &&
     !reducedMotion
   );
 }
 
 export function isCyberMapThemeActive({
   root = globalThis.document?.documentElement,
-  body = globalThis.document?.body,
   hud,
 } = {}) {
   if (hud === undefined)
     hud = globalThis.document?.getElementById?.('intel-hud');
   return !!(
     root?.dataset?.uiTheme === 'cyber' &&
-    hud?.classList?.contains?.('active') &&
-    !body?.classList?.contains?.('cockpit-mode')
+    hud?.classList?.contains?.('active')
   );
 }
 
