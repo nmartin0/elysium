@@ -4313,17 +4313,6 @@
     ],
     "external": ["satellite.js"]
   },
-  "tools-mcp": {
-    "exports": ["./tools/mcp"],
-    "modules": [
-      "src/tools/mcp/index.js",
-      "src/tools/mcp/protocol.js",
-      "src/tools/mcp/http.js",
-      "src/tools/catalog.js",
-      "src/tools/schema.js"
-    ],
-    "external": []
-  },
   "tools-panel": {
     "exports": ["./tools/panel"],
     "modules": [

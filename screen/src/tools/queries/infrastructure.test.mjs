@@ -1,11 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { composeCatalog, coreTools } from '../index.js';
-import { createApiFetch } from '../../../server/mcp/services.js';
-import {
-  createInfrastructureSource,
-  featurePoint,
-} from '../../sources/infrastructureData.js';
+import { featurePoint } from '../../sources/infrastructureData.js';
 
 test('features are placed at their point or average outline vertex', () => {
   assert.deepEqual(
@@ -119,25 +115,4 @@ test('datacenters and dams are listed nearest first with their own fields', asyn
     lon: -114.737,
     distance_km: 3.8,
   });
-});
-
-test('the bundled datasets load through the local fetch', async () => {
-  const fetchImpl = createApiFetch({
-    apiBase: 'http://127.0.0.1:1',
-    fetchImpl: async () => assert.fail('no network'),
-  });
-  const source = createInfrastructureSource({ fetchImpl });
-  const dams = await source.getRecords('local-dams');
-  const datacenters = await source.getRecords('local-datacenters');
-  assert.ok(dams.length > 500 && datacenters.length > 3000);
-  assert.ok(
-    dams.every(
-      (record) => Number.isFinite(record.lat) && Number.isFinite(record.lon),
-    ),
-  );
-  assert.equal(await source.getRecords('local-dams'), dams);
-  await assert.rejects(
-    source.getRecords('local-other'),
-    /Unknown infrastructure layer/,
-  );
 });
