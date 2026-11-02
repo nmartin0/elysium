@@ -1,5 +1,4 @@
 import { applyCyberSonarThemePhase } from './cyberSonar.js';
-import { syncRadioPanelPlacement } from './ui/radioPanelPlacement.js';
 import { HUD_LAYOUTS } from './hudLayoutPolicy.js';
 export { HUD_LAYOUTS } from './hudLayoutPolicy.js';
 
@@ -54,11 +53,9 @@ export function applyHudUiTheme(root, layout) {
   if (normalizeHudLayout(layout) === 'cyber') {
     root.dataset.uiTheme = 'cyber';
     applyCyberSonarThemePhase(root, true);
-    syncRadioPanelPlacement(root.ownerDocument);
     return 'cyber';
   }
   delete root.dataset.uiTheme;
   applyCyberSonarThemePhase(root, false);
-  syncRadioPanelPlacement(root.ownerDocument);
   return null;
 }

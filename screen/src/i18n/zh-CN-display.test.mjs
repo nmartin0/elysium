@@ -2,11 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setLocale, t } from './index.js';
 import { hudQuantity, LOCALIZED_LOCALITY } from '../hudLocalityFormat.js';
-import { cctvSourceStatusLabel } from '../ui/cctvFrames.js';
 import { READOUT_WORDS } from '../layers/recentImagery/display.js';
 import { createModel } from '../layers/firms/model.js';
 import { createQueries } from '../layers/firms/queries.js';
-import { renderRadioState } from '../ui/radioPresentation.js';
 
 test('Chinese HUD and cockpit units keep their case without spacing coordinates', () => {
   try {
@@ -62,44 +60,3 @@ test('Recent Imagery spaces numeric Chinese ages and retains natural relative da
   }
 });
 
-test('CCTV translates the healthy status and preserves unknown provider codes', () => {
-  try {
-    for (const [locale, expected] of [['zh-CN', '正常'], ['ru', 'НОРМА'], ['es', 'OK'], ['en', 'OK']]) {
-      setLocale(locale);
-      assert.equal(cctvSourceStatusLabel('ok'), expected);
-      assert.equal(cctvSourceStatusLabel('CUSTOM'), 'CUSTOM');
-    }
-  } finally {
-    setLocale('en');
-  }
-});
-
-test('radio option text and accessible name use the same localized parentheses', () => {
-  const originalDocument = globalThis.document;
-  const element = () => ({
-    style: {}, dataset: {}, attributes: {},
-    classList: { contains: () => true, toggle() {} },
-    setAttribute(name, value) { this.attributes[name] = value; },
-    replaceChildren(...children) { this.children = children; },
-  });
-  globalThis.document = { createElement: element, getElementById: () => null };
-  try {
-    for (const [locale, label, expected] of [['zh-CN', '全部', '全部（750）'], ['en', 'All', 'All (750)']]) {
-      setLocale(locale);
-      const host = {
-        _radioPanel: element(), _radioFilter: element(),
-        actions: { getLifecycle: () => null, scheduleLayout() {} },
-      };
-      renderRadioState.call(host, {
-        enabled: true, categories: [{ id: 'all', label, count: 750, color: '' }],
-        filter: 'all', filteredCount: 750, stationCount: 750, volume: 1,
-      });
-      const option = host._radioFilter.children[0];
-      assert.equal(option.textContent, `● ${expected}`);
-      assert.equal(option.attributes['aria-label'], expected);
-    }
-  } finally {
-    globalThis.document = originalDocument;
-    setLocale('en');
-  }
-});

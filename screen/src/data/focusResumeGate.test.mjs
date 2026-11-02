@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyVesselFocusDeemphasis } from './aisLiveVessels.js';
-import { applyCctvFocusDeemphasis } from './cctv.js';
 import { applySatellitePointFocusDeemphasis } from './satellites.js';
 import { DEFAULT_FOCUS_DEEMPHASIS_PARAMS } from './focusDeemphasis.js';
 
@@ -68,33 +67,6 @@ assertResumeGate('vessel', () => {
         nowMs,
         screenPositionFor: () => ({ x: 50, y: 50 }),
         cameraDistanceFor: () => 1200,
-        params,
-      })
-    ),
-    readAlpha: () => billboard.color.alpha,
-  };
-});
-
-assertResumeGate('CCTV', () => {
-  const billboard = {
-    position: { x: 1, y: 2, z: 3 },
-    show: true,
-    width: 24,
-    height: 24,
-    scale: 1,
-    color: color(),
-  };
-  const record = { camera: { id: 'cam-1' }, billboard };
-  return {
-    pass: ({ nowMs, target: focusTarget, previousActiveCount }) => (
-      applyCctvFocusDeemphasis({
-        records: [record],
-        target: focusTarget,
-        previousActiveCount,
-        nowMs,
-        screenPositionFor: () => ({ x: 50, y: 50 }),
-        cameraDistanceFor: () => 1200,
-        baseColorFor: () => color(),
         params,
       })
     ),

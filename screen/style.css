@@ -9,9 +9,6 @@
 @import './src/ui/styles/status.css';
 @import './src/ui/styles/overlays.css';
 @import './src/ui/styles/layers.css';
-@import './src/ui/styles/radio.css';
-@import './src/ui/styles/cctv.css';
-@import './src/ui/styles/street-level.css';
 @import './src/ui/styles/panel-layout.css';
 @import './src/ui/styles/base.css';
 @import './src/ui/styles/recent-imagery.css';

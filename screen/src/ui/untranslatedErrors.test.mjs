@@ -4,50 +4,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setLocale, t, translateKnown } from '../i18n/index.js';
-import { presentStreetLevelPanel } from './streetLevelPresentation.js';
-import { providerSnapshot } from '../testSupport/streetLevelFakes.mjs';
 import { createWeatherSource } from '../layers/weather/source.js';
 import { presentRoutingFailure } from '../layers/directions/index.js';
 import { translateFeedError } from './statusText.js';
-import { AIM_AT_GROUND_MESSAGE } from '../layers/streetLevel/policy.js';
-
-const NO_IMAGERY = 'No street-level imagery within 50 m of that point';
-
-function snapshot(error) {
-  return {
-    enabled: true,
-    keyRequired: false,
-    filter: { pano: 'all', sinceDays: 0 },
-    providers: [providerSnapshot()],
-    coverage: { loading: false, count: 0, hint: '', error: null },
-    legend: [],
-    sequence: { providerId: null, selectedId: null, images: 0, loading: false },
-    street: { open: false, loading: false, error, providerId: null },
-    groundClickReady: true,
-  };
-}
 
 for (const locale of ['es', 'ru']) {
-  test(`${locale}: the nearest-image refusal is built in the language and kept by the panel`, () => {
-    setLocale(locale);
-    try {
-      // What streetLevel/index.js openNearest writes into street.error.
-      const refusal = t(
-        'No street-level imagery within {radius} m of that point',
-        { radius: 50 },
-      );
-      assert.notEqual(refusal, NO_IMAGERY, 'should be translated');
-      assert.match(refusal, /50/, 'keeps the radius');
-      assert.equal(presentStreetLevelPanel(snapshot(refusal)).error, refusal);
-      // The screen-centre refusal is stored as English data and translated
-      // by the panel.
-      const aim = presentStreetLevelPanel(snapshot(AIM_AT_GROUND_MESSAGE));
-      assert.notEqual(aim.error, AIM_AT_GROUND_MESSAGE, 'should be translated');
-    } finally {
-      setLocale('en');
-    }
-  });
-
   test(`${locale}: the route proxy's refusals are shown translated`, () => {
     setLocale(locale);
     try {

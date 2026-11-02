@@ -9,7 +9,6 @@ import {
 } from './locale.js';
 import { hudQuantity, LOCALIZED_LOCALITY } from '../hudLocalityFormat.js';
 import { READOUT_WORDS } from '../layers/recentImagery/display.js';
-import { cctvSourceStatusLabel } from '../ui/cctvFrames.js';
 
 test('Traditional Chinese resolves from URL, saved preference and browser language', () => {
   assert.equal(
@@ -66,7 +65,6 @@ test('Traditional Chinese readouts preserve unit case, coordinates and natural r
     );
     assert.equal(READOUT_WORDS.daysAgo(9), '9 天前');
     assert.equal(READOUT_WORDS.daysAgo(0), '今天');
-    assert.equal(cctvSourceStatusLabel('ok'), '正常');
     assert.equal(t('SAVE KEYS'), '保存密鑰');
     assert.equal(
       tn(2, 'Click {count} more point.', 'Click {count} more points.'),

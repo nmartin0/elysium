@@ -12,11 +12,8 @@ const SHARE_PANEL_STATE_SPECS = Object.freeze([
   { id: 'control-panel', pinnable: true },
   { id: 'location-bar', pinnable: true },
   { id: 'data-panel' },
-  { id: 'cctv-panel' },
   { id: 'weather-panel' },
   { id: 'recent-imagery-panel' },
-  { id: 'street-level-panel' },
-  { id: 'radio-panel' },
   { id: 'global-context-panel' },
   { id: 'pp-toggles' },
   { id: 'param-slider-panel' },
@@ -24,13 +21,10 @@ const SHARE_PANEL_STATE_SPECS = Object.freeze([
 /** Standard map-view panels cleared out of the way on a fresh Cockpit entry. */
 const COCKPIT_ENTRY_COLLAPSE_PANEL_IDS = Object.freeze([
   'data-panel',
-  'cctv-panel',
   'weather-panel',
   'recent-imagery-panel',
-  'street-level-panel',
   'pp-toggles',
   'global-context-panel',
-  'radio-panel',
 ]);
 
 /** Own panel disclosure, docking, persistence and Cockpit rail restoration. */
@@ -292,10 +286,8 @@ export class PanelChrome {
   _syncPanelCollapseButton(panelEl) {
     const isRightRail = [
       'pp-toggles',
-      'cctv-panel',
       'weather-panel',
       'recent-imagery-panel',
-      'street-level-panel',
       'global-context-panel',
     ].includes(panelEl?.id);
     const collapsed = panelEl.classList.contains('collapsed');

@@ -14,8 +14,7 @@ const entry = (file) =>
 const tests = (file) =>
   file.endsWith('.test.mjs') ||
   file.startsWith('src/testSupport/') ||
-  file.startsWith('src/tooling/') ||
-  file === 'src/overlays/worldOverlayAllocation.worker.mjs';
+  file.startsWith('src/tooling/');
 const source = (file) =>
   file.startsWith('src/sources/') ||
   /^src\/layers\/[^/]+\/(?:source|bundledSource|flowSource)\.js$/.test(file);

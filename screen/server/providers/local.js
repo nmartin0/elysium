@@ -5,16 +5,11 @@ import { terrainHeightsProxy } from './terrain.js';
 import { adsbdbProxy } from './aircraft/enrichment.js';
 import { overpassProxy } from './overpass.js';
 import { geocodeProxy } from './regional/place.js';
-import { cctvProxy } from './cctv.js';
-import { defaultSourceRoot } from './common/source-root.js';
-import { radioBrowserProxy } from './radio.js';
 import { gbfsProxy } from './gbfs.js';
-import { localReceiversProxy } from './local-receivers.js';
 import { transitProxy } from './transit.js';
 import { aisLiveProxy } from './vessels/ais-live.js';
 import { trackBackfillProxies } from './aircraft/tracks.js';
 import { googlePlacesContextProxy } from './places.js';
-import { mapillaryProxy } from './mapillary.js';
 import { weatherProxy } from './weather.js';
 import { firePerimetersProxy } from './firePerimeters.js';
 import { gnssIntegrityProxy } from './gnssIntegrity.js';
@@ -33,10 +28,7 @@ function localProviderPlugins() {
     adsbdbProxy(),
     overpassProxy(),
     geocodeProxy(),
-    cctvProxy({ sourceRoot: defaultSourceRoot }),
-    radioBrowserProxy(),
     gbfsProxy(),
-    localReceiversProxy(),
     transitProxy(),
     aisLiveProxy(),
     trackBackfillProxies(),
@@ -44,7 +36,6 @@ function localProviderPlugins() {
     windProxy(),
     weatherProxy(),
     cycloneProxy(),
-    mapillaryProxy(),
     firePerimetersProxy(),
     gnssIntegrityProxy(),
     ghostMapsProxy(),
@@ -53,17 +44,6 @@ function localProviderPlugins() {
 
 export { localProviderPlugins };
 
-export {
-  CCTV_FRAME_FETCH_TIMEOUT_MS,
-  fetchCctvImageFromUpstream,
-} from './cctv.js';
-export {
-  createRadioProxyMiddleware,
-  isPublicRadioAddress,
-  normalizeRadioBrowserStation,
-  publicRadioStation,
-  publicRadioHttpsUrl,
-} from './radio.js';
 export { LL2_CACHE_TTL_MS, launchLibraryRequestHeaders } from './space.js';
 export { googlePlacesContextProxy } from './places.js';
 export { googleServerApiKey } from './places.js';

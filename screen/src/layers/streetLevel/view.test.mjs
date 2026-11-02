@@ -10,7 +10,7 @@ import {
   visibleBbox,
 } from './view.js';
 import { latToTileY, lonToTileX, tilesForBbox } from './tileMath.js';
-import { rayCamera } from '../../testSupport/streetLevelFakes.mjs';
+import { rayCamera } from '../../testSupport/rayCamera.mjs';
 
 const RAD = Math.PI / 180;
 /** A viewer 300 m above a street 1,600 m up (Denver-like). */

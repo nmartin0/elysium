@@ -106,12 +106,6 @@
       "node": "./server/providers/gbfs.js"
     },
     "./sources/gbfs": "./src/data/gbfsSource.js",
-    "./server/providers/cctv": {
-      "node": "./server/providers/cctv.js"
-    },
-    "./server/providers/radio": {
-      "node": "./server/providers/radio.js"
-    },
     "./server/providers/overpass": {
       "node": "./server/providers/overpass.js"
     },
@@ -130,11 +124,8 @@
     "./ui/layers": "./src/ui/layers.js",
     "./ui/layers/feedback": "./src/loadingFeedback.js",
     "./ui/location": "./src/ui/location.js",
-    "./ui/radio": "./src/ui/radio.js",
-    "./ui/cctv": "./src/ui/cctv.js",
     "./ui/context": "./src/ui/context.js",
     "./ui/context/policy": "./src/contextModePolicy.js",
-    "./ui/cockpit/math": "./src/cockpitMath.js",
     "./ui/shell": "./src/ui/applicationShell.js",
     "./ui/styles": "./src/ui/styles.js",
     "./sources/live": "./src/sources/live/index.js",
@@ -154,9 +145,7 @@
     "./layers/bikeshare": "./src/layers/bikeshare/index.js",
     "./layers/directions": "./src/layers/directions/index.js",
     "./layers/directions/source": "./src/layers/directions/source.js",
-    "./layers/cctv": "./src/layers/cctv/index.js",
     "./layers/air-quality": "./src/layers/airQuality/index.js",
-    "./layers/radio": "./src/layers/radio/index.js",
     "./layers/submarine-cables": "./src/layers/submarineCables/index.js",
     "./sources/bundled-cables": "./src/layers/submarineCables/bundledSource.js",
     "./geography/natural-earth": "./src/data/naturalEarthRegions.js",
@@ -198,11 +187,8 @@
     "./layers/flights/ingestion": "./src/layers/flights/ingestion.js",
     "./layers/vessels/records": "./src/layers/vessels/records.js",
     "./layers/vessels/ingestion": "./src/layers/vessels/ingestion.js",
-    "./sources/radio-browser": "./src/sources/radioBrowser.js",
-    "./sources/cctv-types": "./src/sources/cctvTypes.js",
     "./sources/regional": "./src/data/regionalModel.js",
     "./layers/bikeshare/source": "./src/layers/bikeshare/source.js",
-    "./layers/cctv/source": "./src/layers/cctv/source.js",
     "./layers/air-quality/source": "./src/layers/airQuality/source.js",
     "./layers/earthquakes/source": "./src/layers/earthquakes/source.js",
     "./layers/perimeters/source": "./src/layers/perimeters/source.js",
@@ -210,7 +196,6 @@
     "./layers/ghostmaps/source": "./src/layers/ghostMaps/source.js",
     "./layers/firms/source": "./src/layers/firms/source.js",
     "./layers/launches/source": "./src/layers/launches/source.js",
-    "./layers/radio/source": "./src/layers/radio/source.js",
     "./layers/satellites/source": "./src/layers/satellites/source.js",
     "./sources/reference": "./src/sources/reference.js",
     "./layers/submarine-cables/source": "./src/layers/submarineCables/bundledSource.js",
@@ -227,15 +212,6 @@
     "./layers/transit/source": "./src/layers/transit/source.js",
     "./sources/transit-service": "./src/sources/transitService.js",
     "./sources/map-features": "./src/sources/overpassFeatures.js",
-    "./server/providers/mapillary": {
-      "node": "./server/providers/mapillary.js"
-    },
-    "./layers/street-level": "./src/layers/streetLevel/index.js",
-    "./layers/street-level/mapillary": "./src/layers/streetLevel/providers/mapillary/index.js",
-    "./layers/street-level/mapillary/source": "./src/layers/streetLevel/providers/mapillary/source.js",
-    "./layers/street-level/google": "./src/layers/streetLevel/providers/google/index.js",
-    "./layers/street-level/kartaview": "./src/layers/streetLevel/providers/kartaview/index.js",
-    "./layers/street-level/panoramax": "./src/layers/streetLevel/providers/panoramax/index.js",
     "./view": "./src/view/index.js"
   }
 }

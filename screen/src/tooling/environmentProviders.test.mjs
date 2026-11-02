@@ -2,11 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fsp } from 'node:fs';
 import { terrainHeightsProxy } from 'gods-eye-view/server/providers/terrain';
-import { tomtomProxy } from 'gods-eye-view/server/providers/traffic';
 import { firmsProxy } from 'gods-eye-view/server/providers/firms';
 import { gbfsProxy } from 'gods-eye-view/server/providers/gbfs';
 import { localProviderPlugins } from '../../server/providers/local.js';
-
 function install(plugin, hook = 'configureServer') {
   const routes = new Map();
   assert.equal(typeof plugin[hook], 'function', `${hook} is available`);
@@ -62,42 +60,6 @@ function isolate(t, env = {}) {
 const json = (res) => JSON.parse(res.body);
 
 /** A response that streams 1 MiB chunks of `text` well past every cap, then ends. */
-function oversizedResponse(text) {
-  const state = { pulled: 0, cancelled: false };
-  const chunk = new TextEncoder().encode(
-    text.repeat(Math.ceil((1 << 20) / text.length)),
-  );
-  const response = new Response(
-    new ReadableStream(
-      {
-        pull(controller) {
-          if (++state.pulled > 40) controller.close();
-          else controller.enqueue(chunk);
-        },
-        cancel() {
-          state.cancelled = true;
-        },
-      },
-      { highWaterMark: 0 },
-    ),
-  );
-  return { response, state };
-}
-
-test('standalone composition mounts every extracted provider exactly once without acquisition', (t) => {
-  t.mock.method(globalThis, 'fetch', () => {
-    throw Error('construction must not fetch');
-  });
-  const plugins = localProviderPlugins();
-  for (const factory of [
-    terrainHeightsProxy,
-    tomtomProxy,
-    firmsProxy,
-    gbfsProxy,
-  ])
-    assert.equal(plugins.filter((p) => p.name === factory().name).length, 1);
-});
-
 test('terrain middleware bounds missing points and reconstructs repeated/reordered requests from cache', async (t) => {
   isolate(t);
   let calls = 0;
@@ -153,130 +115,6 @@ test('terrain middleware migrates valid legacy disk points without fabricating o
     results: [{ ellipsoid: 88 }, { ellipsoid: 77 }],
   });
   assert.equal(calls, 1);
-});
-
-test('traffic middleware preserves keyless mode, caching, stale budget fallback and UTC rollover', async (t) => {
-  isolate(t, { TOMTOM_API_KEY: '', TOMTOM_DAILY_TILE_BUDGET: '1' });
-  let now = Date.UTC(2026, 8, 12, 12);
-  const fetchedAt = String(now);
-  t.mock.method(Date, 'now', () => now);
-  let calls = 0;
-  t.mock.method(globalThis, 'fetch', async (raw) => {
-    calls++;
-    assert.equal(new URL(raw).searchParams.get('key'), 'fixture-key');
-    return new Response(new Uint8Array([1, 2, 3]));
-  });
-  const request = install(tomtomProxy());
-  assert.equal(json(await request('/status')).hasKey, false);
-  assert.equal((await request('/flow/8/1/1.pbf')).status, 503);
-  assert.equal((await request('/flow/7/1/1.pbf')).status, 400);
-  assert.equal(calls, 0);
-  process.env.TOMTOM_API_KEY = 'fixture-key';
-  assert.equal(
-    (await request('/flow/8/1/1.pbf')).headers['x-tomtom-cache'],
-    'MISS',
-  );
-  assert.equal(
-    (await request('/flow/8/1/1.pbf')).headers['x-tomtom-cache'],
-    'HIT',
-  );
-  assert.equal(json(await request('/status')).dailyCount, 1);
-  assert.equal(calls, 1);
-  now += 120001;
-  const staleTile = await request('/flow/8/1/1.pbf');
-  assert.equal(staleTile.headers['x-tomtom-cache'], 'STALE-BUDGET');
-  // The stale copy still says when TomTom produced it.
-  assert.equal(staleTile.headers['x-tomtom-fetched-at'], fetchedAt);
-  assert.equal((await request('/flow/8/2/1.pbf')).status, 429);
-  assert.equal(calls, 1);
-  now += 86400000;
-  assert.equal(json(await request('/status')).dailyCount, 0);
-  assert.equal(
-    (await request('/flow/8/1/1.pbf')).headers['x-tomtom-cache'],
-    'MISS',
-  );
-  assert.equal(calls, 2);
-});
-
-test('traffic refuses cross-site requests in dev and preview before spending the TomTom budget', async (t) => {
-  isolate(t, { TOMTOM_API_KEY: 'fixture-key', TOMTOM_DAILY_TILE_BUDGET: '3' });
-  let calls = 0;
-  t.mock.method(globalThis, 'fetch', async () => {
-    calls++;
-    return new Response(new Uint8Array([1, 2, 3]));
-  });
-  const host = 'localhost:5173';
-  const refused = [
-    { host, 'sec-fetch-site': 'cross-site' }, // <img src> from any web page
-    { host, 'sec-fetch-site': 'same-site' },
-    { host, origin: 'https://evil.example' }, // fetch from another page
-    { host, origin: 'null' }, // sandboxed frame
-    { host, 'x-forwarded-for': '203.0.113.9' }, // through a proxy
-  ];
-  for (const [mode, hook] of [
-    ['dev', 'configureServer'],
-    ['preview', 'configurePreviewServer'],
-  ]) {
-    const request = install(tomtomProxy(), hook);
-    // Each refused shape asks for distinct uncached tiles: without the gate
-    // every one would be a billed attempt counted against the daily budget.
-    let x = 0;
-    for (const headers of refused)
-      for (let i = 0; i < 2; i++) {
-        const res = await request(`/flow/16/${x++}/0.pbf`, 'GET', headers);
-        assert.equal(res.status, 403, `${mode}: ${JSON.stringify(headers)}`);
-      }
-    assert.equal(
-      (await request('/status', 'GET', refused[0])).status,
-      403,
-      `${mode}: status is gated too`,
-    );
-    assert.equal(
-      calls,
-      mode === 'dev' ? 0 : 2,
-      `${mode}: no refused upstream work`,
-    );
-    const app = { host, 'sec-fetch-site': 'same-origin' };
-    assert.equal(json(await request('/status', 'GET', app)).dailyCount, 0);
-    // The app itself and loopback tools (no browser headers) still get tiles.
-    const tile = await request('/flow/8/1/1.pbf', 'GET', app);
-    assert.equal(tile.status, 200);
-    assert.equal(tile.headers['x-tomtom-cache'], 'MISS');
-    assert.equal((await request('/flow/8/2/1.pbf')).status, 200);
-    assert.equal(
-      (
-        await request('/flow/8/1/1.pbf', 'GET', {
-          host,
-          origin: `http://${host}`,
-        })
-      ).headers['x-tomtom-cache'],
-      'HIT',
-    );
-    assert.equal(calls, mode === 'dev' ? 2 : 4);
-  }
-});
-
-test('traffic middleware answers 502 to an oversized tile without caching it', async (t) => {
-  isolate(t, { TOMTOM_API_KEY: 'fixture-key', TOMTOM_DAILY_TILE_BUDGET: '' });
-  const bodies = [];
-  t.mock.method(globalThis, 'fetch', async () => {
-    const oversized = oversizedResponse('\x01');
-    bodies.push(oversized.state);
-    return oversized.response;
-  });
-  const request = install(tomtomProxy());
-  const first = await request('/flow/8/1/1.pbf');
-  assert.equal(first.status, 502);
-  assert.equal(bodies[0].cancelled, true);
-  assert.ok(bodies[0].pulled <= 9, 'reading stops at the 8 MiB cap');
-  assert.ok(
-    !fsp.writeFile.mock.calls.some(({ arguments: [file] }) =>
-      String(file).endsWith('.pbf'),
-    ),
-    'no tile reached the disk cache',
-  );
-  assert.equal((await request('/flow/8/1/1.pbf')).status, 502);
-  assert.equal(bodies.length, 2, 'nothing was cached in memory');
 });
 
 test('FIRMS retains a large successful source during partial failure and filters stale data at serve time', async (t) => {
@@ -563,4 +401,13 @@ test('a shorter concurrent Retry-After never cuts a terrain 429 pause short', as
   t.mock.timers.setTime(Date.now() + 120_000);
   assert.equal((await request('/?points=5,6')).status, 502);
   assert.equal(calls, afterBoth, 'still paused by the 300 s Retry-After');
+});
+
+test('standalone composition mounts every extracted provider exactly once without acquisition', (t) => {
+  t.mock.method(globalThis, 'fetch', () => {
+    throw Error('construction must not fetch');
+  });
+  const plugins = localProviderPlugins();
+  for (const factory of [terrainHeightsProxy, firmsProxy, gbfsProxy])
+    assert.equal(plugins.filter((p) => p.name === factory().name).length, 1);
 });
