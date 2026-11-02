@@ -19,10 +19,10 @@ below (file, what, why). A change that is not listed here is a bug.
 | `screen/src/app/opaqueOrigin.js` (new) | `installOpaqueOriginImageLoading(Cesium)`: when `globalThis.origin === 'null'` (a frame sandboxed without `allow-same-origin`), wraps `Cesium.Resource._Implementations.createImage` so every http(s) image is loaded with `crossOrigin`. Returns false and does nothing in any other origin. | Cesium's `isCrossOriginUrl` compares the URL with `window.location`, which in an opaque origin says "same host", so same-host images (the Milky Way skybox) load without `crossOrigin` and `texImage2D` throws a SecurityError that stops rendering. `isCrossOriginUrl` is not configurable (cannot be replaced); the image loader it feeds can. The asset host must send `Access-Control-Allow-Origin: *`. Roadmap R1 and the sandbox spike. |
 | `screen/src/app/scene.js` | Imports and calls `installOpaqueOriginImageLoading(Cesium)` once, just before the viewer is created (before the first image is requested). | Where Cesium is first configured. |
 | `screen/src/standalone/application.js` | In embed mode (`isEmbedded()`), `googleTokens` is `null` instead of `createGoogleTokenSource()`. | That source GETs `/api/google/tiles-token` from the app's own host. Embedded, the host is ours and has no such route. |
-| `screen/src/standalone/startupChrome.js` | In embed mode `initializeSettings` is left out, so `initKeySetup` does not run. | `initKeySetup` GETs `/api/setup/status`. An embedded globe has no key setup. |
-| `screen/src/voice/realtimeDiagnostics.js` | `postDebugLog` returns at once in embed mode. | It sent a credentialed `sendBeacon` / `fetch` to `/api/realtime/debug-log` on the app's own host. |
-| `screen/src/services/requests.js` | `summary.configured()` resolves `false` in embed mode, without a request. | It probed `/api/openai/hud-summary/status`; `false` means the app never offers a summary and never calls `/api/openai/hud-summary`. |
-| `screen/src/layers/localAdsb/feeds.js` | The feed's `request()` throws "local receiver route unavailable" in embed mode, before any fetch. | It polled `/api/local-receivers/aircraft`. A missing route already leads to the same state (`configured: false`, not polling), so behaviour is the same without the request. |
+| `screen/src/standalone/startupChrome.js` (simplified in `8165f0e1`: `initializeSettings` and `initKeySetup` are gone for every mode) | In embed mode `initializeSettings` is left out, so `initKeySetup` does not run. | `initKeySetup` GETs `/api/setup/status`. An embedded globe has no key setup. |
+| `screen/src/voice/realtimeDiagnostics.js` (deleted in `8165f0e1`) | `postDebugLog` returns at once in embed mode. | It sent a credentialed `sendBeacon` / `fetch` to `/api/realtime/debug-log` on the app's own host. |
+| `screen/src/services/requests.js` (summary service deleted in `8165f0e1`) | `summary.configured()` resolves `false` in embed mode, without a request. | It probed `/api/openai/hud-summary/status`; `false` means the app never offers a summary and never calls `/api/openai/hud-summary`. |
+| `screen/src/layers/localAdsb/feeds.js` (deleted in `ea95db5f`) | The feed's `request()` throws "local receiver route unavailable" in embed mode, before any fetch. | It polled `/api/local-receivers/aircraft`. A missing route already leads to the same state (`configured: false`, not polling), so behaviour is the same without the request. |
 
 Embed mode is the existing flag `isEmbedded()` (`?embed=1`, or
 `globalThis.GEV_EMBED_INLINE`, which the inline panel runtime sets and whose
@@ -54,13 +54,137 @@ Measured with the changes above, in a frame with `sandbox="allow-scripts"`:
 (`Cesium.js:66`, reported as a `securitypolicyviolation` event, twice) and
 carries on; no page error follows.
 
-## To remove next (inventory)
+## Slice 2: what was removed, and how
 
-Read-only list: nothing below has been removed. Paths are under `screen/`.
-Line numbers are for upstream 8978801dfd2a plus the changes above (only
-`standalone/application.js`, `standalone/startupChrome.js`,
-`services/requests.js`, `voice/realtimeDiagnostics.js` and
-`layers/localAdsb/feeds.js` have shifted by a few lines).
+The owner ruled out anything run by or about a government agency (military,
+police or agency cameras, ALPR) and every "game" part. Paths
+are under `screen/`. One commit per group, each with the gates
+(`check-package-boundaries`, `check-import-directions`) passing, except
+`b0b0c05b`, which left them failing (missing imports to the military and
+awareness modules) until the next commit, `8427f8dc`, deleted those callers.
+
+| Commit | Group | Removed | Kept or changed | Why |
+| --- | --- | --- | --- | --- |
+| `f90f7557` | MCP | `server/mcp/`, `src/tools/mcp/`, `docs/MCP_SETUP.md`, the `mcp` script and `./tools/mcp` export, the Vite plugin, their tests | `package-boundaries.json` group `tools-mcp` dropped | "MCP" is on the ruled-out list. |
+| `8165f0e1` | Voice and AI, key setup, tool catalog, inline panel build | `src/voice/`, `src/agent/`, `src/tools/` (the AI tool catalog), `src/keySetup.js`, `server/providers/openai*`, `gemini*`, `server/standalone/voiceTools.js`, `key-setup*`, `provider-settings` html and css, `voice-card.css`, `voice-cost.css`, `globePanelRuntime`, `build/panel.js`, `scripts/build-panel.mjs`, voice and setup scripts, tests | New `src/app/viewActions.js` holds the seven embed view actions (`set_visual_style`, `set_map_stack`, `set_layer_visibility`, `track_entity`, `stop_tracking`, `annotate_map`, `clear_annotations`, origin `tool`) extracted from `voice/gevActions.js`; `keySetupCore.mjs` is reduced to the key registry and `keySetupRequirementEnvVars`; `hud.js` keeps its deterministic summary line and drops the AI one; `IntelHUD` takes only the viewer; the `summary` request service and its embed gate are gone | Its own voice and AI, key setup flows. `gev:view` still needs the action runner, so it was extracted first. Judgment call: the whole `src/tools/` catalog and the MCP-Apps panel build went too, since their only users were voice, MCP and the panel. |
+| `4c7a4d54` | Pinokio and Docker | `pinokio/`, `scripts/pinokio-*.mjs`, `docker-start.mjs`, `Dockerfile`, `compose.yaml`, `.dockerignore`, their tests | `.prettierignore` and `ci.yml` lines | Pinokio is on the list; the Docker files were its launchers. |
+| `671c6230` | Director, scenes, flood demo | `src/director/`, `src/scenes/`, scene UI, `data/bhoteKoshi*`, `public/events/`, `docs/DIRECTOR*`, `SCENE-DOCUMENT.md`, director scripts, `scenes.css`, `bhote-koshi.css`, the scene panel template | Generic panel-layout rules from `scenes.css` moved to `panel-layout.css`; the page reset from `bhote-koshi.css` moved to `base.css`; `bhote-koshi-2026` and `bhote-koshi-locator` removed from the catalog and layer-state registry (tokens `h`, `z` stay reserved); CSP drops YouTube, Facebook and X frame hosts; `SHARE_VIEW_PANELS` keeps `scene-panel` (permanent numbering) | Director and demo scenes, including the flood demo. |
+| `3baad307`, `940911db` | Cockpit | `src/ui/cockpit*.js`, `cockpitCoordinator`, `cockpitTracking`, `cockpitUtilityLayout`, `cockpitVisionPolicy`, `cockpitCloudEffects`, `cockpit.html`, `cockpit.css`, `qa-cockpit-*`, tests; `cockpitAirLod.js` and `cockpitContactDot.js` are kept (layers import them) | New `src/ui/inertCockpit.js`: `createInertCockpit()` answers the cockpit hooks (`cockpitView` null, state "inactive", control refused); `getAircraftTrackingTarget()` returns null | Cockpit is on the list. A stub, not a deletion of the call sites, because the shell, panels and locale code still call it. |
+| `20bb3acb` | News briefs | `data/regionalBrief.js`, the `regional-brief` and `weather-effects` endpoints, server regional news and weather services, the `regional` and `weather` request slots | `regionalModel.js` trimmed to `normalizeRegionalPlace` (used by `nominatim.js`); Open-Meteo, Google News and GDELT credits removed | News briefs are on the list. |
+| `d98bc2e3` | Fake detection boxes | Corner and transit bracket painting, CRT scanlines, the sparse focus ring, `detectionPresentation.js`, the bracket helpers in `detectionDraw.js` | The callout (label) lane for aircraft and vessels is unchanged and detection is still on by default | The boxes were fake; the labels carry real data. |
+| `ffa4273c` | ALPR | `layers/alpr`, `app/layers/alprCameras.js`, `data/alprCameras.js`, the source contract, panel id, layer-state entry (token `p` stays reserved), CSS, fixture | Retry-chip strings for ALPR in `shellFeedback` were left | Licence-plate readers are ruled out. |
+| `b0b0c05b` | Stubs | none | New `src/app/layerStubs.js`; `createLayerCatalog(layers, metadata, stubs)`; the eight stubs are not in `catalog.layers` | See "Stubs" below. |
+| `8427f8dc` | Military, installations, awareness, traffic | `layers/military`, `awareness`, `installations`, `traffic` and their `app/layers`, `data/military*`, `installation*`, `traffic*`, `tomtom*`, server `military-installations`, `traffic.js`, `aircraft/adsb-lol.js` (the adsb.lol military proxy), the `/api/military/track` route, `sources/openFreeMap`, `vectorTiles`, `militaryTileGeometry`, QA scripts | `layers/aircraft/classification.js`: the military registry is now an inert object that answers false and fetches nothing, so `flights` no longer depends on the military layer; `adsbLolFallbackAnchor` kept (civil fallback) | Military, anything about a government agency, simulated traffic. |
+| `ea95db5f` | CCTV, radio, local ADS-B, street level | `layers/cctv`, `radio`, `localAdsb`, `streetLevel` (except `view.js` and `tileMath.js`, which `ghostMaps` imports), `src/sdr/`, their UI, data, server providers (`cctv`, `radio`, `mapillary`, local receivers), `config/cctv_sources.*`, street-level fixtures, `docs/LOCAL-RECEIVERS.md`, `overlays/worldOverlayAllocation.worker.mjs` (a benchmark) | `testSupport/rayCamera.mjs` (the ray helper `view.test` needed); the cctv and street-level template blocks, the radio and SDR section of `context.html`, the sync chip; `mobileShell` Cameras sheet is now `['recent-imagery-panel']`; the `c` CCTV hotkey is gone | Agency and private camera feeds, estimated camera poses, internet radio, hardware receiver. |
+| `29b4a8a9` | Fix to the above | none | New `src/ui/styles/layer-rows.css`: the generic layer toggle row, status chip, sub-control and list rules that sat inside `radio.css` (base lines 612-1045) | `radio.css` held them; deleting it unstyled the layer panel. Found by `english-css-parity.test`. |
+| `015d0b27` | 3D aircraft models | `public/models/` (all glb files and the README), the 3D toggle in `display-controls.html`, tests that read the models | `MODELS_3D_AVAILABLE = false` in `layers/flights/policy.js`; `_modelRegimeActive()` and `_trackedModelRegimeActive()` return false at once | 3D aircraft models are on the list. |
+| `b99d4dd2` | CRT, night vision, FLIR | `styles/retro.js`, `surveillance.js`, `thermal.js`, their shader imports and presets, hotkeys 2-4, three dock buttons | `RETIRED_STYLES` gains `snow`, `retro`, `surveillance`, `thermal`, `crt`, `nvg`, `flir` (old links open as Normal); `SHARE_VIEW_ENUMS` and `SHARE_VIEW_STYLE_PARAMS` keep their reserved codes; `CYBER_VISUAL_DEFAULTS` is `{ style: 'normal' }` (entering Cyber used to select FLIR); `STYLE_PRESET_DEFAULTS = {}`; `view/index.js` style list is normal, anime, noir | Military HUD styling. |
+| `9996f0e8`, `0ecf56b4` | Tests, i18n | tests that named removed things; 1427 unused catalog entries per locale | `npm run i18n -- --prune` run once | The i18n catalog test fails while entries are stale. |
+
+Files edited rather than deleted (file, what, why):
+
+| File | What | Why |
+| --- | --- | --- |
+| `src/app/layerStubs.js` (new) | `createLayerStub(id)` returns a frozen inert object (`inert: true`, `enabled: false`, `isEnabled`, `beginWorldJump`, `endWorldJump`, `stopTracking`, `cancelPendingTrackingRestore`, `releaseCameraOwnership`, `attachNavigation`, `getTrackedInfo`, `getTrackedSubject`, `getContextSnapshot` returning null, `getUIState` returning `{}`); `STUBBED_LAYER_IDS` lists the eight ids | The callers use those hooks without null checks. |
+| `src/app/catalog.js` | `createLayerCatalog(layers, metadata, stubs = [])`; `get(id)` falls back to the stubs | `catalogControlServices` throws for a missing control layer id. |
+| `src/app/constructCatalog.js`, `standalone/catalog.js`, `app/application.js` | Layers removed, `LOCAL_ONLY_LAYER_METADATA` is empty, `streetLevelProviders` plumbing removed, catalog built with `createLayerStubs()` | The stubs are outside `catalog.layers`, so the data manager never registers them. |
+| `src/data/layerState.js` | Registry entries and option groups for `cctv`, `military`, `military-awareness`, `military-installations`, `radio`, `street-level`, `traffic` removed. Tokens stay in `LEGACY_LAYER_STATE_TOKENS` and the ledger | Stubs have no share-link state. A link that names a removed token is rejected whole, as any unknown token is. |
+| `src/app/sourceComposition.js`, `standalone/layerSources.js`, `app/sources.js` | Source contracts and sources for the removed layers removed | Each contract lists layers that must be registered. |
+| `src/ui/layerPanel.js`, `layerNames.js`, `panelChrome.js`, `panelLayoutController.js`, `mobileShell.js`, `hudLayouts.js`, `worldOverlay.js` | Ids of the removed layers and panels removed | Lists of ids. |
+| `src/ui/applicationShell.js`, `shellFacade.js`, `displayBindings.js`, `layerBindings.js`, `contextBindings.js`, `applicationShortcuts.js`, `shellElements.js` | Cctv, street level, radio, local SDR, installations and cockpit wiring removed; the detection layer list is flights and satellites; style keys 2-4 gone | Callers of removed code. |
+| `src/layers/flights/*` | Model branches gated by `MODELS_3D_AVAILABLE`; flights no longer reads the military registry | See 3D models. |
+| `scripts/package-boundaries.json`, `scripts/format-scope.json`, `scripts/check-import-directions.mjs`, `package.json` | Entries for deleted files and exports removed; `inertCockpit.js`, `layerStubs.js`, `viewActions.js` added to their groups | The two repo gates. |
+
+### Stubs
+
+Eight layers are hard-required (`CONTROL_LAYER_IDS`): `military`,
+`military-awareness`, `military-installations`, `traffic`, `cctv`,
+`street-level`, `radio`, `local-adsb`. Each is replaced by the inert object
+above. A stub is not a catalog layer, has no source contract, no panel id and
+no layer-state entry, and no list, panel, search or share link shows it. All
+their implementation files were deleted because nothing else imports them (the
+import-direction gate agrees). The ALPR layer needed no stub and was deleted.
+
+### Left in place on purpose (inert residue)
+
+- Cockpit plumbing: `inertCockpit.js`, the `readCockpit` call sites, the
+  hidden `#cockpit-entry` button and its CSS, `COCKPIT_REFUSAL_NOUNS`.
+- Dead radio-panel branches in `panelChrome.setPanelCollapsed`; layer-state
+  radio helpers and the `idSwitches` import in `data/layerState.js`.
+- Retry-chip strings for ALPR, mapped sites and vector tiles in
+  `shellFeedback.js` and the traffic feedback reducer in `loadingFeedback.js`.
+- `tr3bRegistry` (the TR-3B easter egg), `selectedMilitaryTrackingId` in the
+  flights options, `SHARE_TRACKING_RESTORE_POLICIES.military`, the
+  `military_aircraft` entity kind in the view codec (permanent codes).
+- Dead 3D-model code and data behind `MODELS_3D_AVAILABLE`
+  (`data/modelVisualAnchor.js`, `CLASS_MODEL_URL` in `aircraftClass.js`,
+  `layers/flights/modelSpec.js`).
+- `viewCodec` panel numbering and style enums (permanent).
+- The Contacts (global-context) panel is still in the UI, inert, and the
+  "Cameras" tab of the phone shell still carries that name though it now opens
+  only the Recent Imagery panel.
+- The `tactical` HUD variant and Cyber theme (the Cyber theme no longer
+  selects a look), detection themes.
+- `layers/streetLevel/view.js` and `tileMath.js`; `cockpitAirLod.js` and
+  `cockpitContactDot.js`; the `.scene-btn` rule in `panel-layout.css`.
+
+### Not done
+
+- **Estimated launch trajectories** (`layers/launches/paths.js`
+  `reconstructedAscentPath`, `replay.js`, `camera.js`, `overlays.js`,
+  `orbitRendering.js`, `model.js`, `index.js`, and the coupling to the
+  `satellites` layer): left in. The estimate is woven through replay, camera
+  and overlays, and removing it needs its own change with the launches tests.
+- Dead-code sweep of the residue above.
+
+### Verification
+
+Measured in a scratch copy of the final tree (`vite build`, then the sandbox
+harness from the Astrolabe fork notes, with Esri and terrain tiles stubbed):
+
+- Gates: `check-package-boundaries` and `check-import-directions` both exit 0.
+- Unit tests: the full `node --test` run (per file, over `src` and `server`)
+  on the tree at `0ecf56b4` had one failing file, `cssContentCaption.test`,
+  fixed in the commit that adds this section and re-run alone (passes). The
+  full run was not repeated after that fix.
+- `dist/`: 46 MB before this slice, 32 MB after (`du -sh`; `cesium/` 14 MB,
+  `assets/` 19 MB). `vite build` takes 7 s.
+- Sandboxed frame (`sandbox="allow-scripts"`, CSP `script-src 'self'
+  'wasm-unsafe-eval' blob:`, `?embed=1`): `gev:ready` after 1901 ms;
+  `gev:view-applied` with `ok: true` (steps `stop_tracking`,
+  `clear_annotations`, `camera` all ok); 0 page errors; 0 failed and 0 bad
+  responses; 0 requests to the app's own `/api`; 0 console errors; 0 Cesium
+  render errors; imagery tiles 14 READY, 0 FAILED at the snapshot (34 still
+  transitioning); the globe draws (screenshot: stub checkerboard, 827
+  distinct colours).
+- Plain control (no sandbox, same build, same page): `gev:ready` after
+  1723 ms; `gev:view-applied` `ok: true`; 0 page errors; 0 requests to `/api`;
+  imagery tiles 39 READY, 0 FAILED.
+
+Not verified:
+
+- Only the embed view was run in a browser. The full application chrome (layer
+  panel, dock, hotkeys, Cyber layout, phone shell, share-link restore in a real
+  page) was not, so the stubs and removed panels are checked by the unit tests,
+  the gates and a bundle build, not by clicking.
+- `globe.tilesLoaded` is false in both runs, as in the runs before this slice:
+  the stub tile server does not make Cesium declare the whole set loaded.
+- Old share links that name a removed layer token (`c`, `m`, `g`, `i`, `r`,
+  `t`, `p`, `h`, `z`) are rejected whole by the layer-state decoder, as any
+  unknown token is; the retired looks open as Normal. Only the unit tests
+  cover this.
+- Commit `b0b0c05b` alone does not pass the gates; the commits after it do.
+  Not every intermediate commit was run against the full test suite; the
+  full suite was run on the tree at `0ecf56b4` only. The test fixes for the
+  3D-model and look-retirement commits are in `b99d4dd2` and `9996f0e8`, so
+  `015d0b27` and `b99d4dd2` alone leave some tests failing.
+
+## Inventory (status after slice 2)
+
+The list as written before slice 2, with a **Status** line added above each
+entry. Paths are under `screen/`. Line numbers are upstream's (8978801dfd2a);
+the code they point at is deleted or has moved, so do not use them to find
+current code. Entries marked DONE are covered by the table above.
 
 ### How the app makes a layer "required" (read this first)
 
@@ -113,6 +237,8 @@ a follow target).
 
 ### Layers
 
+**Status:** STUBBED (`b0b0c05b`), implementation DELETED (`8427f8dc`). The aircraft classification registry is an inert object.
+
 **military** (layer id `military`; flights marked military)
 - Code: `src/layers/military/` (whole directory), `src/app/layers/militaryFlights.js`,
   `src/data/militaryFlights.js`, `src/data/militaryRegistry.js`,
@@ -144,6 +270,8 @@ a follow target).
   - Our rule is to drop military aircraft at the door in our own source, so
     nothing in this layer is needed; the layer id only has to exist.
 
+**Status:** STUBBED, DELETED (`8427f8dc`).
+
 **military-installations** (`military-installations`)
 - Code: `src/layers/installations/`, `src/app/layers/militaryInstallations.js`,
   `src/data/militaryInstallations.js`, `src/data/militaryInstallationData.js`,
@@ -159,6 +287,8 @@ a follow target).
   `layers/awareness/` (it is one of the four inputs,
   `constructCatalog.js:149-154`), `src/ui/styles/cyber.css:669`.
 
+**Status:** STUBBED, DELETED (`8427f8dc`).
+
 **military-awareness** (`military-awareness`): not in the owner's list, but it
 is the "nearby contacts" layer that Roadmap says we keep and feed from our own
 data; listed because it is built from `military` and `installations`.
@@ -169,6 +299,8 @@ data; listed because it is built from `military` and `installations`.
   installations` as constructor inputs, so the constructor call has to change
   when those do. Used by `ui/cockpitContext.js:30`, `cockpitCoordinator.js:114-211`,
   `cockpitSignals.js:208`, `cockpitTrackingController.js:92`.
+
+**Status:** STUBBED, DELETED (`ea95db5f`), with the cameras panel, focus, gizmo and sources.
 
 **cctv** (`cctv`; agency and private camera feeds)
 - Code: `src/layers/cctv/` (whole directory), `src/app/layers/cctv.js`,
@@ -194,6 +326,8 @@ data; listed because it is built from `military` and `installations`.
   replace an estimated field of view), `ui/cctvCalibration.js`. They go with
   the layer; no separate stub is needed.
 
+**Status:** STUBBED, DELETED (`8427f8dc`), with the TomTom proxy.
+
 **traffic** (`traffic`; simulated vehicles over road geometry, plus TomTom flow)
 - Code: `src/layers/traffic/` (whole directory; the moving dots are produced
   by `animation.js`, `model.js`, `retention.js`, with `flow*.js` fetching
@@ -211,6 +345,8 @@ data; listed because it is built from `military` and `installations`.
 - Transit vehicles (`layers/transit`) are real and stay; they share no code
   with `traffic` except `app/layers/transit.js:5` using the same overlay host.
 
+**Status:** STUBBED, DELETED (`ea95db5f`), with the radio panel and the SDR card.
+
 **radio** (`radio`; internet radio stations, plays audio)
 - Code: `src/layers/radio/`, `src/app/layers/radio.js`, `src/data/radio.js`,
   `src/sources/radioBrowser.js`, `src/ui/radioBindings.js`,
@@ -225,6 +361,8 @@ data; listed because it is built from `military` and `installations`.
   `src/voice/gevActions.js:416,1928-2264`, `voice/realtimeTurns.js`,
   `voice/geminiSession.js`, `voice/sessionCommands.js:64`.
 
+**Status:** STUBBED, DELETED (`ea95db5f`); `view.js` and `tileMath.js` stay for `ghostMaps`.
+
 **street-level** (`street-level`; Mapillary and Panoramax photo coverage)
 - Code: `src/layers/streetLevel/` (whole directory including `providers/`),
   `src/app/layers/streetLevel.js`, `src/ui/streetLevelControls.js`,
@@ -236,6 +374,8 @@ data; listed because it is built from `military` and `installations`.
 - Imported by: `src/standalone/layerSources.js:23,58`,
   `src/ui/applicationShell.js:1134-1161,1787`, `src/ui/layerNames.js:53`,
   `src/voice/layerManifest.js:354`, `src/testSupport/streetLevelFakes.mjs`.
+
+**Status:** STUBBED, DELETED (`ea95db5f`), with `src/sdr/` and the local-receivers route.
 
 **local-adsb** (`local-adsb`; hardware receiver on the operator's machine)
 - Code: `src/layers/localAdsb/`, `src/app/layers/localAdsb.js`, `src/sdr/`,
@@ -251,6 +391,8 @@ data; listed because it is built from `military` and `installations`.
   `src/ui/applicationShell.js:107,497,1098-1104`, `layerPanel.js:47`,
   `src/sdr/adsbDecoder.js:5-6,344,458` (reads its policy).
 
+**Status:** DELETED (`ffa4273c`); no stub needed.
+
 **alpr-cameras** (`alpr-cameras`; licence-plate readers; ruled out by the
 Roadmap decision on police data, not named in the task list but found in the
 same group): `src/layers/alpr/`, `src/app/layers/alprCameras.js`,
@@ -264,6 +406,8 @@ the layer-state entry and `standalone/layerSources.js:17,52`,
 `tools/services.js:11,76` are removed.
 
 ### Parts
+
+**Status:** DONE (`015d0b27`): models and toggle deleted, code gated off. Dead model data remains (see residue).
 
 **3D aircraft models**
 - `public/models/*.glb` (airplane, atr72, b789, bell206, c172, citation2,
@@ -280,6 +424,8 @@ the layer-state entry and `standalone/layerSources.js:17,52`,
   `layers/flights/rendering.js` and the `resolveAsset` plumbing. Also the
   size budget (R8): `public/models` is the largest binary payload.
 
+**Status:** NOT DONE (see "Not done"). Camera poses estimated for cameras went with the CCTV layer.
+
 **Estimated launch trajectories**
 - `layers/launches/paths.js` (`reconstructedAscentPath` at 215, used at 479;
   exported at 578), `layers/launches/replay.js`, `layers/launches/camera.js`
@@ -292,6 +438,8 @@ the layer-state entry and `standalone/layerSources.js:17,52`,
   `app/constructCatalog.js:139` also tie it to the `satellites` layer (the
   replay restores satellites), so `createApplicationLaunches({ satellites })`
   has to change with the replay.
+
+**Status:** DONE (`671c6230`).
 
 **Director and demo scenes**
 - `src/director/` (document, playback, timeline, packs, sharing),
@@ -313,6 +461,8 @@ the layer-state entry and `standalone/layerSources.js:17,52`,
   `agent/worldPacket.js:101,148`. `standalone/tools.js:1,6-17` builds the
   scene data pack source. `app/application.js` exposes `onSceneDirector`.
 
+**Status:** DONE (`20bb3acb`); the NEWS tab went with the cockpit (`3baad307`).
+
 **News briefs**
 - `ui/cockpitBriefing.js` (the NEWS tab, `ACQUIRING REGIONAL NEWS`, lines
   91-308), `ui/cockpitPresentation.js:38-56`, `ui/cockpitController.js:178-179`,
@@ -324,6 +474,8 @@ the layer-state entry and `standalone/layerSources.js:17,52`,
 - Not required by the catalog; part of cockpit. `services.regional` is built
   in `services/requests.js` and consumed by `cockpitBriefing.js:152-175`
   (`regionalDistanceM`).
+
+**Status:** DONE (`8165f0e1`), after extracting the view actions to `src/app/viewActions.js`.
 
 **Its own voice and AI (OpenAI, Gemini; hud-summary)**
 - `src/voice/` (whole directory), `src/agent/`, `src/ui/styles/voice-card.css`,
@@ -348,6 +500,8 @@ the layer-state entry and `standalone/layerSources.js:17,52`,
 - `src/voice/layerManifest.js` enumerates layer ids for voice only.
   `src/search/` (place search, `/api/google/*`) is separate and is kept.
 
+**Status:** DONE (`8165f0e1`); `keySetupCore.mjs` kept as the key registry only.
+
 **Key setup flows**
 - `src/keySetup.js` (calls `/api/setup/status`, `/api/setup/keys`,
   `/api/realtime/oauth-*`, lines 178, 416, 521, 615, 642),
@@ -365,6 +519,8 @@ the layer-state entry and `standalone/layerSources.js:17,52`,
   that file must be kept or its one function moved. `ui/layerPanel.js` and
   `ui/streetLevelPresentation.js` also reference key guidance.
 
+**Status:** DONE (`4c7a4d54`).
+
 **Pinokio**
 - `pinokio/` (`pinokio.js`, `install.js`, `start.js`, `update.js`, `reset.js`,
   `_ENVIRONMENT`), `scripts/pinokio-*.mjs` (environment, install, preflight,
@@ -375,6 +531,8 @@ the layer-state entry and `standalone/layerSources.js:17,52`,
   `server/providers/places/google.js`, `server/providers/openai/rate-limit.js`,
   and in `SECURITY.md`, `.dockerignore`, `.prettierignore`.
 
+**Status:** DONE (`f90f7557`); the rest of `src/tools/` went in `8165f0e1`.
+
 **MCP**
 - `server/mcp/` (`server.js`, `stdio.js`, `plugin.js`, `panelKey.js`,
   `services.js`), `src/tools/mcp/`, `package.json:56` (`mcp` script) and
@@ -383,6 +541,8 @@ the layer-state entry and `standalone/layerSources.js:17,52`,
   `catalog.js`, `queries/`, `services.js`) is shared with the voice code and
   the panel build, so only `mcp/` and `server/mcp/` are independent;
   `tools/services.js` builds a source for every ruled-out layer (lines 11-85).
+
+**Status:** DONE (`3baad307`) as an inert stand-in, `src/ui/inertCockpit.js`.
 
 **Cockpit** (first-person aircraft view and its briefing, instruments, vision)
 - `src/ui/cockpit*.js` (about 14 files: `cockpit.js`, `cockpitBriefing.js`,
@@ -402,6 +562,8 @@ the layer-state entry and `standalone/layerSources.js:17,52`,
   `layers/awareness/rendering.js`. Cockpit reads `militaryFlightsLayer`
   and `militaryAwarenessLayer` (see military), so remove it before or with
   them.
+
+**Status:** DONE (`d98bc2e3`): boxes, scanlines and focus ring removed; labels kept.
 
 **Fake detection boxes** (the "DETECT" brackets and boxes drawn around
 contacts, with density and mode settings)
@@ -429,6 +591,8 @@ contacts, with density and mode settings)
   at line 37) and Contacts mode forces it on
   (`contactsDetectionPolicy.js` header). Embed mode shows no boxes because
   there are no contacts, but they will appear as soon as there are.
+
+**Status:** DONE for CRT, night vision and FLIR (`b99d4dd2`). The `tactical` HUD variant and the Cyber theme stay; Cyber no longer selects a look.
 
 **Military HUD styling**
 - `src/hud.js` (1121 lines; `MILITARY_STYLES` at 141, auto-activation at
