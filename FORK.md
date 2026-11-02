@@ -18,7 +18,7 @@ below (file, what, why). A change that is not listed here is a bug.
 | --- | --- | --- |
 | `screen/src/app/opaqueOrigin.js` (new) | `installOpaqueOriginImageLoading(Cesium)`: when `globalThis.origin === 'null'` (a frame sandboxed without `allow-same-origin`), wraps `Cesium.Resource._Implementations.createImage` so every http(s) image is loaded with `crossOrigin`. Returns false and does nothing in any other origin. | Cesium's `isCrossOriginUrl` compares the URL with `window.location`, which in an opaque origin says "same host", so same-host images (the Milky Way skybox) load without `crossOrigin` and `texImage2D` throws a SecurityError that stops rendering. `isCrossOriginUrl` is not configurable (cannot be replaced); the image loader it feeds can. The asset host must send `Access-Control-Allow-Origin: *`. Roadmap R1 and the sandbox spike. |
 | `screen/src/app/scene.js` | Imports and calls `installOpaqueOriginImageLoading(Cesium)` once, just before the viewer is created (before the first image is requested). | Where Cesium is first configured. |
-| `screen/src/standalone/application.js` | In embed mode (`isEmbedded()`), `googleTokens` is `null` instead of `createGoogleTokenSource()`. | That source GETs `/api/google/tiles-token` from the app's own host. Embedded, the host is ours and has no such route. |
+| `screen/src/standalone/application.js` | In embed mode (`isEmbedded()`), `googleTokens` is `null` instead of `createGoogleTokenSource()`. Superseded in slice 4: the token source, route and server fallback are gone for every mode. | That source GETs `/api/google/tiles-token` from the app's own host. Embedded, the host is ours and has no such route. |
 | `screen/src/standalone/startupChrome.js` (simplified in `8165f0e1`: `initializeSettings` and `initKeySetup` are gone for every mode) | In embed mode `initializeSettings` is left out, so `initKeySetup` does not run. | `initKeySetup` GETs `/api/setup/status`. An embedded globe has no key setup. |
 | `screen/src/voice/realtimeDiagnostics.js` (deleted in `8165f0e1`) | `postDebugLog` returns at once in embed mode. | It sent a credentialed `sendBeacon` / `fetch` to `/api/realtime/debug-log` on the app's own host. |
 | `screen/src/services/requests.js` (summary service deleted in `8165f0e1`) | `summary.configured()` resolves `false` in embed mode, without a request. | It probed `/api/openai/hud-summary/status`; `false` means the app never offers a summary and never calls `/api/openai/hud-summary`. |
@@ -129,8 +129,9 @@ After slice 3. Each item says why it stays.
 - The Contacts mode of the Context panel (the CONTACTS tab, `contextMode ===
   'flights'`, the first-run "Live contacts" tile). It is not inert: it turns on
   the real `flights` and `ais-live-vessels` layers and owns detection through
-  `contactsDetectionPolicy`. Its view body (the awareness panel nothing filled)
-  is gone. Owner decision needed on whether the mode stays.
+  `contactsDetectionPolicy`. Decision (slice 4): it stays; its copy was fixed.
+  The name "Contacts" and the `radar` icon are listed under the doubtful
+  words below.
 - `viewCodec` panel numbering and style enums (permanent).
 - The `tactical` HUD variant and Cyber theme (the Cyber theme no longer
   selects a look), detection themes.
@@ -142,9 +143,6 @@ After slice 3. Each item says why it stays.
 - Comments and test names that still say "cockpit" (about 60, in `flights`,
   `iconOrientation`, `motionModel`, `localGeojson*`, `contactsDetectionPolicy`
   and tests). No code path reads the word.
-- Copy that still says cockpit or intelligence: the first-run line "It feels
-  like a forbidden cockpit", the HUD banner "TOP SECRET // SI-TK // NOFORN"
-  and "KH11-..." line in `hud.js`, and the tile text "nearby intelligence".
 
 ### Slice 3: commits
 
@@ -169,7 +167,7 @@ written as `body:not(.cockpit-mode) ...` lost that class's specificity.
 
 ### Not done
 
-- 3D-model residue (see above) and the Contacts mode decision.
+- 3D-model residue (see above).
 - `selectedMilitaryTrackingId` and the `military_aircraft` follow kind: kept
   for permanent codes.
 
@@ -252,14 +250,103 @@ Scratch copy of the tree at `79cd9e85` (Node 22, `nice -n 10`, one run at a time
   Satellites on; with removed tokens `c.z` added, or `c.z` alone, the link is
   rejected whole and Satellites stays off, no error.
 - Seen: the full app asks its own `/api/google/tiles-token` at startup
-  (`maps/googleTokens.js`) and `/api/celestrak/*` when Satellites is on. The
-  embed view does neither.
+  (`maps/googleTokens.js`; removed in slice 4) and `/api/celestrak/*` when
+  Satellites is on. The embed view does neither.
 
 Not exercised: a real device or touch input, the Material Symbols and Google
 fonts (blocked in the harness, so icon names show as text), real tile and
 feed data, keyboard navigation of the Context tabs, voice, the Cyber theme
 switch, recording and clean view, hotkeys, and a share link with a removed
 token that also carries camera and style fields from another app version.
+
+## Slice 4: HUD readouts, copy, startup request
+
+Each commit passes `check-import-directions` and `check-package-boundaries`.
+
+| Commit | What | Why |
+| --- | --- | --- |
+| `a40399b6` | `hud.js` and its CSS: removed the "TOP SECRET // SI-TK // NOFORN" line, the random `KH11-nnnn` and `OPS-nnnn` ids, the random orbit and pass numbers, the REC dot, MGRS, GSD and NIIRS (a made-up sensor model), COLL, ONA (also from the summary line), BAND/BITS/LVL, the corner brackets and the two edge strips; dead CRT, NVG and FLIR entries; the `mgrs` import. Kept: mode, summary, UTC time, camera lat/lon, altitude above mean sea level, sun elevation, the vessel line and the bottom line (now lat/lon only). Tests that stubbed `mgrs` or read the removed ids updated; the Cyber CSS test now asserts the removed classes are absent. | No military look, no fake data. What stays is read from the camera and the app. |
+| `bd3a3c87` | Copy. First-run line is now "Live aircraft, vessels, satellites and earthquakes on one globe — from public sources, shown as they are."; kicker "MISSION CONTROL · FIRST LAUNCH" is "WELCOME"; Contacts tile "Aircraft and vessels near you"; HUD button "Telemetry HUD (H)"; layout label "Tactical" is "Full" (the id `tactical` is unchanged, it is in share links); "Visible map targets" is "Visible map objects"; Contacts tab tooltip no longer names installations; Context standby text loses "sites" in all ten locales; "Scanning active events" is "Loading active events", "scanning nearby systems" is "looking for nearby systems"; web manifest description. The Contacts mode itself stays. Catalogs: new text translated by hand into the ten locales (the tool has no English fallback), then `i18n --prune`. | Plain, truthful copy. |
+| `dbed6196` | Removed `maps/googleTokens.js`, the `google-token` route in `maps/google3d.js`, the `googleTokens` argument of `app/scene.js` and `standalone/application.js`, `server/standalone/google-token-unavailable.js` and its plugin entry, their tests. `mapStartup.test.mjs` pins that no token route exists. | The full app asked its own `/api/google/tiles-token` at startup. All data goes through Elysium and there is no key setup, so the request is gone in every mode (the embed gate from slice 1 is superseded). With no key it starts on the keyless globe. |
+
+Judgment calls: the copy changes for tasks 2, 3 and 5 are one commit because
+they touch the same catalog entries. The Cyber sonar (see below) was not
+removed. `mgrs` is still in `package.json` and the lockfile (no importer left;
+not removed because it needs a lockfile rewrite).
+
+### Words checked in user-visible strings (slice 4)
+
+Searched every English catalog key and the templates for intel, classified,
+mission, sensor, recon, tactical, hostile, target, radar, surveillance,
+cockpit, operator, strike, drone, military, detect and similar. Fixed: the
+clear hits above. Left, listed here for the owner:
+
+- Conflict-map layer `s2-ghostmaps` (live, in the Events group): product names
+  "Kinetic 30d", "Border Crisis", "Iran Picture", "Iran Kinetic", "Yemen FLOT",
+  "Intel Picture", "Latest Drop", from S2 Underground KMZ files on GitHub. This
+  is the one real military-flavoured feed still in the app. Not touched: it is
+  a layer decision, not copy.
+- Cyber sonar: the "Sonar" toggle and its rings, range, intensity, sector and
+  opacity sliders, the "Cyber sonar contact scanner" tooltip, `cyberSonar*.js`,
+  `detection.js` integration and the `.hud-sonar` sweep element (visible only in
+  the Cyber layout). It dims real contacts between sweeps; it detects nothing,
+  but it looks like a naval sonar. Removing it is its own change.
+- "Detection overlay (D)" and the "DETECT" button, `contactsDetectionPolicy`:
+  the labels and callouts overlay for real objects.
+- "Contacts" / "LIVE CONTACTS" as the name of the mode (sonar and military
+  jargon), the Chinese catalogs' "目标"/"目標" for it (means target), and the
+  `radar` icon on the Contacts tab, the first-run tile and the phone Context tab
+  (the `radar` glyph is in the icon subset; a swap needs `index.html` too).
+- Vessel types "MILITARY" and "DIVE OPS" (AIS ship-type codes 35 and 34, real
+  data labels), aircraft class "Drone", the layer name "Military aircraft" and the
+  "Shared military flight ..." messages (permanent share-link kinds).
+- "SPACE MISSIONS", "Select {mission}" and the mission roster: real launches and
+  spacecraft, kept.
+- Title bar tagline "NO PLACE LEFT BEHIND" under "GOD'S EYE VIEW" (upstream
+  branding; reads as surveillance).
+- "sensor n/a" (satellite fire sensor), "UNSPECIFIED OPERATOR" (spacecraft
+  operator), "Acquired {time}" (imagery date): real data terms, kept.
+- CSS comments and the `first-run-scanline` decoration on the first-run card
+  (cosmetic; the word "mission" in cyber.css comments).
+
+### Verification, slice 4
+
+Scratch copy of the tree after the last commit (Node 22, `nice -n 10`, one run
+at a time):
+
+- Gates: both exit 0 after each commit (574 modules after the token removal).
+  `i18n` check: all ten catalogs complete, 1232 messages.
+- Unit tests, focused: the seven test files changed or added to in this slice
+  (`hudAltitudeDatum`, `hudDms`, `hudPageVisibility`, `cyberTheme`,
+  `firstRunExperience`, `mapStartup`, `viteBuild`): 88 tests, 0 failed. The
+  files that import or read what changed, run in three groups: 49 (hud tests,
+  `hudLocality`, `cyberTheme`), 477 (22 files that name `hud.js`, the panel
+  layout controller or the changed CSS, plus `src/i18n/*.test.mjs`), 582 (29
+  files that read the welcome, context and display templates, `firstRunExperience`,
+  `bikeshare`, `applicationShell` or `worldOverlay`, plus the i18n tests), and 77
+  plus 21 for the map startup, vite config and standalone files: all pass, 0
+  failed. Not run: the whole suite, `server/`, and `requests.test.mjs`.
+- `dist/`: 32,039,874 bytes before, 32,028,458 after (`index-*.js` 2,459,269 to
+  2,449,525). `vite build` 8.4 s.
+- Sandboxed embed frame (`allow-scripts`, `?embed=1`, CSP with
+  `wasm-unsafe-eval`): `gev:ready` at 2744 ms; `gev:view-applied` `ok: true`;
+  0 page errors, 0 failed, 0 bad responses, 0 console errors, 0 requests to
+  `/api`; 838 distinct colours on the screenshot.
+- Full app (not embed), 1440x900, Esri and terrain stubbed, offline: nine
+  seconds after load the app had made 0 requests to its own `/api` (before
+  slice 4 it asked `/api/google/tiles-token`); 0 page errors, 0 console errors.
+  First-run card text reads the new copy. With the HUD on it shows only
+  `NORMAL`, the summary line, the UTC time, lat/lon, `ALT` and `SUN`, and
+  `AIS: --`. The HUD button title reads "Telemetry HUD (H)", the layout list
+  Full, Minimal, Cyber. The Context panel standby text reads "CONTACTS —
+  nearest planes · vessels / SPACE MISSIONS — launches & orbital assets". The
+  earlier full-app run (desktop, phone 390x844) also had 0 page errors, no
+  horizontal overflow and the five tabs; its only `/api` calls were
+  `/api/celestrak/*` after Satellites was switched on.
+
+Not exercised: the HUD in the Minimal and Cyber layouts in a browser (CSS
+and the tests only), the HUD on the phone shell (it hides the corner blocks),
+a real device, real tile and feed data.
 
 ## Inventory (status after slice 2)
 
