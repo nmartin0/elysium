@@ -13,8 +13,8 @@ Anything else either exports is internal, and may change without notice.
 The manifest, `activate()`, host values, styles and the add-on server are
 described in [MODULE_API.md](MODULE_API.md).
 
-238 names imported, from 40 entry points, by 9 modules;
-298 declarations public in all.
+239 names imported, from 40 entry points, by 9 modules;
+299 declarations public in all.
 
 ## `@elysium/shell-api/api`
 
@@ -410,6 +410,11 @@ export declare function getSchemaAccess(): Promise<Record<string, TypeAccess>>;
 export declare function getSourceColumns(silo: string, table: string): Promise<string[] | null>;
 
 export declare function getSourceTables(silo: string): Promise<string[] | null>;
+
+export declare function getTablesToRebuild(): Promise<{
+    rebuild: string[];
+    unknown: boolean;
+}
 
 export declare function getTriggers(): Promise<Trigger[]>;
 
@@ -881,7 +886,9 @@ export interface RetypePreview {
 }
 
 export interface RetypeResult extends LabelEditResult {
+    tables: string[];
     rebuild: string[];
+    rebuild_unknown: boolean;
 }
 
 export interface RoleAccess {

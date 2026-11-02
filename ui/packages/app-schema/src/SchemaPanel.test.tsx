@@ -807,6 +807,26 @@ describe('changing a field type', () => {
     expect(screen.queryByRole('button', { name: /Change type Transactions/ })).not.toBeInTheDocument()
   })
 
+  it("is not offered on the type's identifier nor on a derived field, where the server always refuses", async () => {
+    describing.answer = describable
+    const withBoth = {
+      ...CUSTOMER,
+      fields: {
+        ...CUSTOMER.fields,
+        customer_id: { type: 'data', display_name: 'Customer id', visibility: 'normal', status: 'active' },
+        total: { type: 'data', display_name: 'Total', visibility: 'normal', status: 'active', derived: 'a plus b' },
+      },
+    }
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: withBoth }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    await screen.findByRole('button', { name: /Change type Email/ })
+    expect(screen.getAllByText('Customer id').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Total').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: /Change type Customer id/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Change type Total/ })).not.toBeInTheDocument()
+  })
+
   it('is not offered to anyone the server refuses', async () => {
     let refused = false
     describing.answer = () => {

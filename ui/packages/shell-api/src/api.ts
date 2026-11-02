@@ -1956,6 +1956,12 @@ export async function startMirrorSync(rebuild?: string[]): Promise<{ started: bo
   return response.json() as Promise<{ started: boolean; detail: string }>
 }
 
+/** The silver tables owed a rebuild right now, derived from the lake; `unknown` when it cannot be read. */
+export async function getTablesToRebuild(): Promise<{ rebuild: string[]; unknown: boolean }> {
+  const response = await apiFetchOrThrow('/admin/mirror/rebuild-owed')
+  return response.json() as Promise<{ rebuild: string[]; unknown: boolean }>
+}
+
 export async function getMirrorState(): Promise<MirrorState> {
   const response = await apiFetchOrThrow('/admin/mirror')
   return response.json() as Promise<MirrorState>
@@ -2782,8 +2788,15 @@ export interface RetypeChange {
 }
 
 export interface RetypeResult extends LabelEditResult {
-  /** The "silo.table" names whose silver now differs from the declared type; [] when none was built. */
+  /** The "silo.table" tables THIS FIELD is stored in whose declared type changed. */
+  tables: string[]
+  /**
+   * EVERY "silo.table" in the deployment whose silver now differs from the declared type, this field's or
+   * not (an earlier change may have left some); [] when none was built. The names the sync takes as `rebuild`.
+   */
   rebuild: string[]
+  /** True when the mirror could not be read: `rebuild` is [] because nobody can tell, not because none is owed. */
+  rebuild_unknown: boolean
 }
 
 export async function previewRetype(digest: string, change: RetypeChange): Promise<RetypePreview> {

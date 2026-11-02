@@ -33,6 +33,7 @@ import {
   applyRetype,
   previewRetype,
   startMirrorSync,
+  getTablesToRebuild,
 } from './api'
 
 // A partial, Response-SHAPED fake, not a real Response -- confirmed
@@ -881,6 +882,16 @@ describe('retyping and the sync that rebuilds', () => {
     expect(JSON.parse(previewInit.body as string)).toEqual({ digest: 'd1', ...change })
     expect(JSON.parse(applyInit.body as string)).toEqual({ digest: 'd1', ...change })
     expect(applied.rebuild).toEqual(['primary_sql.transactions'])
+  })
+
+  it('asks what is owed to rebuild from the server, with its own route', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ rebuild: ['primary_sql.transactions'], unknown: false }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const owed = await getTablesToRebuild()
+
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe('/api/admin/mirror/rebuild-owed')
+    expect(owed).toEqual({ rebuild: ['primary_sql.transactions'], unknown: false })
   })
 
   it('starts a sync with no body when it names nothing, as it always did', async () => {

@@ -119,8 +119,11 @@ function FieldTable({
   onDeprecate,
   onRemove,
   onRetype,
+  idField,
 }: {
   fields: [string, SchemaField][]
+  /** The type's identifier: never retyped from here (the server says why if asked). */
+  idField?: string | null
   onOpenObjectType: (objectType: string) => void
   onOpenLinkType: (linkType: string) => void
   /** What names this field: present only for manage:deployment. */
@@ -162,7 +165,11 @@ function FieldTable({
                   <span className="visually-hidden">{field.display_name ?? apiName}</span>
                 </Button>
               )}
-              {onRetype && field.type !== 'link' && (
+              {/* Not offered where this panel already knows the server would refuse: a link, the
+                  identifier, a derived field (its type is what its rule produces). Others the server
+                  refuses with its reason: the field row security reads, a column a link joins on, an
+                  enriched or predicted field. */}
+              {onRetype && field.type !== 'link' && apiName !== idField && !field.derived && (
                 <Button small minimal icon="exchange" onClick={() => onRetype(apiName)}>
                   Change type <span className="visually-hidden">{field.display_name ?? apiName}</span>
                 </Button>
@@ -354,6 +361,7 @@ function ObjectTypeCard({
             onDeprecate={onDeprecate && ((field) => onDeprecate({ objectType: apiName, field }))}
             onRemove={onRemove && ((field) => onRemove({ objectType: apiName, field }))}
             onRetype={onRetype && ((field) => onRetype({ objectType: apiName, field }))}
+            idField={type.id_field}
           />
         </>
       )}
@@ -366,6 +374,7 @@ function ObjectTypeCard({
         onDeprecate={onDeprecate && ((field) => onDeprecate({ objectType: apiName, field }))}
         onRemove={onRemove && ((field) => onRemove({ objectType: apiName, field }))}
         onRetype={onRetype && ((field) => onRetype({ objectType: apiName, field }))}
+        idField={type.id_field}
       />
       {entries.length === 0 && <Notice state="neutral">No fields are visible to you on this object type.</Notice>}
       {access && <WhoCanSee objectType={apiName} access={access} />}

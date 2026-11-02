@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 vi.mock('@elysium/shell-api/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@elysium/shell-api/api')>()),
   getOntologyDescriptions: vi.fn(),
+  getTablesToRebuild: vi.fn(),
   previewRetype: vi.fn(),
   applyRetype: vi.fn(),
   startMirrorSync: vi.fn(),
@@ -13,6 +14,7 @@ import {
   ApiError,
   applyRetype,
   getOntologyDescriptions,
+  getTablesToRebuild,
   previewRetype,
   type RetypePreview,
   startMirrorSync,
@@ -72,8 +74,11 @@ beforeEach(() => {
     status: 'applied',
     diff: [],
     to_generation: 7,
+    tables: ['primary_sql.transactions'],
     rebuild: ['primary_sql.transactions'],
+    rebuild_unknown: false,
   })
+  vi.mocked(getTablesToRebuild).mockResolvedValue({ rebuild: ['primary_sql.transactions'], unknown: false })
   vi.mocked(startMirrorSync).mockResolvedValue({ started: true, detail: 'A sync is running.' })
 })
 
@@ -162,7 +167,7 @@ describe('applying', () => {
 
     fireEvent.click(changeButton())
 
-    await screen.findByText('Tables to rebuild')
+    await screen.findByText('Tables whose silver is owed a rebuild')
     expect(applyRetype).toHaveBeenCalledWith('d1', {
       object_type: 'Transaction',
       field: 'amount',
@@ -197,14 +202,22 @@ describe('applying', () => {
     expect(startMirrorSync).not.toHaveBeenCalled()
   })
 
-  it('says so, and offers no rebuild, when no silver was built', async () => {
-    vi.mocked(applyRetype).mockResolvedValue({ status: 'applied', diff: [], to_generation: 8, rebuild: [] })
+  it('says so, and offers no rebuild, when no silver was built or it already has the new type', async () => {
+    vi.mocked(applyRetype).mockResolvedValue({
+      status: 'applied',
+      diff: [],
+      to_generation: 8,
+      tables: ['primary_sql.transactions'],
+      rebuild: [],
+      rebuild_unknown: false,
+    })
     const onApplied = renderDialog()
     await choose()
     await screen.findByText('role customer_service')
     fireEvent.click(changeButton())
 
     expect(await screen.findByText(/No silver table needs rebuilding/)).toBeInTheDocument()
+    expect(screen.getByText(/not built yet or already has the new type/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Rebuild now' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Done' }))
     expect(onApplied).toHaveBeenCalledWith(8)
@@ -237,5 +250,159 @@ describe('applying', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Load the file again' }))
     await waitFor(() => expect(getOntologyDescriptions).toHaveBeenCalledTimes(2))
     expect(changeButton()).toBeDisabled()
+  })
+})
+
+describe('what it says about the tables', () => {
+  const applyIt = async () => {
+    renderDialog()
+    await choose()
+    await screen.findByText('role customer_service')
+    fireEvent.click(changeButton())
+    // Let the apply settle (its busy flag is cleared after the reply is shown).
+    await act(async () => undefined)
+  }
+
+  it('does not claim that nothing was touched, nor that history is the only thing a rebuild discards', async () => {
+    await applyIt()
+
+    await screen.findByText('Tables whose silver is owed a rebuild')
+    expect(document.body.textContent).not.toMatch(/nothing stored has been touched/i)
+    expect(document.body.textContent).not.toMatch(/nothing else/)
+    expect(
+      screen.getByText(/rebuilds\s+gold of every type stored in it and restarts its publication tags/),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/Bronze and the changelog are kept/)).toBeInTheDocument()
+  })
+
+  it('says waiting is not free: a value that cannot convert is handled at each sync as the setting says', async () => {
+    await applyIt()
+
+    expect(await screen.findByText(/every sync until then still reads the source/)).toBeInTheDocument()
+    expect(screen.getByText(/on_type_mismatch/)).toBeInTheDocument()
+  })
+
+  it('labels a table owed from an earlier change as not this one', async () => {
+    vi.mocked(applyRetype).mockResolvedValue({
+      status: 'applied',
+      diff: [],
+      to_generation: 7,
+      tables: ['primary_sql.transactions'],
+      rebuild: ['primary_sql.accounts', 'primary_sql.transactions'],
+      rebuild_unknown: false,
+    })
+    await applyIt()
+
+    expect(await screen.findByText(/owed from an earlier change, not this one/)).toBeInTheDocument()
+    expect(screen.getByText(/\(this field\)/)).toBeInTheDocument()
+  })
+
+  it('says the mirror could not be read, offers no rebuild and does not claim none is needed', async () => {
+    vi.mocked(applyRetype).mockResolvedValue({
+      status: 'applied',
+      diff: [],
+      to_generation: 9,
+      tables: ['primary_sql.transactions'],
+      rebuild: [],
+      rebuild_unknown: true,
+    })
+    const onApplied = renderDialog()
+    await choose()
+    await screen.findByText('role customer_service')
+    fireEvent.click(changeButton())
+
+    expect(
+      await screen.findByText(/could not be read, so this cannot tell which tables need a rebuild/),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/No silver table needs rebuilding/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Rebuild now' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(onApplied).toHaveBeenCalledWith(9)
+  })
+
+  it('after a refused rebuild asks what is owed now instead of retrying the stale set', async () => {
+    vi.mocked(startMirrorSync).mockRejectedValue(new ApiError(400, 'primary_sql.transactions does not need a rebuild'))
+    vi.mocked(getTablesToRebuild).mockResolvedValue({ rebuild: [], unknown: false })
+    await applyIt()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Rebuild now' }))
+
+    await waitFor(() => expect(getTablesToRebuild).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText(/No silver table needs rebuilding/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Rebuild now' })).not.toBeInTheDocument()
+  })
+})
+
+describe('previews that arrive out of order', () => {
+  const preview = (toType: string): RetypePreview => ({
+    ...READY,
+    to_type: toType,
+    stored_data: [`the sentence for ${toType}`],
+    diff: [`+        data_type: ${toType}`],
+  })
+
+  it('shows only the reply for the choice now selected, and applies only that', async () => {
+    let answerDecimal: (value: RetypePreview) => void = () => undefined
+    vi.mocked(previewRetype).mockImplementation((_digest, change) =>
+      change.data_type === 'decimal'
+        ? new Promise<RetypePreview>((resolve) => {
+            answerDecimal = resolve
+          })
+        : Promise.resolve(preview(change.data_type)),
+    )
+    renderDialog()
+    await choose('decimal')
+    await choose('date')
+    expect(await screen.findByText('the sentence for date')).toBeInTheDocument()
+
+    await act(async () => answerDecimal(preview('decimal')))
+
+    expect(screen.queryByText('the sentence for decimal')).not.toBeInTheDocument()
+    expect(screen.getByText('the sentence for date')).toBeInTheDocument()
+    fireEvent.click(changeButton())
+    await waitFor(() =>
+      expect(applyRetype).toHaveBeenCalledWith('d1', {
+        object_type: 'Transaction',
+        field: 'amount',
+        data_type: 'date',
+      }),
+    )
+  })
+
+  it('keeps apply disabled while the reply for the selected type has not come', async () => {
+    vi.mocked(previewRetype).mockImplementation((_digest, change) =>
+      change.data_type === 'decimal'
+        ? Promise.resolve(preview('decimal'))
+        : new Promise<RetypePreview>(() => undefined),
+    )
+    renderDialog()
+    await choose('decimal')
+    await screen.findByText('the sentence for decimal')
+    expect(changeButton()).toBeEnabled()
+
+    await choose('date')
+
+    expect(screen.queryByText('the sentence for decimal')).not.toBeInTheDocument()
+    expect(changeButton()).toBeDisabled()
+  })
+
+  it('drops a late failure for a choice no longer selected', async () => {
+    let failDecimal: (reason: unknown) => void = () => undefined
+    vi.mocked(previewRetype).mockImplementation((_digest, change) =>
+      change.data_type === 'decimal'
+        ? new Promise<RetypePreview>((_resolve, reject) => {
+            failDecimal = reject
+          })
+        : Promise.resolve(preview(change.data_type)),
+    )
+    renderDialog()
+    await choose('decimal')
+    await choose('date')
+    await screen.findByText('the sentence for date')
+
+    await act(async () => failDecimal(new ApiError(400, 'decimal is refused')))
+
+    expect(screen.queryByText(/decimal is refused/)).not.toBeInTheDocument()
+    expect(changeButton()).toBeEnabled()
   })
 })

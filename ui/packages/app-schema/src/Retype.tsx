@@ -16,8 +16,20 @@
  * AFTER IT APPLIES the dialog stays open on one more step: the tables whose
  * silver now differs from the declared type, which the sync refuses until they
  * are rebuilt. "Rebuild now" starts a sync that names them; the server accepts
- * only tables that need it. Closing instead leaves the rebuild for later, and
- * nothing is lost by waiting: the list is derived from the lake each time.
+ * only tables that need it. Closing instead leaves the rebuild for later: the
+ * list is derived from the lake each time, so it cannot go stale. Waiting is
+ * not free, though (while silver is refused it and gold of the type are not
+ * updated, and a value that cannot convert is handled at every sync as
+ * on_type_mismatch says), and this says so rather than "nothing is lost".
+ *
+ * THE REPLY'S LIST IS EVERY TABLE OWED, not only this field's: an earlier change
+ * may have left others, and they are labelled as such. If the mirror could not be
+ * read the reply says so (`rebuild_unknown`) and the dialog does not guess. After
+ * a refused "Rebuild now" the list is fetched again, not retried stale.
+ *
+ * A PREVIEW REPLY IS SHOWN ONLY FOR THE CHOICE IT WAS ASKED FOR: replies may
+ * arrive out of order, and applying is possible only when the one on screen is
+ * for the type that is selected.
  */
 
 import { Button, Dialog, DialogBody, DialogFooter, HTMLSelect } from '@blueprintjs/core'
@@ -25,6 +37,7 @@ import {
   applyRetype,
   getErrorMessage,
   getOntologyDescriptions,
+  getTablesToRebuild,
   handleIfSessionExpired,
   previewRetype,
   type RetypePreview,
@@ -71,19 +84,22 @@ export default function RetypeDialog({
   const [stale, setStale] = useState(false)
   const [busy, setBusy] = useState(false)
   // Set once the type has changed: the tables to rebuild, and how the rebuild is going.
-  const [applied, setApplied] = useState<{ rebuild: string[] } | null>(null)
+  const [applied, setApplied] = useState<{ tables: string[]; rebuild: string[]; unknown: boolean } | null>(null)
   const [rebuild, setRebuild] = useState<'idle' | 'busy' | 'started'>('idle')
   const latestSessionExpired = useRef(onSessionExpired)
   useEffect(() => {
     latestSessionExpired.current = onSessionExpired
   })
   const generation = useRef(0)
+  // Which preview request is the current one: a reply for any other is dropped.
+  const previewRequest = useRef(0)
 
   const fail = (caught: unknown) => {
     if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
     setProblem(getErrorMessage(caught))
   }
   const load = () => {
+    previewRequest.current += 1
     setPreview(null)
     setProblem(null)
     setStale(false)
@@ -99,13 +115,17 @@ export default function RetypeDialog({
   useEffect(load, [])
 
   const choose = (dataType: string) => {
+    const mine = ++previewRequest.current
     setChoice(dataType)
     setPreview(null)
     setProblem(null)
     if (dataType === NONE || digest === null) return
     previewRetype(digest, { object_type: target.objectType, field: target.field, data_type: dataType })
-      .then(setPreview)
+      .then((reply) => {
+        if (mine === previewRequest.current) setPreview(reply)
+      })
       .catch((caught: unknown) => {
+        if (mine !== previewRequest.current) return
         setStale(FILE_CHANGED.test(getErrorMessage(caught)))
         fail(caught)
       })
@@ -117,7 +137,7 @@ export default function RetypeDialog({
     applyRetype(digest, { object_type: target.objectType, field: target.field, data_type: choice })
       .then((result) => {
         generation.current = result.to_generation ?? 0
-        setApplied({ rebuild: result.rebuild })
+        setApplied({ tables: result.tables, rebuild: result.rebuild, unknown: result.rebuild_unknown })
       })
       .catch((caught: unknown) => {
         if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
@@ -136,6 +156,11 @@ export default function RetypeDialog({
       .catch((caught: unknown) => {
         setRebuild('idle')
         fail(caught)
+        // THE SET THAT WAS REFUSED MAY BE STALE (a rebuild done by hand, a sync
+        // that got there first): ask what is owed now instead of retrying it.
+        getTablesToRebuild()
+          .then((now) => setApplied((was) => (was ? { ...was, rebuild: now.rebuild, unknown: now.unknown } : was)))
+          .catch(() => undefined)
       })
   }
 
@@ -146,23 +171,40 @@ export default function RetypeDialog({
       <Dialog isOpen onClose={done} title={`${name} is now ${choice}`} className="config-dialog">
         <DialogBody>
           <p className="config-dialog__lede">
-            The type is changed and the deployment has reloaded; nothing stored has been touched yet.
+            The type is changed and the deployment has reloaded. The mirror is not rebuilt yet.
           </p>
-          {applied.rebuild.length === 0 ? (
-            <Notice>No silver table needs rebuilding: none was built for this field yet.</Notice>
+          {applied.unknown ? (
+            <Notice>
+              The mirror could not be read, so this cannot tell which tables need a rebuild. Look at the mirror panel,
+              or run scripts/repair_catalog.py, and the Schema screen will list them when it can be read again. The
+              change itself has been made.
+            </Notice>
+          ) : applied.rebuild.length === 0 ? (
+            <Notice>
+              No silver table needs rebuilding: the silver of {name} is not built yet or already has the new type.
+            </Notice>
           ) : (
             <>
-              <h4 className="config-dialog__heading">Tables to rebuild</h4>
+              <h4 className="config-dialog__heading">Tables whose silver is owed a rebuild</h4>
               <p>
-                Silver cannot take the new type in place, so the sync refuses{' '}
+                Silver cannot take a new type in place, so the sync refuses{' '}
                 {applied.rebuild.length === 1 ? 'this table' : 'these tables'} until{' '}
-                {applied.rebuild.length === 1 ? 'it is' : 'they are'} rebuilt from bronze. Rebuilding discards the
-                snapshot history of {applied.rebuild.length === 1 ? 'that table' : 'those tables'} and nothing else.
+                {applied.rebuild.length === 1 ? 'it is' : 'they are'} rebuilt from bronze, and meanwhile does not update
+                silver or gold of the types stored in {applied.rebuild.length === 1 ? 'it' : 'them'}. Rebuilding
+                discards the snapshot history of {applied.rebuild.length === 1 ? 'that table' : 'those tables'},
+                rebuilds gold of every type stored in {applied.rebuild.length === 1 ? 'it' : 'them'} and restarts its
+                publication tags. Bronze and the changelog are kept.
+              </p>
+              <p>
+                Waiting is allowed, but every sync until then still reads the source: a value that cannot be read as{' '}
+                {choice} is handled as the <code>on_type_mismatch</code> setting says (the table stops, or the row is
+                set aside), as the preview said.
               </p>
               <ul className="add-fields__consequences">
                 {applied.rebuild.map((table) => (
                   <li key={table}>
                     <code>{table}</code>
+                    {applied.tables.includes(table) ? ' (this field)' : ' (owed from an earlier change, not this one)'}
                   </li>
                 ))}
               </ul>
@@ -202,7 +244,8 @@ export default function RetypeDialog({
           <>
             <p className="config-dialog__lede">
               {name} is <strong>{current}</strong> now. Changing it edits one line of the ontology and reloads the
-              deployment. Nothing stored is touched until you rebuild.
+              deployment. Silver and gold are not rebuilt until you say so; what the change does to stored data is
+              listed below.
             </p>
             <label htmlFor="retype-to">New data type</label>
             <HTMLSelect
@@ -273,7 +316,12 @@ export default function RetypeDialog({
             <Button minimal onClick={onClose}>
               Cancel
             </Button>
-            <Button intent="danger" disabled={preview === null || stale} loading={busy} onClick={apply}>
+            <Button
+              intent="danger"
+              disabled={preview === null || preview.to_type !== choice || stale}
+              loading={busy}
+              onClick={apply}
+            >
               Change the type and reload
             </Button>
           </>
