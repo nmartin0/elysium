@@ -12,28 +12,8 @@ export const CATALOG_SOURCE_CONTRACTS = Object.freeze({
     ['searchHls', 'getThumbnail', 'getTileTemplate'],
   ),
   flights: contract(['flights'], ['getSnapshot']),
-  military: contract(['military'], ['getSnapshot']),
   vessels: contract(['ais-live-vessels'], ['getSnapshot']),
-  cctv: contract(
-    ['cctv'],
-    ['getCatalog', 'getHealth', 'getFrameUrl', 'getMediaUrl'],
-  ),
-  radio: contract(['radio'], ['getDirectory', 'recordClick']),
-  traffic: contract(
-    ['traffic'],
-    [
-      'requestRoads',
-      'getStatus',
-      'fetchFlowForBounds',
-      'getFlowSessionStats',
-      'resetFlowTileCache',
-    ],
-  ),
   bikeshare: contract(['bikeshare'], ['getStations']),
-  installations: contract(
-    ['military-installations'],
-    ['getMappedSites', 'searchNearby'],
-  ),
   satellites: contract(['satellites'], ['readGroup']),
   launches: contract(['rocket-launches'], ['getLaunches', 'getActiveTle']),
   firms: contract(['local-firms'], ['getSnapshot']),

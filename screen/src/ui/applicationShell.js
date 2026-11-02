@@ -15,10 +15,6 @@ import { RecordingControls } from './recordingControls.js';
 import { readShellElements } from './shellElements.js';
 import { createInertCockpit } from './inertCockpit.js';
 import { ContextControls } from './context.js';
-import { CctvControls } from './cctv.js';
-import { StreetLevelControls } from './streetLevelControls.js';
-import { RadioControls } from './radio.js';
-import { LocalSdrControls } from './localSdrControls.js';
 import { LocationNavigation } from './locationNavigation.js';
 import { bindClearLayersControl } from './layers.js';
 import { bindCameraOrientationControls } from './cameraOrientationControls.js';
@@ -37,8 +33,6 @@ import {
   applyShareFollowOffset,
   readShareFollowSubject,
 } from './shareFollow.js';
-
-import { runCctvLayerEnableTransition } from '../cctvFocusPolicy.js';
 
 import {
   describeUnsavedWork,
@@ -93,16 +87,13 @@ export class StyleManager extends ShellFacade {
       initWorldOverlay,
       initDetection,
       setDetectionStyle,
-      trafficLayer,
       flightsLayer,
       militaryFlightsLayer,
       satellitesLayer,
-      cctvLayer,
       bikeshareLayer,
       transitLayer,
       aisLiveVesselsLayer,
       militaryAwarenessLayer,
-      localAdsbLayer,
     } = services;
     this.services = services;
     this._lifetime = new UiLifetime();
@@ -118,8 +109,6 @@ export class StyleManager extends ShellFacade {
         _rightPanelStack: this._rightPanelStack,
       },
       operations: {
-        _syncCctvPanelViewport: (...args) =>
-          this._syncCctvPanelViewport(...args),
         _showToast: (...args) => this._showToast(...args),
       },
       readHud: () => this.hud,
@@ -275,14 +264,10 @@ export class StyleManager extends ShellFacade {
           }),
         cachedGroundFloor: services.cachedGroundFloor,
         warmGroundFloor: services.warmGroundFloor,
-        cctvLayer: services.cctvLayer,
       },
       readControls: () => ({
         hud: this.hud,
         _contextControls: this._contextControls,
-        _cctvControls: this._cctvControls,
-        _radioControls: this._radioControls,
-        _streetLevelControls: this._streetLevelControls,
       }),
       operations: {
         _updateTrafficSyncChip: (...args) =>
@@ -292,7 +277,6 @@ export class StyleManager extends ShellFacade {
         _syncContextModeButtons: (...args) =>
           this._syncContextModeButtons(...args),
         _stampNavigation: (...args) => this._stampNavigation(...args),
-        _runExplicitCctvFocus: (...args) => this._runExplicitCctvFocus(...args),
         _runExplicitWorldFocus: (...args) =>
           this._runExplicitWorldFocus(...args),
         runImmediateNavigation: (...args) =>
@@ -444,12 +428,8 @@ export class StyleManager extends ShellFacade {
     initDetection(
       viewer,
       [
-        trafficLayer,
         flightsLayer,
-        militaryFlightsLayer,
-        localAdsbLayer,
         satellitesLayer,
-        cctvLayer,
         bikeshareLayer,
         transitLayer,
         aisLiveVesselsLayer,
@@ -506,7 +486,6 @@ export class StyleManager extends ShellFacade {
         _syncShareState: (...args) => this._syncShareState(...args),
         _toggleOrbit: (...args) => this._toggleOrbit(...args),
         toggleCleanView: (...args) => this.toggleCleanView(...args),
-        _toggleCctvEnabled: (...args) => this._toggleCctvEnabled(...args),
         _setBloomEnabled: (...args) => this._setBloomEnabled(...args),
         _setBloomIntensity: (...args) => this._setBloomIntensity(...args),
         _setSharpenEnabled: (...args) => this._setSharpenEnabled(...args),
@@ -551,9 +530,6 @@ export class StyleManager extends ShellFacade {
     this._sizeDisplayLabelColumn();
     this._initLeftPanelAdaptiveLayout();
     this._initRightPanelAdaptiveLayout();
-    this._initRadioPanel();
-    this._initCctvPanel();
-    this._initStreetLevelPanel();
     this._initGlobalContextPanel();
     this._initLocationBar();
     this._initMobileShell();
@@ -574,10 +550,8 @@ export class StyleManager extends ShellFacade {
 
     // Keep the parameter panel from overlapping toggle controls.
     this._layoutRightPanels();
-    this._syncCctvPanelViewport();
     this._windowResizeHandler = () => {
       this._scheduleRightPanelLayout({ reconsiderAutoCollapse: true });
-      this._syncCctvPanelViewport();
       this._scheduleLeftPanelLayout({ reconsiderAutoCollapse: true });
     };
     window.addEventListener('resize', this._windowResizeHandler);
@@ -682,13 +656,6 @@ export class StyleManager extends ShellFacade {
     // Work this shell can see that a reload drops. Other modules register
     // their own (registerUnsavedWork in src/i18n/index.js).
     this._unsavedWorkChecks = [
-      registerUnsavedWork(() =>
-        this.services?.cctvLayer
-          ?.getUIState?.()
-          ?.cameras?.some((camera) => camera.calDirty)
-          ? msg('unsaved CCTV calibration')
-          : null,
-      ),
       registerUnsavedWork(() =>
         this.cockpitView?.active ? msg('the open cockpit') : null,
       ),
@@ -940,7 +907,6 @@ export class StyleManager extends ShellFacade {
   }
 
   _initGlobalContextPanel() {
-    const { radioLayer, militaryInstallationsLayer } = this.services;
     this._contextControls = new ContextControls({
       elements: {
         _globalContextPanel: document.getElementById('global-context-panel'),
@@ -949,12 +915,9 @@ export class StyleManager extends ShellFacade {
         _contextModeStandby: this._contextModeStandby,
         _contextFlightsView: this._contextFlightsView,
         _contextMissionsView: this._contextMissionsView,
-        _installationsSearchBtn: this._installationsSearchBtn,
       },
-      installations: militaryInstallationsLayer,
       actions: {
         getCockpit: () => this.cockpitView,
-        refreshRadio: () => this._renderRadioState(radioLayer.getUIState()),
         claimVisualAuthority: () =>
           this.shareLinkManager?.claimRestoreLane?.('visual'),
         syncDetection: () => this._syncContactsDetection(),
@@ -968,229 +931,6 @@ export class StyleManager extends ShellFacade {
         },
       },
     });
-  }
-
-  /** Wire the independent Radio companion controls. */
-  _initRadioPanel() {
-    const { radioLayer } = this.services;
-    this._radioControls?.destroy();
-    this._radioControls = new RadioControls({
-      elements: {
-        _cockpitDisplayPanel: this._cockpitDisplayPanel,
-        _cockpitDisplayToggleBtn: this._cockpitDisplayToggleBtn,
-        _cockpitRadioEnableBtn: this._cockpitRadioEnableBtn,
-        _cockpitRadioNextBtn: this._cockpitRadioNextBtn,
-        _cockpitRadioPanel: this._cockpitRadioPanel,
-        _cockpitRadioPlayBtn: this._cockpitRadioPlayBtn,
-        _cockpitRadioPrevBtn: this._cockpitRadioPrevBtn,
-        _cockpitRadioStation: this._cockpitRadioStation,
-        _cockpitRadioToggleBtn: this._cockpitRadioToggleBtn,
-        _cockpitRadioVolume: this._cockpitRadioVolume,
-        _cockpitRadioVolumeValue: this._cockpitRadioVolumeValue,
-        _cockpitUtilityControls: this._cockpitUtilityControls,
-        _radioEnableBtn: this._radioEnableBtn,
-        _radioFilter: this._radioFilter,
-        _radioLayerState: this._radioLayerState,
-        _radioNextBtn: this._radioNextBtn,
-        _radioPanel: this._radioPanel,
-        _radioPlayBtn: this._radioPlayBtn,
-        _radioPlaybackState: this._radioPlaybackState,
-        _radioPrevBtn: this._radioPrevBtn,
-        _radioStationHomepage: this._radioStationHomepage,
-        _radioStationMeta: this._radioStationMeta,
-        _radioStationName: this._radioStationName,
-        _radioStationTags: this._radioStationTags,
-        _radioStopBtn: this._radioStopBtn,
-        _radioTuner: this._radioTuner,
-        _radioTunerBandLabel: this._radioTunerBandLabel,
-        _radioTunerNeedle: this._radioTunerNeedle,
-        _radioTunerSlider: this._radioTunerSlider,
-        _radioTunerStation: this._radioTunerStation,
-        _radioTunerValue: this._radioTunerValue,
-        _radioVolume: this._radioVolume,
-        _radioVolumeValue: this._radioVolumeValue,
-      },
-      radio: radioLayer,
-      canvas: this.viewer?.canvas,
-      actions: {
-        isRegistered: () => this._dataManager?.layers?.has('radio'),
-        isEnabled: () => this._dataManager?.isEnabled('radio'),
-        setEnabled: (enabled, options) =>
-          this._dataManager.setEnabled('radio', enabled, options),
-        setParams: (params, options) =>
-          this._dataManager?.setLayerParams('radio', params, options),
-        getLifecycle: () =>
-          this._dataManager?.getLayerLifecycleState?.('radio'),
-        runUserAction: (...args) => this._runUserFacingContextAction(...args),
-        setPanelCollapsed: (...args) => this.setPanelCollapsed(...args),
-        revealStyleParameters: () => {},
-        setSignalCollapsed: (value) =>
-          this.cockpitView?.setSignalCollapsed(value),
-        isCockpitActive: () => this.cockpitView?.active,
-        signalUserCollapsed: () => this.cockpitView?.signalUserCollapsed,
-        layoutCockpit: () => this.cockpitView?.scheduleContextLayout(),
-        // An open local receiver keeps the shared Radio panel expanded.
-        preservePanelStateDuringClear: () =>
-          this._preservePanelStateDuringLayerClear ||
-          Boolean(this._localSdrControls?.isActive()),
-        scheduleLayout: () => this._scheduleRightPanelLayout(),
-      },
-    });
-    this._localSdrControls?.destroy();
-    this._localSdrControls = null;
-    const receiver = this.services.localAdsbLayer?.receiver;
-    if (receiver) {
-      this._localSdrControls = new LocalSdrControls({
-        document,
-        receiver,
-        feeds: this.services.localAdsbLayer?.feeds || null,
-        radio: radioLayer,
-        actions: {
-          isLocalAdsbEnabled: () =>
-            Boolean(this._dataManager?.isEnabled('local-adsb')),
-          setLocalAdsbEnabled: (enabled) =>
-            this._dataManager?.setEnabled('local-adsb', enabled, {
-              origin: 'user',
-            }),
-          scheduleLayout: () => this._scheduleRightPanelLayout(),
-        },
-      });
-    }
-  }
-
-  /**
-   * Activates an explicit CCTV target, then releases tracking before its camera
-   * flight. Cockpit mode keeps tracking and suppresses only the flight.
-   * @param {Function} activate CCTV target activation returning its camera ID.
-   * @param {Function} focus CCTV camera flight receiving the activated ID.
-   * @returns {*} Focus operation result.
-   */
-  _runExplicitCctvFocus(activate, focus) {
-    if (this._disposed) return false;
-    const cameraId = activate();
-    if (!cameraId) return false;
-    return this._runExplicitNavigation('camera', () => focus(cameraId));
-  }
-
-  /** Compose the Street Level panel controls from its layer and application actions. */
-  _initStreetLevelPanel() {
-    const { streetLevelLayer } = this.services;
-    this._streetLevelControls?.destroy();
-    this._streetLevelControls = null;
-    if (!this._streetLevelPanel || !streetLevelLayer) return;
-    // Photo framing yields to newer navigation and releases tracking like
-    // any deferred flight.
-    streetLevelLayer.attachNavigation?.({
-      begin: (noun) => this._beginDeferredNavigation(noun),
-      reassert: (generation) => this._reassertNavigationHandoff(generation),
-    });
-    this._streetLevelControls = new StreetLevelControls({
-      root: this._streetLevelPanel,
-      layer: streetLevelLayer,
-      actions: {
-        isEnabled: () => this._dataManager?.isEnabled('street-level') === true,
-        setEnabled: (enabled) =>
-          this._dataManager?.setEnabled('street-level', enabled, {
-            origin: 'user',
-          }),
-        setParams: (params, options) =>
-          this._dataManager?.setLayerParams('street-level', params, options),
-        setPanelCollapsed: (collapsed, options) =>
-          this.setPanelCollapsed('street-level-panel', collapsed, options),
-        showToast: (message) => this._showToast(message),
-        // Lets the panel open for a user, voice or tool switch-on, not a restore.
-        subscribeEnableRequests: (listener) =>
-          this._dataManager?.subscribeVisibilityRequests?.((change) => {
-            if (change?.layerId === 'street-level' && change.enabled)
-              listener(change.origin);
-          }) || null,
-      },
-    });
-    this._streetLevelControls.connect();
-  }
-
-  /** Compose camera panel controls from the existing camera port and application actions. */
-  _initCctvPanel() {
-    const { cctvLayer } = this.services;
-    this._cctvControls?.destroy();
-    this._cctvControls = new CctvControls({
-      elements: {
-        _cctvAdjustBtn: this._cctvAdjustBtn,
-        _cctvAutoHopBtn: this._cctvAutoHopBtn,
-        _cctvCalReadout: this._cctvCalReadout,
-        _cctvCalibResetBtn: this._cctvCalibResetBtn,
-        _cctvCalibSaveBtn: this._cctvCalibSaveBtn,
-        _cctvCoverageBtn: this._cctvCoverageBtn,
-        _cctvEnableBtn: this._cctvEnableBtn,
-        _cctvFocusBtn: this._cctvFocusBtn,
-        _cctvFrame: this._cctvFrame,
-        _cctvFrameWrap: this._cctvFrameWrap,
-        _cctvVideo: this._cctvVideo,
-        _cctvMeta: this._cctvMeta,
-        _cctvNearestBtn: this._cctvNearestBtn,
-        _cctvNextBtn: this._cctvNextBtn,
-        _cctvPanel: this._cctvPanel,
-        _cctvPrevBtn: this._cctvPrevBtn,
-        _cctvProjectionBtn: this._cctvProjectionBtn,
-        _cctvQualityChip: this._cctvQualityChip,
-        _cctvSelect: this._cctvSelect,
-        _cctvSourceBadge: this._cctvSourceBadge,
-        _cctvSummary: this._cctvSummary,
-        _cctvSyncChip: this._cctvSyncChip,
-        _cctvSyncLabel: this._cctvSyncLabel,
-        _cctvSyncProgress: this._cctvSyncProgress,
-      },
-      cctv: cctvLayer,
-      actions: {
-        isEnabled: () => this._dataManager?.isEnabled('cctv'),
-        setParams: (params, options) =>
-          this._dataManager?.setLayerParams('cctv', params, options),
-        toggleEnabled: (...args) => this._toggleCctvEnabled(...args),
-        runExplicitFocus: (...args) => this._runExplicitCctvFocus(...args),
-        setPanelCollapsed: (...args) => this.setPanelCollapsed(...args),
-        showToast: (message) => this._showToast(message),
-        syncViewport: () => this._syncCctvPanelViewport(),
-        setSplitFlapText,
-      },
-    });
-  }
-
-  /**
-   * Toggles the CCTV layer enabled state. When enabling and no camera is active,
-   * auto-focuses on the nearest camera.
-   * @param {boolean} [forceState] - Explicit on/off. Omit to toggle.
-   * @returns {Promise<boolean>} True if the layer is now in the requested state.
-   */
-  async _toggleCctvEnabled(forceState) {
-    const { cctvLayer } = this.services;
-    if (this._disposed) return false;
-    if (!this._dataManager || !this._dataManager.layers?.has('cctv')) {
-      this._showToast(t('CCTV layer unavailable'));
-      return false;
-    }
-    const enabled = this._dataManager.isEnabled('cctv');
-    const target = typeof forceState === 'boolean' ? forceState : !enabled;
-    if (target === enabled) return true;
-    await runCctvLayerEnableTransition({
-      target,
-      setEnabled: (next) =>
-        this._dataManager.setEnabled('cctv', next, { origin: 'user' }),
-      readOwnership: () => ({
-        trackedEntity: this.viewer?.trackedEntity,
-        cockpitActive: !!this.cockpitView?.active,
-      }),
-      shouldFocus: () =>
-        !this._disposed &&
-        this._dataManager.isEnabled('cctv') &&
-        !this._cctvControls?.getState()?.activeCameraId,
-      activate: () => cctvLayer.focusNearest({ focus: false }),
-      fly: (cameraId) =>
-        this._runExplicitCctvFocus(
-          () => cameraId,
-          (selectedId) => cctvLayer.focusCamera(selectedId, 1.6),
-        ),
-    });
-    return true;
   }
 
   /**
@@ -1660,33 +1400,6 @@ export class StyleManager extends ShellFacade {
     this._initCockpitDisplayPortal();
   }
 
-  /**
-   * Recalculates the CCTV panel max-height based on its current top position
-   * and the window height, enabling internal scroll without viewport overflow.
-   * @returns {void}
-   */
-  _syncCctvPanelViewport() {
-    if (!this._cctvPanel) return;
-    const inner = this._cctvPanel.querySelector('.cctv-panel-inner');
-    this._lifetime.frame(() => {
-      if (this._cctvPanel.parentElement?.id === 'right-context-rail') {
-        this._cctvPanel.style.maxHeight = '';
-        if (inner) inner.style.maxHeight = '';
-        this._scheduleRightPanelLayout();
-        return;
-      }
-      const rect = this._cctvPanel.getBoundingClientRect();
-      const availableHeight = Math.max(
-        190,
-        Math.floor(window.innerHeight - rect.top - 12),
-      );
-      this._cctvPanel.style.maxHeight = `${availableHeight}px`;
-      if (inner) {
-        inner.style.maxHeight = `${availableHeight}px`;
-      }
-    });
-  }
-
   /** Terminal result for the complete initial share restoration. */
   get initialRestorePromise() {
     return (
@@ -1726,11 +1439,6 @@ export class StyleManager extends ShellFacade {
     this._mapSourceControls?.destroy();
     this._cameraOrientationControls?.destroy();
     this._clearLayersControl?.destroy();
-    this._cctvControls?.destroy();
-    this.services?.streetLevelLayer?.attachNavigation?.(null);
-    this._streetLevelControls?.destroy();
-    this._radioControls?.destroy();
-    this._localSdrControls?.destroy();
     this._cockpitCoordinator.stop();
     this._visualSettings.stop();
     this.shareLinkManager?.destroy();

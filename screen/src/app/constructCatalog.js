@@ -4,23 +4,17 @@ import { createWeatherLayer } from '../layers/weather/index.js';
 import { createCyclonesLayer } from '../layers/cyclones/index.js';
 import { createWindLayer } from '../layers/wind/index.js';
 import { createLayerCatalog } from './catalog.js';
+import { createLayerStubs } from './layerStubs.js';
 import { LAYER_STATE_REGISTRY } from '../data/layerState.js';
 import { createMilitaryRegistry } from '../layers/aircraft/classification.js';
 import { createApplicationFlights } from './layers/flights.js';
-import { createApplicationMilitary } from './layers/militaryFlights.js';
 import { createApplicationVessels } from './layers/aisLiveVessels.js';
-import { createApplicationCctv } from './layers/cctv.js';
-import { createApplicationRadio } from './layers/radio.js';
-import { createApplicationTraffic } from './layers/traffic.js';
 import { createApplicationBikeshare } from './layers/bikeshare.js';
 import { createApplicationDirections } from './layers/directions.js';
 import { createApplicationRecentImagery } from './layers/recentImagery.js';
 import { createApplicationTransit } from './layers/transit.js';
-import { createApplicationInstallations } from './layers/militaryInstallations.js';
 import { createApplicationSatellites } from './layers/satellites.js';
 import { createApplicationLaunches } from './layers/rocketLaunches.js';
-import { createApplicationLocalAdsb } from './layers/localAdsb.js';
-import { createApplicationAwareness } from './layers/militaryAwareness.js';
 import { createApplicationFirms } from './layers/firms.js';
 import { createApplicationEarthquakes } from './layers/earthquakes.js';
 import { createApplicationAirQuality } from './layers/airQuality.js';
@@ -28,17 +22,14 @@ import { createApplicationFirePerimeters } from './layers/perimeters.js';
 import { createApplicationGnssIntegrity } from './layers/gnss.js';
 import { createApplicationGhostMaps } from './layers/ghostMaps.js';
 import { createApplicationCables } from './layers/submarineCables.js';
-import { createApplicationStreetLevel } from './layers/streetLevel.js';
 import { createInfrastructureLayers } from '../data/infrastructure.js';
 import { localGeoJsonServices } from './localGeojsonServices.js';
 
 /**
- * Hardware-local layers are registered like any other but never enter share
- * links or stored layer state: another browser cannot have this receiver.
+ * Layers that never enter share links or stored layer state. The fork has none
+ * (the hardware receiver layer, the only one, was removed).
  */
-export const LOCAL_ONLY_LAYER_METADATA = Object.freeze([
-  Object.freeze({ id: 'local-adsb', disposition: 'local-only' }),
-]);
+export const LOCAL_ONLY_LAYER_METADATA = Object.freeze([]);
 
 /** Serialization metadata for every layer the application catalog constructs. */
 export const APPLICATION_LAYER_METADATA = Object.freeze([
@@ -57,7 +48,6 @@ export function createApplicationCatalog({
   metadata = APPLICATION_LAYER_METADATA,
   vesselOptions,
   resolveAsset,
-  streetLevelProviders,
 }) {
   if (!signal?.addEventListener)
     throw new TypeError('An application lifetime signal is required');
@@ -76,17 +66,9 @@ export function createApplicationCatalog({
   };
   signal.addEventListener('abort', dispose, { once: true });
   try {
-    if (sourceComposition.isConfigured('military'))
-      militaryRegistry.configureSource(sources.military, { signal });
     const flights = createApplicationFlights({
       surface,
       source: sources.flights,
-      militaryRegistry,
-      resolveAsset,
-    });
-    const military = createApplicationMilitary({
-      surface,
-      source: sources.military,
       militaryRegistry,
       resolveAsset,
     });
@@ -94,23 +76,12 @@ export function createApplicationCatalog({
       source: sources.vessels,
       options: vesselOptions,
     });
-    const installations = createApplicationInstallations({
-      surface,
-      source: sources.installations,
-    });
     const satellites = createApplicationSatellites({
       source: sources.satellites,
     });
     const catalog = createLayerCatalog(
       [
         flights,
-        military,
-        createApplicationLocalAdsb({
-          surface,
-          enrichment: sources.flights,
-          displayParams: () => flights.getParams(),
-          ...(resolveAsset ? { resolveAsset } : {}),
-        }),
         createApplicationEarthquakes({ source: sources.earthquakes }),
         createApplicationAirQuality({ source: sources['air-quality'] }),
         createApplicationFirePerimeters({
@@ -121,28 +92,13 @@ export function createApplicationCatalog({
           windowMs: sources['gnss-integrity'].windowMs,
         }),
         createApplicationGhostMaps({ source: sources['s2-ghostmaps'] }),
-        createApplicationStreetLevel({
-          surface,
-          sources: { mapillary: sources.mapillary },
-          providers: streetLevelProviders,
-        }),
         satellites,
         createApplicationLaunches({ source: sources.launches, satellites }),
-        createApplicationTraffic({ source: sources.traffic, surface }),
-        createApplicationCctv({ surface, source: sources.cctv }),
-        createApplicationRadio({ surface, source: sources.radio }),
         createApplicationTransit({ surface, source: sources.transit }),
         createApplicationBikeshare({ source: sources.bikeshare }),
         createApplicationDirections({ source: sources.directions }),
         createApplicationRecentImagery({ source: sources['recent-imagery'] }),
         vessels,
-        installations,
-        createApplicationAwareness({
-          flights,
-          military,
-          vessels,
-          installations,
-        }),
         createWindLayer({ feed: sources.wind, clock: weatherClock }),
         createWeatherLayer({
           feed: sources.weather,
@@ -172,6 +128,7 @@ export function createApplicationCatalog({
         }),
       ],
       metadata,
+      createLayerStubs(),
     );
     return Object.freeze({
       ...catalog,

@@ -14,22 +14,15 @@ import { msg, t, translateKnown } from '../i18n/index.js';
 /** English module names (`layer.name`) by layer id. */
 export const LAYER_NAME_KEYS = Object.freeze({
   flights: msg('Live Flights'),
-  military: msg('Military Flights'),
   earthquakes: msg('Earthquakes (24h)'),
   satellites: msg('Satellites'),
   'rocket-launches': msg('Space Missions (30d)'),
-  traffic: msg('Street Traffic'),
-  cctv: msg('CCTV'),
-  radio: msg('Radio'),
   bikeshare: msg('Bikeshare'),
   'ais-live-vessels': msg('Live AIS Vessels'),
-  'military-installations': msg('Mapped Installations'),
-  'military-awareness': msg('Global Context'),
   'local-datacenters': msg('Datacenters'),
   'local-dams': msg('Dams'),
   'telegeography-submarine-cables': msg('Submarine Cables'),
   'local-firms': msg('FIRMS Active Fires'),
-  'local-adsb': msg('Local ADS-B'),
   transit: msg('Transit'),
   'recent-imagery': msg('Recent Imagery'),
   'fire-perimeters': msg('Fire Perimeters'),
@@ -48,8 +41,6 @@ export const LAYER_NAME_KEYS = Object.freeze({
 export const PANEL_LABEL_KEYS = Object.freeze({
   'ais-live-vessels': msg('Live Vessels'),
   bikeshare: msg('Bike Share'),
-  cctv: msg('Cameras'),
-  'street-level': msg('Street Level'),
   'local-datacenters': msg('Data Centers'),
   'local-firms': msg('Active Fires'),
 });

@@ -49,22 +49,6 @@ export class ShellFacade {
     this._layerBindings._directionsShellModule = value;
   }
 
-  get _cctvRequestFocusHandler() {
-    return this._layerBindings?._cctvRequestFocusHandler;
-  }
-
-  set _cctvRequestFocusHandler(value) {
-    this._layerBindings._cctvRequestFocusHandler = value;
-  }
-
-  get _removeCctvRequestFocusListener() {
-    return this._layerBindings?._removeCctvRequestFocusListener;
-  }
-
-  set _removeCctvRequestFocusListener(value) {
-    this._layerBindings._removeCctvRequestFocusListener = value;
-  }
-
   get _worldRequestFocusHandler() {
     return this._layerBindings?._worldRequestFocusHandler;
   }
@@ -923,14 +907,6 @@ export class ShellFacade {
 
   _syncContextModeButtons(...args) {
     return this._contextControls?._syncContextModeButtons(...args);
-  }
-
-  _setCockpitDisclosure(...args) {
-    return this._radioControls?._setCockpitDisclosure?.(...args);
-  }
-
-  _renderRadioState(...args) {
-    return this._radioControls?._renderRadioState?.(...args);
   }
 
   /**

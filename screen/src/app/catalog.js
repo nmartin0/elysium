@@ -16,7 +16,7 @@ const CONTROL_LAYER_IDS = Object.freeze({
 });
 
 /** Capture the ordered application instances and their serialization metadata. */
-export function createLayerCatalog(layers, metadata) {
+export function createLayerCatalog(layers, metadata, stubs = []) {
   if (!Array.isArray(layers) || !Array.isArray(metadata))
     throw new TypeError(
       'Layer instances and serialization metadata are required',
@@ -37,12 +37,23 @@ export function createLayerCatalog(layers, metadata) {
   }
   if (ids.size !== byId.size)
     throw new TypeError('Catalog metadata is incomplete');
+  // Stubs answer `get` for roles the shell still asks for, but are not layers.
+  const stubById = new Map();
+  for (const stub of stubs) {
+    if (
+      typeof stub?.id !== 'string' ||
+      byId.has(stub.id) ||
+      stubById.has(stub.id)
+    )
+      throw new TypeError(`Invalid or duplicate catalog stub: ${stub?.id}`);
+    stubById.set(stub.id, stub);
+  }
   return Object.freeze({
     layers: Object.freeze([...layers]),
     metadata: Object.freeze(
       metadata.map((entry) => Object.freeze({ ...entry })),
     ),
-    get: (id) => byId.get(id),
+    get: (id) => byId.get(id) ?? stubById.get(id),
   });
 }
 

@@ -37,7 +37,7 @@ export function _handleContextLayerChange(change) {
       'visibility-failed',
     ].includes(change.type)
   ) {
-    this.actions.refreshRadio();
+    this.actions.refreshRadio?.();
   }
   if (change?.type === 'visibility-transition') return;
   // The effective mode must be read BEFORE the entering flag is cleared:

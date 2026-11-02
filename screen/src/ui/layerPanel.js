@@ -40,29 +40,15 @@ function lifecycleStateLabel(lifecycleState) {
 const PANEL_GROUPS = [
   {
     label: msg('Movement'),
-    ids: [
-      'satellites',
-      'flights',
-      'military',
-      'local-adsb',
-      'ais-live-vessels',
-      'traffic',
-      'transit',
-      'bikeshare',
-    ],
+    ids: ['satellites', 'flights', 'ais-live-vessels', 'transit', 'bikeshare'],
   },
   {
     label: msg('Cameras'),
-    ids: ['cctv', 'recent-imagery', 'street-level'],
+    ids: ['recent-imagery'],
   },
   {
     label: msg('Infrastructure'),
-    ids: [
-      'military-installations',
-      'local-datacenters',
-      'telegeography-submarine-cables',
-      'local-dams',
-    ],
+    ids: ['local-datacenters', 'telegeography-submarine-cables', 'local-dams'],
   },
   {
     label: msg('Events'),
@@ -88,7 +74,7 @@ const PANEL_GROUPS = [
   },
   {
     label: msg('Utilities'),
-    ids: ['directions', 'radio'],
+    ids: ['directions'],
   },
 ];
 const PANEL_ORDER = PANEL_GROUPS.flatMap(({ label, ids }) =>

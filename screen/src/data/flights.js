@@ -2,12 +2,12 @@ import { defaultSurface } from './surfaceServices.js';
 import { createApplicationFlights } from '../app/layers/flights.js';
 
 import { createFlightSource } from '../sources/live/standalone.js';
-import * as militaryRegistry from './militaryRegistry.js';
+import { createMilitaryRegistry } from '../layers/aircraft/classification.js';
 
 const flightsLayer = createApplicationFlights({
   surface: defaultSurface,
   source: createFlightSource(),
-  militaryRegistry,
+  militaryRegistry: createMilitaryRegistry(),
 });
 export { TRACKED_MODEL_MAX_PX } from '../layers/flights/policy.js';
 export const _floorGroundedDisplayPositionForTest =

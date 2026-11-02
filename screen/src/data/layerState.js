@@ -298,13 +298,6 @@ function satelliteFilterOption() {
 }
 
 const OPTION_GROUPS = Object.freeze({
-  traffic: Object.freeze([
-    enumOption('roadMode', 'r', null, ['tomtom', 'osm', 'hybrid'], {
-      tomtom: 't',
-      osm: 'o',
-      hybrid: 'h',
-    }),
-  ]),
   'weather-lightning': Object.freeze([
     enumOption('opacity', 'o', 'strong', ['light', 'strong'], {
       light: 'l',
@@ -383,15 +376,6 @@ const OPTION_GROUPS = Object.freeze({
     }),
     integerOption('selectedSatTrackingId', 't', null),
   ]),
-  cctv: Object.freeze([
-    enumOption('coverageMode', 'c', 'on', ['off', 'on', 'viewshed'], {
-      off: '0',
-      on: '1',
-      viewshed: 'v',
-    }),
-    booleanOption('showProjection', 'p', true),
-    booleanOption('autoHop', 'a', false),
-  ]),
   'recent-imagery': Object.freeze([
     // Box edges in degrees × 100000; latitudes stop at the Web-Mercator limit.
     boundedIntegerOption('west', 'w', null, { min: -18000000, max: 18000000 }),
@@ -408,46 +392,6 @@ const OPTION_GROUPS = Object.freeze({
       boundedIntegerOption('split', 'p', 50, { min: 0, max: 100 }),
     ),
     booleanOption('viirs', 'v', false),
-  ]),
-  'street-level': Object.freeze([
-    // Preserve the published Mapillary token; custom switches use stable IDs.
-    booleanOption('mapillary', 'm', true),
-    Object.freeze({
-      key: 'providerSwitches',
-      patchRequested: patchRequestedIdSwitches,
-      token: 'r',
-      defaultValue: '',
-      normalize: (value) => normalizeIdSwitches(value, ['mapillary']),
-      encode: normalizeIdSwitches,
-      decode: (value) => normalizeIdSwitches(value, ['mapillary']),
-    }),
-    enumOption('pano', 'p', 'all', ['all', 'pano', 'flat'], {
-      all: 'a',
-      pano: 'p',
-      flat: 'f',
-    }),
-    // Relative days, so a link means the same next year. The max matches
-    // MAX_SINCE_DAYS in streetLevel/policy.js (pinned by layerState.test).
-    boundedIntegerOption('sinceDays', 's', 0, { min: 0, max: 36500 }),
-  ]),
-  radio: Object.freeze([
-    Object.freeze({
-      key: 'filter',
-      token: 'f',
-      defaultValue: 'all',
-      normalize: normalizeRadioFilter,
-      encode: encodeRadioFilter,
-      decode: decodeRadioFilter,
-    }),
-    Object.freeze({
-      key: 'volume',
-      token: 'v',
-      defaultValue: 0.8,
-      normalize: normalizeVolume,
-      encode: (value) => String(Math.round(value * 100)),
-      decode: (value) =>
-        /^\d{1,3}$/.test(value) ? normalizeVolume(Number(value) / 100) : null,
-    }),
   ]),
 });
 
@@ -576,12 +520,6 @@ export const LAYER_STATE_REGISTRY = Object.freeze([
     disposition: 'enabled-only',
   }),
   Object.freeze({ id: 'bikeshare', token: 'b', disposition: 'enabled-only' }),
-  Object.freeze({
-    id: 'cctv',
-    token: 'c',
-    disposition: 'enabled+options',
-    optionOwner: 'cctv',
-  }),
   Object.freeze({ id: 'directions', token: 'n', disposition: 'enabled-only' }),
   Object.freeze({ id: 'earthquakes', token: 'e', disposition: 'enabled-only' }),
   Object.freeze({
@@ -608,28 +546,6 @@ export const LAYER_STATE_REGISTRY = Object.freeze([
   }),
   Object.freeze({ id: 'local-firms', token: 'w', disposition: 'enabled-only' }),
   Object.freeze({
-    id: 'military',
-    token: 'm',
-    disposition: 'enabled+mirrored-options',
-    optionOwner: 'flights',
-  }),
-  Object.freeze({
-    id: 'military-awareness',
-    token: 'g',
-    disposition: 'enabled-only',
-  }),
-  Object.freeze({
-    id: 'military-installations',
-    token: 'i',
-    disposition: 'enabled-only',
-  }),
-  Object.freeze({
-    id: 'radio',
-    token: 'r',
-    disposition: 'enabled+options',
-    optionOwner: 'radio',
-  }),
-  Object.freeze({
     id: 'recent-imagery',
     token: '1',
     disposition: 'enabled+options',
@@ -652,21 +568,9 @@ export const LAYER_STATE_REGISTRY = Object.freeze([
     optionOwner: 'satellites',
   }),
   Object.freeze({
-    id: 'street-level',
-    token: '0',
-    disposition: 'enabled+options',
-    optionOwner: 'street-level',
-  }),
-  Object.freeze({
     id: 'telegeography-submarine-cables',
     token: 'u',
     disposition: 'enabled-only',
-  }),
-  Object.freeze({
-    id: 'traffic',
-    token: 't',
-    disposition: 'enabled+options',
-    optionOwner: 'traffic',
   }),
   Object.freeze({ id: 'transit', token: 'j', disposition: 'enabled-only' }),
   Object.freeze({

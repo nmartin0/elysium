@@ -7,7 +7,6 @@ export { createStandaloneReferenceSources } from './layerSources.js';
 /** Create fresh layer instances using the existing standalone source choices. */
 export function createStandaloneCatalog({
   sources = {},
-  streetLevelProviders,
   signal = new AbortController().signal,
   surface = createSurfaceServices({
     terrainSource: createApplicationRequestServices().terrain,
@@ -17,7 +16,6 @@ export function createStandaloneCatalog({
   return createApplicationCatalog({
     surface,
     sources: createStandaloneLayerSources(sources),
-    streetLevelProviders,
     signal,
     vesselOptions: {
       maxRows: import.meta.env?.VITE_AIS_LIVE_MAX_ROWS,

@@ -80,47 +80,4 @@ export function _initGlobalContextPanel() {
         });
     });
   });
-  this.listen(this._installationsSearchBtn, 'click', () => {
-    if (
-      this.destroyed ||
-      !this._dataManager?.layers?.has('military-installations')
-    )
-      return;
-    const button = this._installationsSearchBtn;
-    if (button.getAttribute('aria-busy') === 'true') return;
-    button.setAttribute('aria-disabled', 'true');
-    button.setAttribute('aria-busy', 'true');
-    void this._runUserFacingContextAction(async (notificationToken) => {
-      const enabled = await this._dataManager.setEnabled(
-        'military-installations',
-        true,
-        {
-          origin: 'user',
-          notificationToken,
-        },
-      );
-      if (
-        this.destroyed ||
-        enabled === false ||
-        !this._dataManager.isEnabled('military-installations')
-      )
-        return false;
-      const searched = await this.installations.searchNearby?.();
-      if (this.destroyed || searched === false) return false;
-      const stats = this.installations.getStats?.();
-      this.showToast(
-        stats?.statusMessage ||
-          (stats?.status === 'zoom-in'
-            ? t('Zoom in to search mapped installations')
-            : t('Nearby installations refreshed')),
-      );
-      return true;
-    }, t('Nearby installations could not be refreshed; try again')).finally(
-      () => {
-        if (this.destroyed) return;
-        button.setAttribute('aria-disabled', 'false');
-        button.setAttribute('aria-busy', 'false');
-      },
-    );
-  });
 }

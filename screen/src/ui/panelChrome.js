@@ -572,9 +572,6 @@ export class PanelChrome {
     if (this._rightPanelStack?.contains(panelEl)) {
       this._scheduleRightPanelLayout({ reconsiderAutoCollapse: true });
     }
-    if (panelId === 'cctv-panel') {
-      this._syncCctvPanelViewport();
-    }
     this._lifetime.frame(() => this._updateCommandDockTrayStack());
     this._scheduleLeftPanelLayout({
       reconsiderAutoCollapse: this._leftPanelStack?.contains(panelEl) === true,

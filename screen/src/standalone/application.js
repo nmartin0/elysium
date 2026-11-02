@@ -20,7 +20,6 @@ export function createStandaloneApplication({
   cesiumToken,
   geospatial = {},
   sources = {},
-  streetLevelProviders,
   allowQaRegistration = false,
 }) {
   if (constructed)
@@ -62,7 +61,6 @@ export function createStandaloneApplication({
       });
       catalog = createStandaloneCatalog({
         sources,
-        streetLevelProviders,
         signal: context.signal,
         surface: scene.operations.surface,
       });
