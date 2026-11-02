@@ -1,0 +1,155 @@
+/* Panel stack layout shared by the left and right rails. */
+#left-panel-stack > #data-panel,
+#left-panel-stack > #cctv-panel,
+#left-panel-stack > #global-context-panel {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  z-index: auto;
+  max-height: none;
+  flex: 0 0 auto;
+  min-height: 0;
+  pointer-events: auto;
+}
+
+#left-panel-stack > #data-panel {
+  order: 1;
+}
+
+#left-panel-stack > #cctv-panel {
+  order: 2;
+}
+
+/*
+ * Runtime focus mode: the layout engine applies this only when the expanded
+ * panel's measured natural height plus sibling labels cannot fit inside the
+ * live HUD/attribution-safe corridor.
+ */
+#left-panel-stack.layout-focus > [data-panel-id].collapsed {
+  display: none;
+}
+
+#left-panel-stack > #data-panel:not(.collapsed),
+#left-panel-stack > #cctv-panel:not(.collapsed) {
+  box-sizing: border-box;
+  flex: 0 1 var(--left-panel-allocated-height, auto);
+  height: var(--left-panel-allocated-height, auto);
+  max-height: var(--left-panel-allocated-height, 100%);
+}
+
+/*
+ * When an expanded panel and its collapsed siblings fit together, preserve
+ * the canonical control order and center their combined stack at 50vh.
+ */
+#left-panel-stack.layout-tail
+  > :is(#data-panel, #cctv-panel):not(.collapsed) {
+  box-sizing: border-box;
+  flex: 0 0 var(--left-panel-allocated-height);
+  height: var(--left-panel-allocated-height);
+  max-height: var(--left-panel-allocated-height);
+}
+
+#left-panel-stack > #data-panel:not(.collapsed) .data-panel-inner,
+#left-panel-stack > #cctv-panel:not(.collapsed) .cctv-panel-inner {
+  height: 100%;
+  max-height: 100%;
+}
+
+#left-panel-stack > #data-panel:not(.collapsed) .data-panel-inner {
+  overflow: hidden;
+}
+
+#left-panel-stack > #cctv-panel:not(.collapsed) .cctv-panel-inner {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+#left-panel-stack > [data-panel-id]:not(.collapsed) .panel-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: transparent;
+}
+
+#left-panel-stack > [data-panel-id]:not(.collapsed) .panel-divider {
+  background: linear-gradient(
+    90deg,
+    rgb(0 212 255 / 28%),
+    rgba(0, 212, 255, 0.18) 58%,
+    transparent
+  );
+  box-shadow: 0 0 7px rgba(0, 212, 255, 0.22);
+}
+
+#right-context-rail [data-panel-id]:not(.collapsed) .panel-divider {
+  background: linear-gradient(
+    90deg,
+    rgb(0 212 255 / 28%),
+    rgba(0, 212, 255, 0.18) 58%,
+    transparent
+  );
+  box-shadow: 0 0 7px rgba(0, 212, 255, 0.22);
+}
+
+
+#control-panel.collapsed .button-grid,
+#data-panel.collapsed .data-toggle-list,
+#global-context-panel.collapsed #radio-panel,
+#global-context-panel.collapsed #military-awareness-panel,
+#global-context-panel.collapsed .global-context-actions,
+#global-context-panel.collapsed .global-context-modes,
+#global-context-panel.collapsed .context-mode-view,
+#global-context-panel.collapsed
+  > .global-context-panel-inner
+  > .context-mode-standby,
+#radio-panel.collapsed .radio-panel-inner > :not(.panel-header),
+#cctv-panel.collapsed .cctv-controls,
+#cctv-panel.collapsed .cctv-calibration-block,
+#cctv-panel.collapsed .cctv-frame-wrap,
+#cctv-panel.collapsed #cctv-source-badge,
+#cctv-panel.collapsed #cctv-meta,
+#cctv-panel.collapsed .cctv-summary-label,
+#cctv-panel.collapsed #cctv-summary,
+#param-slider-panel.collapsed #param-sliders,
+#location-bar.collapsed .poi-row-container,
+#location-bar.collapsed .location-bar-divider,
+#location-bar.collapsed .location-city-row,
+#location-bar.collapsed .location-search-error {
+  display: none !important;
+}
+
+#data-panel.collapsed,
+#cctv-panel.collapsed {
+  width: var(--left-collapsed-width);
+}
+
+#global-context-panel #radio-panel.collapsed {
+  width: 100%;
+}
+
+#control-panel.collapsed .panel-inner,
+#data-panel.collapsed .data-panel-inner,
+#cctv-panel.collapsed .cctv-panel-inner,
+#radio-panel.collapsed .radio-panel-inner,
+#param-slider-panel.collapsed,
+#location-bar.collapsed .location-inner {
+  padding-bottom: 10px;
+}
+
+#control-panel.collapsed .panel-header,
+#data-panel.collapsed .panel-header,
+#cctv-panel.collapsed .panel-header,
+#radio-panel.collapsed .panel-header,
+#global-context-panel.collapsed .panel-header,
+#param-slider-panel.collapsed .param-panel-header {
+  margin-bottom: 2px;
+}
+
+
+/* The button the CCTV and Street Level panels share. */
+.scene-btn {
+  flex: 1;
+  min-width: 72px;
+}

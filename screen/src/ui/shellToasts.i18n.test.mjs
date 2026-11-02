@@ -26,8 +26,6 @@ const KEYS = [
   'Exit cockpit to fly to a location',
   'Exit cockpit to fly to a photo',
   'Exit cockpit to fly to a shared view',
-  'New scene name',
-  'Delete scene "{scene}" and all shots?',
   'Detailed outline unavailable',
 ];
 

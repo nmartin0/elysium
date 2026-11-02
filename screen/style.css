@@ -13,8 +13,8 @@
 @import './src/ui/styles/radio.css';
 @import './src/ui/styles/cctv.css';
 @import './src/ui/styles/street-level.css';
-@import './src/ui/styles/scenes.css';
-@import './src/ui/styles/bhote-koshi.css';
+@import './src/ui/styles/panel-layout.css';
+@import './src/ui/styles/base.css';
 @import './src/ui/styles/recent-imagery.css';
 @import './src/ui/styles/recording.css';
 @import './src/ui/styles/embed.css';

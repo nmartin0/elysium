@@ -202,8 +202,8 @@ function encode(state) {
 
 test('production registry is exact, canonical, and rejects incomplete contracts', async () => {
   assert.equal(validateLayerStateRegistry(), true);
-  assert.equal(REGISTERED_LAYER_IDS.length, 32);
-  assert.equal(new Set(REGISTERED_LAYER_IDS).size, 32);
+  assert.equal(REGISTERED_LAYER_IDS.length, 30);
+  assert.equal(new Set(REGISTERED_LAYER_IDS).size, 30);
   assert.ok(REGISTERED_LAYER_IDS.includes('transit'));
   assert.deepEqual(REGISTERED_LAYER_IDS, [...REGISTERED_LAYER_IDS].sort());
   assert.deepEqual(LEGACY_LAYER_STATE_TOKENS, {
@@ -518,15 +518,6 @@ test('malformed enabled-layer lists reject the entire payload', () => {
       fields,
     );
   }
-});
-
-test('Nepal event and locator have distinct enabled-only share tokens', () => {
-  const decoded = decodeLayerStateParams(new URLSearchParams('v=2&l=h.z'));
-  assert.deepEqual(decoded.enabledLayerIds, [
-    'bhote-koshi-2026',
-    'bhote-koshi-locator',
-  ]);
-  assert.ok(encode(decoded).includes('l=h.z'));
 });
 
 test('unknown and forbidden option fields are ignored while missing options use codec defaults', () => {

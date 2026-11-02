@@ -1,4 +1,3 @@
-import { SceneDirector } from '../scenes/director.js';
 import { initAnnotations } from '../annotations/index.js';
 import { initDrawTool } from '../annotations/drawTool.js';
 import { initGeoFileImport } from '../ui/geoFileImport.js';
@@ -24,24 +23,12 @@ export function createApplicationTools({
   loadingScreen,
   placeSearch,
   startChrome,
-  onSceneDirector,
-  sceneDataPacks,
   signal,
   defer,
 }) {
   const { viewer, tileset, mapStackController, operations } = scene;
   const { styleManager, weatherEffects, cockpitCloudEffects } = controls;
   const { dataManager } = data;
-  const sceneDirector = new SceneDirector(viewer, styleManager, dataManager, {
-    dataPacks: sceneDataPacks,
-    isMapStackAvailable: (id) =>
-      mapStackController?.isStackAvailable(id) === true,
-  });
-  dataManager.layers
-    .get('bhote-koshi-2026')
-    ?.module.attachSceneController(sceneDirector);
-  defer(() => sceneDirector.destroy());
-  onSceneDirector?.(sceneDirector);
   const annotations = initAnnotations({
     viewer,
     tileset,
@@ -167,7 +154,6 @@ export function createApplicationTools({
     styleManager,
     tileset,
     dataManager,
-    sceneDirector,
     mapStackController,
     annotations,
     weatherEffects,
@@ -195,5 +181,5 @@ export function createApplicationTools({
       signal,
     }),
   );
-  return { sceneDirector, annotations };
+  return { annotations };
 }

@@ -24,10 +24,12 @@ export const KEY_SETUP_KEYS = Object.freeze([
     ['GOOGLE_MAPS_SERVER_API_KEY'],
     { hidden: true },
   ), // i18n-ignore: provider product name
+  key('tomtom', 'TOMTOM', ['TOMTOM_API_KEY']), // i18n-ignore: provider product name
   key('aisstream', 'AISSTREAM', ['AISSTREAM_API_KEY']), // i18n-ignore: provider product name
   key('firms', 'NASA FIRMS', ['FIRMS_MAP_KEY']), // i18n-ignore: provider product name
   key('cesium-ion', 'CESIUM ION', ['CESIUM_ION_TOKEN']), // i18n-ignore: provider product name
   key('opensky', 'OPENSKY', ['OPENSKY_CLIENT_ID', 'OPENSKY_CLIENT_SECRET']), // i18n-ignore: provider product name
+  key('mapillary', 'MAPILLARY', ['MAPILLARY_CLIENT_TOKEN']), // i18n-ignore: provider product name
   key('launch-library', 'LAUNCH LIBRARY', ['LL2_API_TOKEN']), // i18n-ignore: provider product name
 ]);
 
