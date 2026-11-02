@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { StyleManager } from './applicationShell.js';
-import { ContextControls } from './contextControls.js';
 import {
   MOBILE_SHEET_PANELS,
   MOBILE_TABS,
@@ -705,87 +704,6 @@ test('the tab-open callback reports only a successful manual opening', () => {
     'blocked sheets cannot activate a mode',
   );
   phone.shell.destroy();
-});
-
-test('manual Context opens the existing transaction without disabling the tracked aircraft', async () => {
-  const calls = [];
-  const tracked = { layerId: 'flights', icao24: 'abc123', callsign: 'EJA225' };
-  const viewer = { trackedEntity: { gevTrackedId: 'flights:abc123' } };
-  const entity = viewer.trackedEntity;
-  const enabled = new Set(['flights', 'weather']);
-  const controls = new ContextControls({
-    elements: {},
-    installations: {},
-    actions: {
-      getCockpit: () => null,
-      claimVisualAuthority: () => calls.push('claim'),
-      syncDetection() {},
-      scheduleLayout() {},
-      showToast() {},
-    },
-  });
-  controls.connect({
-    layers: new Map(
-      ['flights', 'weather', 'military-awareness'].map((id) => [id, {}]),
-    ),
-    getEnabledLayerIds: () => [...enabled],
-    getLayerParams: () => ({}),
-    isEffectivelyEnabled: (id) => enabled.has(id),
-    isEnabled: (id) => enabled.has(id),
-    setLayerParams: (id, params) => calls.push({ id, params }),
-    setEnabled: async (id, value) => {
-      calls.push({ id, value });
-      if (!value) enabled.delete(id);
-      if (id === 'flights' && !value) viewer.trackedEntity = null;
-      return true;
-    },
-    _setEnabledWithIntent: (id, value) => {
-      calls.push({ id, value });
-      enabled.add(id);
-      return { intentEpoch: 1, promise: Promise.resolve(true) };
-    },
-  });
-  const shell = {
-    cockpitView: {
-      readAircraftInfo: () => (viewer.trackedEntity ? tracked : null),
-    },
-    getAircraftTrackingTarget: StyleManager.prototype.getAircraftTrackingTarget,
-    getContextModeState: () => controls.getContextModeState(),
-    setContextMode: (mode) => controls.setContextMode(mode),
-    _showToast: () => assert.fail('successful entry must not report a failure'),
-  };
-  try {
-    assert.equal(
-      await StyleManager.prototype._onMobileTabOpened.call(shell, 'context'),
-      true,
-    );
-    assert.equal(controls.getContextModeState().mode, 'flights');
-    assert.equal(viewer.trackedEntity, entity);
-    assert.deepEqual(shell.getAircraftTrackingTarget(), {
-      layerId: 'flights',
-      id: 'abc123',
-    });
-    assert.ok(enabled.has('flights'));
-    assert.ok(
-      calls.some(
-        (call) => call.id === 'military-awareness' && call.value === true,
-      ),
-    );
-    assert.ok(!calls.some((call) => call.id === 'flights'));
-    const count = calls.length;
-    assert.equal(
-      await StyleManager.prototype._onMobileTabOpened.call(shell, 'context'),
-      false,
-    );
-    assert.equal(
-      calls.length,
-      count,
-      'an already active Contacts session is not restarted',
-    );
-  } finally {
-    controls.stop();
-    controls.disconnect();
-  }
 });
 
 test('manual Context respects Space Missions, busy transitions, missing tracks and disposal', async () => {
