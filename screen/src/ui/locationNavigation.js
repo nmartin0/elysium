@@ -183,7 +183,6 @@ export class LocationNavigation {
     this._trafficTransitionTimer = null;
     trafficLayer.endWorldJump?.();
     resumeDetection();
-    this._updateTrafficSyncChip(true);
   }
 
   _flyWithTransition(cityChanged, flyAction) {

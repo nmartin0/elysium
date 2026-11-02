@@ -2,7 +2,6 @@ export const LOADING_REVEAL_DELAY_MS = 160;
 export const LOADING_TERMINAL_DWELL_MS = 2200;
 export const LOADING_FAILURE_DWELL_MS = 5000;
 export const LOADING_LONG_THRESHOLD_MS = 30000;
-export const TRAFFIC_SYNC_CONFIRM_MS = 1500;
 /** Layer statuses that are user guidance, not feed faults (see manager.js layerFeedState). */
 export const GUIDANCE_STATUSES = Object.freeze(['zoom-in', 'empty', 'idle']);
 
@@ -174,78 +173,6 @@ export function presentGlobalLoadingStatus(
   if (['error', 'retry'].includes(loadingPresentation?.state))
     return loadingPresentation;
   return presentGlobalStatusNotice(notice, nowMs) || loadingPresentation;
-}
-
-/** Create the sampled Street Traffic chip state. */
-export function createTrafficSyncFeedbackState() {
-  return {
-    busy: false,
-    visible: false,
-    confirmationUntil: 0,
-    label: '',
-    progressText: '',
-  };
-}
-
-/**
- * Reduce one sampled Street Traffic status without extending completion on
- * every animation-loop poll. Coverage describes accepted data, not work.
- */
-export function reduceTrafficSyncFeedback(
-  previous,
-  { enabled = false, stats = {}, forceShow = false } = {},
-  nowMs = 0,
-) {
-  const state = previous || createTrafficSyncFeedbackState();
-  const now = Number.isFinite(nowMs) ? nowMs : 0;
-  if (!enabled) return createTrafficSyncFeedbackState();
-
-  const hasProgress = Number.isFinite(stats.phaseProgressPct);
-  const progressPct = hasProgress
-    ? Math.max(0, Math.min(100, Math.round(stats.phaseProgressPct)))
-    : stats.loading
-      ? 1
-      : 100;
-  const busy =
-    stats.loading === true ||
-    stats.worldJumping === true ||
-    (hasProgress && (progressPct < 100 || (stats.prewarmQueueDepth ?? 0) > 0));
-  const label = String(stats.phaseLabel || stats.loadingLabel || '').trim();
-
-  if (busy) {
-    return {
-      busy: true,
-      visible: true,
-      confirmationUntil: 0,
-      // Neutral default: the layer always supplies its own LIVE/SIMULATED
-      // label, and a fallback string must never claim a live feed on a
-      // keyless build.
-      // i18n-ignore: translated in src/ui/shellFeedback.js
-      label: label || 'syncing road network',
-      progressText: hasProgress ? `${progressPct}%` : '...',
-    };
-  }
-
-  const existingConfirmation =
-    state.confirmationUntil > now ? state.confirmationUntil : 0;
-  const confirmationUntil =
-    existingConfirmation ||
-    (state.busy || forceShow ? now + TRAFFIC_SYNC_CONFIRM_MS : 0);
-  const visible =
-    confirmationUntil > now && progressPct >= 100 && Boolean(label);
-  return {
-    busy: false,
-    visible,
-    confirmationUntil: visible ? confirmationUntil : 0,
-    label: visible ? label : '',
-    // The settled flash carries NO progress number. A settled chip is 100% by
-    // definition — the value never varied — and printing it beside a label
-    // that already ends in a real measurement produced the self-contradicting
-    // "LIVE · TomTom flow · 0% cov  100%". Coverage is the honest number, so
-    // it is the only one left standing; the progress slot belongs to work in
-    // flight.
-    progressText: '',
-  };
 }
 
 function terminalFromEvent(event) {

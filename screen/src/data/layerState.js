@@ -1,7 +1,6 @@
 // Restore labels are marked with msg(); ui/shareRestoration.js translates them.
 // Local, not i18n/marker.js: the token-ledger tests run this file in isolation.
 const msg = (text) => text;
-import { normalizeIdSwitches, patchRequestedIdSwitches } from './idSwitches.js';
 import reservationRows from './layerStateTokenReservations.json' with { type: 'json' };
 
 const VALID_DISPOSITIONS = new Set([
@@ -39,56 +38,12 @@ export const LAYER_RESTORE_ORIGINS = Object.freeze({
   local: 'local-restore',
 });
 
-const RADIO_FILTER_CODES = Object.freeze({
-  all: 'a',
-  news: 'n',
-  talk: 't',
-  weather: 'w',
-  'public-safety': 'p',
-  'aviation-marine': 'v',
-  'traffic-transit': 'x',
-  music: 'm',
-  other: 'o',
-});
-const RADIO_CODE_FILTERS = Object.freeze(
-  Object.fromEntries(
-    Object.entries(RADIO_FILTER_CODES).map(([key, value]) => [value, key]),
-  ),
-);
-
 function normalizeBoolean(value) {
   return typeof value === 'boolean' ? value : null;
 }
 
 function normalizeEnum(values, value) {
   return values.includes(value) ? value : null;
-}
-
-export function normalizeRadioFilter(value) {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase();
-  if (Object.hasOwn(RADIO_FILTER_CODES, normalized)) return normalized;
-  if (/^genre:[a-z0-9][a-z0-9 &-]{0,31}$/.test(normalized)) return normalized;
-  return null;
-}
-
-function encodeRadioFilter(value) {
-  return RADIO_FILTER_CODES[value] || `g-${value.slice('genre:'.length)}`;
-}
-
-function decodeRadioFilter(value) {
-  if (Object.hasOwn(RADIO_CODE_FILTERS, value))
-    return RADIO_CODE_FILTERS[value];
-  if (/^g-[a-z0-9][a-z0-9 &-]{0,31}$/.test(value))
-    return `genre:${value.slice(2)}`;
-  return null;
-}
-
-function normalizeVolume(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return null;
-  return Math.round(Math.max(0, Math.min(1, numeric)) * 100) / 100;
 }
 
 function booleanOption(

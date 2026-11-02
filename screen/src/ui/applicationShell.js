@@ -259,8 +259,6 @@ export class StyleManager extends ShellFacade {
         _contextControls: this._contextControls,
       }),
       operations: {
-        _updateTrafficSyncChip: (...args) =>
-          this._updateTrafficSyncChip(...args),
         _updateGlobalLoadingFeedback: (...args) =>
           this._updateGlobalLoadingFeedback(...args),
         _syncContextModeButtons: (...args) =>
@@ -327,12 +325,9 @@ export class StyleManager extends ShellFacade {
         _runExplicitNavigation: (...args) =>
           this._runExplicitNavigation(...args),
         _stampNavigation: (...args) => this._stampNavigation(...args),
-        _updateTrafficSyncChip: (...args) =>
-          this._updateTrafficSyncChip(...args),
         _showToast: (...args) => this._showToast(...args),
       },
     });
-    this._lastTrafficChipUpdateAt = 0;
 
     // Intel HUD
     this.hud = new IntelHUD(viewer);
@@ -526,7 +521,7 @@ export class StyleManager extends ShellFacade {
     this._initOrbit();
     this._initRecordingOverlay();
     this._startAnimationLoop();
-    this._startTrafficChipTicker();
+    this._startLoadingPollTicker();
     this._updateStyleMiniStatus();
     this._updateLocationMiniStatus();
 
@@ -1225,8 +1220,8 @@ export class StyleManager extends ShellFacade {
    * crossfade is in flight or an animated (time-uniform) stage is visible,
    * holding continuous scene render for exactly that long. Re-armed by
    * _startTransition and by _setStageIntensity enabling an animated stage.
-   * The traffic sync chip no longer rides this loop — it has its own 500 ms
-   * interval (see _startTrafficChipTicker).
+   * The loading chip poll has its own 500 ms interval (see
+   * _startLoadingPollTicker).
    */
   _startAnimationLoop() {
     this._visualEffects.startAnimationLoop();

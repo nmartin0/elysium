@@ -1,17 +1,14 @@
-/** Own loading notices, traffic status, toast timing and visibility cleanup. */
+/** Own loading notices, toast timing and visibility cleanup. */
 import {
   aggregateLayerLoading,
   createGlobalStatusNotice,
   createLoadingFeedbackState,
-  createTrafficSyncFeedbackState,
   presentGlobalLoadingStatus,
   reduceLoadingFeedback,
-  reduceTrafficSyncFeedback,
 } from '../loadingFeedback.js';
 import { setSplitFlapText, disposeSplitFlap } from '../splitFlap.js';
-import { getLocale, t, msg } from '../i18n/index.js';
+import { t, msg } from '../i18n/index.js';
 import { localizeLayerName } from './layerPanel.js';
-import { translateFeedError } from './statusText.js';
 
 // The server also loads loadingFeedback.js (through the HUD summary), so its
 // labels stay English. Translate the known ones; pass anything else (a live
@@ -22,72 +19,27 @@ const STATUS_LABEL_KEYS = Object.freeze({
   'LOAD CANCELLED': msg('LOAD CANCELLED'),
   'LOAD FAILED': msg('LOAD FAILED'),
   'LIVE DATA OFF': msg('LIVE DATA OFF'),
-  'MAPPED SITES LOADED': msg('MAPPED SITES LOADED'),
-  'RETRYING MAPPED SITES': msg('RETRYING MAPPED SITES'),
-  'FETCHING MAPPED SITES': msg('FETCHING MAPPED SITES'),
-  'RETRYING ALPR CAMERAS': msg('RETRYING ALPR CAMERAS'),
-  'FETCHING ALPR CAMERAS': msg('FETCHING ALPR CAMERAS'),
-  'OVERPASS TEMPORARILY UNAVAILABLE': msg('OVERPASS TEMPORARILY UNAVAILABLE'),
-  // The other mapped-site failure reasons (src/data/installationFeedback.js),
-  // upper-cased by presentGlobalLoadingStatus.
-  'OVERPASS RATE-LIMITED': msg('OVERPASS RATE-LIMITED'),
-  'OVERPASS TIMED OUT': msg('OVERPASS TIMED OUT'),
-  'OVERPASS COULD NOT COMPLETE THE QUERY': msg(
-    'OVERPASS COULD NOT COMPLETE THE QUERY',
-  ),
-  'MAP TILES TEMPORARILY UNAVAILABLE': msg('MAP TILES TEMPORARILY UNAVAILABLE'),
-  'MAPPED NAMES TEMPORARILY UNAVAILABLE': msg(
-    'MAPPED NAMES TEMPORARILY UNAVAILABLE',
-  ),
   'TURNING OFF LIVE DATA': msg('TURNING OFF LIVE DATA'),
   'REFRESHING LIVE DATA': msg('REFRESHING LIVE DATA'),
-  'syncing road network': msg('syncing road network'),
 });
-
-// The ALPR retry chip shows the layer's English error upper-cased
-// (loadingFeedback.js). These are the camera and vector tile failures it can
-// carry, by their upper-cased text; each is translated through its own
-// sentence-case key, the one the layer row shows, and upper-cased again.
-const CHIP_ERROR_KEYS = new Map(
-  [
-    msg('Vector tile metadata unavailable'),
-    msg('Vector tiles unavailable'),
-    msg('Vector tile request timed out'),
-    msg('Camera coverage unavailable'),
-    msg('Camera source temporarily unavailable'),
-    msg('Overpass returned an incomplete camera response'),
-  ].map((key) => [key.toUpperCase(), key]),
-);
-const CHIP_TILE_HTTP_RE = /^VECTOR TILES UNAVAILABLE \(HTTP (\d+)\)$/;
 
 function localizeStatusLabel(label) {
   if (typeof label !== 'string' || !label) return label;
-  const text = label.trim();
-  const key = STATUS_LABEL_KEYS[text];
-  if (key) return t(key);
-  const errorKey = CHIP_ERROR_KEYS.get(text);
-  const http = errorKey ? null : CHIP_TILE_HTTP_RE.exec(text);
-  if (!errorKey && !http) return label;
-  return translateFeedError(
-    errorKey || `Vector tiles unavailable (HTTP ${http[1]})`,
-  ).toLocaleUpperCase(getLocale());
+  const key = STATUS_LABEL_KEYS[label.trim()];
+  return key ? t(key) : label;
 }
 
-// A retry detail is "retrying in Ns" or "retry pending", optionally prefixed
-// by the ALPR layer name (loadingFeedback.js). The prefix is kept in every
-// language: it is what tells the chip apart from a mapped-sites retry.
-const RETRY_DETAIL_RE =
-  /^(?:(ALPR cameras) · )?(?:retrying in (\d+)s|(retry pending))$/;
+// A retry detail is "retrying in Ns" or "retry pending".
+const RETRY_DETAIL_RE = /^(?:retrying in (\d+)s|(retry pending))$/;
 
 function localizeStatusDetail(detail) {
   if (typeof detail !== 'string' || !detail) return detail;
   const match = detail.trim().match(RETRY_DETAIL_RE);
   if (match) {
-    const [, prefix, seconds, pending] = match;
-    const retry = pending
+    const [, seconds, pending] = match;
+    return pending
       ? t('retry pending')
       : t('retrying in {seconds}s', { seconds });
-    return prefix ? `${t('ALPR cameras')} · ${retry}` : retry;
   }
   return localizeLayerRoster(detail);
 }
@@ -120,28 +72,21 @@ export class ShellFeedback {
     this.readLayers = readLayers;
     this.destroyed = false;
     this._loadingFeedbackState = createLoadingFeedbackState();
-    this._trafficSyncFeedbackState = createTrafficSyncFeedbackState();
     this._loadingFeedbackEvent = null;
     this._globalStatusNotice = null;
     this._loadingFeedbackTicker =
-      this._trafficChipTicker =
+      this._loadingPollTicker =
       this._toastTimer =
         null;
     this._loadingVisibilityHandler = null;
     this._lastLoadingFeedbackUpdateAt = 0;
-    this._lastTrafficChipUpdateAt = 0;
-    this._lastTrafficGlobalUpdateAt = 0;
+    this._lastLoadingPollAt = 0;
     this._globalLoadingStatus = document.getElementById(
       'global-loading-status',
     );
     this._globalLoadingLabel = document.getElementById('global-loading-label');
     this._globalLoadingDetail = document.getElementById(
       'global-loading-detail',
-    );
-    this._trafficSyncChip = document.getElementById('traffic-sync-chip');
-    this._trafficSyncLabel = document.getElementById('traffic-sync-label');
-    this._trafficSyncProgress = document.getElementById(
-      'traffic-sync-progress',
     );
     this._toast = document.getElementById('toast');
   }
@@ -156,49 +101,6 @@ export class ShellFeedback {
       this._loadingVisibilityHandler,
     );
   }
-  _updateTrafficSyncChip(forceShow = false, now = performance.now()) {
-    if (this.destroyed) return;
-    if (
-      !this._trafficSyncChip ||
-      !this._trafficSyncLabel ||
-      !this._trafficSyncProgress
-    )
-      return;
-    const layers = this.readLayers();
-    const traffic = Array.isArray(layers)
-      ? layers.find((layer) => layer.id === 'traffic')
-      : null;
-    this._trafficSyncFeedbackState = reduceTrafficSyncFeedback(
-      this._trafficSyncFeedbackState,
-      {
-        enabled: traffic?.enabled === true,
-        stats: traffic?.stats || {},
-        forceShow,
-      },
-      now,
-    );
-    const presentation = this._trafficSyncFeedbackState;
-    // setSplitFlapText carries the same unchanged-text guard internally, and
-    // the flap keeps textContent equal to the settled label throughout, so
-    // this stays a no-op on the repeat ticks exactly as it did before.
-    if (presentation.label)
-      setSplitFlapText(
-        this._trafficSyncLabel,
-        localizeStatusLabel(presentation.label),
-        {
-          // Completion is a timing signal, not another animated loading stage.
-          immediate: !presentation.busy,
-        },
-      );
-    // Written on every change INCLUDING the empty settled value — the reducer
-    // clears the progress number once the sync lands, and a truthiness guard
-    // here would strand the last "..." beside the settled label.
-    if (this._trafficSyncProgress.textContent !== presentation.progressText) {
-      this._trafficSyncProgress.textContent = presentation.progressText;
-    }
-    this._trafficSyncChip.classList.toggle('visible', presentation.visible);
-  }
-
   _updateGlobalLoadingFeedback(now = performance.now()) {
     if (this.destroyed) return;
     if (!this._globalLoadingStatus) return;
@@ -253,22 +155,19 @@ export class ShellFeedback {
     this._updateGlobalLoadingFeedback(now);
   }
 
-  _startTrafficChipTicker() {
+  /**
+   * 500 ms safety-net poll of the loading chip: a camera-driven layer can flip
+   * its own `stats.loading` without emitting a manager event, and that is the
+   * one loading start the event path cannot see.
+   */
+  _startLoadingPollTicker() {
     if (this.destroyed) return;
-    if (this._trafficChipTicker) return;
-    this._trafficChipTicker = setInterval(() => {
+    if (this._loadingPollTicker) return;
+    this._loadingPollTicker = setInterval(() => {
       if (document.hidden) return;
       const now = performance.now();
-      // Poll busy traffic promptly; retain the idle/global 500 ms read budget.
-      if (
-        this._trafficSyncFeedbackState.busy ||
-        now - this._lastTrafficChipUpdateAt >= 500
-      ) {
-        this._lastTrafficChipUpdateAt = now;
-        this._updateTrafficSyncChip(false, now);
-      }
-      if (now - this._lastTrafficGlobalUpdateAt >= 500) {
-        this._lastTrafficGlobalUpdateAt = now;
+      if (now - this._lastLoadingPollAt >= 500) {
+        this._lastLoadingPollAt = now;
         this._updateGlobalLoadingFeedback(now);
       }
     }, 100);
@@ -318,9 +217,9 @@ export class ShellFeedback {
     if (this.destroyed) return;
     this.destroyed = true;
     this._stopLoadingFeedbackTicker();
-    clearInterval(this._trafficChipTicker);
+    clearInterval(this._loadingPollTicker);
     clearTimeout(this._toastTimer);
-    this._trafficChipTicker = this._toastTimer = null;
+    this._loadingPollTicker = this._toastTimer = null;
     if (this._loadingVisibilityHandler)
       document.removeEventListener(
         'visibilitychange',
@@ -328,7 +227,6 @@ export class ShellFeedback {
       );
     this._loadingVisibilityHandler = null;
     disposeSplitFlap(this._globalLoadingLabel);
-    disposeSplitFlap(this._trafficSyncLabel);
     this._toast?.classList.remove('visible');
     if (this._globalLoadingStatus) this._globalLoadingStatus.hidden = true;
   }

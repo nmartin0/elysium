@@ -37,7 +37,7 @@ function location(t) {
     },
     elements: {}, navigation: {},
     operations: {
-      _stampNavigation() {}, _updateTrafficSyncChip() {},
+      _stampNavigation() {},
       _runExplicitNavigation(_noun, run) { return run(); },
     },
   });
@@ -86,7 +86,7 @@ function bindings(t) {
     viewer: {}, services: {}, readControls: () => controls,
     feedback: {}, shareRestoration: { connect() {} },
     operations: {
-      _updateTrafficSyncChip() {}, _updateGlobalLoadingFeedback() {},
+      _updateGlobalLoadingFeedback() {},
       _syncContextModeButtons() {},
     },
   });

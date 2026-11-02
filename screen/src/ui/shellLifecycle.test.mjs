@@ -178,13 +178,13 @@ test('feedback disposal clears toast and polling work and rejects retained notic
   try {
     const owner = new ShellFeedback({ readLayers: () => [] });
     owner.observeVisibility();
-    owner._startTrafficChipTicker();
+    owner._startLoadingPollTicker();
     owner._showToast('Saved');
     assert.equal(f.timers.size, 2);
     owner.destroy();
     owner._showToast('Late');
     owner._showGlobalStatusNotice('Late');
-    owner._startTrafficChipTicker();
+    owner._startLoadingPollTicker();
     document.dispatchEvent(new Event('visibilitychange'));
     assert.equal(f.timers.size, 0);
     assert.equal(f.nodes.get('toast').textContent, 'Saved');
@@ -309,37 +309,28 @@ test('weather rail orders before Context, observes and syncs chrome', (t) => {
   }
 });
 
-test('busy traffic completion is polled promptly without accelerating idle or global reads', (t) => {
+test('the loading poll reads on a bounded budget and does no work on hidden pages', (t) => {
   const f = fixture();
   let now = 500;
   t.mock.method(performance, 'now', () => now);
   try {
     const owner = new ShellFeedback({ readLayers: () => [] });
-    let traffic = 0,
-      global = 0;
-    owner._updateTrafficSyncChip = () => traffic++;
+    let global = 0;
     owner._updateGlobalLoadingFeedback = () => global++;
-    owner._startTrafficChipTicker();
-    const tick = f.timers.get(owner._trafficChipTicker);
+    owner._startLoadingPollTicker();
+    const tick = f.timers.get(owner._loadingPollTicker);
     tick();
-    assert.equal(traffic, 1);
     assert.equal(global, 1);
     now = 600;
     tick();
-    assert.equal(traffic, 1, 'idle polling remains bounded');
-    owner._trafficSyncFeedbackState.busy = true;
-    now = 700;
+    assert.equal(global, 1, 'polling stays within the 500 ms read budget');
+    now = 1100;
     tick();
-    assert.equal(traffic, 2, 'busy completion is observed on a 100 ms tick');
-    assert.equal(global, 1, 'other loading feedback keeps its prior budget');
-    owner._trafficSyncFeedbackState.busy = false;
-    now = 800;
-    tick();
-    assert.equal(traffic, 2);
+    assert.equal(global, 2);
     document.hidden = true;
-    now = 1300;
+    now = 1700;
     tick();
-    assert.equal(traffic, 2, 'hidden pages do no polling');
+    assert.equal(global, 2, 'hidden pages do no polling');
     owner.destroy();
     assert.equal(f.timers.size, 0);
   } finally {

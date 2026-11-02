@@ -758,16 +758,6 @@ export class ShellFacade {
   }
 
   /**
-   * Updates the traffic sync status chip with loading phase label and progress.
-   * Auto-hides after 1.5s when loading completes; stays visible while busy.
-   * @param {boolean} [forceShow=false] - Force the chip visible regardless of busy state.
-   * @returns {void}
-   */
-  _updateTrafficSyncChip(forceShow, now) {
-    return this._feedback._updateTrafficSyncChip(forceShow, now);
-  }
-
-  /**
    * Initializes panel collapse buttons and restores persisted collapsed state.
    * Also sets up hover-expand behavior for the style presets and location bar panels.
    * @returns {void}
@@ -1087,13 +1077,12 @@ export class ShellFacade {
   }
 
   /**
-   * 500 ms DOM ticker for the traffic sync chip (was per-frame). It also
-   * polls the loading chip as a safety net: a camera-driven layer can flip
+   * 500 ms safety-net poll of the loading chip: a camera-driven layer can flip
    * its own `stats.loading` without emitting a manager event, and that is
    * the one loading start the event path cannot see.
    */
-  _startTrafficChipTicker() {
-    return this._feedback._startTrafficChipTicker();
+  _startLoadingPollTicker() {
+    return this._feedback._startLoadingPollTicker();
   }
 
   /**

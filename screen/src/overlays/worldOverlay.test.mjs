@@ -770,7 +770,7 @@ test('ticking chrome churn (text swaps, non-chrome nodes) never invalidates a li
   const env = installMockEnvironment({
     occluders: [
       { selector: '.hud-top-left', rect: { left: 0, top: 0, width: 140, height: 44 } },
-      { id: 'traffic-sync-chip', rect: { left: 200, top: 0, width: 90, height: 24 } },
+      { id: 'title-bar', rect: { left: 200, top: 0, width: 90, height: 24 } },
     ],
   });
   initWorldOverlay(env.viewer);

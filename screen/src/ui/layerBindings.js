@@ -196,7 +196,6 @@ export class LayerBindings {
     if (this._disposed) return;
     this._dataManager = dataManager || null;
     this.hud.attachDataManager(this._dataManager);
-    this._updateTrafficSyncChip();
     if (this._dataManagerUnsubscribe) {
       this._dataManagerUnsubscribe();
       this._dataManagerUnsubscribe = null;

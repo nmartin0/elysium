@@ -613,7 +613,6 @@
   "src/ui/recentImagery.test.mjs",
   "src/layers/recentImagery/testDoubles.mjs",
   "scripts/qa-recent-imagery.mjs",
-  "src/data/idSwitches.js",
   "src/layers/streetLevel/view.js",
   "src/layers/streetLevel/tileMath.js",
   "src/testSupport/kartaViewFakes.mjs",
