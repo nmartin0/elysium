@@ -107,35 +107,71 @@ import-direction gate agrees). The ALPR layer needed no stub and was deleted.
 
 ### Left in place on purpose (inert residue)
 
-- Cockpit plumbing: `inertCockpit.js`, the `readCockpit` call sites, the
-  hidden `#cockpit-entry` button and its CSS, `COCKPIT_REFUSAL_NOUNS`.
-- Dead radio-panel branches in `panelChrome.setPanelCollapsed`; layer-state
-  radio helpers and the `idSwitches` import in `data/layerState.js`.
-- Retry-chip strings for ALPR, mapped sites and vector tiles in
-  `shellFeedback.js` and the traffic feedback reducer in `loadingFeedback.js`.
-- `tr3bRegistry` (the TR-3B easter egg), `selectedMilitaryTrackingId` in the
-  flights options, `SHARE_TRACKING_RESTORE_POLICIES.military`, the
-  `military_aircraft` entity kind in the view codec (permanent codes).
-- Dead 3D-model code and data behind `MODELS_3D_AVAILABLE`
-  (`data/modelVisualAnchor.js`, `CLASS_MODEL_URL` in `aircraftClass.js`,
-  `layers/flights/modelSpec.js`).
+After slice 3. Each item says why it stays.
+
+- `military`, `military-awareness`, `military-installations`, `traffic`, `cctv`,
+  `street-level`, `radio`, `local-adsb`: the eight stubs in
+  `app/layerStubs.js`. `catalog.js` (`CONTROL_LAYER_IDS`), `sourceComposition.js`
+  and `constructCatalog.js` still require a layer object for each id.
+- `selectedMilitaryTrackingId` (token `u` in the flights options),
+  `SHARE_TRACKING_RESTORE_POLICIES.military`, the `military_aircraft` entity
+  kind in the view codec and `view/index.js`, and the layer tokens of the
+  removed layers: permanent share-link codes. A code is reserved, never
+  reused, and the token ledger test enforces it.
+- Dead 3D-model code and data behind `MODELS_3D_AVAILABLE` (`false`):
+  `data/modelVisualAnchor.js`, `CLASS_MODEL_URL` in `aircraftClass.js`,
+  `layers/flights/modelSpec.js`, and about 700 lines of model handoff, tracked
+  model regime and model loading in `layers/flights/rendering.js`,
+  `tracking.js`, `motion.js`, `lifecycle.js`. Nothing can reach them (there is
+  no 3D control and no model file), but they are interwoven with the fleet tick
+  and the `models3d` layer-state options (permanent codes), so removing them is
+  its own change.
+- The Contacts mode of the Context panel (the CONTACTS tab, `contextMode ===
+  'flights'`, the first-run "Live contacts" tile). It is not inert: it turns on
+  the real `flights` and `ais-live-vessels` layers and owns detection through
+  `contactsDetectionPolicy`. Its view body (the awareness panel nothing filled)
+  is gone. Owner decision needed on whether the mode stays.
 - `viewCodec` panel numbering and style enums (permanent).
-- The Contacts (global-context) panel is still in the UI, inert, and the
-  "Cameras" tab of the phone shell still carries that name though it now opens
-  only the Recent Imagery panel.
 - The `tactical` HUD variant and Cyber theme (the Cyber theme no longer
   selects a look), detection themes.
-- `layers/streetLevel/view.js` and `tileMath.js`; `cockpitAirLod.js` and
-  `cockpitContactDot.js`; the `.scene-btn` rule in `panel-layout.css`.
+- `layers/streetLevel/view.js` and `tileMath.js` (`ghostMaps` imports them);
+  the `.scene-btn` rule in `panel-layout.css`.
+- `scripts/qa-*.mjs` (`qa-l9-matrix`, `qa-firstrun`, `qa-ui-disposal` and
+  others) still name cockpit and radio ids. They are manual QA scripts that
+  need a live server and were not run or edited.
+- Comments and test names that still say "cockpit" (about 60, in `flights`,
+  `iconOrientation`, `motionModel`, `localGeojson*`, `contactsDetectionPolicy`
+  and tests). No code path reads the word.
+- Copy that still says cockpit or intelligence: the first-run line "It feels
+  like a forbidden cockpit", the HUD banner "TOP SECRET // SI-TK // NOFORN"
+  and "KH11-..." line in `hud.js`, and the tile text "nearby intelligence".
+
+### Slice 3: commits
+
+Each commit passes `check-import-directions` and `check-package-boundaries`.
+
+| Commit | What | Why |
+| --- | --- | --- |
+| `06e142a4` | Estimated launch trajectories: `launches/paths.js`, `replay.js`, `camera.js` deleted; ascent, replay marker, replay camera, projected orbit and estimated landings removed from `rendering`, `overlays`, `orbitRendering`, `selection`, `model`, `panel`, `policy*`, `state`, `index`, `lifecycle`, `ingestion`; `data/rocketLaunches.js` no longer builds a trajectory. | Owner rule: no estimated trajectories or poses. Kept: the orbit drawn from real TLEs by the satellites layer, supplied trajectory points, landing endpoints the record gives. |
+| `158ca0c9` | Cockpit plumbing: `ui/inertCockpit.js`, `cockpitAirLod.js`, `cockpitContactDot.js`, the flights cockpit contact mode, `cockpit-mode` class checks, `follow.cockpit` in `view/index.js`, all cockpit CSS, `COCKPIT_REFUSAL_NOUNS`, the `gev:cockpit-mode-changed` listeners. The phone-shell tab is now "Imagery" (sheet `imagery`). | No cockpit. A tab named Cameras that opens one imagery panel said something false. |
+| `22868be1` | TR-3B easter egg: `tr3bRegistry`, the two sprites, the reclassify button and CSS, every flights branch. Empty `#military-awareness-panel` and the Contacts view body removed. | No game parts; nothing filled the panel. |
+| `cbd5dc25` | Traffic and cctv sync chips (template, CSS, `shellFeedback`, reducer in `loadingFeedback.js`), ALPR, mapped-site, vector-tile and Overpass chip strings, radio filter codec in `layerState.js`, `data/idSwitches.js`. The 500 ms loading poll stays, renamed `_startLoadingPollTicker`. | Their layers are stubs; nothing can set these states. |
+| `2dd514e4`, `ac83006d` | `i18n --prune` (71, then 1 entry per catalog) and the layer-panel group "Cameras" renamed "Imagery". | Catalogs match the code. |
+| `79cd9e85` | Two tests that pinned removed radio and mapped-site paths updated. | |
+
+Judgment calls beyond the brief: the traffic and cctv sync chips and
+their CSS were removed whole, not only their strings (they had no data source);
+`idSwitches.js` was deleted with the radio helpers (its only importer);
+`tr3b`-only CSS and sprites went with the registry; the cyber CSS rules that
+styled `.panel-collapse-btn` together with a cockpit selector were restored
+for `.panel-collapse-btn` alone after the first cleanup dropped them. Rules
+written as `body:not(.cockpit-mode) ...` lost that class's specificity.
 
 ### Not done
 
-- **Estimated launch trajectories** (`layers/launches/paths.js`
-  `reconstructedAscentPath`, `replay.js`, `camera.js`, `overlays.js`,
-  `orbitRendering.js`, `model.js`, `index.js`, and the coupling to the
-  `satellites` layer): left in. The estimate is woven through replay, camera
-  and overlays, and removing it needs its own change with the launches tests.
-- Dead-code sweep of the residue above.
+- 3D-model residue (see above) and the Contacts mode decision.
+- `selectedMilitaryTrackingId` and the `military_aircraft` follow kind: kept
+  for permanent codes.
 
 ### Verification
 
@@ -178,6 +214,52 @@ Not verified:
   full suite was run on the tree at `0ecf56b4` only. The test fixes for the
   3D-model and look-retirement commits are in `b99d4dd2` and `9996f0e8`, so
   `015d0b27` and `b99d4dd2` alone leave some tests failing.
+
+### Verification, slice 3
+
+Scratch copy of the tree at `79cd9e85` (Node 22, `nice -n 10`, one run at a time):
+
+- Gates: `check-import-directions` (576 modules) and `check-package-boundaries`
+  exit 0, run after each commit.
+- Unit tests, not the whole suite. The 32 test files changed in this slice: 653
+  tests, 0 failed. `src/*.test.mjs` at the root: 880 pass. `ui/`,
+  `layers/launches`, `layers/flights`, `share`, `view`, `app`, `data/layer*`,
+  `data/flights*`, `data/aircraft*` (89 files): 791 tests; 3 failed
+  (one radio and two mapped-site assertions on removed code), the two files were
+  fixed and re-run (7 pass). `i18n/*.test.mjs` and `materialSymbolsSubset`: 111
+  pass. Not run: `server/`, and `src/services/requests.test.mjs`, three of whose
+  tests are cancelled on Node 22 even at the base. The suite as a whole was not
+  run, so a file that imports a changed module and is outside those sets could
+  still fail.
+- `dist/`: 32,174,916 bytes before (`index-*.js` 2,564,535), 32,039,874 after
+  (`index-*.js` 2,459,269): 135 KB less, 105 KB of it the main chunk.
+  `assets/` 19.1 MB, `cesium/` 12.8 MB. `vite build` 6.4 s.
+- Sandboxed embed frame (`allow-scripts`, `?embed=1`, CSP with
+  `wasm-unsafe-eval`): `gev:ready` at 3068 ms; `gev:view-applied` `ok: true`
+  (`stop_tracking`, `clear_annotations`, `camera`); 0 page errors, 0 failed
+  and 0 bad responses, 0 console errors, 0 requests to `/api`; 825 distinct
+  colours on the screenshot.
+- Full app (not embed), Chromium with Esri and terrain stubbed, offline:
+  0 page errors in every run. Desktop 1440x900: the Data Layers panel lists
+  22 rows in the groups Movement, Imagery, Infrastructure, Events, Weather,
+  Utilities; toggling Earthquakes and Satellites worked (both then show
+  UNAVAILABLE, because the stub server has no USGS or CelesTrak). The Context
+  panel opens with two tabs, CONTACTS and SPACE MISSIONS. Phone 390x844: the
+  shell is on, no horizontal overflow, five tabs (Layers, Imagery, Context,
+  Search, More) each open their sheet; the Imagery sheet shows the Recent
+  Imagery panel once that layer is on and is empty before (as the Cameras sheet
+  was). Share links built from a link the app made: unchanged opens with
+  Satellites on; with removed tokens `c.z` added, or `c.z` alone, the link is
+  rejected whole and Satellites stays off, no error.
+- Seen: the full app asks its own `/api/google/tiles-token` at startup
+  (`maps/googleTokens.js`) and `/api/celestrak/*` when Satellites is on. The
+  embed view does neither.
+
+Not exercised: a real device or touch input, the Material Symbols and Google
+fonts (blocked in the harness, so icon names show as text), real tile and
+feed data, keyboard navigation of the Context tabs, voice, the Cyber theme
+switch, recording and clean view, hotkeys, and a share link with a removed
+token that also carries camera and style fields from another app version.
 
 ## Inventory (status after slice 2)
 
@@ -439,7 +521,7 @@ the layer-state entry and `standalone/layerSources.js:17,52`,
   replay restores satellites), so `createApplicationLaunches({ satellites })`
   has to change with the replay.
 
-**Status:** DONE (`671c6230`).
+**Status:** DONE (`06e142a4`).
 
 **Director and demo scenes**
 - `src/director/` (document, playback, timeline, packs, sharing),
@@ -542,7 +624,7 @@ the layer-state entry and `standalone/layerSources.js:17,52`,
   the panel build, so only `mcp/` and `server/mcp/` are independent;
   `tools/services.js` builds a source for every ruled-out layer (lines 11-85).
 
-**Status:** DONE (`3baad307`) as an inert stand-in, `src/ui/inertCockpit.js`.
+**Status:** DONE (`3baad307`) as an inert stand-in, `src/ui/inertCockpit.js`; the stand-in and the plumbing that fed it were removed in slice 3 (`158ca0c9`).
 
 **Cockpit** (first-person aircraft view and its briefing, instruments, vision)
 - `src/ui/cockpit*.js` (about 14 files: `cockpit.js`, `cockpitBriefing.js`,
