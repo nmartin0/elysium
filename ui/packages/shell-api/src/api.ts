@@ -2707,8 +2707,11 @@ export async function applyStatus(digest: string, change: StatusChange): Promise
   return (await response.json()) as LabelEditResult
 }
 
-/** What to remove: a stored field, or a link type. (A type is not removed from here.) */
-export type RemovalTarget = { kind: 'field'; object_type: string; field: string } | { kind: 'link'; link: string }
+/** What to remove: a stored field, a link type, or a whole object type. */
+export type RemovalTarget =
+  | { kind: 'field'; object_type: string; field: string }
+  | { kind: 'link'; link: string }
+  | { kind: 'type'; object_type: string }
 
 export interface RemovalPreview {
   diff: string[]

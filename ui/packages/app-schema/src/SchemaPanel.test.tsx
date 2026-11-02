@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter, RouterProvider, createMemoryRouter } from 'react-router-dom'
 
 import SchemaPanel from './SchemaPanel'
@@ -731,6 +731,32 @@ describe('removing a field', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Remove Email/ }))
 
     expect(await screen.findByRole('dialog', { name: 'Remove Customer.Email' })).toBeInTheDocument()
+  })
+
+  it('is offered on a type but cannot be used until the type is deprecated', async () => {
+    describing.answer = describable
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    const card = await screen.findByTestId('object-type-Customer')
+    expect(within(card).getByRole('button', { name: 'Remove' })).toBeDisabled()
+  })
+
+  it('opens the removal of a deprecated type', async () => {
+    describing.answer = describable
+    renderPanel(
+      <SchemaPanel
+        visibleSchema={{ Customer: { ...CUSTOMER, status: 'deprecated' } }}
+        username="alice"
+        onSessionExpired={noop}
+      />,
+    )
+    openObjectTypes()
+
+    const card = await screen.findByTestId('object-type-Customer')
+    fireEvent.click(within(card).getByRole('button', { name: 'Remove' }))
+
+    expect(await screen.findByRole('dialog', { name: 'Remove type Customer' })).toBeInTheDocument()
   })
 
   it('is not offered on a link field, which goes with its link type', async () => {

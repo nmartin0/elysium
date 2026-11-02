@@ -230,3 +230,68 @@ describe('when the file has changed or the name is gone', () => {
     expect(screen.getByRole('button', { name: 'Remove it and reload' })).toBeDisabled()
   })
 })
+
+describe('a whole object type', () => {
+  const TYPE: RemoveTarget = { objectType: 'Tag' }
+  const SCHEMA_WITH_TAG: VisibleSchema = {
+    ...SCHEMA,
+    Tag: { display_name: 'Label', status: 'deprecated', fields: {} },
+  }
+  const LINKED: RemovalPreview = {
+    ...READY,
+    can_remove: false,
+    impact: null,
+    blockers: [{ kind: 'link', place: 'link CustomerTags', says: 'joins Customer.tags and Tag.customers' }],
+    hidden_blockers: 1,
+  }
+
+  const open = (preview: RemovalPreview = READY) => {
+    vi.mocked(previewRemoval).mockResolvedValue(preview)
+    render(
+      <RemoveDialog
+        schema={SCHEMA_WITH_TAG}
+        target={TYPE}
+        onClose={vi.fn()}
+        onApplied={vi.fn()}
+        onSessionExpired={vi.fn()}
+      />,
+    )
+  }
+
+  it('asks the server about the type by its name alone', async () => {
+    open()
+
+    expect(await screen.findByRole('dialog', { name: 'Remove type Label' })).toBeInTheDocument()
+    await waitFor(() => expect(previewRemoval).toHaveBeenCalledWith('d1', { kind: 'type', object_type: 'Tag' }))
+  })
+
+  it("says the binding goes too, and shows the server's sentences about stored data", async () => {
+    open()
+
+    expect(await screen.findByText(/and its entry in source_bindings.yaml/)).toBeInTheDocument()
+    expect(screen.getByText(/Nothing is deleted from your source/)).toBeInTheDocument()
+    expect(await removeButton()).toBeEnabled()
+  })
+
+  it('does not mention bindings when a field goes', async () => {
+    renderDialog()
+
+    await screen.findByText(/Nothing in the configuration names/)
+    expect(screen.queryByText(/source_bindings/)).not.toBeInTheDocument()
+  })
+
+  it('lists the link types that still join it, says some are not shown, and cannot be applied', async () => {
+    open(LINKED)
+
+    expect(await screen.findByText('link CustomerTags')).toBeInTheDocument()
+    expect(screen.getByText(/One more place names something you cannot see/)).toBeInTheDocument()
+    expect(await removeButton()).toBeDisabled()
+  })
+
+  it('applies exactly what it previewed', async () => {
+    open()
+    fireEvent.click(await removeButton())
+
+    await waitFor(() => expect(applyRemoval).toHaveBeenCalledWith('d1', { kind: 'type', object_type: 'Tag' }))
+  })
+})

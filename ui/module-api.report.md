@@ -852,6 +852,9 @@ export type RemovalTarget = {
 } | {
     kind: 'link';
     link: string;
+} | {
+    kind: 'type';
+    object_type: string;
 };
 
 export declare function resetUserPassword(username: string, newPassword: string): Promise<void>;

@@ -1,6 +1,6 @@
 /**
- * Removing a stored field or a link type (the removal design, agreed 28
- * October): the last of deprecate, wait, remove. The screen opens already
+ * Removing a stored field, a link type or a whole object type (the removal
+ * design, agreed 28 October): the last of deprecate, wait, remove. The screen opens already
  * knowing the answer -- it asks the server to PREVIEW as soon as it has
  * the file's digest -- because the useful part is not the button but what
  * stands in front of it: that the name is not yet deprecated, or what
@@ -42,16 +42,17 @@ import { ConfigImpact } from '@elysium/shell-api/components/RoleImpact'
 import type { VisibleSchema } from '@elysium/shell-api/types'
 import { useEffect, useRef, useState } from 'react'
 
-export type RemoveTarget = { objectType: string; field: string } | { link: string }
+export type RemoveTarget = { objectType: string; field: string } | { link: string } | { objectType: string }
 
 function targetOf(target: RemoveTarget): RemovalTarget {
-  return 'link' in target
-    ? { kind: 'link', link: target.link }
-    : { kind: 'field', object_type: target.objectType, field: target.field }
+  if ('link' in target) return { kind: 'link', link: target.link }
+  if ('field' in target) return { kind: 'field', object_type: target.objectType, field: target.field }
+  return { kind: 'type', object_type: target.objectType }
 }
 
 function nameOf(schema: VisibleSchema, target: RemoveTarget): string {
   if ('link' in target) return `link ${target.link}`
+  if (!('field' in target)) return `type ${schema[target.objectType]?.display_name ?? target.objectType}`
   const type = schema[target.objectType]
   return `${type?.display_name ?? target.objectType}.${type?.fields?.[target.field]?.display_name ?? target.field}`
 }
@@ -111,6 +112,9 @@ export default function RemoveDialog({
   onSessionExpired: () => void
 }) {
   const name = nameOf(schema, target)
+  const goes = ['link', 'field'].some((key) => key in target)
+    ? 'its lines from the ontology'
+    : 'its lines from the ontology and its entry in source_bindings.yaml'
   const [digest, setDigest] = useState<string | null>(null)
   const [preview, setPreview] = useState<RemovalPreview | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
@@ -186,8 +190,8 @@ export default function RemoveDialog({
             {preview.deprecated && !blocked && (
               <>
                 <p className="config-dialog__lede">
-                  Nothing in the configuration names {name}. Removing it deletes its lines from the ontology and changes
-                  nothing else; comments in the file stay where they are.
+                  Nothing in the configuration names {name}. Removing it deletes {goes} and changes nothing else;
+                  comments in the file stay where they are.
                 </p>
                 <h4 className="config-dialog__heading">What happens to the data already stored</h4>
                 <ul className="add-fields__consequences">

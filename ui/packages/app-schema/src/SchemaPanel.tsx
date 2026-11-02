@@ -265,7 +265,7 @@ function ObjectTypeCard({
   onUsedBy?: (target: UsedByTarget) => void
   /** Deprecating this type or one of its stored fields: present only for manage:deployment. */
   onDeprecate?: (target: DeprecateTarget) => void
-  /** Removing one of its stored fields: present only for manage:deployment. */
+  /** Removing the type or one of its stored fields: present only for manage:deployment. */
   onRemove?: (target: RemoveTarget) => void
   onOpenObjectType: (objectType: string) => void
   onOpenLinkType: (linkType: string) => void
@@ -317,6 +317,17 @@ function ObjectTypeCard({
       {onDeprecate && (
         <Button small minimal icon="warning-sign" onClick={() => onDeprecate({ objectType: apiName })}>
           {type.status === 'deprecated' ? 'Deprecation' : 'Deprecate'}
+        </Button>
+      )}
+      {onRemove && (
+        <Button
+          small
+          minimal
+          icon="trash"
+          disabled={type.status !== 'deprecated'}
+          onClick={() => onRemove({ objectType: apiName })}
+        >
+          Remove
         </Button>
       )}
 
