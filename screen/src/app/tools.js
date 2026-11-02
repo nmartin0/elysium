@@ -27,7 +27,7 @@ export function createApplicationTools({
   defer,
 }) {
   const { viewer, tileset, mapStackController, operations } = scene;
-  const { styleManager, weatherEffects, cockpitCloudEffects } = controls;
+  const { styleManager, weatherEffects } = controls;
   const { dataManager } = data;
   const annotations = initAnnotations({
     viewer,
@@ -130,7 +130,6 @@ export function createApplicationTools({
     // keeps drawing itself (see keepPanelRendering in embed.js).
     const hidden = document.hidden && !isEmbeddedInline();
     viewer.useDefaultRenderLoop = !hidden;
-    cockpitCloudEffects?.setSuspended?.(hidden);
     if (!hidden) {
       data.presentation.flushVisible();
       governorRequestRender('visibility-restore');
@@ -157,7 +156,6 @@ export function createApplicationTools({
     mapStackController,
     annotations,
     weatherEffects,
-    cockpitCloudEffects,
     getRenderGovernorDiagnostics,
     surfaceServices: operations.surface,
     requestRender: governorRequestRender,

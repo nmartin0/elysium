@@ -1,7 +1,6 @@
 import { catalogControlServices } from './catalog.js';
 import { StyleManager } from '../ui/composition.js';
 import { flyToAustin } from '../camera.js';
-import { initCockpitCloudEffects } from '../cockpitCloudEffects.js';
 import { t } from '../i18n/index.js';
 
 /**
@@ -38,14 +37,8 @@ export function createApplicationControls({
   defer(() => styleManager.orbitController.stop());
   defer(() => styleManager.hud.destroy());
   defer(() => styleManager.dispose());
-  // The previous multi-canvas weather compositor remains disabled. Cockpit
-  // clouds use a separate, capped low-resolution GPU pass that never attaches
-  // Cesium fog or post-process stages and is fully stopped in map mode.
+  // The previous multi-canvas weather compositor remains disabled.
   const weatherEffects = null;
-  const cockpitCloudEffects = initCockpitCloudEffects(viewer, {
-    weatherService: operations.requests.weather,
-  });
-  defer(() => cockpitCloudEffects?.destroy());
 
   // If no share link state, do default fly-to Austin
   if (!styleManager.hasShareState) {
@@ -55,5 +48,5 @@ export function createApplicationControls({
     loaderStatus.textContent = t('Restoring shared view...');
   }
 
-  return { styleManager, weatherEffects, cockpitCloudEffects };
+  return { styleManager, weatherEffects };
 }

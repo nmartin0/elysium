@@ -13,7 +13,7 @@ import { setSplitFlapText } from '../splitFlap.js';
 import { UiLifetime } from './uiLifetime.js';
 import { RecordingControls } from './recordingControls.js';
 import { readShellElements } from './shellElements.js';
-import { CockpitCoordinator } from './cockpitCoordinator.js';
+import { createInertCockpit } from './inertCockpit.js';
 import { ContextControls } from './context.js';
 import { CctvControls } from './cctv.js';
 import { StreetLevelControls } from './streetLevelControls.js';
@@ -31,8 +31,6 @@ import {
 } from './cyberSonarControls.js';
 
 import * as Cesium from 'cesium';
-
-import { aircraftTrackingTarget } from '../cockpitTracking.js';
 
 import { ShellFeedback } from './shellFeedback.js';
 import {
@@ -370,49 +368,7 @@ export class StyleManager extends ShellFacade {
     // Intel HUD
     this.hud = new IntelHUD(viewer);
     this._recording.hud = this.hud;
-    this._cockpitCoordinator = new CockpitCoordinator({
-      viewer,
-      services: {
-        flightsLayer: services.flightsLayer,
-        militaryFlightsLayer: services.militaryFlightsLayer,
-        isTr3b: services.isTr3b,
-        toggleTr3b: services.toggleTr3b,
-        militaryAwarenessLayer: services.militaryAwarenessLayer,
-        cachedGroundFloor: services.cachedGroundFloor,
-        cachedMeshFloor: services.cachedMeshFloor,
-        GROUND_FLOOR_LIFT_M: services.GROUND_FLOOR_LIFT_M,
-        meshFloorPreferred: services.meshFloorPreferred,
-        warmGroundFloor: services.warmGroundFloor,
-        sampleMeshFloorCells: services.sampleMeshFloorCells,
-        holdContinuousRender: services.holdContinuousRender,
-        releaseContinuousRender: services.releaseContinuousRender,
-        fetchRegionalBrief: services.fetchRegionalBrief,
-        regionalDistanceM: services.regionalDistanceM,
-        weatherCodeLabel: services.weatherCodeLabel,
-      },
-      elements: {
-        _ppToggles: this._ppToggles,
-        _cockpitDisplayPanel: this._cockpitDisplayPanel,
-        _hudBtn: this._hudBtn,
-        _detectionBtn: this._detectionBtn,
-        _sliderPanel: this._sliderPanel,
-        _models3dBtn: this._models3dBtn,
-      },
-      operations: {
-        _layoutRightPanels: (...args) => this._layoutRightPanels(...args),
-        _setCockpitVision: (...args) => this._setCockpitVision(...args),
-        _stampNavigation: (...args) => this._stampNavigation(...args),
-        getAircraftTrackingTarget: (...args) =>
-          this.getAircraftTrackingTarget(...args),
-        _scheduleRightPanelLayout: (...args) =>
-          this._scheduleRightPanelLayout(...args),
-      },
-      readDataManager: () => this._dataManager,
-      readContext: () => this.getContextModeState(),
-      readActiveStyle: () => this.activeStyle,
-      enterPanels: () => this._panelChrome.enterCockpit(),
-      exitPanels: () => this._panelChrome.exitCockpit(),
-    });
+    this._cockpitCoordinator = createInertCockpit();
 
     // Full-globe sun/moon ring. It is a crisp screen-space overlay above the
     // Cesium canvas but below the HUD/detection/readout z ladder.
@@ -692,17 +648,7 @@ export class StyleManager extends ShellFacade {
 
   /** Return the aircraft tracker owned before a multi-step Cockpit transaction. */
   getAircraftTrackingTarget() {
-    return aircraftTrackingTarget(this.cockpitView?.readAircraftInfo?.());
-  }
-
-  /** Apply a temporary cockpit-only CRT/NVG/FLIR/NOIR post-process override. */
-  _setCockpitVision(mode, active, { revealParameters = false } = {}) {
-    return this._visualSettings._setCockpitVision(...arguments);
-  }
-
-  /** Reveal shared style parameters, optionally opening Cockpit Display first. */
-  _revealCockpitStyleParameters({ openDisplay = false } = {}) {
-    return this._visualSettings._revealCockpitStyleParameters(...arguments);
+    return null;
   }
 
   /**
@@ -1077,7 +1023,7 @@ export class StyleManager extends ShellFacade {
           this._dataManager?.getLayerLifecycleState?.('radio'),
         runUserAction: (...args) => this._runUserFacingContextAction(...args),
         setPanelCollapsed: (...args) => this.setPanelCollapsed(...args),
-        revealStyleParameters: () => this._revealCockpitStyleParameters(),
+        revealStyleParameters: () => {},
         setSignalCollapsed: (value) =>
           this.cockpitView?.setSignalCollapsed(value),
         isCockpitActive: () => this.cockpitView?.active,

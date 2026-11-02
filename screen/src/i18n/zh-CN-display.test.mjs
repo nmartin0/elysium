@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setLocale, t } from './index.js';
 import { hudQuantity, LOCALIZED_LOCALITY } from '../hudLocalityFormat.js';
-import { formatCockpitDistance } from '../ui/cockpitPresentation.js';
 import { cctvSourceStatusLabel } from '../ui/cctvFrames.js';
 import { READOUT_WORDS } from '../layers/recentImagery/display.js';
 import { createModel } from '../layers/firms/model.js';
@@ -14,7 +13,6 @@ test('Chinese HUD and cockpit units keep their case without spacing coordinates'
     setLocale('zh-CN');
     assert.equal(hudQuantity(0, 'km'), '0 km');
     assert.equal(hudQuantity(2069, 'km', 1), '2069.0 km');
-    assert.equal(formatCockpitDistance(14000), '14\u00a0km');
     assert.equal(LOCALIZED_LOCALITY.sector({ latDeg: 21.33, lonDeg: -77.5 }),
       '扇区 21.33N 77.50W');
     setLocale('ja');
@@ -23,7 +21,6 @@ test('Chinese HUD and cockpit units keep their case without spacing coordinates'
     setLocale('en');
     assert.equal(hudQuantity(0, 'km'), '0KM');
     assert.equal(hudQuantity(2069, 'km', 1), '2069.0KM');
-    assert.equal(formatCockpitDistance(14000), '14\u00a0KM');
   } finally {
     setLocale('en');
   }

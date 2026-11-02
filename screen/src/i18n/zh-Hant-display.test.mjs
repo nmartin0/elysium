@@ -8,7 +8,6 @@ import {
   applyDocumentLanguage,
 } from './locale.js';
 import { hudQuantity, LOCALIZED_LOCALITY } from '../hudLocalityFormat.js';
-import { formatCockpitDistance } from '../ui/cockpitPresentation.js';
 import { READOUT_WORDS } from '../layers/recentImagery/display.js';
 import { cctvSourceStatusLabel } from '../ui/cctvFrames.js';
 
@@ -61,7 +60,6 @@ test('Traditional Chinese readouts preserve unit case, coordinates and natural r
   try {
     setLocale('zh-Hant');
     assert.equal(hudQuantity(2069, 'km', 1), '2069.0 km');
-    assert.equal(formatCockpitDistance(14000), '14\u00a0km');
     assert.equal(
       LOCALIZED_LOCALITY.sector({ latDeg: 21.33, lonDeg: -77.5 }),
       '扇區 21.33N 77.50W',

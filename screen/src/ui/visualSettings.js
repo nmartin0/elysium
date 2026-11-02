@@ -27,11 +27,6 @@ import {
   profileForDensity,
 } from '../data/detectionPolicy.js';
 import {
-  applyCockpitVisionStageIntensities,
-  captureCockpitVisionBaseline,
-  normalizeCockpitVisionMode,
-} from '../cockpitVisionPolicy.js';
-import {
   applyContactsDetection,
   shareCacheNeedsHeal,
   shareableDetectionState,
@@ -214,8 +209,6 @@ export class VisualSettings {
     this._cyberStyleUserSelected = false;
     document.documentElement.dataset.gevStyle = this.activeStyle;
     this._detectionUserOverridden = false;
-    this._cockpitVisionMode = 'optical';
-    this._cockpitVisionRestore = null;
     this._contactsDetectionRestore = null;
     this._detectionAllocationBtns = [
       document.getElementById('detection-allocation-elastic'),
@@ -331,57 +324,8 @@ export class VisualSettings {
     this._syncShareState();
   }
 
-  _setCockpitVision(mode, active, { revealParameters = false } = {}) {
-    const next = active ? normalizeCockpitVisionMode(mode) : 'optical';
-    if (!this.stages) return;
-    if (!active) {
-      if (this._cockpitVisionRestore) {
-        for (const [name, intensity] of Object.entries(
-          this._cockpitVisionRestore,
-        )) {
-          if (this.stages[name])
-            this._setStageIntensity(this.stages[name], intensity);
-        }
-      }
-      this._cockpitVisionRestore = null;
-      this._cockpitVisionMode = 'optical';
-      this._syncIrBoost(); // Cockpit exit: fall back to the map preset's IR state
-      this._updateSliderPanel(this.activeStyle, { reveal: false });
-      this._revealCockpitStyleParameters({ openDisplay: revealParameters });
-      return;
-    }
-    if (!this._cockpitVisionRestore) {
-      this._cockpitVisionRestore = captureCockpitVisionBaseline(
-        this.stages,
-        this.transitions,
-      );
-    }
-    if (next === 'optical') {
-      applyCockpitVisionStageIntensities(this.stages, next);
-      this._syncStagesEnabledFromIntensity();
-      this._cockpitVisionMode = next;
-      this._syncIrBoost();
-      this._updateSliderPanel(null, { reveal: false });
-      this._revealCockpitStyleParameters({ openDisplay: revealParameters });
-      return;
-    }
-    const target = applyCockpitVisionStageIntensities(this.stages, next);
-    this._syncStagesEnabledFromIntensity();
-    this._cockpitVisionMode = next;
-    this._syncIrBoost(); // Cockpit vision override ('nvg'/'thermal' boost; CRT/NOIR clear)
-    this._updateSliderPanel(target || null, { reveal: false });
-    this._revealCockpitStyleParameters({ openDisplay: revealParameters });
-  }
-
   _syncIrBoost() {
-    const cockpitMode = this.cockpitView?.active
-      ? this._cockpitVisionMode
-      : null;
-    const effective = cockpitMode
-      ? cockpitMode === 'optical'
-        ? 'normal'
-        : cockpitMode
-      : this.activeStyle;
+    const effective = this.activeStyle;
     const irBoost =
       effective === 'surveillance' ||
       effective === 'thermal' ||
@@ -395,7 +339,7 @@ export class VisualSettings {
       new CustomEvent('gev:vision-change', {
         detail: {
           style: effective,
-          cockpit: Boolean(cockpitMode),
+          cockpit: false,
         },
       }),
     );
@@ -417,42 +361,6 @@ export class VisualSettings {
       }
       scene.requestRender?.();
     }
-  }
-
-  _syncCockpitInheritedStyle() {
-    if (!this.cockpitView?.active || !this.stages) return;
-    this._cockpitVisionRestore = Object.fromEntries(
-      Object.keys(this.stages).map((name) => [
-        name,
-        name === this.activeStyle ? 1 : 0,
-      ]),
-    );
-    for (const name of Object.keys(this.stages)) this.transitions.delete(name);
-    this.cockpitView.setVisionMode(this.cockpitView.visionMode);
-  }
-
-  _revealCockpitStyleParameters({ openDisplay = false } = {}) {
-    if (
-      !this.cockpitView?.active ||
-      !this._sliderPanel?.classList.contains('active')
-    )
-      return;
-    if (
-      openDisplay &&
-      this._cockpitDisplayToggleBtn?.getAttribute('aria-expanded') !== 'true'
-    ) {
-      this._setCockpitDisclosure?.('display', true);
-      return;
-    }
-    if (this._cockpitDisplayToggleBtn?.getAttribute('aria-expanded') !== 'true')
-      return;
-    this._sliderPanel.classList.remove('collapsed');
-    this._syncPanelCollapseButton(this._sliderPanel);
-    this._lifetime.frame(() =>
-      this._lifetime.frame(() => {
-        this._sliderPanel?.scrollIntoView?.({ block: 'nearest' });
-      }),
-    );
   }
 
   _initBloomSharpen() {
@@ -1635,8 +1543,6 @@ export class VisualSettings {
         detail: { style: styleName },
       }),
     );
-
-    this._syncCockpitInheritedStyle();
 
     // Notify share link manager
     this.shareLinkManager.onStyleChange(styleName);

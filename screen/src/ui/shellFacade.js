@@ -405,22 +405,6 @@ export class ShellFacade {
     this._visualSettings._detectionUserOverridden = value;
   }
 
-  get _cockpitVisionMode() {
-    return this._visualSettings._cockpitVisionMode;
-  }
-
-  set _cockpitVisionMode(value) {
-    this._visualSettings._cockpitVisionMode = value;
-  }
-
-  get _cockpitVisionRestore() {
-    return this._visualSettings._cockpitVisionRestore;
-  }
-
-  set _cockpitVisionRestore(value) {
-    this._visualSettings._cockpitVisionRestore = value;
-  }
-
   get _contactsDetectionRestore() {
     return this._visualSettings._contactsDetectionRestore;
   }
@@ -646,10 +630,6 @@ export class ShellFacade {
   }
 
   /** Keep Cockpit's exit restore target aligned with the active map preset. */
-  _syncCockpitInheritedStyle() {
-    return this._visualSettings._syncCockpitInheritedStyle(...arguments);
-  }
-
   /**
    * Configures Cesium's built-in bloom stage and adds a custom unsharp-mask
    * sharpen stage to the post-process pipeline. Both start disabled.
