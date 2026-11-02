@@ -87,11 +87,7 @@ from core.mirror.lake_permissions import make_private
 from core.mirror.lineage import BRONZE_SNAPSHOT_PROPERTY, LINEAGE_COLUMNS, SECURITY_COLUMN, with_lineage
 from core.mirror.sync_targets import LINK_ID_COLUMN
 from core.mirror.transform import describe_drift, transform_batches
-from core.ontology.field_types import (
-    DEFAULT_FIELD_DATA_TYPE,
-    arrow_type_for,
-    split_declared_type,
-)
+from core.ontology.field_types import changed_column_types, schema_for_columns
 from core.ontology.interface import ExternalReadAdapter, IncrementalUnsupported, TableNotFound
 
 logger = logging.getLogger(__name__)
@@ -362,25 +358,12 @@ def _refuse_a_changed_declared_type(table, arrow_table, identifier: str,
     added by the widening path above, and this compares only columns
     that exist on both sides.
     """
-    # ARROW AGAINST ARROW. The table's own schema converted back to
-    # Arrow is the only comparison that cannot disagree with itself
-    # about how a type is spelled.
-    # SAME TYPE, TWO SPELLINGS. Iceberg's Arrow round trip returns
-    # `large_string` where we wrote `string`, and `large_binary` for
-    # `binary` -- identical storage, different pyarrow objects. Left
-    # unnormalised, EVERY text column looked like a type change and
-    # the check refused every second sync.
-    def _same(left, right) -> bool:
-        pairs = {("string", "large_string"), ("binary", "large_binary")}
-        one, two = str(left), str(right)
-        return one == two or (one, two) in pairs or (two, one) in pairs
-
-    existing = {field.name: field.type for field in table.schema().as_arrow()}
-    changed = [
-        (field.name, str(existing[field.name]), str(field.type))
-        for field in arrow_table.schema
-        if field.name in existing and not _same(existing[field.name], field.type)
-    ]
+    # ARROW AGAINST ARROW. The table's own schema converted back to Arrow
+    # is the only comparison that cannot disagree with itself about how a
+    # type is spelled; the spelling rules (large_string is string) live
+    # with the types, in field_types.changed_column_types, because the
+    # retype screen asks the same question without syncing.
+    changed = changed_column_types(table.schema().as_arrow(), arrow_table.schema)
     if not changed or identifier in rebuild:
         return
     described = "; ".join(f"{name}: {was} -> {now}" for name, was, now in changed)
@@ -2291,17 +2274,10 @@ class IcebergMirrorSync(MirrorSync):
         # `number` gets a real float64 Arrow column. That has to happen
         # at write time, since it is a property of the table being
         # written, not of the rows.
-        column_types = column_types or {}
-        resolved = {
-            column: column_types.get(column, DEFAULT_FIELD_DATA_TYPE) for column in columns
-        }
         data = {column: [row[column] for row in rows] for column in columns}
         # THE ZONE IS NOT PART OF THE ARROW TYPE. `timestamptz` already
         # carries tz=UTC; the declared source zone says how to READ a
         # naive value, not how to STORE it, and everything is stored
         # UTC by then.
-        schema = pa.schema([
-            (column, arrow_type_for(split_declared_type(resolved[column])[0]))
-            for column in columns
-        ])
+        schema = schema_for_columns(columns, column_types)
         return pa.table(data, schema=schema)

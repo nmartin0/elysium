@@ -948,6 +948,125 @@ def _remove_type(ontology: str, bindings: "str | None", change: dict, expected: 
 
 
 # ---------------------------------------------------------------------------
+# RETYPING (slice R1 of the retype design, BLOCKING.md "RETYPE, CHECKED AND
+# SLICED"): the `data_type` line of ONE existing data field, changed.
+# Everything the change sets going in the lake is core/ontology/retype.py's
+# to say; this judges only that the edit is exact. LINES, as removal is: the
+# value on the field's `data_type:` line is replaced (a comment after it
+# stays), or the line is added under `type:` when the field never declared
+# one. A field with no data_type counts as "string", the loader's default.
+# ---------------------------------------------------------------------------
+
+RETYPE_KEYS = ("object_type", "field", "data_type")
+DEFAULT_DATA_TYPE = "string"
+
+
+def apply_retype(ontology: str, change: dict, data_types: "Iterable[str]") -> str:
+    """ontology_schema.yaml with one data field's `data_type` changed.
+    `change` is {object_type, field, data_type}. `data_types` is the list a
+    field may be given -- the mirror's, which the caller holds (this module
+    imports nothing from core, as for apply_new_fields).
+
+    Refuses a type or field not written in the file, a link (its value is
+    its target's id: the link type owns it), the type's identifier, a type
+    off the list, the type it already has, a field written inside a {...} on
+    one line, one that comes in through a `<<:` merge or an anchor, a file
+    mixing CRLF and LF line ends, and any result that does not mean exactly
+    the old file with this one value changed. CRLF files stay CRLF."""
+    import re
+
+    import yaml as plain_yaml
+
+    if not isinstance(change, dict):
+        raise ConfigEditError("Nothing to change.")
+    unknown = sorted(set(change) - set(RETYPE_KEYS))
+    if unknown:
+        raise ConfigEditError(f"{', '.join(unknown)} cannot be set here.")
+    crlf = "\r\n" in ontology
+    if crlf:
+        if re.search(r"(?<!\r)\n", ontology):
+            raise ConfigEditError(
+                f"{ONTOLOGY_FILE} mixes CRLF and LF line ends, and cannot be edited by line until one is used "
+                f"throughout.")
+        ontology = ontology.replace("\r\n", "\n")
+    data_types = tuple(data_types)
+    expected = plain_yaml.safe_load(ontology) or {}
+    types = expected.get("object_types") if isinstance(expected, dict) else None
+    if not isinstance(types, dict):
+        raise ConfigEditError(f"{ONTOLOGY_FILE} declares no object_types.")
+    object_type, field_name, data_type = change.get("object_type"), change.get("field"), change.get("data_type")
+    type_def = types.get(object_type) if isinstance(object_type, str) else None
+    if not isinstance(type_def, dict):
+        raise ConfigEditError(f"There is no object type {object_type!r}.")
+    fields = type_def.get("fields") or {}
+    where = f"{object_type}.{field_name}"
+    if not isinstance(field_name, str) or not isinstance(fields.get(field_name), dict):
+        raise ConfigEditError(
+            f"{object_type} has no field {field_name!r} written in {ONTOLOGY_FILE}. A field that a link "
+            f"made has the type of what it links to.")
+    declared = fields[field_name]
+    if declared.get("type") != "data":
+        raise ConfigEditError(f"{where} is not a data field, and only a data field has a data type of its own.")
+    if field_name == type_def.get("id_field"):
+        raise ConfigEditError(f"{where} is the type's identifier, and its type is not changed here.")
+    security = type_def.get("security")
+    if isinstance(security, dict) and field_name == security.get("field"):
+        # Who may see a row is decided by comparing this value, as text,
+        # with the caller's own (sync_targets: the security column is never
+        # canonicalised). Changing how it is stored would change that
+        # comparison, so it is not done from a screen that cannot see it.
+        raise ConfigEditError(f"{where} decides who may see each row of {object_type}, and its type is not "
+                              f"changed here.")
+    if not isinstance(data_type, str) or data_type not in data_types:
+        raise ConfigEditError(f"{where}'s data type is one of {', '.join(data_types)}.")
+    current = declared.get("data_type", DEFAULT_DATA_TYPE)
+    if data_type == current:
+        raise ConfigEditError(f"{where} is already {current}.")
+
+    path = ["object_types", str(object_type), "fields", str(field_name)]
+    _refuse_an_uneditable_field(ontology, path, where, "data_type" in declared)
+    try:
+        edited = _edit_line(ontology, [*path, "data_type"], data_type, ONTOLOGY_FILE, after=("type",))
+    except RuamelYAMLError:
+        raise ConfigEditError(f"{where} is written as {{...}} on one line, and cannot be retyped without "
+                              f"rewriting it to span several lines first.") from None
+    declared["data_type"] = data_type
+    edited = _meaning_checked(edited, expected)
+    return edited.replace("\n", "\r\n") if crlf else edited
+
+
+def _refuse_an_uneditable_field(text: str, path: list[str], where: str, has_data_type: bool) -> None:
+    """A field whose `data_type` is not a line of its own to edit: written
+    in flow style, reached through a `<<:` merge (its value or the field
+    itself defined elsewhere), or carrying an anchor an alias may share."""
+    node = _yaml().load(text) or CommentedMap()
+    chain = [node]
+    for part in path:
+        if not isinstance(node, CommentedMap) or part not in node:
+            raise ConfigEditError(f"{where} is not in {ONTOLOGY_FILE}.")
+        if part not in node.lc.data:
+            raise ConfigEditError(
+                f"{where} comes in through a `<<:` merge in {ONTOLOGY_FILE}, not as a line of its own, and "
+                f"must be changed where it is defined.")
+        node = node[part]
+        chain.append(node)
+    if any(getattr(each, "fa", None) is not None and each.fa.flow_style() for each in chain
+           if isinstance(each, CommentedMap)):
+        raise ConfigEditError(f"{where} is written as {{...}} on one line, and cannot be retyped without "
+                              f"rewriting it to span several lines first.")
+    if any(getattr(each, "anchor", None) is not None and each.anchor.value is not None for each in chain
+           if isinstance(each, CommentedMap)):
+        raise ConfigEditError(f"{where} carries a YAML anchor that something else may share, and must be "
+                              f"changed by hand.")
+    if getattr(node, "merge", None):
+        raise ConfigEditError(f"{where} takes keys from a `<<:` merge in {ONTOLOGY_FILE}, and must be "
+                              f"changed where they are defined.")
+    if has_data_type and "data_type" not in node.lc.data:
+        raise ConfigEditError(f"{where}'s data type comes in through a `<<:` merge in {ONTOLOGY_FILE}, and "
+                              f"must be changed where it is defined.")
+
+
+# ---------------------------------------------------------------------------
 # NEW FIELDS (the ontology's shape, designed and agreed 26 October): the
 # first of three operations -- add a field, add a type, add a link. A
 # request is a list of OPERATIONS, never free YAML: this renders the

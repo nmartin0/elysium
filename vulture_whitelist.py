@@ -610,6 +610,10 @@ preview_removal_route
 apply_removal_route
 can_remove  # RemovalPreviewResponse, read by the browser
 hidden_blockers  # RemovalPreviewResponse, read by the browser
+preview_retype_route
+apply_retype_route
+to_type  # RetypePreviewResponse, read by the browser
+hidden_places  # RetypePreviewResponse, read by the browser
 # DEV_UI 13.7, putting an earlier version back: routes reached by HTTP.
 preview_restore_route
 restore_route

@@ -152,6 +152,40 @@ def arrow_type_for(data_type: str) -> pa.DataType:
     return FIELD_DATA_TYPES[data_type]
 
 
+def schema_for_columns(columns: "list[str]", column_types: "dict[str, str] | None" = None) -> pa.Schema:
+    """The Arrow schema silver holds for these columns: each declared type
+    (default string; the source zone of a `timestamptz@zone` is not part of
+    the Arrow type). ONE PLACE, for the sync that writes a table and for the
+    question of whether the table on disk still matches the declaration
+    (core/ontology/retype.tables_needing_rebuild)."""
+    column_types = column_types or {}
+    return pa.schema([
+        (column, arrow_type_for(split_declared_type(column_types.get(column, DEFAULT_FIELD_DATA_TYPE))[0]))
+        for column in columns
+    ])
+
+
+def same_arrow_type(left, right) -> bool:
+    """SAME TYPE, TWO SPELLINGS. Iceberg's Arrow round trip returns
+    `large_string` where we wrote `string`, and `large_binary` for
+    `binary` -- identical storage, different pyarrow objects. Left
+    unnormalised, EVERY text column looked like a type change and the check
+    refused every second sync (iceberg_sync._refuse_a_changed_declared_type)."""
+    pairs = {("string", "large_string"), ("binary", "large_binary")}
+    one, two = str(left), str(right)
+    return one == two or (one, two) in pairs or (two, one) in pairs
+
+
+def changed_column_types(existing: pa.Schema, wanted: pa.Schema) -> "list[tuple[str, str, str]]":
+    """[(column, type it has, type now declared)] for the columns present
+    on BOTH sides whose types differ. A column on one side only is not a
+    type change (a new one is added by widening)."""
+    have = {field.name: field.type for field in existing}
+    return [(field.name, str(have[field.name]), str(field.type))
+            for field in wanted
+            if field.name in have and not same_arrow_type(have[field.name], field.type)]
+
+
 def _parse_temporal(value, data_type: str):
     """A source value as a `date` or `datetime`, or a refusal.
 

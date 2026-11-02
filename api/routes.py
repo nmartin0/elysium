@@ -3267,6 +3267,137 @@ def apply_removal_route(body: RemovalRequest, request: Request,
         return {"status": "applied", "diff": written["diff"], "to_generation": written["to_generation"]}
 
 
+# ---- Changing a field's data type, core/ontology/retype.py (slice R1) ----
+
+class RetypeRequest(BaseModel):
+    digest: str
+    object_type: str
+    field: str
+    data_type: str
+
+
+class RetypePreviewResponse(BaseModel):
+    diff: list[str]
+    from_type: str
+    to_type: str
+    # The "silo.table" names whose declared column types change.
+    tables: list[str]
+    # What becomes of the data already stored, in words.
+    stored_data: list[str]
+    # Places that name the field, as far as this person may see: notes, not
+    # blockers (a retype does not remove anything).
+    places: list[UsedByRow]
+    # How many more name it that name something they cannot discover.
+    hidden_places: int = 0
+    not_listed: str
+
+
+class RetypeResponse(BaseModel):
+    status: str
+    diff: list[str]
+    to_generation: int | None = None
+    # The "silo.table" names whose silver now differs from the declared type
+    # and is refused by the sync until rebuilt: [] when silver was never
+    # built. The names POST /admin/mirror/sync takes as `rebuild`.
+    rebuild: list[str] = []
+
+
+def _tables_needing_rebuild(request: Request, schema: dict) -> list[str]:
+    """Silver tables whose column types differ from what `schema` declares,
+    read from the lake as it is now. Derived each time, no marker."""
+    from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+
+    from core.mirror.sync_targets import resolve_sync_targets
+    from core.ontology.retype import tables_needing_rebuild
+
+    catalog = _mirror_catalog_for(request)
+
+    def silver_schema_of(identifier: str):
+        try:
+            return catalog.load_table(identifier).schema().as_arrow()
+        except (NoSuchTableError, NoSuchNamespaceError):
+            return None
+
+    return tables_needing_rebuild(resolve_sync_targets({"object_types": schema}), silver_schema_of)
+
+
+def _planned_retype(request: Request, current_user: UserRecord, body: RetypeRequest):
+    """(files, from_type, tables, notes, hidden) for a retype, in one place
+    for the preview and the apply. Order as for a removal: a stale file is
+    refused first (it says nothing about any name), a field the deployment
+    does not have is "Not found", only then the file is edited. As there, the
+    field asked about is not gated on discovery (a manager of the deployment
+    reads every name in the declaration); the places that name it are shown
+    only if every name they carry is one this person could find."""
+    from core.config_editing import ONTOLOGY_FILE, ConfigEditError, apply_retype
+    from core.mirror.sync_targets import resolve_sync_targets
+    from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE, FIELD_DATA_TYPES
+    from core.ontology.removal import visible_to
+    from core.ontology.retype import changed_tables, places_naming, stored_data
+
+    current = _ontology_as_read(request, body.digest)
+    mediator = _generation(request).mediator
+    running = mediator.schema
+    declared = (running.get(body.object_type) or {}).get("fields", {}).get(body.field)
+    if declared is None:
+        raise _not_found()
+    try:
+        proposed = apply_retype(
+            current, {"object_type": body.object_type, "field": body.field, "data_type": body.data_type},
+            tuple(FIELD_DATA_TYPES))
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    # THE FILE ON DISK NOW and the file as it would be, not the running
+    # generation: what a reload after this edit would start from.
+    before = _load_candidate(request, {})
+    after = _load_candidate(request, {ONTOLOGY_FILE: proposed})
+    tables = changed_tables(resolve_sync_targets({"object_types": before.schema}),
+                            resolve_sync_targets({"object_types": after.schema}))
+    found = places_naming(after.schema, after.roles, after.action_types, after.declared_triggers,
+                          body.object_type, body.field)
+    shown, hidden = visible_to(found, lambda subject: mediator.knows(current_user, subject))
+    return ({ONTOLOGY_FILE: (current, proposed)}, declared.get("data_type", DEFAULT_FIELD_DATA_TYPE), tables,
+            stored_data(tables, body.object_type), shown, hidden)
+
+
+@router.post("/admin/ontology/retype/preview", dependencies=[Depends(_no_store)],
+             response_model=RetypePreviewResponse)
+def preview_retype_route(body: RetypeRequest, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The line that would change, what it does to stored data, and what
+    names the field. Nothing written. A name this person cannot find answers
+    as one that does not exist."""
+    from core.config_editing import shown_diff
+
+    _require_manage_deployment(request, current_user)
+    files, from_type, tables, stored, shown, hidden = _planned_retype(request, current_user, body)
+    return {
+        "diff": [line for name, (before, after) in files.items() for line in shown_diff(name, before, after)],
+        "from_type": from_type, "to_type": body.data_type, "tables": tables, "stored_data": stored,
+        "places": [item.as_dict() for item in shown], "hidden_places": hidden,
+        "not_listed": _USED_BY_NOT_LISTED,
+    }
+
+
+@router.put("/admin/ontology/retype", dependencies=[Depends(_no_store)], response_model=RetypeResponse)
+def apply_retype_route(body: RetypeRequest, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> Any:
+    """Changes the field's data type now, judged again here and not trusted
+    from the preview (stale file: 409). No data is touched: the reply lists
+    the tables whose silver must now be rebuilt (`rebuild`), which the sync
+    refuses until a person names them to POST /admin/mirror/sync. The new
+    file is staged and renamed over the old one and the deployment reloaded,
+    or put back (_write_config_files)."""
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        files, _from, _tables, _stored, _shown, _hidden = _planned_retype(request, current_user, body)
+        written = _write_config_files(request, current_user, files,
+                                      {f"{body.object_type}.{body.field}.data_type": body.data_type})
+        return {"status": "applied", "diff": written["diff"], "to_generation": written["to_generation"],
+                "rebuild": _tables_needing_rebuild(request, _load_candidate(request, {}).schema)}
+
+
 def _reason(text: "str | None") -> str:
     from core.config_proposals import MAX_REASON
 
@@ -5579,10 +5710,17 @@ class SyncStartedResponse(BaseModel):
     detail: str
 
 
+class SyncRequest(BaseModel):
+    # "silo.table" names whose silver is to be dropped and rebuilt from
+    # bronze, each of which must need it right now.
+    rebuild: list[str] = []
+
+
 @router.post("/admin/mirror/sync", dependencies=[Depends(_no_store)],
              response_model=SyncStartedResponse)
 def admin_mirror_sync_route(
     request: Request,
+    body: SyncRequest | None = None,
     current_user: UserRecord = Depends(get_current_user),
 ) -> dict:
     """Starts a sync, and returns before it finishes.
@@ -5590,13 +5728,21 @@ def admin_mirror_sync_route(
     A SYNC IS NOT INSTANT. Two seconds on the shipped fixtures, but
     the roadmap (consumed) measured 500,000 rows in 2.46s and about a minute
     for
-    ten million. A synchronous request would hold a connection for
-    that long, and the one worker process with it.
+    ten million. A synchronous request would hold a connection for that long,
+    and the one worker process with it.
 
     SO IT RUNS ON A THREAD and this returns immediately. The SAME
     SHAPE as `install_sighup_handler`, which reloads configuration the
     same way and injects its thread factory for exactly the reason
     this one does.
+
+    OPTIONALLY `{"rebuild": ["silo.table", ...]}` (a retype, core/ontology/
+    retype.py): silver of each is dropped and rebuilt from bronze, at the
+    cost of its snapshot history. EVERY NAME MUST NEED IT RIGHT NOW -- be in
+    tables_needing_rebuild, i.e. its silver column types differ from the
+    declaration -- else 400 naming it and nothing starts: a name that merely
+    exists is refused, because a rebuild nobody needs destroys history for
+    nothing. The names are audited.
 
     **NOTHING NEW REPORTS THE RESULT.** `run_sync()` already records
     every attempt in `sync_attempts.db`, and the mirror panel already
@@ -5621,6 +5767,15 @@ def admin_mirror_sync_route(
             detail="You need manage:deployment to start a sync.",
         )
 
+    rebuild = sorted(set(body.rebuild)) if body else []
+    if rebuild:
+        needed = set(_tables_needing_rebuild(request, generation.config.schema))
+        for name in rebuild:
+            if name not in needed:
+                raise HTTPException(status_code=400, detail=(
+                    f"{name} does not need a rebuild: its silver matches what the ontology declares (or is not "
+                    f"built). Rebuilding it would discard its snapshot history for nothing. Nothing was started."))
+
     # A LIVE DEPLOYMENT USED TO BE REFUSED A SYNC HERE. There is no
     # such deployment since GOLD-9: every deployment fills the mirror,
     # because that is the only thing reads come from.
@@ -5628,10 +5783,17 @@ def admin_mirror_sync_route(
     generation.mediator.audit_log.log_access(
         current_user.user_id, "_mirror", "_sync", "start", None, True,
     )
+    if rebuild:
+        generation.mediator.audit_log.log_access(
+            current_user.user_id, "_mirror", rebuild, "rebuild", None, True,
+        )
 
     thread_factory = getattr(request.app.state, "sync_thread_factory",
                              threading.Thread)
-    thread_factory(target=_run_sync_in_background, daemon=True).start()
+    if rebuild:
+        thread_factory(target=functools.partial(_run_sync_in_background, set(rebuild)), daemon=True).start()
+    else:
+        thread_factory(target=_run_sync_in_background, daemon=True).start()
 
     return {
         "started": True,
@@ -5642,7 +5804,7 @@ def admin_mirror_sync_route(
     }
 
 
-def _run_sync_in_background() -> None:
+def _run_sync_in_background(rebuild: "set[str] | None" = None) -> None:
     """Runs one sync, swallowing everything.
 
     A THREAD THAT RAISES TAKES ITS EXCEPTION NOWHERE. Nobody is
@@ -5653,7 +5815,10 @@ def _run_sync_in_background() -> None:
     from scripts.run_sync import run_sync
 
     try:
-        run_sync()
+        if rebuild:
+            run_sync(rebuild=rebuild)
+        else:
+            run_sync()
     except Exception:  # noqa: BLE001 - see the docstring
         logger.exception("a sync started from the mirror panel failed")
 

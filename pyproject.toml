@@ -458,8 +458,10 @@ layers = [
     #
     # What blocks a removal (29 October) sits above both: it composes the
     # "used by" report with the write log's pending writes, and nothing
-    # reads it back but the route.
-    "removal",
+    # reads it back but the route. Retyping a field (slice R1) sits beside
+    # it: the same report as notes, and the declared-versus-lake type
+    # comparison from field_types.
+    "removal | retype",
     "who_can_see | used_by",
     "write_mediator",
     "mediator",

@@ -863,6 +863,18 @@ def _build_gold(sync, config, data_dir, unsynced: set | None = None,
             #
             # NOT counted as a gold failure: the silver failure that
             # caused it was already counted and named.
+            #
+            # THIS IS WHAT HAPPENS TO GOLD WHEN A FIELD IS RETYPED AND
+            # SILVER HAS NOT BEEN REBUILT YET (measured, retype slice R1,
+            # tests/integration/test_retype_from_the_ui.py::
+            # TestWhileSilverIsRefused): the declared type changed, silver
+            # of the table is refused (DeclaredTypeChanged), the table is
+            # in `unsynced`, and gold of every type reading it lands HERE.
+            # It is skipped, not rebuilt from the old-typed silver and not
+            # failed: gold keeps its rows, its old column type, its tags
+            # and its changelog exactly as published, while reads already
+            # use the new declared type. Naming that window (the object's
+            # state) is slice R2.
             print(f"skipped gold.{object_type}: "
                   f"{', '.join(stale)} did not sync, so its silver is stale")
             not_published.add(object_type)
