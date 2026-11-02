@@ -150,3 +150,59 @@ def test_the_places_that_name_a_field_are_the_used_by_report_and_no_second_readi
 
 def test_the_module_says_where_gold_goes_while_silver_is_refused():
     assert "SKIPPED" in retype.__doc__
+
+
+class TestWhyAColumnIsNotRetyped:
+    """retype.refusal: judged on the loaded schema and per column."""
+
+    @staticmethod
+    def schema(**fields):
+        return {"A": {"storage": {"silo": "s", "table": "t", "id_column": "id"}, "id_field": "id",
+                      "security": {"field": "region"},
+                      "fields": {"region": {"type": "data"}, "plain": {"type": "data"}, **fields}}}
+
+    @staticmethod
+    def targets(security_column="region"):
+        return [SimpleNamespace(silo_name="s", table_name="t", id_column="id", security_column=security_column,
+                                object_types=frozenset({"A"}))]
+
+    def test_a_plain_field_is_not_refused(self):
+        assert retype.refusal(self.schema(), self.targets(), "A", "plain") is None
+
+    def test_a_computed_field_is_refused_by_its_rule(self):
+        schema = self.schema(c={"type": "data", "derived": {"add": ["plain", 1]}})
+
+        assert "what its rule produces" in retype.refusal(schema, self.targets(), "A", "c")
+
+    def test_the_security_field_of_the_loaded_schema_is_refused(self):
+        assert "who may see each row" in retype.refusal(self.schema(), self.targets(), "A", "region")
+
+    def test_a_column_the_targets_use_for_the_id_is_refused_under_any_field_name(self):
+        schema = self.schema(ref={"type": "data", "column": "id"})
+
+        assert "identifies the rows of A" in retype.refusal(schema, self.targets(), "A", "ref")
+
+    def test_a_column_the_targets_use_for_security_is_refused_under_any_field_name(self):
+        schema = self.schema(copy={"type": "data", "column": "region"})
+        schema["A"]["security"] = "not a mapping here"
+
+        assert "decides who may see the rows of A" in retype.refusal(schema, self.targets(), "A", "copy")
+
+    def test_a_link_key_column_is_refused(self):
+        schema = self.schema(owner={"type": "link", "link_type": "L", "column": "owner_id"},
+                             raw={"type": "data", "column": "owner_id"})
+
+        assert "joins on" in retype.refusal(schema, self.targets(), "A", "raw")
+
+    def test_a_reverse_links_key_in_the_other_table_is_refused(self):
+        schema = self.schema(others={"type": "link", "link_type": "L", "via_table": "t", "via_column": "fk",
+                                     "via_target_column": "tag"},
+                             raw={"type": "data", "column": "tag"})
+
+        assert "joins on" in retype.refusal(schema, self.targets(), "A", "raw")
+
+    def test_the_same_column_name_in_another_table_is_not_refused(self):
+        schema = self.schema(copy={"type": "data", "column": "id", "storage": "other"})
+        schema["A"]["additional_storage"] = {"other": {"silo": "s", "table": "u", "id_column": "k"}}
+
+        assert retype.refusal(schema, self.targets(), "A", "copy") is None

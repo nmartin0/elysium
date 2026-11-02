@@ -8004,10 +8004,11 @@ CONTROLS = [
     Control(
         describes="retype: the identifier is not retyped",
         path="core/config_editing.py",
-        old=('    if field_name == type_def.get("id_field"):\n'
+        old=('    if isinstance(field_name, str) and field_name == type_def.get("id_field"):\n'
              '        raise ConfigEditError(f"{where} is the type\'s identifier, and its type is not changed here.")'),
         new='    if False:\n        raise ConfigEditError("")',
-        tests=[f"{TE}::TestWhatIsRefused::test_the_types_identifier_is_never_retyped_even_when_the_file_lists_it_as_a_field"],
+        tests=[f"{TE}::TestWhatIsRefused::test_the_types_identifier_is_never_retyped_even_when_the_file_lists_it_as_a_field",
+               f"{TE}::TestWhatIsRefused::test_the_identifier_not_listed_as_a_field_is_not_said_to_be_a_links_value"],
     ),
     Control(
         describes="retype: the field that decides who may see a row is not retyped",
@@ -8016,6 +8017,52 @@ CONTROLS = [
         new='    if False:',
         tests=[f"{TE}::TestWhatIsRefused::test_the_field_that_decides_who_may_see_a_row_is_refused",
                f"{T}::TestRetyping::test_what_is_refused_and_how[given6-400-who may see each row]"],
+    ),
+    Control(
+        describes="retype: the field the loaded schema's row rule reads is refused (security: inherit is only a word in the file)",  # noqa: E501
+        path="core/ontology/retype.py",
+        old='    if isinstance(security, Mapping) and security.get("field") == field:',
+        new='    if False:',
+        tests=["tests/integration/test_retype_from_the_ui.py::TestARefusalRestsOnTheLoadedSchemaAndTheColumn::test_a_field_whose_row_rule_is_inherited_from_its_silo_is_refused",
+               "tests/unit/test_retype.py::TestWhyAColumnIsNotRetyped::test_the_security_field_of_the_loaded_schema_is_refused"],
+    ),
+    Control(
+        describes="retype: a column that is another type's security column on a shared table is refused",
+        path="core/ontology/retype.py",
+        old='        if target.security_column == column:',
+        new='        if False:',
+        tests=["tests/integration/test_retype_from_the_ui.py::TestARefusalRestsOnTheLoadedSchemaAndTheColumn::test_a_second_types_copy_of_the_security_column_on_a_shared_table_is_refused",
+               "tests/unit/test_retype.py::TestWhyAColumnIsNotRetyped::test_a_column_the_targets_use_for_security_is_refused_under_any_field_name"],
+    ),
+    Control(
+        describes="retype: a column the identifier is stored in is refused under any field name",
+        path="core/ontology/retype.py",
+        old='        if target.id_column == column:',
+        new='        if False:',
+        tests=["tests/integration/test_retype_from_the_ui.py::TestARefusalRestsOnTheLoadedSchemaAndTheColumn::test_a_field_stored_in_the_identifier_column_under_another_name_is_refused",
+               "tests/unit/test_retype.py::TestWhyAColumnIsNotRetyped::test_a_column_the_targets_use_for_the_id_is_refused_under_any_field_name"],
+    ),
+    Control(
+        describes="retype: a column a link joins on is refused",
+        path="core/ontology/retype.py",
+        old='    if linked:',
+        new='    if False:',
+        tests=["tests/integration/test_retype_from_the_ui.py::TestARefusalRestsOnTheLoadedSchemaAndTheColumn::test_a_field_stored_in_a_links_key_column_is_refused",
+               "tests/unit/test_retype.py::TestWhyAColumnIsNotRetyped::test_a_link_key_column_is_refused", "tests/unit/test_retype.py::TestWhyAColumnIsNotRetyped::test_a_reverse_links_key_in_the_other_table_is_refused"],
+    ),
+    Control(
+        describes="retype: a computed field is refused by its rule, from the loaded schema",
+        path="core/ontology/retype.py",
+        old='    if is_computed(field_config):',
+        new='    if False:',
+        tests=["tests/unit/test_retype.py::TestWhyAColumnIsNotRetyped::test_a_computed_field_is_refused_by_its_rule"],
+    ),
+    Control(
+        describes="retype: a computed field is refused by its rule, from the file",
+        path="core/config_editing.py",
+        old='    if any(key in declared for key in ("derived", "enrich", "predict")):',
+        new='    if False:',
+        tests=[f"{TE}::TestWhatIsRefused::test_a_computed_field_is_refused_whatever_its_rule_is"],
     ),
     Control(
         describes="retype: only a data type of the vocabulary is accepted",

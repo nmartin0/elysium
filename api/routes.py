@@ -3349,7 +3349,7 @@ def _planned_retype(request: Request, current_user: UserRecord, body: RetypeRequ
     from core.mirror.sync_targets import resolve_sync_targets
     from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE, FIELD_DATA_TYPES
     from core.ontology.removal import visible_to
-    from core.ontology.retype import changed_tables, places_naming, stored_data
+    from core.ontology.retype import changed_tables, places_naming, refusal, stored_data
 
     current = _ontology_as_read(request, body.digest)
     mediator = _generation(request).mediator
@@ -3367,6 +3367,13 @@ def _planned_retype(request: Request, current_user: UserRecord, body: RetypeRequ
     # THE FILE ON DISK NOW and the file as it would be, not the running
     # generation: what a reload after this edit would start from.
     before = _load_candidate(request, {})
+    # JUDGED ON THE LOADED SCHEMA and on the columns, not on the file's
+    # words: `security: inherit` is only a word in the file, and storage
+    # is per column (core/ontology/retype.refusal).
+    why_not = refusal(before.schema, resolve_sync_targets({"object_types": before.schema}),
+                      body.object_type, body.field)
+    if why_not:
+        raise HTTPException(status_code=400, detail=why_not)
     after = _load_candidate(request, {ONTOLOGY_FILE: proposed})
     tables = changed_tables(resolve_sync_targets({"object_types": before.schema}),
                             resolve_sync_targets({"object_types": after.schema}))

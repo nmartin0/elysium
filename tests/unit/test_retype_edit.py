@@ -145,7 +145,7 @@ class TestWhatIsRefused:
         ({"object_type": "Nope"}, "no object type"),
         ({"field": "nope"}, "no field 'nope'"),
         ({"field": "owner", "data_type": "string"}, "not a data field"),
-        ({"field": "id"}, "no field 'id'"),
+        ({"field": "id"}, "is the type's identifier"),
         ({"data_type": "varchar"}, "data type is one of"),
         ({"data_type": "number"}, "already number"),
         ({"data_type": None}, "data type is one of"),
@@ -161,6 +161,19 @@ class TestWhatIsRefused:
 
         with pytest.raises(ConfigEditError, match="identifier"):
             retyped(text, field="id", data_type="integer")
+
+    def test_the_identifier_not_listed_as_a_field_is_not_said_to_be_a_links_value(self):
+        with pytest.raises(ConfigEditError) as e:
+            retyped(SMALL, field="id", data_type="integer")
+
+        assert "identifier" in str(e.value) and "link" not in str(e.value)
+
+    @pytest.mark.parametrize("rule", ["derived: {formula: amount}", "enrich: {from: x}", "predict: {model: m}"])
+    def test_a_computed_field_is_refused_whatever_its_rule_is(self, rule):
+        text = SMALL.replace("    fields:\n", f"    fields:\n      computed:\n        type: data\n        {rule}\n", 1)
+
+        with pytest.raises(ConfigEditError, match="what its rule produces"):
+            retyped(text, field="computed", data_type="integer")
 
     def test_the_field_that_decides_who_may_see_a_row_is_refused(self):
         text = SMALL.replace("    id_field: id\n", "    id_field: id\n    security:\n      field: other\n", 1)

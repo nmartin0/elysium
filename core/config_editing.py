@@ -1039,6 +1039,10 @@ def apply_retype(ontology: str, change: dict, data_types: "Iterable[str]") -> st
         raise ConfigEditError(f"There is no object type {object_type!r}.")
     fields = type_def.get("fields") or {}
     where = f"{object_type}.{field_name}"
+    # THE IDENTIFIER FIRST: it is often not listed under `fields:` at all,
+    # and "a link made it" would be a wrong reason for it.
+    if isinstance(field_name, str) and field_name == type_def.get("id_field"):
+        raise ConfigEditError(f"{where} is the type's identifier, and its type is not changed here.")
     if not isinstance(field_name, str) or not isinstance(fields.get(field_name), dict):
         raise ConfigEditError(
             f"{object_type} has no field {field_name!r} written in {ONTOLOGY_FILE}. A field that a link "
@@ -1046,8 +1050,9 @@ def apply_retype(ontology: str, change: dict, data_types: "Iterable[str]") -> st
     declared = fields[field_name]
     if declared.get("type") != "data":
         raise ConfigEditError(f"{where} is not a data field, and only a data field has a data type of its own.")
-    if field_name == type_def.get("id_field"):
-        raise ConfigEditError(f"{where} is the type's identifier, and its type is not changed here.")
+    if any(key in declared for key in ("derived", "enrich", "predict")):
+        raise ConfigEditError(f"{where} is not stored: its type is what its rule produces. Change the rule, "
+                              f"not the type.")
     security = type_def.get("security")
     if isinstance(security, dict) and field_name == security.get("field"):
         # Who may see a row is decided by comparing this value, as text,

@@ -38,11 +38,11 @@ column and the declaration disagree: that is the "rebuilding" state slice R2
 is to name and serve properly.)
 """
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 
 import pyarrow as pa
 
-from core.ontology.field_types import changed_column_types, schema_for_columns
+from core.ontology.field_types import changed_column_types, is_computed, schema_for_columns
 from core.ontology.used_by import Referrer, used_by_field
 
 _UNTOUCHED = "Nothing is deleted from your source: Elysium only reads it."
@@ -83,6 +83,81 @@ def stored_data(tables: Sequence[str], gold_type: str) -> list[str]:
               f"{'it' if one else 'them'} until you rebuild: silver is then rebuilt from bronze, and its "
               f"snapshot history is discarded.")
     return [_UNTOUCHED, silver, _BRONZE, _GOLD.format(type=gold_type), _BEFORE_REBUILD, _NOT_COUNTED]
+
+
+def _storage_of(type_def: dict, field_config: dict) -> dict:
+    """The storage block a field's value is read from: the type's own, or
+    the `additional_storage` the field names."""
+    key = field_config.get("storage")
+    return (type_def.get("additional_storage") or {}).get(key) or type_def.get("storage") or {}
+
+
+def _holder(type_name: str, type_def: dict, field_config: dict, name: str) -> tuple:
+    """(silo, table, column) a data field's value lives in."""
+    storage = _storage_of(type_def, field_config)
+    return (storage.get("silo"), storage.get("table"), field_config.get("column", name))
+
+
+def _key_columns(schema: dict) -> dict[tuple, str]:
+    """{(silo, table, column): the link it is a key of} for the columns a
+    link joins on: the foreign key a link type made (on the target's table,
+    or the table a reverse link reads through) and both columns of a join
+    table. A link field's own column is among them."""
+    keys: dict[tuple, str] = {}
+    for type_name, type_def in schema.items():
+        silo = (type_def.get("storage") or {}).get("silo")
+        for name, field_config in (type_def.get("fields") or {}).items():
+            if field_config.get("type") != "link" and "link_type" not in field_config:
+                continue
+            label = field_config.get("link_type") or f"{type_name}.{name}"
+            if field_config.get("via_table"):
+                for column in (field_config.get("via_column"), field_config.get("via_target_column")):
+                    if column:
+                        keys[(silo, field_config["via_table"], column)] = label
+            else:
+                keys[_holder(type_name, type_def, field_config, name)] = label
+    return keys
+
+
+def refusal(schema: dict, targets: Iterable, object_type: str, field: str) -> "str | None":
+    """Why this field's type is not changed from the screen, judged on the
+    LOADED schema (`security: inherit` has become the silo's block, a
+    `<<:` merge has been expanded) and on the sync targets, which are
+    per COLUMN: a field is stored in a (silo, table, column), and two
+    fields of two types can share one, the last declaration's type winning
+    (sync_targets: column_types.update). So the question is whether the
+    COLUMN is one that the identifier, the row security or a link rests
+    on, not whether this field's NAME is. None when nothing stands in the
+    way. `schema` is {type: definition}; `targets` the sync targets of
+    that schema (passed in: this package does not import the mirror)."""
+    type_def = schema.get(object_type) or {}
+    field_config = (type_def.get("fields") or {}).get(field) or {}
+    where = f"{object_type}.{field}"
+    if is_computed(field_config):
+        return (f"{where} is not stored: its type is what its rule produces. Change the rule, not the type.")
+    security = type_def.get("security")
+    if isinstance(security, Mapping) and security.get("field") == field:
+        return (f"{where} decides who may see each row of {object_type}"
+                f"{' (it follows the rule of its silo)' if type_def.get('security_inherited_from') else ''}"
+                f", and its type is not changed here.")
+    silo, table, column = _holder(object_type, type_def, field_config, field)
+    where_stored = f"column {column} of {silo}.{table}"
+    for target in targets:
+        if (target.silo_name, target.table_name) != (silo, table):
+            continue
+        sharing = ", ".join(sorted(target.object_types)) or object_type
+        if target.id_column == column:
+            return (f"{where} is stored in {where_stored}, which identifies the rows of {sharing}, and "
+                    f"its type is not changed here.")
+        if target.security_column == column:
+            return (f"{where} is stored in {where_stored}, which decides who may see the rows of "
+                    f"{sharing}, and its type is not changed here. Changing how it is stored would change "
+                    f"who can see a row.")
+    linked = _key_columns(schema).get((silo, table, column))
+    if linked:
+        return (f"{where} is stored in {where_stored}, which the link {linked} joins on, and its type is "
+                f"not changed here.")
+    return None
 
 
 def places_naming(schema, roles, action_types, triggers, object_type: str, field: str) -> list[Referrer]:

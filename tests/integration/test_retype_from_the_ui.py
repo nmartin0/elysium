@@ -626,3 +626,81 @@ class TestACrlfFileStaysCrlf:
         assert response.status_code == 200, response.text
         after = (config_dir / FILE).read_bytes()
         assert b"The currency." in after and b"\r\n" in after and not re.search(rb"(?<!\r)\n", after)
+
+
+class TestARefusalRestsOnTheLoadedSchemaAndTheColumn:
+    """The refusal read the FILE's words and compared FIELD NAMES, but the
+    loader resolves `security: inherit` to the silo's block, and storage is
+    per COLUMN (a second declaration of a column on a shared table wins its
+    type). core/ontology/retype.refusal judges what loads and what is
+    stored where."""
+
+    @staticmethod
+    def _start(config_dir, request, mutate, silos=None):
+        _prepared(config_dir)
+        schema = yaml.safe_load((config_dir / FILE).read_text())
+        mutate(schema["object_types"])
+        (config_dir / FILE).write_text(yaml.safe_dump(schema, sort_keys=False))
+        if silos:
+            declared = yaml.safe_load((config_dir / "data_silos.yaml").read_text())
+            silos(declared["data_silos"])
+            (config_dir / "data_silos.yaml").write_text(yaml.safe_dump(declared, sort_keys=False))
+        client = request.getfixturevalue("client")
+        _login_as(client, "ops", "remover")
+        return client
+
+    @staticmethod
+    def _refused(client, config_dir, what, says):
+        before = (config_dir / FILE).read_bytes()
+        for preview in (True, False):
+            response = _retype(client, what, preview=preview)
+            assert response.status_code == 400 and says in response.json()["detail"], response.text
+        assert (config_dir / FILE).read_bytes() == before
+
+    def test_a_field_whose_row_rule_is_inherited_from_its_silo_is_refused(self, config_dir, request):
+        client = self._start(
+            config_dir, request,
+            lambda types: types["Customer"].update(security="inherit"),
+            lambda silos: silos["primary_sql"].update(security={"field": "region"}))
+        assert client.app.state.generation.config.schema["Customer"]["security"] == {"field": "region"}
+
+        self._refused(client, config_dir, {"object_type": "Customer", "field": "region", "data_type": "integer"},
+                      "who may see each row")
+
+    def _shared(self, types):
+        types["Vip"] = {"storage": {"silo": "primary_sql", "table": "customers", "id_column": "customer_id"},
+                        "id_field": "customer_id", "security": "unrestricted",
+                        "fields": {"region": {"type": "data"}, "name": {"type": "data"}}}
+
+    def test_a_second_types_copy_of_the_security_column_on_a_shared_table_is_refused(self, config_dir, request):
+        client = self._start(config_dir, request, self._shared)
+
+        self._refused(client, config_dir, {"object_type": "Vip", "field": "region", "data_type": "integer"},
+                      "decides who may see the rows of")
+
+    def test_another_field_of_the_shared_table_is_still_retyped(self, config_dir, request):
+        client = self._start(config_dir, request, self._shared)
+
+        what = {"object_type": "Vip", "field": "name", "data_type": "integer"}
+        assert _retype(client, what, preview=True).status_code == 200
+
+    def test_a_field_stored_in_the_identifier_column_under_another_name_is_refused(self, config_dir, request):
+        client = self._start(config_dir, request, lambda types: types["Customer"]["fields"].update(
+            ref={"type": "data", "column": "customer_id"}))
+
+        self._refused(client, config_dir, {"object_type": "Customer", "field": "ref", "data_type": "integer"},
+                      "identifies the rows of Customer")
+
+    def test_a_field_stored_in_a_links_key_column_is_refused(self, config_dir, request):
+        client = self._start(config_dir, request, lambda types: types["Transaction"]["fields"].update(
+            cust={"type": "data", "column": "customer_id"}))
+
+        self._refused(client, config_dir, {"object_type": "Transaction", "field": "cust", "data_type": "integer"},
+                      "joins on")
+
+    def test_a_computed_field_is_refused_by_its_rule_not_by_its_type(self, config_dir, request):
+        client = self._start(config_dir, request, lambda types: types["Customer"]["fields"].update(
+            doubled={"type": "data", "derived": {"multiply": ["risk_score", 2]}}))
+        response = _retype(client, {"object_type": "Customer", "field": "doubled", "data_type": "integer"},
+                           preview=True)
+        assert response.status_code == 400 and "what its rule produces" in response.json()["detail"]
