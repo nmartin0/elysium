@@ -43,7 +43,7 @@ const PANEL_GROUPS = [
     ids: ['satellites', 'flights', 'ais-live-vessels', 'transit', 'bikeshare'],
   },
   {
-    label: msg('Cameras'),
+    label: msg('Imagery'),
     ids: ['recent-imagery'],
   },
   {
