@@ -43,18 +43,18 @@ test('t() and translateKnown() fall back to English for an empty entry', () => {
 
 test('tn() skips an empty plural form', () => {
   const es = getCatalog('es');
-  const KEY = '{count} INPUTS UNKNOWN';
+  const KEY = '{count} DAYS';
   const saved = es[KEY];
   setLocale('es');
   try {
     es[KEY] = { ...saved, one: ' ' };
     assert.equal(
-      tn(1, '{count} INPUT UNKNOWN', KEY),
+      tn(1, '{count} DAY', KEY),
       saved.other.replace('{count}', '1'),
     );
     es[KEY] = { one: '', many: '', other: '' };
-    assert.equal(tn(1, '{count} INPUT UNKNOWN', KEY), '1 INPUT UNKNOWN');
-    assert.equal(tn(3, '{count} INPUT UNKNOWN', KEY), '3 INPUTS UNKNOWN');
+    assert.equal(tn(1, '{count} DAY', KEY), '1 DAY');
+    assert.equal(tn(3, '{count} DAY', KEY), '3 DAYS');
   } finally {
     es[KEY] = saved;
     setLocale('en');

@@ -129,9 +129,9 @@ test('applyDocumentLanguage sets lang and dir', () => {
 });
 
 test('t() returns English text in English and translates in Russian', () => {
-  assert.equal(t('POWERED UP'), 'POWERED UP');
+  assert.equal(t('Wind unavailable'), 'Wind unavailable');
   setLocale('ru');
-  assert.notEqual(t('POWERED UP'), 'POWERED UP');
+  assert.notEqual(t('Wind unavailable'), 'Wind unavailable');
 });
 
 test('t() interpolates named values and keeps unknown names literal', () => {
@@ -151,49 +151,34 @@ test('t() falls back to English for text without a translation', () => {
 });
 
 test('tn() picks English and Russian plural forms', () => {
-  const label = (count) =>
-    tn(
-      count,
-      'POWER UP · {count} KEY WAITING',
-      'POWER UP · {count} KEYS WAITING',
-    );
-  assert.equal(label(1), 'POWER UP · 1 KEY WAITING');
-  assert.equal(label(3), 'POWER UP · 3 KEYS WAITING');
+  const label = (count) => tn(count, '{count} DAY', '{count} DAYS');
+  assert.equal(label(1), '1 DAY');
+  assert.equal(label(3), '3 DAYS');
   setLocale('ru');
-  assert.match(label(1), / 1 КЛЮЧ(?![А-ЯЁ])/);
-  assert.match(label(3), / 3 КЛЮЧА(?![А-ЯЁ])/);
-  assert.match(label(5), / 5 КЛЮЧЕЙ(?![А-ЯЁ])/);
-  assert.match(label(21), / 21 КЛЮЧ(?![А-ЯЁ])/);
+  assert.match(label(1), /(^| )1 ДЕНЬ(?![А-ЯЁ])/);
+  assert.match(label(3), /(^| )3 ДНЯ(?![А-ЯЁ])/);
+  assert.match(label(5), /(^| )5 ДНЕЙ(?![А-ЯЁ])/);
+  assert.match(label(21), /(^| )21 ДЕНЬ(?![А-ЯЁ])/);
 });
 
 test('tn() picks the Portuguese one, many and other forms', () => {
-  const label = (count) =>
-    tn(
-      count,
-      'POWER UP · {count} KEY WAITING',
-      'POWER UP · {count} KEYS WAITING',
-    );
+  const label = (count) => tn(count, '{count} DAY', '{count} DAYS');
   setLocale('pt');
-  assert.equal(label(0), 'ATIVAR · 0 CHAVE PENDENTE');
-  assert.equal(label(1), 'ATIVAR · 1 CHAVE PENDENTE');
-  assert.equal(label(3), 'ATIVAR · 3 CHAVES PENDENTES');
-  assert.equal(label(1_000_000), 'ATIVAR · 1000000 DE CHAVES PENDENTES');
+  assert.equal(label(0), '0 DIA');
+  assert.equal(label(1), '1 DIA');
+  assert.equal(label(3), '3 DIAS');
+  assert.equal(label(1_000_000), '1000000 DE DIAS');
 });
 
 test('tn() picks the four Ukrainian plural forms', () => {
-  const label = (count) =>
-    tn(
-      count,
-      'POWER UP · {count} KEY WAITING',
-      'POWER UP · {count} KEYS WAITING',
-    );
+  const label = (count) => tn(count, '{count} DAY', '{count} DAYS');
   setLocale('uk');
-  assert.match(label(1), / 1 КЛЮЧ(?![А-ЯҐЄІЇ])/);
-  assert.match(label(3), / 3 КЛЮЧІ(?![А-ЯҐЄІЇ])/);
-  assert.match(label(5), / 5 КЛЮЧІВ(?![А-ЯҐЄІЇ])/);
-  assert.match(label(11), / 11 КЛЮЧІВ(?![А-ЯҐЄІЇ])/);
-  assert.match(label(21), / 21 КЛЮЧ(?![А-ЯҐЄІЇ])/);
-  assert.match(label(1.5), / 1\.5 КЛЮЧА(?![А-ЯҐЄІЇ])/);
+  assert.match(label(1), /(^| )1 ДЕНЬ(?![А-ЯҐЄІЇ])/);
+  assert.match(label(3), /(^| )3 ДНІ(?![А-ЯҐЄІЇ])/);
+  assert.match(label(5), /(^| )5 ДНІВ(?![А-ЯҐЄІЇ])/);
+  assert.match(label(11), /(^| )11 ДНІВ(?![А-ЯҐЄІЇ])/);
+  assert.match(label(21), /(^| )21 ДЕНЬ(?![А-ЯҐЄІЇ])/);
+  assert.match(label(1.5), /(^| )1\.5 ДНЯ(?![А-ЯҐЄІЇ])/);
 });
 
 test('t() context separates identical English with different meanings', () => {
@@ -238,8 +223,8 @@ function fakeElement({ text = '', attributes = {} } = {}) {
 }
 
 test('applyDocumentTranslations translates opted-in text and attributes in place', () => {
-  const label = fakeElement({ text: '\n  POWERED\n  UP  ' });
-  const pin = fakeElement({ attributes: { title: 'POWERED UP' } });
+  const label = fakeElement({ text: '\n  Wind\n  unavailable  ' });
+  const pin = fakeElement({ attributes: { title: 'Wind unavailable' } });
   const unknown = fakeElement({ text: 'No such message' });
   const doc = {
     querySelectorAll(selector) {
@@ -255,15 +240,15 @@ test('applyDocumentTranslations translates opted-in text and attributes in place
   );
   setLocale('ru');
   assert.equal(applyDocumentTranslations(doc), 2);
-  assert.equal(label.textContent, t('POWERED UP'));
-  assert.equal(pin.attrs.get('title'), t('POWERED UP'));
+  assert.equal(label.textContent, t('Wind unavailable'));
+  assert.equal(pin.attrs.get('title'), t('Wind unavailable'));
   assert.equal(unknown.textContent, 'No such message');
 });
 
 test('applyDocumentTranslations reads data-i18n-context for element text', () => {
   const option = fakeElement({
-    text: 'All',
-    attributes: { 'data-i18n-context': 'radio tag' },
+    text: 'CLEAR',
+    attributes: { 'data-i18n-context': 'action' },
   });
   const doc = {
     querySelectorAll: (selector) =>
@@ -271,8 +256,8 @@ test('applyDocumentTranslations reads data-i18n-context for element text', () =>
   };
   setLocale('pt');
   applyDocumentTranslations(doc);
-  assert.equal(option.textContent, t('All', { context: 'radio tag' }));
-  assert.notEqual(option.textContent, t('All'));
+  assert.equal(option.textContent, t('CLEAR', { context: 'action' }));
+  assert.notEqual(option.textContent, t('CLEAR'));
 });
 
 test('persistLocaleAndReload keeps the choice in ?lang when storage is blocked', () => {
