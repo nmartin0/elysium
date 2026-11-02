@@ -6,9 +6,7 @@ import { terrainHeightsProxy } from './terrain.js';
 import { adsbdbProxy } from './aircraft/enrichment.js';
 import { overpassProxy } from './overpass.js';
 import { militaryInstallationsProxy } from './military-installations.js';
-import { regionalBriefProxy } from './regional/briefing.js';
 import { geocodeProxy } from './regional/place.js';
-import { weatherEffectsProxy } from './regional/weather-effects.js';
 import { cctvProxy } from './cctv.js';
 import { defaultSourceRoot } from './common/source-root.js';
 import { radioBrowserProxy } from './radio.js';
@@ -39,9 +37,7 @@ function localProviderPlugins() {
     adsbdbProxy(),
     overpassProxy(),
     militaryInstallationsProxy(),
-    regionalBriefProxy(),
     geocodeProxy(),
-    weatherEffectsProxy(),
     cctvProxy({ sourceRoot: defaultSourceRoot }),
     radioBrowserProxy(),
     gbfsProxy(),
@@ -104,4 +100,3 @@ export { writeMilitaryInstallationDisk } from './military-installations/cache.js
 export { validMilitaryInstallationBox } from './military-installations/query.js';
 export { militaryInstallationFailureReason } from './military-installations/query.js';
 export { validRegionalPoint } from './regional/query.js';
-export { regionalBriefHasAnySource } from './regional/briefing.js';

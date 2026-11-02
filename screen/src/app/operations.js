@@ -8,8 +8,6 @@ import { searchAndFlyTo } from '../locations.js';
 export function createApplicationOperations({ requests, signal, eventTarget }) {
   for (const [name, method] of Object.entries({
     terrain: 'getHeights',
-    regional: 'getBrief',
-    weather: 'getConditions',
   })) {
     if (typeof requests?.[name]?.[method] !== 'function')
       throw new TypeError(`Missing application request service: ${name}`);

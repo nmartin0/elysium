@@ -9,8 +9,6 @@ const slots = Object.fromEntries(
   Object.entries({
     boundaries: ['query'],
     terrain: ['getHeights'],
-    regional: ['getBrief'],
-    weather: ['getConditions'],
   }).map(([name, methods]) => [
     name,
     createSourceSlot(defaults[name], methods, `${name} service`),

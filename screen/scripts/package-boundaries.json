@@ -309,13 +309,9 @@
       "server/providers/common/query.js",
       "server/providers/common/rate-limit.js",
       "server/providers/regional.js",
-      "server/providers/regional/briefing.js",
       "server/providers/regional/http.js",
-      "server/providers/regional/news.js",
       "server/providers/regional/place.js",
       "server/providers/regional/query.js",
-      "server/providers/regional/weather-effects.js",
-      "server/providers/regional/weather.js",
       "src/data/regionalModel.js",
       "src/geoDistance.js",
       "src/nominatimGeocode.js",
@@ -597,9 +593,7 @@
     "external": []
   },
   "cockpit-controls": {
-    "exports": [
-      "./ui/cockpit/math"
-    ],
+    "exports": ["./ui/cockpit/math"],
     "modules": [
       "src/ui/displayPanelScroll.js",
       "src/cockpitMath.js",
@@ -1797,7 +1791,6 @@
       "src/data/pickRegistry.js",
       "src/data/radio.js",
       "src/data/radioCountry.js",
-      "src/data/regionalBrief.js",
       "src/data/regionalModel.js",
       "src/data/renderAltitude.js",
       "src/data/bundledJson.js",

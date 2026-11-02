@@ -21,8 +21,6 @@ export function createApplicationRequestServices({
   const urls = {
     boundaries: '/api/overpass',
     terrain: '/api/terrain/heights',
-    regional: '/api/regional-brief',
-    weather: '/api/weather-effects',
     ...endpoints,
   };
   async function request(endpoint, { signal, ...init } = {}) {
@@ -155,22 +153,6 @@ export function createApplicationRequestServices({
           }),
           'Terrain heights',
         )?.results;
-      },
-    },
-    regional: {
-      async getBrief(latitude, longitude, options) {
-        return requireOk(
-          await request(pointUrl(urls.regional, latitude, longitude), options),
-          'Regional brief',
-        );
-      },
-    },
-    weather: {
-      async getConditions(latitude, longitude, options) {
-        return requireOk(
-          await request(pointUrl(urls.weather, latitude, longitude), options),
-          'Weather',
-        );
       },
     },
   };

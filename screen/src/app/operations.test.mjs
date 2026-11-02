@@ -6,8 +6,6 @@ function requests(terrain, boundaries = { query: async () => [] }) {
   return {
     terrain,
     boundaries,
-    regional: { getBrief: async () => ({}) },
-    weather: { getConditions: async () => ({}) },
     summary: { summarize: async () => ({}) },
   };
 }
