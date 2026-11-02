@@ -38,8 +38,10 @@ undo" with a validation in front.
 """
 
 import difflib
+import functools
 import hashlib
-from collections.abc import Iterable, Mapping
+import re
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 
 from ruamel.yaml import YAML
@@ -49,6 +51,38 @@ from ruamel.yaml.error import YAMLError as RuamelYAMLError
 
 class ConfigEditError(ValueError):
     """The change is not one this editor will make."""
+
+
+def _keeping_line_ends(*names: str) -> Callable:
+    """For an editor whose first arguments are the text of the files named
+    (None for a file that does not exist): the editor works on LF text and
+    each file it returns comes back with the line ends that file came in
+    with, CRLF staying CRLF. A file that mixes the two is refused, before
+    anything is edited, since no one style can be said to be its own.
+    The routes read and write the bytes as they are (api/routes.
+    _exact_text), so this is where a CRLF file would otherwise be edited
+    line by line into a mixture."""
+    def wrap(edit: Callable) -> Callable:
+        @functools.wraps(edit)
+        def edited(*args, **kwargs):
+            given = list(args[:len(names)])
+            crlf: list[bool] = []
+            for name, text in zip(names, given, strict=False):
+                has = isinstance(text, str) and "\r\n" in text
+                if has and re.search(r"(?<!\r)\n", text):
+                    raise ConfigEditError(
+                        f"{name} mixes CRLF and LF line ends, and cannot be edited by line until one is used "
+                        f"throughout.")
+                crlf.append(has)
+            lf = [text.replace("\r\n", "\n") if isinstance(text, str) else text for text in given]
+            out = edit(*lf, *args[len(names):], **kwargs)
+            outputs = list(out) if isinstance(out, tuple) else [out]
+            for index, text in enumerate(outputs):
+                if isinstance(text, str) and (crlf[index] if index < len(crlf) else crlf[0]):
+                    outputs[index] = text.replace("\n", "\r\n")
+            return tuple(outputs) if isinstance(out, tuple) else outputs[0]
+        return edited
+    return wrap
 
 
 @dataclass(frozen=True)
@@ -325,6 +359,7 @@ def _edit_line(text: str, path: list[str], rendered: "str | None", filename: str
     return "".join(lines)
 
 
+@_keeping_line_ends("config.yaml")
 def apply_changes(text: str, changes: dict) -> str:
     """The file with these settings changed. A value of None REMOVES the
     key -- commented out with REMOVED_MARK -- which is how "absent" is
@@ -476,6 +511,7 @@ def _meaning_checked(edited: str, expected, filename: str = "") -> str:
     return edited
 
 
+@_keeping_line_ends("ontology_schema.yaml")
 def apply_descriptions(text: str, changes: list) -> str:
     """ontology_schema.yaml with these descriptions changed. Each change
     is {object_type, field (or None for the type), key, value}; a value
@@ -575,6 +611,7 @@ def _checked_labels(where: str, labels) -> list[str]:
     return labels
 
 
+@_keeping_line_ends("ontology_schema.yaml")
 def apply_labels(text: str, changes: list) -> str:
     """ontology_schema.yaml with these fields' labels set. Each change is
     {object_type, field, labels}; an empty list removes the key. The
@@ -639,6 +676,7 @@ _STATUS_AFTER = {"type": ("display_name", "plural_display_name", "description"),
                           "foreign_key_column", "join_table")}
 
 
+@_keeping_line_ends("ontology_schema.yaml")
 def apply_status(text: str, change: dict, check) -> str:
     """ontology_schema.yaml with one type, field or link type deprecated
     or made active again. `change` is {kind: type|field|link, status:
@@ -838,6 +876,7 @@ def _delete_entry(text: str, path: list[str], filename: str, where: str, drop_em
     return "".join(lines)
 
 
+@_keeping_line_ends("ontology_schema.yaml", "source_bindings.yaml")
 def apply_removal(ontology: str, bindings: "str | None", change: dict) -> tuple[str, "str | None"]:
     """(ontology_schema.yaml, source_bindings.yaml) with one stored field
     or one link type taken out. `change` is {kind: field, object_type,
@@ -1160,6 +1199,7 @@ def _checked_column(where: str, column) -> "str | None":
     return column
 
 
+@_keeping_line_ends("ontology_schema.yaml", "source_bindings.yaml")
 def apply_new_fields(ontology: str, bindings: "str | None", additions: list,
                      data_types: "Iterable[str]") -> tuple[str, "str | None"]:
     """(ontology_schema.yaml, source_bindings.yaml) with these data
@@ -1283,6 +1323,7 @@ def _checked_name(what: str, value, pattern: str) -> str:
     return value
 
 
+@_keeping_line_ends("ontology_schema.yaml", "source_bindings.yaml")
 def apply_new_type(ontology: str, bindings: "str | None", addition: dict,
                    data_types: "Iterable[str]",
                    silos: "Mapping[str, object]") -> tuple[str, "str | None"]:
@@ -1494,6 +1535,7 @@ def _link_side(name: str, which: str, side, types: dict, taken: dict) -> tuple[s
     return object_type, api_name
 
 
+@_keeping_line_ends("ontology_schema.yaml")
 def apply_new_link(ontology: str, addition: dict) -> str:
     """ontology_schema.yaml with this link type added. `addition` is {name,
     source, target, cardinality} -- source and target each {object_type,

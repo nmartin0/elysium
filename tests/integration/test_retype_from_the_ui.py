@@ -18,6 +18,7 @@ holds, and so is what the sync does about gold while silver is refused.
 import contextlib
 import io
 import json
+import re
 import shutil
 import sqlite3
 
@@ -554,3 +555,74 @@ class TestWhileSilverIsRefused:
                 in flow.refused_output)
         assert "FAILED  gold.Transaction" not in flow.refused_output
 
+
+
+def _made_crlf(config_dir, *names):
+    """The named configuration files with CRLF line ends, as an editor on
+    Windows leaves them; returns {name: bytes}."""
+    for name in names:
+        path = config_dir / name
+        path.write_bytes(path.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+    return {name: (config_dir / name).read_bytes() for name in names}
+
+
+class TestACrlfFileStaysCrlf:
+    """Path.read_text() turned CRLF into LF, so every edit from the screen
+    rewrote a CRLF file with LF line ends, and the mixed-line-end refusal
+    could never fire. The routes read and write the bytes as they are."""
+
+    @pytest.fixture
+    def crlf(self, config_dir, request):
+        _prepared(config_dir)
+        _made_crlf(config_dir, FILE)
+        client = request.getfixturevalue("client")
+        _login_as(client, "ops", "remover")
+        return client
+
+    def test_retype_keeps_every_line_end_and_the_digest_is_the_files_own(self, crlf, config_dir):
+        import hashlib
+
+        on_disk = (config_dir / FILE).read_bytes()
+        assert hashlib.sha256(on_disk).hexdigest() == _digest(crlf)
+
+        assert _retype(crlf).status_code == 200
+
+        after = (config_dir / FILE).read_bytes()
+        assert b"\r\n" in after and not re.search(rb"(?<!\r)\n", after)
+        assert b"data_type: decimal" in after and after != on_disk
+
+    def test_the_preview_of_a_retype_writes_nothing(self, crlf, config_dir):
+        on_disk = (config_dir / FILE).read_bytes()
+        assert _retype(crlf, preview=True).status_code == 200
+        assert (config_dir / FILE).read_bytes() == on_disk
+
+    def test_a_file_mixing_line_ends_is_refused_and_untouched(self, crlf, config_dir):
+        path = config_dir / FILE
+        path.write_bytes(path.read_bytes() + b"# an LF line\n")
+        on_disk = path.read_bytes()
+
+        for preview in (True, False):
+            response = _retype(crlf, preview=preview)
+            assert response.status_code == 400 and "mixes CRLF and LF" in response.json()["detail"]
+        assert path.read_bytes() == on_disk
+
+    def test_a_removal_keeps_every_line_end(self, crlf, config_dir):
+        from tests.integration.test_removal_from_the_ui import _deprecate, _remove
+
+        _deprecate(crlf)
+        response = _remove(crlf)
+
+        assert response.status_code == 200, response.text
+        after = (config_dir / FILE).read_bytes()
+        assert b"\r\n" in after and not re.search(rb"(?<!\r)\n", after)
+        assert "currency" not in yaml.safe_load(after)["object_types"]["Account"]["fields"]
+
+    def test_a_description_keeps_every_line_end(self, crlf, config_dir):
+        response = crlf.put("/api/admin/ontology/descriptions", headers=_csrf_headers(crlf), json={
+            "digest": _digest(crlf),
+            "changes": [{"object_type": "Account", "field": "currency", "key": "description",
+                         "value": "The currency."}]})
+
+        assert response.status_code == 200, response.text
+        after = (config_dir / FILE).read_bytes()
+        assert b"The currency." in after and b"\r\n" in after and not re.search(rb"(?<!\r)\n", after)

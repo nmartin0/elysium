@@ -1891,11 +1891,27 @@ def _config_file(request: Request) -> Path:
 # users, and the read-only panel's manage:users is not enough.
 
 
+def _exact_text(path: Path) -> str:
+    """A configuration file's text EXACTLY as stored: CRLF stays CRLF.
+    Path.read_text() applies universal newlines and would hand the editors
+    an LF copy of a CRLF file, so a screen edit rewrote the line ends of
+    the whole file and the mixed-line-end refusal could never see them.
+    Every route that reads a file to edit or stage it reads through here,
+    and writes through _put_exact_text, so the digest the editor was given
+    is the digest of the bytes on disk."""
+    return path.read_bytes().decode("utf-8")
+
+
+def _put_exact_text(path: Path, text: str) -> None:
+    """The write that pairs with _exact_text: the text's own line ends."""
+    path.write_bytes(text.encode("utf-8"))
+
+
 def _proposed_config(request: Request, body: ConfigEditRequest) -> tuple[str, str]:
     """The file now and the file as it would be, or the reason not."""
     from core.config_editing import ConfigEditError, apply_changes, digest
 
-    current = _config_file(request).read_text()
+    current = _exact_text(_config_file(request))
     if digest(current) != body.digest:
         raise HTTPException(status_code=409, detail=(
             "config.yaml has changed since you opened it. Load it again to see "
@@ -1914,7 +1930,7 @@ def config_settings_route(request: Request,
     from core.config_editing import current_settings, digest
 
     _require_manage_deployment(request, current_user)
-    text = _config_file(request).read_text()
+    text = _exact_text(_config_file(request))
     return {"digest": digest(text), "settings": current_settings(text)}
 
 
@@ -2006,7 +2022,7 @@ def _write_config_files(request: Request, current_user: UserRecord,
 
     def put(filename: str, text: str) -> None:
         staged = staged_beside(filename)
-        staged.write_text(text)
+        _put_exact_text(staged, text)
         os.replace(staged, config_dir / filename)
 
     def put_back(names) -> "list[str]":
@@ -2043,7 +2059,7 @@ def _write_config_files(request: Request, current_user: UserRecord,
     try:
         for filename, (_, proposed) in files.items():
             staged_names.append(filename)
-            staged_beside(filename).write_text(proposed)
+            _put_exact_text(staged_beside(filename), proposed)
     except OSError as e:
         drop_staged(staged_names)
         raise refused(500, "The change was not applied: a file could not be written beside the "
@@ -2102,7 +2118,7 @@ def _load_candidate(request: Request, replacements: "dict[str, str]"):
         candidate = Path(scratch) / "config"
         shutil.copytree(paths.config_dir, candidate)
         for filename, text in replacements.items():
-            (candidate / filename).write_text(text)
+            _put_exact_text(candidate / filename, text)
         try:
             return _with_effective_roles(load_deployment(candidate), paths.data_dir)
         except Exception as e:
@@ -2160,7 +2176,7 @@ def _ontology_as_read(request: Request, read_digest: str) -> str:
     writing must not silently overwrite each other."""
     from core.config_editing import ONTOLOGY_FILE, digest
 
-    current = (request.app.state.runtime_paths.config_dir / ONTOLOGY_FILE).read_text()
+    current = _exact_text(request.app.state.runtime_paths.config_dir / ONTOLOGY_FILE)
     if digest(current) != read_digest:
         raise HTTPException(status_code=409, detail=(
             f"{ONTOLOGY_FILE} has changed since you opened it. Load it again to see "
@@ -2200,7 +2216,7 @@ def ontology_descriptions_route(request: Request,
     from core.ontology.field_types import FIELD_DATA_TYPES
 
     _require_manage_deployment(request, current_user)
-    text = (request.app.state.runtime_paths.config_dir / ONTOLOGY_FILE).read_text()
+    text = _exact_text(request.app.state.runtime_paths.config_dir / ONTOLOGY_FILE)
     return {"digest": digest(text), "types": current_descriptions(text),
             "label_enforcement": bool(_generation(request).config.label_enforcement),
             "data_types": list(FIELD_DATA_TYPES)}
@@ -2415,7 +2431,7 @@ def _proposed_new_fields(request: Request, body: NewFieldsRequest) -> "dict[str,
 
     current = _ontology_as_read(request, body.digest)
     bindings_path = request.app.state.runtime_paths.config_dir / BINDINGS_FILE
-    bindings = bindings_path.read_text() if bindings_path.exists() else None
+    bindings = _exact_text(bindings_path) if bindings_path.exists() else None
     try:
         proposed, proposed_bindings = apply_new_fields(
             current, bindings, [f.model_dump(exclude_none=True) for f in body.fields], FIELD_DATA_TYPES)
@@ -2578,7 +2594,7 @@ def _proposed_new_type(request: Request, body: NewTypeRequest) -> "dict[str, tup
 
     current = _ontology_as_read(request, body.digest)
     bindings_path = request.app.state.runtime_paths.config_dir / BINDINGS_FILE
-    bindings = bindings_path.read_text() if bindings_path.exists() else None
+    bindings = _exact_text(bindings_path) if bindings_path.exists() else None
     addition = body.model_dump(exclude_none=True, exclude={"digest", "reason"})
     addition["fields"] = [f.model_dump(exclude_none=True) for f in body.fields]
     try:
@@ -3135,7 +3151,7 @@ def _planned_removal(request: Request, current_user: UserRecord, body: RemovalRe
         raise HTTPException(status_code=400, detail="What is removed is a field, a link type or a type.")
 
     bindings_path = request.app.state.runtime_paths.config_dir / BINDINGS_FILE
-    bindings = bindings_path.read_text() if bindings_path.exists() else None
+    bindings = _exact_text(bindings_path) if bindings_path.exists() else None
     try:
         proposed, proposed_bindings = apply_removal(current, bindings, change)
     except ConfigEditError as e:
@@ -3451,7 +3467,7 @@ def _proposal_state(request: Request, proposal) -> dict:
     from core.config_editing import digest, shown_diff
 
     config_dir = request.app.state.runtime_paths.config_dir
-    now = {name: (config_dir / name).read_text() if (config_dir / name).exists() else ""
+    now = {name: _exact_text(config_dir / name) if (config_dir / name).exists() else ""
            for name in proposal.files}
     stale = any(digest(now[name]) != proposal.base.get(name) for name in proposal.files)
     impact, problem = None, None
@@ -3520,7 +3536,7 @@ def approve_config_proposal_route(proposal_id: str, request: Request,
             store.decide(proposal_id, "stale", current_user.user_id, reason)
             raise HTTPException(status_code=409, detail=reason)
         config_dir = request.app.state.runtime_paths.config_dir
-        current = {name: (config_dir / name).read_text() for name in proposal.files}
+        current = {name: _exact_text(config_dir / name) for name in proposal.files}
         if any(digest(current[name]) != proposal.base.get(name) for name in proposal.files):
             reason = ("The configuration has changed since this was proposed, so it no longer "
                       "describes what approving it would do. It needs proposing again.")
