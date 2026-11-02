@@ -8048,7 +8048,8 @@ CONTROLS = [
         old='    if linked:',
         new='    if False:',
         tests=["tests/integration/test_retype_from_the_ui.py::TestARefusalRestsOnTheLoadedSchemaAndTheColumn::test_a_field_stored_in_a_links_key_column_is_refused",
-               "tests/unit/test_retype.py::TestWhyAColumnIsNotRetyped::test_a_link_key_column_is_refused", "tests/unit/test_retype.py::TestWhyAColumnIsNotRetyped::test_a_reverse_links_key_in_the_other_table_is_refused"],
+               "tests/unit/test_retype.py::TestWhyAColumnIsNotRetyped::test_a_link_key_column_is_refused",
+               "tests/unit/test_retype.py::TestWhyAColumnIsNotRetyped::test_a_reverse_links_key_in_the_other_table_is_refused"],  # noqa: E501
     ),
     Control(
         describes="retype: a computed field is refused by its rule, from the loaded schema",
