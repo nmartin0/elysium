@@ -7441,8 +7441,9 @@ CONTROLS = [
     Control(
         describes="a flow-style body is refused rather than crashing the route",
         path="core/config_editing.py",
-        old='    except RuamelYAMLError:',
+        old='                            after=("status",))\n    except RuamelYAMLError:',
         new=(
+            '                            after=("status",))\n'
             '    except Exception as _never:  # noqa: BLE001 - deliberately never '
             'matches, for the control\n'
             '        raise _never'
@@ -7715,8 +7716,8 @@ CONTROLS = [
     Control(
         describes="a field a link made is removed as its link type, not as a field",
         path="core/config_editing.py",
-        old='\n    if not isinstance(field_name, str) or not isinstance(fields.get(field_name), dict):\n        raise ConfigEditError(\n            f"{object_type} has no field {field_name!r} written in',  # noqa: E501
-        new='\n    if False:\n        raise ConfigEditError(\n            f"{object_type} has no field {field_name!r} written in',  # noqa: E501
+        old='\n    if not isinstance(field_name, str) or not isinstance(fields.get(field_name), dict):\n        raise ConfigEditError(\n            f"{object_type} has no field {field_name!r} written in {ONTOLOGY_FILE}. A field that a link "\n            f"made is removed',  # noqa: E501
+        new='\n    if False:\n        raise ConfigEditError(\n            f"{object_type} has no field {field_name!r} written in {ONTOLOGY_FILE}. A field that a link "\n            f"made is removed',  # noqa: E501
         tests=[f"{E}::TestWhatIsRefused::test_it_says_why"],
     ),
     Control(
@@ -7947,7 +7948,7 @@ CONTROLS = [
     Control(
         describes="retype: the reply lists the tables whose silver must now be rebuilt",
         path="api/routes.py",
-        old='            owed, unknown = _tables_needing_rebuild(request, request.app.state.generation.config.schema), False',  # noqa: E501
+        old='            owed, unknown = _tables_needing_rebuild(request, written["new_schema"]), False',
         new='            owed, unknown = [], False',
         tests=[f"{T}::TestRetyping::test_the_reply_lists_the_silver_table_that_now_needs_a_rebuild",
                f"{T}::TestWhatHappensToStoredData::test_the_preview_names_the_table_and_the_reply_lists_it_to_rebuild"],

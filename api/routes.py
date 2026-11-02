@@ -2095,7 +2095,10 @@ def _write_config_files(request: Request, current_user: UserRecord,
     return {"diff": [line for filename, (current, proposed) in files.items()
                      for line in shown_diff(filename, current, proposed)],
             "digest": digest(next(iter(files.values()))[1]),
-            "to_generation": new.generation}
+            "to_generation": new.generation,
+            # What the reload just made, for a caller that must answer from it
+            # (the request is pinned to the generation BEFORE the edit).
+            "new_schema": new.config.schema}
 
 
 def _load_candidate(request: Request, replacements: "dict[str, str]"):
@@ -3462,9 +3465,9 @@ def apply_retype_route(body: RetypeRequest, request: Request,
         # the mirror cannot be read the answer is success with the list
         # unknown, which the dialog says.
         try:
-            # The generation the reload just made, not the one this request is
+            # The schema the reload just made, not the one this request is
             # pinned to (that is the one before the edit).
-            owed, unknown = _tables_needing_rebuild(request, request.app.state.generation.config.schema), False
+            owed, unknown = _tables_needing_rebuild(request, written["new_schema"]), False
         except _MirrorUnreadable:
             owed, unknown = [], True
         return {"status": "applied", "diff": written["diff"], "to_generation": written["to_generation"],
