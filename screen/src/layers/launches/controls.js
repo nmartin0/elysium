@@ -13,7 +13,6 @@ export function createControls({ state: layerState, services, parts, source }) {
     /** Release only Space Mission camera ownership, preserving layer and selection state. */
     releaseCameraOwnership() {
       parts.panel.clearMissionRosterHover();
-      parts.replay.stopMissionReplay();
       parts.selection.stopMissionZoomAnchor();
     },
 

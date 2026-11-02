@@ -88,7 +88,6 @@ async function fixture({ legacySource = false } = {}) {
       renderMissionPanel: noop,
       clearMissionRosterHover: noop,
     },
-    replay: { stopMissionReplay: noop },
     selection: {
       setSelectedMission: noop,
       focusMission: noop,
@@ -99,10 +98,7 @@ async function fixture({ legacySource = false } = {}) {
       syncMissionOrbitPrimitiveVisibility: noop,
     },
     overlays: {
-      createReplayVehicleOverlay: noop,
       clearMissionOverlaySources: noop,
-      hideReplayVehicleOverlay: noop,
-      destroyReplayVehicleOverlay: noop,
     },
     launchPad: {
       initLaunchPadZonePrimitive: noop,

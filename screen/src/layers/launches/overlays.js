@@ -1,9 +1,5 @@
 import * as Cesium from 'cesium';
-import { t, msg } from '../../i18n/index.js';
-import {
-  createCyberSonarSampler,
-  isCyberContactSonarActive as isCyberSonarActive,
-} from '../../cyberSonar.js';
+import { t } from '../../i18n/index.js';
 import {
   ROCKET_MISSION_AMBIENT_OVERLAY_COHORT_LIMIT,
   ROCKET_MISSION_AMBIENT_OVERLAY_SOURCE_ID,
@@ -159,8 +155,8 @@ export function createOverlays({ state: layerState, services, parts, source }) {
   }
 
   /**
-   * Build one protected label belonging to the selected mission's trajectory,
-   * live payload position, or orbit. Copy is already source-formatted by the
+   * Build one protected label belonging to the selected mission's recorded
+   * stage endpoint, live payload position, or orbit. Copy is already source-formatted by the
    * caller; newline semantics become explicit host detail rows.
    * @param {object} input
    * @param {string} input.id Stable mission-element identity.
@@ -259,83 +255,6 @@ export function createOverlays({ state: layerState, services, parts, source }) {
     return canvas;
   }
 
-  /**
-   * Resolve the one permitted screen-space replay overlay state.
-   * @param {object} input Overlay state.
-   * @param {boolean} input.replayActive Whether replay owns the camera.
-   * @param {boolean} input.ascending Whether the replay marker is on ascent.
-   * @param {boolean} input.countdownActive Whether the T-minus hold is active.
-   * @returns {'countdown'|'ascent'|'orbit'|null}
-   */
-
-  function replayOverlayMode({
-    replayActive,
-    ascending,
-    countdownActive,
-    preCountdownActive = false,
-  }) {
-    if (!replayActive) return null;
-    if (preCountdownActive) return null;
-    if (countdownActive) return 'countdown';
-    return ascending ? 'ascent' : 'orbit';
-  }
-
-  function createReplayVehicleOverlay() {
-    if (layerState._replayVehicleOverlay || typeof document === 'undefined')
-      return;
-    const host = document.getElementById('cesiumContainer') || document.body;
-    layerState._replayVehicleOverlay = document.createElement('div');
-    layerState._replayVehicleOverlay.className =
-      'mission-replay-vehicle-overlay';
-    layerState._replayVehicleOverlay.hidden = true;
-    layerState._replayVehicleOverlay.setAttribute('aria-hidden', 'true');
-    layerState._replayVehicleOverlay.innerHTML = `
-    <div class="mission-replay-flight-symbol">
-      <svg class="mission-replay-rocket" viewBox="0 0 48 72" aria-hidden="true">
-        <path class="mission-replay-rocket-body" d="M24 5C16 14 14 27 15 45L9 54L18 51L24 58L30 51L39 54L33 45C34 27 32 14 24 5Z"></path>
-        <circle class="mission-replay-rocket-port" cx="24" cy="29" r="3.4"></circle>
-      </svg>
-      <svg class="mission-replay-thrust" viewBox="0 0 72 72" aria-hidden="true">
-        <ellipse style="--thrust-index:0" cx="36" cy="7" rx="5" ry="1.8"></ellipse>
-        <ellipse style="--thrust-index:1" cx="36" cy="15" rx="8" ry="2.4"></ellipse>
-        <ellipse style="--thrust-index:2" cx="36" cy="24" rx="11" ry="3"></ellipse>
-        <ellipse style="--thrust-index:3" cx="36" cy="35" rx="15" ry="3.8"></ellipse>
-        <ellipse style="--thrust-index:4" cx="36" cy="48" rx="20" ry="4.7"></ellipse>
-        <ellipse style="--thrust-index:5" cx="36" cy="63" rx="26" ry="5.8"></ellipse>
-      </svg>
-    </div>
-    <div class="mission-replay-orbit-dot" aria-hidden="true"></div>
-    <div class="mission-replay-overlay-callout">
-      <strong data-replay-overlay-title></strong>
-      <span data-replay-overlay-detail></span>
-    </div>`;
-    host.appendChild(layerState._replayVehicleOverlay);
-    layerState._replayVehicleOverlay._sonarIcons = [
-      ...layerState._replayVehicleOverlay.querySelectorAll(
-        '.mission-replay-flight-symbol, .mission-replay-orbit-dot',
-      ),
-    ];
-    layerState._replayVehicleOverlay._sonarLabel =
-      layerState._replayVehicleOverlay.querySelector(
-        '.mission-replay-overlay-callout',
-      );
-  }
-
-  function hideReplayVehicleOverlay() {
-    if (!layerState._replayVehicleOverlay) return;
-    layerState._replayVehicleOverlay.hidden = true;
-    layerState._replayVehicleOverlay.classList.remove(
-      'is-thrusting',
-      'is-paused',
-    );
-  }
-
-  function destroyReplayVehicleOverlay() {
-    layerState._replayVehicleOverlay?.remove();
-    layerState._replayVehicleOverlay = null;
-    layerState._replayVehicleOverlayText = '';
-  }
-
   function clearMissionOverlaySources() {
     layerState._selectedMissionOverlayTimeText = null;
     layerState._missionOverlayHost.clearSource(
@@ -373,15 +292,13 @@ export function createOverlays({ state: layerState, services, parts, source }) {
       const entries = selectedRecord.elementEntryFactories.map((createEntry) =>
         createEntry(),
       );
-      if (layerState._replayCameraLaunchId !== selectedRecord.launch.id) {
-        entries.unshift(
-          createRocketMissionMarkerOverlayEntry(
-            selectedRecord.launch,
-            selectedRecord.anchorPosition,
-            true,
-          ),
-        );
-      }
+      entries.unshift(
+        createRocketMissionMarkerOverlayEntry(
+          selectedRecord.launch,
+          selectedRecord.anchorPosition,
+          true,
+        ),
+      );
       layerState._missionOverlayHost.setEntries(
         ROCKET_MISSION_SELECTED_OVERLAY_SOURCE_ID,
         entries,
@@ -443,195 +360,6 @@ export function createOverlays({ state: layerState, services, parts, source }) {
       syncMissionOverlayEntries();
   }
 
-  function updateReplayVehicleOverlay(occluder) {
-    if (
-      !layerState._viewer ||
-      !layerState._replayVehicleOverlay ||
-      !layerState._selectedLaunchId
-    ) {
-      hideReplayVehicleOverlay();
-      return null;
-    }
-    const launch = layerState._launches.find(
-      (item) => item.id === layerState._selectedLaunchId,
-    );
-    const track = layerState._replayTracks.get(layerState._selectedLaunchId);
-    if (!launch || !track) {
-      hideReplayVehicleOverlay();
-      return null;
-    }
-    const replayActive = layerState._replayCameraLaunchId === launch.id;
-    const state = track.getReplayState();
-    const mode = replayOverlayMode({
-      replayActive,
-      ascending: state.ascending,
-      countdownActive: state.countdownActive,
-      preCountdownActive: state.preCountdownActive,
-    });
-    if (!mode) {
-      track.lastOverlayWindowPosition = null;
-      track.lastOverlayMode = null;
-      hideReplayVehicleOverlay();
-      return null;
-    }
-    const path = state.ascending ? track.ascentPath : track.animatedOrbitPath;
-    // Do not call scene.sampleHeight() from this post-render path. A selected
-    // mission can remain visible from globe range, and a periodic remote height
-    // probe forces Google Photorealistic 3D Tiles to reconsider its refinement
-    // set even though the camera is stationary. That presented as a one-second
-    // shrink/expand pulse across the globe. Replay follows its already-built,
-    // surface-safe Cartesian path and therefore needs no runtime pad sampling.
-    const position = parts.paths.samplePath(path, state.phaseProgress);
-    if (!position || !occluder.isPointVisible(position)) {
-      hideReplayVehicleOverlay();
-      return null;
-    }
-    const windowPosition = Cesium.SceneTransforms.worldToWindowCoordinates(
-      layerState._viewer.scene,
-      position,
-    );
-    if (!windowPosition) {
-      hideReplayVehicleOverlay();
-      return null;
-    }
-    const canvas = layerState._viewer.scene.canvas;
-    if (
-      windowPosition.x < -80 ||
-      windowPosition.y < -100 ||
-      windowPosition.x > canvas.clientWidth + 80 ||
-      windowPosition.y > canvas.clientHeight + 100
-    ) {
-      hideReplayVehicleOverlay();
-      return null;
-    }
-    // The replay camera already targets this same frame-cached world position.
-    // Applying a second temporal filter here made the DOM vehicle trail the
-    // camera until the snap threshold was crossed, producing a repeating
-    // forward/back jump. Keep smoothing only for the non-tracked close-up pad
-    // marker, where the user can move the camera independently.
-    const renderedWindowPosition =
-      !replayActive && track.lastOverlayMode === mode
-        ? parts.replay.smoothReplayWindowPosition(
-            track.lastOverlayWindowPosition,
-            windowPosition,
-          )
-        : windowPosition;
-    track.lastOverlayWindowPosition = renderedWindowPosition;
-    track.lastOverlayMode = mode;
-    const sonar = isCyberSonarActive()
-      ? createCyberSonarSampler(canvas.clientWidth, canvas.clientHeight)
-      : null;
-    const factor =
-      sonar?.at(renderedWindowPosition.x, renderedWindowPosition.y) ?? 1;
-    for (const icon of layerState._replayVehicleOverlay._sonarIcons || [])
-      icon.style.opacity = String(factor);
-    if (layerState._replayVehicleOverlay._sonarLabel)
-      layerState._replayVehicleOverlay._sonarLabel.style.opacity = String(
-        sonar ? sonar.label(factor) : 1,
-      );
-    layerState._replayVehicleOverlay.hidden = false;
-    layerState._replayVehicleOverlay.dataset.mode = mode;
-    layerState._replayVehicleOverlay.classList.toggle(
-      'is-thrusting',
-      replayActive && state.ascending && !state.countdownActive,
-    );
-    layerState._replayVehicleOverlay.classList.toggle(
-      'is-paused',
-      replayActive && layerState._replayPaused,
-    );
-    layerState._replayVehicleOverlay.style.transform = `translate3d(${renderedWindowPosition.x}px, ${renderedWindowPosition.y}px, 0) translate(-50%, -50%)`;
-    let vehicleRotation = 0;
-    if (replayActive && !state.countdownActive) {
-      const tangentStep = Math.max(0.002, 0.8 / Math.max(2, path.length - 1));
-      const forwardProgress = Math.min(1, state.phaseProgress + tangentStep);
-      const backwardProgress = Math.max(0, state.phaseProgress - tangentStep);
-      const useForward = forwardProgress > state.phaseProgress;
-      const tangentPosition = parts.paths.samplePath(
-        path,
-        useForward ? forwardProgress : backwardProgress,
-      );
-      const tangentWindowPosition = tangentPosition
-        ? Cesium.SceneTransforms.worldToWindowCoordinates(
-            layerState._viewer.scene,
-            tangentPosition,
-          )
-        : null;
-      if (tangentWindowPosition) {
-        const screenDelta = Math.hypot(
-          tangentWindowPosition.x - windowPosition.x,
-          tangentWindowPosition.y - windowPosition.y,
-        );
-        // When the path points almost directly into/out of the camera, its
-        // screen projection has no trustworthy direction. Keep the last valid
-        // path-facing pose instead of snapping the rocket to a camera-facing
-        // upright orientation.
-        if (screenDelta >= 2) {
-          vehicleRotation = useForward
-            ? parts.replay.replayVehicleScreenRotation(
-                windowPosition,
-                tangentWindowPosition,
-              )
-            : parts.replay.replayVehicleScreenRotation(
-                tangentWindowPosition,
-                windowPosition,
-              );
-          track.lastVehicleRotation = vehicleRotation;
-        } else if (Number.isFinite(track.lastVehicleRotation)) {
-          vehicleRotation = track.lastVehicleRotation;
-        }
-      }
-    }
-    layerState._replayVehicleOverlay.style.setProperty(
-      '--mission-replay-rotation',
-      `${Cesium.Math.toDegrees(vehicleRotation)}deg`,
-    );
-
-    const mission = shortMissionLabel(launch.name, 22).toUpperCase();
-    const siteName = compactLaunchSiteName(launch.launchSite);
-    const siteCallout = siteName
-      ? t('LAUNCH SITE · {site}', {
-          site: shortMissionLabel(siteName, 20).toUpperCase(),
-        })
-      : t('LAUNCH SITE');
-    let title = mission;
-    let detail = siteCallout;
-    if (mode === 'countdown') {
-      title = t('T−{time} · {mission}', {
-        time: String(state.countdownSeconds).padStart(2, '0'),
-        mission,
-      });
-      detail = `${t('LAUNCH STANDBY')}\n${siteCallout}`;
-    } else if (mode === 'ascent') {
-      title =
-        state.elapsedSinceStart < 1
-          ? t('LIFTOFF · {mission}', { mission })
-          : t(
-              launch.trajectory.length > 1
-                ? msg('ASCENT REPLAY · {mission}')
-                : msg('ASCENT ESTIMATE · {mission}'),
-              { mission },
-            );
-      detail = parts.policyHelpers.formatMissionEventTime(state.eventTime);
-    } else if (mode === 'recovery') {
-      title = t('STAGE RE-ENTRY / RECOVERY · {mission}', { mission });
-      detail = parts.policyHelpers.formatMissionEventTime(state.eventTime);
-    } else if (mode === 'orbit') {
-      title = t('ORBIT REPLAY · {mission}', { mission });
-      detail = parts.policyHelpers.formatMissionEventTime(state.eventTime);
-    }
-    if (layerState._replayPaused) title = t('PAUSED · {title}', { title });
-    const nextText = `${title}\n${detail}`;
-    if (nextText !== layerState._replayVehicleOverlayText) {
-      layerState._replayVehicleOverlayText = nextText;
-      layerState._replayVehicleOverlay.querySelector(
-        '[data-replay-overlay-title]',
-      ).textContent = title;
-      layerState._replayVehicleOverlay.querySelector(
-        '[data-replay-overlay-detail]',
-      ).textContent = detail;
-    }
-    return mode;
-  }
   return {
     missionAnchorHorizonVisible,
     missionAnchorVisible,
@@ -641,13 +369,8 @@ export function createOverlays({ state: layerState, services, parts, source }) {
     createRocketMissionElementOverlayEntry,
     selectRocketMissionMarkerOverlayCohort,
     missionHoverReticleImage,
-    replayOverlayMode,
-    createReplayVehicleOverlay,
-    hideReplayVehicleOverlay,
-    destroyReplayVehicleOverlay,
     clearMissionOverlaySources,
     syncMissionOverlayEntries,
     refreshSelectedMissionOverlayText,
-    updateReplayVehicleOverlay,
   };
 }

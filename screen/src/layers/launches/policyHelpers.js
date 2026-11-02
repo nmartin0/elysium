@@ -43,7 +43,7 @@ export function createPolicyHelpers({
 
   /**
    * Failed launch records may retain a planned orbit in Launch Library, but
-   * must not be represented as a live or estimated payload in orbit.
+   * must not be represented as a live payload in orbit.
    * @param {string|null} status Normalized Launch Library status name.
    * @returns {boolean} Whether orbital visualization is allowed.
    */
@@ -55,15 +55,15 @@ export function createPolicyHelpers({
   }
 
   /**
-   * Describe only the mission paths that the selected record can actually show.
-   * Launch Library may retain a target orbit after a failure, but that target is
-   * not evidence of orbital insertion and cannot support a reconstructed replay.
+   * Describe only what the selected record carries. Launch Library may retain
+   * a target orbit after a failure; that target is flagged as planned. The
+   * path field names only upstream-supplied trajectory points, never a
+   * reconstructed path.
    * @param {object|null} launch Normalized launch record.
-   * @param {boolean} replayAvailable Whether a rendered ascent/orbit track exists.
-   * @returns {{orbit: string|null, ascent: string, replayAvailable: boolean}}
+   * @returns {{orbit: string|null, ascent: string|null}}
    */
 
-  function missionPathPresentation(launch, replayAvailable = false) {
+  function missionPathPresentation(launch) {
     const orbitName =
       launch?.orbit?.name ||
       (typeof launch?.orbit === 'string' ? launch.orbit : null);
@@ -80,31 +80,8 @@ export function createPolicyHelpers({
         ? `${orbitAllowed ? '' : t('PLANNED · ')}${orbitName}`
         : null,
       ascent:
-        suppliedTrajectoryPoints > 1
-          ? t('SUPPLIED TRAJECTORY POINTS')
-          : replayAvailable
-            ? t('RECONSTRUCTED ESTIMATE')
-            : t('UNAVAILABLE'),
-      replayAvailable: Boolean(replayAvailable),
+        suppliedTrajectoryPoints > 1 ? t('SUPPLIED TRAJECTORY POINTS') : null,
     };
-  }
-
-  /**
-   * Release aircraft follow state through each owning flight layer before a
-   * mission replay takes over the camera.
-   * @param {object|null} dataManager DataLayerManager instance.
-   * @returns {number} Number of owner APIs invoked.
-   */
-
-  function releaseAircraftTracking(dataManager) {
-    let released = 0;
-    for (const layerId of ['flights', 'military']) {
-      const module = dataManager?.layers?.get(layerId)?.module;
-      if (typeof module?.stopTracking !== 'function') continue;
-      module.stopTracking();
-      released++;
-    }
-    return released;
   }
 
   /**
@@ -190,7 +167,7 @@ export function createPolicyHelpers({
   }
 
   /**
-   * Format a mission epoch for compact on-globe replay labels.
+   * Format a mission epoch for compact on-globe mission labels.
    * @param {string|Date|null} launchTime ISO-8601 mission time or Date.
    * @returns {string} UTC timestamp or a clear unavailable state.
    */
@@ -247,7 +224,6 @@ export function createPolicyHelpers({
     satelliteParamsAfterSpaceMissions,
     launchStatusAllowsOrbit,
     missionPathPresentation,
-    releaseAircraftTracking,
     launchPadZoneVisible,
     missionDataCompleteness,
     missionRosterEntries,

@@ -125,7 +125,6 @@ export function createLifecycle({
       layerState._viewer = viewer;
       layerState._enabled = false;
       parts.panel.createMissionPanel();
-      parts.overlays.createReplayVehicleOverlay();
       layerState._dataSource = new Cesium.CustomDataSource('rocket-launches');
       layerState._dataSource.show = false;
       viewer.dataSources.add(layerState._dataSource);
@@ -220,14 +219,12 @@ export function createLifecycle({
       layerState._updateDirty = false;
       parts.ingestion.clearPostTleRetry();
       parts.panel.clearMissionRosterHover();
-      parts.replay.stopMissionReplay();
       parts.selection.stopMissionZoomAnchor();
       if (layerState._dataSource) layerState._dataSource.show = false;
       parts.orbitRendering.syncMissionOrbitPrimitiveVisibility();
       if (layerState._viewer?.scene?.canvas)
         layerState._viewer.scene.canvas.style.cursor = '';
       parts.launchPad.hideLaunchPadZone();
-      parts.overlays.hideReplayVehicleOverlay();
       layerState._selectedLaunchId = null;
       parts.overlays.clearMissionOverlaySources();
       await parts.ingestion.restoreSatelliteDependency();
@@ -244,7 +241,6 @@ export function createLifecycle({
       layerState._updateDirty = false;
       await parts.ingestion.restoreSatelliteDependency();
       parts.panel.clearMissionRosterHover();
-      parts.replay.stopMissionReplay();
       parts.selection.stopMissionZoomAnchor();
       parts.ingestion.clearPostTleRetry();
       if (layerState._clickHandler) layerState._clickHandler.destroy();
@@ -256,12 +252,9 @@ export function createLifecycle({
       parts.launchPad.destroyLaunchPadZonePrimitive();
       parts.orbitRendering.removeMissionOrbitPrimitives();
       parts.overlays.clearMissionOverlaySources();
-      parts.overlays.destroyReplayVehicleOverlay();
       layerState._launches = [];
       layerState._missionOverlayRecords.clear();
-      layerState._animationStarts.clear();
       layerState._satelliteTelemetry.clear();
-      layerState._replayTracks.clear();
       layerState._missionPanel?.remove();
       layerState._missionPanel = null;
       if (layerState._missionRoster) {

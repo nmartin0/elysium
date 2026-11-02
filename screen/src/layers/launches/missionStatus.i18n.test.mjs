@@ -37,14 +37,12 @@ function shownStatus(status) {
         recoveryStages: [],
       },
     ],
-    _replayTracks: new Map(),
   };
   createPanel({
     state,
     parts: {
       overlays: { shortMissionLabel: (name) => name },
       policyHelpers: { missionPathPresentation: () => ({}) },
-      replay: { syncReplayButton() {} },
     },
   }).renderMissionPanel();
   return outputs.get('[data-mission-status]').textContent;

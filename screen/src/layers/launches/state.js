@@ -65,12 +65,6 @@ export function createState({ services }) {
 
   state._missionHoverReticleImage = null;
 
-  state._replayVehicleOverlay = null;
-
-  state._replayVehicleOverlayText = '';
-
-  state._animationStarts = new Map();
-
   state._satelliteTelemetry = new Map();
 
   state._lastPanelTelemetryMs = 0;
@@ -90,20 +84,6 @@ export function createState({ services }) {
   state._satelliteStateBeforeMission = null;
 
   state._satelliteActivationPromise = null;
-
-  state._replayCameraRemover = null;
-
-  state._replayCameraLaunchId = null;
-
-  state._replayCameraToken = 0;
-
-  state._replayPaused = false;
-
-  state._replayPausedAtMs = null;
-
-  state._replaySpeed = 1;
-
-  state._replayTracks = new Map();
 
   state._missionOverlayRecords = new Map();
 
@@ -134,7 +114,6 @@ export function createState({ services }) {
 
   state._missionOrbitPatternRegistered = false;
 
-  state._pathDistanceCache = new WeakMap();
   state._sourceController = new AbortController();
   return state;
 }

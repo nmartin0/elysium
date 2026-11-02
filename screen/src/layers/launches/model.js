@@ -89,6 +89,20 @@ export function createModel({ state: layerState, services, parts, source }) {
     };
   }
 
+  /**
+   * The recorded landing position of a stage, when the record carries one.
+   * A stage without coordinates has no endpoint: nothing is derived from the
+   * pad, the recovery type or the downrange distance.
+   * @param {object} stage Normalized recovery stage.
+   * @returns {{lat: number, lon: number, accuracy: string}|null}
+   */
+
+  function landingEndpoint(stage) {
+    if (Number.isFinite(stage?.lat) && Number.isFinite(stage?.lon))
+      return { lat: stage.lat, lon: stage.lon, accuracy: 'CONFIRMED' };
+    return null;
+  }
+
   function normalizeRecoveryStages(launch, payloads) {
     const rocket = launch.rocket || {};
     const launcherStages = Array.isArray(rocket.launcher_stage)
@@ -240,6 +254,7 @@ export function createModel({ state: layerState, services, parts, source }) {
     finiteCoordinate,
     normalizePayloadFlights,
     normalizeLanding,
+    landingEndpoint,
     normalizeRecoveryStages,
     missionMarkerColor,
     normalizeRocketLaunches,

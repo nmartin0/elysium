@@ -17,14 +17,12 @@ test('rendering a selected mission resets the nearest theme-appropriate Context 
       },
       _selectedLaunchId: 'mission-1',
       _launches: [{ id: 'mission-1', name: 'Example', payloads: [], recoveryStages: [] }],
-      _replayTracks: new Map(),
-    };
+      };
     const panel = createPanel({
       state,
       parts: {
         overlays: { shortMissionLabel: (name) => name },
         policyHelpers: { missionPathPresentation: () => ({}) },
-        replay: { syncReplayButton() {} },
       },
     });
     panel.renderMissionPanel();

@@ -631,51 +631,12 @@
   color: rgba(190, 230, 230, 0.56);
   text-align: center;
 }
-#space-mission-panel .mission-replay-speed-control {
-  display: grid;
-  gap: 5px;
-  margin: 1px 0 10px;
-  padding: 8px 10px 6px;
-  border: 1px solid rgba(34, 230, 230, 0.2);
-  border-radius: 5px;
-  background: rgba(3, 21, 31, 0.36);
-}
-#space-mission-panel .mission-replay-speed-control[hidden] {
-  display: none;
-}
-#space-mission-panel .mission-replay-speed-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: rgba(190, 230, 230, 0.68);
-  font:
-    8px 'JetBrains Mono',
-    monospace;
-  letter-spacing: 0.16em;
-}
-#space-mission-panel .mission-replay-speed-header output {
-  min-width: 42px;
-  text-align: right;
-}
-#space-mission-panel [data-mission-replay-speed] {
-  width: 100%;
-}
-#space-mission-panel .mission-replay-speed-scale {
-  display: flex;
-  justify-content: space-between;
-  color: rgba(190, 230, 230, 0.42);
-  font:
-    7px 'JetBrains Mono',
-    monospace;
-  letter-spacing: 0.08em;
-}
 
 #space-mission-panel .mission-action-row {
   display: flex;
   gap: 8px;
   margin: 1px 0 10px;
 }
-#space-mission-panel .mission-replay-button,
 #space-mission-panel .mission-focus-button {
   flex: 1;
   min-width: 0;
@@ -704,8 +665,6 @@
   color: #22e6e6;
   background: rgba(34, 230, 230, 0.07);
 }
-#space-mission-panel .mission-replay-button:hover,
-#space-mission-panel .mission-replay-button:focus-visible,
 #space-mission-panel .mission-focus-button:hover,
 #space-mission-panel .mission-focus-button:focus-visible {
   border-color: #ffb45f;
@@ -717,66 +676,6 @@
 #space-mission-panel .mission-focus-button:focus-visible {
   border-color: #22e6e6;
   box-shadow: 0 0 14px rgba(34, 230, 230, 0.14);
-}
-#space-mission-panel .mission-replay-button.active {
-  border-color: #22e6e6;
-  color: #d8ffff;
-  background: rgba(34, 230, 230, 0.13);
-  box-shadow: inset 0 0 16px rgba(34, 230, 230, 0.08);
-}
-#space-mission-panel .mission-replay-transport {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 5px;
-}
-#space-mission-panel .mission-replay-transport[hidden] {
-  display: none;
-}
-#space-mission-panel .mission-replay-transport button {
-  min-width: 0;
-  min-height: 34px;
-  padding: 0;
-  border: 1px solid rgba(34, 230, 230, 0.5);
-  border-radius: 4px;
-  color: #22e6e6;
-  background: rgba(34, 230, 230, 0.08);
-  font:
-    15px/1 'JetBrains Mono',
-    monospace;
-  cursor: pointer;
-  transition:
-    border-color 0.15s ease,
-    color 0.15s ease,
-    background 0.15s ease,
-    box-shadow 0.15s ease,
-    opacity 0.15s ease;
-}
-#space-mission-panel .mission-replay-transport button:hover:not(:disabled),
-#space-mission-panel .mission-replay-transport button:focus-visible {
-  border-color: #d8ffff;
-  color: #fff;
-  outline: none;
-  background: rgba(34, 230, 230, 0.16);
-  box-shadow: 0 0 12px rgba(34, 230, 230, 0.14);
-}
-#space-mission-panel .mission-replay-transport button:disabled {
-  opacity: 0.28;
-  cursor: default;
-}
-#space-mission-panel .mission-replay-transport button.cancel {
-  border-color: rgba(255, 159, 67, 0.58);
-  color: #ffb15c;
-  background: rgba(255, 159, 67, 0.08);
-}
-#space-mission-panel
-  .mission-replay-transport.is-paused
-  [data-mission-replay-play] {
-  border-color: #22e6e6;
-  color: #d8ffff;
-  background: rgba(34, 230, 230, 0.18);
-  box-shadow: inset 0 0 12px rgba(34, 230, 230, 0.1);
 }
 #space-mission-panel .space-mission-nav {
   display: flex;
@@ -825,165 +724,6 @@
 }
 #space-mission-panel button {
   cursor: pointer;
-}
-
-.mission-replay-vehicle-overlay {
-  --mission-replay-vehicle-scale: 0.5;
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 86;
-  width: 92px;
-  height: 138px;
-  pointer-events: none;
-  will-change: transform;
-}
-
-.mission-replay-flight-symbol {
-  position: absolute;
-  inset: 0;
-  transform: rotate(var(--mission-replay-rotation, 0deg))
-    scale(var(--mission-replay-vehicle-scale));
-  transform-origin: 46px 69px;
-  will-change: transform;
-}
-
-.mission-replay-orbit-dot {
-  display: none;
-  position: absolute;
-  top: 65px;
-  left: 42px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #22e6e6;
-  box-shadow: 0 0 7px rgba(34, 230, 230, 0.78);
-}
-
-.mission-replay-vehicle-overlay[data-mode='orbit']
-  .mission-replay-flight-symbol {
-  display: none;
-}
-
-.mission-replay-vehicle-overlay[data-mode='orbit'] .mission-replay-orbit-dot {
-  display: block;
-}
-
-.mission-replay-rocket {
-  position: absolute;
-  top: 0;
-  left: 22px;
-  width: 48px;
-  height: 72px;
-  overflow: visible;
-  filter: drop-shadow(0 0 6px rgba(34, 230, 230, 0.66));
-}
-
-.mission-replay-rocket-body {
-  fill: #22e6e6;
-  stroke: #22e6e6;
-  stroke-width: 2;
-  stroke-linejoin: round;
-}
-
-.mission-replay-rocket-port {
-  fill: #22e6e6;
-  stroke: none;
-}
-
-.mission-replay-rocket-flame {
-  display: none;
-}
-
-.mission-replay-thrust {
-  display: none;
-  position: absolute;
-  top: 57px;
-  left: 10px;
-  width: 72px;
-  height: 72px;
-  overflow: visible;
-  filter: drop-shadow(0 0 4px rgba(34, 230, 230, 0.9));
-}
-
-.mission-replay-vehicle-overlay.is-thrusting .mission-replay-thrust {
-  display: block;
-}
-
-.mission-replay-thrust ellipse {
-  fill: none;
-  stroke: rgba(34, 230, 230, 0.98);
-  stroke-width: 2;
-  opacity: 0;
-  vector-effect: non-scaling-stroke;
-  animation: mission-thrust-wave 0.9s ease-in-out infinite;
-  animation-delay: calc(var(--thrust-index) * 0.15s);
-}
-
-.mission-replay-thrust ellipse:nth-child(2n) {
-  stroke: rgba(216, 255, 255, 0.78);
-}
-
-.mission-replay-vehicle-overlay.is-paused .mission-replay-thrust ellipse {
-  animation-play-state: paused;
-}
-
-.mission-replay-overlay-callout {
-  position: absolute;
-  top: 18px;
-  left: 70px;
-  min-width: 188px;
-  color: #fff;
-  font:
-    9px/1.38 'JetBrains Mono',
-    monospace;
-  letter-spacing: 0.075em;
-  text-shadow:
-    0 1px 2px #001018,
-    0 0 6px #001018;
-  white-space: nowrap;
-}
-
-.mission-replay-overlay-callout strong,
-.mission-replay-overlay-callout span {
-  display: block;
-}
-
-.mission-replay-overlay-callout strong {
-  color: #22e6e6;
-  font-size: 10px;
-  font-weight: 500;
-}
-
-.mission-replay-overlay-callout span {
-  color: rgba(255, 255, 255, 0.92);
-  white-space: pre-line;
-}
-
-.mission-replay-vehicle-overlay[data-mode='orbit']
-  .mission-replay-overlay-callout {
-  top: 55px;
-  left: 58px;
-}
-
-@keyframes mission-thrust-wave {
-  0%,
-  18% {
-    opacity: 0;
-  }
-  24% {
-    opacity: 1;
-  }
-  32%,
-  100% {
-    opacity: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mission-replay-thrust ellipse {
-    animation: none;
-  }
 }
 /* Context is read for longer than other panels; it carries no halo. */
 #global-context-panel .panel-glow {

@@ -121,8 +121,8 @@ export function createIngestion({
     layerState._satelliteActivationPromise = activation;
     try {
       const activated = await activation;
-      // Space Missions without its satellite dependency is a broken replay
-      // surface; fail the mission enable so the manager's fail-closed path and
+      // Space Missions without its satellite dependency has no orbit to
+      // show; fail the mission enable so the manager's fail-closed path and
       // the Context rollback see an honest failure instead of a silent success.
       if (
         token === layerState._lifecycleToken &&
@@ -186,13 +186,11 @@ export function createIngestion({
       )
         return;
       const activeTleText = layerState._activeTleText;
-      if (layerState._replayCameraLaunchId) parts.replay.stopMissionReplay();
       layerState._launches = launches;
       parts.orbitRendering.removeMissionOrbitPrimitives();
       layerState._dataSource.entities.removeAll();
       layerState._missionOverlayRecords.clear();
       layerState._satelliteTelemetry.clear();
-      layerState._replayTracks.clear();
       layerState._orbitMatches = 0;
       launches.forEach((launch) =>
         parts.rendering.addLaunchEntity(launch, activeTleText),
