@@ -42,7 +42,6 @@ export const LAYER_NAME_KEYS = Object.freeze({
   'weather-cyclones': msg('Cyclone advisories'),
   'air-quality': msg('Air quality'),
   directions: msg('Directions'),
-  'alpr-cameras': msg('ALPR Cameras'),
 });
 
 /** The layer panel's own English names, where they differ from the module's. */
@@ -51,7 +50,6 @@ export const PANEL_LABEL_KEYS = Object.freeze({
   bikeshare: msg('Bike Share'),
   cctv: msg('Cameras'),
   'street-level': msg('Street Level'),
-  'alpr-cameras': msg('Mapped ALPR Cameras'),
   'local-datacenters': msg('Data Centers'),
   'local-firms': msg('Active Fires'),
 });

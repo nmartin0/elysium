@@ -19,7 +19,6 @@ import { createApplicationTransit } from './layers/transit.js';
 import { createApplicationInstallations } from './layers/militaryInstallations.js';
 import { createApplicationSatellites } from './layers/satellites.js';
 import { createApplicationLaunches } from './layers/rocketLaunches.js';
-import { createApplicationAlpr } from './layers/alprCameras.js';
 import { createApplicationLocalAdsb } from './layers/localAdsb.js';
 import { createApplicationAwareness } from './layers/militaryAwareness.js';
 import { createApplicationFirms } from './layers/firms.js';
@@ -122,7 +121,6 @@ export function createApplicationCatalog({
           windowMs: sources['gnss-integrity'].windowMs,
         }),
         createApplicationGhostMaps({ source: sources['s2-ghostmaps'] }),
-        createApplicationAlpr({ surface, source: sources.alpr }),
         createApplicationStreetLevel({
           surface,
           sources: { mapillary: sources.mapillary },

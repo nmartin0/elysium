@@ -21,7 +21,6 @@ import {
   resolveOutlineWithRetry,
   createAnnotationEngine,
 } from './annotations/annotationEngine.js';
-import { buildOverpassQuery } from './layers/alpr/records.js';
 
 function env(t, value) {
   const prior = process.env.OVERPASS_UPSTREAMS;
@@ -109,7 +108,7 @@ test('zero egress: every Overpass consumer reaches real default handlers, and no
   const handlers = routes(overpassProxy(), militaryInstallationsProxy());
   const queries = [
     '[out:json];way["highway"="primary"](30.2,-97.8,30.3,-97.7);out geom;',
-    buildOverpassQuery(30.2, -97.8, 30.3, -97.7),
+    '[out:json][timeout:20];node["amenity"="bench"](30.2,-97.8,30.3,-97.7);out body 50;',
   ];
   for (const q of queries) {
     const response = await call(handlers, '/api/overpass', {
