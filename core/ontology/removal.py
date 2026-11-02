@@ -160,7 +160,12 @@ _GOLD = "Gold is rebuilt without the column at the next sync, which restarts tha
 #: a --rebuild naming its silver table exits 0 and writes nothing.
 _TYPE_TABLES = [
     "Bronze, silver and gold keep the type's tables exactly as they were at the last sync, and so does the "
-    "history of its changes: nothing is dropped, and no sync reads or refreshes them again.",
+    "history of its changes: nothing is dropped, and no sync reads or refreshes them again. (If another type "
+    "reads the same source table, that table keeps syncing for the other type only, and the columns only this "
+    "type mapped are emptied the way a removed field's column is.)",
+    "A later erasure request cannot reach these tables, because erasure finds a table's key columns from the "
+    "types that exist. Personal data already in them stays until a person deletes the tables in the lake, so "
+    "do that, or erase the people concerned first, before removing a type that holds any.",
     "Asking for a rebuild of its silver table does nothing, because the sync no longer knows the table. Dropping "
     "the tables is done in the lake itself, by a person.",
 ]

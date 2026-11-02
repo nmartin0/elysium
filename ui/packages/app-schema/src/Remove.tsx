@@ -114,7 +114,7 @@ export default function RemoveDialog({
   const name = nameOf(schema, target)
   const goes = ['link', 'field'].some((key) => key in target)
     ? 'its lines from the ontology'
-    : 'its lines from the ontology and its entry in source_bindings.yaml'
+    : 'its lines from the ontology and its entry in source_bindings.yaml (if the deployment has one)'
   const [digest, setDigest] = useState<string | null>(null)
   const [preview, setPreview] = useState<RemovalPreview | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
