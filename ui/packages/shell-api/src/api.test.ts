@@ -30,6 +30,9 @@ import {
   type TypeFreshness,
   type DataFreshness,
   filenameFrom,
+  applyRetype,
+  previewRetype,
+  startMirrorSync,
 } from './api'
 
 // A partial, Response-SHAPED fake, not a real Response -- confirmed
@@ -856,5 +859,50 @@ describe('aggregateObjects and countsByGroup', () => {
 
   it('is empty when there are no rows', () => {
     expect(countsByGroup({ rows: [], scan_truncated: false }, 'year')).toEqual({})
+  })
+})
+
+describe('retyping and the sync that rebuilds', () => {
+  const change = { object_type: 'Transaction', field: 'amount', data_type: 'decimal' }
+
+  it('previews and applies the same body, to the two routes', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ rebuild: ['primary_sql.transactions'] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await previewRetype('d1', change)
+    const applied = await applyRetype('d1', change)
+
+    const [previewUrl, previewInit] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const [applyUrl, applyInit] = fetchMock.mock.calls[1] as [string, RequestInit]
+    expect(previewUrl).toBe('/api/admin/ontology/retype/preview')
+    expect(previewInit.method).toBe('POST')
+    expect(applyUrl).toBe('/api/admin/ontology/retype')
+    expect(applyInit.method).toBe('PUT')
+    expect(JSON.parse(previewInit.body as string)).toEqual({ digest: 'd1', ...change })
+    expect(JSON.parse(applyInit.body as string)).toEqual({ digest: 'd1', ...change })
+    expect(applied.rebuild).toEqual(['primary_sql.transactions'])
+  })
+
+  it('starts a sync with no body when it names nothing, as it always did', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ started: true, detail: '' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await startMirrorSync()
+    await startMirrorSync([])
+
+    for (const [url, init] of fetchMock.mock.calls as [string, RequestInit][]) {
+      expect(url).toBe('/api/admin/mirror/sync')
+      expect(init.body).toBeUndefined()
+    }
+  })
+
+  it('names the tables to rebuild in the body', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ started: true, detail: '' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await startMirrorSync(['primary_sql.transactions'])
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(JSON.parse(init.body as string)).toEqual({ rebuild: ['primary_sql.transactions'] })
   })
 })

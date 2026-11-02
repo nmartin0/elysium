@@ -1946,8 +1946,13 @@ export async function markNotificationSeen(notificationId: string): Promise<void
   })
 }
 
-export async function startMirrorSync(): Promise<{ started: boolean; detail: string }> {
-  const response = await apiFetchOrThrow('/admin/mirror/sync', { method: 'POST' })
+/** Starts a sync. `rebuild` names the "silo.table" silver tables to drop and
+ *  rebuild from bronze; the server refuses any that does not need it. */
+export async function startMirrorSync(rebuild?: string[]): Promise<{ started: boolean; detail: string }> {
+  const response = await apiFetchOrThrow('/admin/mirror/sync', {
+    method: 'POST',
+    ...(rebuild && rebuild.length > 0 ? { body: JSON.stringify({ rebuild }) } : {}),
+  })
   return response.json() as Promise<{ started: boolean; detail: string }>
 }
 
@@ -2752,6 +2757,50 @@ export async function applyRemoval(digest: string, target: RemovalTarget): Promi
     body: JSON.stringify({ digest, ...target }),
   })
   return (await response.json()) as LabelEditResult
+}
+
+/** What changing a field's data type would do (core/ontology/retype.py). */
+export interface RetypePreview {
+  diff: string[]
+  from_type: string
+  to_type: string
+  /** The "silo.table" names whose declared column types change. */
+  tables: string[]
+  /** What becomes of the data already stored, one sentence each. */
+  stored_data: string[]
+  /** Places that name the field, as far as this person may see: notes, not blockers. */
+  places: UsedByRow[]
+  /** How many more name something this person cannot discover. */
+  hidden_places: number
+  not_listed: string
+}
+
+export interface RetypeChange {
+  object_type: string
+  field: string
+  data_type: string
+}
+
+export interface RetypeResult extends LabelEditResult {
+  /** The "silo.table" names whose silver now differs from the declared type; [] when none was built. */
+  rebuild: string[]
+}
+
+export async function previewRetype(digest: string, change: RetypeChange): Promise<RetypePreview> {
+  const response = await apiFetchOrThrow('/admin/ontology/retype/preview', {
+    method: 'POST',
+    body: JSON.stringify({ digest, ...change }),
+  })
+  return (await response.json()) as RetypePreview
+}
+
+/** Changes the type now. Judged again on the server; nothing stored is touched. */
+export async function applyRetype(digest: string, change: RetypeChange): Promise<RetypeResult> {
+  const response = await apiFetchOrThrow('/admin/ontology/retype', {
+    method: 'PUT',
+    body: JSON.stringify({ digest, ...change }),
+  })
+  return (await response.json()) as RetypeResult
 }
 
 /** A configuration change waiting for a role manager who did not propose it. */

@@ -56,6 +56,7 @@ import DescribeType from './DescribeType'
 import UsedByDialog, { type UsedByTarget } from './UsedBy'
 import DeprecateDialog, { type DeprecateTarget } from './Deprecate'
 import RemoveDialog, { type RemoveTarget } from './Remove'
+import RetypeDialog, { type RetypeTarget } from './Retype'
 import DeprecationNote from './DeprecationNote'
 import LabelFields from './LabelFields'
 import './SchemaPanel.css'
@@ -117,6 +118,7 @@ function FieldTable({
   onUsedBy,
   onDeprecate,
   onRemove,
+  onRetype,
 }: {
   fields: [string, SchemaField][]
   onOpenObjectType: (objectType: string) => void
@@ -127,6 +129,8 @@ function FieldTable({
   onDeprecate?: (field: string) => void
   /** Removing a stored field -- offered only once it is deprecated. */
   onRemove?: (field: string) => void
+  /** Changing a stored field's data type: present only for manage:deployment. */
+  onRetype?: (field: string) => void
 }) {
   if (fields.length === 0) return null
   return (
@@ -156,6 +160,11 @@ function FieldTable({
                 <Button small minimal icon="warning-sign" onClick={() => onDeprecate(apiName)}>
                   {field.status === 'deprecated' ? 'Deprecation' : 'Deprecate'}{' '}
                   <span className="visually-hidden">{field.display_name ?? apiName}</span>
+                </Button>
+              )}
+              {onRetype && field.type !== 'link' && (
+                <Button small minimal icon="exchange" onClick={() => onRetype(apiName)}>
+                  Change type <span className="visually-hidden">{field.display_name ?? apiName}</span>
                 </Button>
               )}
               {onRemove && field.type !== 'link' && (
@@ -248,6 +257,7 @@ function ObjectTypeCard({
   onUsedBy,
   onDeprecate,
   onRemove,
+  onRetype,
   onOpenObjectType,
   onOpenLinkType,
 }: {
@@ -267,6 +277,8 @@ function ObjectTypeCard({
   onDeprecate?: (target: DeprecateTarget) => void
   /** Removing the type or one of its stored fields: present only for manage:deployment. */
   onRemove?: (target: RemoveTarget) => void
+  /** Changing the data type of one of its stored fields: present only for manage:deployment. */
+  onRetype?: (target: RetypeTarget) => void
   onOpenObjectType: (objectType: string) => void
   onOpenLinkType: (linkType: string) => void
 }) {
@@ -341,6 +353,7 @@ function ObjectTypeCard({
             onUsedBy={onUsedBy && ((field) => onUsedBy({ objectType: apiName, field }))}
             onDeprecate={onDeprecate && ((field) => onDeprecate({ objectType: apiName, field }))}
             onRemove={onRemove && ((field) => onRemove({ objectType: apiName, field }))}
+            onRetype={onRetype && ((field) => onRetype({ objectType: apiName, field }))}
           />
         </>
       )}
@@ -352,6 +365,7 @@ function ObjectTypeCard({
         onUsedBy={onUsedBy && ((field) => onUsedBy({ objectType: apiName, field }))}
         onDeprecate={onDeprecate && ((field) => onDeprecate({ objectType: apiName, field }))}
         onRemove={onRemove && ((field) => onRemove({ objectType: apiName, field }))}
+        onRetype={onRetype && ((field) => onRetype({ objectType: apiName, field }))}
       />
       {entries.length === 0 && <Notice state="neutral">No fields are visible to you on this object type.</Notice>}
       {access && <WhoCanSee objectType={apiName} access={access} />}
@@ -415,6 +429,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
   const [usedBy, setUsedBy] = useState<UsedByTarget | null>(null)
   const [deprecating, setDeprecating] = useState<DeprecateTarget | null>(null)
   const [removing, setRemoving] = useState<RemoveTarget | null>(null)
+  const [retyping, setRetyping] = useState<RetypeTarget | null>(null)
   // What the last edit did: applied as a generation, or waiting for a
   // second person (a label that lets anyone read more).
   const [edited, setEdited] = useState<{ generation: number } | 'waiting' | null>(null)
@@ -424,6 +439,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
   const onUsedBy = describable ? (target: UsedByTarget) => setUsedBy(target) : undefined
   const onDeprecate = describable ? (target: DeprecateTarget) => setDeprecating(target) : undefined
   const onRemove = describable ? (target: RemoveTarget) => setRemoving(target) : undefined
+  const onRetype = describable ? (target: RetypeTarget) => setRetyping(target) : undefined
   // NAVIGATION STATE LIVES IN THE URL, not in component state.
   //
   // Following a reference is one click -- a link's target, a link tag,
@@ -654,6 +670,18 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
           onSessionExpired={onSessionExpired}
         />
       )}
+      {retyping !== null && (
+        <RetypeDialog
+          schema={schema}
+          target={retyping}
+          onClose={() => setRetyping(null)}
+          onApplied={(generation) => {
+            setRetyping(null)
+            setEdited({ generation })
+          }}
+          onSessionExpired={onSessionExpired}
+        />
+      )}
       {addingType && (
         <AddType
           onClose={() => setAddingType(false)}
@@ -741,6 +769,7 @@ export default function SchemaPanel({ visibleSchema, username, onSessionExpired 
                 onUsedBy={onUsedBy}
                 onDeprecate={onDeprecate}
                 onRemove={onRemove}
+                onRetype={onRetype}
                 onOpenObjectType={openObjectType}
                 onOpenLinkType={openLinkType}
               />

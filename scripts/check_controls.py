@@ -72,6 +72,9 @@ class Control:
 
 R = "tests/integration/test_removal_from_the_ui.py"
 E = "tests/unit/test_remove_edit.py"
+T = "tests/integration/test_retype_from_the_ui.py"
+TE = "tests/unit/test_retype_edit.py"
+TR = "tests/unit/test_retype.py"
 
 CONTROLS = [
     Control(
@@ -7891,6 +7894,261 @@ CONTROLS = [
         old='    if set(published) != set(arrow_schema.names):\n        return True',
         new='    if False:\n        return True',
         tests=[f"{R}::TestWhatHappensToStoredData::test_gold_is_rebuilt_without_the_column_and_its_publication_tags_restart"],
+    ),
+
+    # ---- Retype, slice R1 ----
+    Control(
+        describes="retype: only a manager of the deployment may preview a retype",
+        path="api/routes.py",
+        old=('    _require_manage_deployment(request, current_user)\n'
+             '    files, from_type, tables, stored, shown, hidden = _planned_retype'),
+        new='    files, from_type, tables, stored, shown, hidden = _planned_retype',
+        tests=[f"{T}::TestWhoMay::test_only_a_manager_of_the_deployment_and_the_denial_is_the_same_for_every_name"],
+    ),
+    Control(
+        describes="retype: only a manager of the deployment may change a type",
+        path="api/routes.py",
+        old=('    _require_manage_deployment(request, current_user)\n'
+             '    with _config_edit_lock:\n'
+             '        files, _from,'),
+        new='    with _config_edit_lock:\n        files, _from,',
+        tests=[f"{T}::TestWhoMay::test_only_a_manager_of_the_deployment_and_the_denial_is_the_same_for_every_name",
+               f"{T}::TestWhoMay::test_nothing_is_written_for_someone_who_may_not"],
+    ),
+    Control(
+        describes="retype: a stale view of the file is refused",
+        path="api/routes.py",
+        old=('    current = _ontology_as_read(request, body.digest)\n'
+             '    mediator = _generation(request).mediator\n'
+             '    running = mediator.schema\n'
+             '    declared ='),
+        new=(
+             '    current = (request.app.state.runtime_paths.config_dir / ONTOLOGY_FILE).read_text()\n'
+             '    mediator = _generation(request).mediator\n'
+             '    running = mediator.schema\n'
+             '    declared ='),
+        tests=[f"{T}::TestRetyping::test_a_stale_view_is_refused_on_both_and_nothing_is_changed"],
+    ),
+    Control(
+        describes="retype: a field the deployment does not have is Not found",
+        path="api/routes.py",
+        old='    if declared is None:\n        raise _not_found()',
+        new='    if False:\n        raise _not_found()',
+        tests=[f"{T}::TestRetyping::test_what_is_refused_and_how[given3-404-Not found]",
+               f"{T}::TestRetyping::test_what_is_refused_and_how[given4-404-Not found]"],
+    ),
+    Control(
+        describes="retype: the loader judges the proposed file before anything is shown",
+        path="api/routes.py",
+        old='    after = _load_candidate(request, {ONTOLOGY_FILE: proposed})\n    tables = changed_tables(',
+        new='    after = before\n    tables = changed_tables(',
+        tests=[f"{T}::TestRetyping::test_the_loader_has_the_last_word"],
+    ),
+    Control(
+        describes="retype: the reply lists the tables whose silver must now be rebuilt",
+        path="api/routes.py",
+        old='                "rebuild": _tables_needing_rebuild(request, _load_candidate(request, {}).schema)}',
+        new='                "rebuild": []}',
+        tests=[f"{T}::TestRetyping::test_the_reply_lists_the_silver_table_that_now_needs_a_rebuild",
+               f"{T}::TestWhatHappensToStoredData::test_the_preview_names_the_table_and_the_reply_lists_it_to_rebuild"],
+    ),
+    Control(
+        describes="retype: places naming the field that the person cannot discover are counted, not shown",
+        path="api/routes.py",
+        old='    shown, hidden = visible_to(found, lambda subject: mediator.knows(current_user, subject))\n    return ({ONTOLOGY_FILE',  # noqa: E501
+        new='    shown, hidden = found, 0\n    return ({ONTOLOGY_FILE',
+        tests=[f"{T}::TestWhatNamesTheField::test_places_naming_what_the_person_cannot_discover_are_counted_not_named"],
+    ),
+    Control(
+        describes="retype: the sync takes only rebuild names that need a rebuild right now",
+        path="api/routes.py",
+        old='            if name not in needed:\n                raise HTTPException(status_code=400',
+        new='            if False:\n                raise HTTPException(status_code=400',
+        tests=[f"{T}::TestSyncRebuildNames::test_a_name_that_needs_no_rebuild_is_refused_by_name_and_nothing_starts"],
+    ),
+    Control(
+        describes="retype: the rebuild names reach the sync thread",
+        path="api/routes.py",
+        old='        thread_factory(target=functools.partial(_run_sync_in_background, set(rebuild)), daemon=True).start()',  # noqa: E501
+        new='        thread_factory(target=_run_sync_in_background, daemon=True).start()',
+        tests=[f"{T}::TestWhatHappensToStoredData::test_the_rebuild_is_still_owed_after_a_refused_sync_because_it_is_derived_not_remembered"],
+    ),
+    Control(
+        describes="retype: the background sync passes the rebuild names to run_sync",
+        path="api/routes.py",
+        old='        if rebuild:\n            run_sync(rebuild=rebuild)',
+        new='        if rebuild:\n            run_sync()',
+        tests=[f"{T}::TestSyncRebuildNames::test_the_names_reach_the_sync_and_no_names_start_it_as_it_always_ran"],
+    ),
+    Control(
+        describes="retype: a sync with no names runs as it always did",
+        path="api/routes.py",
+        old='    if rebuild:\n        thread_factory(target=functools.partial(',
+        new='    if True:\n        thread_factory(target=functools.partial(',
+        tests=[f"{T}::TestSyncRebuildNames::test_with_no_body_it_is_the_sync_it_always_was"],
+    ),
+    Control(
+        describes="retype: the rebuild names are audited",
+        path="api/routes.py",
+        old='            current_user.user_id, "_mirror", rebuild, "rebuild", None, True,\n',
+        new='            current_user.user_id, "_mirror", "_sync", "start", None, True,\n',
+        tests=[f"{T}::TestWhatHappensToStoredData::test_the_rebuild_names_are_in_the_audit_log"],
+    ),
+    Control(
+        describes="retype: a link field is not retyped",
+        path="core/config_editing.py",
+        old='    if declared.get("type") != "data":',
+        new='    if False:',
+        tests=[f"{TE}::TestWhatIsRefused::test_it_says_why[given2-not a data field]"],
+    ),
+    Control(
+        describes="retype: the identifier is not retyped",
+        path="core/config_editing.py",
+        old=('    if field_name == type_def.get("id_field"):\n'
+             '        raise ConfigEditError(f"{where} is the type\'s identifier, and its type is not changed here.")'),
+        new='    if False:\n        raise ConfigEditError("")',
+        tests=[f"{TE}::TestWhatIsRefused::test_the_types_identifier_is_never_retyped_even_when_the_file_lists_it_as_a_field"],
+    ),
+    Control(
+        describes="retype: the field that decides who may see a row is not retyped",
+        path="core/config_editing.py",
+        old='    if isinstance(security, dict) and field_name == security.get("field"):',
+        new='    if False:',
+        tests=[f"{TE}::TestWhatIsRefused::test_the_field_that_decides_who_may_see_a_row_is_refused",
+               f"{T}::TestRetyping::test_what_is_refused_and_how[given6-400-who may see each row]"],
+    ),
+    Control(
+        describes="retype: only a data type of the vocabulary is accepted",
+        path="core/config_editing.py",
+        old='    if not isinstance(data_type, str) or data_type not in data_types:\n        raise ConfigEditError(f"{where}\'s data type is one of',  # noqa: E501
+        new='    if not isinstance(data_type, str):\n        raise ConfigEditError(f"{where}\'s data type is one of',
+        tests=[f"{TE}::TestWhatIsRefused::test_a_type_off_the_callers_list_is_refused_though_the_mirror_knows_it",
+               f"{TE}::TestWhatIsRefused::test_it_says_why[given4-data type is one of]"],
+    ),
+    Control(
+        describes="retype: a different type is required",
+        path="core/config_editing.py",
+        old='    if data_type == current:',
+        new='    if False:',
+        tests=[f"{TE}::TestWhatIsRefused::test_it_says_why[given5-already number]",
+               f"{TE}::test_a_field_with_no_data_type_counts_as_string_so_string_is_refused_for_it"],
+    ),
+    Control(
+        describes="retype: a CRLF file stays CRLF",
+        path="core/config_editing.py",
+        old='    return edited.replace("\\n", "\\r\\n") if crlf else edited',
+        new='    return edited',
+        tests=[f"{TE}::TestLineEnds::test_a_file_with_crlf_keeps_crlf_on_every_line_including_the_one_added",
+               f"{TE}::TestLineEnds::test_a_crlf_file_differs_from_its_original_in_one_line_only"],
+    ),
+    Control(
+        describes="retype: a file mixing CRLF and LF is refused",
+        path="core/config_editing.py",
+        old='        if re.search(r"(?<!\\r)\\n", ontology):',
+        new='        if False:',
+        tests=[f"{TE}::TestLineEnds::test_a_file_that_mixes_the_two_is_refused_not_half_converted"],
+    ),
+    Control(
+        describes="retype: a field written inside {...} is refused",
+        path="core/config_editing.py",
+        old='    if any(getattr(each, "fa", None) is not None and each.fa.flow_style() for each in chain',
+        new='    if False and any(getattr(each, "fa", None) is not None and each.fa.flow_style() for each in chain',
+        tests=[f"{TE}::TestWhatCannotBeEditedByLine::test_a_field_written_on_one_line_is_refused_both_ways",
+               f"{TE}::TestWhatCannotBeEditedByLine::test_a_whole_fields_block_in_flow_style_is_refused"],
+    ),
+    Control(
+        describes="retype: a field that comes in through a merge key is refused",
+        path="core/config_editing.py",
+        old='        if part not in node.lc.data:\n            raise ConfigEditError(\n                f"{where} comes in through',  # noqa: E501
+        new='        if False:\n            raise ConfigEditError(\n                f"{where} comes in through',
+        tests=[f"{TE}::TestWhatCannotBeEditedByLine::test_a_field_that_arrives_through_a_merge_is_refused_with_where_to_go"],
+    ),
+    Control(
+        describes="retype: a field that takes its keys from a merge is refused",
+        path="core/config_editing.py",
+        old='    if getattr(node, "merge", None):',
+        new='    if False:',
+        tests=[f"{TE}::TestWhatCannotBeEditedByLine::test_a_data_type_taken_from_a_merge_inside_the_field_is_refused"],
+    ),
+    Control(
+        describes="retype: a field with an anchor is refused",
+        path="core/config_editing.py",
+        old='    if any(getattr(each, "anchor", None) is not None and each.anchor.value is not None for each in chain',
+        new='    if False and any(getattr(each, "anchor", None) is not None and each.anchor.value is not None for each in chain',  # noqa: E501
+        tests=[f"{TE}::TestWhatCannotBeEditedByLine::test_a_field_with_an_anchor_is_refused_rather_than_changing_what_aliases_it"],
+    ),
+    Control(
+        describes="retype: a field with no data_type gets the line under its type",
+        path="core/config_editing.py",
+        old='        edited = _edit_line(ontology, [*path, "data_type"], data_type, ONTOLOGY_FILE, after=("type",))',
+        new='        edited = _edit_line(ontology, [*path, "data_type"], data_type, ONTOLOGY_FILE)',
+        tests=[f"{TE}::test_a_field_with_no_data_type_gets_the_line_under_its_type"],
+    ),
+    Control(
+        describes="retype: silver is judged against the lake, not remembered",
+        path="core/ontology/retype.py",
+        old='        if changed_column_types(have, schema_for_columns(list(target.columns), target.column_types)):',
+        new='        if True:',
+        tests=[f"{TR}::TestWhichSilverTablesNeedARebuild::test_a_table_that_matches_is_not_listed"],
+    ),
+    Control(
+        describes="retype: a table never built has nothing to rebuild",
+        path="core/ontology/retype.py",
+        old='        if have is None:\n            continue',
+        new='        if have is None:\n            needing.append(identifier)\n            continue',
+        tests=[f"{TR}::TestWhichSilverTablesNeedARebuild::test_a_table_never_built_has_nothing_to_rebuild",
+               f"{T}::TestRetyping::test_where_silver_was_never_built_there_is_nothing_to_rebuild"],
+    ),
+    Control(
+        describes="retype: only tables whose declared types changed are touched by a retype",
+        path="core/ontology/retype.py",
+        old='if name in was and was[name] != types)',
+        new='if name in was)',
+        tests=[f"{TR}::TestWhichTablesARetypeTouches::test_nothing_when_nothing_differs"],
+    ),
+    Control(
+        describes="retype: large_string and string are the same type to the rebuild check",
+        path="core/ontology/field_types.py",
+        old='    pairs = {("string", "large_string"), ("binary", "large_binary")}',
+        new='    pairs: set = set()',
+        tests=[f"{TR}::TestWhichSilverTablesNeedARebuild::test_large_string_is_string_so_an_unchanged_text_column_never_asks_for_a_rebuild",
+               "tests/unit/test_a_declared_type_can_change.py::TestAnUnchangedDeclaration::test_a_second_sync_is_fine"],
+    ),
+    Control(
+        describes="retype: a column on one side only is not a type change",
+        path="core/ontology/field_types.py",
+        old='            if field.name in have and not same_arrow_type(have[field.name], field.type)]',
+        new='            if not same_arrow_type(have.get(field.name), field.type)]',
+        tests=[f"{TR}::TestWhichSilverTablesNeedARebuild::test_a_column_on_one_side_only_is_a_new_column_not_a_type_change"],
+    ),
+    Control(
+        describes="retype: the sync refuses silver whose type changed until it is rebuilt",
+        path="core/mirror/iceberg_sync.py",
+        old='    if not changed or identifier in rebuild:\n        return\n    described',
+        new='    if True:\n        return\n    described',
+        tests=[f"{T}::TestWhatHappensToStoredData::test_silver_is_refused_until_rebuilt_and_the_old_silver_stays_as_it_was"],
+    ),
+    Control(
+        describes="retype: a rebuild drops silver and builds it again from bronze",
+        path="core/mirror/iceberg_sync.py",
+        old='            if identifier in self._rebuild:\n',
+        new='            if False:\n',
+        tests=[f"{T}::TestWhatHappensToStoredData::test_a_rebuild_makes_silver_the_new_type_with_a_history_of_its_own"],
+    ),
+    Control(
+        describes="retype: gold of a type whose silver is refused is skipped, not rebuilt from the old silver",
+        path="scripts/run_sync.py",
+        old='        stale = sorted(needed & (unsynced or set()))\n        if stale:',
+        new='        stale = sorted(needed & (unsynced or set()))\n        if False:',
+        tests=[f"{T}::TestWhileSilverIsRefused::test_gold_is_neither_rebuilt_nor_changed",
+               f"{T}::TestWhileSilverIsRefused::test_the_sync_says_so_out_loud"],
+    ),
+    Control(
+        describes="retype: gold is rebuilt when a column's type changes (publication tags restart)",
+        path="core/mirror/gold.py",
+        old='        not _same(existing[field.name], field.type)\n        for field in arrow_schema',
+        new='        False\n        for field in arrow_schema',
+        tests=[f"{T}::TestWhatHappensToStoredData::test_gold_is_rebuilt_and_its_publication_tags_restart"],
     ),
 ]
 

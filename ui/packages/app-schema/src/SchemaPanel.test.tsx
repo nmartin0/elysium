@@ -24,6 +24,7 @@ vi.mock('@elysium/shell-api/api', async (original) => ({
   getLinkableTypes: () => new Promise(() => {}),
   getUsedBy: () => new Promise(() => {}),
   previewRemoval: () => new Promise(() => {}),
+  previewRetype: () => new Promise(() => {}),
 }))
 
 /** The panel keeps its tab and filter in the URL, so it needs a
@@ -779,6 +780,44 @@ describe('removing a field', () => {
 
     await waitFor(() => expect(refused).toBe(true))
     expect(screen.queryByRole('button', { name: /Remove/ })).not.toBeInTheDocument()
+    describing.answer = () => new Promise(() => {})
+  })
+})
+
+describe('changing a field type', () => {
+  const describable = () =>
+    Promise.resolve({ digest: 'd1', types: {}, data_types: ['string', 'number'], label_enforcement: false })
+
+  it('is offered on a stored field, whatever its status, and opens the dialog', async () => {
+    describing.answer = describable
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Change type Email/ }))
+
+    expect(await screen.findByRole('dialog', { name: 'Change the type of Customer.Email' })).toBeInTheDocument()
+  })
+
+  it("is not offered on a link field, whose value is its target's id", async () => {
+    describing.answer = describable
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    await screen.findByRole('button', { name: /Change type Email/ })
+    expect(screen.queryByRole('button', { name: /Change type Transactions/ })).not.toBeInTheDocument()
+  })
+
+  it('is not offered to anyone the server refuses', async () => {
+    let refused = false
+    describing.answer = () => {
+      refused = true
+      return Promise.reject(new Error('refused'))
+    }
+    renderPanel(<SchemaPanel visibleSchema={{ Customer: CUSTOMER }} username="alice" onSessionExpired={noop} />)
+    openObjectTypes()
+
+    await waitFor(() => expect(refused).toBe(true))
+    expect(screen.queryByRole('button', { name: /Change type/ })).not.toBeInTheDocument()
     describing.answer = () => new Promise(() => {})
   })
 })

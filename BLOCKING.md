@@ -1411,6 +1411,19 @@ one Inbox. Built so far, each checked in a real browser:
   before applying; R4 proposed writes held while rebuilding and
   re-checked against the new shape when released. A retype is not a
   change event: triggers and history do not fire for it.
+  R1 BUILT (2 November): "Change type" on a data field of Schema
+  (config_editing.apply_retype, core/ontology/retype.py, POST
+  /admin/ontology/retype/preview and PUT /admin/ontology/retype, and
+  POST /admin/mirror/sync taking `{"rebuild": [...]}`, each name checked
+  against the lake right now). MEASURED for R2: while silver is refused,
+  the sync SKIPS gold of that type ("skipped gold.Transaction: ... did not
+  sync, so its silver is stale", scripts/run_sync.py) -- it neither
+  rebuilds gold from the old-typed silver nor fails it, so gold keeps its
+  old column type, tags and changelog while reads already use the new
+  declared type. Not retypable from the screen, on purpose: a link field, a
+  type's identifier, and the field its row security reads (comparing its
+  value as text decides who sees a row). tests/integration/
+  test_retype_from_the_ui.py runs a real sync before and after.
   A field declared later is not empty history:
   bronze keeps every column the source has. Order: add a field (built),
   then add a type with its binding picked from the source, then add a

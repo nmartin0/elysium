@@ -1024,7 +1024,7 @@ def apply_retype(ontology: str, change: dict, data_types: "Iterable[str]") -> st
         raise ConfigEditError(f"{where} is already {current}.")
 
     path = ["object_types", str(object_type), "fields", str(field_name)]
-    _refuse_an_uneditable_field(ontology, path, where, "data_type" in declared)
+    _refuse_an_uneditable_field(ontology, path, where)
     try:
         edited = _edit_line(ontology, [*path, "data_type"], data_type, ONTOLOGY_FILE, after=("type",))
     except RuamelYAMLError:
@@ -1035,7 +1035,7 @@ def apply_retype(ontology: str, change: dict, data_types: "Iterable[str]") -> st
     return edited.replace("\n", "\r\n") if crlf else edited
 
 
-def _refuse_an_uneditable_field(text: str, path: list[str], where: str, has_data_type: bool) -> None:
+def _refuse_an_uneditable_field(text: str, path: list[str], where: str) -> None:
     """A field whose `data_type` is not a line of its own to edit: written
     in flow style, reached through a `<<:` merge (its value or the field
     itself defined elsewhere), or carrying an anchor an alias may share."""
@@ -1061,9 +1061,6 @@ def _refuse_an_uneditable_field(text: str, path: list[str], where: str, has_data
     if getattr(node, "merge", None):
         raise ConfigEditError(f"{where} takes keys from a `<<:` merge in {ONTOLOGY_FILE}, and must be "
                               f"changed where they are defined.")
-    if has_data_type and "data_type" not in node.lc.data:
-        raise ConfigEditError(f"{where}'s data type comes in through a `<<:` merge in {ONTOLOGY_FILE}, and "
-                              f"must be changed where it is defined.")
 
 
 # ---------------------------------------------------------------------------

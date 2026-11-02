@@ -13,8 +13,8 @@ Anything else either exports is internal, and may change without notice.
 The manifest, `activate()`, host values, styles and the add-on server are
 described in [MODULE_API.md](MODULE_API.md).
 
-234 names imported, from 40 entry points, by 9 modules;
-292 declarations public in all.
+238 names imported, from 40 entry points, by 9 modules;
+298 declarations public in all.
 
 ## `@elysium/shell-api/api`
 
@@ -84,6 +84,8 @@ export declare function applyOntologyDescriptions(digest: string, changes: Descr
 }
 
 export declare function applyRemoval(digest: string, target: RemovalTarget): Promise<LabelEditResult>;
+
+export declare function applyRetype(digest: string, change: RetypeChange): Promise<RetypeResult>;
 
 export declare function applyStatus(digest: string, change: StatusChange): Promise<LabelEditResult>;
 
@@ -777,6 +779,8 @@ export declare function previewOntologyDescriptions(digest: string, changes: Des
 
 export declare function previewRemoval(digest: string, target: RemovalTarget): Promise<RemovalPreview>;
 
+export declare function previewRetype(digest: string, change: RetypeChange): Promise<RetypePreview>;
+
 export declare function previewRoleChange(roleName: string, grants: string[] | null): Promise<RoleImpact>;
 
 export declare function previewStatus(digest: string, change: StatusChange): Promise<StatusPreview>;
@@ -858,6 +862,27 @@ export type RemovalTarget = {
 };
 
 export declare function resetUserPassword(username: string, newPassword: string): Promise<void>;
+
+export interface RetypeChange {
+    object_type: string;
+    field: string;
+    data_type: string;
+}
+
+export interface RetypePreview {
+    diff: string[];
+    from_type: string;
+    to_type: string;
+    tables: string[];
+    stored_data: string[];
+    places: UsedByRow[];
+    hidden_places: number;
+    not_listed: string;
+}
+
+export interface RetypeResult extends LabelEditResult {
+    rebuild: string[];
+}
 
 export interface RoleAccess {
     role: string;
@@ -975,6 +1000,11 @@ export type SetRegion = 'left_only' | 'both' | 'right_only' | 'either';
 export declare function setTriggerEnabled(triggerId: string, enabled: boolean): Promise<void>;
 
 export declare function similarObjects(objectType: string, objectId: string, k?: number): Promise<MeaningResults>;
+
+export declare function startMirrorSync(rebuild?: string[]): Promise<{
+    started: boolean;
+    detail: string;
+}
 
 export type StatusChange = StatusTarget & {
     status: 'deprecated' | 'active';

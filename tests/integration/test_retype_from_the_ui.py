@@ -313,6 +313,18 @@ class TestSyncRebuildNames:
         assert response.status_code == 403 and "nonsense" not in response.text
         assert captured.started == []
 
+    def test_the_names_reach_the_sync_and_no_names_start_it_as_it_always_ran(self, monkeypatch):
+        import scripts.run_sync
+        from api.routes import _run_sync_in_background
+
+        calls = []
+        monkeypatch.setattr(scripts.run_sync, "run_sync", lambda *given, **asked: calls.append((given, asked)))
+
+        _run_sync_in_background()
+        _run_sync_in_background({SILVER})
+
+        assert calls == [((), {}), ((), {"rebuild": {SILVER}})]
+
     def test_a_body_that_is_not_a_list_of_names_is_a_validation_error(self, retyper, captured):
         assert _post_sync(retyper, rebuild="primary_sql.transactions").status_code == 422
         assert captured.started == []
@@ -511,6 +523,15 @@ class TestWhatHappensToStoredData:
         assert len(flow.later.history) == len(flow.before.history) + 1
         assert set(flow.before.history) <= set(flow.later.history)
 
+    def test_an_old_entry_keeps_its_value_as_it_was_and_a_new_one_has_the_new_type(self, flow):
+        def amount(entry):
+            return json.loads(json.loads(entry)["values"])["amount"]
+
+        (old,) = flow.before.history
+        (new,) = set(flow.later.history) - set(flow.before.history)
+        assert amount(old) == "50.99"
+        assert amount(new) == "51.990000000"
+
 
 class TestWhileSilverIsRefused:
     """THE GOLD FINDING (asked of slice R1, fixed by R2): once the YAML says
@@ -532,3 +553,4 @@ class TestWhileSilverIsRefused:
         assert ("skipped gold.Transaction: primary_sql.transactions did not sync, so its silver is stale"
                 in flow.refused_output)
         assert "FAILED  gold.Transaction" not in flow.refused_output
+
