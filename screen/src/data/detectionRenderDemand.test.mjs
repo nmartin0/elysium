@@ -341,15 +341,6 @@ test('detection holds nothing, and asks for its own frames instead', async () =>
     'the old inline threshold must be gone, not shadowing the policy');
   assert.match(shouldPaint, /if \(decision\.requestFollowUp\)\s*governorRequestRender\('detection-paint-skipped'\)/,
     'skipping a paint must hand the request forward, not swallow it');
-
-  // The scanline must not go back to the frame counter: that is what made a
-  // decorative texture demand a permanently hot loop.
-  const scanlines = /function _drawScanlines\([\s\S]*?\n\}/.exec(source)?.[0];
-  assert.ok(scanlines, 'detection.js still draws scanlines');
-  assert.doesNotMatch(scanlines, /_frameCount/,
-    'the scroll offset must come from the clock, not from a frame counter');
-  assert.match(scanlines, /scanlineOffsetPx\(nowMs\)/,
-    'and from the shared policy so the two cannot drift');
 });
 
 test('a layer whose detectable set changed dirties the solve', async () => {

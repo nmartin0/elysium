@@ -9,7 +9,6 @@ import {
   monoTextWidth,
   composeLabel,
   acquireAlpha,
-  appendCornerBracket,
   resolveTier,
   measureLabelCard,
   measureTrackLabel,
@@ -80,25 +79,6 @@ test('acquireAlpha clamps and defaults safely', () => {
   assert.equal(acquireAlpha(1000, 1100, 0), 1);    // no fade -> visible
 });
 
-test('appendCornerBracket emits 4 L-shaped corners (4 moveTo + 8 lineTo)', () => {
-  const calls = [];
-  const sink = {
-    moveTo: (x, y) => calls.push(['m', x, y]),
-    lineTo: (x, y) => calls.push(['l', x, y]),
-  };
-  appendCornerBracket(sink, 100, 100, 20, 10);
-
-  assert.equal(calls.length, 12);
-  assert.equal(calls.filter((c) => c[0] === 'm').length, 4);
-  assert.equal(calls.filter((c) => c[0] === 'l').length, 8);
-  // top-left corner of box (x0=80, y0=90), seg = max(4, floor(10*0.55)) = 5
-  assert.deepEqual(calls.slice(0, 3), [
-    ['m', 80, 95],
-    ['l', 80, 90],
-    ['l', 85, 90],
-  ]);
-});
-
 test('resolveTier maps type to a threat tier, with explicit override winning', () => {
   assert.equal(resolveTier({ type: 'AIR' }), 'civil');
   assert.equal(resolveTier({ type: 'AIR', tier: 'military' }), 'military'); // layer-supplied override
@@ -162,36 +142,6 @@ test('nearFarScale interpolates by distance and clamps to the near/far values', 
   assert.ok(Math.abs(mid - 1.75) < 1e-6, `midpoint ~1.75, got ${mid}`);
 });
 
-
-test('transit brackets paint a 1.25 px mode stroke over 3.25 px dark backing', async () => {
-  const { paintTransitBracket } = await import('./detectionDraw.js');
-  const strokes = [];
-  const ctx = { stroke(path) { strokes.push([path, this.lineWidth, this.strokeStyle, this.globalAlpha]); } };
-  const path = {};
-  paintTransitBracket(ctx, path, '#FF4538', 0.75);
-  assert.deepEqual(strokes, [[path, 3.25, '#05080C', 0.75], [path, 1.25, '#FF4538', 0.75]]);
-});
-
-test('transit bracket backing and colour use source-over under every inherited sensor theme', async () => {
-  const {paintTransitBracket}=await import('./detectionDraw.js');
-  for(const theme of ['normal','thermal','surveillance','noir','retro']) {
-    const strokes=[];
-    const ctx={globalCompositeOperation:'screen',globalAlpha:0.3,stroke(p){strokes.push([this.globalCompositeOperation,this.lineWidth,this.strokeStyle]);},save(){this.saved=[this.globalCompositeOperation,this.globalAlpha];},restore(){[this.globalCompositeOperation,this.globalAlpha]=this.saved;}};
-    paintTransitBracket(ctx,{},'#FF4538',1);
-    assert.deepEqual(strokes,[['source-over',3.25,'#05080C'],['source-over',1.25,'#FF4538']],theme);
-    assert.equal(ctx.globalCompositeOperation,'screen');
-  }
-});
-
-test('transit bracket stroke centres have full pixel coverage at the failing fractional positions', async () => {
-  const {appendTransitBracket}=await import('./detectionDraw.js');
-  for(const sy of [305.076,490.54,279.56]) {
-    const points=[],sink={moveTo:(x,y)=>points.push([x,y]),lineTo:(x,y)=>points.push([x,y])};
-    appendTransitBracket(sink,759.016,sy,11,7);
-    assert.equal(points.length,12);
-    for(const [x,y] of points){assert.equal(x%1,0.5);assert.equal(y%1,0.5);}
-  }
-});
 
 test('formatKnots writes the unit in the UI language', async () => {
   const { setLocale } = await import('../i18n/index.js');

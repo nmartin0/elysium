@@ -185,27 +185,6 @@ export const DATA_CREDITS = [
     html: 'Keyless place search: <a href="https://photon.komoot.io" target="_blank" rel="noopener">Photon</a> (komoot)',
   },
   {
-    key: 'open-meteo',
-    html:
-      'Cockpit current conditions: ' +
-      '<a href="https://open-meteo.com/en/licence" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a> ' +
-      '(CC BY 4.0)',
-  },
-  {
-    key: 'google-news-rss',
-    html:
-      'Cockpit regional headlines: ' +
-      '<a href="https://policies.google.com/terms" target="_blank" rel="noopener">Google News RSS</a> ' +
-      '(location-matched article links; publisher terms apply)',
-  },
-  {
-    key: 'gdelt',
-    html:
-      'Cockpit regional headlines: ' +
-      '<a href="https://www.gdeltproject.org/about.html" target="_blank" rel="noopener">GDELT Project</a> ' +
-      '(location-matched article links; publisher terms apply)',
-  },
-  {
     key: 'austin-cctv',
     html:
       'CCTV cameras &amp; frames: City of Austin, TX — ' +

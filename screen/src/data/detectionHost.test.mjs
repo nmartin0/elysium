@@ -291,22 +291,6 @@ function detectableLayer() {
   };
 }
 
-function militaryLayer() {
-  return {
-    id: 'military',
-    getDetectableObjects() {
-      return [{
-        position: new Cesium.Cartesian3(0, 0, 6_356_752),
-        sourceId: 'military-pin',
-        id: 'MIL-PIN',
-        metric: 'FL450',
-        type: 'AIR',
-        tier: 'military',
-      }];
-    },
-  };
-}
-
 // One air contact and one space contact, both on screen. The mock camera
 // projects through an identity view-projection, so a position's x/y ARE its
 // normalized device coordinates; these two land ~320px apart and both survive
@@ -392,8 +376,7 @@ test('detection lifecycle re-hosts unchanged painters behind the sole host liste
     assert.ok(first.bracketOpacityCounts.full + first.bracketOpacityCounts.partial > 0);
     assert.ok(env.detectionCtx.calls.some(([name, text]) => name === 'fillText'
       && String(text).startsWith('DENSE  VIS:')));
-    assert.ok(env.detectionCtx.calls.some(([name, path]) => name === 'stroke' && path instanceof MockPath2D));
-    assert.ok(env.detectionCtx.calls.some(([name]) => name === 'fillRect'), 'scanlines and banner still paint');
+    assert.ok(env.detectionCtx.calls.some(([name]) => name === 'fillRect'), 'banner still paints');
     assert.equal(env.detectionCtx.globalCompositeOperation, 'source-over');
     assert.equal(env.detectionCtx.filter, 'none');
     assert.equal(surface.style.display, 'block');
@@ -420,7 +403,6 @@ test('detection lifecycle re-hosts unchanged painters behind the sole host liste
     assert.equal(getMode(), 'SPARSE');
     assert.equal(getDetectionDiagnostics().profile, 'SPARSE');
     assert.equal(getDetectionDiagnostics().allocationStrategy, 'WEIGHTED');
-    assert.ok(env.detectionCtx.calls.some(([name]) => name === 'arc'), 'sparse focus ring remains available');
 
     setMode('BALANCED');
     env.postRender.raise();
@@ -606,27 +588,6 @@ test('space-tier callouts take the heavier plate while air contacts keep the lig
   }
 });
 
-test('surveillance military tier reaches the dedicated render target as shipped red', () => {
-  const env = installEnvironment();
-  try {
-    initWorldOverlay(env.viewer);
-    initDetection(env.viewer, [militaryLayer()], () => {});
-    setDetectionStyle('surveillance');
-    setMode('DENSE');
-    env.advance(250);
-    env.postRender.raise();
-
-    assert.ok(
-      env.detectionCtx.calls.some(([name, value]) => name === 'strokeStyle' && value === '#ff5a47'),
-      'the production projection/tier/batched-bracket paint path emits surveillance military red',
-    );
-    assert.ok(env.detectionCtx.calls.some(([name, path]) => name === 'stroke'
-      && path instanceof MockPath2D));
-  } finally {
-    env.cleanup();
-  }
-});
-
 test('pathological detection paint holds alternate frames without freezing shared lanes', () => {
   // Opts into the telemetry banner: the held-frame assertions count banner paints.
   const env = installEnvironment({ search: '?detectDebug=1' });
@@ -743,11 +704,6 @@ test('the mode banner is absent by default and present behind the flag', () => {
       setMode('DENSE');
       env.advance(250);
       env.postRender.raise();
-      // The overlay is alive either way — brackets still stroke.
-      assert.ok(
-        env.detectionCtx.calls.some(([name, path]) => name === 'stroke' && path instanceof MockPath2D),
-        'detection still paints its contacts regardless of the debug gate',
-      );
       return bannerPaints(env);
     } finally {
       destroyDetection();
@@ -937,9 +893,6 @@ test('a transit vehicle is a contact: box, route, mode and operator on the share
       painted.some((text) => String(text).includes('34 KM/H')),
       'and so does what the vehicle is doing',
     );
-    assert.ok(env.ctx.calls.some(([name, , color, width]) => name === 'stroke' && color === '#5EF08A' && width === 1.25));
-    assert.ok(env.ctx.calls.some(([name, , color, width]) => name === 'stroke' && color === '#05080C' && width === 3.25));
-    assert.ok(!env.detectionCtx.calls.some(([name, , color]) => name === 'stroke' && color === '#5EF08A'));
     // The operator travels on the object for the two-tier card form, which is
     // where `klass` is read; the host's track label does not paint it.
     assert.equal(composeLabel(objects[0]).secondary, 'MBTA · BUS 34 KM/H');

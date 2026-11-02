@@ -90,42 +90,6 @@ export function acquireAlpha(firstSeenMs, nowMs, fadeMs) {
 }
 
 /**
- * Appends one bracket-style bounding box (four L-shaped corner segments only)
- * to a path-like sink exposing moveTo(x, y) / lineTo(x, y). Designed so many
- * boxes accumulate into a single Path2D for one batched stroke() — replacing
- * the old per-box beginPath/stroke. Geometry matches the prior reticle exactly.
- * @param {{moveTo: Function, lineTo: Function}} sink - Path2D or compatible recorder.
- * @param {number} sx - Screen X centre of the box.
- * @param {number} sy - Screen Y centre of the box.
- * @param {number} halfW - Half-width of the box.
- * @param {number} halfH - Half-height of the box.
- */
-export function appendCornerBracket(sink, sx, sy, halfW, halfH) {
-  const x0 = sx - halfW;
-  const y0 = sy - halfH;
-  const x1 = sx + halfW;
-  const y1 = sy + halfH;
-  const seg = Math.max(4, Math.floor(Math.min(halfW, halfH) * 0.55));
-
-  // top-left
-  sink.moveTo(x0, y0 + seg);
-  sink.lineTo(x0, y0);
-  sink.lineTo(x0 + seg, y0);
-  // top-right
-  sink.moveTo(x1 - seg, y0);
-  sink.lineTo(x1, y0);
-  sink.lineTo(x1, y0 + seg);
-  // bottom-right
-  sink.moveTo(x1, y1 - seg);
-  sink.lineTo(x1, y1);
-  sink.lineTo(x1 - seg, y1);
-  // bottom-left
-  sink.moveTo(x0 + seg, y1);
-  sink.lineTo(x0, y1);
-  sink.lineTo(x0, y1 - seg);
-}
-
-/**
  * Resolves a detectable object's threat tier — the key into a theme's color
  * ramp (civil/military/sea/space/vehicle). A layer-supplied `tier` wins;
  * otherwise it derives from the coarse `type`. Drives per-tier box/card color.
@@ -241,29 +205,4 @@ export function nearFarScale(distance, near, nearValue, far, farValue) {
   if (distance >= far) return farValue;
   const t = (distance - near) / (far - near);
   return nearValue + t * (farValue - nearValue);
-}
-
-/** Transit keeps literal mode colour on the normal-composite surface. */
-export function paintTransitBracket(ctx, path, color, alpha = 1) {
-  ctx.save?.();
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.globalAlpha = alpha;
-  ctx.strokeStyle = '#05080C';
-  ctx.lineWidth = 3.25;
-  ctx.stroke(path);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1.25;
-  ctx.stroke(path);
-  ctx.restore?.();
-}
-
-/** Centre 1.25 px strokes on pixels, so their cores are fully covered. */
-export function appendTransitBracket(sink, sx, sy, halfW, halfH) {
-  appendCornerBracket(
-    sink,
-    Math.floor(sx) + 0.5,
-    Math.floor(sy) + 0.5,
-    Math.round(halfW),
-    Math.round(halfH),
-  );
 }

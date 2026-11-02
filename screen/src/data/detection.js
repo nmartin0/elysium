@@ -1,4 +1,3 @@
-import { paintTransitBracket } from './detectionDraw.js';
 import * as Cesium from 'cesium';
 import { governorRequestRender } from '../renderGovernor.js';
 import {
@@ -6,12 +5,9 @@ import {
   countAnimatingRenderEntries,
   detectionNeedsFollowUpFrame,
   detectionPaintSkipDecision,
-  scanlineOffsetPx,
 } from './detectionRenderDemand.js';
 import {
   acquireAlpha,
-  appendCornerBracket,
-  appendTransitBracket,
   resolveTier,
   measureTrackLabel,
   nearFarScale,
@@ -46,7 +42,6 @@ import {
   profileForDensity,
   viewScaleForAltitude,
 } from './detectionPolicy.js';
-import { detectionBracketOpacity } from './detectionPresentation.js';
 import {
   createCyberSonarSampler,
   cyberSonarFrameDelay,
@@ -97,12 +92,8 @@ const LEGACY_MODE_ALIAS = {
  */
 const THEME_MAP = DETECTION_THEME_MAP;
 
-/** @constant {number} SPARSE_ZONE_FRACTION - Fraction of viewport half-extent used as sparse focus ring radius */
-const SPARSE_ZONE_FRACTION = 0.5;
 /** Solve cadence for membership/collision; accepted identities still reproject every frame. */
 const LABEL_SOLVE_INTERVAL_MS = 125;
-/** Alpha bands retain bracket batching while approximating a continuous radial fade. */
-const BRACKET_ALPHA_STEPS = 4;
 /** Stable per-layer candidate safety cap; independent of density and camera bearing. */
 const LAYER_CANDIDATE_CAP = 2600;
 const LAYER_WEIGHTS = Object.freeze({
@@ -226,8 +217,6 @@ let _hostLane = null;
  * @type {{surface:HTMLCanvasElement|null,setActive:Function,requestPaint:Function,unregister:Function}|null}
  */
 let _calloutLane = null;
-let _transitBracketPaths = new Map();
-let _transitBracketAlpha = 1;
 /**
  * Callouts solved by the sensor lane this frame, replayed by the callout lane.
  * The array and its rows are POOLED — `_calloutCount` is the live length — so a
@@ -272,10 +261,6 @@ let _suspendReason = '';
 let _enableTime = 0;
 /** @type {number} Cached monospace glyph advance width (px); measured once on first draw. */
 let _charWidth = 0;
-/** @type {boolean} Whether Cockpit view currently owns the viewport. */
-let _cockpitActive = false;
-/** @type {((event: CustomEvent) => void)|null} */
-let _cockpitModeListener = null;
 
 /**
  * Initializes detection inside the shared world-overlay host and stores
@@ -285,12 +270,6 @@ let _cockpitModeListener = null;
  * @param {Function} onModeChange - Callback invoked with the new mode label string on mode changes.
  */
 export function initDetection(viewer, layers, onModeChange) {
-  if (_cockpitModeListener && typeof window !== 'undefined') {
-    window.removeEventListener(
-      'gev:cockpit-mode-changed',
-      _cockpitModeListener,
-    );
-  }
   _hostLane?.unregister?.();
   _calloutLane?.unregister?.();
   _viewer = viewer;
@@ -317,13 +296,6 @@ export function initDetection(viewer, layers, onModeChange) {
     target: 'shared',
   });
   _hostSurface = _hostLane.surface;
-  _cockpitModeListener = (event) => {
-    _cockpitActive = event?.detail?.active === true;
-    _hostLane?.requestPaint();
-  };
-  if (typeof window !== 'undefined') {
-    window.addEventListener('gev:cockpit-mode-changed', _cockpitModeListener);
-  }
 
   setDetectionStyle('normal');
   _syncSurfaceVisibility();
@@ -333,21 +305,12 @@ export function initDetection(viewer, layers, onModeChange) {
 /** Release the host lane and all retained detection runtime state. */
 export function destroyDetection() {
   _clearCyberSonarRenderTimer();
-  if (_cockpitModeListener && typeof window !== 'undefined') {
-    window.removeEventListener(
-      'gev:cockpit-mode-changed',
-      _cockpitModeListener,
-    );
-  }
-  _cockpitModeListener = null;
-  _cockpitActive = false;
   _debugBanner = false;
   if (_hostSurface) _hostSurface.style.display = 'none';
   _hostLane?.unregister?.();
   _hostLane = null;
   _calloutLane?.unregister?.();
   _calloutLane = null;
-  _transitBracketPaths.clear();
   _calloutCount = 0;
   _viewer = null;
   _layers = [];
@@ -843,39 +806,6 @@ function _collectDetectableObjects() {
 }
 
 /**
- * Draws a CRT-style scanline overlay across the entire canvas.
- *
- * The scroll offset comes from the CLOCK, not from `_frameCount`. Those look
- * identical while the scene is rendering — `SCANLINE_STEP_MS` is one 60 fps
- * frame — but they differ in what they DEMAND. A frame counter only advances if
- * something keeps rendering, so tying decorative texture to it meant detection
- * had to hold the scene in continuous mode forever to keep its own shimmer
- * alive. Off the clock, the pattern scrolls whenever the scene is rendering for
- * any real reason and simply rests on a parked view. The lines are always
- * painted; only the shimmer pauses.
- *
- * Opacity is controlled by the theme's scanline property.
- * @param {number} width - Canvas width in pixels.
- * @param {number} height - Canvas height in pixels.
- * @param {number} nowMs - Wall-clock time of this frame.
- */
-function _drawScanlines(width, height, nowMs) {
-  if (!_theme.scanline || !_ctx) return;
-  _ctx.save();
-  _ctx.globalAlpha = _theme.scanline;
-  _ctx.fillStyle = _theme.labelBg;
-  for (let y = scanlineOffsetPx(nowMs); y < height; y += 4) {
-    _ctx.fillRect(0, y, width, 1);
-  }
-  _ctx.restore();
-}
-
-// Corner-bracket geometry (appendCornerBracket) and label composition
-// (composeLabel) now live in detectionDraw.js. _drawOverlay batches brackets by
-// tier color + radial-opacity band and draws labels as one background fill plus
-// two text passes, avoiding per-object strokes while preserving keyhole fading.
-
-/**
  * Draws the top-left status banner showing the current mode, visible/source counts,
  * density tuning value, frame render time, and suspension state.
  *
@@ -896,27 +826,6 @@ function _drawModeBanner(visibleCount, sampledCount) {
   _ctx.fillRect(12, 12, Math.max(180, _ctx.measureText(text).width + 12), 16);
   _ctx.fillStyle = _theme.label;
   _ctx.fillText(text, 18, 23);
-}
-
-/**
- * Draws a faint circular focus ring in the center of the viewport in sparse mode.
- * Objects outside this ring are culled during sparse selection.
- * @param {number} width - Canvas width in pixels.
- * @param {number} height - Canvas height in pixels.
- */
-function _drawSparseFocusRing(width, height) {
-  if (_mode !== MODE_SPARSE) return;
-  const cx = width * 0.5;
-  const cy = height * 0.5;
-  const r = Math.min(width, height) * SPARSE_ZONE_FRACTION;
-  _ctx.save();
-  _ctx.strokeStyle = _theme.glow;
-  _ctx.globalAlpha = 0.35;
-  _ctx.lineWidth = 1;
-  _ctx.beginPath();
-  _ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  _ctx.stroke();
-  _ctx.restore();
 }
 
 function _detectionKey(layerId, sourceId) {
@@ -1111,17 +1020,6 @@ function _paintCalloutLane(frame) {
   if (_mode === MODE_OFF || _suspended) return;
   const ctx = frame.ctx;
   if (!ctx) return;
-  for (const bands of _transitBracketPaths.values()) {
-    for (const entry of bands) {
-      if (entry)
-        paintTransitBracket(
-          ctx,
-          entry.path,
-          entry.color,
-          entry.alpha * _transitBracketAlpha,
-        );
-    }
-  }
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   for (let i = 0; i < _calloutCount; i++) {
@@ -1212,7 +1110,6 @@ function _materializeCandidate(
  * for a bounded cohort on solve ticks.
  */
 function _drawOverlay(frame) {
-  _transitBracketPaths.clear();
   const { width, height } = frame;
   if (!_ctx || width <= 0 || height <= 0) {
     return {
@@ -1231,7 +1128,6 @@ function _drawOverlay(frame) {
   const sonarActive = isCyberSonarActive();
   const cyberMapActive = isCyberMapThemeActive();
   const sonarSampler = createCyberSonarSampler(width, height, now);
-  const bracketPresentationOpacity = detectionBracketOpacity(_cockpitActive);
   const shouldSolve =
     _labelSolveDirty || now - _lastLabelSolveAt >= LABEL_SOLVE_INTERVAL_MS;
   const calloutOcclusionRects = frame.uiRects;
@@ -1258,8 +1154,6 @@ function _drawOverlay(frame) {
     // last data layer is switched off.
     _calloutCount = 0;
     _ctx.font = FONT;
-    _drawScanlines(width, height, now);
-    _drawSparseFocusRing(width, height);
     _drawModeBanner(0, 0);
     _lastDiagnostics = {
       profile: MODE_LABELS[_mode],
@@ -1271,7 +1165,6 @@ function _drawOverlay(frame) {
       candidateCount: 0,
       observationCount: 0,
       visibleCount: 0,
-      bracketPresentationOpacity,
       labelBudget: 0,
       labelsByLayer: {},
       labeledKeys: [],
@@ -1334,25 +1227,6 @@ function _drawOverlay(frame) {
   if (!_charWidth) _charWidth = _ctx.measureText('0000000000').width / 10 || 6;
   const tiers = _theme.tiers || null;
   const colorFor = (key) => (tiers && tiers[key]) || _theme.line;
-  const bracketPaths = new Map();
-  const pathFor = (map, color, alpha) => {
-    const band = Math.max(
-      1,
-      Math.min(BRACKET_ALPHA_STEPS, Math.ceil(alpha * BRACKET_ALPHA_STEPS)),
-    );
-    let bands = map.get(color);
-    if (!bands) {
-      bands = new Array(BRACKET_ALPHA_STEPS + 1);
-      map.set(color, bands);
-    }
-    let entry = bands[band];
-    if (!entry) {
-      entry = { color, alpha: band / BRACKET_ALPHA_STEPS, path: new Path2D() };
-      bands[band] = entry;
-    }
-    return entry.path;
-  };
-
   let visibleCount = 0;
   const bracketOpacityCounts = { full: 0, partial: 0, hidden: 0 };
   const aircraftBracketSectors = { left: 0, front: 0, right: 0 };
@@ -1424,18 +1298,6 @@ function _drawOverlay(frame) {
     );
     const bracketAlpha = admissionAlpha * sonarFactor;
     if (bracketAlpha > 0) {
-      const transit = obj.tier?.startsWith('transit_');
-      (transit ? appendTransitBracket : appendCornerBracket)(
-        pathFor(
-          transit ? _transitBracketPaths : bracketPaths,
-          color,
-          bracketAlpha,
-        ),
-        sx,
-        sy,
-        halfW,
-        halfH,
-      );
       visibleCount++;
       if (obj.type === 'AIR')
         aircraftBracketSectors[detectionHorizontalSector(sx, width)]++;
@@ -1563,19 +1425,6 @@ function _drawOverlay(frame) {
   }
 
   const fade = acquireAlpha(_enableTime, now, FADE_MS);
-  const bracketWidth = _mode === MODE_DENSE ? 1 : 1.25;
-  _transitBracketAlpha = fade * bracketPresentationOpacity;
-
-  // Brackets — batched by tier color and linear radial-opacity band.
-  _ctx.lineWidth = bracketWidth;
-  for (const bands of bracketPaths.values()) {
-    for (const entry of bands) {
-      if (!entry) continue;
-      _ctx.globalAlpha = fade * entry.alpha * bracketPresentationOpacity;
-      _ctx.strokeStyle = entry.color;
-      _ctx.stroke(entry.path);
-    }
-  }
 
   const renderEntries = _labelArbiter.renderEntries(candidateMap, now);
   const fadingCount = countFadingRenderEntries(renderEntries);
@@ -1610,7 +1459,6 @@ function _drawOverlay(frame) {
       visibleCount,
       bracketOpacityCounts,
       aircraftBracketSectors,
-      bracketPresentationOpacity,
       protectedVisibleCount,
       collectiveLabelBudget: collectiveBudget,
       ambientLabelBudget: ambientBudget,
@@ -1643,12 +1491,9 @@ function _drawOverlay(frame) {
     _lastDiagnostics.visibleCount = visibleCount;
     _lastDiagnostics.bracketOpacityCounts = bracketOpacityCounts;
     _lastDiagnostics.aircraftBracketSectors = aircraftBracketSectors;
-    _lastDiagnostics.bracketPresentationOpacity = bracketPresentationOpacity;
     _lastDiagnostics.protectedVisibleCount = protectedVisibleCount;
   }
 
-  _drawScanlines(width, height, now);
-  _drawSparseFocusRing(width, height);
   _drawModeBanner(visibleCount, sampledCount);
   // `_labelSolveDirty` surviving a paint means the solve was owed and did not
   // run — the frame that carried the request cannot be the last one.
