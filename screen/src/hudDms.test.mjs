@@ -3,32 +3,8 @@
 // That carry must reach the minutes (and degrees): `122°20'60.00"W` is not a
 // coordinate. Ordinary decimal inputs land there through binary floating
 // point: 122.35 - 122 is 0.34999999999999432, so -122.35 read 20'60.00".
-//
-// hud.js imports `mgrs`, a CommonJS package whose named exports Node's ESM
-// loader cannot see, so this installs the same one-specifier stub as
-// hudAltitudeDatum.test.mjs before importing it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { registerHooks } from 'node:module';
-
-const MGRS_STUB_URL = 'gev-test-stub:mgrs';
-registerHooks({
-  resolve(specifier, context, next) {
-    if (specifier === 'mgrs') return { url: MGRS_STUB_URL, shortCircuit: true };
-    return next(specifier, context);
-  },
-  load(url, context, next) {
-    if (url === MGRS_STUB_URL) {
-      return {
-        format: 'module',
-        shortCircuit: true,
-        source:
-          'export function forward() { return "10SEG55776339"; }\nexport default { forward };\n',
-      };
-    }
-    return next(url, context);
-  },
-});
 
 const { IntelHUD } = await import('./hud.js');
 
@@ -60,12 +36,12 @@ test('the telemetry tick paints the carried value into both readouts', () => {
     [
       'hud-alt',
       'hud-summary',
-      'hud-mgrs',
+      
       'hud-latlon',
       'hud-bottom-line',
-      'hud-gsd',
-      'hud-coll',
-      'hud-ona',
+      
+      
+      
       'hud-mode',
     ].map((id) => [id, { textContent: '' }]),
   );

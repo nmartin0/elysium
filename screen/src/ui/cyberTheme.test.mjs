@@ -527,9 +527,9 @@ test('Cyber Display uses a red title without a panel-specific center tab', () =>
   assert.match(cyberStyles, /#pp-toggles:not\(\.collapsed\)::before/);
 });
 
-test('Cyber omits only the fictional classification and system header lines', () => {
-  assert.match(
+test('the HUD has no classification, system id or edge strips', () => {
+  assert.doesNotMatch(
     cyberStyles,
-    /#intel-hud\[data-variant='cyber'\] \.hud-top-left \.hud-classification,\s*#intel-hud\[data-variant='cyber'\] \.hud-top-left \.hud-system\s*\{\s*display: none;\s*\}/,
+    /hud-classification|hud-system|hud-bracket|hud-left-edge|hud-right-edge/,
   );
 });

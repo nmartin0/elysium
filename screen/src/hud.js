@@ -1,21 +1,18 @@
 /**
  * @module hud
- * @description Intelligence HUD Overlay — NRO/NGA Satellite Aesthetic.
+ * @description Telemetry overlay for the globe view.
  *
- * Renders authentic reconnaissance metadata over the Cesium canvas:
- * classification banners, live MGRS/lat-lon coordinates, sensor metrics
- * (GSD, NIIRS, ONA), timestamps, and orbital data — all updating in
- * real-time at configurable cadences.
+ * Shows values read from the app and the camera: the active display mode,
+ * a one-line summary of the view, the UTC time, latitude and longitude of the
+ * camera, its altitude above mean sea level, the sun elevation there, and the
+ * live vessel line. Nothing here is simulated.
  *
- * The HUD auto-activates when a military-style shader (NVG, FLIR, CRT) is
- * selected and supports the layout variants: tactical, minimal, cyber.
- *
- * Color theming is driven by the active shader mode via CSS custom properties.
+ * Layout variants: tactical, minimal, cyber. Color theming is driven by the
+ * active style through CSS custom properties.
  */
 
 import * as Cesium from 'cesium';
 import { greatCircleKm } from './geoDistance.js';
-import { forward as toMGRS } from 'mgrs';
 import { CITY_POIS } from './cityPois.js';
 import { composeLocalityTag } from './hudLocality.js';
 import { hudQuantity, LOCALIZED_LOCALITY } from './hudLocalityFormat.js';
@@ -37,23 +34,8 @@ import { formatNumber, msg, t } from './i18n/index.js';
 import { localizeLayerName } from './ui/layerPanel.js';
 import { isEmbeddedInline } from './app/embed.js';
 
-/** Color palettes keyed by shader mode; applied as CSS custom properties. */
+/** Color palettes keyed by style; applied as CSS custom properties. */
 const HUD_COLORS = {
-  surveillance: {
-    main: 'rgba(51, 255, 51, 0.8)',
-    glow: 'rgba(51, 255, 51, 0.5)',
-    border: 'rgba(51, 255, 51, 0.2)',
-  },
-  thermal: {
-    main: 'rgba(255, 255, 255, 0.7)',
-    glow: 'rgba(255, 255, 255, 0.4)',
-    border: 'rgba(255, 255, 255, 0.15)',
-  },
-  retro: {
-    main: 'rgba(255, 170, 0, 0.8)',
-    glow: 'rgba(255, 170, 0, 0.5)',
-    border: 'rgba(255, 170, 0, 0.2)',
-  },
   _default: {
     main: 'rgba(0, 255, 255, 0.6)',
     glow: 'rgba(0, 255, 255, 0.4)',
@@ -67,9 +49,6 @@ const HUD_COLORS = {
  */
 const MODE_LABELS = Object.freeze({
   normal: msg('NORMAL'),
-  retro: msg('CRT'),
-  surveillance: msg('NVG'),
-  thermal: msg('FLIR'),
   anime: msg('ANIME'),
   noir: msg('NOIR'),
 });
@@ -133,10 +112,6 @@ function viewBandLabel(band) {
   }
 }
 
-/** Shader modes that automatically show the HUD overlay. */
-// Fork: the military-sensor styles were removed, so no style auto-shows it.
-const MILITARY_STYLES = new Set();
-
 const HUD_SUMMARY_INTERVAL_MS = 15000;
 
 /**
@@ -177,12 +152,11 @@ function hudTelemetryProvenance(layers = []) {
 }
 
 /**
- * Full-screen intelligence HUD overlay rendered on top of the Cesium canvas.
+ * Full-screen telemetry overlay rendered on top of the Cesium canvas.
  *
- * Displays classification banners, MGRS/lat-lon readouts, sensor metrics
- * (GSD, NIIRS, off-nadir angle), sun elevation, orbital metadata, and a
- * rolling semantic summary line. All values derive from the live camera
- * position and update on independent timer cadences.
+ * Displays the lat/lon, altitude and sun elevation readouts, the UTC time and
+ * a rolling one-line summary. All values derive from the live camera
+ * position and the app's state and update on independent timer cadences.
  */
 export class IntelHUD {
   /**
@@ -196,9 +170,7 @@ export class IntelHUD {
     this._currentStyle = 'normal';
     this._el = null;
     this._variant = DEFAULT_HUD_LAYOUT;
-    this._recBlinkState = true;
     this._updateInterval = null;
-    this._recBlinkInterval = null;
     this._timestampInterval = null;
     this._summaryInterval = null;
     this._summaryTypingInterval = null;
@@ -242,12 +214,6 @@ export class IntelHUD {
       }
     };
 
-    // Session-consistent pseudorandom identifiers (generated once at construction)
-    this._missionId = `KH11-${4000 + Math.floor(Math.random() * 200)}`;
-    this._sensorId = `OPS-${4100 + Math.floor(Math.random() * 100)}`;
-    this._orbitNum = 47000 + Math.floor(Math.random() * 1000);
-    this._passNum = 100 + Math.floor(Math.random() * 200);
-
     this._buildDOM();
     this.viewer.camera.moveStart.addEventListener(this._onCameraMoveStart);
     this.viewer.camera.moveEnd.addEventListener(this._onCameraMoveEnd);
@@ -256,22 +222,19 @@ export class IntelHUD {
 
   /**
    * Construct the HUD DOM structure inside the existing `#intel-hud` element.
-   * Populates corner brackets, classification banners, sensor readouts,
-   * edge metadata strips, and the bottom summary bar.
+   * Populates the mode and summary, the UTC time, the camera position
+   * and altitude readouts, and the bottom line.
    */
   _buildDOM() {
     this._el = document.getElementById('intel-hud');
     if (!this._el) return;
 
-    // i18n-ignore: sensor codes and a classification banner; the rest uses t()
+    // i18n-ignore: coordinate and altitude readouts; the rest uses t()
     this._el.innerHTML = `
       <div class="hud-sonar" aria-hidden="true"></div>
 
       <div class="hud-corner hud-top-left">
-        <div class="hud-bracket">┌</div>
         <div class="hud-content">
-          <div class="hud-readout"><div class="hud-classification">TOP SECRET // SI-TK // NOFORN</div></div>
-          <div class="hud-readout"><div class="hud-system">${this._missionId}  ${this._sensorId}</div></div>
           <div class="hud-readout"><div class="hud-mode" id="hud-mode">${t(MODE_LABELS.normal)}</div></div>
           <div class="hud-summary-wrap">
             <div class="hud-readout"><div class="hud-summary-label">${t('SUMMARY')}</div></div>
@@ -282,50 +245,33 @@ export class IntelHUD {
 
       <div class="hud-corner hud-top-right">
         <div class="hud-content" style="text-align:right">
-          <div class="hud-readout"><div class="hud-rec"><span id="hud-rec-dot">●</span> ${t('REC')}  <span id="hud-timestamp">2026-01-01 00:00:00Z</span></div></div>
-          <div class="hud-readout"><div class="hud-orbital">ORB: ${this._orbitNum}  PASS: DESC-${this._passNum}</div></div>
+          <div class="hud-readout"><div class="hud-time"><span id="hud-timestamp">2026-01-01 00:00:00Z</span></div></div>
         </div>
-        <div class="hud-bracket">┐</div>
       </div>
 
       <div class="hud-corner hud-bottom-left">
-        <div class="hud-bracket">└</div>
         <div class="hud-content">
-          <div class="hud-readout"><div id="hud-mgrs">MGRS: ---</div></div>
           <div class="hud-readout"><div id="hud-latlon">--°--'--"N ---°--'--"W</div></div>
         </div>
       </div>
 
       <div class="hud-corner hud-bottom-right">
         <div class="hud-content" style="text-align:right">
-          <div class="hud-readout"><div id="hud-gsd">GSD: --m  NIIRS: --</div></div>
           <div class="hud-readout"><div id="hud-alt">ALT: --m   SUN: --° EL</div></div>
           <div class="hud-readout"><div id="hud-ais-vessel" class="hud-ais-vessel">${t('AIS: --')}</div></div>
         </div>
-        <div class="hud-bracket">┘</div>
-      </div>
-
-      <div class="hud-edge hud-left-edge">
-        <div class="hud-readout"><div id="hud-coll">COLL: --:--:--Z</div></div>
-        <div class="hud-readout"><div id="hud-ona">ONA: --°</div></div>
-      </div>
-
-      <div class="hud-edge hud-right-edge">
-        <div class="hud-readout"><div>BAND: PAN</div></div>
-        <div class="hud-readout"><div>BITS: 11</div></div>
-        <div class="hud-readout"><div>LVL: 1A</div></div>
       </div>
 
       <div class="hud-bottom-bar">
-        <span class="hud-readout"><span id="hud-bottom-line">LAT: --  LON: --  MGRS: ---</span></span>
+        <span class="hud-readout"><span id="hud-bottom-line">LAT: --  LON: --</span></span>
       </div>
     `;
     this._el.dataset.variant = this._variant;
   }
 
   /**
-   * Start all periodic update timers (timestamp, REC blink, camera
-   * telemetry, semantic summary). Timers run independently at different
+   * Start all periodic update timers (timestamp, camera telemetry, semantic
+   * summary). Timers run independently at different
    * cadences and are cleaned up in {@link destroy}.
    */
   _startTimers() {
@@ -334,14 +280,6 @@ export class IntelHUD {
       const el = document.getElementById('hud-timestamp');
       if (el) el.textContent = this._formatUTC();
     }, 1000);
-
-    // REC blink — every 800ms
-    this._recBlinkInterval = setInterval(() => {
-      this._recBlinkState = !this._recBlinkState;
-      const dot = document.getElementById('hud-rec-dot');
-      if (dot)
-        dot.style.visibility = this._recBlinkState ? 'visible' : 'hidden';
-    }, 800);
 
     // Camera-derived data — 4 updates/second (250ms). Skipped in a hidden
     // page, except an inline panel, whose host may report it hidden while it
@@ -407,9 +345,8 @@ export class IntelHUD {
 
   /**
    * Derive all camera-based telemetry and push values to the DOM.
-   * Reads the viewer camera's cartographic position and computes MGRS,
-   * lat/lon DMS, GSD, NIIRS, sun elevation, off-nadir angle, and
-   * collection timestamp. Stores results in {@link _latestMetrics}.
+   * Reads the viewer camera's cartographic position and computes lat/lon
+   * DMS, altitude and sun elevation. Stores results in {@link _latestMetrics}.
    */
   _updateCameraData() {
     const camera = this.viewer.camera;
@@ -421,46 +358,14 @@ export class IntelHUD {
     const altM = cartographic.height;
     const latDMS = this._toDMS(latDeg, 'lat');
     const lonDMS = this._toDMS(lonDeg, 'lon');
-    let mgrsLabel = '---';
-
-    // MGRS
-    try {
-      const mgrsStr = toMGRS([lonDeg, latDeg], 4); // 4 = 10m precision
-      // Format: 18SUJ23370716 → 18S UJ 2337 0716
-      const formatted = this._formatMGRS(mgrsStr);
-      mgrsLabel = formatted;
-      const el = document.getElementById('hud-mgrs');
-      // i18n-ignore: sensor codes
-      if (el) el.textContent = `MGRS: ${formatted}`;
-    } catch {
-      const el = document.getElementById('hud-mgrs');
-      // i18n-ignore: sensor codes
-      if (el) el.textContent = 'MGRS: ---';
-    }
-
     // Lat/Lon DMS
     const llEl = document.getElementById('hud-latlon');
     if (llEl) llEl.textContent = `${latDMS} ${lonDMS}`;
     const bottomEl = document.getElementById('hud-bottom-line');
     if (bottomEl) {
-      // i18n-ignore: sensor codes
-      bottomEl.textContent = `MGRS: ${mgrsLabel}  LAT: ${latDMS}  LON: ${lonDMS}`;
+      // i18n-ignore: coordinate readout
+      bottomEl.textContent = `LAT: ${latDMS}  LON: ${lonDMS}`;
     }
-
-    // GSD (Ground Sample Distance): approximate resolution in meters per pixel
-    // derived from camera altitude. NIIRS (National Imagery Interpretability
-    // Rating Scale): 0-9 quality rating computed via the General Image Quality
-    // Equation (GIQE) simplified form: NIIRS = 10.25 - 3.32 * log10(GSD_inches).
-    const gsd = Math.max(0.01, altM * 0.000375);
-    const gsdInches = gsd * 39.37;
-    const niirs = Math.max(
-      0,
-      Math.min(9, 10.25 - 3.32 * Math.log10(gsdInches)),
-    );
-    const gsdEl = document.getElementById('hud-gsd');
-    if (gsdEl)
-      // i18n-ignore: sensor codes
-      gsdEl.textContent = `GSD: ${gsd.toFixed(2)}m  NIIRS: ${niirs.toFixed(1)}`;
 
     // Altitude — reported as height above MEAN SEA LEVEL. `altM` is the raw
     // ellipsoidal camera height, which reads far below zero wherever the geoid
@@ -472,38 +377,18 @@ export class IntelHUD {
     const altMslM = ellipsoidalToMslDisplayM(altM, geoidN);
     const sunEl = this._estimateSunElevation(latDeg, lonDeg);
     if (altEl)
-      // i18n-ignore: sensor codes
+      // i18n-ignore: altitude readout
       altEl.textContent = `ALT: ${Math.round(altMslM)}m   SUN: ${sunEl.toFixed(1)}° EL`;
 
-    // Collection timestamp
-    const collEl = document.getElementById('hud-coll');
-    if (collEl) {
-      const now = new Date();
-      const h = String(now.getUTCHours()).padStart(2, '0');
-      const m = String(now.getUTCMinutes()).padStart(2, '0');
-      const s = String(now.getUTCSeconds()).padStart(2, '0');
-      // i18n-ignore: sensor codes
-      collEl.textContent = `COLL: ${h}:${m}:${s}Z`;
-    }
-
-    // Off-nadir angle (ONA): camera pitch of -90 deg is nadir (straight down),
-    // so ONA = 90 + pitch gives 0 at nadir and increases toward the horizon.
-    const pitchDeg = Cesium.Math.toDegrees(camera.pitch);
-    const ona = Math.max(0, 90 + pitchDeg);
-    const onaEl = document.getElementById('hud-ona');
-    // i18n-ignore: sensor codes
-    if (onaEl) onaEl.textContent = `ONA: ${ona.toFixed(1)}°`;
-
-    // `altM` stays the raw ellipsoidal camera height the sensor model reads
-    // (GSD/NIIRS, view band). `altMslM` is the ADDITIVE display datum — the
-    // only one any readout string should print.
+    // `altM` stays the raw ellipsoidal camera height the view band reads.
+    // `altMslM` is the ADDITIVE display datum — the only one any readout
+    // string should print.
     this._latestMetrics = {
       latDeg,
       lonDeg,
       altM,
       altMslM,
       sunEl,
-      ona,
     };
 
     // First time we have real telemetry: replace the "Awaiting telemetry..."
@@ -529,23 +414,6 @@ export class IntelHUD {
       this._markSummaryDirty();
       this._setSummaryText(this._composeSummary(), false);
     }
-  }
-
-  /**
-   * Insert spaces into a raw MGRS string for human-readable display.
-   * @param {string} mgrs - Raw MGRS string, e.g. `"18SUJ23370716"`.
-   * @returns {string} Formatted string, e.g. `"18S UJ 2337 0716"`.
-   */
-  _formatMGRS(mgrs) {
-    // Regex captures: grid zone designator (1-2 digits + band letter),
-    // 100km square ID (2 letters), numeric easting+northing (split in half).
-    const match = mgrs.match(/^(\d{1,2}[A-Z])\s*([A-Z]{2})\s*(\d+)$/);
-    if (!match) return mgrs;
-    const [, zone, square, coords] = match;
-    const half = coords.length / 2;
-    const easting = coords.slice(0, half);
-    const northing = coords.slice(half);
-    return `${zone} ${square} ${easting} ${northing}`;
   }
 
   /**
@@ -706,7 +574,7 @@ export class IntelHUD {
   /**
    * Build the one-line semantic summary string from the latest camera metrics.
    * Includes mode, observation band, nearest POI or lat/lon sector, region,
-   * altitude, view window dimensions, sun elevation, ONA, and local timezone.
+   * altitude, view window dimensions, sun elevation and local timezone.
    * @returns {string} Formatted summary line for the HUD summary readout.
    */
   _composeSummary() {
@@ -746,9 +614,9 @@ export class IntelHUD {
     const provenance = localizedProvenanceTag(
       hudTelemetryProvenance(this._dataManager?.getAll?.() || []),
     );
-    // ALT, SUN and ONA are sensor codes, as in the corner readouts.
+    // ALT and SUN are abbreviations, as in the corner readouts.
     const line = t(
-      '{mode} {band} {locality} | {region} | ALT {alt} | WINDOW {window} | SUN {sun}° | ONA {ona}° | {zone}',
+      '{mode} {band} {locality} | {region} | ALT {alt} | WINDOW {window} | SUN {sun}° | {zone}',
       {
         mode: modeLabel,
         band: viewBandLabel(band),
@@ -757,7 +625,6 @@ export class IntelHUD {
         alt: altTag,
         window: winTag,
         sun: formatNumber(Math.round(m.sunEl)),
-        ona: formatNumber(Math.round(m.ona)),
         zone: localTag,
       },
     );
@@ -826,8 +693,8 @@ export class IntelHUD {
    * React to a shader-style change. Updates the mode label, HUD color
    * scheme (via CSS custom properties), and auto-shows/hides the overlay
    * when in auto mode.
-   * @param {string} styleName - Active style key (e.g. `'surveillance'`,
-   *   `'thermal'`, `'retro'`, `'normal'`).
+   * @param {string} styleName - Active style key (e.g. `'anime'`,
+   *   `'noir'`, `'normal'`).
    */
   onStyleChange(styleName) {
     this._currentStyle = styleName;
@@ -847,14 +714,9 @@ export class IntelHUD {
       this._el.style.setProperty('--hud-border', colors.border);
     }
 
-    // Auto show/hide
-    if (this._autoMode) {
-      if (MILITARY_STYLES.has(styleName)) {
-        this.show();
-      } else {
-        this.hide();
-      }
-    }
+    // Auto mode: no style shows the overlay by itself; it is turned on
+    // explicitly.
+    if (this._autoMode) this.hide();
   }
 
   /** Make the HUD visible and immediately refresh all readouts. */
@@ -957,7 +819,6 @@ export class IntelHUD {
   /** Tear down all running intervals. Call when discarding the HUD instance. */
   destroy() {
     clearInterval(this._updateInterval);
-    clearInterval(this._recBlinkInterval);
     clearInterval(this._timestampInterval);
     clearInterval(this._summaryInterval);
     clearInterval(this._summaryTypingInterval);

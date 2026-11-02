@@ -93,11 +93,6 @@
     right: 16px;
   }
 
-  .hud-left-edge,
-  .hud-right-edge {
-    display: none;
-  }
-
   .hud-bottom-bar {
     width: calc(100vw - 24px);
     left: 12px;
