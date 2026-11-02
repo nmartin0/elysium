@@ -13,6 +13,7 @@ import {
 } from '../../data/iconOrientation.js';
 import { limitCourseStep, courseSlewCapDps } from '../../data/motionModel.js';
 import {
+  MODELS_3D_AVAILABLE,
   MIL_TINT,
   EMERGENCY_TINT,
   GROUND_SCALE,
@@ -198,7 +199,8 @@ export function createRendering({
    *  (`_trackedModelRegimeActive`). */
 
   function _modelRegimeActive() {
-    if (!flightState._models3dEnabled) return false;
+    // Fork: 3D aircraft models were removed; every contact stays a 2D sprite.
+    if (!MODELS_3D_AVAILABLE || !flightState._models3dEnabled) return false;
     const h =
       flightState._viewer?.camera?.positionCartographic?.height ?? Infinity;
     return h < MODEL_ALT_CEIL_M;

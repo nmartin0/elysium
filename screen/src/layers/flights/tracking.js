@@ -17,6 +17,7 @@ import {
   isTrackingClickGesture,
 } from '../../data/trackingClickGesture.js';
 import {
+  MODELS_3D_AVAILABLE,
   TRACKED_MODEL_MAX_LOAD_FAILS,
   TRACKED_MODEL_RETRY_BACKOFF_MS,
   TRAIL_MAX_POINTS,
@@ -286,6 +287,9 @@ export function createTracking({
    */
 
   function _trackedModelRegimeActive() {
+    // Fork: 3D aircraft models were removed; the tracked contact stays a 2D
+    // sprite at every zoom.
+    if (!MODELS_3D_AVAILABLE) return false;
     if (flightState._trackedZoomLatchIcao !== flightState._trackedIcao) {
       flightState._trackedZoomLatchIcao = flightState._trackedIcao;
       flightState._trackedZoomLatched = false;

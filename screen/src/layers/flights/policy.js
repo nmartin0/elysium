@@ -39,6 +39,13 @@ export const GROUND_SCALE = 0.8;
 // the slots go to either the nearest planes ('proximity') or every in-view plane ('all'), each
 // backed by a hard cap so a draw-call explosion can't tank the frame (no instancing yet).
 
+/**
+ * Fork: the glTF aircraft models were removed (public/models is gone), so no
+ * contact is ever drawn as a 3D model. The model code paths stay behind this
+ * switch; every aircraft is a 2D sprite.
+ */
+export const MODELS_3D_AVAILABLE = false;
+
 export const PLANE_MODEL_URL = '/models/airplane.glb';
 
 export const MODEL_ALT_CEIL_M = 800000;

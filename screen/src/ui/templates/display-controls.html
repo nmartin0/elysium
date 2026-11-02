@@ -88,23 +88,6 @@
       <div id="param-sliders"></div>
     </div>
     <div class="pp-toggle-group">
-      <!-- 3D aircraft is DEFAULT-ON in Proximity (owner directive 2026-08-22), so the
-           button ships lit and the mode row ships open — the same markup-carries-the-default
-           convention as #scope-toggle. ui.js re-syncs both from durable layer state, which
-           is what flips them back for a share link or a stored session carrying 3D off. -->
-      <button class="pp-toggle-btn active" id="models3d-toggle" aria-pressed="true" title="3D aircraft — flat icons zoomed out, 3D models up close" data-i18n-title>
-        <span class="pp-icon">&#x2708;</span>
-        <span class="pp-label">3D</span>
-      </button>
-      <div class="pp-slider-row visible" id="models3d-mode-row">
-        <span class="pp-slider-mini-label" data-i18n>Models</span>
-        <div class="gev-segmented pp-mode-seg" role="radiogroup" aria-label="3D model coverage" data-i18n-aria-label>
-          <button class="gev-segment pp-mode-btn active" id="models3d-mode-proximity" data-mode="proximity" role="radio" aria-checked="true" data-i18n>Proximity</button>
-          <button class="gev-segment pp-mode-btn" id="models3d-mode-all" data-mode="all" role="radio" aria-checked="false" data-i18n>All</button>
-        </div>
-      </div>
-    </div>
-    <div class="pp-toggle-group">
       <label class="pp-toggle-btn pp-scope-toggle" title="Scope — the circular viewport mask" data-i18n-title>
         <span class="pp-icon material-symbols-outlined" aria-hidden="true">adjust</span>
         <span class="pp-label" data-i18n>Scope</span>
