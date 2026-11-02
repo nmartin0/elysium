@@ -238,3 +238,21 @@ def describe_span(span: timedelta) -> str:
 
 def now_utc() -> datetime:
     return datetime.now(UTC)
+
+
+def incremental_tables_only_read_by(schema: dict, silos: dict, object_type: str) -> "list[tuple[str, str]]":
+    """[(silo, table)] a silo declares `incremental:` for that no type but
+    `object_type` reads. The loader refuses a declaration for a table the
+    sync no longer reads, so removing the type would leave the deployment
+    unable to load; removal asks this to say so beforehand."""
+    from core.mirror.sync_targets import resolve_sync_targets
+
+    if not any((silo or {}).get("incremental") is not None for silo in (silos or {}).values()):
+        return []
+    others = {name: definition for name, definition in schema.items() if name != object_type}
+    still_read = {(target.silo_name, target.table_name)
+                  for target in resolve_sync_targets({"object_types": others})}
+    return sorted({(target.silo_name, target.table_name)
+                   for target in resolve_sync_targets({"object_types": schema})
+                   if (target.silo_name, target.table_name) not in still_read
+                   and target.table_name in ((silos.get(target.silo_name) or {}).get("incremental") or {})})

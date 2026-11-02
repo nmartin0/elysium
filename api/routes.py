@@ -3027,8 +3027,8 @@ def apply_status_route(body: StatusRequest, request: Request,
 
 class RemovalRequest(BaseModel):
     digest: str
-    # "field" or "link"; object_type and field say which field, link says
-    # which link type. A type is not removed here.
+    # "field", "link" or "type"; object_type and field say which field (or,
+    # alone, which type), link says which link type.
     kind: str
     object_type: str | None = None
     field: str | None = None
@@ -3092,8 +3092,18 @@ def _planned_removal(request: Request, current_user: UserRecord, body: RemovalRe
     every name it carries is one they could find in Schema, and the rest
     are counted."""
     from core.config_editing import BINDINGS_FILE, ONTOLOGY_FILE, ConfigEditError, apply_removal
+    from core.functions.registry import get_enabled_functions
+    from core.mirror.incremental import incremental_tables_only_read_by
     from core.ontology.deprecation import shown_deprecation
-    from core.ontology.removal import applied_writes, field_blockers, link_blockers, link_ends, stored_data, visible_to
+    from core.ontology.removal import (
+        applied_writes,
+        field_blockers,
+        link_blockers,
+        link_ends,
+        stored_data,
+        type_blockers,
+        visible_to,
+    )
 
     current = _ontology_as_read(request, body.digest)
     mediator = _generation(request).mediator
@@ -3113,8 +3123,16 @@ def _planned_removal(request: Request, current_user: UserRecord, body: RemovalRe
             raise _not_found()
         change = {"kind": "link", "link": link}
         what, audited_as = f"link {link}", link
+    elif body.kind == "type":
+        if not object_type or field or link:
+            raise HTTPException(status_code=400, detail="A type is named by its name alone.")
+        if object_type not in running:
+            raise _not_found()
+        ends = [(object_type, name) for name in running[object_type].get("fields", {})]
+        change = {"kind": "type", "object_type": object_type}
+        what, audited_as = f"type {object_type}", object_type
     else:
-        raise HTTPException(status_code=400, detail="What is removed is a field or a link type.")
+        raise HTTPException(status_code=400, detail="What is removed is a field, a link type or a type.")
 
     bindings_path = request.app.state.runtime_paths.config_dir / BINDINGS_FILE
     bindings = bindings_path.read_text() if bindings_path.exists() else None
@@ -3135,6 +3153,10 @@ def _planned_removal(request: Request, current_user: UserRecord, body: RemovalRe
     if body.kind == "field":
         marks = [schema[object_type]["fields"][field]]
         found = field_blockers(*shared, object_type, field)
+    elif body.kind == "type":
+        marks = [schema[object_type]]
+        found = type_blockers(*shared, object_type, functions=get_enabled_functions(list(config.enabled_tools)),
+                              incremental=incremental_tables_only_read_by(schema, config.silo_configs, object_type))
     else:
         marks = [schema[owner]["fields"][name] for owner, name in link_ends(schema, link)]
         found = link_blockers(*shared, link)
@@ -3227,8 +3249,17 @@ def apply_removal_route(body: RemovalRequest, request: Request,
                 "This would let someone read more than they can now, which a removal never should. "
                 "Nothing was changed."))
         try:
+            # A field's binding goes first (a binding for a field the type does
+            # not declare stops the loader, a field without its binding loads).
+            # A TYPE HAS NO SUCH ORDER: with the ontology changed first the
+            # loader says the bindings bind a type it does not declare, with
+            # the bindings first it says the type has no binding, so a crash
+            # between the two renames (not a failure: those are undone) leaves
+            # a pair that does not load either way. The ontology goes first,
+            # because that refusal is the one a person can finish by hand:
+            # delete the named entry from source_bindings.yaml.
             written = _write_config_files(request, current_user, files, {plan.audited_as: "removed"},
-                                          first=(BINDINGS_FILE,))
+                                          first=() if body.kind == "type" else (BINDINGS_FILE,))
         except HTTPException as e:
             if e.status_code == 400:
                 raise _unloadable(plan) from e

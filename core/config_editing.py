@@ -775,7 +775,7 @@ def apply_status(text: str, change: dict, check) -> str:
 # taken out with its last child for `link_types:` and a binding's `fields:`.
 # ---------------------------------------------------------------------------
 
-REMOVAL_KINDS = ("field", "link")
+REMOVAL_KINDS = ("field", "link", "type")
 REMOVAL_KEYS = ("kind", "object_type", "field", "link")
 
 
@@ -823,12 +823,18 @@ def _delete_entry(text: str, path: list[str], filename: str, where: str, drop_em
             f"it to span several lines first.")
     if len(node) == 1:
         if not drop_empty_parent:
-            raise ConfigEditError(f"{where} is the only entry under `{path[-2]}:`, and cannot be taken out "
+            parent = path[-2] if len(path) > 1 else filename
+            raise ConfigEditError(f"{where} is the only entry under `{parent}:`, and cannot be taken out "
                                   f"without leaving it empty.")
         return _delete_entry(text, path[:-1], filename, where, drop_empty_parent=True)
     first = node.lc.key(leaf)[0]
     last = _last_line(lines, first)
-    del lines[first:last + 1]
+    # A comment line INSIDE the entry stays too: it is the one thing this
+    # cannot tell whose it is (a note about the entry, or a neighbour's
+    # commented-out copy), and the rule is that none is ever deleted. It
+    # is a comment on its own line wherever it falls, so the file still
+    # means the same (_meaning_checked proves it).
+    lines[first:last + 1] = [line for line in lines[first:last + 1] if line.lstrip().startswith("#")]
     return "".join(lines)
 
 
@@ -852,12 +858,15 @@ def apply_removal(ontology: str, bindings: "str | None", change: dict) -> tuple[
         raise ConfigEditError(f"{', '.join(unknown)} cannot be set here.")
     kind = change.get("kind")
     if kind not in REMOVAL_KINDS:
-        raise ConfigEditError(f"What is removed is one of {', '.join(REMOVAL_KINDS)}. A type is not removed here.")
+        raise ConfigEditError(f"What is removed is one of {', '.join(REMOVAL_KINDS)}.")
     expected = plain_yaml.safe_load(ontology) or {}
     types = expected.get("object_types") if isinstance(expected, dict) else None
     if not isinstance(types, dict):
         raise ConfigEditError(f"{ONTOLOGY_FILE} declares no object_types.")
     expected_bindings = (plain_yaml.safe_load(bindings) or {}) if bindings is not None else None
+
+    if kind == "type":
+        return _remove_type(ontology, bindings, change, expected, types, expected_bindings)
 
     if kind == "link":
         link = change.get("link")
@@ -904,6 +913,37 @@ def apply_removal(ontology: str, bindings: "str | None", change: dict) -> tuple[
     del bound["fields"][field_name]
     if not bound["fields"]:
         del bound["fields"]
+    return edited, _meaning_checked(edited_bindings, expected_bindings, BINDINGS_FILE)
+
+
+def _remove_type(ontology: str, bindings: "str | None", change: dict, expected: dict, types: dict,
+                 expected_bindings: "dict | None") -> tuple[str, "str | None"]:
+    """A whole object type taken out of ontology_schema.yaml, and its entry
+    out of source_bindings.yaml when the deployment keeps one -- the loader
+    refuses a binding for a type that is not declared, and a type without a
+    binding, so the two files change together or not at all (the caller
+    renames the bindings first). Nothing else is touched: link types that
+    join it, grants, actions and the rest are what blocks the removal, and
+    are the caller's to judge (core/ontology/removal.type_blockers)."""
+    object_type = change.get("object_type")
+    if not isinstance(object_type, str) or not isinstance(types.get(object_type), dict):
+        raise ConfigEditError(f"There is no object type {object_type!r}.")
+    if change.get("field") is not None or change.get("link") is not None:
+        raise ConfigEditError("A type is named by `object_type` alone.")
+    edited = _delete_entry(ontology, ["object_types", object_type], ONTOLOGY_FILE, object_type,
+                           drop_empty_parent=False)
+    del types[object_type]
+    edited = _meaning_checked(edited, expected)
+    if expected_bindings is None:
+        return edited, None
+    held = expected_bindings.get("object_types", expected_bindings)
+    if object_type not in held:
+        return edited, bindings
+    nested = held is not expected_bindings
+    edited_bindings = _delete_entry(bindings or "", [*(["object_types"] if nested else []), object_type],
+                                    BINDINGS_FILE, object_type,
+                                    drop_empty_parent=False)
+    del held[object_type]
     return edited, _meaning_checked(edited_bindings, expected_bindings, BINDINGS_FILE)
 
 

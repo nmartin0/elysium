@@ -46,9 +46,10 @@ does not break a sync or a rebuild (both measured). What would break one is
 a name something still depends on, and that is what the blockers are.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 
-from core.ontology.used_by import Referrer, used_by_field, used_by_link
+from core.ontology.used_by import Referrer, used_by_field, used_by_link, used_by_type
 
 PENDING_WRITE = "pending write"
 
@@ -73,6 +74,39 @@ def link_blockers(schema: Mapping, roles: Mapping, action_types: Mapping, trigge
     """Everything that stops one link type being removed."""
     found = used_by_link(schema, roles, action_types, triggers, link_type)
     return [*found, *_pending_writes(write_log, link_ends(schema, link_type))]
+
+
+def type_blockers(schema: Mapping, roles: Mapping, action_types: Mapping, triggers, write_log,
+                  object_type: str, functions=(), incremental: "Sequence[tuple[str, str]]" = ()) -> list[Referrer]:
+    """Everything that stops a whole object type being removed: the Used by
+    report for the type, then what that report does not read -- functions
+    that declare they read it, a silo's `incremental:` declaration for the
+    only table it was read from (`incremental`: those tables, asked of the
+    mirror; the loader refuses a declaration for a table the sync no longer
+    reads), and PENDING WRITES against any of its fields.
+
+    THE TYPE'S OWN FIELDS ARE NOT SECRETS FROM THE PERSON ASKING: they go
+    with the type, and a manager of the deployment reads every name in the
+    declaration. So a row naming only them is not hidden from a person who
+    may not discover those fields one by one (they would otherwise be unable
+    to remove anything, as for a field). Other types' names stay gated."""
+    own = {f"{object_type}.{name}" for name in (schema.get(object_type) or {}).get("fields") or {}}
+    found = [replace(row, subjects=tuple(name for name in row.subjects if name not in own))
+             for row in used_by_type(schema, roles, action_types, triggers, object_type)]
+    found += [Referrer("function", f"function {function.name}", f"declares that it reads {object_type}")
+              for function in functions if object_type in getattr(function, "reads_object_types", ())]
+    found += _incremental_tables(incremental, object_type)
+    own_fields = [(object_type, name) for name in (schema.get(object_type) or {}).get("fields") or {}]
+    return [*found, *_pending_writes(write_log, own_fields)]
+
+
+def _incremental_tables(only_read_by_it: "Sequence[tuple[str, str]]", object_type: str) -> list[Referrer]:
+    """A silo's `incremental:` entry for each table only this type reads
+    (core/mirror/incremental.incremental_tables_only_read_by, which the
+    caller asks: this package does not import the mirror)."""
+    return [Referrer("silo", f"data silo {silo}, incremental",
+                     f"reads table {table} by changed rows, and only {object_type} reads that table")
+            for silo, table in only_read_by_it]
 
 
 def _pending_writes(write_log, fields: "list[tuple[str, str]]") -> list[Referrer]:
@@ -120,12 +154,27 @@ _BRONZE = ("Bronze still holds the raw column: with ingest_undeclared_columns se
 _GOLD = "Gold is rebuilt without the column at the next sync, which restarts that type's publication tags."
 
 
+#: Measured (TestWhatHappensToStoredDataWhenATypeGoes): after the type is
+#: removed and a sync runs, every one of its tables -- bronze, silver, gold,
+#: gold's history -- has the same snapshots and the same tags as before, and
+#: a --rebuild naming its silver table exits 0 and writes nothing.
+_TYPE_TABLES = [
+    "Bronze, silver and gold keep the type's tables exactly as they were at the last sync, and so does the "
+    "history of its changes: nothing is dropped, and no sync reads or refreshes them again.",
+    "Asking for a rebuild of its silver table does nothing, because the sync no longer knows the table. Dropping "
+    "the tables is done in the lake itself, by a person.",
+]
+
+
 def stored_data(kind: str, cardinality: "str | None", applied: int) -> list[str]:
     """What removal leaves behind, one sentence each, for the confirmation
-    dialog. `kind` is "field" or "link"; `cardinality` the link's, so a
+    dialog. `kind` is "field", "link" or "type"; `cardinality` the link's, so a
     join table is described as one. Each sentence is pinned by a test that
     syncs before and after (see the module docstring)."""
-    if kind == "link" and cardinality == "many_to_many":
+    if kind == "type":
+        notes = [_UNTOUCHED, *_TYPE_TABLES,
+                 "Nothing serves the type from the moment this applies, before any sync runs."]
+    elif kind == "link" and cardinality == "many_to_many":
         notes = [_UNTOUCHED,
                  "The join table stops being synced. Its bronze, silver and gold tables stay as they were "
                  "and are no longer refreshed.",

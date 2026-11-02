@@ -5,6 +5,7 @@ see; the report itself is tested in test_used_by.py, and its completeness
 against the loader in test_used_by_is_complete.py.
 """
 
+from core.mirror.incremental import incremental_tables_only_read_by
 from core.ontology.removal import (
     PENDING_WRITE,
     applied_writes,
@@ -12,9 +13,10 @@ from core.ontology.removal import (
     link_blockers,
     link_ends,
     stored_data,
+    type_blockers,
     visible_to,
 )
-from core.ontology.used_by import Referrer, used_by_field, used_by_link
+from core.ontology.used_by import Referrer, used_by_field, used_by_link, used_by_type
 from tests.unit import test_used_by as built
 
 
@@ -116,3 +118,93 @@ class TestWhatItLeavesBehind:
     def test_applied_edits_are_counted_only_when_there_are_some(self):
         assert not any("already applied" in line for line in stored_data("field", None, 0))
         assert "4 edit(s) already applied" in stored_data("field", None, 4)[-1]
+
+
+class TestWhatBlocksAWholeType:
+    """removal.type_blockers: the Used by report for the type, plus functions,
+    an incremental declaration for its only table, and pending writes on any
+    of its fields."""
+
+    def _blockers(self, log=None, object_type="Order", **given):
+        return type_blockers(built._schema(), built.ROLES, built.ACTIONS, [], Log() if log is None else log,
+                             object_type, **given)
+
+    def test_it_starts_from_the_used_by_report_for_the_type(self):
+        reported = used_by_type(built._schema(), built.ROLES, built.ACTIONS, [], "Order")
+
+        assert [row.as_dict() for row in self._blockers()][:len(reported)] == [row.as_dict() for row in reported]
+
+    def test_a_pending_write_on_any_field_of_the_type_blocks(self):
+        schema = built._schema()
+        field = next(iter(schema["Order"]["fields"]))
+
+        found = self._blockers(Log(**{f"Order.{field}": {"applied": 0, "pending": 2}}))
+
+        waiting = [(row.kind, row.place) for row in found if row.kind == PENDING_WRITE]
+        assert waiting == [(PENDING_WRITE, f"Order.{field}")]
+
+    def test_without_a_write_log_it_cannot_be_told_and_that_blocks(self):
+        found = type_blockers(built._schema(), built.ROLES, built.ACTIONS, [], None, "Order")
+
+        assert any(row.kind == PENDING_WRITE for row in found)
+
+    def test_a_function_declaring_it_reads_the_type_blocks(self):
+        class Reads:
+            name = "forecast"
+            reads_object_types = ["Order"]
+
+        class Elsewhere:
+            name = "other"
+            reads_object_types = ["Customer"]
+
+        found = self._blockers(functions=[Reads(), Elsewhere()])
+
+        assert [(row.kind, row.place) for row in found if row.kind == "function"] == [("function", "function forecast")]
+
+    def test_the_types_own_fields_are_not_hidden_from_the_person_asking(self):
+        schema = built._schema()
+        own = {f"Order.{name}" for name in schema["Order"]["fields"]}
+
+        found = self._blockers()
+
+        assert not own & {subject for row in found for subject in row.subjects}
+
+    def test_an_incremental_declaration_for_the_only_table_that_reads_it_blocks(self):
+        schema = built._schema()
+        schema["Order"]["storage"] = {"silo": "main", "table": "orders", "id_column": "order_id"}
+        schema["Line"]["storage"] = {"silo": "main", "table": "lines", "id_column": "line_id"}
+        storage = schema["Order"]["storage"]
+        silos = {storage["silo"]: {"incremental": {storage["table"]: {"cursor": "updated_at"}}}}
+
+        only = incremental_tables_only_read_by(schema, silos, "Order")
+        found = type_blockers(schema, built.ROLES, built.ACTIONS, [], Log(), "Order", incremental=only)
+
+        assert only == [(storage["silo"], storage["table"])]
+        assert [(row.kind, row.place) for row in found if row.kind == "silo"] == [
+            ("silo", f"data silo {storage['silo']}, incremental")]
+
+    def test_a_table_another_type_still_reads_does_not_block(self):
+        schema = built._schema()
+        schema["Order"]["storage"] = {"silo": "main", "table": "orders", "id_column": "order_id"}
+        schema["Line"]["storage"] = {"silo": "main", "table": "lines", "id_column": "line_id"}
+        storage = schema["Order"]["storage"]
+        silos = {storage["silo"]: {"incremental": {storage["table"]: {"cursor": "updated_at"}}}}
+        schema["Twin"] = {**schema["Order"], "fields": dict(schema["Order"]["fields"])}
+
+        assert incremental_tables_only_read_by(schema, silos, "Order") == []
+
+
+class TestWhatATypeLeavesBehind:
+    def test_it_says_source_untouched_the_tables_stay_and_nothing_serves_it(self):
+        text = " ".join(stored_data("type", None, 0))
+
+        for words in ("Nothing is deleted from your source", "exactly as they were", "history",
+                      "rebuild", "Nothing serves the type"):
+            assert words in text
+
+    def test_it_does_not_claim_a_column_is_emptied(self):
+        assert "Silver keeps the column" not in " ".join(stored_data("type", None, 0))
+
+    def test_applied_edits_are_counted_only_when_there_are_some(self):
+        assert not any("already applied" in line for line in stored_data("type", None, 0))
+        assert "3 edit(s) already applied" in stored_data("type", None, 3)[-1]

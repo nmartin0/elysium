@@ -202,8 +202,8 @@ class TestRemoving:
 
         assert response.status_code == 400 and "removing the link type" in response.json()["detail"]
 
-    def test_a_type_is_not_removed_here(self, remover):
-        response = _remove(remover, {"kind": "type", "object_type": "Tag"})
+    def test_a_type_is_named_by_its_name_alone(self, remover):
+        response = _remove(remover, {"kind": "type", "object_type": "Tag", "field": "label"})
 
         assert response.status_code == 400
 
@@ -630,6 +630,358 @@ class TestWhoMay:
 
 
 # ---------------------------------------------------------------------------
+# Removing a whole object type.
+# ---------------------------------------------------------------------------
+
+TAG = {"kind": "type", "object_type": "Tag"}
+TAGS_LINK = {"kind": "link", "link": "CustomerTags"}
+
+
+def _without_grants_on_type(policy, *types):
+    """Every grant that names these types or any of their fields."""
+    for role in policy["roles"].values():
+        role["allowed_actions"] = [grant for grant in role["allowed_actions"]
+                                   if grant.partition(":")[2].partition(".")[0] not in types]
+
+
+def _tag_prepared(config_dir, split=False):
+    """Nothing grants on Tag or its link, so Tag can go once its link has;
+    with `split`, the bindings are in source_bindings.yaml."""
+    _prepared(config_dir)
+    policy = yaml.safe_load((config_dir / "policy.yaml").read_text())
+    _without_grants_on_type(policy, "Tag")
+    (config_dir / "policy.yaml").write_text(yaml.safe_dump(policy, sort_keys=False))
+    if split:
+        schema = yaml.safe_load((config_dir / FILE).read_text())
+        declaration, bindings = split_bindings(schema["object_types"])
+        (config_dir / FILE).write_text(yaml.safe_dump({**schema, "object_types": declaration}, sort_keys=False))
+        (config_dir / BINDINGS).write_text(yaml.safe_dump({"object_types": bindings}, sort_keys=False))
+
+
+@pytest.fixture
+def tag_remover(config_dir, request):
+    _tag_prepared(config_dir)
+    client = request.getfixturevalue("client")
+    _login_as(client, "ops", "remover")
+    return client
+
+
+@pytest.fixture
+def tag_two_files(config_dir, request):
+    _tag_prepared(config_dir, split=True)
+    client = request.getfixturevalue("client")
+    _login_as(client, "ops", "remover")
+    return client
+
+
+def _ready_to_remove_tag(client):
+    """Its link type removed first (a link names the type it joins), then Tag deprecated."""
+    _deprecate(client, TAGS_LINK)
+    assert _remove(client, TAGS_LINK).status_code == 200
+    _deprecate(client, TAG)
+
+
+class TestRemovingAType:
+    def test_a_deprecated_type_nothing_names_is_deleted_and_the_deployment_reloaded(self, tag_remover, config_dir):
+        _ready_to_remove_tag(tag_remover)
+        before = _generation(tag_remover)
+
+        response = _remove(tag_remover, TAG)
+
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "applied" and response.json()["to_generation"] == before + 1
+        types = _file(config_dir)["object_types"]
+        assert "Tag" not in types and {"Customer", "Account", "Transaction", "SupportTicket"} <= set(types)
+        assert "Tag" not in tag_remover.app.state.generation.config.schema
+
+    def test_the_binding_goes_with_the_type_from_source_bindings(self, tag_two_files, config_dir):
+        assert "Tag" in _file(config_dir, BINDINGS)["object_types"]
+        _ready_to_remove_tag(tag_two_files)
+
+        response = _remove(tag_two_files, TAG)
+
+        assert response.status_code == 200, response.text
+        assert "Tag" not in _file(config_dir, BINDINGS)["object_types"]
+        assert "Tag" not in _file(config_dir)["object_types"]
+        assert "Customer" in _file(config_dir, BINDINGS)["object_types"]
+
+    def test_every_comment_line_in_the_file_survives_even_inside_the_type(self, config_dir, request):
+        _tag_prepared(config_dir)
+        path = config_dir / FILE
+        path.write_text(path.read_text().replace("    title_field: label\n", "    title_field: label\n"
+                                                 "    # a note inside Tag\n", 1))
+        comments = [line for line in path.read_text().splitlines() if line.lstrip().startswith("#")]
+        client = request.getfixturevalue("client")
+        _login_as(client, "ops", "remover")
+        _ready_to_remove_tag(client)
+
+        assert _remove(client, TAG).status_code == 200
+
+        kept = [line for line in path.read_text().splitlines() if line.lstrip().startswith("#")]
+        assert "    # a note inside Tag" in kept
+        assert set(comments) <= set(kept)
+
+    def test_the_preview_shows_the_lines_that_go_and_the_honest_sentences_about_stored_data(self, tag_remover):
+        _ready_to_remove_tag(tag_remover)
+
+        preview = _remove(tag_remover, TAG, preview=True).json()
+
+        assert preview["can_remove"] is True and preview["deprecated"] is True and preview["impact"] is not None
+        assert any(line.startswith("-") and "tags" in line for line in preview["diff"])
+        said = " ".join(preview["stored_data"])
+        assert "keep the type's tables exactly as they were" in said and "Nothing is deleted from your source" in said
+        assert "Nothing serves the type" in said
+
+    def test_a_type_nobody_deprecated_is_refused_and_told_what_to_do_first(self, tag_remover, config_dir):
+        _deprecate(tag_remover, TAGS_LINK)
+        assert _remove(tag_remover, TAGS_LINK).status_code == 200
+        before = (config_dir / FILE).read_text()
+
+        for preview in (True, False):
+            response = _remove(tag_remover, TAG, preview=preview)
+            body = response.json()
+            assert (body["can_remove"] is False and body["deprecated"] is False) if preview else (
+                response.status_code == 409 and "not deprecated" in body["detail"])
+        assert (config_dir / FILE).read_text() == before
+
+    def test_a_stale_view_is_refused_and_nothing_is_removed(self, tag_remover, config_dir):
+        _ready_to_remove_tag(tag_remover)
+        digest = _digest(tag_remover)
+        path = config_dir / FILE
+        path.write_text(path.read_text() + "\n# an operator was here\n")
+
+        assert _remove(tag_remover, TAG, digest=digest).status_code == 409
+        assert "Tag" in _file(config_dir)["object_types"]
+
+    @pytest.mark.parametrize("what", [{"kind": "type", "object_type": "Nobody"},
+                                      {"kind": "type", "object_type": "tag"}])
+    def test_an_unknown_name_is_not_found_on_preview_and_apply(self, tag_remover, what):
+        for preview in (True, False):
+            response = _remove(tag_remover, what, preview=preview)
+            assert response.status_code == 404 and response.json() == {"detail": "Not found"}
+
+    def test_the_loader_has_the_last_word(self, tag_remover, config_dir, monkeypatch):
+        _ready_to_remove_tag(tag_remover)
+        before = (config_dir / FILE).read_text()
+        broken = before.replace("  Customer:\n", "  Customer:\n    not_a_known_key_at_all: [\n", 1)
+        monkeypatch.setattr("core.config_editing.apply_removal", lambda *given: (broken, None))
+
+        response = _remove(tag_remover, TAG)
+
+        assert response.status_code == 409 and "unable to load" in response.json()["detail"]
+        assert (config_dir / FILE).read_text() == before
+
+    def test_if_the_permission_code_says_it_would_widen_access_nothing_is_written(
+            self, tag_remover, config_dir, monkeypatch):
+        _ready_to_remove_tag(tag_remover)
+        before = (config_dir / FILE).read_text()
+        monkeypatch.setattr("api.routes._access_impact", lambda request, replacements: (None, {"widens": True}))
+
+        response = _remove(tag_remover, TAG)
+
+        assert response.status_code == 409 and "read more" in response.json()["detail"]
+        assert (config_dir / FILE).read_text() == before
+
+    def test_a_failed_reload_puts_every_file_back(self, tag_two_files, config_dir, monkeypatch):
+        _ready_to_remove_tag(tag_two_files)
+        before = {FILE: (config_dir / FILE).read_text(), BINDINGS: (config_dir / BINDINGS).read_text()}
+
+        def failing(*given, **asked):
+            raise RuntimeError("Role 'secret_role' grants read:Hidden.thing")
+
+        monkeypatch.setattr("api.routes.reload_generation", failing)
+
+        response = _remove(tag_two_files, TAG)
+
+        assert response.status_code == 409 and "secret_role" not in response.text
+        assert {name: (config_dir / name).read_text() for name in before} == before
+
+    def test_the_audit_log_says_removed(self, tag_remover):
+        _ready_to_remove_tag(tag_remover)
+        assert _remove(tag_remover, TAG).status_code == 200
+
+        entries = [e for e in read_audit_log(tag_remover.app.state.runtime_paths.log_dir)
+                   if e.get("stage") == "config_edit" and e.get("file") == FILE]
+        assert entries[-1]["outcome"] == "applied" and entries[-1]["changes"] == {"Tag": "removed"}
+
+
+class TestWhatBlocksATypeFromGoing:
+    def _link_only(self, config_dir, request):
+        """Tag deprecated, its link NOT removed, nothing else naming it."""
+        _tag_prepared(config_dir)
+        client = request.getfixturevalue("client")
+        _login_as(client, "ops", "remover")
+        _deprecate(client, TAG)
+        return client
+
+    def test_a_type_others_link_to_is_refused_on_preview_and_apply(self, config_dir, request):
+        client = self._link_only(config_dir, request)
+
+        for preview in (True, False):
+            response = _remove(client, TAG, preview=preview)
+            body = response.json()
+            # The manager has no grant on Customer, so the link's other end is a name they may not
+            # discover: the block is counted, and still refuses.
+            assert body["hidden_blockers"] >= 1
+            assert (body["can_remove"] is False) if preview else response.status_code == 409
+        assert "Tag" in _file(config_dir)["object_types"]
+
+    def test_the_link_is_shown_only_to_someone_who_can_discover_its_other_end(self, config_dir, request):
+        client = self._link_only(config_dir, request)
+        digest = _digest(client)
+        with_roles(client.app, narrow={"allowed_actions": frozenset(["manage:deployment"])})
+        _login_as(client, "nar", "narrow")
+
+        hidden = _remove(client, TAG, preview=True, digest=digest).json()
+        assert hidden["can_remove"] is False and hidden["hidden_blockers"] >= 1
+        assert "CustomerTags" not in str(hidden["blockers"]) and "Customer" not in str(hidden["blockers"])
+        assert _remove(client, TAG, digest=digest).json()["hidden_blockers"] >= 1
+
+        with_roles(client.app, narrow={"allowed_actions": frozenset(
+            ["manage:deployment", "discover:Customer", "discover:Customer.tags"])})
+        shown = _remove(client, TAG, preview=True, digest=digest).json()
+        assert "link CustomerTags" in {row["place"] for row in shown["blockers"]}
+        assert shown["hidden_blockers"] == 0
+
+    def test_a_grant_naming_the_type_or_one_of_its_fields_blocks_it(self, config_dir, request):
+        _prepared(config_dir)
+        client = request.getfixturevalue("client")
+        _login_as(client, "ops", "remover")
+        _deprecate(client, TAGS_LINK)
+        assert _remove(client, TAGS_LINK).status_code == 200
+        _deprecate(client, TAG)
+
+        body = _remove(client, TAG, preview=True).json()
+
+        assert body["can_remove"] is False
+        assert ("grant", "role customer_service") in {(row["kind"], row["place"]) for row in body["blockers"]}
+
+    def test_an_action_acting_on_it_blocks_it(self, config_dir, request):
+        _prepared(config_dir)
+        client = request.getfixturevalue("client")
+        _login_as(client, "ops", "remover")
+        _deprecate(client, {"kind": "type", "object_type": "Account"})
+
+        body = _remove(client, {"kind": "type", "object_type": "Account"}, preview=True).json()
+
+        assert ("action", "action TransferFunds") in {(row["kind"], row["place"]) for row in body["blockers"]}
+
+    def test_the_list_is_the_used_by_report_plus_only_what_that_does_not_read(self, tag_remover):
+        _deprecate(tag_remover, TAG)
+        reported = tag_remover.get("/api/admin/ontology/used-by", params={"object_type": "Tag"}).json()["referrers"]
+
+        preview = _remove(tag_remover, TAG, preview=True).json()
+
+        assert reported and all(row in reported for row in preview["blockers"])
+        assert len(preview["blockers"]) + preview["hidden_blockers"] == len(reported)
+
+    def test_a_proposed_write_waiting_on_one_of_its_fields_blocks_and_an_applied_one_does_not(self, tag_remover):
+        _ready_to_remove_tag(tag_remover)
+        log = WriteLogWriter(tag_remover.app.state.runtime_paths.data_dir / "write_log.db")
+        applied = log.log_pending_update("Tag", "t1", {"label": "a"}, {}, "ops", "set it")
+        log.mark_applied(applied)
+
+        preview = _remove(tag_remover, TAG, preview=True).json()
+
+        assert preview["can_remove"] is True
+        assert any("1 edit(s) already applied" in line for line in preview["stored_data"])
+
+        log.log_pending_update("Tag", "t2", {"label": "b"}, {}, "ops", "set it too")
+        preview = _remove(tag_remover, TAG, preview=True).json()
+
+        assert preview["can_remove"] is False
+        assert [(row["kind"], row["place"]) for row in preview["blockers"]] == [("pending write", "Tag.label")]
+        assert _remove(tag_remover, TAG).status_code == 409
+
+    def test_a_reference_made_after_the_preview_is_found_when_it_is_applied(self, tag_remover, config_dir):
+        _ready_to_remove_tag(tag_remover)
+        assert _remove(tag_remover, TAG, preview=True).json()["can_remove"] is True
+        policy = yaml.safe_load((config_dir / "policy.yaml").read_text())
+        policy["roles"]["debug"]["allowed_actions"].append("read:Tag")
+        (config_dir / "policy.yaml").write_text(yaml.safe_dump(policy, sort_keys=False))
+
+        response = _remove(tag_remover, TAG)
+
+        assert response.status_code == 409
+        assert ("grant", "role debug") in {(row["kind"], row["place"]) for row in response.json()["blockers"]}
+        assert "Tag" in _file(config_dir)["object_types"]
+
+
+class TestASilosIncrementalDeclarationBlocksItsOnlyTable:
+    def test_the_blocker_is_named_instead_of_a_generic_unloadable_409(self, config_dir, request):
+        _tag_prepared(config_dir)
+        silos = yaml.safe_load((config_dir / "data_silos.yaml").read_text())
+        silos["data_silos"]["primary_sql"]["incremental"] = {"tags": {"cursor": "label"}}
+        (config_dir / "data_silos.yaml").write_text(yaml.safe_dump(silos, sort_keys=False))
+        client = request.getfixturevalue("client")
+        _login_as(client, "ops", "remover")
+        _ready_to_remove_tag(client)
+
+        for preview in (True, False):
+            body = _remove(client, TAG, preview=preview)
+            body = body.json() if preview else (body.status_code, body.json())[1]
+            assert ("silo", "data silo primary_sql, incremental") in {
+                (row["kind"], row["place"]) for row in body["blockers"]}
+        assert "Tag" in _file(config_dir)["object_types"]
+
+
+class TestATypeIsRemovedWithItsBindingOrNotAtAll:
+    def test_the_ontology_is_renamed_first_for_a_type(self, tag_two_files, config_dir, monkeypatch):
+        _ready_to_remove_tag(tag_two_files)
+        attempted = TestTheTwoFilesGoTogetherOrNotAtAll._failing(monkeypatch, config_dir, {})
+
+        assert _remove(tag_two_files, TAG).status_code == 200
+
+        assert [name for name, _ in attempted][:2] == [FILE, BINDINGS]
+
+    def test_neither_half_state_loads_so_the_order_is_chosen_for_the_message_a_person_can_finish(
+            self, tag_two_files, config_dir, tmp_path):
+        """MEASURED, and the reason a type is not ordered like a field: with
+        either file renamed alone the loader refuses. Ontology-first says the
+        bindings bind a type it does not declare -- finish by deleting that
+        entry; bindings-first says the type has no binding -- harder to mend."""
+        from core.deployment_loader import load_deployment
+
+        _ready_to_remove_tag(tag_two_files)
+        old_ontology, old_bindings = (config_dir / FILE).read_text(), (config_dir / BINDINGS).read_text()
+        assert _remove(tag_two_files, TAG).status_code == 200
+        new_ontology, new_bindings = (config_dir / FILE).read_text(), (config_dir / BINDINGS).read_text()
+
+        for name, ontology, bindings, message in (
+                ("ontology_first", new_ontology, old_bindings, "binds object type"),
+                ("bindings_first", old_ontology, new_bindings, "no source binding")):
+            half = tmp_path / name
+            shutil.copytree(config_dir, half)
+            (half / FILE).write_text(ontology)
+            (half / BINDINGS).write_text(bindings)
+            with pytest.raises(ValueError, match=message):
+                load_deployment(half)
+
+    def test_a_failure_on_the_second_rename_puts_the_first_back(self, tag_two_files, config_dir, monkeypatch):
+        _ready_to_remove_tag(tag_two_files)
+        before = {FILE: (config_dir / FILE).read_text(), BINDINGS: (config_dir / BINDINGS).read_text()}
+        TestTheTwoFilesGoTogetherOrNotAtAll._failing(monkeypatch, config_dir, {BINDINGS: {1}})
+
+        response = _remove(tag_two_files, TAG)
+
+        assert response.status_code == 500 and "Nothing was changed" in response.json()["detail"]
+        assert {name: (config_dir / name).read_text() for name in before} == before
+        assert [p.name for p in config_dir.iterdir() if "elysium-edit" in p.name] == []
+
+
+class TestWhoMayRemoveAType:
+    def test_only_a_manager_of_the_deployment(self, tag_remover):
+        _ready_to_remove_tag(tag_remover)
+        tag_remover.cookies.clear()
+        tag_remover.app.state.user_directory.create_user("pat", "correct-pw", "us-west", "customer_service")
+        _login(tag_remover, "pat", "correct-pw")
+
+        for preview in (True, False):
+            response = _remove(tag_remover, TAG, preview=preview, digest="x")
+            assert response.status_code == 403 and response.json() == {"detail": "Needs manage:deployment"}
+
+
+# ---------------------------------------------------------------------------
 # What the removal leaves behind in stored data, against a REAL SYNC.
 # ---------------------------------------------------------------------------
 
@@ -770,3 +1122,102 @@ class TestWhatHappensToStoredData:
         # no longer has it.
         assert "currency" in [f.name for f in _tables(lake)["gold"].schema().fields]
         assert "currency" not in client.app.state.generation.config.schema["Transaction"]["fields"]
+
+
+# ---------------------------------------------------------------------------
+# Removing a whole TYPE, against a real sync.
+# ---------------------------------------------------------------------------
+
+TAG_TABLES = (("bronze", "bronze_primary_sql.tags"), ("silver", "primary_sql.tags"),
+              ("gold", "gold.Tag"), ("history", "gold_history.Tag"),
+              ("bronze_join", "bronze_primary_sql.customer_tags"), ("silver_join", "primary_sql.customer_tags"))
+
+
+@pytest.fixture
+def tag_lake(lake):
+    """The lake with nothing granting on Tag or its link, so Tag can go once
+    its link type has."""
+    policy = yaml.safe_load((lake.config_dir / "policy.yaml").read_text())
+    _without_grants_naming(policy, "Customer.tags")
+    _without_grants_on_type(policy, "Tag")
+    (lake.config_dir / "policy.yaml").write_text(yaml.safe_dump(policy, sort_keys=False))
+    return lake
+
+
+def _tag_layers(paths):
+    from core.mirror.catalog import open_mirror_catalog
+
+    catalog = open_mirror_catalog(paths.data_dir / "mirror")
+    found = {}
+    for layer, name in TAG_TABLES:
+        try:
+            found[layer] = catalog.load_table(name)
+        except Exception:  # noqa: BLE001 - absent is an answer here
+            found[layer] = None
+    return found
+
+
+def _remove_tag_and_sync_again(paths):
+    from api.app import create_app
+
+    _sync(paths)
+    with sqlite3.connect(paths.data_dir / "dev_fixtures" / "mediator.db") as source:
+        source.execute("UPDATE tags SET label = label || 'x' WHERE tag_id = (SELECT min(tag_id) FROM tags)")
+    _sync(paths)
+    before = _tag_layers(paths)
+    client = TestClient(create_app(paths))
+    client.app.state.user_directory.create_user("ops", "correct-pw", "us-west", "remover")
+    _login(client, "ops", "correct-pw")
+    for what in (TAGS_LINK, TAG):
+        _deprecate(client, what)
+        response = _remove(client, what)
+        assert response.status_code == 200, response.text
+    _sync(paths)
+    return before, _tag_layers(paths), client
+
+
+def _snapshots(tables):
+    return {layer: ([s.snapshot_id for s in table.snapshots()], sorted(table.refs()))
+            for layer, table in tables.items()}
+
+
+class TestWhatHappensToStoredDataWhenATypeGoes:
+    """Each sentence in removal._TYPE_TABLES, as a real sync leaves the lake."""
+
+    def test_no_layer_loses_its_tables_or_gains_a_snapshot_and_gold_keeps_its_tags(self, tag_lake):
+        before, after, _client = _remove_tag_and_sync_again(tag_lake)
+
+        assert all(table is not None for table in after.values())
+        assert _snapshots(after) == _snapshots(before)
+        assert {"published-1", "published-2"} <= set(after["gold"].refs())
+        assert after["history"].scan().to_arrow().num_rows == before["history"].scan().to_arrow().num_rows > 0
+
+    def test_a_rebuild_of_its_silver_table_does_nothing(self, tag_lake):
+        from scripts.run_sync import run_sync
+
+        _before, after, _client = _remove_tag_and_sync_again(tag_lake)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            assert run_sync(tag_lake, rebuild={"primary_sql.tags"}) == 0
+
+        assert _snapshots(_tag_layers(tag_lake)) == _snapshots(after)
+
+    def test_the_source_is_never_written_and_other_types_keep_syncing(self, tag_lake):
+        _before, _after, _client = _remove_tag_and_sync_again(tag_lake)
+        with sqlite3.connect(tag_lake.data_dir / "dev_fixtures" / "mediator.db") as source:
+            assert source.execute("SELECT count(*) FROM tags").fetchone()[0] == 2
+
+        from core.mirror.catalog import open_mirror_catalog
+
+        catalog = open_mirror_catalog(tag_lake.data_dir / "mirror")
+        before_snapshots = len(catalog.load_table("gold.Transaction").snapshots())
+        source = sqlite3.connect(tag_lake.data_dir / "dev_fixtures" / "mediator.db")
+        with source:
+            source.execute("UPDATE transactions SET amount = amount + 1")
+        source.close()
+        _sync(tag_lake)
+        assert len(catalog.load_table("gold.Transaction").snapshots()) > before_snapshots
+
+    def test_nothing_serves_the_type_from_the_moment_it_applies(self, tag_lake):
+        _before, _after, client = _remove_tag_and_sync_again(tag_lake)
+
+        assert "Tag" not in client.app.state.generation.config.schema

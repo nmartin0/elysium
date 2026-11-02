@@ -1386,7 +1386,8 @@ one Inbox. Built so far, each checked in a real browser:
   object whose state cannot be told counts as unavailable. STILL TO CHECK
   before the retype patch: what the history tables do when a field is
   retyped or removed. Order: used by (built), deprecate, remove a field or
-  link, remove a type, retype with rebuild.
+  link, remove a type (built: deprecated, nothing names it, its tables stay in
+  the lake), retype with rebuild.
   A field declared later is not empty history:
   bronze keeps every column the source has. Order: add a field (built),
   then add a type with its binding picked from the source, then add a

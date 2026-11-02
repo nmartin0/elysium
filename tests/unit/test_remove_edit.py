@@ -144,7 +144,7 @@ class TestWhatIsRefused:
         (field("Customer", "nope"), "has no field"),
         (field("Nobody", "email"), "no object type"),
         ({"kind": "link", "link": "Nobody"}, "no link type"),
-        ({"kind": "type", "object_type": "Tag"}, "A type is not removed here"),
+        ({"kind": "frobnicate"}, "What is removed is one of"),
         ({"kind": "link", "link": "CustomerTags", "object_type": "Tag"}, "named by `link` alone"),
         ({**field("Customer", "email"), "link": "CustomerTags"}, "named by `object_type` and `field`"),
         ({**field("Customer", "email"), "reason": "x"}, "cannot be set here"),
@@ -274,3 +274,92 @@ class TestWhatComesInThroughAMerge:
         only = "A:\n  fields:\n    x:\n      column: c\n"
         with pytest.raises(ConfigEditError, match="only"):
             removed(TEXT, field("Account", "currency"), only.replace("A:", "Account:").replace("x:", "currency:"))
+
+
+class TestRemovingAWholeType:
+    """kind: type -- the type's block out of the ontology, its entry out of the bindings."""
+
+    TYPE = {"kind": "type", "object_type": "B"}
+
+    def test_the_type_goes_and_nothing_else_changes(self):
+        after, bindings = removed(SMALL, self.TYPE)
+        before = meaning(SMALL)
+
+        del before["object_types"]["B"]
+        assert meaning(after) == before and bindings is None
+
+    def test_a_real_type_is_taken_out_of_the_fixture(self):
+        after, _ = removed(TEXT, {"kind": "type", "object_type": "Tag"})
+        before = meaning(TEXT)
+
+        del before["object_types"]["Tag"]
+        assert meaning(after) == before
+
+    def test_its_binding_goes_with_it_and_the_others_stay(self):
+        bindings = "object_types:\n  A:\n    storage: {table: a}\n  B:\n    storage: {table: b}\n"
+
+        after, bound = removed(SMALL, self.TYPE, bindings)
+
+        assert meaning(bound) == {"object_types": {"A": {"storage": {"table": "a"}}}}
+        assert "B" not in meaning(after)["object_types"]
+
+    def test_a_bindings_file_without_the_root_key_is_edited_too(self):
+        _after, bound = removed(SMALL, self.TYPE, "A:\n  storage: {table: a}\nB:\n  storage: {table: b}\n")
+
+        assert meaning(bound) == {"A": {"storage": {"table": "a"}}}
+
+    def test_every_comment_line_stays_including_the_ones_inside_the_type(self):
+        text = SMALL.replace("  B:\n    id_field: id\n", "  B:\n    # inside B\n    id_field: id\n"
+                             "    # between B's keys\n", 1)
+
+        after, _ = removed(text, self.TYPE)
+
+        comments = [line for line in text.splitlines() if line.lstrip().startswith("#")]
+        assert all(line in after.splitlines() for line in comments)
+        assert "B:" not in after and "p: {type" not in after
+
+    def test_a_comment_inside_a_removed_field_stays_too(self):
+        text = SMALL.replace("      z:\n        type: data\n", "      z:\n        # inside z\n        type: data\n", 1)
+
+        after, _ = removed(text, field("A", "z"))
+
+        assert "# inside z" in after and "z:" not in after.replace("# inside z", "")
+
+    def test_the_only_type_is_refused_not_an_index_error(self):
+        with pytest.raises(ConfigEditError, match="only"):
+            removed("object_types:\n  A:\n    id_field: id\n    fields:\n      x: {type: data}\n",
+                    {"kind": "type", "object_type": "A"})
+
+    def test_the_only_entry_in_a_bindings_file_is_refused(self):
+        with pytest.raises(ConfigEditError, match="only"):
+            removed(SMALL, self.TYPE, "B:\n  storage: {table: b}\n")
+
+    def test_a_type_that_comes_in_through_a_merge_is_refused(self):
+        text = ("object_types:\n  <<: &shared\n    S:\n      id_field: id\n      fields: {x: {type: data}}\n"
+                "  A:\n    id_field: id\n    fields: {y: {type: data}}\n")
+
+        with pytest.raises(ConfigEditError, match="merge") as e:
+            removed(text, {"kind": "type", "object_type": "S"})
+        assert "where it is defined" in str(e.value)
+
+    def test_a_type_whose_block_others_alias_is_refused_rather_than_breaking_them(self):
+        text = ("object_types:\n  A: &base\n    id_field: id\n    fields: {x: {type: data}}\n"
+                "  B:\n    <<: *base\n")
+
+        with pytest.raises(ConfigEditError):
+            removed(text, {"kind": "type", "object_type": "A"})
+
+    def test_a_type_written_inside_a_braced_mapping_is_refused(self):
+        with pytest.raises(ConfigEditError, match="inside a"):
+            removed("object_types: {A: {id_field: id, fields: {x: {type: data}}}, B: {id_field: id}}\n",
+                    {"kind": "type", "object_type": "B"})
+
+    @pytest.mark.parametrize("change,match", [
+        ({"kind": "type", "object_type": "Nobody"}, "no object type"),
+        ({"kind": "type"}, "no object type"),
+        ({"kind": "type", "object_type": "B", "field": "p"}, "alone"),
+        ({"kind": "type", "object_type": "B", "link": "L"}, "alone"),
+    ])
+    def test_a_name_that_is_not_there_or_extra_names_are_refused(self, change, match):
+        with pytest.raises(ConfigEditError, match=match):
+            removed(SMALL, change)
