@@ -113,7 +113,6 @@ test('every noun the callers pass has its own Cockpit refusal', () => {
   for (const noun of [
     'location',
     'camera',
-    'photo',
     'shared view',
     'file',
     'route',

@@ -274,9 +274,7 @@ test('trackedReadout cannot resurrect a dedicated canvas or render listener', as
 test('tracking layers write gevLabelModel and expose only their cached display positions', async () => {
   const files = await Promise.all([
     'flights.js',
-    'militaryFlights.js',
     'satellites.js',
-    'militaryInstallations.js',
   ].map(async (name) => [name, readLayerSource(new URL(`./${name}`, import.meta.url))]));
   const sources = Object.fromEntries(files);
   for (const [name, source] of files) {
@@ -284,15 +282,13 @@ test('tracking layers write gevLabelModel and expose only their cached display p
     assert.ok(source.includes('.gevDisplayPosition ='), `${name} exposes a display-position cache`);
   }
   assert.match(sources['flights.js'], /gevDisplayPosition\s*=\s*parts\.motion\._trackedDisplayCached/);
-  assert.match(sources['militaryFlights.js'], /gevDisplayPosition\s*=\s*parts\.motion\._trackedDisplayCached/);
   assert.ok(sources['satellites.js'].includes('gevDisplayPosition = _trackedDisplayCached'));
   assert.equal(sources['flights.js'].includes('_trackedEntity.label.text'), false);
-  assert.equal(sources['militaryFlights.js'].includes('_trackedEntity.label.text'), false);
   assert.equal(sources['satellites.js'].includes('_trackedEntity.label.text'), false);
 });
 
-test('civilian and military trail heads use the lower-centre model anchor and weak-texture tint', async () => {
-  const files = await Promise.all(['flights.js', 'militaryFlights.js'].map(async (name) => (
+test('civilian trail heads use the lower-centre model anchor and weak-texture tint', async () => {
+  const files = await Promise.all(['flights.js'].map(async (name) => (
     [name, readLayerSource(new URL(`./${name}`, import.meta.url))]
   )));
   for (const [name, source] of files) {

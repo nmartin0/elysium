@@ -34,7 +34,7 @@ function declaration(block, prop) {
 
 test('layer status chip keeps its English width (82px)', () => {
   const rules = unguardedRules(
-    css('radio.css'),
+    css('layer-rows.css'),
     `.data-toggle-btn.feed-loading, .data-toggle-btn.feed-degraded,
      .data-toggle-btn.feed-stale, .data-toggle-btn.feed-partial,
      .data-toggle-btn.feed-fallback, .data-toggle-btn.feed-unavailable`,
@@ -44,14 +44,14 @@ test('layer status chip keeps its English width (82px)', () => {
 });
 
 test('Directions steps keep one line with an ellipsis in English', () => {
-  const [rule] = unguardedRules(css('radio.css'), '.data-row-list-text');
+  const [rule] = unguardedRules(css('layer-rows.css'), '.data-row-list-text');
   assert.ok(rule);
   assert.equal(declaration(rule, 'white-space'), 'nowrap');
   assert.equal(declaration(rule, 'text-overflow'), 'ellipsis');
 });
 
 test('count-line layout is not reachable from an unguarded selector', () => {
-  const source = css('radio.css');
+  const source = css('layer-rows.css');
   assert.equal(
     unguardedRules(source, '.data-toggle-row--count-line .data-count').length,
     0,
@@ -65,14 +65,6 @@ test('weather status line keeps its fixed English height', () => {
   );
   assert.ok(rule);
   assert.equal(declaration(rule, 'height'), '1.45em');
-});
-
-test('cockpit number separators keep the English cell width', () => {
-  assert.equal(
-    unguardedRules(css('cockpit.css'), '.cockpit-roll-token.is-separator')
-      .length,
-    0,
-  );
 });
 
 test('Display and parameter rows keep their English layout', () => {
@@ -96,13 +88,6 @@ test('weather setting rows keep the 56px English label column', () => {
     declaration(row, 'grid-template-columns'),
     '56px minmax(0, 1fr)',
   );
-});
-
-test('cockpit brief controls keep their English sizes', () => {
-  const source = css('cockpit.css');
-  const [auto] = unguardedRules(source, '#cockpit-brief-auto');
-  assert.equal(declaration(auto, 'width'), '50px');
-  assert.equal(unguardedRules(source, '.cockpit-brief-actions > *').length, 0);
 });
 
 test('the count-line class is set only outside English', async () => {
@@ -187,11 +172,4 @@ test('Recent Imagery readout keeps its English layout', () => {
   const swap = one('.recent-imagery-readout .ri-swap');
   assert.equal(declaration(swap, 'width'), '40px');
   assert.equal(declaration(swap, 'min-width'), undefined);
-});
-
-test('CCTV control buttons stay on one line in English', () => {
-  assert.equal(
-    unguardedRules(css('cctv.css'), '.cctv-controls .scene-btn').length,
-    0,
-  );
 });

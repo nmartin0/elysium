@@ -372,44 +372,6 @@ test('an overlay with NO class to watch still disarms the launcher', () => {
   assert.match(covered, /\} catch \{\s*\n\s*return false;\s*\n\s*\}/);
 });
 
-test('one ESC does one thing — a Cockpit utility disclosure stops later document listeners', () => {
-  const ui = fs.readFileSync(
-    new URL('./ui/radioBindings.js', import.meta.url),
-    'utf8',
-  );
-
-  // stopPropagation() does NOT stop later listeners on the SAME document. The
-  // Context Radio disclosure that once raced the launcher this way is gone, and
-  // Cockpit's utility disclosures never share the screen with the launcher, but
-  // they own the same contract: their capture handler is the only one that can
-  // keep a later document listener (Cockpit exit, the launcher) off the key, and
-  // only the immediate form does it.
-  const utilityEsc = ui.slice(ui.indexOf('if (!displayOpen && !radioOpen) return;'));
-  const claim = utilityEsc.slice(0, utilityEsc.indexOf('setCockpitDisclosure(kind, false'));
-  assert.match(claim, /event\.preventDefault\(\);/);
-  assert.match(claim, /event\.stopImmediatePropagation\(\);/);
-  assert.doesNotMatch(
-    claim,
-    /event\.stopPropagation\(\);/,
-    'the plain form leaves later document listeners acting on the same key',
-  );
-
-  // Belt on the launcher side: a key another surface already marked is not ours,
-  // whether or not that surface remembered to silence us.
-  const keyboard = fs.readFileSync(
-    new URL('./ui/surfaceKeyboard.js', import.meta.url),
-    'utf8',
-  );
-  const handler = keyboard.slice(
-    keyboard.indexOf('const onKeyDown = (event) => {'),
-  );
-  assert.match(
-    handler.slice(0, handler.indexOf("if (event.key === 'Escape')")),
-    /event\.defaultPrevented\) return;/,
-    "a marked key must be somebody else's key",
-  );
-});
-
 test('a refused write takes the tick back instead of promising "never again"', () => {
   const module = fs.readFileSync(
     new URL('./firstRunExperience.js', import.meta.url),

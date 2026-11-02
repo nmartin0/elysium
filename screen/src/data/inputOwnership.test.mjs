@@ -116,16 +116,9 @@ test('every scene click handler consults ownership before it picks', () => {
   const guarded = [
     ['src/data/trackingClickGesture.js', 'onClick(click, gesture);'],
     ['src/data/localGeojsonCore.js', 'viewer.scene.pick(click.position)'],
-    ['src/data/cctvGizmo.js', 'pickGizmoPart(event.position)'],
-    ['src/layers/alpr/presentation.js', 'viewer.scene.pick(click.position)'],
     ['src/layers/bikeshare/selection.js', 'viewer.scene.pick(click.position)'],
     ['src/layers/firms/selection.js', 'scene.pick(click.position)'],
-    [
-      'src/layers/installations/selection.js',
-      'viewer.scene.pick(click.position)',
-    ],
     ['src/layers/launches/lifecycle.js', 'drillPick(movement.position'],
-    ['src/layers/radio/interaction.js', 'pickedRadioStationAt(click.position)'],
     [
       'src/layers/satellites/interaction.js',
       'viewer.scene.pick(click.position)',
@@ -166,7 +159,6 @@ test('ambient selection handlers never claim the pointer themselves', () => {
   for (const file of [
     'src/data/trackingClickGesture.js',
     'src/data/localGeojsonCore.js',
-    'src/data/cctvGizmo.js',
     'src/layers/vessels/selection.js',
     'src/layers/satellites/interaction.js',
   ]) {

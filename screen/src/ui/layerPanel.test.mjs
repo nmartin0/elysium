@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 
-test('panel presentation places Transit between Street Traffic and Bike Share in Movement', () => {
+test('panel presentation places Transit before Bike Share in Movement', () => {
   const source = readFileSync(
     new URL('./layerPanel.js', import.meta.url),
     'utf8',
@@ -19,16 +19,7 @@ test('panel presentation places Transit between Street Traffic and Bike Share in
   );
   assert.deepEqual(
     order.filter(({ label }) => label === 'Movement').map(({ id }) => id),
-    [
-      'satellites',
-      'flights',
-      'military',
-      'local-adsb',
-      'ais-live-vessels',
-      'traffic',
-      'transit',
-      'bikeshare',
-    ],
+    ['satellites', 'flights', 'ais-live-vessels', 'transit', 'bikeshare'],
   );
   assert.equal(order.filter(({ id }) => id === 'transit').length, 1);
 });

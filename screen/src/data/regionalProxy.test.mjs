@@ -7,8 +7,6 @@ import createViteConfig, {
   keylessGooglePlacesResponse,
   LL2_CACHE_TTL_MS,
   readResponseJsonCapped,
-  validMilitaryInstallationBox,
-  validRegionalPoint,
 } from '../../vite.config.js';
 
 test('missing Google place context is a quiet keyless capability, not a 503', () => {
@@ -23,21 +21,7 @@ test('missing Google place context is a quiet keyless capability, not a 503', ()
   assert.equal(keylessGooglePlacesResponse('configured-key'), null);
 });
 
-test('regional proxy rejects absent and blank coordinates instead of coercing them to zero', () => {
-  assert.equal(validRegionalPoint(new URLSearchParams('longitude=12.5')), null);
-  assert.equal(validRegionalPoint(new URLSearchParams('latitude=12.5')), null);
-  assert.equal(validRegionalPoint(new URLSearchParams('latitude=&longitude=12.5')), null);
-  assert.deepEqual(
-    validRegionalPoint(new URLSearchParams('latitude=0&longitude=0')),
-    { latitude: 0, longitude: 0 },
-  );
-});
-
 test('adjacent proxy validators also require every coordinate explicitly', () => {
-  assert.equal(
-    validMilitaryInstallationBox(new URLSearchParams('west=-1&north=1&east=1')),
-    null,
-  );
   assert.equal(adsbLolFallbackAnchor({ url: '?lat=12.5' }), null);
   assert.equal(adsbLolFallbackAnchor({ url: '?lon=12.5' }), null);
 });
@@ -45,10 +29,7 @@ test('adjacent proxy validators also require every coordinate explicitly', () =>
 test('new data proxies install the same routes in dev and preview servers', () => {
   const config = createViteConfig({ mode: 'test' });
   const byName = new Map(config.plugins.map((plugin) => [plugin.name, plugin]));
-  for (const name of [
-    'rocket-launches-proxy',
-    'military-installations-proxy',
-  ]) {
+  for (const name of ['rocket-launches-proxy']) {
     assert.equal(typeof byName.get(name)?.configureServer, 'function', `${name} dev hook`);
     assert.equal(typeof byName.get(name)?.configurePreviewServer, 'function', `${name} preview hook`);
   }

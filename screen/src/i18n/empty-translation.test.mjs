@@ -9,8 +9,8 @@ import {
 import { getCatalog, setLocale, t, tn, translateKnown } from './index.js';
 
 const messages = extractMessages();
-const EMPTY = 'DISCONNECT';
-const BLANK = 'CONTACT LOST · LAST KNOWN READOUT · NOT AN ALL-CLEAR';
+const EMPTY = 'Earthquake source unavailable';
+const BLANK = 'Wind unavailable';
 
 for (const locale of ['es', 'ru']) {
   test(`${locale}: checkCatalog rejects an empty or blank translation`, () => {

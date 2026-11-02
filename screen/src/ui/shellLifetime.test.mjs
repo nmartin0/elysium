@@ -117,13 +117,6 @@ test('manager replacement releases Directions even when the new manager has no r
   assert.equal(events.length, count);
 });
 
-test('attaching the manager reconnects Street Level, so its switch-on requests reach the panel', (t) => {
-  const { owner, manager, controls } = bindings(t);
-  owner.attachDataManager(manager('first'));
-  assert.equal(controls._streetLevelControls.connects, 1);
-  owner.stop(); owner.disconnect();
-});
-
 test('camera-entry listeners are removed before any asynchronous layer cleanup', (t) => {
   const { owner } = bindings(t);
   let changes = 0;

@@ -37,7 +37,7 @@ test('every acquisition source can be omitted without losing catalog membership'
 
 test('all acquisition sources may be absent, and enable fails before initializing or fetching', async (t) => {
   const actual = catalog({}, t);
-  assert.equal(actual.layers.length, 30);
+  assert.equal(actual.layers.length, 22);
   const manager = new LayerLifecycle(
     {},
     { getSourceAvailability: actual.getSourceAvailability },
@@ -75,11 +75,10 @@ test('standalone defaults allow exact replacements and explicit removal, and rej
   const source = { getSnapshot: async () => [] };
   const sources = createStandaloneLayerSources({
     flights: source,
-    military: null,
+    launches: null,
   });
   assert.equal(sources.flights, source);
-  assert.equal(sources.military, null);
-  assert.equal(typeof sources.cctv.getCatalog, 'function');
+  assert.equal(sources.launches, null);
   assert.throws(
     () => createStandaloneLayerSources({ fligts: source }),
     /Unknown source/,
@@ -150,26 +149,6 @@ test('GhostMaps obeys source omission, replacement and explicit removal', async 
   assert.equal(fetches, 0);
 });
 
-test('empty Street Level uses the shared unavailable lifecycle without initialization', async (t) => {
-  const actual = catalog({}, t);
-  const manager = new LayerLifecycle(
-    {},
-    { getSourceAvailability: actual.getSourceAvailability },
-  );
-  manager.register(actual.get('street-level'));
-  assert.equal(await manager.setEnabled('street-level', true), false);
-  assert.equal(manager.layers.get('street-level').initialized, false);
-  const row = manager.getAll()[0];
-  assert.equal(row.stats.status, 'unavailable');
-  assert.equal(row.stats.error, 'No street-level imagery providers configured');
-  assert.equal(await manager.setEnabled('street-level', false), true);
-  const configured = catalog(createStandaloneLayerSources(), t);
-  assert.equal(
-    configured.get('street-level').getSourceAvailability().available,
-    true,
-  );
-});
-
 test('availability lookup accepts frozen layers and uses their display names', () => {
   const composition = resolveCatalogSources({});
   const layers = Object.values(CATALOG_SOURCE_CONTRACTS)
@@ -192,29 +171,4 @@ test('availability lookup accepts frozen layers and uses their display names', (
     manager.getAll()[0].stats.error,
     'Fire perimeters: data source not configured',
   );
-});
-
-test('absent military acquisition does not poll, suppress flights, or erase supplied classification', async (t) => {
-  let fetches = 0;
-  t.mock.method(globalThis, 'fetch', async () => {
-    fetches++;
-    throw new Error('Unexpected fallback acquisition');
-  });
-  const actual = catalog(createStandaloneLayerSources({ military: null }), t);
-  const registry = actual.militaryRegistry;
-  assert.equal(actual.getSourceAvailability('flights').available, true);
-  assert.equal(registry.isMilitaryLayerActive(), false);
-  assert.equal(registry.isMilitaryIcao('abc123'), false);
-  registry.registerMilitaryIcaos([' ABC123 ']);
-  await registry.refreshMilitaryRegistryIfStale();
-  assert.equal(registry.isMilitaryIcao('abc123'), true);
-  assert.equal(registry.isMilitaryIcao('def456'), false);
-  const manager = new LayerLifecycle(
-    {},
-    { getSourceAvailability: actual.getSourceAvailability },
-  );
-  manager.register(actual.get('military'));
-  assert.equal(await manager.setEnabled('military', true), false);
-  assert.equal(registry.isMilitaryLayerActive(), false);
-  assert.equal(fetches, 0);
 });

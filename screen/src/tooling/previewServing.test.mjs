@@ -101,7 +101,7 @@ test('real dev and built-preview servers serve provider JSON and terminate unkno
     try {
       for (const [route, status] of [
         ['/api/flights', 200],
-        ['/api/military', 200],
+        ['/api/military', 404],
         ['/api/adsbdb/type/invalid', 400],
         ['/api/firms/status', 200],
         ['/api/fire-perimeters/inciweb/publication/invalid', 400],
@@ -110,13 +110,12 @@ test('real dev and built-preview servers serve provider JSON and terminate unkno
         ['/api/terrain/heights?points=invalid', 400],
         ['/api/overpass', 405],
         ['/api/overpass/status', 200],
-        ['/api/cctv/sources', 200],
+        ['/api/cctv/sources', 404],
         ['/api/gbfs/', 400],
-        ['/api/tomtom/status', 200],
-        // The Street Level QA gate intercepts these in the browser; this is
-        // the check that the real servers register them.
-        ['/api/mapillary/status', 200],
-        ['/api/mapillary/tiles/coverage/14/1/2', 503],
+        ['/api/tomtom/status', 404],
+        // Fork: the routes of the removed layers must not answer.
+        ['/api/mapillary/status', 404],
+        ['/api/mapillary/tiles/coverage/14/1/2', 404],
         ['/api/radio/unknown', 404],
         ['/api/does-not-exist', 404],
         ['/api', 404],
@@ -133,12 +132,6 @@ test('real dev and built-preview servers serve provider JSON and terminate unkno
           route,
         );
         const body = await response.json();
-        if (route === '/api/cctv/sources')
-          assert.equal(body.sources[0].id, 'fixture');
-        if (route === '/api/mapillary/status')
-          assert.deepEqual(body, { configured: false }, route);
-        if (route.startsWith('/api/mapillary/tiles'))
-          assert.deepEqual(body, { error: 'no_key', keyRequired: true }, route);
         if (
           route === '/api/does-not-exist' ||
           (isPreview && route.startsWith('/api/setup'))

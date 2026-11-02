@@ -1,5 +1,5 @@
 // The language picker reloads the page, so it asks first while the
-// reload would lose work (unsaved CCTV calibration, the open cockpit, anything
+// reload would lose work (the open cockpit, anything
 // a module registers). Choosing the language already active does nothing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,7 +13,7 @@ import {
 
 /** Wire the shell's language choice with the given shell state. No picker
  * markup here: the picker's own behaviour is covered by localePicker.test. */
-function renderSwitch({ calDirty = false, cockpit = false } = {}) {
+function renderSwitch({ cockpit = false } = {}) {
   const previous = {
     document: globalThis.document,
     location: globalThis.location,
@@ -35,11 +35,6 @@ function renderSwitch({ calDirty = false, cockpit = false } = {}) {
     return answer;
   };
   const shell = {
-    services: {
-      cctvLayer: {
-        getUIState: () => ({ cameras: [{ calDirty: false }, { calDirty }] }),
-      },
-    },
     cockpitView: { active: cockpit },
     _confirmLocaleReload: StyleManager.prototype._confirmLocaleReload,
     _chooseLocale: StyleManager.prototype._chooseLocale,
@@ -76,13 +71,12 @@ test('nothing to lose: the switch reloads without asking', () => {
   }
 });
 
-test('unsaved calibration or the open cockpit: the switch asks first', () => {
-  const view = renderSwitch({ calDirty: true, cockpit: true });
+test('the open cockpit: the switch asks first', () => {
+  const view = renderSwitch({ cockpit: true });
   try {
     view.answer(false);
     view.choose('ru');
     assert.equal(view.prompts.length, 1);
-    assert.match(view.prompts[0], /unsaved CCTV calibration/);
     assert.match(view.prompts[0], /the open cockpit/);
     assert.equal(view.reloads.length, 0, 'declined: no reload');
     view.answer(true);
@@ -114,7 +108,7 @@ test('modules register their own unsaved work', () => {
 
 test('the prompt reads in the active language', () => {
   setLocale('es');
-  const view = renderSwitch({ calDirty: true });
+  const view = renderSwitch({ cockpit: true });
   try {
     view.answer(false);
     view.choose('en');
@@ -127,7 +121,7 @@ test('the prompt reads in the active language', () => {
 });
 
 test('the language already active neither asks nor reloads', () => {
-  const view = renderSwitch({ calDirty: true });
+  const view = renderSwitch({ cockpit: true });
   try {
     assert.equal(view.choose('en'), 'unchanged');
     assert.deepEqual(view.prompts, []);

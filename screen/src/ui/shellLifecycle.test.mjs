@@ -228,7 +228,7 @@ test('recording restores the original HUD after repeated entry and revokes retai
   }
 });
 
-test('weather rail orders between CCTV and Context, observes and syncs chrome', (t) => {
+test('weather rail orders before Context, observes and syncs chrome', (t) => {
   const f = fixture();
   const observed = new Set();
   const previousResizeObserver = globalThis.ResizeObserver;
@@ -255,12 +255,7 @@ test('weather rail orders between CCTV and Context, observes and syncs chrome', 
       stack.children.splice(index, 0, panel);
     };
     stack.prepend = (panel) => stack.insertBefore(panel, stack.children[0]);
-    for (const id of [
-      'pp-toggles',
-      'cctv-panel',
-      'weather-panel',
-      'global-context-panel',
-    ]) {
+    for (const id of ['pp-toggles', 'weather-panel', 'global-context-panel']) {
       const panel = f.nodes.get(id) || f.element();
       panel.id = id;
       panel.style = {};
@@ -294,7 +289,7 @@ test('weather rail orders between CCTV and Context, observes and syncs chrome', 
     owner._initRightPanelAdaptiveLayout();
     assert.deepEqual(
       stack.children.map((panel) => panel.id),
-      ['pp-toggles', 'cctv-panel', 'weather-panel', 'global-context-panel'],
+      ['pp-toggles', 'weather-panel', 'global-context-panel'],
     );
     assert.ok(synced.includes('weather-panel'));
     assert.ok(observed.has(weather));

@@ -68,53 +68,6 @@ test('a pending Context tab cannot reopen a disposed panel', async (t) => {
   assert.deepEqual(calls, ['claim']);
 });
 
-test('stopping during installations enable prevents the delayed search', async (t) => {
-  const button = new Button();
-  const { controls, calls } = fixture(t, { _installationsSearchBtn: button });
-  let release;
-  controls._dataManager = {
-    layers: new Map([['military-installations', {}]]),
-    setEnabled: () =>
-      new Promise((resolve) => {
-        release = resolve;
-      }),
-    isEnabled: () => true,
-  };
-  controls.installations.searchNearby = () =>
-    assert.fail('search started after stop');
-  button.dispatchEvent(new Event('click'));
-  controls.stop();
-  release(true);
-  await turn();
-  assert.equal(calls.length, 0);
-  assert.equal(
-    button.getAttribute('aria-busy'),
-    'true',
-    'disposed controls are not mutated by completion',
-  );
-});
-
-test('a late installations search cannot publish a notice after disposal', async (t) => {
-  const button = new Button();
-  const { controls, calls } = fixture(t, { _installationsSearchBtn: button });
-  let release;
-  controls._dataManager = {
-    layers: new Map([['military-installations', {}]]),
-    setEnabled: async () => true,
-    isEnabled: () => true,
-  };
-  controls.installations.searchNearby = () =>
-    new Promise((resolve) => {
-      release = resolve;
-    });
-  button.dispatchEvent(new Event('click'));
-  await turn();
-  controls.stop();
-  release(true);
-  await turn();
-  assert.deepEqual(calls, []);
-});
-
 test('reconnecting and disposal release each manager subscription exactly once', (t) => {
   const { controls } = fixture(t);
   const counts = new Map();

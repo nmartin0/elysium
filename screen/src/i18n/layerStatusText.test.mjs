@@ -6,23 +6,11 @@ import { setLocale, translateKnown } from './index.js';
 // Layers keep these status texts as English data, and the panels show them
 // through translateKnown, so each needs an entry in every catalog.
 const SITES = [
-  ['../layers/streetLevel/index.js', 'loading coverage...'],
   ['../layers/firms/ingestion.js', 'live feed unavailable'],
   ['../layers/bikeshare/controls.js', 'GBFS fetch error'],
-  [
-    '../layers/streetLevel/viewerHost.js',
-    'Open the Street Level panel to view imagery',
-  ],
-  ['../layers/streetLevel/viewerHost.js', 'Image could not be opened'],
   ['../layers/satellites/ingestion.js', 'CelesTrak unreachable'],
-  [
-    '../layers/streetLevel/providers/mapillary/policy.js',
-    'Coverage requests are being rate-limited — they resume on their own',
-  ],
-  ['../layers/alpr/index.js', 'Camera source temporarily unavailable'],
   ['../layers/perimeters/index.js', 'Perimeter source unavailable'],
   ['../layers/recentImagery/index.js', 'Imagery catalog unavailable'],
-  ['../layers/installations/ingestion.js', 'Installation context unavailable'],
   ['../layers/earthquakes/index.js', 'Earthquake source unavailable'],
   ['../layers/submarineCables/ingestion.js', 'TeleGeography load failed'],
   ['../layers/vessels/ingestion.js', 'AIS live load failed'],

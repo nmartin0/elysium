@@ -6,18 +6,8 @@ import { createStandaloneLayerSources } from '../standalone/layerSources.js';
 import { catalogControlServices } from './catalog.js';
 import { LayerLifecycle } from '../data/lifecycle.js';
 
-function fixtureSources(ids, calls) {
-  const sources = createStandaloneLayerSources();
-  sources.military = {
-    getSnapshot: async () => {
-      throw new Error('Use identity acquisition');
-    },
-    async getIdentities(_query, { signal }) {
-      calls.push(signal);
-      return ids;
-    },
-  };
-  return sources;
+function fixtureSources() {
+  return createStandaloneLayerSources();
 }
 
 test('catalogs construct distinct layers and classification from their supplied source', async (t) => {
@@ -27,25 +17,23 @@ test('catalogs construct distinct layers and classification from their supplied 
     a.abort();
     b.abort();
   });
-  const callsA = [];
-  const callsB = [];
   const first = createApplicationCatalog({
-    sources: fixtureSources(['abc123'], callsA),
+    sources: fixtureSources(),
     signal: a.signal,
     surface: fixtureSurface(a.signal),
   });
   const second = createApplicationCatalog({
-    sources: fixtureSources(['def456'], callsB),
+    sources: fixtureSources(),
     signal: b.signal,
     surface: fixtureSurface(b.signal),
   });
-  assert.equal(first.layers.length, 30);
-  assert.ok(first.get('local-adsb'), 'Local ADS-B is registered');
-  assert.deepEqual(
-    first.metadata.find(({ id }) => id === 'local-adsb'),
-    { id: 'local-adsb', disposition: 'local-only' },
-    'the hardware-local layer is never serialized into links',
-  );
+  assert.equal(first.layers.length, 22);
+  for (const id of ['military', 'cctv', 'local-adsb'])
+    assert.equal(
+      first.layers.some((layer) => layer.id === id),
+      false,
+      id,
+    );
   assert.notEqual(first.weatherClock, second.weatherClock);
   await first.weatherClock.setTarget('2026-09-21T12:00:00.000Z');
   assert.match(
@@ -64,8 +52,8 @@ test('catalogs construct distinct layers and classification from their supplied 
   assert.ok(first.get('transit'));
   const order = first.layers.map(({ id }) => id);
   assert.deepEqual(
-    order.slice(order.indexOf('traffic'), order.indexOf('directions') + 1),
-    ['traffic', 'cctv', 'radio', 'transit', 'bikeshare', 'directions'],
+    order.slice(order.indexOf('transit'), order.indexOf('directions') + 1),
+    ['transit', 'bikeshare', 'directions'],
   );
   const lifecycle = new LayerLifecycle({});
   for (const layer of first.layers) lifecycle.register(layer);
@@ -85,21 +73,11 @@ test('catalogs construct distinct layers and classification from their supplied 
     catalogControlServices(first).satellitesLayer,
     first.get('satellites'),
   );
-  assert.equal(callsA.length, 0, 'construction must not acquire');
-  await first.militaryRegistry.refreshMilitaryRegistryIfStale();
-  await second.militaryRegistry.refreshMilitaryRegistryIfStale();
-  assert.equal(first.militaryRegistry.isMilitaryIcao('abc123'), true);
-  assert.equal(first.militaryRegistry.isMilitaryIcao('def456'), false);
-  assert.equal(second.militaryRegistry.isMilitaryIcao('def456'), true);
   a.abort();
   assert.equal(
     await first.weatherClock.setTarget('2026-09-21T13:00:00.000Z'),
     false,
   );
-  assert.equal(callsA[0].aborted, true);
-  assert.equal(first.militaryRegistry.isMilitaryIcao('abc123'), false);
-  assert.equal(callsB[0].aborted, false);
-  assert.equal(second.militaryRegistry.isMilitaryIcao('def456'), true);
 });
 
 test('invalid or already cancelled construction fails before classification can acquire', () => {

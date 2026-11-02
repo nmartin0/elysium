@@ -341,10 +341,12 @@ test('an isolated valid two-character fixture round-trips an l field beyond the 
       `qa-prior-digit-${digit}`,
       digit,
     ]);
-    const fixtureLayers = ['00', '01', '02', '03'].map((token) => ({
-      id: `qa-layer-${token}`,
-      token,
-    }));
+    const fixtureLayers = ['00', '01', '02', '03', '04', '05', '06', '07'].map(
+      (token) => ({
+        id: `qa-layer-${token}`,
+        token,
+      }),
+    );
     const fixtureRows = [
       ...reservationRows,
       ...priorDigits,
@@ -376,7 +378,9 @@ test('an isolated valid two-character fixture round-trips an l field beyond the 
     assert.ok(params.get('l').length > 64, 'fixture must cross the old cap');
     assert.equal(
       params.get('l').length,
-      (expectedLayerIds.length - 4) * 2 + 4 * 3 - 1,
+      (expectedLayerIds.length - fixtureLayers.length) * 2 +
+        fixtureLayers.length * 3 -
+        1,
     );
     const restored = codec.decodeLayerStateParams(params);
     assert.deepEqual(restored?.enabledLayerIds, expectedLayerIds);

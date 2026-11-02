@@ -268,10 +268,13 @@ test('sheets borrow panels and put them back exactly as they were', () => {
   const kept = ['data-panel', 'control-panel'];
   const { calls, press, collapsed } = fixture({ expanded: kept });
   press('cameras');
-  assert.equal(collapsed('cctv-panel'), false);
-  assert.equal(collapsed('street-level-panel'), false);
+  assert.equal(collapsed('recent-imagery-panel'), false);
   press('search');
-  assert.equal(collapsed('cctv-panel'), true, 'Cameras put back on switch');
+  assert.equal(
+    collapsed('recent-imagery-panel'),
+    true,
+    'Cameras put back on switch',
+  );
   assert.equal(collapsed('location-bar'), false);
   press('search');
   for (const id of PANEL_IDS)
@@ -290,22 +293,21 @@ test('sheets borrow panels and put them back exactly as they were', () => {
 test('a panel the user changes inside a sheet stays as they left it', () => {
   const { press, collapsed, document } = fixture();
   press('cameras');
-  // The user collapses CCTV inside the sheet (their own, persisted choice).
-  document.getElementById('cctv-panel').classList.add('collapsed');
+  // The user collapses Imagery inside the sheet (their own, persisted choice).
+  document.getElementById('recent-imagery-panel').classList.add('collapsed');
   press('cameras');
-  assert.equal(collapsed('cctv-panel'), true, 'their collapse is kept');
   assert.equal(
-    collapsed('street-level-panel'),
+    collapsed('recent-imagery-panel'),
     true,
-    'the borrowed one is put back',
+    'their collapse is kept',
   );
 
   // Expanding one in a sheet is kept too, and later sheets respect it.
   press('layers');
-  document.getElementById('cctv-panel').classList.remove('collapsed');
+  document.getElementById('recent-imagery-panel').classList.remove('collapsed');
   press('more');
   press('more');
-  assert.equal(collapsed('cctv-panel'), false);
+  assert.equal(collapsed('recent-imagery-panel'), false);
 });
 
 test('focus moves into the sheet and returns to the tab on close', () => {
@@ -328,17 +330,17 @@ test('focus moves into the sheet and returns to the tab on close', () => {
 
 test('the share link keeps the state from before the sheets', () => {
   const { shell, press, document, closedCount } = fixture({
-    expanded: ['street-level-panel'],
+    expanded: ['recent-imagery-panel'],
   });
   assert.equal(shell.sharedCollapsed('data-panel'), undefined);
   press('layers');
   // Data Layers is open only because the sheet borrowed it.
   assert.equal(shell.sharedCollapsed('data-panel'), true);
-  assert.equal(shell.sharedCollapsed('street-level-panel'), false);
+  assert.equal(shell.sharedCollapsed('recent-imagery-panel'), false);
   assert.equal(shell.sharedCollapsed('unrelated-panel'), undefined);
   // A user change inside the sheet is theirs to share.
-  document.getElementById('cctv-panel').classList.remove('collapsed');
-  assert.equal(shell.sharedCollapsed('cctv-panel'), false);
+  document.getElementById('global-context-panel').classList.remove('collapsed');
+  assert.equal(shell.sharedCollapsed('global-context-panel'), false);
   press('more');
   assert.equal(closedCount(), 0, 'switching sheets is not closing');
   press('more');
@@ -372,14 +374,14 @@ test('Escape closes the sheet only when nothing else took it', () => {
 
 test('share state and restores follow the preference, not layout collapse', () => {
   const { shell, press, collapsed, document } = fixture();
-  // Layout collapsed Street Level only for space; the user left it open.
-  const street = document.getElementById('street-level-panel');
+  // Layout collapsed Imagery only for space; the user left it open.
+  const street = document.getElementById('recent-imagery-panel');
   street.classList.add('layout-auto-collapsed');
   press('cameras');
-  assert.equal(shell.sharedCollapsed('street-level-panel'), false);
+  assert.equal(shell.sharedCollapsed('recent-imagery-panel'), false);
   press('cameras');
   assert.equal(
-    collapsed('street-level-panel'),
+    collapsed('recent-imagery-panel'),
     false,
     'not turned into a real collapse',
   );
@@ -387,14 +389,14 @@ test('share state and restores follow the preference, not layout collapse', () =
 
 test('layout settling after a sheet opens is part of opening', () => {
   const { press, runFrames, collapsed, document } = fixture({
-    expanded: ['street-level-panel'],
+    expanded: ['recent-imagery-panel'],
   });
   press('cameras');
-  // A rail layout pass on the next frame collapses Street Level.
-  document.getElementById('street-level-panel').classList.add('collapsed');
+  // A rail layout pass on the next frame collapses Imagery.
+  document.getElementById('recent-imagery-panel').classList.add('collapsed');
   runFrames();
   press('cameras');
-  assert.equal(collapsed('street-level-panel'), false, 'put back as it was');
+  assert.equal(collapsed('recent-imagery-panel'), false, 'put back as it was');
 });
 
 test('the backdrop closes the open sheet', () => {
@@ -433,14 +435,13 @@ test('desktop widths never see the shell; crossing to desktop restores it', () =
     'width=device-width, initial-scale=1.0',
   );
 
-  const phone = fixture({ expanded: ['street-level-panel'] });
+  const phone = fixture({ expanded: ['recent-imagery-panel'] });
   assert.match(phone.viewport.getAttribute('content'), /viewport-fit=cover$/);
   phone.press('cameras');
   phone.resize(false);
   assert.equal(phone.shell.getSheet(), null);
   assert.equal(phone.document.body.classList.contains('mobile-shell'), false);
-  assert.equal(phone.collapsed('cctv-panel'), true);
-  assert.equal(phone.collapsed('street-level-panel'), false);
+  assert.equal(phone.collapsed('recent-imagery-panel'), false);
   assert.equal(
     phone.viewport.getAttribute('content'),
     'width=device-width, initial-scale=1.0',

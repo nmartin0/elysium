@@ -6,9 +6,6 @@ import { _selectContextMode, _clearLayersOutsideContextMode } from './ui/context
 import { _initGlobalContextPanel } from './ui/contextBindings.js';
 import { setContextMode as contextModeAction } from './ui/contextActions.js';
 import { ContextControls } from './ui/contextControls.js';
-import { readFileSync as readRadioSource } from 'node:fs';
-const radioBindings = readRadioSource(new URL('./ui/radioBindings.js', import.meta.url), 'utf8');
-const radioControlsSource = readRadioSource(new URL('./ui/radioControls.js', import.meta.url), 'utf8');
 // Source-contract pins read the actual Context owners and root disposal wiring. Each pin guards a bug that shipped or nearly shipped:
 //  - session bookkeeping ran AFTER the exit early-return, so the compensating
 //    userAdded.delete never ran on the left-panel chip exit and restoration
@@ -154,7 +151,7 @@ test('wrapped visibility blocks leave the accessible toast to the wrapper token 
 
 test('every user-facing Context exit route settles through the failure surface', () => {
   const initPanel = _initGlobalContextPanel.toString();
-  assert.equal((initPanel.match(/void this\._runUserFacingContextAction/g) || []).length, 3);
+  assert.equal((initPanel.match(/void this\._runUserFacingContextAction/g) || []).length, 2);
   assert.doesNotMatch(initPanel, /falseIsFailure:\s*false/);
   assert.doesNotMatch(initPanel, /void this\._selectContextMode/);
 
@@ -163,27 +160,6 @@ test('every user-facing Context exit route settles through the failure surface',
   )];
   assert.equal(deactivationCalls.length, 4, 'dependency and primary layer exits share the caught restore path');
   assert.doesNotMatch(handler, /void this\._deactivateContextForLayerChange\(\)/);
-});
-
-test('the Radio chip catches lifecycle rejection and semantic false through the toast wrapper', () => {
-  const radioControls = radioBindings.slice(
-    radioBindings.indexOf('const toggleRadio = async (trigger) => {'),
-    radioBindings.indexOf("this.listen(this._radioFilter, 'change'"),
-  );
-  assert.match(radioControls, /await this\.actions\.runUserAction\(/);
-  assert.match(radioControls, /Radio could not \$\{enabling \? 'start' : 'stop'\} cleanly/);
-  assert.match(radioControls, /if \(this\.destroyed \|\| toggled === false\) return/);
-});
-
-test('only the expanded Radio Enable gesture requests the contained post-enable reveal', () => {
-  const radioControls = radioBindings.slice(
-    radioBindings.indexOf('const toggleRadio = async (trigger) => {'),
-    radioBindings.indexOf("this.listen(this._radioFilter, 'change'"),
-  );
-  assert.match(radioControls, /revealAfterEnable = enabling && trigger === this\._radioEnableBtn/);
-  assert.match(radioControls, /if \(revealAfterEnable\)\s*await this\._revealRadioControlsAfterExplicitEnable\(trigger\)/);
-  assert.equal((radioBindings.match(/_revealRadioControlsAfterExplicitEnable\(trigger\)/g) || []).length, 1);
-  assert.match(radioControlsSource, /async _revealRadioControlsAfterExplicitEnable\(trigger\)/);
 });
 
 test('right-rail context entry is transactional: activation result gates the mode', () => {
