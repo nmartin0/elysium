@@ -1388,6 +1388,29 @@ one Inbox. Built so far, each checked in a real browser:
   retyped or removed. Order: used by (built), deprecate, remove a field or
   link, remove a type (built: deprecated, nothing names it, its tables stay in
   the lake), retype with rebuild.
+  RETYPE, CHECKED AND SLICED (2 November): HISTORY IS SAFE -- gold_history
+  keeps each row as JSON in one text column, so retyping a field breaks
+  nothing there and old entries keep the values they had, in the old
+  type; the gold rebuild a type change already causes (gold._columns_
+  changed) drops only gold.<Type>: publication tags restart and the
+  first publication afterwards records no diff, but the changelog stays.
+  Silver is refused on a changed declared type until `run_sync --rebuild
+  silo.table` names it (iceberg_sync._refuse_a_changed_declared_type),
+  and POST /admin/mirror/sync runs run_sync() on a thread with no
+  rebuild names. SLICES: R1 the edit -- "Change type" on a data field
+  (config_editing line edit, preview then apply with the stale-digest
+  409, the dialog saying what is rebuilt and what is kept, and the
+  silo.table names that now need a rebuild, found by comparing the
+  declared type with silver, so no marker file exists to go stale), and
+  the sync route taking those names, refused for any table that does not
+  actually mismatch; R2 the object STATE (live, rebuilding,
+  unavailable) derived the same way, served in answers and on screens
+  ("data as of ..., rebuilding"), the old silver serving until the new
+  one swaps in, and gold not rebuilt from silver of the old type
+  meanwhile; R3 the count of values that will not convert, from bronze,
+  before applying; R4 proposed writes held while rebuilding and
+  re-checked against the new shape when released. A retype is not a
+  change event: triggers and history do not fire for it.
   A field declared later is not empty history:
   bronze keeps every column the source has. Order: add a field (built),
   then add a type with its binding picked from the source, then add a
