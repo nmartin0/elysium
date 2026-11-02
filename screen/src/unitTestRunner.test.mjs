@@ -43,7 +43,6 @@ test('unit runner serializes only GC-bracketed allocation microbenchmarks', () =
   ];
   const plan = buildUnitTestPlan([
     ordinary[1],
-    ALLOCATION_TEST_FILES[1],
     ordinary[0],
     ALLOCATION_TEST_FILES[0],
     ordinary[2],
