@@ -3,7 +3,6 @@ import { applicationHtmlPlugin } from './application-html.js';
 import cesium from 'vite-plugin-cesium';
 import { DEFAULT_ALLOWED_HOSTS, hostCheckPlugin } from './allowedHosts.js';
 import { embedFramingPlugin } from './embed-framing.js';
-import { panelBuildPlugin } from './panel.js';
 
 /**
  * The repository root (this file lives at `<root>/build/vite.js`), as a
@@ -158,7 +157,6 @@ export function createBrowserViteConfig({
       applicationHtmlPlugin(),
       ...plugins,
       embedFramingPlugin(),
-      panelBuildPlugin(),
     ],
     ...(publicDir === undefined ? {} : { publicDir }),
     // A production build must not clean the dependency cache a running dev

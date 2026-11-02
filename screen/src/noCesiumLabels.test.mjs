@@ -164,7 +164,6 @@ test('schemas, UI label lookups, comments and strings are not Cesium labels', ()
     'const schema = { properties: { label: { type: "string" } } };',
     'const control = { label: { none: "None", speed: "Speed" }[value] };',
     'const place = { label: { lat: 1, lon: 2 } };',
-    readFileSync(root + 'src/voice/actionSchemas.js', 'utf8'),
     readFileSync(root + 'src/layers/wind/index.js', 'utf8'),
   ])
     assert.deepEqual(cesiumLabels(source), []);

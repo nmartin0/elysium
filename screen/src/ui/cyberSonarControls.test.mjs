@@ -4,11 +4,6 @@ import {
   getCyberSonarControlState,
   setCyberSonarControls,
 } from './cyberSonarControls.js';
-import { GEV_ACTION_SCHEMAS } from '../voice/actionSchemas.js';
-import { GEV_REALTIME_TOOLS } from '../../server/providers/openai/tools.js';
-import { createGevActionRunner } from '../voice/gevActions.js';
-import { StyleManager } from './applicationShell.js';
-import { VisualSettings } from './visualSettings.js';
 import { readFileSync } from 'node:fs';
 
 function fixture(theme = 'cyber') {
@@ -41,63 +36,10 @@ function fixture(theme = 'cyber') {
   return { doc, owner, calls, flags, hudFlags, root };
 }
 
-test('real runner and facade use visual settings, preserve visibility and return actual values', async () => {
-  const f = fixture();
-  const previousDocument = globalThis.document;
-  globalThis.document = f.doc;
-  const renders = [];
-  const visual = Object.create(VisualSettings.prototype);
-  visual.services = { governorRequestRender: (reason) => renders.push(reason) };
-  const owner = Object.create(StyleManager.prototype);
-  owner._visualSettings = visual;
-  Object.defineProperty(owner, 'hud', { value: f.owner.hud });
-  const viewer = {
-    camera: { moveEnd: { addEventListener() {} } },
-    clock: { onTick: { addEventListener: () => () => {} } },
-    scene: { canvas: new EventTarget() },
-  };
-  try {
-    const runner = createGevActionRunner({ styleManager: owner, viewer, dataManager: {} });
-    const result = await runner('set_cyber_sonar', { enabled: false, intensityPct: 73, sectorDeg: 9 });
-    assert.equal(result.ok, true);
-    assert.equal(result.sonar.intensityPct, 73);
-    assert.equal(result.sonar.sectorDeg, 9);
-    assert.equal(result.sonar.enabled, false);
-    assert.equal(f.root.dataset.uiTheme, 'cyber');
-    assert.equal(f.hudFlags.has('active'), true);
-    assert.equal(renders.length, 3);
-    const before = getCyberSonarControlState();
-    const invalid = await runner('set_cyber_sonar', { rings: 6, opacityPct: 0 });
-    assert.equal(invalid.ok, false);
-    assert.deepEqual(getCyberSonarControlState(), before);
-    assert.equal(renders.length, 3);
-    const zero = await runner('set_cyber_sonar', { intensityPct: 0 });
-    assert.equal(zero.sonar.intensityPct, 0);
-    assert.equal(zero.sonar.enabled, false);
-    const unavailable = createGevActionRunner({ styleManager: {}, viewer, dataManager: {} });
-    assert.equal((await unavailable('set_cyber_sonar', { enabled: true })).ok, false);
-  } finally {
-    globalThis.document = previousDocument;
-  }
-});
-
 test('native sonar sliders represent every accepted integer without browser snapping', () => {
   const html = readFileSync(new URL('./templates/display-controls.html', import.meta.url), 'utf8');
   for (const name of ['rings', 'range', 'intensity', 'opacity', 'sector']) {
     assert.match(html, new RegExp(`id="cyber-sonar-${name}"[^>]*step="1"`));
-  }
-});
-
-test('sonar action is available to both shared and server voice schemas', () => {
-  for (const tools of [GEV_ACTION_SCHEMAS, GEV_REALTIME_TOOLS]) {
-    const action = tools.find((tool) => tool.name === 'set_cyber_sonar');
-    assert.ok(action);
-    assert.equal(action.parameters.additionalProperties, false);
-    assert.deepEqual(Object.keys(action.parameters.properties), [
-      'enabled', 'rings', 'rangePct', 'intensityPct', 'opacityPct', 'sectorDeg',
-    ]);
-    assert.equal(action.parameters.properties.intensityPct.minimum, 0);
-    assert.equal(action.parameters.properties.opacityPct.minimum, 35);
   }
 });
 

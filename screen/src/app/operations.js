@@ -10,7 +10,6 @@ export function createApplicationOperations({ requests, signal, eventTarget }) {
     terrain: 'getHeights',
     regional: 'getBrief',
     weather: 'getConditions',
-    summary: 'summarize',
   })) {
     if (typeof requests?.[name]?.[method] !== 'function')
       throw new TypeError(`Missing application request service: ${name}`);

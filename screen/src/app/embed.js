@@ -22,7 +22,6 @@ const EMBED_READY_MESSAGE = 'gev:ready';
 
 const FOLLOW_LAYERS = {
   aircraft: 'flights',
-  military_aircraft: 'military',
   satellite: 'satellites',
 };
 const FOLLOW_ATTEMPTS = 20;
@@ -221,8 +220,6 @@ export async function applyView(
     }
   }
   steps.push({ step: 'follow', ok: followed });
-  if (followed && view.follow.cockpit)
-    await act('control_cockpit', { action: 'enter', targetLayer: layerId });
   return steps;
 }
 

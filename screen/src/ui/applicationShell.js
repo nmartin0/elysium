@@ -368,10 +368,7 @@ export class StyleManager extends ShellFacade {
     this._lastTrafficChipUpdateAt = 0;
 
     // Intel HUD
-    this.hud = new IntelHUD(viewer, {
-      placeSearch,
-      summaryService: requestServices?.summary,
-    });
+    this.hud = new IntelHUD(viewer);
     this._recording.hud = this.hud;
     this._cockpitCoordinator = new CockpitCoordinator({
       viewer,

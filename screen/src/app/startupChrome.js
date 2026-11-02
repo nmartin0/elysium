@@ -7,7 +7,6 @@ export function startApplicationChrome({
   dataManager,
   signal,
   initializeWelcome = initFirstRunExperience,
-  initializeSettings,
 }) {
   let disposed = false;
   let firstRun;
@@ -35,20 +34,12 @@ export function startApplicationChrome({
       });
       revealTimer = setTimeout(revealFirstRun, 900);
     });
-  const keySetup = Promise.resolve(
-    signal.aborted ? null : initializeSettings?.({ signal }),
-  );
-  // Own the pending initializer too; it must not reveal a dialog after abort.
-  void keySetup.catch(() =>
-    console.error('Provider settings initialization failed'),
-  );
-  return async () => {
+  return () => {
     disposed = true;
     clearTimeout(delayTimer);
     clearTimeout(revealTimer);
     resolveDelay();
     loadingScreen.removeEventListener('transitionend', revealFirstRun);
     firstRun?.destroy();
-    (await keySetup.catch(() => null))?.destroy();
   };
 }

@@ -4,7 +4,7 @@ import { initDrawTool } from '../annotations/drawTool.js';
 import { initGeoFileImport } from '../ui/geoFileImport.js';
 import { initImageryBoxTool } from '../ui/imageryBoxTool.js';
 import { createRecentImageryPanel } from '../ui/recentImagery.js';
-import { initGevVoiceCommands } from '../voice/gevRealtime.js';
+import { createViewActions } from './viewActions.js';
 import { installViews, isEmbeddedInline } from './embed.js';
 import { installScopeMask, destroyScopeMask } from '../scopeMask.js';
 import { installLayerReleaseTrim } from '../sceneCommandRelease.js';
@@ -23,7 +23,6 @@ export function createApplicationTools({
   data,
   loadingScreen,
   placeSearch,
-  voice = {},
   startChrome,
   onSceneDirector,
   sceneDataPacks,
@@ -181,33 +180,20 @@ export function createApplicationTools({
   defer(() => {
     if (window.__godsEyeView === debug) delete window.__godsEyeView;
   });
-  const voiceCommands = initGevVoiceCommands({
-    ...voice,
-    floorServices: operations.surface.groundFloor,
-    annotationResolver: operations.annotationResolver,
-    searchNavigation: operations.searchAndFlyTo,
-    signal,
-    placeSearch,
-    viewer,
-    styleManager,
-    dataManager,
-    sceneDirector,
-    annotations,
-  });
-  defer(() => {
-    voiceCommands.stop({ removeUi: true });
-    if (window.__gevVoiceCommands === voiceCommands)
-      delete window.__gevVoiceCommands;
-  });
-  debug.voiceCommands = voiceCommands;
   defer(
     installViews({
       shell: styleManager,
       viewer,
       dataManager,
-      run: (name, args) => voiceCommands.runner(name, args, { signal }),
+      run: createViewActions({
+        viewer,
+        dataManager,
+        styleManager,
+        annotations,
+        signal,
+      }),
       signal,
     }),
   );
-  return { sceneDirector, annotations, voiceCommands };
+  return { sceneDirector, annotations };
 }

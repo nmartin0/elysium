@@ -835,62 +835,6 @@ test('orbit-toggle controller stops globe motion before toggling', async (t) => 
   });
   assert.equal(toggled, true);
 });
-for (const owner of ['tracking', 'cockpit', 'close-up'])
-  test(`actual voice runner refuses ${owner} without releasing or repositioning`, async (t) => {
-    const { createGevActionRunner } = await import('./voice/gevActions.js');
-    const { runExplicitNavigation } = await import('./navigationPolicy.js');
-    const { viewer, camera } = harness(t, {
-      height: owner === 'close-up' ? 5000 : GLOBE_VIEW.heightM,
-    });
-    const before = pose(camera);
-    if (owner === 'tracking') viewer.trackedEntity = { id: 'tracked-aircraft' };
-    const tracked = viewer.trackedEntity;
-    let releases = 0,
-      stamps = 0;
-    const styleManager = {
-      getCockpitState: () => ({ active: owner === 'cockpit' }),
-      runImmediateNavigation(noun, navigate) {
-        return runExplicitNavigation({
-          cockpitActive: owner === 'cockpit',
-          noun,
-          stamp() {
-            stamps++;
-          },
-          release() {
-            releases++;
-            viewer.trackedEntity = undefined;
-          },
-          navigate,
-        });
-      },
-    };
-    const runner = createGevActionRunner({
-      viewer,
-      styleManager,
-      dataManager: {
-        layers: new Map(),
-        isEnabled: () => false,
-        getAll: () => [],
-      },
-    });
-    const result = await runner('move_camera', {
-      motion: 'rotate_globe',
-      direction: 'left',
-    });
-    assert.equal(result.ok, false);
-    assert.equal(releases, 0);
-    assert.equal(stamps, 0);
-    assert.equal(viewer.trackedEntity, tracked);
-    samePose(camera, before);
-    if (owner === 'close-up') {
-      assert.equal(result.reason, 'globe-view-required');
-      assert.equal(
-        result.error,
-        'Globe rotation isn’t available from this view. You can say ‘Reset to Globe View and rotate the globe.’',
-      );
-    }
-  });
-
 for (const [label, ellipsoid] of [
   ['nonfinite radii', { minimumRadius: 1, maximumRadius: Infinity }],
   ['nonpositive radii', { minimumRadius: 0, maximumRadius: 1 }],

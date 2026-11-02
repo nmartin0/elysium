@@ -30,10 +30,6 @@ import militaryFlightsLayer, {
   _setTrackedMilitaryRefreshStateForTest,
   mapAnalystRecord as mapMilitaryAnalystRecord,
 } from './militaryFlights.js';
-import { findCompatibleHistoryIndex } from './militaryAwareness.js';
-import { createGevActionRunner } from '../voice/gevActions.js';
-import { ANALYST_LAYERS, createAnalystEngine } from './analystEngine.js';
-
 /** Strip block and line comments so source pins scan CODE, not prose. */
 function stripComments(source) {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
@@ -352,54 +348,6 @@ test('analyst records report the class the contact RENDERS as, in both layers', 
   clearTr3bRegistry();
 });
 
-test('the analyst engine filters and aggregates a tr3b class without choking', async () => {
-  clearTr3bRegistry();
-  setTr3b('a1b2c3', true);
-  const records = [
-    mapFlightAnalystRecord('a1b2c3', {
-      callsign: 'SWA696', klass: 'airliner', rawLat: 30.20, rawLon: -97.70,
-      altitude: 10_000, velocity: 200,
-    }),
-    mapFlightAnalystRecord('deadbe', {
-      callsign: 'AAL100', klass: 'airliner', rawLat: 30.21, rawLon: -97.71,
-      altitude: 11_000, velocity: 240,
-    }),
-  ];
-  const engine = createAnalystEngine({
-    getRecords: (key) => (key === 'flights' ? records : []),
-    resolveRegionRing: async () => null,
-    getViewContext: () => ({ lat: 30.2, lon: -97.7, viewRadiusKm: 150 }),
-  });
-
-  // aircraftClass is a declared free-text field, so 'tr3b' is just another value.
-  assert.equal(ANALYST_LAYERS.flights.text.includes('aircraftClass'), true);
-
-  const hits = await engine.query({
-    layers: ['flights'], scope: { kind: 'anywhere' },
-    filters: [{ field: 'aircraftClass', op: 'eq', value: 'tr3b' }], limit: 50,
-  });
-  assert.equal(hits.ok, true);
-  assert.equal(hits.count, 1, 'filtering for TR-3B finds the converted contact');
-  assert.equal(hits.items[0].icao24, 'a1b2c3');
-
-  // The ordinary contact is still reachable by its real class.
-  const airliners = await engine.query({
-    layers: ['flights'], scope: { kind: 'anywhere' },
-    filters: [{ field: 'aircraftClass', op: 'eq', value: 'airliner' }], limit: 50,
-  });
-  assert.equal(airliners.count, 1, 'the converted contact no longer answers to airliner');
-
-  // A numeric sort/summary still runs over the mixed set — aircraftClass is
-  // free text, so there is no enum lookup an unknown value could break.
-  const fastest = await engine.query({
-    layers: ['flights'], scope: { kind: 'anywhere' }, sortBy: 'speedMps', limit: 5,
-  });
-  assert.equal(fastest.ok, true);
-  assert.equal(fastest.count, 2);
-  assert.equal(fastest.summary.speedMpsMax, 240);
-  clearTr3bRegistry();
-});
-
 test('a converted contact never consumes a 3D model CAP SLOT', async () => {
   // The cap is applied to the `cand` list the eligibility pre-pass builds, so
   // excluding converted contacts BEFORE `cand.push` is what frees the slot for
@@ -421,83 +369,6 @@ test('a converted contact never consumes a 3D model CAP SLOT', async () => {
     assert.match(source, /modelEligible\s*=\s*selectModelEligible\(\s*cand,\s*\{\s*cap,/,
       `${name}: the cap bounds the candidate-derived eligible set`);
   }
-});
-
-test('cockpit class filter matches a converted contact end to end', async () => {
-  // The chain that was dead-ending: a spoken "TR-3B" is normalized by the voice
-  // layer, then the cockpit next/previous path matches it against the
-  // aircraftClass on getNearby RECORDS — which used to carry the underlying
-  // airframe class, so the filter never matched. Real normalizer + real
-  // getNearby record builder + real filter matcher; only the styleManager glue
-  // (covered by its own ui tests) is stubbed.
-  globalThis.window = globalThis.window || { clearTimeout, setTimeout, requestIdleCallback: null };
-  clearTr3bRegistry();
-  const icao24 = 'abc123';
-  const center = Cesium.Cartesian3.fromDegrees(-97.7, 30.2, 200);
-
-  // 1) Real voice normalization: what the cockpit path actually receives.
-  const seen = [];
-  const runner = createGevActionRunner({
-    viewer: {
-      clock: { onTick: { addEventListener: () => () => {} } },
-      scene: { canvas: { addEventListener() {}, removeEventListener() {} } },
-      camera: { moveEnd: { addEventListener() {} } },
-    },
-    styleManager: {
-      controlCockpit(action, options) {
-        seen.push(options.aircraftClass);
-        return { ok: true, state: { active: true, navigation: { canNext: true, canPrevious: true, canFocus: true } } };
-      },
-    },
-    dataManager: { layers: new Map(), getAll: () => [] },
-  });
-  await runner('control_cockpit', { action: 'next', aircraftClass: 'TR-3B' });
-  await runner('control_cockpit', { action: 'next', aircraftClass: 'airliner' });
-  const [spokenTr3b, spokenAirliner] = seen;
-  assert.equal(spokenTr3b, TR3B_CLASS);
-  assert.equal(spokenAirliner, 'airliner');
-
-  // 2) Real getNearby record for a real (converted) contact in the layer.
-  const seed = () => _setTrackedFlightRefreshStateForTest({
-    icao24,
-    entity: null,
-    billboard: {
-      position: Cesium.Cartesian3.fromDegrees(-97.71, 30.21, 10_668),
-      color: Cesium.Color.WHITE,
-      show: true,
-    },
-    billboardCollection: { show: true, remove() {} },
-    viewer: { camera: { positionCartographic: null }, scene: {} },
-    tracked: false,
-    meta: { callsign: 'SWA696 ', altitude: 10_668, klass: 'airliner', onGround: false },
-  });
-  const recordFor = () => flightsLayer.getNearby(center, 250_000, 25)
-    .find((r) => r.icao24 === icao24);
-
-  // 3) Real filter matcher over that record, via the exported navigation helper.
-  const matches = (record, aircraftClass) => findCompatibleHistoryIndex(
-    [{ layerId: 'flights', id: icao24 }], -1, 1,
-    { aircraftClass, resolveItem: () => record },
-  ) === 0;
-
-  setTr3b(icao24, true);
-  seed();
-  const converted = recordFor();
-  assert.ok(converted, 'the converted contact is still returned by getNearby');
-  assert.equal(converted.aircraftClass, TR3B_CLASS,
-    'the record reports the class it renders as');
-  assert.equal(matches(converted, spokenTr3b), true,
-    'a spoken "TR-3B" cockpit filter selects the converted contact');
-  assert.equal(matches(converted, spokenAirliner), false,
-    'the converted contact no longer answers to its underlying class');
-
-  setTr3b(icao24, false);
-  seed();
-  const restored = recordFor();
-  assert.equal(restored.aircraftClass, 'airliner', 'unconverting restores the real class');
-  assert.equal(matches(restored, spokenTr3b), false, 'no TR-3B match once restored');
-  assert.equal(matches(restored, spokenAirliner), true, 'the original class filter works again');
-  clearTr3bRegistry();
 });
 
 test('military records and detection cards agree with the conversion', () => {

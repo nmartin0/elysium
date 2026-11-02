@@ -5,7 +5,6 @@ import { createBrowserViteConfig } from '../../build/vite.js';
 import { localProviderPlugins } from '../providers/local.js';
 import { apiNotFoundPlugin } from './api-not-found.js';
 import { googleTokenUnavailablePlugin } from './google-token-unavailable.js';
-import { standaloneVoiceTools } from './voiceTools.js';
 import { unwatchedRuntimeDirsPlugin } from './unwatched-cache.js';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -16,10 +15,9 @@ export default defineConfig(({ command, mode }) => {
   for (const [key, value] of Object.entries(loaded)) {
     if (process.env[key] === undefined) process.env[key] = value;
   }
-  const tools = standaloneVoiceTools();
   return createBrowserViteConfig({
     plugins: [
-      ...localProviderPlugins({ realtime: { tools }, gemini: { tools } }),
+      ...localProviderPlugins(),
       googleTokenUnavailablePlugin(),
       apiNotFoundPlugin(),
       unwatchedRuntimeDirsPlugin(),

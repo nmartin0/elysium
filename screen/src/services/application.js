@@ -11,7 +11,6 @@ const slots = Object.fromEntries(
     terrain: ['getHeights'],
     regional: ['getBrief'],
     weather: ['getConditions'],
-    summary: ['summarize'],
   }).map(([name, methods]) => [
     name,
     createSourceSlot(defaults[name], methods, `${name} service`),

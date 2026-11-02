@@ -6,7 +6,6 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { TRACKABLE_FAMILIES } from './agent/worldPacket.js';
 import { setLocale } from './i18n/index.js';
 import {
   COCKPIT_REFUSAL_NOUNS,
@@ -59,18 +58,18 @@ function sourceFiles(dir) {
 }
 
 // The destination noun: the first argument of a navigation call, or the
-// second of runManagedVoiceNavigation(styleManager, noun, …) in gevActions.js.
+// second of runManagedNavigation(styleManager, noun, …) in gevActions.js.
 // `runNavigation(fly)` layer seams take only the flight (group 1).
 const NOUN_ARGUMENT =
-  /\b(?:(runNavigation)\s*\(|(?:runImmediateNavigation|_runExplicitNavigation|runOrientation|_beginDeferredNavigation|cockpitRefusal|navigation\??\.(?:run|begin))\s*\(|runManagedVoiceNavigation\s*\(\s*[\w.?]+\s*,)\s*([^,)]*)/g;
+  /\b(?:(runNavigation)\s*\(|(?:runImmediateNavigation|_runExplicitNavigation|runOrientation|_beginDeferredNavigation|cockpitRefusal|navigation\??\.(?:run|begin))\s*\(|runManagedNavigation\s*\(\s*[\w.?]+\s*,)\s*([^,)]*)/g;
 // Literal nouns elsewhere: a parameter default (`noun = 'location'`) or both
 // branches of `const noun = … ? 'cyclone' : 'weather'`.
 const NOUN_LITERAL =
   /\bnoun\s*=\s*'([^']+)'|\bconst noun\s*=\s*[^?;]*\?\s*'([^']+)'\s*:\s*'([^']+)'/g;
 
 function trackableKinds() {
-  // This is shared with voice; test the exported owner, not its file position.
-  return TRACKABLE_FAMILIES.map(({ kind }) => kind);
+  // The followable families in app/viewActions.js.
+  return ['aircraft', 'vessel', 'satellite'];
 }
 
 // Non-literal arguments: what each one can be. A wrapper's own `noun` (or all
@@ -122,8 +121,6 @@ test('every noun the callers pass has its own Cockpit refusal', () => {
     'weather',
     'cyclone',
     'vessel',
-    'fire',
-    'frame',
     'aircraft',
     'satellite',
     'target',

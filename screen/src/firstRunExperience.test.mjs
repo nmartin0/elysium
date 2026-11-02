@@ -1,10 +1,8 @@
 import { expandApplicationHtml } from '../build/application-html.js';
 import { readStylesheet } from './testSupport/readStylesheet.mjs';
-import { GEV_REALTIME_TOOLS } from '../server/providers/openai/tools.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import crypto from 'node:crypto';
 import {
   ENVIRONMENTAL_LABEL_CHOICE,
   EXCLUSIVE_SURFACE_CLASSES,
@@ -1014,111 +1012,3 @@ test('the DISPLAY rail starts collapsed on a first run, and a stored choice wins
 
 // ── Voice: instruction-only, tool schema unchanged ─────────────────────
 
-test('the voice TOOL SCHEMA matches the pinned contract — the mission mapping is instructions only', () => {
-  // Analyst layers and the separate satellite-pass tool deliberately extend the schema.
-  // Canonical serialization pins every tool name, description, property and
-  // ordering while allowing source formatting. Derived from the unchanged
-  // release schema before formatting (the previous source-byte pin passed).
-  const legacyTools = structuredClone(GEV_REALTIME_TOOLS).filter(
-    (tool) => tool.name !== 'set_cyber_sonar',
-  );
-  const hudLayout = legacyTools.find((tool) => tool.name === 'set_hud')
-    .parameters.properties.layout;
-  assert.deepEqual(hudLayout.enum, ['tactical', 'minimal', 'cyber']);
-  // Cyber deliberately adds one layout and Operator was retired; first-run
-  // missions still change no tools.
-  hudLayout.enum = ['tactical', 'operator', 'minimal'];
-  const cameraMotion = legacyTools.find((tool) => tool.name === 'move_camera')
-    .parameters.properties.motion;
-  assert.deepEqual(cameraMotion.enum, [
-    'orbit',
-    'pan',
-    'tilt',
-    'rotate',
-    'rotate_globe',
-    'stop',
-  ]);
-  // Snow is retired from set_visual_style; restore it to keep the legacy pin.
-  const visualStyle = legacyTools.find(
-    (tool) => tool.name === 'set_visual_style',
-  ).parameters.properties.style;
-  assert.deepEqual(visualStyle.enum, [
-    'normal',
-    'retro',
-    'surveillance',
-    'thermal',
-    'anime',
-    'noir',
-  ]);
-  visualStyle.enum = [...visualStyle.enum, 'snow'];
-  const block = JSON.stringify(legacyTools);
-  // Re-derived for the voice layer manifest (generated layer enums, alias and
-  // field hints), point-and-ask's pointer/referent arguments and the prompt
-  // consolidation (shorter analyst, annotate_map and ISS wording), plus the
-  // referent-only track_entity alternative (kept out of the model-facing
-  // schema, which may not carry top-level anyOf), and Contacts requested-radius
-  // list descriptions; the missions still ride existing tools.
-  // Street Level and GNSS extend the manifest; broadcast caveats describe tracked and analyst aircraft.
-  // Air quality (ECCC AQHI) extends the manifest.
-  // Globe rotation adds one camera motion and its descriptions; Globe View
-  // framing/default guidance updates only move_camera and mode descriptions.
-  // Radio markup and the complete production-request comparison pin locality.
-  // Panel adds timeout and named voice/provider targets; consolidated guidance
-  // preserves the mission mapping and globe-rotation arguments.
-  // S2 GhostMaps extends the generated layer enums; both feature contracts remain.
-  assert.equal(block.length, 31206, 'serialized tool schema length drifted');
-  assert.equal(
-    crypto.createHash('sha256').update(block).digest('hex'),
-    'f772df95404494bf492e02fde1beabffdfe61986940bffd0cf9ad5a38d768746',
-    'the first-run missions must ride EXISTING tools: no schema edit, no cache bust',
-  );
-  const instructions = fs.readFileSync(
-    new URL('../server/providers/openai/instructions.js', import.meta.url),
-    'utf8',
-  );
-
-  // ...and the mapping that makes them reachable by voice is one instruction
-  // string, whose rollback is deleting that string. Anchored to a LIVE array
-  // entry — a quote at the start of its own line — so commenting the paragraph
-  // out reads as the removal it is, not as a passing substring match.
-  assert.match(
-    instructions,
-    /\n\s+'NAMED VIEWS are shorthand/,
-    'the mission mapping must be an active instruction entry, not commented out',
-  );
-  const mapping = instructions.slice(
-    instructions.indexOf('NAMED VIEWS are shorthand'),
-  );
-  const paragraph = mapping.slice(0, mapping.indexOf("',\n"));
-  for (const layerId of [
-    'local-datacenters',
-    'local-dams',
-    'telegeography-submarine-cables',
-    'local-firms',
-    'earthquakes',
-  ]) {
-    assert.ok(
-      paragraph.includes(layerId),
-      `mapping must name the existing ${layerId} enum value`,
-    );
-  }
-  assert.ok(paragraph.includes('zoom_to_globe'));
-  assert.ok(paragraph.includes('set_layer_visibility'));
-});
-
-test('every layer a mission drives is already in the shipped set_layer_visibility enum', () => {
-  const tool = GEV_REALTIME_TOOLS.find(
-    (tool) => tool.name === 'set_layer_visibility',
-  );
-  const allowedLayers = tool.parameters.properties.layerId.enum;
-  const missionLayerIds = Object.values(FIRST_RUN_MISSIONS).flatMap(
-    (mission) => mission.layerIds || [],
-  );
-  assert.ok(missionLayerIds.length > 0);
-  for (const layerId of missionLayerIds) {
-    assert.ok(
-      allowedLayers.includes(layerId),
-      `${layerId} must already be an allowed enum value`,
-    );
-  }
-});
