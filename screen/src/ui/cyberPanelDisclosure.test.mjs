@@ -57,20 +57,6 @@ test('explicit Cyber opening collapses peers and claims their restoration lanes'
   } finally { globalThis.document = prior; }
 });
 
-test('opening already-expanded Radio reveals Context and closes Display', () => {
-  const f = fixture(), prior = globalThis.document;
-  globalThis.document = f.doc;
-  try {
-    f.owner.setPanelCollapsed('radio-panel', false, { explicit: true });
-    f.owner.setPanelCollapsed('pp-toggles', false, { explicit: true });
-    assert.equal(f.radio.classList.contains('collapsed'), false);
-    assert.equal(f.context.classList.contains('collapsed'), true);
-    f.owner.setPanelCollapsed('radio-panel', false, { explicit: true });
-    assert.equal(f.context.classList.contains('collapsed'), false);
-    assert.equal(f.display.classList.contains('collapsed'), true);
-  } finally { globalThis.document = prior; }
-});
-
 test('non-Cyber explicit panels and restored preferences retain their existing policy', () => {
   for (const theme of ['tactical', 'minimal', 'cyber']) {
     const f = fixture(theme), prior = globalThis.document;

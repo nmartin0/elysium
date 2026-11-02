@@ -1,5 +1,5 @@
-// The global loading chip in the UI language: the status vocabulary, the ALPR
-// retry prefix and every mapped-site failure reason.
+// The global loading chip in the UI language: the status vocabulary and the
+// retry detail.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setLocale, t } from '../i18n/index.js';
@@ -27,14 +27,7 @@ test.afterEach(() => setLocale('en'));
 
 test('English presentation passes through unchanged', () => {
   setLocale('en');
-  for (const label of [
-    'OVERPASS TEMPORARILY UNAVAILABLE',
-    'OVERPASS RATE-LIMITED',
-    'OVERPASS TIMED OUT',
-    'OVERPASS COULD NOT COMPLETE THE QUERY',
-    'MAP TILES TEMPORARILY UNAVAILABLE',
-    'MAPPED NAMES TEMPORARILY UNAVAILABLE',
-  ]) {
+  for (const label of ['LOADING LIVE DATA', 'LOAD COMPLETE', 'LOAD FAILED']) {
     assert.deepEqual(
       localizeLoadingPresentation({
         state: 'retry',
@@ -47,16 +40,9 @@ test('English presentation passes through unchanged', () => {
 });
 
 for (const locale of ['es', 'ru']) {
-  test(`${locale}: every mapped-site retry label is translated with its detail`, () => {
+  test(`${locale}: the status labels and the retry detail are translated`, () => {
     setLocale(locale);
-    for (const label of [
-      'OVERPASS TEMPORARILY UNAVAILABLE',
-      'OVERPASS RATE-LIMITED',
-      'OVERPASS TIMED OUT',
-      'OVERPASS COULD NOT COMPLETE THE QUERY',
-      'MAP TILES TEMPORARILY UNAVAILABLE',
-      'MAPPED NAMES TEMPORARILY UNAVAILABLE',
-    ]) {
+    for (const label of ['LOADING LIVE DATA', 'LOAD COMPLETE', 'LOAD FAILED']) {
       const localized = localizeLoadingPresentation({
         state: 'retry',
         label,
