@@ -57,7 +57,7 @@ import { applyLocaleChoice, mountLocalePicker } from './localePicker.js';
  * - Share link encoding/decoding (delegates to ShareLinkManager).
  * - Detection overlay mode cycling and density tuning.
  * - Toast notification system.
- * - Intel HUD lifecycle and variant switching.
+ * - Telemetry HUD lifecycle and variant switching.
  */
 
 export class StyleManager extends ShellFacade {
@@ -329,7 +329,7 @@ export class StyleManager extends ShellFacade {
       },
     });
 
-    // Intel HUD
+    // Telemetry HUD
     this.hud = new IntelHUD(viewer);
     this._recording.hud = this.hud;
 
@@ -729,7 +729,7 @@ export class StyleManager extends ShellFacade {
     if (standbyDescription) {
       standbyDescription.replaceChildren(
         document.createTextNode(
-          t('CONTACTS — nearest planes · vessels · sites'),
+          t('CONTACTS — nearest planes · vessels'),
         ),
         document.createElement('br'),
         document.createTextNode(

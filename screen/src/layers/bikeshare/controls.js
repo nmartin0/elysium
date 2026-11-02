@@ -71,7 +71,7 @@ export function createControls({ state: layerState, services, parts, source }) {
             ? t('syncing {count} city feeds...', {
                 count: layerState._activeCityIds.size,
               })
-            : t('scanning nearby systems...');
+            : t('looking for nearby systems...');
       }
       // A failed city is only the layer's failure when it left nothing on the
       // map. While other cities still render, the partial failure reads

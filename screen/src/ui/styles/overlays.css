@@ -95,7 +95,7 @@
   margin-right: 2px;
 }
 
-/* ── Intelligence HUD Overlay ────────────────── */
+/* ── Telemetry HUD overlay ────────────────── */
 #intel-hud {
   position: fixed;
   inset: 0;

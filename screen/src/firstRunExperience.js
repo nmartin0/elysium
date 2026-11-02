@@ -120,7 +120,7 @@ export const FIRST_RUN_MISSIONS = Object.freeze({
     // before a launch. LEDGERED post-launch. Until it lands, keyless visitors
     // are judged on the layer row, which tells them the truth.
     layerIds: Object.freeze(['earthquakes', 'local-firms']),
-    busyKey: msg('Scanning active events…'),
+    busyKey: msg('Loading active events…'),
   }),
   explore: Object.freeze({ kind: 'none' }),
 });
@@ -372,7 +372,7 @@ export function initFirstRunExperience({
   const description = root.querySelector('#first-run-description');
   if (description)
     description.textContent = t(
-      'It feels like a forbidden cockpit—then you realize the sources are public and the data is real.',
+      'Live aircraft, vessels, satellites and earthquakes on one globe — from public sources, shown as they are.',
     );
 
   const status = root.querySelector('[data-first-run-status]');
