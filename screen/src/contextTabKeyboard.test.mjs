@@ -60,7 +60,6 @@ test('Context transition state preserves focus and Tab availability until settle
     _globalContextFlightsBtn: contacts,
     _globalContextMissionsBtn: missions,
     _contextModeStandby: {},
-    _contextFlightsView: {},
     _contextMissionsView: {},
     _syncContactsDetection() {},
     _scheduleRightPanelLayout() {},
@@ -147,7 +146,6 @@ test('Context reads as one segmented control with legible type and no halo', () 
   const standby = rule('.context-mode-standby');
   assert.ok(px(standby, 'font') >= 10, 'standby guidance must stay at least 10px');
   assert.doesNotMatch(standby, /dashed/);
-  assert.ok(px(rule('.global-context-actions .panel-layer-toggle'), 'font-size') >= 10);
   // The shared rail title colour (brighter than --text-secondary) keeps the
   // open Context title legible; no Context-only rule dims it again.
   assert.equal(

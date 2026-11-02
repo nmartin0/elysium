@@ -176,53 +176,6 @@ const BODIES = {
              L -3.8,25 L -8,26 L -8,18 L -3.6,16
              L -3.6,6 L -27,13 L -27,8 L -3.4,-8
              L -3.4,-26 L -2.6,-36 Z" fill="white" ${STROKE}/>`,
-  // ── TR-3B (hidden 9th kind, Easter egg — NOT a classifyAircraft() output).
-  //    The canonical black-triangle silhouette: a dark isosceles delta with a
-  //    light at each corner and a dimmer one at the centre. Reached only by
-  //    explicit user conversion (see tr3bRegistry.js), never by classification.
-  //
-  //    DELIBERATE BREAK from the white-fill contract above: this glyph is a
-  //    SHADOW, so it carries its own near-black fill. The billboard tint still
-  //    multiplies (white fleet / cyan tracked / amber military), which darkens
-  //    rather than lightens — the triangle stays a silhouette in every layer,
-  //    and the corner lights pick the tint up as their hue.
-  tr3b: `
-    <path d="M0,-38 L 40,30 L -40,30 Z"
-          fill="#0d1014" stroke="rgba(158,184,210,0.34)" stroke-width="1.6"
-          stroke-linejoin="round"/>
-    <circle cx="0" cy="-24" r="8.5" fill="#c9dcf0" fill-opacity="0.13"/>
-    <circle cx="-28" cy="21" r="8.5" fill="#c9dcf0" fill-opacity="0.13"/>
-    <circle cx="28" cy="21" r="8.5" fill="#c9dcf0" fill-opacity="0.13"/>
-    <circle cx="0" cy="-24" r="4.6" fill="#dceaf8" fill-opacity="0.52"/>
-    <circle cx="-28" cy="21" r="4.6" fill="#dceaf8" fill-opacity="0.52"/>
-    <circle cx="28" cy="21" r="4.6" fill="#dceaf8" fill-opacity="0.52"/>
-    <circle cx="0" cy="6" r="3.4" fill="#dceaf8" fill-opacity="0.26"/>`,
-
-  // ── TR-3B, thermal-reactive variant. Same cold airframe, but the three
-  //    corner emitters + the centre one render HOT: near-white cores inside a
-  //    baked radial glow, so the FLIR/NVG luminance mapping (and any bloom)
-  //    lights them up while the hull stays cold. Selected by the layers
-  //    whenever their `irBoost` style param is on (surveillance/thermal/nvg).
-  tr3bHot: `
-    <defs>
-      <radialGradient id="tr3bGlow">
-        <stop offset="0%" stop-color="#ffffff" stop-opacity="0.92"/>
-        <stop offset="32%" stop-color="#f2f9ff" stop-opacity="0.44"/>
-        <stop offset="100%" stop-color="#dcefff" stop-opacity="0"/>
-      </radialGradient>
-    </defs>
-    <path d="M0,-38 L 40,30 L -40,30 Z"
-          fill="#0b0e12" stroke="rgba(126,148,172,0.3)" stroke-width="1.6"
-          stroke-linejoin="round"/>
-    <circle cx="0" cy="-24" r="15" fill="url(#tr3bGlow)"/>
-    <circle cx="-28" cy="21" r="15" fill="url(#tr3bGlow)"/>
-    <circle cx="28" cy="21" r="15" fill="url(#tr3bGlow)"/>
-    <circle cx="0" cy="6" r="10" fill="url(#tr3bGlow)"/>
-    <circle cx="0" cy="-24" r="5.2" fill="#ffffff"/>
-    <circle cx="-28" cy="21" r="5.2" fill="#ffffff"/>
-    <circle cx="28" cy="21" r="5.2" fill="#ffffff"/>
-    <circle cx="0" cy="6" r="3.6" fill="#ffffff" fill-opacity="0.82"/>`,
-
   // Large UAV (Reaper-class) — bulbous sensor nose, very long slender
   // straight wings, slim tail boom, canted V-tail.
   uav: `

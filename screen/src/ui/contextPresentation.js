@@ -32,8 +32,6 @@ export function _syncContextModeButtons() {
   }
   if (this._contextModeStandby)
     this._contextModeStandby.hidden = flightsActive || missionsActive;
-  if (this._contextFlightsView)
-    this._contextFlightsView.hidden = !flightsActive;
   if (this._contextMissionsView)
     this._contextMissionsView.hidden = !missionsActive;
   // Every _contextMode mutation funnels through here; the sync no-ops until

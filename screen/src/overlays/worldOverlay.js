@@ -109,7 +109,6 @@ export const WORLD_OVERLAY_OCCLUDER_SELECTORS = Object.freeze([
   '.hud-bottom-bar',
   '#space-mission-panel',
   '#space-mission-panel-host',
-  '#military-awareness-panel',
 ]);
 
 /** @typedef {{x:number,y:number,w:number,h:number}} OverlayRect */

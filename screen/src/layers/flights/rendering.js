@@ -44,7 +44,6 @@ export function createRendering({
   resolveAsset,
 }) {
   const { isMilitaryIcao } = services.militaryRegistry;
-  const { tr3bIconKind, isTr3b } = services.aircraftPresentation;
   const { trackedModelScaleForPixelCap } = services.camera;
   const {
     focusNowMs,
@@ -112,14 +111,9 @@ export function createRendering({
     return new Cesium.NearFarScalar(1000, 3.0, 8000000, 0.5);
   }
 
-  /** Sprite kind for one contact's billboard. Identity for every aircraft except
-   *  the ones the operator converted into a TR-3B (Easter egg), which draw the
-   *  black-triangle glyph — its thermal-reactive variant while an IR style owns
-   *  the scene. Routing EVERY `aircraftIcon()` call through this is what makes a
-   *  conversion survive the poll reconciler and the two-tier raster swap. */
+  /** Sprite kind for one contact's billboard: its aircraft class. */
 
-  const _iconKind = (icao24, klass) =>
-    tr3bIconKind(icao24, klass, { hot: flightState._irBoost });
+  const _iconKind = (icao24, klass) => klass;
 
   /** Apply the visual contract to one owned fleet billboard. */
 
@@ -879,11 +873,6 @@ export function createRendering({
       const cand = [];
       for (const [icao, bb] of flightState._billboards) {
         if (icao === flightState._trackedIcao) continue;
-        // A converted TR-3B renders as a billboard and can never take a model, so
-        // it must not occupy a CAP SLOT either — excluded here at selection time,
-        // not just at the handoff below, or accumulated conversions would starve
-        // ordinary contacts of 3D models. (The handoff guard stays as defence.)
-        if (isTr3b(icao)) continue;
         // Ground planes compete for model slots like everyone else (owner decision
         // 2026-07-03: "3D mode is respected regardless of whether a plane is on the
         // ground or in the air — no distinction"). The cap + nearest-first ordering
@@ -1060,12 +1049,7 @@ export function createRendering({
       // billboard stays shown until the model is actually READY to render, so a plane is never both
       // iconless AND modelless (the "planes vanish when 3D turns on" bug). Position the model every
       // tick regardless so it's framed the instant it becomes ready.
-      // Converted TR-3Bs stay 2D on purpose: the Easter egg IS the triangle, and
-      // there is no GLB for it, so the model handoff is suppressed rather than
-      // fed a stand-in mesh. The billboard keeps rendering (and keeps satisfying
-      // the getNearby/getDetectableObjects `bb.show` visibility guards), so a
-      // converted contact still works in Contacts and Cockpit.
-      if (useModels && dr && modelEligible.has(icao24) && !isTr3b(icao24)) {
+      if (useModels && dr && modelEligible.has(icao24)) {
         _ensureModel(icao24);
         const model = flightState._models.get(icao24);
         const ownsVisual = _driveFleetModelHandoff(

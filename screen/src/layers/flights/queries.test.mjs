@@ -21,7 +21,6 @@ function fixture() {
   };
   let formats = 0;
   const services = {
-    aircraftPresentation: {},
     militaryRegistry: {},
     camera: {},
     focus: {},

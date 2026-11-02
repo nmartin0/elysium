@@ -853,7 +853,6 @@ export class StyleManager extends ShellFacade {
         _globalContextFlightsBtn: this._globalContextFlightsBtn,
         _globalContextMissionsBtn: this._globalContextMissionsBtn,
         _contextModeStandby: this._contextModeStandby,
-        _contextFlightsView: this._contextFlightsView,
         _contextMissionsView: this._contextMissionsView,
       },
       actions: {

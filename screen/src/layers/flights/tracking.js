@@ -37,8 +37,6 @@ export function createTracking({
     clearTrackedSubjectContext,
     refreshTrackedSubjectContext,
   } = services.context;
-  const { isTr3b, tr3bTypeLabel, tr3bConvertedIds } =
-    services.aircraftPresentation;
   const { createTrail } = services.trails;
   const { ensureGeoidReady, geoidHeight } = services.geoid;
   const { resolveGroundFloorCellsBounded, floorAltitudeM, cachedGroundFloor } =
@@ -215,10 +213,7 @@ export function createTracking({
       flightState._trackedZoomLatchIcao = flightState._trackedIcao;
       flightState._trackedZoomLatched = false;
     }
-    // A converted TR-3B has no 3D asset — suppressing the regime keeps its
-    // tracked billboard fully opaque (the colour callback reads this too), so
-    // the triangle stays the visual all the way in.
-    if (!flightState._trackedIcao || isTr3b(flightState._trackedIcao)) {
+    if (!flightState._trackedIcao) {
       flightState._trackedZoomLatched = false;
       return false;
     }
@@ -688,13 +683,9 @@ export function createTracking({
         ? t('STALE')
         : '';
     const lines = [[cs, fl, spd, stale].filter(Boolean).join(' · ')];
-    // Converted contacts report their class as TR-3B and nothing else — the
-    // operator/type identity is exactly what the Easter egg is replacing.
-    const ident = isTr3b(icao24)
-      ? tr3bTypeLabel(icao24)
-      : [info.airline, info.typeName || info.typeCode]
-          .filter(Boolean)
-          .join(' · ');
+    const ident = [info.airline, info.typeName || info.typeCode]
+      .filter(Boolean)
+      .join(' · ');
     if (ident) lines.push(ident);
     if (info.route && _routeIsPlausible(icao24, info.route)) {
       lines.push(`${info.route.origin.code} → ${info.route.destination.code}`);
@@ -729,50 +720,6 @@ export function createTracking({
       ),
       TRACKED_ICON_PX,
     );
-  }
-
-  /**
-   * Re-render one contact after its TR-3B conversion (or the active IR style)
-   * changed. Converting drops any 3D model so the triangle owns the visual; the
-   * billboard image, tracked entity, and tracked card are all re-derived here.
-   * @param {string} icao24 - ICAO 24-bit address.
-   * @returns {boolean} True when the layer owns this contact.
-   */
-
-  function _refreshTr3bContact(icao24) {
-    const id = String(icao24 || '')
-      .trim()
-      .toLowerCase();
-    if (!id) return false;
-    if (isTr3b(id)) {
-      // Drop the 3D handoff for this contact — the fleet tick now skips it, so
-      // an already-loaded model would otherwise linger with the billboard hidden.
-      if (flightState._models.has(id) || flightState._modelPending.has(id))
-        parts.rendering._releaseModel(id);
-      const bb = flightState._billboards.get(id);
-      if (bb && id !== flightState._trackedIcao) bb.show = true; // horizon cull re-asserts next tick
-      if (id === flightState._trackedIcao) {
-        parts.rendering._releaseTrackedModel();
-        _syncTracked2dRotation();
-      }
-    }
-    const bb = flightState._billboards.get(id);
-    if (bb) parts.rendering._applyFleetBillboardPresentation(id, bb);
-    if (id === flightState._trackedIcao) {
-      _syncTrackedBillboardImage();
-      _updateTrackedLabelModel(id);
-    }
-    flightState._viewer?.scene?.requestRender?.();
-    return flightState._billboards.has(id) || id === flightState._trackedIcao;
-  }
-
-  /** Re-image every converted contact this layer owns (IR style flip). */
-
-  function _refreshTr3bForStyle() {
-    for (const id of tr3bConvertedIds()) {
-      if (flightState._billboards.has(id) || id === flightState._trackedIcao)
-        _refreshTr3bContact(id);
-    }
   }
 
   /** Plausibility check anchored to the plane's billboard position (coarse is
@@ -1179,8 +1126,6 @@ export function createTracking({
     _trackedLabelText,
     _updateTrackedLabelModel,
     _syncTrackedBillboardImage,
-    _refreshTr3bContact,
-    _refreshTr3bForStyle,
     _routeIsPlausible,
     _trackFlight,
     _onMilitaryActiveChange,

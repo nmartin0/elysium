@@ -9,7 +9,6 @@ function services() {
     'picking',
     'sprites',
     'trails',
-    'aircraftPresentation',
     'camera',
     'militaryRegistry',
     'labels',

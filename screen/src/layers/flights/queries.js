@@ -24,7 +24,6 @@ export function createQueries({
   layer,
   resolveAsset,
 }) {
-  const { tr3bTypeLabel, tr3bAircraftClass } = services.aircraftPresentation;
   const { formatFlightLevel } = services.labels;
   const { isMilitaryIcao } = services.militaryRegistry;
   const { applyTrackedCameraFrame } = services.camera;
@@ -182,12 +181,9 @@ export function createQueries({
       emergency: info?.emergency ? { ...info.emergency } : null,
       emergencyBroadcast: emergencyBroadcastPhrase(info?.emergency),
       airline: info?.airline ?? null,
-      // CLASS label follows the TR-3B conversion so every downstream card
-      // (cockpit, Contacts, analyst) agrees with the triangle on screen.
-      typeName: tr3bTypeLabel(icao24, info?.typeName ?? null),
-      typeCode: tr3bTypeLabel(icao24, info?.typeCode ?? null),
-      // IDENTITY, deliberately NOT converted: registration is the airframe's tail
-      // number and feeds `_contactLabel`'s callsign → registration → hex chain, so
+      typeName: info?.typeName ?? null,
+      typeCode: info?.typeCode ?? null,
+      // Registration is the airframe's tail number and feeds `_contactLabel`'s callsign → registration → hex chain, so
       // a converted contact keeps the label convention every other contact uses.
       // Trimmed like `callsign` above so every consumer (cockpit readout, voice
       // narration, getTrackedSubject) can use it as a label link without
@@ -265,9 +261,7 @@ export function createQueries({
       verticalRateMps: num(info?.verticalRate),
       onGround: info?.onGround === true,
       military,
-      // A converted contact reports the class it RENDERS as, so an analyst
-      // filter/superlative agrees with the triangle on screen.
-      aircraftClass: tr3bAircraftClass(icao24, text(info?.klass)),
+      aircraftClass: text(info?.klass),
       originCountry: text(info?.originCountry),
       operator: text(info?.airline),
       squawk: text(info?.squawk),
@@ -354,10 +348,6 @@ export function createQueries({
       ) {
         flightState._irBoost = params.irBoost;
         parts.rendering._reloadModelsForIrBoost();
-        // Sprites don't reload with the models — swap the TR-3B glyph between its
-        // cold and thermal-reactive variants directly. Bounded by the operator's
-        // own conversions, so this never touches the ordinary fleet.
-        parts.tracking._refreshTr3bForStyle();
       }
       if (Object.hasOwn(params, 'selectedFlightsTrackingId')) {
         const requested = _normalizeTrackedIcao(
@@ -391,16 +381,6 @@ export function createQueries({
         irBoost: flightState._irBoost,
         selectedFlightsTrackingId: flightState._trackedIcao,
       };
-    },
-
-    /**
-     * Re-render a contact whose TR-3B conversion just flipped (Easter egg).
-     * Callers own the registry write; this only re-derives what renders.
-     * @param {string} icao24 - ICAO 24-bit address.
-     * @returns {boolean} True when this layer owns the contact.
-     */
-    refreshTr3b(icao24) {
-      return parts.tracking._refreshTr3bContact(icao24);
     },
 
     /**
@@ -616,15 +596,10 @@ export function createQueries({
           callsign,
           position: pos,
           distance,
-          // Filter surface: the cockpit next/previous path matches on THIS field
-          // (militaryAwareness.aircraftClassMatchesFilter), so a converted contact
-          // has to report the class it renders as or a `tr3b` filter skips it.
-          aircraftClass: tr3bAircraftClass(
-            icao24,
+          aircraftClass:
             String(info?.klass || '')
               .trim()
               .toLowerCase() || null,
-          ),
           altitudeM: info?.altitude ?? null,
           velocityMps: info?.velocity ?? null,
           track: info?.true_track ?? null,

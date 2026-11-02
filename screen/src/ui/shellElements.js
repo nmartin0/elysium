@@ -64,7 +64,6 @@ export function readShellElements(document = globalThis.document) {
       'global-context-missions-btn',
     ),
     _contextModeStandby: document.getElementById('context-mode-standby'),
-    _contextFlightsView: document.getElementById('context-flights-view'),
     _contextMissionsView: document.getElementById('context-missions-view'),
     _leftPanelStack: document.getElementById('left-panel-stack'),
     _shareBtn: document.getElementById('share-btn'),
