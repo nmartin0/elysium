@@ -117,14 +117,13 @@ test('root config retains existing named exports and standalone provider order',
     assert.equal(compatibility[name], value, name);
   const config = standaloneConfig({ mode: 'test' });
   const standaloneProviders = config.plugins
-    .slice(4, -4)
+    .slice(4, -3)
     .map((plugin) => plugin.name);
   assert.deepEqual(
     standaloneProviders,
     providers.localProviderPlugins().map((plugin) => plugin.name),
   );
-  // Token fallback follows real providers before the API 404.
-  assert.equal(config.plugins.at(-4).name, 'google-token-unavailable');
+  // The API 404 follows the real providers.
   assert.equal(config.plugins.at(-3).name, 'api-not-found');
   // Config-only, so it sits after the provider slice rather than in it.
   assert.equal(config.plugins.at(-2).name, 'gev-unwatched-runtime-dirs');

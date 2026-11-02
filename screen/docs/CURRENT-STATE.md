@@ -1961,11 +1961,10 @@ supported. `.env.example` and `pinokio/_ENVIRONMENT` document both entries.
 The Street View headings tool uses the same server-first selection after
 resolving environment overrides per variable; its explicit `--key` wins.
 
-In standalone development and preview servers, a missing Google tile-token
-provider returns an uncached `204 No Content` for `GET /api/google/tiles-token`
-(and HEAD) instead of a browser-visible 404. The fallback is registered after
-real token providers and before the unknown-API handler, so existing Google
-browser keys, provider-issued tokens, and unrelated API routes remain unchanged.
+Fork: the app no longer asks its own server for Google tile tokens
+(`GET /api/google/tiles-token`), and the server's 204 fallback for it is gone.
+With no browser key and no ion token the app starts on the keyless globe and
+makes no request to its own `/api` at startup.
 
 ## Infrastructure marker visibility
 
@@ -5017,11 +5016,7 @@ Retry-After; absent delays back off from 30 seconds to five minutes. Empty
 remain. Malformed capability-probe responses remain unknown and are retried after the existing 30-second backoff; valid configured decisions remain memoized.
 Consumer capability misses never schedule automatic retries.
 
-Keyless browser validation also probes the optional Google tiles-token route.
-The token client cancels rejected response bodies before returning unavailable,
-so they do not remain pending in browser network observation. The Overpass gate
-accepts only that same-origin route's expected 404 console diagnostic; other
-HTTP and JavaScript errors still fail acceptance.
+(Fork: the Google tiles-token probe described here is gone with the route.)
 
 Operator-configured Overpass area and focus-footprint queries use body-level
 `out geom` (with `center` for focus), preserving relation member outlines.
