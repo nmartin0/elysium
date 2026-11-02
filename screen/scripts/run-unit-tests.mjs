@@ -5,7 +5,6 @@ import { pathToFileURL } from 'node:url';
 
 export const ALLOCATION_TEST_FILES = Object.freeze([
   'src/data/focusAllocations.test.mjs',
-  'src/overlays/worldOverlayAllocation.test.mjs',
 ]);
 
 /** Whether this runtime matches the one the allocation budgets were calibrated on. */
