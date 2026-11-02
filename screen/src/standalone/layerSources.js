@@ -1,6 +1,5 @@
 import { createDirectionsSource } from '../layers/directions/source.js';
 import { createRecentImagerySource } from '../layers/recentImagery/source.js';
-import { createOpenFreeMapSource } from '../sources/openFreeMap.js';
 import {
   createFlightSource,
   createVesselSource,
@@ -21,7 +20,6 @@ export { createReferenceSources as createStandaloneReferenceSources } from '../s
 export function createStandaloneLayerSources(overrides = {}) {
   if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides))
     throw new TypeError('Source overrides must be an object');
-  const mapTiles = createOpenFreeMapSource();
   const defaults = {
     ...createReferenceSources(),
     directions: createDirectionsSource(),

@@ -1,10 +1,9 @@
-// The AIS degradation chip and the traffic "SIMULATED — <reason>" text read in
+// The AIS degradation chip text reads in
 // the UI language; English keeps its wording.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setLocale, translateKnown } from '../i18n/index.js';
 import { deriveAisFeedError } from '../data/aisLiveVessels.js';
-import { createModel } from './traffic/model.js';
 
 test('AIS degraded-feed reasons are localized in es', () => {
   setLocale('es');
@@ -33,27 +32,6 @@ test('AIS degraded-feed reasons are localized in es', () => {
   }
 });
 
-test('traffic "SIMULATED — <reason>" is localized in es', () => {
-  setLocale('es');
-  try {
-    const { trafficFeedPresentation } = createModel({
-      state: {},
-      services: {},
-      parts: {},
-      source: {},
-    });
-    const degraded = trafficFeedPresentation({
-      liveMode: true,
-      flowError: 'TomTom daily budget reached',
-    });
-    const shown = translateKnown(degraded.error);
-    assert.notEqual(shown, 'SIMULATED — TomTom daily budget reached');
-    assert.ok(!shown.startsWith('SIMULATED'), `still English: ${shown}`);
-  } finally {
-    setLocale('en');
-  }
-});
-
 test('English degraded-feed wording is unchanged', () => {
   setLocale('en');
   assert.equal(
@@ -67,18 +45,5 @@ test('English degraded-feed wording is unchanged', () => {
   assert.equal(
     deriveAisFeedError({ status: 'missing-key' }, 0),
     'AISSTREAM_API_KEY not set',
-  );
-  const { trafficFeedPresentation } = createModel({
-    state: {},
-    services: {},
-    parts: {},
-    source: {},
-  });
-  assert.equal(
-    trafficFeedPresentation({
-      liveMode: true,
-      flowError: 'TomTom daily budget reached',
-    }).error,
-    'SIMULATED — TomTom daily budget reached',
   );
 });

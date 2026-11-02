@@ -8,7 +8,6 @@ import flightsLayer, {
   _addFlightTrackingCandidateForTest,
   _applyPendingFlightTrackingRestoreForTest,
   _armFlightTrackingRestoreForTest,
-  _militaryLayerSuppressesForTest,
   _pendingFlightTrackingRestoreForTest,
   _setFlightTrackingRefreshOutcomeForTest,
   _setTrackedFlightRefreshStateForTest,
@@ -16,7 +15,6 @@ import flightsLayer, {
   _clearDisplayFloorStateForTest,
   mapAnalystRecord,
 } from './flights.js';
-import { setMilitaryLayerActive } from './militaryRegistry.js';
 import {
   GROUND_FLOOR_LIFT_M,
   reportMeshFloorCell,
@@ -1001,51 +999,6 @@ test('civil tracked readout: a callsign-less enriched contact reads as its regis
 // This layer still OWNS a contact it is holding on its restore latch, so that
 // contact is exempt from suppression exactly like the tracked one.
 // ---------------------------------------------------------------------------
-
-const MIL_HEX = 'ae1234';
-
-test('military suppression exempts the contact this layer is still restoring', () => {
-  const realWindow = globalThis.window;
-  globalThis.window = new EventTarget();
-  try {
-    _armFlightTrackingRestoreForTest(null);
-
-    setMilitaryLayerActive(false);
-    assert.equal(
-      _militaryLayerSuppressesForTest(MIL_HEX),
-      false,
-      'nothing is suppressed while the Military layer is off',
-    );
-
-    setMilitaryLayerActive(true);
-    assert.equal(
-      _militaryLayerSuppressesForTest(MIL_HEX),
-      true,
-      'an ordinary mil-registry duplicate is suppressed',
-    );
-
-    // The regression: a pending restore target was suppressed, so it could
-    // never render, never track, and reported a feed failure instead.
-    _armFlightTrackingRestoreForTest(MIL_HEX);
-    assert.equal(
-      _militaryLayerSuppressesForTest(MIL_HEX),
-      false,
-      'a contact held on the restore latch must still render in this layer',
-    );
-    assert.equal(
-      _militaryLayerSuppressesForTest('bb9999'),
-      true,
-      'the exemption is scoped to the pending target only',
-    );
-
-    _armFlightTrackingRestoreForTest(null);
-    assert.equal(_militaryLayerSuppressesForTest(MIL_HEX), true);
-  } finally {
-    setMilitaryLayerActive(false);
-    _armFlightTrackingRestoreForTest(null);
-    globalThis.window = realWindow;
-  }
-});
 
 // ---------------------------------------------------------------------------
 // Display-time ground floor (2026-08-19 — qa-floor-verify FAIL at KAUS).

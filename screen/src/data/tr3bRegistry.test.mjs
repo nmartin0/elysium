@@ -26,10 +26,6 @@ import flightsLayer, {
   _setTrackedFlightRefreshStateForTest,
   mapAnalystRecord as mapFlightAnalystRecord,
 } from './flights.js';
-import militaryFlightsLayer, {
-  _setTrackedMilitaryRefreshStateForTest,
-  mapAnalystRecord as mapMilitaryAnalystRecord,
-} from './militaryFlights.js';
 /** Strip block and line comments so source pins scan CODE, not prose. */
 function stripComments(source) {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
@@ -223,7 +219,7 @@ test('a conversion survives a poll refresh, in both the billboard and the tracke
 });
 
 test('both flight layers keep a converted contact 2D and visible (render invariants)', async () => {
-  for (const name of ['flights.js', 'militaryFlights.js']) {
+  for (const name of ['flights.js']) {
     const source = readLayerSource(new URL(`./${name}`, import.meta.url));
 
     // 1. The 3D model handoff is SUPPRESSED for a converted contact — there is
@@ -267,7 +263,7 @@ test('conversions are session-scoped and no lifecycle path clears them', async (
   // personally clicked, and re-tracking the same aircraft after a layer restart
   // should still show the triangle. Only a page reload resets it — so no
   // production code may clear the registry.
-  for (const name of ['flights.js', 'militaryFlights.js', '../ui/applicationShell.js']) {
+  for (const name of ['flights.js', '../ui/applicationShell.js']) {
     const source = readLayerSource(new URL(`./${name}`, import.meta.url));
     assert.doesNotMatch(source, /clearTr3bRegistry/,
       `${name}: teardown must not clear session conversions`);
@@ -326,14 +322,11 @@ test('analyst records report the class the contact RENDERS as, in both layers', 
   assert.notEqual(TR3B_CLASS, 'tr3bHot');
 
   const civil = { callsign: 'SWA696', klass: 'airliner', rawLat: 30.2, rawLon: -97.7 };
-  const mil = { callsign: 'RCH451', klass: 'fastjet', rawLat: 30.2, rawLon: -97.7 };
   assert.equal(mapFlightAnalystRecord('a1b2c3', civil).aircraftClass, 'airliner');
-  assert.equal(mapMilitaryAnalystRecord('ae01ce', mil).aircraftClass, 'fastjet');
 
   setTr3b('a1b2c3', true);
   setTr3b('ae01ce', true);
   assert.equal(mapFlightAnalystRecord('a1b2c3', civil).aircraftClass, 'tr3b');
-  assert.equal(mapMilitaryAnalystRecord('ae01ce', mil).aircraftClass, 'tr3b');
   // Per-contact, never global.
   assert.equal(mapFlightAnalystRecord('deadbe', civil).aircraftClass, 'airliner');
 
@@ -341,7 +334,6 @@ test('analyst records report the class the contact RENDERS as, in both layers', 
   setTr3b('ae01ce', false);
   assert.equal(mapFlightAnalystRecord('a1b2c3', civil).aircraftClass, 'airliner',
     'unconverting restores the real class');
-  assert.equal(mapMilitaryAnalystRecord('ae01ce', mil).aircraftClass, 'fastjet');
 
   assert.equal(tr3bAircraftClass('a1b2c3', 'airliner'), 'airliner');
   assert.equal(tr3bAircraftClass('a1b2c3'), null, 'default fallback is null');
@@ -354,7 +346,7 @@ test('a converted contact never consumes a 3D model CAP SLOT', async () => {
   // an ordinary contact. Structural pin: the eligibility loop itself is inline
   // in the fleet tick (no seam to drive headlessly), so this asserts the guard's
   // POSITION rather than replaying the four-pass selection.
-  for (const name of ['flights.js', 'militaryFlights.js']) {
+  for (const name of ['flights.js']) {
     const source = readLayerSource(new URL(`./${name}`, import.meta.url));
     // Anchor on the MODEL-eligibility loop (keepDistSq), not the unrelated
     // ambient-enrichment candidate loop that also builds a `cand`.
@@ -369,43 +361,4 @@ test('a converted contact never consumes a 3D model CAP SLOT', async () => {
     assert.match(source, /modelEligible\s*=\s*selectModelEligible\(\s*cand,\s*\{\s*cap,/,
       `${name}: the cap bounds the candidate-derived eligible set`);
   }
-});
-
-test('military records and detection cards agree with the conversion', () => {
-  clearTr3bRegistry();
-  const icao24 = 'ae01ce';
-  const center = Cesium.Cartesian3.fromDegrees(-97.7, 30.2, 200);
-  const seed = () => _setTrackedMilitaryRefreshStateForTest({
-    icao24,
-    entity: null,
-    billboard: {
-      position: Cesium.Cartesian3.fromDegrees(-97.71, 30.21, 10_668),
-      color: Cesium.Color.WHITE,
-      show: true,
-    },
-    billboardCollection: { show: true, remove() {} },
-    viewer: { camera: { positionCartographic: null }, scene: {} },
-    tracked: false,
-    meta: { callsign: 'RCH451', altitudeFt: 35_000, klass: 'quadjet', type: 'C-17A', onGround: false },
-  });
-
-  seed();
-  const before = militaryFlightsLayer.getNearby(center, 250_000, 25).find((r) => r.icao24 === icao24);
-  assert.equal(before.aircraftClass, 'quadjet');
-  assert.equal(before.type, 'C-17A');
-  const cardBefore = militaryFlightsLayer.getDetectableObjects({ maxCount: 50 })
-    .find((o) => o.sourceId === icao24);
-  assert.equal(cardBefore.klass, 'C-17A', 'the card names the real airframe');
-
-  setTr3b(icao24, true);
-  seed();
-  const after = militaryFlightsLayer.getNearby(center, 250_000, 25).find((r) => r.icao24 === icao24);
-  assert.equal(after.aircraftClass, TR3B_CLASS, 'filter field follows the conversion');
-  assert.equal(after.type, TR3B_TYPE_LABEL,
-    'the display type cannot still name the airframe the triangle replaced');
-  const cardAfter = militaryFlightsLayer.getDetectableObjects({ maxCount: 50 })
-    .find((o) => o.sourceId === icao24);
-  assert.equal(cardAfter.klass, TR3B_TYPE_LABEL,
-    'detectionDraw composes its card line from src.klass — it must read TR-3B');
-  clearTr3bRegistry();
 });

@@ -11,7 +11,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as Cesium from 'cesium';
 import flightsLayer, { _setTrackedFlightRefreshStateForTest } from './flights.js';
-import militaryFlightsLayer, { _setTrackedMilitaryRefreshStateForTest } from './militaryFlights.js';
 
 const ICAO = 'abc123';
 const OTHER = 'def456';
@@ -52,28 +51,6 @@ const LAYERS = [
           callsign: `${ICAO.toUpperCase()} `,
           altitude: 10_668,
           klass: 'airliner',
-          onGround: false,
-        },
-      });
-    },
-  },
-  {
-    name: 'military',
-    layer: militaryFlightsLayer,
-    visualCenterM: Cesium.Cartesian3.ZERO,
-    seed({ billboardShow, models = [] }) {
-      _setTrackedMilitaryRefreshStateForTest({
-        icao24: ICAO,
-        entity: null,
-        billboard: contactBillboard(billboardShow),
-        billboardCollection: { show: true, remove() {} },
-        viewer: contactViewer(),
-        tracked: false,
-        models,
-        meta: {
-          callsign: `${ICAO.toUpperCase()} `,
-          altitudeFt: 35_000,
-          klass: 'fighter',
           onGround: false,
         },
       });

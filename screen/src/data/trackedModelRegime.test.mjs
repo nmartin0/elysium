@@ -35,14 +35,6 @@ import flightsLayer, {
   _driveFleetModelHandoffForTest as flightsDriveFleetModel,
   _ensureFleetModelForTest as flightsEnsureFleetModel,
 } from './flights.js';
-import militaryFlightsLayer, {
-  _setTrackedMilitaryRefreshStateForTest,
-  _trackedModelRegimeActiveForTest as militaryRegimeActive,
-  _updateTrackedModelForTest as militaryDriveTrackedModel,
-  _trackedBillboardColorForTest as militaryTrackedBillboardColor,
-  _driveFleetModelHandoffForTest as militaryDriveFleetModel,
-  _ensureFleetModelForTest as militaryEnsureFleetModel,
-} from './militaryFlights.js';
 import { clearTr3bRegistry, setTr3b } from './tr3bRegistry.js';
 import { reportMeshFloorCell, _clearMeshFloorCellsForTest } from './groundFloor.js';
 
@@ -214,31 +206,6 @@ const LAYERS = [
         models,
         modelCollection,
         meta: { callsign: 'TEST123 ', altitude: 10_668, klass: 'airliner', onGround },
-      });
-      return billboard;
-    },
-  },
-  {
-    name: 'militaryFlights',
-    layer: militaryFlightsLayer,
-    regimeActive: militaryRegimeActive,
-    driveTrackedModel: militaryDriveTrackedModel,
-    driveFleetModel: militaryDriveFleetModel,
-    ensureFleetModel: militaryEnsureFleetModel,
-    trackedBillboardColor: militaryTrackedBillboardColor,
-    bellyM: 5.631 * 0.8,
-    seed({ viewer, tracked = true, icao24 = ICAO, modelCollection = null, onGround = false, models = [] }) {
-      const billboard = contactBillboard();
-      _setTrackedMilitaryRefreshStateForTest({
-        icao24,
-        entity: null,
-        billboard,
-        billboardCollection: { show: true, remove() {} },
-        viewer,
-        tracked,
-        models,
-        modelCollection,
-        meta: { callsign: 'TEST123 ', altitudeFt: 35_000, klass: 'fastjet', onGround },
       });
       return billboard;
     },
@@ -929,8 +896,8 @@ for (const fixture of LAYERS) {
   });
 }
 
-test('both layers gate the tracked-model load and record its failures', async () => {
-  for (const name of ['flights.js', 'militaryFlights.js']) {
+test('the layer gates the tracked-model load and record its failures', async () => {
+  for (const name of ['flights.js']) {
     const source = readLayerSource(new URL(`./${name}`, import.meta.url));
     assert.match(source, /!(?:flightState\.)?_trackedModel\s*&&\s*!(?:flightState\.)?_trackedModelLoading\s*&&\s*(?:parts\.\w+\.)?_trackedModelLoadAllowed\(\s*,?\s*\)/,
       `${name}: the driver asks permission before starting another tracked-model load`);
@@ -945,7 +912,7 @@ test('both layers gate the tracked-model load and record its failures', async ()
 });
 
 test('the tracked regime never consults the fleet models3d toggle', async () => {
-  for (const name of ['flights.js', 'militaryFlights.js']) {
+  for (const name of ['flights.js']) {
     const source = readLayerSource(new URL(`./${name}`, import.meta.url));
     const regime = /^([ \t]*)function _trackedModelRegimeActive\b[\s\S]*?\n\1\}/m.exec(source)?.[0];
     assert.ok(regime, `${name}: _trackedModelRegimeActive is defined`);

@@ -120,47 +120,6 @@ export function createFlightSource({
   };
 }
 
-export function createMilitarySource({
-  fetchImpl = defaultFetch,
-  now = () => Date.now(),
-} = {}) {
-  return {
-    // i18n-ignore: feed source name, replaced by the provider from each snapshot and reported to AI tools
-    label: 'Military aircraft',
-    async getIdentities(_query = {}, { signal } = {}) {
-      const { response, payload } = await readResponse(
-        fetchImpl,
-        '/api/military',
-        { signal },
-        'Military aircraft',
-      );
-      if (!response.ok) throw httpError(response, 'Military aircraft');
-      return readsbIdentities(payload);
-    },
-    async getSnapshot(_query = {}, { signal } = {}) {
-      const { response, payload } = await readResponse(
-        fetchImpl,
-        '/api/military',
-        { signal },
-        'Military aircraft',
-      );
-      if (!response.ok) throw httpError(response, 'Military aircraft');
-      const age = finite(header(response, 'x-feed-age-ms'));
-      return {
-        ...readsbSnapshot(payload, {
-          source: feedSource(response, 'Military aircraft'),
-          observedAtMs: now() - (age != null && age > 0 ? age : 0),
-          now: now(),
-          stale: header(response, 'x-feed-cache') === 'STALE',
-        }),
-        status: response.status,
-      };
-    },
-    // ADSB.lol does not expose a supported live-history endpoint. Omitting
-    // optional getTrack keeps the tracking layer on its accumulated trail.
-  };
-}
-
 export function createVesselSource({
   fetchImpl = defaultFetch,
   apiUrl = '/api/vessels',

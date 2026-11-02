@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createFlightSource,
-  createMilitarySource,
   createVesselSource,
   normalizeReadsbAircraft,
   normalizeVesselObservation,
@@ -187,18 +186,12 @@ test('construction is inert; adapters preserve routes, viewport query, cache epo
       );
     if (url.startsWith('/api/flights/track'))
       return response({ path: [[now / 1000 - 30, 30, -97, 1000, 45, false]] });
-    if (url === '/api/military')
-      return response(
-        { ac: [{ hex: 'abc123', lat: 30, lon: -97, seen_pos: 15 }] },
-        { 'x-feed-age-ms': '60000', 'x-feed-cache': 'STALE' },
-      );
     return response({
       timestamp: now / 1000 - 60,
       trace: [[10, 30, -97, 1000]],
     });
   };
   const civil = createFlightSource({ fetchImpl, now: () => now });
-  const military = createMilitarySource({ fetchImpl, now: () => now });
   assert.equal(requests.length, 0);
   const signal = new AbortController().signal;
   const snapshot = await civil.getSnapshot(
@@ -210,14 +203,6 @@ test('construction is inert; adapters preserve routes, viewport query, cache epo
   assert.equal(snapshot.source, 'adsb.lol');
   assert.equal(snapshot.coverage, '250 nm regional');
   assert.equal((await civil.getTrack('abc123')).records[0].baroAltitudeM, 1000);
-  const mil = await military.getSnapshot();
-  assert.equal(mil.observedAtMs, now - 60000);
-  assert.equal(mil.records[0].positionTimeMs, now - 75000);
-  assert.equal(mil.stale, true);
-  assert.equal(military.getTrack, undefined);
-  assert.ok(
-    requests.every(({ url }) => !url.startsWith('/api/military/track')),
-  );
 });
 
 test('cancellation after slow body parsing rejects even with a transport that ignores abort', async () => {
@@ -313,48 +298,6 @@ test('out-of-range source epochs do not reach Date or globe time constructors', 
   assert.equal(snapshot.observedAtMs, null);
   assert.equal(snapshot.records[0].positionTimeMs, null);
   assert.equal(snapshot.records[0].contactTimeMs, null);
-});
-
-test('classification identities include positionless aircraft without admitting them to rendering', async () => {
-  const source = createMilitarySource({
-    fetchImpl: async () =>
-      response({
-        ac: [
-          { hex: ' ABC123 ' },
-          { hex: 'abc123' },
-          { hex: 'def456', lat: 30, lon: -97 },
-        ],
-      }),
-  });
-  assert.deepEqual(await source.getIdentities(), ['abc123', 'def456']);
-  const snapshot = await source.getSnapshot();
-  assert.deepEqual(
-    snapshot.records.map((record) => record.id),
-    ['def456'],
-  );
-  assert.equal(snapshot.complete, false);
-});
-
-test('identity lookup validates its response and honors body-parse cancellation', async () => {
-  const malformed = createMilitarySource({
-    fetchImpl: async () => response({ ac: [{}] }),
-  });
-  await assert.rejects(malformed.getIdentities(), /Malformed/);
-  const abort = new AbortController();
-  const source = createMilitarySource({
-    fetchImpl: async () => ({
-      ok: true,
-      status: 200,
-      headers: new Headers(),
-      async json() {
-        abort.abort();
-        return { ac: [{ hex: 'abc123' }] };
-      },
-    }),
-  });
-  await assert.rejects(source.getIdentities({}, { signal: abort.signal }), {
-    name: 'AbortError',
-  });
 });
 
 test('squawks are validated and omitted OpenSky status differs from an explicit ADS-B clear', () => {

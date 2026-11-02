@@ -7,9 +7,6 @@ import { readCappedResponseText } from '../common/http.js';
  *   own credit bucket, 4 credits per call on the free tier). OAuth via the
  *   shared coalesced token. 60s per-icao cache; 404/429 forwarded so the
  *   client can fall back to its accumulated trail silently.
- * /api/military/track?hex=<hex> — compatibility refusal for the retired,
- *   undocumented ADSB.lol trace route. The standalone military source uses
- *   locally accumulated trails; provider-supplied history remains optional.
  */
 export function trackBackfillProxies() {
   const TRACK_CACHE_MS = 60000;
@@ -89,38 +86,6 @@ export function trackBackfillProxies() {
         res.statusCode = 502;
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({ error: 'OpenSky track fetch failed' }));
-      }
-    });
-
-    middlewares.use('/api/military/track', async (req, res) => {
-      try {
-        const incoming = new URL(req.url || '', 'http://localhost');
-        const hex = String(incoming.searchParams.get('hex') || '')
-          .trim()
-          .toLowerCase();
-        if (!/^[0-9a-f~]{6,7}$/.test(hex)) {
-          res.statusCode = 400;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(
-            JSON.stringify({ error: 'hex must be a 6-7 char hex string' }),
-          );
-          return;
-        }
-        res.statusCode = 503;
-        res.setHeader('Content-Type', 'application/json');
-        res.setHeader('Cache-Control', 'no-store');
-        res.setHeader('Retry-After', '1800');
-        res.end(
-          JSON.stringify({
-            error:
-              'Military history unavailable; locally accumulated trails remain available',
-            code: 'history_unavailable',
-          }),
-        );
-      } catch (error) {
-        res.statusCode = 502;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ error: 'adsb.lol trace fetch failed' }));
       }
     });
   }

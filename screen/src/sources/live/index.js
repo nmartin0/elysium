@@ -12,8 +12,4 @@ export {
   normalizeVesselTrack,
   vesselSnapshot,
 } from './vessels.js';
-export {
-  createFlightSource,
-  createMilitarySource,
-  createVesselSource,
-} from './standalone.js';
+export { createFlightSource, createVesselSource } from './standalone.js';

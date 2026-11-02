@@ -99,10 +99,6 @@
       "node": "./server/providers/terrain.js"
     },
     "./sources/terrain": "./src/data/terrainHeightsProxy.js",
-    "./server/providers/traffic": {
-      "node": "./server/providers/traffic.js"
-    },
-    "./sources/traffic": "./src/data/tomtomTiles.js",
     "./server/providers/firms": {
       "node": "./server/providers/firms.js"
     },
@@ -118,9 +114,6 @@
     },
     "./server/providers/overpass": {
       "node": "./server/providers/overpass.js"
-    },
-    "./server/providers/military-installations": {
-      "node": "./server/providers/military-installations.js"
     },
     "./server/providers/regional": {
       "node": "./server/providers/regional.js"
@@ -146,7 +139,6 @@
     "./ui/styles": "./src/ui/styles.js",
     "./sources/live": "./src/sources/live/index.js",
     "./layers/flights": "./src/layers/flights/index.js",
-    "./layers/military": "./src/layers/military/index.js",
     "./aircraft": "./src/layers/aircraft/index.js",
     "./layers/vessels": "./src/layers/vessels/index.js",
     "./layers/earthquakes": "./src/layers/earthquakes/index.js",
@@ -159,9 +151,6 @@
     "./layers/firms": "./src/layers/firms/index.js",
     "./layers/satellites": "./src/layers/satellites/index.js",
     "./layers/launches": "./src/layers/launches/index.js",
-    "./layers/installations": "./src/layers/installations/index.js",
-    "./layers/awareness": "./src/layers/awareness/index.js",
-    "./layers/traffic": "./src/layers/traffic/index.js",
     "./layers/bikeshare": "./src/layers/bikeshare/index.js",
     "./layers/directions": "./src/layers/directions/index.js",
     "./layers/directions/source": "./src/layers/directions/source.js",
@@ -207,8 +196,6 @@
     "./ui/panel-chrome": "./src/ui/panelChrome.js",
     "./layers/flights/records": "./src/layers/flights/records.js",
     "./layers/flights/ingestion": "./src/layers/flights/ingestion.js",
-    "./layers/military/records": "./src/layers/military/records.js",
-    "./layers/military/ingestion": "./src/layers/military/ingestion.js",
     "./layers/vessels/records": "./src/layers/vessels/records.js",
     "./layers/vessels/ingestion": "./src/layers/vessels/ingestion.js",
     "./sources/radio-browser": "./src/sources/radioBrowser.js",
@@ -222,11 +209,9 @@
     "./layers/gnss/source": "./src/layers/gnss/source.js",
     "./layers/ghostmaps/source": "./src/layers/ghostMaps/source.js",
     "./layers/firms/source": "./src/layers/firms/source.js",
-    "./layers/installations/source": "./src/layers/installations/source.js",
     "./layers/launches/source": "./src/layers/launches/source.js",
     "./layers/radio/source": "./src/layers/radio/source.js",
     "./layers/satellites/source": "./src/layers/satellites/source.js",
-    "./layers/traffic/source": "./src/layers/traffic/source.js",
     "./sources/reference": "./src/sources/reference.js",
     "./layers/submarine-cables/source": "./src/layers/submarineCables/bundledSource.js",
     "./sources/http-body": "./src/sources/httpBody.js",
