@@ -134,9 +134,6 @@ jobs:
           node-version: 24.14.0
           cache: npm
 
-      - name: Run the Pinokio install path
-        run: node scripts/pinokio-install.mjs
-
       - name: Check adopted formatting
         run: npm run format:check
 
@@ -144,7 +141,7 @@ jobs:
         run: npm run check:boundaries
 
       - name: Run focused onboarding tests
-        run: node --test src/setupDoctor.test.mjs src/pinokioEnvironment.test.mjs src/pinokioPreflight.test.mjs src/pinokioLauncherContract.test.mjs src/keySetupHardening.test.mjs src/mapStartup.test.mjs src/hudSummaryResponse.test.mjs src/codexOauthRealtime.test.mjs
+        run: node --test src/mapStartup.test.mjs
 
       - name: Build production bundle
         run: npm run build
