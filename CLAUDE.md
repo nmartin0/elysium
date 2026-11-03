@@ -473,7 +473,7 @@ to put a timeout and discarding token counts -- is no longer true:
 `chat()` takes `deadline=` and `usage=` (core/llm/interface.py), and
 `scripts/llm_bench.py` is the measurement.
 
-**Vertex-lite IS now entirely frontend, and the paragraph that used to
+**Graph-lite IS now entirely frontend, and the paragraph that used to
 sit here was an example of the failure mode two sections above.** It
 said `count_objects` had no HTTP route, so "that endpoint comes
 first". It has one: `POST /api/objects/{object_type}/count`, added by

@@ -43,15 +43,15 @@ closest thing to prior art for an ontology-shaped product.
 FOUR LAYERS, and only two of them matter to Elysium.
 
   BUILDING THE DATA
-    Pipeline Builder   point-and-click ingest and transform; you
+    pipeline builder   point-and-click ingest and transform; you
                        "start by defining endpoint schema for
                        Ontology object types and properties and
                        describing the pipeline to match inputs".
-    Ontology Manager   object types, links, actions, primary keys,
+    model manager   object types, links, actions, primary keys,
                        display configuration.
 
   EXPLORING IT
-    Object Explorer    "a search and analysis tool for answering
+    the object browser    "a search and analysis tool for answering
                        questions about anything in the Ontology
                        layer", where users visually compose queries
                        from simple filters up to Search Arounds,
@@ -64,16 +64,16 @@ FOUR LAYERS, and only two of them matter to Elysium.
                        its own data, linked objects, key metrics,
                        and links to or embedding of related
                        analyses.
-    Vertex             a graph canvas: add objects, click one for
+    graph canvas             a graph canvas: add objects, click one for
                        its properties, run Search Arounds to pull in
                        related objects, filter the whole graph with
                        property HISTOGRAMS and "filter to / filter
                        out", with applied filters shown at the top
                        and removable individually.
 
-  ANALYSING IT        Contour (tabular), Quiver (charts, time
+  ANALYSING IT        Tabular and chart analysis tools (tables, charts, time
                       series).
-  COMPOSING APPS      Workshop, a widget kit: object table, object
+  COMPOSING APPS      The dashboard builder, a widget kit: object table, object
                       list, property list, links, edit history, DATA
                       FRESHNESS, ACTION LOG TIMELINE, filter pills,
                       metric cards.
@@ -177,7 +177,7 @@ agent available at every station rather than at one.
      what makes a tool feel like a tool.
 
   Plus the two already planned: the PIPELINE BUILDER
-  (BLOCKING.md item 24) and ONTOLOGY VISUALISATION
+  (the removed BLOCKING.md item on ontology visualisation) and ONTOLOGY VISUALISATION
   -- the type-level map, which is also how the builder draws links.
 
   And underneath all of it, UI-LIVE: a screen that does not update
@@ -185,8 +185,8 @@ agent available at every station rather than at one.
 
 ## 6. What NOT to build, deliberately
 
-  - An app-building platform (Workshop). An app inside an app.
-  - Analysis notebooks (Contour, Quiver). Charts over a set, yes; a
+  - An app-building platform (the precedent's dashboard builder). An app inside an app.
+  - Analysis notebooks (the precedent's analysis tools). Charts over a set, yes; a
     second analytical language, no.
   - Model management, a marketplace, time-series infrastructure,
     geospatial.
@@ -606,7 +606,7 @@ AGAINST THE CODE -- which changed two of the answers.
 
 The precedent's object set exists as soon as a query does; saving is a
 separate, deliberate act -- "import saved object set" is its own card
-in Quiver. Same here: everything on screen IS a set, named by how it
+in the precedent's chart tool. Same here: everything on screen IS a set, named by how it
 was built (`Customer · 3 filters · 1,284`), so the interface always
 has a subject and saving is a PROMOTION rather than a creation.
 
@@ -741,7 +741,7 @@ with three entries plus the inboxes -- far fewer than today.
 # 13. The ontology UI
 
 The pipeline is visual; the ontology should be too. Researched
-September 22 against the precedent's Ontology Manager and the academic
+September 22 against the precedent's model manager and the academic
 lineage (Protégé, VOWL/WebVOWL), and against the very different
 tradition of visual POLICY editors -- which turned out to matter more.
 
@@ -761,7 +761,7 @@ tradition of visual POLICY editors -- which turned out to matter more.
     difference between a linter and a stack trace. Newer ontology
     tools do this as "quality analysis with a score and annotated
     anti-patterns".
-  - HEALTH, as the precedent's own Ontology Manager carries -- it exists
+  - HEALTH, as the precedent's own model manager carries -- it exists
     partly for "investigating whether data is updating in user
     applications". A type that no gold table populates is a type
     nobody can query, and the canvas should say so rather than
@@ -839,7 +839,7 @@ that exists. A change that NARROWS access needs no second person.
 ## 13.7 What the ontology UI edits, and what it must not
 
 It edits the DECLARATION -- the same law as the pipeline builder
-(BLOCKING.md item 24): ontology_schema.yaml
+(the removed BLOCKING.md item on ontology visualisation): ontology_schema.yaml
 and policy.yaml, round-tripped, validated before landing, recorded as
 a generation, rollback-able.
 

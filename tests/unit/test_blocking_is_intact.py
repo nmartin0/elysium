@@ -117,7 +117,7 @@ class TestCrossReferencesPointSomewhere:
     on a file whose internal references are all off by one.
 
     IT ALSO FOUND ONE THAT WAS WRONG FROM THE DAY IT WAS WRITTEN.
-    Object Explorer's entry said "saving and acting on a selection ...
+    the object browser's entry said "saving and acting on a selection ...
     the last of those is the same thing as item 23 below", and item 23
     was the plugin API. It had never pointed at Saved SELECTIONS.
 

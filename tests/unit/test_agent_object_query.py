@@ -2,7 +2,7 @@
 """
 Point 17: aggregation and link traversal as agent steps.
 
-FOUNDRY'S PRECEDENT is precise here. Their Agent Studio has exactly
+THE PRECEDENT'S PRECEDENT is precise here. Their agent builder has exactly
 four tool types, and the Object query tool "supports filtering,
 aggregation, inspection, and traversal of links for configured
 objects". Elysium's agent had filtering (search_object) and inspection
@@ -187,7 +187,7 @@ def test_both_new_steps_are_advertised_in_the_prompt():
     assert "search_around" in source
 
 
-# --- Auto-execute (Foundry parity) --------------------------------------
+# --- Auto-execute (the precedent parity) --------------------------------------
 
 
 @pytest.fixture
@@ -256,7 +256,7 @@ def test_the_default_is_to_pause_for_confirmation(write_loop):
 
 
 def test_auto_execute_writes_without_a_confirmation_step(write_loop):
-    # Foundry's Action tool "can be configured to run automatically or
+    # the precedent's Action tool "can be configured to run automatically or
     # to run after confirmation from the user".
     loop, mediator = write_loop(auto_execute=True)
     gathered: list[dict] = []

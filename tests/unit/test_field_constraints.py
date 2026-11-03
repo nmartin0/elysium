@@ -1,7 +1,7 @@
 """
 Constraints on the values a field may hold.
 
-FOUNDRY'S VALUE TYPES: "a minimum value, maximum value, or range of
+THE PRECEDENT'S VALUE TYPES: "a minimum value, maximum value, or range of
 allowed values", a regex, an enum -- enforcing "data validation in a
 manner reusable across the platform". Declared on the FIELD, so every
 action that sets it is checked.

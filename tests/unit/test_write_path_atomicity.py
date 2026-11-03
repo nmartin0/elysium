@@ -1,11 +1,11 @@
 """
 Point 2 of the machinery audit: the data copying mechanism -- the write
-path and its write log -- checked against Palantir's own precedent.
+path and its write log -- checked against the precedent's own precedent.
 
-FOUNDRY'S STANDARD, quoted directly rather than paraphrased so the
+THE PRECEDENT'S STANDARD, quoted directly rather than paraphrased so the
 comparison is honest: "All table updates in a job are committed
 together. If the job fails at any point, no partial writes are
-visible." Foundry contrasts this with plain Iceberg, which "provides
+visible." the precedent contrasts this with plain Iceberg, which "provides
 atomic updates: each update is applied individually," and notes that
 per-update atomicity "can pose correctness issues for pipelines that
 perform multiple writes in a single transaction."
@@ -180,7 +180,7 @@ def test_a_clean_rejection_leaves_no_trace_for_recovery(deployment):
 
 
 def test_a_genuinely_half_applied_write_is_flagged_ambiguous(deployment):
-    # THE case where Elysium cannot match Foundry's all-or-nothing
+    # THE case where Elysium cannot match the precedent's all-or-nothing
     # guarantee, and must therefore be honest about it rather than
     # pretend. The first sub-write commits; the second is rejected
     # because its object changed underneath. There is no rollback
@@ -245,7 +245,7 @@ def test_a_half_applied_write_is_not_reported_as_already_applied(deployment):
 
 
 def test_reads_never_observe_a_partially_applied_write(deployment):
-    # Foundry: "no partial writes are visible." Elysium cannot make the
+    # the precedent: "no partial writes are visible." Elysium cannot make the
     # WRITE atomic across separate databases, but it can make the READ
     # atomic -- the write log masks in-flight changes so a reader sees
     # the intended state, never a half-applied mix.

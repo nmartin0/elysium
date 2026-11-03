@@ -324,8 +324,8 @@ def test_a_change_that_did_not_take_effect_is_caught(books):
             books.silo, books.database, SCHEMA, AT)
 
 
-def test_the_breaking_flags_follow_foundrys_taxonomy():
-    # Additive changes pass through untouched in Foundry; destructive
+def test_the_breaking_flags_follow_the_precedents_taxonomy():
+    # Additive changes pass through untouched in the precedent; destructive
     # ones are refused by default and need manual remapping. These are
     # their list, not a judgement made locally.
     assert AddColumn.is_breaking is False

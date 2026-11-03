@@ -9,7 +9,7 @@ columns" -- and the mirror then served its last good contents forever
 while the ontology said something else.
 
 ADDITIVE IS THE SAFE DIRECTION. A column nothing previously read
-cannot have been read wrongly, and Foundry treats the same change as a
+cannot have been read wrongly, and the precedent treats the same change as a
 non-event: "additive changes to the backing dataset do not interfere
 with the synchronization process".
 

@@ -3,7 +3,7 @@ The published-history route answers only what the caller may already
 see.
 
 THE RULE IS NOT NEW, and that is the point. `edit_history` settled it
-from Foundry's precedent -- "users who have access to the current
+from the precedent -- "users who have access to the current
 state of an object can access the entire history of the object" -- so
 authorization is the SAME check as reading the object. No separate
 grant, and no way to learn about an object's past that you could not

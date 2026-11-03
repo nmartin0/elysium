@@ -8,7 +8,7 @@ strings, so a corrected silver can be rebuilt without re-reading the
 customer's database; that is the only reason this was not urgent.
 
 ALONGSIDE `number`, NOT REPLACING IT, which is what every layer below
-us does. Foundry has Double and Decimal as separate base types,
+us does. The precedent has Double and Decimal as separate base types,
 Iceberg has double and decimal(P,S), PostgreSQL has double precision
 and numeric. They answer different questions. Floats for measurement,
 decimals for money.

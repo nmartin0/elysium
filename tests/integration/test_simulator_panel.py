@@ -1,5 +1,5 @@
 """The simulator's control panel as a module of a running Elysium
-(BLOCKING.md item 3, step 2.3): listed in modules.yaml, offered to holders
+(the removed BLOCKING.md item on modules, step 2.3): listed in modules.yaml, offered to holders
 of the permission it declares, its server started by Elysium and reached
 through the proxy, saying who is asking. A WORLD IS NOT STARTED HERE --
 PostgreSQL refuses to run as root, and the simulator's own suite

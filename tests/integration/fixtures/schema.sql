@@ -67,7 +67,7 @@ CREATE TABLE tags (
     region TEXT NOT NULL
 );
 
--- A true many-to-many join table: key pairs only. Foundry's own rule
+-- A true many-to-many join table: key pairs only. The precedent's own rule
 -- is that a join carrying any other information "is no longer a
 -- many-to-many relation but two separate many-to-one relations".
 CREATE TABLE customer_tags (

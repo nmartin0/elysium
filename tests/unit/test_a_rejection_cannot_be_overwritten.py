@@ -18,7 +18,7 @@ falls through to confirm_and_execute(approved=False) inside
 so no rejected write survives today for a second reviewer to find.
 
 IT IS CLOSED AT THE STORE ANYWAY, because the store is what a future
-partial-rejection feature would call. Foundry scopes a decision to
+partial-rejection feature would call. The precedent scopes a decision to
 "all tasks in the request that you are eligible to review", which is
 exactly the shape that leaves a rejected task sitting beside undecided
 ones -- and this project already implements the approval half of that

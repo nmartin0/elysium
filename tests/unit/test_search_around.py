@@ -2,8 +2,8 @@
 Point 7 of the machinery audit: Search Around -- link traversal as a
 real query primitive.
 
-FOUNDRY'S PRECEDENT. Search Around is a first-class query type in their
-Object Set Service: it "takes an incoming object set and runs a
+THE PRECEDENT'S PRECEDENT. Search Around is a first-class query type in their
+object-set service: it "takes an incoming object set and runs a
 secondary filter on another object set based on a certain property of
 the incoming set." Asking "every transaction belonging to a us-west
 customer" is one operation there, not one per customer.

@@ -1,7 +1,7 @@
 """
 Frozen sets: membership fixed at an instant (formerly BLOCKING 17, saved selections, DEV_UI 11.3).
 
-FOUNDRY'S STATIC OBJECT SET IS THE PRECEDENT: "saved as a list of
+THE PRECEDENT'S STATIC OBJECT SET IS THE PRECEDENT: "saved as a list of
 primary keys", staying "the same regardless of any changes to the
 input data" -- as against a dynamic set, "a representation of the
 filters". So a frozen set here is keys, and opening one is an ordinary

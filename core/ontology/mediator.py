@@ -2551,7 +2551,7 @@ class DataMediator:
         but MAC is applied per object in Python afterwards (following
         security.via_field chains that can cross silos), so a
         engine-side COUNT would count rows the caller cannot see. That
-        is the same constraint the precedent's own Object Set Service works
+        is the same constraint the precedent's own object-set service works
         under, and the reason it is a service rather than exposed SQL.
 
         AND BECAUSE IT IS BUILT ON search_object(), IT INHERITS THE

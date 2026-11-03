@@ -8,7 +8,7 @@ synthesis is prose. So the step call is constrained and synthesis is
 not, which is the split this module exists to make possible.
 
 WHAT IT CONSTRAINS IS WHAT THE BENCH MEASURED GOING WRONG. On the
-deployment's own model, 2026-10-11 (BLOCKING 10), every step-mode
+deployment's own model, 2026-10-11 (the removed BLOCKING item on agent steps), every step-mode
 failure began with a value the schema below cannot express: a field
 named "count", the id field `transaction_id`, a wildcard "*", a list
 inside a one-value filter, an invented step name. Each is now outside
@@ -136,7 +136,7 @@ def _steps_for_type(object_type: str, definition: dict, in_plan: bool = False) -
         if any(str(fields[name].get("data_type") or "").partition("@")[0] in _TEMPORAL_TYPES
                for name in data):
             # A TOTAL PER PERIOD, for a type with a date to group by
-            # (the removed BLOCKING.md item on modules's time-series reads, part 3).
+            # (the removed BLOCKING.md item on modules' time-series reads, part 3).
             aggregate["period"] = _enum(PERIODS)
     steps.append(_step("aggregate_object", aggregate, ["object_type", "aggregate"]))
     if links:

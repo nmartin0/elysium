@@ -1,8 +1,8 @@
 """
 Tests for multi-storage create -- see write_log.py's own module
 docstring for the full mechanism this proves: the object's own id must
-be supplied EXPLICITLY (never auto-generated, matching Palantir
-Foundry's own MDO requirement that a primary key already exist,
+be supplied EXPLICITLY (never auto-generated, matching the precedent
+The precedent's own MDO requirement that a primary key already exist,
 matching, in every backing datasource), logged first via
 write_log.log_pending_create(), then applied to each storage group
 sequentially via WriteMediator._apply_one_create(), with the id

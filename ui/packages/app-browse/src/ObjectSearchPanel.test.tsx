@@ -1811,7 +1811,7 @@ describe('the panel knows no ontology nouns of its own', () => {
 })
 
 describe('a view reached by following a link', () => {
-  /** VERTEX-LITE'S SECOND HALF: Browse says how you got here, instead
+  /** GRAPH-LITE'S SECOND HALF: Browse says how you got here, instead
    *  of showing a bare filter with no memory of the object you left. */
   const ORIGIN = JSON.stringify({ type: 'Account', id: 'acc_1', field: 'region' })
   const LINK_FILTER = JSON.stringify([{ field: 'region', values: ['acc_1'], mode: 'keep' }])

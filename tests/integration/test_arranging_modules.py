@@ -1,4 +1,4 @@
-"""The module manager changing the deployment (BLOCKING.md item 3, step
+"""The module manager changing the deployment (the removed BLOCKING.md item on modules, step
 1.4c): turning modules on and off, ordering the rail, setting home --
 over HTTP, against a COPY of the fixture configuration, since these
 tests write modules.yaml and the shared fixtures must never be the file

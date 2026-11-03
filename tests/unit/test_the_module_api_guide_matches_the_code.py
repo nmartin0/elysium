@@ -1,4 +1,4 @@
-"""ui/MODULE_API.md, the module API's guide (BLOCKING.md item 3, step 4.3),
+"""ui/MODULE_API.md, the module API's guide (the removed BLOCKING.md item on modules, step 4.3),
 held to the code it describes.
 
 A GUIDE DRIFTS where a generated report does not, which is why the owner

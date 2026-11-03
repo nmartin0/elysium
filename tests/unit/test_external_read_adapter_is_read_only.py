@@ -63,7 +63,7 @@ def test_a_raw_delete_and_drop_through_the_read_adapter_are_also_denied(db_path)
     # Not just UPDATE -- the authorizer denies every write-type
     # operation, including the destructive ones a real, misconfigured
     # credential would otherwise allow against a customer's own
-    # database (the exact scenario Palantir's own docs warn about:
+    # database (the exact scenario the precedent's own docs warn about:
     # "syncs can change the source system if the source credentials
     # allow it... dropping data from a database via arbitrary SQL").
     reader = SQLiteReadAdapter({"path": db_path})

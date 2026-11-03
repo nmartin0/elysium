@@ -91,7 +91,7 @@ def test_the_message_names_the_offending_field():
 
 
 def test_auto_execute_with_literal_values_is_allowed():
-    # THE POINT OF THE DISTINCTION. Foundry's own Action tool "can be
+    # THE POINT OF THE DISTINCTION. The precedent's own Action tool "can be
     # configured to run automatically", and a deployment should be able
     # to let an agent file a low-stakes note unattended. Refusing every
     # auto_execute would make the flag useless rather than safe.

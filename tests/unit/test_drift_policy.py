@@ -6,7 +6,7 @@ Type drift raised; a vanished column produced whatever the adapter's
 SELECT happened to do. Nobody decided that, and nobody could say what a
 new shape would do without running it.
 
-THE RULE FOR DESTRUCTIVE CHANGE IS FOUNDRY'S, and it is sharper than
+THE RULE FOR DESTRUCTIVE CHANGE IS THE PRECEDENT'S, and it is sharper than
 "always refuse": in Object Storage v2 a schema change is breaking only
 if the property HAS RECEIVED USER EDITS. The write log is the same
 thing under another name.
@@ -61,7 +61,7 @@ FIELDS = {"region": "region"}
 
 class TestRemovedColumn:
     def test_absorbs_when_nothing_ever_wrote_to_the_field(self, tmp_path, source):
-        # FOUNDRY'S LINE. Refusing here freezes the mirror over a column
+        # THE PRECEDENT'S LINE. Refusing here freezes the mirror over a column
         # nobody used, and a frozen mirror goes stale while the source
         # moves on -- stale data that looks current is its own wrong.
         sync = _sync(tmp_path, source, _FakeWriteLog({"applied": 0, "pending": 0}))

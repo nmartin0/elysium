@@ -181,7 +181,7 @@ def test_each_bundled_module_builds_and_activates_every_page_it_declares(folder,
 @pytest.mark.parametrize("folder,manifest", _bundled(), ids=lambda v: v if isinstance(v, str) else "")
 def test_each_bundled_module_is_held_to_the_conformance_suite(folder, manifest):
     """A module built apart is tested apart, and held to what every
-    module is held to (@elysium/testing/conformance; BLOCKING.md item 3:
+    module is held to (@elysium/testing/conformance; the removed BLOCKING.md item on modules:
     adoption is ERROR for a new module). Its own vitest.config.ts makes
     it a project of the page's run (ui/vite.config.ts), and the preset
     gives it the same environment as the page's tests; one of its tests
@@ -220,7 +220,7 @@ def test_every_module_naming_an_activation_event_brings_its_own_bundle():
     """A module's `activationEvents` (step 1.3) say when the shell asks it
     for code besides its pages -- palette commands on `onPalette`, rail
     badges on `onStartup`. Elysium's page no longer carries code for any
-    module (BLOCKING.md item 3, step 3: Browse's palette was the last), so
+    module (the removed BLOCKING.md item on modules, step 3: Browse's palette was the last), so
     that code can only come from the module's own bundle. One built into
     the page that named an event would be asked, and have nothing to give."""
     without = sorted(m["id"] for m in _manifests() if m.get("activationEvents") and not m.get("entry"))
@@ -230,7 +230,7 @@ def test_every_module_naming_an_activation_event_brings_its_own_bundle():
 
 def test_every_module_that_fills_a_slot_brings_its_own_bundle():
     """A module's `into` (step 1.5) names contributions to another module's
-    slot. Elysium's page no longer carries any (BLOCKING.md item 3, step
+    slot. Elysium's page no longer carries any (the removed BLOCKING.md item on modules, step
     3: the Approvals tabs were the last), so the code for one can only
     come from the module's own bundle -- its `entry`, whose activate()
     the conformance suite holds to the ids declared. A module built into

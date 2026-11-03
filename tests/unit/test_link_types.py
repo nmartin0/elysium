@@ -1,7 +1,7 @@
 """
 Point 16: link types as first-class ontology entities.
 
-FOUNDRY'S MODEL, adopted directly: a link type is "the schema
+THE PRECEDENT'S MODEL, adopted directly: a link type is "the schema
 definition of a relationship between two object types" -- an entity in
 its own right, not an attribute of a field. It names both object
 types, their cardinality, and how the relationship is backed:
@@ -372,7 +372,7 @@ def test_a_valid_deployment_is_unaffected_by_the_narrowing(tmp_path):
 def test_a_join_carrying_its_own_properties_is_expressible():
     """The object-backed link case, built rather than asserted.
 
-    Foundry's third link backing lets a join carry properties -- their
+    The precedent's third link backing lets a join carry properties -- their
     example is a FlightManifest linking Aircraft and Flight while
     holding Pilot and First Mate. Elysium has foreign-key and
     join-table backings only, and the roadmap claimed this was already

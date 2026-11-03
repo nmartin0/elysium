@@ -5,7 +5,7 @@ The property that matters most here is NOT that casting works (that is
 core/ontology/field_types.py's own job, tested there) but that DRIFT is
 detected and reported usefully. A column whose real values stopped
 matching the ontology means the customer's source system changed
-underneath us, and the whole reason this stage exists -- per Foundry's
+underneath us, and the whole reason this stage exists -- per the precedent's
 own guidance -- is to catch that rather than let it become wrong data
 in the mirror.
 """

@@ -1,7 +1,7 @@
 /**
  * Compare the set on screen with a saved view or a frozen set.
  *
- * THE PRECEDENT'S OBJECT SET SERVICE is the precedent: two sets combine by
+ * THE PRECEDENT'S OBJECT-SET SERVICE: two sets combine by
  * union, intersect and subtract, and each result is a new set. This
  * shows the three regions at once -- only here, both, only there --
  * which is the overlap view Amplitude's cohort comparison and

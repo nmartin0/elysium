@@ -6,7 +6,7 @@
  * four thousand before they commit.
  *
  * ONE HOP AT A TIME, deliberately. No canvas, no layout, no automatic
- * multi-hop expansion -- those are the "full Vertex" item, and
+ * multi-hop expansion -- those are the "full graph canvas" item, and
  * reaching them by accident is how a read-only explorer becomes
  * something nobody can reason about on a real ontology.
  */

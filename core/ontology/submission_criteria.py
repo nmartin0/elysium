@@ -105,7 +105,7 @@ CheckKind = Literal["current_state", "parameter", "user"]
 # attributes, and nothing else. All three of UserRecord's fields are
 # allowed, following the precedent's Current User template directly -- their
 # docs describe checking "a user's ID, group memberships via group
-# IDs, or any other multipass attribute available", so role (our
+# IDs, or any other identity-service attribute available", so role (our
 # nearest thing to a group) and security_value (our nearest thing to
 # an Organization attribute) both belong here rather than only user_id.
 #

@@ -8,7 +8,7 @@ count. Reproduced against the real synthesise path.
 
 THE INDUSTRY PATTERN IS ONE SENTENCE: the model orchestrates,
 deterministic code computes. The precedent ships this as a first-class tool
--- AIP Logic's four tools are Apply actions, Call function, Query
+-- the precedent's logic builder's four tools are Apply actions, Call function, Query
 objects, and Calculator, which "enables you to perform accurate
 mathematical calculations with an LLM". This is that tool, in the
 registry this project already has.

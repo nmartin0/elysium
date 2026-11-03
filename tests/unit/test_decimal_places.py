@@ -6,7 +6,7 @@ know. The ontology says a field is a number and says nothing about its
 scale: the same `number` type carries a coordinate, a count and a
 ratio, and two places is wrong for at least two of them.
 
-Foundry puts it in the same place -- value formatting is property
+The precedent puts it in the same place -- value formatting is property
 metadata that transforms raw values "into more readable versions in
 user applications" -- and it sits beside `visibility` and `status`
 here for the same reason: all three are things an ontology author knows

@@ -1,7 +1,7 @@
 """
 One action, many objects.
 
-FOUNDRY DRAWS THE LINE IN THE ONTOLOGY, not the UI: a "bulk action
+THE PRECEDENT DRAWS THE LINE IN THE ONTOLOGY, not the UI: a "bulk action
 type" is one "using an object reference list parameter". Bulk is a
 property of the ACTION, declared and reviewable before anyone runs it,
 rather than a mode an application switches into.
@@ -158,7 +158,7 @@ def test_one_beyond_the_ceiling_is_refused(bulk_mediator):
     that makes a bulk action safe at small sizes is what makes it
     dangerous at large ones.
 
-    Foundry stops at 1,000; the owner chose 256 by default and 1,024
+    The precedent stops at 1,000; the owner chose 256 by default and 1,024
     at most, per deployment (14 Oct).
     """
     import pytest

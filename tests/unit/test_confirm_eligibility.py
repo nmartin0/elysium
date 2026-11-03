@@ -225,7 +225,7 @@ class TestTheTTLIsConfigurable:
 class TestBothCategories:
     """An inbox shows what you may decide AND what you proposed.
 
-    Following Foundry, whose Approvals inbox filters "Your inbox" and
+    Following the precedent, whose Approvals inbox filters "Your inbox" and
     "Created by you" rather than showing only one.
 
     THE PROPOSER NEEDS THE SECOND ESPECIALLY ONCE FOUR-EYES IS ON: they
@@ -357,7 +357,7 @@ class TestDuplicateProposals:
 
     NOT DEDUPLICATED, deliberately. A second identical proposal might be
     a double-click, a colleague re-requesting something forgotten, or a
-    deliberate nudge, and Elysium cannot tell which. Foundry allows
+    deliberate nudge, and Elysium cannot tell which. The precedent allows
     duplicates too and relies on the reviewer seeing them together --
     which only works if they can SEE that they are duplicates.
     """

@@ -1,7 +1,7 @@
 /**
  * Where a filtered Browse view came from, when it came by a link.
  *
- * VERTEX-LITE'S SECOND HALF. Following a link from an object's Related
+ * GRAPH-LITE'S SECOND HALF. Following a link from an object's Related
  * section landed in Browse with a filter and no memory of how you got
  * there -- "Transactions where customer_id is cust_001" rather than
  * "Ada Okafor's 47 transactions".

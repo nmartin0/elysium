@@ -652,7 +652,7 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     app.state.credentials_db_path = runtime_paths.data_dir / "credentials.db"
 
     # The artifact store, wired here for the first time -- it has
-    # existed since the Object Explorer work and only its own tests
+    # existed since the the object browser work and only its own tests
     # ever constructed one.
     #
     # A SEPARATE database from credentials, deliberately. Artifacts are

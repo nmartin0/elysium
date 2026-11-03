@@ -6,7 +6,7 @@ one at a time to find out, and an answer built before it does cites an
 id at the user.
 
 THE DECLARATION ALREADY EXISTED AND WAS WIRED TO NOTHING.
-`title_field` is Palantir's "title key" -- "the property that acts as
+`title_field` is the precedent's "title key" -- "the property that acts as
 a display name for objects of this type" -- validated at schema load
 by object_type_validation.py, declared in the SHIPPED deployment as
 `title_field: name` on Customer, with a runtime lookup

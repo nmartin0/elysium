@@ -15,7 +15,7 @@ sensitivity LEVEL and a set of COMPARTMENTS -- and dominance is
 `S1 <= S2 and C1 subset-of C2`. Elysium's values (`us-east`,
 `us-west`) are compartments: disjoint, unranked.
 
-FOUNDRY MAKES THE SAME SPLIT and ships only one by default. Markings
+THE PRECEDENT MAKES THE SAME SPLIT and ships only one by default. Markings
 are compartments -- "a user must be a member of ALL Markings applied
 to a resource". Classification-based Access Controls are levels, are
 off by default, and "can not be used together with markings... on the

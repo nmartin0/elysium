@@ -7,7 +7,7 @@ looked wrong had nothing to compare against except a source that may
 since have changed, and adding an ontology field meant RE-READING THE
 SILO rather than re-transforming what we already held.
 
-Foundry's reason for ingesting "as-is from its most raw source, with no
+The precedent's reason for ingesting "as-is from its most raw source, with no
 external preprocessing" is exactly this: "every Ontology property value
 traces back to a specific row in a specific raw file".
 

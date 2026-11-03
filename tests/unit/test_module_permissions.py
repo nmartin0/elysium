@@ -1,4 +1,4 @@
-"""Permissions a module declares (BLOCKING.md item 3, step 2.3): read from
+"""Permissions a module declares (the removed BLOCKING.md item on modules, step 2.3): read from
 its module.json, granted as module:<id>:<name>, worked out into the
 registry at each load (the owner's choice, 22 October), and checked in
 roles as every other grant is -- except that one from a module no longer

@@ -1592,7 +1592,7 @@ def _propose_action(client, session=None, new_name="Updated Name"):
     # 202 response. Uses the same UpdateCustomerName action editor's
     # own execute: grant covers -- see policy.yaml's own comment.
     # No separate "object_id" field -- customer_id is just another
-    # entry in "parameters" now, matching Palantir Foundry's own action
+    # entry in "parameters" now, matching the precedent's own action
     # parameter model directly (see WriteMediator.propose_action(, origin="human")'s
     # own docstring).
     #
@@ -1913,7 +1913,7 @@ def test_delete_nonexistent_user_is_404(client):
 
 
 # --- Object Set operations (Point 11): count, aggregate, and search-
-# around over HTTP. Foundry's own Object Set Service serves
+# around over HTTP. The precedent's own object-set service serves
 # "searching, filtering, aggregating, and loading" -- Elysium had the
 # first two exposed and neither of the last, so these existed on
 # DataMediator with zero route references.
@@ -2201,7 +2201,7 @@ def test_an_object_genuinely_named_count_is_still_reachable(client):
     assert json.loads(response.content)["id"] == "count"
 
 
-# --- Paging and sorting (Point 12). Foundry's own model: pageSize +
+# --- Paging and sorting (Point 12). The precedent's own model: pageSize +
 # pageToken in, nextPageToken + totalCount back, and orderBy with an
 # optional :asc/:desc suffix. Elysium previously returned a hard 50
 # results with total_matches reported but NO way to fetch the rest.
@@ -2304,7 +2304,7 @@ def test_ids_made_of_digits_are_listed_as_numbers(client):
 
 
 def test_the_last_page_has_no_next_token(client):
-    # Foundry's contract: "the presence of the nextPageToken field
+    # the precedent's contract: "the presence of the nextPageToken field
     # indicates that there are more results." Absent, not empty.
     _many_customers(client, count=10)
 
@@ -2323,7 +2323,7 @@ def test_total_matches_counts_everything_not_just_the_page(client):
 
 
 def test_an_oversized_page_size_is_clamped_not_rejected(client):
-    # Foundry: "Requests for more than the maximum page size will be
+    # the precedent: "Requests for more than the maximum page size will be
     # reduced to the maximum."
     _many_customers(client, count=20)
 
@@ -2437,7 +2437,7 @@ def test_ordering_stays_consistent_across_pages(client):
     assert names == sorted(names)
 
 
-# --- Edit history (Point 14). Foundry's Edit History widget answers
+# --- Edit history (Point 14). The precedent's Edit History widget answers
 # "what changed, by whom, and when?" over an immutable audit trail.
 # Authorization follows their rule directly: "Users who have access to
 # the current state of an object can access the entire history."
@@ -2516,7 +2516,7 @@ def test_object_history_pages(client):
     assert not (first_ids & {entry["id"] for entry in second["entries"]})
 
 
-# --- Opaque page tokens. Foundry's own format is a version prefix and
+# --- Opaque page tokens. The precedent's own format is a version prefix and
 # a base64 payload ("v1.QnVpbGQgdGhlIEZ1dHVyZTo..."), and their
 # guidance is that a client treats a token as opaque and passes it
 # back unchanged.
@@ -2555,7 +2555,7 @@ def test_a_bare_offset_is_no_longer_accepted(client):
 
 
 def test_every_malformed_token_shape_falls_back_to_the_first_page(client):
-    # Foundry's tokens are short-lived and meant for immediate
+    # the precedent's tokens are short-lived and meant for immediate
     # sequential use, so a garbled one is a client bug -- but failing
     # the request would turn a display glitch into an error page.
     _many_customers(client, count=30)
@@ -3662,7 +3662,7 @@ def test_a_field_the_reviewer_cannot_read_is_REDACTED_not_omitted(client):
     the rubber-stamp problem in its worst form, because it produces
     MORE confidence rather than less.
 
-    Foundry redacts -- "certain resources or users contained in a
+    The precedent redacts -- "certain resources or users contained in a
     record if you do not have the necessary permissions to view that
     item" -- and this follows it.
     """
@@ -4036,8 +4036,8 @@ def test_an_unauthenticated_response_carries_it_too(client):
 
 # --- "select all matching" ---------------------------------------------
 #
-# WHY IDS AND NOT A FILTER PASSED ONWARD. Foundry's approvals model
-# settles it: "a task is an individual change in Foundry. All tasks
+# WHY IDS AND NOT A FILTER PASSED ONWARD. The precedent's approvals model
+# settles it: "a task is an individual change in the precedent. All tasks
 # associated with a request must be approved for the request to be
 # invoked." A reviewer approves specific changes, never a rule resolved
 # later -- and a filter that outlived the selection would let an
@@ -4305,7 +4305,7 @@ def test_search_and_detail_agree_on_representation(client):
 def test_the_inbox_says_what_a_reviewer_may_decide(client):
     """Step 4: a reviewer's inbox scopes itself to them.
 
-    Foundry's rule is "approve or reject all tasks in the request THAT
+    The precedent's rule is "approve or reject all tasks in the request THAT
     YOU ARE ELIGIBLE TO REVIEW", and a listing that did not say which
     those were would make Approve look like it runs the write -- which
     for a request spanning security partitions it does not.
@@ -4358,7 +4358,7 @@ def test_the_inbox_counts_approvals_not_decisions(client):
 
 
 # ---------------------------------------------------------------------------
-# The shell contract (shell/README.md, BLOCKING.md item 3): what any
+# The shell contract (shell/README.md, the removed BLOCKING.md item on modules): what any
 # backend serves a shell, and Elysium serving it.
 # ---------------------------------------------------------------------------
 
@@ -4473,7 +4473,7 @@ def test_shell_modules_carries_no_grant_and_no_folder(client):
 
 
 # ---------------------------------------------------------------------------
-# A module's bundle, served (BLOCKING.md item 3, step 1.2).
+# A module's bundle, served (the removed BLOCKING.md item on modules, step 1.2).
 # ---------------------------------------------------------------------------
 
 

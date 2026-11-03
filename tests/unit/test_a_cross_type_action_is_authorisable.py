@@ -8,7 +8,7 @@ mutation of a cross-type action. The two halves had never agreed, so
 no valid policy could authorise one at all.
 
 THE OWNER CHOSE OPTION C, which the research surfaced and the file did
-not have. Foundry's model: "you must hold edit permissions on the
+not have. The precedent's model: "you must hold edit permissions on the
 action type AND on all ontology resource types edited by the action."
 So the grant is per ACTION and per TYPE -- never per field.
 
@@ -21,7 +21,7 @@ restores something vestigial -- this codebase's own comment says it
 "was accepted here and checked by no authorize() call anywhere... a
 policy granting write:Order.total validated cleanly and permitted
 nothing". Relying on `execute:` alone (B) is simpler and weaker than
-anything in the precedent: it drops the per-type check Foundry keeps.
+anything in the precedent: it drops the per-type check the precedent keeps.
 
 `F-03` GOES WITH IT, AND NOT BY COINCIDENCE. The old loop read
 `sw_def["mutations"]`, which a DELETE sub-write does not have --

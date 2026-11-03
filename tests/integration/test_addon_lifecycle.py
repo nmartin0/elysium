@@ -1,4 +1,4 @@
-"""An add-on's server kept running by Elysium (BLOCKING.md item 3, step
+"""An add-on's server kept running by Elysium (the removed BLOCKING.md item on modules, step
 2.2, api/addon_servers.py): started with what the contract promises,
 restarted with back-off when it fails, stopped with a deadline, one
 worker supervising it, following the configuration -- and shown and

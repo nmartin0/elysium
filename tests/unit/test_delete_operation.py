@@ -1,7 +1,7 @@
 """
 Point 13: delete, modelled as an EDIT rather than a DELETE statement.
 
-FOUNDRY'S MODEL, which reshaped this entire feature. Their actions
+THE PRECEDENT'S MODEL, which reshaped this entire feature. Their actions
 "edit, create, delete, and link object data", but a delete there never
 touches the source: "edits are written to the writeback dataset and
 NOT the dataset backing an object type... This ensures that users have
@@ -14,7 +14,7 @@ WHY THAT MATTERS HERE, beyond matching a precedent. Three options were
 drafted before this research -- treat a missing row as success, flag
 every interrupted delete ambiguous, or add a deleted_at column to the
 customer's schema -- and ALL THREE shared a false premise: that
-Elysium would issue a destructive DELETE. Foundry does not, and once
+Elysium would issue a destructive DELETE. The precedent does not, and once
 that is fixed the hard problem evaporates:
 
   - The external read-only guarantee stays intact. Elysium never
@@ -130,7 +130,7 @@ def test_a_deleted_object_disappears_from_search(deployment):
 
 def test_deleting_never_touches_the_customers_database(deployment):
     # THE property that makes this model right for Elysium rather than
-    # merely Foundry-shaped. The external read-only guarantee this
+    # merely precedent-shaped. The external read-only guarantee this
     # whole project is built around would be broken by a destructive
     # delete.
     mediator, write_mediator, _log, db_path = deployment
@@ -142,7 +142,7 @@ def test_deleting_never_touches_the_customers_database(deployment):
 
 
 def test_a_delete_is_reversible_by_a_later_write(deployment):
-    # Foundry's ordering rule: the LATEST edit wins, so a write after a
+    # the precedent's ordering rule: the LATEST edit wins, so a write after a
     # delete makes the object visible again.
     mediator, write_mediator, _log, _db = deployment
     _write(write_mediator, "delete")
@@ -252,7 +252,7 @@ def test_deleted_objects_are_filtered_in_bulk_not_per_object(deployment):
 # path that had just been made constant-time. The index is 0.006 ms and
 # flat at 555,000 rows.
 #
-# Following Foundry: "the data-modification logic is immediately applied
+# Following the precedent: "the data-modification logic is immediately applied
 # to the index in the object databases", with deleted-ness a stored
 # column (__is_deleted) rather than something derived at read time.
 # Their index is explicitly ephemeral -- "all indexed data in object
@@ -270,7 +270,7 @@ def test_a_delete_populates_the_index(deployment):
 
 
 def test_a_later_write_clears_the_index(deployment):
-    # "Last edit wins", the same rule Foundry's indexing uses.
+    # "Last edit wins", the same rule the precedent's indexing uses.
     _mediator, write_mediator, log, _db = deployment
     _write(write_mediator, "delete")
 
@@ -283,7 +283,7 @@ def test_a_later_write_clears_the_index(deployment):
 
 
 def test_the_index_timestamp_matches_the_log_entry(deployment):
-    # deleted_at mirrors Foundry's own __patch_offset: it records WHICH
+    # deleted_at mirrors the precedent's own __patch_offset: it records WHICH
     # edit produced the row, so the index can be RECONCILED against the
     # log rather than merely rebuilt from it. Sourced from the log row
     # itself rather than a second clock reading, or the comparison

@@ -1347,7 +1347,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
 // =============================================================================
 //
 // CONTEXT: the first real screen for a genuine, staged architecture
-// direction (the precedent's own Object Explorer/Object View/Actions
+// direction (the precedent's own the object browser/Object View/Actions
 // widgets as the real-world reference, scaled to fixed, hand-built
 // screens rather than a generic app-building tool -- see api/
 // routes.py's own AI-notes for the backend side, core/ontology/
@@ -1380,7 +1380,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
 //   object_type_validation.py) -- getDisplayTitle() above (shared, in
 //   ../format) uses it when a type declares one and the caller can
 //   actually see that field's own value, falling back to the raw id
-//   otherwise. Matches the precedent's own Object Explorer, which has the
+//   otherwise. Matches the precedent's own the object browser, which has the
 //   equivalent concept ("title key").
 // - A real, pre-existing React warning ("a component is changing an
 //   uncontrolled input to be controlled") is fixed -- the <select>'s

@@ -739,7 +739,7 @@
 
   /* Explore related -- where each link leads, and how far. A list rather
  * than a canvas: one hop at a time is the whole design, and a layout
- * engine is the "full Vertex" item. */
+ * engine is the "full graph canvas" item. */
   /* A SECTION WITHIN A PAGE, which is the step DEV_UI.md 9.2 specifies
    * between the page title and a panel heading. "Related" had no rule
    * at all and was rendering at whatever Blueprint gives an h3 -- which

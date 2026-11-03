@@ -14,7 +14,7 @@ triggers that combine, and the precedent says how:
   starts when a person's combination becomes true and a TIMER fires at
   its end (core/timers.py), so it is on time even if no data arrives;
   it resets if the combination stops being true first.
-- ON A SCHEDULE. the precedent's automation's "combination of time-based and
+- ON A SCHEDULE. The precedent's automation's "combination of time-based and
   object data conditions": checked only at the schedule's times
   (core/timer_rules.py), and told EVERY time it is true then -- a
   morning digest, not an alarm.

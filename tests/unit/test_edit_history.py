@@ -1,13 +1,13 @@
 """
 Point 14: edit history as a read API.
 
-FOUNDRY'S PRECEDENT. Their Edit History widget provides "an immutable
+THE PRECEDENT'S PRECEDENT. Their Edit History widget provides "an immutable
 audit trail of all changes made to ontology objects", configured to
 answer "what changed, by whom, and when?" Elysium already recorded all
 of that in the write log -- who, when, what changed, and the
 description of the action -- with no way to read it back.
 
-THE SECURITY RULE COMES FROM FOUNDRY DIRECTLY, which settled a
+THE SECURITY RULE COMES FROM THE PRECEDENT DIRECTLY, which settled a
 question that would otherwise have needed inventing: "Users who have
 access to the current state of an object (object with the same primary
 key) can access the entire history of the object." So authorization is
@@ -140,7 +140,7 @@ def test_an_object_with_no_edits_has_empty_history(deployment):
 
 
 def test_mac_denies_history_for_an_object_the_caller_cannot_read(deployment):
-    # Foundry's rule: access to the history follows access to the
+    # the precedent's rule: access to the history follows access to the
     # object. A caller who cannot read the present must not read the
     # past.
     mediator, write_mediator = deployment
@@ -207,7 +207,7 @@ def test_history_shows_applied_writes_only(deployment):
 
 def test_edits_from_one_action_share_a_batch_id(deployment):
     # A UI grouping "these four changes happened together" needs this;
-    # Foundry links a single action log to every object it edited for
+    # the precedent links a single action log to every object it edited for
     # the same reason.
     mediator, write_mediator = deployment
     _edit(write_mediator, {"name": "Ada v2"}, {"name": "Ada Okafor"})

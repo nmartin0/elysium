@@ -239,7 +239,7 @@ work here; the rest are reference for specific tasks.
                        in this list. Yours to maintain. Contains at
                        least one known error (E-19 above).
     OBJECT_EXPLORER_PLAN.md
-                       The object explorer's design.
+                       The the object browser's design.
     CONFIG_ROUND_TRIP_AND_UI_KIT.md
                        Two subjects. The UI-KIT half is yours; the
                        config round-trip half is joint (§5).

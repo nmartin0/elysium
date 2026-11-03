@@ -10,7 +10,7 @@ This is the point at which the mirror stops being a CACHE and becomes a
 SYSTEM OF RECORD, which is why durable storage landed first.
 
 NOT CHANGE DATA CAPTURE. Real CDC receives a feed from the source; this
-diffs two snapshots we took ourselves -- Foundry's documented fallback
+diffs two snapshots we took ourselves -- the precedent's documented fallback
 for exactly our case, where "my source system sends a full snapshot
 every sync" and "transforms apply CDC to detect inserts, updates, and
 deletes, then write only the changes as APPEND transactions".
@@ -156,7 +156,7 @@ class TestThePartialReadGuard:
 
 
 class TestIdentifierPairing:
-    """Foundry's "identifier changelog (recommended)", which we qualify
+    """the precedent's "identifier changelog (recommended)", which we qualify
     for because every object type declares an id_field.
 
     It is "more performant" than the net-changes mode and gives "richer

@@ -412,7 +412,7 @@ def test_mutation_property_check_is_scoped_to_the_right_object_type():
 # TransferFunds case: from_account_id AND to_account_id both reference
 # Account). This marker is the fix: explicit, by parameter identity,
 # never inferred from type alone -- confirmed directly against
-# Palantir's own documented mechanism for exactly this case before
+# the precedent's own documented mechanism for exactly this case before
 # designing it (see this module's own docstring).
 
 def _transfer_style_action(from_default=None, to_default=None):
@@ -704,7 +704,7 @@ def test_a_parameter_reference_is_not_a_literal():
 
 # --- bulk actions: a parameter that names MANY objects ----------------
 #
-# Foundry draws the line in the ontology rather than the UI: a "bulk
+# the precedent draws the line in the ontology rather than the UI: a "bulk
 # action type" is one "using an object reference list parameter". Bulk
 # is a property of the ACTION, declared and reviewable before anyone
 # runs it, rather than a mode an application switches into.

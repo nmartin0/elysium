@@ -1,7 +1,7 @@
 """
 A condition proposing a write, rather than a notice.
 
-AS THE OWNER, which is Foundry's split and the one
+AS THE OWNER, which is the precedent's split and the one
 The triggers design (consumed) already stated: "action effects execute AS the
 owner. Submission criteria are evaluated against the owner; the audit
 log records the owner."

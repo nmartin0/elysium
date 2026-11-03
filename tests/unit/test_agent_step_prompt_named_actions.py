@@ -14,7 +14,7 @@ propose_action validation), not a retroactive full-module test pass.
 
 ACTION_TYPES uses the sub_writes shape throughout -- the object being
 acted on is just an ordinary, object_reference-typed parameter
-(ticket_id) now, matching Palantir Foundry's own action parameter
+(ticket_id) now, matching the precedent's own action parameter
 model directly (verified against their docs, not assumed). There is
 no longer a separate, model-facing object_id field or step key at all
 -- see WriteMediator.propose_action(, origin="human")'s own docstring for the full

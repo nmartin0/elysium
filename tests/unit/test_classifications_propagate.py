@@ -1,6 +1,6 @@
 """Field classifications reach every table that holds the values (R12).
 
-FOUNDRY'S RULE, which these tests hold the mirror to: "If a dataset has
+THE PRECEDENT'S RULE, which these tests hold the mirror to: "If a dataset has
 a file marking, every dataset that depends on it inherits that marking."
 A field's values are copied into bronze, silver, the changelog, gold
 and gold's history; a label on the ontology property alone describes
@@ -69,7 +69,7 @@ class TestWhereTheLabelsGo:
 
     def test_a_column_holding_any_field_s_values_carries_every_label(self):
         """Quarantine, history and conflicts hold values of MANY fields
-        in one column, so they carry the union -- Foundry's direction:
+        in one column, so they carry the union -- the precedent's direction:
         a derived dataset inherits everything it depends on."""
         tables = classifications_by_table(SCHEMA)
 

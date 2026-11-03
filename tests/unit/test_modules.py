@@ -1,6 +1,6 @@
 """
 core/modules.py: which sub-apps a deployment loads, and the feed each
-person is given (BLOCKING.md item 3, shell/README.md).
+person is given (the removed BLOCKING.md item on modules, shell/README.md).
 """
 
 import json
@@ -254,7 +254,7 @@ class TestActivationEvents:
 
 
 class TestTheModuleApiItNeeds:
-    """`api` in module.json (BLOCKING.md item 3, step 4): the module API
+    """`api` in module.json (the removed BLOCKING.md item on modules, step 4): the module API
     version a module needs, "^1.0". Whether the page offers it is the
     shell's to decide (shell/core/src/contract.ts, apiRefusal); a version
     written wrong is said here, at load."""
@@ -296,7 +296,7 @@ class TestTheModuleApiItNeeds:
 
 
 class TestBundles:
-    """A module with its own bundle (BLOCKING.md item 3, step 1.2)."""
+    """A module with its own bundle (the removed BLOCKING.md item on modules, step 1.2)."""
 
     def _bundled(self, tmp_path, **manifest):
         folder = _module(tmp_path / "graph", entry="dist/index.js", styles=["dist/index.css"], **manifest)

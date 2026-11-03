@@ -128,7 +128,7 @@ def test_a_write_grant_is_rejected_whatever_it_names():
     # Including one whose type and field are perfectly real -- the
     # prefix is the problem, not what follows it.
     # `write:Widget` IS VALID NOW -- `F-02` option C, which is
-    # Foundry's model: edit permission on the action type AND on every
+    # the precedent's model: edit permission on the action type AND on every
     # object type the action edits. What stays rejected is the FIELD
     # form, because nothing checks it.
     validate_roles(_role("write:Widget"), OBJECT_TYPES, ACTION_TYPES,

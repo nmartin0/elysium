@@ -3,9 +3,9 @@ Tests for `check: user` submission criteria -- the acting principal as
 a third thing a criterion can read, beside object state and call
 parameters.
 
-Follows Palantir Foundry's Current User template, which checks "a
-user's ID, group memberships via group IDs, or any other multipass
-attribute available". All three UserRecord fields are allowed for that
+Follows the precedent's Current User template, which checks "a
+user's ID, group memberships via group IDs, or any other identity-service attribute
+available". All three UserRecord fields are allowed for that
 reason, including role_name, which overlaps with what an execute:
 grant already says. See core/ontology/submission_criteria.py for why
 that overlap was accepted rather than designed out.
@@ -57,7 +57,7 @@ def test_a_user_criterion_denies_when_the_attribute_does_not_match(field, value)
 
 
 def test_a_user_criterion_supports_membership_in_a_static_list():
-    # Foundry's documented static-list case: user IDs compared against
+    # the precedent's documented static-list case: user IDs compared against
     # a statically defined list. This is what naming individuals looks
     # like, and nothing in RBAC or MAC can express it.
     allowed = _criterion("user_id", operator="in", value=["alice", "carol"])

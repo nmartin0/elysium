@@ -22,7 +22,7 @@ gap was narrower than described and no less real: everything was
 re-checked EXCEPT the security value of the objects.
 
 CHECKED AGAINST THE APPROVER. They are the person deciding now, their
-record is live, and Foundry's rule for applying an action is that the
+record is live, and the precedent's rule for applying an action is that the
 submitter must be able to see the objects it edits. Re-resolving the
 PROPOSER from a stored user id would be a different authority question
 with its own answer -- since answered (NEW-3): the approve route re-reads

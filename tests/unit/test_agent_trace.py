@@ -111,7 +111,7 @@ def test_arguments_survive_a_json_unfriendly_value():
 
 # --- Repeat mode ---------------------------------------------------------
 #
-# Foundry's guidance for evaluating LLM-backed functions is to run each
+# the precedent's guidance for evaluating LLM-backed functions is to run each
 # case "at least three times", and that "a high variance in numeric
 # evaluators can indicate that the test case and evaluator are not
 # meaningful and require further refinement".

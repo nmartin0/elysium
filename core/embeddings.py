@@ -70,7 +70,7 @@ BATCH = 16
 #: table costs a bounded read, not the table.
 MAX_SCAN = 2_000
 #: The most results one ranking returns (the precedent's KNN: 1 to 100 in
-#: Workshop, up to 500 in its v2 functions).
+#: its dashboard builder, up to 500 in its v2 functions).
 MAX_K = 100
 
 SCHEMA = """

@@ -3,7 +3,7 @@
  * lists.
  *
  * One chart per field worth bucketing, from /aggregate. This is the
- * "Charts" half of Object Explorer; the table is the other.
+ * "Charts" half of the object browser; the table is the other.
  *
  * WHICH FIELDS GET A CHART. The ones the ontology author declared
  * PROMINENT, which is the same metadata the result table defaults its

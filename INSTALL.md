@@ -561,7 +561,7 @@ This is not redundant with the code-level guarantee — it is the more
 important of the two. A database-enforced permission holds regardless
 of what any application does, including one with a bug. Application
 code is the second layer, not the first. This mirrors the practice
-the precedent documents for the precedent, whose own documentation warns plainly
+the precedent documents for its own syncs, whose own documentation warns plainly
 that a sync "can change the source system if the source credentials
 allow it — for instance... dropping data from a database via
 arbitrary SQL." The credential is the real boundary.

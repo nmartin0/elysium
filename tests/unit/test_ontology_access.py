@@ -1,7 +1,7 @@
 """
 Point 15: Functions with ontology access, via a caller-bound capability.
 
-FOUNDRY'S FUNCTIONS ARE DEFINED BY ONTOLOGY ACCESS -- "first-class
+THE PRECEDENT'S FUNCTIONS ARE DEFINED BY ONTOLOGY ACCESS -- "first-class
 support for reading the properties of various object types, traversing
 links, and flexibly making Ontology edits", which is what makes them
 "go far beyond commonly used Functions-as-a-Service platforms". Elysium
@@ -9,7 +9,7 @@ had pure computation only.
 
 WHY A CAPABILITY, NOT A MEDIATOR. These functions are invoked by an
 LLM that chooses their arguments, so ambient ontology access would let
-the model aim a function at data the caller cannot see. Foundry's own
+the model aim a function at data the caller cannot see. The precedent's own
 Q&A gives away how they avoid the equivalent: "there is no way to get
 the executing user's ID within a function without passing it as a
 parameter" -- their function authors do not write permission checks
@@ -94,7 +94,7 @@ def test_a_function_can_count_and_aggregate(mediator):
 
 
 def test_a_function_can_traverse_links(mediator):
-    # Foundry's search-around, reachable from a function.
+    # the precedent's search-around, reachable from a function.
     assert _access(mediator).search_around("Customer", "transactions") == [1, 2, 3, 4]
 
 
@@ -145,7 +145,7 @@ def test_aggregates_respect_the_callers_boundary(mediator):
 
 
 def test_an_undeclared_object_type_is_refused(mediator):
-    # Defence in depth beyond Foundry: a function that declared
+    # Defence in depth beyond the precedent: a function that declared
     # Customer cannot read Account, even if its caller could.
     access = _access(mediator, WEST, types=("Customer",))
 
@@ -192,7 +192,7 @@ def test_an_undeclared_type_RAISES_rather_than_returning_empty(mediator):
 
 
 def test_a_function_declaring_an_unknown_object_type_fails_at_load():
-    # Foundry runs compatibility checks before publishing a function.
+    # the precedent runs compatibility checks before publishing a function.
     # Elysium has no versioning to protect (see the roadmap (consumed)), but
     # the
     # same class of mistake is worth catching at LOAD rather than

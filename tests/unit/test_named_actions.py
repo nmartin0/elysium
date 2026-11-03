@@ -1,6 +1,6 @@
 """
 Tests for WriteMediator.propose_action(, origin="human") -- the named-action-types
-write path, matching Palantir Foundry's own action-type model
+write path, matching the precedent's own action-type model
 directly: a NAMED, independently-governed operation with its own
 execute: grant, declared parameters, and declared mutations -- not a
 generic CRUD verb with free-form field input. See

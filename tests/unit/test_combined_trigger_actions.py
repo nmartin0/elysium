@@ -1,7 +1,7 @@
 """Combined, held and scheduled triggers propose actions too (17
 October; core/trigger_states.py).
 
-The owner: "isn't that the main point of the triggers?" Foundry's
+The owner: "isn't that the main point of the triggers?" the precedent's
 answer to which objects: an action parameter takes the objects a
 CONDITION exposes, of the matching type. So the maker names which
 condition's view supplies them -- the trigger's own by default -- and

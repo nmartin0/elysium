@@ -16,7 +16,7 @@ WHAT IS DELIBERATE RATHER THAN MISSING: a user needs
 `execute:ActionName` and NOT a write grant on the underlying type. An
 action IS the capability. Granting "may transfer funds" without
 granting "may write Account" is the reason named actions exist, and
-Foundry's model is the same.
+The precedent's model is the same.
 
 THIS FILE EXISTS BECAUSE THE PROPERTY IS INCIDENTAL. Nothing declares
 it, and a future path that synthesised a UserRecord -- a service

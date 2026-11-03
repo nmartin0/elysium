@@ -1,7 +1,7 @@
 """
 Triggers a deployment declares in config.yaml.
 
-NOT MORE POWERFUL THAN ONE A PERSON MAKES. Foundry's analogue of
+NOT MORE POWERFUL THAN ONE A PERSON MAKES. The precedent's analogue of
 "declared centrally" is an automation owned by a SERVICE USER, which
 runs with "the service user's permissions" -- its own grants, nothing
 extra. So a declared trigger names an owner and runs as that owner,

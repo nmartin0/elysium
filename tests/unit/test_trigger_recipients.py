@@ -1,17 +1,17 @@
 """
 A trigger may notify a role, each member counted as themselves.
 
-FOUNDRY'S RULE, TRANSLATED. Its recipient picker "will only display
+THE PRECEDENT'S RULE, TRANSLATED. Its recipient picker "will only display
 users and groups for which the person configuring the Action has
 adequate permissions". In Elysium a group is a ROLE, and role names are
 visible only to manage:users holders -- so anybody may name a role
 THEY HOLD, and a manage:users holder may name ANY role.
 
-EACH MEMBER COUNTED WITH THEIR OWN AUTHORITY. Foundry: "notification
+EACH MEMBER COUNTED WITH THEIR OWN AUTHORITY. The precedent: "notification
 effects use each recipient's individual permissions", so an automation
 "may trigger for some recipients but not others".
 
-AND THE ACTION HANGS ON THE OWNER ALONE. Foundry: "condition
+AND THE ACTION HANGS ON THE OWNER ALONE. The precedent: "condition
 evaluation uses automation owner's permissions". A recipient who can
 see MORE than the owner may cross while the owner has not -- they are
 told, and no write is proposed in the owner's name.
@@ -122,7 +122,7 @@ class TestRoleMembersAreNotified:
 
 class TestTheActionHangsOnTheOwner:
     def test_a_recipient_crossing_alone_proposes_nothing(self, world):
-        """THE PROPERTY FOUNDRY'S SPLIT EXISTS FOR.
+        """THE PROPERTY THE PRECEDENT'S SPLIT EXISTS FOR.
 
         The owner sees us-east's two transactions and never crosses
         above 2; a us-west colleague sees four and does. The colleague

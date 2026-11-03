@@ -1,7 +1,7 @@
 """
 Changing a role: proposed by one person, approved by another.
 
-FOUNDRY'S MODEL -- security changes are approval requests, and a change
+THE PRECEDENT'S MODEL -- security changes are approval requests, and a change
 to access policy needs approval "from a user... other than the change
 request author". Approving saves the role store and reloads, so the new
 rules take effect atomically; if the reload fails, the save is undone.

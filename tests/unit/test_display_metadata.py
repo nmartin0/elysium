@@ -1,7 +1,7 @@
 """
 Point 10: display metadata on object types and fields.
 
-FOUNDRY'S PRECEDENT, matched deliberately. Their object type metadata
+THE PRECEDENT'S PRECEDENT, matched deliberately. Their object type metadata
 is displayName, pluralDisplayName, and description; their property
 metadata is displayName and description. Elysium had NONE of it -- an
 object type carried six keys, all structural, and a field carried

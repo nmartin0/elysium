@@ -8,7 +8,7 @@
  *
  * ONE HOP AT A TIME, DELIBERATELY. Not a graph canvas: no automatic
  * multi-hop expansion, no layout, no drag-to-rearrange. Those are the
- * "full Vertex" item in ROADMAP.md, and reaching them by accident --
+ * "full graph canvas" item in ROADMAP.md, and reaching them by accident --
  * by letting one expansion trigger the next -- is how a read-only
  * explorer becomes something nobody can reason about on a real
  * ontology.

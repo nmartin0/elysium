@@ -1,7 +1,7 @@
 """
 Comparing two sets, and keeping one part of the comparison.
 
-FOUNDRY'S OBJECT SET SERVICE is the precedent: two sets combine by
+THE PRECEDENT'S OBJECT-SET SERVICE: two sets combine by
 union, intersect and subtract, and each result is a new set. Compare
 reports the three regions at once; combine keeps one as a frozen set.
 

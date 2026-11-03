@@ -1,7 +1,7 @@
 """
 One reviewer, one task, one decision.
 
-FOUNDRY SEPARATES APPROVAL FROM INVOCATION, and that dissolves what
+THE PRECEDENT SEPARATES APPROVAL FROM INVOCATION, and that dissolves what
 looked like a trade-off. Approval is per task and partial by
 eligibility -- "approve or reject all tasks in the request THAT YOU
 ARE ELIGIBLE TO REVIEW" -- while invocation is not: "all tasks
@@ -122,7 +122,7 @@ class TestTheInvocationGate:
         assert store.is_fully_approved(write_id) is True
 
     def test_one_task_undecided_means_not_ready(self, store):
-        """FOUNDRY'S RULE, and the reason partial approval is safe:
+        """THE PRECEDENT'S RULE, and the reason partial approval is safe:
         "all tasks associated with a request must be approved for the
         request to be invoked"."""
         write_id = store.store(_pending(3))
@@ -222,7 +222,7 @@ class TestTheGateHoldsARequestOpen:
 class TestEligibility:
     """Which tasks a reviewer may decide.
 
-    FOUNDRY SCOPES THE ACTION: "approve or reject all tasks in the
+    THE PRECEDENT SCOPES THE ACTION: "approve or reject all tasks in the
     request THAT YOU ARE ELIGIBLE TO REVIEW".
 
     WHAT DIFFERS BETWEEN TASKS IS THE OBJECT, not the action. Every

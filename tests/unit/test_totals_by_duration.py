@@ -1,6 +1,6 @@
 """Totals by a fixed length, on a zone's clock (core/periods.py, BLOCKING.md
 item 3's time-series reads; the owner's choice of ISO 8601 durations,
-26 October, after Foundry's aggregate).
+26 October, after the precedent's aggregate).
 
 Europe/London's clocks went forward at 01:00 UTC on 29 March 2026 and
 back at 01:00 UTC on 25 October 2026 -- the two nights these use."""

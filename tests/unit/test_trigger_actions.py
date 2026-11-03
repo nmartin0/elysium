@@ -1,10 +1,10 @@
 """
 A trigger that proposes a write when its condition fires.
 
-FOUNDRY ALLOWS IT, and Elysium is more conservative than Foundry.
+THE PRECEDENT ALLOWS IT, and Elysium is more conservative than the precedent.
 Any creator of an automation may add an action effect; the gate is the
 action's own -- "the owner configuring an action must pass the
-submission criteria for that action". Foundry then EXECUTES it.
+submission criteria for that action". The precedent then EXECUTES it.
 Elysium PROPOSES it into the approvals queue, where somebody still
 decides.
 
@@ -190,7 +190,7 @@ class TestActionValidation:
         assert "No action type" in self._check(generation, action_type="Nope")
 
     def test_an_owner_who_cannot_run_it_is_refused(self, generation):
-        """A TRIGGER GRANTS NOTHING ITS OWNER LACKS. Foundry: "the
+        """A TRIGGER GRANTS NOTHING ITS OWNER LACKS. The precedent: "the
         owner configuring an action must pass the submission criteria
         for that action"."""
         assert "cannot run" in self._check(generation, owner_may_execute=False)

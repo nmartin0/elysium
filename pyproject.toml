@@ -294,7 +294,7 @@ layers = [
     # hierarchy rather than beneath it.
     "secret_references",
     # addons: an add-on server's declaration, its token and which
-    # headers pass (BLOCKING.md item 3, step 2). A leaf: the standard
+    # headers pass (the removed BLOCKING.md item on modules, step 2). A leaf: the standard
     # library only; api/addon_servers.py does the sockets and processes.
     "addons",
     # config_editing is a leaf too: ruamel and the standard library, no
@@ -404,7 +404,7 @@ exhaustive = true
 # projected_condition (R68, 18 October) is a trigger's forecast of its
 # view's totals per period: trigger machinery beside count_condition,
 # composing the mediator's aggregate and the forecasts.
-# modules (BLOCKING item 3, 21 October) sits with deployment_loader, its
+# modules (the removed BLOCKING.md item on modules, 21 October) sits with deployment_loader, its
 # only loader: it reads module.json files with core.config and asks
 # intermediate_layer's authorize who is offered each -- configuration
 # composed with authorization, outside the hierarchy like role_impact.

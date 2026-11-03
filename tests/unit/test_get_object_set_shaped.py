@@ -9,7 +9,7 @@ minutes to read two numbers.
 DataLoader -- the usual fix -- does not apply: it batches loads made
 within one tick, invisibly, and our caller is a model that must emit
 each read as its own round trip. So the vocabulary changes instead,
-shaped after Palantir's ObjectSet: a set of ids plus a select of which
+shaped after the precedent's object set: a set of ids plus a select of which
 fields, with the single-object case as the special case.
 """
 
@@ -93,7 +93,7 @@ def test_authorization_is_not_batched_along_with_the_read():
 def test_too_many_ids_is_a_named_refusal_not_a_short_read():
     # Never a silent truncation. Answering about some of a list and
     # quietly skipping the rest is the exact failure the prompt already
-    # warns the model against, and Palantir errors with
+    # warns the model against, and the precedent errors with
     # ObjectsExceededLimit rather than returning a short page.
     with pytest.raises(ValueError, match="exceeds the limit"):
         _run({

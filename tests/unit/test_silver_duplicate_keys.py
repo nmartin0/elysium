@@ -4,7 +4,7 @@ the medallion design's rule S4).
 
 WHY IT IS NOT AN ORDINARY EXPECTATION: every other rule is about one
 row's values; this is about two rows disagreeing about who they are. An
-object type is BACKED BY a table keyed on its id, and Foundry fails an
+object type is BACKED BY a table keyed on its id, and the precedent fails an
 indexing run outright on a duplicate primary key, because the ontology
 cannot say which row the object is.
 

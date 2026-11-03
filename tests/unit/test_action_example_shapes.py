@@ -20,7 +20,7 @@ illustrated as `"transaction_ids": "<value>"`. A model copying that
 sends one string. write_mediator wraps a non-list in [value] rather
 than iterating it, so the harm is bounded -- no character-by-character
 walk -- but the proposal covers ONE object when the parameter exists
-to carry many. Foundry calls an action using one a "bulk action type".
+to carry many. The precedent calls an action using one a "bulk action type".
 Ours was demonstrated in a form that cannot be bulk.
 
 WORTH NOTING FOR BACKEND, not fixed here: a parameter's declared type

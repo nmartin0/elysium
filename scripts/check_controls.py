@@ -6742,7 +6742,7 @@ CONTROLS = [
         tests=["tests/unit/test_stop_reason_is_named.py::"
                "test_an_invented_count_is_answered_with_the_step_it_meant"],
     ),
-    # -- ADD-ONS' OWN SERVERS AND DECLARED PERMISSIONS (BLOCKING.md item 3,
+    # -- ADD-ONS' OWN SERVERS AND DECLARED PERMISSIONS (the removed BLOCKING.md item on modules,
     # step 2): the proxy, the lifecycle, the registry, the simulator panel.
     Control(
         describes="ADD-ON: the browser's cookie and a forged identity never reach an add-on",

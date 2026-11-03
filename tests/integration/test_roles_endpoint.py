@@ -19,7 +19,7 @@ def _as(client, username, role):
 
 class TestWhoMaySee:
     def test_manage_users_alone_is_not_enough(self, client):
-        """THE SEPARATION FOUNDRY DRAWS: managing membership is not
+        """THE SEPARATION THE PRECEDENT DRAWS: managing membership is not
         managing permissions."""
         _as(client, "ann", "admin")
 

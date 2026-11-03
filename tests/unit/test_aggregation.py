@@ -1,8 +1,8 @@
 """
-Point 6 of the machinery audit: the Object Set Service equivalent --
+Point 6 of the machinery audit: the object-set service equivalent --
 real aggregation primitives on DataMediator.
 
-FOUNDRY'S PRECEDENT. Their Object Set Service serves "searching,
+THE PRECEDENT'S PRECEDENT. Their object-set service serves "searching,
 filtering, aggregating, and loading," and their aggregate API exposes
 min/avg/max/count with groupBy. Elysium had the first two and neither
 of the last: DataMediator's whole public surface was six methods, none
@@ -13,7 +13,7 @@ rather than exposed SQL. MAC is applied per object in Python, AFTER the
 engine returns, because a security value can be reached through a
 via_field chain that crosses silos. A GROUP BY pushed into the engine
 would aggregate rows the caller cannot see -- letting someone infer
-sums over data they are not permitted to read. Foundry has the same
+sums over data they are not permitted to read. The precedent has the same
 constraint, which is why OSS is a service rather than a SQL endpoint.
 
 So: filter and project in the engine, authorize per object in Python,
@@ -119,7 +119,7 @@ def test_every_aggregate_function_works(mediator):
 
 
 def test_count_needs_no_field_name(mediator):
-    # Matches Foundry, where count aggregates the set itself rather
+    # Matches the precedent, where count aggregates the set itself rather
     # than a property.
     result = mediator.aggregate_by_field(
         CUSTOMER_SERVICE, "Transaction", as_equality_conditions({}), group_by="category", aggregate="count"

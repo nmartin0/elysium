@@ -1,8 +1,8 @@
 """
 Point 3 of the machinery audit: the external database copying
-machinery, checked against Foundry's own documented sync semantics.
+machinery, checked against the precedent's own documented sync semantics.
 
-FOUNDRY'S MODEL, quoted rather than paraphrased so the comparison is
+THE PRECEDENT'S MODEL, quoted rather than paraphrased so the comparison is
 honest:
 
   - Transaction type: "The transaction type determines whether ingested
@@ -17,7 +17,7 @@ honest:
 
 WHERE ELYSIUM DELIBERATELY DIFFERS, stated rather than glossed:
 
-  - No APPEND mode. Foundry offers incremental APPEND for large
+  - No APPEND mode. The precedent offers incremental APPEND for large
     datasets, where "a sync failure will result in a minimal amount of
     duplicated work rather than requiring a complete re-run." Elysium
     is SNAPSHOT-only, which is simpler and correct, but means a large
@@ -25,7 +25,7 @@ WHERE ELYSIUM DELIBERATELY DIFFERS, stated rather than glossed:
     limit rather than an oversight.
   - Per-TABLE independence. scripts/run_sync.py continues after a
     failed table rather than aborting every table. That matches
-    Foundry's own granularity -- a Foundry sync targets ONE dataset,
+    The precedent's own granularity -- a sync targets ONE dataset,
     so "aborts the entire transaction" is scoped to one table there
     too -- and a partial refresh of the remaining tables is strictly
     better than none.
@@ -95,7 +95,7 @@ def _sync(sync, accept_deletions=False):
 
 
 def test_a_sync_is_a_snapshot_that_replaces_rather_than_appends(sync, source):
-    # Foundry's SNAPSHOT: ingested data "overwrites previously ingested
+    # the precedent's SNAPSHOT: ingested data "overwrites previously ingested
     # data." Running twice must not double the rows.
     _sync(sync)
     _sync(sync)
@@ -146,7 +146,7 @@ def test_an_emptied_source_table_produces_an_empty_mirror(sync, source):
 
 
 def test_a_failed_read_leaves_the_last_good_mirror_intact(sync, source):
-    # Foundry: "a failure at any point aborts the entire transaction."
+    # the precedent: "a failure at any point aborts the entire transaction."
     # A sync that cannot read its source must not damage what is
     # already mirrored.
     _sync(sync)

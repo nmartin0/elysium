@@ -4,7 +4,7 @@ LB-1's first half. Synthesis produced figures in prose and nothing
 checked them: an invented $7,412.00 against records of 49.99 and
 199.00 was returned verbatim, and so was wrong arithmetic. The
 industry pattern is that the model orchestrates and deterministic code
-computes; Palantir ships this as one of AIP Logic's four tools.
+computes; the precedent ships this as one of its logic builder's four tools.
 
 TWO PROPERTIES CARRY THE FILE, and both are the kind that look like
 details until they are wrong.

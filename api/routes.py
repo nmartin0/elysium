@@ -5577,7 +5577,7 @@ def delete_frozen_set_route(set_id: str, request: Request,
 
 # --- Comparing two sets --------------------------------------------------------------------------
 #
-# THE PRECEDENT'S OBJECT SET SERVICE is the precedent: two sets combine by
+# THE PRECEDENT'S OBJECT-SET SERVICE: two sets combine by
 # `union`, `intersect` and `subtract`, and each result is a new set.
 # Comparing is those three read at once -- left minus right, left and
 # right, right minus left -- which is the Venn shape Amplitude's cohort
@@ -10330,7 +10330,7 @@ def _finish_paused_query(app, generation, write_id: str, pending, outcome: "dict
                  subjects=[*subjects, *ids_in_gathered(result.gathered)])
 
 # --- Object Set operations: the analytical half of the read surface.
-# The precedent's own Object Set Service serves "searching, filtering,
+# The precedent's own object-set service serves "searching, filtering,
 # aggregating, and loading"; Elysium had the first two exposed over
 # HTTP and neither of the last, so count/aggregate/search-around were
 # reachable in DataMediator but not from any UI.

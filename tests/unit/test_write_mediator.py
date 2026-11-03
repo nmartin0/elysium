@@ -3,7 +3,7 @@ Tests for core/ontology/write_mediator.py's propose_action() -- the
 highest-stakes new code in this project, so this gets real, dedicated
 coverage. Migrated from propose_write() (action-types-redesign branch,
 migration pass) -- propose_write() itself is removed once every real
-caller has moved to propose_action(), matching Palantir's own actions-
+caller has moved to propose_action(), matching the precedent's own actions-
 only model (edits via other means are locked down by default and not
 recommended for new usage, per their own docs, verified directly).
 
