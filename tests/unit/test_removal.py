@@ -200,7 +200,8 @@ class TestWhatATypeLeavesBehind:
 
         for words in ("Nothing is deleted from your source", "exactly as they were", "history",
                       "rebuild", "Nothing serves the type", "erasure request still reaches",
-                      "has no record", "marks the erasure incomplete", "only by the columns that type maps",
+                      "no sync can change that", "partly known", "marks the erasure incomplete",
+                      "--adopt", "Adopt such tables before erasing",
                       "reads the same source table"):
             assert words in text
 

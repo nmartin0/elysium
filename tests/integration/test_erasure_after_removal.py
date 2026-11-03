@@ -182,10 +182,11 @@ class TestATableWrittenBeforeTheRecordExisted:
         assert "not an object type of the ontology" in errors
         # HONEST, not "no such type": the tables erasure cannot search are named, with the remedy.
         assert "gold.Tag" in errors and "gold_history.Tag" in errors
-        assert "Restore the type and sync once" in errors and "drop the tables" in errors
+        assert "Restore the type and sync" in errors and "--adopt" in errors and "drop it in the lake" in errors
         assert "primary_sql.customers" not in errors              # known to the ontology
 
-    def test_the_next_sync_records_it_for_a_type_that_still_exists(self, tag_lake):  # noqa: F811
+    def test_the_next_sync_records_it_for_a_type_that_still_exists_but_does_not_call_it_complete(
+            self, tag_lake):  # noqa: F811
         _sync(tag_lake)
         _forget_what_tables_recorded(tag_lake, ["gold.Customer", "primary_sql.customers"])
         catalog = open_mirror_catalog(tag_lake.data_dir / "mirror")
@@ -196,6 +197,9 @@ class TestATableWrittenBeforeTheRecordExisted:
         for identifier in ("gold.Customer", "primary_sql.customers"):
             assert recorded_key_columns(catalog.load_table(identifier)) == {
                 "customer_id": {"Customer"}}, identifier
+        # It already held data, so what a type removed earlier kept there cannot be known.
+        schema = load_deployment(tag_lake.config_dir).schema
+        assert {"gold.Customer", "primary_sql.customers"} <= set(survey(catalog, schema).partly_known)
 
 
 class TestWhatTheRegisterAndTheSyncSay:
@@ -245,3 +249,91 @@ class TestWhatTheRegisterAndTheSyncSay:
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             run_sync(tag_lake)
         assert ErasureRegister(tag_lake.data_dir / "erasures.db").incomplete() == []
+
+
+def _remove_tag_through_the_ui(paths, strip=False, notices=None):
+    """Sync, optionally make every table as an older sync left it, then remove
+    Tag as a person would -- and NO sync afterwards."""
+    from api.app import create_app
+    from tests.integration.test_removal_from_the_ui import TAG, TAGS_LINK, TestClient, _deprecate, _login
+    from tests.integration.test_removal_from_the_ui import _remove as remove
+
+    _sync(paths)
+    if strip:
+        catalog = open_mirror_catalog(paths.data_dir / "mirror")
+        _forget_what_tables_recorded(paths, [".".join(parts) for namespace in catalog.list_namespaces()
+                                             for parts in catalog.list_tables(namespace)])
+    client = TestClient(create_app(paths))
+    client.app.state.user_directory.create_user("ops", "correct-pw", "us-west", "remover")
+    _login(client, "ops", "correct-pw")
+    for what in (TAGS_LINK, TAG):
+        _deprecate(client, what)
+        response = remove(client, what)
+        assert response.status_code == 200, response.text
+        if notices is not None:
+            notices.append(response.json().get("notice"))
+    return client
+
+
+class TestRemovingATypeRecordsItsTablesFirst:
+    def test_a_removal_through_the_ui_leaves_no_hole_in_old_tables(self, tag_lake):  # noqa: F811
+        """Every table is as a sync before the record left it; Tag goes through
+        the UI; no sync follows. Erasure still reaches Tag's tables."""
+        _remove_tag_through_the_ui(tag_lake, strip=True)
+        tag_id, _label = _a_tag(tag_lake)
+
+        code, printed, errors = _erase(tag_lake, "Tag", str(tag_id))
+
+        for table in ("bronze_primary_sql.tags", "primary_sql.tags", "gold.Tag"):
+            assert all(str(row.get("tag_id")) != str(tag_id) for row in _rows(tag_lake, table)), table
+        # Honest about the rest: they existed before the record, so they are partly known.
+        assert code == 2 and "NOT COMPLETE" in errors, printed + errors
+        assert "no key columns known" not in errors
+
+    def test_a_removal_with_an_unreadable_lake_goes_ahead_and_says_what_it_could_not_record(
+            self, tag_lake, monkeypatch):  # noqa: F811
+        import api.routes
+
+        def unreadable(request):
+            raise OSError("the lake is not there")
+        monkeypatch.setattr(api.routes, "_mirror_catalog_for", unreadable)
+        notices: list = []
+
+        client = _remove_tag_through_the_ui(tag_lake, notices=notices)
+
+        assert "Tag" not in client.app.state.generation.config.schema
+        assert all(notice and "could not be read" in notice and "--adopt" in notice for notice in notices)
+        assert "the lake is not there" not in " ".join(notices)
+
+    def test_a_removal_that_could_record_carries_no_notice(self, tag_lake):  # noqa: F811
+        notices: list = []
+        _remove_tag_through_the_ui(tag_lake, notices=notices)
+
+        assert notices == [None, None]
+
+
+class TestAdoptingALegacyTable:
+    def test_the_operators_statement_makes_the_tables_searchable_and_complete(self, tag_lake):  # noqa: F811
+        from scripts.erase import adopt
+
+        _remove_tag_and_sync_again(tag_lake)
+        legacy = ["bronze_primary_sql.tags", "primary_sql.tags", "gold.Tag", "gold_history.Tag",
+                  "changelog_primary_sql.tags"]
+        _forget_what_tables_recorded(tag_lake, legacy)
+        tag_id, _label = _a_tag(tag_lake)
+        refused, errors = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(refused), contextlib.redirect_stderr(errors):
+            assert adopt("gold.NoSuch", "tag_id=Tag", None, None, False, paths=tag_lake) == 1
+            assert adopt("gold.Tag", "nope=Tag", None, None, False, paths=tag_lake) == 1
+            assert adopt("gold.Tag", None, None, None, False, paths=tag_lake) == 1
+        assert "No table 'gold.NoSuch'" in errors.getvalue() and "no column 'nope'" in errors.getvalue()
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            for identifier in legacy:
+                column = "tag_id"
+                assert adopt(identifier, f"{column}=Tag", f"{column}=Tag", None, False, paths=tag_lake) == 0
+        code, printed, errors = _erase(tag_lake, "Tag", str(tag_id))
+
+        assert code == 0, printed + errors
+        for table in legacy:
+            assert all(str(row.get("tag_id")) != str(tag_id) for row in _rows(tag_lake, table)), table

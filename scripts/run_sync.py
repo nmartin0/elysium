@@ -51,6 +51,7 @@ import argparse
 import contextlib
 import json
 import sys
+import time
 import uuid
 from typing import Any
 
@@ -1017,6 +1018,8 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
     # than a full UUID: it is printed, typed into a grep and read
     # aloud. One in four billion against a few runs a day.
     run_id = uuid.uuid4().hex[:8]
+    # WALL CLOCK, because it is compared with when tables first held data.
+    sync_began = time.time()
     print(f"run {run_id}")
 
     accepted = set(accept_deletions or ())
@@ -1239,7 +1242,7 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
         # the sync's verdict: a table that could not record is reported by
         # erasure as unreachable, not skipped.
         try:
-            record_key_columns(sync._catalog, config.schema)
+            record_key_columns(sync._catalog, config.schema, created_since=sync_began)
         except Exception as exc:  # noqa: BLE001 - metadata, never the sync's verdict
             print(f"WARNING erasure keys not recorded: {exc}", file=sys.stderr)
 

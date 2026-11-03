@@ -2425,6 +2425,9 @@ class NewFieldsResponse(BaseModel):
     diff: list[str]
     to_generation: int | None = None
     proposal_id: str | None = None
+    # Something the person should know that is not an error: a removal that
+    # could not record, in the lake, what an erasure will need.
+    notice: str | None = None
 
 
 def _proposed_new_fields(request: Request, body: NewFieldsRequest) -> "dict[str, tuple[str, str]]":
@@ -3267,6 +3270,7 @@ def apply_removal_route(body: RemovalRequest, request: Request,
             raise HTTPException(status_code=409, detail=(
                 "This would let someone read more than they can now, which a removal never should. "
                 "Nothing was changed."))
+        notice = _record_erasure_keys_before(request, body)
         try:
             # A field's binding goes first (a binding for a field the type does
             # not declare stops the loader, a field without its binding loads).
@@ -3283,7 +3287,37 @@ def apply_removal_route(body: RemovalRequest, request: Request,
             if e.status_code == 400:
                 raise _unloadable(plan) from e
             raise
-        return {"status": "applied", "diff": written["diff"], "to_generation": written["to_generation"]}
+        return {"status": "applied", "diff": written["diff"], "to_generation": written["to_generation"],
+                "notice": notice}
+
+
+def _record_erasure_keys_before(request: Request, body: "RemovalRequest") -> "str | None":
+    """Writes each lake table's key columns, from the schema as it is NOW,
+    before a removal takes the name out of it: the removed type's tables
+    stay in the lake, and an erasure afterwards needs them to say which
+    columns hold whose ids (core/mirror/erasure.py). A table that already
+    held data and recorded nothing stays partly known -- see
+    KEY_COLUMNS_PROPERTY -- but what this type kept in it is recorded.
+
+    NEVER FAILS THE EDIT. When the lake cannot be read, or a table cannot
+    take the record, the removal goes ahead and the reply says which tables
+    were not recorded: a removal that cannot be done because the lake is
+    unreachable would leave the type stuck, which is worse than a notice."""
+    from core.mirror.erasure import record_key_columns
+
+    failed: list[str] = []
+    try:
+        record_key_columns(_mirror_catalog_for(request), _generation(request).config.schema, failed=failed)
+    except Exception as e:  # noqa: BLE001 - never fail the edit; say so
+        logger.warning("removal: the lake could not be read to record erasure keys (%s)", type(e).__name__)
+        return ("The lake could not be read, so the tables of what was removed were not recorded as "
+                "holding people's ids. Until they are adopted (python -m scripts.erase --adopt) an "
+                "erasure may not be able to search them.")
+    if failed:
+        return (f"{len(failed)} lake table(s) could not record their key columns ({', '.join(sorted(failed))}); "
+                f"an erasure may not be able to search them until they are adopted "
+                f"(python -m scripts.erase --adopt).")
+    return None
 
 
 # ---- Changing a field's data type, core/ontology/retype.py (slice R1) ----

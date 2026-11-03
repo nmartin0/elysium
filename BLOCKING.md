@@ -2008,24 +2008,43 @@ access review, audit integrity and backup verification.
 ERASURE AND A REMOVED TYPE (3 November): what holds, and the limits that
 remain. Every sync records on each lake table the columns that hold ids,
 which of them identify its own rows and which link to another object
-(`elysium.erasure_keys`), so an erasure still reaches the tables of a type
-removed from the ontology, and follows its links from an erased person to
-the removed type's own rows and their history, conflicts and findings.
-LIMITS, stated plainly: (1) a table written before the record existed, whose
-type is removed before one sync has recorded it, cannot be searched; erasure
-names it (`unreachable`), the register marks the erasure `incomplete`
-(`erase --list`), and every sync says so until the tables are dropped in the
-lake or the type is restored and synced once. (2) A table with no record at
-all is `partly known` even when the ontology still maps some of its columns,
-because a removed type's other columns there cannot be known; it clears at
-the next sync that records it. (3) The record never narrows, so a column
-re-pointed from one type to another keeps the old type: erasing the old type
-also removes rows of whoever now owns those values. That is chosen (erasing
-too much of a person is the lesser failure) and is shown, not hidden: the
-erase output and the dry run print a WARNING naming table, column and type.
-(4) A gold join table whose name two silos share is keyed by both silos'
-columns and reported partly known. An incomplete erasure does not stop the
-server; what could be reached has been erased.
+(and which type owns each link), as `elysium.erasure_keys`. So an erasure
+still reaches the tables of a type removed from the ontology, and follows
+its links from an erased person to the removed type's own rows and their
+history, conflicts and findings. Removing a type through the UI records the
+lake's tables first; if the lake cannot be read the removal still goes
+ahead and the reply carries a notice.
+
+WHAT NO SYNC CAN DO, plainly. A record can only say what the ontology
+mapped on the day it was written. A table that already held data before its
+first record (every table, on a deployment upgraded to this) is `partial`
+and stays so however often a sync records it again: whatever a type removed
+earlier kept in it is unknown. Erasure searches such a table by the columns
+known, lists it as `partly known`, and marks the erasure `incomplete`
+(`erase --list`; every sync says so and works the erasure out again from
+its seed keys). A table with no record whose type is gone is `unreachable`
+and is not searched at all. Both are resolved by an operator, not by a sync:
+`python -m scripts.erase --adopt TABLE --keys column=Type [--ids ...]
+[--links column=Owner:Target]` states what the table holds (`--adopt-none`:
+no person's id), or the table is dropped in the lake. Adopt BEFORE erasing:
+an erasure run first removes the rows that linked a person to what depended
+on them, and those cannot then be followed. A table created by the sync
+that recorded it is `complete`.
+
+OTHER LIMITS. (1) The record never narrows, so a column re-pointed from one
+type to another keeps the old type: erasing it also removes rows of whoever
+now owns those values. That is chosen (erasing too much is the lesser
+failure) and shown: the erase output, the dry run and the sync print a
+WARNING naming table, column and type. (2) A partly known table is counted
+against an erasure only when it holds one of that erasure's types (or the
+erasure is of a type the ontology no longer has): a removed type's link to a
+live type, in an unknown column of an unrelated partly known table, cannot
+be seen. (3) Quarantine and cleaning records of a table several types keep
+rows in are matched against each of those types' ids (reported as shared);
+a join table's records are matched part by part against the type that owns
+each. (4) A gold join table whose name two silos share is keyed by both
+silos' columns and reported partly known. An incomplete erasure does not
+stop the server; what could be reached has been erased.
 
 ## 9. Owning the UI kit, and when to start
 

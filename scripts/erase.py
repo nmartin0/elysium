@@ -3,6 +3,14 @@
     python -m scripts.erase Customer cust_001 --reason "GDPR request 2026-114"
     python -m scripts.erase Customer cust_001 --reason "..." --write
     python -m scripts.erase --list
+    python -m scripts.erase --adopt bronze_primary_sql.tags --keys tag_id=Tag [--ids tag_id=Tag]
+    python -m scripts.erase --adopt-none primary_sql.audit_notes
+
+--adopt is the operator's statement about ONE lake table written before
+its key columns were recorded: these columns hold these types' ids
+(--links column=Owner:Target names a removed type's links). No sync can
+know what a type removed earlier kept in such a table, so no sync stops it
+being "partly known"; this does. --adopt-none says it holds no person's id.
 
 Without --write it says what would go -- the object and everything
 that links to it, counted per type -- and changes nothing. With it:
@@ -35,7 +43,10 @@ from core.deployment_loader import load_deployment, resolve_runtime_paths
 from core.intermediate_layer.audit import AuditLog
 from core.mirror.catalog import open_mirror_catalog
 from core.mirror.erasure import (
+    ADOPT_HINT,
+    PART_MARK,
     ErasureRegister,
+    adopt_table,
     apply_erasures,
     cascade,
     forget_beyond_the_mirror,
@@ -66,8 +77,7 @@ def run(object_type: str, object_id: str, reason: str, write: bool = False,
             print("If it was removed, its tables may still hold people. Erasure cannot search these, "
                   "which hold data and record no key columns: "
                   + ", ".join(f"{name} ({why})" for name, why in sorted(unsearchable.items()))
-                  + ". Restore the type and sync once so they record their keys, then erase again, "
-                    "or drop the tables in the lake.", file=sys.stderr)
+                  + f". Restore the type and sync, or {ADOPT_HINT}.", file=sys.stderr)
         return 1
 
     with single_writer(paths.data_dir / "sync.lock") as acquired:
@@ -86,7 +96,7 @@ def run(object_type: str, object_id: str, reason: str, write: bool = False,
             return 0
         register = ErasureRegister(paths.data_dir / "erasures.db")
         who = requested_by or getpass.getuser()
-        erasure_id = register.record(keys, who, reason)
+        erasure_id = register.record(keys, who, reason, seeds=[(object_type, object_id)])
         result = apply_erasures(catalog, config.schema, register, mirror_dir)
         removed = result.removed
         # AND EVERYWHERE ELSE (decided 14 Oct): every store but the audit
@@ -102,12 +112,13 @@ def run(object_type: str, object_id: str, reason: str, write: bool = False,
           f"{'; and ' + elsewhere if elsewhere else ''}. Restart or reload the server.")
     for line in gap_notice(result.reach):
         print(f"WARNING {line}", file=sys.stderr)
-    if result.reach.incomplete:
+    gaps = result.incomplete.get(erasure_id, [])
+    if gaps:
         # NOT A SUCCESS, and not silent: the person may still be in these
         # tables. The register records the erasure as incomplete (--list),
-        # and every sync says so until a later one can search them.
-        print(f"NOT COMPLETE: {len(result.reach.incomplete)} table(s) could not be fully searched: "
-              f"{', '.join(result.reach.incomplete)}.", file=sys.stderr)
+        # and every sync says so, and works it out again, until it is not.
+        print(f"NOT COMPLETE: {len(gaps)} table(s) could not be fully searched: "
+              f"{', '.join(gaps)}.", file=sys.stderr)
         return 2
     return 0
 
@@ -134,9 +145,79 @@ def list_erasures(paths=None) -> int:
     return 0
 
 
+def _pairs(text: "str | None", what: str) -> "dict[str, set[str]]":
+    """`column=Type[,column=Type]` as {column: {Type}}."""
+    found: dict[str, set[str]] = {}
+    for part in (text or "").split(","):
+        if not part.strip():
+            continue
+        column, _, name = part.partition("=")
+        if not column.strip() or not name.strip():
+            raise ValueError(f"{what}: {part!r} is not column=Type")
+        found.setdefault(column.strip(), set()).add(name.strip())
+    return found
+
+
+def adopt(identifier: str, keys: "str | None", ids: "str | None", links: "str | None",
+          none: bool, paths=None) -> int:
+    """The operator's statement about ONE lake table: which of its columns
+    hold which types' ids (or that it holds none). Recorded on the table,
+    unioned with what is known, never narrowing; the table then stops being
+    partly known. Names only; an unknown table or column is refused."""
+    from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+
+    paths = paths or resolve_runtime_paths()
+    config = load_deployment(paths.config_dir)
+    try:
+        stated = _pairs(keys, "--keys")
+        stated_ids = _pairs(ids, "--ids")
+        stated_links: dict[str, set[tuple[str, str]]] = {}
+        for column, names in _pairs(links, "--links").items():
+            for name in names:
+                owner, _, target = name.partition(":")
+                if not owner or not target:
+                    raise ValueError(f"--links: {column}={name} is not column=Owner:Target")
+                stated_links.setdefault(column, set()).add((owner, target))
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    if none == bool(stated or stated_ids or stated_links):
+        print("Say what the table holds (--keys column=Type) or that it holds no person's id "
+              "(--adopt-none), not both and not neither.", file=sys.stderr)
+        return 1
+    catalog = open_mirror_catalog(paths.data_dir / "mirror", dict(config.mirror_storage))
+    with single_writer(paths.data_dir / "sync.lock") as acquired:
+        if not acquired:
+            print("A sync is running. Try again when it has finished; nothing was recorded.")
+            return 1
+        try:
+            record = adopt_table(catalog, config.schema, identifier,
+                                 {**stated, **stated_ids}, stated_ids, stated_links)
+        except (NoSuchTableError, NoSuchNamespaceError):
+            print(f"No table {identifier!r} in the lake.", file=sys.stderr)
+            return 1
+        except KeyError as e:
+            print(f"{identifier} has no column {e.args[0].partition(PART_MARK)[0]!r}.", file=sys.stderr)
+            return 1
+    print(f"Recorded for {identifier}: "
+          + (", ".join(f"{column}={'|'.join(sorted(names))}" for column, names in sorted(record.keys.items()))
+             or "no person's id")
+          + ". It is no longer partly known. Erasures still marked incomplete are worked out again "
+            "at the next sync.")
+    return 0
+
+
 def main() -> int:
     if sys.argv[1:] == ["--list"]:
         return list_erasures()
+    if sys.argv[1:2] in (["--adopt"], ["--adopt-none"]):
+        parser = argparse.ArgumentParser(prog=f"erase {sys.argv[1]}")
+        parser.add_argument("table")
+        parser.add_argument("--keys")
+        parser.add_argument("--ids")
+        parser.add_argument("--links")
+        args = parser.parse_args(sys.argv[2:])
+        return adopt(args.table, args.keys, args.ids, args.links, sys.argv[1] == "--adopt-none")
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("object_type")
