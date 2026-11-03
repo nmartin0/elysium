@@ -2,6 +2,13 @@ import * as Cesium from 'cesium';
 import { STUBBED_LAYER_IDS } from './layerState.js';
 
 /**
+ * Mirrors `KEYLESS_TERRAIN_STUB` in maps/terrain.js (kept here so the data
+ * credits do not import the map code): while true, the Re:Earth terrain is not
+ * used, so it is not credited. Flip both together (FORK.md, "Basemap").
+ */
+export const REEARTH_TERRAIN_CREDIT_STUBBED = true;
+
+/**
  * Per-layer data attribution registered into Cesium's credit display.
  *
  * Legal requirement (see DATA_SOURCES.md, findings H10/H11 in
@@ -381,6 +388,15 @@ export const DATA_CREDITS = [
       '(public domain; audio delivered directly by each broadcaster)',
   },
   {
+    // The default basemap (bundled, Natural Earth II levels 0 to 2). Public
+    // domain, so the credit is a courtesy; kept in the lightbox beside the rest.
+    key: 'natural-earth-basemap',
+    html:
+      'Basemap (default, keyless): Made with ' +
+      '<a href="https://www.naturalearthdata.com" target="_blank" rel="noopener">Natural Earth</a> ' +
+      '(public domain). Free vector and raster map data @ naturalearthdata.com',
+  },
+  {
     key: 'reearth-terrain',
     html:
       'Terrain (keyless globe stacks): ' +
@@ -584,6 +600,8 @@ export function registerDataCredits(viewer, credits = DATA_CREDITS) {
   }
   for (const { key, html } of credits) {
     if (STUBBED_LAYER_IDS.includes(key)) continue;
+    // The Re:Earth terrain is stubbed off, so it is not credited (FORK.md).
+    if (key === 'reearth-terrain' && REEARTH_TERRAIN_CREDIT_STUBBED) continue;
     // showOnScreen=false → lives in the expandable "Data attribution" popover,
     // not the on-globe credit line.
     creditDisplay.addStaticCredit(new Cesium.Credit(html, false));

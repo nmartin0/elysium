@@ -2,7 +2,21 @@ import * as Cesium from 'cesium';
 
 // Attribution and service rights are documented in DATA_SOURCES.md.
 export const ESRI_ATTRIBUTION_HTML =
-  '<a href="https://www.esri.com" target="_blank" rel="noopener">Powered by Esri</a>';
+  '<a href="https://www.esri.com" target="_blank" rel="noopener">Powered by Esri</a> · needs your own Esri licence';
+
+/** Natural Earth is public domain; the credit is a courtesy (naturalearthdata.com). */
+export const NATURAL_EARTH_ATTRIBUTION_HTML =
+  'Made with <a href="https://www.naturalearthdata.com" target="_blank" rel="noopener">Natural Earth</a>. Free vector and raster map data @ naturalearthdata.com';
+
+/** Natural Earth II, levels 0 to 2, copied from Cesium's Assets (see FORK.md). */
+export const NATURAL_EARTH_TILES_URL = '/basemap/natural-earth-ii';
+
+export function createNaturalEarthImagery() {
+  return Cesium.TileMapServiceImageryProvider.fromUrl(NATURAL_EARTH_TILES_URL, {
+    credit:
+      'Made with Natural Earth. Free vector and raster map data @ naturalearthdata.com',
+  });
+}
 
 export function createOsmImagery() {
   return new Cesium.OpenStreetMapImageryProvider({
@@ -16,7 +30,7 @@ export function createEsriImagery() {
     'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer',
     {
       credit:
-        'Powered by Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+        'Powered by Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community (needs your own Esri licence)',
       enablePickFeatures: false,
     },
   );

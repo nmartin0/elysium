@@ -5,6 +5,15 @@ import { createTerrainRetryPolicy } from './terrainRetry.js';
 export const KEYLESS_TERRAIN_URL =
   'https://terrain.reearth.land/cesium-mesh/ellipsoid';
 
+/**
+ * STUBBED (owner, 2 Nov 2026): the hosted Re:Earth endpoint is a third party's
+ * service whose terms nobody here could read, and the owner's plan is terrain
+ * self-hosted from Mapterhorn. While `stubbed` is true the keyless stacks get
+ * flat ellipsoid terrain and make no terrain request. Set it to false to turn
+ * the Re:Earth terrain back on (the tests lift it themselves).
+ */
+export const KEYLESS_TERRAIN_STUB = { stubbed: true };
+
 /** These factories are lazy: a hidden globe must not trigger terrain loading. */
 export async function createWorldTerrain(accessToken, { signal } = {}) {
   accessToken = String(accessToken || '').trim();
@@ -48,6 +57,8 @@ export function createKeylessTerrainResource(
 }
 
 export async function createKeylessTerrain() {
+  if (KEYLESS_TERRAIN_STUB.stubbed)
+    return { provider: new Cesium.EllipsoidTerrainProvider() };
   try {
     return {
       provider: await Cesium.CesiumTerrainProvider.fromUrl(

@@ -25,7 +25,9 @@ they break an owner rule or the app.
   stay; they are the reason a merge of upstream changes to those files
   needs a hand-resolve. New work does not add to that list.
 - STUBBED on 2 November 2026 (owner): the `s2-ghostmaps` conflict-map layer
-  and the Cyber sonar. See "Stubbed, with how to turn back on" below.
+  and the Cyber sonar. See "Stubbed, with how to turn back on" below. The
+  same day the keyless default basemap moved off Esri imagery and the keyless
+  terrain was switched off (see "Basemap", below).
 - Left as upstream, on purpose: the "God's Eye View" page title and
   title bar, the "Provider Settings" wording, `.env.example` (its
   OpenAI, Gemini and Mapillary keys are inert in this fork), the
@@ -68,6 +70,39 @@ Both are switched off and hidden. All their code, tests and data files stay.
   restore those two `display` values; the engine tests
   (`cyberSonar.test.mjs`, `cyberSonarScene.test.mjs`) lift the stub
   themselves, and `cyberTheme.test.mjs` pins the two CSS lines.
+
+### Basemap (owner, 2 November 2026)
+
+The basemap is the free open set (docs/feeds.md, "Basemap build plan"). Only
+the first slice is built: the low-zoom layer.
+
+- **Default stack.** With no Google key the app now starts on the new
+  `natural-earth` stack (`src/maps/catalog.js`, `defaultSources.js`,
+  `app/scene.js`), not Esri. It is Natural Earth II (public domain), levels 0
+  to 2 (about 5.7 px per degree at level 2), 465 KB (475,959 bytes; 42 JPEG tiles and the tile map file) in
+  `screen/public/basemap/natural-earth-ii/`, copied from the `cesium` npm
+  package (`Assets/Textures/NaturalEarthII`) and read by
+  `Cesium.TileMapServiceImageryProvider`. Beyond level 2 Cesium stretches
+  it, so close up it is blurry; WorldCover is the planned fix.
+- **Esri stays, not the default.** The `esri-imagery` stack, its chip and its
+  fallbacks are unchanged, but the chip reads "Esri Satellite (own licence)"
+  and the credit says "needs your own Esri licence". The id is also kept in
+  the share-link enum (`natural-earth` is appended there; codes are
+  permanent). Still on Esri: the Recent Imagery layer borrows the Esri stack
+  when a day is shown (`maps/imageryComparison.js`, `IMAGERY_COMPARISON_STACK_ID`).
+  That is left as upstream for now and is the next thing to move.
+- **Keyless terrain stubbed.** `KEYLESS_TERRAIN_STUB = { stubbed: true }` in
+  `src/maps/terrain.js`: `createKeylessTerrain()` returns flat ellipsoid
+  terrain and makes no request, and `registerDataCredits` skips the
+  Re:Earth credit (its own mirror flag `REEARTH_TERRAIN_CREDIT_STUBBED` in
+  `data/dataCredits.js`; flip both). Why: the hosted Re:Earth endpoint is a third party's
+  service and its terms could not be read here; the owner's plan is terrain
+  self-hosted from Mapterhorn. To turn it back on set `stubbed: false`
+  (the two tests in `sourceFactories.test.mjs` lift it themselves).
+- Files: `src/maps/{catalog,defaultSources,imagery,terrain}.js`,
+  `app/scene.js`, `mapStackChips.js`, `view/index.js`, `share/viewCodec.js`
+  (enum appended), `data/dataCredits.js` (new `natural-earth-basemap` entry,
+  Re:Earth skipped while stubbed), their tests, `public/basemap/`.
 
 ## Changes versus upstream 8978801dfd2a
 

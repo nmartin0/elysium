@@ -92,6 +92,13 @@ const CONTROLLER_STACKS = [
     unavailableReason: null,
   },
   {
+    id: 'natural-earth',
+    label: 'Natural Earth',
+    requiresIon: false,
+    available: true,
+    unavailableReason: null,
+  },
+  {
     id: 'bing-aerial',
     label: 'Bing Aerial',
     requiresIon: true,
@@ -107,7 +114,7 @@ const CONTROLLER_STACKS = [
   },
   {
     id: 'esri-imagery',
-    label: 'Esri Satellite',
+    label: 'Esri Satellite (own licence)',
     requiresIon: false,
     available: true,
     unavailableReason: null,
@@ -121,7 +128,7 @@ const CONTROLLER_STACKS = [
   },
 ];
 
-test('the row renders exactly the five owner-approved sources', () => {
+test('the row renders exactly the six owner-approved sources', () => {
   const container = makeElement();
   renderMapStackChips(container, CONTROLLER_STACKS, {
     activeId: 'photoreal',
@@ -130,17 +137,26 @@ test('the row renders exactly the five owner-approved sources', () => {
 
   assert.deepEqual(
     container.children.map((chip) => chip.dataset.stackId),
-    ['photoreal', 'bing-aerial', 'bing-labels', 'esri-imagery', 'osm'],
+    [
+      'photoreal',
+      'natural-earth',
+      'bing-aerial',
+      'bing-labels',
+      'esri-imagery',
+      'osm',
+    ],
   );
   assert.deepEqual(container.children.map(chipText), [
     'Google 3D',
+    'Natural Earth',
     'Bing Aerial',
     'Bing Labels',
-    'Esri Satellite',
+    'Esri Satellite (own licence)',
     'OSM',
   ]);
   assert.deepEqual(PRESENTED_MAP_STACK_IDS, [
     'photoreal',
+    'natural-earth',
     'bing-aerial',
     'bing-labels',
     'esri-imagery',
@@ -168,7 +184,7 @@ test('internal and future stacks stay outside the approved presentation set', ()
   ];
   renderMapStackChips(container, withHybrid, { activeId: 'photoreal', doc });
 
-  assert.equal(container.children.length, 5);
+  assert.equal(container.children.length, 6);
   assert.doesNotMatch(container.children.map(chipText).join(' '), /Hybrid/);
 });
 
@@ -192,9 +208,9 @@ test('clicking a chip dispatches that stack id — the same selection the dropdo
     doc,
   });
 
+  container.children[5].click();
   container.children[4].click();
-  container.children[3].click();
-  container.children[1].click();
+  container.children[2].click();
   assert.deepEqual(selected, ['osm', 'esri-imagery', 'bing-aerial']);
 });
 
@@ -230,12 +246,12 @@ test('the lit chip tracks controller state, not the click', () => {
   // A rejected/superseded switch reports the stack that is genuinely active.
   syncMapStackChips(container, 'photoreal');
   assert.ok(container.children[0].classList.contains('active'));
-  assert.equal(container.children[4].getAttribute('aria-pressed'), 'false');
+  assert.equal(container.children[5].getAttribute('aria-pressed'), 'false');
 
   // A landed switch moves both the class and the pressed state.
   syncMapStackChips(container, 'osm');
-  assert.ok(container.children[4].classList.contains('active'));
-  assert.equal(container.children[4].getAttribute('aria-pressed'), 'true');
+  assert.ok(container.children[5].classList.contains('active'));
+  assert.equal(container.children[5].getAttribute('aria-pressed'), 'true');
   assert.ok(!container.children[0].classList.contains('active'));
   assert.equal(container.children[0].getAttribute('aria-pressed'), 'false');
 });
@@ -259,7 +275,7 @@ test('keyless ion stacks stay focusable, aria-disabled, and say why', () => {
     doc,
   });
 
-  const bingAerial = container.children[1];
+  const bingAerial = container.children[2];
   assert.equal(
     bingAerial.disabled,
     false,
@@ -285,7 +301,7 @@ test('keyless ion stacks stay focusable, aria-disabled, and say why', () => {
   );
 
   assert.equal(
-    container.children[3].getAttribute('aria-disabled'),
+    container.children[5].getAttribute('aria-disabled'),
     'false',
     'OSM stays selectable',
   );
@@ -323,7 +339,7 @@ test('a non-ion stack that fails never claims an ion token is required', () => {
     'Needs GOOGLE_MAPS_API_KEY — add it in Provider Settings',
   );
   assert.equal(
-    chipText(container.children[1]),
+    chipText(container.children[2]),
     'Bing Aerial',
     'available ion stacks stay unbadged',
   );

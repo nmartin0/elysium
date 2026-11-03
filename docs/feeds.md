@@ -88,10 +88,91 @@ here does.
 - **Aircraft: adsb.lol**, with the door rules above.
 - **Basemap: a properly licensed one is to be found** (research under
   way); Esri's keyless imagery is not to be used. **Status, 2 November
-  2026: the screen still ships upstream's keyless Esri World Imagery as
-  its default**, because the web UI is kept as upstream has it (see
-  FORK.md, "Stub, don't delete"). This line is therefore not yet met;
-  it is met when the owner's basemap choice is built.
+  2026: the default is no longer Esri.** With no Google key the screen
+  starts on bundled Natural Earth II (public domain, low zoom only) with
+  flat terrain; the Esri stack stays selectable, labelled as needing the
+  user's own licence (FORK.md, "Basemap"). This line is met for the
+  default only: the Recent Imagery layer still borrows the Esri stack,
+  and the rest of the owner's set (WorldCover, self-hosted Mapterhorn
+  terrain) is not built; see "Basemap build plan".
+
+## Basemap build plan
+
+Owner decision, 2 November 2026: the free open set. Natural Earth for low
+zoom, ESA WorldCover 2021 for land cover, terrain self-hosted from
+Mapterhorn. Checked on 3 November 2026 from a container that could reach
+GitHub and package registries only. The providers' own sites
+(naturalearthdata.com, esa-worldcover.org, mapterhorn.com,
+download.mapterhorn.com, terrain.reearth.land) did not load, so anything not
+marked "verified" is unverified.
+
+**Built (first slice).** Natural Earth II levels 0 to 2 (42 JPEG tiles and a
+tile map file, 475,959 bytes) from the `cesium` npm package, under
+`screen/public/basemap/natural-earth-ii/`. It is a 2048 by 1024
+equirectangular picture of the world: fine from orbit height, a blur at city
+zoom.
+
+- **Natural Earth.** Verified (nvkelso/natural-earth-vector `LICENSE.md`): "All
+  versions of Natural Earth raster + vector map data ... are in the public
+  domain", for personal, educational and commercial use; "No permission is
+  needed ... Crediting the authors is unnecessary". Suggested citation, short:
+  "Made with Natural Earth." Long: "Made with Natural Earth. Free vector and
+  raster map data @ naturalearthdata.com". The app shows the long form.
+  Cesium's own `LICENSE.md` lists "Public domain data from Natural Earth".
+  Not verified: that the Cesium tiles are the unaltered release (the tile map
+  title says `NE2_HR_LC_SR_W_DR_recolored.tif`, so they were recoloured). The
+  full-size rasters are not on GitHub (the natural-earth-raster README says
+  "Github has file size limits"), so a sharper Natural Earth raster has to come
+  from naturalearthdata.com; not verified.
+- **ESA WorldCover 2021.** Not built, not verified from the provider. From the
+  owner's brief, not re-checked: CC BY 4.0, 10 m, global, 11 classes, in
+  3-degree GeoTIFF tiles. The exact attribution wording is unverified; read it
+  from esa-worldcover.org before it goes in the app. The download size is
+  unverified. A raster tile pyramid for the globe is a separate build step
+  (colour the classes, cut web tiles, pack as PMTiles) that has not been
+  written.
+- **Mapterhorn.** Verified from github.com/mapterhorn/mapterhorn (README,
+  `pipelines/README.md`, `pipelines/attribution.py`,
+  `pipelines/download_urls.py`, `CONTRIBUTING.md`, read through
+  raw.githubusercontent.com):
+  - Code is BSD-3. The terrain data is "various open-data sources"; the
+    full list is at mapterhorn.com/attribution (not reachable).
+  - Contribution rule: a source must be "similar or not more restrictive than
+    CC-BY-4.0"; a source whose licence forbids commercial use or has a
+    share-alike clause is not accepted. So each source permits commercial use
+    with credit, and the credit is per source.
+  - `attribution.py` writes `attribution.json` with, per source: `source`,
+    `name`, `website`, `license`, `producer`, `license_pdf`, `resolution`,
+    `access_year`, `tarball_size`, `tarball_md5sum`, `tarball_url`
+    (`https://download.mapterhorn.com/sources/{source}.tar`). The app must show
+    that list (or link to it), not one blanket credit.
+  - Format: Terrarium-encoded RGB, WebP, 512 px tiles, Web Mercator, in
+    PMTiles. `planet.pmtiles` holds zoom 0 to 12 for the world; each
+    `6-{x}-{y}.pmtiles` holds zoom 13 and deeper under that zoom-6 tile.
+    `download_urls.json` lists each file with `url`, `md5sum`, `size`, bounds
+    and zoom range, at `https://download.mapterhorn.com/{name}.pmtiles`. The
+    hosted tile URL is `https://tiles.mapterhorn.com/{z}/{x}/{y}.webp`.
+  - Not verified: the sizes. `download_urls.json` and `attribution.json` carry
+    them but could not be fetched. The pipeline README says single-zoom
+    working files reach "around 1 gigabyte", so zoom 13 and deeper for the
+    whole planet is far beyond a small server; size `planet.pmtiles` first.
+    Not verified: Mapterhorn's fair-use terms for its hosted tiles.
+  - Cesium cannot read Terrarium tiles. Its terrain providers read
+    quantized-mesh (`layer.json` and `.terrain` tiles) or a heightmap. The
+    Re:Earth endpoint upstream used is Mapterhorn converted to quantized-mesh.
+    Self-hosting needs either a small custom `TerrainProvider` that reads
+    Terrarium tiles (client code, no conversion) or a quantized-mesh build.
+    Neither is written.
+- **Hosting.** PMTiles is one static file read with HTTP range requests, so
+  any static host works if it sends `Accept-Ranges` and CORS headers and
+  caches. No tile server. The owner must host: Natural Earth (done, in the
+  repo); `planet.pmtiles` for terrain at zoom 0 to 12 (size unverified);
+  optionally the `6-x-y` files for regions that need close terrain (sizes
+  unverified); the WorldCover tile pyramid (size unverified, depends on the
+  deepest zoom cut); and a page or file that lists every Mapterhorn source
+  from `attribution.json`.
+- **Until then.** Terrain is flat on the keyless stacks, because the hosted
+  Re:Earth endpoint belongs to a third party and its terms were not read.
 
 ## Recommendation (as researched)
 
@@ -113,8 +194,9 @@ AISStream terms of any kind; the Danish Maritime Authority's commercial
 and attribution terms; a CelesTrak User-Agent rule or licence;
 nowCOAST's own terms, limits and radar layer names; the Mobility
 Database API limits; any provider page for Re:Earth terrain;
-Mapterhorn's fair-use policy and full source list; whether keyless Esri
-World Imagery is allowed at all.
+Mapterhorn's fair-use policy, full source list and file sizes; whether
+keyless Esri World Imagery is allowed at all; ESA WorldCover's attribution
+wording and download size (see "Basemap build plan").
 
 ## Sources
 

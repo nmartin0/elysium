@@ -141,3 +141,19 @@ test('every Street Level imagery source is in the attribution lightbox', () => {
       `${key} has no credit`,
     );
 });
+
+test('the default Natural Earth basemap is credited, and the stubbed Re:Earth terrain is not registered', async () => {
+  const credit = DATA_CREDITS.find(
+    (entry) => entry.key === 'natural-earth-basemap',
+  );
+  assert.ok(credit, 'the default basemap must be credited');
+  assert.match(credit.html, /Made with .*Natural Earth/);
+  assert.match(credit.html, /naturalearthdata\.com/);
+  const { registerDataCredits } = await import('./dataCredits.js');
+  const added = [];
+  registerDataCredits({
+    creditDisplay: { addStaticCredit: (c) => added.push(c.html) },
+  });
+  assert.ok(added.some((html) => /Natural Earth/.test(html)));
+  assert.ok(!added.some((html) => /Re:Earth Terrain/.test(html)));
+});

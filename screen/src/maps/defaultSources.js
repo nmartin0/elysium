@@ -4,6 +4,8 @@ import { keySetupRequirementEnvVars } from '../keySetupCore.mjs';
 import { t } from '../i18n/index.js';
 import {
   createOsmImagery,
+  createNaturalEarthImagery,
+  NATURAL_EARTH_ATTRIBUTION_HTML,
   createEsriImagery,
   createIonImagery,
   ESRI_ATTRIBUTION_HTML,
@@ -26,7 +28,7 @@ export function createDefaultMapSources({
       : createKeylessTerrain,
   };
   return {
-    defaultId: googleTileset ? 'photoreal' : 'esri-imagery',
+    defaultId: googleTileset ? 'photoreal' : 'natural-earth',
     unknownId: 'photoreal',
     recoveryId: googleTileset ? 'photoreal' : null,
     state: { hasCesiumIonToken: hasIon },
@@ -52,11 +54,16 @@ export function createDefaultMapSources({
           ? () => createIonImagery(descriptor.style, ionToken)
           : descriptor.id === 'osm'
             ? createOsmImagery
-            : createEsriImagery;
+            : descriptor.id === 'natural-earth'
+              ? createNaturalEarthImagery
+              : createEsriImagery;
       return {
         ...common,
         imagery,
         terrain,
+        ...(descriptor.id === 'natural-earth'
+          ? { credit: NATURAL_EARTH_ATTRIBUTION_HTML }
+          : {}),
         ...(descriptor.id === 'esri-imagery'
           ? {
               credit: ESRI_ATTRIBUTION_HTML,

@@ -45,8 +45,11 @@ pauses while the tab is hidden and runs one overdue update on return.
 ## Globe and view
 
 - **Map stacks**: Google Photorealistic 3D (needs `GOOGLE_MAPS_API_KEY`),
-  Bing aerial and labels (need `CESIUM_ION_TOKEN`), Esri imagery, OpenStreetMap.
-  With no key the app starts on Esri imagery with keyless terrain.
+  Natural Earth (bundled, public domain), Bing aerial and labels (need
+  `CESIUM_ION_TOKEN`), Esri imagery (needs your own Esri licence), OpenStreetMap.
+  With no key the app starts on Natural Earth with flat terrain (the keyless
+  terrain is stubbed off, see FORK.md "Basemap"). Natural Earth is sharp only
+  at low zoom (levels 0 to 2); Recent Imagery still borrows the Esri stack.
 - **Visual styles**: Normal, Anime, Noir. Older links that name the removed
   looks open as Normal.
 - **HUD**: mode, a deterministic summary line, UTC time, camera latitude,

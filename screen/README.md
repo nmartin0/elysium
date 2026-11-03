@@ -44,8 +44,8 @@ source switched off with a note.
 
 | Variable | Used for | Without it |
 | --- | --- | --- |
-| `GOOGLE_MAPS_API_KEY` | Photorealistic 3D Tiles, Google place search | Starts on Esri World Imagery; search falls back to Photon and Nominatim |
-| `CESIUM_ION_TOKEN` | Bing map stacks, Cesium world terrain | Those stacks are off; keyless terrain |
+| `GOOGLE_MAPS_API_KEY` | Photorealistic 3D Tiles, Google place search | Starts on bundled Natural Earth (not Esri); search falls back to Photon and Nominatim |
+| `CESIUM_ION_TOKEN` | Bing map stacks, Cesium world terrain | Those stacks are off; flat terrain (keyless terrain is stubbed) |
 | `AISSTREAM_API_KEY` | Live vessels | Vessel layer off |
 | `FIRMS_MAP_KEY` | Active fires (NASA FIRMS) | Fire layer off |
 | `OPENSKY_CLIENT_ID`, `OPENSKY_CLIENT_SECRET` | OpenSky aircraft ([docs/opensky-auth.md](docs/opensky-auth.md)) | adsb.lol fallback |
@@ -57,8 +57,9 @@ tuning variables.
 
 ## What is in the app
 
-- **Map stacks**: Google Photorealistic 3D, Bing aerial and labels, Esri
-  imagery, OpenStreetMap (`src/maps/catalog.js`), with terrain and a
+- **Map stacks**: Google Photorealistic 3D, Natural Earth (the keyless
+  default), Bing aerial and labels, Esri imagery (your own Esri licence),
+  OpenStreetMap (`src/maps/catalog.js`), with terrain and a
   recent-imagery layer and compare tools.
 - **Layers** (`src/ui/layerNames.js`): Live Flights, Live Vessels, Satellites,
   Space Missions (30d), Earthquakes (24h), Active Fires (FIRMS), Fire

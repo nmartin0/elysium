@@ -8,6 +8,14 @@ export const MAP_STACKS = [
     requiresIon: false,
   },
   {
+    // The keyless default (2 Nov 2026): bundled Natural Earth II, public domain.
+    id: 'natural-earth',
+    label: 'Natural Earth', // i18n-ignore: imagery product name
+    shortLabel: 'NE',
+    kind: 'natural-earth',
+    requiresIon: false,
+  },
+  {
     id: 'bing-aerial',
     label: 'Bing Aerial', // i18n-ignore: imagery product name
     shortLabel: 'Aerial',
@@ -25,7 +33,8 @@ export const MAP_STACKS = [
   },
   {
     id: 'esri-imagery',
-    label: 'Esri Satellite', // i18n-ignore: imagery product name
+    // Not the default: needs the user's own Esri licence (FORK.md, docs/feeds.md).
+    label: 'Esri Satellite (own licence)', // i18n-ignore: imagery product name
     shortLabel: 'SAT',
     kind: 'esri-imagery',
     requiresIon: false,

@@ -1,11 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as Cesium from 'cesium';
-import { createIonImagery } from './imagery.js';
-import { createWorldTerrain, createKeylessTerrain } from './terrain.js';
+import {
+  createIonImagery,
+  createNaturalEarthImagery,
+  NATURAL_EARTH_TILES_URL,
+} from './imagery.js';
+import {
+  createWorldTerrain,
+  createKeylessTerrain,
+  KEYLESS_TERRAIN_STUB,
+} from './terrain.js';
 import { createDefaultMapSources } from './defaultSources.js';
 
 test('Esri uses Re:Earth without keys and preserves ion terrain when configured', async () => {
+  KEYLESS_TERRAIN_STUB.stubbed = false; // the stub is lifted to test the real path
   const originalTerrain = Cesium.CesiumTerrainProvider.fromUrl;
   const originalResource = Cesium.IonResource.fromAssetId;
   const calls = [];
@@ -65,9 +74,72 @@ test('Esri uses Re:Earth without keys and preserves ion terrain when configured'
       );
     }
   } finally {
+    KEYLESS_TERRAIN_STUB.stubbed = true;
     Cesium.CesiumTerrainProvider.fromUrl = originalTerrain;
     Cesium.IonResource.fromAssetId = originalResource;
   }
+});
+
+test('with no key the default stack is Natural Earth, not Esri, and its credit is attached', () => {
+  const keyless = createDefaultMapSources();
+  assert.equal(keyless.defaultId, 'natural-earth');
+  assert.notEqual(keyless.defaultId, 'esri-imagery');
+  const ne = keyless.sources.find(
+    ({ descriptor }) => descriptor.id === 'natural-earth',
+  );
+  assert.equal(ne.available, true);
+  assert.match(ne.credit, /Natural Earth/);
+  assert.match(ne.credit, /naturalearthdata\.com/);
+  const esri = keyless.sources.find(
+    ({ descriptor }) => descriptor.id === 'esri-imagery',
+  );
+  assert.match(esri.descriptor.label, /own licence/);
+  assert.match(esri.credit, /own Esri licence/);
+  // A Google tileset still wins when there is one.
+  assert.equal(
+    createDefaultMapSources({ googleTileset: { show: true } }).defaultId,
+    'photoreal',
+  );
+});
+
+test('the keyless terrain is stubbed to flat and makes no request', async () => {
+  assert.equal(KEYLESS_TERRAIN_STUB.stubbed, true);
+  const originalTerrain = Cesium.CesiumTerrainProvider.fromUrl;
+  try {
+    Cesium.CesiumTerrainProvider.fromUrl = async () =>
+      assert.fail('stubbed terrain must not be requested');
+    const { provider, fallback } = await createKeylessTerrain();
+    assert.ok(provider instanceof Cesium.EllipsoidTerrainProvider);
+    assert.equal(fallback, undefined);
+  } finally {
+    Cesium.CesiumTerrainProvider.fromUrl = originalTerrain;
+  }
+});
+
+test('the bundled Natural Earth tiles exist and the provider reads them', async () => {
+  const { existsSync, readFileSync } = await import('node:fs');
+  const dir = new URL(
+    '../../public/basemap/natural-earth-ii/',
+    import.meta.url,
+  );
+  assert.ok(existsSync(new URL('tilemapresource.xml', dir)));
+  assert.ok(existsSync(new URL('0/0/0.jpg', dir)));
+  assert.ok(existsSync(new URL('2/7/3.jpg', dir)));
+  const xml = readFileSync(new URL('tilemapresource.xml', dir), 'utf8');
+  const original = Cesium.TileMapServiceImageryProvider.fromUrl;
+  const calls = [];
+  try {
+    Cesium.TileMapServiceImageryProvider.fromUrl = async (url, options) => {
+      calls.push({ url, options });
+      return {};
+    };
+    await createNaturalEarthImagery();
+  } finally {
+    Cesium.TileMapServiceImageryProvider.fromUrl = original;
+  }
+  assert.match(xml, /extension="jpg"/);
+  assert.equal(calls[0].url, NATURAL_EARTH_TILES_URL);
+  assert.match(calls[0].options.credit, /Natural Earth/);
 });
 
 test('imagery and terrain pass their own ion token without relying on SDK defaults', async () => {
@@ -319,6 +391,10 @@ test('both Google 3D routes keep tiles drawing while draped imagery loads', asyn
 });
 
 test('unreachable keyless terrain falls back to flat terrain marked as a fallback', async (t) => {
+  KEYLESS_TERRAIN_STUB.stubbed = false; // lift the stub to test the real path
+  t.after(() => {
+    KEYLESS_TERRAIN_STUB.stubbed = true;
+  });
   t.mock.method(Cesium.CesiumTerrainProvider, 'fromUrl', async () => {
     throw new Error('layer.json unreachable');
   });

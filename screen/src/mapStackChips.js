@@ -16,6 +16,7 @@ import { t } from './i18n/index.js';
 export const MAP_STACK_CHIP_CLASS = 'map-stack-chip';
 export const PRESENTED_MAP_STACK_IDS = Object.freeze([
   'photoreal',
+  'natural-earth',
   'bing-aerial',
   'bing-labels',
   'esri-imagery',
