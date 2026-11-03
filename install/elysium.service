@@ -38,6 +38,7 @@ User=elysium
 Group=elysium
 WorkingDirectory=/opt/elysium
 
+Environment=PYTHONPATH=/opt/elysium/src
 Environment=ELYSIUM_CONFIG_DIR=/etc/elysium
 Environment=ELYSIUM_DATA_DIR=/var/lib/elysium
 Environment=ELYSIUM_LOG_DIR=/var/log/elysium
@@ -52,7 +53,7 @@ Environment=ELYSIUM_LOG_DIR=/var/log/elysium
 # still running is cut, a write cut mid-apply is what the write log's
 # resume path recovers. Thirty, because a restart should not hang for the
 # ten minutes a slow model call can take.
-ExecStart=/opt/elysium/venv/bin/uvicorn api.app:app --host 127.0.0.1 --port 8000 --timeout-graceful-shutdown 30
+ExecStart=/opt/elysium/venv/bin/uvicorn elysium.api.app:app --host 127.0.0.1 --port 8000 --timeout-graceful-shutdown 30
 
 # LONGER THAN uvicorn's thirty, so uvicorn ends the process -- cleanly,
 # "Application shutdown complete" -- rather than systemd's SIGKILL at its

@@ -7,8 +7,8 @@ import json
 import numpy as np
 import pytest
 
-from core.embeddings import MAX_TEXT_CHARS, EmbeddingStore, nearest, refresh, text_of, unit
-from core.ontology.semantic_search import semantic_search_of, validate_semantic_search
+from elysium.core.embeddings import MAX_TEXT_CHARS, EmbeddingStore, nearest, refresh, text_of, unit
+from elysium.core.ontology.semantic_search import semantic_search_of, validate_semantic_search
 
 #: Words that mean the same thing share a dimension -- the property an
 #: embedding model has, reduced to a dictionary.
@@ -177,7 +177,7 @@ class TestTheEmbedder:
     """The one request every embedding server speaks (18 October)."""
 
     def _embedder(self, monkeypatch, reply, tags=None, model="nomic-embed-text", **options):
-        from adapters import embedding_adapter
+        from elysium.adapters import embedding_adapter
 
         sent = []
 
@@ -246,7 +246,7 @@ class TestTheEmbedder:
         {"data": [{"index": 0, "embedding": [1.0]}, {"index": 1, "embedding": []}]},
     ])
     def test_a_reply_without_one_vector_per_text_is_unavailable(self, monkeypatch, reply):
-        from core.llm.interface import LLMUnavailable
+        from elysium.core.llm.interface import LLMUnavailable
 
         embedder, _ = self._embedder(monkeypatch, reply)
         with pytest.raises(LLMUnavailable, match="one vector per text"):
@@ -266,7 +266,7 @@ class TestTheEmbedder:
         """Matryoshka (18 October): `dimensions` is sent, and a server
         answering another length is refused -- never cut down here, which
         is right only for a model trained for it."""
-        from core.llm.interface import LLMUnavailable
+        from elysium.core.llm.interface import LLMUnavailable
 
         embedder, sent = self._embedder(monkeypatch, self._data([0.5] * 4), dimensions=4)
         assert embedder.embed_query("x") == [0.5] * 4
@@ -315,13 +315,13 @@ class TestTheSettings:
         return SimpleNamespace(**settings)
 
     def test_any_provider_embeds_at_the_chat_servers_origin(self):
-        from core.deployment_loader import build_embedder
+        from elysium.core.deployment_loader import build_embedder
 
         for provider in ("ollama", "vllm"):
             assert build_embedder(self._config(provider)).origin == "http://ollama.internal:11434"
 
     def test_the_configured_size_reaches_the_embedder(self):
-        from core.deployment_loader import build_embedder
+        from elysium.core.deployment_loader import build_embedder
 
         assert build_embedder(self._config(embedding_dimensions=512)).dimensions == 512
         assert build_embedder(self._config(embedding_dimensions=None)).dimensions is None
@@ -329,7 +329,7 @@ class TestTheSettings:
     def test_a_separate_embedding_server_is_used_when_named(self):
         from types import MappingProxyType
 
-        from core.deployment_loader import build_embedder
+        from elysium.core.deployment_loader import build_embedder
 
         embedder = build_embedder(self._config(embedding_connection=MappingProxyType(
             {"base_url": "http://tei:8080", "api_key": "k"})))
@@ -338,7 +338,7 @@ class TestTheSettings:
     def test_a_provider_with_no_server_is_told_to_name_one(self):
         from types import MappingProxyType
 
-        from core.deployment_loader import build_embedder
+        from elysium.core.deployment_loader import build_embedder
 
         with pytest.raises(ValueError, match="embedding_connection.base_url"):
             build_embedder(self._config("claude_agent_sdk", llm_connection=MappingProxyType({})))
@@ -354,13 +354,13 @@ class TestTheSettings:
         ({"embedding_dimensions": True}, "16 to 8192"),
     ])
     def test_a_bad_setting_is_refused_with_the_reason(self, llm, why):
-        from core.deployment_loader import _embedding_settings
+        from elysium.core.deployment_loader import _embedding_settings
 
         with pytest.raises(ValueError, match=why):
             _embedding_settings(llm)
 
     def test_a_key_is_read_from_the_environment_by_reference(self, monkeypatch):
-        from core.deployment_loader import _embedding_settings
+        from elysium.core.deployment_loader import _embedding_settings
 
         monkeypatch.setenv("EMBED_KEY", "from-env")
         settings = _embedding_settings({"embedding_model": "m",

@@ -53,9 +53,9 @@ which makes this a security input to D1, not only a speed decision.
 
 import pytest
 
-from core.agent.agentic_loop import AgentLoop
-from core.intermediate_layer.auth import resolve_user_record
-from core.llm.agent_step_prompt import _build_system_prompt
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.agent.agentic_loop import AgentLoop
+from elysium.core.llm.agent_step_prompt import _build_system_prompt
 
 
 @pytest.fixture

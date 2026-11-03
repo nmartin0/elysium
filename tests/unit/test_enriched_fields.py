@@ -4,11 +4,11 @@ the rule language a model may write in, and what gold does with it."""
 import pyarrow as pa
 import pytest
 
-from core.enrichment_recipes import EnrichmentRecipeStore
-from core.mirror.enrichment import with_approved_recipes
-from core.mirror.gold_arrow import APPROVED_RULES, with_derived
-from core.ontology.derived_fields import gate_derived_grants
-from core.ontology.enriched_fields import (
+from elysium.core.enrichment_recipes import EnrichmentRecipeStore
+from elysium.core.mirror.enrichment import with_approved_recipes
+from elysium.core.mirror.gold_arrow import APPROVED_RULES, with_derived
+from elysium.core.ontology.derived_fields import gate_derived_grants
+from elysium.core.ontology.enriched_fields import (
     RuleError,
     apply_recipe,
     apply_rules,
@@ -166,7 +166,7 @@ class TestGold:
         is read by: 1.234,50 is an amount in pt_BR and nothing without it."""
         from decimal import Decimal
 
-        from core.mirror.enrichment import with_approved_recipes
+        from elysium.core.mirror.enrichment import with_approved_recipes
 
         types = _types(data_type="decimal",
                        enrich={"from": ["body"], "instruction": "The amount.", "extract": True})

@@ -4,7 +4,7 @@
 #
 # Each type's "storage" block holds ONLY its physical backing --
 # everything else in a type's entry is purely SEMANTIC. See
-# core/ontology/mediator.py's own docstring for the full reasoning.
+# src/elysium/core/ontology/mediator.py's own docstring for the full reasoning.
 
 object_types:
   Customer:
@@ -19,7 +19,7 @@ object_types:
     # test_mdo_e2e.py, proving a real model transparently reads a
     # field backed by a GENUINELY SEPARATE silo, with no indication in
     # its own prompt this field is any different from any other. See
-    # core/ontology/mediator.py's own MDO docstring for the mechanism.
+    # src/elysium/core/ontology/mediator.py's own MDO docstring for the mechanism.
     # Deliberately mismatched naming, same as tests/unit/test_mdo.py --
     # risk_db's own id_column is "cust_ref", not "customer_id".
     additional_storage:
@@ -215,8 +215,8 @@ action_types:
           - set: {property: name, value: parameter.new_name}
   # For tests/integration/test_write_proposal_e2e.py -- the one real,
   # still-open gap this project had: "user.security_value" and writing
-  # to a type's own id_field (see core/ontology/write_mediator.py's
-  # _resolve_mutation_value() and core/ontology/schema.py's
+  # to a type's own id_field (see src/elysium/core/ontology/write_mediator.py's
+  # _resolve_mutation_value() and src/elysium/core/ontology/schema.py's
   # get_column_for_field()) were both found and fixed while building
   # named actions, but neither had ever been exercised by a REAL,
   # freely-reasoning model before -- only unit tests and direct
@@ -262,7 +262,7 @@ action_types:
   # this addition's own job to prove again.
   #
   # Mutations only ever "set" a value -- there is no arithmetic
-  # increment/decrement mutation kind, deliberately (see core/ontology/
+  # increment/decrement mutation kind, deliberately (see src/elysium/core/ontology/
   # write_mediator.py's own docstring on mutation resolution). A real
   # transfer's own new balances are therefore parameters the CALLER
   # supplies directly, already computed -- exactly how a real person
@@ -285,7 +285,7 @@ action_types:
         # specify a different "to" account through the form at all.
         # default_to_current_object marks EXACTLY WHICH parameter
         # should be treated that way -- explicit, by parameter
-        # identity, never inferred from object_type alone (see core/
+        # identity, never inferred from object_type alone (see src/elysium/core/
         # ontology/action_types.py's own docstring for the full
         # reasoning, confirmed directly against the precedent's own
         # documented mechanism for this exact case). from_account_id,

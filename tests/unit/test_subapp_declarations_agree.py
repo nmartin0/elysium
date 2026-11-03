@@ -58,7 +58,7 @@ def _shell_dependencies() -> set[str]:
 def _folders() -> tuple[str, ...]:
     """Every module Elysium ships: the default set and the system
     sub-apps it always loads (step 1.4)."""
-    from core.modules import SHIPPED_MODULES, SYSTEM_MODULES
+    from elysium.core.modules import SHIPPED_MODULES, SYSTEM_MODULES
     return SHIPPED_MODULES + SYSTEM_MODULES
 
 

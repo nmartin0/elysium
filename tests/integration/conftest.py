@@ -15,7 +15,7 @@ shipped demo data.
 
 isolated_audit_log extends the SAME isolation principle to logging.
 This USED TO require saving, mutating, and restoring
-core.intermediate_layer.audit's own module-level LOG_PATH global by
+elysium.core.access.audit's own module-level LOG_PATH global by
 hand -- exactly the kind of fragile, easy-to-get-wrong test-isolation
 workaround a real global forces (see AuditLog's own module docstring
 for the full reasoning behind eliminating it). Now that AuditLog is a
@@ -36,7 +36,7 @@ ran next in the same pytest process; neither is possible now.
 
 This is PURELY a test-suite hygiene concern -- a real deployment runs
 as a completely separate OS process (uvicorn, or python3 -m
-scripts.run_deployment) and is never touched by anything happening
+elysium.scripts.run_deployment) and is never touched by anything happening
 inside a pytest run.
 
 read_audit_log() now lives in tests/conftest.py, not duplicated here
@@ -70,11 +70,11 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from api.app import create_app
-from core.agent.agentic_loop import AgentLoop
-from core.deployment_loader import RuntimePaths, load_deployment_bundle
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.write_mediator import WriteMediator
+from elysium.api.app import create_app
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.agent.agentic_loop import AgentLoop
+from elysium.core.deployment_loader import RuntimePaths, load_deployment_bundle
+from elysium.core.ontology.write_mediator import WriteMediator
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -194,8 +194,8 @@ def synced_template(tmp_path_factory):
     import contextlib
     import io
 
-    from core.deployment_loader import RuntimePaths
-    from scripts.run_sync import run_sync
+    from elysium.core.deployment_loader import RuntimePaths
+    from elysium.scripts.run_sync import run_sync
 
     root = tmp_path_factory.mktemp("synced-template")
     data_dir = root / "data"

@@ -18,9 +18,9 @@ import sqlite3
 import pytest
 from pyiceberg.exceptions import NoSuchTableError
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.gold import audit, build_gold, conform, published_ids
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.gold import audit, build_gold, conform, published_ids
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 CUSTOMER = {
     "id_field": "customer_id",

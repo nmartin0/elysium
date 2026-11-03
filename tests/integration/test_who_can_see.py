@@ -6,7 +6,7 @@ ontology_schema.yaml, not from the route's output: a role named
 customer_service_no_email must not read email, and so on.
 """
 
-from core.ontology.who_can_see import _compartment
+from elysium.core.ontology.who_can_see import _compartment
 from tests.integration.test_api import _login
 
 

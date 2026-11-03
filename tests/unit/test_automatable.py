@@ -19,7 +19,7 @@ actions that should not even be PROPOSED unattended.
 
 import pytest
 
-from core.ontology.action_types import validate_action_types
+from elysium.core.ontology.action_types import validate_action_types
 
 
 def _action(**overrides):
@@ -144,7 +144,7 @@ class TestTheRefusalType:
         """NOBODY'S GRANTS ARE WRONG. The action itself says it must
         be started by a person, and a PermissionError would send
         somebody auditing roles that are perfectly correct."""
-        from core.ontology.write_mediator import NotAutomatable
+        from elysium.core.ontology.write_mediator import NotAutomatable
 
         assert issubclass(NotAutomatable, ValueError)
         assert not issubclass(NotAutomatable, PermissionError)
@@ -159,7 +159,7 @@ class TestOriginKnowsAboutAutomation:
         to approve it."""
         import typing
 
-        from core.ontology.write_mediator import Origin
+        from elysium.core.ontology.write_mediator import Origin
 
         assert set(typing.get_args(Origin)) == {"human", "agent", "automation"}
 
@@ -196,17 +196,17 @@ class TestWhetherAnotherPersonApproves:
         return action
 
     def test_a_four_eyes_rule_means_someone_else(self):
-        from core.ontology.action_types import automation_needs_another_approver
+        from elysium.core.ontology.action_types import automation_needs_another_approver
 
         assert automation_needs_another_approver(self._with_four_eyes()) is True
 
     def test_unless_the_action_lets_the_owner(self):
-        from core.ontology.action_types import automation_needs_another_approver
+        from elysium.core.ontology.action_types import automation_needs_another_approver
 
         assert automation_needs_another_approver(
             self._with_four_eyes(owner_may_approve_automation=True)) is False
 
     def test_no_rule_no_second_person(self):
-        from core.ontology.action_types import automation_needs_another_approver
+        from elysium.core.ontology.action_types import automation_needs_another_approver
 
         assert automation_needs_another_approver(_action()) is False

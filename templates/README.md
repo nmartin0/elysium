@@ -12,7 +12,7 @@ stories.
 - `data_silos.yaml` -- where your data physically lives (connection details, per silo)
 - `ontology_schema.yaml` -- what data exists and how it's structured
 - `policy.yaml` -- who your users are, and exactly what they can do (MAC + fully-explicit RBAC)
-- `example_queries.yaml` -- optional demo queries for `scripts/run_deployment.py`
+- `example_queries.yaml` -- optional demo queries for `src/elysium/scripts/run_deployment.py`
 
 Every YAML file below is real, valid, and would work if copied in as-is
 -- it's a genuinely runnable minimal example, not just illustrative

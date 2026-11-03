@@ -24,7 +24,7 @@ So the permitted attributes are a closed list and this asserts it.
 
 import pytest
 
-from core.llm.tracing import (
+from elysium.core.llm.tracing import (
     CHAT,
     EXECUTE_TOOL,
     INVOKE_AGENT,

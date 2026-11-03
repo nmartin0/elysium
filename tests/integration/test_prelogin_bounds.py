@@ -16,8 +16,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from core.auth.limits import MAX_LOGIN_PASSWORD_LENGTH, MAX_USERNAME_LENGTH
-from core.auth.login_attempt_tracker import WINDOW
+from elysium.core.auth.limits import MAX_LOGIN_PASSWORD_LENGTH, MAX_USERNAME_LENGTH
+from elysium.core.auth.login_attempt_tracker import WINDOW
 from tests.integration.test_api import _csrf_headers, _login
 
 PW = "a-long-and-unremarkable-passphrase"

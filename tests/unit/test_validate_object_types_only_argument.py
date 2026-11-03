@@ -24,7 +24,7 @@ work, it can only stop a wrong call from looking like a right one.
 
 import pytest
 
-from core.ontology.object_type_validation import validate_object_types
+from elysium.core.ontology.object_type_validation import validate_object_types
 
 SCHEMA = {
     "Customer": {

@@ -17,7 +17,7 @@ depends on a real one existing).
 
 import pytest
 
-from core.ontology.action_types import MAX_SUB_WRITES, validate_action_types
+from elysium.core.ontology.action_types import MAX_SUB_WRITES, validate_action_types
 
 OBJECT_TYPES = {
     "Widget": {"id_field": "widget_id", "fields": {"name": {"type": "data"}}},

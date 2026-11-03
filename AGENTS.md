@@ -34,6 +34,17 @@ at more length, and uv overwrites it -- put it back after regenerating.
 
 `./lint.sh` fails if they have drifted.
 
+The package lives in `src/elysium/` (src layout). Install it once, so
+`python -m elysium.scripts.<name>`, `uvicorn elysium.api.app:app` and the
+`elysium` command resolve from anywhere:
+
+```bash
+pip install -e . --no-deps
+```
+
+`lint.sh` and `pytest.ini` put `src` on the path themselves, so the tests
+and the lint run without the install.
+
 ```bash
 ./lint.sh                                    # ruff, mypy, vulture, import-linter
 python -m pytest tests/ -q -m "not integration"   # the suite that must pass
@@ -61,7 +72,7 @@ than through `npm run lint`, read the count, not the exit code.
 tests matter enough to check that they would notice it breaking:
 
 ```bash
-python -m scripts.mutation_test core/mirror/incremental.py \
+python -m elysium.scripts.mutation_test src/elysium/core/mirror/incremental.py \
     tests/unit/test_incremental_sync.py
 ```
 
@@ -69,7 +80,7 @@ It lists every small change to the code that no selected test caught.
 A survivor is a question, not a verdict -- some mean the same thing
 either way -- so read each, then write the test or let it go. Its first
 two runs found a sync mark that could have moved backwards and 40-odd
-untested refusals in the derived-field loader. `scripts/check_controls.py`
+untested refusals in the derived-field loader. `src/elysium/scripts/check_controls.py`
 remains where a deliberate break is RECORDED; this is where one is
 looked for. Property tests (hypothesis) live in
 `tests/unit/test_properties.py`.
@@ -79,7 +90,7 @@ fail in sandboxes without one. That is environmental, not a regression.
 
 ## Hand over the restart with the patch, not after it
 
-A patch touching `api/` or `core/` needs `uvicorn` restarted before
+A patch touching `src/elysium/api/` or `src/elysium/core/` needs `uvicorn` restarted before
 its effect is visible. That belongs in the same block as the
 `git am`, every time, rather than in a sentence afterwards.
 
@@ -87,7 +98,7 @@ its effect is visible. That belongs in the same block as the
     git am ~/Downloads/NNN-....patch
     git push
     cd ~/elysium/ui && npm run build     # if the patch touched ui/
-    # restart uvicorn                     # if it touched api/ or core/
+    # restart uvicorn                     # if it touched src/elysium/api/ or src/elysium/core/
 
 WHY IT KEEPS BEING FORGOTTEN: the frontend hot-reloads, so a
 UI-and-backend patch LOOKS applied. The new panel appears, the new
@@ -533,7 +544,7 @@ cannot see CSS.
 **Name the measurement; do not assert the property.** Write "one
 query, 0.5 ms at 100 rows and 144 ms at 55,000" rather than "one
 query". Write "asserts are live; checked the systemd unit, the
-container entrypoint and `scripts/`" rather than "asserts are live".
+container entrypoint and `src/elysium/scripts/`" rather than "asserts are live".
 
 Both of those were claimed here without the number, and both were
 wrong in the same way: the single query was a full-history scan, and
@@ -549,7 +560,7 @@ writes at the engine level. Do not add a write method to a read
 adapter, and do not route around this.
 
 **Deletes do not delete.** A delete is an edit recorded in the write
-log; the source row is untouched. See `core/ontology/write_log.py`.
+log; the source row is untouched. See `src/elysium/core/ontology/write_log.py`.
 
 **MAC is applied in Python, per object, after the engine returns** —
 because a security value can chain through `via_field` across silos. A
@@ -598,7 +609,7 @@ configuration sets (`tests/integration/fixtures`, `templates`,
 They must still load and lint, which a test checks; generate the demo
 from the templates rather than keeping a third copy by hand.
 
-The deployment linter (`scripts/lint_deployment.py`) must know about
+The deployment linter (`src/elysium/scripts/lint_deployment.py`) must know about
 any new schema construct. It reads raw YAML on its error path, so
 anything generated at load — link fields, for instance — needs
 expanding there too, or it will blame the wrong file.
@@ -606,7 +617,7 @@ expanding there too, or it will blame the wrong file.
 ## Files you should not hand-edit
 
 `ui/module-api.report.md` is generated: the public module API, written
-down (module platform, step 4). `python -m scripts.module_api_report`
+down (module platform, step 4). `python -m elysium.scripts.module_api_report`
 rewrites it, and a test fails while it is stale -- so a change to what
 modules may rely on arrives as a diff of it, to be reviewed as an API
 change rather than regenerated without a look. It goes when the module

@@ -35,10 +35,10 @@ import sqlite3
 
 import pytest
 
-import core.mirror.iceberg_sync as iceberg_sync
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.gold import build_gold
-from core.mirror.iceberg_sync import IcebergMirrorSync
+import elysium.core.mirror.iceberg_sync as iceberg_sync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.gold import build_gold
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 TYPE = {
     "id_field": "id",
@@ -148,12 +148,12 @@ class TestItNeverFailsAPublish:
         """Retention is housekeeping. A publish that succeeded must not
         be reported as failed because the tidying afterwards did not."""
         # PATCHED WHERE IT NOW LIVES. `_expire_unreferenced` moved to
-        # core.mirror.iceberg_sync as `expire_unreferenced` so bronze
+        # elysium.core.mirror.iceberg_sync as `expire_unreferenced` so bronze
         # and silver could use it too (the backlog (consumed) 0d4); gold
         # imports
         # it INSIDE its try, so the lookup happens at call time and
         # patching the source module is what takes effect.
-        import core.mirror.iceberg_sync as sync_module
+        import elysium.core.mirror.iceberg_sync as sync_module
 
         def explode(table):
             raise OSError("catalog unavailable (injected)")

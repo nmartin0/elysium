@@ -37,9 +37,9 @@ users can use it, but this specific user's prompt never mentions it.
 
 import pytest
 
-from core.agent.agentic_loop import AgentLoop
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.write_mediator import WriteMediator
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.agent.agentic_loop import AgentLoop
+from elysium.core.ontology.write_mediator import WriteMediator
 
 
 @pytest.mark.integration

@@ -8,7 +8,7 @@ types and grants, and nothing else.
 
 import dataclasses
 
-from core.llm.interface import LLMUnavailable
+from elysium.core.llm.interface import LLMUnavailable
 
 
 class _Recorder:

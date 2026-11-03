@@ -9,7 +9,7 @@ import json
 import threading
 import time
 
-import api.live_updates as live_updates
+import elysium.api.live_updates as live_updates
 
 
 def _login(client, username, role, region="us-west"):
@@ -131,8 +131,8 @@ def test_a_new_publication_is_served_without_a_restart(client):
     import io
     import sqlite3
 
-    from api.reload import follow_publications
-    from scripts.run_sync import run_sync
+    from elysium.api.reload import follow_publications
+    from elysium.scripts.run_sync import run_sync
 
     _login(client, "reader", "customer_service")
     paths = client.app.state.runtime_paths
@@ -157,7 +157,7 @@ def test_a_new_publication_is_served_without_a_restart(client):
 def test_following_a_publication_never_applies_an_unreloaded_edit(client, monkeypatch):
     """It builds from the bytes the RUNNING generation was built from,
     not from whatever is on disk now."""
-    import api.reload as reload
+    import elysium.api.reload as reload
 
     seen = {}
 

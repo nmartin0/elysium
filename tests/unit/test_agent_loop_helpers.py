@@ -5,7 +5,7 @@ AgentLoop.filter_real_data() -- all genuinely pure functions of their
 arguments only, none needing instance state.
 """
 
-from core.agent.agentic_loop import AgentLoop, _detect_asymmetry, _step_signature
+from elysium.core.agent.agentic_loop import AgentLoop, _detect_asymmetry, _step_signature
 
 
 def test_step_signature_search_object_is_order_independent():

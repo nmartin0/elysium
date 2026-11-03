@@ -40,7 +40,7 @@ was for.
 
 import pytest
 
-from core.deployment_loader import _resolve_undeclared_columns
+from elysium.core.deployment_loader import _resolve_undeclared_columns
 
 
 class TestThePolicy:
@@ -99,7 +99,7 @@ class TestItIsActuallyWired:
     def test_the_sync_takes_it(self):
         import inspect
 
-        from core.mirror.iceberg_sync import IcebergMirrorSync
+        from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
         parameters = inspect.signature(IcebergMirrorSync.__init__).parameters
 
@@ -108,7 +108,7 @@ class TestItIsActuallyWired:
     def test_the_real_sync_script_passes_it(self):
         from pathlib import Path
 
-        source = Path("scripts/run_sync.py").read_text()
+        source = Path("src/elysium/scripts/run_sync.py").read_text()
 
         assert ("ingest_undeclared_columns=config.ingest_undeclared_columns"
                 in source)
@@ -116,7 +116,7 @@ class TestItIsActuallyWired:
     def test_the_column_list_is_actually_narrowed(self):
         from pathlib import Path
 
-        source = Path("core/mirror/iceberg_sync.py").read_text()
+        source = Path("src/elysium/core/mirror/iceberg_sync.py").read_text()
         i = source.index("undeclared = [column for column in columns")
         branch = source[i:i + 900]
 
@@ -127,7 +127,7 @@ class TestItIsActuallyWired:
     def test_an_absent_key_warns_rather_than_narrowing(self):
         from pathlib import Path
 
-        source = Path("core/mirror/iceberg_sync.py").read_text()
+        source = Path("src/elysium/core/mirror/iceberg_sync.py").read_text()
         i = source.index("undeclared = [column for column in columns")
         branch = source[i:i + 1600]
 
@@ -140,7 +140,7 @@ class TestWhatTheWarningSays:
         """"Some columns" is a warning nobody acts on."""
         from pathlib import Path
 
-        source = Path("core/mirror/iceberg_sync.py").read_text()
+        source = Path("src/elysium/core/mirror/iceberg_sync.py").read_text()
         i = source.index("never declared")
         window = source[i:i + 700]
 
@@ -153,7 +153,7 @@ class TestWhatTheWarningSays:
         audiences."""
         from pathlib import Path
 
-        source = Path("core/mirror/iceberg_sync.py").read_text()
+        source = Path("src/elysium/core/mirror/iceberg_sync.py").read_text()
         i = source.index("never declared")
         window = source[i:i + 700]
 

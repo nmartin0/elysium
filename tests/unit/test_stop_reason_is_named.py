@@ -40,9 +40,9 @@ import io
 
 import pytest
 
-from core.agent.agentic_loop import StopReason
-from core.deployment_loader import build_generation
-from core.intermediate_layer.auth import resolve_user_record
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.agent.agentic_loop import StopReason
+from elysium.core.deployment_loader import build_generation
 
 # The shipped deployment names her user_alice. Passing "alice" returns
 # an EMPTY UserRecord -- no role, no region -- and every read is then
@@ -184,7 +184,7 @@ def test_the_legacy_booleans_still_answer_for_their_own_reason():
     than stored beside it -- one fact, one place -- and this pins that
     the derivation is right in both directions.
     """
-    from core.agent.agentic_loop import AgentLoopResult
+    from elysium.core.agent.agentic_loop import AgentLoopResult
 
     for reason, flag in (
         (StopReason.CANCELLED, "cancelled"),
@@ -208,7 +208,7 @@ def test_a_proposed_write_is_not_an_incomplete_answer():
     would be wrong, and it is the case most easily swept into
     "everything that is not a finish is incomplete".
     """
-    from core.agent.agentic_loop import AgentLoopResult
+    from elysium.core.agent.agentic_loop import AgentLoopResult
 
     result = AgentLoopResult(gathered=[{"a": 1}],
                              stop_reason=StopReason.PROPOSED_WRITE)

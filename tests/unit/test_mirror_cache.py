@@ -16,10 +16,10 @@ import sqlite3
 import pytest
 from pyiceberg.expressions import And, EqualTo, In, NotEqualTo, NotIn
 
-import core.mirror.iceberg_reader as reader_module
-import core.mirror.mirror_adapter as mirror_module
-from core.mirror.snapshot_cache import SnapshotCache
-from scripts.run_sync import run_sync
+import elysium.core.mirror.iceberg_reader as reader_module
+import elysium.core.mirror.mirror_adapter as mirror_module
+from elysium.core.mirror.snapshot_cache import SnapshotCache
+from elysium.scripts.run_sync import run_sync
 
 
 def _pinned_adapter(paths):
@@ -27,7 +27,7 @@ def _pinned_adapter(paths):
     snapshots -- exactly as core/deployment_loader.py pins them."""
     from pyiceberg.catalog.sql import SqlCatalog
 
-    from core.mirror.mirror_adapter import MirrorReadAdapter
+    from elysium.core.mirror.mirror_adapter import MirrorReadAdapter
 
     mirror_dir = paths.data_dir / "mirror"
     catalog = SqlCatalog(

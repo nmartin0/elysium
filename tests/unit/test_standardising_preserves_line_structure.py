@@ -31,7 +31,7 @@ reaching every later comparison.
 
 import pytest
 
-from core.mirror.standardise import DEFAULTS, rules_for, standardise
+from elysium.core.mirror.standardise import DEFAULTS, rules_for, standardise
 
 
 class TestStructureSurvives:

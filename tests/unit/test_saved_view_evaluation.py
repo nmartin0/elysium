@@ -21,14 +21,14 @@ counts 4 for a us-west reader and 2 for a us-east one.
 
 import pytest
 
-from core.count_condition import count_for_each
-from core.intermediate_layer.auth import UserRecord
-from core.saved_views import SavedView
+from elysium.core.access.auth import UserRecord
+from elysium.core.count_condition import count_for_each
+from elysium.core.saved_views import SavedView
 
 
 @pytest.fixture
 def mediator(synced_deployment):
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     # E-08: a deployment of its own, not the developer's.
     paths = synced_deployment

@@ -15,8 +15,8 @@ a decision its queue will not show.
 
 import json
 
-from core.identity_decisions import MergeDecisionStore
-from core.notifications import NotificationStore
+from elysium.core.identity_decisions import MergeDecisionStore
+from elysium.core.notifications import NotificationStore
 from tests.conftest import with_roles
 from tests.integration.test_api import _login  # noqa: F401
 
@@ -114,8 +114,8 @@ class TestTheCounts:
 def _waiting_write(client, action="Recategorize"):
     from datetime import UTC, datetime
 
-    from core.intermediate_layer.auth import UserRecord
-    from core.ontology.write_mediator import PendingWrite, SubWrite
+    from elysium.core.access.auth import UserRecord
+    from elysium.core.ontology.write_mediator import PendingWrite, SubWrite
 
     return client.app.state.pending_writes.store(PendingWrite(
         sub_writes=(SubWrite("Transaction", "1", "update", {"category": "x"}),),

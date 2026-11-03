@@ -14,7 +14,7 @@ SCANNED, which is how governed query engines report the same thing.
 
 from unittest.mock import patch
 
-import core.ontology.mediator as mediator_module
+import elysium.core.ontology.mediator as mediator_module
 from tests.integration.test_api import _csrf_headers, _login  # noqa: F401
 
 

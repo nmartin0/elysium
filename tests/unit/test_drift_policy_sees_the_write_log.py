@@ -32,10 +32,10 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.sync_targets import resolve_sync_targets
-from core.ontology.write_log import WriteLogWriter
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.sync_targets import resolve_sync_targets
+from elysium.core.ontology.write_log import WriteLogWriter
 
 COLUMNS = ["customer_id", "name", "tier"]
 FIELDS = {"name": "name", "tier": "tier"}

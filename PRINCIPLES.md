@@ -259,8 +259,8 @@ Package and module boundaries in this codebase are real, checked
 contracts (`import-linter`'s own contracts, `ui/`'s own npm workspace
 split — one package per real screen or shared concern, not one
 monolithic app) — not conventions that happen to be followed today.
-`core/` never reaches into `adapters/` or `api/`; authentication
-(`core.auth`) and authorization (`core.intermediate_layer`) stay
+`src/elysium/core/` never reaches into `src/elysium/adapters/` or `src/elysium/api/`; authentication
+(`elysium.core.auth`) and authorization (`elysium.core.access`) stay
 fully independent of each other; these are enforced on every run of
 `./lint.sh`, not just documented intentions someone could quietly
 drift away from.

@@ -9,8 +9,8 @@ or proposed -- and only on objects they may read.
 
 from datetime import UTC, datetime
 
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.write_mediator import PendingWrite, SubWrite
+from elysium.core.access.auth import UserRecord
+from elysium.core.ontology.write_mediator import PendingWrite, SubWrite
 from tests.conftest import with_roles
 from tests.integration.test_api import _login  # noqa: F401
 

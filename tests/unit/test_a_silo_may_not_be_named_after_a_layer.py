@@ -27,7 +27,7 @@ a deployment for no reason, which is its own kind of wrong.
 
 import pytest
 
-from core.deployment_loader import (
+from elysium.core.deployment_loader import (
     RESERVED_SILO_NAMES,
     RESERVED_SILO_PREFIXES,
     _refuse_reserved_silo_names,
@@ -87,7 +87,7 @@ class TestItIsWiredIntoTheLoad:
         import shutil
         from pathlib import Path
 
-        from core.deployment_loader import load_deployment
+        from elysium.core.deployment_loader import load_deployment
 
         fixtures = Path("tests/integration/fixtures")
         for name in ("config.yaml", "ontology_schema.yaml", "policy.yaml",
@@ -107,7 +107,7 @@ class TestItIsWiredIntoTheLoad:
         import shutil
         from pathlib import Path
 
-        from core.deployment_loader import load_deployment
+        from elysium.core.deployment_loader import load_deployment
 
         fixtures = Path("tests/integration/fixtures")
         for name in ("config.yaml", "ontology_schema.yaml", "policy.yaml",
@@ -122,9 +122,9 @@ class TestTheReservedSetItself:
         """If a new layer is added elsewhere, this is where it has to
         be declared too -- and the test says so rather than leaving it
         to be discovered by a collision."""
-        from core.mirror.gold_history import CHANGELOG_NAMESPACE
-        from core.mirror.quarantine_report import QUARANTINE_PREFIX
-        from core.ontology.gold_view import GOLD_NAMESPACE
+        from elysium.core.mirror.gold_history import CHANGELOG_NAMESPACE
+        from elysium.core.mirror.quarantine_report import QUARANTINE_PREFIX
+        from elysium.core.ontology.gold_view import GOLD_NAMESPACE
 
         assert GOLD_NAMESPACE in RESERVED_SILO_NAMES
         assert CHANGELOG_NAMESPACE in RESERVED_SILO_NAMES
@@ -132,7 +132,7 @@ class TestTheReservedSetItself:
         assert "bronze_" in RESERVED_SILO_PREFIXES
 
     def test_the_loader_reads_the_one_declaration(self):
-        import core.lake_names as lake_names
+        import elysium.core.lake_names as lake_names
 
         assert RESERVED_SILO_NAMES is lake_names.RESERVED_SILO_NAMES
         assert RESERVED_SILO_PREFIXES is lake_names.RESERVED_SILO_PREFIXES
@@ -150,7 +150,7 @@ class TestTheReservedSetItself:
         # marker on synthetic evaluation rows.
         not_lake_names = {"DEFAULT_NAMESPACE", "SYNTHETIC_PREFIX"}
         found = {}
-        for folder in ("core/mirror", "scripts"):
+        for folder in ("src/elysium/core/mirror", "src/elysium/scripts"):
             for path in (root / folder).glob("*.py"):
                 for node in ast.parse(path.read_text()).body:
                     if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
@@ -171,8 +171,8 @@ class TestTheReservedSetItself:
         a reserved name or prefix."""
         import ast
 
-        from core.lake_names import RESERVED_SILO_NAMES as names
-        from core.lake_names import RESERVED_SILO_PREFIXES as prefixes
+        from elysium.core.lake_names import RESERVED_SILO_NAMES as names
+        from elysium.core.lake_names import RESERVED_SILO_PREFIXES as prefixes
 
         calls = {"create_namespace", "namespace_exists", "load_table", "list_tables",
                  "create_table", "drop_table"}
@@ -201,7 +201,7 @@ class TestTheReservedSetItself:
 
         root = Path(__file__).resolve().parent.parent.parent
         undeclared = []
-        for folder in ("core", "scripts", "api"):
+        for folder in ("src/elysium/core", "src/elysium/scripts", "src/elysium/api"):
             for path in (root / folder).rglob("*.py"):
                 undeclared += [f"{path.relative_to(root)} {u}"
                                for u in self._undeclared_heads(path.read_text())]
@@ -221,7 +221,7 @@ class TestTheReservedSetItself:
         """`goldmine` is accepted as a silo name, so the integrity check
         must treat its tables as source copies; it used to test
         startswith("gold") and skip them."""
-        from core.mirror.integrity import _not_a_source_layer
+        from elysium.core.mirror.integrity import _not_a_source_layer
 
         assert _not_a_source_layer("gold")
         assert _not_a_source_layer("gold_history")

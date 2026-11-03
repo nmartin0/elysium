@@ -1,4 +1,4 @@
-"""core/ontology/retype.py: which tables a retype touches, which silver
+"""src/elysium/core/ontology/retype.py: which tables a retype touches, which silver
 tables the sync now refuses, what names the field, and the sentences the
 dialog shows (slice R1). The sentences are also pinned against a real sync in
 tests/integration/test_retype_from_the_ui.py; this checks their shape and the
@@ -8,10 +8,10 @@ from types import SimpleNamespace
 
 import pyarrow as pa
 
-from core.ontology import retype
-from core.ontology.field_types import changed_column_types, same_arrow_type, schema_for_columns
-from core.ontology.retype import changed_tables, places_naming, stored_data, tables_needing_rebuild
-from core.ontology.used_by import used_by_field
+from elysium.core.ontology import retype
+from elysium.core.ontology.field_types import changed_column_types, same_arrow_type, schema_for_columns
+from elysium.core.ontology.retype import changed_tables, places_naming, stored_data, tables_needing_rebuild
+from elysium.core.ontology.used_by import used_by_field
 from tests.unit import test_used_by as built
 
 
@@ -102,7 +102,7 @@ class TestTheSharedComparison:
     def test_it_is_the_one_the_sync_uses(self):
         import inspect
 
-        from core.mirror import iceberg_sync
+        from elysium.core.mirror import iceberg_sync
 
         assert "changed_column_types" in inspect.getsource(iceberg_sync._refuse_a_changed_declared_type)
         assert "schema_for_columns" in inspect.getsource(iceberg_sync.IcebergMirrorSync._to_arrow)

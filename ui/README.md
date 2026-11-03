@@ -1,13 +1,13 @@
 # Elysium web UI
 
-A real client for the `api/` layer — login; ask a question (Query);
+A real client for the `src/elysium/api/` layer — login; ask a question (Query);
 search and browse objects, with a real per-object detail page and
 direct action invocation (Browse); approve or reject a proposed write;
 see notifications and watches; read the ontology; and (for admins)
 manage users, roles, silos, the mirror and deployment config. React +
 TypeScript + Vite, no state management library, built on **Blueprint**
 (`@blueprintjs/core`) — see the main project README's "Two ways to run
-this" section for what `api/` actually exposes.
+this" section for what `src/elysium/api/` actually exposes.
 
 This paragraph once denied having a design system at all, which was
 true of a phase-one API client and false from the Blueprint migration
@@ -35,7 +35,7 @@ MODULE_API.md              THE MODULE API'S GUIDE, for someone writing
                            add-on server, and the version rules.
 module-api.report.md       THE PUBLIC MODULE API (the removed BLOCKING.md item on modules,
                            step 4): every name a module may rely on,
-                           generated -- `python -m scripts.module_api_report`
+                           generated -- `python -m elysium.scripts.module_api_report`
                            -- and held current by a test. Not edited by
                            hand.
 ui/src/                    App.tsx (auth state, routing, what is
@@ -181,7 +181,7 @@ check or `check@page`, the narrowest winning, and every one needs a
 reason: `todo` runs the check and reports a failure without failing
 (and FAILS once the check passes, so the list only shrinks), `off` does
 not run it, `replaced` names the module's own stronger test as
-`<file>::<test name>`. `python -m scripts.conformance_report` (from the repository root) lists every
+`<file>::<test name>`. `python -m elysium.scripts.conformance_report` (from the repository root) lists every
 module's exceptions.
 
 The checks are tested themselves, against pages built to fail each one
@@ -205,7 +205,7 @@ Vitest itself.
 npm run build
 ```
 
-Produces `dist/` — `api/app.py` serves this automatically, from the
+Produces `dist/` — `src/elysium/api/app.py` serves this automatically, from the
 same process as the API itself, if it exists (see that file's own
 docstring). `install/install.sh` runs this build step automatically
 during a fresh install, if `npm` is available; it's skipped gracefully

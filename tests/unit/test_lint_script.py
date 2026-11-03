@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-import scripts.check_lockfiles as check_lockfiles
+import elysium.scripts.check_lockfiles as check_lockfiles
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 

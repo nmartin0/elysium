@@ -60,11 +60,16 @@ name = "elysium"
 version = "0.0.0"
 requires-python = ">=3.12"
 
-[tool.setuptools]
-# The packages an editable install puts on the path. Named explicitly
+[project.scripts]
+# A stub until the real command line lands (BLOCKING.md, "Converge on
+# precedent", step S16, "One CLI"): it lists the scripts that exist.
+elysium = "elysium.cli:main"
+
+[tool.setuptools.packages.find]
+# SRC LAYOUT: one distribution, `elysium`, under src/. Named explicitly
 # because automatic discovery finds `deployment`, `tests` and the
 # worktree directories too.
-packages = ["core", "api", "adapters", "scripts"]
+where = ["src"]
 
 [project.optional-dependencies]
 # PROBABILISTIC IDENTITY RESOLUTION (GOLD-6), optional because
@@ -131,12 +136,13 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Header"]
 # the older pin turned out to be unnecessary -- 55 source files, no
 # issues. That pin is why sim's requirements downgraded Elysium's type
 # checker by a major version whenever either was installed.
-files = ["core", "api", "adapters", "scripts/check_controls.py", "sdk/python", "sim/panel/server.py",
+files = ["src/elysium/core", "src/elysium/api", "src/elysium/adapters", "src/elysium/scripts/check_controls.py",
+         "sdk/python", "sim/panel/server.py",
          "sim/simulator"]
 ignore_missing_imports = true
 
 [tool.vulture]
-paths = ["core", "api", "adapters", "scripts", "tests",
+paths = ["src", "tests",
          "sim/simulator", "sim/tests", "sim/panel", "sdk",
          "vulture_whitelist.py"]
 min_confidence = 60
@@ -146,68 +152,69 @@ min_confidence = 60
 ignore_decorators = ["@router.*", "@app.*"]
 
 [tool.importlinter]
-root_packages = ["core", "api", "adapters", "simulator"]
+root_packages = ["elysium", "simulator"]
 
 # Contract 1 of 3 -- the outer, top-level layering. api is the entry
 # point (HTTP layer, wires everything together); adapters implement
 # the concrete storage/LLM backends; core holds the domain logic and
 # must never know which concrete backend it's actually talking to
 # (dependency inversion -- core defines the interfaces adapters/ own
-# files implement, e.g. core.ontology.interface, core.llm.interface,
-# core.functions.interface).
+# files implement, e.g. elysium.core.ontology.interface, elysium.core.llm.interface,
+# elysium.core.functions.interface).
 #
 # Confirmed directly against this project's REAL, current imports
 # before writing this (not assumed): api and adapters genuinely never
 # import from each other, and core genuinely never imports from api
-# at all. core.deployment_loader is the ONE, deliberate exception --
+# at all. elysium.core.deployment_loader is the ONE, deliberate exception --
 # it's this project's own composition root, the single place
 # responsible for instantiating a concrete adapter (OllamaAdapter,
 # SQLiteAdapter) based on deployment config and injecting it into
-# core.ontology.mediator.DataMediator -- not a violation, and
+# elysium.core.ontology.mediator.DataMediator -- not a violation, and
 # whitelisted explicitly below rather than weakening this contract
 # for the rest of core/.
 [[tool.importlinter.contracts]]
 name = "api sits above adapters and core; core never reaches into adapters or api"
 type = "layers"
 layers = ["api", "adapters", "core"]
+containers = ["elysium"]
 ignore_imports = [
-    "core.deployment_loader -> adapters.ollama_adapter",
-    "core.deployment_loader -> adapters.vllm_adapter",
-    "core.deployment_loader -> adapters.claude_agent_sdk_adapter",
-    "core.deployment_loader -> adapters.sqlite_adapter",
+    "elysium.core.deployment_loader -> elysium.adapters.ollama_adapter",
+    "elysium.core.deployment_loader -> elysium.adapters.vllm_adapter",
+    "elysium.core.deployment_loader -> elysium.adapters.claude_agent_sdk_adapter",
+    "elysium.core.deployment_loader -> elysium.adapters.sqlite_adapter",
     # The adapter REGISTRY is the one place core names a concrete
     # adapter, and each exception is listed rather than the rule
     # weakened. A fifth would be a fifth line here.
-    "core.deployment_loader -> adapters.sqlalchemy_adapter",
+    "elysium.core.deployment_loader -> elysium.adapters.sqlalchemy_adapter",
     # The embedder (R45, 18 October): built where the chat adapters are.
-    "core.deployment_loader -> adapters.embedding_adapter",
+    "elysium.core.deployment_loader -> elysium.adapters.embedding_adapter",
     # The CSV folder source (19 October): registered where the others are.
-    "core.deployment_loader -> adapters.csv_folder_adapter",
-    "core.deployment_loader -> adapters.rest_adapter",
+    "elysium.core.deployment_loader -> elysium.adapters.csv_folder_adapter",
+    "elysium.core.deployment_loader -> elysium.adapters.rest_adapter",
 ]
 
 # Contract 2 of 3 -- the real, internal shape of core/ itself, mapped
 # directly against this project's actual import graph before writing
-# this list (not designed from memory or assumption): core.agent (the
+# this list (not designed from memory or assumption): elysium.core.agent (the
 # LLM-driven agentic loop) sits at the top, orchestrating everything
-# else; core.functions and core.intermediate_layer are true leaves (never
+# else; elysium.core.functions and elysium.core.access are true leaves (never
 # import from any other core.X submodule). The middle ordering
 # (llm, memory, ontology) reflects real, confirmed dependencies --
-# core.llm imports core.ontology and core.functions; core.memory imports
-# core.intermediate_layer and core.ontology; core.ontology imports
-# core.intermediate_layer. core.auth has no real position requirement
+# elysium.core.llm imports elysium.core.ontology and elysium.core.functions; elysium.core.memory imports
+# elysium.core.access and elysium.core.ontology; elysium.core.ontology imports
+# elysium.core.access. elysium.core.auth has no real position requirement
 # of its own (nothing else in core/ depends on it directly -- its
-# only real consumer within core/ is core.user_directory, and
+# only real consumer within core/ is elysium.core.user_directory, and
 # ultimately api/ itself for the login/session endpoints), placed
-# here as a leaf alongside core.intermediate_layer and core.functions.
+# here as a leaf alongside elysium.core.access and elysium.core.functions.
 [[tool.importlinter.contracts]]
 name = "core/ internal layering (agent orchestrates llm/memory/ontology/functions)"
 type = "layers"
 layers = [
     "agent", "mirror", "llm", "memory", "ontology", "auth",
-    "intermediate_layer", "functions",
+    "access", "functions",
     # The filter vocabulary, below everything. It started inside
-    # core/ontology and moved out because core.functions sits BELOW
+    # core/ontology and moved out because elysium.core.functions sits BELOW
     # ontology here and needs it too -- OntologyAccess builds
     # conditions for a search. A vocabulary that the bottom layer
     # cannot reach is in the wrong place, and the contract said so.
@@ -230,7 +237,7 @@ layers = [
     # invisible_text, another leaf importing nothing but the standard
     # library. It knows which codepoints have no glyph and nothing
     # else -- not what a field is, not what a row is. Two callers
-    # today: core.ontology.constraints declares the rule, and the
+    # today: elysium.core.ontology.constraints declares the rule, and the
     # mirror reports it. A leaf both can reach without a cycle.
     # The columns Elysium writes into every row. A LEAF because
     # core/mirror writes them and core/ontology reads one, and the
@@ -275,7 +282,7 @@ layers = [
     # identity_decisions, the same shape a third time (GOLD-6): one
     # SQLite store of proposed merges and what a person decided about
     # them. A leaf, deliberately -- it imports nothing from core,
-    # because the thing that READS it (core.mirror) sits above, and a
+    # because the thing that READS it (elysium.core.mirror) sits above, and a
     # store that knew about its reader would invert that.
     "identity_decisions",
     # The artifact store, also a leaf. It persists and scopes saved
@@ -373,7 +380,7 @@ layers = [
     # write log -- can ask it the same question the same way.
     "erased_ids",
 ]
-containers = ["core"]
+containers = ["elysium.core"]
 exhaustive = true
 # pending_write_persistence and pending_write_serialisation join
 # pending_write_store here for the same reason it is already listed:
@@ -405,16 +412,16 @@ exhaustive = true
 # view's totals per period: trigger machinery beside count_condition,
 # composing the mediator's aggregate and the forecasts.
 # modules (the removed BLOCKING.md item on modules, 21 October) sits with deployment_loader, its
-# only loader: it reads module.json files with core.config and asks
-# intermediate_layer's authorize who is offered each -- configuration
+# only loader: it reads module.json files with elysium.core.config and asks
+# access's authorize who is offered each -- configuration
 # composed with authorization, outside the hierarchy like role_impact.
 exhaustive_ignores = ["modules", "predictions", "meaning_search", "adapter_roles", "count_condition", "projected_condition", "trigger_runs", "trigger_windows", "trigger_states", "declared_triggers", "concurrency", "config", "deployment_loader", "role_impact", "internal_storage", "logging_config", "pending_write_persistence", "pending_write_serialisation", "pending_write_store", "sqlite_connection", "user_directory"]
 
 # Contract 3 of 3 -- the single most repeatedly-stated architectural
 # principle throughout this project's own history: authentication
-# (core.auth -- who is this person, verified via password/session,
+# (elysium.core.auth -- who is this person, verified via password/session,
 # the front gate) is completely separate from authorization
-# (core.intermediate_layer -- what is this person allowed to do,
+# (elysium.core.access -- what is this person allowed to do,
 # RBAC/MAC access control). Confirmed directly, before writing this,
 # that this was ALREADY true in practice throughout this codebase's
 # real history -- neither package imports from the other anywhere --
@@ -426,12 +433,12 @@ exhaustive_ignores = ["modules", "predictions", "meaning_search", "adapter_roles
 # directions between this specific pair, regardless of where either
 # one sits in that ordering.
 [[tool.importlinter.contracts]]
-name = "authentication (core.auth) and authorization (core.intermediate_layer) stay fully independent"
+name = "authentication (elysium.core.auth) and authorization (elysium.core.access) stay fully independent"
 type = "independence"
-modules = ["core.auth", "core.intermediate_layer"]
+modules = ["elysium.core.auth", "elysium.core.access"]
 
 # Contract -- invariant I2, "authorization in one place". The low-level
-# role-grant check, core.intermediate_layer.rbac.authorize, is imported
+# role-grant check, elysium.core.access.rbac.authorize, is imported
 # by access_control (the access layer, which combines it with the
 # MAC check) and by the modules below. Nothing else may import it; a
 # new caller goes through check_access(), or through the mediators.
@@ -442,17 +449,17 @@ modules = ["core.auth", "core.intermediate_layer"]
 # are a debt list, not a licence: the refactor plan retires them as the
 # API moves onto Depends(require(grant)) and the facades, and the list
 # must only ever shrink.
-#   api.routes             about 60 inline checks on manage:/read:/
+#   elysium.api.routes             about 60 inline checks on manage:/read:/
 #                          execute:/write: grants in handlers
-#   api.app                which modules to offer a user (startup)
-#   api.deprecation_alerts who holds manage:deployment, to be alerted
-#   core.agent.agentic_loop the RBAC half of tool-call authorization
-#   core.modules           which modules a person is offered
-#   core.role_impact       what a role can read or only discover
-#   core.ontology.mediator / write_mediator / who_can_see
+#   elysium.api.app                which modules to offer a user (startup)
+#   elysium.api.deprecation_alerts who holds manage:deployment, to be alerted
+#   elysium.core.agent.agentic_loop the RBAC half of tool-call authorization
+#   elysium.core.modules           which modules a person is offered
+#   elysium.core.role_impact       what a role can read or only discover
+#   elysium.core.ontology.mediator / write_mediator / who_can_see
 #                          type and field discovery, action execute
 #                          grants: the mediators' own RBAC checks
-#   core.memory.guard      MemoryGuard's per-field and author checks
+#   elysium.core.memory.guard      MemoryGuard's per-field and author checks
 # MAC (row-level) cannot be linted: DataMediator._security_allowed is a
 # method, reached only from access_control by convention.
 [[tool.importlinter.contracts]]
@@ -460,21 +467,21 @@ name = "authorization has one decision point (only the access layer and listed e
 type = "forbidden"
 # "core.*" and not "core": a source that contains the forbidden module
 # is not checked against it.
-source_modules = ["core.*", "api", "adapters"]
-forbidden_modules = ["core.intermediate_layer.rbac"]
+source_modules = ["elysium.core.*", "elysium.api", "elysium.adapters"]
+forbidden_modules = ["elysium.core.access.rbac"]
 allow_indirect_imports = true
 ignore_imports = [
-    "core.intermediate_layer.access_control -> core.intermediate_layer.rbac",
-    "api.routes -> core.intermediate_layer.rbac",
-    "api.app -> core.intermediate_layer.rbac",
-    "api.deprecation_alerts -> core.intermediate_layer.rbac",
-    "core.agent.agentic_loop -> core.intermediate_layer.rbac",
-    "core.modules -> core.intermediate_layer.rbac",
-    "core.role_impact -> core.intermediate_layer.rbac",
-    "core.ontology.mediator -> core.intermediate_layer.rbac",
-    "core.ontology.write_mediator -> core.intermediate_layer.rbac",
-    "core.ontology.who_can_see -> core.intermediate_layer.rbac",
-    "core.memory.guard -> core.intermediate_layer.rbac",
+    "elysium.core.access.access_control -> elysium.core.access.rbac",
+    "elysium.api.routes -> elysium.core.access.rbac",
+    "elysium.api.app -> elysium.core.access.rbac",
+    "elysium.api.deprecation_alerts -> elysium.core.access.rbac",
+    "elysium.core.agent.agentic_loop -> elysium.core.access.rbac",
+    "elysium.core.modules -> elysium.core.access.rbac",
+    "elysium.core.role_impact -> elysium.core.access.rbac",
+    "elysium.core.ontology.mediator -> elysium.core.access.rbac",
+    "elysium.core.ontology.write_mediator -> elysium.core.access.rbac",
+    "elysium.core.ontology.who_can_see -> elysium.core.access.rbac",
+    "elysium.core.memory.guard -> elysium.core.access.rbac",
 ]
 
 # The remaining contracts below map the real, internal shape of each
@@ -502,7 +509,7 @@ layers = [
     "app", "v2", "routes",
     "apps | auth_dependency | generation_dependency | reload | addon_servers | csrf_middleware | request_size_limit_middleware | generation_header_middleware | request_metrics_middleware | live_updates | timer_service | trigger_checks | reminders | deprecation_alerts",
 ]
-containers = ["api"]
+containers = ["elysium.api"]
 exhaustive = true
 
 [[tool.importlinter.contracts]]
@@ -553,7 +560,7 @@ layers = [
     # this package back.
     #
     # The filter vocabulary moved OUT of this package, to core/filters.py:
-    # core.functions sits below core.ontology in the layering above and
+    # elysium.core.functions sits below elysium.core.ontology in the layering above and
     # needs it too, so a vocabulary living inside ontology could not be
     # reached from there.
     # classifications is a leaf too: object_type_validation checks a
@@ -579,17 +586,17 @@ layers = [
     # only the standard library; api/ is its only caller.
     "decimal_text",
 ]
-containers = ["core.ontology"]
+containers = ["elysium.core.ontology"]
 exhaustive = true
 
 [[tool.importlinter.contracts]]
-name = "core/intermediate_layer/ internal layering (access_control wraps rbac wraps auth; audit, policy_validation stay leaves)"
+name = "core/access/ internal layering (access_control wraps rbac wraps auth; audit, policy_validation stay leaves)"
 type = "layers"
 layers = ["access_control", "rbac", "auth | audit | policy_validation"]
-containers = ["core.intermediate_layer"]
+containers = ["elysium.core.access"]
 exhaustive = true
 
-# core.llm.interface is the one real leaf (the LLMAdapter Protocol
+# elysium.core.llm.interface is the one real leaf (the LLMAdapter Protocol
 # itself); the other three each implement or consume it but were
 # never meant to depend on EACH OTHER -- independence, not layers,
 # since there's no real ordering between them, just a shared leaf all
@@ -598,9 +605,9 @@ exhaustive = true
 name = "core/llm/ siblings (agent_step_prompt, concurrency_limited_adapter, synthesis_prompt) stay independent of each other"
 type = "independence"
 modules = [
-    "core.llm.agent_step_prompt",
-    "core.llm.concurrency_limited_adapter",
-    "core.llm.synthesis_prompt",
+    "elysium.core.llm.agent_step_prompt",
+    "elysium.core.llm.concurrency_limited_adapter",
+    "elysium.core.llm.synthesis_prompt",
 ]
 
 # The three concrete adapters are deliberately parallel, alternative
@@ -610,7 +617,7 @@ modules = [
 [[tool.importlinter.contracts]]
 name = "the concrete adapters stay independent of each other"
 type = "independence"
-modules = ["adapters.ollama_adapter", "adapters.sqlite_adapter"]
+modules = ["elysium.adapters.ollama_adapter", "elysium.adapters.sqlite_adapter"]
 
 
 # ---------------------------------------------------------------

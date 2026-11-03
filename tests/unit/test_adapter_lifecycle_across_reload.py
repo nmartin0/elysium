@@ -24,9 +24,9 @@ import threading
 import pytest
 from pyiceberg.catalog.sql import SqlCatalog
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.mirror_adapter import MirrorReadAdapter
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.mirror_adapter import MirrorReadAdapter
 
 ROWS = 200
 
@@ -102,8 +102,8 @@ def test_the_adapters_hold_no_module_level_state(mirrored):
     # outside that generation holds a reference. Module-level caches,
     # class attributes and lru_caches are all ways for one to survive,
     # and a survivor would serve a configuration nobody is running.
-    import adapters.sqlite_adapter as sqlite_module
-    import core.mirror.mirror_adapter as mirror_module
+    import elysium.adapters.sqlite_adapter as sqlite_module
+    import elysium.core.mirror.mirror_adapter as mirror_module
 
     for module in (sqlite_module, mirror_module):
         cached = [

@@ -25,8 +25,8 @@ The middle rung on a TYPE was previously unreachable: the weakest grant
 anyone could write already permitted enumeration, and an id is data.
 """
 
-from core.intermediate_layer.auth import UserRecord
-from core.intermediate_layer.rbac import authorize
+from elysium.core.access.auth import UserRecord
+from elysium.core.access.rbac import authorize
 
 ROLES = {
     "reader": {"allowed_actions": frozenset(["read:Customer", "read:Customer.email"])},

@@ -38,7 +38,7 @@ the finding, not the existence of an unreferenced file.
 
 import pytest
 
-from core.mirror.integrity import (
+from elysium.core.mirror.integrity import (
     _ORPHAN_TOLERANCE,
     _check_for_orphaned_data_files,
 )
@@ -69,7 +69,7 @@ class _Catalog:
 
 
 def _check(tmp_path, on_disk, live, monkeypatch):
-    import core.mirror.integrity as integrity
+    import elysium.core.mirror.integrity as integrity
 
     monkeypatch.setattr(integrity, "_files_a_snapshot_references",
                          lambda catalog, identifier: set(live))

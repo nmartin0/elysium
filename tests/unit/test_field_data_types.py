@@ -13,13 +13,13 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.filters import FieldFilter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.mirror_adapter import MirrorReadAdapter
-from core.mirror.sync_targets import resolve_sync_targets
-from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE, arrow_type_for, coerce
-from core.ontology.object_type_validation import validate_object_types
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.filters import FieldFilter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.mirror_adapter import MirrorReadAdapter
+from elysium.core.mirror.sync_targets import resolve_sync_targets
+from elysium.core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE, arrow_type_for, coerce
+from elysium.core.ontology.object_type_validation import validate_object_types
 
 
 def _as_conditions(criteria: dict) -> list[FieldFilter]:

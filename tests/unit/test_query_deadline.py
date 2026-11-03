@@ -14,12 +14,12 @@ from pathlib import Path
 
 import pytest
 
-from core.agent.agentic_loop import AgentLoop
-from core.deployment_loader import load_deployment
-from core.intermediate_layer.auth import UserRecord
-from core.llm.interface import LLMUnavailable
-from core.llm.synthesis_prompt import synthesize_insight
-from core.request_context import RequestContext, TokenUsage
+from elysium.core.access.auth import UserRecord
+from elysium.core.agent.agentic_loop import AgentLoop
+from elysium.core.deployment_loader import load_deployment
+from elysium.core.llm.interface import LLMUnavailable
+from elysium.core.llm.synthesis_prompt import synthesize_insight
+from elysium.core.request_context import RequestContext, TokenUsage
 
 USER = UserRecord("dana", "us-west", "debug")
 CONFIG_DIR = Path(__file__).resolve().parents[2] / "deployment" / "etc"

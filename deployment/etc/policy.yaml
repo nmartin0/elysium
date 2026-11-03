@@ -1,7 +1,7 @@
 # policy.yaml  (this deployment's access policy)
 #
 # TWO independent, both-required gates for any access (see
-# core/intermediate_layer/access_control.py's check_access()):
+# src/elysium/core/access/access_control.py's check_access()):
 #
 #   MAC (mandatory, non-negotiable): security_attribute below names
 #   which field on a user record is the row-level boundary -- a user
@@ -86,7 +86,7 @@ roles:
 
   # DEVELOPMENT ONLY. One login that reaches every sub-app and reads
   # every object type, so checking a layout does not mean switching
-  # users three times. scripts/create_debug_user.py creates the account
+  # users three times. src/elysium/scripts/create_debug_user.py creates the account
   # that uses it.
   #
   # INVENTS NO PERMISSION. Every grant here is one some other role above

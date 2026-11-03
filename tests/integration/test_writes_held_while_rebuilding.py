@@ -12,8 +12,8 @@ told the write is held, never guessed live.
 
 import pytest
 
-from core.mirror.sync_attempts import SyncAttempts
-from core.mirror.sync_lock import single_writer
+from elysium.core.mirror.sync_attempts import SyncAttempts
+from elysium.core.mirror.sync_lock import single_writer
 from tests.integration.test_approvals_inbox import _csrf, _inbox, _login, _propose
 
 CUSTOMERS = ("primary_sql", "customers")
@@ -109,7 +109,7 @@ class TestHeldWhenItCannotBeTold:
         def broken(request):
             raise RuntimeError("the catalog cannot be read")
 
-        monkeypatch.setattr("api.routes._mirror_catalog_for", broken)
+        monkeypatch.setattr("elysium.api.routes._mirror_catalog_for", broken)
 
         held = _decide(client, write_id, True)
 
@@ -124,7 +124,7 @@ class TestHeldWhenItCannotBeTold:
         def broken(path):
             raise OSError("no lock")
 
-        monkeypatch.setattr("core.mirror.sync_lock.single_writer", broken)
+        monkeypatch.setattr("elysium.core.mirror.sync_lock.single_writer", broken)
 
         held = _decide(client, write_id, True)
 
@@ -136,6 +136,6 @@ class TestHeldWhenItCannotBeTold:
         def broken(*args, **kwargs):
             raise RuntimeError("no states")
 
-        monkeypatch.setattr("api.routes._mirror_states", broken)
+        monkeypatch.setattr("elysium.api.routes._mirror_states", broken)
 
         assert _decide(client, write_id, True).status_code == 409

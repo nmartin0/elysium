@@ -9,7 +9,7 @@ own names, after checking the asker could have built it.
 
 import pytest
 
-from core.agent.set_context import (
+from elysium.core.agent.set_context import (
     MAX_VALUES_LISTED,
     SetContextError,
     describe_set,

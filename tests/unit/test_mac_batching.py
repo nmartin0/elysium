@@ -32,12 +32,12 @@ import sqlite3
 import pytest
 import yaml
 
-import core.ontology.mediator as mediator_module
-from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
-from core.filters import as_equality_conditions
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.link_types import expand_link_types
-from core.ontology.mediator import DataMediator
+import elysium.core.ontology.mediator as mediator_module
+from elysium.core.access.auth import UserRecord
+from elysium.core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from elysium.core.filters import as_equality_conditions
+from elysium.core.ontology.link_types import expand_link_types
+from elysium.core.ontology.mediator import DataMediator
 
 FIXTURES = "tests/integration/fixtures/"
 WEST = UserRecord(user_id="u1", security_value="us-west", role_name="customer_service")
@@ -206,7 +206,7 @@ def test_security_resolution_scales_with_chain_depth_not_set_size(tmp_path):
     # Asserted by comparing two genuinely different set sizes rather
     # than against a fixed number: what must hold is that the count
     # does not GROW, which a single measurement cannot show.
-    import adapters.sqlite_adapter as sqlite_adapter_module
+    import elysium.adapters.sqlite_adapter as sqlite_adapter_module
 
     real_run_query = sqlite_adapter_module._run_query
     real_run_query_one = sqlite_adapter_module._run_query_one
@@ -386,7 +386,7 @@ def test_get_object_resolves_security_once_not_per_field(tmp_path):
     #
     # Warming the cache once before the loop makes every check after
     # the first a dictionary lookup.
-    import adapters.sqlite_adapter as sqlite_adapter_module
+    import elysium.adapters.sqlite_adapter as sqlite_adapter_module
 
     mediator = _mediator(tmp_path)
     real_run_query = sqlite_adapter_module._run_query
@@ -450,7 +450,7 @@ def test_reading_a_page_of_objects_shares_one_security_resolution(tmp_path):
     #
     # Measured at exactly 4 queries per row with no sharing at all --
     # the same cost as before the optimization, plus a wasted clear.
-    import adapters.sqlite_adapter as sqlite_adapter_module
+    import elysium.adapters.sqlite_adapter as sqlite_adapter_module
 
     mediator = _mediator(tmp_path)
     conn = sqlite3.connect(mediator.adapters["primary_sql"].db_path)

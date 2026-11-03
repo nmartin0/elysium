@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from core.deployment_loader import load_deployment
-from core.ontology.deprecation import link_status, most_restrictive, validate_deprecation
+from elysium.core.deployment_loader import load_deployment
+from elysium.core.ontology.deprecation import link_status, most_restrictive, validate_deprecation
 
 FIXTURES = Path(__file__).resolve().parents[1] / "integration" / "fixtures"
 WHY = {"reason": "Replaced by a single name field."}

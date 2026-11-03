@@ -10,8 +10,8 @@ fixtures, in tests/integration/test_object_sets_evaluation.py.
 
 import pytest
 
-from core.ontology import object_sets as sets
-from core.ontology.object_sets import (
+from elysium.core.ontology import object_sets as sets
+from elysium.core.ontology.object_sets import (
     Base,
     Combine,
     Compare,

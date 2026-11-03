@@ -26,12 +26,12 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteWriteAdapter
-from core.intermediate_layer.audit import AuditLog
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.submission_criteria import SubmissionCriteriaViolation
-from core.ontology.write_log import WriteLogWriter
-from core.ontology.write_mediator import WriteMediator
+from elysium.adapters.sqlite_adapter import SQLiteWriteAdapter
+from elysium.core.access.audit import AuditLog
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.ontology.submission_criteria import SubmissionCriteriaViolation
+from elysium.core.ontology.write_log import WriteLogWriter
+from elysium.core.ontology.write_mediator import WriteMediator
 from tests.conftest import author_book_mediator
 
 TEST_USERS = {

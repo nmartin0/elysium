@@ -36,7 +36,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = REPO_ROOT / "tests" / "integration" / "fixtures"
 
-GUARDED_SCRIPTS = sorted(p.stem for p in (REPO_ROOT / "scripts").glob("create_*_user*.py"))
+GUARDED_SCRIPTS = sorted(p.stem for p in (REPO_ROOT / "src" / "elysium" / "scripts").glob("create_*_user*.py"))
 
 
 def _accounts(data_dir: Path) -> list[str]:
@@ -53,7 +53,7 @@ def _run(script: str, argv: list[str], tmp_path: Path, monkeypatch) -> int:
     monkeypatch.setenv("ELYSIUM_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("ELYSIUM_LOG_DIR", str(tmp_path / "log"))
     monkeypatch.setattr(sys, "argv", [f"scripts/{script}.py", *argv])
-    module = importlib.import_module(f"scripts.{script}")
+    module = importlib.import_module(f"elysium.scripts.{script}")
     return module.main()
 
 
@@ -78,7 +78,7 @@ def test_the_refusal_names_the_command_that_would_work(script, tmp_path, monkeyp
     _run(script, [], tmp_path, monkeypatch)
 
     message = capsys.readouterr().err
-    assert f"python -m scripts.{script}" in message
+    assert f"python -m elysium.scripts.{script}" in message
     assert "--yes-this-is-development" in message
 
 
@@ -97,7 +97,7 @@ def test_the_colleague_script_cannot_be_used_to_dodge_the_debug_guard():
     above would still pass if this one script stopped creating 'debug'
     for some unrelated reason -- and then the regression that matters
     would be untested."""
-    source = (REPO_ROOT / "scripts" / "create_colleague_user.py").read_text()
+    source = (REPO_ROOT / "src" / "elysium" / "scripts" / "create_colleague_user.py").read_text()
 
     # It genuinely still creates 'debug': that is what made the bypass
     # total, and it is why guarding THIS script was the fix rather than

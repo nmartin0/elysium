@@ -32,9 +32,9 @@ import io
 
 import pytest
 
-from core.agent.agentic_loop import _detect_asymmetry
-from core.deployment_loader import build_generation
-from core.intermediate_layer.auth import resolve_user_record
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.agent.agentic_loop import _detect_asymmetry
+from elysium.core.deployment_loader import build_generation
 
 USER_ID = "user_alice"
 
@@ -210,7 +210,7 @@ class TestTheIdGuardIsConservative:
               "Customer": {"fields": {}}}
 
     def _check(self, gathered, ids=(1,)):
-        from core.agent.agentic_loop import _reject_ids_of_another_type
+        from elysium.core.agent.agentic_loop import _reject_ids_of_another_type
 
         _reject_ids_of_another_type("Transaction", list(ids), gathered, self.SCHEMA)
 
@@ -277,7 +277,7 @@ class TestARefusedStepIsNotAlreadyHad:
 
 class TestTheBenchCanShowItsSteps:
     def test_each_entry_is_one_line_with_notes_where_they_happened(self):
-        from scripts.llm_bench import describe_gathered
+        from elysium.scripts.llm_bench import describe_gathered
 
         lines = describe_gathered([
             {"step": "search_object", "object_type": "Customer",

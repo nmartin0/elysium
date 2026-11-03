@@ -42,7 +42,7 @@ security question is what the published-history route refused to be.
 
 import pytest
 
-from core.change_hints import CHANGE_KINDS, describe_hint, hints_for
+from elysium.core.change_hints import CHANGE_KINDS, describe_hint, hints_for
 
 
 class TestOnlyTypesTheCallerMayKnowOf:
@@ -93,7 +93,7 @@ class TestItDecidesNothingItself:
         opinion creeps back in."""
         from pathlib import Path
 
-        source = Path("core/change_hints.py").read_text()
+        source = Path("src/elysium/core/change_hints.py").read_text()
         imports = [line for line in source.splitlines()
                    if line.startswith(("import ", "from "))]
 
@@ -134,8 +134,8 @@ class TestTheTransportUsesThisModule:
         above cannot be bypassed by the code that transports it."""
         from pathlib import Path
 
-        source = Path("api/live_updates.py").read_text()
+        source = Path("src/elysium/api/live_updates.py").read_text()
 
-        assert "from core.change_hints import describe_hint, hints_for" in source
+        assert "from elysium.core.change_hints import describe_hint, hints_for" in source
         assert "hints_for(visible_schema, [object_type])" in source
         assert "describe_hint(allowed, change)" in source

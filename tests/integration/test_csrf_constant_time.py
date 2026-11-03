@@ -11,7 +11,7 @@ the behaviour around it is tested normally.
 import ast
 import inspect
 
-import api.csrf_middleware as csrf
+import elysium.api.csrf_middleware as csrf
 from tests.integration.test_api import _csrf_headers, _login
 
 PW = "a-long-and-unremarkable-passphrase"

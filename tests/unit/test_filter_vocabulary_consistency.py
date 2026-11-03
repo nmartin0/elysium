@@ -27,7 +27,7 @@ finding.
 
 import pytest
 
-from core.filters import OPERATOR_TYPES, FieldFilter, UnsupportedFilter
+from elysium.core.filters import OPERATOR_TYPES, FieldFilter, UnsupportedFilter
 
 # A value of roughly the right shape for each operator, so the clause
 # builder gets far enough to either build SQL or decline. The point is
@@ -62,7 +62,7 @@ def test_the_sqlite_adapter_handles_or_declines_every_operator(operator):
     which produces a query missing its condition -- every row returned,
     reported as a filtered result.
     """
-    from adapters.sqlite_adapter import _clause_for
+    from elysium.adapters.sqlite_adapter import _clause_for
 
     try:
         clause, _values = _clause_for(FieldFilter("f", operator, SAMPLE[operator]))
@@ -80,7 +80,7 @@ def test_the_mirror_adapter_handles_or_declines_every_operator(operator):
     # The second adapter, and the reason this is a class-level test
     # rather than one about SQLite. A third adapter would be caught by
     # the same shape.
-    from core.mirror.iceberg_reader import IcebergNamespaceReader
+    from elysium.core.mirror.iceberg_reader import IcebergNamespaceReader
 
     # The mechanics moved to the shared reader (GOLD-3).
     adapter = IcebergNamespaceReader.__new__(IcebergNamespaceReader)
@@ -102,7 +102,7 @@ def test_an_unknown_operator_is_declined_not_ignored():
     what OPERATOR_TYPES is for -- so this asserts the LAST line of
     defence still holds if it ever did.
     """
-    from adapters.sqlite_adapter import _clause_for
+    from elysium.adapters.sqlite_adapter import _clause_for
 
     with pytest.raises((UnsupportedFilter, KeyError, ValueError)):
         _clause_for(FieldFilter("f", "definitely_not_an_operator", "x"))

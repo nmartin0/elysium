@@ -20,7 +20,7 @@ the thresholds, the refusal messages -- run everywhere.
 
 import pytest
 
-from core.mirror.matching import (
+from elysium.core.mirror.matching import (
     DEFAULT_AUTO_PROPOSE_ABOVE,
     DEFAULT_REVIEW_ABOVE,
     Candidate,

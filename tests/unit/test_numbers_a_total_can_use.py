@@ -37,8 +37,8 @@ import math
 
 import pytest
 
-from core.mirror.transform import transform_rows
-from core.ontology.field_types import coerce
+from elysium.core.mirror.transform import transform_rows
+from elysium.core.ontology.field_types import coerce
 
 
 class TestWhatANumberColumnRefuses:

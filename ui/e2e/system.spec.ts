@@ -4,7 +4,7 @@
 //
 // SETUP: as the other specs, with the e2e users created afresh -- opsuser
 // was added for this file:
-//   cd ~/elysium && python -m scripts.create_e2e_users --yes-this-is-development
+//   cd ~/elysium && python -m elysium.scripts.create_e2e_users --yes-this-is-development
 
 import { expect, test, type Page } from '@playwright/test'
 

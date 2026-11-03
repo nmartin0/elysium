@@ -24,7 +24,7 @@ USUAL = {"subscription": (50, 5), "hardware": (300, 30), "refund": (-80, 10)}
 
 @pytest.fixture
 def deployment(tmp_path):
-    from core.deployment_loader import RuntimePaths
+    from elysium.core.deployment_loader import RuntimePaths
 
     config = tmp_path / "config"
     shutil.copytree(integration_conftest.FIXTURES_DIR, config)
@@ -56,7 +56,7 @@ def deployment(tmp_path):
 
 
 def _sync(paths) -> str:
-    from scripts.run_sync import run_sync
+    from elysium.scripts.run_sync import run_sync
 
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
@@ -65,7 +65,7 @@ def _sync(paths) -> str:
 
 
 def _flags(paths):
-    from core.unusual_flags import UnusualFlagStore
+    from elysium.core.unusual_flags import UnusualFlagStore
 
     return UnusualFlagStore(paths.data_dir / "unusual_flags.db").flags("Transaction")
 
@@ -87,7 +87,7 @@ def test_found_at_the_sync_and_judged_within_each_compartment(deployment):
 
 
 def test_unchanged_gold_keeps_its_flags_and_is_not_scanned_again(deployment, monkeypatch):
-    import core.mirror.unusual_scan as unusual_scan
+    import elysium.core.mirror.unusual_scan as unusual_scan
 
     _sync(deployment)
     before = _flags(deployment)
@@ -100,7 +100,7 @@ def test_unchanged_gold_keeps_its_flags_and_is_not_scanned_again(deployment, mon
 def _client(paths, user, region, role="debug"):
     from fastapi.testclient import TestClient
 
-    from api.app import create_app
+    from elysium.api.app import create_app
     from tests.integration.test_api import _login
 
     client = TestClient(create_app(paths))
@@ -152,7 +152,7 @@ class TestTheMarker:
 
     def test_expected_clears_it_for_everyone_until_the_value_changes(self, deployment,
                                                                     monkeypatch):
-        from core.unusual_flags import UnusualFlagStore
+        from elysium.core.unusual_flags import UnusualFlagStore
 
         monkeypatch.setenv("ELYSIUM_COOKIE_SECURE", "false")
         _sync(deployment)
@@ -168,8 +168,8 @@ class TestTheMarker:
         the record itself now may be read."""
         import dataclasses
 
-        from core.unusual import find_unusual  # noqa: F401 - the shape stored
-        from core.unusual_flags import UnusualFlagStore
+        from elysium.core.unusual import find_unusual  # noqa: F401 - the shape stored
+        from elysium.core.unusual_flags import UnusualFlagStore
 
         monkeypatch.setenv("ELYSIUM_COOKIE_SECURE", "false")
         _sync(deployment)
@@ -184,7 +184,7 @@ class TestTheMarker:
         the record's own check answers it."""
         import dataclasses
 
-        from core.unusual_flags import UnusualFlagStore
+        from elysium.core.unusual_flags import UnusualFlagStore
 
         monkeypatch.setenv("ELYSIUM_COOKIE_SECURE", "false")
         _sync(deployment)
@@ -200,7 +200,7 @@ class TestTheMarker:
         compared within other fields -- wait for the next scan unshown."""
         import dataclasses
 
-        from core.unusual_flags import UnusualFlagStore
+        from elysium.core.unusual_flags import UnusualFlagStore
 
         monkeypatch.setenv("ELYSIUM_COOKIE_SECURE", "false")
         _sync(deployment)
@@ -218,7 +218,7 @@ class TestTheMarker:
 
 def _restore(store, stored):
     """Writes stored flags back, as the scan would have."""
-    from core.unusual import Flag
+    from elysium.core.unusual import Flag
 
     by_compartment: dict = {}
     for flag in stored:
@@ -344,7 +344,7 @@ class TestTheQueue:
         own read check answers, in the listing and the decision both."""
         import dataclasses
 
-        from core.unusual_flags import UnusualFlagStore
+        from elysium.core.unusual_flags import UnusualFlagStore
 
         store = UnusualFlagStore(reviewed.data_dir / "unusual_flags.db")
         east = next(flag for flag in store.flags("Transaction")

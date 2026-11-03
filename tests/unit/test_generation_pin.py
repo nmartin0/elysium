@@ -15,7 +15,7 @@ is an authorization bug rather than a cosmetic one.
 import dataclasses
 from types import SimpleNamespace
 
-from api.generation_dependency import get_generation
+from elysium.api.generation_dependency import get_generation
 
 
 def _request(generation):
@@ -65,7 +65,7 @@ def test_routes_read_the_pin_rather_than_app_state():
     # so silently -- nothing about it looks wrong at the call site.
     from pathlib import Path
 
-    source = (Path(__file__).resolve().parent.parent.parent / "api" / "routes.py").read_text()
+    source = (Path(__file__).resolve().parent.parent.parent / "src" / "elysium" / "api" / "routes.py").read_text()
 
     # WORD-BOUNDED, not a substring match. "app.state.config" is a
     # prefix of "app.state.config_history", which is legitimate runtime
@@ -75,7 +75,7 @@ def test_routes_read_the_pin_rather_than_app_state():
 
     for attribute in ("config", "mediator", "write_mediator", "loop", "synthesis_client"):
         assert not re.search(rf"app\.state\.{attribute}\b(?!_)", source), (
-            f"api/routes.py still reads app.state.{attribute} directly; "
+            f"src/elysium/api/routes.py still reads app.state.{attribute} directly; "
             f"use the pinned generation instead"
         )
 
@@ -89,7 +89,7 @@ def test_routes_read_the_pin_rather_than_app_state():
     # test above. A guard that names five specific attributes does not
     # generalise to the sixth.
     assert not re.search(r"app\.state\.generation\b(?!_)", source), (
-        "api/routes.py reads app.state.generation directly; use _generation(request), "
+        "src/elysium/api/routes.py reads app.state.generation directly; use _generation(request), "
         "which returns the generation this request pinned at entry"
     )
 
@@ -102,7 +102,7 @@ def test_runtime_state_is_still_read_from_app_state():
     # them too would be wrong.
     from pathlib import Path
 
-    source = (Path(__file__).resolve().parent.parent.parent / "api" / "routes.py").read_text()
+    source = (Path(__file__).resolve().parent.parent.parent / "src" / "elysium" / "api" / "routes.py").read_text()
 
     assert "app.state.session_store" in source
     assert "app.state.user_directory" in source
@@ -131,7 +131,7 @@ def test_app_state_no_longer_carries_the_configuration_derived_objects():
     # nothing at the call site looking wrong.
     from pathlib import Path
 
-    source = (Path(__file__).resolve().parent.parent.parent / "api" / "app.py").read_text()
+    source = (Path(__file__).resolve().parent.parent.parent / "src" / "elysium" / "api" / "app.py").read_text()
     assignments = [
         line for line in source.splitlines()
         if line.strip().startswith("app.state.") and "=" in line
@@ -139,7 +139,7 @@ def test_app_state_no_longer_carries_the_configuration_derived_objects():
     assigned = {line.split("app.state.")[1].split()[0].split("=")[0] for line in assignments}
 
     for gone in ("config", "mediator", "write_mediator", "loop", "synthesis_client"):
-        assert gone not in assigned, f"api/app.py still assigns app.state.{gone}"
+        assert gone not in assigned, f"src/elysium/api/app.py still assigns app.state.{gone}"
 
 
 def test_runtime_state_is_still_assigned_on_app_state():
@@ -149,7 +149,7 @@ def test_runtime_state_is_still_assigned_on_app_state():
     # test above while logging out every user on reload.
     from pathlib import Path
 
-    source = (Path(__file__).resolve().parent.parent.parent / "api" / "app.py").read_text()
+    source = (Path(__file__).resolve().parent.parent.parent / "src" / "elysium" / "api" / "app.py").read_text()
 
     for kept in ("session_store", "credential_store", "user_directory",
                  "login_attempt_tracker", "query_rate_limiter", "pending_writes",
@@ -173,7 +173,7 @@ def test_the_one_read_past_the_pin_stays_one():
     """
     from pathlib import Path
 
-    source = (Path(__file__).resolve().parent.parent.parent / "api" / "routes.py").read_text()
+    source = (Path(__file__).resolve().parent.parent.parent / "src" / "elysium" / "api" / "routes.py").read_text()
 
     assert source.count("latest_generation(request)") == 1
 
@@ -183,23 +183,23 @@ def test_the_one_read_past_the_pin_stays_one():
 
 def test_v2_routes_read_the_pin_rather_than_app_state():
     # The same guard for the standard read surface. Every module in
-    # api/v2 takes its generation from api.v2.context.call, which takes it
+    # api/v2 takes its generation from elysium.api.v2.context.call, which takes it
     # from the pin; ANY read of app.state.generation here, and any of the
     # five derived objects, would reopen the torn read.
     import re
     from pathlib import Path
 
-    package = Path(__file__).resolve().parent.parent.parent / "api" / "v2"
+    package = Path(__file__).resolve().parent.parent.parent / "src" / "elysium" / "api" / "v2"
     modules = sorted(package.glob("*.py"))
     assert {"context.py", "objects.py", "object_sets.py", "schema.py"} <= {m.name for m in modules}
 
     for module in modules:
         source = module.read_text()
         assert "app.state.generation" not in source, (
-            f"api/v2/{module.name} reads app.state.generation; use the pinned generation"
+            f"src/elysium/api/v2/{module.name} reads app.state.generation; use the pinned generation"
         )
-        assert "latest_generation" not in source, f"api/v2/{module.name} reaches past the pin"
+        assert "latest_generation" not in source, f"src/elysium/api/v2/{module.name} reaches past the pin"
         for attribute in ("config", "mediator", "write_mediator", "loop", "synthesis_client"):
             assert not re.search(rf"app\.state\.{attribute}\b(?!_)", source), (
-                f"api/v2/{module.name} reads app.state.{attribute} directly"
+                f"src/elysium/api/v2/{module.name} reads app.state.{attribute} directly"
             )

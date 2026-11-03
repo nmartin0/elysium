@@ -25,7 +25,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.mirror.durability import (
+from elysium.core.mirror.durability import (
     MirrorDurabilityError,
     force_table_metadata_to_disk,
     force_to_disk,
@@ -119,8 +119,8 @@ class TestTheSyncUsesIt:
         whether the sync calls it."""
         import sqlite3
 
-        from adapters.sqlite_adapter import SQLiteReadAdapter
-        from core.mirror.iceberg_sync import IcebergMirrorSync
+        from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+        from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
         source = tmp_path / "s.db"
         conn = sqlite3.connect(source)

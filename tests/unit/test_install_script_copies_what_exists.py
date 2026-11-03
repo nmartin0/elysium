@@ -36,8 +36,7 @@ def test_the_parser_finds_the_copies():
     # Its own control: a parser that found nothing would make the
     # existence check below pass for ever.
     sources = _cp_sources()
-    assert "core" in sources and "functions" in sources
-    assert len(sources) >= 10
+    assert "src" in sources
 
 
 def test_every_path_the_installer_copies_exists_in_the_repository():
@@ -49,17 +48,19 @@ def test_every_top_level_package_the_server_imports_is_copied():
     copied = {s.split("/")[0] for s in _cp_sources()}
     repo_packages = {p.name for p in ROOT.iterdir()
                      if p.is_dir() and (p / "__init__.py").exists()}
+    repo_packages |= {p.name for p in (ROOT / "src").iterdir() if (p / "__init__.py").exists()}
     imported = set()
     for folder in ("api", "core", "adapters", "functions"):
-        for path in (ROOT / folder).rglob("*.py"):
+        for path in (ROOT / "src" / "elysium" / folder).rglob("*.py"):
             for node in ast.walk(ast.parse(path.read_text())):
                 if isinstance(node, ast.Import):
                     imported |= {a.name.split(".")[0] for a in node.names}
                 elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
                     imported.add(node.module.split(".")[0])
     needed = imported & repo_packages
-    assert {"core", "api", "adapters", "functions"} <= needed
-    assert needed <= copied, f"imported by the server but not copied: {sorted(needed - copied)}"
+    assert "elysium" in needed
+    # `elysium` is the one package under src/, so copying src/ copies it.
+    assert "src" in copied, f"imported by the server but not copied: {sorted(needed)}"
 
 
 def test_python_dependencies_come_from_the_hashed_lock_when_there_is_one():

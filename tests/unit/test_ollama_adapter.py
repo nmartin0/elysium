@@ -18,7 +18,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from adapters.ollama_adapter import OllamaAdapter
+from elysium.adapters.ollama_adapter import OllamaAdapter
 
 BASE = {"base_url": "http://localhost:11434/api/chat"}
 
@@ -29,7 +29,7 @@ def _sent(connection: dict, **chat_kwargs) -> dict:
     response = Mock()
     response.json.return_value = {"message": {"content": "ok"}}
     response.raise_for_status.return_value = None
-    with patch("adapters.http_transport.post", return_value=response) as post:
+    with patch("elysium.adapters.http_transport.post", return_value=response) as post:
         adapter.chat("system", "user", **chat_kwargs)
     return post.call_args.kwargs["json"]
 

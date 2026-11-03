@@ -7,10 +7,10 @@ existing deployment behaves as before.
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.mediator import DataMediator
-from core.ontology.object_type_validation import validate_object_types
-from core.ontology.schema import is_discoverable
+from elysium.core.access.auth import UserRecord
+from elysium.core.ontology.mediator import DataMediator
+from elysium.core.ontology.object_type_validation import validate_object_types
+from elysium.core.ontology.schema import is_discoverable
 
 
 def _schema(**customer):

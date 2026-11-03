@@ -8,7 +8,7 @@ to start it afresh -- was opened empty with its tables skipped: "no such
 table: generation_sequence", 11 errors in test_api.py the day passing
 tests' directories began to be removed (23 October)."""
 
-from core.sqlite_connection import connection_with_schema
+from elysium.core.sqlite_connection import connection_with_schema
 
 SCHEMA = "CREATE TABLE IF NOT EXISTS things (id INTEGER PRIMARY KEY);"
 

@@ -22,7 +22,7 @@ import json
 import logging
 import sqlite3
 
-from core.mirror.iceberg_sync import (
+from elysium.core.mirror.iceberg_sync import (
     SOURCE_TYPES_PROPERTY,
     _report_type_drift,
     _source_types_json,
@@ -145,7 +145,7 @@ class TestWhatEachAdapterCanSay:
         Routing around that to answer a diagnostic would trade a
         structural write guarantee for a nicety.
         """
-        from adapters.sqlite_adapter import SQLiteReadAdapter
+        from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
 
         db = tmp_path / "t.db"
         conn = sqlite3.connect(db)
@@ -161,7 +161,7 @@ class TestWhatEachAdapterCanSay:
         there while SQLite is the embedded fixture case."""
         import psycopg
 
-        from adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
+        from elysium.adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
         from tests.postgres_server import real_postgres
 
         uri, stop = real_postgres()

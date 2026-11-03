@@ -29,8 +29,8 @@ topsecret}`.
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.write_mediator import _compartment_crossings
+from elysium.core.access.auth import UserRecord
+from elysium.core.ontology.write_mediator import _compartment_crossings
 
 EAST = UserRecord(user_id="e", security_value="us-east", role_name="agent")
 
@@ -117,7 +117,7 @@ class TestTheRefusalType:
         COMBINATION, and a PermissionError would send somebody looking
         at grants that are perfectly correct.
         """
-        from core.ontology.write_mediator import CrossCompartmentWrite
+        from elysium.core.ontology.write_mediator import CrossCompartmentWrite
 
         assert issubclass(CrossCompartmentWrite, ValueError)
         assert not issubclass(CrossCompartmentWrite, PermissionError)
@@ -132,10 +132,10 @@ class TestACreateIsAWriteToo:
     def propose(self, tmp_path):
         import sqlite3
 
-        from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
-        from core.ontology.mediator import DataMediator
-        from core.ontology.write_log import WriteLogWriter
-        from core.ontology.write_mediator import WriteMediator
+        from elysium.adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
+        from elysium.core.ontology.mediator import DataMediator
+        from elysium.core.ontology.write_log import WriteLogWriter
+        from elysium.core.ontology.write_mediator import WriteMediator
 
         schema = {"Ticket": {
             "id_field": "id", "security": {"field": "region"},
@@ -178,7 +178,7 @@ class TestACreateIsAWriteToo:
         return build
 
     def test_reading_one_compartment_and_creating_in_another_is_refused(self, propose):
-        from core.ontology.write_mediator import CrossCompartmentWrite
+        from elysium.core.ontology.write_mediator import CrossCompartmentWrite
 
         with pytest.raises(CrossCompartmentWrite, match="t-east.*us-east.*t-new.*us-west"):
             propose("us-west")

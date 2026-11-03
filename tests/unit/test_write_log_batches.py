@@ -23,7 +23,7 @@ class's own mechanics.
 
 import pytest
 
-from core.ontology.write_log import WriteLogReader, WriteLogWriter
+from elysium.core.ontology.write_log import WriteLogReader, WriteLogWriter
 
 
 def _sub_write(object_type="Account", object_id="acc_1", operation="update",

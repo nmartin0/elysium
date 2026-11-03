@@ -20,8 +20,8 @@ look like a usability improvement and would be a disclosure.
 
 import pytest
 
-from core.filters import parse_filters
-from core.intermediate_layer.auth import UserRecord
+from elysium.core.access.auth import UserRecord
+from elysium.core.filters import parse_filters
 
 
 def _condition(field):

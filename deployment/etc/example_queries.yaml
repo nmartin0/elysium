@@ -1,6 +1,6 @@
 # example_queries.yaml  (acme_corp-specific -- pure data)
 #
-# Demo queries for scripts/run_deployment.py, matching acme_corp's own
+# Demo queries for src/elysium/scripts/run_deployment.py, matching acme_corp's own
 # seeded dev fixture data (see dev_fixtures/schema.sql for what
 # cust_001/003/004 and user_alice/carol actually are). A different
 # deployment would list its own users/queries here -- the runner script
@@ -23,7 +23,7 @@ examples:
 #
 # An example WITH it is rendered to anybody who opens the query screen,
 # before they have asked anything and whatever they are cleared to see.
-# `core/display_safety.py` refuses any that names an identifier-shaped
+# `src/elysium/core/display_safety.py` refuses any that names an identifier-shaped
 # token, and refuses it at LOAD so a deployment cannot start with a
 # leak in its placeholder text.
 #

@@ -57,13 +57,13 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.intermediate_layer.auth import UserRecord
-from core.mirror.gold import build_gold, published_snapshot_ids
-from core.mirror.gold_connector import GoldConnector
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.ontology.gold_view import build_gold_view
-from core.ontology.mediator import DataMediator
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.access.auth import UserRecord
+from elysium.core.mirror.gold import build_gold, published_snapshot_ids
+from elysium.core.mirror.gold_connector import GoldConnector
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.ontology.gold_view import build_gold_view
+from elysium.core.ontology.mediator import DataMediator
 
 SCHEMA = {
     "Customer": {
@@ -516,12 +516,12 @@ class TestTheRenameSetting:
         ({"on_suspected_rename": " HOLD "}, "hold"), ({"on_suspected_rename": None}, "hold"),
     ], ids=["absent", "serve_empty", "spelled_loosely", "left_blank"])
     def test_what_config_yaml_says(self, config, means):
-        from core.deployment_loader import _resolve_suspected_rename
+        from elysium.core.deployment_loader import _resolve_suspected_rename
 
         assert _resolve_suspected_rename(config) == means
 
     def test_anything_else_is_refused_at_load(self):
-        from core.deployment_loader import _resolve_suspected_rename
+        from elysium.core.deployment_loader import _resolve_suspected_rename
 
         with pytest.raises(ValueError, match="on_suspected_rename must be one of"):
             _resolve_suspected_rename({"on_suspected_rename": "absorb"})
@@ -529,7 +529,7 @@ class TestTheRenameSetting:
     def test_the_sync_is_given_it(self):
         import inspect
 
-        from scripts import run_sync
+        from elysium.scripts import run_sync
 
         assert "on_suspected_rename=config.on_suspected_rename" in inspect.getsource(run_sync)
 
@@ -554,7 +554,7 @@ class TestAnAbsorbedColumnIsRecorded:
         assert deployment.sync_and_publish_cleanly().absorbed_drift is None
 
     def test_the_attempt_records_it_beside_its_outcome(self, deployment):
-        from scripts.run_sync import _detail_for, _outcome_for
+        from elysium.scripts.run_sync import _detail_for, _outcome_for
 
         deployment.sync._on_suspected_rename = "serve_empty"
         deployment.execute("ALTER TABLE customers RENAME COLUMN score TO risk_score")
@@ -569,7 +569,7 @@ class TestWhichTablesLicenseAType:
     type HAS must all be accepted."""
 
     def _accepted(self, type_def, accepted):
-        from scripts.run_sync import deletions_accepted_for
+        from elysium.scripts.run_sync import deletions_accepted_for
 
         return deletions_accepted_for(type_def, set(accepted))
 

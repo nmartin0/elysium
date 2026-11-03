@@ -120,7 +120,7 @@ class TestDeprecating:
     def test_the_loader_has_the_last_word(self, deployer, config_dir, monkeypatch):
         before = (config_dir / FILE).read_text()
         broken = before.replace("  Customer:\n", "  Customer:\n    not_a_known_key_at_all: [\n", 1)
-        monkeypatch.setattr("core.config_editing.apply_status", lambda *given: broken)
+        monkeypatch.setattr("elysium.core.config_editing.apply_status", lambda *given: broken)
 
         assert _status(deployer).status_code == 400
         assert (config_dir / FILE).read_text() == before
@@ -130,7 +130,7 @@ class TestAStatusNeverWidensAccess:
     def test_if_the_permission_code_says_it_would_the_edit_is_refused_and_nothing_is_written(
             self, deployer, config_dir, monkeypatch):
         before = (config_dir / FILE).read_text()
-        monkeypatch.setattr("api.routes._access_impact", lambda request, replacements: (None, {"widens": True}))
+        monkeypatch.setattr("elysium.api.routes._access_impact", lambda request, replacements: (None, {"widens": True}))
 
         response = _status(deployer)
 

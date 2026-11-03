@@ -6,10 +6,10 @@ from datetime import UTC, datetime
 
 import pytest
 
-from api.timer_service import Firing
-from core.notifications import NotificationStore
-from core.reminders import ReminderError, describe_repeat, fire, parse
-from core.timers import Timer
+from elysium.api.timer_service import Firing
+from elysium.core.notifications import NotificationStore
+from elysium.core.reminders import ReminderError, describe_repeat, fire, parse
+from elysium.core.timers import Timer
 
 NOW = datetime(2026, 7, 20, 12, tzinfo=UTC)
 

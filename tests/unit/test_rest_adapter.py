@@ -16,9 +16,9 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-import adapters.rest_adapter as rest
-from adapters.rest_adapter import ApiRefused, RestAdapter, retry_after_seconds
-from core.ontology.interface import StorageUnavailable
+import elysium.adapters.rest_adapter as rest
+from elysium.adapters.rest_adapter import ApiRefused, RestAdapter, retry_after_seconds
+from elysium.core.ontology.interface import StorageUnavailable
 
 CONFIG = {"storage": {"table": "invoices", "id_column": "id"}}
 
@@ -226,7 +226,7 @@ class TestTokensThatExpire:
             _oauth_adapter(expiring_api, **auth)
 
     def test_a_literal_client_secret_is_refused_in_configuration(self):
-        from core.secret_references import PlaintextSecret, expand_secrets
+        from elysium.core.secret_references import PlaintextSecret, expand_secrets
 
         with pytest.raises(PlaintextSecret):
             expand_secrets({"auth": {"client_secret": "s3cret"}}, where="books")
@@ -445,7 +445,7 @@ def test_a_wrong_declaration_is_refused_at_load(connection, error):
 def test_a_frozen_declaration_is_accepted(api):
     """As the loader hands it over -- the CSV adapter's first live run
     failed on exactly this."""
-    from core.immutable import deep_freeze
+    from elysium.core.immutable import deep_freeze
 
     api.mode = "root"
     frozen = deep_freeze({"base_url": api.base, "tables": {"invoices": {
@@ -455,7 +455,7 @@ def test_a_frozen_declaration_is_accepted(api):
 
 
 def test_it_is_registered():
-    from core.deployment_loader import _READ_ADAPTER_REGISTRY
+    from elysium.core.deployment_loader import _READ_ADAPTER_REGISTRY
 
     assert _READ_ADAPTER_REGISTRY["rest"] is RestAdapter
 

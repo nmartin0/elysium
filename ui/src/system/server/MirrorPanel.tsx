@@ -606,7 +606,7 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
 
       {state.tables.length === 0 && (
         <Notice state="active" title="Nothing synced yet">
-          Run <code>python -m scripts.run_sync</code> to copy from the configured silos.
+          Run <code>python -m elysium.scripts.run_sync</code> to copy from the configured silos.
         </Notice>
       )}
     </>

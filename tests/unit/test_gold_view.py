@@ -17,7 +17,7 @@ neighbours happened: a chain that loads happily and fails every read.
 
 import pytest
 
-from core.ontology.gold_view import GOLD_NAMESPACE, GOLD_VIEW_MARKER, build_gold_view
+from elysium.core.ontology.gold_view import GOLD_NAMESPACE, GOLD_VIEW_MARKER, build_gold_view
 
 SCHEMA = {
     "Customer": {

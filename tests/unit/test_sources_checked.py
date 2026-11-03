@@ -13,7 +13,7 @@ import logging
 import pytest
 from fastapi.testclient import TestClient
 
-from core.source_health import source_failures
+from elysium.core.source_health import source_failures
 
 PW = "a-long-and-unremarkable-passphrase"
 
@@ -21,7 +21,7 @@ PW = "a-long-and-unremarkable-passphrase"
 def _app(paths, monkeypatch):
     monkeypatch.setenv("ELYSIUM_DATA_DIR", str(paths.data_dir))
     monkeypatch.setenv("ELYSIUM_LOG_DIR", str(paths.log_dir))
-    from api.app import create_app
+    from elysium.api.app import create_app
     return create_app(paths)
 
 
@@ -89,7 +89,7 @@ class TestAtStartup:
     def test_a_missing_source_is_named_and_the_service_still_starts(self, synced_deployment, monkeypatch, caplog):
         _delete_source(synced_deployment)
 
-        with caplog.at_level(logging.WARNING, logger="api.app"):
+        with caplog.at_level(logging.WARNING, logger="elysium.api.app"):
             app = _app(synced_deployment, monkeypatch)
 
         assert app is not None
@@ -97,7 +97,7 @@ class TestAtStartup:
         assert len(named) == 1 and "'primary_sql'" in named[0] and "FileNotFoundError" in named[0]
 
     def test_a_healthy_start_warns_about_nothing(self, synced_deployment, monkeypatch, caplog):
-        with caplog.at_level(logging.WARNING, logger="api.app"):
+        with caplog.at_level(logging.WARNING, logger="elysium.api.app"):
             _app(synced_deployment, monkeypatch)
 
         assert not [r for r in caplog.records if "startup check" in r.getMessage()]
@@ -138,11 +138,11 @@ class TestAClosedVocabulary:
 
     @staticmethod
     def _kind(exc):
-        from core.source_health import failure_kind
+        from elysium.core.source_health import failure_kind
         return failure_kind(exc)
 
     def test_each_kind(self):
-        from core.ontology.interface import StorageUnavailable
+        from elysium.core.ontology.interface import StorageUnavailable
 
         def wrapped(inner):
             try:
@@ -161,7 +161,7 @@ class TestAClosedVocabulary:
         assert self._kind(Exception("something nobody foresaw")) == "other"
 
     def test_every_answer_is_from_the_list(self):
-        from core.source_health import FAILURE_KINDS
+        from elysium.core.source_health import FAILURE_KINDS
 
         for exc in (FileNotFoundError(), PermissionError(), OSError(), KeyError("k"),
                     RuntimeError("x"), Exception()):

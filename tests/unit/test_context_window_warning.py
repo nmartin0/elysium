@@ -29,7 +29,7 @@ import logging
 
 import pytest
 
-from adapters.ollama_adapter import CONTEXT_WARNING_FRACTION, OllamaAdapter
+from elysium.adapters.ollama_adapter import CONTEXT_WARNING_FRACTION, OllamaAdapter
 
 
 def _adapter(**options):

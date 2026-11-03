@@ -23,8 +23,8 @@ about.
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.write_mediator import WriteMediator
+from elysium.core.access.auth import UserRecord
+from elysium.core.ontology.write_mediator import WriteMediator
 
 ALICE = UserRecord("alice", "us-west", "customer_service")
 
@@ -215,7 +215,7 @@ class TestTheLimitIsTheDeployments:
         return config_dir
 
     def _load(self, tmp_path, value):
-        from core.deployment_loader import load_deployment
+        from elysium.core.deployment_loader import load_deployment
 
         return load_deployment(self._config_dir(tmp_path, value))
 
@@ -233,7 +233,7 @@ class TestTheLimitIsTheDeployments:
 
     def test_the_limit_in_force_is_the_one_refused_past(self, tmp_path):
         """THE WIRING: a declared limit reaches the write mediator."""
-        from core.deployment_loader import build_generation
+        from elysium.core.deployment_loader import build_generation
 
         generation = build_generation(self._config_dir(tmp_path, 3), None, tmp_path / "log")
 

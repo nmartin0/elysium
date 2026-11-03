@@ -12,7 +12,7 @@ person's to keep right; its inventories are not."""
 import re
 from pathlib import Path
 
-from core.modules import _ACTIVATION_EVENTS, _CONTRIBUTION_KEYS, _MANIFEST_KEYS
+from elysium.core.modules import _ACTIVATION_EVENTS, _CONTRIBUTION_KEYS, _MANIFEST_KEYS
 
 ROOT = Path(__file__).resolve().parents[2]
 GUIDE = (ROOT / "ui" / "MODULE_API.md").read_text()

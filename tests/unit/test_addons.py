@@ -13,7 +13,7 @@ from pathlib import Path
 import jwt
 import pytest
 
-from core.addons import (
+from elysium.core.addons import (
     AddonError,
     ServerSpec,
     command_line,
@@ -23,7 +23,7 @@ from core.addons import (
     response_headers,
     sign_identity,
 )
-from core.modules import ModuleError, _load_manifest
+from elysium.core.modules import ModuleError, _load_manifest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "sdk" / "python"))
 import elysium_addon  # noqa: E402
@@ -220,7 +220,7 @@ class TestTheOutbox:
     """A notice an add-on drops in its outbox (step 2.4), as read by Elysium."""
 
     def test_to_everyone_or_to_names(self):
-        from core.addons import OutboxMessage, parse_outbox_message
+        from elysium.core.addons import OutboxMessage, parse_outbox_message
 
         assert parse_outbox_message(b'{"to": "everyone", "summary": " Ready "}') \
             == OutboxMessage(to=None, summary="Ready", detail=None)
@@ -240,14 +240,14 @@ class TestTheOutbox:
         (b"x" * 70000, "larger than"),
     ])
     def test_a_file_it_cannot_take_is_said(self, raw, said):
-        from core.addons import parse_outbox_message
+        from elysium.core.addons import parse_outbox_message
 
         with pytest.raises(AddonError) as refused:
             parse_outbox_message(raw)
         assert said in str(refused.value)
 
     def test_the_sdk_writes_what_elysium_reads_never_half_a_file(self, tmp_path):
-        from core.addons import parse_outbox_message
+        from elysium.core.addons import parse_outbox_message
 
         name = elysium_addon.post({"outbox": str(tmp_path)}, "World ready", to=["ada"], detail="probe",
                                   name="ready-1")

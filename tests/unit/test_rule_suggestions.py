@@ -14,7 +14,7 @@ import sqlite3
 
 import pytest
 
-from core.rule_suggestions import (
+from elysium.core.rule_suggestions import (
     ABSENCE,
     ACCEPTED,
     DECLARED,
@@ -77,10 +77,10 @@ class TestTheQueue:
 
 class TestTheScan:
     def test_a_disguised_absence_is_found_on_the_field_it_belongs_to(self, synced_deployment):
-        from core.deployment_loader import load_deployment
-        from core.mirror.catalog import open_mirror_catalog
-        from core.mirror.rule_suggestion_scan import refresh
-        from scripts.run_sync import run_sync
+        from elysium.core.deployment_loader import load_deployment
+        from elysium.core.mirror.catalog import open_mirror_catalog
+        from elysium.core.mirror.rule_suggestion_scan import refresh
+        from elysium.scripts.run_sync import run_sync
 
         with sqlite3.connect(synced_deployment.data_dir / "dev_fixtures" / "mediator.db") as conn:
             conn.execute("UPDATE customers SET email = 'N/A' WHERE customer_id = 'cust_002'")
@@ -95,7 +95,7 @@ class TestTheScan:
         assert found.get(("Customer", "email", "N/A")) == PENDING
 
     def test_a_value_the_schema_already_nulls_is_declared(self):
-        from core.mirror.rule_suggestion_scan import already_declared
+        from elysium.core.mirror.rule_suggestion_scan import already_declared
 
         schema = {"Customer": {"fields": {"email": {"standardise": {"null_if": ["N/A"]}}}}}
 

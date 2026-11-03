@@ -10,7 +10,7 @@ llm:
   # "claude_agent_sdk" (runs the local claude CLI, so calls draw on
   # your Claude subscription's Agent SDK credit rather than separately
   # billed API credits -- see INSTALL.md for setup).
-  provider: ollama                 # key into core/deployment_loader.py's LLM
+  provider: ollama                 # key into src/elysium/core/deployment_loader.py's LLM
                                     # adapter registry -- see that file's
                                     # _LLM_ADAPTER_REGISTRY for what's built in
   #
@@ -84,8 +84,8 @@ agent:
   # without changing the running pool. Said here rather than left to
   # be discovered, because a setting that silently does not apply is
   # worse than one that plainly cannot.
-  max_concurrent_requests: 4        # thread pool size for api/ and
-                                     # scripts/serve_requests.py
+  max_concurrent_requests: 4        # thread pool size for src/elysium/api/ and
+                                     # src/elysium/scripts/serve_requests.py
 
 # How proposed writes behave while they wait for a decision.
 writes:
@@ -106,7 +106,7 @@ writes:
 # Tools the LLM may call, by name -- entirely optional; omitting this
 # section (or listing none) is completely valid, unlike llm:, which
 # every deployment needs. Registered tools live in
-# core/functions/registry.py -- see NAMING below.
+# src/elysium/core/functions/registry.py -- see NAMING below.
 # NAMING: "tools" out here, "functions" in the code (004-F3).
 #
 # THE BOUNDARY WORD IS THE INDUSTRY'S. OpenAI deprecated its
@@ -120,8 +120,8 @@ writes:
 # response field, the finish reason and the reply message together --
 # and renaming the INSIDE buys nothing anyone outside can see. So the
 # mapping is written down instead: tools.enabled here names entries
-# in core/functions/registry.py, each implementing the Function
-# contract in core/functions/interface.py.
+# in src/elysium/core/functions/registry.py, each implementing the Function
+# contract in src/elysium/core/functions/interface.py.
 tools:
   enabled:
     - linear_regression
@@ -133,7 +133,7 @@ tools:
 #
 # IT BOUNDS THE LIST, NOT THE DISK. The snapshots themselves are not
 # removed -- PyIceberg 0.12's ExpireSnapshots expires nothing, which
-# was measured rather than assumed (see core/mirror/gold.py). The
+# was measured rather than assumed (see src/elysium/core/mirror/gold.py). The
 # changelog is unaffected either way: what CHANGED lives in its own
 # table, so forgetting a publication loses the ability to read the
 # table as it WAS, not the record of what happened.

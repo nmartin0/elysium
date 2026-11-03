@@ -6,10 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from api.deprecation_alerts import KIND, arm, deprecation_timer
-from api.timer_service import Firing
-from core.notifications import NotificationStore
-from core.ontology.deprecation_alerts import (
+from elysium.api.deprecation_alerts import KIND, arm, deprecation_timer
+from elysium.api.timer_service import Firing
+from elysium.core.notifications import NotificationStore
+from elysium.core.ontology.deprecation_alerts import (
     DEFAULT_LEAD_DAYS,
     LEAD,
     OVERDUE,
@@ -19,8 +19,8 @@ from core.ontology.deprecation_alerts import (
     send,
     words,
 )
-from core.timers import Timer, TimerStore
-from core.user_directory import UserDirectory
+from elysium.core.timers import Timer, TimerStore
+from elysium.core.user_directory import UserDirectory
 
 TODAY = date(2027, 3, 1)
 
@@ -208,7 +208,7 @@ def test_the_app_runs_the_check_on_the_timer_service_it_already_has():
     service, and the daily timer is armed where the others are."""
     from pathlib import Path
 
-    source = Path("api/app.py").read_text()
+    source = Path("src/elysium/api/app.py").read_text()
 
     assert "DEPRECATION_DATES: deprecation_timer," in source
     assert "arm_deprecation_dates(_app)" in source
@@ -218,7 +218,7 @@ class TestTheSettingReachesTheLoadedConfiguration:
     def _load(self, tmp_path, value):
         import shutil
 
-        from core.deployment_loader import load_deployment
+        from elysium.core.deployment_loader import load_deployment
 
         config_dir = tmp_path / "config"
         shutil.copytree("tests/integration/fixtures", config_dir)

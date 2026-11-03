@@ -14,9 +14,9 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.transform import describe_drift, transform_rows
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.transform import describe_drift, transform_rows
 
 
 def test_declared_types_are_cast_to_real_python_types():
@@ -184,7 +184,7 @@ def test_the_last_good_mirror_survives_a_drifted_sync(tmp_path, source_db):
 def test_a_naive_time_in_an_instant_column_says_how_to_declare_its_zone():
     # Found 20 October over a simulated MariaDB, whose DATETIME has no
     # zone: the refusal was right and gave no way forward.
-    from core.mirror.transform import DriftedColumn
+    from elysium.core.mirror.transform import DriftedColumn
 
     naive = DriftedColumn(column="created_at", declared_type="timestamptz",
                           example_value="2026-01-01 00:00:00", row_count_checked=60)
@@ -198,7 +198,7 @@ def test_a_naive_time_in_an_instant_column_says_how_to_declare_its_zone():
 
 
 def test_a_date_alone_is_not_taken_for_a_naive_time():
-    from core.mirror.transform import DriftedColumn
+    from elysium.core.mirror.transform import DriftedColumn
 
     message = describe_drift("web", "customers", [DriftedColumn(
         column="joined", declared_type="timestamptz", example_value="2026-01-01",

@@ -33,11 +33,11 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.gold import build_gold
-from core.mirror.gold_conflicts import ConflictsNotRecorded, read_conflicts
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.survivorship import PROPERTY_CONFLICT, SECURITY_CONFLICT
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.gold import build_gold
+from elysium.core.mirror.gold_conflicts import ConflictsNotRecorded, read_conflicts
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.survivorship import PROPERTY_CONFLICT, SECURITY_CONFLICT
 
 TYPE = {
     "id_field": "customer_id",
@@ -246,8 +246,8 @@ class TestWhenTheArgumentEnds:
     track record says whose value both sources ended up holding."""
 
     def test_billing_adopting_the_crms_name_counts_for_the_crm(self, published, tmp_path):
-        from core.mirror.source_record import SourceRecordStore
-        from scripts.run_sync import _record_ended_disagreements
+        from elysium.core.mirror.source_record import SourceRecordStore
+        from elysium.scripts.run_sync import _record_ended_disagreements
 
         _build(published)  # CRM "Ada Okafor" serves, billing "Ada" is outranked
         conn = sqlite3.connect(tmp_path / "billing.db")
@@ -272,8 +272,8 @@ class TestWhenTheArgumentEnds:
                                            rows, []) == 0
 
     def test_while_they_still_disagree_nothing_is_recorded(self, published, tmp_path):
-        from core.mirror.source_record import SourceRecordStore
-        from scripts.run_sync import _record_ended_disagreements
+        from elysium.core.mirror.source_record import SourceRecordStore
+        from elysium.scripts.run_sync import _record_ended_disagreements
 
         _build(published)
         rows = {None: published._catalog.load_table("b.customers").scan().to_arrow().to_pylist(),
@@ -287,8 +287,8 @@ class TestWhenTheArgumentEnds:
         tested: two syncs either side of billing adopting the CRM's name."""
         from types import SimpleNamespace
 
-        import scripts.run_sync as run_sync
-        from core.mirror.source_record import SourceRecordStore
+        import elysium.scripts.run_sync as run_sync
+        from elysium.core.mirror.source_record import SourceRecordStore
 
         config = SimpleNamespace(schema={"Customer": TYPE}, identity_inference=False,
                                  retain_publications=30, mirror_storage={})

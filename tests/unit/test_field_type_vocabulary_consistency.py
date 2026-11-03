@@ -28,8 +28,8 @@ mirror, and nothing compared the two.
 
 import pytest
 
-from core.filters import OPERATOR_TYPES
-from core.ontology.field_types import FIELD_DATA_TYPES, coerce
+from elysium.core.filters import OPERATOR_TYPES
+from elysium.core.ontology.field_types import FIELD_DATA_TYPES, coerce
 
 # A value of roughly the right shape per type, so coerce() gets far
 # enough to convert or refuse. The point is never the value.

@@ -14,11 +14,11 @@ import io
 
 import pyarrow.parquet as pq
 
-from core.mirror.erasure import ErasureRegister, source_key_columns, table_key_columns
-from scripts.backup_deployment import backup
-from scripts.erase import run as erase
-from scripts.restore_deployment import restore
-from scripts.run_sync import run_sync
+from elysium.core.mirror.erasure import ErasureRegister, source_key_columns, table_key_columns
+from elysium.scripts.backup_deployment import backup
+from elysium.scripts.erase import run as erase
+from elysium.scripts.restore_deployment import restore
+from elysium.scripts.run_sync import run_sync
 
 ADA = "cust_001"                 # two transactions: 1 and 2
 ADA_EMAIL = "ada.okafor@example.com"
@@ -50,7 +50,7 @@ def _erase(paths, write=True):
 
 class TestWhereKeysLive:
     def test_every_layer_and_every_link_is_mapped(self, synced_deployment):
-        from core.deployment_loader import load_deployment
+        from elysium.core.deployment_loader import load_deployment
 
         schema = load_deployment(synced_deployment.config_dir).schema
 
@@ -147,13 +147,13 @@ class TestARestore:
 
 
 def _memories(paths):
-    from core.memory.store import MemoryStore
+    from elysium.core.memory.store import MemoryStore
 
     return MemoryStore(paths.data_dir / "memories.db")
 
 
 def _notes(paths):
-    from core.artifact_store import ArtifactStore, note_kind
+    from elysium.core.artifact_store import ArtifactStore, note_kind
 
     store = ArtifactStore(paths.data_dir / "artifacts.db")
 
@@ -228,8 +228,8 @@ class TestWhatPeopleRemembered:
 def _pending(object_type, object_id, *, user="asker", parameters=None):
     from datetime import UTC, datetime
 
-    from core.intermediate_layer.auth import UserRecord
-    from core.ontology.write_mediator import PendingWrite, SubWrite
+    from elysium.core.access.auth import UserRecord
+    from elysium.core.ontology.write_mediator import PendingWrite, SubWrite
 
     return PendingWrite(
         sub_writes=(SubWrite(object_type, object_id, "update", {"category": "x"}),),
@@ -240,9 +240,9 @@ def _pending(object_type, object_id, *, user="asker", parameters=None):
 
 
 def _queue(paths):
-    from core.intermediate_layer.audit import AuditLog
-    from core.pending_write_persistence import PendingWritePersistence
-    from core.pending_write_store import PendingWriteStore
+    from elysium.core.access.audit import AuditLog
+    from elysium.core.pending_write_persistence import PendingWritePersistence
+    from elysium.core.pending_write_store import PendingWriteStore
 
     return PendingWriteStore(audit_log=AuditLog(paths.log_dir / "audit.log"),
                              persistence=PendingWritePersistence(
@@ -255,7 +255,7 @@ class TestEverythingButTheAuditLog:
     keeps that an erasure happened, and not of whom."""
 
     def test_a_frozen_set_loses_them_and_the_criteria_that_found_them(self, synced_deployment):
-        from core.frozen_sets import FrozenSetStore
+        from elysium.core.frozen_sets import FrozenSetStore
 
         store = FrozenSetStore(synced_deployment.data_dir / "frozen_sets.db")
         mixed = store.freeze("someone", "Ada and Bram", "Customer", [ADA, "cust_002"],
@@ -275,7 +275,7 @@ class TestEverythingButTheAuditLog:
         assert store.get("someone", other).origin              # THE CONTROL
 
     def test_the_write_log_forgets_their_edits_and_keeps_the_rest(self, synced_deployment):
-        from core.ontology.write_log import WriteLogWriter
+        from elysium.core.ontology.write_log import WriteLogWriter
 
         log = WriteLogWriter(synced_deployment.data_dir / "write_log.db")
         batch = log.log_pending_batch(
@@ -314,8 +314,8 @@ class TestEverythingButTheAuditLog:
 
     def test_a_paused_question_that_read_them_is_dropped_and_its_asker_told(
             self, synced_deployment):
-        from core.notifications import NotificationStore
-        from core.paused_queries import PausedQueryStore
+        from elysium.core.notifications import NotificationStore
+        from elysium.core.paused_queries import PausedQueryStore
 
         questions = PausedQueryStore(synced_deployment.data_dir / "paused_queries.db")
         questions.save("w1", "asker", "Ada's email, and recategorize 5?",
@@ -334,7 +334,7 @@ class TestEverythingButTheAuditLog:
         assert "erased" in told.summary and "Ada" not in told.summary
 
     def test_an_answer_built_from_them_is_forgotten(self, synced_deployment):
-        from core.notifications import NotificationStore
+        from elysium.core.notifications import NotificationStore
 
         notices = NotificationStore(synced_deployment.data_dir / "notifications.db")
         notices.notify("asker", "query_answer", "Answer to: Ada's email?",
@@ -347,7 +347,7 @@ class TestEverythingButTheAuditLog:
         assert [n.summary for n in notices.for_user("asker")] == ["Answer to: Chidi?"]
 
     def test_a_merge_proposal_naming_them_goes_with_its_decisions(self, synced_deployment):
-        from core.identity_decisions import APPROVED, MergeDecisionStore
+        from elysium.core.identity_decisions import APPROVED, MergeDecisionStore
 
         store = MergeDecisionStore(synced_deployment.data_dir / "identity_decisions.db")
         theirs = store.propose("Customer", f"primary:{ADA}", "crm:77", 0.9)
@@ -361,7 +361,7 @@ class TestEverythingButTheAuditLog:
     def test_an_ended_disagreement_about_them_is_forgotten(self, synced_deployment):
         """R60: the track record keeps which entity a settled disagreement
         was about, which is a fact about the person."""
-        from core.mirror.source_record import Ended, SourceRecordStore
+        from elysium.core.mirror.source_record import Ended, SourceRecordStore
 
         store = SourceRecordStore(synced_deployment.data_dir / "source_record.db")
         store.record("Customer", [Ended(ADA, "email", "t1", "crm", "primary"),
@@ -375,8 +375,8 @@ class TestEverythingButTheAuditLog:
     def test_a_vote_about_them_is_forgotten(self, synced_deployment):
         """R60's voting half: which sources sided with which value about
         this person is a fact about them."""
-        from core.mirror.source_record import SourceRecordStore
-        from core.mirror.source_vote import vote
+        from elysium.core.mirror.source_record import SourceRecordStore
+        from elysium.core.mirror.source_vote import vote
 
         store = SourceRecordStore(synced_deployment.data_dir / "source_record.db")
         store.replace_vote("Customer", vote({
@@ -401,7 +401,7 @@ class TestEverythingButTheAuditLog:
         assert ADA not in json.dumps(erasure) and "Okafor" not in json.dumps(erasure)
 
     def test_a_restore_forgets_them_in_every_store_again(self, synced_deployment, tmp_path):
-        from core.frozen_sets import FrozenSetStore
+        from elysium.core.frozen_sets import FrozenSetStore
 
         store = FrozenSetStore(synced_deployment.data_dir / "frozen_sets.db")
         set_id = store.freeze("someone", "Ada and Bram", "Customer", [ADA, "cust_002"])
@@ -421,7 +421,7 @@ def test_the_server_will_not_serve_a_lake_with_unapplied_erasures(synced_deploym
     server refuses to start until then rather than serve them once."""
     import pytest
 
-    from api.app import create_app
+    from elysium.api.app import create_app
 
     ErasureRegister(synced_deployment.data_dir / "erasures.db").record(
         [("Customer", ADA)], "tester", "test")
@@ -431,7 +431,7 @@ def test_the_server_will_not_serve_a_lake_with_unapplied_erasures(synced_deploym
 
 
 def test_the_list_says_what_happened_without_an_id(synced_deployment):
-    from scripts.erase import list_erasures
+    from elysium.scripts.erase import list_erasures
 
     _erase(synced_deployment)
     _code, printed = _quiet(list_erasures, synced_deployment)
@@ -451,8 +451,8 @@ class TestBothReadPathsSuppress:
     def test_the_fallback_read_drops_erased_keys_too(self, tmp_path):
         import sqlite3
 
-        from adapters.sqlite_adapter import SQLiteReadAdapter
-        from core.mirror.iceberg_sync import IcebergMirrorSync
+        from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+        from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
         source = tmp_path / "s.db"
         with sqlite3.connect(source) as conn:

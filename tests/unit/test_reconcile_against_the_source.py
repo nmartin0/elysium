@@ -12,8 +12,8 @@ import io
 import sqlite3
 from decimal import Decimal
 
-from core.mirror.reconcile import describe, reconcile_rows
-from scripts.reconcile import run
+from elysium.core.mirror.reconcile import describe, reconcile_rows
+from elysium.scripts.reconcile import run
 
 TYPE = {
     "id_field": "transaction_id",
@@ -134,7 +134,7 @@ class TestAgainstARealSourceAndARealSync:
 def test_a_type_built_from_several_sources_is_skipped_by_name():
     """Never silently passed: a fused type has no one source row to
     compare with, and the report says so rather than calling it ok."""
-    from core.mirror.reconcile import reconcile
+    from elysium.core.mirror.reconcile import reconcile
 
     fused = {"Customer": {"id_field": "customer_id",
                           "storage": {"silo": "a", "table": "t", "id_column": "id"},
@@ -149,7 +149,7 @@ def test_a_type_built_from_several_sources_is_skipped_by_name():
 
 
 def test_the_report_says_when_each_side_was_read():
-    from core.mirror.reconcile import TypeReconciliation
+    from elysium.core.mirror.reconcile import TypeReconciliation
 
     lines = describe([TypeReconciliation("T", 1, 1, published_at="2026-10-12T09:00:00+00:00")])
 

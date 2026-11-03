@@ -30,10 +30,10 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.link_types import expand_link_types
-from core.ontology.mediator import DataMediator
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.access.auth import UserRecord
+from elysium.core.ontology.link_types import expand_link_types
+from elysium.core.ontology.mediator import DataMediator
 
 OBJECT_TYPES = {
     "Customer": {

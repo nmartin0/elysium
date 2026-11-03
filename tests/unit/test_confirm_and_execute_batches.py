@@ -23,10 +23,10 @@ batch mechanics, not about proving RBAC/MAC again.
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteWriteAdapter
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.write_log import WriteLogWriter
-from core.ontology.write_mediator import WriteMediator
+from elysium.adapters.sqlite_adapter import SQLiteWriteAdapter
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.ontology.write_log import WriteLogWriter
+from elysium.core.ontology.write_mediator import WriteMediator
 from tests.conftest import author_book_mediator
 
 TEST_USERS = {"alice": {"org_id": "org-a", "role": "editor"}}

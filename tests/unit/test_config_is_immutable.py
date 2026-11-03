@@ -26,8 +26,8 @@ from pathlib import Path
 
 import pytest
 
-from core.deployment_loader import load_deployment
-from core.immutable import deep_freeze
+from elysium.core.deployment_loader import load_deployment
+from elysium.core.immutable import deep_freeze
 
 DEPLOYMENT = Path(__file__).resolve().parent.parent.parent / "deployment" / "etc"
 

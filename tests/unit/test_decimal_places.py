@@ -21,7 +21,7 @@ figure would be a different and much worse feature.
 
 import pytest
 
-from core.ontology.object_type_validation import validate_object_types
+from elysium.core.ontology.object_type_validation import validate_object_types
 
 BASE = {
     "Reading": {

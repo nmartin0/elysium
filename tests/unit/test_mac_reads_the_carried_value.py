@@ -35,7 +35,7 @@ reaches MAC at the next sync either way.
 
 from pathlib import Path
 
-SOURCE = Path("core/ontology/mediator.py").read_text()
+SOURCE = Path("src/elysium/core/ontology/mediator.py").read_text()
 
 
 def _security_value_body():
@@ -96,8 +96,8 @@ class TestTheLayering:
         """`core/ontology` may not import `core/mirror` -- the contract
         refused it, correctly: the mediator should not depend on how
         the lake is built."""
-        assert "from core.carried_columns import SECURITY_COLUMN" in SOURCE
-        assert "from core.mirror.lineage import SECURITY_COLUMN" not in SOURCE
+        assert "from elysium.core.carried_columns import SECURITY_COLUMN" in SOURCE
+        assert "from elysium.core.mirror.lineage import SECURITY_COLUMN" not in SOURCE
 
 
 class TestViaFieldIsUnaffected:

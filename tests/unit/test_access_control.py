@@ -1,5 +1,5 @@
 """
-Tests for core/intermediate_layer/access_control.py's check_access() --
+Tests for core/access/access_control.py's check_access() --
 the single canonical enforcement point. Takes a pre-resolved UserRecord
 now, not a raw user_id + users dict + security_attribute -- and no
 longer needs security_attribute at all, since UserRecord already
@@ -12,9 +12,9 @@ project.
 
 import pytest
 
-from core.intermediate_layer.access_control import check_access
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.mediator import DataMediator
+from elysium.core.access.access_control import check_access
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.ontology.mediator import DataMediator
 from tests.conftest import author_book_mediator
 
 TEST_USERS = {

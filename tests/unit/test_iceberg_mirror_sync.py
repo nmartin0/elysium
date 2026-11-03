@@ -15,9 +15,9 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.lineage import LINEAGE_COLUMNS
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.lineage import LINEAGE_COLUMNS
 
 COLUMNS = ["customer_id", "name", "region"]
 
@@ -233,7 +233,7 @@ def test_a_sync_issues_one_bulk_query_not_one_per_field_per_row(tmp_path):
     # Counting real queries rather than timing: a timing assertion would
     # be flaky, while the query count is exactly the thing that was
     # wrong.
-    import adapters.sqlite_adapter as sqlite_adapter_module
+    import elysium.adapters.sqlite_adapter as sqlite_adapter_module
 
     path = tmp_path / "bulk.db"
     conn = sqlite3.connect(path)

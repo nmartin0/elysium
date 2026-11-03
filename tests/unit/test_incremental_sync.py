@@ -21,10 +21,10 @@ from decimal import Decimal
 
 import pytest
 
-import core.mirror.iceberg_sync as iceberg_sync
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.incremental import (
+import elysium.core.mirror.iceberg_sync as iceberg_sync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.incremental import (
     CURSOR_PROPERTY,
     FULL_READ_PROPERTY,
     MARK_PROPERTY,
@@ -205,7 +205,7 @@ class TestWhenAChangedRowsReadWouldBeWrong:
         assert result.read == "full (the source has no column 'modified')"
 
     def test_an_adapter_that_cannot_reads_in_full_and_says_why(self, mirror, monkeypatch):
-        from core.ontology.interface import ExternalReadAdapter
+        from elysium.core.ontology.interface import ExternalReadAdapter
 
         _sync(mirror)
         monkeypatch.setattr(Recording, "iter_rows_since", ExternalReadAdapter.iter_rows_since)
@@ -288,7 +288,7 @@ class TestTheDeclaration:
                                  {("p", "customers")})
 
     def test_a_join_table_cannot_be_declared(self):
-        from core.deployment_loader import _incremental_policies
+        from elysium.core.deployment_loader import _incremental_policies
 
         # THE EXPANDED FORM the loader validates: a many-to-many field
         # carries via_table, via_column and via_target_column.
@@ -302,7 +302,7 @@ class TestTheDeclaration:
             "Tag": {"storage": {"silo": "p", "table": "tags", "id_column": "id"},
                     "fields": {"id": {"column": "id"}}},
         }
-        from core.mirror.sync_targets import resolve_sync_targets
+        from elysium.core.mirror.sync_targets import resolve_sync_targets
 
         assert ("p", "customer_tags") in {
             (t.silo_name, t.table_name) for t in resolve_sync_targets({"object_types": object_types})
@@ -316,7 +316,7 @@ class TestTheDeclaration:
         ("7d", "7 days"), ("1d", "1 day"), ("36h", "36 hours"), ("5m", "5 minutes"),
         ("90s", "90 seconds")])
     def test_a_duration_is_said_in_its_own_unit(self, text, said):
-        from core.mirror.incremental import describe_span
+        from elysium.core.mirror.incremental import describe_span
 
         assert describe_span(parse_duration(text, "x")) == said
 
@@ -372,7 +372,7 @@ def test_run_sync_reads_a_declared_table_by_its_changes(synced_deployment):
     """THE WIRING, end to end: data_silos.yaml's declaration reaches the
     sync, the first run after declaring reads in full and says why, the
     next reads changes, and `--full` reads everything again."""
-    from scripts.run_sync import run_sync
+    from elysium.scripts.run_sync import run_sync
 
     silos = synced_deployment.config_dir / "data_silos.yaml"
     silos.write_text(silos.read_text().replace(
@@ -414,7 +414,7 @@ class TestWhatMutationTestingFound:
         assert decode_mark(_bronze_properties(sync)[MARK_PROPERTY]) == "2026-10-09"
 
     def test_higher_ignores_empty_and_boolean_candidates(self):
-        from core.mirror.incremental import higher
+        from elysium.core.mirror.incremental import higher
 
         assert higher("b", None) == "b"
         assert higher(None, None) is None

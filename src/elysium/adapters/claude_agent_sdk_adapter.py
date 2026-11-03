@@ -1,0 +1,300 @@
+"""
+claude_agent_sdk_adapter.py  (LLM backend -- Claude, via the local CLI)
+
+Runs `claude -p` as a subprocess rather than calling an HTTP API. That
+shape is deliberate and is the whole point of this adapter: it
+authenticates with the operator's existing Claude subscription login,
+drawing on the monthly Agent SDK credit that Pro, Max, Team and
+Enterprise plans include, rather than on separately-billed API credits.
+
+Anthropic's own documentation for that credit says it "covers Claude
+Agent SDK usage, the claude -p command, and third-party apps built on
+the Agent SDK", and that such usage "no longer counts toward your
+Claude plan's usage limits" -- it is a separate pool. Their API-key
+path is explicitly excluded: "Claude Platform accounts using an API
+key don't receive a credit."
+
+So there are two genuinely different ways to reach Claude, and this is
+the subscription one. An API-key adapter would be faster and simpler
+and would cost money per token; this trades latency for a bill the
+operator has already paid.
+
+REQUIRES the `claude` CLI installed and logged in. This adapter does
+not manage authentication and deliberately cannot: it never sees a
+credential, it just runs a command the operator has already
+authorised.
+
+THREE THINGS THIS ADAPTER GETS RIGHT THAT ARE EASY TO GET WRONG:
+
+1. It STRIPS ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN from the
+   subprocess environment. The CLI's credential precedence puts those
+   ABOVE the subscription OAuth token, so leaving them set makes every
+   call bill API credits silently while the operator believes their
+   subscription is covering it. This is a real, reported failure --
+   one user reported roughly $52 consumed unintentionally that way --
+   and it is invisible until the invoice arrives.
+
+2. It DISABLES ALL TOOLS. `claude` is an agentic tool that can read
+   files and run shell commands. Elysium's central guarantee is that
+   it never writes to a customer's systems and reads only what the
+   ontology declares; handing an unconstrained agent a subprocess
+   inside that boundary would undo it. Not a configuration option --
+   an invariant, asserted by a test.
+
+3. It CANNOT honour temperature, and says so rather than pretending.
+   See chat() below.
+"""
+
+import json
+import logging
+import os
+import shutil
+import subprocess
+import threading
+import time
+
+from elysium.core.llm.interface import LLMCancelled, LLMUnavailable, TokenUsage, call_timeout
+
+logger = logging.getLogger(__name__)
+
+DISALLOWED_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+
+
+#: Linux's MAX_ARG_STRLEN (32 pages of 4 KiB): the most one argv string
+#: may hold. macOS's limit is on the whole argv and larger; this is the
+#: binding one.
+MAX_ARGUMENT_BYTES = 131_072
+
+
+class ClaudeAgentSDKAdapter:
+    """Talks to Claude through the local `claude` CLI in print mode."""
+
+    def __init__(self, model: str, connection: dict):
+        self.model = model
+        self.executable = connection.get("executable", "claude")
+        self.timeout_seconds = connection.get("request_timeout_seconds", 300)
+        # Default 1, not higher. Each call spawns a Node process, and
+        # the subscription credit is a shared monthly pool rather than
+        # a per-second rate limit -- so concurrency buys little and
+        # risks exhausting the credit faster than an operator expects.
+        self.max_concurrent_requests = connection.get("max_concurrent_requests", 1)
+        self._warned_about_temperature = False
+
+        if shutil.which(self.executable) is None:
+            raise ValueError(
+                f"The {self.executable!r} command was not found on PATH. This adapter runs "
+                f"Claude through the local CLI so that it draws on your Claude subscription's "
+                f"Agent SDK credit; install it with "
+                f"`npm install -g @anthropic-ai/claude-code` and sign in with `claude login`."
+            )
+
+    def _environment(self) -> dict:
+        """The subprocess environment, with API credentials removed.
+
+        Removed rather than overridden: an empty ANTHROPIC_API_KEY is
+        still an ANTHROPIC_API_KEY as far as the CLI's precedence
+        rules are concerned.
+        """
+        environment = dict(os.environ)
+        for name in DISALLOWED_ENV:
+            environment.pop(name, None)
+        return environment
+
+    def _command(self, system_prompt: str, json_mode: "bool | dict") -> list[str]:
+        # ONE ARGUMENT MAY NOT EXCEED 128 KiB ON LINUX (MAX_ARG_STRLEN),
+        # and the system prompt travels as one (F-24). Past it the spawn
+        # fails with OSError "Argument list too long" -- not an
+        # LLMUnavailable, so it escaped every caller's handling and
+        # named nothing an operator could act on. Refused here instead,
+        # with the size: the prompt is mostly the visible schema, so a
+        # deployment large enough to hit this needs a backend that takes
+        # the prompt in the request body (Ollama, vLLM).
+        size = len(system_prompt.encode("utf-8"))
+        if size >= MAX_ARGUMENT_BYTES:
+            raise LLMUnavailable(
+                f"The system prompt is {size:,} bytes; the {self.executable!r} command "
+                f"takes it as one command-line argument, which this operating system "
+                f"limits to {MAX_ARGUMENT_BYTES:,}. Use a backend that sends the prompt "
+                f"in the request (ollama or vllm), or narrow what the role can see."
+            )
+        command = [
+            self.executable,
+            "-p",
+            "--model", self.model,
+            "--system-prompt", system_prompt,
+            "--output-format", "json",
+            # NO TOOLS. See this module's own docstring: an
+            # unconstrained agent subprocess inside Elysium's boundary
+            # would undo the guarantee that it reads only what the
+            # ontology declares.
+            "--allowed-tools", "",
+        ]
+        if isinstance(json_mode, dict):
+            # A SCHEMA (AR-5's constrain_steps): ENFORCED, not asked for.
+            # The CLI validates the model's output against --json-schema
+            # and returns it in the envelope's `structured_output` field
+            # (code.claude.com/docs/en/headless, "Get structured
+            # output"). Before, this branch only appended "respond with
+            # JSON", so constrain_steps on this backend constrained
+            # nothing -- found by the 14 Oct checklist sweep.
+            schema = json.dumps(json_mode, separators=(",", ":"))
+            if len(schema.encode("utf-8")) >= MAX_ARGUMENT_BYTES:
+                raise LLMUnavailable(
+                    f"The step schema is {len(schema.encode('utf-8')):,} bytes and the "
+                    f"{self.executable!r} command takes it as one argument, which this "
+                    f"operating system limits to {MAX_ARGUMENT_BYTES:,}. Turn constrain_steps "
+                    f"off, or use a backend that takes it in the request.")
+            command += ["--json-schema", schema]
+        elif json_mode:
+            # The CLI's --output-format json describes its own envelope,
+            # not the model's answer, so the instruction to emit JSON
+            # has to reach the model itself. Appended rather than
+            # replacing the caller's system prompt, which already
+            # carries the schema the JSON must match.
+            command += [
+                "--append-system-prompt",
+                "Respond with a single valid JSON object and nothing else. "
+                "No prose before or after it, and no markdown code fence.",
+            ]
+        return command
+
+    def _run_until_cancelled(self, command: list, user_message: str, timeout: float,
+                             cancel) -> subprocess.CompletedProcess:
+        """subprocess.run, except that setting `cancel` kills the CLI
+        (AL-11) -- the process is the request, so ending it is what stops
+        the work, the way closing the socket does for an HTTP model."""
+        import time
+
+        process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, env=self._environment())
+        holder: dict = {}
+        reader = threading.Thread(
+            target=lambda: holder.update(out=process.communicate(user_message)), daemon=True)
+        reader.start()
+        ends_at = time.monotonic() + timeout
+        while reader.is_alive():
+            reader.join(0.1)
+            if cancel.is_set() or time.monotonic() >= ends_at:
+                process.kill()
+                reader.join()
+                if cancel.is_set():
+                    raise LLMCancelled("The request was cancelled while the model was answering.")
+                raise subprocess.TimeoutExpired(command, timeout)
+        stdout, stderr = holder["out"]
+        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+    def chat(self, system_prompt: str, user_message: str,
+              json_mode: "bool | dict" = False, temperature: float | None = None, *,
+              deadline: float | None = None, usage: TokenUsage | None = None,
+              cancel: "threading.Event | None" = None) -> str:
+        # TEMPERATURE IS NOT SUPPORTED, and that is a real behavioural
+        # difference rather than a detail. Both of Elysium's callers ask
+        # for temperature=0 because they want deterministic output --
+        # agent_step_prompt.py in particular needs parseable JSON steps
+        # -- and the CLI exposes no temperature control at all (verified
+        # against `claude --help`). Answers will therefore vary more
+        # between identical requests than Ollama's do.
+        #
+        # Warned ONCE at first use rather than raised. Raising would
+        # make this adapter unusable, since every existing caller
+        # passes temperature=0; and the agent loop already recovers
+        # from a malformed step, so the variance degrades quality
+        # rather than breaking correctness. Warned rather than ignored
+        # because silently accepting a determinism request this adapter
+        # cannot meet is the kind of quiet substitution that makes a
+        # system untrustworthy.
+        #
+        # Once, not per call: a warning on every request is noise an
+        # operator learns to filter out, which is the same as no
+        # warning at all.
+        if temperature is not None and not self._warned_about_temperature:
+            self._warned_about_temperature = True
+            logger.warning(
+                "%s ignores temperature=%r: the claude CLI exposes no control for it, "
+                "so responses will vary more between identical requests than a "
+                "temperature-honouring backend's would.",
+                type(self).__name__, temperature,
+            )
+
+        # NO LONGER THAN THE REQUEST HAS LEFT (E-11); subprocess.run's
+        # timeout bounds the whole run, and kills the process at it.
+        timeout = call_timeout(deadline, self.timeout_seconds)
+        if cancel is not None and cancel.is_set():
+            raise LLMCancelled("The request was cancelled before the model was called.")
+        started = time.monotonic()
+        try:
+            if cancel is None:
+                completed = subprocess.run(
+                    self._command(system_prompt, json_mode),
+                    input=user_message,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    env=self._environment(),
+                    check=False,
+                )
+            else:
+                completed = self._run_until_cancelled(
+                    self._command(system_prompt, json_mode), user_message, timeout, cancel)
+        except subprocess.TimeoutExpired as e:
+            raise LLMUnavailable(
+                f"The {self.executable!r} command did not respond within "
+                f"{timeout:.0f}s."
+            ) from e
+
+        if completed.returncode != 0:
+            # stderr carries the CLI's own message, which names the real
+            # cause -- not signed in, credit exhausted, unknown model --
+            # far better than anything this adapter could infer.
+            raise LLMUnavailable(
+                f"The {self.executable!r} command failed (exit {completed.returncode}): "
+                f"{completed.stderr.strip() or 'no error output'}"
+            )
+
+        if usage is not None:
+            # A hosted model says nothing of reading and writing apart;
+            # the time around the command is all there is.
+            usage.add(*self._extract_usage(completed.stdout), seconds=time.monotonic() - started)
+        return self._extract_text(completed.stdout)
+
+    @staticmethod
+    def _extract_usage(stdout: str) -> tuple[int | None, int | None]:
+        """(input, output) tokens from the CLI's JSON envelope's `usage`,
+        or (None, None) when it is not there -- reported as unreported,
+        never as zero."""
+        try:
+            envelope = json.loads(stdout)
+        except json.JSONDecodeError:
+            return None, None
+        reported = envelope.get("usage") if isinstance(envelope, dict) else None
+        if not isinstance(reported, dict):
+            return None, None
+        return reported.get("input_tokens"), reported.get("output_tokens")
+
+    @staticmethod
+    def _extract_text(stdout: str) -> str:
+        """The model's answer, out of the CLI's JSON envelope.
+
+        Falls back to the raw output if it is not the envelope this
+        expects. A future CLI version changing its shape should degrade
+        to "returns something the caller can try to parse" rather than
+        to "raises on every call".
+        """
+        try:
+            envelope = json.loads(stdout)
+        except json.JSONDecodeError:
+            return stdout.strip()
+
+        if isinstance(envelope, dict):
+            # A SCHEMA-CONSTRAINED ANSWER arrives as an object, already
+            # validated, under `structured_output`. Callers read text, so
+            # it is handed back as JSON text -- the same thing a free
+            # JSON answer would be.
+            structured = envelope.get("structured_output")
+            if isinstance(structured, (dict, list)):
+                return json.dumps(structured)
+            for key in ("result", "text", "content"):
+                value = envelope.get(key)
+                if isinstance(value, str):
+                    return value.strip()
+        return stdout.strip()

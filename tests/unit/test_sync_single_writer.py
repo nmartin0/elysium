@@ -50,7 +50,7 @@ def _run_sync(data_dir, **popen_kwargs):
         "ELYSIUM_DATA_DIR": str(data_dir),
     }
     return subprocess.Popen(
-        [sys.executable, "-m", "scripts.run_sync"],
+        [sys.executable, "-m", "elysium.scripts.run_sync"],
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

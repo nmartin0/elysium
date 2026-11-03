@@ -24,7 +24,7 @@ import sqlite3
 
 import pytest
 
-from core.sqlite_connection import (
+from elysium.core.sqlite_connection import (
     MINIMUM_SQLITE_FOR_JSON_EACH,
     require_json_each,
 )
@@ -32,7 +32,7 @@ from core.sqlite_connection import (
 
 @pytest.fixture
 def write_log(tmp_path):
-    from core.ontology.write_log import WriteLogWriter
+    from elysium.core.ontology.write_log import WriteLogWriter
 
     return WriteLogWriter(tmp_path / "wl.db")
 
@@ -78,7 +78,7 @@ class TestTheSqlIsConstant:
         """
         import inspect
 
-        import core.ontology.write_log as module
+        import elysium.core.ontology.write_log as module
 
         source = inspect.getsource(module)
 

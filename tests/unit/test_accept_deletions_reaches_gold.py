@@ -10,9 +10,9 @@ import contextlib
 import io
 import sqlite3
 
-from core.mirror.catalog import open_mirror_catalog
-from core.mirror.gold import _latest_published_snapshot
-from scripts.run_sync import run_sync
+from elysium.core.mirror.catalog import open_mirror_catalog
+from elysium.core.mirror.gold import _latest_published_snapshot
+from elysium.scripts.run_sync import run_sync
 
 
 def _published_transactions(paths) -> int:

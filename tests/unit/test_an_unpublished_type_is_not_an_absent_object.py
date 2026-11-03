@@ -34,7 +34,7 @@ own patch, which is why this one is three lines.
 
 from pathlib import Path
 
-SOURCE = Path("core/mirror/gold_connector.py").read_text()
+SOURCE = Path("src/elysium/core/mirror/gold_connector.py").read_text()
 
 
 class TestTheTwoCasesAreSeparated:

@@ -12,7 +12,7 @@ import csv
 import io
 import sqlite3
 
-from core.mirror.changelog import AsOf, as_of_join
+from elysium.core.mirror.changelog import AsOf, as_of_join
 
 VERSIONS = [
     {"id": "c1", "region": "us-west", "_valid_from": None, "_valid_to": "2026-06-01T00:00:00+00:00",
@@ -62,8 +62,8 @@ def test_the_history_script_answers_as_of_a_time(synced_deployment):
     sync reads with the OLD name as of a time before the rename."""
     from datetime import UTC, datetime, timedelta
 
-    from scripts.history_of import run
-    from scripts.run_sync import run_sync
+    from elysium.scripts.history_of import run
+    from elysium.scripts.run_sync import run_sync
 
     before_rename = (datetime.now(UTC) - timedelta(days=1)).isoformat()
     db = synced_deployment.data_dir / "dev_fixtures" / "mediator.db"
@@ -89,7 +89,7 @@ def test_an_old_row_deleted_later_existed_before_its_deletion():
     """Found in review: a row older than the changelog, never changed and
     then deleted, opened no version -- so before its deletion it read as
     never having existed."""
-    from core.mirror.changelog import DELETE, scd2_versions
+    from elysium.core.mirror.changelog import DELETE, scd2_versions
 
     versions = scd2_versions([{"id": "c9", "region": "us-west", "_change": DELETE,
                                "_recorded_at": "2026-06-01T00:00:00+00:00"}], "id")

@@ -12,9 +12,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from api.routes import _preselection
-from core.identity_decisions import APPROVED, REJECTED, MergeDecisionStore
-from core.mirror.match_calibration import (
+from elysium.api.routes import _preselection
+from elysium.core.identity_decisions import APPROVED, REJECTED, MergeDecisionStore
+from elysium.core.mirror.match_calibration import (
     CALIBRATED,
     UNCALIBRATED,
     benjamini_hochberg,
@@ -22,7 +22,7 @@ from core.mirror.match_calibration import (
     conformal_p,
     rejections_needed,
 )
-from core.mirror.matching import SplinkMatcher
+from elysium.core.mirror.matching import SplinkMatcher
 
 TYPE = {"storage": {"silo": "s", "table": "t", "id_column": "pk"},
         "fields": {"name": {"type": "data"}, "postcode": {"type": "data"}},
@@ -187,8 +187,8 @@ class TestTheListing:
 
 class TestTheServerSideReport:
     def test_it_gives_the_counts_the_screen_leaves_out(self, tmp_path):
-        from core.mirror.matching import settings_for
-        from scripts.evaluate_matching import calibration_report
+        from elysium.core.mirror.matching import settings_for
+        from elysium.scripts.evaluate_matching import calibration_report
 
         store = MergeDecisionStore(tmp_path / "identity_decisions.db")
         provenance = json.dumps(NOW, sort_keys=True)

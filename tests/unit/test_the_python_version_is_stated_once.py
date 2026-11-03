@@ -56,7 +56,7 @@ class TestTheFloorIsReal:
         """`datetime.UTC` is 3.11 and later. A floor below that is not
         a preference, it is an import error."""
         users = [
-            path for path in Path(".").glob("core/**/*.py")
+            path for path in Path(".").glob("src/elysium/core/**/*.py")
             if "from datetime import" in path.read_text()
             and "UTC" in path.read_text().split("from datetime import")[1][:60]
         ]

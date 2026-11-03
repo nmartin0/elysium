@@ -40,8 +40,8 @@ from pathlib import Path
 import pytest
 from pyiceberg.catalog.sql import SqlCatalog
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 COLUMNS = ["id", "a"]
 TYPES = {"id": "string", "a": "string"}

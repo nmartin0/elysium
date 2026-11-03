@@ -17,7 +17,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from core.mirror.health_condition import (
+from elysium.core.mirror.health_condition import (
     RECIPIENT_GRANT,
     STALE_AFTER,
     notify_mirror_health,
@@ -27,7 +27,7 @@ from core.mirror.health_condition import (
 
 @pytest.fixture
 def store(tmp_path):
-    from core.notifications import NotificationStore
+    from elysium.core.notifications import NotificationStore
 
     return NotificationStore(tmp_path / "n.db")
 

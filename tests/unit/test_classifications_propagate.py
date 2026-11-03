@@ -17,14 +17,14 @@ import json
 
 import pytest
 
-from core.mirror.catalog import open_mirror_catalog
-from core.mirror.classifications import (
+from elysium.core.mirror.catalog import open_mirror_catalog
+from elysium.core.mirror.classifications import (
     CLASSIFICATIONS_PROPERTY,
     classifications_by_table,
     recorded_classifications,
 )
-from core.ontology.classifications import validate_field_classification
-from scripts.run_sync import run_sync
+from elysium.core.ontology.classifications import validate_field_classification
+from elysium.scripts.run_sync import run_sync
 
 SCHEMA = {
     "Customer": {
@@ -89,7 +89,7 @@ class TestWhereTheLabelsGo:
 class TestWhatALabelMayBe:
     def test_a_bad_label_stops_the_ontology_loading(self):
         """AT LOAD, not at the sync that would have written it."""
-        from core.ontology.object_type_validation import validate_object_types
+        from elysium.core.ontology.object_type_validation import validate_object_types
 
         with pytest.raises(ValueError, match="'PII'"):
             validate_object_types({"T": {"id_field": "id", "security": {"field": "region"},
@@ -101,7 +101,7 @@ class TestWhatALabelMayBe:
         """THE CONTROL for the test above, which once passed for the
         wrong reason: its fixture had no security block, and THAT was
         the error raised."""
-        from core.ontology.object_type_validation import validate_object_types
+        from elysium.core.ontology.object_type_validation import validate_object_types
 
         validate_object_types({"T": {"id_field": "id", "security": {"field": "region"},
                                      "fields": {
@@ -178,7 +178,7 @@ class TestTheSchemaSaysSo:
     def test_one_bare_label_arrives_as_a_list(self):
         """The ontology may write `classification: pii`; a client always
         reads a list, so it never has to ask which it got."""
-        from api.routes import SchemaFieldResponse
+        from elysium.api.routes import SchemaFieldResponse
 
         bare = SchemaFieldResponse(type="data", display_name="Email", classification="pii")
         none = SchemaFieldResponse(type="data", display_name="Name")

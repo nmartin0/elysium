@@ -16,10 +16,10 @@ import io
 
 import pytest
 
-import core.ontology.mediator as mediator_module
-from core.deployment_loader import build_generation
-from core.functions.ontology_access import OntologyAccess
-from core.intermediate_layer.auth import resolve_user_record
+import elysium.core.ontology.mediator as mediator_module
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.deployment_loader import build_generation
+from elysium.core.functions.ontology_access import OntologyAccess
 
 
 class Script:

@@ -21,7 +21,7 @@ from tests.integration.test_api import (  # noqa: F401
 
 
 def _store(client):
-    from core.notifications import NotificationStore
+    from elysium.core.notifications import NotificationStore
 
     return NotificationStore(
         client.app.state.runtime_paths.data_dir / "notifications.db",

@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-import api.addon_servers as addon_servers
-from api.addon_servers import STATE_FILENAME, addon_directory
+import elysium.api.addon_servers as addon_servers
+from elysium.api.addon_servers import STATE_FILENAME, addon_directory
 from tests.conftest import with_roles
 from tests.integration.test_api import _csrf_headers, _login
 from tests.integration.test_editing_config_from_the_ui import config_dir  # noqa: F401

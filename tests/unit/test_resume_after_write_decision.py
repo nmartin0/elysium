@@ -31,9 +31,9 @@ import io
 
 import pytest
 
-from core.agent.agentic_loop import AgentLoopResult, StopReason
-from core.deployment_loader import build_generation
-from core.intermediate_layer.auth import UserRecord, resolve_user_record
+from elysium.core.access.auth import UserRecord, resolve_user_record
+from elysium.core.agent.agentic_loop import AgentLoopResult, StopReason
+from elysium.core.deployment_loader import build_generation
 
 USER_ID = "user_alice"
 

@@ -11,13 +11,13 @@ is 1 August midnight UTC, and 14 June at 13 August.
 from datetime import UTC, datetime
 from pathlib import Path
 
-import core.filters
-import core.trigger_windows
-from api.timer_service import Firing, fire_due
-from api.trigger_checks import window_timer
-from core.saved_views import SavedView
-from core.timers import TimerStore
-from core.trigger_windows import KIND, MIN_SPACING_SECONDS, _instant, next_crossing, schedule
+import elysium.core.filters
+import elysium.core.trigger_windows
+from elysium.api.timer_service import Firing, fire_due
+from elysium.api.trigger_checks import window_timer
+from elysium.core.saved_views import SavedView
+from elysium.core.timers import TimerStore
+from elysium.core.trigger_windows import KIND, MIN_SPACING_SECONDS, _instant, next_crossing, schedule
 from tests.integration.test_trigger_checks import _csrf, _inline, _notes
 
 AUGUST_1 = datetime(2026, 8, 1, tzinfo=UTC)
@@ -29,10 +29,10 @@ class _Clock:
 
     def __init__(self, monkeypatch, at):
         self.at = at
-        real = core.filters.resolve_relative_date
-        monkeypatch.setattr(core.filters, "resolve_relative_date",
+        real = elysium.core.filters.resolve_relative_date
+        monkeypatch.setattr(elysium.core.filters, "resolve_relative_date",
                             lambda value, now=None: real(value, now or self.at))
-        monkeypatch.setattr(core.trigger_windows, "now", lambda: self.at)
+        monkeypatch.setattr(elysium.core.trigger_windows, "now", lambda: self.at)
 
 
 def _recent_transactions_trigger(client, **condition):
@@ -147,7 +147,7 @@ def test_stored_dates_and_times_are_read_as_utc():
 def test_the_server_starting_checks_every_date_filtered_trigger(client, monkeypatch):
     """Crossings while it was down, and a first timer for each -- and
     only date-filtered ones: nothing else can have moved."""
-    from api.trigger_checks import TriggerChecks
+    from elysium.api.trigger_checks import TriggerChecks
 
     _Clock(monkeypatch, datetime(2026, 7, 20, 12, tzinfo=UTC))
     client.app.state.user_directory.create_user("alice", "pw", "us-west", "customer_service")

@@ -22,8 +22,8 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 COLUMNS = ["id", "amount"]
 TYPES = {"id": "string", "amount": "number"}
@@ -194,7 +194,7 @@ class TestRetention:
         the request timeout -- minutes at worst -- so a bound measured
         in days makes the hazard unreachable rather than unlikely.
         """
-        from core.mirror.iceberg_sync import RETENTION_MARGIN_MS
+        from elysium.core.mirror.iceberg_sync import RETENTION_MARGIN_MS
 
         properties = synced._catalog.load_table("bronze_s.t").properties
         declared = int(properties["history.expire.max-snapshot-age-ms"])

@@ -32,8 +32,8 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 
 @pytest.fixture
@@ -95,7 +95,7 @@ class TestTheAttemptHistory:
         nothing. This exercises the decision itself."""
         from types import SimpleNamespace
 
-        from scripts.run_sync import _outcome_for
+        from elysium.scripts.run_sync import _outcome_for
 
         assert _outcome_for(SimpleNamespace(unchanged=True)) == "unchanged"
         assert _outcome_for(SimpleNamespace(unchanged=False)) == "synced"
@@ -103,7 +103,7 @@ class TestTheAttemptHistory:
     def test_it_distinguishes_quiet_from_busy(self, tmp_path):
         """Through run_sync's own recording, which is where A17
         lived."""
-        from core.mirror.sync_attempts import SyncAttempts
+        from elysium.core.mirror.sync_attempts import SyncAttempts
 
         attempts = SyncAttempts(tmp_path / "a.db")
         attempts.record("p", "t", "synced")
@@ -126,7 +126,7 @@ class TestTheManifestDescribesThisRun:
         run."""
         from types import SimpleNamespace
 
-        from core.mirror.manifest import publish_manifest, read_manifests
+        from elysium.core.mirror.manifest import publish_manifest, read_manifests
 
         source = tmp_path / "s.db"
         conn = sqlite3.connect(source)

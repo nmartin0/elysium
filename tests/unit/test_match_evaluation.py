@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.mirror.match_evaluation import (
+from elysium.core.mirror.match_evaluation import (
     evaluate,
     labels_from_clusters,
     labels_from_pairs,
@@ -17,7 +17,7 @@ from core.mirror.match_evaluation import (
     synthetic_duplicates,
     wilson,
 )
-from scripts.evaluate_matching import _labels_file, report
+from elysium.scripts.evaluate_matching import _labels_file, report
 
 
 def candidate(left, right, score, **agreement):

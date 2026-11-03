@@ -6,7 +6,7 @@ left in config.yaml would read as governing something."""
 
 import pytest
 
-from core.deployment_loader import _no_trigger_clock
+from elysium.core.deployment_loader import _no_trigger_clock
 
 
 @pytest.mark.parametrize("key", ["check_triggers_every_minutes", "check_date_triggers_every_minutes"])
@@ -24,7 +24,7 @@ def test_loading_a_deployment_refuses_it(tmp_path):
     import shutil
     from pathlib import Path
 
-    from core.deployment_loader import load_deployment
+    from elysium.core.deployment_loader import load_deployment
 
     fixtures = Path(__file__).parent.parent / "integration" / "fixtures"
     for name in ("config.yaml", "data_silos.yaml", "ontology_schema.yaml", "policy.yaml"):

@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from core.intermediate_layer.policy_validation import grantable, validate_roles
-from core.modules import (
+from elysium.core.access.policy_validation import grantable, validate_roles
+from elysium.core.modules import (
     ModuleError,
     _load_manifest,
     declared_permissions,

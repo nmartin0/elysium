@@ -28,7 +28,7 @@ import json
 
 import pytest
 
-from core.mirror.gold_history import (
+from elysium.core.mirror.gold_history import (
     CHANGE_COLUMN,
     CHANGED_AT_COLUMN,
     SNAPSHOT_COLUMN,
@@ -174,7 +174,7 @@ class TestWhatIsNotAnError:
         returns before creating one when the diff is empty."""
         import inspect
 
-        from core.mirror.gold_history import HistoryNotRecorded as absent
+        from elysium.core.mirror.gold_history import HistoryNotRecorded as absent
 
         assert "not a fault" in inspect.getdoc(absent).lower()
 

@@ -40,7 +40,7 @@ import datetime
 import decimal
 import json
 
-from core.llm.synthesis_prompt import _tagged_records, synthesize_insight
+from elysium.core.llm.synthesis_prompt import _tagged_records, synthesize_insight
 
 RECORDS = [
     {

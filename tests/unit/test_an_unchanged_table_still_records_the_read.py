@@ -37,9 +37,9 @@ import time
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.ontology.write_log import WriteLogWriter
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.ontology.write_log import WriteLogWriter
 
 
 @pytest.fixture
@@ -169,7 +169,7 @@ class TestTheBoundIsTheOLDEST:
     def test_the_loader_takes_the_oldest_across_tables(self, mirror, tmp_path):
         from types import SimpleNamespace
 
-        from core.deployment_loader import _mirror_last_synced_at
+        from elysium.core.deployment_loader import _mirror_last_synced_at
 
         mirror.run()
         time.sleep(1.1)

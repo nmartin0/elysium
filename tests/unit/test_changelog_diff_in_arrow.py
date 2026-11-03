@@ -19,7 +19,7 @@ import random
 import pyarrow as pa
 import pytest
 
-from core.mirror.changelog import (
+from elysium.core.mirror.changelog import (
     MAX_DELETED_FRACTION,
     diff_snapshot_tables,
     diff_snapshots,

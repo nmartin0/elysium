@@ -61,7 +61,7 @@ jobs:
       # running server writes into deployment/ too.
       #
       # AFTER BOTH TIERS. It sat between them at first: the integration
-      # tests wrote there too -- importing api.app built a whole
+      # tests wrote there too -- importing elysium.api.app built a whole
       # application against the default deployment (E-08c).
       - name: The tests created nothing in deployment/
         run: |
@@ -101,7 +101,7 @@ jobs:
         run: pip install --require-hashes -r requirements-dev.lock
 
       - name: The controls fire
-        run: python -m scripts.check_controls
+        run: python -m elysium.scripts.check_controls
 
   frontend:
     runs-on: ubuntu-24.04

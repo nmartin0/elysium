@@ -18,9 +18,9 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from api.routes import _recent_snapshots
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.api.routes import _recent_snapshots
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 
 @pytest.fixture

@@ -23,9 +23,9 @@ import io
 
 import pytest
 
-from core.agent.agentic_loop import StopReason
-from core.deployment_loader import build_generation
-from core.intermediate_layer.auth import resolve_user_record
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.agent.agentic_loop import StopReason
+from elysium.core.deployment_loader import build_generation
 
 USER_ID = "user_alice"
 
@@ -254,7 +254,7 @@ def test_a_handle_is_accepted_where_the_live_path_needs_a_list(loop_and_user):
     """VALIDATION RUNS BEFORE RESOLUTION, so a plan step's
     `"object_ids": "$b"` is a string when its shape is checked. The
     live path must still reject a bare string there."""
-    from core.llm.agent_step_prompt import validated_step
+    from elysium.core.llm.agent_step_prompt import validated_step
 
     step = {"step": "get_object", "object_type": "Transaction",
             "object_ids": "$b", "field_names": ["amount"]}

@@ -52,8 +52,8 @@ def test_the_template_action_types_pass_real_validation():
     # Runs the SAME validators core/deployment_loader.py runs, against
     # the real file rather than a fixture. A schema construct that
     # stopped parsing would fail here rather than for a new deployer.
-    from core.ontology.action_types import validate_action_types
-    from core.ontology.submission_criteria import validate_action_type_criteria
+    from elysium.core.ontology.action_types import validate_action_types
+    from elysium.core.ontology.submission_criteria import validate_action_type_criteria
 
     schema = yaml.safe_load((TEMPLATES / "ontology_schema.yaml").read_text())
     action_types = schema.get("action_types") or {}
@@ -155,7 +155,7 @@ def test_the_debug_script_refuses_without_the_flag(monkeypatch, tmp_path):
     import sys
 
     result = subprocess.run(
-        [sys.executable, "-m", "scripts.create_debug_user"],
+        [sys.executable, "-m", "elysium.scripts.create_debug_user"],
         capture_output=True, text=True, cwd=DEPLOYMENT.parent.parent,
         env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)},
     )
@@ -173,7 +173,7 @@ def test_a_new_deployment_starts_on_the_new_installation_defaults():
     every NEW deployment copied from it started on the old behaviour:
     one bad cell refused a whole table, every undeclared source column
     landed in bronze, and confirmed writes reached every silo."""
-    from core.deployment_loader import load_deployment
+    from elysium.core.deployment_loader import load_deployment
 
     config = load_deployment(TEMPLATES)
 

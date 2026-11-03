@@ -866,7 +866,7 @@ Each step is one reviewable unit of a few commits, and each deletes what it repl
 - Preconditions: none.
 - Risk: low.
 
-**S2. Package rename (rename only, no behaviour change)**
+**S2. Package rename (rename only, no behaviour change). DONE, 3 November 2026.** Kept under `src/elysium/`: `core`, `api`, `adapters`, `functions`, `scripts` (regrouping into the section 1.1 packages is the later steps); `core/intermediate_layer` is now `core/access`; `elysium.cli` is a stub. Paths elsewhere in this file still say `core/...` and mean `src/elysium/core/...`.
 - Deletes: top-level `core`, `api`, `adapters`, `scripts` and `functions` (`functions` is missing from `packages` [S:23]); the name `core/intermediate_layer`.
 - Replaces with: `src/elysium/...`, with `intermediate_layer` renamed `access` [O:167]; a `[project.scripts]` stub.
 - Together with: 743 files of imports [S:23]; 27 `mock.patch("core....")` strings [S:56]; 1,166 control paths, handled by S1's anchoring; pyproject import-linter layers (`pyproject.toml:189-204, 405-427`) [O:167].

@@ -10,7 +10,7 @@ import sqlite3
 
 import pytest
 
-from core.periods import MAX_PERIODS, Buckets, by_period, parse_duration, time_zone, with_gaps_filled
+from elysium.core.periods import MAX_PERIODS, Buckets, by_period, parse_duration, time_zone, with_gaps_filled
 
 D = datetime.date
 UTC = datetime.UTC
@@ -153,8 +153,8 @@ ALL = ["read:Reading", "read:Reading.reading_id", "read:Reading.site", "read:Rea
 
 
 def _mediator(tmp_path, rows=ROWS):
-    from adapters.sqlite_adapter import SQLiteWriteAdapter
-    from core.ontology.mediator import DataMediator
+    from elysium.adapters.sqlite_adapter import SQLiteWriteAdapter
+    from elysium.core.ontology.mediator import DataMediator
 
     # One file per call: a test may build two, to compare them.
     db = tmp_path / f"readings-{len(list(tmp_path.glob('*.db')))}.db"
@@ -167,7 +167,7 @@ def _mediator(tmp_path, rows=ROWS):
 
 
 def _north():
-    from core.intermediate_layer.auth import resolve_user_record
+    from elysium.core.access.auth import resolve_user_record
 
     return resolve_user_record({"n": {"org_id": "north", "role": "r"}}, "n", "org_id")
 
@@ -204,13 +204,13 @@ class TestThroughTheMediator:
 
 class TestTheGroupsTheRouteWrites:
     def test_a_buckets_start_is_iso_8601_with_its_offset(self):
-        from api.routes import _aggregate_group
+        from elysium.api.routes import _aggregate_group
 
         assert _aggregate_group(at("2026-07-01T10:15:00+01:00")) == "2026-07-01T10:15:00+01:00"
         assert _aggregate_group(D(2026, 7, 1)) == "2026-07-01"
 
     def test_anything_else_is_left_as_it_is(self):
-        from api.routes import _aggregate_group
+        from elysium.api.routes import _aggregate_group
 
         assert _aggregate_group(2026) == 2026
         assert _aggregate_group("north") == "north"
@@ -270,7 +270,7 @@ class TestFirstAndLast:
     def test_the_tie_is_broken_by_id_and_not_by_the_order_read(self):
         # Directly: the database hands rows back in id order, which would
         # hide a rule that only took the first one it was given.
-        from core.ontology.mediator import _ORDERED
+        from elysium.core.ontology.mediator import _ORDERED
 
         moment = (at("2026-07-01T09:05:00"),)
         timed = [(moment, "r5", "five"), (moment, "r1", "one"), (moment, "r9", "nine")]

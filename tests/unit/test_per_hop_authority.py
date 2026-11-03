@@ -14,8 +14,8 @@ grants and partly under another, which was never authorized as a whole
 snapshots.
 """
 
-from core.agent.agentic_loop import AgentLoop
-from core.intermediate_layer.auth import UserRecord
+from elysium.core.access.auth import UserRecord
+from elysium.core.agent.agentic_loop import AgentLoop
 from tests.conftest import scripted_llm_client
 
 ALICE = UserRecord("alice", "us-west", "analyst")

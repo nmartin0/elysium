@@ -22,14 +22,14 @@ import time
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.expectation_warnings import ExpectationWarnings
-from core.mirror.expectations import (
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.expectation_warnings import ExpectationWarnings
+from elysium.core.mirror.expectations import (
     RuleCount,
     apply_expectations,
     expectations_for,
 )
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 
 def _warn(column, required=True):

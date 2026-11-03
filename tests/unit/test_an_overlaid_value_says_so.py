@@ -6,8 +6,8 @@ DataMediator.overlaid_fields names the fields and the kind; the object
 detail route carries it and the object page shows it.
 """
 
-from core.ontology.mediator import DataMediator
-from core.ontology.write_log import WriteLogWriter
+from elysium.core.ontology.mediator import DataMediator
+from elysium.core.ontology.write_log import WriteLogWriter
 
 SINCE = "2000-01-01T00:00:00+00:00"
 

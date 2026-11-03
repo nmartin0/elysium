@@ -22,9 +22,9 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.manifest import PUBLISHABLE, build_manifest, publish, read_manifests
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.manifest import PUBLISHABLE, build_manifest, publish, read_manifests
 
 FILES = {
     "ontology_schema.yaml": "object_types: {}",
@@ -174,7 +174,7 @@ class TestAuditFindings:
         than damaged -- and a damaged one is the file someone would
         reach for during an incident.
         """
-        from core.mirror.manifest import MANIFEST_PREFIX, _file_io, _warehouse_root
+        from elysium.core.mirror.manifest import MANIFEST_PREFIX, _file_io, _warehouse_root
 
         publish(synced._catalog, 1, "2026-01-01T00:00:00Z", "d1", FILES, ["s.t"])
         location = f"{_warehouse_root(synced._catalog)}/{MANIFEST_PREFIX}/manifest-2.json"
@@ -190,7 +190,7 @@ class TestAuditFindings:
         # Counted as a MISS, a corrupt file at generation 2 would
         # contribute to the run of absences that ends the search --
         # so a readable generation 3 could be lost behind a damaged 2.
-        from core.mirror.manifest import MANIFEST_PREFIX, _file_io, _warehouse_root
+        from elysium.core.mirror.manifest import MANIFEST_PREFIX, _file_io, _warehouse_root
 
         publish(synced._catalog, 1, "2026-01-01T00:00:00Z", "d1", FILES, ["s.t"])
         location = f"{_warehouse_root(synced._catalog)}/{MANIFEST_PREFIX}/manifest-2.json"

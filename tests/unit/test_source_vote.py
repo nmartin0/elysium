@@ -7,8 +7,8 @@ import random
 
 import pytest
 
-from core.mirror.source_record import SourceRecordStore, agreement_shown
-from core.mirror.source_vote import copy_probability, disputed, vote
+from elysium.core.mirror.source_record import SourceRecordStore, agreement_shown
+from elysium.core.mirror.source_vote import copy_probability, disputed, vote
 
 
 def held(**sources):
@@ -148,7 +148,7 @@ class TestTheStore:
 
 class TestTheServerSideReport:
     def test_it_names_the_copies_and_gives_counts(self, tmp_path):
-        from scripts.source_track_record import report
+        from elysium.scripts.source_track_record import report
 
         store = SourceRecordStore(tmp_path / "r.db")
         store.replace_vote("Customer", vote(population()[0]))

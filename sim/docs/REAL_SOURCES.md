@@ -115,7 +115,7 @@ would know a rename was coming, and a product shipping a way to create
 and alter databases has one more door. The control channel is
 `POST /control` on loopback with a token in an owner-only `control.json`.
 
-**Runs on 19 to 26 October** (`scripts/live_world.py` starts a world,
+**Runs on 19 to 26 October** (`src/elysium/scripts/live_world.py` starts a world,
 configures a deployment from its `connections.json` alone, and each round
 syncs and compares every object type with an independent plain reader and
 the watched totals with the simulator's oracle). Every table ended in

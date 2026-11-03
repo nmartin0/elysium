@@ -20,7 +20,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from core.ontology.decimal_text import decimal_text, exact_decimals
+from elysium.core.ontology.decimal_text import decimal_text, exact_decimals
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -65,7 +65,7 @@ class TestTheApi:
     def test_a_route_without_a_response_model_sends_a_string(self):
         """THE FLOAT HALF. Installed by importing the app, for every
         route in the process -- so this builds a route of its own."""
-        import api.app  # noqa: F401 -- installs the encoder
+        import elysium.api.app  # noqa: F401 -- installs the encoder
 
         app = FastAPI()
 
@@ -81,7 +81,7 @@ class TestTheApi:
         Checked in the source: what is at stake is that each route's
         answer goes through exact_decimals, and a behavioural test of
         that would be a test of exact_decimals again."""
-        tree = ast.parse((ROOT / "api" / "routes.py").read_text())
+        tree = ast.parse((ROOT / "src" / "elysium" / "api" / "routes.py").read_text())
         function = next(node for node in ast.walk(tree)
                         if isinstance(node, ast.FunctionDef) and node.name == route)
         called = {node.func.id for node in ast.walk(function)
@@ -95,8 +95,8 @@ def test_the_detail_route_answers_at_the_declared_scale():
     two places, and the JSON the client would receive."""
     from types import SimpleNamespace
 
-    from api.routes import ObjectDetailResponse, get_object_detail_route
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.api.routes import ObjectDetailResponse, get_object_detail_route
+    from elysium.core.access.auth import UserRecord
 
     declared = {"amount": {"type": "data", "data_type": "decimal", "decimal_places": 2},
                 "note": {"type": "data"}}

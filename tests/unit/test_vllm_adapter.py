@@ -18,9 +18,9 @@ happens to use.
 import pytest
 import requests
 
-from adapters.vllm_adapter import DEFAULT_MAX_CONCURRENT_REQUESTS, VLLMAdapter
-from core.deployment_loader import _default_concurrency
-from core.llm.interface import LLMUnavailable, TokenUsage
+from elysium.adapters.vllm_adapter import DEFAULT_MAX_CONCURRENT_REQUESTS, VLLMAdapter
+from elysium.core.deployment_loader import _default_concurrency
+from elysium.core.llm.interface import LLMUnavailable, TokenUsage
 
 CONNECTION = {"base_url": "http://gpu:8000/v1/chat/completions"}
 
@@ -161,6 +161,6 @@ class TestTheConcurrencyFollowsTheEngine:
 
 class TestItIsRegistered:
     def test_a_deployment_can_ask_for_vllm(self):
-        from core.deployment_loader import _LLM_ADAPTER_REGISTRY
+        from elysium.core.deployment_loader import _LLM_ADAPTER_REGISTRY
 
         assert _LLM_ADAPTER_REGISTRY["vllm"] is VLLMAdapter

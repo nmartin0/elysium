@@ -14,8 +14,8 @@ from decimal import Decimal
 
 import pytest
 
-from adapters.csv_folder_adapter import BadLine, CsvFolderAdapter
-from core.ontology.interface import StorageUnavailable
+from elysium.adapters.csv_folder_adapter import BadLine, CsvFolderAdapter
+from elysium.core.ontology.interface import StorageUnavailable
 
 CONFIG = {"storage": {"table": "sold", "id_column": "id"}}
 
@@ -199,7 +199,7 @@ class TestThroughTheSync:
     """End to end into the mirror, as run_sync drives it."""
 
     def _sync(self, tmp_path, folder):
-        from core.mirror.iceberg_sync import IcebergMirrorSync
+        from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
         return IcebergMirrorSync(tmp_path / "mirror", {"supplier": _adapter(folder)})
 
@@ -229,7 +229,7 @@ class TestThroughTheSync:
 
 
 def test_it_is_registered():
-    from core.deployment_loader import _READ_ADAPTER_REGISTRY
+    from elysium.core.deployment_loader import _READ_ADAPTER_REGISTRY
 
     assert _READ_ADAPTER_REGISTRY["csv_folder"] is CsvFolderAdapter
 
@@ -238,7 +238,7 @@ def test_it_is_registered():
 def test_a_frozen_declaration_is_accepted(tmp_path):
     """As the deployment loader hands it over: deep-frozen. The first run
     against a real deployment failed here while every dict-fed test passed."""
-    from core.immutable import deep_freeze
+    from elysium.core.immutable import deep_freeze
 
     _write(tmp_path, "sold_1.csv", "id,qty\na,1\n")
     frozen = deep_freeze({"path": str(tmp_path), "null_values": [""],

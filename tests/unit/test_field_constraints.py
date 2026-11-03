@@ -14,7 +14,7 @@ from decimal import Decimal
 
 import pytest
 
-from core.ontology.constraints import validate_constraints, violation
+from elysium.core.ontology.constraints import validate_constraints, violation
 
 
 def _field(data_type="string", **constraints):

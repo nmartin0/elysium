@@ -15,11 +15,11 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.fusion import FIELD_SOURCES_COLUMN, fuse
-from core.mirror.gold import build_gold
-from core.mirror.gold_provenance import read_provenance
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.fusion import FIELD_SOURCES_COLUMN, fuse
+from elysium.core.mirror.gold import build_gold
+from elysium.core.mirror.gold_provenance import read_provenance
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 IDENTITY_TYPE = {
     "id_field": "customer_id",
@@ -80,7 +80,7 @@ class TestThroughARealBuild:
 
     def test_a_single_source_type_records_nothing(self, synced_deployment):
         """`silo` already answers it for every field there."""
-        from core.mirror.catalog import open_mirror_catalog
+        from elysium.core.mirror.catalog import open_mirror_catalog
 
         catalog = open_mirror_catalog(synced_deployment.data_dir / "mirror")
         provenance = read_provenance(catalog, "Customer", "customer_id", "cust_001")

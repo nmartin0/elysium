@@ -29,11 +29,11 @@ import sqlite3
 import pyarrow as pa
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.gold import audit, build_gold, conform
-from core.mirror.gold_arrow import audit_arrow, conform_arrow
-from core.mirror.gold_stream import StreamingAudit
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.gold import audit, build_gold, conform
+from elysium.core.mirror.gold_arrow import audit_arrow, conform_arrow
+from elysium.core.mirror.gold_stream import StreamingAudit
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 TYPE = {
     "id_field": "customer_id",
@@ -186,8 +186,8 @@ def test_a_type_with_an_approved_prediction_is_never_streamed(mirrored, monkeypa
     """R48: a model learns from every record of a compartment at once, so
     a batch reader is read whole first -- a model trained per batch would
     learn from a slice, and differ from batch to batch."""
-    import core.mirror.gold_arrow as gold_arrow
-    from core.mirror.prediction_fill import COMPARTMENTS
+    import elysium.core.mirror.gold_arrow as gold_arrow
+    from elysium.core.mirror.prediction_fill import COMPARTMENTS
 
     seen = []
     monkeypatch.setattr(gold_arrow, "with_predicted",

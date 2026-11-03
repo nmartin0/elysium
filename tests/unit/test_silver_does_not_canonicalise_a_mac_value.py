@@ -38,7 +38,7 @@ protection belongs to the table that does.
 
 import pytest
 
-from core.mirror.transform import transform_rows
+from elysium.core.mirror.transform import transform_rows
 
 RULES = {"unicode": "NFC", "collapse_whitespace": True, "trim": True,
          "null_if": ["N/A", ""]}
@@ -99,7 +99,7 @@ class TestWithIt:
 
 class TestWhereTheColumnComesFrom:
     def test_it_is_read_from_the_type_declaration(self):
-        from core.mirror.sync_targets import resolve_sync_targets
+        from elysium.core.mirror.sync_targets import resolve_sync_targets
 
         schema = {"object_types": {"Customer": {
             "id_field": "customer_id",
@@ -115,7 +115,7 @@ class TestWhereTheColumnComesFrom:
         assert target.security_column == "region"
 
     def test_a_type_with_no_security_block_has_none(self):
-        from core.mirror.sync_targets import resolve_sync_targets
+        from elysium.core.mirror.sync_targets import resolve_sync_targets
 
         schema = {"object_types": {"Widget": {
             "id_field": "widget_id",
@@ -128,7 +128,7 @@ class TestWhereTheColumnComesFrom:
 
     def test_two_types_disagreeing_about_one_table_is_refused(self):
         """Picking one would leave a column nobody protects."""
-        from core.mirror.sync_targets import resolve_sync_targets
+        from elysium.core.mirror.sync_targets import resolve_sync_targets
 
         shared = {"silo": "p", "table": "shared", "id_column": "id"}
         schema = {"object_types": {
@@ -155,7 +155,7 @@ class TestItIsActuallyWired:
     def test_sync_table_takes_it(self):
         import inspect
 
-        from core.mirror.iceberg_sync import IcebergMirrorSync
+        from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
         assert "security_column" in inspect.signature(
             IcebergMirrorSync.sync_table).parameters
@@ -163,7 +163,7 @@ class TestItIsActuallyWired:
     def test_the_real_sync_script_passes_it(self):
         from pathlib import Path
 
-        source = Path("scripts/run_sync.py").read_text()
+        source = Path("src/elysium/scripts/run_sync.py").read_text()
 
         assert "security_column=target.security_column" in source
 
@@ -173,7 +173,7 @@ class TestItIsActuallyWired:
         passes them that way."""
         import inspect
 
-        from core.mirror.iceberg_sync import IcebergMirrorSync
+        from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
         parameters = list(inspect.signature(
             IcebergMirrorSync.sync_table).parameters)

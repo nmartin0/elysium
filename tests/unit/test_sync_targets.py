@@ -12,7 +12,7 @@ while the mirror quietly failed to serve some real query later.
 
 import pytest
 
-from core.mirror.sync_targets import resolve_sync_targets
+from elysium.core.mirror.sync_targets import resolve_sync_targets
 
 
 def _targets_by_table(schema):

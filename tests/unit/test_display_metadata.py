@@ -17,8 +17,8 @@ make the feature a burden rather than a convenience.
 
 import pytest
 
-from core.ontology.object_type_validation import validate_object_types
-from core.ontology.schema import get_display_name, get_plural_display_name, humanize
+from elysium.core.ontology.object_type_validation import validate_object_types
+from elysium.core.ontology.schema import get_display_name, get_plural_display_name, humanize
 
 
 def test_humanize_turns_identifiers_into_labels():
@@ -130,7 +130,7 @@ def _action(**param_extras):
 
 
 def test_an_action_parameter_may_declare_display_metadata():
-    from core.ontology.action_types import validate_action_types
+    from elysium.core.ontology.action_types import validate_action_types
 
     validate_action_types(
         _action(display_name="Widget", description="Which widget to move."),
@@ -148,7 +148,7 @@ def test_an_action_parameter_may_declare_display_metadata():
 def test_an_empty_parameter_display_value_is_rejected(key):
     # Same rule as object types and fields: an empty label renders
     # blank rather than falling back to something readable.
-    from core.ontology.action_types import validate_action_types
+    from elysium.core.ontology.action_types import validate_action_types
 
     with pytest.raises(ValueError, match="non-empty string"):
         validate_action_types(
@@ -166,7 +166,7 @@ def test_an_empty_parameter_display_value_is_rejected(key):
 def test_a_parameter_description_reaches_the_agents_prompt():
     # THE reason this gap mattered. The model has to supply the value,
     # and the type alone does not say what the value means.
-    from core.llm.agent_step_prompt import _describe_actions
+    from elysium.core.llm.agent_step_prompt import _describe_actions
 
     described = _describe_actions(
         {
@@ -192,7 +192,7 @@ def test_a_parameter_description_reaches_the_agents_prompt():
 def test_a_parameter_without_a_description_is_described_as_before():
     # The addition must not change how an undeclared parameter reads --
     # every existing deployment has none.
-    from core.llm.agent_step_prompt import _describe_actions
+    from elysium.core.llm.agent_step_prompt import _describe_actions
 
     described = _describe_actions(
         {

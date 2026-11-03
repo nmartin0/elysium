@@ -10,7 +10,7 @@ closes.
 
 import pytest
 
-from core.ontology.object_type_validation import validate_object_types
+from elysium.core.ontology.object_type_validation import validate_object_types
 
 
 def _object_type(id_field="widget_id", title_field=None, fields=None, security=None):

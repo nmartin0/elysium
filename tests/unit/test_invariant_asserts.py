@@ -37,9 +37,9 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.ontology.mediator import DataMediator
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.ontology.mediator import DataMediator
 
 
 def test_a_duplicate_object_in_a_lock_set_is_caught_not_hung():
@@ -85,7 +85,7 @@ def test_a_normal_sync_does_not_trip_the_row_count_assert(sync):
 
 
 def test_the_startup_guard_passes_when_assertions_are_enabled():
-    from core.sqlite_connection import require_assertions_enabled
+    from elysium.core.sqlite_connection import require_assertions_enabled
 
     require_assertions_enabled()  # does not raise
 
@@ -100,7 +100,7 @@ def test_the_startup_guard_refuses_when_assertions_are_stripped():
 
     result = subprocess.run(
         [sys.executable, "-O", "-c",
-         "from core.sqlite_connection import require_assertions_enabled;"
+         "from elysium.core.sqlite_connection import require_assertions_enabled;"
          " require_assertions_enabled()"],
         capture_output=True, text=True, cwd=".",
     )
@@ -114,14 +114,14 @@ def test_both_entry_points_call_the_guard():
     # A guard nothing calls is worse than none: it reads as a
     # guarantee while providing nothing. Asserted structurally, since
     # the runtime behaviour needs a separate interpreter.
-    assert "require_assertions_enabled()" in open("api/app.py").read()
-    assert "require_assertions_enabled()" in open("scripts/run_sync.py").read()
+    assert "require_assertions_enabled()" in open("src/elysium/api/app.py").read()
+    assert "require_assertions_enabled()" in open("src/elysium/scripts/run_sync.py").read()
 
 
 def test_the_refusal_message_names_the_fix():
     # An operator hitting this at 3am needs to know what to change,
     # not merely that something is wrong.
-    from core.sqlite_connection import require_assertions_enabled
+    from elysium.core.sqlite_connection import require_assertions_enabled
 
     source = require_assertions_enabled.__doc__ or ""
     import inspect

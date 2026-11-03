@@ -29,12 +29,12 @@ from datetime import UTC, datetime
 import pytest
 import yaml
 
-from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.link_types import expand_link_types
-from core.ontology.mediator import DataMediator
-from core.ontology.write_log import WriteLogWriter
-from core.ontology.write_mediator import PendingWrite, SubWrite, WriteMediator
+from elysium.core.access.auth import UserRecord
+from elysium.core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from elysium.core.ontology.link_types import expand_link_types
+from elysium.core.ontology.mediator import DataMediator
+from elysium.core.ontology.write_log import WriteLogWriter
+from elysium.core.ontology.write_mediator import PendingWrite, SubWrite, WriteMediator
 
 FIXTURES = "tests/integration/fixtures/"
 WEST = UserRecord(user_id="alice", security_value="us-west", role_name="customer_service")

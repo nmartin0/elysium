@@ -25,7 +25,7 @@ import decimal
 import pyarrow as pa
 import pytest
 
-from core.ontology.field_types import (
+from elysium.core.ontology.field_types import (
     DECIMAL_PRECISION,
     DECIMAL_SCALE,
     arrow_type_for,

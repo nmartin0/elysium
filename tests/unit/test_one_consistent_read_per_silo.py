@@ -8,9 +8,9 @@ source as of its first statement, without blocking the source's writers.
 import psycopg
 import pytest
 
-from adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
-from core.ontology.interface import StorageUnavailable
-from scripts.run_sync import _by_silo, _consistent_read
+from elysium.adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
+from elysium.core.ontology.interface import StorageUnavailable
+from elysium.scripts.run_sync import _by_silo, _consistent_read
 
 
 @pytest.fixture(scope="module")
@@ -104,7 +104,7 @@ class TestTheRun:
         import contextlib
         import io
 
-        from scripts.run_sync import run_sync
+        from elysium.scripts.run_sync import run_sync
 
         printed = io.StringIO()
         with contextlib.redirect_stdout(printed):
@@ -120,8 +120,8 @@ def test_the_run_opens_one_snapshot_per_silo_around_its_tables(synced_deployment
     import contextlib
     import io
 
-    from adapters.sqlite_adapter import SQLiteReadAdapter
-    from scripts.run_sync import run_sync
+    from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+    from elysium.scripts.run_sync import run_sync
 
     entered, reads = [], []
     inside = {"now": None}

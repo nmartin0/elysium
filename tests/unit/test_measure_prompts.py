@@ -13,8 +13,8 @@ range, and someone changes a prompt on the strength of it.
 
 import pytest
 
-from core.llm.interface import LLMUnavailable
-from scripts.measure_prompts import Observation, _summarise, observe
+from elysium.core.llm.interface import LLMUnavailable
+from elysium.scripts.measure_prompts import Observation, _summarise, observe
 
 
 class _Result:
@@ -178,7 +178,7 @@ class TestQuestionSelection:
     def test_every_question_has_a_unique_label(self):
         # The labels are the interface --only presents, so a duplicate
         # would make one of them unreachable.
-        from scripts.measure_prompts import QUESTIONS
+        from elysium.scripts.measure_prompts import QUESTIONS
 
         labels = [label for label, _ in QUESTIONS]
         assert len(labels) == len(set(labels))
@@ -188,7 +188,7 @@ class TestQuestionSelection:
         # and in
         # the instructions a person follows. Renaming one silently
         # would make a recorded result unreproducible.
-        from scripts.measure_prompts import QUESTIONS
+        from elysium.scripts.measure_prompts import QUESTIONS
 
         assert [label for label, _ in QUESTIONS] == [
             "single_field", "one_hop", "aggregate", "multi_object",

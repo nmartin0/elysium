@@ -29,7 +29,7 @@ way. This pins it to the function somebody would actually reach for.
 import inspect
 from pathlib import Path
 
-from core.mirror.manifest import read_manifests
+from elysium.core.mirror.manifest import read_manifests
 
 
 class TestTheRefusalIsWhereSomebodyWouldLookForIt:
@@ -71,7 +71,7 @@ class TestNothingLoadsConfigurationFromTheLake:
     def test_the_deployment_loader_does_not_read_manifests(self):
         """The check that would actually catch a regression: if this
         ever fails, somebody has wired the lake into configuration."""
-        source = Path("core/deployment_loader.py").read_text()
+        source = Path("src/elysium/core/deployment_loader.py").read_text()
 
         assert "read_manifests" not in source
         assert "manifest" not in source.lower().replace("manifesto", "")

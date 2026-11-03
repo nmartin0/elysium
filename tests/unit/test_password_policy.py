@@ -10,7 +10,7 @@ internet to ask Have I Been Pwned.
 
 import pytest
 
-from core.auth.password_policy import MAX_LENGTH, MIN_LENGTH, password_problem
+from elysium.core.auth.password_policy import MAX_LENGTH, MIN_LENGTH, password_problem
 
 
 class TestLength:

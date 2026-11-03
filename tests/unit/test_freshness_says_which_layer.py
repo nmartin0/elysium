@@ -19,8 +19,8 @@ import shutil
 
 import pytest
 
-from core.deployment_loader import RuntimePaths, build_generation
-from scripts.run_sync import run_sync
+from elysium.core.deployment_loader import RuntimePaths, build_generation
+from elysium.scripts.run_sync import run_sync
 
 
 @pytest.fixture

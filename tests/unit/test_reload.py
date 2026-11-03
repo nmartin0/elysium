@@ -21,8 +21,8 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from api.reload import ReloadInProgress, reload_generation
-from core.deployment_loader import build_generation
+from elysium.api.reload import ReloadInProgress, reload_generation
+from elysium.core.deployment_loader import build_generation
 
 DEPLOYMENT = Path(__file__).resolve().parent.parent.parent / "deployment" / "etc"
 
@@ -45,7 +45,7 @@ def _restore_sighup():
 
 def _app(tmp_path):
     generation = build_generation(DEPLOYMENT, data_dir=tmp_path, log_dir=tmp_path / "log")
-    from core.config_history import ConfigHistory
+    from elysium.core.config_history import ConfigHistory
 
     return SimpleNamespace(state=SimpleNamespace(
         generation=generation,
@@ -115,7 +115,7 @@ def test_a_second_reload_is_rejected_rather_than_queued(tmp_path):
         release.wait(timeout=5)
         return app.state.generation
 
-    import api.reload as reload_module
+    import elysium.api.reload as reload_module
     original = reload_module.build_generation
     reload_module.build_generation = slow_build
     try:
@@ -206,8 +206,8 @@ def test_a_role_added_by_a_reload_is_usable_without_a_restart(tmp_path):
     # by construction. It now reads through a callable.
     import dataclasses
 
-    from core.immutable import deep_freeze
-    from core.user_directory import UserDirectory
+    from elysium.core.immutable import deep_freeze
+    from elysium.core.user_directory import UserDirectory
 
     app = _app(tmp_path)
     directory = UserDirectory(tmp_path / "credentials.db",
@@ -233,7 +233,7 @@ def test_the_mapping_form_still_works_for_scripts(tmp_path):
     # scripts/bootstrap_root.py and friends pass a plain dict. A
     # one-shot script has no reload to be stale across, and requiring
     # it to wrap a dict in a lambda would be ceremony without a reason.
-    from core.user_directory import UserDirectory
+    from elysium.core.user_directory import UserDirectory
 
     directory = UserDirectory(tmp_path / "c.db", {"admin": {"allowed_actions": frozenset()}})
 
@@ -247,7 +247,7 @@ def test_pending_writes_audit_against_the_current_generation(tmp_path):
     # STARTUP log -- naming the wrong generation, which is a
     # wrong-but-plausible value in an audit trail and worse than an
     # obviously missing one.
-    from core.pending_write_store import PendingWriteStore
+    from elysium.core.pending_write_store import PendingWriteStore
 
     app = _app(tmp_path)
     store = PendingWriteStore(audit_log=lambda: app.state.generation.mediator.audit_log)
@@ -262,8 +262,8 @@ def test_pending_writes_audit_against_the_current_generation(tmp_path):
 def test_the_instance_form_still_works(tmp_path):
     # Tests and scripts construct a store with a plain AuditLog, and a
     # one-shot caller has no reload to be stale across.
-    from core.intermediate_layer.audit import AuditLog
-    from core.pending_write_store import PendingWriteStore
+    from elysium.core.access.audit import AuditLog
+    from elysium.core.pending_write_store import PendingWriteStore
 
     log = AuditLog(tmp_path / "audit.log")
 
@@ -285,8 +285,8 @@ def test_sighup_returns_immediately_rather_than_reloading_inline(tmp_path):
     import signal
     import time
 
-    import api.reload as reload_module
-    from api.reload import install_sighup_handler
+    import elysium.api.reload as reload_module
+    from elysium.api.reload import install_sighup_handler
 
     app = _app(tmp_path)
     before = app.state.generation.generation
@@ -339,7 +339,7 @@ def test_sighup_actually_reloads(tmp_path):
     import signal
     import time
 
-    from api.reload import install_sighup_handler
+    from elysium.api.reload import install_sighup_handler
 
     app = _app(tmp_path)
     before = app.state.generation.generation
@@ -366,7 +366,7 @@ def test_a_failing_sighup_reload_raises_nothing_out_of_its_thread(tmp_path):
     import signal
     import time
 
-    from api.reload import install_sighup_handler
+    from elysium.api.reload import install_sighup_handler
 
     app = _app(tmp_path)
     before = app.state.generation
@@ -420,7 +420,7 @@ def test_visible_schema_cannot_change_under_a_running_loop(tmp_path):
     # So there is no path by which it can differ mid-query, and
     # "recompute when the generation moves" would recompute the same
     # answer.
-    from core.intermediate_layer.auth import resolve_user_record
+    from elysium.core.access.auth import resolve_user_record
 
     app = _app(tmp_path)
     running_loop = app.state.generation.loop
@@ -506,7 +506,7 @@ def test_a_repointed_silo_is_named_in_the_audit(tmp_path):
     import dataclasses
     import json
 
-    from core.immutable import deep_freeze
+    from elysium.core.immutable import deep_freeze
 
     app = _app(tmp_path)
     before = app.state.generation.config
@@ -549,12 +549,12 @@ def test_adding_a_silo_is_not_a_repoint(tmp_path):
     # Neither an added nor a removed silo redirects an EXISTING read: a
     # new one has nothing pointed at it yet, and a removed one fails
     # validation at load if anything still declares it.
-    from core.deployment_loader import repointed_silos
+    from elysium.core.deployment_loader import repointed_silos
 
     app = _app(tmp_path)
     import dataclasses
 
-    from core.immutable import deep_freeze
+    from elysium.core.immutable import deep_freeze
 
     before = app.state.generation.config
     after = dataclasses.replace(before, silo_configs=deep_freeze({
@@ -571,8 +571,8 @@ def test_changing_the_adapter_type_counts_as_a_repoint(tmp_path):
     # change this detects.
     import dataclasses
 
-    from core.deployment_loader import repointed_silos
-    from core.immutable import deep_freeze
+    from elysium.core.deployment_loader import repointed_silos
+    from elysium.core.immutable import deep_freeze
 
     app = _app(tmp_path)
     before = app.state.generation.config
@@ -595,7 +595,7 @@ def _app_with_store(tmp_path):
     the helper under test calls awaiting(), and a stub would let a
     change to that method pass unnoticed here.
     """
-    from core.pending_write_store import PendingWriteStore
+    from elysium.core.pending_write_store import PendingWriteStore
 
     app = _app(tmp_path)
     app.state.pending_writes = PendingWriteStore()
@@ -605,8 +605,8 @@ def _app_with_store(tmp_path):
 def _a_pending_write():
     from datetime import UTC, datetime
 
-    from core.intermediate_layer.auth import UserRecord
-    from core.ontology.write_mediator import PendingWrite, SubWrite
+    from elysium.core.access.auth import UserRecord
+    from elysium.core.ontology.write_mediator import PendingWrite, SubWrite
 
     return PendingWrite(
         sub_writes=(SubWrite("Customer", "cust_001", "update", {"name": "Ada"}, {}),),
@@ -661,7 +661,7 @@ def test_a_reload_that_invalidates_a_write_records_it(tmp_path):
     trail showed a write proposed and a write expired, with nothing
     connecting them.
     """
-    from api.reload import _audit_writes_invalidated_by
+    from elysium.api.reload import _audit_writes_invalidated_by
 
     app = _app_with_store(tmp_path)
     app.state.pending_writes.store(_a_pending_write())
@@ -684,7 +684,7 @@ def test_it_names_who_reloaded_as_well_as_who_proposed(tmp_path):
     # The person whose write was invalidated did nothing. Somebody else
     # changed the configuration, and an entry naming only the proposer
     # would read as though they had.
-    from api.reload import _audit_writes_invalidated_by
+    from elysium.api.reload import _audit_writes_invalidated_by
 
     app = _app_with_store(tmp_path)
     app.state.pending_writes.store(_a_pending_write())
@@ -704,7 +704,7 @@ def test_an_ALREADY_unapplyable_write_is_not_logged_again(tmp_path):
     # ONLY THE TRANSITION. Logging the current state on every reload
     # would bury the one entry that matters under repetitions of
     # itself.
-    from api.reload import _audit_writes_invalidated_by
+    from elysium.api.reload import _audit_writes_invalidated_by
 
     app = _app_with_store(tmp_path)
     app.state.pending_writes.store(_a_pending_write())
@@ -721,7 +721,7 @@ def test_an_ALREADY_unapplyable_write_is_not_logged_again(tmp_path):
 def test_a_reload_that_invalidates_nothing_logs_nothing(tmp_path):
     # THE CONTROL. An entry on every reload would be noise, and noise
     # is how a real entry gets missed.
-    from api.reload import _audit_writes_invalidated_by
+    from elysium.api.reload import _audit_writes_invalidated_by
 
     app = _app_with_store(tmp_path)
     app.state.pending_writes.store(_a_pending_write())
@@ -738,7 +738,7 @@ def test_a_write_RESTORED_by_a_reload_is_not_logged(tmp_path):
     # The reverse transition is not a loss. Putting a field back makes
     # a write applyable again, and recording that as an invalidation
     # would be actively wrong.
-    from api.reload import _audit_writes_invalidated_by
+    from elysium.api.reload import _audit_writes_invalidated_by
 
     app = _app_with_store(tmp_path)
     app.state.pending_writes.store(_a_pending_write())
@@ -756,7 +756,7 @@ def test_an_audit_failure_does_not_fail_the_reload(tmp_path):
     # A configuration change that is otherwise valid must not be
     # rejected because a note could not be written -- the same posture
     # record_generation() takes.
-    from api.reload import _audit_writes_invalidated_by
+    from elysium.api.reload import _audit_writes_invalidated_by
 
     app = _app_with_store(tmp_path)
     app.state.pending_writes.store(_a_pending_write())

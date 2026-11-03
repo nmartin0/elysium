@@ -16,7 +16,7 @@ Opt-in keeps both.
 import sqlite3
 from pathlib import Path
 
-from scripts.seed_dev_silos import FIXTURES, build
+from elysium.scripts.seed_dev_silos import FIXTURES, build
 
 SCHEMA = FIXTURES / "schema.sql"
 

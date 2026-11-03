@@ -50,7 +50,7 @@ ollama pull nomic-embed-text   # only for search by meaning (llm.embedding_model
 ```
 
 For search by meaning, measure this machine before declaring a large
-table: `python -m scripts.embedding_bench <Type>` embeds a sample and
+table: `python -m elysium.scripts.embedding_bench <Type>` embeds a sample and
 says how long a first pass over the whole table would take.
 
 Smaller, "reasoning-flavored" models have generally worked better for
@@ -62,7 +62,7 @@ trial-and-error; try a model, run the test suite, see how it does.
 ## 4. Running the included example
 
 ```bash
-python3 -m scripts.run_deployment
+python3 -m elysium.scripts.run_deployment
 ```
 
 No arguments — config, data, and logs are all resolved automatically.
@@ -80,7 +80,7 @@ python3 -m pytest tests/unit/ -v
 # Slow -- real LLM calls against tests/integration/'s own isolated fixture
 python3 -m pytest tests/integration/ -v -m integration
 
-# api/ layer -- real FastAPI TestClient, mocked LLM, no Ollama needed
+# src/elysium/api/ layer -- real FastAPI TestClient, mocked LLM, no Ollama needed
 python3 -m pytest tests/integration/test_api.py -v
 ```
 
@@ -150,7 +150,7 @@ repository) sets up a genuine production install:
   access at all, since this is where `credentials.db` lives),
   `/var/log/elysium` (logs).
 - A **systemd service** (`install/elysium.service`) running
-  `uvicorn api.app:app` under the `elysium` user, bound to
+  `uvicorn elysium.api.app:app` under the `elysium` user, bound to
   `127.0.0.1` by default, with least-privilege settings: it can write
   only `/var/lib/elysium` and `/var/log/elysium`. On stop, requests in
   flight get 30 seconds to finish before they are cut.
@@ -196,12 +196,12 @@ once:
 sudo systemctl restart elysium.service
 sudo su -s /bin/sh elysium -c "cd /opt/elysium && \
   ELYSIUM_CONFIG_DIR=/etc/elysium ELYSIUM_DATA_DIR=/var/lib/elysium \
-  ./venv/bin/python3 -m scripts.bootstrap_root ops operator"
+  ./venv/bin/python3 -m elysium.scripts.bootstrap_root ops operator"
 ```
 
 NOT FROM ADMIN: putting somebody in a role that carries a `manage:`
 grant needs holding that grant yourself (Kubernetes' rule, in
-`api/routes.py`'s `_refuse_escalation`), and `root` does not hold
+`src/elysium/api/routes.py`'s `_refuse_escalation`), and `root` does not hold
 `manage:deployment`. An account holding both `manage:users` and
 `manage:deployment` can make more from Admin.
 
@@ -230,7 +230,7 @@ worse data and say nothing about the difference.
 **So the first sync must run before the service can answer reads.**
 It starts without one and says so in the log, naming every object type
 that has no publication yet; a read of one of those raises an error
-naming the type and the command. Run `python -m scripts.run_sync`.
+naming the type and the command. Run `python -m elysium.scripts.run_sync`.
 
 `read_from_mirror: false` used to send reads straight to your
 databases and bypasses all of it. **It is refused at load now**, so a
@@ -244,7 +244,7 @@ querying your databases on every request. The mirror is populated by
 a sync, which you run on a schedule.
 
 ```bash
-python3 -m scripts.run_sync
+python3 -m elysium.scripts.run_sync
 ```
 
 One run copies every table your ontology references — across every
@@ -285,7 +285,7 @@ data_silos:
 Each sync then reads only the rows at or after the last value it saw.
 A deleted row is invisible to that kind of read, so the table is still
 read in full on the schedule you set, and that full read is what
-removes deleted rows from the mirror. `python3 -m scripts.run_sync
+removes deleted rows from the mirror. `python3 -m elysium.scripts.run_sync
 --full` does a full read of everything now. The sync prints how it
 read each table, and System → Server → Deployment lists the declared tables.
 
@@ -323,7 +323,7 @@ so without this guard an overlapping run would fail partway through.
 unexpected, run it on its own and read the steps:
 
 ```
-python -m scripts.agent_trace --user alice "who is Ada Okafor?"
+python -m elysium.scripts.agent_trace --user alice "who is Ada Okafor?"
 ```
 
 It prints each step the agent chose, its arguments, and its result,
@@ -335,7 +335,7 @@ To check whether the agent answers a question *consistently*, run it
 several times:
 
 ```
-python -m scripts.agent_trace --user alice --repeat 3 "who is Ada Okafor?"
+python -m elysium.scripts.agent_trace --user alice --repeat 3 "who is Ada Okafor?"
 ```
 
 It reports how many distinct routes the agent took. Different routes
@@ -497,15 +497,15 @@ machine that is off and nothing once it is running.
    Without either, the service warns at startup. It does not refuse:
    a development laptop on a plain disk is ordinary.
 
-2. **Backups are encrypted files** (`scripts/backup_deployment.py`),
+2. **Backups are encrypted files** (`src/elysium/scripts/backup_deployment.py`),
    because a backup exists to leave the volume, which is exactly where
    volume encryption stops. AES-256-GCM under a fresh key per backup,
    wrapped (AES-KW) by your backup key:
 
-       python -m scripts.backup_deployment --new-key /etc/elysium/backup.key
+       python -m elysium.scripts.backup_deployment --new-key /etc/elysium/backup.key
        export ELYSIUM_BACKUP_KEY_FILE=/etc/elysium/backup.key
-       python -m scripts.backup_deployment /backups/2026-10-14.elysium-backup
-       python -m scripts.restore_deployment --check /backups/2026-10-14.elysium-backup
+       python -m elysium.scripts.backup_deployment /backups/2026-10-14.elysium-backup
+       python -m elysium.scripts.restore_deployment --check /backups/2026-10-14.elysium-backup
 
    **Keep the key away from both the data and the backups** -- the
    command refuses a key file inside either, or one other accounts can
@@ -608,7 +608,7 @@ every row of that table back, and the sync says so.
 
 ## A note for backups
 
-Use `python -m scripts.backup_deployment` (encrypted; see "Encryption
+Use `python -m elysium.scripts.backup_deployment` (encrypted; see "Encryption
 at rest" above). Internal databases run in SQLite WAL mode, which
 creates `-wal` and `-shm` files beside each `.db`, and a copy of only
 the `.db` can miss committed transactions still in the WAL; the script

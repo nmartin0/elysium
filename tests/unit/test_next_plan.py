@@ -16,9 +16,9 @@ import json
 
 import pytest
 
-from core.llm.agent_step_prompt import PLAN_INSTRUCTIONS, next_plan, validated_step
-from core.llm.interface import LLMUnavailable
-from core.llm.plan import PlanError
+from elysium.core.llm.agent_step_prompt import PLAN_INSTRUCTIONS, next_plan, validated_step
+from elysium.core.llm.interface import LLMUnavailable
+from elysium.core.llm.plan import PlanError
 
 SCHEMA = {
     "Customer": {

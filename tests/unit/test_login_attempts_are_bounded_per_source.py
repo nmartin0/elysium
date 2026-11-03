@@ -44,12 +44,12 @@ from pathlib import Path
 
 import pytest
 
-from core.auth.login_attempt_tracker import (
+from elysium.core.auth.login_attempt_tracker import (
     MAX_ATTEMPTS,
     WINDOW,
     LoginAttemptTracker,
 )
-from core.auth.login_attempt_tracker import MAX_NEW_USERNAMES_PER_SOURCE as BUDGET
+from elysium.core.auth.login_attempt_tracker import MAX_NEW_USERNAMES_PER_SOURCE as BUDGET
 
 ATTACKER = "203.0.113.9"
 ELSEWHERE = "198.51.100.4"
@@ -153,7 +153,7 @@ class TestWhatMustNotChange:
         """E-02's other half, from patch 321, must survive this."""
         old = (datetime.now(UTC) - WINDOW - timedelta(minutes=1)).isoformat()
         # Touch the tracker first: the schema is created on the first
-        # connection through core.auth.database, so a raw sqlite3
+        # connection through elysium.core.auth.database, so a raw sqlite3
         # INSERT before that finds no table. Found by the test failing.
         tracker.is_locked_out("nobody")
         with sqlite3.connect(tracker._db_path) as conn:

@@ -33,8 +33,8 @@ has never heard of.
 import dataclasses
 import inspect
 
-from core.pending_write_serialisation import from_row, to_row
-from core.pending_write_store import PendingWrite
+from elysium.core.pending_write_serialisation import from_row, to_row
+from elysium.core.pending_write_store import PendingWrite
 
 
 def _field_names():

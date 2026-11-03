@@ -14,7 +14,7 @@ Identity only. Nothing reloads yet.
 from datetime import UTC, datetime
 from pathlib import Path
 
-from core.deployment_loader import CONFIG_FILENAMES, _source_digest, load_deployment
+from elysium.core.deployment_loader import CONFIG_FILENAMES, _source_digest, load_deployment
 
 DEPLOYMENT = Path(__file__).resolve().parent.parent.parent / "deployment" / "etc"
 
@@ -115,7 +115,7 @@ import json  # noqa: E402
 
 import pytest  # noqa: E402
 
-from core.intermediate_layer.audit import AuditLog  # noqa: E402
+from elysium.core.access.audit import AuditLog  # noqa: E402
 from tests.unit.test_named_actions import _record, write_mediator  # noqa: E402,F401
 
 
@@ -193,7 +193,7 @@ def test_apply_time_audit_records_the_generation_the_write_was_proposed_under(wr
 def test_the_generation_is_required_on_a_pending_write():
     # No default, for the same reason origin has none: a default would
     # be a guess written into an audit trail.
-    from core.ontology.write_mediator import PendingWrite
+    from elysium.core.ontology.write_mediator import PendingWrite
 
     with pytest.raises(TypeError):
         PendingWrite((), "alice", "desc", "Act", "human", datetime.now(UTC))

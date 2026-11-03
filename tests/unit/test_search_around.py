@@ -27,11 +27,11 @@ import sqlite3
 import pytest
 import yaml
 
-from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
-from core.filters import as_equality_conditions
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.link_types import expand_link_types
-from core.ontology.mediator import DataMediator
+from elysium.core.access.auth import UserRecord
+from elysium.core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from elysium.core.filters import as_equality_conditions
+from elysium.core.ontology.link_types import expand_link_types
+from elysium.core.ontology.mediator import DataMediator
 
 FIXTURES = "tests/integration/fixtures/"
 CUSTOMER_SERVICE = UserRecord(user_id="u1", security_value="us-west", role_name="customer_service")
@@ -194,7 +194,7 @@ def test_traversal_is_batched_not_one_query_per_source_object(tmp_path):
     # search_object() alone, because that method's own per-object MAC
     # resolution is a real, pre-existing cost this inherits rather than
     # introduces (see the roadmap (consumed)'s deferred list).
-    import adapters.sqlite_adapter as sqlite_adapter_module
+    import elysium.adapters.sqlite_adapter as sqlite_adapter_module
 
     real_run_query = sqlite_adapter_module._run_query
     real_run_query_one = sqlite_adapter_module._run_query_one

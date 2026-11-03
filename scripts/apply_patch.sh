@@ -58,4 +58,4 @@ behind_ahead="$(git rev-list --left-right --count "$REMOTE/$BRANCH"...HEAD)"
 
 git log --oneline -"$applied"
 echo "PUSHED: $applied commit(s); $BRANCH matches $REMOTE/$BRANCH."
-echo "Now: restart uvicorn if api/ or core/ changed; run 'cd ui && npm run build' if ui/ changed."
+echo "Now: restart uvicorn if src/elysium/api/ or src/elysium/core/ changed; run 'cd ui && npm run build' if ui/ changed."

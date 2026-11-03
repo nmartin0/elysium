@@ -21,8 +21,8 @@ in one place.
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.write_log import WriteLogWriter
+from elysium.core.access.auth import UserRecord
+from elysium.core.ontology.write_log import WriteLogWriter
 
 ALICE = UserRecord("alice", "us-west", "customer_service")
 

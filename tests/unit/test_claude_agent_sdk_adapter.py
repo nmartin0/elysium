@@ -29,8 +29,8 @@ import stat
 
 import pytest
 
-from adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
-from core.llm.interface import LLMUnavailable
+from elysium.adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
+from elysium.core.llm.interface import LLMUnavailable
 
 
 @pytest.fixture
@@ -247,7 +247,7 @@ def test_no_warning_when_no_temperature_is_requested(fake_claude, caplog):
 
 
 def test_it_registers_as_a_deployment_provider():
-    from core.deployment_loader import _LLM_ADAPTER_REGISTRY
+    from elysium.core.deployment_loader import _LLM_ADAPTER_REGISTRY
 
     assert _LLM_ADAPTER_REGISTRY["claude_agent_sdk"] is ClaudeAgentSDKAdapter
 
@@ -259,7 +259,7 @@ def test_a_prompt_past_the_argument_limit_is_refused_by_name(fake_claude):
     """MEASURED: without the guard this spawn fails with OSError
     "Argument list too long", which no caller handles. Refused as
     LLMUnavailable instead, naming the size and the way out."""
-    from adapters.claude_agent_sdk_adapter import MAX_ARGUMENT_BYTES
+    from elysium.adapters.claude_agent_sdk_adapter import MAX_ARGUMENT_BYTES
 
     with pytest.raises(LLMUnavailable, match="ollama or vllm"):
         ClaudeAgentSDKAdapter("m", {}).chat("x" * MAX_ARGUMENT_BYTES, "q")
@@ -274,7 +274,7 @@ def test_the_limit_is_the_real_one():
     a prompt one byte under the limit spawns; at the limit it fails."""
     import subprocess
 
-    from adapters.claude_agent_sdk_adapter import MAX_ARGUMENT_BYTES
+    from elysium.adapters.claude_agent_sdk_adapter import MAX_ARGUMENT_BYTES
 
     subprocess.run(["true", "x" * (MAX_ARGUMENT_BYTES - 1)], check=True)
     with pytest.raises(OSError):

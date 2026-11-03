@@ -17,7 +17,7 @@ in directly.
 
 import pathlib
 
-from core.deployment_loader import (
+from elysium.core.deployment_loader import (
     build_live_read_adapters,
     load_deployment_bundle,
 )
@@ -93,7 +93,7 @@ def test_run_sync_does_not_take_its_adapters_from_the_mediator():
     So the wiring is asserted directly.
     """
     source = (
-        pathlib.Path(__file__).resolve().parents[2] / "scripts" / "run_sync.py"
+        pathlib.Path(__file__).resolve().parents[2] / "src" / "elysium" / "scripts" / "run_sync.py"
     ).read_text()
 
     # WITH run_sync's OWN PATHS: called bare, it read the default

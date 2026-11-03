@@ -10,10 +10,10 @@ AgentLoop.run() takes a pre-resolved UserRecord now, not a raw user_id.
 
 import pytest
 
-from core.agent.agentic_loop import AgentLoop
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.mediator import DataMediator
-from functions.linear_regression import LinearRegressionFunction
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.agent.agentic_loop import AgentLoop
+from elysium.core.ontology.mediator import DataMediator
+from elysium.functions.linear_regression import LinearRegressionFunction
 from tests.conftest import author_book_mediator, scripted_llm_client
 
 TEST_USERS = {

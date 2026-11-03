@@ -16,9 +16,9 @@ deployment, where Customer.email is `pii` and Transaction.amount is
 
 import pytest
 
-from core.intermediate_layer.auth import resolve_user_record
-from core.intermediate_layer.policy_validation import grantable, validate_roles
-from core.ontology.classifications import compile_label_access, label_access_changes
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.access.policy_validation import grantable, validate_roles
+from elysium.core.ontology.classifications import compile_label_access, label_access_changes
 
 SCHEMA = {
     "Customer": {"id_field": "id", "fields": {
@@ -88,7 +88,7 @@ class TestTheGrantItself:
 
 
 def _mediator(paths, enforce: bool, extra_grant: "str | None" = None):
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     if enforce:
         config = paths.config_dir / "config.yaml"
@@ -125,7 +125,7 @@ class TestThroughTheRealMediator:
     def test_on_the_declared_roles_are_left_as_written(self, synced_deployment):
         """The role editor shows and saves config.roles; a compiled grant
         saved back would become a declared one nobody wrote."""
-        from core.deployment_loader import build_generation
+        from elysium.core.deployment_loader import build_generation
 
         _mediator(synced_deployment, enforce=True)
         generation = build_generation(synced_deployment.config_dir, synced_deployment.data_dir,

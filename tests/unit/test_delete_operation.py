@@ -33,13 +33,13 @@ from datetime import UTC, datetime
 import pytest
 import yaml
 
-from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
-from core.filters import as_equality_conditions
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.link_types import expand_link_types
-from core.ontology.mediator import DataMediator
-from core.ontology.write_log import WriteLogWriter
-from core.ontology.write_mediator import PendingWrite, SubWrite, WriteMediator
+from elysium.core.access.auth import UserRecord
+from elysium.core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from elysium.core.filters import as_equality_conditions
+from elysium.core.ontology.link_types import expand_link_types
+from elysium.core.ontology.mediator import DataMediator
+from elysium.core.ontology.write_log import WriteLogWriter
+from elysium.core.ontology.write_mediator import PendingWrite, SubWrite, WriteMediator
 
 FIXTURES = "tests/integration/fixtures/"
 WEST = UserRecord(user_id="u1", security_value="us-west", role_name="customer_service")
@@ -214,7 +214,7 @@ def test_deleted_objects_are_filtered_in_bulk_not_per_object(deployment):
     # The same discipline Point 9 applied to security resolution: a
     # per-object delete check would reintroduce exactly the N+1 that
     # was just removed.
-    import adapters.sqlite_adapter as sqlite_adapter_module
+    import elysium.adapters.sqlite_adapter as sqlite_adapter_module
 
     mediator, write_mediator, _log, db_path = deployment
     conn = sqlite3.connect(db_path)

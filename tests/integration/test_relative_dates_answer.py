@@ -13,15 +13,15 @@ May to July 2026 and "the last N days" moves.
 
 from datetime import UTC, datetime
 
-import core.filters
+import elysium.core.filters
 from tests.integration.test_api import _csrf_headers, _login
 
 NOW = datetime(2026, 7, 20, 12, 0, tzinfo=UTC)
 
 
 def _pin(monkeypatch):
-    real = core.filters.resolve_relative_date
-    monkeypatch.setattr(core.filters, "resolve_relative_date",
+    real = elysium.core.filters.resolve_relative_date
+    monkeypatch.setattr(elysium.core.filters, "resolve_relative_date",
                         lambda value, now=None: real(value, now or NOW))
 
 
@@ -55,18 +55,18 @@ def test_more_than_n_days_ago(client, monkeypatch):
 
 def test_a_date_field_gets_dates():
     """A timestamp bound is not compared with a date column."""
-    condition = core.filters.FieldFilter("d", "relative_date", {"since_days_ago": 1})
+    condition = elysium.core.filters.FieldFilter("d", "relative_date", {"since_days_ago": 1})
 
-    assert core.filters.resolved(condition, "date", NOW).value == {"start": "2026-07-19", "end": None}
-    assert core.filters.resolved(condition, "timestamp", NOW).value["start"].startswith("2026-07-19T12:00")
+    assert elysium.core.filters.resolved(condition, "date", NOW).value == {"start": "2026-07-19", "end": None}
+    assert elysium.core.filters.resolved(condition, "timestamp", NOW).value["start"].startswith("2026-07-19T12:00")
 
 
 def test_in_the_last_n_hours(client, monkeypatch):
     """Hours (16 October), through the same path. At 10:00 on 14 June,
     the last 12 hours reach back to 22:00 on the 13th: of alice's four,
     only 14 June is inside."""
-    real = core.filters.resolve_relative_date
-    monkeypatch.setattr(core.filters, "resolve_relative_date",
+    real = elysium.core.filters.resolve_relative_date
+    monkeypatch.setattr(elysium.core.filters, "resolve_relative_date",
                         lambda value, now=None: real(value, now or datetime(2026, 6, 14, 10, tzinfo=UTC)))
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")

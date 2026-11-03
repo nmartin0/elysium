@@ -34,8 +34,8 @@ meaningless.
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.submission_criteria import (
+from elysium.core.access.auth import UserRecord
+from elysium.core.ontology.submission_criteria import (
     _USER_RECORD_FIELDS,
     SubmissionCriteriaViolation,
     _resolve_expected,

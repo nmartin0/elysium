@@ -10,8 +10,8 @@ import inspect
 
 import pytest
 
-import core.ontology.mediator as mediator_module
-from core.ontology.mediator import _SECURITY_CACHE, security_cache_scope
+import elysium.core.ontology.mediator as mediator_module
+from elysium.core.ontology.mediator import _SECURITY_CACHE, security_cache_scope
 
 
 class TestTheScope:
@@ -63,7 +63,7 @@ class TestTheMediatorHoldsNone:
     def test_the_prefetch_stores_nothing_without_a_scope(self, monkeypatch):
         """A prefetch outside any scope must not create one: a stray
         cache in a thread's base context outlives the call."""
-        from core.ontology.mediator import DataMediator
+        from elysium.core.ontology.mediator import DataMediator
         mediator = DataMediator.__new__(DataMediator)
         mediator._prefetch_security_values("Customer", ["cust_001"])
         assert _SECURITY_CACHE.get() is None
@@ -74,7 +74,7 @@ class TestAnAgentQueryIsOneScope:
         """THE LOOP RUNS ON AN EXECUTOR THREAD, which the per-request
         middleware's scope does not reach -- so run() opens its own, for
         all of a query's hops."""
-        from core.agent.agentic_loop import AgentLoop
+        from elysium.core.agent.agentic_loop import AgentLoop
         seen = []
         monkeypatch.setattr(AgentLoop, "_run",
                             lambda self, *args, **kwargs: seen.append(_SECURITY_CACHE.get()) or "done")

@@ -24,7 +24,7 @@ import stat
 
 import pytest
 
-from core.mirror.lake_permissions import (
+from elysium.core.mirror.lake_permissions import (
     PRIVATE_MODE,
     make_private,
     readable_by_others,
@@ -65,7 +65,7 @@ class TestCreating:
     def test_the_sync_creates_its_lake_private(self, tmp_path):
         """Through the real path, not the helper: it defaulted to
         0o755, which on a shared host is every account on the box."""
-        from core.mirror.iceberg_sync import IcebergMirrorSync
+        from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
         lake = tmp_path / "mirror"
         IcebergMirrorSync(lake, {})

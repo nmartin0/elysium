@@ -33,7 +33,7 @@ that the route ignored it.
 
 from pathlib import Path
 
-ROUTES = Path("api/routes.py").read_text()
+ROUTES = Path("src/elysium/api/routes.py").read_text()
 
 
 class TestTheRouteCallsTheAtomicMethod:
@@ -64,12 +64,12 @@ class TestTheLimiterStillOffersBoth:
     them across two transactions IN A ROUTE, not their existence."""
 
     def test_the_atomic_method_exists(self):
-        from core.auth.query_rate_limiter import QueryRateLimiter
+        from elysium.core.auth.query_rate_limiter import QueryRateLimiter
 
         assert hasattr(QueryRateLimiter, "try_record_query")
 
     def test_and_so_do_the_parts(self):
-        from core.auth.query_rate_limiter import QueryRateLimiter
+        from elysium.core.auth.query_rate_limiter import QueryRateLimiter
 
         assert hasattr(QueryRateLimiter, "is_rate_limited")
         assert hasattr(QueryRateLimiter, "record_query")

@@ -8,8 +8,8 @@ Through the real app, session and stream, as test_live_updates.py.
 import threading
 import time
 
-import api.live_updates as live_updates
-from core.notifications import NotificationStore, on_notify
+import elysium.api.live_updates as live_updates
+from elysium.core.notifications import NotificationStore, on_notify
 
 
 def _login(client, username):

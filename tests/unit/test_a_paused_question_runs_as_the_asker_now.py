@@ -9,9 +9,9 @@ them.
 
 from types import SimpleNamespace
 
-from api.routes import _finish_paused_query
-from core.notifications import NotificationStore
-from core.paused_queries import PausedQueryStore
+from elysium.api.routes import _finish_paused_query
+from elysium.core.notifications import NotificationStore
+from elysium.core.paused_queries import PausedQueryStore
 
 
 class _Directory:
@@ -25,7 +25,7 @@ class _Directory:
         return not self.active
 
     def get_user_record(self, user_id):
-        from core.intermediate_layer.auth import UserRecord
+        from elysium.core.access.auth import UserRecord
         return UserRecord(user_id, "us-west", "editor")
 
 
@@ -69,10 +69,10 @@ def test_a_question_with_nothing_paused_is_left_alone(tmp_path):
 def test_a_resumed_answer_says_what_is_inferred(tmp_path):
     """R63 on the resumed path: the answer the asker is notified with
     carries the code-written note when its data holds an inferred value."""
-    from core.agent.agentic_loop import AgentLoopResult
+    from elysium.core.agent.agentic_loop import AgentLoopResult
 
     class Answering:
-        from core.llm.agent_features import OFF as features
+        from elysium.core.llm.agent_features import OFF as features
 
         def resume(self, previous, user, *args, **kwargs):
             return AgentLoopResult(gathered=[{

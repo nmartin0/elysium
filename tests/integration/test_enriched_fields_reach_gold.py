@@ -26,7 +26,7 @@ RULES = [
 
 @pytest.fixture
 def deployment(tmp_path, monkeypatch):
-    from core.deployment_loader import RuntimePaths
+    from elysium.core.deployment_loader import RuntimePaths
 
     # As the shared `client` fixture does: TestClient speaks plain http,
     # and a Secure cookie is never sent back over it.
@@ -62,14 +62,14 @@ def deployment(tmp_path, monkeypatch):
 
 
 def _sync(paths):
-    from scripts.run_sync import run_sync
+    from elysium.scripts.run_sync import run_sync
 
     with contextlib.redirect_stdout(io.StringIO()):
         run_sync(paths)
 
 
 def _client(paths):
-    from api.app import create_app
+    from elysium.api.app import create_app
 
     client = TestClient(create_app(paths))
     with contextlib.suppress(ValueError):  # made by an earlier app on the same data
@@ -84,8 +84,8 @@ def _topics(client):
 
 
 def test_empty_until_approved_then_filled_and_searchable(deployment):
-    from core.enrichment_recipes import EnrichmentRecipeStore
-    from core.ontology.enriched_fields import declaration_hash, enrichment_of
+    from elysium.core.enrichment_recipes import EnrichmentRecipeStore
+    from elysium.core.ontology.enriched_fields import declaration_hash, enrichment_of
 
     _sync(deployment)
     client = _client(deployment)
@@ -121,8 +121,8 @@ def test_empty_until_approved_then_filled_and_searchable(deployment):
 def test_an_approved_vote_fills_the_field_and_its_review_shows_every_set(deployment):
     """A combined recipe (EVAPORATE-Code+) is stored, reviewed and run like
     one set: gold takes the weighted vote, and a tie is left empty."""
-    from core.enrichment_recipes import EnrichmentRecipeStore
-    from core.ontology.enriched_fields import check_recipe, declaration_hash, enrichment_of
+    from elysium.core.enrichment_recipes import EnrichmentRecipeStore
+    from elysium.core.ontology.enriched_fields import check_recipe, declaration_hash, enrichment_of
 
     _sync(deployment)
     field = yaml.safe_load((deployment.config_dir / "ontology_schema.yaml").read_text())[
@@ -163,8 +163,8 @@ def test_an_extracted_number_reaches_gold_typed_and_its_review_says_what_it_take
     """`extract: true` with `data_type: integer` (17 October): the rule
     takes text from the row, gold stores it as the field's type, a row
     with no such text is empty."""
-    from core.enrichment_recipes import EnrichmentRecipeStore
-    from core.ontology.enriched_fields import check_recipe, declaration_hash, enrichment_of
+    from elysium.core.enrichment_recipes import EnrichmentRecipeStore
+    from elysium.core.ontology.enriched_fields import check_recipe, declaration_hash, enrichment_of
 
     schema_path = deployment.config_dir / "ontology_schema.yaml"
     ontology = yaml.safe_load(schema_path.read_text())
@@ -203,11 +203,11 @@ def test_an_extracted_number_reaches_gold_typed_and_its_review_says_what_it_take
 
 
 def test_the_compile_script_proposes_and_changes_nothing(deployment, monkeypatch, capsys):
-    """scripts/compile_enrichment.py against real gold and the recipe
+    """src/elysium/scripts/compile_enrichment.py against real gold and the recipe
     store, with the model scripted: it reads the field's inputs, labels a
     sample, proposes -- and the field stays empty until someone approves."""
-    import scripts.compile_enrichment as script
-    from core.enrichment_recipes import EnrichmentRecipeStore
+    import elysium.scripts.compile_enrichment as script
+    from elysium.core.enrichment_recipes import EnrichmentRecipeStore
     from tests.unit.test_enrichment_compiler import GOOD, ScriptedModel
 
     _sync(deployment)
@@ -267,8 +267,8 @@ class TestReviewingARecipe:
     """GET /api/enrichment-recipes and POST .../decide."""
 
     def _propose(self, deployment, compartment="us-west", digest=None):
-        from core.enrichment_recipes import EnrichmentRecipeStore
-        from core.ontology.enriched_fields import declaration_hash, enrichment_of
+        from elysium.core.enrichment_recipes import EnrichmentRecipeStore
+        from elysium.core.ontology.enriched_fields import declaration_hash, enrichment_of
 
         field = yaml.safe_load((deployment.config_dir / "ontology_schema.yaml").read_text())[
             "object_types"]["SupportTicket"]["fields"]["topic"]

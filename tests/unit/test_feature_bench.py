@@ -15,11 +15,11 @@ import json
 
 import pytest
 
-from core.deployment_loader import build_generation
-from core.intermediate_layer.auth import resolve_user_record
-from core.llm.prompt_values import render_value
-from scripts import feature_bench, llm_bench
-from scripts.llm_bench import FEATURE_CASES, USER_ID, parse_features
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.deployment_loader import build_generation
+from elysium.core.llm.prompt_values import render_value
+from elysium.scripts import feature_bench, llm_bench
+from elysium.scripts.llm_bench import FEATURE_CASES, USER_ID, parse_features
 from tests.unit.test_llm_bench import Scripted
 
 #: What a model using each switch would send, in order, per case.
@@ -88,7 +88,7 @@ class Answering:
 
     def chat(self, system_prompt, user_message, json_mode=False, temperature=None, *,
              deadline=None, usage=None, cancel=None):
-        from scripts.llm_bench import ALL_CASES
+        from elysium.scripts.llm_bench import ALL_CASES
 
         case = next((c for c in ALL_CASES if c.query in user_message), None)
         values = [f.value for f in case.expected_facts] + [a.value for a in case.expected_aggregates] \
@@ -216,7 +216,7 @@ def test_an_unreachable_model_decides_nothing(scripted_generations, monkeypatch,
     """Found by running it with no model: the warm-up failed, the arm
     collected nothing, and the verdict printed was "OFF" -- a verdict
     about the outage, not the switch."""
-    from core.llm.interface import LLMUnavailable
+    from elysium.core.llm.interface import LLMUnavailable
 
     class Gone:
         max_concurrent_requests = 1

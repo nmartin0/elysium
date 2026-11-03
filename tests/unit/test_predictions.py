@@ -7,14 +7,14 @@ import random
 
 import pytest
 
-from core.ontology.predicted_fields import (
+from elysium.core.ontology.predicted_fields import (
     declaration_hash,
     fill_predicted_types,
     predicted_fields,
     prediction_of,
     validate_predicted_fields,
 )
-from core.predictions import MIN_GROUP, MIN_KNOWN, NotLearnable, train
+from elysium.core.predictions import MIN_GROUP, MIN_KNOWN, NotLearnable, train
 
 
 def _types(**predict):
@@ -89,7 +89,7 @@ class TestTheDeclaration:
             "Customer", "risk", prediction_of(fields["risk"], fields))
 
     def test_reading_a_prediction_needs_reading_the_answer_and_every_input(self):
-        from core.ontology.derived_fields import gate_derived_grants
+        from elysium.core.ontology.derived_fields import gate_derived_grants
 
         types = _types()
         roles = {"no_answer": {"allowed_actions": frozenset({
@@ -242,7 +242,7 @@ def test_the_schema_marks_a_prediction_as_predicted(test_db_path, test_schema):
     recorded fact -- the enrichment marker, in its own words."""
     import copy
 
-    from core.intermediate_layer.auth import resolve_user_record
+    from elysium.core.access.auth import resolve_user_record
     from tests.conftest import author_book_mediator
 
     schema = copy.deepcopy(test_schema)
@@ -263,12 +263,12 @@ class TestAComputedField:
     writes it, or builds on it as though it were recorded."""
 
     def test_it_is_computed(self):
-        from core.ontology.field_types import is_computed
+        from elysium.core.ontology.field_types import is_computed
 
         assert is_computed(_types()["Customer"]["fields"]["risk"])
 
     def test_the_sync_never_asks_the_source_for_it(self):
-        from core.mirror.sync_targets import resolve_sync_targets
+        from elysium.core.mirror.sync_targets import resolve_sync_targets
 
         types = _types()
         types["Customer"]["fields"].pop("account")
@@ -279,7 +279,7 @@ class TestAComputedField:
         assert "risk" not in target.columns and "churned" in target.columns
 
     def test_meaning_is_never_embedded_from_it(self):
-        from core.ontology.semantic_search import validate_semantic_search
+        from elysium.core.ontology.semantic_search import validate_semantic_search
 
         types = _types()
         types["Customer"]["semantic_search"] = {"from": ["risk"]}
@@ -289,7 +289,7 @@ class TestAComputedField:
 
 class TestRetraining:
     def test_a_retrained_model_must_still_earn_its_approval(self):
-        from core.predictions import RETRAIN_TOLERANCE, still_earned
+        from elysium.core.predictions import RETRAIN_TOLERANCE, still_earned
 
         assert still_earned(0.6, 0.6) and still_earned(0.6 - RETRAIN_TOLERANCE, 0.6)
         assert not still_earned(0.6 - RETRAIN_TOLERANCE - 0.001, 0.6)
@@ -304,8 +304,8 @@ class TestRetraining:
 def _gold(rows, approvals, how):
     import pyarrow as pa
 
-    from core.mirror.gold_arrow import with_predicted
-    from core.mirror.prediction_fill import APPROVED_PREDICTIONS, COMPARTMENTS
+    from elysium.core.mirror.gold_arrow import with_predicted
+    from elysium.core.mirror.prediction_fill import APPROVED_PREDICTIONS, COMPARTMENTS
 
     types = _types()
     type_def = types["Customer"]
@@ -370,7 +370,7 @@ class TestFillingGold:
 
 
 def test_an_answer_resting_on_a_prediction_says_so():
-    from core.llm.inferred_values import for_the_reader, inferred_fields
+    from elysium.core.llm.inferred_values import for_the_reader, inferred_fields
 
     found = inferred_fields(_types())
     note = for_the_reader([found[("Customer", "risk")]])

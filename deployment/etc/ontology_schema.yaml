@@ -16,7 +16,7 @@
 # including each object type's own id_field, needs a matching
 # read:<Type>.<field> grant in policy.yaml before any user can ever see
 # it. A field declared here with no matching grant anywhere simply
-# never appears to the LLM at all -- see core/ontology/mediator.py's
+# never appears to the LLM at all -- see src/elysium/core/ontology/mediator.py's
 # visible_schema() docstring for the full reasoning.
 #
 # Each type's "storage" key holds ONLY its physical backing (which
@@ -24,7 +24,7 @@
 # SEMANTIC (what it means, how it relates to other types). Keeping
 # these visibly separate means editing what a Customer IS never
 # requires also understanding SQL table names, and vice versa -- see
-# core/ontology/mediator.py's own docstring for the full reasoning.
+# src/elysium/core/ontology/mediator.py's own docstring for the full reasoning.
 
 object_types:
   Customer:
@@ -48,7 +48,7 @@ object_types:
     #
     # The role check still applies; nothing written from a restricted
     # record may be copied into one; and no via_field chain may end at
-    # one (core/ontology/unrestricted.py).
+    # one (src/elysium/core/ontology/unrestricted.py).
     security:
       field: region
     fields:

@@ -7,15 +7,15 @@ import datetime
 import numpy as np
 import pytest
 
-import core.forecasts as forecasts
-from core.forecasts import (
+import elysium.core.forecasts as forecasts
+from elysium.core.forecasts import (
     HORIZON,
     MIN_PERIODS,
     cached_forecast,
     finished_series,
     forecast,
 )
-from core.periods import next_period
+from elysium.core.periods import next_period
 
 D = datetime.date
 

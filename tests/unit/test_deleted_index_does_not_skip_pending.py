@@ -39,7 +39,7 @@ import sqlite3
 
 import pytest
 
-from core.ontology.write_log import WriteLogWriter
+from elysium.core.ontology.write_log import WriteLogWriter
 
 APPLIED, PENDING, ABANDONED = "applied", "pending", "abandoned"
 

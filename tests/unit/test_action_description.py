@@ -16,7 +16,7 @@ BUILT FROM WHAT THE DEPLOYMENT ALREADY AUTHORED. Action types carry a
 both existed in deployment/etc and neither was used here.
 """
 
-from core.ontology.write_mediator import _describe_action
+from elysium.core.ontology.write_mediator import _describe_action
 
 ACTION = {
     "description": "Change which category a transaction is filed under.",

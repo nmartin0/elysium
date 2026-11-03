@@ -20,7 +20,7 @@ import sqlite3
 
 import pytest
 
-from core.sqlite_connection import add_column_if_missing
+from elysium.core.sqlite_connection import add_column_if_missing
 
 OLD_SAVED_VIEWS = """
 CREATE TABLE saved_views (
@@ -52,14 +52,14 @@ class TestAnOlderDatabaseStillReads:
     def test_its_views_come_back(self, old_saved_views):
         """THE BUG THAT SHIPPED. Before the migration this returned an
         empty list, and nothing anywhere said so."""
-        from core.saved_views import SavedViewStore
+        from elysium.core.saved_views import SavedViewStore
 
         views = SavedViewStore(old_saved_views).for_owner("alice")
 
         assert [view.name for view in views] == ["Kept"]
 
     def test_the_new_column_takes_its_default(self, old_saved_views):
-        from core.saved_views import SavedViewStore
+        from elysium.core.saved_views import SavedViewStore
 
         view = SavedViewStore(old_saved_views).for_owner("alice")[0]
 
@@ -67,7 +67,7 @@ class TestAnOlderDatabaseStillReads:
 
     def test_opening_twice_is_harmless(self, old_saved_views):
         """IDEMPOTENT, because every connection runs the migrations."""
-        from core.saved_views import SavedViewStore
+        from elysium.core.saved_views import SavedViewStore
 
         store = SavedViewStore(old_saved_views)
         store.for_owner("alice")

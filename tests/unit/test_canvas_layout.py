@@ -5,7 +5,7 @@ import math
 
 import pytest
 
-from core.canvas_layout import (
+from elysium.core.canvas_layout import (
     MAX_AREAS,
     CanvasLayoutError,
     CanvasLayoutStore,

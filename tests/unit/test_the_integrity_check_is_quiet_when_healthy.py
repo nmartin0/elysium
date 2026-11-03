@@ -35,10 +35,10 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.gold import build_gold
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.integrity import check_mirror
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.gold import build_gold
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.integrity import check_mirror
 
 TYPE = {
     "id_field": "id", "security": {"field": "region"},
@@ -183,10 +183,10 @@ class TestTheLayersAreNamedConstants:
         """PA001-F6.4. Hand-written prefixes here would drift the
         moment a namespace was renamed elsewhere, and the symptom
         would be this same false alarm returning quietly."""
-        from core.mirror.gold_history import CHANGELOG_NAMESPACE
-        from core.mirror.integrity import NON_SOURCE_NAMESPACES
-        from core.mirror.quarantine_report import QUARANTINE_PREFIX
-        from core.ontology.gold_view import GOLD_NAMESPACE
+        from elysium.core.mirror.gold_history import CHANGELOG_NAMESPACE
+        from elysium.core.mirror.integrity import NON_SOURCE_NAMESPACES
+        from elysium.core.mirror.quarantine_report import QUARANTINE_PREFIX
+        from elysium.core.ontology.gold_view import GOLD_NAMESPACE
 
         assert GOLD_NAMESPACE in NON_SOURCE_NAMESPACES
         assert CHANGELOG_NAMESPACE in NON_SOURCE_NAMESPACES

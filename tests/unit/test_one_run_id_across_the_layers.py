@@ -28,7 +28,7 @@ gold. A real run found it; nothing else would have.
 import sqlite3
 from pathlib import Path
 
-from core.mirror.sync_attempts import SyncAttempts
+from elysium.core.mirror.sync_attempts import SyncAttempts
 
 
 class TestTheAttemptStore:
@@ -84,14 +84,14 @@ class TestEveryLayerIsWired:
     def test_the_sync_accepts_a_run_id(self):
         import inspect
 
-        from core.mirror.iceberg_sync import IcebergMirrorSync
+        from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
         assert "run_id" in inspect.signature(IcebergMirrorSync).parameters
 
     def test_gold_accepts_one(self):
         import inspect
 
-        from core.mirror.gold import build_gold
+        from elysium.core.mirror.gold import build_gold
 
         assert "run_id" in inspect.signature(build_gold).parameters
 
@@ -99,14 +99,14 @@ class TestEveryLayerIsWired:
         """`_build_gold(...)` -- the site that silently failed to wire
         on both attempts, leaving gold blank while bronze and silver
         carried the id."""
-        source = Path("scripts/run_sync.py").read_text()
+        source = Path("src/elysium/scripts/run_sync.py").read_text()
         start = source.index("failures += _build_gold")
         call = source[start:source.index(")", source.index("unsynced=unsynced", start))]
 
         assert "run_id=run_id" in call
 
     def test_and_the_builder_passes_it_to_build_gold(self):
-        source = Path("scripts/run_sync.py").read_text()
+        source = Path("src/elysium/scripts/run_sync.py").read_text()
         start = source.index("result = build_gold(")
         call = source[start:source.index("\n\n", start)]
 
@@ -117,37 +117,37 @@ class TestEveryLayerIsWired:
         the audit branch. And a third call that is not a publication:
         an unchanged type confirmed current (PA001-G11) records the run
         that confirmed it."""
-        source = Path("core/mirror/gold.py").read_text()
+        source = Path("src/elysium/core/mirror/gold.py").read_text()
 
         assert source.count("_record_run(catalog, identifier, run_id)") == 3
 
     def test_bronze_and_silver_both_record_it(self):
-        source = Path("core/mirror/iceberg_sync.py").read_text()
+        source = Path("src/elysium/core/mirror/iceberg_sync.py").read_text()
 
         assert "RUN_ID_PROPERTY" in source
         # two call sites plus the definition
         assert source.count("_read_properties(read_started_at") == 3
 
     def test_the_run_announces_itself(self):
-        source = Path("scripts/run_sync.py").read_text()
+        source = Path("src/elysium/scripts/run_sync.py").read_text()
 
         assert 'print(f"run {run_id}")' in source
 
     def test_and_says_when_it_finished(self):
         """R9 said "printed at both ends"; the 14 Oct sweep found only
         the start."""
-        source = Path("scripts/run_sync.py").read_text()
+        source = Path("src/elysium/scripts/run_sync.py").read_text()
 
         assert 'print(f"run {run_id} finished: "' in source
 
 
 class TestTheProperty:
     def test_it_is_absent_rather_than_empty_without_a_run(self):
-        from core.mirror.iceberg_sync import _read_properties
+        from elysium.core.mirror.iceberg_sync import _read_properties
 
         assert "elysium.run_id" not in _read_properties("2026-01-01", None)
 
     def test_and_present_with_one(self):
-        from core.mirror.iceberg_sync import RUN_ID_PROPERTY, _read_properties
+        from elysium.core.mirror.iceberg_sync import RUN_ID_PROPERTY, _read_properties
 
         assert _read_properties("2026-01-01", "abc")[RUN_ID_PROPERTY] == "abc"

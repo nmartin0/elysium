@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pytest
 
-from core.ontology import write_mediator as wm
+from elysium.core.ontology import write_mediator as wm
 from tests.unit.test_confirming_a_write_rechecks_reach import ACTIONS as BASE
 from tests.unit.test_confirming_a_write_rechecks_reach import GRANTS, SCHEMA, WEST
 
@@ -44,9 +44,9 @@ OPEN = {"open_ticket": {
 
 def _writer(tmp: Path) -> "wm.WriteMediator":
     """One worker's view of a deployment that may already exist."""
-    from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
-    from core.ontology.mediator import DataMediator
-    from core.ontology.write_log import WriteLogWriter
+    from elysium.adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
+    from elysium.core.ontology.mediator import DataMediator
+    from elysium.core.ontology.write_log import WriteLogWriter
 
     source = tmp / "s.db"
     if not source.exists():

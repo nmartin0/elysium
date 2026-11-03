@@ -21,7 +21,7 @@ import shutil
 import pytest
 import yaml
 
-from core.deployment_loader import load_deployment
+from elysium.core.deployment_loader import load_deployment
 
 
 @pytest.fixture

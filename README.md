@@ -48,8 +48,8 @@ proposal was made.
 ## 1. How the system is organized
 
 ```
-core/            Generic engine, built around the **ontology** --
-                 core/ontology/'s own semantic schema layer (object
+src/elysium/core/            Generic engine, built around the **ontology** --
+                 src/elysium/core/ontology/'s own semantic schema layer (object
                  types, fields, links) resolved live against your real
                  databases, never a materialized copy -- see section
                  3.3 for the full concept, including multi-datasource
@@ -57,14 +57,14 @@ core/            Generic engine, built around the **ontology** --
                  physical database). No knowledge of any organization,
                  any specific database technology, or any specific LLM
                  backend.
-adapters/        Concrete backends -- one file per real technology
-                 (SQLite, SQLAlchemy, Ollama, vLLM, the Claude Agent SDK). core/ only ever
+src/elysium/adapters/        Concrete backends -- one file per real technology
+                 (SQLite, SQLAlchemy, Ollama, vLLM, the Claude Agent SDK). src/elysium/core/ only ever
                  talks to these through a generic contract.
-functions/       Stateless computational capabilities the LLM may
+src/elysium/functions/       Stateless computational capabilities the LLM may
                  invoke (e.g. linear regression) -- zero data access.
-api/             The HTTP layer -- session-based auth, user
+src/elysium/api/             The HTTP layer -- session-based auth, user
                  management, the query endpoint, and the two-phase
-                 write-confirmation flow. Knows FastAPI exists; core/
+                 write-confirmation flow. Knows FastAPI exists; src/elysium/core/
                  never does.
 deployment/      YOUR organization's configuration and data, for local
                  development -- laid out to mirror a real install
@@ -78,7 +78,7 @@ deployment/      YOUR organization's configuration and data, for local
                  A real install (see install/) uses /etc/elysium,
                  /var/lib/elysium, /var/log/elysium instead -- the SAME
                  three-location model, not a different one. See
-                 core/deployment_loader.py's resolve_runtime_paths().
+                 src/elysium/core/deployment_loader.py's resolve_runtime_paths().
 templates/       Copy-and-edit starting points for the five deployment/
                  YAML files, using a realistic Employee/ExpenseReport
                  example -- genuinely runnable, not just illustrative
@@ -117,7 +117,7 @@ ui/              The React + TypeScript frontend -- Query (ask a
                    app-notifications/  -- the other five screens;
                                          section 8 lists all ten
                                          packages.
-scripts/         Runnable entry points.
+src/elysium/scripts/         Runnable entry points.
 install/         install.sh (fresh-install script) and elysium.service
                  (systemd unit) for a real, running install.
 tests/           Unit tests (fast, no LLM) and integration tests --
@@ -126,7 +126,7 @@ tests/           Unit tests (fast, no LLM) and integration tests --
                  from deployment/'s real, shipped demo data.
 ```
 
-The core idea: **`core/` never changes for your organization, and never
+The core idea: **`src/elysium/core/` never changes for your organization, and never
 changes based on which database or LLM you use, or whether it's running
 from a checkout or a real install.**
 
@@ -159,13 +159,13 @@ works with the example data, then replace the content with your own.
 
 **Check your edits are valid before running anything:**
 ```
-python3 -m scripts.lint_deployment
+python3 -m elysium.scripts.lint_deployment
 ```
 Validates `config.yaml`/`ontology_schema.yaml`/`policy.yaml` — every
 action type's own structure, every role's own grants checked against
 what they actually reference — without opening any real database
 connection or creating any file on disk. Pass a different directory
-(`python3 -m scripts.lint_deployment /path/to/candidate/config`) to
+(`python3 -m elysium.scripts.lint_deployment /path/to/candidate/config`) to
 check a config before ever copying it into `deployment/etc/` at all.
 Exits 0 if valid, 1 if not — usable in a pre-deploy CI step, not just
 interactively.
@@ -174,8 +174,8 @@ Everything lives under `deployment/etc/`, `deployment/var/lib/`, and
 `deployment/var/log/` locally — the exact same three-way split a real
 install uses, just rooted under one project-relative folder instead of
 `/etc/elysium`, `/var/lib/elysium`, `/var/log/elysium`. Nothing in
-`core/` treats one of these as more "real" than the other —
-`resolve_runtime_paths()` (in `core/deployment_loader.py`) is the one
+`src/elysium/core/` treats one of these as more "real" than the other —
+`resolve_runtime_paths()` (in `src/elysium/core/deployment_loader.py`) is the one
 place that decides where each actually is.
 
 ### 3.1 `config.yaml` — operational settings
@@ -202,10 +202,10 @@ tools:
 
 | Field | What it controls |
 |---|---|
-| `llm.provider` / `llm.connection` | Which LLM adapter, and its own connection details (opaque to `core/`). |
+| `llm.provider` / `llm.connection` | Which LLM adapter, and its own connection details (opaque to `src/elysium/core/`). |
 | `llm.step_model` / `synthesis_model` | Which model handles step-selection vs. final answer writing. |
 | `agent.max_hops` | Hard ceiling on steps per question. |
-| `agent.max_concurrent_requests` | Thread pool size for `api/` and `scripts/serve_requests.py`. |
+| `agent.max_concurrent_requests` | Thread pool size for `src/elysium/api/` and `src/elysium/scripts/serve_requests.py`. |
 | `tools.enabled` | Which registered tools the LLM may call, by name. |
 
 ### 3.2 `data_silos.yaml` — where your data physically lives
@@ -295,7 +295,7 @@ Two things this makes possible, and one deliberate limit:
   unsafe: it commits through a durable, single-write log FIRST (one
   atomic write, regardless of how many storages the change spans),
   then applies each storage's own share of the change in order — see
-  `core/ontology/write_log.py`'s own module docstring for the full
+  `src/elysium/core/ontology/write_log.py`'s own module docstring for the full
   mechanism. A caller reading mid-write never observes a half-applied
   state.
 - **The deliberate limit**: a single search or field lookup may only
@@ -453,11 +453,11 @@ explicit — nothing is inherited from anything else**:
 | `create:<Type>` | May bring a new object into existence. Still needs `write:<Type>.<field>` for every field being set. |
 | `tool:<name>` | May invoke this specific tool. |
 | `execute:<ActionName>` | May invoke this one named, independently-governed action — the mutations it declares apply regardless of any individual `write:<Type>.<field>` grant, as long as every one of its sub-writes targets a single object type. A sub-write spanning more than one object type additionally needs its own `write:<Type>.<field>` grant per field touched, for each type involved. |
-| `discover:action_types` | A single, blanket grant (not per-action) — see the whole action-type catalog via `GET /me/visible-action-types`, including actions this role holds no `execute:` grant for. Matches a real, documented default found in production ontology-based platforms more closely than this project's own default posture, which is intentionally more conservative absent this grant: an unknown action and a real-but-unauthorized one otherwise look identical, by design (see `api/routes.py`'s own `propose_action_route`). A role holding this can still only *invoke* an action with its own, separate `execute:` grant — discovery and execution are genuinely separate axes here, matching that broader model. |
-| `manage:users` | May create new database-backed users via `api/`'s `/users` endpoint. |
+| `discover:action_types` | A single, blanket grant (not per-action) — see the whole action-type catalog via `GET /me/visible-action-types`, including actions this role holds no `execute:` grant for. Matches a real, documented default found in production ontology-based platforms more closely than this project's own default posture, which is intentionally more conservative absent this grant: an unknown action and a real-but-unauthorized one otherwise look identical, by design (see `src/elysium/api/routes.py`'s own `propose_action_route`). A role holding this can still only *invoke* an action with its own, separate `execute:` grant — discovery and execution are genuinely separate axes here, matching that broader model. |
+| `manage:users` | May create new database-backed users via `src/elysium/api/`'s `/users` endpoint. |
 
 - **`security_attribute`** — the *mandatory* boundary (MAC). A user can never see data outside their own value for this field, regardless of role.
-- **`users`** — static, only used by `scripts/run_deployment.py` (a simple demo/dev tool). The real running service (`api/`) never reads this section — see section 4.
+- **`users`** — static, only used by `src/elysium/scripts/run_deployment.py` (a simple demo/dev tool). The real running service (`src/elysium/api/`) never reads this section — see section 4.
 
 This is deliberately verbose. A role touching a dozen fields needs a
 dozen lines. That verbosity is the actual point — every one of those
@@ -467,23 +467,23 @@ thought about.
 ### 3.6 `example_queries.yaml` and your database
 
 `example_queries.yaml` is `user_id`/`query` pairs for
-`scripts/run_deployment.py`'s demo. Your database is whatever your
+`src/elysium/scripts/run_deployment.py`'s demo. Your database is whatever your
 chosen adapter's `connection` in `config.yaml` points at — for SQLite
 locally, see `deployment/var/lib/dev_fixtures/schema.sql` for the
 fixture pattern.
 
 ---
 
-## 4. Two ways to run this: `scripts/run_deployment.py` vs. `api/`
+## 4. Two ways to run this: `src/elysium/scripts/run_deployment.py` vs. `src/elysium/api/`
 
 These are **intentionally not unified**:
 
-- **`scripts/run_deployment.py`** is a simple demo/dev tool. It reads users directly from `policy.yaml`'s static `users:` section — no login, no password, just a list of example questions run as each named user in turn.
-- **`api/`** is the real, running HTTP service. Every user is a real login, created via `core/user_directory.py` (database-backed, runtime-mutable) and authenticated via `core/auth/` (argon2id password hashing, session tokens).
+- **`src/elysium/scripts/run_deployment.py`** is a simple demo/dev tool. It reads users directly from `policy.yaml`'s static `users:` section — no login, no password, just a list of example questions run as each named user in turn.
+- **`src/elysium/api/`** is the real, running HTTP service. Every user is a real login, created via `src/elysium/core/user_directory.py` (database-backed, runtime-mutable) and authenticated via `src/elysium/core/auth/` (argon2id password hashing, session tokens).
 
 ```bash
 # Local dev, against the venv set up in INSTALL.md's own section 2:
-uvicorn api.app:app --reload
+uvicorn elysium.api.app:app --reload
 ```
 
 **Writes are real, and genuinely two-phase.** `POST /query` may return
@@ -491,7 +491,7 @@ a `202 Accepted` with a `pending_write` reference instead of an answer
 — nothing has been written yet. A separate, later request,
 `POST /writes/{write_id}/confirm` (`{"approved": true}` or `false`),
 is what actually approves or rejects it. This mirrors
-`scripts/run_deployment.py`'s terminal confirmation prompt, adapted for
+`src/elysium/scripts/run_deployment.py`'s terminal confirmation prompt, adapted for
 a remote caller — a synchronous "type y/n" pause has no meaning over
 HTTP, so proposing and confirming are genuinely separate requests,
 possibly minutes apart. Proposed writes expire on their own (15
@@ -503,9 +503,9 @@ minutes) if never confirmed.
 
 | To add... | Implement | Register in |
 |---|---|---|
-| A new database technology | `core/ontology/interface.py`'s `ExternalReadAdapter` (and `ExternalWriteAdapter` to accept writes) | `core/deployment_loader.py`'s `_READ_ADAPTER_REGISTRY` (and `_WRITE_ADAPTER_REGISTRY`) |
-| A new LLM backend | `core/llm/interface.py`'s `LLMAdapter` | `core/deployment_loader.py`'s `_LLM_ADAPTER_REGISTRY` |
-| A new tool | `core/functions/interface.py`'s `Function` | `core/functions/registry.py`'s registry |
+| A new database technology | `src/elysium/core/ontology/interface.py`'s `ExternalReadAdapter` (and `ExternalWriteAdapter` to accept writes) | `src/elysium/core/deployment_loader.py`'s `_READ_ADAPTER_REGISTRY` (and `_WRITE_ADAPTER_REGISTRY`) |
+| A new LLM backend | `src/elysium/core/llm/interface.py`'s `LLMAdapter` | `src/elysium/core/deployment_loader.py`'s `_LLM_ADAPTER_REGISTRY` |
+| A new tool | `src/elysium/core/functions/interface.py`'s `Function` | `src/elysium/core/functions/registry.py`'s registry |
 
 For a whole new sub-app (a new top-level screen in `ui/`, not a new
 backend extension point), check `BLOCKING.md` and `DEV_UI.md` first —
@@ -540,7 +540,7 @@ is explicit, fail-safe, and never inferred" section.
   being given, when ANY field it was written from changes -- so on an
   object whose fields change daily, memories go stale daily.
 - **One machine.** Several workers on one machine are supported and
-  checked (`python -m scripts.check_workers`): they coordinate through
+  checked (`python -m elysium.scripts.check_workers`): they coordinate through
   SQLite and file locks on a shared data directory. Several machines
   sharing one data directory is not supported -- those locks are not
   reliable over a network filesystem.
@@ -559,7 +559,7 @@ gap.
 
 ### What this list used to say, and no longer does
 
-**"Cross-silo links aren't supported."** They are. `core/mirror/
+**"Cross-silo links aren't supported."** They are. `src/elysium/core/mirror/
 fusion.py` assembles one object type from several storages — a
 `Customer` built from `primary_sql.customers` and
 `risk_db.risk_scores` is a declared join, because every property has

@@ -44,6 +44,9 @@
 set -u
 STATUS=0
 
+# SRC LAYOUT: `elysium` lives in src/, so it resolves without an install.
+export PYTHONPATH="src${PYTHONPATH:+:$PYTHONPATH}"
+
 echo "--- ruff check ---"
 ruff check || STATUS=1
 
@@ -64,14 +67,14 @@ echo "--- lock files ---"
 # drift printed its warning directly above "All checks passed." and the
 # script exited 0 (004-F1). tests/unit/test_lint_script.py now checks
 # every step sets the variable the script exits with.
-python3 -m scripts.check_lockfiles || STATUS=1
+python3 -m elysium.scripts.check_lockfiles || STATUS=1
 
 echo "--- import-linter ---"
 # PYTHONPATH=sim SO `simulator` RESOLVES. The simulator's package
 # lives at sim/simulator and is named `simulator` in its contracts --
 # import-linter imports what it analyses, and without this it reports
 # "Could not find package 'simulator' in your Python path."
-PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}sim" lint-imports || STATUS=1
+PYTHONPATH="$PYTHONPATH:sim" lint-imports || STATUS=1
 
 echo
 if [ "$STATUS" -eq 0 ]; then

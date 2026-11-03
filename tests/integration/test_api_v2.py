@@ -17,7 +17,7 @@ import json
 
 import pytest
 
-from api.v2 import paging
+from elysium.api.v2 import paging
 
 PROBLEM = "application/problem+json"
 CUSTOMERS = {"type": "base", "objectType": "Customer"}
@@ -454,7 +454,7 @@ class TestObjectSets:
 
     def test_the_depth_cap_is_a_400(self, client):
         login(client, "v2deep")
-        from core.ontology.object_sets import MAX_SET_DEPTH
+        from elysium.core.ontology.object_sets import MAX_SET_DEPTH
 
         node = CUSTOMERS
         for _ in range(MAX_SET_DEPTH):
@@ -555,7 +555,7 @@ class TestWhatAnErrorMayReveal:
             assert "link" not in response.text and "primary_sql" not in response.text
 
     def test_a_request_that_reads_too_many_objects_is_refused_not_cut_short(self, client, monkeypatch):
-        from core.ontology import object_sets as sets
+        from elysium.core.ontology import object_sets as sets
 
         monkeypatch.setattr(sets, "MAX_SCANNED_ROWS", 15_000)
         login(client, "v2scanned")
@@ -577,7 +577,7 @@ class TestErrorsAndTheRequestId:
         assert trace.status_code == 200 and trace.json()
 
     def test_the_error_instance_id_is_the_request_id_the_call_was_given(self, client, monkeypatch):
-        from core.request_context import RequestContext
+        from elysium.core.request_context import RequestContext
 
         fixed = RequestContext(request_id="req-fixed-0001")
         monkeypatch.setattr(RequestContext, "new", classmethod(lambda cls, deadline_seconds=None: fixed))

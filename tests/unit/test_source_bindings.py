@@ -25,8 +25,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from core.deployment_loader import load_deployment
-from core.ontology.bindings import merge_bindings, split_bindings
+from elysium.core.deployment_loader import load_deployment
+from elysium.core.ontology.bindings import merge_bindings, split_bindings
 
 DECLARATION = {
     "Customer": {

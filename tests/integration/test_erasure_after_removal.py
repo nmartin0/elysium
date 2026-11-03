@@ -19,9 +19,9 @@ import sqlite3
 import pyarrow.parquet as pq
 import yaml
 
-from core.deployment_loader import load_deployment
-from core.mirror.catalog import open_mirror_catalog
-from core.mirror.erasure import (
+from elysium.core.deployment_loader import load_deployment
+from elysium.core.mirror.catalog import open_mirror_catalog
+from elysium.core.mirror.erasure import (
     KEY_COLUMNS_PROPERTY,
     ErasureRegister,
     apply_erasures,
@@ -29,7 +29,7 @@ from core.mirror.erasure import (
     recorded_key_columns,
     survey,
 )
-from scripts.erase import run as erase
+from elysium.scripts.erase import run as erase
 from tests.integration.test_removal_from_the_ui import (  # noqa: F401 - fixtures
     _remove_tag_and_sync_again,
     _sync,
@@ -152,7 +152,7 @@ class TestATableWrittenBeforeTheRecordExisted:
         register = ErasureRegister(tag_lake.data_dir / "erasures.db")
         register.record([("Customer", "no-such-customer")], "tester", "test")
 
-        with caplog.at_level(logging.WARNING, logger="core.mirror.erasure"):
+        with caplog.at_level(logging.WARNING, logger="elysium.core.mirror.erasure"):
             result = apply_erasures(catalog, config.schema, register,
                                     tag_lake.data_dir / "mirror")
 
@@ -232,14 +232,14 @@ class TestWhatTheRegisterAndTheSyncSay:
         assert code == 2
         assert register.incomplete() == ["gold.Tag", "primary_sql.tags"]
         assert not register.unpurged()                    # applied to what could be searched
-        from scripts.erase import list_erasures
+        from elysium.scripts.erase import list_erasures
         listed = io.StringIO()
         with contextlib.redirect_stdout(listed):
             list_erasures(tag_lake)
         assert "INCOMPLETE: gold.Tag, primary_sql.tags" in listed.getvalue()
 
     def test_every_later_sync_says_so_and_it_clears_when_they_can_be_searched(self, tag_lake):  # noqa: F811
-        from scripts.run_sync import run_sync
+        from elysium.scripts.run_sync import run_sync
 
         self._incomplete_erasure(tag_lake)
         errors = io.StringIO()
@@ -258,7 +258,7 @@ class TestWhatTheRegisterAndTheSyncSay:
 def _remove_tag_through_the_ui(paths, strip=False, notices=None, before_removal=None):
     """Sync, optionally make every table as an older sync left it, then remove
     Tag as a person would -- and NO sync afterwards."""
-    from api.app import create_app
+    from elysium.api.app import create_app
     from tests.integration.test_removal_from_the_ui import TAG, TAGS_LINK, TestClient, _deprecate, _login
     from tests.integration.test_removal_from_the_ui import _remove as remove
 
@@ -299,11 +299,11 @@ class TestRemovingATypeRecordsItsTablesFirst:
 
     def test_a_removal_with_an_unreadable_lake_goes_ahead_and_says_what_it_could_not_record(
             self, tag_lake, monkeypatch):  # noqa: F811
-        import api.routes
+        import elysium.api.routes
 
         def unreadable(request):
             raise OSError("the lake is not there")
-        monkeypatch.setattr(api.routes, "_mirror_catalog_for", unreadable)
+        monkeypatch.setattr(elysium.api.routes, "_mirror_catalog_for", unreadable)
         notices: list = []
 
         client = _remove_tag_through_the_ui(tag_lake, notices=notices)
@@ -316,11 +316,11 @@ class TestRemovingATypeRecordsItsTablesFirst:
             self, tag_lake, monkeypatch):  # noqa: F811
         import contextlib as _contextlib
 
-        import api.routes
-        import core.mirror.sync_lock
+        import elysium.api.routes
+        import elysium.core.mirror.sync_lock
 
         recorded: list = []
-        monkeypatch.setattr("core.mirror.erasure.record_key_columns",
+        monkeypatch.setattr("elysium.core.mirror.erasure.record_key_columns",
                             lambda *args, **kwargs: recorded.append(args))
 
         @_contextlib.contextmanager
@@ -330,19 +330,19 @@ class TestRemovingATypeRecordsItsTablesFirst:
 
         _remove_tag_through_the_ui(
             tag_lake, notices=notices,
-            before_removal=lambda client: monkeypatch.setattr(core.mirror.sync_lock, "single_writer", busy))
+            before_removal=lambda client: monkeypatch.setattr(elysium.core.mirror.sync_lock, "single_writer", busy))
 
-        assert api.routes and recorded == []
+        assert elysium.api.routes and recorded == []
         assert all(notice and "A sync was running" in notice and "--adopt-all-current" in notice
                    for notice in notices)
 
     def test_approving_a_waiting_change_records_the_tables_first_too(self, tag_lake, monkeypatch):  # noqa: F811
         """Every path that can drop a type takes the record first, not only the removal."""
-        import api.routes
+        import elysium.api.routes
 
         calls: list = []
-        real = api.routes._record_erasure_keys_before
-        monkeypatch.setattr(api.routes, "_record_erasure_keys_before",
+        real = elysium.api.routes._record_erasure_keys_before
+        monkeypatch.setattr(elysium.api.routes, "_record_erasure_keys_before",
                             lambda request: calls.append("recorded") or real(request))
         policy = yaml.safe_load((tag_lake.config_dir / "policy.yaml").read_text())
         policy["roles"]["approver"] = {"allowed_actions": ["manage:roles"]}
@@ -350,8 +350,8 @@ class TestRemovingATypeRecordsItsTablesFirst:
         client = _remove_tag_through_the_ui(tag_lake)
         calls.clear()
         ontology = (tag_lake.config_dir / "ontology_schema.yaml").read_text()
-        from core.config_editing import digest
-        from core.config_proposals import ConfigProposalStore
+        from elysium.core.config_editing import digest
+        from elysium.core.config_proposals import ConfigProposalStore
         from tests.integration.test_removal_from_the_ui import _csrf_headers, _login
         proposal_id = ConfigProposalStore(
             tag_lake.data_dir / "config_proposals.db").propose(
@@ -376,7 +376,7 @@ class TestRemovingATypeRecordsItsTablesFirst:
 
 class TestAdoptingALegacyTable:
     def test_keys_and_ids_for_one_column_are_both_kept_and_a_link_alone_makes_a_key(self, tag_lake):  # noqa: F811
-        from scripts.erase import adopt
+        from elysium.scripts.erase import adopt
 
         _remove_tag_and_sync_again(tag_lake)
         catalog = open_mirror_catalog(tag_lake.data_dir / "mirror")
@@ -387,7 +387,7 @@ class TestAdoptingALegacyTable:
         assert "Customer" in recorded_key_columns(catalog.load_table("gold_history.Tag"))["tag_id"]
 
     def test_the_operators_statement_makes_the_tables_searchable_and_complete(self, tag_lake):  # noqa: F811
-        from scripts.erase import adopt
+        from elysium.scripts.erase import adopt
 
         _remove_tag_and_sync_again(tag_lake)
         legacy = ["bronze_primary_sql.tags", "primary_sql.tags", "gold.Tag", "gold_history.Tag",
@@ -460,7 +460,7 @@ class TestWriteRefusesWhileATableCannotBeFullySearched:
 class TestAdoptingEverythingTheOntologyMaps:
     def test_it_needs_the_confirmation_and_never_adopts_a_table_the_ontology_does_not_know(
             self, tag_lake):  # noqa: F811
-        from scripts.erase import adopt_everything_current
+        from elysium.scripts.erase import adopt_everything_current
 
         _remove_tag_and_sync_again(tag_lake)
         catalog = open_mirror_catalog(tag_lake.data_dir / "mirror")
@@ -509,7 +509,7 @@ class TestVouchingForUnmappedColumnsNeedsATypedPhrase:
         """The real main(): argument parsing, the prompt, the adoption."""
         import sys
 
-        import scripts.erase as erase_script
+        import elysium.scripts.erase as erase_script
 
         monkeypatch.setattr(erase_script, "resolve_runtime_paths", lambda: tag_lake)
         monkeypatch.setattr(sys, "argv", ["erase", "--adopt-all-current",
@@ -524,7 +524,7 @@ class TestVouchingForUnmappedColumnsNeedsATypedPhrase:
         return code, printed.getvalue(), errors.getvalue()
 
     def _unmapped_table(self, catalog):
-        from core.mirror.erasure import preview_adopt_all_current
+        from elysium.core.mirror.erasure import preview_adopt_all_current
 
         config = load_deployment(self._paths.config_dir)
         plan, _ = preview_adopt_all_current(catalog, config.schema, True)

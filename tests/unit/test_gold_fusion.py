@@ -17,10 +17,10 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.fusion import FUSED_FROM_COLUMN, fields_by_storage, fuse
-from core.mirror.gold import build_gold
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.fusion import FUSED_FROM_COLUMN, fields_by_storage, fuse
+from elysium.core.mirror.gold import build_gold
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 TYPE = {
     "id_field": "customer_id",

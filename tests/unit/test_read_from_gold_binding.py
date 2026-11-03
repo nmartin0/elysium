@@ -25,10 +25,10 @@ import shutil
 import pytest
 import yaml
 
-from core.deployment_loader import RuntimePaths, build_generation
-from core.intermediate_layer.auth import UserRecord
-from core.mirror.gold_connector import GoldConnector
-from scripts.run_sync import run_sync
+from elysium.core.access.auth import UserRecord
+from elysium.core.deployment_loader import RuntimePaths, build_generation
+from elysium.core.mirror.gold_connector import GoldConnector
+from elysium.scripts.run_sync import run_sync
 
 DEBUG = UserRecord("debug", "us-west", "debug")
 
@@ -52,7 +52,7 @@ def deployment(tmp_path, synced_deployment):
             # A DEPLOYMENT THAT HAS NEVER SYNCED, seeded like the
             # fixture but with no mirror and no gold -- copying the
             # synced one would bring gold with it and prove nothing.
-            import scripts.seed_dev_silos as seed
+            import elysium.scripts.seed_dev_silos as seed
             data_dir.mkdir(parents=True)
             for schema_name, db_name in seed.DATABASES:
                 seed.build(seed.FIXTURES / schema_name, data_dir / "dev_fixtures" / db_name)
@@ -106,7 +106,7 @@ class TestWhatStopsTheDeployment:
         boot. So the deployment builds, the log says what is missing,
         and a READ of that type raises rather than quietly answering
         from the source."""
-        from core.mirror.gold_connector import GoldPublicationMissing
+        from elysium.core.mirror.gold_connector import GoldPublicationMissing
         paths = deployment(sync=False, name="unsynced")
 
         generation = build_generation(paths.config_dir, paths.data_dir, paths.log_dir,
@@ -126,7 +126,7 @@ class TestWhatStopsTheDeployment:
 
     def test_a_vanished_gold_table_fails_LOUDLY_rather_than_falling_back(self, deployment):
         """The case that used to fall back silently for one type."""
-        from core.mirror.gold_connector import GoldPublicationMissing
+        from elysium.core.mirror.gold_connector import GoldPublicationMissing
         paths = deployment(name="vanished")
         generation = build_generation(paths.config_dir, paths.data_dir, paths.log_dir)
         generation.mediator.adapters["gold"]._reader._catalog.drop_table("gold.Transaction")

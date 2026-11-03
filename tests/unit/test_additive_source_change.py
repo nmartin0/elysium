@@ -22,9 +22,9 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.lineage import LINEAGE_COLUMNS
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.lineage import LINEAGE_COLUMNS
 
 TYPES = {"customer_id": "string", "name": "string", "region": "string"}
 

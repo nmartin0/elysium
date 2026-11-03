@@ -34,7 +34,7 @@ transposed figure look exactly like data.
 
 import pytest
 
-from scripts.suggest_declarations import (
+from elysium.scripts.suggest_declarations import (
     ABSENCE,
     RANGE,
     _looks_absent,

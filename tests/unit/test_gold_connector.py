@@ -19,13 +19,13 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.filters import FieldFilter
-from core.mirror.gold import build_gold
-from core.mirror.gold_connector import GoldConnector, GoldPublicationMissing
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.mirror_adapter import MirrorReadAdapter
-from core.ontology.gold_view import build_gold_view
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.filters import FieldFilter
+from elysium.core.mirror.gold import build_gold
+from elysium.core.mirror.gold_connector import GoldConnector, GoldPublicationMissing
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.mirror_adapter import MirrorReadAdapter
+from elysium.core.ontology.gold_view import build_gold_view
 
 SCHEMA = {
     "Customer": {
@@ -221,7 +221,7 @@ class TestItIsNotAnAdapter:
         assert not issubclass(GoldConnector, MirrorReadAdapter)
 
     def test_and_shares_the_iceberg_machinery_rather_than_copying_it(self):
-        from core.mirror.iceberg_reader import IcebergNamespaceReader
+        from elysium.core.mirror.iceberg_reader import IcebergNamespaceReader
 
         source = inspect.getsource(GoldConnector)
 

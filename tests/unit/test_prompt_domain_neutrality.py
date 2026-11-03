@@ -36,8 +36,8 @@ examples teach the RIGHT things, not what their nouns are.
 
 import re
 
-from core.llm.agent_step_prompt import _build_system_prompt
-from core.llm.synthesis_prompt import SYSTEM_PROMPT
+from elysium.core.llm.agent_step_prompt import _build_system_prompt
+from elysium.core.llm.synthesis_prompt import SYSTEM_PROMPT
 
 # Nouns from THIS deployment's ontology. A prompt naming them is
 # teaching one deployment's domain to every deployment.

@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS = ["scripts/create_debug_user.py", "scripts/create_e2e_users.py"]
+SCRIPTS = ["src/elysium/scripts/create_debug_user.py", "src/elysium/scripts/create_e2e_users.py"]
 
 
 class TestOneGuardNotThree:
@@ -67,29 +67,29 @@ class TestTheWordingStaysPerScript:
     def test_the_two_scripts_say_different_things(self):
         """A generic warning would say less than either. The debug user
         gets every grant; the e2e users have known passwords."""
-        debug = Path("scripts/create_debug_user.py").read_text()
-        e2e = Path("scripts/create_e2e_users.py").read_text()
+        debug = Path("src/elysium/scripts/create_debug_user.py").read_text()
+        e2e = Path("src/elysium/scripts/create_e2e_users.py").read_text()
 
         assert "every grant the " in debug
         assert "browser " in e2e
 
     def test_each_names_its_own_command(self):
         """The refusal tells the reader how to re-run THIS script."""
-        debug = Path("scripts/create_debug_user.py").read_text()
-        e2e = Path("scripts/create_e2e_users.py").read_text()
+        debug = Path("src/elysium/scripts/create_debug_user.py").read_text()
+        e2e = Path("src/elysium/scripts/create_e2e_users.py").read_text()
 
-        assert "scripts.create_debug_user" in debug
-        assert "scripts.create_e2e_users" in e2e
+        assert "elysium.scripts.create_debug_user" in debug
+        assert "elysium.scripts.create_e2e_users" in e2e
 
 
 class TestTheGuardItself:
     def test_it_returns_true_when_the_flag_is_absent(self):
-        from core.auth.development_only import refuse_unless_development
+        from elysium.core.auth.development_only import refuse_unless_development
 
         assert refuse_unless_development("m", "x", argv=["prog"]) is True
 
     def test_it_returns_false_when_the_flag_is_present(self):
-        from core.auth.development_only import refuse_unless_development
+        from elysium.core.auth.development_only import refuse_unless_development
 
         assert refuse_unless_development(
             "m", "x", argv=["prog", "--yes-this-is-development"]) is False

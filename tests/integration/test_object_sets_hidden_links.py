@@ -27,10 +27,10 @@ import types
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord, resolve_user_record
-from core.ontology import mediator as mediator_module
-from core.ontology import object_sets as sets
-from core.ontology.object_sets import (
+from elysium.core.access.auth import UserRecord, resolve_user_record
+from elysium.core.ontology import mediator as mediator_module
+from elysium.core.ontology import object_sets as sets
+from elysium.core.ontology.object_sets import (
     ObjectSetError,
     OrderTerm,
     SchemaView,

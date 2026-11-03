@@ -20,7 +20,7 @@ import sys
 
 import pytest
 
-from scripts.lint_deployment import lint_deployment
+from elysium.scripts.lint_deployment import lint_deployment
 
 VALID_CONFIG_YAML = """
 llm:
@@ -251,7 +251,7 @@ def test_two_bad_grants_in_the_same_role_get_their_own_distinct_lines(tmp_path, 
 
 
 def test_find_yaml_position_returns_none_for_a_path_that_does_not_exist():
-    from scripts.lint_deployment import _find_yaml_position
+    from elysium.scripts.lint_deployment import _find_yaml_position
     assert _find_yaml_position("a:\n  b: 1\n", ["a", "does_not_exist"]) is None
 
 
@@ -417,7 +417,7 @@ def test_main_exits_with_the_right_code(tmp_path, cli_exit_expectation):
     # else: leave tmp_path empty -- config.yaml missing, guaranteed invalid.
 
     result = subprocess.run(
-        [sys.executable, "-m", "scripts.lint_deployment", str(tmp_path)],
+        [sys.executable, "-m", "elysium.scripts.lint_deployment", str(tmp_path)],
         capture_output=True, text=True, cwd=".",
     )
 
@@ -429,7 +429,7 @@ def test_main_exits_with_the_right_code(tmp_path, cli_exit_expectation):
 # These two exist because validate_action_type_criteria() is a SEPARATE
 # call from validate_action_types() -- core/ontology/action_types.py may
 # not import core/ontology/submission_criteria.py, they are siblings in
-# core.ontology's layering. A separate call can be forgotten, so this is
+# elysium.core.ontology's layering. A separate call can be forgotten, so this is
 # the test that fails if it ever is.
 
 _ONTOLOGY_WITH_CRITERION = """

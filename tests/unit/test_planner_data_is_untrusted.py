@@ -33,8 +33,8 @@ model calls was the only one warned.
 
 import json
 
-from core.llm.agent_step_prompt import _build_system_prompt
-from core.llm.prompt_values import dumps_gathered
+from elysium.core.llm.agent_step_prompt import _build_system_prompt
+from elysium.core.llm.prompt_values import dumps_gathered
 
 SCHEMA = {
     "Customer": {
@@ -191,7 +191,7 @@ def test_a_planning_call_omits_the_framing_entirely():
     5,675-character prompt, against 3.7s to load the model. This
     paragraph costs about 43 seconds of every cold planning call.
     """
-    from core.llm.agent_step_prompt import _build_system_prompt as build
+    from elysium.core.llm.agent_step_prompt import _build_system_prompt as build
 
     step_prompt = build(SCHEMA, [], False, {})
     plan_prompt = build(SCHEMA, [], False, {}, data_is_shown=False)
@@ -205,7 +205,7 @@ def test_the_step_path_still_gets_it():
     """THE HALF THAT MUST NOT CHANGE. The step loop IS shown field
     values, every hop, so the framing is exactly as necessary there as
     it was when AL-2 added it."""
-    from core.llm.agent_step_prompt import _build_system_prompt as build
+    from elysium.core.llm.agent_step_prompt import _build_system_prompt as build
 
     default = build(SCHEMA, [], False, {})
 
@@ -220,7 +220,7 @@ def test_next_plan_asks_for_the_shorter_prompt():
     whether the CALLER passes the flag."""
     import json
 
-    from core.llm.agent_step_prompt import next_plan
+    from elysium.core.llm.agent_step_prompt import next_plan
 
     seen = {}
 

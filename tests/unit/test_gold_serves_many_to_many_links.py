@@ -30,16 +30,16 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.intermediate_layer.auth import UserRecord
-from core.mirror.gold import build_gold, published_snapshot_ids
-from core.mirror.gold_connector import GoldConnector
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.sync_targets import resolve_sync_targets
-from core.ontology.gold_view import build_gold_view
-from core.ontology.link_types import expand_link_types
-from core.ontology.mediator import DataMediator
-from scripts.run_sync import _publish_link_tables
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.access.auth import UserRecord
+from elysium.core.mirror.gold import build_gold, published_snapshot_ids
+from elysium.core.mirror.gold_connector import GoldConnector
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.sync_targets import resolve_sync_targets
+from elysium.core.ontology.gold_view import build_gold_view
+from elysium.core.ontology.link_types import expand_link_types
+from elysium.core.ontology.mediator import DataMediator
+from elysium.scripts.run_sync import _publish_link_tables
 
 OBJECT_TYPES = {
     "Customer": {"storage": {"silo": "p", "table": "customers",

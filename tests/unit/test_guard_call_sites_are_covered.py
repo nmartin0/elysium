@@ -37,8 +37,8 @@ from pathlib import Path
 
 import pytest
 
-ACTION_TYPES = Path("core/ontology/action_types.py").read_text()
-AGENTIC_LOOP = Path("core/agent/agentic_loop.py").read_text()
+ACTION_TYPES = Path("src/elysium/core/ontology/action_types.py").read_text()
+AGENTIC_LOOP = Path("src/elysium/core/agent/agentic_loop.py").read_text()
 
 
 def _enclosing_function(source: str, guard: str) -> str:

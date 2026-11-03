@@ -15,12 +15,12 @@ import subprocess
 import pytest
 import requests
 
-import adapters.claude_agent_sdk_adapter as claude_module
-import adapters.ollama_adapter as ollama_module
-from adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
-from adapters.ollama_adapter import OllamaAdapter
-from adapters.vllm_adapter import VLLMAdapter
-from core.request_context import CallRecord, TokenUsage
+import elysium.adapters.claude_agent_sdk_adapter as claude_module
+import elysium.adapters.ollama_adapter as ollama_module
+from elysium.adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
+from elysium.adapters.ollama_adapter import OllamaAdapter
+from elysium.adapters.vllm_adapter import VLLMAdapter
+from elysium.core.request_context import CallRecord, TokenUsage
 
 
 def _answering(body):
@@ -181,8 +181,8 @@ class _Recording:
 
 class TestEachCallSaysWhatItIsFor:
     def test_a_step_a_plan_and_an_answer(self):
-        from core.llm.agent_step_prompt import next_plan, next_step
-        from core.llm.synthesis_prompt import synthesize_insight
+        from elysium.core.llm.agent_step_prompt import next_plan, next_step
+        from elysium.core.llm.synthesis_prompt import synthesize_insight
 
         schema = {"Customer": {"id_field": "customer_id", "fields": {"name": {"type": "data"}}}}
         usage = TokenUsage()

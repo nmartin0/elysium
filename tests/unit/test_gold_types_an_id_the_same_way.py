@@ -37,11 +37,11 @@ import sqlite3
 import pyarrow as pa
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.gold import _arrow, build_gold, published_snapshot_ids
-from core.mirror.gold_arrow import conform_arrow
-from core.mirror.gold_connector import GoldConnector
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.gold import _arrow, build_gold, published_snapshot_ids
+from elysium.core.mirror.gold_arrow import conform_arrow
+from elysium.core.mirror.gold_connector import GoldConnector
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 TYPE = {
     "id_field": "id", "security": {"field": "v"},

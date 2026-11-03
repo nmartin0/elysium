@@ -5,7 +5,7 @@ pairs at build time; group_if_approved computes the same closure at
 decision time, so a reviewer can be shown it first.
 """
 
-from core.identity_decisions import APPROVED, REJECTED, MergeDecisionStore
+from elysium.core.identity_decisions import APPROVED, REJECTED, MergeDecisionStore
 
 
 def _store(tmp_path):

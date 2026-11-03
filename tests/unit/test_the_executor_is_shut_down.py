@@ -25,7 +25,7 @@ property and a coincidence.
 
 from pathlib import Path
 
-SOURCE = Path("api/app.py").read_text()
+SOURCE = Path("src/elysium/api/app.py").read_text()
 
 
 class TestItIsWiredIn:

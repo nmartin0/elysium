@@ -22,7 +22,7 @@ pattern -- no new dependency needed for one file.
 import asyncio
 import json
 
-from api.request_size_limit_middleware import RequestSizeLimitMiddleware
+from elysium.api.request_size_limit_middleware import RequestSizeLimitMiddleware
 
 
 def _http_scope(headers: list[tuple[bytes, bytes]] | None = None) -> dict:

@@ -11,8 +11,8 @@ import json
 
 import pytest
 
-from api.v2 import paging
-from api.v2.paging import InvalidToken, fingerprint, issue, page_size, redeem
+from elysium.api.v2 import paging
+from elysium.api.v2.paging import InvalidToken, fingerprint, issue, page_size, redeem
 
 KEY = b"k" * 32
 QUERY = fingerprint({"type": "base", "objectType": "Customer"}, [], [])

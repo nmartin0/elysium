@@ -22,7 +22,7 @@ to what THIS user may see.
 
 import pytest
 
-from core.agent.agentic_loop import AgentLoop
+from elysium.core.agent.agentic_loop import AgentLoop
 
 SCHEMA = {
     "Transaction": {"fields": {"amount": {}, "category": {}, "currency": {}}},

@@ -4,7 +4,7 @@ it are protected by convention rather than by structure (001's F-12b).
 WHAT WENT WRONG. login_attempt_tracker.is_locked_out() explained why
 it leaves an expired row in place and added: "this is now a
 STRUCTURALLY read-only connection besides -- it couldn't delete even
-if it tried". It could. `core.auth.database.connection()` reaches
+if it tried". It could. `elysium.core.auth.database.connection()` reaches
 `open_connection()` with `read_only` defaulting to False, which it
 MUST, because `connection_with_schema()` runs CREATE TABLE IF NOT
 EXISTS and column migrations through the same handle -- and
@@ -35,8 +35,8 @@ from pathlib import Path
 
 import pytest
 
-from core.auth.database import connection
-from core.auth.login_attempt_tracker import LoginAttemptTracker
+from elysium.core.auth.database import connection
+from elysium.core.auth.login_attempt_tracker import LoginAttemptTracker
 
 
 @pytest.fixture
@@ -114,7 +114,7 @@ def test_a_genuinely_read_only_connection_would_refuse(db_path):
     above are about THIS handle rather than about SQLite lacking the
     ability. Without it, "the connection can write" could be read as
     "nothing here can ever be protected"."""
-    from core.sqlite_connection import open_connection
+    from elysium.core.sqlite_connection import open_connection
 
     with connection(db_path):
         pass  # create the schema first; a read-only handle cannot

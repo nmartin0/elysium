@@ -25,12 +25,12 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteWriteAdapter
-from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
-from core.filters import as_equality_conditions
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.mediator import DataMediator
-from core.ontology.write_log import WriteLogWriter
+from elysium.adapters.sqlite_adapter import SQLiteWriteAdapter
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from elysium.core.filters import as_equality_conditions
+from elysium.core.ontology.mediator import DataMediator
+from elysium.core.ontology.write_log import WriteLogWriter
 
 TEST_SCHEMA = {
     "Widget": {
@@ -132,7 +132,7 @@ def test_rbac_blocks_one_silo_entirely_while_the_other_still_works(mediator):
 
 
 def test_an_action_to_one_silo_never_touches_the_other(mediator):
-    from core.ontology.write_mediator import WriteMediator
+    from elysium.core.ontology.write_mediator import WriteMediator
 
     roles = {**TEST_ROLES, "widget_writer": {"allowed_actions": [
         "read:Widget", "read:Widget.widget_id", "execute:RenameWidget",

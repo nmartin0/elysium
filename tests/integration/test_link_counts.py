@@ -15,7 +15,7 @@ count of what merely EXISTS would do.
 """
 
 
-from core.intermediate_layer.auth import UserRecord
+from elysium.core.access.auth import UserRecord
 
 ALICE = UserRecord("alice", "us-west", "customer_service")
 
@@ -54,7 +54,7 @@ def test_the_count_matches_what_expansion_returns(mediator):
     no number -- it is the surprise this feature exists to prevent,
     arriving with false confidence attached.
     """
-    from core.filters import parse_filters
+    from elysium.core.filters import parse_filters
 
     counts = mediator.link_counts(ALICE, "Customer", "cust_001")
     expanded = mediator.search_around(
@@ -142,7 +142,7 @@ def test_the_mediator_carries_it_to_the_caller(mediator):
     fourth time this session that a gap hid behind tests that stopped
     one layer short.
     """
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.core.access.auth import UserRecord
 
     # A REPLACEMENT SCHEMA, because the loaded one is deep-frozen -- a
     # mappingproxy, deliberately, so nothing can mutate the ontology at
@@ -168,7 +168,7 @@ def test_the_mediator_carries_it_to_the_caller(mediator):
 def test_a_field_without_one_reports_none(mediator):
     # Absent must arrive as absent rather than as a default, or the UI
     # cannot tell "no opinion" from "zero places".
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.core.access.auth import UserRecord
 
     fields = mediator.visible_schema(UserRecord("alice", "us-west", "customer_service"))
     assert fields["Customer"]["fields"]["name"]["decimal_places"] is None

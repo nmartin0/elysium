@@ -110,7 +110,7 @@ class TestTheApplyWindow:
         """THE NARROWER WINDOW F-27 NAMED. Marked applied FIRST, a crash
         before the index row left an applied delete that resume SKIPS.
         Marking LAST, a crash there leaves a pending entry resume finds."""
-        from core.ontology.write_mediator import SubWrite
+        from elysium.core.ontology.write_mediator import SubWrite
 
         wl = wm.write_log
         real_record = wl.record_delete

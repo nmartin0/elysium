@@ -17,7 +17,7 @@ proof of, the second -- which is why the bench has a --constrain arm.
 import jsonschema
 import pytest
 
-from core.llm.step_schema import step_schema
+from elysium.core.llm.step_schema import step_schema
 
 SCHEMA = {
     "Customer": {
@@ -148,19 +148,19 @@ class TestItReachesTheServer:
         attribute it lacked."""
         from unittest.mock import Mock, patch
 
-        from adapters.ollama_adapter import OllamaAdapter
+        from elysium.adapters.ollama_adapter import OllamaAdapter
 
         response = Mock()
         response.json.return_value = {"message": {"content": "{}"}}
         response.raise_for_status.return_value = None
         schema = {"anyOf": [{"type": "object"}]}
-        with patch("adapters.http_transport.post", return_value=response) as post:
+        with patch("elysium.adapters.http_transport.post", return_value=response) as post:
             OllamaAdapter("m", {"base_url": "http://x"}).chat("s", "u", json_mode=schema)
 
         assert post.call_args.kwargs["json"]["format"] == schema
 
     def test_next_step_passes_a_schema_only_when_constrained(self):
-        from core.llm.agent_step_prompt import next_step
+        from elysium.core.llm.agent_step_prompt import next_step
 
         seen = []
 
@@ -183,7 +183,7 @@ class TestThePlanSchema:
     """The bench's plan-mode failures, 2026-10-11, verbatim in shape."""
 
     def _admits(self, plan, max_steps=8):
-        from core.llm.step_schema import plan_schema
+        from elysium.core.llm.step_schema import plan_schema
 
         try:
             jsonschema.validate(plan, plan_schema(SCHEMA, [], False, {}, max_steps))

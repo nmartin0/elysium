@@ -11,14 +11,14 @@ first person to use that action.
 The two call-site tests at the bottom are the ones that matter most.
 validate_action_type_criteria() has to be CALLED by whatever loads a
 deployment, because core/ontology/action_types.py may not import it --
-they are siblings in core.ontology's layering. That makes it
+they are siblings in elysium.core.ontology's layering. That makes it
 forgettable in a way action_types.py's own checks are not, so each
 caller gets a test that fails if the call is dropped.
 """
 
 import pytest
 
-from core.ontology.submission_criteria import (
+from elysium.core.ontology.submission_criteria import (
     _OPERATORS,
     Criterion,
     OperatorName,

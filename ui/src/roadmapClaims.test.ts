@@ -28,7 +28,7 @@ import { describe, expect, it } from 'vitest'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(here, '..', '..')
 
-/** Every .py under core/, api/ and scripts/. */
+/** Every .py under src/elysium/core/, api/ and scripts/. */
 function backendSource(): { file: string; source: string }[] {
   const found: { file: string; source: string }[] = []
   const walk = (dir: string) => {
@@ -42,7 +42,7 @@ function backendSource(): { file: string; source: string }[] {
       }
     }
   }
-  for (const dir of ['core', 'api', 'scripts']) walk(path.join(repoRoot, dir))
+  for (const dir of ['core', 'api', 'scripts']) walk(path.join(repoRoot, 'src', 'elysium', dir))
   return found
 }
 
@@ -76,7 +76,7 @@ describe('claims the UI roadmap made about the backend', () => {
     const files = backendSource()
 
     expect(files.length).toBeGreaterThan(50)
-    expect(files.map((f) => f.file)).toContain('core/sqlite_connection.py')
+    expect(files.map((f) => f.file)).toContain('src/elysium/core/sqlite_connection.py')
   })
 
   it('item 22: the migration MECHANISM still exists', () => {
@@ -108,7 +108,7 @@ describe('claims the UI roadmap made about the backend', () => {
   it('item 22: the column its old argument rested on still migrates itself', () => {
     // The specific, checkable refutation: the feared case arrived and
     // the mechanism handled it.
-    const auth = readFileSync(path.join(repoRoot, 'core', 'auth', 'database.py'), 'utf8')
+    const auth = readFileSync(path.join(repoRoot, 'src', 'elysium', 'core', 'auth', 'database.py'), 'utf8')
 
     expect(auth).toMatch(/must_change_password/)
     expect(auth).toMatch(/add_column_if_missing\(\s*["']users["']\s*,\s*["']must_change_password["']/)

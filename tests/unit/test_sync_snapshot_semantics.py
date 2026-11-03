@@ -38,9 +38,9 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.lineage import LINEAGE_COLUMNS
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.lineage import LINEAGE_COLUMNS
 
 
 @pytest.fixture
@@ -246,7 +246,7 @@ def test_the_sync_reads_a_consistent_snapshot_under_concurrent_source_writes(tmp
     In rollback-journal mode the writer would be blocked instead and the
     test would prove nothing (SEC-10's likely cause of the old flake).
     """
-    import core.mirror.iceberg_sync as iceberg_sync
+    import elysium.core.mirror.iceberg_sync as iceberg_sync
 
     path = tmp_path / "churn.db"
     conn = sqlite3.connect(path)

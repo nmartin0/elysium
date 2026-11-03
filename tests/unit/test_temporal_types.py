@@ -19,7 +19,7 @@ import datetime
 import pyarrow as pa
 import pytest
 
-from core.ontology.field_types import arrow_type_for, coerce
+from elysium.core.ontology.field_types import arrow_type_for, coerce
 
 
 class TestADateIsNotAnInstant:

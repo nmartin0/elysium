@@ -1,4 +1,4 @@
-"""scripts/live_world.py, the harness that runs Elysium over a simulated
+"""src/elysium/scripts/live_world.py, the harness that runs Elysium over a simulated
 world (BLOCKING.md, "Make the simulator's sources behave like real ones,
 then run Elysium over it", step 3).
 
@@ -6,7 +6,7 @@ A HARNESS THAT CANNOT FAIL PROVES NOTHING, so its judging parts are
 pinned here without a world: how it reads a pack, what deployment it
 writes, how it spells values, and that a wrong row, a changed "last good"
 copy and an oracle that disagrees are each reported. Running it against
-real servers is by hand -- `python -m scripts.live_world --help` -- as a
+real servers is by hand -- `python -m elysium.scripts.live_world --help` -- as a
 user that is not root, because PostgreSQL refuses root.
 """
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from scripts import live_world as live
+from elysium.scripts import live_world as live
 
 FIELD_SERVICE = Path(__file__).resolve().parents[2] / "sim" / "packs" / "field_service.yaml"
 

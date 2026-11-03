@@ -10,8 +10,8 @@ the batch read on the same adapter honoured it.
 
 import pyarrow as pa
 
-from core.mirror.mirror_adapter import MirrorReadAdapter
-from core.ontology.bindings import link_route
+from elysium.core.mirror.mirror_adapter import MirrorReadAdapter
+from elysium.core.ontology.bindings import link_route
 
 MANY_TO_MANY = {"type": "link", "target": "Tag", "cardinality": "many",
                 "via_table": "customer_tags", "via_column": "customer_id",

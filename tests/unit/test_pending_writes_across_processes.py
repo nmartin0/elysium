@@ -19,10 +19,10 @@ import sys
 import textwrap
 from datetime import timedelta
 
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.write_mediator import PendingWrite, SubWrite
-from core.pending_write_persistence import PendingWritePersistence
-from core.pending_write_store import PendingWriteStore
+from elysium.core.access.auth import UserRecord
+from elysium.core.ontology.write_mediator import PendingWrite, SubWrite
+from elysium.core.pending_write_persistence import PendingWritePersistence
+from elysium.core.pending_write_store import PendingWriteStore
 
 
 def _in_another_process(db_path, body: str) -> str:
@@ -30,10 +30,10 @@ def _in_another_process(db_path, body: str) -> str:
     script = textwrap.dedent(f"""
         from datetime import UTC, datetime, timedelta
         from pathlib import Path
-        from core.intermediate_layer.auth import UserRecord
-        from core.ontology.write_mediator import PendingWrite, SubWrite
-        from core.pending_write_persistence import PendingWritePersistence
-        from core.pending_write_store import PendingWriteStore
+        from elysium.core.access.auth import UserRecord
+        from elysium.core.ontology.write_mediator import PendingWrite, SubWrite
+        from elysium.core.pending_write_persistence import PendingWritePersistence
+        from elysium.core.pending_write_store import PendingWriteStore
 
         store = PendingWriteStore(
             ttl=timedelta(minutes=15),

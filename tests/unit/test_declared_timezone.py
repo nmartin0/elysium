@@ -13,8 +13,8 @@ between knowing and assuming.
 
 import pytest
 
-from core.ontology.field_types import split_declared_type
-from core.ontology.object_type_validation import _validate_field_timezone
+from elysium.core.ontology.field_types import split_declared_type
+from elysium.core.ontology.object_type_validation import _validate_field_timezone
 
 
 def _check(field_info, declared="timestamptz"):
@@ -75,7 +75,7 @@ class TestTheTwoTravelTogether:
         Both callers now come here, so the encoding is known in exactly
         one place.
         """
-        from core.ontology.field_types import arrow_type_for
+        from elysium.core.ontology.field_types import arrow_type_for
 
         data_type, _ = split_declared_type("timestamptz@Europe/London")
 
@@ -97,7 +97,7 @@ class TestTheZoneReachesTheSync:
     }}
 
     def test_a_field_with_no_other_rules_keeps_its_zone(self):
-        from core.mirror.sync_targets import resolve_sync_targets
+        from elysium.core.mirror.sync_targets import resolve_sync_targets
 
         (target,) = resolve_sync_targets({"object_types": self.SCHEMA})
 
@@ -107,9 +107,9 @@ class TestTheZoneReachesTheSync:
         import datetime
         import sqlite3
 
-        from adapters.sqlite_adapter import SQLiteReadAdapter
-        from core.mirror.iceberg_sync import IcebergMirrorSync
-        from core.mirror.sync_targets import resolve_sync_targets
+        from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+        from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+        from elysium.core.mirror.sync_targets import resolve_sync_targets
 
         source = tmp_path / "s.db"
         conn = sqlite3.connect(source)

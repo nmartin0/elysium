@@ -13,15 +13,15 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-import core.trigger_windows
-from core.count_condition import evaluate_user_triggers
-from core.intermediate_layer.auth import UserRecord
-from core.notifications import NotificationStore
-from core.pending_write_persistence import PendingWritePersistence
-from core.pending_write_store import PendingWriteStore
-from core.saved_views import SavedViewStore
-from core.trigger_states import State, TriggerStateStore, problem
-from core.triggers import TriggerStore
+import elysium.core.trigger_windows
+from elysium.core.access.auth import UserRecord
+from elysium.core.count_condition import evaluate_user_triggers
+from elysium.core.notifications import NotificationStore
+from elysium.core.pending_write_persistence import PendingWritePersistence
+from elysium.core.pending_write_store import PendingWriteStore
+from elysium.core.saved_views import SavedViewStore
+from elysium.core.trigger_states import State, TriggerStateStore, problem
+from elysium.core.triggers import TriggerStore
 
 OWNER = UserRecord("debug", "us-west", "debug")
 REFUNDS = [{"field": "category", "operator": "equals", "value": "refund"}]
@@ -31,7 +31,7 @@ ACTION = {"action_type": "RecategorizeTransactions", "action_parameter": "transa
 
 @pytest.fixture
 def generation(synced_deployment):
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     paths = synced_deployment
     return build_generation(paths.config_dir, paths.data_dir, paths.log_dir)
@@ -40,7 +40,7 @@ def generation(synced_deployment):
 @pytest.fixture
 def world(tmp_path, generation, monkeypatch):
     clock = {"at": datetime(2026, 7, 20, 9, tzinfo=UTC)}
-    monkeypatch.setattr(core.trigger_windows, "now", lambda: clock["at"])
+    monkeypatch.setattr(elysium.core.trigger_windows, "now", lambda: clock["at"])
     views = SavedViewStore(tmp_path / "v.db")
     triggers = TriggerStore(tmp_path / "t.db")
     notes = NotificationStore(tmp_path / "n.db")

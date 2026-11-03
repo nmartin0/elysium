@@ -29,7 +29,7 @@ and the type is not, anywhere. This change makes the model more likely
 to send the right shape; it does not make the wrong shape impossible.
 """
 
-from core.llm.agent_step_prompt import _describe_actions
+from elysium.core.llm.agent_step_prompt import _describe_actions
 
 BULK = {
     "RecategorizeTransactions": {

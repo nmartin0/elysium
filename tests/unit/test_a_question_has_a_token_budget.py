@@ -7,9 +7,9 @@ model that reports a fixed token count per call.
 
 import pytest
 
-from core.agent.agentic_loop import AgentLoop, StopReason
-from core.deployment_loader import _token_budget
-from core.request_context import RequestContext
+from elysium.core.agent.agentic_loop import AgentLoop, StopReason
+from elysium.core.deployment_loader import _token_budget
+from elysium.core.request_context import RequestContext
 
 
 class _Model:
@@ -36,14 +36,14 @@ def _run(mediator, budget):
 
 
 def _user():
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.core.access.auth import UserRecord
 
     return UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
 
 
 @pytest.fixture
 def mediator(synced_deployment):
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     return build_generation(synced_deployment.config_dir, synced_deployment.data_dir,
                             synced_deployment.log_dir).mediator

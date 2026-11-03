@@ -46,7 +46,7 @@ def _silo_rule(config_dir, client, rule):
     silos = yaml.safe_load(path.read_text())
     silos["data_silos"]["primary_sql"]["security"] = rule
     path.write_text(yaml.safe_dump(silos))
-    from api.reload import reload_generation
+    from elysium.api.reload import reload_generation
     reload_generation(client.app, requested_by="test")
     editing._grant(client)   # a reload rebuilds the roles the fixture granted in memory
 
@@ -70,7 +70,7 @@ class TestWhatTheFormOffers:
         assert {"customer_id", "name", "region"} <= set(columns)
 
     def test_a_source_that_cannot_be_asked_says_null_so_the_form_takes_it_by_hand(self, deployer, monkeypatch):
-        monkeypatch.setattr("api.routes.live_source_adapters", lambda request: {"primary_sql": object()})
+        monkeypatch.setattr("elysium.api.routes.live_source_adapters", lambda request: {"primary_sql": object()})
 
         assert deployer.get("/api/admin/ontology/sources/primary_sql/tables").json() == {"tables": None}
         assert deployer.get("/api/admin/ontology/sources/primary_sql/columns",
@@ -171,7 +171,7 @@ class TestAddingAType:
     def test_the_loader_has_the_last_word(self, deployer, config_dir, monkeypatch):
         before = (config_dir / FILE).read_text()
         broken = before.replace("  Customer:\n", "  Customer:\n    not_a_known_key_at_all: [\n", 1)
-        monkeypatch.setattr("core.config_editing.apply_new_type", lambda *given: (broken, None))
+        monkeypatch.setattr("elysium.core.config_editing.apply_new_type", lambda *given: (broken, None))
 
         assert _type(deployer).status_code == 400
         assert (config_dir / FILE).read_text() == before
@@ -199,7 +199,7 @@ class TestThePreview:
         assert odd["columns_missing"] == ["ghost"]
 
     def test_a_source_that_cannot_say_is_not_checked(self, deployer, monkeypatch):
-        monkeypatch.setattr("api.routes.live_source_adapters", lambda request: {"primary_sql": object()})
+        monkeypatch.setattr("elysium.api.routes.live_source_adapters", lambda request: {"primary_sql": object()})
 
         found = _type(deployer, preview=True).json()
 

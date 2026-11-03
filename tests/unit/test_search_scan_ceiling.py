@@ -17,8 +17,8 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.ontology.mediator import MAX_SEARCH_SCAN
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.ontology.mediator import MAX_SEARCH_SCAN
 
 
 @pytest.fixture
@@ -72,14 +72,14 @@ class TestTheLimitReachesTheQuery:
         """
         import inspect
 
-        import adapters.sqlite_adapter as module
+        import elysium.adapters.sqlite_adapter as module
 
         source = inspect.getsource(module._limit_clause)
 
         assert "LIMIT" in source
 
     def test_the_clause_is_absent_when_there_is_no_limit(self):
-        from adapters.sqlite_adapter import _limit_clause
+        from elysium.adapters.sqlite_adapter import _limit_clause
 
         assert _limit_clause(None) == ""
         assert _limit_clause(50) == " LIMIT 50"

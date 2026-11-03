@@ -16,7 +16,7 @@ matched something already predicted.
 
 import json
 
-from scripts.agent_trace import _LOOP_NOTES, _render
+from elysium.scripts.agent_trace import _LOOP_NOTES, _render
 
 
 def test_a_step_shows_its_arguments_and_its_result():
@@ -74,7 +74,7 @@ def test_every_loop_note_the_loop_can_emit_is_recognised():
     # as though it were gathered data.
     import inspect
 
-    from core.agent import agentic_loop
+    from elysium.core.agent import agentic_loop
 
     source = inspect.getsource(agentic_loop)
     emitted = {
@@ -130,7 +130,7 @@ class _Result:
 
 
 def test_the_route_is_the_kinds_of_step_in_order():
-    from scripts.agent_trace import _tools_used
+    from elysium.scripts.agent_trace import _tools_used
 
     route = _tools_used(_Result([
         {"step": "search_object", "object_type": "Customer"},
@@ -144,7 +144,7 @@ def test_loop_notes_are_not_part_of_the_route():
     # A rejected step is the loop talking about itself, not a tool the
     # agent chose. Counting it would make two runs look like different
     # routes because one of them stuttered.
-    from scripts.agent_trace import _tools_used
+    from elysium.scripts.agent_trace import _tools_used
 
     route = _tools_used(_Result([
         {"step": "search_object"},
@@ -156,7 +156,7 @@ def test_loop_notes_are_not_part_of_the_route():
 
 
 def test_identical_runs_collapse_to_one_route():
-    from scripts.agent_trace import _tools_used
+    from elysium.scripts.agent_trace import _tools_used
 
     same = [{"step": "search_object"}, {"step": "finish"}]
     routes = {_tools_used(_Result(list(same))) for _ in range(3)}
@@ -165,7 +165,7 @@ def test_identical_runs_collapse_to_one_route():
 
 
 def test_different_routes_stay_distinct():
-    from scripts.agent_trace import _tools_used
+    from elysium.scripts.agent_trace import _tools_used
 
     narrow = _tools_used(_Result([{"step": "search_object"}]))
     wider = _tools_used(_Result([{"step": "search_object"}, {"step": "get_object"}]))

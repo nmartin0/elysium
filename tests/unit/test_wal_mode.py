@@ -23,7 +23,7 @@ import sqlite3
 import threading
 import time
 
-from core.sqlite_connection import connection_with_schema
+from elysium.core.sqlite_connection import connection_with_schema
 
 SCHEMA = "CREATE TABLE IF NOT EXISTS t (id INTEGER PRIMARY KEY, v TEXT);"
 

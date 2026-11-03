@@ -3,7 +3,7 @@ COPY of the fixture configuration -- these tests write the file."""
 
 import yaml
 
-from core.intermediate_layer.auth import UserRecord
+from elysium.core.access.auth import UserRecord
 from tests.conftest import read_audit_log, with_roles
 from tests.integration import test_editing_config_from_the_ui as editing
 from tests.integration.test_api import _csrf_headers, _login

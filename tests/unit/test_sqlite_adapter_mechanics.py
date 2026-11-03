@@ -9,7 +9,7 @@ docstring for why), so this file moved and its imports updated to match.
 
 import pytest
 
-from adapters.sqlite_adapter import _connect, _run_query, _run_query_one
+from elysium.adapters.sqlite_adapter import _connect, _run_query, _run_query_one
 
 
 @pytest.fixture

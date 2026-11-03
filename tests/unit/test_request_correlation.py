@@ -20,8 +20,8 @@ lines.
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord
-from core.request_context import RequestContext
+from elysium.core.access.auth import UserRecord
+from elysium.core.request_context import RequestContext
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ def mediator(tmp_path, synced_deployment):
     test the stub. A fresh data directory keeps the audit log empty,
     which is what lets a count mean what it says.
     """
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     # THE DEPLOYMENT'S OWN DATA DIRECTORY, not a bare tmp_path.
     #

@@ -40,8 +40,8 @@ declare `allow_invisible_characters`.
 
 import pytest
 
-from core.invisible_text import dangerous_characters, describe_dangerous
-from core.ontology.constraints import violation
+from elysium.core.invisible_text import dangerous_characters, describe_dangerous
+from elysium.core.ontology.constraints import violation
 
 PLAIN = {"data_type": "string"}
 TAGS = "\U000E0041\U000E0042\U000E0043"
@@ -117,7 +117,7 @@ class TestTheTwoDetectorsAgree:
         """Filtered by family rather than recomputed, so the two can
         never disagree about what is PRESENT -- only about what is
         acceptable."""
-        from core.invisible_text import invisible_characters
+        from elysium.core.invisible_text import invisible_characters
 
         value = f"Ac\u200bme{OVERRIDE}Ltd{TAGS}"
         every = invisible_characters(value)

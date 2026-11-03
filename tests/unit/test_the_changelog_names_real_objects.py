@@ -29,7 +29,7 @@ It is the one layer where a silent inconsistency is permanent.
 import pyarrow as pa
 import pytest
 
-from core.mirror.integrity import (
+from elysium.core.mirror.integrity import (
     _changelog_id_column,
     _check_changelog_names_real_objects,
 )

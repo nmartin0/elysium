@@ -32,8 +32,8 @@ reporting exactly the disagreement that makes the loop possible.
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.write_mediator import WriteMediator
+from elysium.core.access.auth import UserRecord
+from elysium.core.ontology.write_mediator import WriteMediator
 
 SOURCE = "  Ada   Okafor "      # what the customer's row holds
 SERVED = "Ada Okafor"           # what silver standardised it into

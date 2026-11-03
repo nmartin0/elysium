@@ -6,9 +6,9 @@ what it refuses. The routes are in tests/integration/test_new_fields_from_the_ui
 import pytest
 import yaml
 
-from core.config_editing import ConfigEditError
-from core.config_editing import apply_new_fields as _apply_new_fields
-from core.ontology.field_types import FIELD_DATA_TYPES
+from elysium.core.config_editing import ConfigEditError
+from elysium.core.config_editing import apply_new_fields as _apply_new_fields
+from elysium.core.ontology.field_types import FIELD_DATA_TYPES
 
 ONTOLOGY = """\
 # The ontology.

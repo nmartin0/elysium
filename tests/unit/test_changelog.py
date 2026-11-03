@@ -23,7 +23,7 @@ got to, never the path it took.
 
 import pytest
 
-from core.mirror.changelog import (
+from elysium.core.mirror.changelog import (
     DELETE,
     INSERT,
     MAX_DELETED_FRACTION,
@@ -214,8 +214,8 @@ class TestWiredIntoTheSync:
 
     @staticmethod
     def _sync(tmp_path, source):
-        from adapters.sqlite_adapter import SQLiteReadAdapter
-        from core.mirror.iceberg_sync import IcebergMirrorSync
+        from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+        from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
         return IcebergMirrorSync(tmp_path / "mirror", {"s": SQLiteReadAdapter({"path": source})})
 
@@ -334,8 +334,8 @@ class TestWiredIntoTheSync:
         connection.commit()
         connection.close()
 
-        from adapters.sqlite_adapter import SQLiteReadAdapter
-        from core.mirror.iceberg_sync import IcebergMirrorSync
+        from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+        from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
         sync = IcebergMirrorSync(tmp_path / "mirror", {"s": SQLiteReadAdapter({"path": source})})
         types = {"id": "string", "amount": "number"}

@@ -29,8 +29,8 @@ stating because AL-3 found that prompt is re-sent every hop, and I had
 been adding to it without measuring.
 """
 
-from core.llm.agent_step_prompt import _describe_schema
-from core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE
+from elysium.core.llm.agent_step_prompt import _describe_schema
+from elysium.core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE
 
 SCHEMA = {
     "Transaction": {

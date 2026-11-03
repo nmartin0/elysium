@@ -36,8 +36,8 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 AWKWARD = {
     "group": "g",            # a reserved word
@@ -172,7 +172,7 @@ class TestTheMisspellingHazard:
         """A name that NEEDS quoting -- _q leaves a plain lowercase name
         bare, and SQLite always rejects an unknown bare name. A space
         or a capital is what made the misfeature reachable."""
-        from core.ontology.interface import StorageUnavailable
+        from elysium.core.ontology.interface import StorageUnavailable
 
         with pytest.raises(StorageUnavailable, match="declares column 'Typo Column'"):
             SQLiteReadAdapter({"path": source}).read_all_rows("t", ["id", "Typo Column"], {})

@@ -73,7 +73,7 @@ the head breaks this file; anything that moves shared boilerplate
 toward the head breaks that one.
 """
 
-from core.llm.agent_step_prompt import (
+from elysium.core.llm.agent_step_prompt import (
     _action_state_notes,
     _build_system_prompt,
     _build_user_message,

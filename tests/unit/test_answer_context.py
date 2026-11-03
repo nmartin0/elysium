@@ -6,8 +6,8 @@ one get_field entry per field -- and passed through filter_real_data
 first, as the route does.
 """
 
-from core.agent.agentic_loop import AgentLoop
-from core.agent.answer_context import (
+from elysium.core.agent.agentic_loop import AgentLoop
+from elysium.core.agent.answer_context import (
     MAX_READ_BACK,
     doors,
     follow_ons,

@@ -6,7 +6,7 @@ import sqlite3
 
 import pytest
 
-from core.periods import MAX_PERIODS, period_start, periods_between, with_gaps_filled
+from elysium.core.periods import MAX_PERIODS, period_start, periods_between, with_gaps_filled
 
 D = datetime.date
 
@@ -71,8 +71,8 @@ ROWS = [  # (id, region, placed, amount)
 
 
 def _mediator(tmp_path, actions):
-    from adapters.sqlite_adapter import SQLiteWriteAdapter
-    from core.ontology.mediator import DataMediator
+    from elysium.adapters.sqlite_adapter import SQLiteWriteAdapter
+    from elysium.core.ontology.mediator import DataMediator
 
     db = tmp_path / "orders.db"
     with sqlite3.connect(db) as conn:
@@ -84,7 +84,7 @@ def _mediator(tmp_path, actions):
 
 
 def _west():
-    from core.intermediate_layer.auth import resolve_user_record
+    from elysium.core.access.auth import resolve_user_record
 
     return resolve_user_record({"w": {"org_id": "west", "role": "r"}}, "w", "org_id")
 

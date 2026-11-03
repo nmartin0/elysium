@@ -1,6 +1,6 @@
 """
 Integration tests for the api/ layer -- each test gets a GENUINELY
-isolated app instance (api.app.create_app(), given its own RuntimePaths
+isolated app instance (elysium.api.app.create_app(), given its own RuntimePaths
 pointing at a fresh temp directory) rather than mutating the one real,
 module-level app. Real FastAPI TestClient, real core/auth/
 core/user_directory logic, real (but fully disposable) SQLite data.
@@ -33,9 +33,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.auth.database import connection
-from core.auth.query_rate_limiter import MAX_QUERIES_PER_WINDOW
-from core.intermediate_layer.auth import UserRecord
+from elysium.core.access.auth import UserRecord
+from elysium.core.auth.database import connection
+from elysium.core.auth.query_rate_limiter import MAX_QUERIES_PER_WINDOW
 from tests.conftest import config_of, mediator_of, with_config, with_roles
 
 pytestmark = pytest.mark.mocked_llm
@@ -577,7 +577,7 @@ def test_visible_schema_never_leaks_per_field_internals(client):
                 # the caller can already discover, never a value and
                 # never a path. `replaced_by` names another field, type
                 # or link type only when THAT name is itself discoverable
-                # to this caller (core.ontology.mediator._visible_replacement).
+                # to this caller (elysium.core.ontology.mediator._visible_replacement).
                 "deprecation",
                 # A link that took its status from one of its two types
                 # (most-restrictive-wins): which type. Names a type the
@@ -1437,7 +1437,7 @@ def test_query_end_to_end_with_mocked_llm(client):
         call_count["n"] += 1
         return response
 
-    with patch("adapters.http_transport.post", side_effect=fake_post):
+    with patch("elysium.adapters.http_transport.post", side_effect=fake_post):
         response = client.post("/api/query", json={"query": "test"}, headers=_csrf_headers(client))
 
     assert response.status_code == 200
@@ -1522,8 +1522,8 @@ def test_query_refuses_if_permissions_changed_during_processing(client):
     changed_record = UserRecord(user_id="alice", security_value="us-west", role_name=None)
 
     with (
-        patch("adapters.http_transport.post", side_effect=fake_post),
-        patch("core.user_directory.UserDirectory.get_user_record", side_effect=[real_record, changed_record]),
+        patch("elysium.adapters.http_transport.post", side_effect=fake_post),
+        patch("elysium.core.user_directory.UserDirectory.get_user_record", side_effect=[real_record, changed_record]),
     ):
         response = client.post("/api/query", json={"query": "test"}, headers=_csrf_headers(client))
 
@@ -1538,7 +1538,7 @@ def test_every_early_stop_reaches_synthesis_as_possibly_incomplete(client, stop_
     hit_token_budget` -- three of the endings -- so a loop that stopped
     because it repeated itself or produced invalid steps was answered as
     though it had finished. It now asks the result."""
-    from core.agent.agentic_loop import AgentLoop, AgentLoopResult, StopReason
+    from elysium.core.agent.agentic_loop import AgentLoop, AgentLoopResult, StopReason
 
     assert stop_reason in vars(StopReason).values()
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
@@ -1552,7 +1552,7 @@ def test_every_early_stop_reaches_synthesis_as_possibly_incomplete(client, stop_
     with (
         patch.object(AgentLoop, "run", lambda *_a, **_k: AgentLoopResult(
             gathered=[{"step": "search_object", "result": [{"id": 1}]}], stop_reason=stop_reason)),
-        patch("api.routes.synthesize_insight", fake_synthesis),
+        patch("elysium.api.routes.synthesize_insight", fake_synthesis),
     ):
         response = client.post("/api/query", json={"query": "test"}, headers=_csrf_headers(client))
 
@@ -1564,7 +1564,7 @@ def test_synthesis_is_handed_the_deployments_inferred_fields(client):
     """R63: the route passes this deployment's enriched fields, so the
     answer can be noted by code. Patched to declare one, since the
     fixture has none."""
-    from core.agent.agentic_loop import AgentLoop, AgentLoopResult
+    from elysium.core.agent.agentic_loop import AgentLoop, AgentLoopResult
 
     client.app.state.user_directory.create_user("alice", "correct-pw", "us-west", "customer_service")
     _login(client, "alice", "correct-pw")
@@ -1577,8 +1577,8 @@ def test_synthesis_is_handed_the_deployments_inferred_fields(client):
     with (
         patch.object(AgentLoop, "run", lambda *_a, **_k: AgentLoopResult(
             gathered=[{"step": "search_object", "result": [{"id": 1}]}])),
-        patch("api.routes.synthesize_insight", fake_synthesis),
-        patch("api.routes._inferred_fields", lambda _request: {"marker": True}),
+        patch("elysium.api.routes.synthesize_insight", fake_synthesis),
+        patch("elysium.api.routes._inferred_fields", lambda _request: {"marker": True}),
     ):
         response = client.post("/api/query", json={"query": "test"}, headers=_csrf_headers(client))
 
@@ -1621,7 +1621,7 @@ def _propose_action(client, session=None, new_name="Updated Name"):
         _use_session(client, session)
     headers = _csrf_header_for(session) if session else _csrf_headers(client)
 
-    with patch("adapters.http_transport.post", side_effect=fake_post):
+    with patch("elysium.adapters.http_transport.post", side_effect=fake_post):
         return client.post("/api/query", json={"query": "update the name"}, headers=headers)
 
 
@@ -2232,7 +2232,7 @@ def _resync(client):
     import contextlib
     import io
 
-    from scripts.run_sync import run_sync
+    from elysium.scripts.run_sync import run_sync
 
     paths = client.app.state.runtime_paths
     with contextlib.redirect_stdout(io.StringIO()):
@@ -2247,7 +2247,7 @@ def _rebuild_generation(client):
     on reading the publication it was built against -- which is correct,
     and exactly what a test that just synced does not want.
     """
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     paths = client.app.state.runtime_paths
     client.app.state.generation = build_generation(
@@ -2448,7 +2448,7 @@ def _record_edit(client, changes, description, user_id="alice"):
     write log. The mediator holds a READER (correctly -- the read path
     must not be able to write), so this constructs a writer over the
     same database, exactly as the app's own WriteMediator does."""
-    from core.ontology.write_log import WriteLogWriter
+    from elysium.core.ontology.write_log import WriteLogWriter
 
     writer = WriteLogWriter(mediator_of(client.app).write_log.db_path)
     writer.mark_applied(writer.log_pending_update("Customer", "cust_001", changes, {}, user_id, description))
@@ -2537,7 +2537,7 @@ def test_a_page_token_is_opaque_not_an_offset(client):
 
 
 def test_an_opaque_token_round_trips(client):
-    from api.routes import _decode_page_token, _encode_page_token
+    from elysium.api.routes import _decode_page_token, _encode_page_token
 
     for start in (0, 3, 50, 999999):
         assert _decode_page_token(_encode_page_token(start)) == start
@@ -2732,7 +2732,7 @@ def test_a_missing_sqlite_file_is_not_reported_healthy(tmp_path):
     # alert that will not fire on the incident it exists for.
     import sqlite3 as sqlite_module
 
-    from adapters.sqlite_adapter import SQLiteReadAdapter
+    from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
 
     db_path = tmp_path / "silo.db"
     connection = sqlite_module.connect(db_path)
@@ -2765,7 +2765,7 @@ def test_an_EMPTY_database_is_not_reported_healthy_either(tmp_path):
     """
     import sqlite3 as sqlite_module
 
-    from adapters.sqlite_adapter import SQLiteReadAdapter
+    from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
 
     db_path = tmp_path / "empty.db"
     sqlite_module.connect(db_path).close()
@@ -3570,7 +3570,7 @@ def test_awaiting_writes_never_returns_the_changed_values(client):
     way around the read rules: an approver could learn a balance by
     proposing a write against it and listing their own inbox.
     """
-    from api.routes import AwaitingWriteResponse
+    from elysium.api.routes import AwaitingWriteResponse
 
     # ASSERTED AGAINST THE RESPONSE MODEL, not against a live response,
     # and a control taught me why. FastAPI strips undeclared keys, so a
@@ -3984,7 +3984,7 @@ def test_the_number_changes_when_the_configuration_does(client):
     # The REAL reload path, not a hand-built generation. A helper that
     # only bumped a counter would test the header and not the thing the
     # header is for.
-    from api.reload import reload_generation
+    from elysium.api.reload import reload_generation
 
     reload_generation(client.app, requested_by="test")
 
@@ -3999,7 +3999,7 @@ def test_the_configuration_header_moves_on_a_reload(client):
     serving one configuration (measured running two real workers)."""
     before = client.get("/api/health").headers["x-elysium-configuration"]
 
-    from api.reload import reload_generation
+    from elysium.api.reload import reload_generation
 
     reload_generation(client.app, requested_by="test")
 
@@ -4014,7 +4014,7 @@ def test_two_workers_on_one_configuration_send_the_same_configuration_header(cli
     does (api/reload.follow_reload_epoch)."""
     before = client.get("/api/health")
 
-    from api.reload import reload_generation
+    from elysium.api.reload import reload_generation
 
     reload_generation(client.app, requested_by="follow", announce=False)
 
@@ -4221,9 +4221,9 @@ def test_old_metrics_are_dropped_at_startup(tmp_path, monkeypatch):
     """
     import time
 
-    from api.app import create_app
-    from core.deployment_loader import RuntimePaths
-    from core.request_metrics import RequestMetrics
+    from elysium.api.app import create_app
+    from elysium.core.deployment_loader import RuntimePaths
+    from elysium.core.request_metrics import RequestMetrics
 
     data_dir = tmp_path / "data"
     data_dir.mkdir()
@@ -4483,7 +4483,7 @@ def _with_bundled_modules(client, tmp_path):
     import dataclasses
     import json
 
-    from core.modules import load_modules
+    from elysium.core.modules import load_modules
 
     folders = []
     for module_id, permission in (("graph", None), ("secret", "manage:users")):

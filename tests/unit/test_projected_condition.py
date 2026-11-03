@@ -7,10 +7,10 @@ import datetime
 import numpy as np
 import pytest
 
-from core.notifications import NotificationStore
-from core.projected_condition import KIND, WATCHING, evaluate_projected, problem
-from core.saved_views import SavedView
-from core.triggers import Trigger, describe
+from elysium.core.notifications import NotificationStore
+from elysium.core.projected_condition import KIND, WATCHING, evaluate_projected, problem
+from elysium.core.saved_views import SavedView
+from elysium.core.triggers import Trigger, describe
 
 TODAY = datetime.date(2026, 10, 14)        # a Wednesday
 THIS_WEEK = datetime.date(2026, 10, 12)
@@ -119,13 +119,13 @@ class TestWhenItIsTold:
 
 class TestWhatItReads:
     def test_the_forecast_line_not_the_top_of_its_range(self, monkeypatch):
-        import core.forecasts
-        from core.forecasts import Forecast
-        from core.projected_condition import projection_for
+        import elysium.core.forecasts
+        from elysium.core.forecasts import Forecast
+        from elysium.core.projected_condition import projection_for
 
         made = Forecast([{"start": "2026-10-12", "value": 45.0, "low": 38.0, "high": 55.0}],
                         None, {"share": 0.1})
-        monkeypatch.setattr(core.forecasts, "cached_forecast", lambda *a, **k: made)
+        monkeypatch.setattr(elysium.core.forecasts, "cached_forecast", lambda *a, **k: made)
         projection = projection_for(Totals({"alice": _rising(30)}), VIEW, _trigger(50.0),
                                     Person("alice"), TODAY)
         assert projection["state"] == "clear", "the range passes 50; the forecast does not"
@@ -134,7 +134,7 @@ class TestWhatItReads:
                               Person("alice"), TODAY)["state"] == "projected"
 
     def test_a_cut_off_set_is_not_trusted(self):
-        from core.projected_condition import projection_for
+        from elysium.core.projected_condition import projection_for
 
         class CutOff(Totals):
             def aggregate_by_field(self, user, *args, outcome, **kwargs):

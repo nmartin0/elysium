@@ -20,7 +20,7 @@ import sys
 
 import pytest
 
-from core.config_history import ConfigHistory
+from elysium.core.config_history import ConfigHistory
 
 
 @pytest.fixture
@@ -35,8 +35,8 @@ def _one_process_lifetime(data_dir, tag):
     restart, as far as any per-process counter can tell."""
     code = f"""
 from pathlib import Path
-from core.config_history import ConfigHistory, record_generation
-from core.deployment_loader import build_generation, resolve_runtime_paths
+from elysium.core.config_history import ConfigHistory, record_generation
+from elysium.core.deployment_loader import build_generation, resolve_runtime_paths
 r = resolve_runtime_paths()
 g = build_generation(r.config_dir, Path({str(data_dir)!r}), r.log_dir)
 object.__setattr__(g, 'source_digest', g.source_digest[:-4] + {tag!r})
@@ -101,7 +101,7 @@ class TestALoadIsWhatIsNumbered:
         gave distinct numbers -- a control restoring it passed this test.
         The restart tests above run separate interpreters, and those are
         what failed under the old counter."""
-        from core.deployment_loader import build_generation
+        from elysium.core.deployment_loader import build_generation
 
         real = private_deployment  # E-08: never the developer's deployment
         one = build_generation(real.config_dir, data_dir, real.log_dir)

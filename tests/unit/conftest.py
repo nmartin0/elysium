@@ -29,9 +29,9 @@ from pathlib import Path
 
 import pytest
 
-import scripts.seed_dev_silos as seed
-from core.deployment_loader import RuntimePaths
-from scripts.run_sync import run_sync
+import elysium.scripts.seed_dev_silos as seed
+from elysium.core.deployment_loader import RuntimePaths
+from elysium.scripts.run_sync import run_sync
 
 # THE REPOSITORY'S OWN, not resolve_runtime_paths()'s: a developer with
 # ELYSIUM_CONFIG_DIR set would otherwise test someone else's deployment.

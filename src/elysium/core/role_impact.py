@@ -1,0 +1,181 @@
+"""What a role change would do, said in ACCESS terms (DEV_UI 13.5).
+
+"Before saving, the diff stated in ACCESS TERMS rather than config
+terms: this newly exposes ... to role analyst; this removes read of
+Customer.email from 2 roles." DEV_UI calls it the highest-value screen:
+Google's Policy Simulator, baseline against simulated. The roles editor
+already shows the GRANTS added and removed; a reviewer approving
+`read:Customer.email` still has to work out what that lets people do.
+
+HOW, WITHOUT A SECOND OPINION. The permission code is asked twice --
+as it stands, and as it would stand -- and the two answers compared.
+The proposed grants go through the SAME compilation the running
+mediators use (deployment_loader.access_roles: classification labels
+into field grants, derived fields gated on their inputs), then a copy
+of the mediator holding those roles is asked visible_schema for a
+person in the role. So a grant that compiles to nothing shows as
+nothing, and a label grant shows as the fields it opens.
+
+PEOPLE, NOT OBJECTS. "412 objects" would be a count across every
+compartment, and each person sees only their own; how many PEOPLE gain
+or lose something is the number a reviewer can act on, and it is exact.
+"""
+
+import copy
+import dataclasses
+from typing import Any
+
+from elysium.core.access.auth import UserRecord
+from elysium.core.access.rbac import authorize
+from elysium.core.ontology.classifications import LABEL_GRANT_PREFIX
+
+
+def _view(mediator: Any, roles: dict, role_name: str) -> dict:
+    """What a person in `role_name` would be served, under `roles`."""
+    probe = copy.copy(mediator)
+    probe.roles = roles
+    return probe.visible_schema(UserRecord("", None, role_name))
+
+
+def _field_levels(view: dict) -> dict[tuple[str, str], str]:
+    levels = {}
+    for object_type, seen in view.items():
+        for name, info in (seen.get("fields") or {}).items():
+            levels[(object_type, name)] = "read" if info.get("readable") else "discover"
+    return levels
+
+
+def _type_levels(view: dict, roles: dict, role_name: str) -> dict[str, str]:
+    person = UserRecord("", None, role_name)
+    return {object_type: "read" if authorize(person, roles, f"read:{object_type}") else "discover"
+            for object_type in view}
+
+
+def _compare(before: dict, after: dict) -> tuple[list, list]:
+    """Keys whose level rose (or appeared), and whose level fell (or went)."""
+    rank = {None: 0, "discover": 1, "read": 2}
+    gained, lost = [], []
+    for key in sorted(set(before) | set(after), key=str):
+        was, now = before.get(key), after.get(key)
+        if rank[now] > rank[was]:
+            gained.append((key, was, now))
+        elif rank[now] < rank[was]:
+            lost.append((key, was, now))
+    return gained, lost
+
+
+def role_change_impact(config: Any, mediator: Any, role_name: str,
+                       after: "list | None", holders: int) -> dict:
+    """What changing `role_name`'s grants to `after` (None: removing the
+    role) would do to the `holders` people who hold it, in access terms.
+    """
+    from elysium.core.deployment_loader import _freeze_roles, access_roles, deep_freeze
+    from elysium.core.role_changes import grants_of, resulting_roles
+
+    declared = deep_freeze(_freeze_roles(resulting_roles(config.roles, role_name, after)))
+    proposed = access_roles(dataclasses.replace(config, roles=declared))
+    return _one_role(mediator, mediator.roles, mediator, proposed, role_name,
+                     grants_of(config.roles, role_name), after,
+                     set(config.action_types or {}), holders)
+
+
+def config_access_impact(mediator: Any, before: Any, after: Any,
+                         holders: "dict[str, int]") -> dict:
+    """What replacing configuration `before` with `after` would do, role
+    by role, in the same access terms as a role change -- for an edit to
+    the ontology's labels, or a whole earlier version put back.
+
+    BOTH SIDES ARE COMPILED HERE, from their configurations, rather than
+    the running mediator standing in for "before": the comparison is
+    then like for like, schema and roles each from its own side. A
+    label changes the SCHEMA, and access_roles compiles labels into
+    grants against the schema it is given.
+
+    `widens` is the question the approval rule asks (decided 16
+    October): may anyone read, know of or run something they could not
+    before. NOT "was a label removed" -- with enforcement on, ADDING a
+    label opens a field to a role that holds read:label:<it> without a
+    grant for the field.
+    """
+    from elysium.core.deployment_loader import access_roles
+
+    def probe(config):
+        copy_ = copy.copy(mediator)
+        copy_.schema = config.schema
+        copy_.roles = access_roles(config)
+        return copy_
+
+    old, new = probe(before), probe(after)
+    actions = set(before.action_types or {}) | set(after.action_types or {})
+    changed = []
+    for role_name in sorted(set(before.roles) | set(after.roles)):
+        impact = _one_role(old, old.roles, new, new.roles, role_name,
+                           _declared(before.roles, role_name), _declared(after.roles, role_name),
+                           actions, holders.get(role_name, 0))
+        if any(impact[key] for key in _CHANGES) or impact["removes_role"]:
+            changed.append(impact)
+    return {"widens": any(impact[key] for impact in changed for key in _GAINS),
+            "roles": changed}
+
+
+_GAINS = ("types_gained", "fields_gained", "actions_gained", "other_gained")
+_CHANGES = (*_GAINS, "types_lost", "fields_lost", "actions_lost", "other_lost")
+
+
+def _declared(roles, role_name: str) -> "list | None":
+    role = roles.get(role_name)
+    return None if role is None else list(role.get("allowed_actions") or ())
+
+
+def _one_role(old: Any, old_roles: dict, new: Any, new_roles: dict, role_name: str,
+              before_grants: "list | None", after: "list | None", actions: set,
+              holders: int) -> dict:
+    """One role's access under `old` and under `new`, compared."""
+    before_view = _view(old, old_roles, role_name) if role_name in old_roles else {}
+    after_view = _view(new, new_roles, role_name) if role_name in new_roles else {}
+    types_gained, types_lost = _compare(_type_levels(before_view, old_roles, role_name),
+                                        _type_levels(after_view, new_roles, role_name))
+    fields_gained, fields_lost = _compare(_field_levels(before_view), _field_levels(after_view))
+    # A field of a type that appears or disappears entirely is said once,
+    # on the type: "can now read Order" covers its fields.
+    whole = {key for key, was, _ in types_gained if was is None} | {
+        key for key, _, now in types_lost if now is None}
+
+    def fields(changes):
+        return [{"type": t, "field": f, "from": was, "to": now}
+                for (t, f), was, now in changes if t not in whole]
+
+    def types(changes):
+        return [{"type": t, "from": was, "to": now} for t, was, now in changes]
+
+    before_set = set(before_grants or ())
+    after_set = set(after or ())
+
+    def runs(grants):
+        return {g.removeprefix("execute:") for g in grants
+                if g.startswith("execute:") and g.removeprefix("execute:") in actions}
+
+    # EVERYTHING ELSE, said as the grant: administration (manage:*),
+    # tools, labels. Labels are ALSO counted above through the fields
+    # they open; listing the grant too says where that came from.
+    def other(grant: str) -> bool:
+        # A LABEL GRANT IS "read:label:pii" -- read:-shaped, and not a
+        # read of any type. Filtered on the prefix alone it vanished from
+        # the list it is supposed to be named in (found by its test).
+        if grant.startswith(LABEL_GRANT_PREFIX):
+            return True
+        return not grant.startswith(("read:", "discover:", "execute:"))
+
+    return {
+        "role": role_name,
+        "holders": holders,
+        "removes_role": after is None and before_grants is not None,
+        "types_gained": types(types_gained),
+        "types_lost": types(types_lost),
+        "fields_gained": fields(fields_gained),
+        "fields_lost": fields(fields_lost),
+        "actions_gained": sorted(runs(after_set) - runs(before_set)),
+        "actions_lost": sorted(runs(before_set) - runs(after_set)),
+        "other_gained": sorted(g for g in after_set - before_set if other(g)),
+        "other_lost": sorted(g for g in before_set - after_set if other(g)),
+    }

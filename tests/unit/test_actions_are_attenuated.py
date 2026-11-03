@@ -26,7 +26,7 @@ would break it with no test objecting.
 
 import inspect
 
-from core.ontology import write_mediator as module
+from elysium.core.ontology import write_mediator as module
 
 
 class TestEveryWriteChecksTheCaller:
@@ -68,7 +68,7 @@ class TestAnActionDeclaresNoAuthority:
         `run_as`, `allowed_actions` -- would need the intersection
         this test's absence currently makes unnecessary.
         """
-        from core.deployment_loader import build_generation
+        from elysium.core.deployment_loader import build_generation
 
         paths = private_deployment  # E-08: never the developer's deployment
         generation = build_generation(

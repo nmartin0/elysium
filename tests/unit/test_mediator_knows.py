@@ -5,8 +5,8 @@ blocker, so it must agree with visible_schema on every case.
 
 import pytest
 
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.mediator import DataMediator
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.ontology.mediator import DataMediator
 
 SCHEMA = {
     "Order": {"storage": {"silo": "s", "table": "orders", "id_column": "order_id"}, "id_field": "order_id",

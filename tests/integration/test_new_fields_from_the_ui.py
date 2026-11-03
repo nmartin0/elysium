@@ -13,7 +13,7 @@ import difflib
 import pytest
 import yaml
 
-from core.ontology.bindings import split_bindings
+from elysium.core.ontology.bindings import split_bindings
 from tests.conftest import read_audit_log
 from tests.integration import test_access_labels as labelled
 from tests.integration import test_editing_config_from_the_ui as editing
@@ -62,7 +62,7 @@ def _declared(config_dir):
 
 class TestWhatTheFormOffers:
     def test_the_data_types_are_the_mirrors_own_list(self, deployer):
-        from core.ontology.field_types import FIELD_DATA_TYPES
+        from elysium.core.ontology.field_types import FIELD_DATA_TYPES
 
         offered = deployer.get("/api/admin/ontology/descriptions").json()["data_types"]
 
@@ -145,7 +145,7 @@ class TestAddingAField:
         reason, and the file is not touched."""
         before = (config_dir / FILE).read_text()
         broken = before.replace("  Customer:\n", "  Customer:\n    not_a_known_key_at_all: [\n", 1)
-        monkeypatch.setattr("core.config_editing.apply_new_fields", lambda *given: (broken, None))
+        monkeypatch.setattr("elysium.core.config_editing.apply_new_fields", lambda *given: (broken, None))
 
         response = _fields(deployer, NICKNAME)
 
@@ -188,7 +188,7 @@ class TestThePreview:
             def columns_present(self, table):
                 raise RuntimeError("down")
 
-        monkeypatch.setattr("api.routes.live_source_adapters", lambda request: {"primary_sql": Down()})
+        monkeypatch.setattr("elysium.api.routes.live_source_adapters", lambda request: {"primary_sql": Down()})
 
         found = _fields(deployer, NICKNAME, preview=True).json()["fields"]
 
@@ -201,12 +201,12 @@ class TestThePreview:
             def columns_present(self, table):
                 return set()
 
-        monkeypatch.setattr("api.routes.live_source_adapters", lambda request: {"primary_sql": Unknown()})
+        monkeypatch.setattr("elysium.api.routes.live_source_adapters", lambda request: {"primary_sql": Unknown()})
 
         assert _fields(deployer, NICKNAME, preview=True).json()["fields"][0]["source_has_column"] is None
 
     def test_a_source_with_no_way_to_ask_is_not_checked(self, deployer, monkeypatch):
-        monkeypatch.setattr("api.routes.live_source_adapters", lambda request: {"primary_sql": object()})
+        monkeypatch.setattr("elysium.api.routes.live_source_adapters", lambda request: {"primary_sql": object()})
 
         assert _fields(deployer, NICKNAME, preview=True).json()["fields"][0]["source_has_column"] is None
 
@@ -264,7 +264,7 @@ class TestWhenAGrantAlreadyNamesIt:
         assert "passport" in _declared(config_dir)["Customer"]["fields"]
 
     def test_the_proposer_cannot_approve_their_own(self, enforcing):
-        from api.reload import reload_generation
+        from elysium.api.reload import reload_generation
 
         labelled._roles(enforcing.app.state.runtime_paths.config_dir, both=["manage:deployment", "manage:roles"])
         reload_generation(enforcing.app, requested_by="test")

@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from core.auth.session_store import SessionStore
+from elysium.core.auth.session_store import SessionStore
 
 
 @pytest.fixture

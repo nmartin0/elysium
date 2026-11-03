@@ -19,10 +19,10 @@ considered. The full lines stay in the audit log file.
 
 import json
 
-from core.intermediate_layer.audit import AuditLog
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.object_sets import SchemaView, evaluate, parse_object_set, prepare
-from core.request_context import RequestContext
+from elysium.core.access.audit import AuditLog
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.ontology.object_sets import SchemaView, evaluate, parse_object_set, prepare
+from elysium.core.request_context import RequestContext
 
 HIDDEN_CUSTOMERS = {"cust_003", "cust_004"}
 HIDDEN_TRANSACTIONS = {"5", "6", "7"}

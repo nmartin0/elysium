@@ -12,11 +12,11 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.standardise import rules_for, standardise
-from core.mirror.sync_targets import resolve_sync_targets
-from core.ontology.constraints import validate_constraints, violation
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.standardise import rules_for, standardise
+from elysium.core.mirror.sync_targets import resolve_sync_targets
+from elysium.core.ontology.constraints import validate_constraints, violation
 
 
 def _field(data_type="string", **constraints):

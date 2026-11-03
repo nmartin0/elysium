@@ -20,7 +20,7 @@ import time
 
 import pytest
 
-from core.sqlite_connection import DEFAULT_QUERY_TIMEOUT_SECONDS, open_connection
+from elysium.core.sqlite_connection import DEFAULT_QUERY_TIMEOUT_SECONDS, open_connection
 
 
 @pytest.fixture

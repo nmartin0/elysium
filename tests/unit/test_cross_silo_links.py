@@ -33,9 +33,9 @@ import sqlite3
 
 import pytest
 
-from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.mediator import DataMediator
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from elysium.core.ontology.mediator import DataMediator
 
 TEST_SCHEMA = {
     "Employee": {

@@ -22,10 +22,10 @@ import io
 
 import pytest
 
-from core.agent.agentic_loop import MAX_OBJECT_IDS
-from core.deployment_loader import build_generation
-from core.intermediate_layer.auth import resolve_user_record
-from core.llm.plan import MAX_PLAN_FANOUT
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.agent.agentic_loop import MAX_OBJECT_IDS
+from elysium.core.deployment_loader import build_generation
+from elysium.core.llm.plan import MAX_PLAN_FANOUT
 
 USER_ID = "user_alice"
 
@@ -143,7 +143,7 @@ def test_too_many_objects_is_refused_rather_than_paged(loop_and_user):
 
 
 def test_the_fanout_cap_matches_the_loop_s_own(loop_and_user):
-    """TWO CONSTANTS, ONE NUMBER. core.llm sits below core.agent and
+    """TWO CONSTANTS, ONE NUMBER. elysium.core.llm sits below elysium.core.agent and
     cannot import MAX_OBJECT_IDS, so the plan vocabulary states it
     again -- and this is what stops the two drifting."""
     assert MAX_PLAN_FANOUT == MAX_OBJECT_IDS

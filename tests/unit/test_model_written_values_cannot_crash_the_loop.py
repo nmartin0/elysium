@@ -35,10 +35,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.agent.agentic_loop import AgentLoop, _step_signature, check_step_values
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.mediator import DataMediator
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.access.auth import UserRecord
+from elysium.core.agent.agentic_loop import AgentLoop, _step_signature, check_step_values
+from elysium.core.ontology.mediator import DataMediator
 
 SCHEMA = {
     "Account": {

@@ -9,8 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.mirror.identity import Resolution
-from core.mirror.source_record import (
+from elysium.core.mirror.identity import Resolution
+from elysium.core.mirror.source_record import (
     SHOWN_FROM,
     Ended,
     SourceRecordStore,
@@ -152,7 +152,7 @@ class TestTheSync:
         return SimpleNamespace(load_table=lambda identifier: table)
 
     def test_an_ended_disagreement_is_kept_after_a_build(self, tmp_path):
-        from scripts.run_sync import _record_ended_disagreements
+        from elysium.scripts.run_sync import _record_ended_disagreements
 
         store = SourceRecordStore(tmp_path / "r.db")
         rows = {None: [{"pk": "c1", "email": "a@x", "city": "Hull"}],
@@ -167,7 +167,7 @@ class TestTheSync:
             ("city", frozenset(("crm", "primary")))].held == {"crm": 1}
 
     def test_a_failure_is_reported_and_never_breaks_the_sync(self, tmp_path, capsys):
-        from scripts.run_sync import _record_ended_disagreements
+        from elysium.scripts.run_sync import _record_ended_disagreements
 
         def broken(identifier):
             raise RuntimeError("disk on fire")
@@ -180,7 +180,7 @@ class TestTheSync:
         assert "track record not updated" in capsys.readouterr().err
 
     def test_a_type_without_a_rule_has_nothing_to_record(self, tmp_path):
-        from scripts.run_sync import _record_ended_disagreements
+        from elysium.scripts.run_sync import _record_ended_disagreements
 
         plain = {k: v for k, v in self.TYPE.items() if k != "identity"}
 
@@ -201,8 +201,8 @@ class TestTheSyncVotes:
             "fields": {"email": {"type": "data"}, "city": {"type": "data"}}}
 
     def test_a_vote_is_kept_with_no_conflicts_table(self, tmp_path):
-        from core.mirror.gold_conflicts import ConflictsNotRecorded
-        from scripts.run_sync import _record_ended_disagreements
+        from elysium.core.mirror.gold_conflicts import ConflictsNotRecorded
+        from elysium.scripts.run_sync import _record_ended_disagreements
 
         def none_recorded(identifier):
             raise ConflictsNotRecorded(identifier)
@@ -220,7 +220,7 @@ class TestTheSyncVotes:
 
 class TestTheServerSideReport:
     def test_it_gives_the_counts_the_panel_leaves_out(self, tmp_path):
-        from scripts.source_track_record import report
+        from elysium.scripts.source_track_record import report
 
         store = SourceRecordStore(tmp_path / "r.db")
         store.record("Customer", [Ended(f"c{i}", "city", "t", "crm", "billing")

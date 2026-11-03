@@ -26,8 +26,8 @@ these tests sit.
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord
-from core.llm.agent_step_prompt import _build_system_prompt
+from elysium.core.access.auth import UserRecord
+from elysium.core.llm.agent_step_prompt import _build_system_prompt
 
 # Everything that describes where data LIVES rather than what it IS.
 BINDING_KEYS = ("via_table", "via_column", "via_target_column", "id_column")
@@ -39,7 +39,7 @@ ANALYST = UserRecord("u", "us-west", "customer_service")
 
 @pytest.fixture
 def agent_schema(synced_deployment):
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     generation = build_generation(synced_deployment.config_dir,
                                    synced_deployment.data_dir,
@@ -96,7 +96,7 @@ class TestTheDictItself:
         """The older guarantee this file sits beside: for_agent drops
         unreadable fields, because a field the model cannot read is one
         it cannot use -- and naming it invites an attempt."""
-        from core.deployment_loader import build_generation
+        from elysium.core.deployment_loader import build_generation
 
         generation = build_generation(synced_deployment.config_dir,
                                        synced_deployment.data_dir,

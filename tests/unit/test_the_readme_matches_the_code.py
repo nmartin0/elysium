@@ -30,10 +30,10 @@ FLAT = " ".join(README.split())
 
 class TestWhatItClaimsExists:
     @pytest.mark.parametrize("claim, module", [
-        ("bronze", "core/mirror/iceberg_sync.py"),
-        ("silver", "core/mirror/transform.py"),
-        ("gold", "core/mirror/gold.py"),
-        ("fusion.py", "core/mirror/fusion.py"),
+        ("bronze", "src/elysium/core/mirror/iceberg_sync.py"),
+        ("silver", "src/elysium/core/mirror/transform.py"),
+        ("gold", "src/elysium/core/mirror/gold.py"),
+        ("fusion.py", "src/elysium/core/mirror/fusion.py"),
     ])
     def test_the_pipeline_stages_it_names_are_real(self, claim, module):
         assert claim in README, claim
@@ -82,10 +82,10 @@ class TestWhatItClaimsIsMissing:
         no remember handler at all."""
         from unittest.mock import MagicMock
 
-        from core.agent.agentic_loop import AgentLoop
-        from core.llm.agent_features import OFF, AgentFeatures
+        from elysium.core.agent.agentic_loop import AgentLoop
+        from elysium.core.llm.agent_features import OFF, AgentFeatures
 
-        loop = (ROOT / "core/agent/agentic_loop.py").read_text(encoding="utf-8")
+        loop = (ROOT / "src/elysium/core/agent/agentic_loop.py").read_text(encoding="utf-8")
 
         assert "Agent memory is written by hand" in FLAT
         assert "remember_from_query" in FLAT and "off by default" in FLAT
@@ -97,8 +97,8 @@ class TestWhatItClaimsIsMissing:
     def test_the_one_machine_limitation_is_still_true(self):
         """Claimed: several workers on one machine are checked, and the
         coordination is file locks -- which is why it is ONE machine."""
-        assert (ROOT / "scripts/check_workers.py").exists()
-        assert "fcntl" in (ROOT / "core/ontology/write_mediator.py").read_text(encoding="utf-8")
+        assert (ROOT / "src/elysium/scripts/check_workers.py").exists()
+        assert "fcntl" in (ROOT / "src/elysium/core/ontology/write_mediator.py").read_text(encoding="utf-8")
         assert "One machine." in FLAT
 
     def test_it_admits_the_pre_customer_status(self):

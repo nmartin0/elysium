@@ -21,7 +21,7 @@ import uuid
 
 import pytest
 
-from core.concurrency import ConcurrencyLimiter, share_limits_under
+from elysium.core.concurrency import ConcurrencyLimiter, share_limits_under
 
 
 @pytest.fixture
@@ -45,7 +45,7 @@ def _hold_in_another_process(directory, name, cap):
         [sys.executable, "-c",
          "import sys\n"
          "from pathlib import Path\n"
-         "from core.concurrency import ConcurrencyLimiter, share_limits_under\n"
+         "from elysium.core.concurrency import ConcurrencyLimiter, share_limits_under\n"
          f"share_limits_under(Path({str(directory)!r}))\n"
          f"with ConcurrencyLimiter({cap}, name={name!r}).limit():\n"
          "    print('held', flush=True)\n"
@@ -126,7 +126,7 @@ class TestOneProcessWasAlreadyWrong:
             assert waiting
 
     def test_the_llm_wrapper_names_its_cap_by_server(self):
-        from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
+        from elysium.core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
 
         class _Ollama:
             base_url = "http://localhost:11434"

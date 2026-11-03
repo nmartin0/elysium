@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from core.config_editing import (
+from elysium.core.config_editing import (
     EDITABLE,
     REMOVED_MARK,
     ConfigEditError,

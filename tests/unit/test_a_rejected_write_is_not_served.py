@@ -29,7 +29,7 @@ exactly the state.
 
 import pytest
 
-from core.ontology.write_log import WriteLogWriter
+from elysium.core.ontology.write_log import WriteLogWriter
 from tests.unit.test_write_path_atomicity import (
     ACCOUNTANT,
     _raw,

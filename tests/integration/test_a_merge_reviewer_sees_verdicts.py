@@ -20,7 +20,7 @@ in a log.
 
 import json
 
-from core.identity_decisions import MergeDecisionStore
+from elysium.core.identity_decisions import MergeDecisionStore
 from tests.conftest import with_roles
 
 

@@ -29,8 +29,8 @@ from unittest.mock import patch
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord
-from core.mirror.gold_connector import GoldConnector
+from elysium.core.access.auth import UserRecord
+from elysium.core.mirror.gold_connector import GoldConnector
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ def generation(synced_deployment):
     It used to build one over a fresh data directory and read the
     SOURCE adapters directly -- which is the path this change
     removed, so there is nothing to read until a sync has run."""
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     paths = synced_deployment  # E-08: never the developer's deployment
     return build_generation(paths.config_dir, paths.data_dir, paths.log_dir)

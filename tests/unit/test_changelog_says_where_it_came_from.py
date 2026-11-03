@@ -12,8 +12,8 @@ a failed overwrite cannot lose the evidence.
 
 import sqlite3
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 
 def test_an_entry_names_its_bronze_snapshot_and_its_run(tmp_path):

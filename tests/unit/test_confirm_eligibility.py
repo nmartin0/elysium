@@ -29,9 +29,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.write_mediator import PendingWrite, SubWrite
-from core.pending_write_store import PendingWriteStore
+from elysium.core.access.auth import UserRecord
+from elysium.core.ontology.write_mediator import PendingWrite, SubWrite
+from elysium.core.pending_write_store import PendingWriteStore
 
 ALICE = UserRecord("alice", "us-west", "editor")
 
@@ -213,7 +213,7 @@ class TestTheTTLIsConfigurable:
         # only a fallback now.
         from pathlib import Path
 
-        from core.deployment_loader import load_deployment
+        from elysium.core.deployment_loader import load_deployment
 
         config = load_deployment(
             Path(__file__).resolve().parent.parent.parent / "deployment" / "etc",
@@ -385,7 +385,7 @@ class TestDuplicateProposals:
     def test_a_DIFFERENT_change_is_not_a_duplicate(self):
         # THE CONTROL. A counter that matched everything would make the
         # tag permanent and therefore meaningless.
-        from core.ontology.write_mediator import SubWrite
+        from elysium.core.ontology.write_mediator import SubWrite
 
         store, first = _store()
         other = _pending()
@@ -400,7 +400,7 @@ class TestDuplicateProposals:
         # target. Two people proposing different names for one customer
         # are in conflict, not agreement, and calling them duplicates
         # would hide that.
-        from core.ontology.write_mediator import SubWrite
+        from elysium.core.ontology.write_mediator import SubWrite
 
         store, first = _store()
         store.store(dataclasses.replace(_pending(), sub_writes=(

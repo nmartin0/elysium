@@ -23,10 +23,10 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.expectations import expectations_for
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.quarantine_report import quarantine_for, quarantine_summary
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.expectations import expectations_for
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.quarantine_report import quarantine_for, quarantine_summary
 
 
 class _Target:

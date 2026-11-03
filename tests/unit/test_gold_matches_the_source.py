@@ -28,13 +28,13 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.intermediate_layer.auth import UserRecord
-from core.mirror.gold import build_gold, published_snapshot_ids
-from core.mirror.gold_connector import GoldConnector
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.ontology.gold_view import build_gold_view
-from core.ontology.mediator import DataMediator
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.access.auth import UserRecord
+from elysium.core.mirror.gold import build_gold, published_snapshot_ids
+from elysium.core.mirror.gold_connector import GoldConnector
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.ontology.gold_view import build_gold_view
+from elysium.core.ontology.mediator import DataMediator
 
 CUSTOMERS = [("c1", "Ada", "us-west"), ("c2", "Bram", "us-west"),
               ("c3", "Chidi", "us-east")]
@@ -128,7 +128,7 @@ class TestGoldEqualsTheSource:
     def test_a_filter_on_the_cross_silo_field_agrees(self, both):
         """Filtering on a column that came from the OTHER database is
         where a fused table most easily disagrees with its sources."""
-        from core.filters import FieldFilter
+        from elysium.core.filters import FieldFilter
 
         condition = [FieldFilter("score", "equals", "0.90")]
         source = sorted(both["source"].search_object(WEST, "Customer", condition))

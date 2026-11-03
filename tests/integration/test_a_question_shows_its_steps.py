@@ -55,7 +55,7 @@ def _scripted(steps, during=None):
 
 
 def _stream(client, question, steps, during=None):
-    with patch("adapters.http_transport.post", side_effect=_scripted(steps, during)):
+    with patch("elysium.adapters.http_transport.post", side_effect=_scripted(steps, during)):
         response = client.post("/api/query", json={"query": question},
                                headers={**_csrf(client), "Accept": "application/x-ndjson"})
     assert response.status_code == 200, response.text
@@ -64,7 +64,7 @@ def _stream(client, question, steps, during=None):
 
 
 def _plain(client, question, steps):
-    with patch("adapters.http_transport.post", side_effect=_scripted(steps)):
+    with patch("elysium.adapters.http_transport.post", side_effect=_scripted(steps)):
         return client.post("/api/query", json={"query": question}, headers=_csrf(client))
 
 
@@ -162,7 +162,7 @@ def test_leaving_partway_ends_the_question_its_own_way(monkeypatch):
     import asyncio
     import threading
 
-    import api.routes as routes
+    import elysium.api.routes as routes
 
     seen = {}
 
@@ -197,7 +197,7 @@ def test_leaving_partway_ends_the_question_its_own_way(monkeypatch):
 def test_an_event_watched_after_leaving_is_set_at_once():
     import threading
 
-    from api.routes import _QueryProgress
+    from elysium.api.routes import _QueryProgress
 
     progress = _QueryProgress(None, None)
     progress.left()
@@ -216,7 +216,7 @@ def test_a_model_that_cannot_be_reached_is_the_last_line_not_a_crash(client):
     import requests
 
     _login(client)
-    with patch("adapters.http_transport.post",
+    with patch("elysium.adapters.http_transport.post",
                side_effect=requests.ConnectionError("http://localhost:11434 refused")):
         response = client.post("/api/query", json={"query": "What is Ada's email?"},
                                headers={**_csrf(client), "Accept": "application/x-ndjson"})
@@ -235,5 +235,5 @@ def test_a_model_that_cannot_be_reached_is_the_last_line_not_a_crash(client):
 def _plain_unreachable(client):
     import requests
 
-    with patch("adapters.http_transport.post", side_effect=requests.ConnectionError("refused")):
+    with patch("elysium.adapters.http_transport.post", side_effect=requests.ConnectionError("refused")):
         return client.post("/api/query", json={"query": "What is Ada's email?"}, headers=_csrf(client))

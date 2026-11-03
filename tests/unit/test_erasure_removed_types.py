@@ -11,8 +11,8 @@ import sqlite3
 import pyarrow as pa
 import pytest
 
-from core.mirror.catalog import open_mirror_catalog
-from core.mirror.erasure import (
+from elysium.core.mirror.catalog import open_mirror_catalog
+from elysium.core.mirror.erasure import (
     ErasureRegister,
     adopt_all_current,
     adopt_table,

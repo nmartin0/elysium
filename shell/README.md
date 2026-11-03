@@ -3,12 +3,12 @@
 A generic web shell for sub-apps: the frame they are mounted in, and the
 contract any backend speaks to offer them. It knows nothing about
 Elysium; Elysium is one backend that implements the contract
-(`core/modules.py`, `api/routes.py`). the removed BLOCKING.md item on modules records the
+(`src/elysium/core/modules.py`, `src/elysium/api/routes.py`). the removed BLOCKING.md item on modules records the
 design and the order it is being built in.
 
 ```
 shell/
-  core/            @shell/core: the contract, the registry, the routes
+  src/elysium/core/            @shell/core: the contract, the registry, the routes
     src/contract.ts      the feed's types, and checkFeed
     src/registry.ts      a feed -> pages, rail and redirects (pure)
     src/ModuleRoutes.tsx a registry -> react-router routes
@@ -373,7 +373,7 @@ what that cost and what it shares.
 
 A host with a Content-Security-Policy must allow the import map: it is
 an inline script. Elysium allows it by its hash (`'sha256-...'`), never
-by `'unsafe-inline'` (api/app.py).
+by `'unsafe-inline'` (src/elysium/api/app.py).
 
 ## Precedents
 

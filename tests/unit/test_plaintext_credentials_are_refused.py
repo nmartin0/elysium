@@ -33,7 +33,7 @@ stops it leaving if it does anyway.
 
 import pytest
 
-from core.secret_references import MissingSecret, PlaintextSecret, expand_secrets
+from elysium.core.secret_references import MissingSecret, PlaintextSecret, expand_secrets
 
 
 class TestWhatIsRefused:

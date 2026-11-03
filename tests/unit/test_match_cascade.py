@@ -9,10 +9,10 @@ import json
 
 import pytest
 
-from core.masked_review import CLOSE, masked_comparison
-from core.mirror.match_calibration import scoring_key
-from core.mirror.match_cascade import PROBABILISTIC, RULE, cascade, rule_groups
-from core.mirror.matching import Candidate, SplinkMatcher, settings_for
+from elysium.core.masked_review import CLOSE, masked_comparison
+from elysium.core.mirror.match_calibration import scoring_key
+from elysium.core.mirror.match_cascade import PROBABILISTIC, RULE, cascade, rule_groups
+from elysium.core.mirror.matching import Candidate, SplinkMatcher, settings_for
 
 try:  # the extra is optional by design
     import splink  # noqa: F401
@@ -151,8 +151,8 @@ class TestTheScores:
 
 class TestTheReportSaysClose:
     def test_an_error_line_says_close_not_agrees(self):
-        from core.mirror.match_evaluation import evaluate, labels_from_clusters
-        from scripts.evaluate_matching import report
+        from elysium.core.mirror.match_evaluation import evaluate, labels_from_clusters
+        from elysium.scripts.evaluate_matching import report
 
         labels = labels_from_clusters({"a": 1, "b": 1}, "test")
         found = [Candidate("a", "b", 0.07, {"email": CLOSE, "name": None})]

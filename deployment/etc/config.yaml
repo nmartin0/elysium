@@ -4,12 +4,12 @@
 # Which data silo(s) this deployment reads from lives in its own,
 # separate data_silos.yaml -- see that file's own header for why.
 # Different deployments can run entirely different models/hardware/
-# silos by editing only these files -- core/ code never hardcodes any
+# silos by editing only these files -- src/elysium/core/ code never hardcodes any
 # of this.
 
 llm:
   provider: ollama                 # key into deployment_loader's LLM adapter
-                                    # registry -- adapters/ollama_adapter.py
+                                    # registry -- src/elysium/adapters/ollama_adapter.py
   connection:
     base_url: "http://localhost:11434/api/chat"
     request_timeout_seconds: 600   # a 1300-token prompt at the ~5.4 tokens/sec
@@ -42,7 +42,7 @@ llm:
   # embedding, for any type declaring `semantic_search: {from: [...]}`
   # in ontology_schema.yaml. Pull it first (`ollama pull
   # nomic-embed-text`), then measure this machine with
-  # `python -m scripts.embedding_bench <Type>` before declaring a large
+  # `python -m elysium.scripts.embedding_bench <Type>` before declaring a large
   # table. A sync embeds for at most embedding_budget_seconds and the
   # next one carries on.
   # embedding_model: "nomic-embed-text"
@@ -72,7 +72,7 @@ llm:
 # a field labelled `pii` (ontology_schema.yaml, `classification:`) is
 # readable only by roles holding `read:label:pii` -- and that one grant
 # reads every pii field in the types the role can read. Off by default;
-# run `python -m scripts.label_access_diff` first to see who would gain
+# run `python -m elysium.scripts.label_access_diff` first to see who would gain
 # and lose what.
 # access:
 #   label_enforcement: true
@@ -121,15 +121,15 @@ agent:
   # Constrain each step reply to the step vocabulary as a JSON Schema
   # (AR-5): the model cannot name a field, type or step that does not
   # exist. Needs Ollama 0.5+ or vLLM. Off until the bench says it helps:
-  #   python -m scripts.llm_bench --constrain
+  #   python -m elysium.scripts.llm_bench --constrain
   # constrain_steps: false
   # Four more changes to what the model sees or may do, each built and
   # off until one bench session on THIS model says which help:
-  #   python -m scripts.feature_bench
+  #   python -m elysium.scripts.feature_bench
   # 2026-10-14's session said free_text_search and remember_from_query
   # ON, the other two OFF; both ON are waiting on one confirming run of
   # the original seven with them together (BLOCKING.md, agent-loop item).
-  # (core/llm/agent_features.py says what each one does.)
+  # (src/elysium/core/llm/agent_features.py says what each one does.)
   # filter_operators: false     # {"in": [..]}, {"min": .., "max": ..}, ...
   # search_result_cap: 20       # at most this many ids per search reach the model
   # free_text_search: false     # a search_text step, as the UI's search box
@@ -149,7 +149,7 @@ agent:
 # Tools the LLM may call, by name -- entirely optional; omitting this
 # section (or listing none) is completely valid, unlike llm:, which
 # every deployment needs. Registered tools live in
-# core/functions/registry.py -- see NAMING below.
+# src/elysium/core/functions/registry.py -- see NAMING below.
 # NAMING: "tools" out here, "functions" in the code (004-F3).
 #
 # THE BOUNDARY WORD IS THE INDUSTRY'S. OpenAI deprecated its
@@ -163,8 +163,8 @@ agent:
 # response field, the finish reason and the reply message together --
 # and renaming the INSIDE buys nothing anyone outside can see. So the
 # mapping is written down instead: tools.enabled here names entries
-# in core/functions/registry.py, each implementing the Function
-# contract in core/functions/interface.py.
+# in src/elysium/core/functions/registry.py, each implementing the Function
+# contract in src/elysium/core/functions/interface.py.
 tools:
   enabled:
     - linear_regression

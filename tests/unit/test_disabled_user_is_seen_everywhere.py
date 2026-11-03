@@ -24,7 +24,7 @@ token lifetime.
 
 import pytest
 
-from core.user_directory import UserDirectory
+from elysium.core.user_directory import UserDirectory
 
 ROLES = {"editor": {"allowed_actions": frozenset(["read:Customer"])}}
 
@@ -97,7 +97,7 @@ def test_an_unknown_user_gets_a_record_that_grants_nothing(directory):
     through auth_dependency's disabled check and act with whatever the
     empty record happened to allow.
     """
-    from core.intermediate_layer.access_control import authorize
+    from elysium.core.access.access_control import authorize
 
     ghost = directory.get_user_record("no-such-person")
 
@@ -126,7 +126,7 @@ def test_the_post_loop_check_asks_about_disabled_at_all(directory):
     """
     import pathlib
 
-    routes = pathlib.Path(__file__).resolve().parents[2] / "api" / "routes.py"
+    routes = pathlib.Path(__file__).resolve().parents[2] / "src" / "elysium" / "api" / "routes.py"
     source = routes.read_text()
 
     marker = "current_record_now = user_directory.get_user_record(current_user.user_id)"

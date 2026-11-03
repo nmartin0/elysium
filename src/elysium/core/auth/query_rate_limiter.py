@@ -1,0 +1,191 @@
+"""
+query_rate_limiter.py  (rate-limit repeated /query calls, per
+authenticated user)
+
+A real, found gap this project shipped without: POST /query invokes a
+real LLM on every call -- a genuinely more expensive operation than
+almost anything else this app does, both in real compute and, for a
+paid LLM backend, real money -- with no backend-enforced slowdown at
+all. A single authenticated user (or a compromised session) could
+script unlimited queries with no real cost to themselves. Closed here,
+matching the SAME class/db_path/one-shared-instance, fixed-window
+pattern login_attempt_tracker.py's own docstring already establishes
+and explains in full -- this file only calls out what's genuinely
+DIFFERENT about this specific case, not the shared reasoning.
+
+Keyed by user_id, not username or IP -- this app is authenticated
+throughout (there is no meaningful anonymous traffic to rate-limit at
+all, unlike login_attempt_tracker.py's own pre-authentication case),
+and a real user_id is a stable, correct identity to key by regardless
+of which IP or device a person happens to be using; an IP-based limit
+would be both too loose (multiple real users sharing one IP behind
+NAT would throttle each other) and too permissive (one real user
+switching networks would reset their own limit for free).
+
+MAX_QUERIES_PER_WINDOW/WINDOW chosen as a reasonable, generous default
+for genuine, interactive, human usage (asking a question, reading the
+real answer, asking a follow-up) while still closing the real gap for
+scripted/runaway abuse -- not tuned against this specific deployment's
+own real traffic; revisit if real, observed usage patterns ever call
+for something stricter or looser.
+
+Deliberately NOT shared infrastructure with login_attempt_tracker.py
+itself, despite the identical shape -- these are two, genuinely
+different real concerns (pre-auth brute-force lockout vs. authenticated
+resource-cost protection), with their own, independent, real reasons to
+change independently of each other later.
+
+Used by: api/routes.py's own query() route, the only caller.
+"""
+
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+from elysium.core.auth.database import connection
+from elysium.core.sqlite_connection import immediate_transaction
+
+MAX_QUERIES_PER_WINDOW = 20
+WINDOW = timedelta(minutes=5)
+
+
+class QueryRateLimiter:
+    """Rate-limits repeated /query calls, per authenticated user.
+
+    ONE class, not a Reader/Writer pair. This store was briefly split
+    into two during the read-only mirror work, then deliberately
+    reverted: the split was pattern-matching, not a real requirement.
+    The genuine guarantee that work exists to provide is that Elysium's
+    read path cannot write to the CUSTOMER'S OWN external database --
+    someone else's production system, protected from our bugs. This
+    table is Elysium's own, written only by Elysium, with no third
+    party to protect. Splitting it produced two classes holding one
+    method each and made every caller pick a half, for a failure mode
+    (is_rate_limited() accidentally writing) that was never real.
+    """
+
+    def __init__(self, db_path: Path):
+        self._db_path = db_path
+
+    def is_rate_limited(self, user_id: str) -> bool:
+        with connection(self._db_path) as conn:
+            row = conn.execute(
+                "SELECT query_count, window_started_at FROM query_rate_limits WHERE user_id = ?", (user_id,)
+            ).fetchone()
+
+        if row is None:
+            return False
+
+        window_started_at = datetime.fromisoformat(row["window_started_at"])
+        if datetime.now(UTC) - window_started_at >= WINDOW:
+            # The window itself has expired -- a stale record, not a
+            # real, current limit. Left in place rather than deleted
+            # here (a read-only method deleting rows would be a real,
+            # surprising side effect); record_query() below is what
+            # actually resets it, the next time this user queries at
+            # all.
+            return False
+
+        return row["query_count"] >= MAX_QUERIES_PER_WINDOW
+
+    def try_record_query(self, user_id: str) -> bool:
+        """Records one query and says whether it was allowed, atomically.
+
+        THE DEFECT THIS REPLACES (001's F-05). record_query() is
+        already atomic; the SEQUENCE around it was not. api/routes.py
+        did:
+
+            if query_rate_limiter.is_rate_limited(user_id):   # txn 1
+                raise HTTPException(429, ...)
+            query_rate_limiter.record_query(user_id)          # txn 2
+
+        Another caller checks between those two lines, sees the same
+        count, and is let through. Neither method is wrong; the
+        sequence is. MEASURED: with the count at 19 of 20, two callers
+        both check, both pass, both record, and the count reaches 21.
+        The overshoot is (callers inside the window) - 1, so with the
+        default pool of four the realistic worst case is three past the
+        limit.
+
+        ONE IMMEDIATE TRANSACTION, which is also what the precedent
+        says for this algorithm specifically. A naive token bucket has
+        a race "potentially resulting in a request above the limit
+        passing through", and the published remedy is that checking and
+        updating happen in a single operation. Ours is a FIXED WINDOW,
+        which is the algorithm that answer is easiest for -- fixed
+        window counters can be implemented with an atomic
+        increment-and-get, unlike algorithms that need multiple steps.
+
+        RETURNS A BOOL RATHER THAN RAISING, so the route keeps its own
+        HTTPException and its own message. A store that raised an HTTP
+        concern would put a second opinion about status codes in
+        core/, which is not where that belongs.
+
+        DOES NOT INCREMENT WHEN IT REFUSES. A refused query cost no
+        model call, so counting it would extend the lockout for work
+        that never happened -- and would let a client that keeps
+        retrying hold its own window open forever.
+
+        is_rate_limited() STAYS, for a caller that only wants to ask
+        without consuming. Nothing in the product does today; it is the
+        honest primitive and removing it would be a separate decision.
+        """
+        with connection(self._db_path) as conn, immediate_transaction(conn):
+            row = conn.execute(
+                "SELECT query_count, window_started_at FROM query_rate_limits WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+
+            now = datetime.now(UTC)
+            window_expired = (
+                row is None
+                or now - datetime.fromisoformat(row["window_started_at"]) >= WINDOW
+            )
+            if window_expired:
+                conn.execute(
+                    """
+                    INSERT INTO query_rate_limits (user_id, query_count, window_started_at)
+                    VALUES (?, 1, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET query_count = 1, window_started_at = excluded.window_started_at
+                    """,
+                    (user_id, now.isoformat()),
+                )
+                return True
+
+            if row["query_count"] >= MAX_QUERIES_PER_WINDOW:
+                return False
+
+            conn.execute(
+                "UPDATE query_rate_limits SET query_count = query_count + 1 WHERE user_id = ?",
+                (user_id,),
+            )
+            return True
+
+    def record_query(self, user_id: str) -> None:
+        # An immediate transaction: this counter is read, compared
+        # against its window, then written. Without it two concurrent
+        # calls can both read the same count and both write count+1 as
+        # the same value -- silently undercounting, which for a rate
+        # limiter means letting through more than the configured limit.
+        with connection(self._db_path) as conn, immediate_transaction(conn):
+            row = conn.execute(
+                "SELECT query_count, window_started_at FROM query_rate_limits WHERE user_id = ?", (user_id,)
+            ).fetchone()
+
+            now = datetime.now(UTC)
+            if row is None or now - datetime.fromisoformat(row["window_started_at"]) >= WINDOW:
+                # No record yet, or the previous window has fully
+                # expired -- start a genuinely fresh one, not an
+                # ever-growing count from a much earlier, unrelated
+                # burst of queries.
+                conn.execute(
+                    """
+                    INSERT INTO query_rate_limits (user_id, query_count, window_started_at)
+                    VALUES (?, 1, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET query_count = 1, window_started_at = excluded.window_started_at
+                    """,
+                    (user_id, now.isoformat()),
+                )
+            else:
+                conn.execute(
+                    "UPDATE query_rate_limits SET query_count = query_count + 1 WHERE user_id = ?", (user_id,)
+                )

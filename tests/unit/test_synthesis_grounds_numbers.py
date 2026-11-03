@@ -30,8 +30,8 @@ import decimal
 
 import pytest
 
-from core.functions.registry import get_enabled_functions
-from core.llm.synthesis_prompt import _has_only_grounded_numbers, synthesize_insight
+from elysium.core.functions.registry import get_enabled_functions
+from elysium.core.llm.synthesis_prompt import _has_only_grounded_numbers, synthesize_insight
 
 RECORDS = [
     {"object_type": "Transaction", "object_id": "1",

@@ -49,7 +49,7 @@ class TestTheContractItKeeps:
     def test_the_mediator_owns_the_filtering(self):
         """A route that filtered would be a second place deciding one
         question."""
-        from core.ontology.mediator import DataMediator
+        from elysium.core.ontology.mediator import DataMediator
 
         assert hasattr(DataMediator, "filter_published_history")
 
@@ -59,7 +59,7 @@ class TestTheContractItKeeps:
         broken."""
         import inspect
 
-        from core.ontology.mediator import DataMediator
+        from elysium.core.ontology.mediator import DataMediator
 
         signature = inspect.signature(DataMediator.filter_published_history)
 
@@ -68,7 +68,7 @@ class TestTheContractItKeeps:
     def test_the_ontology_layer_does_not_import_the_mirror(self):
         from pathlib import Path
 
-        source = Path("core/ontology/mediator.py").read_text()
+        source = Path("src/elysium/core/ontology/mediator.py").read_text()
         body = source[source.index("def filter_published_history"):]
         body = body[:body.index("\n    def ", 10)]
 
@@ -78,14 +78,14 @@ class TestTheContractItKeeps:
         imports = [line for line in body.splitlines()
                    if line.strip().startswith(("import ", "from "))]
 
-        assert not [line for line in imports if "core.mirror" in line], imports
+        assert not [line for line in imports if "elysium.core.mirror" in line], imports
 
 
 class TestWhatTheRouteDoes:
     def test_it_reads_then_delegates(self):
         from pathlib import Path
 
-        source = Path("api/routes.py").read_text()
+        source = Path("src/elysium/api/routes.py").read_text()
         body = source[source.index("def published_history_route"):]
         body = body[:body.index("\n@router", 10)]
 
@@ -97,7 +97,7 @@ class TestWhatTheRouteDoes:
         response must never tell the two apart."""
         from pathlib import Path
 
-        source = Path("api/routes.py").read_text()
+        source = Path("src/elysium/api/routes.py").read_text()
         body = source[source.index("def published_history_route"):]
         body = body[:body.index("\n@router", 10)]
         after = body[body.index("except HistoryNotRecorded"):]
@@ -108,7 +108,7 @@ class TestWhatTheRouteDoes:
         """A caller asking for everything gets a page."""
         from pathlib import Path
 
-        source = Path("api/routes.py").read_text()
+        source = Path("src/elysium/api/routes.py").read_text()
         body = source[source.index("def published_history_route"):]
         body = body[:body.index("\n@router", 10)]
 
@@ -122,13 +122,13 @@ class TestTheFilteringItself:
     def mediator(self, tmp_path, isolated_audit_log):
         import sqlite3
 
-        from core.deployment_loader import (
+        from elysium.core.access.audit import AuditLog
+        from elysium.core.deployment_loader import (
             _READ_ADAPTER_REGISTRY,
             _build_adapters,
         )
-        from core.intermediate_layer.audit import AuditLog
-        from core.ontology.mediator import DataMediator
-        from core.ontology.write_log import WriteLogWriter
+        from elysium.core.ontology.mediator import DataMediator
+        from elysium.core.ontology.write_log import WriteLogWriter
 
         schema = {
             "Customer": {
@@ -174,7 +174,7 @@ class TestTheFilteringItself:
 
     @staticmethod
     def _user(role):
-        from core.intermediate_layer.auth import UserRecord
+        from elysium.core.access.auth import UserRecord
 
         # A REAL MAC VALUE, because check_access denies outright when
         # `security_value is None` -- the first version of this fixture

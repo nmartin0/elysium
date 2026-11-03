@@ -11,7 +11,7 @@ enforcement on, adding a label can open a field.
 import pytest
 import yaml
 
-from core.config_editing import apply_labels
+from elysium.core.config_editing import apply_labels
 from tests.conftest import read_audit_log
 from tests.integration import test_editing_config_from_the_ui as editing
 from tests.integration.test_api import _csrf_headers, _login
@@ -163,7 +163,7 @@ def _roles_without_reader(client):
     policy = yaml.safe_load(path.read_text())
     del policy["roles"]["labelled_reader"]
     path.write_text(yaml.safe_dump(policy, sort_keys=False))
-    from api.reload import reload_generation
+    from elysium.api.reload import reload_generation
 
     reload_generation(client.app, requested_by="test")
 
@@ -201,7 +201,7 @@ class TestTheSecondPerson:
         """ops holds manage:deployment; given manage:roles too, they are
         still the proposer."""
         _roles(config_dir, deployer=["manage:deployment", "manage:roles"])
-        from api.reload import reload_generation
+        from elysium.api.reload import reload_generation
 
         reload_generation(enforcing.app, requested_by="test")
         assert _labels(enforcing, EMAIL_OFF, reason="x").json()["status"] == "waiting"
@@ -253,7 +253,7 @@ class TestTheSecondPerson:
     def test_only_role_managers_reject_someone_elses(self, enforcing, config_dir):
         """A second deployment manager may see the queue, not decide it."""
         _roles(config_dir, other_deployer=["manage:deployment"])
-        from api.reload import reload_generation
+        from elysium.api.reload import reload_generation
 
         reload_generation(enforcing.app, requested_by="test")
         enforcing.app.state.user_directory.create_user("olly", "correct-pw", "us-west", "other_deployer")

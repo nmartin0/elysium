@@ -11,10 +11,10 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.sync_targets import resolve_sync_targets
-from core.ontology.field_rules import rule_violation, rules_for, validate_field_rules
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.sync_targets import resolve_sync_targets
+from elysium.core.ontology.field_rules import rule_violation, rules_for, validate_field_rules
 
 BOOKING = {
     "id_field": "id",
@@ -130,8 +130,8 @@ class TestOnAWrite:
 
     @pytest.fixture
     def writes(self, synced_deployment):
-        from core.deployment_loader import build_generation
-        from core.intermediate_layer.auth import resolve_user_record
+        from elysium.core.access.auth import resolve_user_record
+        from elysium.core.deployment_loader import build_generation
 
         schema = synced_deployment.config_dir / "ontology_schema.yaml"
         text = schema.read_text()
@@ -152,7 +152,7 @@ class TestOnAWrite:
         return generation.write_mediator, user
 
     def test_a_change_that_breaks_it_against_the_current_value_is_refused(self, writes):
-        from core.ontology.write_mediator import ConstraintViolation
+        from elysium.core.ontology.write_mediator import ConstraintViolation
 
         mediator, user = writes
         with pytest.raises(ConstraintViolation, match="category_is_not_a_currency"):

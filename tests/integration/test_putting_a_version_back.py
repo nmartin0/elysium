@@ -9,8 +9,8 @@ more afterwards; then it waits, like a label, for a role manager.
 import pytest
 import yaml
 
-from api.reload import reload_generation
-from core.config_editing import apply_labels
+from elysium.api.reload import reload_generation
+from elysium.core.config_editing import apply_labels
 from tests.integration import test_access_labels as labels
 from tests.integration.test_api import _csrf_headers
 

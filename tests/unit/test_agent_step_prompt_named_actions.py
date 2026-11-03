@@ -21,7 +21,7 @@ no longer a separate, model-facing object_id field or step key at all
 reasoning.
 """
 
-from core.llm.agent_step_prompt import (
+from elysium.core.llm.agent_step_prompt import (
     MALFORMED_STEP,
     _action_state_notes,
     _build_system_prompt,

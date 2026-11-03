@@ -31,7 +31,7 @@ import threading
 
 import pytest
 
-from core.auth.query_rate_limiter import MAX_QUERIES_PER_WINDOW, QueryRateLimiter
+from elysium.core.auth.query_rate_limiter import MAX_QUERIES_PER_WINDOW, QueryRateLimiter
 
 
 @pytest.fixture
@@ -45,7 +45,7 @@ def _fill_to(limiter: QueryRateLimiter, user_id: str, count: int) -> None:
 
 
 def _count(limiter: QueryRateLimiter, user_id: str) -> int:
-    from core.auth.database import connection
+    from elysium.core.auth.database import connection
 
     with connection(limiter._db_path) as conn:
         row = conn.execute(

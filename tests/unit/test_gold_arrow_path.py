@@ -23,8 +23,8 @@ findings are compared MESSAGE FOR MESSAGE.
 import pyarrow as pa
 import pytest
 
-from core.mirror.gold import audit, build_gold, conform
-from core.mirror.gold_arrow import audit_arrow, conform_arrow
+from elysium.core.mirror.gold import audit, build_gold, conform
+from elysium.core.mirror.gold_arrow import audit_arrow, conform_arrow
 
 TYPE = {
     "id_field": "customer_id",
@@ -55,7 +55,7 @@ class TestConformParity:
         """Compared at the shape that gets PUBLISHED: the dict path
         completes the lineage columns and casts to the declared types
         in _arrow(), which conform_arrow does in one step."""
-        from core.mirror.gold import _arrow
+        from elysium.core.mirror.gold import _arrow
 
         assert conform_arrow(TYPE, _table(ROWS)).to_pylist() == \
             _arrow(conform(TYPE, ROWS), TYPE).to_pylist()

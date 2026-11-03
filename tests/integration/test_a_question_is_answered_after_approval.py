@@ -67,7 +67,7 @@ def _answers(client, wait=10.0):
 
 def _ask_and_decide(client, approved):
     _login(client, "alice", "correct-pw", "editor")
-    with patch("adapters.http_transport.post",
+    with patch("elysium.adapters.http_transport.post",
                side_effect=_model([PROPOSE, {"step": "finish"}])):
         asked = client.post("/api/query", json={"query": "rename Bram, then tell me his name"},
                             headers=_csrf(client))
@@ -95,7 +95,7 @@ def test_a_declined_write_says_so_instead(client):
 def test_the_question_is_finished_once(client):
     """take() removes it: a second decision path finds nothing."""
     _ask_and_decide(client, approved=True)
-    from core.paused_queries import PausedQueryStore
+    from elysium.core.paused_queries import PausedQueryStore
 
     store = PausedQueryStore(client.app.state.runtime_paths.data_dir / "paused_queries.db")
     with store._connection() as conn:

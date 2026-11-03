@@ -34,9 +34,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.deployment_loader import build_llm_adapter
-from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
-from core.llm.retrying_adapter import RetryingLLMAdapter
+from elysium.core.deployment_loader import build_llm_adapter
+from elysium.core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
+from elysium.core.llm.retrying_adapter import RetryingLLMAdapter
 
 
 def _adapter(provider="ollama"):

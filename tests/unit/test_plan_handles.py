@@ -17,7 +17,7 @@ never read.
 
 import pytest
 
-from core.llm.plan import (
+from elysium.core.llm.plan import (
     PlanError,
     resolve_handles,
     resolve_step,

@@ -9,7 +9,7 @@ hide a power that exists.
 
 import pytest
 
-from core.intermediate_layer.policy_validation import (
+from elysium.core.access.policy_validation import (
     grantable,
     validate_roles,
 )
@@ -17,7 +17,7 @@ from core.intermediate_layer.policy_validation import (
 
 @pytest.fixture
 def config(private_deployment):
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     paths = private_deployment  # E-08: never the developer's deployment
     return build_generation(paths.config_dir, paths.data_dir, paths.log_dir).config

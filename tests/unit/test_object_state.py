@@ -4,7 +4,7 @@ lock, the worst of a type's tables for the type."""
 
 import pytest
 
-from core.mirror.object_state import LIVE, REBUILDING, UNAVAILABLE, hold_reason, table_state, type_state
+from elysium.core.mirror.object_state import LIVE, REBUILDING, UNAVAILABLE, hold_reason, table_state, type_state
 
 
 class TestTableState:

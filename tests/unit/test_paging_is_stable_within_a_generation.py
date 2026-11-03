@@ -23,9 +23,9 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.mirror_adapter import MirrorReadAdapter
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.mirror_adapter import MirrorReadAdapter
 
 TYPE_CONFIG = {"storage": {"table": "customers", "id_column": "customer_id"}}
 COLUMNS = ["customer_id", "name"]

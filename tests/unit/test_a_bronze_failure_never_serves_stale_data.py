@@ -33,8 +33,8 @@ import sqlite3
 import pytest
 from pyiceberg.table import Table
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 
 @pytest.fixture
@@ -218,7 +218,7 @@ class TestTheAttemptSaysDegraded:
         assert "disk full" not in result.degraded, "the kind, never the message"
 
     def test_it_is_recorded_as_degraded_not_synced(self, mirror, _bronze_fails):
-        from scripts.run_sync import _outcome_for
+        from elysium.scripts.run_sync import _outcome_for
 
         mirror.run()
         mirror.sql("UPDATE t SET name='NEW' WHERE id='1'")
@@ -226,7 +226,7 @@ class TestTheAttemptSaysDegraded:
         assert _outcome_for(mirror.run()) == "degraded"
 
     def test_a_good_run_is_not(self, mirror):
-        from scripts.run_sync import _outcome_for
+        from elysium.scripts.run_sync import _outcome_for
 
         result = mirror.run()
         assert result.degraded is None

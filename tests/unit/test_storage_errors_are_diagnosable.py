@@ -23,8 +23,8 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.ontology.interface import StorageUnavailable
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.ontology.interface import StorageUnavailable
 
 TYPE_CONFIG = {"storage": {"table": "transactions", "id_column": "transaction_id"}}
 

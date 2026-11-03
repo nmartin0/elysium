@@ -23,7 +23,7 @@ import time
 
 import pytest
 
-from core.request_metrics import RequestMetrics
+from elysium.core.request_metrics import RequestMetrics
 
 
 @pytest.fixture
@@ -191,7 +191,7 @@ class TestTheRetentionWindow:
     """
 
     def test_the_window_is_long_enough_to_answer_recent_questions(self):
-        from core.request_metrics import RETENTION_SECONDS
+        from elysium.core.request_metrics import RETENTION_SECONDS
 
         # The questions this table answers are all recent: "is it slow
         # now", "did the reload make it worse", "what changed this
@@ -202,7 +202,7 @@ class TestTheRetentionWindow:
         # THE CONTROL. A sweep that dropped everything would make the
         # dashboard permanently empty, which looks exactly like an idle
         # server.
-        from core.request_metrics import RETENTION_SECONDS
+        from elysium.core.request_metrics import RETENTION_SECONDS
 
         metrics.record("/api/query", "POST", 200, 10.0)
 
@@ -226,7 +226,7 @@ class TestPercentilesAreNearestRankNotInterpolated:
     """
 
     def test_a_single_value_still_answers(self):
-        from core.request_metrics import _percentile
+        from elysium.core.request_metrics import _percentile
 
         assert _percentile([5.0], 0.50) == 5.0
         assert _percentile([5.0], 0.99) == 5.0
@@ -234,14 +234,14 @@ class TestPercentilesAreNearestRankNotInterpolated:
     def test_p99_never_exceeds_the_slowest_request(self):
         """THE FAULT THAT MATTERS. An interpolating percentile invents
         a number above the observed maximum."""
-        from core.request_metrics import _percentile
+        from elysium.core.request_metrics import _percentile
 
         durations = sorted([1.0] * 50 + [900.0])
 
         assert _percentile(durations, 0.99) <= max(durations)
 
     def test_every_percentile_is_a_value_that_happened(self):
-        from core.request_metrics import _percentile
+        from elysium.core.request_metrics import _percentile
 
         durations = sorted(float(n) for n in range(1, 11))
 
@@ -251,6 +251,6 @@ class TestPercentilesAreNearestRankNotInterpolated:
     def test_nothing_to_measure_is_None_not_zero(self):
         """Zero would read as instantaneous, which is the opposite of
         'we do not know' and much more alarming to be wrong about."""
-        from core.request_metrics import _percentile
+        from elysium.core.request_metrics import _percentile
 
         assert _percentile([], 0.50) is None

@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pytest
 
-from core.identity_decisions import APPROVED, PENDING, REJECTED, MergeDecisionStore
+from elysium.core.identity_decisions import APPROVED, PENDING, REJECTED, MergeDecisionStore
 
 
 def _open_fds() -> int:

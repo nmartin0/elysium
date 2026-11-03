@@ -10,7 +10,7 @@ import uuid
 
 import pytest
 
-from core.mirror.openlineage import (
+from elysium.core.mirror.openlineage import (
     COMPLETE,
     FAIL,
     RUN_JOB,
@@ -144,7 +144,7 @@ class TestTheConfigBlock:
             validate_lineage_block(block)
 
     def test_a_url_in_config_yaml_reaches_the_deployment(self, synced_deployment):
-        from core.deployment_loader import build_generation
+        from elysium.core.deployment_loader import build_generation
 
         config = synced_deployment.config_dir / "config.yaml"
         config.write_text(config.read_text()

@@ -9,7 +9,7 @@ functions are where the second is proved.
 
 import sqlite3
 
-from core.role_changes import (
+from elysium.core.role_changes import (
     RoleChange,
     approval_problem,
     change_problem,
@@ -116,8 +116,8 @@ class TestTwoStoresMayShareAFile:
         first, marked it verified, and RoleStore's CREATE TABLE never
         ran -- "no such table: role_store_meta". Keyed by path and
         schema, each store is guaranteed its own tables."""
-        from core.role_changes import RoleChangeStore
-        from core.role_store import RoleStore
+        from elysium.core.role_changes import RoleChangeStore
+        from elysium.core.role_store import RoleStore
 
         path = tmp_path / "roles.db"
         RoleChangeStore(path).propose("reader", None, ["read:X"], "alice")
@@ -158,32 +158,32 @@ class TestEscalation:
         return lambda grant: grant in grants
 
     def test_adding_a_lacked_grant_is_named(self):
-        from core.role_changes import escalation_problem
+        from elysium.core.role_changes import escalation_problem
 
         problem = escalation_problem(["read:X"], ["read:X", "read:Y"], self._holds("read:X"))
 
         assert "read:Y" in problem
 
     def test_adding_a_held_grant_passes(self):
-        from core.role_changes import escalation_problem
+        from elysium.core.role_changes import escalation_problem
 
         assert escalation_problem([], ["read:X"], self._holds("read:X")) is None
 
     def test_removal_passes(self):
-        from core.role_changes import escalation_problem
+        from elysium.core.role_changes import escalation_problem
 
         assert escalation_problem(["read:X", "read:Y"], ["read:X"], self._holds()) is None
 
     def test_a_new_role_checks_every_grant(self):
         """NO `before` MEANS EVERYTHING IS BEING ADDED."""
-        from core.role_changes import escalation_problem
+        from elysium.core.role_changes import escalation_problem
 
         assert escalation_problem(None, ["read:X"], self._holds())
 
     def test_manage_escalation_lets_anything_through(self):
         """THE WAY THROUGH, and it must exist: a grant added to the
         ontology today is held by nobody."""
-        from core.role_changes import ESCALATE, escalation_problem
+        from elysium.core.role_changes import ESCALATE, escalation_problem
 
         assert escalation_problem([], ["execute:New"], self._holds(ESCALATE)) is None
 

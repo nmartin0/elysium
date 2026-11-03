@@ -20,8 +20,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from core.mirror.iceberg_sync import SOURCE_READ_PROPERTY, IcebergMirrorSync
-from core.ontology.write_log import WriteLogWriter
+from elysium.core.mirror.iceberg_sync import SOURCE_READ_PROPERTY, IcebergMirrorSync
+from elysium.core.ontology.write_log import WriteLogWriter
 
 BEFORE = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
 
@@ -99,7 +99,7 @@ class Slow:
 
 @pytest.fixture
 def slow_sync(tmp_path):
-    from adapters.sqlite_adapter import SQLiteReadAdapter
+    from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
 
     source = tmp_path / "source.db"
     conn = sqlite3.connect(source)

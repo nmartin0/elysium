@@ -57,10 +57,10 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.gold import build_gold, published_snapshot_ids
-from core.mirror.gold_connector import GoldConnector
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.gold import build_gold, published_snapshot_ids
+from elysium.core.mirror.gold_connector import GoldConnector
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 
 def _type(table):

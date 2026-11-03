@@ -22,9 +22,9 @@ data_silos:
     # rule here is refused at load -- inheritance never turns into
     # "everyone sees every row" by omission.
     # security: {field: region}
-    adapter: sqlite                 # see adapters/ for what's built in;
+    adapter: sqlite                 # see src/elysium/adapters/ for what's built in;
                                      # register a new one in
-                                     # core/deployment_loader.py's
+                                     # src/elysium/core/deployment_loader.py's
                                      # _ADAPTER_REGISTRY
     connection:
       path: "dev_fixtures/mediator.db"   # relative to the DATA directory

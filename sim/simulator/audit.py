@@ -15,7 +15,7 @@ refused attempt appears in full:
     ...|reader|probe|LOG:  statement: DROP TABLE "sources"
     ...|reader|probe|ERROR:  must be owner of table sources
 
-The shape is taken from elysium'S OWN core/intermediate_layer/
+The shape is taken from elysium'S OWN core/access/
 audit.py, which was written for the same purpose one layer up: one
 entry per event, structured rather than prose, queryable after the
 fact. Its reasoning applies unchanged here -- a paper trail nobody can
@@ -284,7 +284,7 @@ def summarise(statements: list[Statement]) -> dict[str, dict[str, int]]:
 # about itself would prove nothing about a consumer -- the evidence has to come
 # from the database, which is also where it comes from in production.
 #
-# RESOLVED: the shape is taken from Elysium's core/intermediate_layer/audit.py
+# RESOLVED: the shape is taken from Elysium's core/access/audit.py
 # -- one structured entry per event, queryable after the fact -- and the file
 # format is not, because Elysium owns its own events and this does not.
 #

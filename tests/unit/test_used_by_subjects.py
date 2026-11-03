@@ -17,8 +17,8 @@ except the name asked about.
 import re
 from pathlib import Path
 
-from core.deployment_loader import load_deployment
-from core.ontology.used_by import used_by_field, used_by_link, used_by_type
+from elysium.core.deployment_loader import load_deployment
+from elysium.core.ontology.used_by import used_by_field, used_by_link, used_by_type
 from tests.unit import test_used_by as built
 
 FIXTURES = Path(__file__).resolve().parents[1] / "integration" / "fixtures"
@@ -98,7 +98,7 @@ def test_every_row_the_fixture_configuration_produces_lists_what_it_mentions():
 
 
 def test_the_check_itself_notices_a_row_that_forgets_a_name():
-    from core.ontology.used_by import Referrer
+    from elysium.core.ontology.used_by import Referrer
 
     row = Referrer("security", "Line row rule", "borrows its rule through Order.region", ("Line",))
 

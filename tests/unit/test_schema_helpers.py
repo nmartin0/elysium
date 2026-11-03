@@ -1,6 +1,6 @@
 """The id ordering the object lists use (26 October)."""
 
-from core.ontology.schema import id_sort_key, sort_key
+from elysium.core.ontology.schema import id_sort_key, sort_key
 
 
 def test_ids_of_digits_sort_as_the_numbers_they_are():

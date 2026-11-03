@@ -9,10 +9,10 @@ from datetime import UTC, datetime
 import pyarrow as pa
 import pytest
 
-from core.mirror.catalog import open_mirror_catalog
-from core.mirror.incremental import TEXT_COLUMNS_PROPERTY
-from core.mirror.retype_count import count_unconvertible
-from core.ontology.retype import stored_data
+from elysium.core.mirror.catalog import open_mirror_catalog
+from elysium.core.mirror.incremental import TEXT_COLUMNS_PROPERTY
+from elysium.core.mirror.retype_count import count_unconvertible
+from elysium.core.ontology.retype import stored_data
 
 
 @pytest.fixture

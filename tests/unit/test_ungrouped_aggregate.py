@@ -21,9 +21,9 @@ import decimal
 
 import pytest
 
-from core.deployment_loader import build_generation
-from core.intermediate_layer.auth import resolve_user_record
-from core.llm.prompt_values import dumps_gathered
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.deployment_loader import build_generation
+from elysium.core.llm.prompt_values import dumps_gathered
 
 USER_ID = "user_alice"
 
@@ -92,7 +92,7 @@ def test_a_grouped_aggregate_with_a_null_group_is_NOT_unwrapped():
     that would turn "the total for rows with no category" into "the
     total", silently, which is a wrong answer rather than an ugly one.
     """
-    from core.agent.agentic_loop import AgentLoop
+    from elysium.core.agent.agentic_loop import AgentLoop
 
     class OneNullGroup:
         def aggregate_by_field(self, *a, **k):

@@ -14,8 +14,8 @@ import shutil
 import pytest
 import yaml
 
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.write_mediator import ConstraintViolation
+from elysium.core.access.auth import UserRecord
+from elysium.core.ontology.write_mediator import ConstraintViolation
 
 PROPOSER = UserRecord("debug", "us-west", "debug")
 APPROVER = UserRecord("reviewer", "us-west", "debug")
@@ -25,7 +25,7 @@ def _deployment(synced, constrained: bool, name: str):
     """The shipped configuration, constrained or not, over the test's own
     synced data (E-08) -- which used to be a COPY of the developer's data
     directory, credentials and all, and empty on a fresh clone."""
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     config = synced.data_dir.parent / f"etc-{name}"
     shutil.copytree(synced.config_dir, config)

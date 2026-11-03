@@ -16,9 +16,9 @@ run continues.
 
 import pytest
 
-from core.identity_decisions import APPROVED, MergeDecisionStore
-from core.mirror.matching import Candidate
-from scripts.run_sync import _propose_merges
+from elysium.core.identity_decisions import APPROVED, MergeDecisionStore
+from elysium.core.mirror.matching import Candidate
+from elysium.scripts.run_sync import _propose_merges
 
 TYPE = {
     "id_field": "customer_id",
@@ -67,7 +67,7 @@ def store(tmp_path):
 @pytest.fixture
 def matcher(monkeypatch):
     def install(instance):
-        import core.mirror.matching as matching_module
+        import elysium.core.mirror.matching as matching_module
         monkeypatch.setattr(matching_module, "SplinkMatcher", lambda: instance)
         return instance
     return install
@@ -97,7 +97,7 @@ class TestTheSwitch:
 
     def test_the_deployment_default_is_OFF(self, synced_deployment):
         """A deployment that says nothing infers nothing."""
-        from core.deployment_loader import load_deployment
+        from elysium.core.deployment_loader import load_deployment
 
         assert load_deployment(synced_deployment.config_dir).identity_inference is False
 
@@ -142,7 +142,7 @@ class TestProposingIsNotDeciding:
 
 class TestFailuresNeverBreakTheSync:
     def test_a_missing_extra_is_reported_and_survived(self, store, matcher, capsys):
-        from core.mirror.matching import SplinkNotInstalled
+        from elysium.core.mirror.matching import SplinkNotInstalled
         matcher(_Matcher(raises=SplinkNotInstalled()))
 
         proposed = _propose_merges(store, _Config(True), "Customer", TYPE, ROWS)
@@ -168,9 +168,9 @@ class TestTheSyncReadsDecisions:
 
         import yaml
 
-        from core.deployment_loader import RuntimePaths
-        from core.mirror.iceberg_sync import IcebergMirrorSync
-        from scripts.run_sync import run_sync
+        from elysium.core.deployment_loader import RuntimePaths
+        from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+        from elysium.scripts.run_sync import run_sync
 
         config_dir = tmp_path / "etc"
         shutil.copytree(synced_deployment.config_dir, config_dir)
@@ -205,9 +205,9 @@ class TestFrozenConfiguration:
         mappingproxy and a list as a TUPLE. Checking for dict and list
         rejected every real deployment while passing every test that
         built its schema by hand."""
-        from core.immutable import deep_freeze
-        from core.mirror.identity import rule_for
-        from core.mirror.matching import settings_for
+        from elysium.core.immutable import deep_freeze
+        from elysium.core.mirror.identity import rule_for
+        from elysium.core.mirror.matching import settings_for
 
         frozen = deep_freeze(TYPE)
 
@@ -255,7 +255,7 @@ class TestWhatProducedIt:
         assert (proposal.proposal_id, proposal.provenance) == ("p1", "")
 
     def test_splink_states_its_version_weights_and_blocking(self):
-        from core.mirror.matching import SplinkMatcher
+        from elysium.core.mirror.matching import SplinkMatcher
 
         found = SplinkMatcher().provenance(TYPE)
 
@@ -267,7 +267,7 @@ class TestWhatProducedIt:
     def test_the_blocking_actually_used_is_recorded(self):
         """With none declared, the first compared field blocks -- and that
         is what decided which pairs were scored at all."""
-        from core.mirror.matching import SplinkMatcher
+        from elysium.core.mirror.matching import SplinkMatcher
 
         undeclared = {**TYPE, "identity": {"match_on": ["email"],
                                            "probabilistic": {"compare": ["name", "email"]}}}

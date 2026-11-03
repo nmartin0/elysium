@@ -5,7 +5,7 @@ unquoted no/yes/on/off/true/false becoming a real bool; an unquoted
 date-like value becoming a real datetime.date; a leading-zero numeral
 becoming octal) turning what an admin plainly intended as a string
 identifier into something else entirely, BEFORE core/ontology/
-action_types.py's validate_action_types() or core/intermediate_layer/
+action_types.py's validate_action_types() or core/access/
 policy_validation.py's validate_roles() -- both of which assume every
 name they compare is already a genuine string -- ever run.
 
@@ -17,7 +17,7 @@ sibling validators.
 
 import pytest
 
-from core.deployment_loader import validate_identifier_types
+from elysium.core.deployment_loader import validate_identifier_types
 
 
 def _schema(object_types=None, action_types=None):

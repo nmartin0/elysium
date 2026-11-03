@@ -13,7 +13,7 @@ import shutil
 
 import pytest
 
-from scripts import module_api_report
+from elysium.scripts import module_api_report
 
 
 @pytest.mark.skipif(shutil.which("npx") is None, reason="needs Node's npx, to run TypeScript")
@@ -23,7 +23,7 @@ def test_the_report_is_what_the_code_says():
     assert problems == []
     assert module_api_report.REPORT.read_text() == report, (
         "ui/module-api.report.md is stale: the public module API changed. Run "
-        "`python -m scripts.module_api_report`, and review the diff as an API change.")
+        "`python -m elysium.scripts.module_api_report`, and review the diff as an API change.")
 
 
 def test_a_module_s_imports_are_read_as_names():

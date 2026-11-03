@@ -24,9 +24,9 @@ tests cannot catch, because every side is individually correct.
 
 import re
 
-from core.agent.agentic_loop import AgentLoop
-from core.llm.agent_features import AgentFeatures
-from core.llm.agent_step_prompt import _build_system_prompt, next_step
+from elysium.core.agent.agentic_loop import AgentLoop
+from elysium.core.llm.agent_features import AgentFeatures
+from elysium.core.llm.agent_step_prompt import _build_system_prompt, next_step
 
 #: Every switch on (core/llm/agent_features.py). The vocabulary must
 #: agree with them off -- the tests below -- and with them on.

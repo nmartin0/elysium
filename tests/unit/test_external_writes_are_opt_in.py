@@ -37,7 +37,7 @@ be forgotten; a missing adapter cannot.
 
 import pytest
 
-from core.deployment_loader import _resolve_write_targets, _writable_silo_configs
+from elysium.core.deployment_loader import _resolve_write_targets, _writable_silo_configs
 
 
 class _Config:
@@ -146,7 +146,7 @@ class TestTheGateIsActuallyWired:
     def test_the_write_adapters_are_built_from_the_filtered_set(self):
         from pathlib import Path
 
-        source = Path("core/deployment_loader.py").read_text()
+        source = Path("src/elysium/core/deployment_loader.py").read_text()
         i = source.index("write_adapters = cast(")
         window = source[i - 400:i + 300]
 
@@ -159,7 +159,7 @@ class TestTheGateIsActuallyWired:
         normal install."""
         from pathlib import Path
 
-        source = Path("core/deployment_loader.py").read_text()
+        source = Path("src/elysium/core/deployment_loader.py").read_text()
         i = source.index("def _build_read_adapters")
         body = source[i:source.index("\ndef ", i + 10)]
 

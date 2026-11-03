@@ -31,7 +31,7 @@
  *            `<file>::<test name>`, and the suite checks that test exists
  * Anything but `error` needs a `reason`. Data, not code, so one report
  * can list every module's exceptions without running them
- * (python -m scripts.conformance_report).
+ * (python -m elysium.scripts.conformance_report).
  *
  * THE CHECKS ARE TESTED THEMSELVES: conformance.test.tsx runs each one
  * on a page built to fail it, and on one built to pass. A check that

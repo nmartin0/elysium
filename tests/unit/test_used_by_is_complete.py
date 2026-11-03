@@ -26,8 +26,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from core.deployment_loader import load_deployment
-from core.ontology.used_by import used_by_field, used_by_link, used_by_type
+from elysium.core.deployment_loader import load_deployment
+from elysium.core.ontology.used_by import used_by_field, used_by_link, used_by_type
 
 FIXTURES = Path(__file__).resolve().parents[1] / "integration" / "fixtures"
 

@@ -38,9 +38,9 @@ ordinary name. Most of the tests below are about staying quiet.
 
 import pytest
 
-from core.invisible_text import describe
-from core.misleading_text import describe_misleading, misleading_text
-from core.ontology.constraints import violation
+from elysium.core.invisible_text import describe
+from elysium.core.misleading_text import describe_misleading, misleading_text
+from elysium.core.ontology.constraints import violation
 
 DECLARED = {"data_type": "string",
              "constraints": {"no_misleading_text": True}}

@@ -51,8 +51,8 @@ from pathlib import Path
 
 import pytest
 
-from core.auth.query_rate_limiter import MAX_QUERIES_PER_WINDOW as CAP
-from core.auth.query_rate_limiter import QueryRateLimiter
+from elysium.core.auth.query_rate_limiter import MAX_QUERIES_PER_WINDOW as CAP
+from elysium.core.auth.query_rate_limiter import QueryRateLimiter
 
 
 @pytest.fixture

@@ -36,7 +36,7 @@ keeping moved into the code it describes — a measured fact in a
 deleted file is a measured fact lost.
 
 That last step is the one that cost. `SCALABILITY.md` was cited six
-times from `core/`, `adapters/` and `tests/`; `HOT_RELOAD_PLAN.md`
+times from `src/elysium/core/`, `src/elysium/adapters/` and `tests/`; `HOT_RELOAD_PLAN.md`
 from twenty-six places, all of them by STEP NUMBER. A comment saying
 "see step 5h" is worth nothing without the document. A comment saying
 "snapshot retention must respect pinned generations" is worth
@@ -94,7 +94,7 @@ after `git am --abort` if an earlier apply was interrupted. Always
 confirm with `git ls-remote origin dev` before believing "pushed".
 
 **And say whether the server needs restarting.** A patch touching
-`api/` or `core/` needs `uvicorn` restarted; a frontend-only patch
+`src/elysium/api/` or `src/elysium/core/` needs `uvicorn` restarted; a frontend-only patch
 does not. Saying "restart uvicorn" beside the commands has prevented
 several confused 404 reports.
 
@@ -160,7 +160,7 @@ the wrong directory -- which it did, producing "No module named
     cd ~/elysium/ui && npm run e2e:install     (once)
     cd ~/elysium/ui && npm run build           (tests the BUILT bundle)
 
-    cd ~/elysium && python -m scripts.create_e2e_users \
+    cd ~/elysium && python -m elysium.scripts.create_e2e_users \
                         --yes-this-is-development      (once)
         Refuses without the flag, deliberately: known passwords are a
         back door. Creates plainuser, adminuser and opsuser -- several,
@@ -168,7 +168,7 @@ the wrong directory -- which it did, producing "No module named
         other, and the System sub-app only to opsuser. Re-run it when a
         user is added; it replaces the ones it finds.
 
-    cd ~/elysium && uvicorn api.app:app
+    cd ~/elysium && uvicorn elysium.api.app:app
         Serves the UI and the API together. LEAVE A RUNNING ONE ALONE:
         static files are read from disk per request, so a fresh build
         is picked up without a restart.
@@ -188,7 +188,7 @@ reported seeing, assume jsdom cannot see it either.
 **CHANGING A FIELD'S `data_type` NEEDS A REBUILD.** Iceberg refuses an
 incompatible column change -- "Cannot change column type: amount: string
 -> decimal(38, 9)" -- because it is not a widening, and it is right to.
-Bronze makes the rebuild free: `python -m scripts.run_sync --rebuild
+Bronze makes the rebuild free: `python -m elysium.scripts.run_sync --rebuild
 silo.table` rebuilds silver from bronze without re-reading the source
 (the Mirror panel's "Rebuild now" does the same). When no deployment
 holds data worth keeping, delete the mirror and sync again. The roadmap
@@ -211,13 +211,13 @@ recorded" on a deployment that had recorded attempts perfectly well,
 because the endpoint serving it predated the field. The empty state
 was correct, the data was correct, and the server was old.
 
-**SO: if a patch touches `api/` or `core/`, the restart goes in the
+**SO: if a patch touches `src/elysium/api/` or `src/elysium/core/`, the restart goes in the
 instructions with the `git am`, not as something to remember
 afterwards.**
 
 **AND DO NOT REACH FOR `/openapi.json` TO CHECK WHAT THE SERVER HAS.**
 It is DISABLED -- `openapi_url=None`, with `docs_url` and `redoc_url`,
-a considered security decision recorded in api/app.py: FastAPI
+a considered security decision recorded in src/elysium/api/app.py: FastAPI
 registers all three on the app itself, outside the protected router,
 so an unauthenticated request could browse the full API surface
 including every admin route path.
@@ -229,7 +229,7 @@ the log and got read as "old code" rather than "wrong URL".
 To check what the CODE has:
 
     python -c "
-    from api.app import app
+    from elysium.api.app import app
     import json
     print(json.dumps(app.openapi()).count('some_new_field'))
     "
@@ -253,7 +253,7 @@ built, which was much cheaper than after.
 export ELYSIUM_CONFIG_DIR=$HOME/elysium/tests/integration/fixtures
 export ELYSIUM_DATA_DIR=/tmp/elysium-dev
 export ELYSIUM_LOG_DIR=/tmp/elysium-dev/log
-uvicorn api.app:app --port 8000     # terminal 1
+uvicorn elysium.api.app:app --port 8000     # terminal 1
 cd ui && npm run dev                # terminal 2
 ```
 
@@ -262,19 +262,19 @@ under it is state worth keeping (no deployment exists), so rebuilding the
 development state is the whole recovery. These scripts do it today, and the
 roadmap folds them into `elysium dev reset`:
 
-- `scripts/seed_dev_silos.py` — the three silo databases. Without
+- `src/elysium/scripts/seed_dev_silos.py` — the three silo databases. Without
   these, every silo reads unreachable, which is CORRECT and the Silos
   screen will tell them so.
-- `scripts/create_debug_user.py` — `debug` / `a`, role `debug`.
-- `scripts/repair_catalog.py` — repoints a catalog whose metadata
+- `src/elysium/scripts/create_debug_user.py` — `debug` / `a`, role `debug`.
+- `src/elysium/scripts/repair_catalog.py` — repoints a catalog whose metadata
   file was lost to a full disk or a power cut. Reports by default;
   repairs with `--write`. Needed because re-syncing CANNOT fix it, and
   deleting the mirror destroys the changelog.
-- `scripts/create_e2e_users.py` — `plainuser`, `adminuser` and
+- `src/elysium/scripts/create_e2e_users.py` — `plainuser`, `adminuser` and
   `opsuser`, the users the browser tests log in as. Several, because
   the nav is supposed to show Admin to one and not the other, and the
   System sub-app (manage:deployment) only to opsuser.
-- `scripts/create_colleague_user.py` — adds `colleague` / `a` in the
+- `src/elysium/scripts/create_colleague_user.py` — adds `colleague` / `a` in the
   same role, for testing that shared things are shared.
 **For volume, `seed_dev_silos.py --bulk N`.** Without it the fixture
 schemas hold four customers and seven transactions — enough to
@@ -319,7 +319,7 @@ is how the mistakes below happen.
    ```bash
    ./lint.sh
    python -m pytest tests/ -q -m "not integration"
-   python -m pytest tests/integration/test_api.py -q    # if api/ changed
+   python -m pytest tests/integration/test_api.py -q    # if src/elysium/api/ changed
    cd ui && npx vitest run && npm run lint
    ```
 
@@ -405,7 +405,7 @@ These are not hypothetical. Each happened this project, most of them
 more than once.
 
 **A grep is not proof.** "Nothing runs in parallel anywhere" was wrong
-— the ThreadPoolExecutor is in `api/`, which the grep did not cover.
+— the ThreadPoolExecutor is in `src/elysium/api/`, which the grep did not cover.
 "`reads_object_types` is advisory" was wrong — `OntologyAccess`
 enforces it, three files from where the search ran. Before writing a
 claim into a commit message, check it in the place it would actually
@@ -470,8 +470,8 @@ it anywhere else. Two things worth carrying that are not features:
 measured it is BLOCKING.md's "Agent-loop efficiency" item. What this
 paragraph used to say blocked it -- `LLMAdapter.chat()` having nowhere
 to put a timeout and discarding token counts -- is no longer true:
-`chat()` takes `deadline=` and `usage=` (core/llm/interface.py), and
-`scripts/llm_bench.py` is the measurement.
+`chat()` takes `deadline=` and `usage=` (src/elysium/core/llm/interface.py), and
+`src/elysium/scripts/llm_bench.py` is the measurement.
 
 **Graph-lite IS now entirely frontend, and the paragraph that used to
 sit here was an example of the failure mode two sections above.** It

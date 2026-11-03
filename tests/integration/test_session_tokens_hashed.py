@@ -10,7 +10,7 @@ slow one protects a guessable secret, and this is not one.
 import hashlib
 import sqlite3
 
-from core.auth.auth_cookies import SESSION_COOKIE_NAME
+from elysium.core.auth.auth_cookies import SESSION_COOKIE_NAME
 from tests.integration.test_api import _login
 
 PASSWORD = "a-long-and-unremarkable-passphrase"
@@ -63,7 +63,7 @@ class TestTheUpgradeDestroysRawTokens:
     def test_raw_rows_are_deleted_and_hashed_rows_kept(self, tmp_path):
         """THE RAW ROWS ARE THE LEAK, so they are destroyed, not left to
         expire. Told apart by length: 43 raw, 64 hashed."""
-        from core.auth.database import SCHEMA
+        from elysium.core.auth.database import SCHEMA
 
         path = tmp_path / "credentials.db"
         conn = sqlite3.connect(path)
@@ -75,7 +75,7 @@ class TestTheUpgradeDestroysRawTokens:
         conn.commit()
         conn.close()
 
-        from core.auth.database import connection
+        from elysium.core.auth.database import connection
 
         with connection(path) as live:
             left = {row[0] for row in live.execute("SELECT token FROM sessions")}
@@ -98,7 +98,7 @@ class TestAnOlderUsersTableGainsTheColumn:
         conn.commit()
         conn.close()
 
-        from core.user_directory import UserDirectory
+        from elysium.core.user_directory import UserDirectory
 
         directory = UserDirectory(path, {"admin": {"allowed_actions": []}})
 

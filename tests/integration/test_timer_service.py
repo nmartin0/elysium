@@ -7,8 +7,8 @@ loop: what is under test is which timers fire, once, by whom.
 import fcntl
 from pathlib import Path
 
-from api.timer_service import LOOK_SECONDS, MIN_SLEEP_SECONDS, fire_due, seconds_until_next
-from core.timers import TimerStore
+from elysium.api.timer_service import LOOK_SECONDS, MIN_SLEEP_SECONDS, fire_due, seconds_until_next
+from elysium.core.timers import TimerStore
 
 
 def _store(client):

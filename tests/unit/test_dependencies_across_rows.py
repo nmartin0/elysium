@@ -12,11 +12,11 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.expectations import ExpectationFailed
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.sync_targets import resolve_sync_targets
-from core.ontology.field_rules import (
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.expectations import ExpectationFailed
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.sync_targets import resolve_sync_targets
+from elysium.core.ontology.field_rules import (
     FieldDependency,
     dependency_violations,
     validate_dependencies,

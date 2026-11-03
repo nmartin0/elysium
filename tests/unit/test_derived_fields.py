@@ -22,11 +22,11 @@ from decimal import Decimal
 import pyarrow as pa
 import pytest
 
-import scripts.seed_dev_silos as seed
-from core.deployment_loader import RuntimePaths, load_deployment_bundle
-from core.filters import FieldFilter
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.derived_fields import (
+import elysium.scripts.seed_dev_silos as seed
+from elysium.core.access.auth import UserRecord
+from elysium.core.deployment_loader import RuntimePaths, load_deployment_bundle
+from elysium.core.filters import FieldFilter
+from elysium.core.ontology.derived_fields import (
     compute,
     derivation_of,
     fill_result_types,
@@ -36,7 +36,7 @@ from core.ontology.derived_fields import (
     result_type,
     validate_derived_fields,
 )
-from scripts.run_sync import run_sync
+from elysium.scripts.run_sync import run_sync
 from tests.unit.conftest import CONFIG_DIR
 
 FIELDS = {
@@ -204,7 +204,7 @@ class TestWhoMayReadOne:
 def test_gold_s_dict_path_computes_it_too():
     """A fused type publishes through gold._arrow, the others through
     conform_arrow; both end in with_derived, and this is the first."""
-    from core.mirror.gold import _arrow
+    from elysium.core.mirror.gold import _arrow
 
     type_def = {"id_field": "id", "storage": {"id_column": "id"}, "fields": {
         "id": {"type": "data"}, "quantity": {"type": "data", "data_type": "integer"},
@@ -298,7 +298,7 @@ class TestThroughARealDeployment:
         assert mediator.get_field(SERVICE, "Customer", "cust_001", "label") == "Ada Renamed / us-west"
 
     def test_the_sync_never_asks_a_source_for_it(self, deployment):
-        from core.mirror.sync_targets import resolve_sync_targets
+        from elysium.core.mirror.sync_targets import resolve_sync_targets
 
         config, _ = deployment
         columns = {column for target in resolve_sync_targets({"object_types": config.schema})
@@ -335,7 +335,7 @@ class TestThroughARealDeployment:
 
     def test_it_cannot_be_written(self, deployment):
         config, mediator = deployment
-        from core.ontology.write_mediator import WriteMediator
+        from elysium.core.ontology.write_mediator import WriteMediator
 
         with pytest.raises(ValueError, match="computed from other fields"):
             WriteMediator._group_changes_by_storage(
@@ -360,7 +360,7 @@ def test_an_action_that_sets_a_derived_field_is_refused_at_load(tmp_path):
 def test_the_data_contract_says_how_it_is_computed_and_stays_valid_odcs(deployment):
     """ODCS v3 has `transformLogic` on a property for exactly this; the
     contract must still validate against the standard's own schema."""
-    from core.mirror.data_contracts import data_contract
+    from elysium.core.mirror.data_contracts import data_contract
     from tests.unit.test_data_contracts import _valid
 
     config, _ = deployment

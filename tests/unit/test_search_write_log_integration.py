@@ -28,13 +28,13 @@ import sqlite3
 
 import pytest
 
-from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
-from core.filters import as_equality_conditions
-from core.intermediate_layer.audit import AuditLog
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.mediator import DataMediator
-from core.ontology.write_log import WriteLogWriter
-from core.ontology.write_mediator import WriteMediator
+from elysium.core.access.audit import AuditLog
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from elysium.core.filters import as_equality_conditions
+from elysium.core.ontology.mediator import DataMediator
+from elysium.core.ontology.write_log import WriteLogWriter
+from elysium.core.ontology.write_mediator import WriteMediator
 
 TEST_SCHEMA = {
     "Ticket": {
@@ -248,6 +248,6 @@ def test_submission_criteria_sees_pending_value_not_stale_backend_state(fixture,
         "simulated in-flight update to ticket 2",
     )
 
-    from core.ontology.submission_criteria import SubmissionCriteriaViolation
+    from elysium.core.ontology.submission_criteria import SubmissionCriteriaViolation
     with pytest.raises(SubmissionCriteriaViolation, match="must currently be closed"):
         write_mediator.propose_action(alice, "Reopen", {"ticket_id": 2}, origin="human")

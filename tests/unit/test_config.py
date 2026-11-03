@@ -3,7 +3,7 @@
 import pytest
 import yaml
 
-from core.config import load_yaml
+from elysium.core.config import load_yaml
 
 
 def test_load_yaml_parses_simple_mapping(tmp_path):

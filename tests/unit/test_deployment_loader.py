@@ -1,4 +1,4 @@
-from core.deployment_loader import resolve_runtime_paths
+from elysium.core.deployment_loader import resolve_runtime_paths
 
 
 def test_secrets_dir_is_created_private(tmp_path, monkeypatch):

@@ -12,9 +12,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from core.config_editing import ConfigEditError
-from core.config_editing import apply_status as edit
-from core.ontology.deprecation import validate_deprecation
+from elysium.core.config_editing import ConfigEditError
+from elysium.core.config_editing import apply_status as edit
+from elysium.core.ontology.deprecation import validate_deprecation
 
 FILE = Path(__file__).resolve().parents[1] / "integration" / "fixtures" / "ontology_schema.yaml"
 TEXT = FILE.read_text()

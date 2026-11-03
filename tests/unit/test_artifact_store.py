@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from core.artifact_store import ArtifactStore
+from elysium.core.artifact_store import ArtifactStore
 
 
 @pytest.fixture

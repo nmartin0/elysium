@@ -87,13 +87,13 @@ mkdir -p "$OPT_DIR" "$ETC_DIR" "$VAR_LIB_DIR" "$VAR_LOG_DIR"
 
 # --- 3. Application code -------------------------------------------------
 
-# `functions/` is imported by core/functions/registry.py. This line used
-# to copy a `tools/` directory that no longer exists, which under
-# `set -e` stopped a fresh install here, and never copied `functions/`.
+# The whole `src/` tree is one package, `elysium`; the service puts
+# $OPT_DIR/src on PYTHONPATH. An earlier version of this line copied a
+# `tools/` directory that no longer exists, which under `set -e` stopped a
+# fresh install here.
 # tests/unit/test_install_script_copies_what_exists.py checks that every
 # source named here exists in the repository.
-cp -r "$SOURCE_DIR/core" "$SOURCE_DIR/adapters" "$SOURCE_DIR/functions" \
-      "$SOURCE_DIR/api" "$SOURCE_DIR/scripts" "$SOURCE_DIR/requirements.txt" "$OPT_DIR/"
+cp -r "$SOURCE_DIR/src" "$SOURCE_DIR/requirements.txt" "$OPT_DIR/"
 
 # The hashed lockfile, when the checkout has one (AGENTS.md, Commands).
 if [ -f "$SOURCE_DIR/requirements.lock" ]; then
@@ -102,7 +102,7 @@ fi
 
 # --- 3b. Web UI (OPTIONAL -- gracefully skipped if npm isn't available) ---
 #
-# api/app.py only mounts the built UI if ui/dist actually exists (see
+# src/elysium/api/app.py only mounts the built UI if ui/dist actually exists (see
 # its own docstring) -- a deployment without Node/npm available still
 # ends up as a completely valid, working, API-only backend. This step
 # is a genuine convenience, not a hard requirement, matching that same
@@ -115,7 +115,7 @@ if command -v npm >/dev/null 2>&1; then
     (cd "$OPT_DIR/ui" && npm ci && npm run build)
     echo "Built the web UI (ui/dist)."
 else
-    echo "npm not found -- skipping the web UI build. This deployment will run as an API-only backend (see api/app.py's docstring -- the UI mount is conditional). Install Node.js/npm and re-run this script to add it later."
+    echo "npm not found -- skipping the web UI build. This deployment will run as an API-only backend (see src/elysium/api/app.py's docstring -- the UI mount is conditional). Install Node.js/npm and re-run this script to add it later."
 fi
 
 # --- 4. Python virtual environment ---------------------------------------
@@ -137,7 +137,7 @@ fi
 # deployment/etc in the source checkout is laid out to EXACTLY mirror
 # /etc/elysium -- a direct structural copy, not cherry-picked files,
 # because local development and a real install share the SAME
-# three-location model (see core/deployment_loader.py's
+# three-location model (see src/elysium/core/deployment_loader.py's
 # resolve_runtime_paths() docstring).
 #
 # deployment/var/lib is NOT copied wholesale, deliberately: if the
@@ -202,7 +202,7 @@ else
     # not relied upon to survive through `su` -- su does not reliably
     # propagate the calling shell's environment.
     su -s /bin/sh "$ELYSIUM_USER" -c \
-        "cd '$OPT_DIR' && ELYSIUM_CONFIG_DIR='$ETC_DIR' ELYSIUM_DATA_DIR='$VAR_LIB_DIR' ./venv/bin/python3 -m scripts.bootstrap_root root admin"
+        "cd '$OPT_DIR' && PYTHONPATH='$OPT_DIR/src' ELYSIUM_CONFIG_DIR='$ETC_DIR' ELYSIUM_DATA_DIR='$VAR_LIB_DIR' ./venv/bin/python3 -m elysium.scripts.bootstrap_root root admin"
 fi
 
 echo ""

@@ -12,7 +12,7 @@ from decimal import Decimal
 
 import pytest
 
-from core.ontology.field_types import coerce
+from elysium.core.ontology.field_types import coerce
 
 
 @pytest.mark.parametrize("value, expected", [
@@ -36,7 +36,7 @@ def test_a_fraction_is_refused_not_truncated(value):
 def test_the_text_and_the_native_value_now_agree():
     """The bronze round trip: what the source sent, and the text bronze
     stores for it, coerce to the same thing."""
-    from core.mirror.bronze_text import bronze_text
+    from elysium.core.mirror.bronze_text import bronze_text
 
     for native in (5.0, 7.0, -3.0, 5.5):
         try:

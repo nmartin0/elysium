@@ -20,10 +20,10 @@ import jsonschema
 import open_data_contract_standard
 import pytest
 
-from core.deployment_loader import load_deployment
-from core.mirror.catalog import open_mirror_catalog
-from core.mirror.data_contracts import contract_version, data_contract
-from core.mirror.freshness import FreshnessTarget
+from elysium.core.deployment_loader import load_deployment
+from elysium.core.mirror.catalog import open_mirror_catalog
+from elysium.core.mirror.data_contracts import contract_version, data_contract
+from elysium.core.mirror.freshness import FreshnessTarget
 
 ODCS_SCHEMA = json.loads(
     (Path(open_data_contract_standard.__file__).parent / "schema.json").read_text())
@@ -148,7 +148,7 @@ class TestTheMapping:
 
 
 def test_the_export_script_writes_one_file_per_type(private_deployment, tmp_path, capsys):
-    from scripts.export_contracts import run
+    from elysium.scripts.export_contracts import run
 
     run(tmp_path / "out", private_deployment)
 

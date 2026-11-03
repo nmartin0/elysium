@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from core.config_editing import ConfigEditError, apply_retype
-from core.ontology.field_types import FIELD_DATA_TYPES
+from elysium.core.config_editing import ConfigEditError, apply_retype
+from elysium.core.ontology.field_types import FIELD_DATA_TYPES
 
 TYPES = tuple(FIELD_DATA_TYPES)
 FIXTURE = (Path(__file__).resolve().parents[1] / "integration" / "fixtures" / "ontology_schema.yaml").read_text()

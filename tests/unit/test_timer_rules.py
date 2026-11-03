@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from core.timer_rules import RuleError, first_occurrence, instant, next_occurrence, validate
+from elysium.core.timer_rules import RuleError, first_occurrence, instant, next_occurrence, validate
 
 NY = ZoneInfo("America/New_York")
 

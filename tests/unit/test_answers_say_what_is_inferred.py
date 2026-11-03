@@ -7,10 +7,10 @@ whatever it writes, code appends a note naming them.
 
 import pytest
 
-from core.enrichment_recipes import EnrichmentRecipeStore
-from core.llm.inferred_values import InferredField, inferred_fields, inferred_in
-from core.llm.synthesis_prompt import synthesize_insight
-from core.ontology.enriched_fields import declaration_hash, enrichment_of
+from elysium.core.enrichment_recipes import EnrichmentRecipeStore
+from elysium.core.llm.inferred_values import InferredField, inferred_fields, inferred_in
+from elysium.core.llm.synthesis_prompt import synthesize_insight
+from elysium.core.ontology.enriched_fields import declaration_hash, enrichment_of
 
 SCHEMA = {"SupportTicket": {"fields": {
     "subject": {"type": "data"},

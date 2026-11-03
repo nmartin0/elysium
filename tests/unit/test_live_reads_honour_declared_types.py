@@ -22,12 +22,12 @@ import decimal
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord
+from elysium.core.access.auth import UserRecord
 
 
 @pytest.fixture
 def mediator(tmp_path, private_deployment):
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     paths = private_deployment  # E-08: never the developer's deployment
     return build_generation(

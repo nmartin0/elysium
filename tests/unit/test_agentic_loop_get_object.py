@@ -19,9 +19,9 @@ alice: org-a, full read grants on Author (name, books) and Book
 own TEST_ROLES shape, not reinvented.
 """
 
-from core.agent.agentic_loop import AgentLoop
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.mediator import DataMediator
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.agent.agentic_loop import AgentLoop
+from elysium.core.ontology.mediator import DataMediator
 from tests.conftest import author_book_mediator, scripted_llm_client
 
 TEST_USERS = {

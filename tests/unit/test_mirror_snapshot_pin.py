@@ -22,9 +22,9 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.mirror_adapter import MirrorReadAdapter
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.mirror_adapter import MirrorReadAdapter
 
 
 @pytest.fixture
@@ -112,7 +112,7 @@ def test_a_table_with_no_pin_reads_current_state(synced, source_db):
 def test_the_pin_survives_a_filtered_scan(synced, source_db):
     # The filter path builds its scan separately, and an early version
     # of this change set snapshot_id on only one of the two branches.
-    from core.filters import as_equality_conditions
+    from elysium.core.filters import as_equality_conditions
 
     sync, _ = synced
     snapshot = sync._catalog.load_table("primary.customers").current_snapshot().snapshot_id

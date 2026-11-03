@@ -14,10 +14,10 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.transform import transform_rows
-from core.ontology.field_types import coerce
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.transform import transform_rows
+from elysium.core.ontology.field_types import coerce
 
 WORDS = ["true", "TRUE", " t ", "yes", "y", "on", "false", "F", "no", "n", "off"]
 

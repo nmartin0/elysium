@@ -14,11 +14,11 @@ import logging
 import pytest
 import requests
 
-from adapters.ollama_adapter import OllamaAdapter
-from core.llm import synthesis_prompt
-from core.llm.agent_step_prompt import UNPARSEABLE_REPLY, next_step
-from core.llm.interface import LLMUnavailable
-from core.ontology.action_types import validate_action_types
+from elysium.adapters.ollama_adapter import OllamaAdapter
+from elysium.core.llm import synthesis_prompt
+from elysium.core.llm.agent_step_prompt import UNPARSEABLE_REPLY, next_step
+from elysium.core.llm.interface import LLMUnavailable
+from elysium.core.ontology.action_types import validate_action_types
 
 # A schema complete enough to build a real system prompt from. A
 # MINIMAL ONE HIDES THE BUG: the first reproduction of F-15 used a

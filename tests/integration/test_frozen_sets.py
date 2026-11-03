@@ -11,7 +11,7 @@ THE FIXTURE: cust_001 and cust_002 are us-west, cust_003 us-east,
 cust_004 eu. Every user below is us-west unless it says otherwise.
 """
 
-from core.frozen_sets import FrozenSetStore
+from elysium.core.frozen_sets import FrozenSetStore
 
 
 def _login(client, username, region="us-west", role="customer_service"):

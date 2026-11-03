@@ -18,13 +18,13 @@ what the data is stored at, and this adapter reads the table anyway.
 
 import pytest
 
-from core.filters import FieldFilter
-from core.intermediate_layer.auth import UserRecord
+from elysium.core.access.auth import UserRecord
+from elysium.core.filters import FieldFilter
 
 
 @pytest.fixture
 def mediator(synced_deployment):
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     # E-08: a deployment of its own, not the developer's.
     paths = synced_deployment
@@ -96,7 +96,7 @@ class TestNonDecimalFieldsAreUntouched:
     def test_an_unparseable_value_passes_through(self):
         """SOMEBODY ELSE'S ERROR TO REPORT. Swallowing it here would
         turn a clear message into an empty result."""
-        from core.mirror.iceberg_reader import IcebergNamespaceReader
+        from elysium.core.mirror.iceberg_reader import IcebergNamespaceReader
 
         # The mechanics moved to the shared reader (GOLD-3).
         adapter = IcebergNamespaceReader.__new__(IcebergNamespaceReader)
@@ -162,7 +162,7 @@ class TestTheRangeBounds:
     answered -- and pinned here, since nothing else exercises it."""
 
     def _term(self, value, decimal_columns=frozenset({"amount"})):
-        from core.mirror.iceberg_reader import IcebergNamespaceReader
+        from elysium.core.mirror.iceberg_reader import IcebergNamespaceReader
         # The mechanics moved to the shared reader (GOLD-3).
         adapter = IcebergNamespaceReader.__new__(IcebergNamespaceReader)
         return adapter._term_for(

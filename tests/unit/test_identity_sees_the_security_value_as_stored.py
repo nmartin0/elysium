@@ -38,7 +38,7 @@ tests/unit/test_the_pipeline_does_not_move_access.py. Two halves of
 one claim, in two files, and neither proves the other.
 """
 
-from core.mirror.identity import IdentityRule, resolve
+from elysium.core.mirror.identity import IdentityRule, resolve
 
 TYPE = {
     "id_field": "id", "security": {"field": "region"},

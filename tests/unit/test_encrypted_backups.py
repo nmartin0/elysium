@@ -23,10 +23,10 @@ import sys
 
 import pytest
 
-from core import encrypted_archive as archive
-from core.encrypted_archive import ArchiveKeyError, CorruptArchive
-from core.notifications import NotificationStore
-from core.storage_encryption import check
+from elysium.core import encrypted_archive as archive
+from elysium.core.encrypted_archive import ArchiveKeyError, CorruptArchive
+from elysium.core.notifications import NotificationStore
+from elysium.core.storage_encryption import check
 
 SECRET = "ada.okafor@example.com"
 
@@ -158,7 +158,7 @@ class TestTheCommands:
         sealed = tmp_path / "backups" / "out.elysium-backup"
         sealed.parent.mkdir()
 
-        made = _cli("scripts.backup_deployment", str(sealed), env=env)
+        made = _cli("elysium.scripts.backup_deployment", str(sealed), env=env)
         assert made.returncode == 0, made.stderr
         assert SECRET.encode() not in sealed.read_bytes()
 
@@ -166,7 +166,7 @@ class TestTheCommands:
         target.mkdir()
         # --force: this tiny deployment lacks credentials.db, which a
         # restore rightly calls a problem; the point here is the archive.
-        back = _cli("scripts.restore_deployment", str(sealed), "--into", str(target), "--force",
+        back = _cli("elysium.scripts.restore_deployment", str(sealed), "--into", str(target), "--force",
                     env=env)
         assert back.returncode == 0, back.stdout + back.stderr
         rows = sqlite3.connect(target / "notifications.db").execute(
@@ -175,7 +175,7 @@ class TestTheCommands:
 
     def test_without_a_key_it_refuses_rather_than_writing_plain(self, deployment, tmp_path):
         data, env = deployment
-        made = _cli("scripts.backup_deployment", str(tmp_path / "x"),
+        made = _cli("elysium.scripts.backup_deployment", str(tmp_path / "x"),
                     env={**env, "ELYSIUM_BACKUP_KEY_FILE": ""})
 
         assert made.returncode == 1
@@ -184,7 +184,7 @@ class TestTheCommands:
 
     def test_plain_only_when_asked(self, deployment, tmp_path):
         data, env = deployment
-        made = _cli("scripts.backup_deployment", "--unencrypted", str(tmp_path / "plain"),
+        made = _cli("elysium.scripts.backup_deployment", "--unencrypted", str(tmp_path / "plain"),
                     env={**env, "ELYSIUM_BACKUP_KEY_FILE": ""})
 
         assert made.returncode == 0, made.stderr
@@ -195,13 +195,13 @@ class TestTheCommands:
         data, env = deployment
         sealed = tmp_path / "backups" / "out.elysium-backup"
         sealed.parent.mkdir()
-        _cli("scripts.backup_deployment", str(sealed), env=env)
+        _cli("elysium.scripts.backup_deployment", str(sealed), env=env)
         other = tmp_path / "keys" / "other.key"
         archive.write_key_file(other)
         target = tmp_path / "restored"
         target.mkdir()
 
-        back = _cli("scripts.restore_deployment", str(sealed), "--into", str(target),
+        back = _cli("elysium.scripts.restore_deployment", str(sealed), "--into", str(target),
                     env={**env, "ELYSIUM_BACKUP_KEY_FILE": str(other)})
 
         assert back.returncode == 1
@@ -245,7 +245,7 @@ class TestTheVolumeCheck:
 
     def test_a_plain_device_is_unknown_and_warned(self, tmp_path, caplog):
         """THE CONTROL: a device-mapper target is not encryption by itself."""
-        from core.storage_encryption import report
+        from elysium.core.storage_encryption import report
 
         probe = self._machine(tmp_path, "LVM-abc\n")
         with caplog.at_level(logging.WARNING):

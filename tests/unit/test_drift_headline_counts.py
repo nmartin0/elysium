@@ -11,7 +11,7 @@ fixes that column, re-runs, and discovers the next one a full read of
 the customer's database later. Saying the count costs nothing.
 """
 
-from core.mirror.drift_policy import verdict_for_type_change
+from elysium.core.mirror.drift_policy import verdict_for_type_change
 
 
 class TestTheHeadline:

@@ -9,9 +9,9 @@ import copy
 
 import pytest
 
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.object_type_validation import validate_object_types
-from core.ontology.silo_security import INHERITED_FROM, resolve_inherited_security, silo_rules
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.ontology.object_type_validation import validate_object_types
+from elysium.core.ontology.silo_security import INHERITED_FROM, resolve_inherited_security, silo_rules
 from tests.conftest import TEST_SCHEMA, author_book_mediator
 
 USERS = {
@@ -118,7 +118,7 @@ class TestTheLoaderDoesIt:
 
         import yaml
 
-        from core.deployment_loader import load_deployment
+        from elysium.core.deployment_loader import load_deployment
         shutil.copytree(self.FIXTURES, tmp_path / "d", dirs_exist_ok=True)
         d = tmp_path / "d"
         silos = yaml.safe_load((d / "data_silos.yaml").read_text())

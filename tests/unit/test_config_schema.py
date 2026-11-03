@@ -18,10 +18,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from core.config import load_yaml
-from core.config_schema import MODELS, unknown_key_findings, unknown_keys
-from core.deployment_loader import load_deployment
-from scripts.lint_deployment import lint_deployment
+from elysium.core.config import load_yaml
+from elysium.core.config_schema import MODELS, unknown_key_findings, unknown_keys
+from elysium.core.deployment_loader import load_deployment
+from elysium.scripts.lint_deployment import lint_deployment
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURES = ROOT / "tests" / "integration" / "fixtures"

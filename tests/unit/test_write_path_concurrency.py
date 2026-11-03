@@ -34,12 +34,12 @@ import threading
 import pytest
 import yaml
 
-from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.link_types import expand_link_types
-from core.ontology.mediator import DataMediator
-from core.ontology.write_log import WriteLogWriter
-from core.ontology.write_mediator import WriteMediator
+from elysium.core.access.auth import UserRecord
+from elysium.core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from elysium.core.ontology.link_types import expand_link_types
+from elysium.core.ontology.mediator import DataMediator
+from elysium.core.ontology.write_log import WriteLogWriter
+from elysium.core.ontology.write_mediator import WriteMediator
 
 FIXTURES = "tests/integration/fixtures/"
 TRIALS = 15
@@ -213,7 +213,7 @@ def test_the_keyed_lock_manager_hands_out_one_lock_under_real_contention():
     # claim is load-bearing -- every per-object write lock depends on
     # concurrent callers receiving the SAME lock object -- so it is
     # verified directly rather than trusted.
-    from core.concurrency import KeyedLockManager
+    from elysium.core.concurrency import KeyedLockManager
 
     for _ in range(20):
         manager = KeyedLockManager()

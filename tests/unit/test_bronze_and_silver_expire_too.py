@@ -39,9 +39,9 @@ commit there would be pure cost.
 
 from pathlib import Path
 
-from core.mirror.iceberg_sync import RETENTION_MARGIN_MS, expire_unreferenced
+from elysium.core.mirror.iceberg_sync import RETENTION_MARGIN_MS, expire_unreferenced
 
-SOURCE = Path("core/mirror/iceberg_sync.py").read_text()
+SOURCE = Path("src/elysium/core/mirror/iceberg_sync.py").read_text()
 
 
 def _the_function() -> str:
@@ -66,16 +66,16 @@ class TestTheHelperIsShared:
         assert callable(expire_unreferenced)
 
     def test_gold_calls_the_shared_one(self):
-        gold = Path("core/mirror/gold.py").read_text()
+        gold = Path("src/elysium/core/mirror/gold.py").read_text()
 
-        assert "from core.mirror.iceberg_sync import expire_unreferenced" in gold
+        assert "from elysium.core.mirror.iceberg_sync import expire_unreferenced" in gold
         assert "def _expire_unreferenced" not in gold
 
     def test_gold_keeps_its_import_local(self):
         """It was function-local to avoid a cycle, and moving it to the
         top of the module would reintroduce one."""
-        gold = Path("core/mirror/gold.py").read_text()
-        i = gold.index("from core.mirror.iceberg_sync import expire_unreferenced")
+        gold = Path("src/elysium/core/mirror/gold.py").read_text()
+        i = gold.index("from elysium.core.mirror.iceberg_sync import expire_unreferenced")
 
         assert gold[:i].rstrip().endswith("try:")
 
@@ -106,7 +106,7 @@ class TestBothLayersCallIt:
         assert "expire_unreferenced" not in before_else
 
     def test_all_three_layers_are_covered(self):
-        gold = Path("core/mirror/gold.py").read_text()
+        gold = Path("src/elysium/core/mirror/gold.py").read_text()
 
         # TWO CALL SITES PLUS THE DEFINITION in iceberg_sync, and one
         # call in gold. Counting the bare name would count the def as

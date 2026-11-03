@@ -27,13 +27,13 @@ import sqlite3
 
 import pytest
 
-from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
-from core.intermediate_layer.audit import AuditLog
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.mediator import DataMediator
-from core.ontology.submission_criteria import SubmissionCriteriaViolation
-from core.ontology.write_log import WriteLogWriter
-from core.ontology.write_mediator import WriteMediator
+from elysium.core.access.audit import AuditLog
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from elysium.core.ontology.mediator import DataMediator
+from elysium.core.ontology.submission_criteria import SubmissionCriteriaViolation
+from elysium.core.ontology.write_log import WriteLogWriter
+from elysium.core.ontology.write_mediator import WriteMediator
 
 TEST_SCHEMA = {
     "Ticket": {

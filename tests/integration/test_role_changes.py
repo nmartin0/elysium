@@ -183,7 +183,7 @@ class TestAFailedReloadIsUndone:
         """SAVE, RELOAD, AND UNDO THE SAVE IF THE RELOAD FAILS -- it can
         fail for a reason unrelated to roles. Leaving the store saved
         would make the next restart load roles nobody saw take effect."""
-        import api.routes as routes
+        import elysium.api.routes as routes
 
         _as(client, "dana")
         change_id = _propose(
@@ -212,7 +212,7 @@ class TestApprovalsDoNotLoseEachOther:
         Staged by pinning the second approval to the generation from
         BEFORE the first one applied, which is what the wait produces.
         """
-        import api.routes as routes
+        import elysium.api.routes as routes
 
         _as(client, "dana")
         base_cs = _grants(client, "customer_service")
@@ -308,7 +308,7 @@ class TestAccountCreationWaitsForAnApproval:
             [sys.executable, "-c",
              "import sys\n"
              "from pathlib import Path\n"
-             "from core.role_changes import role_change_lock\n"
+             "from elysium.core.role_changes import role_change_lock\n"
              f"with role_change_lock(Path({str(data_dir)!r})):\n"
              "    print('held', flush=True)\n"
              "    sys.stdin.readline()\n"],
@@ -359,7 +359,7 @@ class TestApprovalsWaitForOtherWorkers:
             [sys.executable, "-c",
              "import sys\n"
              "from pathlib import Path\n"
-             "from core.role_changes import role_change_lock\n"
+             "from elysium.core.role_changes import role_change_lock\n"
              f"with role_change_lock(Path({str(data_dir)!r})):\n"
              "    print('held', flush=True)\n"
              "    sys.stdin.readline()\n"],

@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from core.intermediate_layer.auth import UserRecord
-from core.modules import (
+from elysium.core.access.auth import UserRecord
+from elysium.core.modules import (
     CONTRACT_VERSION,
     SHIPPED_HOME,
     SHIPPED_MODULES,

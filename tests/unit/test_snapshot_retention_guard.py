@@ -45,7 +45,7 @@ _EXPIRY_CALLS = ("expire_snapshots", "remove_snapshot", "expire_snapshot")
 
 
 def _sources():
-    for directory in ("core", "scripts", "api", "adapters"):
+    for directory in ("src/elysium/core", "src/elysium/scripts", "src/elysium/api", "src/elysium/adapters"):
         for path in (ROOT / directory).rglob("*.py"):
             yield path, path.read_text()
 

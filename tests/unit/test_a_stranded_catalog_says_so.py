@@ -34,7 +34,7 @@ every other IO failure by reading its message.
 
 import pytest
 
-from core.deployment_loader import MirrorCatalogStranded
+from elysium.core.deployment_loader import MirrorCatalogStranded
 
 
 class TestTheExceptionItself:
@@ -58,8 +58,8 @@ class TestWhatTheMessageHasToCarry:
             "interrupted -- a full disk, or a power loss -- between writing "
             "the metadata and swapping the pointer to it.\n\n"
             "To see what is stranded, and then repair it:\n"
-            "    python -m scripts.repair_catalog\n"
-            "    python -m scripts.repair_catalog --write\n\n"
+            "    python -m elysium.scripts.repair_catalog\n"
+            "    python -m elysium.scripts.repair_catalog --write\n\n"
             "Bronze and silver can also be rebuilt from source. THE CHANGELOG "
             "CANNOT: it is the one layer nothing can derive again, so repair "
             "before rebuilding."))
@@ -70,7 +70,7 @@ class TestWhatTheMessageHasToCarry:
     def test_it_names_the_repair_command(self, message):
         """The tool existed before the exception did. The whole point
         of this patch is that the failure now reaches it."""
-        assert "scripts.repair_catalog" in message
+        assert "elysium.scripts.repair_catalog" in message
 
     def test_it_offers_the_dry_run_first(self, message):
         """`--write` repoints a table and loses the commits recorded
@@ -91,14 +91,14 @@ class TestTheSyncPresentsItAsARefusal:
         three."""
         from pathlib import Path
 
-        source = Path("scripts/run_sync.py").read_text()
+        source = Path("src/elysium/scripts/run_sync.py").read_text()
 
         assert "except MirrorCatalogStranded" in source
 
     def test_and_exits_non_zero(self):
         from pathlib import Path
 
-        source = Path("scripts/run_sync.py").read_text()
+        source = Path("src/elysium/scripts/run_sync.py").read_text()
         window = source[source.index("except MirrorCatalogStranded"):]
 
         assert "sys.exit(1)" in window[:400]
@@ -108,7 +108,7 @@ class TestTheLoaderRaisesIt:
     def test_a_missing_metadata_file_is_turned_into_this(self):
         from pathlib import Path
 
-        source = Path("core/deployment_loader.py").read_text()
+        source = Path("src/elysium/core/deployment_loader.py").read_text()
         window = source[source.index("def _snapshot_ids_from_catalog"):]
 
         assert "except (FileNotFoundError, OSError)" in window[:2000]
@@ -119,7 +119,7 @@ class TestTheLoaderRaisesIt:
         has not been written yet, which is ordinary on a first run."""
         from pathlib import Path
 
-        source = Path("core/deployment_loader.py").read_text()
+        source = Path("src/elysium/core/deployment_loader.py").read_text()
         window = source[source.index("def _snapshot_ids_from_catalog"):]
 
         assert "except (NoSuchTableError, NoSuchNamespaceError)" in window[:1200]

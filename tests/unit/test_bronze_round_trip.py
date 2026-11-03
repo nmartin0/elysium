@@ -12,9 +12,9 @@ tests/unit/test_properties.py; this file checks it through a real sync.
 import json
 import sqlite3
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.bronze_text import ENCODINGS_PROPERTY, MIXED, decoded_rows
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.bronze_text import ENCODINGS_PROPERTY, MIXED, decoded_rows
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 
 def _source(path, rows):
@@ -62,7 +62,7 @@ def test_bronze_decodes_to_what_the_source_sent(tmp_path):
 
 def test_a_changed_rows_read_keeps_what_bronze_already_knew(tmp_path):
     """R2 reads a few rows; the encodings of the rest are carried."""
-    from core.mirror.incremental import IncrementalPolicy
+    from elysium.core.mirror.incremental import IncrementalPolicy
 
     path = tmp_path / "i.db"
     connection = sqlite3.connect(path)

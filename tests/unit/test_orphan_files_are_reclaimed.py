@@ -13,8 +13,8 @@ import os
 import shutil
 import time
 
-from core.mirror.catalog import open_mirror_catalog
-from scripts.remove_orphan_files import run
+from elysium.core.mirror.catalog import open_mirror_catalog
+from elysium.scripts.remove_orphan_files import run
 
 TABLE = "primary_sql.customers"
 
@@ -72,7 +72,7 @@ def test_a_young_orphan_is_left_alone(synced_deployment):
 
 
 def test_nothing_is_touched_while_a_sync_holds_the_lock(synced_deployment):
-    from core.mirror.sync_lock import single_writer
+    from elysium.core.mirror.sync_lock import single_writer
 
     orphan = _plant(synced_deployment, "orphan-old.parquet", age_hours=100)
     with single_writer(synced_deployment.data_dir / "sync.lock") as acquired:

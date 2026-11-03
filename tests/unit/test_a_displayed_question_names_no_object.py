@@ -41,7 +41,7 @@ version reached through the mediator into an adapter to ask it.
 
 import pytest
 
-from core.display_safety import identifier_shaped, refuse_unsafe_display_examples
+from elysium.core.display_safety import identifier_shaped, refuse_unsafe_display_examples
 
 
 class TestWhatCountsAsNamingAnObject:
@@ -133,7 +133,7 @@ class TestItIsActuallyCalled:
     def test_building_a_generation_runs_the_check(self):
         from pathlib import Path
 
-        source = Path("core/deployment_loader.py").read_text()
+        source = Path("src/elysium/core/deployment_loader.py").read_text()
         i = source.index("def build_generation")
         body = source[i:i + 4000]
 

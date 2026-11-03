@@ -17,9 +17,9 @@ from pathlib import Path
 
 import pytest
 
-from core.auth.credential_store import CredentialStore
-from core.auth.session_store import SessionStore
-from core.user_directory import UserDirectory
+from elysium.core.auth.credential_store import CredentialStore
+from elysium.core.auth.session_store import SessionStore
+from elysium.core.user_directory import UserDirectory
 
 TEST_ROLES = {"analyst": {"allowed_actions": ["read:Employee"]}}
 

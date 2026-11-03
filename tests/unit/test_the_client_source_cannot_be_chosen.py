@@ -37,7 +37,7 @@ shares one with thousands of others.
 
 import pytest
 
-from core.auth.client_source import UNKNOWN_SOURCE, client_source
+from elysium.core.auth.client_source import UNKNOWN_SOURCE, client_source
 
 
 class _Request:
@@ -146,7 +146,7 @@ class TestItIsActuallyCalled:
     def test_both_login_failure_paths_pass_a_source(self):
         from pathlib import Path
 
-        source = Path("api/routes.py").read_text()
+        source = Path("src/elysium/api/routes.py").read_text()
         calls = [line for line in source.splitlines()
                  if "record_failure(" in line and "def " not in line]
 
@@ -159,7 +159,7 @@ class TestItIsActuallyCalled:
     def test_the_deployment_can_declare_its_proxies(self):
         import dataclasses
 
-        from core.deployment_loader import DeploymentConfig
+        from elysium.core.deployment_loader import DeploymentConfig
 
         names = {field.name for field in dataclasses.fields(DeploymentConfig)}
 

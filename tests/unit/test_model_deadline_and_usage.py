@@ -19,12 +19,12 @@ import time
 
 import pytest
 
-import adapters.claude_agent_sdk_adapter as claude_module
-import adapters.ollama_adapter as ollama_module
-from adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
-from adapters.ollama_adapter import OllamaAdapter
-from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
-from core.llm.interface import LLMAdapter, LLMUnavailable, TokenUsage, call_timeout
+import elysium.adapters.claude_agent_sdk_adapter as claude_module
+import elysium.adapters.ollama_adapter as ollama_module
+from elysium.adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
+from elysium.adapters.ollama_adapter import OllamaAdapter
+from elysium.core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
+from elysium.core.llm.interface import LLMAdapter, LLMUnavailable, TokenUsage, call_timeout
 
 
 class TestCallTimeout:

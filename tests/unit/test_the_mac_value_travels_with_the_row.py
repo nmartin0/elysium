@@ -40,12 +40,12 @@ twice called wrongly. That half is deliberately separate.
 
 import pytest
 
-from core.carried_columns import (
+from elysium.core.carried_columns import (
     CARRIED_COLUMNS,
     LINEAGE_COLUMNS,
     SECURITY_COLUMN,
 )
-from core.mirror.lineage import with_lineage
+from elysium.core.mirror.lineage import with_lineage
 
 ROWS = [{"customer_id": "c1", "region": " us-west ", "name": "Ada"},
         {"customer_id": "c2", "region": "N/A", "name": "Bo"}]
@@ -109,7 +109,7 @@ class TestTheNamedSet:
         not move them back."""
         from pathlib import Path
 
-        source = Path("core/carried_columns.py").read_text()
+        source = Path("src/elysium/core/carried_columns.py").read_text()
         imports = [line for line in source.splitlines()
                    if line.startswith(("import ", "from "))]
 
@@ -122,8 +122,8 @@ class TestEveryStageNamesTheSet:
     anything here -- that is the cost the side table would not have."""
 
     @pytest.mark.parametrize("path", [
-        "core/mirror/gold.py",
-        "core/mirror/gold_arrow.py",
+        "src/elysium/core/mirror/gold.py",
+        "src/elysium/core/mirror/gold_arrow.py",
     ])
     def test_the_gold_stages_carry_the_set(self, path):
         from pathlib import Path
@@ -138,7 +138,7 @@ class TestEveryStageNamesTheSet:
     def test_the_sync_passes_the_security_column(self):
         from pathlib import Path
 
-        source = Path("core/mirror/iceberg_sync.py").read_text()
+        source = Path("src/elysium/core/mirror/iceberg_sync.py").read_text()
 
         assert "security_column=security_column" in source
 
@@ -151,7 +151,7 @@ class TestConformMatchesTheSchema:
         -- four history tests said so the moment `_security` joined the
         set, it being the first carried column that can legitimately be
         missing."""
-        from core.mirror.gold import conform
+        from elysium.core.mirror.gold import conform
 
         type_def = {
             "id_field": "customer_id",

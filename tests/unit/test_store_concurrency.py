@@ -30,8 +30,8 @@ import time
 
 import pytest
 
-from core.auth.login_attempt_tracker import MAX_ATTEMPTS, LoginAttemptTracker
-from core.auth.query_rate_limiter import MAX_QUERIES_PER_WINDOW, QueryRateLimiter
+from elysium.core.auth.login_attempt_tracker import MAX_ATTEMPTS, LoginAttemptTracker
+from elysium.core.auth.query_rate_limiter import MAX_QUERIES_PER_WINDOW, QueryRateLimiter
 
 
 def _run_concurrently(fn, count):
@@ -80,7 +80,7 @@ def test_concurrent_queries_are_not_undercounted(tmp_path):
 def test_a_failing_transaction_rolls_back_rather_than_half_applying(tmp_path):
     # immediate_transaction() must genuinely roll back on an exception,
     # not leave a partial write behind.
-    from core.sqlite_connection import immediate_transaction, open_connection
+    from elysium.core.sqlite_connection import immediate_transaction, open_connection
 
     db_path = tmp_path / "t.db"
     conn = open_connection(db_path)
@@ -104,7 +104,7 @@ def test_the_connection_isolation_level_is_restored_afterwards(tmp_path):
     # The helper changes isolation_level to take explicit control; it
     # must hand the connection back as it found it, or an unrelated
     # later caller on the same connection behaves differently.
-    from core.sqlite_connection import immediate_transaction, open_connection
+    from elysium.core.sqlite_connection import immediate_transaction, open_connection
 
     db_path = tmp_path / "t.db"
     conn = open_connection(db_path)
@@ -124,7 +124,7 @@ def test_a_second_writer_blocks_rather_than_reading_stale_state(tmp_path):
     # front, so a second transaction cannot start until the first
     # commits. Proven directly rather than inferred from the absence of
     # a race above.
-    from core.sqlite_connection import immediate_transaction, open_connection
+    from elysium.core.sqlite_connection import immediate_transaction, open_connection
 
     db_path = tmp_path / "t.db"
     setup = open_connection(db_path)
@@ -174,7 +174,7 @@ def test_one_limiter_per_silo_however_threads_interleave():
     # just raced eight threads at a barrier and PASSED against the
     # broken code -- the same probabilistic mistake that hid the cache
     # race through three attempts.
-    from core.ontology.mediator import DataMediator
+    from elysium.core.ontology.mediator import DataMediator
 
     both_inside = threading.Barrier(2, timeout=2)
 
@@ -215,7 +215,7 @@ def test_schema_is_verified_once_however_threads_interleave(tmp_path):
     # the one migration catches "column already exists" -- safe by
     # coincidence, not construction. A future non-idempotent migration
     # would have corrupted the database with no warning.
-    from core.sqlite_connection import connection_with_schema
+    from elysium.core.sqlite_connection import connection_with_schema
 
     runs = []
     guard = threading.Lock()
@@ -263,7 +263,7 @@ def test_two_callers_racing_for_one_key_cannot_both_hold_it():
     describes what callers are owed, not how it is delivered, so it
     keeps working if the implementation changes again.
     """
-    from core.concurrency import KeyedLockManager
+    from elysium.core.concurrency import KeyedLockManager
 
     manager = KeyedLockManager()
     acquired: list[bool] = []
@@ -301,7 +301,7 @@ def test_two_callers_racing_for_one_key_cannot_both_hold_it():
 def test_different_keys_get_different_locks():
     # The other half: one lock for everything would be correct and
     # useless.
-    from core.concurrency import KeyedLockManager
+    from elysium.core.concurrency import KeyedLockManager
 
     manager = KeyedLockManager()
 
@@ -322,7 +322,7 @@ def test_lock_memory_is_bounded_however_many_keys_are_used():
     is constant regardless of how many distinct objects are ever
     touched.
     """
-    from core.concurrency import KeyedLockManager
+    from elysium.core.concurrency import KeyedLockManager
 
     manager = KeyedLockManager()
     for index in range(200_000):
@@ -337,7 +337,7 @@ def test_lock_memory_is_bounded_however_many_keys_are_used():
 def test_the_same_key_always_maps_to_the_same_lock():
     # Striping is only correct if a key's lock is stable. A key that
     # mapped somewhere else on a later call would exclude nobody.
-    from core.concurrency import KeyedLockManager
+    from elysium.core.concurrency import KeyedLockManager
 
     manager = KeyedLockManager()
 
@@ -353,7 +353,7 @@ def test_two_keys_sharing_a_stripe_still_exclude_each_other():
     of them NOT excluding when they should. What must never happen is
     a shared stripe failing to exclude.
     """
-    from core.concurrency import KeyedLockManager
+    from elysium.core.concurrency import KeyedLockManager
 
     manager = KeyedLockManager()
     # Find two genuinely different keys that collide.
@@ -384,8 +384,8 @@ def test_locking_two_stripe_colliding_objects_together_does_not_deadlock():
     while still ordering by key, so callers acquire the same locks in
     the same sequence and cannot deadlock against each other either.
     """
-    from core.concurrency import KeyedLockManager
-    from core.ontology.mediator import DataMediator
+    from elysium.core.concurrency import KeyedLockManager
+    from elysium.core.ontology.mediator import DataMediator
 
     probe = KeyedLockManager()
     first = ("Customer", "c1")

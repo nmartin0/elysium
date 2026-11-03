@@ -6,9 +6,9 @@ tests/integration/test_new_type_from_the_ui.py.
 import pytest
 import yaml
 
-from core.config_editing import ConfigEditError
-from core.config_editing import apply_new_type as _apply_new_type
-from core.ontology.field_types import FIELD_DATA_TYPES
+from elysium.core.config_editing import ConfigEditError
+from elysium.core.config_editing import apply_new_type as _apply_new_type
+from elysium.core.ontology.field_types import FIELD_DATA_TYPES
 
 ONTOLOGY = """\
 # The ontology.
@@ -172,7 +172,7 @@ def test_a_frozen_silo_map_is_read_like_a_plain_one():
     """The running configuration holds its silos as read-only mappings."""
     from types import MappingProxyType
 
-    from core.ontology.silo_security import silo_rules
+    from elysium.core.ontology.silo_security import silo_rules
 
     frozen = {"data_silos": MappingProxyType({"a": MappingProxyType({"security": MappingProxyType({"field": "x"})})})}
     assert silo_rules(frozen) == {"a": {"field": "x"}}

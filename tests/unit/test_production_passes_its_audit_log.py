@@ -13,10 +13,10 @@ kept in /tmp and deleted at exit -- so production must always pass one.
 import ast
 from pathlib import Path
 
-from core.intermediate_layer.audit import AuditLog
+from elysium.core.access.audit import AuditLog
 
 ROOT = Path(__file__).resolve().parents[2]
-PRODUCTION = ("core", "api", "scripts", "adapters")
+PRODUCTION = ("src/elysium/core", "src/elysium/api", "src/elysium/scripts", "src/elysium/adapters")
 
 # The keyword each constructor takes its audit log (or path) by.
 NEEDS = {"DataMediator": "audit_log", "PendingWriteStore": "audit_log", "AuditLog": "log_path"}
@@ -25,7 +25,7 @@ NEEDS = {"DataMediator": "audit_log", "PendingWriteStore": "audit_log", "AuditLo
 # THE TWO FALLBACKS THEMSELVES -- `audit_log if ... else AuditLog()` in
 # the constructors whose default this is. They are what the rest of this
 # file protects, not callers relying on them.
-THE_FALLBACKS = {"core/ontology/mediator.py", "core/pending_write_store.py"}
+THE_FALLBACKS = {"src/elysium/core/ontology/mediator.py", "src/elysium/core/pending_write_store.py"}
 
 
 def _relying_on_the_default(path: Path, root: Path = ROOT) -> list[str]:

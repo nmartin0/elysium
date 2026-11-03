@@ -12,7 +12,7 @@
 # allowed range. THE LOCKFILES DO: requirements.lock and
 # requirements-dev.lock pin every package, transitive ones included,
 # with hashes -- install with `pip install --require-hashes -r
-# requirements.lock`. scripts/check_lockfiles.py (run by lint.sh) fails
+# requirements.lock`. src/elysium/scripts/check_lockfiles.py (run by lint.sh) fails
 # when this file and the locks disagree. (E-15: this paragraph said a
 # lockfile was "deliberately deferred" long after both existed.)
 
@@ -21,17 +21,17 @@
 #
 # sqlite3 is NOT listed here -- it ships built into Python itself.
 requests<3.0        # HTTP calls to the local Ollama API
-pyjwt>=2.15.1,<3.0  # core/addons.py -- signs the identity token an add-on's server is sent (HS256 JWT)
+pyjwt>=2.15.1,<3.0  # src/elysium/core/addons.py -- signs the identity token an add-on's server is sent (HS256 JWT)
 pyyaml<7.0          # reading deployment config/schema/policy YAML files
-ruamel.yaml>=0.19,<0.20  # WRITING config.yaml from the UI -- round-trip mode keeps every comment (core/config_editing.py)
-argon2-cffi<26.0     # password hashing for core/auth/ -- argon2id, the current OWASP-recommended algorithm
-fastapi<1.0         # api/ -- the HTTP layer
-pydantic>=2.0,<3.0  # core/ -- declarative validation of deployment config. Previously reached only
-                  # transitively through fastapi, which was fine while api/ was the only importer.
-                  # core/ontology/submission_criteria.py imports it directly now, so it is declared
+ruamel.yaml>=0.19,<0.20  # WRITING config.yaml from the UI -- round-trip mode keeps every comment (src/elysium/core/config_editing.py)
+argon2-cffi<26.0     # password hashing for src/elysium/core/auth/ -- argon2id, the current OWASP-recommended algorithm
+fastapi<1.0         # src/elysium/api/ -- the HTTP layer
+pydantic>=2.0,<3.0  # src/elysium/core/ -- declarative validation of deployment config. Previously reached only
+                  # transitively through fastapi, which was fine while src/elysium/api/ was the only importer.
+                  # src/elysium/core/ontology/submission_criteria.py imports it directly now, so it is declared
                   # directly: a fastapi release that drops or re-bounds pydantic would otherwise
-                  # break core/ with nothing in this file mentioning the package at all.
-uvicorn<1.0         # ASGI server to actually run api/app.py
+                  # break src/elysium/core/ with nothing in this file mentioning the package at all.
+uvicorn<1.0         # ASGI server to actually run src/elysium/api/app.py
 starlette>=1.0.1,<2.0  # FastAPI's ASGI layer -- pinned: versions before this had a real, disclosed
                   # authentication-bypass CVE (CVE-2026-48710), fixed in 1.0.1. Since we're
                   # building an authentication system on top of this, this floor is load-bearing,
@@ -71,7 +71,7 @@ pyiceberg[sql-sqlite,pyarrow]<1.0
 # same CLDR the operating systems and browsers use.
 babel>=2.12,<3.0
 # DEP-4: reference data a regular expression gets wrong, each used only
-# where a field declares it (core/ontology/value_checks.py), each
+# where a field declares it (src/elysium/core/ontology/value_checks.py), each
 # imported only then. phonenumbers (Apache-2.0) -- Google's
 # libphonenumber metadata, validity by country and E.164; email-validator
 # (Unlicense) -- RFC syntax only, its DNS check never used; ftfy

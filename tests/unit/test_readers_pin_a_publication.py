@@ -35,10 +35,10 @@ import sqlite3
 
 import pytest
 
-import core.mirror.gold as gold
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.gold import build_gold, published_snapshot_ids
-from core.mirror.iceberg_sync import IcebergMirrorSync
+import elysium.core.mirror.gold as gold
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.gold import build_gold, published_snapshot_ids
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 TYPE = {
     "id_field": "id",

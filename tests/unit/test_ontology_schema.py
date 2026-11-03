@@ -2,7 +2,7 @@
 
 import pytest
 
-from core.ontology.schema import (
+from elysium.core.ontology.schema import (
     get_field_column,
     get_field_info,
     get_field_storage_name,

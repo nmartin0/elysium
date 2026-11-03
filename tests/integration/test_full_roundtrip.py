@@ -20,10 +20,10 @@ Run with: python3 -m pytest tests/integration/ -v -m integration
 
 import pytest
 
-from core.agent.agentic_loop import AgentLoop
-from core.deployment_loader import build_llm_adapter
-from core.intermediate_layer.auth import resolve_user_record
-from core.llm.synthesis_prompt import synthesize_insight
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.agent.agentic_loop import AgentLoop
+from elysium.core.deployment_loader import build_llm_adapter
+from elysium.core.llm.synthesis_prompt import synthesize_insight
 from tests.conftest import read_audit_log
 
 

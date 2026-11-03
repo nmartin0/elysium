@@ -24,8 +24,8 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
-from core.filters import as_equality_conditions
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
+from elysium.core.filters import as_equality_conditions
 
 AWKWARD = {
     "id_field": "id",

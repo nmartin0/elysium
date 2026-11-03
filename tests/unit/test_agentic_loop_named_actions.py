@@ -23,12 +23,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.agent.agentic_loop import AgentLoop, StopReason
-from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.mediator import DataMediator
-from core.ontology.write_log import WriteLogWriter
-from core.ontology.write_mediator import WriteMediator
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.agent.agentic_loop import AgentLoop, StopReason
+from elysium.core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from elysium.core.ontology.mediator import DataMediator
+from elysium.core.ontology.write_log import WriteLogWriter
+from elysium.core.ontology.write_mediator import WriteMediator
 
 TEST_SCHEMA = {
     "Ticket": {

@@ -4,7 +4,7 @@ DEV_UI 13.7): only the lines that change, and only the keys allowed."""
 import pytest
 import yaml
 
-from core.config_editing import (
+from elysium.core.config_editing import (
     REMOVED_MARK,
     ConfigEditError,
     apply_descriptions,

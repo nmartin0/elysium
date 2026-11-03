@@ -1,7 +1,7 @@
 # policy.yaml  (TEMPLATE -- copy into deployment/etc/ and edit)
 #
 # TWO independent, both-required gates for any access (see
-# core/intermediate_layer/access_control.py's check_access()):
+# src/elysium/core/access/access_control.py's check_access()):
 #
 #   MAC (mandatory, non-negotiable): security_attribute below names
 #   which field on a user record is the row-level boundary -- a user
@@ -48,7 +48,7 @@
 #                                named action at all.
 #     tool:<name>              -- may invoke this specific tool
 #     manage:users              -- may create new database-backed users
-#                                via api/'s /users endpoint (see
+#                                via src/elysium/api/'s /users endpoint (see
 #                                scripts/install.sh's root bootstrap)
 #     discover:action_types     -- a single, blanket grant (not per-
 #                                action) -- see the WHOLE action-type

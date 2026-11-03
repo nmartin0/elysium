@@ -10,7 +10,7 @@ cannot discover Account.
 
 import dataclasses
 
-from core.role_impact import role_change_impact
+from elysium.core.role_impact import role_change_impact
 from tests.integration.test_api import _csrf_headers, _login
 
 
@@ -132,7 +132,7 @@ class TestTheApproverSeesIt:
         def broken(*_args, **_kwargs):
             raise RuntimeError("stale")
 
-        monkeypatch.setattr("core.role_impact.role_change_impact", broken)
+        monkeypatch.setattr("elysium.core.role_impact.role_change_impact", broken)
         response = client.get("/api/roles/changes")
 
         assert response.status_code == 200
@@ -147,7 +147,7 @@ class TestItAsksThePermissionCode:
         opens it. A diff of grant strings could not say that."""
         import copy
 
-        from core.deployment_loader import access_roles, deep_freeze
+        from elysium.core.deployment_loader import access_roles, deep_freeze
 
         def thaw(value):
             if hasattr(value, "items"):

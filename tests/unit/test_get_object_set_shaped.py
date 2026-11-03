@@ -15,8 +15,8 @@ fields, with the single-object case as the special case.
 
 import pytest
 
-from core.agent.agentic_loop import MAX_OBJECT_IDS, AgentLoop
-from core.llm.agent_step_prompt import _build_system_prompt
+from elysium.core.agent.agentic_loop import MAX_OBJECT_IDS, AgentLoop
+from elysium.core.llm.agent_step_prompt import _build_system_prompt
 
 
 class _FakeMediator:
@@ -139,7 +139,7 @@ def test_the_prompt_teaches_the_batched_shape_not_the_n_plus_1_one():
 # reads what it is given but not that a model's JSON survives
 # validation. These cover the other half.
 
-from core.llm.agent_step_prompt import next_step  # noqa: E402
+from elysium.core.llm.agent_step_prompt import next_step  # noqa: E402
 
 
 class _Says:
@@ -198,14 +198,14 @@ def test_object_ids_present_but_field_names_missing_fails_closed():
 # duplicate detection, which called step["object_id"] directly in two
 # places. Both raised KeyError on the first real query:
 #
-#   File "core/agent/agentic_loop.py", line 124, in _step_signature
+#   File "src/elysium/core/agent/agentic_loop.py", line 124, in _step_signature
 #     return ("get_object", step["object_type"], step["object_id"], ...)
 #   KeyError: 'object_id'
 #
 # Two unit tests either side of a crash is not coverage of the thing
 # between them.
 
-from core.agent.agentic_loop import _object_ids_in, _step_signature  # noqa: E402
+from elysium.core.agent.agentic_loop import _object_ids_in, _step_signature  # noqa: E402
 
 
 class _Scripted:

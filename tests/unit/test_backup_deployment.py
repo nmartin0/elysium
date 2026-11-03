@@ -21,7 +21,7 @@ import sqlite3
 
 import pytest
 
-from scripts.backup_deployment import OWNED_DATABASES, WAREHOUSE, backup
+from elysium.scripts.backup_deployment import OWNED_DATABASES, WAREHOUSE, backup
 
 
 @pytest.fixture
@@ -132,7 +132,7 @@ def test_it_snapshots_rather_than_copying():
     """
     import inspect
 
-    import scripts.backup_deployment as module
+    import elysium.scripts.backup_deployment as module
 
     source = inspect.getsource(module._snapshot_database)
 

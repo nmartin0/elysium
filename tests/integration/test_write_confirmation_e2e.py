@@ -23,7 +23,7 @@ isolated test deployment, a fresh database per test. user_eve has the
 
 import pytest
 
-from core.filters import as_equality_conditions
+from elysium.core.filters import as_equality_conditions
 from tests.integration.conftest import propose_named_action
 
 QUERY_TEXT = (

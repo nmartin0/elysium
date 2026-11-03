@@ -67,8 +67,8 @@ import tracemalloc
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 ROWS = 20_000
 # Roughly double what is measured today (~2-3 KB/row). Catches a

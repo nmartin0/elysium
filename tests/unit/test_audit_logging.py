@@ -1,7 +1,7 @@
 """
 Tests for the audit-log distinctions added alongside MDO:
 log_unknown_reference() and log_security_resolution_failed()
-(core/intermediate_layer/audit.py). Both are purely ADDITIVE --
+(core/access/audit.py). Both are purely ADDITIVE --
 neither replaces or reorders the existing access_check entry
 log_access() already writes on every decision; these tests confirm
 that explicitly, not just that the new entries appear.
@@ -20,11 +20,11 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteWriteAdapter
-from core.filters import as_equality_conditions
-from core.intermediate_layer.audit import AuditLog
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.mediator import DataMediator
+from elysium.adapters.sqlite_adapter import SQLiteWriteAdapter
+from elysium.core.access.audit import AuditLog
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.filters import as_equality_conditions
+from elysium.core.ontology.mediator import DataMediator
 from tests.conftest import author_book_mediator, read_audit_log
 
 TEST_ROLES = {
@@ -177,7 +177,7 @@ def test_the_log_directory_is_created_once_not_per_record(tmp_path):
     # would be flaky.
     from pathlib import Path
 
-    from core.intermediate_layer.audit import AuditLog
+    from elysium.core.access.audit import AuditLog
 
     calls = []
     real_mkdir = Path.mkdir
@@ -202,7 +202,7 @@ def test_every_record_is_still_written(tmp_path):
     # only safe because the WRITE itself is unchanged -- still opened
     # and closed per append, so a rotation is followed naturally rather
     # than leaving the process writing to a moved inode.
-    from core.intermediate_layer.audit import AuditLog
+    from elysium.core.access.audit import AuditLog
 
     log_path = tmp_path / "nested" / "audit.log"
     log = AuditLog(log_path)

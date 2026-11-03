@@ -6,7 +6,7 @@ values from its field, so an administrator who may not read that field
 is not shown it -- and cannot decide it.
 """
 
-from core.rule_suggestions import ABSENCE, RuleSuggestionStore, suggestion_id
+from elysium.core.rule_suggestions import ABSENCE, RuleSuggestionStore, suggestion_id
 from tests.conftest import with_roles
 
 SID = suggestion_id("Customer", "email", ABSENCE, "N/A")

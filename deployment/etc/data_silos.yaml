@@ -65,7 +65,7 @@ data_silos:
 #    adapter: csv_folder
 #    connection:
 #      # A FOLDER OF CSV FILES, relative to the data directory or absolute.
-#      # Read only, by the sync only (adapters/csv_folder_adapter.py).
+#      # Read only, by the sync only (src/elysium/adapters/csv_folder_adapter.py).
 #      path: "feeds/supplier"
 #      tables:
 #        sold:
@@ -94,7 +94,7 @@ data_silos:
 #    connection:
 #      # A REST/JSON API. Read only, by the sync only; every sync reads
 #      # every page, so a record deleted in the API leaves Elysium too
-#      # (adapters/rest_adapter.py).
+#      # (src/elysium/adapters/rest_adapter.py).
 #      base_url: "https://api.example.com/v1"
 #      auth: {type: bearer, token: "${BOOKS_TOKEN}"}
 #      #   or {type: api_key, name: "X-Api-Key", api_key: "${KEY}", in: header|query}
@@ -151,7 +151,7 @@ data_silos:
 # table is still read IN FULL on the schedule above, and that read is
 # the one that notices deletions. A row whose cursor is empty, or a
 # change that did not move it, is likewise refreshed by full reads only.
-# `python -m scripts.run_sync --full` reads everything now.
+# `python -m elysium.scripts.run_sync --full` reads everything now.
 #
 # `lookback` is for PostgreSQL's now(), which is a transaction's START
 # time: a long transaction can commit after a later one was read, with

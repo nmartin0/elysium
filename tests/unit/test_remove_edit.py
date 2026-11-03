@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from core.config_editing import ConfigEditError, apply_removal
+from elysium.core.config_editing import ConfigEditError, apply_removal
 
 FILE = Path(__file__).resolve().parents[1] / "integration" / "fixtures" / "ontology_schema.yaml"
 TEXT = FILE.read_text()

@@ -25,8 +25,8 @@ correctly and invisibly to the model.
 
 import pytest
 
-from core.agent.agentic_loop import AgentLoop
-from core.intermediate_layer.auth import resolve_user_record
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.agent.agentic_loop import AgentLoop
 
 
 @pytest.mark.integration

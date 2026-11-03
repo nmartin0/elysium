@@ -10,7 +10,7 @@ load. A browser test against the real server found it.
 import base64
 import hashlib
 
-from api.app import import_map_script_src
+from elysium.api.app import import_map_script_src
 
 MAP = '{\n  "imports": {\n    "react": "/shared/react.js"\n  }\n}'
 

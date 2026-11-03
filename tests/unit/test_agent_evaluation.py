@@ -13,8 +13,9 @@ import io
 
 import pytest
 
-from core.agent.agentic_loop import StopReason
-from core.agent.evaluation import (
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.agent.agentic_loop import StopReason
+from elysium.core.agent.evaluation import (
     CaseReport,
     EvalCase,
     ExpectedAggregate,
@@ -25,8 +26,7 @@ from core.agent.evaluation import (
     pass_hat_k,
     plug_in_pass_hat_k,
 )
-from core.deployment_loader import build_generation
-from core.intermediate_layer.auth import resolve_user_record
+from elysium.core.deployment_loader import build_generation
 
 # ---------------------------------------------------------------- estimators
 
@@ -251,13 +251,13 @@ def _result(gathered, stop_reason, fabricated=()):
     it against the shape the loop actually returns rather than two
     fields chosen by hand.
     """
-    from core.agent.agentic_loop import AgentLoopResult
+    from elysium.core.agent.agentic_loop import AgentLoopResult
     return AgentLoopResult(gathered=list(gathered), stop_reason=stop_reason,
                            fabricated_finishes=fabricated)
 
 
 def _trial(case_name, passed):
-    from core.agent.evaluation import TrialResult
+    from elysium.core.agent.evaluation import TrialResult
     return TrialResult(case_name=case_name, passed=passed,
                        stop_reason=StopReason.FINISHED)
 
@@ -270,7 +270,7 @@ def test_trials_are_grouped_per_case_not_pooled():
     hard one that never does -- 3/3 and 0/3 pooled look like 50%, and
     nothing says one case is entirely broken.
     """
-    from core.agent.evaluation import aggregate
+    from elysium.core.agent.evaluation import aggregate
 
     reports = aggregate([
         _trial("easy", True), _trial("easy", True), _trial("easy", True),
@@ -284,7 +284,7 @@ def test_trials_are_grouped_per_case_not_pooled():
 
 def test_a_flaky_case_is_distinguishable_from_a_reliable_one():
     """Same mean, different reliability -- the point of pass^k."""
-    from core.agent.evaluation import aggregate
+    from elysium.core.agent.evaluation import aggregate
 
     reliable, flaky = aggregate([
         _trial("reliable", True), _trial("reliable", True),
@@ -306,7 +306,7 @@ def test_a_flaky_case_is_distinguishable_from_a_reliable_one():
 
 def test_the_summary_line_never_quotes_a_passk_that_could_not_vary():
     """A degenerate run says so instead of reporting 100%."""
-    from core.agent.evaluation import CaseReport
+    from elysium.core.agent.evaluation import CaseReport
 
     degenerate = CaseReport("all_passed", trials=3, successes=3).summary()
     varied = CaseReport("mixed", trials=4, successes=3).summary()
@@ -330,7 +330,7 @@ def test_unusable_replies_are_carried_into_the_report():
     a PARSING problem wearing a model problem's clothes, and swapping
     the model would be the wrong fix.
     """
-    from core.agent.evaluation import aggregate
+    from elysium.core.agent.evaluation import aggregate
 
     reports = aggregate([
         TrialResult(case_name="c", passed=True,
@@ -347,7 +347,7 @@ def test_unusable_replies_are_carried_into_the_report():
 def test_a_clean_run_reports_no_parse_failures():
     """The denominator has to be trustworthy: a case with none must not
     report a rate."""
-    from core.agent.evaluation import aggregate
+    from elysium.core.agent.evaluation import aggregate
 
     reports = aggregate([TrialResult(case_name="c", passed=True)])
 
@@ -358,7 +358,7 @@ def test_a_clean_run_reports_no_parse_failures():
 def test_the_summary_mentions_unusable_replies_only_when_there_were_some():
     """A line reading "unusable replies=0.00/trial" on every healthy
     case is noise that teaches people to skim the line."""
-    from core.agent.evaluation import CaseReport
+    from elysium.core.agent.evaluation import CaseReport
 
     clean = CaseReport("c", trials=4, successes=3).summary()
     noisy = CaseReport("c", trials=4, successes=3, parse_failures=2).summary()

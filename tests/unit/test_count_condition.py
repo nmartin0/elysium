@@ -23,7 +23,7 @@ one figure and redacts it, because no such figure exists.
 
 import pytest
 
-from core.count_condition import (
+from elysium.core.count_condition import (
     CountCondition,
     _verdict,
     evaluate_for_recipients,
@@ -32,7 +32,7 @@ from core.count_condition import (
 
 @pytest.fixture
 def store(tmp_path):
-    from core.notifications import NotificationStore
+    from elysium.core.notifications import NotificationStore
 
     return NotificationStore(tmp_path / "n.db")
 

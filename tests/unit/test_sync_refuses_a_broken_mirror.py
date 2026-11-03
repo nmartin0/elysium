@@ -18,9 +18,9 @@ from pathlib import Path
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.integrity import unreadable_tables
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.integrity import unreadable_tables
 
 ARGS = ("primary", "customers", "customer_id", ["customer_id", "name"],
         {"customer_id": "string", "name": "string"})
@@ -69,7 +69,7 @@ class TestTheRefusal:
             sync.sync_table(*ARGS)
 
         assert "primary.customers" in str(refused.value)
-        assert "scripts.repair_catalog" in str(refused.value)
+        assert "elysium.scripts.repair_catalog" in str(refused.value)
 
     def test_it_reads_the_source_no_times(self, mirrored):
         """BEFORE ANYTHING ELSE: the old failure came after the read."""

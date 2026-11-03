@@ -40,9 +40,9 @@ import uuid
 
 import pytest
 
-from adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
-from core.mirror.bronze_text import bronze_text
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
+from elysium.core.mirror.bronze_text import bronze_text
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 
 class TestValuesThatUsedToBeLost:

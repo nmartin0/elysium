@@ -39,10 +39,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.deployment_loader import _refuse_system_column_names
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.lineage import (
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.deployment_loader import _refuse_system_column_names
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.lineage import (
     LINEAGE_COLUMNS,
     SYSTEM_COLUMNS,
     collides_with_a_system_column,
@@ -210,7 +210,7 @@ class TestItIsWiredIntoTheLoad:
                                                                      tmp_path):
         import shutil
 
-        from core.deployment_loader import load_deployment
+        from elysium.core.deployment_loader import load_deployment
 
         fixtures = Path("tests/integration/fixtures")
         for name in ("config.yaml", "ontology_schema.yaml", "policy.yaml",
@@ -227,7 +227,7 @@ class TestItIsWiredIntoTheLoad:
     def test_the_unmodified_fixture_still_loads(self, tmp_path):
         import shutil
 
-        from core.deployment_loader import load_deployment
+        from elysium.core.deployment_loader import load_deployment
 
         fixtures = Path("tests/integration/fixtures")
         for name in ("config.yaml", "ontology_schema.yaml", "policy.yaml",
@@ -242,8 +242,8 @@ class TestTheListStaysHonest:
         """The set is named in one place; the columns are declared in
         three modules. If they drift, the guard silently stops
         guarding -- so the drift is a test failure instead."""
-        from core.mirror.fusion import FUSED_FROM_COLUMN
-        from core.mirror.sync_targets import LINK_ID_COLUMN
+        from elysium.core.mirror.fusion import FUSED_FROM_COLUMN
+        from elysium.core.mirror.sync_targets import LINK_ID_COLUMN
 
         for column in (*LINEAGE_COLUMNS, FUSED_FROM_COLUMN, LINK_ID_COLUMN):
             assert column in SYSTEM_COLUMNS, (

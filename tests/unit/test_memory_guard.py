@@ -21,11 +21,11 @@ import sqlite3
 
 import pytest
 
-from core.agent.agentic_loop import AgentLoop
-from core.intermediate_layer.auth import resolve_user_record
-from core.memory.guard import MemoryGuard
-from core.memory.store import MAX_TEXT, MemoryStore
-from core.ontology.mediator import DataMediator
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.agent.agentic_loop import AgentLoop
+from elysium.core.memory.guard import MemoryGuard
+from elysium.core.memory.store import MAX_TEXT, MemoryStore
+from elysium.core.ontology.mediator import DataMediator
 from tests.conftest import author_book_mediator, scripted_llm_client
 
 FULL = ["read:Author", "read:Author.author_id", "read:Author.org_id", "read:Author.name"]
@@ -172,7 +172,7 @@ class TestForgetting:
 
 class TestErasure:
     def test_forget_erased_matches_by_salted_hash(self, guard, tmp_path):
-        from core.mirror.erasure import ErasureRegister
+        from elysium.core.mirror.erasure import ErasureRegister
 
         guard.remember(_user("alice"), "Author", "auth_001", "x")
         guard.remember(_user("bob"), "Author", "auth_002", "z")

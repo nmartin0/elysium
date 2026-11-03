@@ -35,7 +35,7 @@ refusal becomes a probe for how the guard is written.
 
 import pytest
 
-from core.ontology.submission_criteria import (
+from elysium.core.ontology.submission_criteria import (
     SubmissionCriteriaViolation,
     evaluate_submission_criteria,
 )

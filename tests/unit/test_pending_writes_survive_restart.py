@@ -26,10 +26,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.write_mediator import PendingWrite, SubWrite
-from core.pending_write_persistence import PendingWritePersistence
-from core.pending_write_store import PendingWriteStore
+from elysium.core.access.auth import UserRecord
+from elysium.core.ontology.write_mediator import PendingWrite, SubWrite
+from elysium.core.pending_write_persistence import PendingWritePersistence
+from elysium.core.pending_write_store import PendingWriteStore
 
 
 def _a_write(description="move the money"):

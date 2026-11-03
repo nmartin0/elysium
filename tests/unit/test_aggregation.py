@@ -25,11 +25,11 @@ import sqlite3
 import pytest
 import yaml
 
-from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
-from core.filters import as_equality_conditions
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.link_types import expand_link_types
-from core.ontology.mediator import DataMediator
+from elysium.core.access.auth import UserRecord
+from elysium.core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from elysium.core.filters import as_equality_conditions
+from elysium.core.ontology.link_types import expand_link_types
+from elysium.core.ontology.mediator import DataMediator
 
 FIXTURES = "tests/integration/fixtures/"
 CUSTOMER_SERVICE = UserRecord(user_id="u1", security_value="us-west", role_name="customer_service")
@@ -245,7 +245,7 @@ def test_aggregation_reads_data_in_bulk_not_per_object(mediator):
     # a real, pre-existing cost that this method inherits and does not
     # introduce. What must stay true is that reading the DATA adds a
     # constant, not one query per object.
-    import adapters.sqlite_adapter as sqlite_adapter_module
+    import elysium.adapters.sqlite_adapter as sqlite_adapter_module
 
     real_run_query = sqlite_adapter_module._run_query
     real_run_query_one = sqlite_adapter_module._run_query_one
@@ -335,7 +335,7 @@ def test_an_aggregate_reads_a_constant_number_of_times(tmp_path):
         object_types, adapters, dict.fromkeys(object_types, "primary_sql"), policy["roles"]
     )
 
-    import adapters.sqlite_adapter as sqlite_adapter_module
+    import elysium.adapters.sqlite_adapter as sqlite_adapter_module
 
     real_run_query = sqlite_adapter_module._run_query
     real_run_query_one = sqlite_adapter_module._run_query_one

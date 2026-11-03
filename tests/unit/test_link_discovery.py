@@ -7,7 +7,7 @@ links, ids, the security column and low-cardinality columns are left
 out; a name hint ranks, and nothing is applied.
 """
 
-from core.mirror.link_discovery import discover
+from elysium.core.mirror.link_discovery import discover
 
 SCHEMA = {
     "Account": {

@@ -19,20 +19,20 @@ from datetime import timedelta
 
 import pytest
 
-from core.count_condition import evaluate_user_triggers
-from core.intermediate_layer.auth import UserRecord
-from core.notifications import NotificationStore
-from core.pending_write_persistence import PendingWritePersistence
-from core.pending_write_store import PendingWriteStore
-from core.saved_views import SavedViewStore
-from core.triggers import TriggerStore, action_problem
+from elysium.core.access.auth import UserRecord
+from elysium.core.count_condition import evaluate_user_triggers
+from elysium.core.notifications import NotificationStore
+from elysium.core.pending_write_persistence import PendingWritePersistence
+from elysium.core.pending_write_store import PendingWriteStore
+from elysium.core.saved_views import SavedViewStore
+from elysium.core.triggers import TriggerStore, action_problem
 
 OWNER = UserRecord("debug", "us-west", "debug")
 
 
 @pytest.fixture
 def generation(synced_deployment):
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     # E-08: a deployment of its own, not the developer's.
     paths = synced_deployment

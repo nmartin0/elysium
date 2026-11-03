@@ -65,7 +65,7 @@ class TestWhatTheFormOffers:
         assert {"transaction_id", "customer_id", "amount"} <= set(columns)
 
     def test_a_source_that_cannot_be_asked_says_null(self, deployer, monkeypatch):
-        monkeypatch.setattr("api.routes.live_source_adapters", lambda request: {"primary_sql": object()})
+        monkeypatch.setattr("elysium.api.routes.live_source_adapters", lambda request: {"primary_sql": object()})
 
         assert deployer.get("/api/admin/ontology/linkable-types/Transaction/columns").json() == {"columns": None}
 
@@ -156,7 +156,7 @@ class TestAddingALink:
     def test_the_loader_has_the_last_word(self, deployer, config_dir, monkeypatch):
         before = (config_dir / FILE).read_text()
         broken = before.replace("  Customer:\n", "  Customer:\n    not_a_known_key_at_all: [\n", 1)
-        monkeypatch.setattr("core.config_editing.apply_new_link", lambda *given: broken)
+        monkeypatch.setattr("elysium.core.config_editing.apply_new_link", lambda *given: broken)
 
         assert _link(deployer).status_code == 400
         assert (config_dir / FILE).read_text() == before
@@ -200,7 +200,7 @@ class TestThePreview:
         assert no_column["problems"] == ["The table customer_tags has no column ghost."]
 
     def test_a_source_that_cannot_say_is_not_checked(self, deployer, monkeypatch):
-        monkeypatch.setattr("api.routes.live_source_adapters", lambda request: {"primary_sql": object()})
+        monkeypatch.setattr("elysium.api.routes.live_source_adapters", lambda request: {"primary_sql": object()})
 
         found = _link(deployer, preview=True).json()
 

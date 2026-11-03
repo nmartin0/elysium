@@ -29,7 +29,7 @@ import ast
 import pathlib
 import re
 
-from scripts.backup_deployment import OWNED_DATABASES
+from elysium.scripts.backup_deployment import OWNED_DATABASES
 
 _DATABASE_FILENAME = re.compile(r"^[a-z_]+\.db$")
 
@@ -48,7 +48,7 @@ DELIBERATELY_EXCLUDED = {
     "pending.db": "a temporary default, never under the data directory",
 }
 
-_APPLICATION = ("api", "core", "scripts", "adapters")
+_APPLICATION = tuple(f"src/elysium/{p}" for p in ("api", "core", "scripts", "adapters"))
 
 
 def _database_names_in_code() -> dict[str, list[str]]:

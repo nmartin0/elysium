@@ -5,10 +5,10 @@ without anything else breaking. This keeps the two together."""
 import re
 from pathlib import Path
 
-from api.apps import visible_apps_for
-from core.agent.help_assistant import SCREEN_GUIDE, SHELL_GUIDE, SHELL_GUIDE_WITH_BROWSE, build_context
-from core.intermediate_layer.auth import UserRecord
-from core.modules import load_modules
+from elysium.api.apps import visible_apps_for
+from elysium.core.access.auth import UserRecord
+from elysium.core.agent.help_assistant import SCREEN_GUIDE, SHELL_GUIDE, SHELL_GUIDE_WITH_BROWSE, build_context
+from elysium.core.modules import load_modules
 
 # The packages AND the page's own screens (ui/src): the System pages
 # live there, and the Inbox did until it became a package (step 3).

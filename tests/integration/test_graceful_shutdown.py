@@ -18,7 +18,7 @@ import urllib.request
 
 import uvicorn
 
-from core.ontology.write_mediator import WriteMediator
+from elysium.core.ontology.write_mediator import WriteMediator
 
 # What install/elysium.service passes: --timeout-graceful-shutdown 30.
 GRACE_SECONDS = 30

@@ -1,0 +1,3091 @@
+"""
+mediator.py  (the data-silo router + security enforcer -- generic, org-agnostic)
+
+ARCHITECTURE, NAMED PRECISELY: this class implements the classic
+mediator-wrapper pattern from federated-database research -- a
+"mediator" holding the semantic schema and routing decisions, talking
+to "wrapper" adapters (adapters/sqlite_adapter.py, and any future one)
+that are purely physical and know nothing about routing. This is the
+SAME family of architecture as virtual knowledge graphs / ontology-
+based data access (e.g. the Ontop system): a schema layer resolved
+LIVE against genuinely separate, un-copied data sources at query time,
+not a materialized/indexed copy of them. Worth naming explicitly
+because it's a meaningfully different mechanism from the precedent's
+own Ontology, despite the shared "ontology" vocabulary for the schema
+concepts themselves (object types, link types) -- the precedent's Ontology
+is a heavily materialized, pre-indexed layer (a separate ingestion
+pipeline copies source data in before anything is queried); this
+system deliberately never copies anything, resolving every link live
+against whichever silo actually holds it, every time.
+
+Each object type's schema entry (ontology_schema.yaml) separates its
+SEMANTIC shape (fields, security, links -- what core/ontology/schema.py's
+helpers ever read) from its PHYSICAL backing (storage.silo/table/
+id_column -- what ONLY the adapter layer and _build_silo_for_type()
+ever read) via a dedicated "storage" sub-key, not flat sibling keys --
+a human editing what a Customer IS never needs to also see or
+understand SQL table names, and vice versa.
+
+MDO (MULTI-DATASOURCE OBJECT TYPES): one object type's DIFFERENT
+properties can each be backed by a genuinely different silo, matching
+the precedent's own column-wise MDO concept -- see _resolve_shared_storage()
+below for the full mechanism. A field opts in via its own "storage" key
+naming an entry in the type's "additional_storage" block; a field with
+no "storage" key uses the type's own primary "storage" block, exactly
+as every field did before MDO existed -- fully backward compatible,
+zero changes required to any single-silo object type. A field may also
+declare "column" to override the actual SQL column name it maps to
+(defaulting to the field name itself, again matching every field's
+existing behavior before this) -- real external silos won't always
+happen to name a column exactly like our own field name.
+
+DELIBERATE V1 SCOPE BOUNDARY, worth stating explicitly: a single
+search_object() filter or get_field() call may only touch fields from
+ONE storage at a time -- see _resolve_shared_storage()'s own docstring
+for why (federated cross-silo intersection is a real, unsolved
+problem, intentionally left for later, separately-justified work).
+This mirrors the precedent's own MDO scope choice -- they support
+column-wise MDO but explicitly not the row-wise case, handled through
+an entirely different mechanism instead of generalizing one to cover
+both.
+
+Cross-database WRITE atomicity for an "update" is now solved, when
+write_log is configured -- see core/ontology/write_log.py's
+own module docstring for the full mechanism (verified directly against
+the precedent's own actual approach, not assumed) and its still-real,
+explicitly stated remaining scope boundaries (multi-storage "create,"
+crash recovery, search_object() integration). READS still enforce the
+single-storage boundary above unconditionally; only WRITES gained a
+path around it.
+
+Takes a pre-resolved UserRecord, not a raw user_id -- DataMediator no
+longer holds users/security_attribute at all (dropped entirely, a real
+reduction in responsibility, not a relocation): resolving a user's
+identity happens ONCE per request, in the caller (see core/
+access/auth.py's resolve_user_record()), and this class
+only ever USES that resolved record. This also means DataMediator
+itself never needs to look anyone up.
+
+THREE gates, all fully explicit -- nothing implied by anything else:
+  1. MAC (region/org boundary) -- _security_allowed(), re-derived live
+     from the OBJECT's own data on every call, never trusted from
+     anywhere else.
+  2. RBAC, object-type level -- "read:{object_type}". Governs DISCOVERY
+     only (may this user search_object/find IDs of this type at all).
+  3. RBAC, field level -- "read:{object_type}.{field_name}". Governs
+     seeing ONE specific field's value. Required for EVERY field,
+     including the object type's own id_field -- an identifier is
+     USUALLY just an opaque reference, but isn't always (a
+     PasswordReset keyed by its own reset_token has a genuinely
+     sensitive identifier), so it gets no special exemption.
+
+UNIFORM DENIAL, deliberately: search_object()/get_field() NEVER raise a
+distinguishing error for "doesn't exist" vs "exists but not authorized"
+-- both look identical to the caller (empty list / None). This is a
+CALLER-FACING guarantee only -- internally, both methods additionally
+log_unknown_reference() (core/access/audit.py) whenever a
+name genuinely doesn't exist in the schema, alongside (never instead
+of) the normal access-check log entry. A standard security pattern,
+not a project-specific invention: fail uniformly to the requester,
+log the real reason for an operator -- see audit.py's own docstring.
+
+visible_schema() is what core/llm/agent_step_prompt.py calls to build
+the LLM's prompt -- and AgentLoop.run() computes it ONCE per request
+and passes it into search_object() explicitly (the optional
+visible_schema parameter below) so a multi-step traversal doesn't
+recompute the same authorize()-for-every-field-and-type work on every
+single search_object call within one request. A caller without an
+already-computed one (a direct/test caller) still works correctly --
+search_object() computes it itself if none is passed in.
+
+Used by: scripts/run_deployment.py (via core/deployment_loader.py),
+         core/llm/agent_step_prompt.py, core/ontology/write_mediator.py,
+         core/memory/guard.py, core/agent/agentic_loop.py
+"""
+
+import decimal
+import logging
+import re
+import threading
+from collections.abc import Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
+from functools import wraps
+from typing import Any, cast
+
+from elysium.core.access.access_control import check_access
+from elysium.core.access.audit import AuditLog
+from elysium.core.access.auth import UserRecord
+from elysium.core.access.rbac import authorize
+from elysium.core.carried_columns import SECURITY_COLUMN
+from elysium.core.concurrency import ConcurrencyLimiter, KeyedLockManager
+from elysium.core.filters import FieldFilter, resolved, row_matches, validate_filter
+from elysium.core.ontology.deprecation import shown_deprecation
+from elysium.core.ontology.derived_fields import compute, derivation_of, finished
+from elysium.core.ontology.enriched_fields import enrichment_of
+from elysium.core.ontology.field_types import coerce
+from elysium.core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
+from elysium.core.ontology.link_types import is_reverse_link
+from elysium.core.ontology.predicted_fields import prediction_of
+from elysium.core.ontology.schema import (
+    get_column_for_field,
+    get_display_name,
+    get_field_storage_name,
+    get_link_target,
+    get_plural_display_name,
+    is_discoverable,
+    is_link_field,
+    is_searchable_field,
+)
+from elysium.core.ontology.semantic_search import semantic_search_of
+from elysium.core.ontology.unrestricted import UNRESTRICTED, is_unrestricted
+from elysium.core.ontology.write_log import WriteLogReader
+from elysium.core.request_context import RequestContext
+
+#: Measures in one aggregate request (aggregate_measures).
+MAX_MEASURES = 8
+_MEASURE_NAME = re.compile(r"[a-z_][a-z0-9_]*")
+
+_AGGREGATES: dict[str, Callable[[list], Any]] = {
+    "count": len,
+    "sum": sum,
+    "avg": lambda values: sum(values) / len(values),
+    "min": min,
+    "max": max,
+}
+
+#: ORDERED BY TIME: the value at the earliest, or the latest, moment in a
+#: bucket -- TimescaleDB's first() and last(), "the first value in one
+#: column when rows are ordered by another". With min and max, a bucket's
+#: first, max, min and last are a candlestick. Only over time buckets,
+#: where there is a time to order by. Each value arrives as (moment,
+#: object id, value): two at one moment are told apart by id, so the
+#: answer does not depend on the order rows were read in.
+_ORDERED: dict[str, Callable[[list], Any]] = {
+    "first": lambda timed: min(timed, key=lambda entry: entry[:2])[2],
+    "last": lambda timed: max(timed, key=lambda entry: entry[:2])[2],
+}
+
+
+# Sentinel for "absent from the cache", distinct from a cached None --
+# which is a real security value meaning the object has none.
+_MISSING = object()
+
+
+@dataclass(frozen=True)
+class ReauthorizedConditions:
+    """What survived re-authorization, and what did not.
+
+    `disabled` holds FIELD NAMES, not conditions: the UI needs to say
+    "the region filter is inactive", and the name is what it says.
+    """
+
+    runnable: list
+    disabled: list[str]
+
+
+# THIS MODULE HAD NO LOGGER until a live read needed to report a type
+# it could not honour. The audit log was the wrong home for it: that
+# records ACCESS DECISIONS, and a source value disagreeing with the
+# ontology is not one.
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SearchOutcome:
+    """What a search did, beyond the ids it returned.
+
+    AN OUT-PARAMETER RATHER THAN A RETURN TYPE, which is the less
+    elegant of two options and the right one here. `search_object`
+    returns a list of ids to 92 call sites; changing that shape to
+    carry one boolean would touch every one of them, almost all tests,
+    for a fact most callers do not want.
+
+    NOT ON RequestContext, which was the first idea and is wrong:
+    that is frozen, and its own docstring describes the fields it
+    expects to gain -- a deadline, a token count -- which are INPUTS
+    set at creation. This is an output.
+
+    Callers that care pass one and read it; callers that do not pass
+    nothing and are unaffected.
+    """
+
+    # THE SEARCH READ THE CEILING AND STOPPED. It does NOT mean "there
+    # is more for you to see": where MAC could not be pushed into the
+    # query, the ceiling bounds a SCAN whose survivors are then
+    # filtered, so the rows beyond it might all have been invisible
+    # anyway. Reported as rows scanned, never as rows matched.
+    scan_truncated: bool = False
+    #: The row check was part of the query (a `field:` security column was
+    #: pushed down, or the type has no row check at all), so every candidate
+    #: scanned was visible and a truncated scan is a truncated ANSWER. When
+    #: False, a truncated scan says nothing about how many visible rows lie
+    #: beyond the ceiling.
+    row_check_pushed: bool = False
+
+# HOW MANY ROWS A SINGLE SEARCH MAY READ.
+#
+# MEASURED, on the read path this bounds: 200,000 rows cost 0.70s and
+# 66MB, which extrapolates to roughly 35 seconds and 3.3GB for ten
+# million -- per request, before any filtering. Unbounded is an OOM on
+# the first real table.
+#
+# 10,000 IS A JUDGEMENT, not a measurement. It is far above any page a
+# user reads (the API's own MAX_PAGE_SIZE is 500) and far below the
+# point where the fetch hurts: at the measured rate it costs about
+# 35ms and 3MB.
+#
+# WHAT IT MEANS DEPENDS ON WHETHER MAC WAS PUSHED. With a `field:`
+# security declaration the database returns only rows the user may
+# see, so this caps the ANSWER. With `via_field:` it caps a SCAN whose
+# survivors are then filtered, so a truncated result says "we stopped
+# looking" and NOT "there is more for you" -- a distinction reported
+# in rows SCANNED rather than rows matched, which is how governed
+# query engines report exactly this.
+MAX_SEARCH_SCAN = 10_000
+
+
+
+# THE SECURITY CACHE, SCOPED -- never an attribute of the mediator.
+#
+# IT WAS AN ATTRIBUTE, AND THAT WAS A MAC BYPASS (004-F6, reproduced).
+# One DataMediator serves every user and thread of a generation, and the
+# cache was cleared only by the NEXT prefetch anybody made. A us-west
+# user read a customer; the source moved it to us-east; the same user
+# read everything again -- the response itself saying 'us-east' -- while
+# the rightful us-east user was denied, all until somebody searched.
+#
+# NOW IT LIVES IN A CONTEXTVAR, set by an explicit scope and RESET when
+# the scope ends:
+#
+#   NO SCOPE, NO CACHE. With none active, every security check reads
+#   live and a prefetch stores nothing. So correctness never depends on
+#   a scope being remembered: an entry point that forgot one is slower,
+#   not wrong. (Remembering at every site is the incomplete-migration
+#   pattern the audits kept finding.)
+#
+#   SCOPES ARE ADDED ONLY WHERE SHARING PAYS: per HTTP request
+#   (middleware), per agent query (AgentLoop.run), per public mediator
+#   call. A nested scope REUSES the outer one, so a search followed by a
+#   page of get_object() calls in one request still shares -- the
+#   measured 4-queries-per-row regression get_object's comment records
+#   stays gone.
+#
+#   ALWAYS RESET. Executor threads keep their own context between tasks;
+#   a cache set and never reset would bring the bug back one thread at a
+#   time.
+_SECURITY_CACHE: ContextVar[tuple[dict, dict] | None] = ContextVar(
+    "elysium_security_cache", default=None,
+)
+
+
+@contextmanager
+def security_cache_scope():
+    """A security cache for the duration, or the enclosing one if any."""
+    if _SECURITY_CACHE.get() is not None:
+        yield
+        return
+    token = _SECURITY_CACHE.set(({}, {}))
+    try:
+        yield
+    finally:
+        _SECURITY_CACHE.reset(token)
+
+
+def _security_scoped(method):
+    """Runs a public mediator call inside security_cache_scope()."""
+    @wraps(method)
+    def scoped(*args, **kwargs):
+        with security_cache_scope():
+            return method(*args, **kwargs)
+    return scoped
+
+
+
+
+def _all_readable(visible_fields: dict, search) -> bool:
+    """Whether every input of a semantic_search declaration is READABLE
+    in this visible schema. The visible schema also carries fields a
+    person may only DISCOVER, marked readable False; presence alone let
+    a discover-only grant rank records by a field's meaning (found 18
+    October)."""
+    if search is None:
+        return False
+    return all((visible_fields.get(name) or {}).get("readable") is True for name in search.inputs)
+
+
+def _visible_replacement(block: "dict | None", discoverable: "set[str]") -> "dict | None":
+    """`block` (shown_deprecation's output) with `replaced_by` kept only
+    when that name is itself discoverable to this caller -- otherwise
+    None. Deprecation's `reason` is free text the deployment's managers
+    wrote about a name this caller may already discover (deliberate,
+    per the mediator's own module docstring); `replaced_by` is a NAME,
+    and showing one the caller cannot discover is exactly the leak
+    `target` is already stripped from a link for (see
+    _without_unknown_target, above)."""
+    if block is None or block["replaced_by"] is None or block["replaced_by"] in discoverable:
+        return block
+    return {**block, "replaced_by": None}
+
+
+class DataMediator:
+    def __init__(self, schema: dict, adapters: dict[str, ExternalReadAdapter],
+                 silo_for_type: dict[str, str], roles: dict,
+                 write_log: WriteLogReader | None = None,
+                 audit_log: AuditLog | None = None,
+                 mirror_synced_at: str | None = None,
+                 source_schema: dict | None = None,
+                 mirror_synced_at_by_type: "dict[str, str] | None" = None,
+                 source_silo_for_type: dict[str, str] | None = None):
+        self.schema = schema
+        self.adapters = adapters
+        self.silo_for_type = silo_for_type
+        # WHERE THE DATA ACTUALLY LIVES, which since GOLD-8 is not the
+        # same as where READS come from: `schema` describes gold, and a
+        # WRITE goes to the customer's database (decision D3).
+        #
+        # CARRIED HERE SO NOBODY HAS TO REMEMBER. A WriteMediator is
+        # built from a DataMediator in seven places, six of them tests,
+        # and asking each to pass the source schema separately made the
+        # write path silently follow reads into gold -- it looked for
+        # an adapter called "gold" and raised KeyError. A mediator that
+        # knows both cannot be wired wrongly.
+        self.source_schema = source_schema if source_schema is not None else schema
+        self.source_silo_for_type = (
+            source_silo_for_type if source_silo_for_type is not None else silo_for_type
+        )
+        self.roles = roles
+        # Optional, defaulting to None -- plenty of legitimate
+        # DataMediator constructions have nothing to do with writes at
+        # all (a read-only deployment, or any test exercising only
+        # reads). None means get_field() below never checks the log,
+        # identical to this class's behavior before the log existed.
+        # The SAME instance a caller passes to WriteMediator when one
+        # IS constructed -- WriteMediator now reads self.mediator.write_log
+        # directly rather than taking its own, separately-passed copy,
+        # so there is only ever one WriteLog per deployment, not two
+        # values that could accidentally drift apart.
+        # When reads come from the local mirror, this is the mirror's
+        # own last-sync timestamp -- what makes the read-your-writes
+        # overlay in _read_field_with_log_check() below bounded rather
+        # than unbounded. None for a live deployment, which disables
+        # the overlay entirely (the live adapter already reads the
+        # real, current value).
+        self.mirror_synced_at = mirror_synced_at
+        # EACH TYPE'S OWN, where its published gold recorded one (21
+        # October): the overlay runs from what THAT type serves. See
+        # _overlay_since.
+        self.mirror_synced_at_by_type = dict(mirror_synced_at_by_type or {})
+        self.write_log = write_log
+        # UNLIKE write_log above, this is NEVER None -- audit logging is
+        # a core security requirement this project treats as always-on,
+        # not an opt-in capability (see AuditLog's own module docstring
+        # for the full reasoning, and why its class-level default path
+        # is a deliberate, narrower exception to this project's usual
+        # "no defaults for per-deployment stores" rule). A caller not
+        # providing one still gets a real, working AuditLog, writing to
+        # a sensible default location, rather than every method below
+        # needing an "if audit_log is not None" guard the way write_log
+        # genuinely does.
+        self.audit_log = audit_log if audit_log is not None else AuditLog()
+
+        # Built LAZILY, per-silo, inside _write_limiter_for_silo()
+        # below -- NOT eagerly here. A real, necessary correction:
+        # this used to build one limiter per adapter unconditionally,
+        # reading adapter.max_concurrent_writes -- but a genuine
+        # ExternalReadAdapter (this class's own real, normal case,
+        # once DataMediator's own read path moves to a read-only
+        # credential) has no such attribute at all -- only
+        # ExternalWriteAdapter does. Building this eagerly, for EVERY
+        # DataMediator regardless of whether anything ever calls
+        # _write_limiter_for_silo() on it, would make constructing a
+        # genuinely read-only DataMediator fail outright. Lazy
+        # construction means this code path is only ever exercised by
+        # the one, real caller that actually needs it -- WriteMediator's
+        # own internal, write-capable _adapter_mediator (see that
+        # class's own __init__ docstring) -- never by a real, ordinary,
+        # read-only DataMediator instance at all.
+        self._write_limiters: dict[str, ConcurrencyLimiter] = {}
+        # NO SECURITY CACHE HERE. It was one, shared by every user and
+        # thread, and that was a MAC bypass -- see _SECURITY_CACHE above.
+        self._object_locks = KeyedLockManager()
+
+    def _lock_for_object(self, object_type: str, object_id: Any) -> threading.Lock:
+        return self._object_locks.lock_for((object_type, object_id))
+
+    @contextmanager
+    def _locks_for_objects(self, object_refs: list[tuple[str, Any]]):
+        # Multi-object counterpart to _lock_for_object() above -- used
+        # by WriteMediator.confirm_and_execute() when applying a batch
+        # (see write_mediator.py's own docstring for the full
+        # sub_writes/write_log_batches mechanism this supports).
+        #
+        # SORTED acquisition order, deliberately -- the standard,
+        # well-known deadlock-avoidance technique: two concurrent
+        # multi-object batches that happen to share some objects can
+        # never deadlock against each other as long as EVERY caller
+        # acquiring more than one lock at once uses this SAME canonical
+        # order (breaks circular wait, one of the four Coffman
+        # conditions). str(object_id) in the sort key for the same
+        # reason WriteLog's own object_id columns are consistently
+        # str()-converted -- comparing a mix of int and str ids directly
+        # would raise in Python 3, not just behave surprisingly.
+        #
+        # NOT the same as the order sub_writes actually APPLY in --
+        # deliberately. Apply order stays the batch's own declared LIST
+        # order (referential correctness: a sub_write creating an
+        # object must apply before another sub_write that references
+        # it). Lock ACQUISITION order is sorted for deadlock avoidance
+        # ONLY -- these are two genuinely different orderings serving
+        # two different purposes; conflating them would be a real bug,
+        # not just a style inconsistency.
+        sorted_refs = sorted(object_refs, key=lambda ref: (ref[0], str(ref[1])))
+        assert len(set(sorted_refs)) == len(sorted_refs), (
+            f"duplicate object in lock set {sorted_refs} -- "
+            f"threading.Lock is not reentrant, this would self-deadlock"
+        )
+        # DEDUPLICATED BY LOCK, NOT BY KEY. Locks are striped onto a
+        # bounded set, so two DISTINCT objects can share one --
+        # verified directly: ('Customer', 'c1') and ('Customer',
+        # 'c1940') map to the same lock. Acquiring it twice in one
+        # write would self-deadlock, since threading.Lock is not
+        # reentrant, and the assert above cannot see it because the
+        # KEYS differ.
+        #
+        # Ordering is still by sorted key, so every caller acquires
+        # the same locks in the same sequence and cannot deadlock
+        # against another caller either.
+        locks: list = []
+        for object_type, object_id in sorted_refs:
+            lock = self._lock_for_object(object_type, object_id)
+            if lock not in locks:
+                locks.append(lock)
+        acquired = []
+        try:
+            for lock in locks:
+                lock.acquire()
+                acquired.append(lock)
+            yield
+        finally:
+            for lock in reversed(acquired):
+                lock.release()
+
+    def _write_limiter_for_silo(self, silo_name: str) -> ConcurrencyLimiter:
+        # Keyed directly by silo name, not object_type -- needed by
+        # WriteMediator's own log-based apply paths (see
+        # _apply_one_update() and _apply_one_create() in
+        # write_mediator.py), which resolve a limiter PER STORAGE
+        # GROUP. Resolving by object_type alone would always give back
+        # the PRIMARY silo's limiter, the wrong one for a group writing
+        # to a different (e.g. MDO additional_storage) silo -- a real
+        # bug, caught directly by tracing the actual call chain, not
+        # just reasoned about (see write_mediator.py's own comment on
+        # this at its update-side fix).
+        #
+        # Built lazily, on first real use, not eagerly in __init__ --
+        # see that method's own comment for why: this method (and
+        # therefore max_concurrent_writes) is only ever genuinely
+        # needed on a real, write-capable ExternalWriteAdapter, never
+        # on a genuine, read-only ExternalReadAdapter, which has no
+        # such attribute at all. The cast() below is real, deliberate
+        # type-narrowing, not a way of hiding a genuine mismatch: this
+        # method is ONLY ever called via WriteMediator's own internal,
+        # write-capable _adapter_mediator (see that class's own
+        # __init__ docstring) -- self.adapters there genuinely does
+        # hold ExternalWriteAdapter instances at runtime (in practice,
+        # concretely, adapters/sqlite_adapter.py's own SQLiteWriteAdapter),
+        # even though self.adapters' own STATIC type stays
+        # dict[str, ExternalReadAdapter] for every OTHER, real,
+        # read-only DataMediator this class also serves.
+        # setdefault(), not `if not in: create`. That shape is
+        # check-then-act: two threads both see the silo missing, both
+        # build a limiter, and one silently replaces the other -- so
+        # they end up holding DIFFERENT limiters for the same silo and
+        # each enforces max_concurrent_writes independently. The
+        # configured ceiling on concurrent writes to a customer's
+        # database is then exceeded, with nothing raised and nothing
+        # logged.
+        #
+        # Proven by forcing the interleaving rather than hoping for it:
+        # two limiter objects created, two handed out. dict.setdefault()
+        # is atomic under the GIL, which is the same guarantee
+        # KeyedLockManager already relies on (see core/concurrency.py,
+        # where the claim is tested directly).
+        #
+        # The limiter is constructed unconditionally, so a redundant one
+        # may be built and discarded under contention. That is cheap
+        # and, unlike the race, harmless -- an unused ConcurrencyLimiter
+        # holds nothing.
+        adapter = cast(ExternalWriteAdapter, self.adapters[silo_name])
+        return self._write_limiters.setdefault(
+            # NAMED BY SILO, so every worker writing it shares its cap --
+            # a SQLite silo's 1 is a property of the file, not the worker.
+            silo_name, ConcurrencyLimiter(adapter.max_concurrent_writes,
+                                          name=f"silo-write/{silo_name}")
+        )
+
+    def _adapter_for(self, object_type: str) -> ExternalReadAdapter:
+        silo_name = self.silo_for_type[object_type]
+        return self.adapters[silo_name]
+
+    def _type_schema(self, object_type: str) -> dict:
+        type_schema = self.schema.get(object_type)
+        if type_schema is None:
+            raise ValueError(f"Unknown object_type: {object_type}")
+        return type_schema
+
+    def _resolve_shared_storage(self, object_type: str, field_names) -> tuple[ExternalReadAdapter, dict]:
+        # MDO (multi-datasource object types) -- resolves ONE adapter +
+        # synthetic type_config shared by every field in field_names.
+        # A field may declare its own "storage" (an entry in this
+        # type's additional_storage), backing it from a genuinely
+        # different silo than its type's own primary one -- see
+        # ontology_schema.yaml's own MDO comments for the full design.
+        #
+        # DELIBERATE V1 SCOPE BOUNDARY: raises if field_names span more
+        # than one storage. A single search filter or get_field call
+        # may only touch fields from ONE storage at a time -- multi-
+        # storage search (federated intersection across adapters) is a
+        # real, unsolved problem, deliberately left for later,
+        # separately-justified work rather than silently attempted
+        # here. This mirrors the precedent's own MDO scope choice -- they
+        # support column-wise MDO but explicitly not the row-wise
+        # case, handling that through an entirely different mechanism
+        # instead of trying to generalize one mechanism to cover both.
+        #
+        # WRITE callers (WriteMediator) work AROUND this guard now,
+        # deliberately, rather than being subject to it directly --
+        # see core/ontology/write_log.py's own module docstring for
+        # the mechanism: an "update" whose mutations span multiple
+        # storages resolves each storage's own fields through a
+        # SEPARATE call to this same method (one field at a time, or
+        # grouped by storage), so this guard is simply never invoked
+        # with more than one storage's worth of fields in a single
+        # write anymore. This function itself is completely unchanged
+        # -- it's the CALLING pattern for writes that changed.
+        #
+        # The type's own id_field ALWAYS resolves to the primary
+        # storage, never an additional_storage entry -- MDO lets
+        # DIFFERENT PROPERTIES live in different places, but there is
+        # still exactly one identity for the object, and every
+        # additional_storage entry's own id_column exists only to say
+        # HOW to join on that shared identity value, not to redefine it.
+        type_schema = self._type_schema(object_type)
+        id_field = type_schema["id_field"]
+
+        storage_names: set[str | None] = set()
+        for field_name in field_names:
+            if field_name == id_field:
+                storage_names.add(None)
+            else:
+                storage_names.add(get_field_storage_name(type_schema["fields"][field_name]))
+
+        if not storage_names:
+            # No fields specified at all (e.g. search_object() with an
+            # empty criteria dict, "give me everything") -- the primary
+            # storage is the only sensible default, since that's where
+            # the type's own identity column lives.
+            storage_names = {None}
+
+        if len(storage_names) > 1:
+            raise ValueError(
+                f"{object_type}: cannot combine fields from multiple storages "
+                f"in one operation -- {sorted(field_names)}"
+            )
+
+        storage_name = storage_names.pop()
+        storage_block = (
+            type_schema["storage"] if storage_name is None
+            else type_schema["additional_storage"][storage_name]
+        )
+        adapter = self.adapters[storage_block["silo"]]
+        # A synthetic type_config -- everything from the real one,
+        # EXCEPT storage, which is swapped for whichever block this
+        # specific set of fields actually resolved to. Adapters only
+        # ever read type_config["storage"], never anything else in this
+        # dict, so this is safe -- see adapters/sqlite_adapter.py.
+        synthetic_type_config = {**type_schema, "storage": storage_block}
+        return adapter, synthetic_type_config
+
+    def security_value_of(self, object_type: str, object_id: Any) -> Any:
+        """The object's CURRENT security value, or None when it has none
+        or cannot be resolved -- the public name for what the access
+        check, the write path and the memory guard all need (F-09).
+
+        NONE STAYS NONE. "No security value" and "an empty-string
+        security value" are different facts, and a caller that flattens
+        one into the other can no longer tell an unresolvable object
+        from one that genuinely carries "".
+        """
+        return self._get_security_value(object_type, object_id)
+
+    def _get_security_value(self, object_type: str, object_id: Any) -> Any:
+        # Cache first, populated by _prefetch_security_values() when a
+        # caller is resolving many objects. A MISS falls through to the
+        # per-object reads below unchanged, so correctness never depends
+        # on the cache being warm -- it only ever makes the same answer
+        # cheaper to reach.
+        # A SINGLE .get() per cache, not `if key in cache: return
+        # cache[key]`. That shape is a check-then-get, and another
+        # request's prefetch clearing the cache between the two raises
+        # KeyError -- proven by forcing the interleaving directly, since
+        # the GIL makes it rare rather than impossible.
+        #
+        # _MISSING rather than None as the sentinel: None is a REAL
+        # cached security value, meaning "this object has none and is
+        # therefore visible to nobody". Treating it as a miss would send
+        # every such object down the slow path forever, and worse,
+        # would make a genuine None indistinguishable from an absent
+        # entry.
+        cache_key = (object_type, str(object_id))
+        scoped = _SECURITY_CACHE.get()
+        # NO SCOPE, NO CACHE: read live -- slower, never stale.
+        value_cache, link_cache = scoped if scoped is not None else ({}, {})
+        cached = value_cache.get(cache_key, _MISSING)
+        if cached is not _MISSING:
+            return cached
+        link = link_cache.get(cache_key)
+        if link is not None:
+            target_type, linked_id = link
+            if linked_id is None:
+                return None
+            return self._get_security_value(target_type, linked_id)
+
+        # Resolves the row-level security value for one object, following
+        # a via_field link if this object type doesn't hold it directly.
+        # PURE MAC mechanics -- a mechanical internal lookup core/ needs
+        # to make ITS OWN decision, not something gated by the acting
+        # user's own field-level permissions.
+        #
+        # A via_field link CAN legitimately cross into a different data
+        # silo -- e.g. a PayrollRecord (silo B) whose security chain
+        # inherits an Employee's (silo A) department. This just works:
+        # the recursive call below re-resolves _adapter_for(target_type)
+        # fresh, from that type's OWN silo declaration, exactly the same
+        # as the top of THIS call did for object_type -- nothing here
+        # assumes the target lives in the same database as the source.
+        # Proven with a real cross-database test, not just reasoned
+        # about -- see tests/unit/test_cross_silo_links.py.
+        #
+        # ALSO goes through _resolve_shared_storage(), same as every
+        # other field read in this file -- the security-bearing field
+        # ITSELF can be MDO-backed (unusual, but not disallowed by the
+        # schema format), and this method used to bypass MDO entirely,
+        # always querying the type's PRIMARY adapter/table regardless
+        # of where security["field"]/["via_field"] actually lived. A
+        # real, confirmed bug (a raw OperationalError, "no such
+        # column") until this fix -- caught directly, not just reasoned
+        # about, before being fixed. See tests/unit/test_mdo.py's
+        # security-field-is-itself-MDO test.
+        type_schema = self._type_schema(object_type)
+        security = type_schema["security"]
+
+        # THE LOWEST LABEL, never None (core/ontology/unrestricted.py):
+        # None means "unresolvable, visible to nobody".
+        if is_unrestricted(type_schema):
+            return UNRESTRICTED
+
+        if "field" in security:
+            field_name = security["field"]
+
+            # THE CARRIED COLUMN FIRST -- `LLM3-3`.
+            #
+            # `_security` holds this value copied once, at sync, into the
+            # namespace every pipeline stage carries forward unchanged.
+            # Reading it rather than the declared column makes MAC's input
+            # immune to whatever a later stage does to the data: an
+            # enrichment that rewrites `region`, a redaction that blanks
+            # it, a standardisation that folds its case.
+            #
+            # MEASURED DAMAGE BEFORE THE COLUMN EXISTED: a region of
+            # "N/A" became None and the object belonged to no compartment
+            # at all; `" us-west "` became `"us-west"` and stopped
+            # matching a caller whose own value kept its spacing.
+            #
+            # RESOLVED ON THE DECLARED FIELD, deliberately. `_security`
+            # is not a declared field and has no storage of its own --
+            # `with_lineage` writes it into the SAME table the declared
+            # field lives in, so that field is what says which adapter
+            # holds it.
+            #
+            # NO NEW STALENESS, which was the objection and it does not
+            # survive checking: the mediator reads through GoldConnector,
+            # so MAC has always seen a PUBLISHED snapshot rather than
+            # live data. A write reaches MAC at the next sync either way,
+            # and `_security` is republished in the same sync as the
+            # column it came from.
+            adapter, resolved = self._resolve_shared_storage(
+                object_type, [field_name])
+            try:
+                carried = self._read_field_with_log_check(
+                    object_type, object_id, SECURITY_COLUMN,
+                    adapter, resolved)
+            except Exception:  # noqa: BLE001 - no such column, by design
+                # A DEPLOYMENT READING LIVE SOURCES HAS NO `_security`,
+                # and that is not a weakening: no sync means no pipeline,
+                # so nothing can rewrite the value between the source and
+                # this read. The thing the column protects against does
+                # not exist there.
+                #
+                # Measured: reading it unconditionally failed 146 tests,
+                # every one a fixture reading an adapter directly.
+                carried = None
+            if carried is not None:
+                return carried
+
+            adapter, resolved_type_config = self._resolve_shared_storage(object_type, [field_name])
+            # Checks the write log FIRST, via the SAME shared
+            # _read_field_with_log_check() get_field() and
+            # search_object() already use -- a real, previously-missed
+            # gap otherwise: for an object still mid-CREATE, nothing
+            # exists in the real backend AT ALL yet (not just this one
+            # field), so a direct adapter read would return None and
+            # incorrectly deny access to the very user who is creating
+            # it, even though the pending write's own security value
+            # would have matched them correctly. Caught directly by a
+            # real test, not assumed -- see
+            # tests/unit/test_write_log_create.py's own
+            # test_get_field_sees_pending_create_value.
+            return self._read_field_with_log_check(object_type, object_id, field_name, adapter, resolved_type_config)
+
+        if "via_field" in security:
+            via_field = security["via_field"]
+            adapter, resolved_type_config = self._resolve_shared_storage(object_type, [via_field])
+            linked_id = self._read_field_with_log_check(
+                object_type, object_id, via_field, adapter, resolved_type_config
+            )
+            if linked_id is None:
+                return None
+
+            target_type = type_schema["fields"][via_field]["target"]
+            return self._get_security_value(target_type, linked_id)
+
+        raise ValueError(f"No security resolution declared for object_type {object_type!r}")
+
+    def _without_deleted(self, object_type: str, object_ids: list) -> list:
+        """Drops objects whose latest applied write is a delete.
+
+        Read in BULK, one query for the whole candidate set rather than
+        one per object -- the same discipline Point 9 applied to
+        security resolution, and for the same reason: a per-object
+        check here would reintroduce exactly the N+1 that was just
+        removed.
+        """
+        if self.write_log is None or not object_ids:
+            return object_ids
+        deleted = self.write_log.deleted_object_ids(object_type)
+        if not deleted:
+            return object_ids
+        return [object_id for object_id in object_ids if str(object_id) not in deleted]
+
+    def _prefetch_security_values(self, object_type: str, object_ids: list) -> None:
+        """Resolves the security value for many objects at once, into
+        the per-request cache _get_security_value() already reads.
+
+        THE MEASURED PROBLEM. check_access() resolves each object's
+        security value individually, and a via_field chain adds a read
+        per hop. Profiling an aggregate over 20,000 objects: 6.25s
+        total, 6.10s of it in check_access(). search_object() on 2,004
+        objects issued 4,021 SQL queries before this existed.
+
+        THE SHAPE OF THE FIX. A security chain is a walk over object
+        TYPES, not over objects: every Transaction resolves through
+        Customer, so the whole set needs one read of Transaction's
+        via_field and one read of Customer's security field --
+        regardless of how many objects there are. This walks the chain
+        level by level, reading each level in bulk, so cost scales with
+        the DEPTH of the chain rather than the size of the set.
+
+        Deliberately populates a cache rather than changing
+        check_access()'s signature. Every authorization decision still
+        goes through the exact same code path, per object, in the same
+        order, with the same audit logging -- this only makes the reads
+        it performs cheaper. A security check that took a different
+        route when batched would be a genuinely different check, and
+        that is not a risk worth taking for speed.
+
+        Silently does nothing on any failure. This is a cache warmer:
+        if a bulk read fails for any reason, every caller still gets
+        the correct answer from the per-object path, just slower.
+        """
+        scoped = _SECURITY_CACHE.get()
+        if scoped is None:
+            # NOTHING TO WARM: outside a scope there is no cache to fill,
+            # and filling a stray one is how the bypass began.
+            return
+        value_cache, link_cache = scoped
+        value_cache.clear()
+        link_cache.clear()
+        pending = {object_type: [str(object_id) for object_id in object_ids]}
+        seen_types = set()
+
+        while pending:
+            current_type, ids = pending.popitem()
+            if current_type in seen_types or not ids:
+                continue
+            seen_types.add(current_type)
+
+            type_schema = self.schema.get(current_type)
+            if type_schema is None:
+                continue
+            security = type_schema.get("security") or {}
+            field_name = security.get("field") or security.get("via_field")
+            if field_name is None:
+                continue
+
+            try:
+                rows = self._read_field_for_ids(current_type, ids, field_name)
+            except Exception:
+                # See the docstring: a warmer that fails must not break
+                # the read it was warming.
+                return
+
+            if "field" in security:
+                for object_id, value in rows.items():
+                    value_cache[(current_type, str(object_id))] = value
+                continue
+
+            # A via_field hop: remember which linked id each object
+            # resolves through, then batch the NEXT level.
+            target_type = type_schema["fields"][field_name]["target"]
+            for object_id, linked_id in rows.items():
+                link_cache[(current_type, str(object_id))] = (target_type, linked_id)
+            next_ids = [str(linked) for linked in rows.values() if linked is not None]
+            if next_ids:
+                pending[target_type] = next_ids
+
+    def _read_field_for_ids(self, object_type: str, object_ids: list, field_name: str) -> dict:
+        """One field, many objects, one adapter call. No authorization
+        of its own -- this is the read half of _prefetch_security_
+        values(), and resolving a security value is precisely the step
+        that decides authorization, so it cannot itself be gated on
+        one."""
+        adapter, resolved_type_config = self._resolve_shared_storage(object_type, [field_name])
+        id_column = resolved_type_config["storage"]["id_column"]
+        column = get_column_for_field(resolved_type_config, field_name)
+
+        # NOT COERCED, DELIBERATELY. This resolves a SECURITY VALUE,
+        # which is compared for equality against the user's own. Coercion
+        # changes a value's representation, and changing the
+        # representation of one side of the comparison that decides
+        # authorization is not a risk worth taking to make a region name
+        # tidier.
+        #
+        # A security field is a string in every deployment shipped, so
+        # there is nothing to coerce in practice -- but "nothing to
+        # coerce in practice" is a fact about today's configs rather
+        # than a guarantee, which is why this says so rather than
+        # relying on it.
+
+        # Filtered IN THE ENGINE. This read every row of the table and
+        # discarded the rest in Python; fetching three objects out of
+        # 200,004 read all of them.
+        rows = adapter.read_fields_for_ids(
+            resolved_type_config["storage"]["table"], id_column,
+            list(object_ids), [column], resolved_type_config,
+        )
+        return {row[id_column]: row[column] for row in rows}
+
+    def _pushable_security_column(self, object_type: str, searched_adapter,
+                                   searched_config: dict) -> str | None:
+        """The COLUMN a MAC filter can become, or None if it cannot.
+
+        THE CANONICAL NAME FOR THIS IS PREDICATE PUSHDOWN, and what
+        cannot be pushed is the RESIDUAL predicate, applied after the
+        read. Row-level security is the same idea stated as "an
+        enforced, invisible WHERE clause": the condition becomes a
+        property of the table rather than something every query must
+        remember.
+
+        `field:` IS PUSHABLE. The security value lives in a column of
+        the object's own table, so `WHERE region = ?` expresses the
+        whole rule and a LIMIT after it is CORRECT rather than a guess.
+
+        `via_field:` IS NOT. The value is reached by following a link,
+        possibly into another table or another silo, and resolved
+        recursively. No single query against this table expresses it.
+
+        THAT IS A KNOWN HAZARD, NOT A LOCAL LIMITATION. The field
+        guidance for row-level security is "keep predicates join-free";
+        a security rule requiring a join is exactly the pattern
+        practitioners warn about. Databricks hits the same wall from
+        the other side -- their SecureView barrier stops predicates
+        crossing the policy boundary, which "can force full table
+        scans... even when the policy resolves to a constant true".
+
+        So an author choosing `via_field:` over `field:` is choosing a
+        scan, and ontology_schema.yaml says so.
+        """
+        security = (self.schema.get(object_type) or {}).get("security") or {}
+        field_name = security.get("field")
+        if field_name is None:
+            return None
+
+        try:
+            security_adapter, security_config = self._resolve_shared_storage(
+                object_type, [field_name],
+            )
+        except (KeyError, ValueError):
+            # UNRESOLVABLE MEANS UNPUSHABLE, not an error to raise here.
+            # Whatever is wrong with the mapping, the caller's fallback
+            # is a residual filter, which is correct if slower.
+            return None
+
+        # AND IT MUST LIVE IN THE TABLE BEING SEARCHED, which is why
+        # the caller passes its own resolved config rather than this
+        # re-resolving. With MDO an object type spans several storages
+        # and the one a search routes to depends on WHICH FIELDS it
+        # filters on -- so "the table being searched" is not a property
+        # of the object type, and asking for the default storage gives
+        # the wrong answer.
+        #
+        # Three MDO tests caught this: `WHERE region = ?` against a
+        # table with no such column fails outright.
+        #
+        # Same silo AND same table: a column name means nothing outside
+        # one table, and two tables in one silo may each have a
+        # `region` meaning different things.
+        if searched_adapter is not security_adapter:
+            return None
+        if security_config["storage"] != searched_config["storage"]:
+            return None
+
+        return get_column_for_field(security_config, field_name)
+
+    def has_no_row_check(self, object_type: str) -> bool:
+        """Whether `object_type` is declared `security: unrestricted`
+        (core/ontology/unrestricted.py) -- the role check alone decides."""
+        return is_unrestricted(self.schema.get(object_type))
+
+    def _security_allowed(self, object_type: str, object_id: Any, requesting_user_security_value: str) -> bool:
+        security_value = self._get_security_value(object_type, object_id)
+        # AN UNRESTRICTED TYPE NEVER REACHES THIS: check_access passes it
+        # through has_no_row_check, so the decision lives in one place. A
+        # caller that did reach here with one would be refused -- the
+        # sentinel equals no user's value -- which is the safe direction.
+        return security_value is not None and security_value == requesting_user_security_value
+
+    def knows(self, user_record: UserRecord, subject: str) -> bool:
+        """Whether this person may know a name exists, by the rule
+        visible_schema applies: "Customer" is a type, "Customer.email" a
+        field of a type they know, "link:CustomerTags" a link type with
+        at least one end they can discover on a type they know.
+
+        ASKED BY THE REMOVAL SCREEN, which names things (what would block
+        a removal) and must name only what the person could already find
+        in Schema. A name that is not in the schema is not known, so a
+        name that does not exist and one the person cannot discover
+        answer alike.
+        """
+        if subject.startswith("link:"):
+            link_type = subject[len("link:"):]
+            return any(
+                field_info.get("type") == "link" and field_info.get("link_type") == link_type
+                and self.knows(user_record, f"{owner}.{field_name}")
+                for owner, owner_def in self.schema.items()
+                for field_name, field_info in owner_def["fields"].items())
+        object_type, _, field_name = subject.partition(".")
+        definition = self.schema.get(object_type)
+        if definition is None or not (
+                is_discoverable(definition) or authorize(user_record, self.roles, f"discover:{object_type}")):
+            return False
+        return not field_name or (
+            field_name in definition["fields"]
+            and authorize(user_record, self.roles, f"discover:{object_type}.{field_name}"))
+
+    def visible_schema(self, user_record: UserRecord, *, for_agent: bool = False) -> dict:
+        # THE single source of truth for "what does this user get to
+        # know exists." A type is included whenever discover:{type} is
+        # granted -- and `read:` implies `discover:`, so the ordinary
+        # grant still admits one. id_field requires its own explicit
+        # grant, same as any other field -- no special case.
+        #
+        # "Discovery-only access" USED TO MEAN read:{type} with no
+        # field grants, which the old comment here called a real and
+        # legitimate state. It was, but it was not discovery: read:
+        # gates search_object, so such a role could still enumerate
+        # every object and get ids back, and an id is data. The genuine
+        # middle rung is discover:{type}, which yields none.
+        #
+        # THE AGENT AND THE UI ARE DIFFERENT AUDIENCES, which for_agent
+        # selects between. A discover-only type is worth showing a
+        # PERSON -- it says the deployment holds something they cannot
+        # see, a fact about their own access. To the MODEL the schema
+        # is a menu of what it can DO, and a type it cannot search is
+        # an item it can only fail on: prompt tokens every hop, and
+        # steps the mediator then denies.
+        #
+        # A TYPE IS KNOWN TO THIS PERSON when a grant says so OR its owner
+        # listed it to everyone (`discoverable: true`, schema.
+        # is_discoverable). Worked out first, for every type, because a
+        # link field has to be judged by whether ITS TARGET is known.
+        known = {
+            name for name, definition in self.schema.items()
+            if is_discoverable(definition)
+            or authorize(user_record, self.roles, f"discover:{name}")
+        }
+        # WHICH LINK TYPES ARE DISCOVERABLE: a link's own `replaced_by`
+        # names another link type, not a field, so it is judged against
+        # this rather than a type's fields (see _visible_replacement's
+        # two call sites, below). A link type counts once any one of its
+        # two sides is discoverable -- the same "either side is enough"
+        # a caller already relies on to find the relationship at all.
+        discoverable_link_types = {
+            field_info["link_type"]
+            for owner, owner_def in self.schema.items()
+            for field_name, field_info in owner_def["fields"].items()
+            if field_info.get("type") == "link" and field_info.get("link_type")
+            and authorize(user_record, self.roles, f"discover:{owner}.{field_name}")
+        }
+
+        def _without_unknown_target(field_info: dict) -> dict:
+            # A LINK NAMES ITS TARGET, so a link to a type this person is
+            # not told about would tell them. count_links' docstring has
+            # always said so ("naming it would say the deployment holds
+            # something they were not told about") and the schema served
+            # here did it anyway: a role with no access to Customer saw
+            # Transaction's field naming Customer as its target -- found
+            # while building discoverable types, by asking the real
+            # mediator, not by reading it.
+            #
+            # A FORWARD link keeps its value (an id the person is granted
+            # in their own type) and becomes plain data: no target, no
+            # relationship, nothing to follow. A reverse one is computed
+            # from the other table, so with the target unknown there is
+            # nothing left of it and it goes.
+            if field_info.get("type") != "link" or field_info.get("target") in known:
+                return field_info
+            if is_reverse_link(field_info):
+                return {}
+            return {
+                **{key: value for key, value in field_info.items()
+                   if key not in ("target", "cardinality", "via_table")},
+                "type": "data",
+                # status_inherited_from NAMES THE TYPE this link borrowed
+                # its status from -- exactly the name "target" above is
+                # stripped for. "deprecated" is itself a hint about a
+                # type this caller cannot see, so the status it never
+                # declared on its own is dropped with it.
+                "status": field_info.get("status") if field_info.get("status_inherited_from") is None else "active",
+                "status_inherited_from": None,
+            }
+
+        visible = {}
+        for object_type, type_def in self.schema.items():
+            if object_type not in known:
+                continue
+
+            # READABLE IS A SEPARATE QUESTION, and only it permits
+            # search. A discover-only type yields no ids at all.
+            readable = authorize(user_record, self.roles, f"read:{object_type}")
+            if for_agent and not readable:
+                continue
+
+            # WHICH OF THIS TYPE'S OWN FIELDS ARE DISCOVERABLE, worked
+            # out before building any one field's entry: `replaced_by`
+            # names a sibling field, and showing a name this caller
+            # cannot discover would be the exact leak target's own
+            # stripping above exists to prevent.
+            discoverable_fields = {
+                name for name in type_def["fields"]
+                if authorize(user_record, self.roles, f"discover:{object_type}.{name}")
+            }
+
+            visible_fields = {
+                field_name: {
+                    **redacted,
+                    "display_name": get_display_name(field_info, field_name),
+                    "visibility": field_info.get("visibility", "normal"),
+                    # FROM `redacted`, NOT `field_info`: a link whose
+                    # target is unknown has already had its inherited
+                    # status reset there (_without_unknown_target), and
+                    # reading the original here would undo exactly that
+                    # (the bug an independent review found, 31 October).
+                    "status": redacted.get("status") or "active",
+                    # WHY it is deprecated, what replaces it, and -- for
+                    # a link that took its type's status -- which type.
+                    # Words the deployment's managers wrote about a name
+                    # this caller may already discover; `replaced_by` is
+                    # shown only when the name it gives is itself
+                    # discoverable to this caller, for the same reason.
+                    "status_inherited_from": redacted.get("status_inherited_from"),
+                    "deprecation": _visible_replacement(
+                        shown_deprecation(redacted.get("deprecation")),
+                        discoverable_link_types if field_info.get("type") == "link" else discoverable_fields),
+                    # HOW MANY DECIMAL PLACES this field is worth
+                    # showing, if the ontology says. Absent means the
+                    # UI shows the value as it arrived -- there is no
+                    # sensible default, which is the whole reason this
+                    # is declared rather than guessed.
+                    "decimal_places": field_info.get("decimal_places"),
+                    # HOW IT IS COMPUTED, as text, for a derived field
+                    # (R37) -- "multiply(quantity, unit_price)". Names of
+                    # fields the caller may already discover; no values.
+                    "derived": (derivation.describe()
+                                if (derivation := derivation_of(field_info)) is not None
+                                else None),
+                    # A VALUE KIND, at last (R38): this one was chosen
+                    # by approved rules a model wrote (R41), and says
+                    # from what -- "inferred from subject, body". The UI
+                    # marks every such value; a reader must be able to
+                    # tell an inference from a recorded fact.
+                    "inferred": (enrichment.describe()
+                                 if (enrichment := enrichment_of(field_info)) is not None
+                                 # A PREDICTION (R48) is marked the same way,
+                                 # in its own words: "predicted from ...".
+                                 else prediction.describe()
+                                 if (prediction := prediction_of(field_info,
+                                                                 type_def["fields"])) is not None
+                                 else None),
+                    # NAMED BUT WITHHELD. False means the caller may
+                    # know this field exists and not what it holds --
+                    # the middle rung, and what the approvals diff
+                    # already renders as "Hidden by your permissions".
+                    "readable": authorize(
+                        user_record, self.roles, f"read:{object_type}.{field_name}"
+                    ),
+                }
+                for field_name, field_info in type_def["fields"].items()
+                if authorize(user_record, self.roles, f"discover:{object_type}.{field_name}")
+                if (redacted := _without_unknown_target(field_info))
+            }
+
+            if for_agent:
+                # A field the model cannot read is one it cannot use,
+                # for the same reason as the type above.
+                visible_fields = {
+                    name: info for name, info in visible_fields.items() if info["readable"]
+                }
+
+            id_field = type_def["id_field"]
+            id_field_visible = authorize(user_record, self.roles, f"read:{object_type}.{id_field}")
+
+            # title_field -- OPTIONAL, and RBAC-gated the exact same
+            # way id_field already is above: a real, existing grant is
+            # required for THIS specific field's own value before it's
+            # ever surfaced as "the" display name for this type, even
+            # though the field name itself is declared, schema-wide,
+            # in ontology_schema.yaml (schema STRUCTURE is not the same
+            # thing as a field's own VALUE being visible -- the same
+            # distinction visible_schema() already draws for every
+            # other field here). None (not the declared name) when the
+            # caller can't actually see it -- the UI already treats
+            # None/absent identically to "no title_field declared at
+            # all," falling back to the raw id, never a broken or
+            # partially-rendered label.
+            title_field = type_def.get("title_field")
+            title_field_visible = title_field is not None and authorize(
+                user_record, self.roles, f"read:{object_type}.{title_field}"
+            )
+
+            # A REAL, CONFIRMED BUG, fixed here: this used to spread the
+            # FULL type_def (`**type_def`) into the result, which meant
+            # `storage`/`additional_storage`/`security` -- real,
+            # internal infrastructure detail from ontology_schema.yaml
+            # (which physical database, table, and column backs a
+            # field) -- leaked out through this method's own return
+            # value, completely unfiltered, to EVERY caller, including
+            # the two real HTTP routes (GET /me/visible-schema, GET
+            # /users/{username}/visible-schema) that return this dict
+            # directly as an HTTP response body. Never intentional --
+            # confirmed directly, not assumed, that NOTHING anywhere in
+            # this codebase actually reads those three keys off a
+            # visible_schema() result: not agentic_loop.py's own LLM
+            # prompt-building path, not this file's own internal
+            # search_object()/_filterable_columns() callers (which use
+            # ONLY `fields`/`id_field` from a visible_type_def, and
+            # resolve real storage separately, from self.schema
+            # directly, never from this filtered view). This was pure,
+            # unused bycatch of the old spread pattern, not a real
+            # dependency anywhere -- safe to remove outright, not just
+            # scope down. Only the three real, intentional, semantic
+            # keys below are ever included now.
+            visible[object_type] = {
+                "fields": visible_fields,
+                # Whether this type can be SEARCHED, so a UI can decide
+                # whether to offer a search box at all rather than one
+                # that returns nothing.
+                "readable": readable,
+                "id_field": id_field if id_field_visible else None,
+                "title_field": title_field if title_field_visible else None,
+                # Display metadata, resolved here rather than in the
+                # route: it is a property of the ONTOLOGY, and every
+                # consumer (HTTP, the agent's own prompt) should see
+                # the same label for the same field. Always present --
+                # humanize() supplies a readable fallback -- so a UI
+                # never has to decide what to show when none is
+                # declared.
+                "display_name": get_display_name(type_def, object_type),
+                "plural_display_name": get_plural_display_name(type_def, object_type),
+                "description": type_def.get("description"),
+                # UI rendering hints. Cosmetic, never security: see
+                # _validate_ui_metadata() for why `hidden` fields are
+                # still returned here.
+                "group": type_def.get("group"),
+                "icon": type_def.get("icon"),
+                "color": type_def.get("color"),
+                "status": type_def.get("status") or "active",
+                # `replaced_by` names another type; shown only when
+                # this caller can discover that type (see
+                # _visible_replacement, beside the link case above).
+                "deprecation": _visible_replacement(shown_deprecation(type_def.get("deprecation")), known),
+                # SEARCH BY MEANING (R45): declared, and every field its
+                # text is made from READABLE -- knowing a field exists is
+                # not reading it. The one answer Browse, the agent's
+                # prompt and its step schema all read.
+                "searchable_by_meaning": readable and _all_readable(
+                    visible_fields, semantic_search_of(type_def)),
+            }
+        return visible
+
+    def overlaid_fields(self, object_type: str, object_id: Any,
+                        field_names: list[str]) -> dict[str, str]:
+        """Which of these fields a read answers from the WRITE LOG rather
+        than the copy it would otherwise read (R67b, R38).
+
+        THE OVERLAY IS RIGHT AND WAS SILENT. An approved write's value is
+        served over the mirror's older one -- read-your-writes -- and it
+        flows into every read, chart and export. Nothing on the ordinary
+        read path said so; only the approvals diff did. So a person
+        comparing the screen with the source system found two answers
+        and nothing explaining which was which.
+
+        TWO KINDS, the two questions the overlay answers in
+        _read_field_with_log_check: "pending" -- approved, still being
+        applied to the source; "unsynced" -- applied to the source, not
+        yet in the mirror's copy. Same precedence: a pending value wins.
+
+        THE CALLER PASSES ONLY FIELDS IT MAY READ AND DID READ, and this
+        says nothing about the value -- only where it came from -- so it
+        discloses nothing the read did not.
+        """
+        if self.write_log is None or self.write_log.is_deleted(object_type, object_id):
+            return {}
+        pending = self.write_log.get_pending_changes(object_type, object_id) or {}
+        applied = self.write_log.get_applied_changes_since(
+            object_type, object_id, self._overlay_since(object_type)) or {}
+        found = {}
+        for field_name in field_names:
+            if field_name in pending:
+                found[field_name] = "pending"
+            elif field_name in applied:
+                found[field_name] = "unsynced"
+        return found
+
+    def _overlay_since(self, object_type: str) -> "str | None":
+        """Where Elysium's own applied writes start being laid over what
+        `object_type` serves: when the data its published gold was built
+        from was read. A type with none recorded uses the deployment's
+        oldest table, and a live deployment (no mirror) overlays nothing.
+
+        PER TYPE (21 October). One time for the whole deployment, the
+        oldest of every table, meant one table behind -- a standby with
+        replay paused -- held it back for everything, and in a type read
+        from a current source a write Elysium made earlier was laid over
+        a newer change made directly at the source: a stale value shown.
+        """
+        if self.mirror_synced_at is None:
+            return None
+        return self.mirror_synced_at_by_type.get(object_type, self.mirror_synced_at)
+
+    def _read_field_with_log_check(self, object_type: str, object_id: Any, field_name: str,
+                                    adapter: ExternalReadAdapter, resolved_type_config: dict) -> Any:
+        # THE shared "check the write log first, else the real adapter"
+        # merge -- factored out of get_field() so search_object()'s
+        # write-log reconciliation (_reconcile_search_with_pending_writes()
+        # below) and write_mediator.py's own _read_current_state_for_
+        # criteria() can reuse the EXACT same logic, rather than each
+        # growing its own, possibly-diverging copy. Takes an ALREADY-
+        # resolved adapter/resolved_type_config rather than resolving
+        # them itself -- every caller already has these in hand from
+        # its own _resolve_shared_storage() call, and re-resolving here
+        # would be redundant, not safer.
+        #
+        # Uses get_column_for_field() (not get_field_column()) --
+        # unlike get_field() itself, callers here may legitimately ask
+        # about the type's own id_field (e.g. a search criterion
+        # naming it), which get_field_column() alone cannot resolve
+        # (see get_column_for_field()'s own docstring for why the
+        # id_field needs its own handling). For every OTHER field the
+        # two produce an identical result -- get_column_for_field()
+        # delegates to get_field_column() for anything that isn't the
+        # id_field -- so this is a behavior-preserving generalization,
+        # not a divergence, for get_field()'s own existing use.
+        if self.write_log is not None:
+            # A deleted object is not visible in the ontology, matching
+            # the precedent's own rule: when the latest edit is a delete the
+            # object is hidden "regardless of whether any corresponding
+            # row is in one of the data sources". Checked BEFORE any
+            # masking or adapter read, so a deleted object never leaks
+            # a value through either path.
+            if self.write_log.is_deleted(object_type, object_id):
+                return None
+
+            pending_changes = self.write_log.get_pending_changes(object_type, object_id)
+            if pending_changes is not None and field_name in pending_changes:
+                return pending_changes[field_name]
+
+            # THE MIRROR OVERLAY -- read-your-writes when reads come
+            # from the local mirror rather than the live database. A
+            # confirmed write is genuinely applied to the customer's
+            # real database, but the mirror is a point-in-time copy
+            # that hasn't been re-synced yet, so without this a person
+            # would approve a change and not see it until the next
+            # scheduled sync.
+            #
+            # Deliberately consulted AFTER pending_changes above, not
+            # instead of it: the two answer different questions (an
+            # in-flight write vs. an applied-but-not-yet-mirrored one),
+            # and a still-pending write's INTENDED value should win
+            # over an older applied one for the same object.
+            #
+            # mirror_synced_at is None for a live deployment, which
+            # makes this a no-op there -- the live adapter already
+            # reads the real, current value, so there is nothing to
+            # overlay.
+            applied = self.write_log.get_applied_changes_since(
+                object_type, object_id, self._overlay_since(object_type)
+            )
+            if applied is not None and field_name in applied:
+                return applied[field_name]
+
+        column = get_column_for_field(resolved_type_config, field_name)
+        return self._as_declared(
+            object_type, field_name,
+            adapter.get_raw_field(object_type, object_id, column, resolved_type_config),
+        )
+
+    def reauthorize_conditions(self, user_record: UserRecord, object_type: str,
+                               conditions: list) -> "ReauthorizedConditions":
+        """Re-checks a SAVED filter against the caller's current
+        schema, and says what was dropped.
+
+        A saved artifact is a request, never an authority. Between
+        saving and reopening, the author may have lost read access to a
+        field they filtered on -- or the opener may be a colleague the
+        search was shared with, who never had it. Each condition is
+        checked against the opener's OWN visible schema, and any it
+        cannot read is disabled.
+
+        DISABLED AND REPORTED, not dropped silently and not failed
+        hard. Dropping silently is the worst option: the user sees more
+        rows than the search promised and concludes their data changed.
+        Failing hard is unhelpful when the rest of the search still
+        works. And there is no disclosure risk in naming the field --
+        the person opening the artifact can already see the condition
+        written in it. We are explaining their own saved query, not
+        revealing what they cannot see.
+
+        Returns the runnable conditions and the names of the disabled
+        ones, so the UI can say so rather than guess.
+        """
+        visible = self.visible_schema(user_record)
+        visible_type_def = visible.get(object_type)
+        if visible_type_def is None:
+            # Cannot read the type at all: nothing is runnable, and
+            # every condition is disabled for the same reason.
+            return ReauthorizedConditions(
+                runnable=[], disabled=[condition.field for condition in conditions]
+            )
+
+        readable = self._filterable_columns(object_type, visible_type_def)
+        runnable = [c for c in conditions if c.field in readable]
+        disabled = [c.field for c in conditions if c.field not in readable]
+        return ReauthorizedConditions(runnable=runnable, disabled=disabled)
+
+    def _filterable_columns(self, object_type: str, visible_type_def: dict) -> set:
+        columns = set()
+        if visible_type_def["id_field"] is not None:
+            columns.add(visible_type_def["id_field"])
+        for field_name, field_info in visible_type_def["fields"].items():
+            if is_searchable_field(field_info):
+                columns.add(field_name)
+        return columns
+
+    @_security_scoped
+    def search_object(self, user_record: UserRecord, object_type: str,
+                       conditions: "list[FieldFilter] | None" = None,
+                       visible_schema: dict | None = None,
+                      context: RequestContext | None = None,
+                      outcome: "SearchOutcome | None" = None) -> list:
+        """IDs the caller may see, matching every condition.
+
+        TAKES CONDITIONS, not a {field: value} dict. The dict could
+        express only equality -- one value per field -- so selecting
+        two values on a chart had no representation at all, and
+        validate_filter() could never reject anything because every
+        condition was built here and correct by construction.
+
+        Field names are checked against the caller's OWN visible
+        schema, so a field they cannot read is indistinguishable from
+        one that does not exist. That check needs a caller, which is
+        why it lives here and not in the vocabulary.
+        """
+        conditions = conditions or []
+        # visible_schema is OPTIONAL -- pass the already-computed one
+        # (AgentLoop.run() does, once per request) to avoid recomputing
+        # it on every search_object call within one traversal. A direct
+        # caller with no pre-computed schema still works correctly;
+        # this just computes it itself in that case.
+        #
+        # NEVER raises for "doesn't exist" or "not authorized to
+        # discover" -- both return an empty list, indistinguishable
+        # from a real search that legitimately matched nothing.
+        visible = visible_schema if visible_schema is not None else self.visible_schema(user_record)
+        visible_type_def = visible.get(object_type)
+        if visible_type_def is None:
+            # Distinguishes, for auditing, TWO genuinely different
+            # reasons this returns empty -- the object_type ITSELF
+            # doesn't exist in the schema at all (log_unknown_reference,
+            # a real, useful signal a model may be guessing at type
+            # names), vs a real type this user simply never had
+            # read:{object_type} granted for. The latter is a genuine,
+            # meaningful RBAC decision, previously never logged at all
+            # (there's no object_id yet at this point, so check_access()
+            # -- which needs one -- is never reached for this specific
+            # gate). Reuses log_access()'s existing shape directly
+            # (object_id=None, mac_allowed=None -- MAC genuinely never
+            # applies without a specific object) rather than inventing
+            # a third log shape for what's still fundamentally the same
+            # kind of access decision.
+            if object_type not in self.schema:
+                self.audit_log.log_unknown_reference(user_record.user_id, object_type)
+            else:
+                self.audit_log.log_access(user_record.user_id, object_type, None, f"read:{object_type}",
+                                           mac_allowed=None, rbac_allowed=False)
+            return []
+
+        valid_columns = self._filterable_columns(object_type, visible_type_def)
+        for condition in conditions:
+            if condition.field not in valid_columns:
+                # Generic, no field list -- revealing "valid: [...]"
+                # here would hand back exactly the schema visible_schema()
+                # just deliberately hid.
+                raise ValueError("Invalid search criteria")
+            # Now reachable, and able to REJECT: the operator comes
+            # from the caller rather than being constructed here.
+            validate_filter(condition, self._declared_type(object_type, condition.field))
+
+        adapter, resolved_type_config = self._resolve_shared_storage(
+            object_type, [condition.field for condition in conditions]
+        )
+
+        # Translates each criteria KEY (a field name) to its real SQL
+        # column name -- see get_column_for_field()'s own docstring for
+        # why the id_field needs its own handling (it isn't a regular
+        # entry in type_schema["fields"] at all).
+        # Field names become column names; operator and value survive.
+        # A RELATIVE DATE IS MADE ABSOLUTE HERE, once, against now
+        # (core/filters.py, resolved) -- no storage can evaluate one.
+        translated = [
+            FieldFilter(
+                field=get_column_for_field(resolved_type_config, condition.field),
+                operator=absolute.operator,
+                value=absolute.value,
+            )
+            for condition in conditions
+            for absolute in [resolved(condition, self._declared_type(object_type, condition.field))]
+        ]
+        # THE MAC FILTER, PUSHED INTO THE QUERY where the ontology lets
+        # it be. `field:` security lives in a column of this very
+        # table, so it is just another condition -- and appending it
+        # here rather than before translation is deliberate: it is not
+        # user input and must not go through the filterable-column
+        # check, which exists to stop a caller filtering on something
+        # they cannot see.
+        #
+        # WHERE THIS APPLIES, THE DATABASE RETURNS ONLY ROWS THE USER
+        # MAY SEE, so the residual filter below finds nothing to remove
+        # and a row limit becomes CORRECT rather than a guess.
+        pushed_security = self._pushable_security_column(
+            object_type, adapter, resolved_type_config,
+        )
+        if pushed_security is not None and user_record.security_value is not None:
+            translated = [
+                *translated,
+                FieldFilter(field=pushed_security, operator="equals",
+                            value=user_record.security_value),
+            ]
+
+        # ONE MORE THAN THE CEILING, deliberately: reading
+        # MAX_SEARCH_SCAN + 1 is how "we stopped looking" is
+        # distinguished from "that was all of them" without a second
+        # query. Getting exactly the ceiling back is ambiguous.
+        candidate_ids = self._find_ids_with_fallback(
+            adapter, object_type, translated, resolved_type_config,
+            MAX_SEARCH_SCAN + 1,
+        )
+        if len(candidate_ids) > MAX_SEARCH_SCAN:
+            candidate_ids = candidate_ids[:MAX_SEARCH_SCAN]
+            if outcome is not None:
+                outcome.scan_truncated = True
+            logger.warning(
+                "%s: a search read the %d-row ceiling and stopped. "
+                "Results are incomplete; narrow the filters.",
+                object_type, MAX_SEARCH_SCAN,
+            )
+        candidate_ids = self._reconcile_search_with_pending_writes(
+            object_type, conditions, candidate_ids, adapter, resolved_type_config
+        )
+        action = f"read:{object_type}"
+        candidate_ids = self._without_deleted(object_type, candidate_ids)
+        if outcome is not None:
+            outcome.row_check_pushed = (
+                (pushed_security is not None and user_record.security_value is not None)
+                or self.has_no_row_check(object_type))
+
+        # Resolves every candidate's security value in bulk before the
+        # per-object checks below. check_access() itself is unchanged --
+        # same call, same order, same audit logging -- it just finds
+        # the values already cached instead of reading one at a time.
+        self._prefetch_security_values(object_type, candidate_ids)
+
+        # ONE AUDIT RECORD FOR THE WHOLE READ, not one per object.
+        #
+        # This loop used to write an audit record per candidate, of
+        # which nearly all said the same thing. Measured on the real
+        # path: a read over 50,000 objects wrote 50,007 records and
+        # spent 1.08 of 1.45 seconds doing it.
+        #
+        # Denials still write their own -- check_access() suppresses
+        # only GRANTS when part_of_bulk_read -- and every denied id is
+        # named in the bulk record too. See AuditLog.log_bulk_read().
+        allowed, denied = [], []
+        for candidate_id in candidate_ids:
+            if check_access(self, user_record, self.roles, object_type, candidate_id,
+                            action, context, part_of_bulk_read=True):
+                allowed.append(candidate_id)
+            else:
+                denied.append(candidate_id)
+
+        self.audit_log.log_bulk_read(
+            user_record.user_id, object_type, action,
+            considered=len(candidate_ids),
+            denied_object_ids=denied,
+            fields_read=[],
+            security_values_seen=self._security_values_for(object_type, allowed),
+            request_id=context.request_id if context else None,
+        )
+        return allowed
+
+    def _visible_link_ids(self, user_record: UserRecord, target_type: str,
+                           linked: Any, context: RequestContext | None = None) -> Any:
+        """The link's targets the caller may actually see (PA001-X1).
+
+        BATCH-PREFETCHED, because the alternative is one security read
+        per linked object and a link list can be long;
+        _prefetch_security_values() is the same warming link_counts and
+        search_object already rely on.
+
+        ORDER AND SHAPE ARE PRESERVED: a caller that may see everything
+        gets exactly what the adapter returned, so this can only ever
+        REMOVE ids.
+        """
+        if not linked:
+            return linked
+        ids = list(linked) if isinstance(linked, (list, tuple)) else [linked]
+        self._prefetch_security_values(target_type, ids)
+        action = f"read:{target_type}"
+        visible = [
+            target_id for target_id in ids
+            if check_access(self, user_record, self.roles, target_type, target_id,
+                             action, context)
+        ]
+        if not isinstance(linked, (list, tuple)):
+            return visible[0] if visible else None
+        return visible
+
+    def _security_values_for(self, object_type: str, object_ids: list) -> set:
+        """The distinct security partitions a set of objects sits in.
+
+        WHICH PARTITIONS A READ TOUCHED is one of the six questions a
+        defensible trail answers -- "why it was permitted" -- and the
+        per-object records never captured it. Read from the cache the
+        prefetch already filled, so it costs nothing.
+        """
+        # THROUGH THE RESOLVER, not the cache directly. The cache is
+        # keyed by the type the value LIVES ON, which for a via_field
+        # chain is the far side -- Transaction's security value is
+        # cached under Customer. Reading it directly returned an empty
+        # set and would have shipped a silently blank audit field.
+        #
+        # The resolver hits that warm cache anyway, so this stays cheap:
+        # _prefetch_security_values() has already run by the time any
+        # caller reaches here.
+        return {
+            self._get_security_value(object_type, object_id)
+            for object_id in object_ids
+        }
+
+    def may_search_by_meaning(self, user_record: UserRecord, object_type: str,
+                              visible: dict | None = None) -> bool:
+        """Whether this person may rank a type by meaning (R45): the type
+        declares semantic_search, and they may read the type AND every
+        field its text is made from. A ranking by a field's meaning is a
+        read of that field."""
+        visible = visible if visible is not None else self.visible_schema(user_record)
+        return bool((visible.get(object_type) or {}).get("searchable_by_meaning"))
+
+    def readable_in_order(self, user_record: UserRecord, object_type: str,
+                          object_ids: list, limit: int,
+                          context: RequestContext | None = None) -> list:
+        """The first `limit` of `object_ids`, in their order, that this
+        person may read and that are not deleted -- for a ranking, which
+        knows only what is near, never who may see it.
+
+        Ids arrive as text, as the vector store keeps them -- the form
+        the object page's own route reads every object by, whatever its
+        id type."""
+        if object_type not in self.visible_schema(user_record):
+            return []
+        candidates = self._without_deleted(object_type, list(object_ids))
+        self._prefetch_security_values(object_type, candidates)
+        action = f"read:{object_type}"
+        kept = []
+        for candidate in candidates:
+            if check_access(self, user_record, self.roles, object_type, candidate, action, context):
+                kept.append(candidate)
+                if len(kept) >= limit:
+                    break
+        return kept
+
+    def free_text_searchable_fields(self, user_record: UserRecord, object_type: str,
+                                     visible_schema: dict | None = None) -> list[str]:
+        # PUBLIC (unlike _filterable_columns() above) -- api/routes.py's
+        # own free-text search endpoint needs this SAME list to know
+        # which fields to show as each result's own summary row,
+        # matching exactly what search_object_free_text() itself
+        # actually searched, not a second, independently-guessed set
+        # that could silently drift out of sync with it (the same
+        # single-source-of-truth discipline is_searchable_field() was
+        # already built to enforce elsewhere in this file).
+        #
+        # Narrower than _filterable_columns() above, deliberately: free-
+        # text CONTAINS search only makes sense over plain "data"
+        # fields, not the id_field or a forward-link field (both real,
+        # useful EXACT-match filter keys for search_object(), but
+        # substring-searching a raw id/foreign-key value isn't what a
+        # human typing a few characters of a name or email is after).
+        # Also excludes any field backed by a non-primary storage (MDO)
+        # -- see search_object_free_text()'s own docstring for why.
+        visible = visible_schema if visible_schema is not None else self.visible_schema(user_record)
+        visible_type_def = visible.get(object_type)
+        if visible_type_def is None:
+            return []
+        return [
+            field_name for field_name, field_info in visible_type_def["fields"].items()
+            if field_info["type"] == "data" and get_field_storage_name(field_info) is None
+        ]
+
+    @_security_scoped
+    def search_object_free_text(self, user_record: UserRecord, object_type: str, query_text: str,
+                                 visible_schema: dict | None = None,
+                                 conditions: list | None = None,
+                                context: RequestContext | None = None,
+                                outcome: "SearchOutcome | None" = None) -> list:
+        """Free-text search, optionally narrowed by structured filters.
+
+        TWO CONTEXTS, COMBINED, which is how every search engine that
+        does both handles it: the text query decides what MATCHES, the
+        conditions decide what is ELIGIBLE, and a result must satisfy
+        both. Elasticsearch calls these query context and filter
+        context and ANDs them in one bool; this is the same shape with
+        one text clause.
+
+        That split is why the filter vocabulary stays AND-only. Free
+        text already ORs across every searchable column -- inside
+        find_ids_matching_text, where it belongs -- so the OR a user
+        needs exists without the vocabulary having to grow one. A
+        `should` clause in the filter language would have been a much
+        larger change for the same result.
+
+        It is what makes charts and a table describe ONE object set:
+        the table's text query and a chart click both narrow the same
+        thing, rather than being two queries nobody can combine.
+        """
+        # The human-facing, browse/search counterpart to search_object()
+        # above -- a forgiving, CONTAINS match across every visible,
+        # plain-data, primary-storage field at once, not an exact match
+        # against one named field. Built for a real end user typing a
+        # few characters of a name or email into a search box, not for
+        # the model's own precise, single-field search_object() steps
+        # (which stay completely unchanged by this addition -- see
+        # this method's own AI-notes for the fuller reasoning on why
+        # this is a new, separate method rather than a mode flag on the
+        # existing one).
+        #
+        # An empty/blank query_text returns EVERY visible object of
+        # this type -- the natural "browse, nothing typed yet" default
+        # for a UI landing on this type, not an empty result.
+        #
+        # DELIBERATE V1 SCOPE BOUNDARIES, both worth stating explicitly:
+        # - MDO-backed fields (additional_storage) are excluded from the
+        #   search entirely, matching this project's own existing,
+        #   already-justified "one storage per search" boundary for
+        #   search_object() itself (see _resolve_shared_storage()'s own
+        #   docstring) -- not a new gap, the same one, applied here too.
+        # - Does NOT reconcile against write_log.py's own pending writes
+        #   the way search_object() does via _reconcile_search_with_
+        #   pending_writes() -- that mechanism is built around exact-
+        #   match criteria (field: value pairs) and doesn't generalize
+        #   cleanly to a substring match against a possibly-pending
+        #   value. An object mid-update could therefore, briefly, be
+        #   missing from (or wrongly present in) a free-text search for
+        #   its own in-flight change -- the same class of torn-state
+        #   window search_object() itself used to have before that
+        #   mechanism existed. Acceptable for a first, foundational
+        #   version of a browse/search UI (the window is normally
+        #   brief, and this is a discovery aid, not a correctness-
+        #   sensitive read) -- not acceptable to leave forever
+        #   undocumented, which is why it's spelled out here.
+        visible = visible_schema if visible_schema is not None else self.visible_schema(user_record)
+        visible_type_def = visible.get(object_type)
+        if visible_type_def is None:
+            if object_type not in self.schema:
+                self.audit_log.log_unknown_reference(user_record.user_id, object_type)
+            else:
+                self.audit_log.log_access(user_record.user_id, object_type, None, f"read:{object_type}",
+                                           mac_allowed=None, rbac_allowed=False)
+            return []
+
+        searchable_fields = self.free_text_searchable_fields(user_record, object_type, visible)
+        if not searchable_fields:
+            return []
+
+        adapter, resolved_type_config = self._resolve_shared_storage(object_type, searchable_fields)
+        columns = [get_column_for_field(resolved_type_config, field_name) for field_name in searchable_fields]
+
+        if query_text.strip():
+            candidate_ids = adapter.find_ids_matching_text(object_type, columns, query_text, resolved_type_config)
+            if conditions:
+                # Filter context: intersect, rather than re-running the
+                # text search with conditions folded in. The adapter's
+                # text search takes columns and a string, and widening
+                # its contract to also take conditions would give two
+                # ways to express the same filter.
+                # CAPPED LIKE THE OTHERS. This narrows an already-found
+                # text match, so the ceiling bounds how many CONDITION
+                # matches are read to intersect against -- and a
+                # truncated set here silently drops text matches that
+                # would have qualified, which is why it reports too.
+                eligible = set(
+                    self._find_ids_with_fallback(
+                        adapter, object_type,
+                        self._translate_conditions(
+                            object_type, conditions, resolved_type_config, visible_type_def
+                        ),
+                        resolved_type_config,
+                        MAX_SEARCH_SCAN + 1,
+                    )
+                )
+                if len(eligible) > MAX_SEARCH_SCAN and outcome is not None:
+                    outcome.scan_truncated = True
+                candidate_ids = [oid for oid in candidate_ids if oid in eligible]
+        else:
+            # No text: the conditions ARE the query.
+            candidate_ids = self._find_ids_with_fallback(
+                adapter, object_type,
+                self._translate_conditions(
+                    object_type, conditions or [], resolved_type_config, visible_type_def
+                ),
+                resolved_type_config,
+                MAX_SEARCH_SCAN + 1,
+            )
+            if len(candidate_ids) > MAX_SEARCH_SCAN:
+                candidate_ids = candidate_ids[:MAX_SEARCH_SCAN]
+                if outcome is not None:
+                    outcome.scan_truncated = True
+                logger.warning(
+                    "%s: a free-text search read the %d-row ceiling and "
+                    "stopped. Results are incomplete; narrow the filters.",
+                    object_type, MAX_SEARCH_SCAN,
+                )
+
+        action = f"read:{object_type}"
+        candidate_ids = self._without_deleted(object_type, candidate_ids)
+        # Same bulk pre-resolution as search_object() above.
+        self._prefetch_security_values(object_type, candidate_ids)
+        return [
+            candidate_id for candidate_id in candidate_ids
+            if check_access(self, user_record, self.roles, object_type, candidate_id, action, context)
+        ]
+
+    def _as_declared(self, object_type: str, field_name: str, value):
+        """A raw source value, as the type the ontology declares it is.
+
+        WHY THE LIVE PATH NEEDS THIS AND THE MIRROR DOES NOT. A sync
+        coerces on the way into silver, so a mirror read already
+        returns what the ontology promised. A live read hands back
+        whatever the driver produced.
+
+        MEASURED, same field and same ontology: the mirror returns
+        Decimal('49.990000000') and the silo returns 49.99 as a FLOAT.
+        The ontology says `decimal` and one path ignored it.
+
+        THAT MATTERS MORE WITH A REAL DATABASE. SQLite has few types
+        and hands back str, int and float. psycopg returns Decimal,
+        datetime, date and UUID objects -- none of which the ontology's
+        vocabulary names -- so a PostgreSQL adapter would widen this
+        gap rather than reveal it.
+
+        A FAILURE HERE IS REPORTED AND THE RAW VALUE PASSES THROUGH.
+        The sync can refuse a whole table because a refused sync leaves
+        the previous snapshot standing; a READ has no previous value to
+        fall back on, and refusing would turn a type disagreement into
+        an unreadable object. Drift is the sync's job to catch and the
+        mirror panel's to show.
+        """
+        if value is None:
+            return None
+
+        declared = self._declared_type(object_type, field_name)
+        if declared is None:
+            # NO EXPECTATION TO VIOLATE. Declaring a type is how an
+            # author opts in, the same bargain the operator check makes.
+            return value
+
+        try:
+            return coerce(value, declared)
+        except (ValueError, TypeError, decimal.InvalidOperation):
+            # ONE LINE PER OFFENDING VALUE, which on a whole bad column
+            # is one line per row. Accepted rather than deduplicated:
+            # the mediator holds no per-request state to remember what
+            # it has already said, and inventing some to quieten a log
+            # would be more machinery than the problem deserves on a
+            # path that is being deprecated.
+            #
+            # THE SYNC IS THE PROPER MECHANISM. It collects every
+            # drifted column, reports the first offending value for
+            # each, and refuses. This is a backstop for the live path,
+            # not a replacement for that.
+            logger.warning(
+                "%s.%s: source value %r does not match the declared type %r. "
+                "Serving it unchanged; a sync would refuse it.",
+                object_type, field_name, value, declared,
+            )
+            return value
+
+    def _declared_type(self, object_type: str, field_name: str) -> str | None:
+        """A field's declared data_type, or None when it declares none.
+
+        None means "no expectation to violate" -- declaring a type is
+        how an author opts into operator checking, the same bargain the
+        mutation-value check makes.
+        """
+        fields = (self.schema.get(object_type) or {}).get("fields") or {}
+        return (fields.get(field_name) or {}).get("data_type")
+
+    def _translate_conditions(self, object_type: str, conditions: list,
+                               resolved_type_config: dict, visible_type_def: dict) -> list:
+        """Field names to column names, validated on the way.
+
+        Shared by search_object() and search_object_free_text() so
+        there is one definition of "may this caller filter on this
+        field", not two that could drift.
+        """
+        translated = []
+        valid_columns = self._filterable_columns(object_type, visible_type_def)
+        for condition in conditions:
+            if condition.field not in valid_columns:
+                # Same message whether the field is UNREADABLE or
+                # absent -- uniform denial, exactly as search_object()
+                # does it.
+                raise ValueError("Invalid search criteria")
+            declared = self._declared_type(object_type, condition.field)
+            validate_filter(condition, declared)
+            absolute = resolved(condition, declared)
+            translated.append(
+                FieldFilter(
+                    field=get_column_for_field(resolved_type_config, condition.field),
+                    operator=absolute.operator,
+                    value=absolute.value,
+                )
+            )
+        return translated
+
+    def _find_ids_with_fallback(self, adapter, object_type: str, conditions: list,
+                                 resolved_type_config: dict,
+                                 limit: int | None = None) -> list:
+        """Pushes what the storage declared it can express; applies the
+        rest here.
+
+        THE MEDIATOR SPLITS, using `pushable_operators` the adapter
+        declared, rather than asking and retrying on refusal. An
+        earlier version had adapters raise UnsupportedFilter and this
+        retry with NOTHING pushed, which made one unsupported operator
+        cost the whole query: a `contains` alongside three ranges
+        scanned everything, measured at 40x the pushed-down time for
+        the same answer.
+
+        Partial pushdown was rejected then because an adapter reporting
+        which conditions it took could disagree with what it did, and
+        that disagreement returns wrong rows silently. Declaring up
+        front removes the report and with it the mismatch -- only the
+        mediator decides, and it asks for nothing else.
+
+        This is the SQL/Python alignment rule's own exception, and it
+        is now as narrow as it can be: exactly the operators a storage
+        cannot express come back here, and nothing else.
+        """
+        pushable: frozenset[str] = getattr(adapter, "pushable_operators", frozenset())
+        pushed = [c for c in conditions if c.operator in pushable]
+        remaining = [c for c in conditions if c.operator not in pushable]
+
+        candidate_ids = adapter.find_ids(object_type, pushed, resolved_type_config, limit)
+        if not remaining:
+            return candidate_ids
+        return self._apply_conditions_in_python(
+            adapter, candidate_ids, remaining, resolved_type_config
+        )
+
+    def _apply_conditions_in_python(self, adapter, candidate_ids: list,
+                                     conditions: list, resolved_type_config: dict) -> list:
+        """Evaluates conditions a storage could not express.
+
+        Reads only the columns the remaining conditions name, for only
+        the ids the pushed-down half returned -- so the cost is
+        proportional to what the engine could NOT narrow, not to the
+        table.
+        """
+        if not conditions or not candidate_ids:
+            return candidate_ids
+        id_column = resolved_type_config["storage"]["id_column"]
+        columns = sorted({condition.field for condition in conditions})
+        rows = adapter.read_fields_for_ids(
+            resolved_type_config["storage"]["table"], id_column,
+            candidate_ids, columns, resolved_type_config,
+        )
+        return [
+            row[id_column] for row in rows
+            if all(row_matches(row, condition) for condition in conditions)
+        ]
+
+    def _reconcile_search_with_pending_writes(self, object_type: str, conditions: list, candidate_ids: list,
+                                               adapter: ExternalReadAdapter, resolved_type_config: dict) -> list:
+        # Closes the gap write_log.py's own module docstring used to
+        # name explicitly: search_object() queries the REAL backend
+        # directly (via adapter.find_ids() above), which for an object
+        # with a still-pending write reflects whatever it held BEFORE
+        # that write, not the INTENDED value the write log already
+        # promises get_field() will show. Left alone, that means an
+        # object mid-update could be MISSING from a search for its own
+        # new, intended value (the real row doesn't match yet), or
+        # WRONGLY included in a search for the old value it's about to
+        # stop having (the real row still matches, transiently).
+        #
+        # Only ever runs when write_log is configured -- see
+        # this class's own __init__ for why None means completely
+        # unchanged, pre-log behavior, same as get_field()'s own guard.
+        if self.write_log is None:
+            return candidate_ids
+
+        # Every entry system-wide, not scoped to this object_type --
+        # deliberately simple for this first pass: write_log entries
+        # are expected to be rare (the pending window is normally
+        # brief) and get_all_pending_writes() has no object_type
+        # filter today (built for both this caller and WriteMediator.
+        # resume_pending_writes(), which genuinely needs every entry
+        # regardless of type). A real, stated cost if this ever proves
+        # too slow in practice, not a correctness concern -- worth a
+        # type-scoped query later if it matters, not assumed to matter
+        # now. get_all_pending_writes(), NOT the old, retired get_
+        # pending_entries() -- this must see a NOT-YET-STARTED
+        # sub-write's own pending intent too, not just an already-
+        # mid-apply one; see write_log.py's own docstring for why a
+        # genuine gap here would let a search miss or wrongly include
+        # an object for exactly the torn-state reason this whole
+        # reconciliation mechanism exists to prevent.
+        # AND THE APPLIED-BUT-NOT-YET-MIRRORED ONES (16 October). Only
+        # pending writes were reconciled, so after a change was saved a
+        # search for its NEW value missed the object until the next
+        # sync -- while reading the object showed the new value, through
+        # the overlay in _read_field_with_log_check(). The write log's
+        # get_all_applied_changes_since() was written "for search
+        # reconciliation" and nothing called it. Found by a trigger:
+        # checking one straight after a saved change found nothing,
+        # because the count it rests on could not see the change.
+        #
+        # Bounded the same way as the overlay: since the mirror's last
+        # sync, and nothing at all for a live deployment
+        # (mirror_synced_at None), whose adapter reads the current value.
+        id_field = self._type_schema(object_type)["id_field"]
+        applied = [
+            {**entry, "operation": "create" if id_field in entry["changes"] else "update"}
+            for entry in self.write_log.get_all_applied_changes_since(
+                self._overlay_since(object_type))
+        ]
+        relevant_entries = [
+            entry for entry in [*self.write_log.get_all_pending_writes(), *applied]
+            # Only the FIELD NAMES matter here -- whether a pending
+            # write touched anything the search filtered on. The
+            # operator and value are irrelevant to that question, which
+            # is why this survived the change from a dict unchanged
+            # apart from how the names are read out.
+            if entry["object_type"] == object_type
+            and set(entry["changes"]) & {condition.field for condition in conditions}
+        ]
+        if not relevant_entries:
+            return candidate_ids
+
+        # Keyed by str(id), not the id itself -- a pending entry's own
+        # object_id is ALWAYS a string (see write_log.py's own
+        # get_all_pending_writes() docstring), but a real, native id
+        # from adapter.find_ids() might not be (e.g. an integer id
+        # column). A plain set().discard(entry_object_id) would then
+        # silently fail to remove an existing INTEGER match, since "1"
+        # != 1 -- keying by string form on both sides makes add/remove
+        # correct regardless of the id column's real type. Existing candidates
+        # keep their own, already-correctly-typed value; a genuinely
+        # NEW match (see the loop below) gets its native type resolved
+        # fresh from the adapter, so nothing returned from here is ever
+        # a bare string standing in for what should be e.g. an int.
+        result_by_str = {str(candidate_id): candidate_id for candidate_id in candidate_ids}
+        for entry in relevant_entries:
+            object_id = entry["object_id"]
+            # Re-derives this object's FULL match against criteria from
+            # scratch, field by field, merging the log's pending value
+            # over the real backend's current one exactly the way
+            # get_field() itself would (via the SAME shared
+            # _read_field_with_log_check()) -- not just the fields THIS
+            # entry happens to change, since criteria can span fields
+            # the entry never touches at all, and those still need
+            # their (unaffected, real) current value included in the
+            # match.
+            matches = all(
+                self._read_field_with_log_check(
+                    object_type, object_id, condition.field, adapter,
+                    resolved_type_config,
+                ) is not None
+                and row_matches(
+                    {condition.field: self._read_field_with_log_check(
+                        object_type, object_id, condition.field, adapter,
+                        resolved_type_config,
+                    )},
+                    condition,
+                )
+                for condition in conditions
+            )
+            if matches:
+                # setdefault, not a plain assignment -- if this id was
+                # ALREADY a candidate (with its real, native type from
+                # adapter.find_ids() itself), preserve that type rather
+                # than overwriting it with the log's own string form.
+                # For a genuinely NEW match (not previously a candidate
+                # at all), resolve the REAL, natively-typed id.
+                if object_id not in result_by_str:
+                    if entry["operation"] == "create":
+                        # The "sticky note" -- a create's own log entry
+                        # always has the id written down directly (an
+                        # explicit id is REQUIRED for multi-storage
+                        # create -- see WriteMediator.propose_action()'s
+                        # own validation), so this works even if the
+                        # row doesn't exist yet in whichever storage
+                        # THIS search happens to be scoped to. Reading
+                        # it off the real row instead (like the update
+                        # branch below does) would come back None for
+                        # exactly that reason during the pending window.
+                        id_field = self._type_schema(object_type)["id_field"]
+                        native_id = entry["changes"][id_field]
+                    else:
+                        # Ordinary update -- the object already exists
+                        # in every storage, so get_raw_field() already
+                        # relies on SQLite's own type coercion to match
+                        # a string id against a differently-typed
+                        # column (the SAME thing every get_field() call
+                        # already depends on whenever a caller supplies
+                        # a string object_id for an integer-keyed
+                        # type), reusing an existing, already-relied-
+                        # upon behavior, not introducing a new fragility.
+                        id_column = resolved_type_config["storage"]["id_column"]
+                        native_id = adapter.get_raw_field(object_type, object_id, id_column, resolved_type_config)
+                    result_by_str[object_id] = native_id
+            else:
+                result_by_str.pop(object_id, None)
+        return list(result_by_str.values())
+
+    @_security_scoped
+    def search_around(self, user_record: UserRecord, object_type: str, conditions: list,
+                       link_field: str,
+                      context: RequestContext | None = None,
+                      outcome: "SearchOutcome | None" = None) -> list:
+        """Follows a link from every object matching criteria, returning
+        the ids on the far side that the caller can also see.
+
+        The precedent's own Search Around: "takes an incoming object set and
+        runs a secondary filter on another object set based on a
+        certain property of the incoming set." Asking "every
+        transaction belonging to a us-west customer" is one call here
+        rather than one per customer.
+
+        MAC IS APPLIED ON BOTH SIDES, and that is the point. The source
+        set comes from search_object(), so a caller only traverses from
+        objects they can see; the resulting target ids are then
+        authorized individually, so following a link can never reveal
+        an object the caller could not have read directly. Skipping
+        either check would turn a link into a way around the security
+        boundary.
+
+        Returns a deduplicated list -- two source objects legitimately
+        linking to the same target should yield it once.
+        """
+        source_ids = self.search_object(user_record, object_type, conditions)
+        return self._follow_link(user_record, object_type, source_ids, link_field, context, outcome)
+
+    @_security_scoped
+    def search_around_from(self, user_record: UserRecord, object_type: str, source_ids: list,
+                           link_field: str, context: RequestContext | None = None,
+                           outcome: "SearchOutcome | None" = None) -> list:
+        """search_around() from sources the caller NAMES rather than
+        describes: the object-set algebra (core/ontology/object_sets.py)
+        has already evaluated a set and wants its far side.
+
+        THE SOURCES ARE CHECKED AGAIN HERE, not trusted. A reverse link is
+        resolved from the other table in one batch, without reading each
+        source, so a source the caller may not see would still yield the
+        targets it links to. Ids handed in by a caller are therefore only
+        ever a request: the ones that still pass check_access() are the
+        sources, and the rest vanish as they would from a search.
+        """
+        sources = self._still_readable(user_record, object_type, source_ids, context)
+        return self._follow_link(user_record, object_type, sources, link_field, context, outcome)
+
+    def readable_subset(self, user_record: UserRecord, object_type: str, object_ids: list,
+                        context: RequestContext | None = None) -> list:
+        """The ids, in order, among `object_ids` that the caller may read.
+        The public name of _still_readable for the object-set algebra,
+        which uses it to narrow a search by the link values the caller is
+        allowed to know and by nothing else."""
+        return self._still_readable(user_record, object_type, object_ids, context)
+
+    def _still_readable(self, user_record: UserRecord, object_type: str, object_ids: list,
+                        context: RequestContext | None = None) -> list:
+        """The ids, in order, that the caller may read today: the same
+        deletion filter and the same per-object check_access() that
+        search_object() ends with, for ids that arrived from somewhere
+        other than a search."""
+        candidates = self._without_deleted(object_type, list(dict.fromkeys(object_ids)))
+        self._prefetch_security_values(object_type, candidates)
+        action = f"read:{object_type}"
+        return [object_id for object_id in candidates
+                if check_access(self, user_record, self.roles, object_type, object_id, action,
+                                context, part_of_bulk_read=True)]
+
+    @_security_scoped
+    def field_values_for_ids(self, user_record: UserRecord, object_type: str, object_ids: list,
+                             field_names: list[str],
+                             context: RequestContext | None = None) -> dict:
+        """{str(id): {field: value}} for the ids the caller may read.
+
+        THE PUBLIC FORM OF _read_fields_for_ids, which trusts its ids. This
+        one does not: every id passes check_access() here, so a caller
+        cannot read a value of an object it could not have searched for,
+        whatever it was handed. Fields the caller has no read grant on are
+        left out of every row, as _read_fields_for_ids leaves them. An id
+        with no row is absent. Plain stored columns only: a derived,
+        enriched or predicted field is computed per object by get_field()
+        and is not one of these.
+        """
+        allowed = self._still_readable(user_record, object_type, object_ids, context)
+        if not allowed or not field_names:
+            return {}
+        rows = self._read_fields_for_ids(user_record, object_type, set(allowed), field_names)
+        rows = {str(object_id): row for object_id, row in rows.items()}
+        self._withhold_hidden_link_targets(user_record, object_type, rows, context)
+        return rows
+
+    def _withhold_hidden_link_targets(self, user_record: UserRecord, object_type: str, rows: dict,
+                                      context: RequestContext | None) -> None:
+        """Sets to None, in place, every forward-link value in `rows` whose
+        target the caller may not read: get_field()'s rule (NEW-1), applied
+        to a batch.
+
+        WITHOUT IT, filtering and sorting would see the RAW foreign key
+        that get_field() withholds, and `startsWith` or an ordering would
+        recover it a prefix at a time. A hidden link must behave as null
+        everywhere the values are used, so this is done where the values
+        are produced rather than in each user of them.
+
+        BATCHED: one security prefetch for the distinct targets of a field
+        and one check_access() per distinct target (a column of a million
+        rows pointing at a hundred customers is a hundred checks), logged
+        as ONE bulk read of the target type the way search_object() logs
+        its own, with every denied id named in it.
+        """
+        fields = (self.schema.get(object_type) or {}).get("fields") or {}
+        columns = {name for row in rows.values() for name in row}
+        for name in sorted(columns):
+            field_info = fields.get(name)
+            if field_info is None or not is_link_field(field_info) or is_reverse_link(field_info):
+                continue
+            target_type = get_link_target(field_info)
+            if target_type not in self.schema:
+                continue  # an opaque reference: nothing to enforce (see get_field)
+            distinct = list(dict.fromkeys(
+                element for row in rows.values() if row.get(name) is not None
+                for element in (row[name] if isinstance(row[name], list) else [row[name]])))
+            if not distinct:
+                continue
+            action = f"read:{target_type}"
+            self._prefetch_security_values(target_type, distinct)
+            visible = set()
+            denied = []
+            for target_id in distinct:
+                if check_access(self, user_record, self.roles, target_type, target_id, action,
+                                context, part_of_bulk_read=True):
+                    visible.add(target_id)
+                else:
+                    denied.append(target_id)
+            self.audit_log.log_bulk_read(
+                user_record.user_id, target_type, action,
+                considered=len(distinct), denied_object_ids=denied, fields_read=[],
+                security_values_seen=self._security_values_for(target_type, list(visible)),
+                request_id=context.request_id if context else None)
+            if not denied:
+                continue
+            for row in rows.values():
+                value = row.get(name)
+                if isinstance(value, list):
+                    row[name] = [element for element in value if element in visible]
+                elif value is not None and value not in visible:
+                    row[name] = None
+
+    def _follow_link(self, user_record: UserRecord, object_type: str, source_ids: list,
+                     link_field: str, context: RequestContext | None,
+                     outcome: "SearchOutcome | None") -> list:
+        """The far side of a link from sources that have ALREADY passed
+        check_access(): search_around()'s body, shared with
+        search_around_from()."""
+        if not source_ids:
+            return []
+
+        visible_type_def = self.visible_schema(user_record).get(object_type)
+        field_info = (visible_type_def or {}).get("fields", {}).get(link_field)
+        if field_info is None or not is_link_field(field_info):
+            # Same uniform-denial shape as every other read: a caller
+            # learns nothing about whether the field exists, is a link,
+            # or is merely ungranted.
+            return []
+
+        target_type = get_link_target(field_info)
+        raw_field_info = self.schema[object_type]["fields"][link_field]
+        if "via_table" not in raw_field_info:
+            # A FORWARD link -- the id lives on the source object
+            # itself, so there is nothing to traverse in batch; reading
+            # the field per source is already the whole operation.
+            #
+            # READ AS ONE BULK READ, not one get_field() per source: that
+            # wrote an audit line per source (a thousand sources, a
+            # thousand lines) and cost a read and a security check each.
+            # The sources have passed check_access(); the field's own
+            # RBAC is checked by _read_fields_for_ids; a target the caller
+            # may not read is dropped by the target loop below, as
+            # get_field()'s NEW-1 rule would drop it. The read is logged
+            # the way search_object() logs its own (log_bulk_read).
+            rows = self._read_fields_for_ids(user_record, object_type, set(source_ids), [link_field])
+            by_text = {str(source_id): row for source_id, row in rows.items()}
+            self.audit_log.log_bulk_read(
+                user_record.user_id, object_type, f"read:{object_type}.{link_field}",
+                considered=len(source_ids), denied_object_ids=[], fields_read=[link_field],
+                security_values_seen=self._security_values_for(object_type, list(source_ids)),
+                request_id=context.request_id if context else None)
+            targets = []
+            for source_id in source_ids:
+                value = by_text.get(str(source_id), {}).get(link_field)
+                if value is None:
+                    continue
+                targets.extend(value if isinstance(value, list) else [value])
+        else:
+            target_adapter = self._adapter_for(target_type)
+            target_id_column = self.schema[target_type]["storage"]["id_column"]
+            grouped = target_adapter.resolve_reverse_links_batch(
+                source_ids, raw_field_info, target_id_column
+            )
+            targets = [
+                target_id for target_ids in grouped.values() for target_id in target_ids
+            ]
+
+        action = f"read:{target_type}"
+        # Targets are a DIFFERENT object type from the sources, so this
+        # prefetch is for the target type -- the source side was already
+        # resolved by the search_object() call at the top of this method.
+        # CAPPED LIKE THE SEARCHES, and it needed its own cap
+        # because phase 0.2 bounded the SOURCE side and left the
+        # FAN-OUT unbounded: 10,000 sources each holding 100 links
+        # is a million targets, and check_access writes one audit
+        # line per target.
+        #
+        # MEASURED: an audit line costs about 11 microseconds, so a
+        # million-target traversal spends ELEVEN SECONDS writing its
+        # own trail before any data reaches the caller. the roadmap (consumed)
+        # profiled the same shape at 200,000 objects and found
+        # 200,006 open() calls dominating everything else.
+        #
+        # THE TARGETS, NOT THE SOURCES. Capping sources further
+        # would answer a different question wrongly -- somebody
+        # asking about ten customers with a hundred transactions
+        # each wants all thousand, and the limit that matters is on
+        # what comes back.
+        targets = list(targets)
+        if len(targets) > MAX_SEARCH_SCAN:
+            targets = targets[:MAX_SEARCH_SCAN]
+            if outcome is not None:
+                outcome.scan_truncated = True
+            logger.warning(
+                "%s -> %s: a search-around reached the %d-target ceiling and "
+                "stopped. Results are incomplete; narrow the filters.",
+                object_type, target_type, MAX_SEARCH_SCAN,
+            )
+
+        if outcome is not None:
+            outcome.row_check_pushed = self.has_no_row_check(target_type)
+        self._prefetch_security_values(target_type, list(targets))
+        seen = set()
+        allowed = []
+        for target_id in targets:
+            if target_id in seen:
+                continue
+            seen.add(target_id)
+            if check_access(self, user_record, self.roles, target_type, target_id, action, context):
+                allowed.append(target_id)
+        return allowed
+
+    @_security_scoped
+    def link_counts(self, user_record: UserRecord, object_type: str,
+                     object_id: Any) -> dict:
+        """How many objects sit on the far side of each link, per link.
+
+        COUNTS BEFORE EXPANSION, which is the whole design of the link
+        explorer. A person deciding whether to follow a link needs to
+        know it leads to four things or four thousand BEFORE they
+        commit -- fan-out should never be a surprise, and an
+        explorer that expands first and apologises later is unusable on
+        real data.
+
+        MAC AND RBAC APPLY, so a count is what THIS caller would
+        actually receive rather than what exists. That matters more
+        than it sounds: a count of what exists would leak the size of
+        data they cannot see, and a count that disagreed with the
+        subsequent expansion would look like a bug in the explorer.
+
+        Only links whose TARGET TYPE is visible are reported. A link to
+        a type the caller cannot discover is not a link they have, and
+        naming it would say the deployment holds something they were
+        not told about.
+        """
+        visible = self.visible_schema(user_record)
+        type_schema = visible.get(object_type)
+        if type_schema is None:
+            return {}
+
+        counts = {}
+        for field_name, field_info in type_schema["fields"].items():
+            if field_info.get("type") != "link":
+                continue
+            target = field_info.get("target")
+            if target not in visible:
+                continue
+            # A field whose VALUE is withheld cannot be counted either
+            # -- the count would be derived from data the caller may
+            # not read. The middle rung of the grant ladder.
+            if field_info.get("readable") is False:
+                continue
+
+            value = self.get_field(user_record, object_type, object_id, field_name)
+            ids = value if isinstance(value, list) else ([] if value is None else [value])
+            # RE-AUTHORISED ON THE FAR SIDE, the same way search_around
+            # does it. An id sitting in a link field is not proof the
+            # caller may see the object it names -- MAC is per object,
+            # so the source row being visible says nothing about the
+            # target row.
+            #
+            # UNTESTABLE IN THIS DEPLOYMENT, and worth saying so: a
+            # Transaction inherits its MAC value VIA customer_id, so
+            # every transaction of a visible customer is necessarily
+            # visible and a control removing this check fails nothing.
+            # It is kept because the ontology does not REQUIRE that
+            # arrangement -- a deployment whose link crosses a MAC
+            # boundary would leak a count of objects the caller cannot
+            # see, which is exactly the disclosure this feature must
+            # not make.
+            #
+            # Prefetched in one batch before the per-id loop, or this
+            # would issue a query per linked object and a customer with
+            # four thousand transactions would make the COUNT slower
+            # than the expansion it exists to avoid.
+            action = f"read:{target}"
+            self._prefetch_security_values(target, list(ids))
+            visible_ids = [
+                target_id for target_id in dict.fromkeys(ids)
+                if check_access(self, user_record, self.roles, target, target_id, action, None)
+            ]
+
+            counts[field_name] = {
+                "target": target,
+                "count": len(visible_ids),
+                "cardinality": field_info.get("cardinality"),
+            }
+        return counts
+
+    def filter_published_history(self, user_record: UserRecord,
+                                  object_type: str, object_id: str,
+                                  entries: list[dict],
+                                  context: RequestContext | None = None
+                                  ) -> list[dict]:
+        """Which recorded changes this caller may see, and which fields.
+
+        IT TAKES THE ENTRIES RATHER THAN READING THEM, and that is the
+        import contract talking rather than taste: `core/ontology` may
+        not reach into `core/mirror`, and the first version of this
+        imported `gold_history` and broke the layering check. The
+        caller reads the lake; this decides access. Splitting it the
+        other way -- the route filtering -- would put access control in
+        two places, which is what `edit_history` refused to do.
+
+        THE SAME RULE edit_history SETTLED, from the precedent: "users who
+        have access to the current state of an object can access the
+        entire history of the object". Authorization is the SAME check
+        as reading the object. No separate grant, and no way to learn
+        about an object's past that you could not learn about its
+        present.
+
+        FIELDS ARE FILTERED PER FIELD, because a history entry carries
+        the whole row as it stood -- including fields the caller may
+        never read, and PAST values of fields they can read today. A
+        caller granted read:Customer but not read:Customer.email must
+        not receive the email address merely because it changed.
+
+        AN ENTRY WITH EVERY FIELD FILTERED OUT IS STILL RETURNED, with
+        empty values, for edit_history's reason: the FACT that this
+        object changed at a given time is what a history is for.
+
+        UNIFORM DENIAL: a caller who may not read the object gets an
+        empty list, so the answer never distinguishes "no history" from
+        "not allowed" from "no such object".
+        """
+        if not check_access(self, user_record, self.roles, object_type,
+                            object_id, f"read:{object_type}", context):
+            return []
+
+        type_def = (self.schema.get(object_type) or {})
+        readable = {
+            field_name
+            for field_name in (type_def.get("fields") or {})
+            if authorize(user_record, self.roles,
+                         f"read:{object_type}.{field_name}")
+        }
+        return [
+            {
+                "change": entry.get("change"),
+                "changed_at": entry.get("changed_at"),
+                "publication": entry.get("publication"),
+                "values": {name: value
+                           for name, value in (entry.get("values") or {}).items()
+                           if name in readable},
+            }
+            for entry in entries
+        ]
+
+    def edit_history(self, user_record: UserRecord, object_type: str, object_id: Any,
+                      limit: int | None = None, offset: int = 0,
+                     context: RequestContext | None = None) -> tuple[list[dict], int]:
+        """Every applied write to one object, newest first, if the
+        caller may read that object.
+
+        The precedent's own rule, quoted because it settles the security
+        question cleanly: "Users who have access to the current state
+        of an object (object with the same primary key) can access the
+        entire history of the object." So authorization is the SAME
+        check as reading the object itself -- no separate grant, and no
+        way to learn about an object's past that you could not learn
+        about its present.
+
+        A caller who cannot read the object gets an empty list, not an
+        error: the same uniform denial every other read path uses, so
+        the response never distinguishes "no history" from "not
+        allowed" from "no such object".
+
+        CHANGED FIELDS ARE FILTERED per-field, not just per-object. A
+        caller granted read:Customer but not read:Customer.email must
+        not learn that the email changed, or to what, by reading
+        history -- that would be a genuine way around field-level RBAC.
+        An entry whose changes are entirely ungranted still appears,
+        with empty changes, because the FACT that someone edited this
+        object at a given time is exactly what an audit trail is for.
+        """
+        if self.write_log is None:
+            return [], 0
+        if not check_access(self, user_record, self.roles, object_type, object_id,
+                            f"read:{object_type}", context):
+            return [], 0
+
+        readable = {
+            field_name
+            for field_name in (self.schema.get(object_type) or {}).get("fields", {})
+            if authorize(user_record, self.roles, f"read:{object_type}.{field_name}")
+        }
+        # Returns (page, total) together so the MAC check above happens
+        # ONCE. A separate count method would have to repeat it, and a
+        # count that forgot would leak how much history exists for an
+        # object the caller cannot read.
+        entries = [
+            {**entry, "changes": {k: v for k, v in entry["changes"].items() if k in readable}}
+            for entry in self.write_log.edit_history(object_type, object_id, limit, offset)
+        ]
+        return entries, self.write_log.edit_history_count(object_type, object_id)
+
+    def count_objects(self, user_record: UserRecord, object_type: str, conditions: list,
+                       outcome: "SearchOutcome | None" = None,
+                       query_text: str = "") -> int:
+        """How many objects of this type the CALLER can see, matching
+        criteria.
+
+        The count is of objects this specific user is authorized to
+        read, never the raw row count -- two users running the same
+        count legitimately get different answers, and a count that
+        ignored MAC would leak the existence of rows outside the
+        caller's boundary.
+
+        Deliberately built on search_object() rather than a SQL
+        COUNT(*): the criteria filter is pushed to the engine there,
+        but MAC is applied per object in Python afterwards (following
+        security.via_field chains that can cross silos), so a
+        engine-side COUNT would count rows the caller cannot see. That
+        is the same constraint the precedent's own object-set service works
+        under, and the reason it is a service rather than exposed SQL.
+
+        AND BECAUSE IT IS BUILT ON search_object(), IT INHERITS THE
+        CEILING -- which is why `outcome` exists here. search_object()
+        stops at MAX_SEARCH_SCAN rows, so a count over a `via_field`
+        type whose candidates span every compartment can come back
+        SHORT: the scan budget is spent on rows that are then filtered
+        away, and the caller's own set is cut off with them. Without an
+        outcome to write into, that is a wrong number reported as a
+        right one.
+
+        A SHORT COUNT CANNOT BE A LEAK -- every id still passes
+        check_access() individually, so the error is always downward,
+        never a row from another compartment. It is a correctness and
+        trust defect rather than a confidentiality one, which is the
+        reason it survived this long and not a reason to leave it.
+
+        "WE STOPPED COUNTING", NEVER "THERE ARE MORE FOR YOU", the same
+        reading SearchOutcome's own comment insists on: beyond the
+        ceiling the rows might all have been invisible anyway.
+        """
+        return len(self._set_members(user_record, object_type, conditions, outcome, query_text))
+
+    def _set_members(self, user_record: UserRecord, object_type: str, conditions: list,
+                     outcome: "SearchOutcome | None", query_text: str) -> list:
+        """The ids of the set a count or an aggregate describes.
+
+        WITH THE TEXT QUERY WHEN THERE IS ONE, which is the half that
+        was missing. Browse's table runs search_object_free_text --
+        whose own docstring says it "is what makes charts and a table
+        describe ONE object set" -- and its charts and facets ran
+        search_object, which has no text at all. So "Transaction · 81"
+        for the search "refund" sat beside a donut of all five
+        categories and facets counting 404, seen in a browser.
+
+        The same two searches the rest of this class uses, chosen here
+        once, so a count and an aggregate cannot pick differently.
+        """
+        if query_text and query_text.strip():
+            return self.search_object_free_text(
+                user_record, object_type, query_text, conditions=conditions, outcome=outcome)
+        return self.search_object(user_record, object_type, conditions, outcome=outcome)
+
+    def aggregate_by_field(self, user_record: UserRecord, object_type: str, conditions: list,
+                            group_by: str | None, aggregate: str, field_name: str | None = None,
+                            outcome: "SearchOutcome | None" = None,
+                            query_text: str = "", period: "str | None" = None,
+                            duration: "str | None" = None,
+                            time_zone: "str | None" = None) -> dict:
+        """Aggregates a field over the objects the caller can see.
+
+        `period` (day, week or month) groups a DATE field by the period
+        each value falls in rather than by its exact value, keyed by the
+        period's first day, with empty periods between the first and last
+        filled in as 0 for a count or a sum (core/periods.py) -- a series
+        over time, which is what a chart over time and a forecast need.
+        `duration` does the same by a fixed length, an ISO 8601 duration
+        such as PT15M, keyed by each bucket's start; `time_zone` counts
+        either on that zone's clock (core/periods.py says how).
+
+        `aggregate` is one of count/sum/avg/min/max -- the same set
+        the precedent's own aggregate API exposes. `field_name` is required
+        for every aggregate except count, which needs no field.
+        `group_by` of None aggregates the whole matching set into a
+        single result under the key None.
+
+        Returns {group_value: metric}. Null group values are EXCLUDED,
+        matching the precedent's documented behaviour: "null properties are
+        never included in groupBy or aggregation computations."
+
+        Reads in BULK. The naive version -- get_object() per matching
+        id -- cost 16,045 SQL queries to aggregate 2,004 objects,
+        measured directly. Authorization is still resolved per object,
+        because it must be, but the DATA is read once.
+
+        `outcome` REPORTS THAT THE SET WAS CUT OFF, and matters more
+        here than almost anywhere. A truncated search shows a short
+        LIST, which looks short; a truncated aggregate shows a
+        confident NUMBER on a chart, and nothing about a bar labelled
+        3,000 says it should have said 4,000. See count_objects() above
+        for why the ceiling can bite on a set the caller could
+        otherwise see in full, and SearchOutcome for why the flag is an
+        out-parameter rather than a return shape.
+        """
+        measured = self.aggregate_measures(
+            user_record, object_type, conditions, group_by,
+            [{"name": "value", "aggregate": aggregate, "field": field_name}],
+            outcome=outcome, query_text=query_text, period=period, duration=duration,
+            time_zone=time_zone)
+        return {group: metrics["value"] for group, metrics in measured.items()}
+
+    def aggregate_measures(self, user_record: UserRecord, object_type: str, conditions: list,
+                           group_by: str | None, measures: list[dict],
+                           outcome: "SearchOutcome | None" = None, query_text: str = "",
+                           period: "str | None" = None, duration: "str | None" = None,
+                           time_zone: "str | None" = None,
+                           members: "list | None" = None) -> dict:
+        """SEVERAL MEASURES OVER ONE READ: {group: {name: value}}.
+
+        `members`, when given, is the set to aggregate AS IDS (the
+        object-set algebra evaluates a set before asking for numbers over
+        it). They are checked again, not trusted: only those that still
+        pass check_access() are counted, and `conditions` and `query_text`
+        are then not consulted.
+
+        Each measure is {"name", "aggregate", "field"} and is exactly what
+        aggregate_by_field() computes for it alone -- aggregate_by_field
+        is this with one measure, and every rule in its docstring holds
+        for each measure here. What several add is that the set is
+        resolved and READ ONCE, so the measures of one chart cannot
+        disagree about which rows they saw, and the cost of a second
+        measure is its arithmetic, not another scan.
+
+        WHY THE ANSWER IS A LIST OF ROWS, {group, metrics}, and not an
+        object keyed by group: JavaScript reorders integer-like keys
+        (`{"b":1,"10":2,"2":3}` reads back 2, 10, b) and a year or a status
+        code is one, and group values keep their types in a list. Metrics
+        are an object keyed by measure name, because a name is an
+        identifier and is never reordered.
+
+        A group is present when ANY measure has a value in it. A measure
+        with none there is 0 for a count or a sum, as an empty period is,
+        and None for the others -- there is no average of nothing.
+
+        The precedent's aggregate takes a list of {type, field, name} and
+        answers each group with its metrics by name; names are the
+        caller's, unique, and plain identifiers so that an object keyed
+        by them is never reordered by a reader (a key that looks like an
+        integer is, in JavaScript).
+        """
+        from elysium.core.periods import ZERO_WHEN_EMPTY
+
+        if not measures:
+            raise ValueError("Ask for at least one measure.")
+        if len(measures) > MAX_MEASURES:
+            raise ValueError(f"At most {MAX_MEASURES} measures in one request; got {len(measures)}.")
+        names = [str(measure.get("name") or "") for measure in measures]
+        for name in names:
+            if not _MEASURE_NAME.fullmatch(name):
+                raise ValueError(f"A measure's name must be lower-case letters, digits and "
+                                 f"underscores, starting with a letter or underscore; "
+                                 f"{name!r} is not.")
+        if len(set(names)) != len(names):
+            raise ValueError("Two measures have the same name; each needs its own.")
+        for measure in measures:
+            aggregate = measure.get("aggregate")
+            field_name = measure.get("field")
+            if aggregate not in _AGGREGATES and aggregate not in _ORDERED:
+                raise ValueError(f"Unknown aggregate {aggregate!r} -- expected one of "
+                                 f"{sorted({*_AGGREGATES, *_ORDERED})}")
+            if aggregate in _ORDERED and period is None and duration is None:
+                raise ValueError(
+                    f"{aggregate} is the value at the {'earliest' if aggregate == 'first' else 'latest'} "
+                    f"moment of each time bucket, so it needs one: group_by a date or timestamp "
+                    f"field with a period or a duration.")
+            if aggregate != "count" and field_name is None:
+                raise ValueError(f"aggregate {aggregate!r} requires a field_name")
+
+        # NEITHER group_by NOR field_name MAY NAME A LINK. A link is
+        # not a column -- it is resolved through the link machinery --
+        # so passing one here reaches the adapter as a column name and
+        # fails in SQL rather than as a usable error:
+        #
+        #   sqlite3.OperationalError: no such column: transactions
+        #
+        # Observed on a real query, once aggregate_object became
+        # reachable from the agent loop: the model asked to aggregate
+        # over "transactions", which is a link field on Customer and
+        # does have a read: grant, so it passed authorization and then
+        # failed at the database.
+        #
+        # Checked HERE rather than in next_step()'s validation because
+        # this is the enforcing side: the agent is one caller among
+        # several, and a link is not aggregatable for anyone.
+        type_config = self.schema.get(object_type) or {}
+        for argument_name, candidate in (("group_by", group_by),
+                                         *(("field_name", m.get("field")) for m in measures)):
+            if candidate is None:
+                continue
+            field_info = (type_config.get("fields") or {}).get(candidate)
+            if field_info and is_link_field(field_info):
+                raise ValueError(
+                    f"{argument_name} {candidate!r} is a link on {object_type}, not an "
+                    f"aggregatable field. Follow the link with search_around first, then "
+                    f"aggregate over the objects on the far side."
+                )
+
+        bucketing = None
+        if period is not None or duration is not None or time_zone is not None:
+            from elysium.core.periods import PERIODS, TEMPORAL, Buckets, parse_duration
+            from elysium.core.periods import time_zone as zone_named
+
+            if period is not None and duration is not None:
+                raise ValueError("Group by a period or by a duration -- one of them, not both.")
+            if period is None and duration is None:
+                raise ValueError("time_zone says which clock to count periods on; ask for a "
+                                 "period or a duration with it.")
+            if period is not None and period not in PERIODS:
+                raise ValueError(f"Unknown period {period!r} -- expected one of {list(PERIODS)}")
+            declared = ((type_config.get("fields") or {}).get(group_by or "") or {}).get("data_type")
+            if group_by is None or declared not in TEMPORAL:
+                raise ValueError(
+                    f"{'period' if period else 'duration'} groups by a date: group_by must name "
+                    f"a date or timestamp field of {object_type}; {group_by!r} is "
+                    f"{declared or 'text'}."
+                )
+            bucketing = Buckets(period=period,
+                                length=None if duration is None else parse_duration(duration),
+                                zone=zone_named(time_zone), dated=declared == "date")
+
+        if members is not None:
+            visible_ids = set(self._still_readable(user_record, object_type, members))
+        else:
+            visible_ids = set(self._set_members(user_record, object_type, conditions, outcome, query_text))
+        if not visible_ids:
+            return {}
+
+        fields = [name for name in dict.fromkeys(
+            [group_by, *(measure.get("field") for measure in measures)]) if name is not None]
+        if not fields:
+            # Counts over the whole set, with no grouping and no field:
+            # the size of the authorized set itself, and nothing to read
+            # (a bulk read of zero columns returns nothing, and the count
+            # would come back empty -- a real bug, caught by testing it).
+            return {None: {measure["name"]: len(visible_ids) for measure in measures}}
+
+        rows = self._read_fields_for_ids(user_record, object_type, visible_ids, fields)
+
+        per_measure = {measure["name"]: self._measured(rows, group_by, measure, bucketing)
+                       for measure in measures}
+        groups = list(dict.fromkeys(group for result in per_measure.values() for group in result))
+        if bucketing is not None:
+            groups.sort()
+        return {group: {measure["name"]: per_measure[measure["name"]].get(
+                            group, 0 if measure["aggregate"] in ZERO_WHEN_EMPTY else None)
+                        for measure in measures}
+                for group in groups}
+
+    @staticmethod
+    def _measured(rows: dict, group_by: str | None, measure: dict, bucketing) -> dict:
+        """One measure over rows already read: {group: value}."""
+        aggregate = measure["aggregate"]
+        field_name = measure.get("field")
+        if bucketing is not None:
+            from elysium.core.periods import by_period, with_gaps_filled
+
+            assert group_by is not None
+            # A RECORD THE CALLER MAY NOT READ THE DATE OF is in no
+            # period -- _read_fields_for_ids returns nothing for a field
+            # they lack read on, exactly as a null group is dropped below.
+            if aggregate in _ORDERED:
+                from elysium.core.periods import moment_order
+
+                per = by_period(
+                    ((row.get(group_by), (moment_order(row.get(group_by)), str(object_id),
+                                          row.get(field_name)))
+                     for object_id, row in rows.items() if row.get(field_name) is not None),
+                    bucketing)
+                return with_gaps_filled(
+                    {start: _ORDERED[aggregate](timed) for start, timed in per.items()},
+                    bucketing, aggregate)
+            per = by_period(
+                ((row.get(group_by),
+                  row.get(field_name) if field_name is not None else object_id)
+                 for object_id, row in rows.items()
+                 if field_name is None or row.get(field_name) is not None),
+                bucketing)
+            return with_gaps_filled(
+                {start: _AGGREGATES[aggregate](values) for start, values in per.items()},
+                bucketing, aggregate)
+
+        grouped: dict[Any, list] = {}
+        for object_id, row in rows.items():
+            group_value = row.get(group_by) if group_by is not None else None
+            if group_by is not None and group_value is None:
+                # Excluded, per the precedent's own documented rule.
+                continue
+            value = row.get(field_name) if field_name is not None else object_id
+            if field_name is not None and value is None:
+                continue
+            grouped.setdefault(group_value, []).append(value)
+
+        return {group: _AGGREGATES[aggregate](values) for group, values in grouped.items()}
+
+
+    def _read_fields_for_ids(self, user_record: UserRecord, object_type: str,
+                              object_ids: set, field_names: list[str]) -> dict:
+        """Reads several fields for many ALREADY-AUTHORIZED objects in
+        one adapter call per storage, rather than one per field per
+        object.
+
+        object_ids must already have passed check_access() -- this
+        method performs no authorization of its own, which is why it is
+        private and why every caller resolves visibility first. Field
+        names are still RBAC-checked individually, since a caller
+        authorized to read an object is not thereby authorized to read
+        every field of it.
+        """
+        readable = [
+            name for name in field_names
+            if authorize(user_record, self.roles, f"read:{object_type}.{name}")
+        ]
+        if not readable:
+            return {}
+
+        adapter, resolved_type_config = self._resolve_shared_storage(object_type, readable)
+        id_column = resolved_type_config["storage"]["id_column"]
+        columns = [get_column_for_field(resolved_type_config, name) for name in readable]
+
+        # Filtered IN THE ENGINE -- see read_fields_for_ids(). Set
+        # membership is exactly the work a database is for, and doing
+        # it in Python meant reading a whole table to return a page.
+        raw = adapter.read_fields_for_ids(
+            resolved_type_config["storage"]["table"], id_column,
+            list(object_ids), columns, resolved_type_config,
+        )
+
+        # THE WRITE LOG, ASKED ONCE INSTEAD OF PER OBJECT PER FIELD.
+        #
+        # This loop used to call _read_field_with_log_check() for every
+        # field of every row, and each call opened its own SQLite
+        # connection -- twice, for "is it deleted" and "does it have a
+        # pending change". Measured: counting 50,000 transactions by
+        # category opened 200,023 connections and took 35 seconds, of
+        # which 34 was connection churn. The grouping everyone assumes
+        # is the cost was 0.24s.
+        #
+        # Both tables hold only PENDING writes, so they are small
+        # whatever the object table's size -- which is why one query
+        # for all of them is affordable and the per-object form never
+        # was.
+        pending_by_id: dict = {}
+        deleted_ids: set = set()
+        if self.write_log is not None:
+            ids = [row[id_column] for row in raw]
+            pending_by_id = self.write_log.pending_changes_for_ids(object_type, ids)
+            deleted_ids = self.write_log.deleted_ids(object_type, ids)
+
+        by_id = {}
+        for row in raw:
+            object_id = row[id_column]
+            # A DELETED OBJECT READS AS ABSENT, field by field, exactly
+            # as the per-object path did.
+            if str(object_id) in deleted_ids:
+                by_id[object_id] = dict.fromkeys(readable)
+                continue
+
+            pending = pending_by_id.get(str(object_id))
+            by_id[object_id] = {
+                name: (pending[name] if pending is not None and name in pending else row[column])
+                for name, column in zip(readable, columns, strict=True)
+            }
+        return by_id
+
+    @_security_scoped
+    def get_field(self, user_record: UserRecord, object_type: str, object_id: Any, field_name: str,
+                   context: RequestContext | None = None):
+        # NEVER raises for "field/type doesn't exist" or "not authorized"
+        # -- both return None.
+        if object_type not in self.schema:
+            # Distinguishes, for auditing, a genuinely unknown
+            # object_type from an ordinary RBAC/MAC denial -- see
+            # log_unknown_reference()'s own docstring.
+            self.audit_log.log_unknown_reference(user_record.user_id, object_type)
+            return None
+
+        action = f"read:{object_type}.{field_name}"
+        access_allowed = check_access(self, user_record, self.roles, object_type, object_id, action, context)
+
+        type_schema = self._type_schema(object_type)
+        field_exists = field_name in type_schema["fields"]
+
+        if not field_exists:
+            # ALWAYS logged, regardless of what check_access() just
+            # decided -- this is the fix for a real ordering bug found
+            # while verifying this mechanism directly: a made-up field
+            # name almost always makes check_access() itself return
+            # False (no role grants a nonexistent action string), which
+            # means an early "if not access_allowed: return None" here
+            # would make this branch effectively unreachable in the
+            # COMMON case -- exactly the case (a model guessing at a
+            # field name) this logging exists to catch. Determining
+            # field_exists independently, and logging it independently
+            # of access_allowed, is what actually achieves that.
+            self.audit_log.log_unknown_reference(user_record.user_id, object_type, field_name)
+
+        if not access_allowed or not field_exists:
+            return None
+
+        field_info = type_schema["fields"][field_name]
+
+        if is_link_field(field_info) and field_info.get("cardinality") == "many":
+            # A reverse link's via_table almost always physically lives
+            # in the TARGET type's own database, not the source's --
+            # it's typically the target's own table, holding a foreign
+            # key back to the source. So this query must run against
+            # the TARGET's adapter, not the source object's adapter --
+            # querying the source's adapter here was a real bug (not
+            # just an overcautious guard) until this fix: it would
+            # raise "no such table" the moment source and target lived
+            # in different silos, since the via_table simply doesn't
+            # exist in the source's own database. Proven with a real
+            # cross-database test -- see tests/unit/test_cross_silo_links.py.
+            target_type = get_link_target(field_info)
+            target_adapter = self._adapter_for(target_type)
+            target_id_column = self.schema[target_type]["storage"]["id_column"]
+            linked = target_adapter.resolve_reverse_link(
+                object_id, field_info, target_id_column)
+            # FILTERED BY MAC, exactly as link_counts() two methods
+            # below already does (PA001-X1). Without this, a link field
+            # returns the IDS of objects the caller may not see, while
+            # link_counts and search_around on the SAME link correctly
+            # report and return fewer. Reproduced with one row: a
+            # us-west user reading a us-west tag got a us-east
+            # customer's id, whose own object correctly answers None.
+            #
+            # link_counts' own comment called this case "UNTESTABLE IN
+            # THIS DEPLOYMENT". It is testable with one many-to-many
+            # row that crosses regions, and it leaked.
+            #
+            # THE AGENT READS THROUGH get_object, which reads through
+            # here, so the disclosure reached the model as well as the
+            # API.
+            return self._visible_link_ids(user_record, target_type, linked, context)
+
+        derivation = derivation_of(field_info)
+        if derivation is not None:
+            # COMPUTED FROM ITS INPUTS AS THEY ARE READ NOW (R37), each
+            # through this same method -- so each passes its own access
+            # check, and a change still waiting to sync is reflected in
+            # the total beside it. Gold's stored copy is for filters and
+            # counts. Grants already guarantee a caller who reached here
+            # may read every input (gate_derived_grants); None from an
+            # input therefore means empty, never refused.
+            values = {name: self.get_field(user_record, object_type, object_id, name, context)
+                      for name in derivation.inputs}
+            return finished(compute(derivation, values), field_info.get("data_type") or "string")
+
+        # Checks core/ontology/write_log.py's own store FIRST, before
+        # ever reaching the real adapter -- if an update touching this
+        # exact field is still mid-apply (see WriteMediator.
+        # _apply_one_update()), this is what makes that in-flight
+        # window invisible to a reader: they see the INTENDED value
+        # immediately, never a state where some of the update's
+        # storages already reflect it and others don't yet. Delegated
+        # to _read_field_with_log_check() -- the SAME shared logic
+        # search_object()'s own write-log reconciliation uses, see its
+        # own docstring for the full reasoning.
+        adapter, resolved_type_config = self._resolve_shared_storage(object_type, [field_name])
+        value = self._read_field_with_log_check(object_type, object_id, field_name, adapter,
+                                                resolved_type_config)
+        if is_link_field(field_info) and value is not None:
+            # A FORWARD LINK TO AN OBJECT THE CALLER MAY NOT SEE ANSWERS
+            # None (NEW-1, decided by the owner 14 Oct: hide it). The id is
+            # a foreign key on a row the caller may read, but it NAMES an
+            # object they may not -- and the many-valued links, search and
+            # link counts already withhold such ids. One rule for every
+            # way of following a link.
+            #
+            # check_access, not _visible_link_ids: that prefetches, and
+            # prefetching clears the security cache get_object warms for
+            # the object being read, so every later field would pay to
+            # resolve it again.
+            #
+            # A TARGET THE ONTOLOGY DOES NOT DECLARE has no security rule
+            # to enforce, and checking it would raise "Unknown object_type"
+            # out of a method that never raises (test_mdo's Agent link):
+            # the id is an opaque reference, returned as it always was.
+            target_type = get_link_target(field_info)
+            if target_type in self.schema and not check_access(
+                    self, user_record, self.roles, target_type, value,
+                    f"read:{target_type}", context):
+                return None
+        return value
+
+    @_security_scoped
+    def get_object(self, user_record: UserRecord, object_type: str, object_id: Any,
+                   field_names: list[str],
+                   context: RequestContext | None = None) -> dict:
+        # A thin, per-field loop around get_field() above -- reuses its
+        # ENTIRE RBAC/MAC/audit/MDO-storage-resolution/write-log-
+        # reconciliation logic exactly, unchanged, once per field. This
+        # exists ONLY to save the MODEL real hops (one request instead
+        # of N separate get_field calls against max_hops), not to
+        # reduce the number of underlying storage reads or introduce
+        # any new authorization/data logic of its own -- see this
+        # method's own AI-notes for why batching the UNDERLYING
+        # storage queries (e.g. resolving shared storage once for
+        # every field that happens to share one) was considered and
+        # deliberately deferred, not attempted here.
+        #
+        # Same "never raises" contract as get_field() -- an unknown
+        # field, an unknown object_type, or a genuine RBAC/MAC denial
+        # all resolve to that field's own entry being None, exactly as
+        # a caller would see calling get_field() for it directly; a
+        # partially-authorized request (some fields granted, some not)
+        # returns a dict mixing real values and Nones, never raises or
+        # silently drops the denied ones.
+        # Resolves this object's security value ONCE before the loop.
+        #
+        # get_field() calls check_access() per field, and each call
+        # resolves MAC independently -- so reading four fields of one
+        # object cost eight queries, two per field, for data living in
+        # a single row. Warming the cache first makes every check after
+        # the first a dictionary lookup: 2N becomes N+1.
+        #
+        # Deliberately warms rather than restructuring the loop into a
+        # bulk read. get_field() also applies per-field RBAC, logs
+        # unknown fields, follows reverse links to a different adapter
+        # entirely, and masks values against pending writes. Replacing
+        # it would mean reimplementing all of that; this changes only
+        # what the existing path costs.
+        #
+        # ONLY IF NOT ALREADY CACHED, which matters more than it looks.
+        # _prefetch_security_values() CLEARS the cache before filling
+        # it, so warming unconditionally here would make a caller
+        # reading a page of results defeat itself: search_object()
+        # resolves security for all fifty rows, then the first
+        # get_object() throws that away and the remaining forty-nine
+        # each re-resolve their own. The unconditional version was
+        # committed and measured at exactly 4 queries per row, with no
+        # sharing across the page at all.
+        values_cached, links_cached = _SECURITY_CACHE.get() or ({}, {})
+        if (object_type, str(object_id)) not in values_cached and (
+            object_type, str(object_id)
+        ) not in links_cached:
+            self._prefetch_security_values(object_type, [object_id])
+
+        return {
+            # THE CONTEXT TRAVELS WITH THE LOOP, so one call reading
+            # six fields writes six audit lines sharing one id rather
+            # than six unrelated ones. get_field already accepted it;
+            # only this wrapper dropped it on the floor.
+            field_name: self.get_field(user_record, object_type, object_id, field_name,
+                                       context=context)
+            for field_name in field_names
+        }

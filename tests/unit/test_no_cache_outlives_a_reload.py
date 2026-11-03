@@ -38,7 +38,7 @@ import pytest
 MEMOISING = {"lru_cache", "cache", "cached_property", "memoize", "cached"}
 
 #: Where a stale value would be an authorization decision.
-GOVERNED = ("core", "api", "adapters")
+GOVERNED = ("src/elysium/core", "src/elysium/api", "src/elysium/adapters")
 
 #: Caches allowed BY NAME, each keyed on something no reload changes.
 ALLOWED = {
@@ -46,13 +46,13 @@ ALLOWED = {
     # holidays library's reference data -- no configuration reload
     # changes when Christmas is, and building a calendar is the slow
     # part of checking a date against it.
-    ("core/ontology/value_checks.py", "_calendar"):
+    ("src/elysium/core/ontology/value_checks.py", "_calendar"):
         "public-holiday calendars by country code; reference data, not configuration",
     # The /api/v2 page-token signing key, keyed by the data directory.
     # It is read once from a file written once; no configuration reload
     # changes it, and it decides no grant (a token is re-checked against
     # the caller's current permissions on every page).
-    ("api/v2/paging.py", "_key"):
+    ("src/elysium/api/v2/paging.py", "_key"):
         "page-token signing key by data directory; written once, not configuration",
 }
 
@@ -144,7 +144,7 @@ class TestWhatThePlanAlsoSettled:
         rather than leaving the older note to be believed."""
         import dataclasses
 
-        from core.deployment_loader import DeploymentConfig
+        from elysium.core.deployment_loader import DeploymentConfig
 
         assert dataclasses.fields(DeploymentConfig)
         with pytest.raises(dataclasses.FrozenInstanceError):

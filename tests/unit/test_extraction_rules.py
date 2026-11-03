@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pytest
 
-from core.ontology.extraction_rules import describe, same_value, take, tokens, typed
+from elysium.core.ontology.extraction_rules import describe, same_value, take, tokens, typed
 
 
 def _rule(after, take_shape, within=2, **extra):

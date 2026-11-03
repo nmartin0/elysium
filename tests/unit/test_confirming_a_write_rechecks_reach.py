@@ -39,11 +39,11 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.mediator import DataMediator
-from core.ontology.write_log import WriteLogWriter
-from core.ontology.write_mediator import WriteMediator
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
+from elysium.core.access.auth import UserRecord
+from elysium.core.ontology.mediator import DataMediator
+from elysium.core.ontology.write_log import WriteLogWriter
+from elysium.core.ontology.write_mediator import WriteMediator
 
 SCHEMA = {
     "Ticket": {

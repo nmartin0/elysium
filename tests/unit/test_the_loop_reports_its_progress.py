@@ -5,9 +5,9 @@ stop it."""
 import contextlib
 import io
 
-from core.deployment_loader import build_generation
-from core.intermediate_layer.auth import resolve_user_record
-from scripts.llm_bench import CASES, USER_ID
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.deployment_loader import build_generation
+from elysium.scripts.llm_bench import CASES, USER_ID
 from tests.unit.test_llm_bench import Scripted
 
 LINK_FANOUT = next(case for case in CASES if case.name == "link_fanout")

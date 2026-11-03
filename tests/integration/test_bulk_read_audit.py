@@ -30,7 +30,7 @@ PARTITIONS a query touched.
 import collections
 import json
 
-from core.intermediate_layer.auth import UserRecord
+from elysium.core.access.auth import UserRecord
 
 ALICE = UserRecord("alice", "us-west", "customer_service")
 

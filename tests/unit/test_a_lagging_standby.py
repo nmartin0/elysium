@@ -14,9 +14,9 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import create_engine, text
 
-from adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from scripts.run_sync import _detail_for
+from elysium.adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.scripts.run_sync import _detail_for
 
 
 @pytest.fixture(scope="module")

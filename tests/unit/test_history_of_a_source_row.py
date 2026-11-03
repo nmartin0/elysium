@@ -5,8 +5,8 @@ import csv
 import io
 import sqlite3
 
-from scripts.history_of import run
-from scripts.run_sync import run_sync
+from elysium.scripts.history_of import run
+from elysium.scripts.run_sync import run_sync
 
 
 def test_a_renamed_customer_has_two_versions_and_one_is_current(synced_deployment):

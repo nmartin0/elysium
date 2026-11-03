@@ -33,10 +33,10 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.transform import transform_rows
-from core.ontology.field_types import coerce
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.transform import transform_rows
+from elysium.core.ontology.field_types import coerce
 
 BAD_MONEY = ["$5.00", "N/A", "1,234", "TBD", "5%", "(3.00)", "3.00 USD"]
 

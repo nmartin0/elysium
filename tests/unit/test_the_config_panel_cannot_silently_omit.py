@@ -33,7 +33,7 @@ from pathlib import Path
 
 import pytest
 
-from core.deployment_loader import DeploymentConfig
+from elysium.core.deployment_loader import DeploymentConfig
 
 #: Settings the config panel deliberately does not show, and why.
 #: Adding a field to `DeploymentConfig` means adding it to the response
@@ -73,7 +73,7 @@ WITHHELD_FROM_CONFIG_RESPONSE = {
 
 
 def _response_fields():
-    source = Path("api/routes.py").read_text()
+    source = Path("src/elysium/api/routes.py").read_text()
     i = source.index("class DeploymentConfigResponse")
     body = source[i:source.index("\n\n\n", i)]
     return set(re.findall(r"^    (\w+):", body, re.M))
@@ -130,7 +130,7 @@ class TestTheFourThatDrifted:
     def test_the_route_actually_returns_it(self, setting):
         """Declared and not returned is the same invisibility, reached
         the other way round."""
-        source = Path("api/routes.py").read_text()
+        source = Path("src/elysium/api/routes.py").read_text()
         i = source.index("def deployment_config_route")
         body = source[i:source.index("\n@router", i)]
 

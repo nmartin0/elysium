@@ -77,19 +77,20 @@ class TestEveryExtraIsReachable:
 
 
 class TestThePackagesAnEditableInstallExposes:
-    def test_they_are_named_rather_than_discovered(self):
-        """Automatic discovery finds `deployment`, `tests` and the
-        sibling worktree directories, and fails or installs them."""
-        assert PYPROJECT.get("tool", {}).get("setuptools", {}).get("packages")
+    def test_they_are_found_under_src_rather_than_discovered_from_the_root(self):
+        """Automatic discovery from the root finds `deployment`, `tests` and
+        the sibling worktree directories, and fails or installs them."""
+        find = PYPROJECT.get("tool", {}).get("setuptools", {}).get("packages", {}).get("find", {})
+        assert find.get("where") == ["src"]
 
-    @pytest.mark.parametrize("package", ["core", "api", "adapters", "scripts"])
-    def test_the_real_ones_are_included(self, package):
-        assert package in PYPROJECT["tool"]["setuptools"]["packages"]
+    def test_the_package_exists_where_it_is_looked_for(self):
+        assert (Path(__file__).resolve().parents[2] / "src" / "elysium" / "__init__.py").exists()
 
     def test_tests_and_deployment_are_not(self):
         """Installing a deployment's configuration into site-packages
         would be a surprising thing for an editable install to do."""
-        packages = PYPROJECT["tool"]["setuptools"]["packages"]
+        find = PYPROJECT["tool"]["setuptools"]["packages"]["find"]
 
-        assert "tests" not in packages
-        assert "deployment" not in packages
+        assert find["where"] == ["src"]
+        assert not (Path(__file__).resolve().parents[2] / "src" / "tests").exists()
+        assert not (Path(__file__).resolve().parents[2] / "src" / "deployment").exists()

@@ -28,11 +28,11 @@ import sqlite3
 import pytest
 import yaml
 
-from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
-from core.functions.ontology_access import OntologyAccess
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.link_types import expand_link_types
-from core.ontology.mediator import DataMediator
+from elysium.core.access.auth import UserRecord
+from elysium.core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from elysium.core.functions.ontology_access import OntologyAccess
+from elysium.core.ontology.link_types import expand_link_types
+from elysium.core.ontology.mediator import DataMediator
 
 FIXTURES = "tests/integration/fixtures/"
 WEST = UserRecord(user_id="a", security_value="us-west", role_name="customer_service")
@@ -197,7 +197,7 @@ def test_a_function_declaring_an_unknown_object_type_fails_at_load():
     # the
     # same class of mistake is worth catching at LOAD rather than
     # mid-conversation, after a user has already asked a question.
-    from core.functions.registry import _FUNCTION_REGISTRY, validate_function_declarations
+    from elysium.core.functions.registry import _FUNCTION_REGISTRY, validate_function_declarations
 
     class BadFunction:
         name = "bad"
@@ -218,7 +218,7 @@ def test_a_function_declaring_an_unknown_object_type_fails_at_load():
 
 
 def test_a_function_declaring_a_known_object_type_validates():
-    from core.functions.registry import _FUNCTION_REGISTRY, validate_function_declarations
+    from elysium.core.functions.registry import _FUNCTION_REGISTRY, validate_function_declarations
 
     class GoodFunction:
         name = "good"
@@ -241,7 +241,7 @@ def test_a_purely_computational_function_declares_nothing_and_validates():
     # The existing linear_regression, unchanged by this work: it
     # declares no object types, so it receives no capability and
     # provably cannot reach the ontology.
-    from core.functions.registry import get_enabled_functions, validate_function_declarations
+    from elysium.core.functions.registry import get_enabled_functions, validate_function_declarations
 
     validate_function_declarations(["linear_regression"], {})
     assert get_enabled_functions(["linear_regression"])[0].reads_object_types == []
@@ -284,7 +284,7 @@ def test_the_agent_loop_passes_nothing_but_the_capability():
     # use whatever arrived.
     import inspect
 
-    from core.agent import agentic_loop
+    from elysium.core.agent import agentic_loop
 
     source = inspect.getsource(agentic_loop)
 

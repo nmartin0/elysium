@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from core.ontology.object_type_validation import validate_object_types
+from elysium.core.ontology.object_type_validation import validate_object_types
 
 FIXTURES = Path("tests/integration/fixtures")
 
@@ -51,8 +51,8 @@ def test_an_empty_or_non_string_group_is_rejected(bad):
 
 
 def test_the_group_reaches_visible_schema():
-    from core.intermediate_layer.auth import UserRecord
-    from core.ontology.mediator import DataMediator
+    from elysium.core.access.auth import UserRecord
+    from elysium.core.ontology.mediator import DataMediator
 
     schema = _schema(group="Finance")
     mediator = DataMediator(

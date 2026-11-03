@@ -5,9 +5,9 @@ GET /me/visible-apps.
 
 from pathlib import Path
 
-from api.apps import visible_apps_for
-from core.intermediate_layer.auth import resolve_user_record
-from core.modules import load_modules
+from elysium.api.apps import visible_apps_for
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.modules import load_modules
 
 TEST_USERS = {
     "alice": {"role": "admin"},

@@ -41,7 +41,7 @@ def _scripted(*steps):
 
 
 def _ask(client, question, *steps):
-    with patch("adapters.http_transport.post", side_effect=_scripted(*steps)):
+    with patch("elysium.adapters.http_transport.post", side_effect=_scripted(*steps)):
         return client.post("/api/query", headers=_csrf(client), json={"query": question})
 
 
@@ -113,7 +113,7 @@ def test_the_log_says_where_the_questions_time_went(client, caplog):
     import re
 
     _login(client)
-    with caplog.at_level(logging.INFO, logger="api.routes"):
+    with caplog.at_level(logging.INFO, logger="elysium.api.routes"):
         response = _ask(client, "Who is Ada Okafor?",
                         {"step": "search_object", "object_type": "Customer",
                          "filter": {"name": "Ada Okafor"}})

@@ -19,13 +19,13 @@ wrong layer.
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.submission_criteria import (
+from elysium.core.access.auth import UserRecord
+from elysium.core.ontology.submission_criteria import (
     SubmissionCriteriaViolation,
     UserField,
     validate_action_type_criteria,
 )
-from core.ontology.submission_criteria import evaluate_submission_criteria as evaluate
+from elysium.core.ontology.submission_criteria import evaluate_submission_criteria as evaluate
 
 ALICE = UserRecord("alice", "us-west", "lead")
 
@@ -121,7 +121,7 @@ def test_every_declared_user_field_is_a_real_userrecord_attribute():
 
 # --- The wiring, and the prompt builder ---
 
-from core.llm.agent_step_prompt import _sub_write_validity_for_object  # noqa: E402
+from elysium.core.llm.agent_step_prompt import _sub_write_validity_for_object  # noqa: E402
 from tests.unit.test_named_actions import _record, write_mediator  # noqa: E402,F401
 
 _USER_GATED_ACTION = {

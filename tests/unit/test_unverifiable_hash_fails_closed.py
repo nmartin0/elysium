@@ -32,7 +32,7 @@ worth closing rather than noting.
 
 import pytest
 
-from core.auth.password_hashing import (
+from elysium.core.auth.password_hashing import (
     DUMMY_HASH,
     hash_password,
     verify_password,

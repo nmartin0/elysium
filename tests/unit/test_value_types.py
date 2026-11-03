@@ -9,9 +9,9 @@ numbers are written two ways, are one key while each keeps its spelling.
 
 import pytest
 
-from core.mirror.identity import _match_key as match_key
-from core.mirror.identity import rule_for as identity_rule_for
-from core.ontology.value_types import canonical_key, validate_and_expand_value_types
+from elysium.core.mirror.identity import _match_key as match_key
+from elysium.core.mirror.identity import rule_for as identity_rule_for
+from elysium.core.ontology.value_types import canonical_key, validate_and_expand_value_types
 
 
 def _schema(**field):
@@ -83,7 +83,7 @@ def test_identity_matches_two_spellings_of_one_address():
 def test_the_loader_expands_it(tmp_path):
     import shutil
 
-    from core.deployment_loader import load_deployment
+    from elysium.core.deployment_loader import load_deployment
     from tests.unit.conftest import CONFIG_DIR
 
     config_dir = tmp_path / "etc"

@@ -11,9 +11,9 @@ rules go: SyncResult.warnings, recorded per table and shown in Admin.
 
 import sqlite3
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import LEADING_ZEROS_REASON, IcebergMirrorSync
-from core.mirror.transform import transform_rows
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import LEADING_ZEROS_REASON, IcebergMirrorSync
+from elysium.core.mirror.transform import transform_rows
 
 
 def test_the_value_is_still_accepted_and_counted():

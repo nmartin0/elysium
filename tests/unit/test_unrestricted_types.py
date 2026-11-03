@@ -14,16 +14,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.filters import as_equality_conditions
-from core.intermediate_layer.auth import UserRecord, resolve_user_record
-from core.ontology.object_type_validation import validate_object_types
-from core.ontology.unrestricted import (
+from elysium.core.access.auth import UserRecord, resolve_user_record
+from elysium.core.filters import as_equality_conditions
+from elysium.core.ontology.object_type_validation import validate_object_types
+from elysium.core.ontology.unrestricted import (
     UNRESTRICTED,
     as_stored_compartment,
     is_unrestricted,
     normalise_security_blocks,
 )
-from core.ontology.write_mediator import SubWrite, WriteMediator, _compartment_crossings
+from elysium.core.ontology.write_mediator import SubWrite, WriteMediator, _compartment_crossings
 from tests.conftest import TEST_SCHEMA, author_book_mediator
 
 USERS = {

@@ -56,7 +56,7 @@ def test_a_type_they_cannot_see_is_dropped_and_the_answer_says_what_was_kept(cli
 def test_a_type_whose_grant_was_withdrawn_is_not_named_back(client):
     """Cleaned on READ as well as on write: what was stored while they
     could see a type must not tell them about it once they cannot."""
-    from core.canvas_layout import CanvasLayoutStore
+    from elysium.core.canvas_layout import CanvasLayoutStore
 
     _as(client, "alice", "customer_service")
     user_id = client.app.state.user_directory.get_user_record("alice").user_id

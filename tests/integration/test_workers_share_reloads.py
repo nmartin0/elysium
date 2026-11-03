@@ -24,7 +24,7 @@ from tests.integration.test_api import _csrf_headers, _login  # noqa: F401
 
 @pytest.fixture
 def worker_b(client):
-    from api.app import create_app
+    from elysium.api.app import create_app
 
     return TestClient(create_app(client.app.state.runtime_paths))
 
@@ -110,7 +110,7 @@ class TestAFailedFollowIsNotRetriedEveryRequest:
         request and change nothing -- so the failed epoch is remembered,
         and this worker keeps its working configuration until the next
         reload is announced."""
-        import api.reload as reload
+        import elysium.api.reload as reload
 
         _approve_widening_on_a(client)
         kept = worker_b.app.state.generation

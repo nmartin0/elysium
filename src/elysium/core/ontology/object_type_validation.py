@@ -1,0 +1,556 @@
+"""
+object_type_validation.py  (schema-load-time validation for object
+types' own title_field AND security.field/security.via_field)
+
+TITLE_FIELD -- an OPTIONAL, per-object-type declaration of which
+field's own value acts as a human-readable display name (see
+core/ontology/schema.py's own get_title_field() for the runtime-lookup
+counterpart, and README.md's own section 3.3 for the deployer-facing
+explanation). Matches the precedent's own "title key" concept directly
+(verified against their docs, not assumed: "Title key: The property
+that acts as a display name for objects of this type") -- named
+title_field here instead to match this project's OWN existing
+id_field naming convention, not the precedent's own "key" terminology.
+
+SECURITY.FIELD / SECURITY.VIA_FIELD -- the actual MAC boundary itself
+(core/ontology/mediator.py's own _get_security_value()). A real,
+previously-honest, previously-DEFERRED gap, closed here: this exact
+"typo'd reference fails silently at schema-load time" class of bug
+this module already closed for title_field was left open for the
+security-critical field specifically, deliberately not fixed as a
+side effect of adding title_field support -- see this module's own
+git history / previous AI-notes for that original, explicit deferral.
+Closed now, on its own, separately-considered pass, precisely because
+a config builder is about to make editing this exact file meaningfully
+easier for an admin to do, including easier to get subtly wrong.
+
+WHY schema-load time, not runtime: same reasoning as core/ontology/
+action_types.py's own module docstring -- a typo'd title_field or
+security.field (e.g. "nmae" instead of "name") depends only on the
+schema itself, never a real caller's own parameters, and deserves to
+fail loudly at startup, not the first time a real object happens to
+render, or the first time any MAC check actually needs to resolve it.
+
+THE FOUR REAL GAPS FOUND AND CLOSED HERE, together, not separately --
+all discovered by reading core/ontology/mediator.py's own
+_get_security_value() directly before writing any of this, not
+assumed from the schema format alone:
+  1. Every object type's own "security" key was OPTIONAL at
+     deployment_loader.py's own parse time (object_type_def.get(
+     "security", {})) -- but mediator.py's own _get_security_value()
+     does a DIRECT, non-.get() access (type_schema["security"]),
+     meaning a missing security block entirely would raise a raw,
+     uncontrolled KeyError the first time any MAC check ever touched
+     that object type, not a clear error at startup.
+  2. security.via_field never even received deployment_loader.py's
+     own _require_str() type-coercion check -- security.field did,
+     via_field didn't, a real, narrower gap alongside the referential
+     one this module otherwise closes.
+  3. No referential check that security.field references a real,
+     declared, plain "data" field (never "link" -- a link field's own
+     value is an id, never a meaningful, comparable security value)
+     of the SAME object type -- the exact class of check this module
+     already does for title_field, just missing for this one.
+  4. No referential check that security.via_field references a real,
+     declared "link" field (the OPPOSITE restriction from #3) whose
+     own "target" is itself a real object_type -- AND, since
+     _get_security_value() resolves a via_field chain RECURSIVELY
+     (an object type's own security can point through another type's
+     security, transitively), no check that the WHOLE chain actually,
+     eventually terminates in a real security.field, with no cycle.
+     An unvalidated cycle here would not just fail loudly -- it would
+     hang the whole request via infinite recursion, the most severe
+     failure shape this whole module exists to prevent.
+
+DELIBERATELY still scoped to these two concerns (title_field,
+security.field/via_field) -- id_field itself was considered and
+dropped: there is genuinely nothing to validate it against at this
+level (it's a declared name the rest of the system treats as
+authoritative, not a reference into "fields" the way title_field is)
+-- validate_identifier_types() already covers the one thing that IS
+checkable about it (that it's a real string). A general link field's
+own "target" -- for a link field that ISN'T a security.via_field --
+still has no referential validation anywhere in this project; a real,
+separate, broader gap, deliberately NOT closed here, matching this
+module's own "don't scope-creep into an unrelated, lower-stakes
+question" discipline that originally deferred THIS fix in the first
+place.
+"""
+
+import zoneinfo
+
+from elysium.core.ontology.classifications import validate_field_classification
+from elysium.core.ontology.deprecation import STATUSES, validate_deprecation
+from elysium.core.ontology.field_types import FIELD_DATA_TYPES
+from elysium.core.ontology.link_types import is_reverse_link
+from elysium.core.ontology.unrestricted import is_unrestricted
+
+
+def validate_object_types(object_types: dict, only: str | None = None) -> None:
+    """Validates every object type, or just `only` if given.
+
+    `only` narrows WHICH type is checked without narrowing what the
+    checks can SEE. That distinction matters: _validate_security()
+    below resolves a security.via_field against the other object types,
+    so handing it a single-entry dict would report every legitimate
+    cross-reference as an unknown type. The linter uses this to
+    validate one entry at a time -- so an eager-fail check surfaces
+    every bad type rather than only the first -- while still resolving
+    references against the whole schema.
+    """
+    if only is not None and not isinstance(only, str):
+        # A NAME, NOT A COLLECTION. `only` narrows validation to ONE
+        # object type, and anything else silently matches nothing --
+        # so `validate_object_types(schema, {})` validates NOTHING and
+        # returns cleanly, which reads exactly like "this schema is
+        # fine".
+        #
+        # I DID THIS TWICE while checking F-19, and both times
+        # concluded from a clean return that an invalid ontology was
+        # being accepted. It is not: passing `{}` skipped every check.
+        # An argument whose wrong value looks like success is worth
+        # one line to refuse.
+        raise TypeError(
+            f"validate_object_types(only=...) takes an object type NAME or "
+            f"None, not {type(only).__name__}. Passing anything else "
+            f"validates nothing and returns as though the schema were valid."
+        )
+
+    for object_type_name, type_def in object_types.items():
+        if only is not None and object_type_name != only:
+            continue
+        _validate_title_field(object_type_name, type_def)
+        _validate_security(object_type_name, object_types, visited=frozenset())
+        _validate_field_data_types(object_type_name, type_def)
+        _validate_id_types(object_type_name, type_def)
+        _validate_display_metadata(object_type_name, type_def)
+        _validate_ui_metadata(object_type_name, type_def)
+        _validate_discoverable(object_type_name, type_def)
+        validate_deprecation(f"Object type {object_type_name!r}", object_type_name, type_def,
+                             object_types, "object type")
+        fields = type_def.get("fields") or {}
+        for field_name, field_info in fields.items():
+            validate_field_classification(object_type_name, field_name, field_info)
+            validate_deprecation(f"{object_type_name}.{field_name}", field_name, field_info, fields, "field")
+
+
+VISIBILITIES = ("prominent", "normal", "hidden")
+
+# HOW MANY DECIMAL PLACES a numeric field is worth showing. Declared on
+# the PROPERTY, not chosen by the UI, because the UI cannot know: the
+# ontology says a field is a number and says nothing about its scale,
+# and two decimals is wrong for a coordinate and for a count alike.
+#
+# The precedent puts this in the same place -- value formatting is property
+# metadata that transforms "raw values into more readable versions in
+# user applications" -- and it sits beside `visibility` and `status`
+# here for the same reason: all three are things the ontology author
+# knows and an application cannot infer.
+MAX_DECIMAL_PLACES = 10
+
+
+def _validate_discoverable(object_type_name: str, type_def: dict) -> None:
+    """`discoverable`, when present, is true or false -- nothing else.
+
+    NOT COSMETIC, unlike the hints beside it: it decides whether people
+    with no grant on the type are told it exists. A YAML `"false"` (a
+    quoted string) is truthy in Python, so a loose reader would list a
+    type its owner meant to keep hidden. Refused at load, with the value
+    shown, rather than guessed at.
+    """
+    value = type_def.get("discoverable")
+    if value is not None and not isinstance(value, bool):
+        raise ValueError(
+            f"Object type {object_type_name!r}: discoverable must be true or false, got {value!r}"
+        )
+
+
+def _validate_ui_metadata(object_type_name: str, type_def: dict) -> None:
+    """Checks the optional hints a UI renders an ontology with.
+
+    All optional, all cosmetic, and that second word is the important
+    one. `visibility: hidden` tells an application not to SHOW a field;
+    it does not stop anyone reading it. Field-level RBAC grants are the
+    only thing that does, and they are enforced in the mediator before
+    a value is ever produced. Anyone reaching for `hidden` to keep data
+    from a user has reached for the wrong tool, and the value still
+    appears in visible_schema() for exactly that reason -- a UI hint
+    that silently doubled as an access control would be far more
+    dangerous than one that obviously does not.
+
+    `status` mirrors the three states an ontology entry can be in while
+    a deployment evolves: active, experimental, deprecated. A UI can
+    warn on the last of these rather than letting someone build against
+    something on its way out.
+    """
+    icon = type_def.get("icon")
+    if icon is not None and (not isinstance(icon, str) or not icon.strip()):
+        raise ValueError(
+            f"Object type {object_type_name!r}: icon must be a non-empty string, got {icon!r}"
+        )
+    colour = type_def.get("color")
+    if colour is not None and (not isinstance(colour, str) or not colour.strip()):
+        raise ValueError(
+            f"Object type {object_type_name!r}: color must be a non-empty string, got {colour!r}"
+        )
+    _validate_status(f"Object type {object_type_name!r}", type_def)
+
+    for field_name, field_info in (type_def.get("fields") or {}).items():
+        owner = f"Object type {object_type_name!r}, field {field_name!r}"
+        visibility = field_info.get("visibility")
+        if visibility is not None and visibility not in VISIBILITIES:
+            raise ValueError(
+                f"{owner}: visibility must be one of {list(VISIBILITIES)}, got {visibility!r}"
+            )
+        _validate_status(owner, field_info)
+        _validate_decimal_places(owner, field_info)
+
+
+def _validate_decimal_places(owner: str, field_info: dict) -> None:
+    """Checks `decimal_places`, if a field declares one.
+
+    COSMETIC, like everything else this module validates. It changes
+    how a number is DISPLAYED and never what it is -- the stored value,
+    the value an action writes, and the value a filter compares against
+    are all untouched. A deployment rounding for display and then
+    filtering on the rounded figure would be a different and much worse
+    feature.
+
+    WHY A SEPARATE KEY RATHER THAN A FORMAT STRING. "%.2f" would carry
+    padding, thousands separators, currency symbols and locale
+    assumptions along with the precision, and every one of those is a
+    decision this project has not made. A count of places is the whole
+    of what the ontology knows.
+    """
+    places = field_info.get("decimal_places")
+    if places is None:
+        return
+
+    # bool is an int in Python, and `decimal_places: true` is a typo
+    # that would otherwise mean one place.
+    if isinstance(places, bool) or not isinstance(places, int):
+        raise ValueError(
+            f"{owner}: decimal_places must be a whole number, got {places!r}"
+        )
+    if places < 0 or places > MAX_DECIMAL_PLACES:
+        raise ValueError(
+            f"{owner}: decimal_places must be between 0 and {MAX_DECIMAL_PLACES}, "
+            f"got {places}"
+        )
+
+    # ONLY MEANINGFUL ON A NUMBER. Declared on a string it would be
+    # silently ignored, and an author who wrote it meant something by
+    # it -- saying so at load is kinder than leaving them to notice the
+    # field renders unchanged.
+    data_type = field_info.get("data_type")
+    # `decimal` BELONGS HERE TOO, and was missed when that type was
+    # added -- caught by declaring a real money field and watching the
+    # linter refuse it. Two places showing "10.5" and "10.50" for the
+    # same column is exactly the inconsistency decimal_places exists to
+    # prevent, and a decimal field is the one most likely to need it.
+    if data_type is not None and data_type not in ("number", "integer", "decimal"):
+        raise ValueError(
+            f"{owner}: decimal_places is only meaningful on a numeric field, "
+            f"but this one is {data_type!r}"
+        )
+
+
+def _validate_status(owner: str, definition: dict) -> None:
+    status = definition.get("status")
+    if status is not None and status not in STATUSES:
+        raise ValueError(f"{owner}: status must be one of {list(STATUSES)}, got {status!r}")
+
+
+def _validate_display_metadata(object_type_name: str, type_def: dict) -> None:
+    # Display metadata is entirely optional -- every ontology predating
+    # it stays valid, and core/ontology/schema.py's own humanize()
+    # supplies a readable fallback. What IS checked is that a declared
+    # value is a real, non-empty string: an empty display_name is worse
+    # than none at all, because it renders as blank in a UI rather than
+    # falling back to something readable.
+    def check(owner: str, definition: dict, keys: tuple[str, ...]) -> None:
+        for key in keys:
+            if key not in definition:
+                continue
+            value = definition[key]
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(
+                    f"{owner}: {key} must be a non-empty string, got {value!r}"
+                )
+
+    check(
+        f"Object type {object_type_name!r}",
+        type_def,
+        # `group` labels a type for filtering and browsing, the way
+        # the reference implementation does -- purely a display
+        # concern, validated the same way the rest are.
+        ("display_name", "plural_display_name", "description", "group"),
+    )
+    for field_name, field_info in (type_def.get("fields") or {}).items():
+        check(
+            f"Object type {object_type_name!r}, field {field_name!r}",
+            field_info,
+            ("display_name", "description"),
+        )
+
+
+def _validate_id_types(object_type_name: str, type_def: dict) -> None:
+    # `id_type` is declared on the STORAGE block, alongside the
+    # id_column it describes -- not under `fields`, and not on the
+    # top-level id_field key. Deliberate, and following this project's
+    # own established position rather than inventing one: an object's
+    # identity is a property of its storage, never MDO-overridden (see
+    # core/ontology/schema.py's own get_column_for_field() docstring,
+    # which states exactly that). Declaring the type beside the column
+    # keeps the two facts together, and gives each additional_storage
+    # block its own -- Customer is keyed by customer_id in primary but
+    # cust_ref in risk_db, genuinely different columns that could
+    # genuinely have different types.
+    storages = [type_def.get("storage") or {}]
+    storages.extend((type_def.get("additional_storage") or {}).values())
+
+    for storage in storages:
+        declared = storage.get("id_type")
+        if declared is None:
+            # Genuinely optional, defaulting to string -- every schema
+            # predating this stays valid.
+            continue
+        if declared not in FIELD_DATA_TYPES:
+            raise ValueError(
+                f"Object type {object_type_name!r}: storage declares unknown "
+                f"id_type {declared!r} -- known types: {sorted(FIELD_DATA_TYPES)}."
+            )
+
+
+def _validate_field_data_types(object_type_name: str, type_def: dict) -> None:
+    # A typo'd data_type must fail HERE, at deployment load, rather
+    # than at sync time -- by which point it would be a confusing
+    # failure in a scheduled batch job, far from the schema that
+    # actually caused it. Same "fail loudly, as early as possible"
+    # discipline every other check in this file follows.
+    for field_name, field_info in type_def.get("fields", {}).items():
+        declared = field_info.get("data_type")
+        if declared is None:
+            # Genuinely optional -- see core/ontology/field_types.py's
+            # own docstring on why every schema predating this stays
+            # valid.
+            continue
+        if declared not in FIELD_DATA_TYPES:
+            raise ValueError(
+                f"Object type {object_type_name!r}: field {field_name!r} declares unknown "
+                f"data_type {declared!r} -- known types: {sorted(FIELD_DATA_TYPES)}."
+            )
+        if field_info.get("type") == "link":
+            # A link field's own value is an id (or a list of them),
+            # resolved from the TARGET type's own id column -- its type
+            # is that target's business, not this field's to redeclare.
+            raise ValueError(
+                f"Object type {object_type_name!r}: field {field_name!r} is a link and must not "
+                f"declare its own data_type."
+            )
+
+        _validate_field_timezone(object_type_name, field_name, field_info, declared)
+
+
+def _validate_field_timezone(object_type_name: str, field_name: str,
+                              field_info: dict, declared: str) -> None:
+    """Checks the optional `timezone` a field may declare.
+
+    WHAT IT IS FOR. A source that hands back '2026-03-12 14:30:00' has
+    given a wall-clock reading in an unstated place -- not an instant.
+    Assuming UTC is a guess, and assuming the server's zone is worse,
+    because it makes the same data mean different things on two
+    machines. A field whose source zone is KNOWN can say so, and the
+    reading is promoted to the instant it always was.
+
+    DECLARED, NEVER INFERRED. Someone had to write the zone down, which
+    is the whole difference between knowing and assuming.
+
+    ONLY ON `timestamptz`, because it answers a question only that type
+    asks. A `date` has no time to place; a `timestamp` is deliberately
+    naive and promoting it would defeat the point of declaring it.
+    Silently ignoring the key on those would let an author believe
+    their dates were being converted.
+
+    AN IANA NAME, NOT AN OFFSET. '-05:00' is wrong for half the year in
+    any zone that observes daylight saving; 'America/New_York' is
+    right in both halves.
+    """
+    timezone_name = field_info.get("timezone")
+    if timezone_name is None:
+        return
+
+    if declared != "timestamptz":
+        raise ValueError(
+            f"Object type {object_type_name!r}: field {field_name!r} declares a "
+            f"`timezone` but its data_type is {declared!r}. A timezone places a "
+            f"naive reading on the clock, which only `timestamptz` needs."
+        )
+
+    if not isinstance(timezone_name, str):
+        raise ValueError(
+            f"Object type {object_type_name!r}: field {field_name!r} declares a "
+            f"`timezone` that is not a string: {timezone_name!r}."
+        )
+
+    try:
+        zoneinfo.ZoneInfo(timezone_name)
+    except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+        # AT CONFIG LOAD, not at the first row that needs it. A typo in
+        # a zone name would otherwise surface during a sync, hours
+        # later, as a drift report about data that is perfectly fine.
+        raise ValueError(
+            f"Object type {object_type_name!r}: field {field_name!r} declares "
+            f"timezone {timezone_name!r}, which is not a known IANA zone. "
+            f"Use a name like 'America/New_York', not an offset like '-05:00'."
+        ) from None
+
+
+def _validate_title_field(object_type_name: str, type_def: dict) -> None:
+    title_field = type_def.get("title_field")
+    if title_field is None:
+        return
+
+    if title_field == type_def.get("id_field"):
+        # The id_field itself is a real, valid title_field target --
+        # not listed under "fields" at all (see core/ontology/
+        # schema.py's own get_column_for_field() docstring for why),
+        # but a completely legitimate, if unglamorous, display value
+        # in the absence of anything better.
+        return
+
+    field_info = type_def.get("fields", {}).get(title_field)
+    if field_info is None:
+        raise ValueError(f"Object type {object_type_name!r}: title_field references unknown field {title_field!r}.")
+    if field_info.get("type") != "data":
+        # A link field's own "value" is an id (or list of ids), never
+        # a sensible display string -- plain data only.
+        raise ValueError(
+            f"Object type {object_type_name!r}: title_field {title_field!r} must be a plain data field, "
+            f"not a link."
+        )
+
+
+def _validate_security(object_type_name: str, object_types: dict, visited: frozenset[str],
+                       origin: "str | None" = None) -> None:
+    # visited: every object_type_name already walked on THIS specific
+    # via_field chain -- passed down explicitly on each recursive
+    # call, not a module-level or shared mutable set, so validating
+    # object type A's own chain can never leak state into a
+    # completely separate, later call validating object type B's.
+    if object_type_name in visited:
+        chain = " -> ".join([*visited, object_type_name])
+        raise ValueError(f"Circular security.via_field chain detected: {chain}.")
+    visited = visited | {object_type_name}
+
+    type_def = object_types[object_type_name]
+    security = type_def.get("security")
+    if security is None:
+        # Matches mediator.py's own DIRECT, non-.get() access
+        # (type_schema["security"]) -- a missing block here would
+        # otherwise surface as a raw, uncontrolled KeyError the first
+        # time any MAC check ever touched this object type, not a
+        # clear error at startup.
+        raise ValueError(f"Object type {object_type_name!r} has no security block declared.")
+
+    if is_unrestricted(type_def):
+        # EXACTLY {"unrestricted": True}: nothing beside it, so a block
+        # cannot say both "no row check" and "check this field".
+        if dict(security) != {"unrestricted": True}:
+            raise ValueError(
+                f"Object type {object_type_name!r}: security is `unrestricted`, which takes "
+                f"nothing else beside it; got {dict(security)!r}.")
+        if origin is not None:
+            # REACHED THROUGH A CHAIN: the type that started it would
+            # become unrestricted without anyone having written so.
+            raise ValueError(
+                f"Object type {origin!r}: its security.via_field chain ends at "
+                f"{object_type_name!r}, which is unrestricted -- so {origin!r} would be "
+                f"visible to everyone without saying so. Declare {origin!r} `security: "
+                f"unrestricted` if that is meant, or point its chain at a type with a "
+                f"security field.")
+        return
+
+    if not hasattr(security, "get") or isinstance(security, str):
+        raise ValueError(
+            f"Object type {object_type_name!r}: security must be a block with `field` or "
+            f"`via_field`, or the word `unrestricted`; got {security!r}.")
+
+    has_field = "field" in security
+    has_via_field = "via_field" in security
+    if has_field and has_via_field:
+        # Not a hypothetical concern -- mediator.py's own
+        # _get_security_value() checks "field" first and would
+        # silently ignore via_field entirely if both were present,
+        # exactly the kind of quietly-wrong-role-grant class of
+        # mistake this project has consistently refused to allow
+        # anywhere else.
+        raise ValueError(
+            f"Object type {object_type_name!r}: security declares both 'field' and 'via_field' -- "
+            f"exactly one is required."
+        )
+    if not has_field and not has_via_field:
+        raise ValueError(
+            f"Object type {object_type_name!r}: security declares neither 'field' nor 'via_field' -- "
+            f"exactly one is required."
+        )
+
+    if has_field:
+        field_name = security["field"]
+        field_info = type_def.get("fields", {}).get(field_name)
+        if field_info is None:
+            raise ValueError(
+                f"Object type {object_type_name!r}: security.field references unknown field {field_name!r}."
+            )
+        if field_info.get("type") != "data":
+            raise ValueError(
+                f"Object type {object_type_name!r}: security.field {field_name!r} must be a plain data "
+                f"field, not a link."
+            )
+        return
+
+    via_field = security["via_field"]
+    field_info = type_def.get("fields", {}).get(via_field)
+    if field_info is None:
+        raise ValueError(
+            f"Object type {object_type_name!r}: security.via_field references unknown field {via_field!r}."
+        )
+    if field_info.get("type") != "link":
+        # The opposite restriction from security.field above -- a
+        # via_field chain only makes sense against a real link (it's
+        # how the chain reaches the NEXT object type at all).
+        raise ValueError(
+            f"Object type {object_type_name!r}: security.via_field {via_field!r} must be a link field, "
+            f"not plain data."
+        )
+
+    if is_reverse_link(field_info):
+        # A REVERSE LINK IS NOT A CHAIN (001's F-19). Security resolves
+        # by reading a value stored ON this row and following it; a
+        # reverse link (cardinality "many") is computed by querying the
+        # OTHER table, so there is nothing here to follow. Accepted,
+        # the deployment loaded and every read of the type then failed
+        # with "Could not find column" -- an object type nobody could
+        # read, discovered one request at a time.
+        raise ValueError(
+            f"Object type {object_type_name!r}: security.via_field {via_field!r} is a reverse "
+            f"link (cardinality {field_info.get('cardinality')!r}, via_table "
+            f"{field_info.get('via_table')!r}), which is computed from the other table "
+            f"rather than stored here. Use the forward link on "
+            f"{field_info.get('target')!r} that points back, or a field of this type."
+        )
+
+    target_type = field_info.get("target")
+    if target_type not in object_types:
+        raise ValueError(
+            f"Object type {object_type_name!r}: security.via_field {via_field!r} targets unknown object "
+            f"type {target_type!r}."
+        )
+
+    # Recurse -- the chain must eventually terminate in a real
+    # security.field, through however many via_field hops. visited
+    # (passed explicitly, not shared) is what makes a genuine cycle
+    # fail loudly here, at schema-load time, instead of hanging a
+    # real request via infinite recursion in mediator.py's own,
+    # identically-shaped runtime resolution.
+    _validate_security(target_type, object_types, visited, origin or object_type_name)

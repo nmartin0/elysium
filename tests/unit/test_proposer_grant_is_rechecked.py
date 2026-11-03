@@ -39,8 +39,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.write_mediator import PendingWrite, SubWrite, WriteMediator
+from elysium.core.access.auth import UserRecord
+from elysium.core.ontology.write_mediator import PendingWrite, SubWrite, WriteMediator
 
 GRANTED = {"agent": {"allowed_actions": ["execute:MoveCustomer"]}}
 REVOKED = {"agent": {"allowed_actions": []}}
@@ -169,7 +169,7 @@ class TestTheRecheckIsActuallyCalled:
         import re
         from pathlib import Path
 
-        source = Path("core/ontology/write_mediator.py").read_text()
+        source = Path("src/elysium/core/ontology/write_mediator.py").read_text()
         lines = source.splitlines()
         call = next(n for n, line in enumerate(lines)
                     if "self._refuse_if_the_proposer_lost_the_grant(" in line)
@@ -188,7 +188,7 @@ class TestTheRecheckIsActuallyCalled:
         is what a reader checks."""
         from pathlib import Path
 
-        source = Path("core/ontology/write_mediator.py").read_text()
+        source = Path("src/elysium/core/ontology/write_mediator.py").read_text()
         i = source.index("self._refuse_if_the_proposer_lost_the_grant(")
         window = source[i - 600:i + 400]
 

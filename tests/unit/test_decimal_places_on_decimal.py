@@ -14,7 +14,7 @@ decimal_places exists to prevent.
 
 import pytest
 
-from core.ontology.object_type_validation import _validate_decimal_places
+from elysium.core.ontology.object_type_validation import _validate_decimal_places
 
 
 def _check(data_type):

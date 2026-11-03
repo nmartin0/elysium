@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
-from core.auth import session_store
-from core.auth.session_store import SessionStore
+from elysium.core.auth import session_store
+from elysium.core.auth.session_store import SessionStore
 
 
 @pytest.fixture

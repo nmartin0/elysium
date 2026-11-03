@@ -22,10 +22,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.auth.credential_store import CredentialStore
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.write_mediator import NOT_LOOKED_UP
-from core.user_directory import UserDirectory
+from elysium.core.access.auth import UserRecord
+from elysium.core.auth.credential_store import CredentialStore
+from elysium.core.ontology.write_mediator import NOT_LOOKED_UP
+from elysium.core.user_directory import UserDirectory
 from tests.unit.test_confirming_a_write_rechecks_reach import WEST, build_deployment
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -103,7 +103,7 @@ class TestTheRouteLooksThemUp:
         return directory
 
     def _lookup(self, directory, user_id):
-        from api.routes import _proposer_as_they_are_now
+        from elysium.api.routes import _proposer_as_they_are_now
 
         request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(
             user_directory=directory)))
@@ -126,7 +126,7 @@ def test_every_confirm_under_api_says_which_proposer_it_found():
     to the snapshot. A new route that confirms without `proposer_now`
     would quietly reopen NEW-3; this finds it."""
     calls = []
-    for path in sorted((ROOT / "api").rglob("*.py")):
+    for path in sorted((ROOT / "src" / "elysium" / "api").rglob("*.py")):
         for node in ast.walk(ast.parse(path.read_text())):
             target = None
             if isinstance(node, ast.Call):

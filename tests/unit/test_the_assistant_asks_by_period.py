@@ -12,9 +12,9 @@ import datetime
 import jsonschema
 import pytest
 
-from core.agent.answer_context import read_back
-from core.llm.agent_step_prompt import validated_step
-from core.llm.step_schema import step_schema
+from elysium.core.agent.answer_context import read_back
+from elysium.core.llm.agent_step_prompt import validated_step
+from elysium.core.llm.step_schema import step_schema
 from tests.unit.test_step_schema import SCHEMA
 
 WEEKLY = {"step": "aggregate_object", "object_type": "Transaction", "filter": {},
@@ -54,8 +54,8 @@ class TestTheParser:
 class TestTheLoop:
     @pytest.fixture
     def loop_and_user(self, synced_deployment, monkeypatch):
-        from core.deployment_loader import build_generation
-        from core.intermediate_layer.auth import resolve_user_record
+        from elysium.core.access.auth import resolve_user_record
+        from elysium.core.deployment_loader import build_generation
 
         generation = build_generation(synced_deployment.config_dir, synced_deployment.data_dir,
                                       synced_deployment.log_dir)
@@ -81,7 +81,7 @@ class TestTheLoop:
         assert result == {"2026-05-04": 3, "2026-05-11": 0}
 
     def test_two_periods_are_two_different_steps(self):
-        from core.agent.agentic_loop import _step_signature
+        from elysium.core.agent.agentic_loop import _step_signature
 
         assert _step_signature(WEEKLY) != _step_signature({**WEEKLY, "period": "month"})
 

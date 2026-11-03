@@ -11,10 +11,10 @@ from decimal import Decimal
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.outliers import MIN_VALUES, unusual, validate_outliers
-from core.mirror.sync_targets import resolve_sync_targets
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.outliers import MIN_VALUES, unusual, validate_outliers
+from elysium.core.mirror.sync_targets import resolve_sync_targets
 
 ORDINARY = [float(value) for value in range(100, 130)]  # 30 values, 100..129
 

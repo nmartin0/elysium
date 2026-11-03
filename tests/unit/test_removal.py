@@ -5,8 +5,8 @@ see; the report itself is tested in test_used_by.py, and its completeness
 against the loader in test_used_by_is_complete.py.
 """
 
-from core.mirror.incremental import incremental_tables_only_read_by
-from core.ontology.removal import (
+from elysium.core.mirror.incremental import incremental_tables_only_read_by
+from elysium.core.ontology.removal import (
     PENDING_WRITE,
     applied_writes,
     field_blockers,
@@ -16,7 +16,7 @@ from core.ontology.removal import (
     type_blockers,
     visible_to,
 )
-from core.ontology.used_by import Referrer, used_by_field, used_by_link, used_by_type
+from elysium.core.ontology.used_by import Referrer, used_by_field, used_by_link, used_by_type
 from tests.unit import test_used_by as built
 
 

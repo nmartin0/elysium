@@ -13,16 +13,16 @@ others.
 
 import pytest
 
-from core.count_condition import evaluate_user_triggers
-from core.intermediate_layer.auth import UserRecord
-from core.notifications import NotificationStore
-from core.saved_views import SavedViewStore
-from core.triggers import TriggerStore, describe
+from elysium.core.access.auth import UserRecord
+from elysium.core.count_condition import evaluate_user_triggers
+from elysium.core.notifications import NotificationStore
+from elysium.core.saved_views import SavedViewStore
+from elysium.core.triggers import TriggerStore, describe
 
 
 @pytest.fixture
 def mediator(synced_deployment):
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     # E-08: a deployment of its own, not the developer's.
     paths = synced_deployment

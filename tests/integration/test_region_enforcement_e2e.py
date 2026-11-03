@@ -19,8 +19,8 @@ be fragile and order-dependent, exactly what we were careful to avoid.
 
 import pytest
 
-from core.agent.agentic_loop import AgentLoop
-from core.intermediate_layer.auth import resolve_user_record
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.agent.agentic_loop import AgentLoop
 from tests.conftest import read_audit_log
 
 

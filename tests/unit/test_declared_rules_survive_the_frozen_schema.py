@@ -10,8 +10,8 @@ Every existing test built its schema from plain dicts, which is why
 none saw it. This one freezes it first.
 """
 
-from core.immutable import deep_freeze
-from core.mirror.sync_targets import resolve_sync_targets
+from elysium.core.immutable import deep_freeze
+from elysium.core.mirror.sync_targets import resolve_sync_targets
 
 SCHEMA = {"object_types": {"T": {
     "id_field": "id",

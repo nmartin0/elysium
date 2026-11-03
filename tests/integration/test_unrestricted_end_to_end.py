@@ -23,9 +23,9 @@ from tests.integration.test_api import _login
 def client(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
-    from api.app import create_app
-    from core.deployment_loader import RuntimePaths
-    from scripts.run_sync import run_sync
+    from elysium.api.app import create_app
+    from elysium.core.deployment_loader import RuntimePaths
+    from elysium.scripts.run_sync import run_sync
 
     monkeypatch.setenv("ELYSIUM_COOKIE_SECURE", "false")
     config = tmp_path / "config"

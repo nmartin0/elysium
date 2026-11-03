@@ -20,10 +20,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from adapters import http_transport
-from adapters.ollama_adapter import OllamaAdapter
-from core.concurrency import ConcurrencyLimiter, WaitAbandoned
-from core.llm.interface import LLMCancelled, LLMUnavailable
+from elysium.adapters import http_transport
+from elysium.adapters.ollama_adapter import OllamaAdapter
+from elysium.core.concurrency import ConcurrencyLimiter, WaitAbandoned
+from elysium.core.llm.interface import LLMCancelled, LLMUnavailable
 
 SLOW_SECONDS = 5.0
 
@@ -163,10 +163,10 @@ class TestWaitingForASlot:
 
 class TestTheLoop:
     def test_a_cancelled_call_ends_the_run_as_cancelled(self, test_db_path, test_schema):
-        from adapters.sqlite_adapter import SQLiteWriteAdapter
-        from core.agent.agentic_loop import AgentLoop, StopReason
-        from core.intermediate_layer.auth import UserRecord
-        from core.ontology.mediator import DataMediator
+        from elysium.adapters.sqlite_adapter import SQLiteWriteAdapter
+        from elysium.core.access.auth import UserRecord
+        from elysium.core.agent.agentic_loop import AgentLoop, StopReason
+        from elysium.core.ontology.mediator import DataMediator
 
         roles = {"r": {"allowed_actions": ["read:Author"]}}
         mediator = DataMediator(test_schema, {"test_silo": SQLiteWriteAdapter({"path": test_db_path})},
@@ -190,7 +190,7 @@ class TestTheLoop:
 def test_the_claude_cli_is_killed_when_cancelled(tmp_path):
     """The process IS the request for this adapter, so ending it is what
     stops the work."""
-    from adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
+    from elysium.adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
 
     adapter = ClaudeAgentSDKAdapter.__new__(ClaudeAgentSDKAdapter)
     adapter._environment = lambda: None

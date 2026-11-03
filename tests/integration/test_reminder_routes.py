@@ -4,9 +4,9 @@ owner's notifications."""
 
 from datetime import UTC, datetime, timedelta
 
-from api.reminders import reminder_timer
-from api.timer_service import fire_due
-from core.reminders import KIND, MAX_PER_PERSON
+from elysium.api.reminders import reminder_timer
+from elysium.api.timer_service import fire_due
+from elysium.core.reminders import KIND, MAX_PER_PERSON
 from tests.integration.test_trigger_checks import _csrf, _login
 
 
@@ -59,8 +59,8 @@ def test_refused_with_the_reason(client):
 
 
 def test_one_person_may_have_so_many(client, monkeypatch):
-    import core.reminders
-    monkeypatch.setattr(core.reminders, "MAX_PER_PERSON", 2)
+    import elysium.core.reminders
+    monkeypatch.setattr(elysium.core.reminders, "MAX_PER_PERSON", 2)
     _login(client, "alice")
     _make(client, at=_in(30))
     _make(client, at=_in(31))

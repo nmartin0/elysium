@@ -1134,7 +1134,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
                      correct and is a bad first five minutes unless
                      somebody says why. */
                     `Elysium reads from its local mirror, and nothing has been ` +
-                    `copied into it yet. Run scripts/run_sync to fetch from ` +
+                    `copied into it yet. Run python -m elysium.scripts.run_sync to fetch from ` +
                     `the configured silos.`
                   : `No ${currentType} records are available to show.`
             }

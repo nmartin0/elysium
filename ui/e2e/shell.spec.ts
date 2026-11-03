@@ -16,7 +16,7 @@
 // and produces "No module named 'scripts'".
 //
 //   cd ~/elysium/ui && npm run build   (tests the BUILT bundle)
-//   cd ~/elysium && python -m scripts.create_e2e_users \
+//   cd ~/elysium && python -m elysium.scripts.create_e2e_users \
 //                       --yes-this-is-development
 //   cd ~/elysium && uvicorn api.app:app
 //   cd ~/elysium/ui && npm run e2e

@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from api.addon_servers import OUTBOX, START_FILENAME, addon_directory, read_state
-from core.notifications import NotificationStore
+from elysium.api.addon_servers import OUTBOX, START_FILENAME, addon_directory, read_state
+from elysium.core.notifications import NotificationStore
 from tests.integration.test_addon_lifecycle import World, _wait, echo_module, quick_back_off  # noqa: F401
 from tests.integration.test_addon_proxy import ECHO, guarded_module, write_modules
 from tests.integration.test_api import _login

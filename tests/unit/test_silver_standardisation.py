@@ -17,11 +17,11 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.standardise import rules_for, standardise
-from core.mirror.sync_targets import resolve_sync_targets
-from core.mirror.transform import transform_rows
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.standardise import rules_for, standardise
+from elysium.core.mirror.sync_targets import resolve_sync_targets
+from elysium.core.mirror.transform import transform_rows
 
 DEFAULTS = rules_for({})
 WITH_SENTINELS = rules_for({"standardise": {"null_if": ["N/A", "", "-"]}})

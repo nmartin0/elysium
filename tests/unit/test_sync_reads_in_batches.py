@@ -27,11 +27,11 @@ import sqlite3
 
 import pytest
 
-import core.mirror.iceberg_sync as iceberg_sync
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.transform import transform_batches, transform_rows
-from core.ontology.interface import ExternalReadAdapter, StorageUnavailable
+import elysium.core.mirror.iceberg_sync as iceberg_sync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.transform import transform_batches, transform_rows
+from elysium.core.ontology.interface import ExternalReadAdapter, StorageUnavailable
 
 COLUMNS = ["id", "n", "region"]
 TYPES = {"id": "string", "n": "integer", "region": "string"}
@@ -109,7 +109,7 @@ class TestBatchingChangesNothingButTheCost:
             seen.append(len(rows))
             return transform_rows(rows, *args, **kwargs)
 
-        monkeypatch.setattr("core.mirror.transform.transform_rows", recording)
+        monkeypatch.setattr("elysium.core.mirror.transform.transform_rows", recording)
         _sync_twice(tmp_path, 7, monkeypatch)
 
         assert seen and max(seen) <= 7

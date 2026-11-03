@@ -18,12 +18,12 @@ import json
 
 import pytest
 
-from core.agent.agentic_loop import AgentLoop, StopReason
-from core.agent.evaluation import EvalCase, ExpectedMemory, grade
-from core.filters import FilterError, agent_conditions
-from core.intermediate_layer.auth import resolve_user_record
-from core.llm.agent_features import OFF, AgentFeatures, features_from_config
-from core.llm.agent_step_prompt import (
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.agent.agentic_loop import AgentLoop, StopReason
+from elysium.core.agent.evaluation import EvalCase, ExpectedMemory, grade
+from elysium.core.filters import FilterError, agent_conditions
+from elysium.core.llm.agent_features import OFF, AgentFeatures, features_from_config
+from elysium.core.llm.agent_step_prompt import (
     FILTER_OPERATORS_SECTION,
     FREE_TEXT_SECTION,
     MEANING_SECTION,
@@ -31,9 +31,9 @@ from core.llm.agent_step_prompt import (
     _build_system_prompt,
     validated_step,
 )
-from core.llm.step_schema import step_schema
-from core.memory.guard import MemoryGuard
-from core.memory.store import MemoryStore
+from elysium.core.llm.step_schema import step_schema
+from elysium.core.memory.guard import MemoryGuard
+from elysium.core.memory.store import MemoryStore
 from tests.conftest import TEST_SCHEMA, author_book_mediator, scripted_llm_client
 
 READ_ALL = ["read:Author", "read:Author.author_id", "read:Author.org_id", "read:Author.name",
@@ -294,7 +294,7 @@ class TestMeaningSearch:
         return loop.run(_alice(), "which books read like a long poem?")
 
     def test_the_nearest_records_come_back_nearest_first_and_marked_a_ranking(self, mediator):
-        from core.meaning_search import Ranked
+        from elysium.core.meaning_search import Ranked
 
         service = self.Service(Ranked(True, ids=[2, 1]))
         [entry] = _entries(self._run(mediator, service), "search_meaning")
@@ -303,20 +303,20 @@ class TestMeaningSearch:
         assert service.asked == [("alice", "Book", "a long poem", AgentLoop.MEANING_K)]
 
     def test_when_it_cannot_answer_the_model_is_told_why_not_handed_an_empty_list(self, mediator):
-        from core.meaning_search import MODEL_DOWN, Ranked
+        from elysium.core.meaning_search import MODEL_DOWN, Ranked
 
         [entry] = _entries(self._run(mediator, self.Service(Ranked(False, reason=MODEL_DOWN))),
                            "search_meaning")
         assert entry["result"] == [] and entry["note"] == MODEL_DOWN
 
     def test_with_no_embedder_it_is_not_offered(self, mediator):
-        from core.meaning_search import NOT_OFFERED
+        from elysium.core.meaning_search import NOT_OFFERED
 
         [entry] = _entries(self._run(mediator, None), "search_meaning")
         assert entry["note"] == NOT_OFFERED
 
     def test_off_it_is_not_a_step(self, mediator):
-        from core.meaning_search import Ranked
+        from elysium.core.meaning_search import Ranked
 
         service = self.Service(Ranked(True, ids=[1]))
         assert not _entries(self._run(mediator, service, features=OFF), "search_meaning")
@@ -338,7 +338,7 @@ class TestMeaningSearch:
         assert "(search by meaning)" not in off, "off, the prompt is what it was"
 
     def test_the_answer_says_these_are_the_nearest_not_how_many_there_are(self):
-        from core.agent.answer_context import read_back
+        from elysium.core.agent.answer_context import read_back
 
         sentences = " ".join(read_back([{**self.STEP, "result": [2, 1]}], TEST_SCHEMA))
         assert "close in meaning to 'a long poem'" in sentences

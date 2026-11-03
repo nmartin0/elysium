@@ -34,7 +34,7 @@ GRANTS = ["read:Transaction", "read:Transaction.transaction_id", "read:Transacti
 
 @pytest.fixture
 def deployment(tmp_path, monkeypatch):
-    from core.deployment_loader import RuntimePaths
+    from elysium.core.deployment_loader import RuntimePaths
 
     monkeypatch.setenv("ELYSIUM_COOKIE_SECURE", "false")
     config = tmp_path / "config"
@@ -93,14 +93,14 @@ def _add_transactions(db):
 
 
 def _sync(paths):
-    from scripts.run_sync import run_sync
+    from elysium.scripts.run_sync import run_sync
 
     with contextlib.redirect_stdout(io.StringIO()):
         run_sync(paths)
 
 
 def _client(paths, user="ops", region="us-west", role="debug"):
-    from api.app import create_app
+    from elysium.api.app import create_app
 
     client = TestClient(create_app(paths))
     with contextlib.suppress(ValueError):
@@ -110,8 +110,8 @@ def _client(paths, user="ops", region="us-west", role="debug"):
 
 
 def _propose(paths, monkeypatch, *extra):
-    """scripts.propose_prediction, as a person runs it."""
-    from scripts import propose_prediction
+    """elysium.scripts.propose_prediction, as a person runs it."""
+    from elysium.scripts import propose_prediction
 
     monkeypatch.setenv("ELYSIUM_CONFIG_DIR", str(paths.config_dir))
     monkeypatch.setenv("ELYSIUM_DATA_DIR", str(paths.data_dir))
@@ -171,8 +171,8 @@ GOOD = {"skill": 0.42, "score": 0.05, "naive_score": 0.16, "known": 300, "judged
 
 
 def _store_proposal(paths, compartment="us-west", evaluation=None):
-    from core.ontology.predicted_fields import declaration_hash, prediction_of
-    from core.prediction_proposals import PredictionProposalStore
+    from elysium.core.ontology.predicted_fields import declaration_hash, prediction_of
+    from elysium.core.prediction_proposals import PredictionProposalStore
 
     fields = yaml.safe_load((paths.config_dir / "ontology_schema.yaml").read_text())[
         "object_types"]["Transaction"]["fields"]
@@ -232,7 +232,7 @@ class TestReviewing:
 
 def _approve(paths, monkeypatch, compartment="us-west"):
     """Propose with the script, and approve as someone in the compartment."""
-    from core.prediction_proposals import PredictionProposalStore
+    from elysium.core.prediction_proposals import PredictionProposalStore
 
     code, said = _propose(paths, monkeypatch, "--group-by", "currency",
                           "--compartment", compartment)
@@ -306,7 +306,7 @@ class TestFilling:
 
     def test_a_model_that_measures_worse_than_approved_fills_nothing(self, deployment,
                                                                     monkeypatch):
-        from core.prediction_proposals import PredictionProposalStore
+        from elysium.core.prediction_proposals import PredictionProposalStore
 
         _sync(deployment)
         proposal = _approve(deployment, monkeypatch)
@@ -336,14 +336,14 @@ class TestFilling:
         assert rows and all(row["fields"].get("refund_chance") is None for row in rows)
 
     def test_an_unchanged_table_is_not_retrained(self, deployment, monkeypatch):
-        import core.predictions
+        import elysium.core.predictions
 
         _sync(deployment)
         _approve(deployment, monkeypatch)
         _sync(deployment)
         calls = []
-        real = core.predictions.train
-        monkeypatch.setattr(core.predictions, "train",
+        real = elysium.core.predictions.train
+        monkeypatch.setattr(elysium.core.predictions, "train",
                             lambda *args, **kwargs: calls.append(1) or real(*args, **kwargs))
         _sync(deployment)
         assert calls == [], "nothing changed, so gold was not rebuilt and nothing retrained"

@@ -23,8 +23,8 @@ gathered from real data? Both are checked directly below.
 
 import pytest
 
-from core.agent.agentic_loop import AgentLoop
-from core.intermediate_layer.auth import resolve_user_record
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.agent.agentic_loop import AgentLoop
 
 # The real, known amounts for cust_001 in this fixture -- see
 # fixtures/schema.sql. Used to verify the tool was called with genuine

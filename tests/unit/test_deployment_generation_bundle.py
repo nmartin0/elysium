@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from core.deployment_loader import DeploymentGeneration, build_generation
+from elysium.core.deployment_loader import DeploymentGeneration, build_generation
 
 DEPLOYMENT = Path(__file__).resolve().parent.parent.parent / "deployment" / "etc"
 
@@ -102,7 +102,7 @@ def test_the_generation_is_what_app_state_is_built_from():
     # Guards the ONE construction path. If app.py ever rebuilds these
     # independently again, the attributes stop being views onto the
     # generation and the torn read comes back.
-    source = (Path(__file__).resolve().parent.parent.parent / "api" / "app.py").read_text()
+    source = (Path(__file__).resolve().parent.parent.parent / "src" / "elysium" / "api" / "app.py").read_text()
 
     assert "build_generation(" in source
     assert "AgentLoop.from_deployment(" not in source, "app.py must not build the loop itself"

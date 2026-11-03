@@ -20,8 +20,8 @@ from pathlib import Path
 
 import pytest
 
-import api.addon_servers as addon_servers
-from api.addon_servers import (
+import elysium.api.addon_servers as addon_servers
+from elysium.api.addon_servers import (
     START_FILENAME,
     STATE_FILENAME,
     Supervisor,
@@ -30,7 +30,7 @@ from api.addon_servers import (
     log_path,
     read_state,
 )
-from core.modules import ModuleError, _load_manifest, load_addon_options
+from elysium.core.modules import ModuleError, _load_manifest, load_addon_options
 from tests.conftest import read_audit_log
 from tests.integration.test_addon_proxy import ECHO, write_modules
 from tests.integration.test_api import _csrf_headers, _login

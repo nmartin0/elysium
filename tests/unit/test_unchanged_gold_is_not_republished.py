@@ -20,15 +20,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.gold import (
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.gold import (
     CURRENT_AT_PROPERTY,
     INPUTS_PROPERTY,
     build_gold,
     published_at,
 )
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from scripts import run_sync
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.scripts import run_sync
 
 SCHEMA = {
     "Order": {"id_field": "id", "security": {"field": "region"},

@@ -15,10 +15,10 @@ from pathlib import Path
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.ontology.field_types import coerce
-from core.ontology.localised_values import normalise_locale
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.ontology.field_types import coerce
+from elysium.core.ontology.localised_values import normalise_locale
 
 
 class TestTheRules:
@@ -86,7 +86,7 @@ class TestTheDeclaration:
         the SOURCE's, so one silo can differ."""
         import shutil
 
-        from core.deployment_loader import load_deployment
+        from elysium.core.deployment_loader import load_deployment
 
         shutil.copytree(Path("tests/integration/fixtures"), tmp_path / "etc",
                         ignore=shutil.ignore_patterns("other_deployment"))
@@ -188,7 +188,7 @@ class TestExcelDateSerials:
             coerce(text, "date", excel_dates=True)
 
     def test_the_declaration_must_be_a_boolean(self):
-        from core.deployment_loader import _excel_date_silos
+        from elysium.core.deployment_loader import _excel_date_silos
 
         assert _excel_date_silos({"a": {"excel_dates": True}, "b": {}}) == frozenset({"a"})
         with pytest.raises(ValueError, match="true or false"):
@@ -236,7 +236,7 @@ class TestZeroDates:
         assert coerce("0000-00-00", "string", zero_dates=True) == "0000-00-00"
 
     def test_the_declaration_is_read_per_silo_and_must_be_a_boolean(self):
-        from core.deployment_loader import _excel_date_silos
+        from elysium.core.deployment_loader import _excel_date_silos
 
         assert _excel_date_silos({"a": {"zero_dates_as_null": True}, "b": {}},
                                  key="zero_dates_as_null") == frozenset({"a"})
@@ -269,7 +269,7 @@ class TestZeroDates:
 
 
     def test_the_advice_is_for_a_wholly_zero_date_only(self):
-        from core.mirror.transform import DriftedColumn, describe_drift
+        from elysium.core.mirror.transform import DriftedColumn, describe_drift
 
         def advice(value):
             return "zero_dates_as_null" in describe_drift("s", "t", [DriftedColumn(

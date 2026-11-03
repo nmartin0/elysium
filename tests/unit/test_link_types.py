@@ -20,7 +20,7 @@ metadata, and nowhere for a relationship's own identity.
 
 import pytest
 
-from core.ontology.link_types import expand_link_types, validate_link_types
+from elysium.core.ontology.link_types import expand_link_types, validate_link_types
 
 OBJECT_TYPES = {
     "Customer": {
@@ -210,7 +210,7 @@ def _lint(tmp_path, mutate=None):
     lints it -- exercising the actual CLI path an operator uses."""
     import shutil
 
-    from scripts.lint_deployment import lint_deployment
+    from elysium.scripts.lint_deployment import lint_deployment
 
     config_dir = tmp_path / "config"
     shutil.copytree("tests/integration/fixtures", config_dir)

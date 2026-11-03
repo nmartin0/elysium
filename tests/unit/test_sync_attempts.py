@@ -23,7 +23,7 @@ import time
 
 import pytest
 
-from core.mirror.sync_attempts import SyncAttempts
+from elysium.core.mirror.sync_attempts import SyncAttempts
 
 
 @pytest.fixture

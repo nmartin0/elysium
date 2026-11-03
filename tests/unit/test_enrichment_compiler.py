@@ -5,7 +5,7 @@ import math
 
 import pytest
 
-from core.agent.enrichment_compiler import (
+from elysium.core.agent.enrichment_compiler import (
     UNUSABLE,
     combine,
     compile_recipe,
@@ -14,7 +14,7 @@ from core.agent.enrichment_compiler import (
     label_row,
     weight_of,
 )
-from core.ontology.enriched_fields import MAX_MEMBERS, MAX_WEIGHT, Enrichment, check_recipe, check_rules
+from elysium.core.ontology.enriched_fields import MAX_MEMBERS, MAX_WEIGHT, Enrichment, check_recipe, check_rules
 
 ENRICHMENT = Enrichment(("subject",), "What the ticket is about.", ("billing", "refund", "technical"))
 

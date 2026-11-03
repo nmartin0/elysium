@@ -43,7 +43,7 @@ def _csrf(client):
 def test_the_agent_is_told_which_set_was_on_screen(client):
     _login(client)
     fake_post, seen = _recording_model()
-    with patch("adapters.http_transport.post", side_effect=fake_post):
+    with patch("elysium.adapters.http_transport.post", side_effect=fake_post):
         response = client.post("/api/query", headers=_csrf(client), json={
             "query": "Which is largest?",
             "about": {"object_type": "Transaction",
@@ -61,7 +61,7 @@ def test_without_a_set_the_question_is_untouched(client):
     """THE CONTROL: Query's own questions say nothing about a set."""
     _login(client)
     fake_post, seen = _recording_model()
-    with patch("adapters.http_transport.post", side_effect=fake_post):
+    with patch("elysium.adapters.http_transport.post", side_effect=fake_post):
         client.post("/api/query", headers=_csrf(client), json={"query": "Which is largest?"})
 
     assert "This question is about" not in seen[0]
@@ -71,7 +71,7 @@ def test_a_set_on_a_field_the_asker_cannot_read_is_refused_before_the_model(clie
     """Uniform denial, and no model call spent on it."""
     _login(client)
     fake_post, seen = _recording_model()
-    with patch("adapters.http_transport.post", side_effect=fake_post):
+    with patch("elysium.adapters.http_transport.post", side_effect=fake_post):
         response = client.post("/api/query", headers=_csrf(client), json={
             "query": "Which?", "about": {"object_type": "Transaction", "conditions": [
                 {"field": "no_such_field", "operator": "equals", "value": 1}]}})
@@ -88,7 +88,7 @@ def test_a_model_that_cannot_be_reached_is_a_503_that_names_no_host(client):
     import requests
 
     _login(client)
-    with patch("adapters.http_transport.post",
+    with patch("elysium.adapters.http_transport.post",
                side_effect=requests.ConnectionError("localhost:11434 refused")):
         response = client.post("/api/query", headers=_csrf(client), json={
             "query": "Which?", "about": {"object_type": "Transaction"}})

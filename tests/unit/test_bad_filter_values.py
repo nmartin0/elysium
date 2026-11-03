@@ -33,8 +33,8 @@ import io
 
 import pytest
 
-from core.deployment_loader import build_generation
-from core.intermediate_layer.auth import resolve_user_record
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.deployment_loader import build_generation
 
 USER_ID = "user_alice"
 

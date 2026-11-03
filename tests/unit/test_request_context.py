@@ -11,12 +11,12 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from core.intermediate_layer.audit import AuditLog
-from core.request_context import RequestContext
+from elysium.core.access.audit import AuditLog
+from elysium.core.request_context import RequestContext
 
 
 def _user():
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.core.access.auth import UserRecord
     return UserRecord(user_id="alice", role_name="r", security_value=None)
 
 
@@ -113,7 +113,7 @@ def test_check_access_carries_the_context_into_the_log(tmp_path, monkeypatch):
     threading between them was never exercised. This calls the
     authorization path itself.
     """
-    from core.intermediate_layer import access_control
+    from elysium.core.access import access_control
 
     written = []
 
@@ -136,7 +136,7 @@ def test_check_access_carries_the_context_into_the_log(tmp_path, monkeypatch):
 
 
 def test_check_access_without_a_context_records_none(tmp_path, monkeypatch):
-    from core.intermediate_layer import access_control
+    from elysium.core.access import access_control
 
     written = []
 

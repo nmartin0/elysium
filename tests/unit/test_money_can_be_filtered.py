@@ -24,12 +24,12 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.filters import FieldFilter, validate_filter
-from core.mirror.gold import build_gold
-from core.mirror.gold_connector import GoldConnector
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.ontology.gold_view import build_gold_view
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.filters import FieldFilter, validate_filter
+from elysium.core.mirror.gold import build_gold
+from elysium.core.mirror.gold_connector import GoldConnector
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.ontology.gold_view import build_gold_view
 
 TYPE = {
     "id_field": "id",
@@ -131,7 +131,7 @@ class TestTheGoldPath:
         silver = sync._catalog.load_table("p.t")
         build_gold(sync._catalog, "Thing", TYPE, silver.scan().to_arrow())
         view, _ = build_gold_view({"Thing": TYPE})
-        from core.mirror.gold import published_snapshot_ids
+        from elysium.core.mirror.gold import published_snapshot_ids
         connector = GoldConnector(sync._catalog,
                                    published_snapshot_ids(sync._catalog, view))
 
@@ -152,7 +152,7 @@ class TestTheGoldPath:
         silver = sync._catalog.load_table("p.t")
         build_gold(sync._catalog, "Thing", TYPE, silver.scan().to_arrow())
         view, _ = build_gold_view({"Thing": TYPE})
-        from core.mirror.gold import published_snapshot_ids
+        from elysium.core.mirror.gold import published_snapshot_ids
         connector = GoldConnector(sync._catalog,
                                    published_snapshot_ids(sync._catalog, view))
         condition = [FieldFilter("amount", "range", {"min": 0, "max": 51})]
@@ -187,7 +187,7 @@ class TestTheNamingIsDocumented:
         for path in self._configs():
             text = path.read_text()
             assert "NAMING" in text
-            assert "core/functions/registry.py" in text
+            assert "src/elysium/core/functions/registry.py" in text
 
     def test_nothing_points_at_a_package_that_is_not_in_the_repository(self):
         """ASKS GIT, NOT THE FILESYSTEM.
@@ -213,7 +213,7 @@ class TestTheNamingIsDocumented:
 
         assert tracked == "", f"core/tools is tracked in the repository: {tracked}"
         for path in [*self._configs(), Path("README.md"),
-                     Path("functions/linear_regression.py")]:
+                     Path("src/elysium/functions/linear_regression.py")]:
             assert "core/tools/" not in path.read_text(), f"{path} points at core/tools/"
 
     def test_the_boundary_key_is_still_tools(self):

@@ -1,0 +1,799 @@
+"""
+action_types.py  (schema-load-time validation for action_types)
+
+Every action_type is REQUIRED to use the sub_writes shape -- there is
+no supported "flat," single-object shorthand anymore (see propose_
+action()'s own docstring for the full reasoning: the object(s) an
+action touches are always just ordinary parameters, matching the precedent
+the precedent's own model directly). An action_type missing "sub_writes"
+entirely is REJECTED here, loudly, at load time -- see this module's
+own AI-notes at the bottom for the real, concrete gap this closes: the
+old version of this module silently SKIPPED validating an action_type
+missing sub_writes (treating it as "the old, deliberately-untouched
+shape"), even though propose_action() itself does a bare
+action_def["sub_writes"] dict access with no fallback -- meaning a
+malformed action_type used to pass schema-load validation cleanly and
+then crash with a raw, confusing KeyError the first time anyone
+actually proposed it. Found while auditing this file for exactly this
+class of gap, not hypothetically.
+
+WHY schema-load time, not propose_action() time: every one of these
+checks depends only on the SCHEMA itself (object_type/field names,
+declared affected_object_types, the sub_writes list's own shape) --
+never on a real caller's parameters, which don't exist yet at load
+time. Failing loudly here, once, at startup, is strictly better than
+failing lazily, per-request, the first time some caller happens to
+propose this specific action -- a malformed action_type is a
+deployment-configuration bug, not a runtime condition, and deserves
+to be caught before the deployment ever starts serving requests. Same
+"fail loudly at load time" discipline used elsewhere in this project
+(e.g. core/user_directory.py's UserDirectory.create_user() rejecting
+an unknown role_name immediately, not silently).
+
+Each sub_write's own mutations are checked against the target
+object_type's REAL, declared fields (plus its own id_field, settable
+by a create's own mutations even though it isn't listed under
+"fields" itself -- see core/deployment_loader.py's own schema
+handling) -- a typo'd property name (e.g. "nmae" instead of "name")
+used to pass silently at load time and only surface the first time a
+real caller happened to trigger that specific action, the exact same
+class of gap the missing-sub_writes case above closes, just one level
+deeper.
+
+A SEPARATE, later check still exists at propose_action() time and is
+NOT replaced by this: two sub_writes with DIFFERENT object_id
+EXPRESSIONS (e.g. parameter.from_account_id and parameter.
+to_account_id) could still resolve to the SAME real id once real
+parameters arrive (a caller could legitimately, if unusually, supply
+the same account for both). This module only catches the WEAKER,
+purely structural case -- the literal SAME expression string used
+twice, which is guaranteed to collide no matter what parameters ever
+arrive, and is therefore safe to reject at load time, before any
+request exists. The full check, against REAL resolved ids, belongs
+at propose_action() time and is a separate, later piece of work.
+
+MAX_SUB_WRITES exists for the same reason the precedent caps their own
+batched action calls (10,000, at their scale) -- holding N locks for
+N sequential round-trips has a real, growing latency/contention cost.
+Elysium's actual use cases (a transfer, a multi-line-item order, a
+reassignment cascade) are small; 20 is deliberately conservative --
+a real ceiling a schema author should reconsider their design against
+hitting, not a number generous enough to hide an operational problem.
+A hard-coded constant, never schema-configurable, never visible to
+the model -- sub_writes is entirely schema-authored, the same as
+mutations already is; there is no code path where a model composes
+one.
+
+object_reference PARAMETERS -- {type: "object_reference",
+object_type: "Author"} -- matches the precedent's own action
+parameter model directly (verified against their docs, not assumed:
+"Modify object(s): can be used to modify an existing object whose
+primary key is derived from object reference parameters" -- the
+object being acted on is ALWAYS just a parameter, never a separate,
+out-of-band field, at every scale the precedent itself supports). A
+sub_write's object_id, when it's a "parameter.<name>" expression,
+MUST reference a parameter declared this way, with its own object_type
+matching the sub_write's own -- this is what let a later increment
+retire the separate, caller-supplied object_id argument entirely
+(now done -- see propose_action()'s own docstring): every action,
+including ones touching only one object, identifies that object as an
+ordinary, named parameter like any other, not a special case.
+
+object_id is NOT required to be a "parameter.<name>" expression at
+all -- it uses the exact same resolution vocabulary
+_resolve_mutation_value() already gives mutation values (literal,
+parameter.<name>, user.security_value), and this module only adds a
+check for the one kind (parameter.<name>) that has something
+additional to validate against (a declared parameter's own type and
+object_type). A literal or user.security_value object_id is
+structurally fine and simply has nothing further this module can
+check about it at load time.
+
+default_to_current_object -- an OPTIONAL, per-parameter marker on an
+object_reference parameter, e.g. {type: "object_reference",
+object_type: "Account", default_to_current_object: true} -- confirmed
+directly against the precedent's own documented mechanism for
+exactly this case before designing it (their Action-widget "Default
+value" -> "Environment variable" -> "Current object" binding, set on
+ONE specific parameter by its own unique ID, not inferred from type).
+A REAL, previously-discovered gap this closes: ui/'s own ActionForm.
+jsx used to pre-fill and lock EVERY object_reference parameter whose
+own object_type happened to match the object type of the page the
+form was opened from -- correct for an action with only one such
+parameter, but silently wrong the moment two object_reference
+parameters share the SAME object_type. The real, live TransferFunds
+case is exactly this: from_account_id AND to_account_id both
+reference Account -- before this marker existed, BOTH got pre-filled
+and locked to the SAME current account's id, with no way to specify a
+different "to" account through the form at all. Explicit, by
+parameter identity, exactly matching the precedent's own model, never
+inferred from object_type alone -- see this module's own validation
+below for the three things checked about it: only valid on an
+object_reference parameter; a real boolean, not some other YAML-
+coercible value; at most one such parameter per action_type (never
+more than one "the" current object); and its own object_type must be
+a member of affected_object_types (otherwise it could never actually
+take effect -- ui/'s own ObjectDetailPanel.jsx only ever offers an
+action as a button when the CURRENT page's object_type is a member of
+that action's own affected_object_types, so a marked parameter whose
+type isn't even in that list could never be "the current object" on
+any page this action is reachable from).
+"""
+
+from elysium.core.ontology.field_types import is_computed
+
+MAX_SUB_WRITES = 20
+
+
+def validate_action_types(action_types: dict, object_types: dict) -> None:
+    for action_type_name, action_def in action_types.items():
+        if "sub_writes" not in action_def:
+            # See this module's own docstring for the full history of
+            # why this used to be silently skipped instead of rejected.
+            raise ValueError(f"Action type {action_type_name!r}: missing required key 'sub_writes'.")
+        _validate_sub_writes_action(action_type_name, action_def, object_types)
+        _validate_auto_execute(action_type_name, action_def)
+        _validate_automatable(action_type_name, action_def)
+        _validate_owner_may_approve_automation(action_type_name, action_def)
+        _validate_parameters_are_used(action_type_name, action_def)
+        _validate_effects_are_reachable(action_type_name, action_def, object_types)
+
+
+def _validate_effects_are_reachable(action_type_name: str, action_def: dict,
+                                     object_types: dict) -> None:
+    """An action may only mutate types its parameters can reach.
+
+    THE EFFECT SIGNATURE, written as a check rather than a type system.
+    An action is not a function from one type to another -- it takes
+    several parameters and mutates several types -- so the honest shape
+    is closer to `action : (A, B, ...) -> Effect[C, D, ...]`, and both
+    halves are already declared: parameters name their `object_type`,
+    and every sub-write names the `object_type` it writes.
+
+    WHAT WAS MISSING IS THE ARROW BETWEEN THEM. Nothing checked that
+    the effects stay within what the parameters reach, so a
+    TransferFunds taking two Accounts could quietly mutate a Customer
+    and pass validation.
+
+    REACHABLE MEANS NAMED OR LINKED-TO. A parameter's own type counts,
+    and so does anything that type links to -- an action on a Customer
+    may legitimately write the Transactions hanging off it, which is
+    what `object_reference_list` and link traversal exist for. One hop,
+    deliberately: a transitive closure over links would reach most of
+    an ontology and stop being a constraint at all.
+
+    NO DEPENDENT TYPES REQUIRED, and none available -- refinement and
+    dependent types for Python are academic, and the ecosystem offers
+    runtime schema validation instead. This is that: a check over YAML
+    at config load, in the one place this project already enforces
+    every other shape.
+    """
+    parameters = action_def.get("parameters") or {}
+    reachable = set()
+    for parameter in parameters.values():
+        if not isinstance(parameter, dict):
+            continue
+        named = parameter.get("object_type")
+        if named is None:
+            continue
+        reachable.add(named)
+        # ONE HOP, through declared links only.
+        for field in (object_types.get(named, {}).get("fields") or {}).values():
+            if isinstance(field, dict) and field.get("type") == "link":
+                target = field.get("target")
+                if target:
+                    reachable.add(target)
+
+    if not reachable:
+        # NOTHING TO CHECK AGAINST. An action with no object_reference
+        # parameter creates rather than mutates, and what it may create
+        # is a different question from what it may reach.
+        return
+
+    for index, sub_write in enumerate(action_def.get("sub_writes") or []):
+        written = sub_write.get("object_type")
+        if written is not None and written not in reachable:
+            raise ValueError(
+                f"Action type {action_type_name!r}: sub-write {index} writes "
+                f"{written!r}, which none of its parameters reaches. "
+                f"Reachable from its parameters: {', '.join(sorted(reachable))}. "
+                f"An action may only mutate what it was given or what that "
+                f"links to."
+            )
+
+
+def _validate_sub_writes_action(action_type_name: str, action_def: dict, object_types: dict) -> None:
+    sub_writes = action_def["sub_writes"]
+    if not isinstance(sub_writes, list) or not sub_writes:
+        raise ValueError(f"Action type {action_type_name!r}: 'sub_writes' must be a non-empty list.")
+    if len(sub_writes) > MAX_SUB_WRITES:
+        # See this module's own docstring for why this is a hard,
+        # non-configurable ceiling, not a default to raise.
+        raise ValueError(
+            f"Action type {action_type_name!r}: {len(sub_writes)} sub_writes exceeds max of {MAX_SUB_WRITES}."
+        )
+
+    declared_types = action_def.get("affected_object_types")
+    if not isinstance(declared_types, list) or not declared_types:
+        raise ValueError(f"Action type {action_type_name!r}: 'affected_object_types' must be a non-empty list.")
+    unknown_declared = [t for t in declared_types if t not in object_types]
+    if unknown_declared:
+        raise ValueError(
+            f"Action type {action_type_name!r}: affected_object_types has unknown type(s) {unknown_declared}."
+        )
+
+    declared_params = action_def.get("parameters", {})
+    _validate_parameter_display_metadata(action_type_name, declared_params)
+    _validate_object_reference_parameters(action_type_name, declared_params, object_types, declared_types)
+
+    referenced_types: set[str] = set()
+    seen_object_refs: set[tuple[str, str]] = set()
+    for i, sub_write in enumerate(sub_writes):
+        _validate_one_sub_write(action_type_name, i, sub_write, object_types, declared_params)
+        _validate_literal_value_types(action_type_name, i, sub_write, object_types)
+        object_type = sub_write["object_type"]
+        referenced_types.add(object_type)
+
+        # The WEAKER, purely structural duplicate check -- see this
+        # module's own docstring for why the full, resolved-id check
+        # is a separate, later, propose_action()-time concern.
+        object_ref = (object_type, str(sub_write["object_id"]))
+        if object_ref in seen_object_refs:
+            raise ValueError(
+                f"Action type {action_type_name!r}: sub_writes[{i}] duplicates an earlier "
+                f"reference to {object_type} {sub_write['object_id']!r} -- merge into one sub_write."
+            )
+        seen_object_refs.add(object_ref)
+
+    # EXACT match required, not "at least" -- an object_type declared
+    # in affected_object_types but never actually referenced by any
+    # sub_write is just as much a real drift from what this action
+    # type's own reach documentation claims as an UNDER-declared one
+    # would be, and is rejected for the identical reason: this
+    # declaration is meant to be read, and trusted, by whoever is
+    # deciding a role's real reach (see write_mediator.py's own
+    # execute: RBAC docstring on why that reach matters) -- a stale,
+    # over-broad declaration is exactly as misleading as a missing one.
+    over_declared = set(declared_types) - referenced_types
+    under_declared = referenced_types - set(declared_types)
+    if over_declared or under_declared:
+        raise ValueError(
+            f"Action type {action_type_name!r}: affected_object_types doesn't match sub_writes' own "
+            f"types (unused: {sorted(over_declared) or 'none'}; undeclared: {sorted(under_declared) or 'none'})."
+        )
+
+
+def _validate_object_reference_parameters(action_type_name: str, declared_params: dict, object_types: dict,
+                                           affected_object_types: list) -> None:
+    # Applies to EVERY declared object_reference parameter, not just
+    # ones actually used as a sub_write's own object_id -- a parameter
+    # referencing an object could legitimately be used only inside a
+    # mutation's value or a submission_criteria check instead (e.g.
+    # "which employee's manager to notify"), and deserves the same
+    # "does this object_type actually exist" scrutiny either way.
+    default_to_current_object_params = []
+    for param_name, param_spec in declared_params.items():
+        if param_spec.get("type") not in OBJECT_REFERENCE_TYPES:
+            if "default_to_current_object" in param_spec:
+                # A real, previously-possible mistake -- this flag
+                # only makes sense on an object_reference parameter
+                # (see this function's own docstring on the flag
+                # itself, right below); on anything else it would
+                # silently do nothing, ever, since ui/'s own
+                # ActionForm.jsx only checks it on parameters it has
+                # already confirmed are type: object_reference.
+                raise ValueError(
+                    f"Action type {action_type_name!r}: parameter {param_name!r} declares "
+                    f"default_to_current_object but is not type 'object_reference'."
+                )
+            continue
+        referenced_type = param_spec.get("object_type")
+        if referenced_type is None:
+            raise ValueError(
+                f"Action type {action_type_name!r}: parameter {param_name!r} (object_reference) "
+                f"is missing 'object_type'."
+            )
+        if referenced_type not in object_types:
+            raise ValueError(
+                f"Action type {action_type_name!r}: parameter {param_name!r} references "
+                f"unknown type {referenced_type!r}."
+            )
+
+        # default_to_current_object -- OPTIONAL, and by PARAMETER
+        # IDENTITY, never inferred from object_type alone. The real,
+        # previously-discovered gap this closes: ui/'s own ActionForm.
+        # jsx used to pre-fill and lock EVERY object_reference
+        # parameter whose own object_type happened to match the page
+        # it was opened from -- correct for an action with only one
+        # such parameter, but silently wrong the moment two
+        # object_reference parameters share the SAME object_type (the
+        # real, live TransferFunds case: from_account_id AND
+        # to_account_id both reference Account -- both used to get
+        # locked to the SAME id, with no way to specify a different
+        # "to" account at all). Confirmed directly against the precedent's
+        # own documented mechanism for exactly this case (the precedent's
+        # own Action-widget "Default value" -> "Environment variable"
+        # -> "Current object" binding) before designing this: THEIRS
+        # is also explicit, by parameter ID, never inferred from type
+        # -- this mirrors that directly, at the schema level instead
+        # of a separate view-configuration step, since this project
+        # has no separate view-config layer of its own.
+        if "default_to_current_object" in param_spec:
+            value = param_spec["default_to_current_object"]
+            if not isinstance(value, bool):
+                # Same "YAML-coercible surprise" concern _require_str()
+                # exists for elsewhere in this project (e.g. a bare
+                # "true"/"false" STRING here would be truthy in Python
+                # either way, silently masking a real authoring
+                # mistake) -- caught here, explicitly, rather than
+                # left to a confusing failure far away in ui/.
+                raise ValueError(
+                    f"Action type {action_type_name!r}: parameter {param_name!r}'s own "
+                    f"default_to_current_object must be a real boolean, got {value!r}."
+                )
+            if value:
+                default_to_current_object_params.append(param_name)
+                if referenced_type not in affected_object_types:
+                    # Otherwise this marker could never actually take
+                    # effect in real use: ObjectDetailPanel.jsx only
+                    # ever offers an action as a button when the
+                    # CURRENT page's own object_type is a member of
+                    # that action's own affected_object_types -- a
+                    # marked parameter whose type isn't even in that
+                    # list could never be "the current object" on any
+                    # page this action is ever actually reachable
+                    # from.
+                    raise ValueError(
+                        f"Action type {action_type_name!r}: parameter {param_name!r}'s own "
+                        f"default_to_current_object references {referenced_type!r}, which is not in "
+                        f"affected_object_types -- it could never actually be the current object on any "
+                        f"page this action is reachable from."
+                    )
+
+    if len(default_to_current_object_params) > 1:
+        # Exactly one, or none -- never more than one. Matches
+        # the precedent's own model directly: their binding names ONE
+        # specific parameter by its own unique ID, never several at
+        # once -- two parameters both claiming to be "the current
+        # object" is exactly the same class of ambiguity this whole
+        # mechanism exists to close, just reintroduced a different way.
+        raise ValueError(
+            f"Action type {action_type_name!r}: more than one parameter declares "
+            f"default_to_current_object (got {sorted(default_to_current_object_params)}) -- at most one is allowed."
+        )
+
+
+def _validate_parameter_display_metadata(action_type_name: str, declared_params: dict) -> None:
+    """Checks the optional display_name and description on parameters.
+
+    Object types and fields gained these earlier; action parameters did
+    not, which left the one place they matter MOST without them. A
+    parameter is what a person is asked to fill in and what the model
+    is asked to supply, and "new_from_balance" tells neither of them
+    what it is for.
+
+    Optional, and validated the same way the others are: a declared
+    value must be a real, non-empty string. An empty display_name is
+    worse than none, because it renders blank instead of falling back
+    to something readable.
+    """
+    for param_name, param_def in (declared_params or {}).items():
+        if not isinstance(param_def, dict):
+            continue
+        for key in ("display_name", "description"):
+            if key not in param_def:
+                continue
+            value = param_def[key]
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(
+                    f"Action type {action_type_name!r}: parameter {param_name!r} {key} "
+                    f"must be a non-empty string, got {value!r}"
+                )
+
+
+PARAMETER_PREFIX = "parameter."
+
+# THE TWO WAYS A PARAMETER CAN NAME OBJECTS. `object_reference` names
+# one; `object_reference_list` names many, and the write mediator
+# expands the list into one sub-write per object -- each with its own
+# authorization check, its own submission criteria, and its own place
+# in the atomic batch.
+#
+# The precedent draws the line identically: a "bulk action type" is one
+# "using an object reference list parameter". Bulk is a property of the
+# ACTION, declared in the ontology, rather than a mode an application
+# switches into -- which is what makes it reviewable before anyone runs
+# it.
+OBJECT_REFERENCE_TYPES = ("object_reference", "object_reference_list")
+
+
+def _collect_parameter_references(action_def: dict) -> set[str]:
+    """Every parameter an action actually USES.
+
+    A reference is a string beginning "parameter." -- the only form
+    WriteMediator._resolve_mutation_value() expands. Anything else is a
+    literal, which is exactly the failure this collection exists to
+    expose.
+    """
+    referenced: set[str] = set()
+
+    def note(value) -> None:
+        if isinstance(value, str) and value.startswith(PARAMETER_PREFIX):
+            referenced.add(value[len(PARAMETER_PREFIX):])
+
+    for sub_write in action_def.get("sub_writes") or []:
+        note(sub_write.get("object_id"))
+        for mutation in sub_write.get("mutations") or []:
+            note((mutation.get("set") or {}).get("value"))
+        # CRITERIA LIVE ON THE SUB_WRITE, which is where
+        # WriteMediator reads them (sw_def["submission_criteria"]).
+        # This loop previously read action_def["submission_criteria"]
+        # instead, one level too high, and found nothing at all --
+        # harmless while every criterion value is a literal, and
+        # silently wrong the moment one is not.
+        #
+        # The failure it would have caused is the bad kind: a parameter
+        # used ONLY by a criterion would be reported as declared-but-
+        # unused, so an author would delete the declaration and break
+        # the criterion, with the validator having told them to.
+        for criterion in sub_write.get("submission_criteria") or []:
+            for value in (criterion or {}).values():
+                note(value)
+
+    return referenced
+
+
+_YAML_COERCED = {
+    bool: "YAML reads y/yes/true/on as a boolean",
+    int: "YAML reads a bare numeral as an integer, and a leading zero as octal (010 is 8)",
+    float: "YAML reads a decimal as a float, losing trailing zeros (1.20 is 1.2)",
+}
+
+
+def _describe_coercion(value) -> str | None:
+    """How YAML turned a written value into something else, if it did.
+
+    `date` is checked separately because datetime.date is not a
+    builtin scalar the way the others are, and its coercion is the
+    least obvious: an unquoted 2024-01-01 becomes a real date object,
+    not the string anyone writing it expects to store.
+    """
+    from datetime import date, datetime
+
+    if isinstance(value, bool):
+        return _YAML_COERCED[bool]
+    if isinstance(value, (date, datetime)):
+        return "YAML reads an unquoted ISO date as a date object"
+    if isinstance(value, int):
+        return _YAML_COERCED[int]
+    if isinstance(value, float):
+        return _YAML_COERCED[float]
+    return None
+
+
+def _validate_literal_value_types(action_type_name: str, index: int, sub_write: dict,
+                                   object_types: dict) -> None:
+    """Catches a literal mutation value that YAML silently retyped.
+
+    A mutation writing to a field declared `data_type: string` should
+    be writing a string. YAML does not agree: an unquoted 010 arrives
+    as 8, 2024-01-01 as a date object, and yes as True -- all before
+    any code here sees them, and all indistinguishable afterwards from
+    a value someone meant to write that way.
+
+    Checkable only because fields carry a declared data_type. When this
+    was first recorded there was none, and the note correctly said a
+    fix "needs a schema-aware check that knows where a value is
+    expected". The schema now knows.
+
+    LITERALS ONLY. A value beginning "parameter." is a reference
+    resolved at proposal time, and is always a string by construction.
+    """
+    object_type = sub_write.get("object_type")
+    fields = (object_types.get(object_type) or {}).get("fields") or {}
+
+    for mutation in sub_write.get("mutations") or []:
+        setter = mutation.get("set") or {}
+        property_name, value = setter.get("property"), setter.get("value")
+        if isinstance(value, str):
+            continue  # a literal string, or a parameter reference
+        declared = (fields.get(property_name) or {}).get("data_type")
+        if declared != "string":
+            continue
+        coercion = _describe_coercion(value)
+        if coercion is not None:
+            raise ValueError(
+                f"Action type {action_type_name!r}: sub_writes[{index}] sets "
+                f"{property_name!r} to {value!r}, but that field declares "
+                f"data_type 'string' -- {coercion}. Quote the value to keep it a string."
+            )
+
+
+def _validate_parameters_are_used(action_type_name: str, action_def: dict) -> None:
+    """Every declared parameter must be referenced somewhere.
+
+    A DIFFERENT check from "does this reference something real", which
+    already existed. That one catches a reference to a parameter that
+    was never declared; this catches a parameter that was declared and
+    never referenced -- and the two fail in opposite directions.
+
+    The failure it exists for is a malformed reference. Writing
+    `object_id: $report_id` instead of `parameter.report_id` leaves the
+    string as a LITERAL, so the action targets an object whose id is
+    the characters "$report_id" and the declared parameter goes
+    unused. Nothing else notices: the schema is structurally valid,
+    the parameter resolves against nothing, and the action is simply
+    wrong at run time.
+
+    That is not hypothetical -- it was written into templates/ by hand
+    in an earlier commit here and shipped, and this check is what found
+    it.
+    """
+    declared = set((action_def.get("parameters") or {}).keys())
+    referenced = _collect_parameter_references(action_def)
+
+    unused = declared - referenced
+    if unused:
+        raise ValueError(
+            f"Action type {action_type_name!r}: parameter(s) {sorted(unused)} are declared "
+            f"but never referenced. A reference must be written 'parameter.<name>'; any "
+            f"other form is treated as a literal value."
+        )
+
+
+def _validate_automatable(action_type_name: str, action_def: dict) -> None:
+    """Checks the optional automatable flag.
+
+    A DIFFERENT QUESTION FROM auto_execute, and the two are easy to
+    confuse. `auto_execute` asks whether a proposal needs confirming;
+    `automatable` asks whether a TRIGGER may propose it at all.
+
+    An action can be both: safe to run without confirmation when a
+    person asked for it, and never to be started by a condition
+    firing at 3am. Refusing to allow the second is not a stricter
+    version of the first -- it is about WHO may begin the write rather
+    than what happens after.
+
+    ABSENT MEANS TRUE, deliberately, and this is the one default in
+    this file that is permissive. Every action already passes through
+    the approvals queue unless auto_execute says otherwise, so a
+    trigger proposing one produces a pending write somebody must
+    decide on. The flag exists for actions that should not even be
+    PROPOSED unattended -- and an author who wants that says so,
+    rather than every author having to opt in to ordinary behaviour.
+    """
+    if "automatable" not in action_def:
+        return
+    value = action_def["automatable"]
+    if not isinstance(value, bool):
+        raise ValueError(
+            f"Action type {action_type_name!r}: automatable must be true or "
+            f"false, got {value!r}."
+        )
+
+
+def _validate_owner_may_approve_automation(action_type_name: str, action_def: dict) -> None:
+    """Checks the optional owner_may_approve_automation flag (decided 16
+    October: each action decides).
+
+    WHETHER THE OWNER OF AN AUTOMATION MAY APPROVE WHAT IT PROPOSED, on
+    an action whose rules say the approver must not be the proposer.
+    ABSENT MEANS NO: the automation proposes as its owner, so the owner
+    is the proposer and someone else approves -- the rule GitHub chose
+    when people used their own automations to satisfy "required
+    approvals". An action whose automations do routine, reviewed-in-bulk
+    work can say the owner's review is enough
+    (WriteMediator._proposer_for_approval).
+
+    REFUSED BESIDE `automatable: false`: a rule about who approves an
+    automation's proposals, on an action no automation may propose, is
+    a contradiction the author should hear about rather than a setting
+    that silently does nothing.
+    """
+    if "owner_may_approve_automation" not in action_def:
+        return
+    value = action_def["owner_may_approve_automation"]
+    if not isinstance(value, bool):
+        raise ValueError(
+            f"Action type {action_type_name!r}: owner_may_approve_automation must be "
+            f"true or false, got {value!r}."
+        )
+    if value and action_def.get("automatable") is False:
+        raise ValueError(
+            f"Action type {action_type_name!r}: owner_may_approve_automation is true, but "
+            f"automatable is false -- no automation may propose this action, so who "
+            f"approves an automation's proposal never arises. Remove one of them."
+        )
+
+
+def _validate_auto_execute(action_type_name: str, action_def: dict) -> None:
+    """Checks the optional auto_execute flag.
+
+    The precedent's own Action tool "can be configured to run automatically
+    or to run after confirmation from the user", and their governance
+    model puts that decision in the ACTION config -- "controls which
+    business mutations the agent can perform, and whether confirmation
+    is required". Per action type, not a global switch: a deployment
+    should be able to let an agent file a low-stakes note without also
+    letting it move money unattended.
+
+    Absent means False. The default is confirmation, and it is enforced
+    in Python at the point of execution rather than by asking the model
+    to behave -- a prompt can be talked around, a branch cannot.
+    """
+    if "auto_execute" not in action_def:
+        return
+    value = action_def["auto_execute"]
+    if not isinstance(value, bool):
+        raise ValueError(
+            f"Action type {action_type_name!r}: auto_execute must be true or false, "
+            f"got {value!r}."
+        )
+    if value is not True:
+        return
+
+    # UNATTENDED WRITES MAY NOT TAKE MODEL-SUPPLIED VALUES.
+    #
+    # Ontology data flows into `gathered`, and `gathered` flows into the
+    # prompt, so a field value containing instructions reaches the model
+    # as text. Three gates normally sit between a model's decision and a
+    # write: the execute grant, MAC per sub_write per object, and a
+    # human at confirm. auto_execute removes the third.
+    #
+    # What remains is bounded by the acting user's own grants, so this
+    # is not privilege escalation. It is action without consent, which
+    # is a different property and one this project takes seriously.
+    #
+    # THE DISTINCTION THAT IS STATICALLY DETECTABLE, and it is the one
+    # that matters: a mutation whose value is `parameter.<name>` is
+    # chosen BY THE MODEL. Combined with auto_execute, injected text
+    # decides both WHETHER to write and WHAT to write. A mutation whose
+    # value is a literal, or `user.<attribute>`, lets it decide only
+    # whether -- a far smaller blast radius, and one a deployment can
+    # reason about.
+    #
+    # Refused at load rather than warned about. An action type is
+    # authored once and read forever; a warning at startup is seen by
+    # whoever deployed it and by nobody afterwards.
+    #
+    # The narrower rule from the roadmap (consumed) -- "no field the model has
+    # read" -- is not knowable here: what a model has read is a
+    # property of a running query, not of a schema.
+    model_supplied = [
+        mutation["set"]["property"]
+        for sub_write in action_def.get("sub_writes") or []
+        for mutation in sub_write.get("mutations") or []
+        if isinstance((mutation.get("set") or {}).get("value"), str)
+        and mutation["set"]["value"].startswith(PARAMETER_PREFIX)
+    ]
+    if model_supplied:
+        raise ValueError(
+            f"Action type {action_type_name!r}: auto_execute cannot be combined with "
+            f"model-supplied values. Field(s) {sorted(set(model_supplied))} are set "
+            f"from action parameters, so an unattended write would let the model "
+            f"choose both whether to write and what to write -- and ontology data "
+            f"reaches the model as text, so that text can be attacker-influenced. "
+            f"Either set these fields from literals, or leave auto_execute off so a "
+            f"human confirms."
+        )
+
+
+def _validate_one_sub_write(action_type_name: str, index: int, sub_write: dict, object_types: dict,
+                             declared_params: dict) -> None:
+    # A delete has nothing to mutate -- it records the object's removal
+    # from the ontology, not a change to its values -- so `mutations` is
+    # required for create and update only. Declaring an empty list is
+    # still accepted, so an author who writes one is not corrected for
+    # no reason.
+    required_keys = {"object_type", "object_id", "operation"}
+    if sub_write.get("operation") != "delete":
+        required_keys.add("mutations")
+    missing = required_keys - sub_write.keys()
+    if missing:
+        raise ValueError(f"Action type {action_type_name!r}: sub_writes[{index}] missing key(s) {sorted(missing)}.")
+
+    object_type = sub_write["object_type"]
+    if object_type not in object_types:
+        raise ValueError(
+            f"Action type {action_type_name!r}: sub_writes[{index}] references unknown type {object_type!r}."
+        )
+
+    operation = sub_write["operation"]
+    if operation not in ("create", "update", "delete"):
+        raise ValueError(
+            f"Action type {action_type_name!r}: sub_writes[{index}].operation must be "
+            f"'create', 'update' or 'delete', got {operation!r}."
+        )
+
+    if operation == "delete":
+        # Nothing further to check: a delete names an object, not a
+        # change to it. An empty mutations list is accepted here rather
+        # than rejected, since an author who writes one has expressed
+        # exactly what a delete means.
+        if sub_write.get("mutations"):
+            raise ValueError(
+                f"Action type {action_type_name!r}: sub_writes[{index}] is a delete and "
+                f"must not declare mutations."
+            )
+        return
+
+    if not isinstance(sub_write["mutations"], list) or not sub_write["mutations"]:
+        raise ValueError(f"Action type {action_type_name!r}: sub_writes[{index}].mutations must be a non-empty list.")
+
+    # Every mutation's own "property" must be a REAL field this
+    # object_type actually declares -- catches a typo (e.g. "nmae"
+    # instead of "name") that would otherwise pass silently here and
+    # only surface as a confusing failure deep inside
+    # _group_changes_by_storage() the first time a real caller
+    # happened to trigger this specific action. id_field is
+    # separately valid too -- it's a real, settable property (a
+    # create's own mutations set it explicitly) even though it isn't
+    # listed under the type's own "fields" (see core/deployment_
+    # loader.py's own schema handling for why).
+    valid_properties = set(object_types[object_type]["fields"]) | {object_types[object_type]["id_field"]}
+    for mutation_index, mutation in enumerate(sub_write["mutations"]):
+        property_name = mutation.get("set", {}).get("property")
+        if property_name not in valid_properties:
+            raise ValueError(
+                f"Action type {action_type_name!r}: sub_writes[{index}].mutations[{mutation_index}] "
+                f"sets unknown property {property_name!r} on {object_type!r}."
+            )
+        if is_computed(object_types[object_type]["fields"].get(property_name) or {}):
+            # COMPUTED, NOT STORED (R37): there is no column to write,
+            # and the value would be overwritten by its own formula.
+            raise ValueError(
+                f"Action type {action_type_name!r}: sub_writes[{index}].mutations[{mutation_index}] "
+                f"sets {property_name!r} on {object_type!r}, which is computed from other fields; "
+                f"set those instead."
+            )
+
+    object_id = sub_write["object_id"]
+    if isinstance(object_id, str) and object_id.startswith("parameter."):
+        # See this module's own docstring for why ONLY this expression
+        # kind gets checked here -- literal and user.security_value
+        # object_ids are structurally fine, with nothing further to
+        # validate against at load time.
+        param_name = object_id.removeprefix("parameter.")
+        param_spec = declared_params.get(param_name)
+        if param_spec is None:
+            raise ValueError(
+                f"Action type {action_type_name!r}: sub_writes[{index}].object_id references "
+                f"undeclared parameter {param_name!r}."
+            )
+        # EITHER FORM. object_reference names one object;
+        # object_reference_list names many, and the write mediator
+        # expands the list into one sub-write per object -- each
+        # getting its own authorization check, its own submission
+        # criteria and its own place in the atomic batch.
+        #
+        # The precedent draws the line here too: a "bulk action type" is one
+        # "using an object reference list parameter", a property of the
+        # ACTION rather than a mode the UI switches into.
+        if param_spec.get("type") not in OBJECT_REFERENCE_TYPES:
+            raise ValueError(
+                f"Action type {action_type_name!r}: sub_writes[{index}].object_id's parameter "
+                f"{param_name!r} must be type 'object_reference' or 'object_reference_list', "
+                f"got {param_spec.get('type')!r}."
+            )
+        if param_spec.get("object_type") != object_type:
+            raise ValueError(
+                f"Action type {action_type_name!r}: sub_writes[{index}].object_id's parameter "
+                f"{param_name!r} references {param_spec.get('object_type')!r}, expected {object_type!r}."
+            )
+
+
+def automation_needs_another_approver(action_def: dict) -> bool:
+    """Whether what an automation proposes with this action must be
+    approved by someone other than the automation's owner: a four-eyes
+    rule on any of its sub-writes (`not_equals proposer.user_id`), not
+    lifted by owner_may_approve_automation. For the Watch dialog, which
+    says so before anyone builds an automation that needs a second
+    person every time it fires -- the same answer
+    WriteMediator._proposer_for_approval gives when it is approved."""
+    if action_def.get("owner_may_approve_automation") is True:
+        return False
+    return any(
+        criterion.get("operator") == "not_equals" and criterion.get("value") == "proposer.user_id"
+        for sub_write in action_def.get("sub_writes") or ()
+        for criterion in (sub_write or {}).get("submission_criteria") or ()
+    )

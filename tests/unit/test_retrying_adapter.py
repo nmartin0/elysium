@@ -19,8 +19,8 @@ of a 4xx ships.
 
 import pytest
 
-from core.llm.interface import LLMUnavailable
-from core.llm.retrying_adapter import RetryingLLMAdapter
+from elysium.core.llm.interface import LLMUnavailable
+from elysium.core.llm.retrying_adapter import RetryingLLMAdapter
 
 
 class Scripted:

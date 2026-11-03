@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from core.ontology.write_mediator import PendingWrite
+from elysium.core.ontology.write_mediator import PendingWrite
 from tests.unit.test_agent_object_query import ACCOUNTANT, TRANSFER, write_loop  # noqa: F401
 from tests.unit.test_write_mediator import _record, wm  # noqa: F401  (fixture imports)
 
@@ -54,7 +54,7 @@ def test_provenance_reaches_the_audit_log_not_just_the_object(wm, tmp_path):  # 
     # The object is in-process and dies with it. The audit log is
     # where provenance has to survive, so assert on the log, not on
     # the dataclass a second time.
-    from core.intermediate_layer.audit import AuditLog
+    from elysium.core.access.audit import AuditLog
 
     log_path = tmp_path / "audit.log"
     wm.mediator.audit_log = AuditLog(log_path)

@@ -11,9 +11,9 @@ its next crossing (test_trigger_windows.py). These drive the real routes with th
 import fcntl
 import threading
 
-from api.trigger_checks import TriggerChecks
-from core.saved_views import SavedView
-from core.trigger_runs import reads_the_clock, run_triggers, watching
+from elysium.api.trigger_checks import TriggerChecks
+from elysium.core.saved_views import SavedView
+from elysium.core.trigger_runs import reads_the_clock, run_triggers, watching
 
 
 def _login(client, username, role="editor"):

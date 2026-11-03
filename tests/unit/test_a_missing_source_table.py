@@ -14,10 +14,10 @@ from contextlib import closing
 import pytest
 from sqlalchemy import text
 
-from adapters.csv_folder_adapter import CsvFolderAdapter
-from adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.csv_folder_adapter import CsvFolderAdapter
+from elysium.adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 ARGS = ("p", "t", "id", ["id", "v"], {"id": "string", "v": "string"}, {"v": "v"})
 
@@ -110,7 +110,7 @@ class TestOnlyWhenTheSourceSaysSo:
     from the listing as well, so "not listed" alone is not "gone"."""
 
     def test_a_refused_read_keeps_its_own_reason(self, tmp_path):
-        from core.ontology.interface import StorageUnavailable
+        from elysium.core.ontology.interface import StorageUnavailable
 
         db, sync = _sqlite(tmp_path, "t")
         sync.sync_table(*ARGS)

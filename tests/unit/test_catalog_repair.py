@@ -26,9 +26,9 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from scripts.repair_catalog import find_broken
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.scripts.repair_catalog import find_broken
 
 COLUMNS = ["id", "a"]
 TYPES = {"id": "string", "a": "string"}

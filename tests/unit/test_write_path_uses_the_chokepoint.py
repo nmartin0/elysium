@@ -37,8 +37,8 @@ import types
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.write_mediator import WriteMediator
+from elysium.core.access.auth import UserRecord
+from elysium.core.ontology.write_mediator import WriteMediator
 
 
 class _SpyAuditLog:

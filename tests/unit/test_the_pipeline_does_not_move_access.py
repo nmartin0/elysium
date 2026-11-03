@@ -45,12 +45,12 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.intermediate_layer.auth import UserRecord
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.mirror_adapter import MirrorReadAdapter
-from core.mirror.sync_targets import resolve_sync_targets
-from core.ontology.mediator import DataMediator
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.access.auth import UserRecord
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.mirror_adapter import MirrorReadAdapter
+from elysium.core.mirror.sync_targets import resolve_sync_targets
+from elysium.core.ontology.mediator import DataMediator
 
 SCHEMA = {
     "Customer": {

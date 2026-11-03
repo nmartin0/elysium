@@ -53,7 +53,7 @@ NOT_GRANTS = {
 # rather than a list because the ORDER means nothing and a duplicate
 # would be a mistake.
 def _verbs_the_validator_accepts() -> set[str]:
-    source = (ROOT / "core" / "intermediate_layer" / "policy_validation.py").read_text()
+    source = (ROOT / "src" / "elysium" / "core" / "access" / "policy_validation.py").read_text()
     prefixed = set(re.findall(r'grant\.startswith\("([a-z_]+):"\)', source))
     exact = {
         grant.split(":", 1)[0]
@@ -69,7 +69,8 @@ def _verbs_the_code_asks_for() -> set[str]:
     bare literals like "manage:users".
     """
     verbs = set()
-    for path in list((ROOT / "core").rglob("*.py")) + list((ROOT / "api").rglob("*.py")):
+    package = ROOT / "src" / "elysium"
+    for path in list((package / "core").rglob("*.py")) + list((package / "api").rglob("*.py")):
         source = path.read_text()
         # EVERY f-string of the shape `verb:{...}`, minus a known
         # non-grant. Two earlier versions were each wrong in one
@@ -151,7 +152,7 @@ def test_the_probe_finds_anything_at_all():
 
 
 def _exact_grants_the_validator_accepts() -> set[str]:
-    source = (ROOT / "core" / "intermediate_layer" / "policy_validation.py").read_text()
+    source = (ROOT / "src" / "elysium" / "core" / "access" / "policy_validation.py").read_text()
     return set(re.findall(r'grant == "([a-z_]+:[a-z_]+)"', source))
 
 
@@ -162,8 +163,9 @@ def _exact_grants_the_code_uses() -> set[str]:
     import ast
 
     found = set()
-    validator = ROOT / "core" / "intermediate_layer" / "policy_validation.py"
-    for path in list((ROOT / "core").rglob("*.py")) + list((ROOT / "api").rglob("*.py")):
+    validator = ROOT / "src" / "elysium" / "core" / "access" / "policy_validation.py"
+    package = ROOT / "src" / "elysium"
+    for path in list((package / "core").rglob("*.py")) + list((package / "api").rglob("*.py")):
         if path == validator:
             continue
         for node in ast.walk(ast.parse(path.read_text())):

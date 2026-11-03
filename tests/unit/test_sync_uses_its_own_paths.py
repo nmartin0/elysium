@@ -14,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
-import scripts.seed_dev_silos as seed
-from core.deployment_loader import RuntimePaths
-from scripts.run_sync import run_sync
+import elysium.scripts.seed_dev_silos as seed
+from elysium.core.deployment_loader import RuntimePaths
+from elysium.scripts.run_sync import run_sync
 
 
 @pytest.fixture

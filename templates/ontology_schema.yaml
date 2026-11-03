@@ -5,7 +5,7 @@
 # including each object type's own id_field, needs a matching
 # read:<Type>.<field> grant in policy.yaml before any user can ever see
 # it. A field declared here with no matching grant anywhere simply
-# never appears to the LLM at all -- see core/ontology/mediator.py's
+# never appears to the LLM at all -- see src/elysium/core/ontology/mediator.py's
 # visible_schema() docstring for the full reasoning.
 #
 # Each type's "storage" block holds ONLY its physical backing --
@@ -194,7 +194,7 @@ link_types:
       target_column: project_id
 
   # Link types are first-class ontology entities: ONE declaration, both
-  # directions generated from it. See core/ontology/link_types.py.
+  # directions generated from it. See src/elysium/core/ontology/link_types.py.
   EmployeeExpenseReports:
     display_name: Expense Reports
     source: {object_type: Employee, api_name: expense_reports}

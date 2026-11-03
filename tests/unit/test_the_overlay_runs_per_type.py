@@ -21,12 +21,12 @@ from types import SimpleNamespace
 
 import pytest
 
-import scripts.run_sync as run_sync
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.gold import DATA_AS_OF_PROPERTY
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.ontology.mediator import DataMediator
-from core.ontology.write_log import WriteLogWriter
+import elysium.scripts.run_sync as run_sync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.gold import DATA_AS_OF_PROPERTY
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.ontology.mediator import DataMediator
+from elysium.core.ontology.write_log import WriteLogWriter
 
 TYPES = {
     name: {"id_field": "id", "security": {"field": "region"},
@@ -124,7 +124,7 @@ class TestGoldRecordsWhenItsDataWasRead:
         assert _recorded(sync, "Beta") == _read_at(sync, "beta")
 
     def test_the_loader_reads_each_types_time(self, deployment):
-        from core.deployment_loader import _gold_data_as_of
+        from elysium.core.deployment_loader import _gold_data_as_of
 
         sync, data_dir = deployment
         run_sync._build_gold(sync, sync.config, data_dir)

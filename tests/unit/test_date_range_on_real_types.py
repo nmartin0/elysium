@@ -20,7 +20,7 @@ date cannot be stored at all.
 
 import pytest
 
-from core.filters import FieldFilter, FilterError, validate_filter
+from elysium.core.filters import FieldFilter, FilterError, validate_filter
 
 
 def _filter(operator="date_range", value=None):

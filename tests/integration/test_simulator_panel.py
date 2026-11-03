@@ -8,8 +8,8 @@ PostgreSQL refuses to run as root, and the simulator's own suite
 import pytest
 import yaml
 
-from api.addon_servers import read_state
-from core.modules import ELYSIUM_ROOT
+from elysium.api.addon_servers import read_state
+from elysium.core.modules import ELYSIUM_ROOT
 from tests.integration.test_addon_lifecycle import _wait
 from tests.integration.test_addon_proxy import write_modules
 from tests.integration.test_api import _csrf_headers, _login

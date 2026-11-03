@@ -10,7 +10,7 @@ import hashlib
 import io
 import shutil
 
-from scripts.preview_ontology import run
+from elysium.scripts.preview_ontology import run
 
 
 def _fingerprint(directory) -> str:

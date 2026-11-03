@@ -19,10 +19,10 @@ WHAT IS PROTECTED, in the order the tests are written:
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord, resolve_user_record
-from core.ontology import mediator as mediator_module
-from core.ontology import object_sets as sets
-from core.ontology.object_sets import (
+from elysium.core.access.auth import UserRecord, resolve_user_record
+from elysium.core.ontology import mediator as mediator_module
+from elysium.core.ontology import object_sets as sets
+from elysium.core.ontology.object_sets import (
     ObjectSetError,
     ObjectSetNotFound,
     SchemaView,
@@ -471,7 +471,7 @@ class TestThroughTheMediatorAndNowhereElse:
     def test_every_returned_id_was_checked_by_the_mediator(self, mediator, alice, monkeypatch):
         """Records each id the access check is asked about during an
         evaluation; every id returned must be among those that passed."""
-        from core.ontology import mediator as module
+        from elysium.core.ontology import mediator as module
 
         passed = set()
         real = module.check_access

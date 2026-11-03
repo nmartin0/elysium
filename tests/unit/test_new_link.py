@@ -6,8 +6,8 @@ tests/integration/test_new_link_from_the_ui.py.
 import pytest
 import yaml
 
-from core.config_editing import ConfigEditError, apply_new_link
-from core.ontology.link_types import expand_link_types, validate_link_types
+from elysium.core.config_editing import ConfigEditError, apply_new_link
+from elysium.core.ontology.link_types import expand_link_types, validate_link_types
 
 ONTOLOGY = """\
 # The ontology.

@@ -26,7 +26,7 @@ what is tested here is that its documentation still describes it.
 
 import inspect
 
-from core.intermediate_layer import policy_validation
+from elysium.core.access import policy_validation
 
 
 def test_every_exact_grant_is_named_in_the_docstring():

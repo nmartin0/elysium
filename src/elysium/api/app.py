@@ -1,0 +1,859 @@
+"""
+app.py  (the FastAPI application -- knows FastAPI exists; core/ never does)
+
+Builds everything ONCE at startup and stores it on app.state: the
+DataMediator, one AgentLoop instance, one synthesis LLM client. This
+matters, not just for efficiency -- core/concurrency.py's
+ConcurrencyLimiter is built once per AgentLoop/LLMAdapter construction
+and enforces a limit ACROSS all callers of that one instance. Building
+a fresh AgentLoop per request would silently give every request its
+own private limiter that never sees any other request, defeating the
+whole mechanism. One instance, reused, is required for the concurrency
+protections already built to mean anything -- same pattern
+scripts/serve_requests.py already uses.
+
+WRITES: proposing a write over HTTP is now real (see api/routes.py's
+/query and /writes/{write_id}/confirm) -- app.state.write_mediator and
+app.state.pending_writes (a PendingWriteStore, see core/
+pending_write_store.py) are both built here, once, same lifecycle as
+everything else. Confirmation is ALWAYS a separate, later HTTP request
+from the one that proposed the write -- see core/agent/agentic_loop.py's
+module docstring for why AgentLoop itself was changed to never confirm
+a write on its own.
+
+Authentication/authorization here is ENTIRELY database-backed
+(core/user_directory.py + core/auth/), never policy.yaml's static
+`users:` section -- that section remains what scripts/run_deployment.py
+(a simple demo/dev tool) uses. The two are intentionally not unified:
+api/ is the real, running service; run_deployment.py is not.
+
+CREDENTIALS_DB_PATH lives in the DATA directory (deployment/var/lib/
+credentials.db locally; /var/lib/elysium/credentials.db under a real
+install) -- runtime state, not config, same reasoning that keeps
+config_dir and data_dir independent throughout core/deployment_loader.py.
+
+Logging is now wired through directly, not configured separately --
+load_deployment_bundle() below builds the ONE shared AuditLog instance
+mediator itself owns; app.state.pending_writes reads it back from
+mediator, same "shared instance, not a separate copy" discipline as
+write_log/credential_store/session_store/user_directory. See
+core/access/audit.py's own module docstring for why this
+replaced the old module-level configure_audit_log() global entirely.
+
+app.state.executor is OUR OWN explicit ThreadPoolExecutor, sized from
+config.max_concurrent_requests -- the SAME config value and the SAME
+mechanism scripts/serve_requests.py already uses, deliberately NOT
+relying on Starlette's own separate, differently-sized internal thread
+pool (the one it uses automatically for synchronous route handlers).
+An explicit, understood concurrency boundary, not an ambient default --
+see api/routes.py's /query for where this actually gets used.
+
+create_app() takes an OPTIONAL RuntimePaths -- defaulting to
+resolve_runtime_paths() (the real, running server's normal path) when
+not given. tests/integration/test_api.py passes its OWN, fully
+isolated RuntimePaths (built fresh per test, under pytest's tmp_path)
+to get a genuinely separate app instance -- its own mediator, its own
+credentials database, its own audit log -- rather than mutating
+app.state on the one real, module-level `app` instance. That mutation
+approach was the earlier design; it meant tests could (and once did)
+corrupt the real, shipped demo data. A real app instance per test,
+built from a real but disposable fixture, makes that structurally
+impossible instead of relying on careful cleanup.
+
+STATIC UI SERVING: if ui/dist exists (a built React app -- see ui/'s
+own README), it's served by this SAME process via app.frontend() --
+FastAPI's own, real, native SPA-serving mechanism (0.138.0+; see this
+method's own call below for the fuller history, including a real bug
+this replaced) -- one systemd unit, not a separate static host,
+matching this project's "minimal ops burden" philosophy (see install/
+install.sh). Registered AFTER the API router, not before -- FastAPI's
+own real path operations always take priority over frontend fallback
+routes, so every real API path is matched by the router first; the
+frontend fallback only ever handles what's left over. A SECOND,
+independent safeguard beyond that alone: the router itself only ever
+matches /api/* (see its own include_router() call below), so there is
+no collision possible between a real backend path and a client-side
+react-router-dom route even in principle. Registration is CONDITIONAL,
+not required -- a checkout where nobody's run `npm run build` yet
+still runs correctly as a pure API backend; only a real install
+(which does build the UI) gets it served automatically.
+"""
+
+import asyncio
+import base64
+import decimal
+import hashlib
+import logging
+import re
+import sqlite3
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
+from datetime import timedelta
+from pathlib import Path
+
+import fastapi.encoders
+from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
+
+from elysium.api.csrf_middleware import csrf_protect
+from elysium.api.generation_header_middleware import GenerationHeaderMiddleware
+from elysium.api.live_updates import ChangeBus, watch_publications
+from elysium.api.reload import follow_publications, follow_reload_epoch, install_sighup_handler
+from elysium.api.request_metrics_middleware import RequestMetricsMiddleware
+from elysium.api.request_size_limit_middleware import RequestSizeLimitMiddleware
+from elysium.core.addons import PROXY_PREFIX as ADDON_PROXY_PREFIX
+from elysium.core.addons import SANDBOX_POLICY as ADDON_SANDBOX_POLICY
+from elysium.core.artifact_store import ArtifactStore
+from elysium.core.auth.credential_store import CredentialStore
+from elysium.core.auth.database import connection
+from elysium.core.auth.login_attempt_tracker import LoginAttemptTracker
+from elysium.core.auth.query_rate_limiter import QueryRateLimiter
+from elysium.core.auth.session_store import SessionStore
+from elysium.core.concurrency import share_limits_under
+from elysium.core.config_history import ConfigHistory, record_generation
+from elysium.core.deployment_loader import (
+    RuntimePaths,
+    build_generation,
+    build_live_read_adapters,
+    resolve_runtime_paths,
+)
+from elysium.core.mirror.lake_permissions import warn_if_world_readable
+from elysium.core.ontology.decimal_text import decimal_text
+from elysium.core.ontology.mediator import security_cache_scope
+from elysium.core.ontology.write_log import WriteLogWriter
+from elysium.core.pending_write_persistence import PendingWritePersistence
+from elysium.core.pending_write_store import PendingWriteStore
+from elysium.core.request_metrics import RETENTION_SECONDS, RequestMetrics
+from elysium.core.source_health import source_failures
+from elysium.core.sqlite_connection import (
+    require_assertions_enabled,
+    require_json_each,
+)
+from elysium.core.storage_encryption import report as report_storage_encryption
+from elysium.core.user_directory import UserDirectory
+
+# A DECIMAL IS SENT EXACTLY, AS A STRING (PA001-G12). FastAPI's own
+# decimal_encoder turns Decimal("10.500000000") into the float 10.5, and
+# every route without a response model goes through it -- so money read
+# through those routes arrived as a binary float, a different number in
+# general. Replaced at its source, once, for this process: a route added
+# later cannot forget it. Routes WITH a response model are serialised by
+# pydantic, which already keeps decimals exact; the search and detail
+# routes also pad to the declared scale (core/ontology/decimal_text.py).
+fastapi.encoders.ENCODERS_BY_TYPE[decimal.Decimal] = decimal_text
+
+logger = logging.getLogger(__name__)
+
+UI_DIST_DIR = Path(__file__).resolve().parents[3] / "ui" / "dist"
+
+
+#: The page's import map hashes, by the (mtime, size) of index.html they
+#: were read from -- see import_map_script_src.
+_import_map_hashes: dict[tuple[float, int], tuple[str, ...]] = {}
+_IMPORT_MAP = re.compile(r'<script type="importmap">(.*?)</script>', re.DOTALL)
+
+
+def import_map_script_src(index_html: Path) -> str:
+    """A `script-src` directive allowing the page's import map, and only it.
+
+    THE IMPORT MAP IS AN INLINE SCRIPT (the removed BLOCKING.md item on modules, step 1.2:
+    the page's shared libraries, @shell/build), and `default-src 'self'`
+    forbids inline scripts -- so the browser ignored it and no module
+    could resolve `react`. Found by the first browser test against this
+    server; the static server the earlier one used sends no policy.
+
+    ALLOWED BY ITS HASH, not by 'unsafe-inline': CSP Level 2's
+    `'sha256-...'` source admits exactly the script whose text hashes to
+    it, so the policy still refuses any other inline script, injected or
+    not. `script-src` then also needs 'self', which `default-src` gave.
+
+    READ FROM THE FILE BEING SERVED, and again whenever it changes: static
+    files are read per request, so a fresh `npm run build` is served
+    without a restart, and its map must be allowed without one too.
+    """
+    try:
+        stat = index_html.stat()
+    except OSError:
+        return ""
+    key = (stat.st_mtime, stat.st_size)
+    hashes = _import_map_hashes.get(key)
+    if hashes is None:
+        text = index_html.read_text(encoding="utf-8")
+        hashes = tuple("'sha256-" + base64.b64encode(hashlib.sha256(m.encode()).digest()).decode() + "'"
+                       for m in _IMPORT_MAP.findall(text))
+        _import_map_hashes.clear()
+        _import_map_hashes[key] = hashes
+    return f"; script-src 'self' {' '.join(hashes)}" if hashes else ""
+
+
+# The features denied by every response's Permissions-Policy (E-05); `()`
+# is the empty allowlist -- not even this origin.
+PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+
+
+
+def arm_declared_schedules(app) -> None:
+    """Sets the checks of config.yaml's scheduled triggers (core/
+    trigger_states.arm_declared). Never raises: a timer that could not
+    be set costs that trigger its schedule, logged, not the server."""
+    try:
+        from elysium.core.timers import TimerStore
+        from elysium.core.trigger_states import arm_declared
+
+        arm_declared(TimerStore(app.state.runtime_paths.data_dir),
+                     app.state.generation.config.declared_triggers)
+    except Exception:  # noqa: BLE001
+        logger.warning("could not set the schedules of declared triggers", exc_info=True)
+
+
+def _publication_sources(app) -> tuple:
+    """(catalog, object types) of the generation serving right now."""
+    from elysium.api.routes import _deployment_catalog
+
+    mediator = app.state.generation.mediator
+    return _deployment_catalog(mediator), list(mediator.schema or {})
+
+
+def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
+    # BEFORE anything else, including config loading. Several
+    # data-integrity invariants in this project are enforced by
+    # `assert` and are stripped by -O / PYTHONOPTIMIZE; starting
+    # without them means silent corruption rather than louder failure.
+    require_assertions_enabled()
+    # THE WRITE LOG PASSES ID LISTS AS JSON, so a SQLite without
+    # json_each cannot serve one. Checked here rather than discovered
+    # at the first write-log read, where the error would name neither
+    # the requirement nor what to do about it.
+    require_json_each()
+
+    # docs_url/redoc_url/openapi_url all explicitly None -- a real,
+    # confirmed finding, part of the same broader "backend is a
+    # kernel, frontend is userspace" audit: FastAPI's own /docs,
+    # /redoc, and /openapi.json are ENABLED BY DEFAULT and NOT gated
+    # by get_current_user() at all (registered directly on the app
+    # itself, outside the protected router) -- confirmed live, not
+    # assumed, that an entirely unauthenticated request could browse
+    # the FULL API surface this way, including every admin-only route
+    # path (GET /users/{username}/visible-schema and its own
+    # siblings). Elysium has no third-party API consumers to serve a
+    # public explorer FOR -- the frontend already knows exactly what
+    # it calls, and there is no legitimate audience for this endpoint
+    # left once that's true. Disabled outright, not merely
+    # auth-gated: a real, considered choice, not the path of least
+    # resistance -- gating FastAPI's own built-in docs routes behind
+    # a custom auth check is possible but meaningfully more involved
+    # than this app genuinely needs, for a feature with no real
+    # audience here at all.
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        """Shut the executor down on the way out, on purpose.
+
+        SEC-09, raised by the security agent and inherited when it was
+        destroyed: "the executor drained only incidentally". Verified
+        rather than taken on trust -- `app.state.executor` was created
+        and `shutdown()` appeared nowhere, and there was no lifespan
+        handler at all.
+
+        IT DID DRAIN, AND THAT IS THE POINT. `concurrent.futures`
+        registers an atexit hook and its worker threads are not
+        daemons, so in-flight work was joined at INTERPRETER EXIT by
+        the standard library. Nothing in this application asked for
+        that, nothing could bound how long it took, and a graceful
+        shutdown that is not interpreter exit -- a reload, a signal
+        handled by the server -- did not drain it at all.
+
+        `wait=True` keeps the behaviour that was already happening by
+        accident and makes it the application's own.
+        """
+        # THE PUBLICATION WATCHER (live updates). Started here, where
+        # its loop is the server's, and cancelled on the way out. It
+        # reads nothing while nobody is listening.
+        watcher = None
+        stop_announcing = None
+        bus = getattr(_app.state, "change_bus", None)
+        if bus is not None:
+            from elysium.core.notifications import on_notify
+
+            watcher = asyncio.create_task(watch_publications(
+                bus, lambda: _publication_sources(_app),
+                on_publication=lambda: follow_publications(_app)))
+            # A NOTIFICATION WRITTEN HERE reaches its recipient's open
+            # tabs at once: "your inbox changed", to them alone.
+            stop_announcing = on_notify(bus.publish_inbox)
+        # TRIGGERS CHECKED WHEN SOMETHING HAPPENS (16 October): after a
+        # change is saved and when a trigger is made (api/trigger_
+        # checks.py); and THE TIMER SERVICE (api/timer_service.py), which
+        # fires whatever anything registered -- today, each date-filtered
+        # trigger's next window crossing. Each worker runs the loop; one
+        # fires each round. Only where there is a deployment -- a test
+        # app built without one has none.
+        clock = None
+        if getattr(_app.state, "runtime_paths", None) is not None \
+                and getattr(_app.state, "pending_writes", None) is not None:
+            from elysium.api.timer_service import run_timer_service
+            from elysium.api.trigger_checks import TriggerChecks, window_timer
+            from elysium.core.trigger_windows import KIND as TRIGGER_WINDOW
+
+            # ON THE APP'S OWN EXECUTOR, which shutdown joins below, so
+            # a check under way finishes rather than being cut off.
+            pool = getattr(_app.state, "executor", None)
+            _app.state.trigger_checks = TriggerChecks(
+                _app, submit=None if pool is None else pool.submit)
+            # EVERY DATE-FILTERED TRIGGER ONCE: crossings while the
+            # server was down, and a first timer for each.
+            _app.state.trigger_checks.after_start()
+            # AND EVERY SCHEDULED config.yaml TRIGGER'S CHECK, set; the
+            # same after each reload (api/reload.py).
+            arm_declared_schedules(_app)
+            from elysium.api.deprecation_alerts import KIND as DEPRECATION_DATES
+            from elysium.api.deprecation_alerts import arm as arm_deprecation_dates
+            from elysium.api.deprecation_alerts import deprecation_timer
+
+            # THE DAILY LOOK AT `remove_after` DATES, on this same service.
+            arm_deprecation_dates(_app)
+            from elysium.api.reminders import reminder_timer
+            from elysium.api.trigger_checks import hold_timer, schedule_timer
+            from elysium.core.reminders import KIND as REMINDER
+            from elysium.core.trigger_states import HOLD_KIND, SCHEDULE_KIND
+
+            clock = asyncio.create_task(run_timer_service(_app, {
+                TRIGGER_WINDOW: window_timer, REMINDER: reminder_timer,
+                HOLD_KIND: hold_timer, SCHEDULE_KIND: schedule_timer,
+                DEPRECATION_DATES: deprecation_timer,
+            }))
+        # ADD-ONS' OWN SERVERS (the removed BLOCKING.md item on modules, step 2.2): started,
+        # watched and restarted by api/addon_servers.py, following the
+        # current generation's modules; stopped with their deadlines on
+        # the way out. Only where there is a deployment, like the timers.
+        supervisor = None
+        paths = getattr(_app.state, "runtime_paths", None)
+        if paths is not None and getattr(_app.state, "generation", None) is not None:
+            from elysium.api.addon_servers import Supervisor, wanted_from
+            from elysium.core.access.rbac import authorize
+            from elysium.core.notifications import NotificationStore
+
+            def offered_to(module) -> set[str]:
+                """Who the module is offered to NOW, by the current
+                configuration: an add-on's notice reaches nobody else."""
+                roles = _app.state.generation.config.roles
+                directory = _app.state.user_directory
+                return {u["username"] for u in directory.list_users() if not u["disabled"]
+                        and (module.permission is None
+                             or authorize(directory.get_user_record(u["username"]), roles, module.permission))}
+
+            supervisor = Supervisor(paths.data_dir, paths.log_dir,
+                                    lambda: wanted_from(_app.state.generation.config.modules),
+                                    offered_to=offered_to,
+                                    store=NotificationStore(paths.data_dir / "notifications.db"))
+            supervisor.start()
+        yield
+        if supervisor is not None:
+            await asyncio.to_thread(supervisor.close)
+        if stop_announcing is not None:
+            stop_announcing()
+        if clock is not None:
+            clock.cancel()
+        if watcher is not None:
+            watcher.cancel()
+        executor = getattr(_app.state, "executor", None)
+        if executor is not None:
+            executor.shutdown(wait=True)
+
+    app = FastAPI(lifespan=_lifespan, title="LLM Data Mediator", docs_url=None, redoc_url=None, openapi_url=None)
+
+    # VALIDATION ERRORS WITHOUT THE VALUES (E-01). FastAPI's default 422
+    # returns each error's `input` -- the value that failed -- and `ctx`.
+    # Measured: a login missing its username echoed the PASSWORD, and
+    # /me/password echoed the caller's CURRENT one. `loc` and `msg` say
+    # what was wrong and where; nothing in ui/ reads the other two
+    # (checked). The owner's decision, September 21.
+    # A MODEL THAT CANNOT BE REACHED IS A 503 THAT SAYS SO, not a bare
+    # 500. /query let LLMUnavailable escape, so the screen read "Request
+    # failed (500)" -- found in a browser asking about a set with no
+    # model running. THE KIND, NOT THE MESSAGE: the adapter's message
+    # names the model's host and port, connection details /config
+    # withholds from every caller (the help route learned this first).
+    # Logged in full for the operator. Routes that handle it themselves
+    # -- help, the cancelled-query 499 -- never reach this.
+    from elysium.api.routes import MODEL_UNAVAILABLE_DETAIL
+    from elysium.core.llm.interface import LLMUnavailable
+
+    @app.exception_handler(LLMUnavailable)
+    async def model_unavailable(request: Request, exc: LLMUnavailable):
+        logger.warning("model unavailable during %s: %s", request.url.path, exc)
+        return JSONResponse(status_code=503, content={"detail": MODEL_UNAVAILABLE_DETAIL})
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_errors_without_values(request: Request, exc: RequestValidationError):
+        errors = [
+            {key: value for key, value in error.items() if key not in ("input", "ctx")}
+            for error in exc.errors()
+        ]
+        return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
+
+    # CSRF validation -- registered BEFORE add_security_headers below,
+    # deliberately: Starlette's own middleware stack makes the LAST-
+    # registered middleware the OUTERMOST one, so add_security_headers
+    # (registered after this) wraps AROUND csrf_protect and therefore
+    # still runs -- and still applies security headers -- even on a
+    # request csrf_protect rejects and short-circuits before it ever
+    # reaches a real route. Verified directly, not assumed: confirmed
+    # live that a genuine 403 CSRF rejection still carries the same
+    # Content-Security-Policy/X-Frame-Options headers as every other
+    # response. See api/csrf_middleware.py's own docstring for why
+    # this exists at all (SameSite=Strict alone, researched directly
+    # against OWASP's own current CSRF guidance, was found insufficient
+    # on its own).
+    app.middleware("http")(csrf_protect)
+
+    # Request size limit -- registered SECOND, between csrf_protect and
+    # add_security_headers below, deliberately: a real, found gap this
+    # app had NO protection against at all (confirmed directly, not
+    # assumed -- neither FastAPI nor Starlette enforce a body size
+    # limit by default). Registered AFTER csrf_protect so this runs
+    # BEFORE it -- an oversized body is rejected before CSRF validation
+    # ever spends any real work on it -- but BEFORE add_security_headers
+    # below, so THAT stays the true outermost layer and still wraps
+    # this middleware's own real 413 rejection too (confirmed directly,
+    # with a real, isolated three-middleware test, before choosing this
+    # exact registration order): every real response this app sends,
+    # including a 413, carries the same, consistent security headers.
+    # See api/request_size_limit_middleware.py's own docstring for the
+    # full reasoning, including why this is a real ASGI middleware
+    # class rather than the simpler style csrf_protect/
+    # add_security_headers both use.
+    app.add_middleware(RequestSizeLimitMiddleware)
+    # Stamps the serving generation on every response, so a client can
+    # notice a configuration reload on its next request rather than
+    # believing what it was told at login. See the module docstring.
+    app.add_middleware(GenerationHeaderMiddleware)
+    # Times every request for the RED metrics. Added AFTER the others
+    # so it wraps them: a request rejected for being too large is still
+    # a request, and a dashboard that only counted the ones that got
+    # through would understate the load.
+    #
+    # IT READS THE STORE OFF app.state AT REQUEST TIME, not at
+    # registration. Middleware is registered before runtime_paths is
+    # even resolved, so passing the store here would mean passing None
+    # forever -- and a metrics middleware that silently recorded
+    # nothing is worse than none, because the dashboard would show an
+    # idle server.
+    app.add_middleware(RequestMetricsMiddleware)
+
+    # Security headers, applied to EVERY response -- a real, found gap:
+    # this app previously set none at all. Verified directly before
+    # writing a strict CSP, not assumed safe: grepped for inline
+    # style={{}} props (zero), external <script>/<link> tags in
+    # index.html (zero -- one same-origin <script type="module">
+    # only), and any CDN/external CSS reference (zero) -- this app is
+    # genuinely, fully self-contained, same-origin only, so a strict
+    # default-src 'self' covers everything it actually needs, nothing
+    # broken by tightening it this far.
+    #
+    # Strict-Transport-Security deliberately NOT set here -- TLS
+    # termination is typically a deployment/reverse-proxy concern, not
+    # this application's own code; setting it here risks either
+    # conflicting with, or duplicating, whatever the real front-facing
+    # proxy in a given deployment already sets. See README.md's own
+    # "Known limitations, honestly" section for this noted as a real,
+    # deployment-specific responsibility, not silently assumed handled.
+    @app.middleware("http")
+    async def add_security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "same-origin"
+        # img-src ADDS data:, AND ONLY FOR IMAGES (found 14 Oct, in the
+        # browser). The check above looked for external scripts and
+        # stylesheets and found none -- but Blueprint draws its
+        # checkbox tick, radio dot and select caret as data: SVG
+        # backgrounds in its own CSS, which default-src 'self' blocks.
+        # Every ticked checkbox in the app rendered as a plain blue
+        # square. An image cannot run script, so data: here does not
+        # widen what can execute; script-src stays 'self' by default.
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; "
+            "frame-ancestors 'none'" + import_map_script_src(UI_DIST_DIR / "index.html")
+        )
+        # AN ADD-ON'S SERVER ANSWERS ON THIS ORIGIN (core/addons.py), so
+        # whatever it returns is SANDBOXED: HTML opened from there gets
+        # an origin of its own and runs no script, and cannot reach
+        # Elysium's session the way a page of Elysium's own could.
+        if request.url.path.startswith(ADDON_PROXY_PREFIX):
+            response.headers["Content-Security-Policy"] = ADDON_SANDBOX_POLICY
+        # POWERFUL FEATURES, DENIED OUTRIGHT (E-05): nothing here uses a
+        # camera, microphone, location, payment or USB device, so no page
+        # -- nor anything injected into one -- may ask for them.
+        response.headers["Permissions-Policy"] = PERMISSIONS_POLICY
+        # NO CACHE BY DEFAULT FOR THE API. Every /api answer is made for
+        # the person signed in, so none may be kept by a shared browser
+        # profile or an intermediate cache and handed to someone else on
+        # the same machine. Until this was a default, 21 GET routes
+        # (object search, detail, history, notes, users, config) had
+        # simply never been given the header. A route that sets its own
+        # Cache-Control keeps it: the module file route says
+        # `private, no-cache` on purpose (a rebuilt bundle keeps its
+        # name, so the browser must ask again), and an add-on's server
+        # may state its own policy.
+        if request.url.path.startswith("/api/") and "cache-control" not in response.headers:
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+    # FOLLOW ANY RELOAD ANOTHER WORKER ANNOUNCED, before this request
+    # reads the configuration -- registered LAST, so it runs FIRST.
+    #
+    # ON THE THREAD POOL, like the SIGHUP handler's reload: the check is
+    # one SELECT, but catching up is a ~22 ms rebuild, and on the event
+    # loop that would stall every request in flight in this worker.
+    # ONE SECURITY CACHE PER REQUEST, and none shared between requests.
+    # A handler that searches and then reads a page of objects shares
+    # one resolution; the next request starts empty. Starlette copies
+    # this context into the thread that runs a synchronous handler, so
+    # the scope reaches it. See core/ontology/mediator._SECURITY_CACHE.
+    @app.middleware("http")
+    async def security_cache_per_request(request: Request, call_next):
+        with security_cache_scope():
+            return await call_next(request)
+
+    @app.middleware("http")
+    async def follow_reload(request: Request, call_next):
+        await run_in_threadpool(follow_reload_epoch, app)
+        return await call_next(request)
+
+    if runtime_paths is None:
+        runtime_paths = resolve_runtime_paths()
+
+    # AN ERASURE NOT YET APPLIED STOPS THE SERVER (R13). After a restore
+    # every erasure is marked unpurged and the lake on disk may hold the
+    # people who asked to be forgotten; serving it, even once, would show
+    # them. The sync applies them -- so it must run first, and this says
+    # exactly that rather than serving and hoping.
+    erasures_db = runtime_paths.data_dir / "erasures.db"
+    if erasures_db.exists():
+        from elysium.core.mirror.erasure import ErasureRegister
+
+        if ErasureRegister(erasures_db).unpurged():
+            raise RuntimeError(
+                "Erasures are recorded that the mirror has not applied (usually after a "
+                "restore). Run `python -m elysium.scripts.run_sync` first; it applies them, and "
+                "this server will then start.")
+
+    # ONE construction path. Everything derived from the configuration
+    # files is built together, as an immutable DeploymentGeneration,
+    # and the individual names below are VIEWS onto it rather than
+    # independently constructed objects.
+    #
+    # (The five convenience attributes this once described are gone --
+    # see THE ONLY REFERENCE below. This paragraph said they were
+    # "kept for now" long after the migration that removed them, which
+    # is a comment describing a hazard that no longer exists: the same
+    # failure as a workaround, arriving from the documentation side.)
+    generation = build_generation(
+        runtime_paths.config_dir, runtime_paths.data_dir, runtime_paths.log_dir
+    ,
+        # SERVING (GOLD-8): this process answers reads, so it requires
+        # published gold for every object type and refuses to start
+        # without it. build_generation() itself does not, because the
+        # SYNC builds generations too -- and it is what publishes gold.
+        serving=True,)
+    # THE ONLY REFERENCE. The five configuration-derived objects are
+    # reachable through this and nowhere else -- there is deliberately
+    # no app.state.config, no app.state.mediator and so on.
+    #
+    # Their absence is the point, not tidiness. While they existed, a
+    # route could read app.state.mediator directly and get a DIFFERENT
+    # generation from the one its request pinned -- schema and grants
+    # disagreeing inside one request, silently, with nothing about the
+    # call site looking wrong. Deleting them makes the pin structural
+    # rather than advisory.
+    app.state.runtime_paths = runtime_paths
+    # WHAT each generation contained, not merely which one it was.
+    # Without this a reload leaves an audit line saying 7 became 8 and
+    # no way to see what either WAS -- see core/config_history.py.
+    #
+    # Its own database, beside write_log.db and artifacts.db rather
+    # than inside credentials.db: configuration history has a different
+    # retention story from credentials, and mixing them means a restore
+    # or a purge cannot treat them differently.
+    # CAPS ARE SHARED BY EVERY WORKER using this data directory -- a
+    # model server's or a silo's capacity does not multiply with the
+    # worker count. Before anything that limits is used.
+    share_limits_under(runtime_paths.data_dir)
+    app.state.config_history = ConfigHistory(runtime_paths.data_dir / "config_history.db")
+    # THE EPOCH THIS WORKER STARTED AT. A fresh worker builds from the
+    # latest configuration, so it is already current with every reload
+    # announced before it began.
+    app.state.reload_epoch = app.state.config_history.reload_epoch()
+    app.state.failed_reload_epoch = None
+    record_generation(app.state.config_history, generation)
+    app.state.generation = generation
+
+    # LIVE READS ARE GONE (GOLD-9), so there is no warning here any
+    # more: a deployment that asks for them is REFUSED at load, by
+    # core/deployment_loader.py's _refuse_live_reads. A warning was the
+    # right answer while the fallback existed -- it said what was being
+    # bypassed -- but a fallback nobody can select needs no warning,
+    # and leaving one would imply it is still possible.
+
+    # THE DELETED INDEX, BROUGHT UP TO DATE (F-28). Free when it is
+    # already current -- two integers compared -- and a full rebuild
+    # only when there is no watermark at all, which means the index has
+    # never synced or came back from a backup without one.
+    #
+    # NOT A CHECK, because a check costs what the rebuild costs: both
+    # read the log once. The watermark is what makes the normal boot
+    # cost nothing.
+    try:
+        outcome, rows = WriteLogWriter(
+            runtime_paths.data_dir / "write_log.db").sync_deleted_index()
+        if outcome != "current":
+            logger.info(f"deleted index {outcome}: {rows} log row(s)")
+    except Exception as e:  # noqa: BLE001 - a boot must not fail over a cache
+        logger.warning(f"deleted index could not be synced ({e}); "
+                       f"run python -m elysium.scripts.rebuild_deleted_index")
+
+    # WHO CAN READ THE LAKE (the gold-is-worth-stealing risk). Reported, not
+    # changed: an operator may have widened it deliberately -- a
+    # backup user, a read-only analytics mount -- and silently
+    # revoking that at startup would break a working deployment to
+    # enforce a preference.
+    warn_if_world_readable(runtime_paths.data_dir / "mirror", logger)
+    # AND WHETHER THE DISK UNDER IT IS ENCRYPTED (decided 14 Oct: the
+    # volume's job, Elysium's to check). Reported, never enforced.
+    report_storage_encryption(runtime_paths.data_dir, logger)
+
+    # EVERY SOURCE CHECKED AT STARTUP, each failure reported BY NAME
+    # (E-13). Nothing called health_check() before, so an unreachable
+    # database surfaced only as the first request that needed it failed.
+    # NOT a refusal to start: the mirror may still serve its last synced
+    # contents, and an operator needs the service up to see the failure
+    # in Admin. Logged, and to journald under systemd.
+    # THE KIND AND THE DETAIL, here only: this is the operator's log,
+    # where the class and message are what diagnoses it (E-06 keeps
+    # them out of every response).
+    details: dict[str, str] = {}
+    for silo_name, failure in source_failures(
+        generation.config.silo_configs,
+        build_live_read_adapters(runtime_paths, generation.config),
+        details,
+    ).items():
+        logger.warning("Source %r failed its startup check: %s (%s). The service is starting "
+                       "anyway; reads needing it will fail until it answers.", silo_name, failure,
+                       details.get(silo_name, "no detail"))
+    config = generation.config
+    # Kept alongside the three stores below for tests/integration/
+    # test_api.py's own direct, HTTP-bypassing test-setup DB access --
+    # a genuinely different, legitimate need from route handlers, which
+    # should use the shared store instances instead of re-deriving this
+    # path and calling a free function on every single request.
+    app.state.credentials_db_path = runtime_paths.data_dir / "credentials.db"
+
+    # The artifact store, wired here for the first time -- it has
+    # existed since the the object browser work and only its own tests
+    # ever constructed one.
+    #
+    # A SEPARATE database from credentials, deliberately. Artifacts are
+    # user content with a retention story of their own; credentials are
+    # the thing that must survive when everything else is discarded,
+    # and mixing them means a restore or a purge cannot treat them
+    # differently.
+    app.state.artifact_store = ArtifactStore(runtime_paths.data_dir / "artifacts.db")
+    # RED metrics: one row per request, written by
+    # RequestMetricsMiddleware, read by the admin metrics route.
+    app.state.request_metrics = RequestMetrics(runtime_paths.data_dir / "metrics.db")
+    # A real, explicit schema-creation step, run here, once, before ANY
+    # internal store below is constructed -- a real, necessary addition,
+    # not previously needed: every store here used to lazily create its
+    # own share of credentials.db's schema itself, on first real use
+    # (core/auth/database.py's own connection() -- schema-verified once
+    # per db_path, in-process, the first time ANY of these stores
+    # actually ran a real query). That was always fine for a WRITE-
+    # capable connection, since CREATE TABLE IF NOT EXISTS is itself a
+    # write. It stops being fine the moment a genuinely READ-ONLY
+    # connection (core/internal_storage.py's own InternalReadAdapter,
+    # first real consumer: QueryRateLimitReader below) might be the
+    # FIRST thing to ever touch this database -- a read-only connection
+    # structurally cannot run CREATE TABLE either (see core/
+    # sqlite_connection.py's own docstring: the authorizer denies it,
+    # same as any other write-type operation), so relying on "whichever
+    # store happens to run first" to create the schema would be a real,
+    # order-dependent gap. This makes the guarantee explicit and
+    # unconditional instead.
+    with connection(app.state.credentials_db_path):
+        pass
+    # Built ONCE -- see module docstring for why this must not be
+    # reconstructed per request, same reasoning as write_mediator
+    # below. Every route now goes through these instances rather than
+    # re-deriving credentials_db_path and calling a free function each
+    # time -- see core/auth/credential_store.py, core/auth/session_store.py,
+    # and core/user_directory.py's own docstrings for the full reasoning.
+    app.state.credential_store = CredentialStore(app.state.credentials_db_path)
+    app.state.session_store = SessionStore(app.state.credentials_db_path)
+    app.state.login_attempt_tracker = LoginAttemptTracker(app.state.credentials_db_path)
+    app.state.query_rate_limiter = QueryRateLimiter(app.state.credentials_db_path)
+    # A CALLABLE, not config.roles: this object survives a reload (it
+    # owns credentials.db) while the configuration it validates against
+    # is replaced. A snapshot taken here would be stale the moment
+    # anything reloaded -- see UserDirectory.__init__.
+    app.state.user_directory = UserDirectory(
+        app.state.credentials_db_path, lambda: app.state.generation.config.roles,
+    )
+    # Built ONCE -- see module docstring for why this must not be
+    # reconstructed per request. Reads its own write_log directly from
+    # mediator (see WriteMediator's own write_log property) -- nothing
+    # to pass or verify matches here; load_deployment_bundle() always
+    # constructs mediator with a real write_log, and WriteMediator's
+    # own __init__ raises a clear error if that were ever not true.
+    # STARTUP ONLY, and deliberately not part of build_generation().
+    # This recovers writes interrupted by a crash; a RELOAD must not
+    # repeat it, because the writes it recovers are already recovered
+    # and re-running it against in-flight state is a different
+    # operation with different risks.
+    # OLD REQUEST TIMINGS, DROPPED AT STARTUP.
+    #
+    # AT STARTUP AND NOWHERE ELSE, which is a real limit rather than an
+    # oversight: a server that runs for months without restarting keeps
+    # accumulating. Measured at 192 KB per 10,000 requests, so ten
+    # million requests is roughly 192 MB -- slow enough that restart
+    # frequency is a reasonable sweep interval, and bounded enough that
+    # nobody is surprised.
+    #
+    # The alternative, sweeping on every write, would put a DELETE in
+    # the path of an occasional user request to reclaim space nobody is
+    # short of. A scheduler would be a whole mechanism for the same.
+    #
+    # FAILURE HERE DOES NOT STOP THE SERVER. A metrics table that could
+    # not be pruned is a disk-space problem for later; refusing to boot
+    # over it is an outage now.
+    try:
+        dropped = app.state.request_metrics.forget_older_than(RETENTION_SECONDS)
+        if dropped:
+            logger.info(f"dropped {dropped} request metric(s) older than retention")
+    except (OSError, sqlite3.Error) as e:
+        logger.warning(f"request metrics not pruned at startup ({e})")
+
+    resume_summary = generation.write_mediator.resume_pending_writes()
+    if resume_summary["resumed"] or resume_summary["already_applied"] or resume_summary["ambiguous"]:
+        logger.info(f"resume_pending_writes() on startup: {resume_summary}")
+    if resume_summary["ambiguous"]:
+        logger.warning(
+            f"{resume_summary['ambiguous']} write(s) left ambiguous after resume -- "
+            f"see audit.log's write_resume_ambiguous entries for detail; these need manual review."
+        )
+    # NOT REBUILT BY A RELOAD, and unfixable by the callable pattern
+    # the other runtime-state holders use. A ThreadPoolExecutor's size
+    # is fixed at construction, and rebuilding it would abandon
+    # in-flight work -- so max_concurrent_requests is configuration
+    # that is unreloadable by NATURE rather than by oversight.
+    # templates/config.yaml says so where a deployer will read it.
+    app.state.executor = ThreadPoolExecutor(max_workers=config.max_concurrent_requests)
+    # LIVE UPDATES (api/live_updates.py): one bus for every open stream.
+    # Survives a reload, like the executor -- the streams outlive any
+    # one generation, and the watcher asks for the current one each poll.
+    app.state.change_bus = ChangeBus()
+    # Shares the SAME AuditLog instance mediator itself holds -- not a
+    # second, separately-constructed one that happens to point at the
+    # same file, matching the "one shared instance" discipline this
+    # whole app.state build already uses for write_log/credential_store/
+    # session_store/user_directory.
+    # A CALLABLE: this store survives a reload while each generation
+    # builds its own AuditLog. Holding an instance would stamp entries
+    # with the STARTUP generation -- see PendingWriteStore.__init__.
+    # THE TTL IS RUNTIME STATE, read once at startup and not rebuilt by
+    # a reload -- the store survives a reload deliberately, and
+    # rebuilding it to pick up a new TTL would discard every proposal
+    # waiting for a decision. A changed TTL takes effect at the next
+    # restart, which templates/config.yaml says.
+    app.state.pending_writes = PendingWriteStore(
+        ttl=timedelta(minutes=config.pending_write_ttl_minutes),
+        audit_log=lambda: app.state.generation.mediator.audit_log,
+        # PERSISTED, so a restart does not empty the approval queue.
+        # For a product whose pitch is that writes are mediated and
+        # approved, losing the queue on deploy was the worst fit
+        # between the claim and the behaviour -- and the store's own
+        # docstring said so, as a stated limitation.
+        persistence=PendingWritePersistence(
+            runtime_paths.data_dir / "pending_writes.db",
+        ),
+    )
+
+    from elysium.api.routes import router
+    # ALL real API routes live under /api -- a real, structural
+    # guarantee, not individual, case-by-case vigilance: a client-side
+    # frontend route can NEVER collide with a real backend path,
+    # because the frontend never defines one starting with /api (see
+    # ui/vite.config.js's own AI-notes for the real bug this closes,
+    # found by the user testing a bookmarked Object View URL directly
+    # -- a raw browser navigation to a path that was ALSO a real,
+    # unprefixed backend route hit the backend directly, with no auth
+    # header, instead of ever loading this app at all). Every existing
+    # frontend/backend caller already updated to match -- see that
+    # same AI-notes entry for the full list.
+    # LAST, after everything is wired: a SIGHUP arriving mid-startup
+    # would otherwise reload against a half-built app.state.
+    install_sighup_handler(app)
+
+    app.include_router(router, prefix="/api")
+
+    # THE STANDARD, VERSIONED READ SURFACE (api/v2), beside the routes
+    # above and not instead of them. Same session cookie, same CSRF
+    # check, same generation pin; its errors are problem details, and
+    # only for paths under /api/v2/.
+    from elysium.api.v2 import install_problem_handlers
+    from elysium.api.v2 import router as v2_router
+    app.include_router(v2_router, prefix="/api/v2")
+    install_problem_handlers(app)
+
+    if UI_DIST_DIR.is_dir():
+        # app.frontend() -- FastAPI's own, real, native SPA-serving
+        # mechanism (shipped 2026-06-20, FastAPI 0.138.0; confirmed
+        # directly against this project's own installed version,
+        # 0.141.1, not assumed from documentation alone). Replaces
+        # the old app.mount("/", StaticFiles(..., html=True)) "hack"
+        # this project used before -- REAL bug found by the user
+        # testing a bookmarked client-side route directly: StaticFiles
+        # (html=True) only serves index.html for an actual root/
+        # directory path, NOT for an arbitrary client-side route like
+        # /browse (confirmed directly: a fresh GET to that exact,
+        # already-shipped, uncontroversial route 404'd against a real,
+        # production-mode server -- a second, genuinely separate bug
+        # from the /api-prefix collision found in the same session).
+        # fallback="index.html" explicit, not "auto" -- this project
+        # has no 404.html and never will, no reason to depend on
+        # auto's own conditional logic for a file that doesn't exist.
+        # Only ever engages for a real browser navigation (GET/HEAD,
+        # Accept: text/html) -- a missing JS/CSS asset, or a genuine
+        # API 404 under /api, is NEVER swallowed by this fallback.
+        app.frontend("/", directory=UI_DIST_DIR, fallback="index.html")
+
+    return app
+
+
+
+def __getattr__(name: str) -> FastAPI:
+    """`elysium.api.app.app`, built the first time something asks for it.
+
+    IT WAS BUILT AT IMPORT: `app = create_app()` on the last line. So
+    importing this module -- which every integration test does, for
+    create_app -- started a whole application against the DEFAULT
+    deployment, creating credentials.db, write_log.db, metrics.db,
+    config_history.db and a mirror in the developer's data directory.
+    Measured on a fresh clone: `python -c "import elysium.api.app"` alone made
+    all five (E-08c).
+
+    NOW LAZY (PEP 562): `uvicorn elysium.api.app:app` looks the attribute up by
+    name, which lands here and builds it once; importing create_app
+    never does. Chosen over uvicorn's --factory, which would change
+    every command that starts the server -- the systemd unit, the docs,
+    and the one typed each time.
+    """
+    if name != "app":
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    built = create_app()
+    # Cached as a real module attribute, so later lookups never reach
+    # here again and every one returns the same app.
+    globals()["app"] = built
+    return built

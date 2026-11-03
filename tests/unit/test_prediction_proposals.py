@@ -3,9 +3,9 @@ be approved, and the field a score is broken down by."""
 
 import pytest
 
-from core.ontology.predicted_fields import check_group_by, prediction_of
-from core.prediction_proposals import PredictionProposalStore
-from core.predictions import refusal
+from elysium.core.ontology.predicted_fields import check_group_by, prediction_of
+from elysium.core.prediction_proposals import PredictionProposalStore
+from elysium.core.predictions import refusal
 from tests.unit.test_predictions import _types
 
 GOOD = {"skill": 0.42, "groups": [{"value": "US", "records": 80, "score": 0.9, "skill": 0.5}],

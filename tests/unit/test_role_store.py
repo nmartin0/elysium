@@ -15,7 +15,7 @@ import logging
 
 import pytest
 
-from core.role_store import RoleStore, canonical
+from elysium.core.role_store import RoleStore, canonical
 
 
 @pytest.fixture
@@ -27,7 +27,7 @@ def paths(private_deployment):
 
 
 def _generation(paths):
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     return build_generation(*paths)
 
@@ -58,7 +58,7 @@ class TestBeforeAnyEdit:
         always the same value, since one is copied from the other, so
         it would have passed whatever the digest was.
         """
-        from core.deployment_loader import CONFIG_FILENAMES, _source_digest
+        from elysium.core.deployment_loader import CONFIG_FILENAMES, _source_digest
 
         assert _generation(paths).source_digest == _source_digest(
             paths[0], CONFIG_FILENAMES,

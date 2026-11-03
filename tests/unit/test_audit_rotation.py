@@ -10,7 +10,7 @@ the kind of win that gets taken without noticing what it costs.
 
 import json
 
-from core.intermediate_layer.audit import AuditLog
+from elysium.core.access.audit import AuditLog
 
 
 def _entries(path):

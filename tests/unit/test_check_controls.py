@@ -8,7 +8,7 @@ code it can reach.
 
 import pytest
 
-from scripts.check_controls import CONTROLS, Control, apply, main
+from elysium.scripts.check_controls import CONTROLS, Control, apply, main
 
 
 def test_every_declared_break_matches_exactly_once():
@@ -21,7 +21,7 @@ def test_every_declared_break_matches_exactly_once():
     # another file still matches exactly once, and fails here only so
     # that the stale path is seen -- with the one-command fix in the
     # message.
-    from scripts.check_controls import AMBIGUOUS, MOVED, OK, RETIRED, resolve_all
+    from elysium.scripts.check_controls import AMBIGUOUS, MOVED, OK, RETIRED, resolve_all
 
     resolved = resolve_all(CONTROLS)
     moved = [f"  {c.path} -> {p[0]}  ({c.describes})" for c, s, p in resolved if s == MOVED]
@@ -50,7 +50,7 @@ def test_the_break_is_reverted_even_when_the_tests_fail(tmp_path, monkeypatch):
     # A broken file left behind would look like a bug in the code
     # rather than in this script, and would be found by somebody else,
     # later, confused.
-    from scripts import check_controls
+    from elysium.scripts import check_controls
 
     target = tmp_path / "subject.py"
     target.write_text("VALUE = 1\n")
@@ -69,7 +69,7 @@ def test_a_control_that_does_not_fire_is_reported(tmp_path, monkeypatch, capsys)
     # the break it claims or the tests do not check what they appear
     # to -- and in this project it has been the second nine times out
     # of ten.
-    from scripts import check_controls
+    from elysium.scripts import check_controls
 
     target = tmp_path / "subject.py"
     target.write_text("VALUE = 1\n")
@@ -88,7 +88,7 @@ def test_a_control_that_does_not_fire_is_reported(tmp_path, monkeypatch, capsys)
 
 
 def test_a_break_that_matches_nothing_stops_the_run(tmp_path, monkeypatch):
-    from scripts import check_controls
+    from elysium.scripts import check_controls
 
     (tmp_path / "subject.py").write_text("VALUE = 1\n")
     monkeypatch.setattr(check_controls, "ROOT", tmp_path)
@@ -112,7 +112,7 @@ def test_a_break_left_by_a_killed_run_is_put_back(tmp_path, monkeypatch, capsys)
     # run reported "the break matches 0 times".
     import json
 
-    from scripts import check_controls
+    from elysium.scripts import check_controls
 
     subject = tmp_path / "subject.py"
     subject.write_text("VALUE = 2\n")            # as the break left it
@@ -134,7 +134,7 @@ def test_the_original_is_parked_before_the_break_goes_in(tmp_path, monkeypatch):
     # the file broken with no record of what it was.
     import json
 
-    from scripts import check_controls
+    from elysium.scripts import check_controls
 
     subject = tmp_path / "subject.py"
     subject.write_text("VALUE = 1\n")
@@ -151,7 +151,7 @@ def test_the_original_is_parked_before_the_break_goes_in(tmp_path, monkeypatch):
 def test_an_unreadable_record_shouts_rather_than_carrying_on(tmp_path, monkeypatch):
     # Something is in the tree and this cannot say what. Better to
     # stop than to run a suite against code nobody meant to change.
-    from scripts import check_controls
+    from elysium.scripts import check_controls
 
     parked = tmp_path / ".controls-in-progress.json"
     parked.write_text("{not json")
@@ -170,7 +170,7 @@ def test_only_a_failed_test_counts_as_firing(code, expected):
     # Exit 4 (a test id not found) and 2 (collection broken by the
     # break) used to count as "fires" because the runner asked only
     # whether the status was non-zero.
-    from scripts.check_controls import classify
+    from elysium.scripts.check_controls import classify
 
     outcome, why = classify(code)
     assert outcome == expected
@@ -180,7 +180,7 @@ def test_only_a_failed_test_counts_as_firing(code, expected):
 def test_a_control_citing_a_missing_test_is_broken_not_firing(tmp_path, monkeypatch, capsys):
     # End to end through the real pytest: the id does not exist, pytest
     # exits 4, and the run must say so and fail.
-    from scripts import check_controls
+    from elysium.scripts import check_controls
 
     (tmp_path / "subject.py").write_text("VALUE = 1\n")
     (tmp_path / "test_subject.py").write_text("def test_real():\n    assert True\n")
@@ -211,7 +211,7 @@ def _resolves(test_id: str) -> str | None:
     import ast
     import re
 
-    from scripts.check_controls import ROOT
+    from elysium.scripts.check_controls import ROOT
 
     path, *parts = test_id.split("::")
     if not parts:
@@ -254,7 +254,7 @@ def test_the_resolver_notices_a_missing_function_class_and_file():
 def test_a_control_whose_tests_were_all_skipped_is_broken_not_silent(tmp_path, monkeypatch, capsys):
     # Exit status 0, but nothing ran: the code was not shown to be
     # noticed OR missed.
-    from scripts import check_controls
+    from elysium.scripts import check_controls
 
     (tmp_path / "subject.py").write_text("VALUE = 1\n")
     (tmp_path / "test_subject.py").write_text(
@@ -276,13 +276,14 @@ def test_a_control_whose_tests_were_all_skipped_is_broken_not_silent(tmp_path, m
 # --- content anchoring, against a small temporary tree -----------------
 
 def _tree(tmp_path, monkeypatch, files):
-    from scripts import check_controls
+    from elysium.scripts import check_controls
 
     for name, text in files.items():
         target = tmp_path / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text)
     monkeypatch.setattr(check_controls, "ROOT", tmp_path)
+    monkeypatch.setattr(check_controls, "SEARCH_ROOTS", ("core", "api"))
     monkeypatch.setattr(check_controls, "IN_PROGRESS", tmp_path / ".in-progress.json")
     return check_controls
 
@@ -369,7 +370,7 @@ def test_report_moves_prints_and_runs_nothing(tmp_path, monkeypatch, capsys):
 
 
 def test_rewrite_paths_changes_only_the_path_of_moved_controls():
-    from scripts.check_controls import rewrite_paths
+    from elysium.scripts.check_controls import rewrite_paths
 
     source = (
         "CONTROLS = [\n"
@@ -412,6 +413,7 @@ def test_rewrite_paths_option_updates_the_file_it_lives_in(tmp_path, monkeypatch
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "ROOT", tmp_path)
+    monkeypatch.setattr(module, "SEARCH_ROOTS", ("core", "api"))
     monkeypatch.setattr(module, "CONTROLS", [c for c in module.CONTROLS
                                              if c.describes == "moved one"])
 

@@ -31,10 +31,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.deployment_loader import _build_read_adapters
-from core.mirror.catalog import open_mirror_catalog
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.deployment_loader import _build_read_adapters
+from elysium.core.mirror.catalog import open_mirror_catalog
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 TYPE_CONFIG = {"storage": {"table": "customers", "id_column": "customer_id"}}
 SCHEMA = {"C": {"storage": {"silo": "p", "table": "customers",
@@ -144,7 +144,7 @@ class TestARelativeDataDirectory:
     working directory -- so `mirror_dir` is relative on every ordinary
     deployment. `Path.as_uri()` REFUSES a relative path, so patch
     408's factory raised ValueError the first time anyone ran
-    `python -m scripts.run_sync` from their own checkout.
+    `python -m elysium.scripts.run_sync` from their own checkout.
 
     EVERY TEST IN THIS FILE USED tmp_path, which is absolute. Both
     tiers passed while the shipped default was broken -- which is the
@@ -192,7 +192,7 @@ class TestNobodyOpensTheCatalogTheirOwnWay:
     def test_only_the_factory_constructs_a_catalog(self):
         root = Path(__file__).resolve().parent.parent.parent
         offenders = []
-        for directory in ("core", "api", "adapters", "scripts"):
+        for directory in ("src/elysium/core", "src/elysium/api", "src/elysium/adapters", "src/elysium/scripts"):
             for path in (root / directory).rglob("*.py"):
                 if path.name == "catalog.py" and path.parent.name == "mirror":
                     continue
@@ -201,7 +201,7 @@ class TestNobodyOpensTheCatalogTheirOwnWay:
 
         assert not offenders, (
             f"{offenders} construct SqlCatalog directly. Use "
-            f"core.mirror.catalog.open_mirror_catalog, or an S3 deployment will "
+            f"elysium.core.mirror.catalog.open_mirror_catalog, or an S3 deployment will "
             f"sync and then be unreadable (PA001-F5).")
 
 
@@ -214,7 +214,7 @@ class TestEverySyncObjectIsGivenTheStorage:
     exactly the "cannot build a generation" this item was about."""
 
     def test_the_loaders_last_synced_time_reads_an_object_store_mirror(self, tmp_path, s3):
-        from core.deployment_loader import _mirror_last_synced_at
+        from elysium.core.deployment_loader import _mirror_last_synced_at
 
         source = _source(tmp_path, "s")
         sync = IcebergMirrorSync(tmp_path / "mirror",
@@ -229,7 +229,7 @@ class TestEverySyncObjectIsGivenTheStorage:
 
         root = Path(__file__).resolve().parent.parent.parent
         missing = []
-        for directory in ("core", "api", "adapters", "scripts"):
+        for directory in ("src/elysium/core", "src/elysium/api", "src/elysium/adapters", "src/elysium/scripts"):
             for path in (root / directory).rglob("*.py"):
                 for node in ast.walk(ast.parse(path.read_text())):
                     if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)

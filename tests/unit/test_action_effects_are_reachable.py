@@ -24,7 +24,7 @@ every other shape.
 
 import pytest
 
-from core.ontology.action_types import _validate_effects_are_reachable
+from elysium.core.ontology.action_types import _validate_effects_are_reachable
 
 OBJECT_TYPES = {
     "Account": {"fields": {"owner": {"type": "link", "target": "Customer"}}},

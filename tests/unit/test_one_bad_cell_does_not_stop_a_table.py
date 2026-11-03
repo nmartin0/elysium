@@ -39,8 +39,8 @@ pipeline to make a point it was never told about is not an upgrade.
 
 import pytest
 
-from core.deployment_loader import _resolve_type_mismatch_policy
-from core.mirror.transform import transform_rows
+from elysium.core.deployment_loader import _resolve_type_mismatch_policy
+from elysium.core.mirror.transform import transform_rows
 
 COLUMNS = ["id", "n"]
 TYPES = {"id": "string", "n": "integer"}
@@ -131,7 +131,7 @@ class TestItIsActuallyWired:
     def test_the_sync_takes_the_policy(self):
         import inspect
 
-        from core.mirror.iceberg_sync import IcebergMirrorSync
+        from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
         parameters = inspect.signature(IcebergMirrorSync.__init__).parameters
 
@@ -140,14 +140,14 @@ class TestItIsActuallyWired:
     def test_the_real_sync_script_passes_it(self):
         from pathlib import Path
 
-        source = Path("scripts/run_sync.py").read_text()
+        source = Path("src/elysium/scripts/run_sync.py").read_text()
 
         assert "on_type_mismatch=config.on_type_mismatch" in source
 
     def test_the_quarantine_branch_writes_rows_rather_than_raising(self):
         from pathlib import Path
 
-        source = Path("core/mirror/iceberg_sync.py").read_text()
+        source = Path("src/elysium/core/mirror/iceberg_sync.py").read_text()
         i = source.index('self._on_type_mismatch == "quarantine"')
         # TO THE NEXT BLOCK, not a fixed number of characters: a fixed
         # window broke the day the branch grew to name each row's cell.
@@ -166,8 +166,8 @@ class TestTheQuarantineRecordNamesTheCellThatFailed:
     def test_each_row_names_its_own_failing_column(self, tmp_path):
         import sqlite3
 
-        from adapters.sqlite_adapter import SQLiteReadAdapter
-        from core.mirror.iceberg_sync import IcebergMirrorSync
+        from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+        from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
         source = tmp_path / "s.db"
         conn = sqlite3.connect(source)
@@ -204,8 +204,8 @@ def test_a_refusal_names_the_setting_that_would_have_saved_the_table(tmp_path):
     refused -- by design -- but the message now says how to stop that."""
     import sqlite3
 
-    from adapters.sqlite_adapter import SQLiteReadAdapter
-    from core.mirror.iceberg_sync import IcebergMirrorSync
+    from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+    from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
     source = tmp_path / "s.db"
     conn = sqlite3.connect(source)

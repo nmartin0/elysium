@@ -31,9 +31,9 @@ from types import SimpleNamespace
 
 import pytest
 
-import scripts.run_sync as run_sync
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
+import elysium.scripts.run_sync as run_sync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 TYPES = {
     "Alpha": {"id_field": "id", "security": {"field": "region"},

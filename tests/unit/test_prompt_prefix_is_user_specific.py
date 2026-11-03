@@ -23,7 +23,7 @@ these attacks need.
 Until now that was a comment. A comment does not fail a build.
 """
 
-from core.llm.agent_step_prompt import _build_system_prompt
+from elysium.core.llm.agent_step_prompt import _build_system_prompt
 
 # The most divergent case there is: no object type, field or id in
 # common. Whatever these two share is shared by EVERY pair of users.

@@ -7,7 +7,7 @@ while anyone is listening, and hints "updated" for the ones that moved.
 import asyncio
 from types import SimpleNamespace
 
-from api.live_updates import ChangeBus, watch_publications
+from elysium.api.live_updates import ChangeBus, watch_publications
 
 
 class _Catalog:

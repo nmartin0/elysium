@@ -26,7 +26,7 @@ import decimal
 
 import pytest
 
-from core.functions.registry import get_enabled_functions
+from elysium.core.functions.registry import get_enabled_functions
 
 
 @pytest.fixture
@@ -172,7 +172,7 @@ def test_a_non_string_expression_is_refused(calculator):
 
 
 def test_an_over_long_expression_is_refused_before_parsing(calculator):
-    from functions.calculator import MAX_EXPRESSION_LENGTH
+    from elysium.functions.calculator import MAX_EXPRESSION_LENGTH
 
     with pytest.raises(ValueError, match="over the limit"):
         calculator.run(expression=" + ".join(["1"] * MAX_EXPRESSION_LENGTH))

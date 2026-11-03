@@ -1,4 +1,4 @@
-"""scripts/compare_models.py: D1 and D2 as one table (19 October).
+"""src/elysium/scripts/compare_models.py: D1 and D2 as one table (19 October).
 
 Driven end to end on scripted models, since no model runs here: each
 named model is a different scripted speed, and the table must say which
@@ -10,9 +10,9 @@ import dataclasses
 import io
 import json
 
-import scripts.compare_models as compare
-import scripts.llm_bench as bench
-from core.request_context import TokenUsage
+import elysium.scripts.compare_models as compare
+import elysium.scripts.llm_bench as bench
+from elysium.core.request_context import TokenUsage
 from tests.unit.test_llm_bench import Scripted  # noqa: F401 - the shared scripted model
 
 SPEED = {"fast-model": 6.0, "slow-model": 1.5}
@@ -53,7 +53,7 @@ class _Answer:
 
 
 def _compare(monkeypatch, synced_deployment, argv):
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     answers = []
 

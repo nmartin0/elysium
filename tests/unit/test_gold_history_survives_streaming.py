@@ -32,9 +32,9 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.gold import build_gold
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.gold import build_gold
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 TYPE = {
     "id_field": "id",
@@ -138,7 +138,7 @@ class TestTheFirstPublication:
         is never computed. What record_publication RECEIVES is the
         observable difference -- None with the guard, a materialised
         list without it."""
-        import core.mirror.gold_history as history_module
+        import elysium.core.mirror.gold_history as history_module
 
         received = []
         real = history_module.record_publication

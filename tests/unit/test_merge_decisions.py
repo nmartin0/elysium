@@ -14,8 +14,8 @@ stops being a promise here and becomes a property of the code.
 
 import pytest
 
-from core.identity_decisions import APPROVED, PENDING, REJECTED, MergeDecisionStore
-from core.mirror.identity import resolve
+from elysium.core.identity_decisions import APPROVED, PENDING, REJECTED, MergeDecisionStore
+from elysium.core.mirror.identity import resolve
 
 TYPE = {
     "id_field": "customer_id",

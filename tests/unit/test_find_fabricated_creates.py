@@ -8,8 +8,8 @@ carries its id field. Each marks a delete that recovery lost.
 import subprocess
 import sys
 
-from core.ontology.write_log import WriteLogWriter
-from scripts.find_fabricated_creates import find_fabricated_creates
+from elysium.core.ontology.write_log import WriteLogWriter
+from elysium.scripts.find_fabricated_creates import find_fabricated_creates
 
 
 def _log(tmp_path):
@@ -44,7 +44,7 @@ def test_a_missing_log_is_reported_not_created(tmp_path):
     """OPENING A MISSING SQLITE PATH CREATES IT -- a trap recorded in this
     project. mode=ro and an existence check mean it does not."""
     result = subprocess.run(
-        [sys.executable, "-m", "scripts.find_fabricated_creates", "--data-dir", str(tmp_path)],
+        [sys.executable, "-m", "elysium.scripts.find_fabricated_creates", "--data-dir", str(tmp_path)],
         capture_output=True, text=True,
     )
 
@@ -55,7 +55,7 @@ def test_a_missing_log_is_reported_not_created(tmp_path):
 def test_it_exits_non_zero_when_it_finds_one(tmp_path):
     _log(tmp_path)
     result = subprocess.run(
-        [sys.executable, "-m", "scripts.find_fabricated_creates", "--data-dir", str(tmp_path)],
+        [sys.executable, "-m", "elysium.scripts.find_fabricated_creates", "--data-dir", str(tmp_path)],
         capture_output=True, text=True,
     )
 

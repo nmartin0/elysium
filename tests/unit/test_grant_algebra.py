@@ -14,7 +14,7 @@ path added next year passes every existing test and fails these.
 
 import inspect
 
-from core.ontology import write_mediator as module
+from elysium.core.ontology import write_mediator as module
 
 
 class TestEveryWriteGoesThroughOnePlace:
@@ -58,7 +58,7 @@ class TestAuthorityIsNeverStored:
         so a decision taken when it was proposed would be a decision
         taken under rules that may no longer exist.
         """
-        import api.routes as routes
+        import elysium.api.routes as routes
 
         source = inspect.getsource(routes)
 

@@ -20,9 +20,9 @@ from decimal import Decimal
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.lineage import (
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.lineage import (
     BRONZE_SNAPSHOT_PROPERTY,
     LINEAGE_COLUMNS,
     row_hash,

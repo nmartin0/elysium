@@ -15,8 +15,8 @@ both callers use it.
 
 import pytest
 
-from core.ontology.link_types import is_forward_link, is_reverse_link
-from core.ontology.object_type_validation import validate_object_types
+from elysium.core.ontology.link_types import is_forward_link, is_reverse_link
+from elysium.core.ontology.object_type_validation import validate_object_types
 
 FORWARD = {"type": "link", "target": "Customer", "cardinality": "one"}
 REVERSE = {"type": "link", "target": "Transaction", "cardinality": "many", "via_table": "transactions"}

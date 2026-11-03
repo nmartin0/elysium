@@ -24,14 +24,14 @@ from pathlib import Path
 
 import pytest
 
-import core.trigger_windows
-from core.declared_triggers import load_declared_triggers
-from core.pending_write_persistence import PendingWritePersistence
-from core.pending_write_store import PendingWriteStore
-from core.timers import TimerStore
-from core.trigger_runs import run_triggers
-from core.trigger_states import SCHEDULE_KIND, State, TriggerStateStore, arm_declared
-from core.user_directory import UserDirectory
+import elysium.core.trigger_windows
+from elysium.core.declared_triggers import load_declared_triggers
+from elysium.core.pending_write_persistence import PendingWritePersistence
+from elysium.core.pending_write_store import PendingWriteStore
+from elysium.core.timers import TimerStore
+from elysium.core.trigger_runs import run_triggers
+from elysium.core.trigger_states import SCHEDULE_KIND, State, TriggerStateStore, arm_declared
+from elysium.core.user_directory import UserDirectory
 
 REFUNDS = {"name": "Refunds", "object_type": "Transaction",
            "conditions": [{"field": "category", "operator": "equals", "value": "refund"}], "above": 0}
@@ -41,7 +41,7 @@ ACTION = {"type": "RecategorizeTransactions", "parameter": "transaction_ids",
 
 @pytest.fixture
 def generation(synced_deployment):
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     paths = synced_deployment
     return build_generation(paths.config_dir, paths.data_dir, paths.log_dir)
@@ -108,7 +108,7 @@ class TestItRuns:
 
     def _world(self, tmp_path, generation, synced_deployment, trigger, monkeypatch):
         clock = {"at": datetime(2026, 7, 20, 9, tzinfo=UTC)}
-        monkeypatch.setattr(core.trigger_windows, "now", lambda: clock["at"])
+        monkeypatch.setattr(elysium.core.trigger_windows, "now", lambda: clock["at"])
         data_dir = Path(synced_deployment.data_dir)
         UserDirectory(data_dir / "credentials.db", generation.config.roles).create_user(
             "ops-bot", "pw-not-used", "us-west", "debug")

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from core.auth.database import connection
-from core.auth.query_rate_limiter import (
+from elysium.core.auth.database import connection
+from elysium.core.auth.query_rate_limiter import (
     MAX_QUERIES_PER_WINDOW,
     WINDOW,
     QueryRateLimiter,

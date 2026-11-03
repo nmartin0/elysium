@@ -1,6 +1,6 @@
 """The object detail route names fields served from the write log (R67b)."""
 
-from core.ontology.write_log import WriteLogWriter
+from elysium.core.ontology.write_log import WriteLogWriter
 from tests.conftest import mediator_of
 
 

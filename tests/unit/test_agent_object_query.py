@@ -35,11 +35,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from core.agent.agentic_loop import AgentLoop, StopReason, _step_signature
-from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.link_types import expand_link_types
-from core.ontology.mediator import DataMediator
+from elysium.core.access.auth import UserRecord
+from elysium.core.agent.agentic_loop import AgentLoop, StopReason, _step_signature
+from elysium.core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from elysium.core.ontology.link_types import expand_link_types
+from elysium.core.ontology.mediator import DataMediator
 
 FIXTURES = "tests/integration/fixtures/"
 WEST = UserRecord(user_id="a", security_value="us-west", role_name="customer_service")
@@ -181,7 +181,7 @@ def test_search_around_signatures_distinguish_the_link_field():
 def test_both_new_steps_are_advertised_in_the_prompt():
     # A capability the model is never told about might as well not
     # exist -- the dispatch and the prompt must stay in step.
-    source = open("core/llm/agent_step_prompt.py").read()
+    source = open("src/elysium/core/llm/agent_step_prompt.py").read()
 
     assert "aggregate_object" in source
     assert "search_around" in source
@@ -192,8 +192,8 @@ def test_both_new_steps_are_advertised_in_the_prompt():
 
 @pytest.fixture
 def write_loop(tmp_path):
-    from core.ontology.write_log import WriteLogWriter
-    from core.ontology.write_mediator import WriteMediator
+    from elysium.core.ontology.write_log import WriteLogWriter
+    from elysium.core.ontology.write_mediator import WriteMediator
 
     schema = yaml.safe_load(open(FIXTURES + "ontology_schema.yaml"))
     policy = yaml.safe_load(open(FIXTURES + "policy.yaml"))
@@ -299,7 +299,7 @@ def test_the_model_cannot_request_auto_execution(write_loop):
 
 
 def test_a_non_boolean_auto_execute_is_rejected_at_load():
-    from core.ontology.action_types import _validate_auto_execute
+    from elysium.core.ontology.action_types import _validate_auto_execute
 
     with pytest.raises(ValueError, match="must be true or false"):
         _validate_auto_execute("Bad", {"auto_execute": "yes"})
@@ -324,7 +324,7 @@ def test_a_delete_goes_from_the_agents_prompt_through_to_applied(write_loop):
     is the opposite of what I assumed at the time. The validation
     added since now rejects that form outright.
     """
-    from core.llm.agent_step_prompt import _describe_actions
+    from elysium.core.llm.agent_step_prompt import _describe_actions
 
     loop, mediator = write_loop()
     delete_action = {
@@ -391,7 +391,7 @@ def test_a_delete_action_type_reaches_the_agents_prompt(write_loop):
     whose parameter resolution and MAC chain are set up for it, and is
     recorded in the roadmap (consumed) rather than half-built here.
     """
-    from core.llm.agent_step_prompt import _describe_actions
+    from elysium.core.llm.agent_step_prompt import _describe_actions
 
     delete_action = {
         "affected_object_types": ["Account"],
@@ -496,8 +496,8 @@ def test_an_unreachable_backend_raises_rather_than_finishing():
     # THE bug. Finishing here hands the user a confident-looking answer
     # assembled from zero data, with nothing to indicate the model was
     # never reached.
-    from core.llm.agent_step_prompt import next_step
-    from core.llm.interface import LLMUnavailable
+    from elysium.core.llm.agent_step_prompt import next_step
+    from elysium.core.llm.interface import LLMUnavailable
 
     class UnreachableClient:
         max_concurrent_requests = 1
@@ -513,7 +513,7 @@ def test_an_unparseable_answer_still_finishes():
     # The other half, and it must keep working: the model DID answer,
     # there is gathered context, and the best available answer beats an
     # error.
-    from core.llm.agent_step_prompt import next_step
+    from elysium.core.llm.agent_step_prompt import next_step
 
     class GarbageClient:
         max_concurrent_requests = 1
@@ -539,9 +539,9 @@ def test_both_adapters_raise_the_same_type_for_an_unreachable_backend():
     RuntimeError and leaving the word behind, after which it still
     passed.
     """
-    import adapters.claude_agent_sdk_adapter as claude_module
-    from adapters.ollama_adapter import OllamaAdapter
-    from core.llm.interface import LLMUnavailable
+    import elysium.adapters.claude_agent_sdk_adapter as claude_module
+    from elysium.adapters.ollama_adapter import OllamaAdapter
+    from elysium.core.llm.interface import LLMUnavailable
 
     # Ollama: a base_url nothing is listening on.
     ollama = OllamaAdapter("m", {"base_url": "http://127.0.0.1:9/api/chat",
@@ -573,7 +573,7 @@ def test_a_wider_get_object_is_not_treated_as_a_duplicate():
     run for persisting. The roadmap listed it as a gap; it is the
     correct behaviour, and this pins it.
     """
-    from core.agent.agentic_loop import _step_signature
+    from elysium.core.agent.agentic_loop import _step_signature
 
     narrow = _step_signature(
         {"step": "get_field", "object_type": "Customer",
@@ -593,7 +593,7 @@ def test_a_wider_get_object_is_not_treated_as_a_duplicate():
 def test_an_identical_get_object_is_still_caught():
     # The distinction has to hold: repeating the SAME request is what
     # duplicate detection exists for.
-    from core.agent.agentic_loop import _step_signature
+    from elysium.core.agent.agentic_loop import _step_signature
 
     step = {"step": "get_object", "object_type": "Customer",
             "object_id": "cust_001", "field_names": ["name", "email"]}
@@ -649,14 +649,14 @@ def test_every_declared_step_kind_has_a_handler(loop_and_mediator):
     from pathlib import Path
 
     loop, _ = loop_and_mediator
-    prompt = Path("core/llm/agent_step_prompt.py").read_text()
+    prompt = Path("src/elysium/core/llm/agent_step_prompt.py").read_text()
     offered = set(re.findall(r'"step": "([a-z_]+)"', prompt))
 
     # `finish` ends the loop rather than executing, so it is handled by
     # run() and not by the dispatch table. The source offers the
     # switched steps too (core/llm/agent_features.py), so the table is
     # read with every switch on.
-    from core.llm.agent_features import AgentFeatures
+    from elysium.core.llm.agent_features import AgentFeatures
 
     loop.features = AgentFeatures(filter_operators=True, search_result_cap=1,
                                   free_text_search=True, remember_from_query=True,

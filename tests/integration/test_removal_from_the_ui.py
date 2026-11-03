@@ -24,8 +24,8 @@ import yaml
 from fastapi.testclient import TestClient
 
 import tests.integration.conftest as integration_conftest
-from core.ontology.bindings import split_bindings
-from core.ontology.write_log import WriteLogWriter
+from elysium.core.ontology.bindings import split_bindings
+from elysium.core.ontology.write_log import WriteLogWriter
 from tests.conftest import read_audit_log, with_roles
 from tests.integration import test_editing_config_from_the_ui as editing
 from tests.integration.test_api import _csrf_headers, _login
@@ -179,7 +179,7 @@ class TestRemoving:
         _deprecate(remover)
         before = (config_dir / FILE).read_text()
         broken = before.replace("  Customer:\n", "  Customer:\n    not_a_known_key_at_all: [\n", 1)
-        monkeypatch.setattr("core.config_editing.apply_removal", lambda *given: (broken, None))
+        monkeypatch.setattr("elysium.core.config_editing.apply_removal", lambda *given: (broken, None))
 
         response = _remove(remover)
 
@@ -190,7 +190,7 @@ class TestRemoving:
             self, remover, config_dir, monkeypatch):
         _deprecate(remover)
         before = (config_dir / FILE).read_text()
-        monkeypatch.setattr("api.routes._access_impact", lambda request, replacements: (None, {"widens": True}))
+        monkeypatch.setattr("elysium.api.routes._access_impact", lambda request, replacements: (None, {"widens": True}))
 
         response = _remove(remover)
 
@@ -401,7 +401,7 @@ class TestNothingIsLeakedToSomeoneWhoCannotDiscoverTheName:
     def test_a_removal_blocked_only_by_what_they_cannot_discover_still_cannot_go(self):
         # Nothing visible blocks it; the count alone must refuse, or the
         # filter would turn a block into a way round it.
-        from api.routes import _blocked_answer, _Removal
+        from elysium.api.routes import _blocked_answer, _Removal
 
         plan = _Removal(files={}, deprecated=True, remove_after=None, blockers=[], hidden=2, stored_data=[],
                         what="Account.currency", audited_as="Account.currency")
@@ -450,10 +450,10 @@ class TestWhenOnlyWhatTheyCannotSeeBlocksIt:
 
     @pytest.fixture
     def only_hidden(self, remover, monkeypatch):
-        from core.ontology.used_by import Referrer
+        from elysium.core.ontology.used_by import Referrer
 
         _deprecate(remover)
-        monkeypatch.setattr("core.ontology.removal.field_blockers", lambda *given: [
+        monkeypatch.setattr("elysium.core.ontology.removal.field_blockers", lambda *given: [
             Referrer("security", "Elsewhere row rule", "borrows its rule through here", ("Nowhere",))])
         return remover
 
@@ -482,7 +482,7 @@ class TestWhenTheReloadFails:
         def failing(*given, **asked):
             raise RuntimeError("Role 'secret_role': grant 'read:Hidden.thing' references an unknown field")
 
-        monkeypatch.setattr("api.routes.reload_generation", failing)
+        monkeypatch.setattr("elysium.api.routes.reload_generation", failing)
 
         response = _remove(remover)
 
@@ -513,7 +513,7 @@ class TestTheTwoFilesGoTogetherOrNotAtAll:
                 raise OSError(28, "No space left on device")
             return real(source, target, *given, **asked)
 
-        monkeypatch.setattr("api.routes.os.replace", replace)
+        monkeypatch.setattr("elysium.api.routes.os.replace", replace)
         return attempted
 
     def _both_unchanged(self, config_dir, before):
@@ -535,7 +535,7 @@ class TestTheTwoFilesGoTogetherOrNotAtAll:
     def test_the_state_between_the_two_renames_is_one_the_loader_accepts(self, two_files, config_dir, tmp_path):
         """Bindings renamed, ontology not yet (a crash right there) loads;
         the other order would be 'binds field(s) ... does not declare'."""
-        from core.deployment_loader import load_deployment
+        from elysium.core.deployment_loader import load_deployment
 
         _deprecate(two_files)
         old_ontology = (config_dir / FILE).read_text()
@@ -608,7 +608,7 @@ class TestTheTwoFilesGoTogetherOrNotAtAll:
         def failing(*given, **asked):
             raise RuntimeError("would not build")
 
-        monkeypatch.setattr("api.routes.reload_generation", failing)
+        monkeypatch.setattr("elysium.api.routes.reload_generation", failing)
         # Renames: bindings 1, ontology 1 (apply); the undo goes ontology first
         # (its 2nd rename fails), and the bindings must still be put back.
         self._failing(monkeypatch, config_dir, {FILE: {2}})
@@ -765,7 +765,7 @@ class TestRemovingAType:
         _ready_to_remove_tag(tag_remover)
         before = (config_dir / FILE).read_text()
         broken = before.replace("  Customer:\n", "  Customer:\n    not_a_known_key_at_all: [\n", 1)
-        monkeypatch.setattr("core.config_editing.apply_removal", lambda *given: (broken, None))
+        monkeypatch.setattr("elysium.core.config_editing.apply_removal", lambda *given: (broken, None))
 
         response = _remove(tag_remover, TAG)
 
@@ -776,7 +776,7 @@ class TestRemovingAType:
             self, tag_remover, config_dir, monkeypatch):
         _ready_to_remove_tag(tag_remover)
         before = (config_dir / FILE).read_text()
-        monkeypatch.setattr("api.routes._access_impact", lambda request, replacements: (None, {"widens": True}))
+        monkeypatch.setattr("elysium.api.routes._access_impact", lambda request, replacements: (None, {"widens": True}))
 
         response = _remove(tag_remover, TAG)
 
@@ -790,7 +790,7 @@ class TestRemovingAType:
         def failing(*given, **asked):
             raise RuntimeError("Role 'secret_role' grants read:Hidden.thing")
 
-        monkeypatch.setattr("api.routes.reload_generation", failing)
+        monkeypatch.setattr("elysium.api.routes.reload_generation", failing)
 
         response = _remove(tag_two_files, TAG)
 
@@ -941,7 +941,7 @@ class TestATypeIsRemovedWithItsBindingOrNotAtAll:
         either file renamed alone the loader refuses. Ontology-first says the
         bindings bind a type it does not declare -- finish by deleting that
         entry; bindings-first says the type has no binding -- harder to mend."""
-        from core.deployment_loader import load_deployment
+        from elysium.core.deployment_loader import load_deployment
 
         _ready_to_remove_tag(tag_two_files)
         old_ontology, old_bindings = (config_dir / FILE).read_text(), (config_dir / BINDINGS).read_text()
@@ -991,7 +991,7 @@ def lake(tmp_path, monkeypatch, request):
     """A deployment with its source databases built and its gold published,
     Transaction.currency (nothing names it once its grants are out) the
     field that will go. `ingest_undeclared_columns` comes from the test."""
-    from core.deployment_loader import RuntimePaths
+    from elysium.core.deployment_loader import RuntimePaths
 
     monkeypatch.setenv("ELYSIUM_COOKIE_SECURE", "false")
     config = tmp_path / "config"
@@ -1014,14 +1014,14 @@ def lake(tmp_path, monkeypatch, request):
 
 
 def _sync(paths):
-    from scripts.run_sync import run_sync
+    from elysium.scripts.run_sync import run_sync
 
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         assert run_sync(paths) == 0
 
 
 def _tables(paths):
-    from core.mirror.catalog import open_mirror_catalog
+    from elysium.core.mirror.catalog import open_mirror_catalog
 
     catalog = open_mirror_catalog(paths.data_dir / "mirror")
     return {layer: catalog.load_table(name) for layer, name in (
@@ -1038,7 +1038,7 @@ def _remove_currency_and_sync_again(paths):
     """Syncs, publishes gold twice (a source row changes between), removes
     Transaction.currency through the routes, syncs again. Returns the tables
     as they were before the removal and as they are after."""
-    from api.app import create_app
+    from elysium.api.app import create_app
 
     _sync(paths)
     with sqlite3.connect(paths.data_dir / "dev_fixtures" / "mediator.db") as source:
@@ -1099,7 +1099,7 @@ class TestWhatHappensToStoredData:
         assert set(_currency(after["bronze"], snapshots["bronze"][-1])) == {"USD", "EUR"}
 
     def test_a_silver_rebuild_drops_the_column_and_the_sync_after_it_succeeds(self, lake):
-        from scripts.run_sync import run_sync
+        from elysium.scripts.run_sync import run_sync
 
         _remove_currency_and_sync_again(lake)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -1108,7 +1108,7 @@ class TestWhatHappensToStoredData:
         assert "currency" not in [f.name for f in _tables(lake)["silver"].schema().fields]
 
     def test_nothing_serves_it_from_the_moment_it_applies_before_any_sync(self, lake):
-        from api.app import create_app
+        from elysium.api.app import create_app
 
         _sync(lake)
         client = TestClient(create_app(lake))
@@ -1146,7 +1146,7 @@ def tag_lake(lake):
 
 
 def _tag_layers(paths):
-    from core.mirror.catalog import open_mirror_catalog
+    from elysium.core.mirror.catalog import open_mirror_catalog
 
     catalog = open_mirror_catalog(paths.data_dir / "mirror")
     found = {}
@@ -1159,7 +1159,7 @@ def _tag_layers(paths):
 
 
 def _remove_tag_and_sync_again(paths):
-    from api.app import create_app
+    from elysium.api.app import create_app
 
     _sync(paths)
     with sqlite3.connect(paths.data_dir / "dev_fixtures" / "mediator.db") as source:
@@ -1194,7 +1194,7 @@ class TestWhatHappensToStoredDataWhenATypeGoes:
         assert after["history"].scan().to_arrow().num_rows == before["history"].scan().to_arrow().num_rows > 0
 
     def test_a_rebuild_of_its_silver_table_does_nothing(self, tag_lake):
-        from scripts.run_sync import run_sync
+        from elysium.scripts.run_sync import run_sync
 
         _before, after, _client = _remove_tag_and_sync_again(tag_lake)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -1207,7 +1207,7 @@ class TestWhatHappensToStoredDataWhenATypeGoes:
         with sqlite3.connect(tag_lake.data_dir / "dev_fixtures" / "mediator.db") as source:
             assert source.execute("SELECT count(*) FROM tags").fetchone()[0] == 2
 
-        from core.mirror.catalog import open_mirror_catalog
+        from elysium.core.mirror.catalog import open_mirror_catalog
 
         catalog = open_mirror_catalog(tag_lake.data_dir / "mirror")
         before_snapshots = len(catalog.load_table("gold.Transaction").snapshots())

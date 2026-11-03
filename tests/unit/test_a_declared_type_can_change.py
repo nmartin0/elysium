@@ -42,8 +42,8 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import DeclaredTypeChanged, IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import DeclaredTypeChanged, IcebergMirrorSync
 
 
 @pytest.fixture
@@ -131,7 +131,7 @@ class TestGoldFollowsSilver:
     followed our own printed instruction was left half-fixed."""
 
     def test_gold_rebuilds_when_a_declared_type_changes(self, mirror):
-        from core.mirror.gold import build_gold
+        from elysium.core.mirror.gold import build_gold
 
         type_def = {
             "id_field": "id", "security": {"field": "note"},
@@ -156,7 +156,7 @@ class TestGoldFollowsSilver:
     def test_gold_does_not_rebuild_when_nothing_changed(self, mirror):
         """The other half: rebuilding gold every sync would discard a
         type's publication tags and its history for no reason."""
-        from core.mirror.gold import build_gold
+        from elysium.core.mirror.gold import build_gold
 
         type_def = {
             "id_field": "id", "security": {"field": "note"},

@@ -25,8 +25,8 @@ TODAY = datetime.datetime.now(datetime.UTC).date()
 
 @pytest.fixture(scope="module")
 def paths(tmp_path_factory):
-    from core.deployment_loader import RuntimePaths
-    from scripts.run_sync import run_sync
+    from elysium.core.deployment_loader import RuntimePaths
+    from elysium.scripts.run_sync import run_sync
 
     root = tmp_path_factory.mktemp("forecast")
     config = root / "config"
@@ -65,7 +65,7 @@ def paths(tmp_path_factory):
 
 
 def _client(paths, user, region, monkeypatch):
-    from api.app import create_app
+    from elysium.api.app import create_app
 
     monkeypatch.setenv("ELYSIUM_COOKIE_SECURE", "false")
     client = TestClient(create_app(paths))
@@ -125,7 +125,7 @@ def test_only_a_count_or_a_sum(paths, monkeypatch):
 def test_a_cut_off_set_is_not_forecast(paths, monkeypatch):
     """Every period counted from a cut-off set is a floor, and a forecast
     of floors is a guess about where the cut fell."""
-    import core.ontology.mediator as mediator_module
+    import elysium.core.ontology.mediator as mediator_module
 
     monkeypatch.setattr(mediator_module, "MAX_SEARCH_SCAN", 50)
     body = _forecast(_client(paths, "ops", "us-west", monkeypatch)).json()

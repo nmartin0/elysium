@@ -35,12 +35,12 @@ import sqlite3
 
 import pytest
 
-from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
-from core.filters import as_equality_conditions
-from core.intermediate_layer.audit import AuditLog
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.mediator import DataMediator
-from core.ontology.write_log import WriteLogWriter
+from elysium.core.access.audit import AuditLog
+from elysium.core.access.auth import UserRecord
+from elysium.core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from elysium.core.filters import as_equality_conditions
+from elysium.core.ontology.mediator import DataMediator
+from elysium.core.ontology.write_log import WriteLogWriter
 
 # Customer spans two storages IN THE SAME SILO. Its security field
 # lives in the primary one; `region` ALSO exists in the second table,
@@ -212,7 +212,7 @@ class TestOnGoldStorageIsEnough:
     storage would show up as a refused pushdown, not as nothing."""
 
     def _gold_mediator(self):
-        from core.ontology.gold_view import build_gold_view
+        from elysium.core.ontology.gold_view import build_gold_view
 
         view, excluded = build_gold_view(SCHEMA)
         assert not excluded
@@ -230,7 +230,7 @@ class TestOnGoldStorageIsEnough:
         assert mediator._pushable_security_column("Customer", searched_adapter, searched) == "region"
 
     def test_every_type_is_its_own_table(self):
-        from core.ontology.gold_view import build_gold_view
+        from elysium.core.ontology.gold_view import build_gold_view
 
         two = {**SCHEMA, "Order": {**SCHEMA["Customer"], "additional_storage": {},
                                    "fields": {"customer_id": {"type": "data"},

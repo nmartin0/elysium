@@ -33,7 +33,7 @@ import json
 
 import pytest
 
-from core.mirror.manifest import describes_a_different_deployment
+from elysium.core.mirror.manifest import describes_a_different_deployment
 
 
 class TestWhatIsReported:
@@ -102,7 +102,7 @@ class TestItNeverRefuses:
         and read by nothing."""
         from pathlib import Path
 
-        source = Path("core/mirror/integrity.py").read_text()
+        source = Path("src/elysium/core/mirror/integrity.py").read_text()
 
         assert "_check_the_lake_manifest(" in source
         assert "describes_a_different_deployment" in source
@@ -118,7 +118,7 @@ class TestItNeverRefuses:
         such method."""
         from pathlib import Path
 
-        source = Path("core/mirror/integrity.py").read_text()
+        source = Path("src/elysium/core/mirror/integrity.py").read_text()
         body = source[source.index("def _check_the_lake_manifest("):]
         body = body[:body.index("\ndef ", 10)]
 
@@ -136,7 +136,7 @@ class TestFindingTheNewestManifest:
     def test_by_generation_not_by_name_or_time(self, tmp_path, names, expected):
         """`manifest-10` sorts before `manifest-9` as a string, and a
         restored lake can carry any timestamps at all."""
-        from core.mirror.manifest import MANIFEST_PREFIX
+        from elysium.core.mirror.manifest import MANIFEST_PREFIX
 
         directory = tmp_path / MANIFEST_PREFIX
         directory.mkdir()

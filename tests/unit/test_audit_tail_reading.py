@@ -28,8 +28,8 @@ from pathlib import Path
 
 import pytest
 
-from core.intermediate_layer import audit as audit_module
-from core.intermediate_layer.audit import AuditLog
+from elysium.core.access import audit as audit_module
+from elysium.core.access.audit import AuditLog
 
 
 class _CountingHandle:

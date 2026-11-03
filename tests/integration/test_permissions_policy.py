@@ -5,7 +5,7 @@ Every response denies the powerful browser features nothing here uses
 
 import pytest
 
-from api.app import PERMISSIONS_POLICY
+from elysium.api.app import PERMISSIONS_POLICY
 
 DENIED = ["camera", "microphone", "geolocation", "payment", "usb"]
 

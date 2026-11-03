@@ -24,10 +24,10 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror import integrity as integrity_module
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.integrity import check_mirror
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror import integrity as integrity_module
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.integrity import check_mirror
 
 COLUMNS = ["id", "a"]
 TYPES = {"id": "string", "a": "string"}
@@ -158,7 +158,7 @@ def test_gold_and_its_history_on_disk_are_not_reported_as_unknown(mirror):
     bronze as the known set, so every gold and changelog table on disk
     read as "the catalog does not list it" -- on a healthy deployment,
     every run. Two publications, so gold has a changelog table too."""
-    from core.mirror.gold import build_gold
+    from elysium.core.mirror.gold import build_gold
 
     gold_type = {**SCHEMA["Thing"], "storage": {"silo": "s", "table": "t", "id_column": "id"}}
     for _ in range(2):
@@ -227,7 +227,7 @@ class TestAMissingCatalog:
         import subprocess
 
         return subprocess.run(
-            ["python", "-m", "scripts.check_mirror", "--mirror", str(mirror_dir)],
+            ["python", "-m", "elysium.scripts.check_mirror", "--mirror", str(mirror_dir)],
             capture_output=True, text=True, check=False,
         )
 
@@ -284,7 +284,7 @@ class TestACountMismatchNamesItsDirection:
 
     @staticmethod
     def _note_for(silver, bronze, monkeypatch):
-        from core.mirror import integrity
+        from elysium.core.mirror import integrity
 
         counts = {"s.t": silver, "bronze_s.t": bronze}
         monkeypatch.setattr(
@@ -334,7 +334,7 @@ class TestRowCountsComeFromMetadata:
     """
 
     def test_the_count_matches_a_scan(self, mirror):
-        from core.mirror.integrity import _row_count
+        from elysium.core.mirror.integrity import _row_count
 
         table = mirror._catalog.load_table("s.t")
         scanned = table.scan().to_arrow().num_rows
@@ -345,7 +345,7 @@ class TestRowCountsComeFromMetadata:
         # The property, not just the answer: a table whose summary says
         # something different must be believed, or this is still
         # scanning and the test proves nothing.
-        from core.mirror.integrity import _row_count
+        from elysium.core.mirror.integrity import _row_count
 
         table = mirror._catalog.load_table("s.t")
         assert table.current_snapshot().summary.get("total-records") is not None
@@ -376,6 +376,6 @@ class TestRowCountsComeFromMetadata:
     def test_an_unreadable_table_still_reports_nothing(self, mirror):
         # THE CONTROL on the fallback path. Whatever went wrong, "this
         # table could not be read" is the true statement.
-        from core.mirror.integrity import _row_count
+        from elysium.core.mirror.integrity import _row_count
 
         assert _row_count(mirror._catalog, "s.no_such_table") is None

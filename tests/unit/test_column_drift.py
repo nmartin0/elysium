@@ -15,8 +15,8 @@ import sqlite3
 
 import pyarrow as pa
 
-from core.mirror.profiles import MIN_ROWS, ProfileStore, drift_between, profile_table
-from scripts.run_sync import run_sync
+from elysium.core.mirror.profiles import MIN_ROWS, ProfileStore, drift_between, profile_table
+from elysium.scripts.run_sync import run_sync
 
 
 def _profile(**columns):
@@ -90,7 +90,7 @@ class TestARealSync:
         customer: each value is a valid string, the column is broken.
         Four fixture customers are below MIN_ROWS, so the floor is
         lowered for this test -- the rule, not the floor, is under test."""
-        monkeypatch.setattr("core.mirror.profiles.MIN_ROWS", 2)
+        monkeypatch.setattr("elysium.core.mirror.profiles.MIN_ROWS", 2)
         _sync(synced_deployment)                       # a known baseline
         with sqlite3.connect(synced_deployment.data_dir / "dev_fixtures" / "mediator.db") as conn:
             conn.execute("UPDATE customers SET name = 'UNKNOWN'")
@@ -103,7 +103,7 @@ class TestARealSync:
     def test_a_sync_that_published_nothing_new_profiles_nothing(self, synced_deployment,
                                                                 monkeypatch):
         """THE CONTROL: no new publication, nothing to compare."""
-        monkeypatch.setattr("core.mirror.profiles.MIN_ROWS", 2)
+        monkeypatch.setattr("elysium.core.mirror.profiles.MIN_ROWS", 2)
         _sync(synced_deployment)
 
         assert "DRIFT" not in _sync(synced_deployment)

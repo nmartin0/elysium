@@ -40,7 +40,7 @@ from pathlib import Path
 
 import pytest
 
-from core.role_store import RoleStore, RoleStoreUnreadable
+from elysium.core.role_store import RoleStore, RoleStoreUnreadable
 
 
 @pytest.fixture

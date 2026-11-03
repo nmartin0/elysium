@@ -1,0 +1,10645 @@
+"""
+routes.py  (the actual HTTP endpoints)
+
+/login is the ONE route with no auth dependency -- everything else
+requires a valid session, resolved by api/auth_dependency.py's
+get_current_user().
+
+/login's failure is DELIBERATELY as generic as verify_credential()
+itself already is -- "invalid username or password" regardless of
+whether the username exists at all, same uniform-denial reasoning used
+everywhere else in this project, just applied at the HTTP boundary
+instead of inside core/.
+
+/users (creating a new user) is gated by authorize(current_user, roles,
+"manage:users") -- the SAME authorize() function every other RBAC
+check in this project uses, not a separate "is_root" special case.
+core/user_directory.create_user() itself performs no permission check
+of its own; the route is responsible for checking BEFORE calling it,
+same "gatekeeping stays at the boundary" pattern used throughout.
+
+/query runs on OUR OWN explicit executor (app.state.executor, see
+api/app.py's docstring) via asyncio.run_in_executor(), not Starlette's
+own internal thread pool. It has THREE possible outcomes:
+  - 200: a real answer, synthesized from what was gathered. If
+    AgentLoop hit its max_hops limit before finishing (result.
+    hit_max_hops), synthesize_insight() is told explicitly -- the
+    answer itself will say so, rather than reading like a complete
+    result when the search may genuinely have been cut short. See
+    core/llm/synthesis_prompt.py's possibly_incomplete parameter.
+  - 202 Accepted: the AI proposed a write. Nothing has happened to the
+    data yet -- the response is a REFERENCE (a write_id), which
+    /writes/{write_id}/confirm resolves later, in a genuinely separate
+    request. 202 is the correct, standard status for exactly this
+    shape ("request understood, not yet acted on, here's where to
+    check"). See core/agent/agentic_loop.py's module docstring for why
+    AgentLoop itself was changed to never confirm/execute a write on
+    its own -- a synchronous pause for human approval mid-request has
+    no meaning for a remote HTTP caller.
+  - Cancelled early because the client disconnected mid-query: logged
+    (log_query_cancelled), then raises a 499 (a widely-used, if
+    unofficial, convention for "client closed the request") -- this
+    response is never actually delivered to anyone (that's WHY it was
+    cancelled), but the route still needs to return something
+    well-formed rather than silently fall into logic that assumes the
+    job completed normally. Disconnection is detected by a small
+    concurrent watcher task polling request.is_disconnected() and
+    setting a threading.Event AgentLoop.run() checks between hops --
+    this does NOT stop the underlying background thread instantly
+    (Python cannot safely force-kill a running thread from outside;
+    confirmed against CPython's own issue tracker), only skips any
+    FURTHER hops once the watcher notices -- bounded by the executor's
+    fixed size and AgentLoop's own max_hops either way, so an abandoned
+    job can't run unboundedly even in the worst case.
+
+RE-VERIFICATION: a query can take a while (several LLM round-trips).
+If the user's role or MAC value changes WHILE it's running (e.g. a
+genuine access revocation), the results just gathered were computed
+under permissions that are no longer current. Applies to BOTH the
+"synthesize an answer" path AND the "return a pending write" path --
+stale permissions shouldn't be acted on either way. Re-checks the
+user's CURRENT record (a fast, direct database lookup, not offloaded
+to the executor) against the UserRecord the job actually ran with,
+using UserRecord's own dataclass equality rather than hand-rolled
+field comparisons. Any mismatch refuses the whole response -- 409
+Conflict, distinct from 401 (never authenticated) or 403 (never had
+permission at all).
+
+/logout-all revokes EVERY session for the calling user (self-service --
+a lost device, not sure which token is compromised). /users/{username}/
+logout-all does the same for an admin, targeting anyone -- gated by
+manage:users, same as every other account-management action below.
+Both call the SAME SessionStore.invalidate_all_sessions();
+deliberately revokes ALL sessions including whichever one made the
+request, not "all except this one" -- simpler, and matches the
+project's "if in doubt, everyone re-authenticates" discipline.
+
+/users/{username}/visible-schema is an admin debugging view --
+DataMediator.visible_schema() already computes exactly "what can this
+user see," this just exposes it for a target user instead of only ever
+being used internally for the caller's own request. Lets an admin
+verify a role actually grants what they think it grants, without
+impersonating anyone.
+
+/users/{username}/disable, /enable, and DELETE /users/{username} are
+account lifecycle actions, all gated by manage:users. Disabling
+invalidates existing sessions AND is checked fresh on every subsequent
+request (see api/auth_dependency.py) -- it takes effect immediately,
+not just against future logins. /login itself ALSO checks
+is_user_disabled(), after the credential check, never before -- see
+that route's own comment for why the ordering matters (a timing side
+channel otherwise). Deletion clears the credential, the directory
+entry, and every session in one atomic operation (elysium.core.user_directory.
+delete_user()) -- a deleted account can never be left holding a
+still-valid token. Deliberately NOT guarded against an admin disabling
+or deleting their own account, or the last remaining admin -- a real,
+intentionally out-of-scope simplification, not an oversight.
+
+/writes/{write_id}/confirm is the SEPARATE, later request that actually
+approves or rejects a proposed write. Looks the write up by ID AND the
+confirming user's identity together (elysium.core.pending_write_store.
+PendingWriteStore.pop() is uniform-denial -- wrong user, unknown ID,
+and expired ID all produce the identical 404, never a distinguishing
+message). Also runs on app.state.executor now, same as /query --
+confirm_and_execute() stopped being "a single, already-atomic SQL
+statement" once an update could span multiple storages (see
+core/ontology/write_log.py's own module docstring): it can now be a
+log INSERT, several sequential cross-file write_fields() calls under a
+lock, and a log UPDATE, real I/O that could otherwise block the event
+loop for meaningfully longer than intended.
+"""
+
+import asyncio
+import base64
+import contextlib
+import dataclasses
+import functools
+import json
+import logging
+import os
+import threading
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from pydantic import BaseModel, Field, field_validator
+
+from elysium.api.apps import visible_apps_for
+from elysium.api.auth_dependency import get_current_user
+from elysium.api.generation_dependency import get_generation, latest_generation
+from elysium.api.reload import ReloadInProgress, reload_generation
+from elysium.core.access.auth import UserRecord
+from elysium.core.access.rbac import authorize
+from elysium.core.addons import notification_kind
+from elysium.core.agent.agentic_loop import AgentLoop
+from elysium.core.artifact_store import note_kind
+from elysium.core.auth.auth_cookies import (
+    clear_csrf_cookie,
+    clear_session_cookie,
+    generate_csrf_token,
+    session_cookie_name,
+    set_csrf_cookie,
+    set_session_cookie,
+)
+from elysium.core.auth.limits import MAX_LOGIN_PASSWORD_LENGTH, MAX_USERNAME_LENGTH
+from elysium.core.deployment_loader import build_live_read_adapters
+from elysium.core.export import filename_for, to_csv
+from elysium.core.filters import FieldFilter, FilterError, as_equality_conditions, parse_filters
+from elysium.core.identity_decisions import APPROVED, REJECTED, MergeDecisionStore
+from elysium.core.lake_names import BRONZE_PREFIX
+from elysium.core.llm.synthesis_prompt import synthesize_insight
+from elysium.core.masked_review import agreement_pattern, masked_comparison, withheld_fields
+from elysium.core.mirror.expectation_warnings import ExpectationWarnings
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.integrity import _row_count, check_mirror
+from elysium.core.mirror.object_state import REBUILDING_OUTCOME, UNAVAILABLE, hold_reason, table_state, type_state
+from elysium.core.mirror.quarantine_report import quarantine_for
+from elysium.core.mirror.source_record import agreement_shown
+from elysium.core.mirror.sync_attempts import SyncAttempts
+from elysium.core.mirror.sync_targets import resolve_sync_targets
+from elysium.core.modules import (
+    CONTRACT_VERSION,
+    ModuleError,
+    arranged,
+    arrangement,
+    bundle_file,
+    declared_permissions,
+    feed_for,
+    module_grant,
+    offered_to,
+    permissions_by_module,
+    render_modules_yaml,
+)
+from elysium.core.ontology.action_types import automation_needs_another_approver
+from elysium.core.ontology.decimal_text import exact_decimals
+from elysium.core.ontology.mediator import SearchOutcome
+from elysium.core.ontology.schema import get_display_name, get_field_column, id_sort_key, sort_key
+from elysium.core.ontology.submission_criteria import SubmissionCriteriaViolation
+from elysium.core.ontology.write_mediator import MAX_BULK_OBJECTS, WriteMediator
+from elysium.core.pending_write_store import PendingWriteStore
+from elysium.core.request_context import RequestContext
+from elysium.core.source_health import source_failures
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+def _generation(request: Request):
+    """The configuration this request is pinned to.
+
+    Pinned ONCE per request by api/generation_dependency.py and cached
+    on request.state; this reads that pin rather than app.state, so a
+    reload landing mid-request cannot make two reads in one request
+    disagree. Falls back to app.state for the small number of internal
+    callers that construct a Request without going through the
+    dependency -- notably the test client's own direct calls.
+    """
+    pinned = getattr(request.state, "generation", None)
+    if pinned is not None:
+        return pinned
+    return get_generation(request)
+
+
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class ChangeOwnPasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str
+
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    mac_value: str | None = None
+    role_name: str
+
+
+class QueryAbout(BaseModel):
+    """THE SET ON SCREEN (DEV_UI 5.4): what Browse was showing when the
+    question was asked -- the type, its conditions in the filter
+    vocabulary, and the text search. Said to the agent in words; see
+    core/agent/set_context.py."""
+
+    object_type: str
+    conditions: list[dict] = []
+    text: str = ""
+
+
+class QueryRequest(BaseModel):
+    query: str
+    #: Asked from Browse about the set on screen, not typed into Query.
+    about: QueryAbout | None = None
+
+
+class AnswerDoor(BaseModel):
+    """Where an answer leads (core/agent/answer_context.py): an object's
+    page, or a set Browse can show exactly."""
+    kind: str
+    object_type: str
+    label: str
+    object_id: str | None = None
+    # Browse's own {field, values, mode}, only when it says the set exactly.
+    filters: list[dict] | None = None
+
+
+class QueryResponse(BaseModel):
+    answer: str
+    # HOW IT WAS ANSWERED, in the ontology's words, from the agent's own
+    # steps -- the question read back as what was done to answer it.
+    read_back: list[str] = []
+    # Where the answer leads, and complete questions to ask next. Never
+    # a thread: each follow-on is a question someone could have typed.
+    doors: list[AnswerDoor] = []
+    follow_ons: list[str] = []
+    # The request this answer was built by, so the caller can ask what
+    # was read to produce it. Returning it is what makes the trace
+    # reachable -- an id the browser never sees is one nobody can look
+    # up, and the endpoint would be dead surface.
+    request_id: str
+
+
+# --- Response models -------------------------------------------------
+#
+# Every route below declares a real `response_model`. This is NOT
+# primarily about typing or documentation -- FastAPI's own OpenAPI
+# generation is deliberately disabled in this project (see api/app.py,
+# where docs_url/openapi_url are set to None after the full API surface
+# was found readable without authentication). The reason is narrower
+# and more important: `response_model` makes FastAPI FILTER the
+# response, silently dropping any field the declared model does not
+# name, before it ever reaches the caller.
+#
+# That converts "we remembered to filter" into "it is structurally
+# impossible not to." This project has hit the un-filtered failure FOUR
+# times: visible_schema()'s own storage config, visible_action_types()'
+# sub_writes, visible-apps' gating_permission -- each fixed by hand --
+# and then, found while writing these very models, per-field internals
+# (storage/column/via_table/via_column, plus a data_type key added
+# earlier in this same effort) still leaking one level down inside
+# GET /me/visible-schema's own field dicts. A hand-written filter fixed
+# the first three; nothing prevented the fourth. These models do.
+#
+# The real cost, stated plainly because it is easy to get wrong:
+# filtering is SILENT. A model that omits a field the frontend actually
+# uses breaks the UI with no error anywhere. Every model below was
+# built against responses captured from a real, running server, and
+# the field-level models specifically against a real grep of what the
+# frontend genuinely reads -- not against what the code appeared to
+# return.
+
+
+class ProfileResponse(BaseModel):
+    username: str
+    role_name: str | None
+    mac_value: str | None
+    # TRUE AFTER AN ADMINISTRATOR'S RESET, until the owner chooses their
+    # own. The UI reads it and asks for a new password before anything.
+    must_change_password: bool = False
+
+
+class TypeFreshnessResponse(BaseModel):
+    """Whether one object type is as current as it is meant to be.
+
+    THE VERDICT AND THE WINDOW IT WAS JUDGED AGAINST, together.
+    DEV_UI.md 16.6: "a freshness number without a threshold is
+    trivia" -- a reader told "published 30 hours ago" cannot tell
+    whether that is normal, and one told "expected within 26" can.
+
+    FIVE STATES, not three. `never` and `exempt` are not points on the
+    same scale as the other three: a type that has never published is
+    not stale but ABSENT, and its reads fail outright; a type that is
+    exempt is not fresh but UNJUDGED.
+    """
+
+    state: str
+    published_at: str | None = None
+    warn_after_hours: float | None = None
+    fail_after_hours: float | None = None
+
+
+class DataFreshnessResponse(BaseModel):
+    source: str
+    last_synced_at: str | None
+    # WHICH LAYER, AND WHEN IT WAS PUBLISHED (GOLD-3). Present only
+    # when some object types are read from gold, because that is the
+    # clock a reader actually experiences: silver records when the
+    # SOURCE WAS READ, gold when a PUBLICATION WAS MADE, and a source
+    # read hourly but published daily is a day stale to the person
+    # looking at it.
+    published_at: dict[str, str] | None = None
+    # PER TYPE, AGAINST ITS OWN DECLARED WINDOW (DEV_UI.md 16.6).
+    # `published_at` above says WHEN; this says whether that is late,
+    # which is a question only the deployment's declared sync interval
+    # can answer. Point 7 of that decision: "shown, not only alerted
+    # on" -- the window is what makes the timestamp mean something
+    # before anything fires.
+    freshness: dict[str, TypeFreshnessResponse] | None = None
+
+
+class VisibleAppResponse(BaseModel):
+    name: str
+    path: str
+    #: WHAT A PERSON IS WORKING ON, so the rail can group rather than
+    #: list. DEV_UI.md 12: the rail "is not an app switcher. It is a
+    #: SUBJECT switcher".
+    #:
+    #: DECLARED HERE OR IT DISAPPEARS. Pydantic drops what the model
+    #: does not name, so api/apps.py grew a `subject` on every entry,
+    #: the rail was reordered by it, and the headings rendered nowhere
+    #: -- the field never left the server. That is the fourth time this
+    #: exact omission has happened, which is why there is a test
+    #: forcing every new config field into the config response; this
+    #: model has no such test.
+    subject: str | None = None
+
+
+class SchemaFieldResponse(BaseModel):
+    # target/cardinality serialize as explicit nulls for a plain data
+    # field. That is deliberate, and the lesser of two real evils:
+    # Pydantic's exclude_none is all-or-nothing per RESPONSE, with no
+    # per-model option (verified directly, not assumed), and applying
+    # it here would also drop the enclosing type's own title_field
+    # null -- which is a genuine SIGNAL, not absence. A null
+    # title_field means "this type has one, but you cannot read it",
+    # and ui/'s own format.ts documents depending on exactly that
+    # distinction. Two extra nulls on a data field are harmless noise;
+    # silently changing what a null title_field means is not. The
+    # existing test suite caught this when the exclusion was applied
+    # too broadly.
+    # `type` tells a link from a data field; `target` and `cardinality`
+    # resolve a link. storage, column, via_table and via_column stay
+    # OUT -- they are physical layout with no legitimate reason to
+    # reach a browser, and were genuinely leaking before this model
+    # existed.
+    #
+    # data_type WAS grouped with them and should not have been. It is
+    # SEMANTIC, not physical: "number" says nothing about where the
+    # column lives, and it is precisely what the filter vocabulary
+    # validates against. Without it a browser cannot tell which
+    # operators a field accepts, so the filter bar offered `equals`
+    # for everything -- more restrictive than the server, which allows
+    # any operator on a field with no declared type.
+    type: str
+    # Whether this field's VALUE may be read. False is the middle rung:
+    # the caller holds discover:{Type}.{field} and not read:, so they
+    # may know the field exists and not what it holds, and a UI names
+    # it while withholding the value.
+    #
+    # Defaulted to True so a response model without the key behaves as
+    # every pre-ladder deployment did.
+    readable: bool = True
+    # Declared by the ontology, absent when it says nothing. A response
+    # model that did not name it would strip it silently -- which is
+    # exactly how `readable` shipped broken.
+    decimal_places: int | None = None
+    data_type: str | None = None
+    #: R37: how a derived field is computed, e.g. "multiply(quantity,
+    #: unit_price)". None for a stored field.
+    derived: str | None = None
+    #: R41/R38: an enriched field's value kind, e.g. "inferred from
+    #: subject" -- chosen by approved rules a model wrote. None for a
+    #: recorded value. The UI marks every value of such a field.
+    inferred: str | None = None
+    target: str | None = None
+    cardinality: str | None = None
+    # The relationship this link field belongs to. Both ends of one
+    # relationship carry the SAME link_type, and it is the only thing
+    # joining them -- the API expands link types into per-type fields,
+    # so without it a client cannot tell that Customer.transactions and
+    # Transaction.customer_id are two ends of one link rather than two
+    # unrelated fields. The schema browser's Link types view is built
+    # on exactly this.
+    #
+    # Not internal config: it is the relationship's declared name, the
+    # same one an ontology author wrote. The storage details beside it
+    # -- via_table, via_column, via_target_column -- stay filtered out.
+    link_type: str | None = None
+    # Always present -- core/ontology/schema.py's humanize() supplies a
+    # readable fallback when none is declared, so a UI never has to
+    # decide what to render for an unlabelled field.
+    display_name: str
+    description: str | None = None
+    # UI hints, always present with a default. "hidden" tells an
+    # application not to SHOW this field; it does not stop anyone
+    # reading it -- field-level RBAC is the only thing that does.
+    visibility: str = "normal"
+    status: str = "active"
+    #: Why it is deprecated and what replaces it (core/ontology/deprecation.py);
+    #: None when it is not, or when the file gave no reason.
+    deprecation: "DeprecationResponse | None" = None
+    #: A link that took its status from a type: which one.
+    status_inherited_from: str | None = None
+    #: What the field's VALUES are -- `pii`, `financial` (R12). Labels,
+    #: never grants; always a list here, though the ontology may write
+    #: one label bare.
+    classification: list[str] = []
+
+    @field_validator("classification", mode="before")
+    @classmethod
+    def _one_label_is_a_list(cls, value):
+        return [value] if isinstance(value, str) else (value or [])
+
+
+class DeprecationResponse(BaseModel):
+    reason: str | None = None
+    replaced_by: str | None = None
+    remove_after: str | None = None
+
+
+class VisibleObjectTypeResponse(BaseModel):
+    fields: dict[str, SchemaFieldResponse]
+    # Whether this type may be SEARCHED, as opposed to merely known
+    # about. False is the middle rung: the caller holds discover:{Type}
+    # and not read:{Type}, so a search returns nothing and a UI should
+    # say so rather than render "no matches" -- a claim about the data
+    # when the truth is about their access.
+    #
+    # Defaulted, because a response model without it SILENTLY STRIPS
+    # the key FastAPI is not told about. That is how this was missed:
+    # the mediator was correct, every mediator-level test passed, and
+    # the flag never survived serialisation.
+    readable: bool = True
+    id_field: str | None
+    title_field: str | None
+    # Matching the precedent's own object type metadata (displayName,
+    # pluralDisplayName, description), in this project's snake_case.
+    display_name: str
+    plural_display_name: str
+    description: str | None = None
+    icon: str | None = None
+    color: str | None = None
+    status: str = "active"
+    deprecation: DeprecationResponse | None = None
+    # A label for filtering and browsing a large ontology. Purely
+    # organisational -- it groups nothing structurally.
+    group: str | None = None
+    # SEARCH BY MEANING (R45): whether THIS person may rank this type by
+    # meaning -- declared, and every embedded field readable. Defaulted
+    # for the reason `readable` is: an undeclared key is stripped.
+    searchable_by_meaning: bool = False
+
+
+class ActionParameterResponse(BaseModel):
+    # Mirrors SchemaFieldResponse's own reasoning for action parameters
+    # -- ActionForm.tsx reads `type` (to pick an input control and to
+    # spot an object_reference), `object_type`, `required`, and
+    # `default_to_current_object`.
+    type: str
+    object_type: str | None = None
+    required: bool | None = None
+    default_to_current_object: bool | None = None
+    # A parameter is what a person is asked to fill in. Without these
+    # a form can only label it "new_from_balance".
+    display_name: str | None = None
+    description: str | None = None
+
+
+class VisibleActionTypeResponse(BaseModel):
+    affected_object_types: list[str]
+    parameters: dict[str, ActionParameterResponse]
+    executable: bool
+    # DECLARED HERE OR IT NEVER ARRIVES. The route set it and this
+    # model silently dropped it -- so the Watch dialog would have
+    # received undefined, matched nothing against `false`, and offered
+    # every action. Every frontend test passed regardless, because
+    # they mock the API; an integration test found it.
+    automatable: bool
+    # WHETHER WHAT AN AUTOMATION PROPOSES MUST BE APPROVED BY SOMEONE
+    # OTHER THAN ITS OWNER (decided 16 October: each action decides).
+    automation_needs_another_approver: bool = False
+    #: Bulk actions only: how many objects one proposal may name.
+    max_objects: int | None = None
+
+
+class UserSummaryResponse(BaseModel):
+    username: str
+    mac_value: str | None
+    role_name: str | None
+    disabled: bool
+
+
+class CreateUserResponse(BaseModel):
+    status: str
+    username: str
+
+
+class MergeFieldResponse(BaseModel):
+    """One field of a proposed merge, as the reviewer may see it.
+
+    `left` and `right` are OPTIONAL AND ABSENT when the caller may not
+    read that field -- not null, not masked, absent. The literature on
+    masked clerical review is explicit that the reviewing facility
+    "should only have access to those plaintext attributes that are
+    displayed", so a value the reviewer cannot see is never put in the
+    response at all. `response_model_exclude_none` would turn a None
+    into an absent key, which looks the same and is not: the value
+    would still have been serialised into this process, logged on an
+    error, and held in whatever cached it.
+    """
+
+    field: str
+    verdict: str
+    left: str | None = None
+    right: str | None = None
+    # WHETHER THE VALUE WAS WITHHELD, which absence alone cannot say:
+    # a readable field that is null on both sides is also absent, and
+    # a reviewer told they judged it blind would be told something
+    # untrue. Carries no part of the value.
+    readable: bool = True
+
+
+class MergeProposalResponse(BaseModel):
+    """A proposed merge awaiting somebody's judgement."""
+
+    proposal_id: str
+    object_type: str
+    left_id: str
+    right_id: str
+    proposed_at: str
+    decision: str
+    decided_by: str | None = None
+    #: The agreement pattern -- what the reviewer actually decides on.
+    #: FUSION_AND_IDENTITY.md: "the reviewer's decision is made on the
+    #: agreement PATTERN, not the score". The score is deliberately NOT
+    #: here: a number invites deference to the matcher, which is the
+    #: thing a human review exists to prevent.
+    pattern: str
+    fields: list[MergeFieldResponse]
+    #: Named so the reviewer knows the comparison was wider than what
+    #: they can see, rather than believing they saw all of it.
+    withheld: list[str]
+    #: AT OR ABOVE THE TYPE'S `auto_propose_above` (WIRED-3, decided by
+    #: the owner 14 Oct: pre-select it). A FLAG, NEVER THE SCORE, for the
+    #: reason `pattern` says: a number invites deference. The screen
+    #: ticks these for one bulk approval; a person still presses it.
+    high_confidence: bool = False
+    #: WHICH RULE TICKED IT (R57): "declared" -- at or above
+    #: auto_propose_above -- or "calibrated" -- below it, but selected
+    #: against reviewers' rejections at the type's false_merge_rate.
+    #: None when not pre-selected. `high_confidence` is true exactly
+    #: when this is set, so an older screen still ticks the same pairs.
+    preselected_by: str | None = None
+    #: THE TYPE'S CALIBRATION, the same on every proposal of a type:
+    #: {"status": "calibrated" | "uncalibrated", "false_merge_rate": r}.
+    #: NO COUNTS: the rejections behind it span every compartment, and
+    #: how many there are would describe pairs this reviewer cannot see.
+    #: scripts/evaluate_matching.py --decisions prints them, server-side.
+    calibration: dict | None = None
+    #: WHAT PRODUCED IT (R62): matcher, version, declared weights and the
+    #: settings in force -- so a decision can still be explained after
+    #: the settings change. Never the score, for the reason above.
+    provenance: dict | None = None
+    #: WHAT APPROVING IT WOULD JOIN (R58), present only when that is more
+    #: than this pair: approving A-B while B-C stands approved makes A, B
+    #: and C one entity. The records this reviewer may read, by the name
+    #: the proposal uses; `group_hidden` counts the rest, unnamed.
+    group: list[str] | None = None
+    group_hidden: int | None = None
+
+
+class MergeDecisionRequest(BaseModel):
+    decision: str
+    note: str | None = None
+    #: THE GROUP THE REVIEWER WAS SHOWN (R58), required to approve a
+    #: proposal whose `group` is present: exactly that list. Anything
+    #: else -- absent, or a group that has grown since -- is refused with
+    #: the group as it now stands.
+    confirm_group: list[str] | None = None
+
+
+class MatchingIdsResponse(BaseModel):
+    """Ids only, deliberately. A caller asking "what would select-all
+    select" needs identity and nothing else, and returning whole
+    objects would make an already-large response larger for no use."""
+
+    object_ids: list[str]
+
+
+class SearchResponse(BaseModel):
+    results: list[dict[str, Any]]
+    total_matches: int
+    # THE ID THAT MAKES THE TRACE REACHABLE. Every access decision made
+    # while serving this request carries it, and
+    # GET /requests/{id}/trace reads them back -- but only if the
+    # caller knows the id. Query already returns its own; Browse
+    # recorded a trace nobody could ask for.
+    request_id: str | None = None
+    # Present only when there are more results -- see the route.
+    next_page_token: str | None = None
+    # THE SEARCH READ ITS CEILING AND STOPPED. It does NOT mean
+    # "there is more for you": where MAC could not be pushed into
+    # the query, the ceiling bounds a SCAN whose survivors are
+    # filtered afterwards, so the rows beyond it might all have
+    # been invisible anyway. The UI must say "we stopped looking",
+    # never "there is more".
+    scan_truncated: bool = False
+
+
+class ObjectDetailResponse(BaseModel):
+    id: str
+    fields: dict[str, Any]
+    #: Fields whose value comes from an approved write the copy has not
+    #: caught up with: "pending" (still being applied to the source) or
+    #: "unsynced" (applied, not yet mirrored). Absent is the ordinary
+    #: case. See DataMediator.overlaid_fields (R67b).
+    overlaid: dict[str, str] = {}
+    # See SearchResponse: the trace is recorded either way, and this is
+    # what lets a caller ask for it.
+    request_id: str | None = None
+
+
+class ConfirmWriteResponse(BaseModel):
+    # object_ids is genuinely OPTIONAL, not defensive typing: this route
+    # returns two real shapes. An APPROVED write returns
+    # {"status": "written", "object_ids": [...]}; a REJECTED one returns
+    # {"status": "rejected"} with no ids at all, because nothing was
+    # written and there are no ids to report. Requiring it here made
+    # every rejection a 500 -- caught by the existing test suite, which
+    # is exactly the kind of behavior change response_model can
+    # otherwise introduce silently.
+    status: str
+    object_ids: list[Any] | None = None
+
+
+class ObjectSetQueryRequest(BaseModel):
+    """Criteria selecting the object set an operation runs over.
+
+    Mirrors the precedent's own aggregate API, where a `query` field "can be
+    used to select which objects to aggregate" -- the set is chosen
+    first, then the operation applies to it. An empty criteria dict
+    means every object of the type the caller can see, which is a
+    legitimate and common request rather than an error.
+    """
+
+    criteria: dict[str, Any] = {}
+
+    # The full vocabulary, as a list of conditions. Present alongside
+    # `criteria` rather than replacing it because they are not the same
+    # request: `criteria` is equality on each key and cannot express
+    # "region is us-west OR us-east", which is what selecting two
+    # values on a chart means.
+    #
+    # A caller sends ONE of them. Sending both is rejected rather than
+    # merged -- merging would need a rule for what happens when they
+    # disagree about the same field, and inventing one silently is how
+    # a filter ends up meaning something nobody asked for.
+    conditions: list[dict[str, Any]] | None = None
+
+    # A FROZEN SET TO NARROW TO, by id. Expanded by the route, not
+    # here, because only the route knows who is asking and a frozen set
+    # belongs to its owner. ANDed with the conditions above -- filtering
+    # within a frozen set is the ordinary case, not an error.
+    frozen_set: str | None = None
+
+    def as_conditions(self) -> list:
+        """The filter this request asks for, however it was expressed.
+
+        Field names are NOT validated here -- the mediator checks them
+        against the caller's own visible schema, so a field they cannot
+        read stays indistinguishable from one that does not exist. This
+        only turns the wire form into the internal one.
+        """
+        if self.conditions is not None and self.criteria:
+            raise ValueError(
+                "Send either criteria or conditions, not both -- they are "
+                "different requests and merging them would have to guess."
+            )
+        if self.conditions is not None:
+            return parse_filters(self.conditions)
+        return as_equality_conditions(self.criteria)
+
+
+class TextSetQueryRequest(ObjectSetQueryRequest):
+    """A set described the way Browse describes it: text AND conditions.
+
+    THE TEXT WAS MISSING FROM EVERY COUNT AND AGGREGATE. The table runs
+    the search box through search_object_free_text; the charts and
+    facets sent conditions only, so "Transaction · 81" for the search
+    "refund" sat beside a donut of all five categories. A subclass
+    rather than a field on ObjectSetQueryRequest, because the export
+    already takes its text as a query parameter and two places to put
+    one query would need a rule for when they disagree.
+    """
+
+    q: str = ""
+
+
+class AggregateMeasure(BaseModel):
+    """One thing to compute per group, after the precedent's aggregation item
+    ({type, field, name}). `field` is required for every aggregate except
+    count, which aggregates the set itself rather than a property."""
+
+    #: Yours to choose, unique in the request, and a plain identifier
+    #: (lower-case letters, digits, underscores): the answer is an object
+    #: keyed by it, and a key that looks like an integer is reordered by
+    #: JavaScript.
+    name: str
+    aggregate: str
+    field: str | None = None
+
+
+class AggregateRequest(TextSetQueryRequest):
+    # Named to match the precedent's own vocabulary: an aggregation with an
+    # optional groupBy, one or more measures to compute per group, all
+    # from ONE read of the set.
+    measures: list[AggregateMeasure]
+    group_by: str | None = None
+    #: day | week | month: group a DATE `group_by` by the period each
+    #: value falls in (core/periods.py). Each group is the period's first
+    #: day, ISO 8601; empty periods are 0 for a count or a sum.
+    period: str | None = None
+    #: Or by a fixed length, an ISO 8601 duration -- PT15M, PT1H, P3D --
+    #: as the precedent's aggregate groups by one. Each group is a bucket's
+    #: start, ISO 8601, with its offset when the field is an instant.
+    duration: str | None = None
+    #: An IANA zone, such as Europe/London, whose clock the period or the
+    #: duration is counted on. UTC when absent.
+    time_zone: str | None = None
+
+
+class SearchAroundRequest(ObjectSetQueryRequest):
+    link_field: str
+
+
+class CountResponse(BaseModel):
+    count: int
+    # THE COUNT IS A FLOOR, NOT A TOTAL, when this is set. count_objects
+    # is built on search_object, so it inherits the MAX_SEARCH_SCAN
+    # ceiling: on a `via_field` type the scan budget is spent on
+    # candidates from every compartment, and the caller's own rows can
+    # be cut off with the rest. See SearchResponse for the wording rule
+    # -- "we stopped counting", never "there are more for you".
+    scan_truncated: bool = False
+
+
+class AggregateRow(BaseModel):
+    #: {group_by: value}, the value as it is (a number stays a number, a
+    #: bucket is its ISO 8601 start); {} when no group_by was asked, so
+    #: the whole set is one row. Null groups are not rows, as in the precedent.
+    group: dict[str, Any]
+    #: {measure name: value}. None for an average, minimum, maximum, first
+    #: or last of nothing; 0 for a count or sum of nothing.
+    metrics: dict[str, Any]
+
+
+class AggregateResponse(BaseModel):
+    #: A LIST, because a series has an order: a JSON object is reordered
+    #: by JavaScript when its keys look like integers, which a year or a
+    #: status code does.
+    rows: list[AggregateRow]
+    # SEE CountResponse. It matters more here: a truncated search shows
+    # a short LIST, which looks short, while a truncated aggregate
+    # shows a confident NUMBER -- nothing about a bar labelled 3,000
+    # says it should have said 4,000.
+    scan_truncated: bool = False
+
+
+class SearchAroundResponse(BaseModel):
+    ids: list[Any]
+    total: int
+    # SEE SearchResponse: the traversal stopped, which does NOT mean
+    # there is more for this caller to see. Phase 0.2 capped the
+    # SOURCE side of a search-around and left the fan-out unbounded --
+    # ten thousand sources holding a hundred links each is a million
+    # targets, and one audit line per target.
+    scan_truncated: bool = False
+
+
+class LinkCountResponse(BaseModel):
+    target: str
+    count: int
+    cardinality: str | None = None
+
+
+class LinkCountsResponse(BaseModel):
+    # Keyed by link field name. A response model rather than a bare
+    # dict because an undeclared key is SILENTLY STRIPPED by FastAPI --
+    # the readable flag on visible_schema shipped broken for exactly
+    # that reason, computed correctly and never serialised.
+    links: dict[str, LinkCountResponse]
+
+
+class EditHistoryEntryResponse(BaseModel):
+    id: str
+    operation: str
+    changes: dict[str, Any]
+    user_id: str
+    description: str
+    created_at: str
+    # Present when the edit was part of a multi-object action, so a UI
+    # can group the writes that happened together -- the precedent links a
+    # single action log to every object it edited for the same reason.
+    batch_id: str | None = None
+
+
+class EditHistoryResponse(BaseModel):
+    entries: list[EditHistoryEntryResponse]
+    total: int
+    next_page_token: str | None = None
+
+
+class HealthResponse(BaseModel):
+    status: str
+    checks: dict[str, str]
+
+
+def _no_store(response: Response) -> None:
+    # Shared by every /me/* route below (dependencies=[Depends(_no_store)])
+    # -- each one returns session-specific data about the CALLER
+    # specifically (their own profile, their own visible schema/apps/
+    # action types), never something safe for a shared or intermediate
+    # cache to persist and later hand back to a different person on
+    # the same machine. Cache-Control: no-store is the real, current,
+    # standard recommendation for exactly this class of response
+    # (confirmed directly against current guidance, not assumed) --
+    # matters most on a shared workstation, a realistic scenario for
+    # an internal tool like this one, not a hypothetical.
+    #
+    # A real, standard FastAPI pattern, not a workaround: a route (or,
+    # as here, a dependency) can declare a plain `response: Response`
+    # parameter and set headers on it directly, while the route itself
+    # still returns an ordinary dict for the body -- FastAPI merges
+    # the two into the one, real response actually sent (confirmed
+    # directly against FastAPI's own docs before using it this way).
+    response.headers["Cache-Control"] = "no-store"
+
+
+@router.get("/users/{username}/visible-schema", response_model=dict[str, VisibleObjectTypeResponse])
+def visible_schema_route(username: str, request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    _require_manage_users(request, current_user)
+
+    user_directory = request.app.state.user_directory
+    if not user_directory.user_exists(username):
+        raise HTTPException(status_code=404, detail=f"Unknown user {username!r}")
+
+    target_record = user_directory.get_user_record(username)
+    mediator = _generation(request).mediator
+    return mediator.visible_schema(target_record)
+
+
+@router.post("/users/{username}/logout-all", status_code=204)
+def logout_all_for_user(username: str, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> None:
+    _require_manage_users(request, current_user)
+    request.app.state.session_store.invalidate_all_sessions(username)
+
+
+@router.post("/users/{username}/disable", status_code=204)
+def disable_user_route(username: str, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> None:
+    _require_manage_users(request, current_user)
+    try:
+        request.app.state.user_directory.disable_user(username)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    # AFTER IT SUCCEEDED: a refused action is not recorded as done.
+    _audit_account(request, current_user, 'disable', username)
+
+
+@router.post("/users/{username}/enable", status_code=204)
+def enable_user_route(username: str, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> None:
+    _require_manage_users(request, current_user)
+    try:
+        request.app.state.user_directory.enable_user(username)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    # AFTER IT SUCCEEDED: a refused action is not recorded as done.
+    _audit_account(request, current_user, 'enable', username)
+
+
+@router.post("/me/password", dependencies=[Depends(_no_store)])
+def change_own_password_route(
+    body: ChangeOwnPasswordRequest,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Changes the caller's own password. Needs the CURRENT one.
+
+    THE CURRENT PASSWORD, because a session is not the person: a laptop
+    left unlocked would otherwise be enough to take the account for
+    good. And a wrong guess counts toward LOCKOUT exactly as a failed
+    login does -- otherwise this endpoint is an unthrottled way to test
+    passwords for anybody holding a session.
+
+    EVERY OTHER SESSION ENDS; THIS ONE STAYS. Somebody who suspects their
+    password is known wants their other devices logged out, and to stay
+    signed in on the one they are fixing it from.
+    """
+    # READ FROM THE REQUEST, not Cookie(alias=...) (SEC-17). A default
+    # argument is evaluated ONCE at import, so an alias captures
+    # whatever the cookie was called then -- and the name is
+    # conditional on the environment now.
+    session_token = request.cookies.get(session_cookie_name())
+    username = current_user.user_id
+    tracker = request.app.state.login_attempt_tracker
+    if tracker.is_locked_out(username):
+        raise HTTPException(status_code=429, detail="Too many failed attempts; try again later.")
+    if not request.app.state.credential_store.verify_credential(username, body.current_password):
+        tracker.record_failure(username, source=_client_source(request))
+        _audit_account(request, current_user, "change_password", username,
+                       detail="refused: current password wrong")
+        raise HTTPException(status_code=400, detail="The current password is not right.")
+    if body.new_password == body.current_password:
+        raise HTTPException(status_code=400, detail="The new password must differ from the current one.")
+    _refuse_weak_password(body.new_password, username)
+
+    request.app.state.credential_store.update_credential(username, body.new_password)
+    request.app.state.user_directory.set_must_change_password(username, False)
+    tracker.record_success(username)
+    ended = request.app.state.session_store.invalidate_other_sessions(username, session_token)
+    _audit_account(request, current_user, "change_password", username,
+                   detail=f"{ended} other session(s) ended")
+    return {"changed": True, "other_sessions_ended": ended}
+
+
+@router.post("/users/{username}/password", dependencies=[Depends(_no_store)])
+def reset_password_route(
+    username: str,
+    body: ResetPasswordRequest,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """An administrator sets somebody else's password.
+
+    IMPERSONATION, and treated as such -- Kubernetes lists it among its
+    escalation verbs. Whoever sets a password can log in as its owner,
+    so resetting the password of somebody whose role carries a manage:*
+    grant the administrator lacks is refused: the same rule as putting
+    somebody in that role.
+
+    NOT FOR YOURSELF. Your own goes through /me/password, which asks for
+    the current one; an administrator resetting their own would skip it.
+
+    EVERY SESSION OF THE TARGET ENDS, so whoever may have been using the
+    old password is logged out as it stops working.
+    """
+    _require_manage_users(request, current_user)
+    if username == current_user.user_id:
+        raise HTTPException(status_code=400,
+                            detail="Change your own password from your profile; it asks for the current one.")
+    directory = request.app.state.user_directory
+    if not directory.user_exists(username):
+        raise HTTPException(status_code=404, detail="No such user")
+    _refuse_escalation(request, current_user, directory.get_user_record(username).role_name or "")
+    _refuse_weak_password(body.new_password, username)
+
+    request.app.state.credential_store.update_credential(username, body.new_password)
+    # THE ADMINISTRATOR KNOWS THIS PASSWORD, so its owner must replace it
+    # before doing anything else.
+    directory.set_must_change_password(username, True)
+    request.app.state.session_store.invalidate_all_sessions(username)
+    _audit_account(request, current_user, "reset_password", username,
+                   detail="every session of the target ended")
+    return {"reset": True}
+
+
+@router.delete("/users/{username}", status_code=204)
+def delete_user_route(username: str, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> None:
+    _require_manage_users(request, current_user)
+    try:
+        request.app.state.user_directory.delete_user(username)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    # AFTER IT SUCCEEDED: a refused action is not recorded as done.
+    _audit_account(request, current_user, 'delete', username)
+
+
+async def _watch_for_disconnect(request: Request, cancel_event: threading.Event) -> None:
+    # Runs CONCURRENTLY with the executor-offloaded loop.run() call,
+    # not racing it -- just sets cancel_event if it notices the client
+    # is gone; AgentLoop.run() itself notices the event on its next hop
+    # and returns early. Polling, not instant, but cheap and bounded.
+    while not cancel_event.is_set():
+        if await request.is_disconnected():
+            cancel_event.set()
+            return
+        await asyncio.sleep(0.5)
+
+
+class AwaitingWriteResponse(BaseModel):
+    """One proposal waiting for a decision.
+
+    DELIBERATELY NOT THE CHANGED VALUES. A pending write names object
+    ids and the fields it would set, and both are governed by MAC and
+    field-level RBAC on every other read path. Returning them here
+    because the caller happens to hold an execute grant would be a way
+    around the read rules -- an approver could learn an account balance
+    by proposing a write against it and listing their own inbox.
+
+    So: what is being decided, by whom, and how long the reviewer has.
+    The values are visible through the ordinary read path, subject to
+    the ordinary checks, and a reviewer who cannot see them there
+    should not see them here.
+    """
+
+    write_id: str
+    action_type_name: str
+    description: str
+    proposed_by: str
+    proposed_at: str
+    object_count: int
+    expires_at: str
+    # WHETHER THIS IS YOURS TO DECIDE OR YOURS TO WAIT ON. A reviewer
+    # and a proposer see the same row and need different things from
+    # it, and a client that had to compare proposed_by against the
+    # current user would be re-deriving something the server already
+    # knows.
+    #
+    # Both can be true: nothing stops a deployment without a four-eyes
+    # rule from letting someone approve their own write.
+    awaiting_your_review: bool
+    proposed_by_you: bool
+    # Fields this write targets that the ontology no longer declares,
+    # as "Type.field". Non-empty means it CANNOT be approved -- the
+    # configuration moved on while it waited.
+    #
+    # A DIFFERENT STATE FROM REJECTED, which is what step 6c of
+    # the hot-reload plan asks for: rejected means a human decided
+    # against it, this means nobody can act on it either way. An inbox
+    # that showed an Approve button here would let a reviewer make a
+    # decision, learn it was refused, and have gained nothing.
+    undeclared_fields: list[str]
+    # THE INBOX FIELDS. A reviewer needs to know what they can act on
+    # and what the request is still waiting for -- otherwise "approve"
+    # looks like it will run the write, and for a request spanning
+    # security partitions it will not.
+    #
+    # COUNTS, NOT THE TASKS THEMSELVES. A listing showing fifty task
+    # rows per request would bury the requests, and the detail view
+    # already loads a single write in full.
+    tasks_total: int
+    tasks_you_may_decide: int
+    tasks_approved: int
+    # How many OTHER pending writes propose exactly this change.
+    #
+    # SURFACED, NOT PREVENTED. A second identical proposal might be a
+    # double-click, a colleague re-requesting something forgotten, or a
+    # deliberate nudge, and Elysium cannot tell which. What was wrong
+    # was that identical rows were INDISTINGUISHABLE -- a reviewer
+    # could not tell one mistake pasted three times from three separate
+    # requests, and approving one left the others behind unexplained.
+    duplicate_count: int
+
+
+class PendingForObjectResponse(BaseModel):
+    """One waiting write that touches an object, as the object shows it."""
+
+    write_id: str
+    action_type_name: str
+    awaiting_your_review: bool
+    proposed_by_you: bool
+
+
+class PendingForObjectsResponse(BaseModel):
+    #: By object id, only the ids with something waiting.
+    pending: dict[str, list[PendingForObjectResponse]]
+
+
+#: How many ids one request may ask about: a page of Browse, and then some.
+MAX_PENDING_IDS = 200
+
+
+@router.get("/writes/pending-for", dependencies=[Depends(_no_store)],
+            response_model=PendingForObjectsResponse)
+def pending_for_objects_route(object_type: str, ids: str, request: Request,
+                              current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Which of these objects have a change waiting, and which (DEV_UI 15.3).
+
+    "SHOW PENDING PROPOSALS IN CONTEXT, which is the part no inbox does
+    well. If an object has a pending change, that belongs ON THE OBJECT;
+    if a set does, it belongs on the set -- '3 of these 40 have pending
+    changes'." It is also "the antidote to context-free approving, since
+    the reviewer is already looking at the thing being changed".
+
+    THE INBOX'S OWN RULE FOR WHAT A CALLER SEES: a write they may decide
+    (execute:<Action>) or one they proposed -- the same `relevant` test
+    as /writes/awaiting, so the object never shows a write the Inbox
+    would hide. And only for objects they may read, checked through the
+    mediator: an id they cannot see is answered as one with nothing
+    waiting, as everywhere.
+
+    NO VALUES. An action name and whose decision it is; the change itself
+    is in the Inbox, where field-level reading rules apply to it.
+    """
+    wanted = [part for part in ids.split(",") if part][:MAX_PENDING_IDS]
+    if not wanted:
+        return {"pending": {}}
+    generation = _generation(request)
+    roles = generation.config.roles
+
+    def may_confirm(candidate) -> bool:
+        return authorize(current_user, roles, f"execute:{candidate.action_type_name}")
+
+    def relevant(candidate) -> bool:
+        return may_confirm(candidate) or candidate.user_id == current_user.user_id
+
+    store: PendingWriteStore = request.app.state.pending_writes
+    touching: dict[str, list[dict]] = {}
+    for write_id, pending in store.awaiting(relevant):
+        for sub in pending.sub_writes:
+            if sub.object_type != object_type or str(sub.object_id) not in wanted:
+                continue
+            touching.setdefault(str(sub.object_id), []).append({
+                "write_id": write_id,
+                "action_type_name": pending.action_type_name,
+                "awaiting_your_review": may_confirm(pending),
+                "proposed_by_you": pending.user_id == current_user.user_id,
+            })
+    readable = {object_id: entries for object_id, entries in touching.items()
+                if _may_read_object(generation.mediator, current_user, object_type, object_id)}
+    return {"pending": readable}
+
+
+class UnusualValueResponse(BaseModel):
+    field: str
+    value: float
+    #: In words: against which records, and how far (core/unusual.py).
+    reason: str
+    #: "worth_a_look" when someone has looked and kept it; an "expected"
+    #: one is not returned at all.
+    decision: str | None = None
+
+
+class UnusualOnObjectsResponse(BaseModel):
+    #: By object id, only the ids with something unusual.
+    unusual: dict[str, list[UnusualValueResponse]]
+
+
+def _unusual_store(request: Request):
+    from elysium.core.unusual_flags import UnusualFlagStore
+
+    return UnusualFlagStore(request.app.state.runtime_paths.data_dir / "unusual_flags.db")
+
+
+def _may_see_flag(generation, current_user: UserRecord, flag) -> bool:
+    """Whether this caller may be told of this flag (R51; the owner, 19
+    October: everyone who may read the fields involved).
+
+    THREE CONDITIONS, each for a reason:
+      - read on the type, the flagged number, and EVERY field it was
+        compared within: the reason names their values;
+      - the flag's compartment is the caller's: it was judged against
+        that compartment's records alone (core/mirror/unusual_scan.py);
+      - and the declaration still names them -- a check since removed
+        or changed flags nothing.
+    The record itself is checked by the caller, through the mediator."""
+    from elysium.core.ontology.unusual_checks import unusual_of
+
+    roles = generation.config.roles
+    declared = unusual_of(generation.config.schema.get(flag.object_type) or {})
+    if declared is None or flag.field not in declared[0]:
+        return False
+    if flag.compartment is not None and flag.compartment != current_user.security_value:
+        return False
+    names = [flag.field, *(field for field, _ in flag.kind)]
+    if [field for field, _ in flag.kind] != list(declared[1]):
+        return False
+    return authorize(current_user, roles, f"read:{flag.object_type}") and all(
+        authorize(current_user, roles, f"read:{flag.object_type}.{name}") for name in names)
+
+
+@router.get("/unusual/{object_type}", dependencies=[Depends(_no_store)],
+            response_model=UnusualOnObjectsResponse)
+def unusual_on_objects_route(object_type: str, ids: str, request: Request,
+                             current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Which of these records have a number unusual for their kind (R51),
+    and why -- for a marker on the record, where it is read.
+
+    "THE SAME CHECKS AS EVERY READ": the flag's own rule (_may_see_flag)
+    and the record's, through the mediator -- an id the caller cannot see
+    is answered as one with nothing unusual, as everywhere. A value a
+    person marked "expected" is not returned: that decision clears the
+    marker for everyone until the value changes."""
+    wanted = [part for part in ids.split(",") if part][:MAX_PENDING_IDS]
+    if not wanted:
+        return {"unusual": {}}
+    generation = _generation(request)
+    found: dict[str, list[dict]] = {}
+    for flag in _unusual_store(request).flags(object_type, wanted):
+        if flag.decision == "expected" or not _may_see_flag(generation, current_user, flag):
+            continue
+        found.setdefault(flag.record_id, []).append({
+            "field": flag.field, "value": flag.value, "reason": flag.reason(),
+            "decision": flag.decision})
+    return {"unusual": {record_id: flags for record_id, flags in found.items()
+                        if _may_read_object(generation.mediator, current_user, object_type,
+                                            record_id)}}
+
+
+class UnusualReviewItemResponse(BaseModel):
+    object_type: str
+    record_id: str
+    field: str
+    field_label: str
+    value: float
+    reason: str
+    #: The compartment it was judged in, as a string; None for none.
+    compartment: str | None = None
+    #: None while undecided; expected | worth_a_look.
+    decision: str | None = None
+    decided_by: str | None = None
+
+
+class UnusualReviewResponse(BaseModel):
+    items: list[UnusualReviewItemResponse]
+    #: How many were found in all, in the types and compartment this
+    #: caller reviews: at most elysium.core.unusual.MAX_FLAGS per type are kept,
+    #: the furthest first, so a short list can say "of N".
+    found: int
+
+
+class UnusualDecisionRequest(BaseModel):
+    object_type: str
+    record_id: str
+    field: str
+    #: expected | worth_a_look
+    decision: str
+
+
+def _may_review_flag(generation, current_user: UserRecord, flag) -> bool:
+    """Whether this caller may DECIDE about a flag (R51; the owner, 19
+    October: someone who may edit the type). Everything a reader of it
+    needs (_may_see_flag), and write on the type: "expected" clears the
+    marker for everyone, which is a statement about the data, as an edit
+    is. The record's own read check is the caller's, through the
+    mediator."""
+    return (_may_see_flag(generation, current_user, flag)
+            and authorize(current_user, generation.config.roles, f"write:{flag.object_type}"))
+
+
+def _reviewable_flags(request: Request, current_user: UserRecord) -> list:
+    generation = _generation(request)
+    return [flag for flag in _unusual_store(request).flags()
+            if _may_review_flag(generation, current_user, flag)
+            and _may_read_object(generation.mediator, current_user, flag.object_type,
+                                 flag.record_id)]
+
+
+def _review_item(generation, flag) -> dict:
+    fields = (generation.config.schema.get(flag.object_type) or {}).get("fields") or {}
+    return {"object_type": flag.object_type, "record_id": flag.record_id, "field": flag.field,
+            "field_label": get_display_name(fields.get(flag.field) or {}, flag.field),
+            "value": flag.value, "reason": flag.reason(),
+            "compartment": None if flag.compartment is None else str(flag.compartment),
+            "decision": flag.decision, "decided_by": flag.decided_by}
+
+
+@router.get("/unusual-review", dependencies=[Depends(_no_store)],
+            response_model=UnusualReviewResponse)
+def unusual_review_route(request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Values unusual for their kind (R51), furthest first, as far as this
+    caller may decide about them -- undecided and decided both, so a
+    decision can be changed. Nothing in the data is changed by any of it."""
+    generation = _generation(request)
+    store = _unusual_store(request)
+    flags = _reviewable_flags(request, current_user)
+    found = 0
+    for object_type in sorted({flag.object_type for flag in flags}):
+        for compartment, total in store.totals(object_type).items():
+            if compartment is None or compartment == current_user.security_value:
+                found += total
+    return {"items": [_review_item(generation, flag) for flag in flags],
+            "found": max(found, len(flags))}
+
+
+@router.post("/unusual-review/decide", response_model=UnusualReviewItemResponse)
+def decide_unusual_route(body: UnusualDecisionRequest, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """"Expected" or "worth a look", for the value as it was judged.
+
+    404 for a flag this caller may not decide about, or that is not
+    there -- uniform denial. "Expected" holds for THAT VALUE: if the
+    record's number changes, the next scan judges it afresh."""
+    from elysium.core.unusual_flags import DECISIONS
+
+    if body.decision not in DECISIONS:
+        raise HTTPException(status_code=422, detail=f"A decision is one of {', '.join(DECISIONS)}.")
+    generation = _generation(request)
+    store = _unusual_store(request)
+    flag = next((flag for flag in store.flags(body.object_type, [body.record_id])
+                 if flag.field == body.field), None)
+    if (flag is None or not _may_review_flag(generation, current_user, flag)
+            or not _may_read_object(generation.mediator, current_user, flag.object_type,
+                                    flag.record_id)):
+        raise HTTPException(status_code=404, detail="No such unusual value")
+    store.decide(flag.object_type, flag.record_id, flag.field, flag.value, body.decision,
+                 current_user.user_id)
+    generation.mediator.audit_log.log_unusual_decision(
+        current_user.user_id, flag.object_type, flag.record_id, flag.field, flag.value,
+        body.decision)
+    return _review_item(generation, dataclasses.replace(
+        flag, decision=body.decision, decided_by=current_user.user_id))
+
+
+@router.get("/writes/awaiting", dependencies=[Depends(_no_store)],
+            response_model=list[AwaitingWriteResponse])
+def awaiting_writes_route(request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    """Proposals this user may decide on.
+
+    WITHOUT THIS, FOUR-EYES IS ENFORCEABLE AND UNREACHABLE. Confirming
+    a write requires its id, and only the proposer had one -- so the
+    single person who could find a write was the single person a
+    four-eyes rule forbids from approving it.
+
+    THE SAME ELIGIBILITY TEST THE CONFIRM ROUTE USES, so a listed write
+    can always be claimed and a claimable write is always listed.
+    Deciding them separately is how an inbox ends up showing rows that
+    404, or silently hiding a decision somebody is waiting on.
+    """
+    roles = _generation(request).config.roles
+
+    def may_confirm(candidate) -> bool:
+        return authorize(current_user, roles, f"execute:{candidate.action_type_name}")
+
+    def relevant(candidate) -> bool:
+        # EITHER YOURS TO DECIDE OR YOURS TO WAIT ON, following
+        # the precedent's inbox, which filters "Your inbox" and "Created by
+        # you" rather than showing only one.
+        #
+        # A proposer needs the second especially once four-eyes is on:
+        # they CANNOT approve their own write, so without this they
+        # propose something and then have no way to see whether anyone
+        # has looked at it. Nothing else in the product would tell
+        # them, and a proposal that vanishes into silence is one people
+        # stop making.
+        return may_confirm(candidate) or candidate.user_id == current_user.user_id
+
+    store: PendingWriteStore = request.app.state.pending_writes
+    write_mediator = _generation(request).write_mediator
+    waiting = store.awaiting(relevant)
+
+    return [
+        {
+            "write_id": write_id,
+            "action_type_name": pending.action_type_name,
+            "description": pending.description,
+            "proposed_by": pending.user_id,
+            "proposed_at": pending.proposed_at.isoformat(),
+            "object_count": len(pending.sub_writes),
+            "expires_at": store.expires_at(write_id),
+            "awaiting_your_review": may_confirm(pending),
+            "proposed_by_you": pending.user_id == current_user.user_id,
+            # THE SAME FUNCTION confirm_and_execute() uses, so the
+            # inbox cannot disagree with what approving would actually
+            # do. Computing it separately here is how a queue ends up
+            # offering a button that always fails.
+            "undeclared_fields": write_mediator.fields_no_longer_declared(pending),
+            "tasks_total": len(pending.sub_writes),
+            "tasks_you_may_decide": len(
+                write_mediator.eligible_task_indexes(pending, current_user, roles)
+            ),
+            # APPROVED, not decided: a rejected task is not progress
+            # toward invocation, and counting it as such would show a
+            # request as nearly ready when it is permanently blocked.
+            "tasks_approved": sum(
+                1 for decision in store.task_decisions(write_id).values()
+                if decision.approved
+            ),
+            "duplicate_count": store.duplicates_of(write_id),
+        }
+        # OLDEST FIRST. A reviewer works through a queue, and the write
+        # closest to expiring is the one whose decision is about to be
+        # taken away from them.
+        for write_id, pending in sorted(waiting, key=lambda item: item[1].proposed_at)
+    ]
+
+
+class FieldChangeResponse(BaseModel):
+    """One field a pending write would change.
+
+    THE FIELD NAME IS ALWAYS PRESENT. Values are shown only where the
+    reviewer may read them, and a field they may not read is marked
+    REDACTED rather than omitted.
+
+    That follows the precedent, whose review surfaces "redact certain
+    resources or users contained in a record if you do not have the
+    necessary permissions to view that item" -- and it is a deliberate
+    reversal of an earlier design here that omitted such fields and
+    reported only a boolean "something is hidden".
+
+    Omitting leaks less and is worse. A reviewer seeing three fields
+    cannot tell whether that is the whole change or a fragment, so they
+    approve believing they saw everything -- the rubber-stamp problem
+    in its worst form, because it produces MORE confidence rather than
+    less. Redaction discloses that a field exists and withholds its
+    value, which is the smaller cost: the reviewer already knows this
+    write exists and which object it touches.
+    """
+
+    field_name: str
+    # False means the reviewer lacks read:{Type}.{field}. The two value
+    # fields are then null, and that is a REDACTION rather than a null
+    # value in the data.
+    readable: bool
+    current_value: Any = None
+    proposed_value: Any = None
+
+
+class ObjectChangeResponse(BaseModel):
+    object_type: str
+    object_id: str
+    operation: str
+    changes: list[FieldChangeResponse]
+
+
+class WriteDetailResponse(BaseModel):
+    """Everything a reviewer needs to decide, and nothing more."""
+
+    write_id: str
+    action_type_name: str
+    description: str
+    proposed_by: str
+    proposed_at: str
+    expires_at: str
+    awaiting_your_review: bool
+    proposed_by_you: bool
+    objects: list[ObjectChangeResponse]
+    # Whether ANY field in this write is redacted for this reviewer.
+    # Computed rather than derived by a client, so a UI cannot forget
+    # to warn -- the one thing a reviewer must not miss is that they
+    # are seeing a partial change.
+    has_redacted_fields: bool
+
+
+@router.get("/writes/{write_id}", dependencies=[Depends(_no_store)],
+            response_model=WriteDetailResponse)
+def write_detail_route(write_id: str, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """What a pending write would actually change.
+
+    SEPARATE FROM THE LISTING, because a diff needs the CURRENT value
+    of every changed field, which means a gated read per field per
+    object. A pending write can touch twenty objects; doing that for
+    every row of an inbox would cost hundreds of reads to render a
+    queue somebody is scanning rather than reading. The precedent splits it
+    the same way -- the inbox lists requests, and you open one to see
+    its tasks.
+
+    THE SAME VISIBILITY RULE AS THE LISTING: you may see a write you
+    could approve, or one you proposed. Anything else is a 404, not a
+    403, matching the uniform denial every other path here uses.
+    """
+    generation = _generation(request)
+    roles = generation.config.roles
+    store: PendingWriteStore = request.app.state.pending_writes
+
+    may_confirm_action = None
+    pending = None
+    for candidate_id, candidate in store.awaiting(lambda _pending: True):
+        if candidate_id != write_id:
+            continue
+        may_confirm_action = authorize(
+            current_user, roles, f"execute:{candidate.action_type_name}",
+        )
+        if may_confirm_action or candidate.user_id == current_user.user_id:
+            pending = candidate
+        break
+
+    if pending is None:
+        # Unknown, expired, and not-yours are one answer, deliberately.
+        raise HTTPException(status_code=404, detail="Unknown or expired pending write")
+
+    # WHAT THIS REVIEWER MAY READ, per type. visible_schema is already
+    # the single source of truth for that question everywhere else, so
+    # the diff asks it rather than re-deriving the grants.
+    visible = generation.mediator.visible_schema(current_user)
+
+    objects = []
+    redacted_anywhere = False
+    for sub_write in pending.sub_writes:
+        readable_fields = set((visible.get(sub_write.object_type) or {}).get("fields") or {})
+        changes = []
+        for field_name, proposed in sub_write.changes.items():
+            readable = field_name in readable_fields
+            redacted_anywhere = redacted_anywhere or not readable
+            changes.append({
+                "field_name": field_name,
+                "readable": readable,
+                # The CURRENT value comes from the ordinary read path,
+                # so MAC applies to the object as well as RBAC to the
+                # field. A null here is indistinguishable from a
+                # MAC-denied object, which is the same uniform denial
+                # every other read gives and is deliberate.
+                "current_value": generation.mediator.get_field(
+                    current_user, sub_write.object_type, sub_write.object_id, field_name,
+                ) if readable else None,
+                # Gated identically. A field you may not read is a
+                # field whose PROPOSED value you may not read either --
+                # otherwise proposing a write would be a way to learn
+                # what you are about to be told.
+                "proposed_value": proposed if readable else None,
+            })
+        objects.append({
+            "object_type": sub_write.object_type,
+            "object_id": str(sub_write.object_id),
+            "operation": sub_write.operation,
+            "changes": changes,
+        })
+
+    return {
+        "write_id": write_id,
+        "action_type_name": pending.action_type_name,
+        "description": pending.description,
+        "proposed_by": pending.user_id,
+        "proposed_at": pending.proposed_at.isoformat(),
+        "expires_at": store.expires_at(write_id),
+        "awaiting_your_review": bool(may_confirm_action),
+        "proposed_by_you": pending.user_id == current_user.user_id,
+        "objects": objects,
+        "has_redacted_fields": redacted_anywhere,
+    }
+
+
+class ConfirmWriteRequest(BaseModel):
+    approved: bool
+
+
+@router.post("/login", status_code=204)
+def login(body: LoginRequest, request: Request, response: Response) -> None:
+    credential_store = request.app.state.credential_store
+    session_store = request.app.state.session_store
+    user_directory = request.app.state.user_directory
+    login_attempt_tracker = request.app.state.login_attempt_tracker
+
+    # OVERSIZED: THE SAME 401, AND NOTHING WRITTEN OR HASHED (E-02). Before
+    # any lookup, so a 20,000-character username writes no
+    # login_attempts row and a 200,000-character password never reaches
+    # argon2. Skipping the hash does make this answer faster -- but it
+    # reveals only the length of what the caller sent, which they know.
+    if len(body.username) > MAX_USERNAME_LENGTH or len(body.password) > MAX_LOGIN_PASSWORD_LENGTH:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    # Checked BEFORE the real password verification below, but NEVER
+    # used to short-circuit it -- see login_attempt_tracker.py's own
+    # module docstring for the full reasoning. verify_credential()
+    # below still runs UNCONDITIONALLY regardless of this result, so a
+    # locked-out response takes exactly as long as a real wrong-
+    # password one, never leaking "this account exists and has recent
+    # failed attempts against it" through response timing alone.
+    locked_out = login_attempt_tracker.is_locked_out(body.username)
+
+    # Credential check ALWAYS runs first, unconditionally -- checking
+    # is_user_disabled() before this and short-circuiting for a
+    # disabled account would create a timing side channel (a disabled
+    # account's login would return faster than a real password check,
+    # leaking "this account exists and is disabled" through response
+    # timing alone, even with an identical error message). Same timing-
+    # safety principle verify_credential() itself already follows.
+    credentials_valid = credential_store.verify_credential(body.username, body.password)
+
+    if locked_out:
+        # Same generic message as every other failure below --
+        # deliberately never distinguishable from a plain wrong
+        # password. Not recorded as a NEW failure here -- already
+        # locked out; another record wouldn't change the outcome.
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    if not credentials_valid:
+        login_attempt_tracker.record_failure(
+            body.username, source=_client_source(request))
+        # Generic on purpose -- see module docstring.
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    if user_directory.is_user_disabled(body.username):
+        # SAME message as a wrong password -- a disabled account must
+        # not be distinguishable from one that simply doesn't exist or
+        # was given the wrong password. Deliberately NOT recorded as a
+        # rate-limit failure -- the password itself was genuinely
+        # correct here, blocked by account status alone, a different
+        # thing entirely from a guessing attempt.
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    login_attempt_tracker.record_success(body.username)
+    token = session_store.create_session(body.username)
+    # Real, httponly cookie -- never returned in the JSON body at all;
+    # doing both would defeat the entire point (see core/auth/
+    # auth_cookies.py's own docstring). The CSRF cookie is
+    # deliberately readable (NOT httponly) -- see that same module's
+    # docstring for why, and api/csrf_middleware.py for how it's used.
+    set_session_cookie(response, token)
+    set_csrf_cookie(response, generate_csrf_token())
+
+
+@router.post("/logout", status_code=204)
+def logout(request: Request, response: Response) -> None:
+    # Needs the RAW token (to delete that exact session), not a
+    # resolved UserRecord -- the only route with this need, so it
+    # reads the cookie directly rather than adding a second shape to
+    # the shared auth dependency for one caller.
+    # THE READ THAT BREAKS IF SEC-17 IS HALF-APPLIED. Written with
+    # the prefix and read without it, logout stops invalidating the
+    # session server-side: the browser drops its cookie and the token
+    # stays valid. 208 integration tests passed with exactly that
+    # combination, because none ran the production configuration.
+    session_token = request.cookies.get(session_cookie_name())
+    if session_token is not None:
+        request.app.state.session_store.invalidate_session(session_token)
+    # No error even if the cookie was missing -- logging out of a
+    # session that isn't valid anyway isn't a meaningful failure.
+    clear_session_cookie(response)
+    clear_csrf_cookie(response)
+
+
+@router.post("/logout-all", status_code=204)
+def logout_all(request: Request, current_user: UserRecord = Depends(get_current_user)) -> None:
+    # Self-service -- revokes EVERY session for the caller, including
+    # whichever one made this request. See module docstring.
+    request.app.state.session_store.invalidate_all_sessions(current_user.user_id)
+
+
+@router.get("/users", response_model=list[UserSummaryResponse])
+def list_users_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    _require_manage_users(request, current_user)
+    return request.app.state.user_directory.list_users()
+
+
+def _declared_sync_interval(config) -> float | None:
+    """The interval every freshness window was derived from."""
+    from elysium.core.mirror.freshness import WARN_MULTIPLE
+
+    for target in config.freshness_targets.values():
+        if target.exempt:
+            # AN EXEMPT TYPE CARRIES THE DEFAULT AS A FORMALITY, not as
+            # a window derived from the declared interval, so it cannot
+            # be read backwards. Another type will carry the real one.
+            continue
+        return round(target.warn_after.total_seconds() / 3600 / WARN_MULTIPLE, 4)
+    return None
+
+
+class DeploymentConfigResponse(BaseModel):
+    """What this deployment is actually running.
+
+    READ-ONLY, and deliberately so. Editing config at runtime is a
+    separate question with its own preconditions; this is the half
+    that carries no risk and answers "why is it behaving like that".
+    """
+
+    llm_provider: str
+    step_model: str
+    synthesis_model: str
+    #: Search by meaning (R45): the model that embeds, None when unset,
+    #: and how long one sync may spend embedding.
+    embedding_model: str | None = None
+    embedding_budget_seconds: float = 300.0
+    #: Numbers per vector when smaller than the model's own; None for its own.
+    embedding_dimensions: int | None = None
+    #: The task prefixes as configured; None for the model family's own.
+    embedding_prefixes: dict[str, str] | None = None
+    max_hops: int
+    max_consecutive_duplicates: int
+    max_consecutive_invalid_steps: int
+    max_concurrent_requests: int
+    #: AR-5: whether step replies are constrained to the step schema.
+    #: Defaulted so an older client reading this still parses.
+    constrain_steps: bool = False
+    #: The agent switches that are ON (core/llm/agent_features.py), by
+    #: name -- empty while the bench has not said to turn any on.
+    agent_features: list[str] = []
+    #: AL-10: the per-query token budget; None for none.
+    max_tokens_per_query: int | None = None
+    #: Decided 14 Oct: how many objects one bulk action may name.
+    bulk_action_limit: int = 256
+    deprecation_lead_days: int = 30
+    #: Formerly BLOCKING 6: classification labels decide field access.
+    label_enforcement: bool = False
+    #: R15: whether lineage events also go to a service. WHETHER, never
+    #: the URL -- a URL can carry credentials, and names-not-contents is
+    #: this endpoint's rule. The file is always written.
+    lineage_service: bool = False
+    lineage_namespace: str = "elysium"
+    #: DEP-1: how each silo's people write numbers and dates, as a CLDR
+    #: locale; None means machine formats only. Locale codes, not data.
+    source_locales: dict[str, str | None] = {}
+    #: ZOO-22: silos whose date columns may hold Excel serials.
+    excel_date_silos: list[str] = []
+    #: the removed BLOCKING.md item on modules: the modules loaded, by id, in rail order. Ids,
+    #: never folders -- a folder is a path, and names-not-contents.
+    modules: list[str] = []
+    # Silos whose 0000-00-00 dates are read as empty (`zero_dates_as_null`).
+    zero_date_silos: list[str] = []
+    #: R2: tables read by changed rows -- "silo.table" -> its cursor
+    #: column and schedule. Column names, never a mark's value.
+    incremental_tables: dict[str, str] = {}
+    # THE FOUR OPERATIONAL TOGGLES ADDED IN OCTOBER, and the reason
+    # `F-06` matters rather than a tidiness complaint: each was added to
+    # DeploymentConfig and NOT here, so the panel that answers "why is
+    # it behaving like that" could not answer it for any of them.
+    #
+    # Pydantic drops what the model does not name, so the omission was
+    # silent four times running. A test now forces every new config
+    # field to be listed here or named in WITHHELD_FROM_CONFIG_RESPONSE
+    # with a reason.
+    write_targets: "tuple[str, ...] | None" = None
+    trusted_proxies: "tuple[str, ...]" = ()
+    on_type_mismatch: "str | None" = None
+    # "hold" or "serve_empty": what a suspected source rename costs.
+    on_suspected_rename: str = "hold"
+    ingest_undeclared_columns: "bool | None" = None
+    # HOW OFTEN THIS DEPLOYMENT EXPECTS TO SYNC, and therefore every
+    # freshness threshold a reader is judged against (DEV_UI.md 16.6).
+    #
+    # THE DECLARED NUMBER, NOT THE DERIVED WINDOWS. `freshness_targets`
+    # on the config is a mapping per object type, computed from this
+    # one number and each type's own override; showing the map here
+    # would put the ontology in a settings panel. This is the figure
+    # somebody wrote down, and the one they would change.
+    #
+    # IT ANSWERS A QUESTION BROWSE NOW RAISES. A reader who sees
+    # "Overdue -- this deployment expects one every 26 hours" should be
+    # able to find out where 26 came from, and this is where.
+    sync_interval_hours: "float | None" = None
+    # WHICH configuration this is, not just what it says. Answers a
+    # question the rest of this response cannot: two deployments with
+    # identical settings below may still be different loads of
+    # different files. Once configuration can be reloaded while running
+    # (the hot-reload plan) this becomes the only way to tell which
+    # generation served a given request.
+    #
+    # The digest is over the four config files' bytes. Safe to expose
+    # alongside the rest of this response: it discloses WHETHER the
+    # files changed, never what is in them, and this endpoint already
+    # requires manage:users.
+    generation: int
+    loaded_at: str
+    source_digest: str
+    security_attribute: str
+    read_from_mirror: bool
+    enabled_tools: list[str]
+    silo_names: list[str]
+    object_type_count: int
+    action_type_count: int
+    role_names: list[str]
+
+
+class ReloadResponse(BaseModel):
+    """The outcome of a configuration reload."""
+
+    from_generation: int
+    to_generation: int
+    source_digest: str
+    changed: bool
+
+
+@router.post("/admin/reload", response_model=ReloadResponse)
+def reload_route(request: Request,
+                 current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Reloads configuration from disk without restarting.
+
+    GATED ON manage:deployment, a SEPARATE grant from manage:users.
+    Creating an account and replacing the ontology, the grants and the
+    silo wiring are different powers, and a deployment should be able
+    to hand out one without the other.
+
+    FAILURE CHANGES NOTHING. build_generation() validates fully and
+    either returns a whole generation or raises, so a broken YAML edit
+    is a 400 with the validation error rather than an outage. That is
+    strictly better than today, where the only way to load new
+    configuration is to restart -- and a restart with a broken file
+    does not come back.
+
+    Requests already in flight keep the generation they pinned and
+    finish on it. The next request gets the new one.
+    """
+    generation = _generation(request)
+    if not authorize(current_user, generation.config.roles, "manage:deployment"):
+        raise HTTPException(status_code=403, detail="Not authorized to reload configuration")
+
+    try:
+        new = reload_generation(request.app, requested_by=current_user.user_id)
+    except ReloadInProgress as e:
+        # 409, not 429: this is a conflict with another operation, not
+        # a rate limit. Rejected rather than queued -- see
+        # reload_generation() for why.
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Reload rejected: {e}") from e
+
+    return {
+        "from_generation": generation.generation,
+        "to_generation": new.generation,
+        "source_digest": new.source_digest,
+        # Whether the FILES actually differ, as opposed to whether a
+        # reload happened. Reloading unchanged files is a new
+        # generation of the same configuration, and conflating the two
+        # would make "did anything change?" unanswerable.
+        "changed": new.source_digest != generation.source_digest,
+    }
+
+
+class ConfigSettingResponse(BaseModel):
+    key: str
+    label: str
+    kind: str
+    description: str
+    when_absent: str
+    choices: list[str]
+    minimum: int | None = None
+    present: bool
+    value: bool | int | str | None = None
+
+
+class ConfigSettingsResponse(BaseModel):
+    # THE FILE'S DIGEST AS READ. An edit sends it back, and is refused if
+    # the file has changed since -- an operator editing by hand and the
+    # UI writing must not silently overwrite each other.
+    digest: str
+    settings: list[ConfigSettingResponse]
+
+
+class ConfigEditRequest(BaseModel):
+    digest: str
+    # A value of null REMOVES the key: "absent" is a state of its own.
+    changes: dict[str, bool | int | str | None]
+
+
+class ConfigEditPreviewResponse(BaseModel):
+    diff: list[str]
+
+
+class ConfigEditResponse(BaseModel):
+    diff: list[str]
+    digest: str
+    to_generation: int
+    # Something to know that is not an error: see _record_erasure_keys_before.
+    notice: str | None = None
+
+
+#: One edit at a time: two people applying at once would each compare
+#: against the file the other is about to replace.
+_config_edit_lock = threading.Lock()
+
+
+def _config_file(request: Request) -> Path:
+    return request.app.state.runtime_paths.config_dir / "config.yaml"
+
+
+# GATED BY _require_manage_deployment (below, shared with the rule
+# suggestions): manage:deployment, the grant reload and config history
+# use. Changing the deployment is a different power from managing its
+# users, and the read-only panel's manage:users is not enough.
+
+
+def _exact_text(path: Path) -> str:
+    """A configuration file's text EXACTLY as stored: CRLF stays CRLF.
+    Path.read_text() applies universal newlines and would hand the editors
+    an LF copy of a CRLF file, so a screen edit rewrote the line ends of
+    the whole file and the mixed-line-end refusal could never see them.
+    Every route that reads a file to edit or stage it reads through here,
+    and writes through _put_exact_text, so the digest the editor was given
+    is the digest of the bytes on disk."""
+    return path.read_bytes().decode("utf-8")
+
+
+def _put_exact_text(path: Path, text: str) -> None:
+    """The write that pairs with _exact_text: the text's own line ends."""
+    path.write_bytes(text.encode("utf-8"))
+
+
+def _proposed_config(request: Request, body: ConfigEditRequest) -> tuple[str, str]:
+    """The file now and the file as it would be, or the reason not."""
+    from elysium.core.config_editing import ConfigEditError, apply_changes, digest
+
+    current = _exact_text(_config_file(request))
+    if digest(current) != body.digest:
+        raise HTTPException(status_code=409, detail=(
+            "config.yaml has changed since you opened it. Load it again to see "
+            "the new version before changing it."))
+    try:
+        return current, apply_changes(current, body.changes)
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/admin/config/settings", dependencies=[Depends(_no_store)],
+            response_model=ConfigSettingsResponse)
+def config_settings_route(request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The settings that may be changed from the UI, as config.yaml has them."""
+    from elysium.core.config_editing import current_settings, digest
+
+    _require_manage_deployment(request, current_user)
+    text = _exact_text(_config_file(request))
+    return {"digest": digest(text), "settings": current_settings(text)}
+
+
+@router.post("/admin/config/settings/preview", dependencies=[Depends(_no_store)],
+             response_model=ConfigEditPreviewResponse)
+def preview_config_settings_route(body: ConfigEditRequest, request: Request,
+                                  current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The lines that would change, and nothing written (DEV_UI 13.5:
+    "before saving, the diff"). Only the changed lines appear, because
+    the editor leaves every other byte where it was."""
+    from elysium.core.config_editing import diff
+
+    _require_manage_deployment(request, current_user)
+    current, proposed = _proposed_config(request, body)
+    return {"diff": diff(current, proposed)}
+
+
+@router.put("/admin/config/settings", dependencies=[Depends(_no_store)],
+            response_model=ConfigEditResponse)
+def apply_config_settings_route(body: ConfigEditRequest, request: Request,
+                                current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Writes the change to config.yaml and reloads (_write_config_file)."""
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        current, proposed = _proposed_config(request, body)
+        return _write_config_file(request, current_user, "config.yaml", current, proposed,
+                                  dict(body.changes))
+
+
+def _write_config_file(request: Request, current_user: UserRecord, filename: str,
+                       current: str, proposed: str, changes: dict) -> dict:
+    """One file; see _write_config_files."""
+    return _write_config_files(request, current_user, {filename: (current, proposed)}, changes)
+
+
+def _write_config_files(request: Request, current_user: UserRecord,
+                        files: "dict[str, tuple[str, str]]", changes: dict,
+                        first: "tuple[str, ...]" = ()) -> dict:
+    """Puts each proposed text in place of its file and reloads. Called
+    holding _config_edit_lock, after the caller has checked the files
+    are still what was read. `files` is {filename: (current, proposed)}.
+
+    VALIDATE, WRITE, RELOAD, AND PUT IT BACK IF THE RELOAD FAILS -- the
+    role-change route's "save, reload, undo", with the loader run first
+    against a copy of the configuration with the new files in it, so a
+    configuration that would not load never reaches the disk at all.
+    The undo is for what only a full build finds.
+
+    ATOMIC PER FILE: each is written beside itself and renamed over it,
+    so a crash mid-write leaves the old file or the new one, never half.
+    Several files are not one rename, so ALL are staged before the first
+    is renamed (a full disk shows up while nothing has changed), they are
+    renamed with `first` leading (else in the order `files` gives), and a rename that fails puts the
+    ones already renamed back from their saved text. If that fails too the
+    error names the files and what to do. A crash between two renames
+    leaves a mix, which the next load judges like any hand edit -- so the
+    caller orders them for the intermediate state to load (a removal puts
+    the bindings first: a binding for an undeclared field is a load error,
+    a declared field without a binding is not).
+
+    AUDITED EITHER WAY, one entry per file, with the values -- each
+    editor's allowlist makes them numbers, switches, fixed choices,
+    descriptive text and labels, never a secret.
+    """
+    from elysium.core.config_editing import digest, shown_diff
+
+    audit = _generation(request).mediator.audit_log
+    config_dir = request.app.state.runtime_paths.config_dir
+
+    def refused(status: int, reason: str):
+        for filename, (current, _) in files.items():
+            audit.log_config_edit(current_user.user_id, "rejected", filename, changes,
+                                  digest(current), None, detail=reason[:500])
+        return HTTPException(status_code=status, detail=reason)
+
+    try:
+        _load_candidate(request, {name: proposed for name, (_, proposed) in files.items()})
+    except HTTPException as e:
+        raise refused(e.status_code, e.detail) from e
+
+    def staged_beside(filename: str) -> Path:
+        path = config_dir / filename
+        return path.with_name(f".{path.name}.elysium-edit")
+
+    def drop_staged(names) -> None:
+        for name in names:
+            with contextlib.suppress(OSError):
+                staged_beside(name).unlink()
+
+    def put(filename: str, text: str) -> None:
+        staged = staged_beside(filename)
+        _put_exact_text(staged, text)
+        os.replace(staged, config_dir / filename)
+
+    def put_back(names) -> "list[str]":
+        """Every name is tried, whatever happens to the one before; the
+        ones that could not be put back are returned."""
+        failed = []
+        for name in reversed(list(names)):
+            try:
+                put(name, files[name][0])
+            except OSError:
+                drop_staged([name])
+                failed.append(name)
+        return failed
+
+    def stuck(failed: "list[str]", why: str):
+        """The state a restore could not repair: say which files hold the
+        NEW text, where they are, and what to do. A pair in different
+        generations stops the next restart ('binds field(s) not declared')."""
+        new_text = ", ".join(str(config_dir / name) for name in failed)
+        old_text = ", ".join(str(config_dir / name) for name in files if name not in failed) or "the other file"
+        return refused(500, (
+            f"The change was not applied, but {why} could not be undone: {new_text} holds the new text and "
+            f"{old_text} the old. Put the files back in step before you restart -- copy the old text of "
+            f"{new_text} back from your backup or version control -- or the next start will refuse to load."))
+
+    # ONE AFTER THE OTHER, IN THE ORDER THE CALLER GAVE: bindings first
+    # for a removal (a binding for a field the ontology no longer has
+    # stops the loader, a field without its binding loads), so a crash
+    # between the two renames leaves a pair the next start accepts.
+    # Both are staged before either is renamed, so a full disk or a
+    # permission error is found while nothing has changed.
+    order = sorted(files, key=lambda name: name not in first)
+    staged_names: list[str] = []
+    try:
+        for filename, (_, proposed) in files.items():
+            staged_names.append(filename)
+            _put_exact_text(staged_beside(filename), proposed)
+    except OSError as e:
+        drop_staged(staged_names)
+        raise refused(500, "The change was not applied: a file could not be written beside the "
+                           "configuration. Nothing was changed.") from e
+    written: list[str] = []
+    try:
+        for filename in order:
+            os.replace(staged_beside(filename), config_dir / filename)
+            written.append(filename)
+    except OSError as e:
+        drop_staged(files)
+        failed = put_back(written)
+        if failed:
+            raise stuck(failed, "a failed rename") from e
+        raise refused(500, "The change was not applied: a file could not be put in place. "
+                           "Nothing was changed.") from e
+    try:
+        new = reload_generation(request.app, requested_by=current_user.user_id)
+    except Exception as e:
+        failed = put_back(written)
+        if failed:
+            raise stuck(failed, "a failed reload") from e
+        if isinstance(e, ReloadInProgress):
+            raise refused(409, str(e)) from e
+        raise refused(400, f"The change was not applied: the configuration would not reload ({e}).") from e
+
+    for filename, (current, proposed) in files.items():
+        audit.log_config_edit(current_user.user_id, "applied", filename, changes,
+                              digest(current), digest(proposed))
+    # AS THE INTERFACE MAY SHOW IT (core/config_editing.shown_diff): an
+    # approved restore writes data_silos.yaml too, and its lines must not
+    # come back in the response when the preview never showed them.
+    return {"diff": [line for filename, (current, proposed) in files.items()
+                     for line in shown_diff(filename, current, proposed)],
+            "digest": digest(next(iter(files.values()))[1]),
+            "to_generation": new.generation,
+            # What the reload just made, for a caller that must answer from it
+            # (the request is pinned to the generation BEFORE the edit).
+            "new_schema": new.config.schema}
+
+
+def _load_candidate(request: Request, replacements: "dict[str, str]"):
+    """The configuration as it would load with these files replaced --
+    with the roles actually in force, as a running generation has them
+    -- or a 400 saying why it would not load.
+
+    THE SAME LOAD a reload does, on a copy, so nothing that passes here
+    can fail to load for a reason this did not see; and the result is
+    what the access comparison is asked about, so the preview and the
+    approval describe the configuration that would really run.
+    """
+    import shutil
+    import tempfile
+
+    from elysium.core.deployment_loader import _with_effective_roles, load_deployment
+
+    paths = request.app.state.runtime_paths
+    with tempfile.TemporaryDirectory() as scratch:
+        candidate = Path(scratch) / "config"
+        shutil.copytree(paths.config_dir, candidate)
+        for filename, text in replacements.items():
+            _put_exact_text(candidate / filename, text)
+        try:
+            return _with_effective_roles(load_deployment(candidate), paths.data_dir)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"That configuration would not load: {e}") from e
+
+
+# ---- Describing the ontology (DEV_UI 13.7), core/config_editing.py ----
+
+class DescribedFieldResponse(BaseModel):
+    display_name: str | None = None
+    description: str | None = None
+    # data or link: only a data field may be a title.
+    kind: str
+    # Its access labels (`classification:`), [] for none.
+    labels: list[str] = []
+
+
+class DescribedTypeResponse(BaseModel):
+    display_name: str | None = None
+    plural_display_name: str | None = None
+    description: str | None = None
+    group: str | None = None
+    title_field: str | None = None
+    fields: dict[str, DescribedFieldResponse]
+
+
+class OntologyDescriptionsResponse(BaseModel):
+    digest: str
+    types: dict[str, DescribedTypeResponse]
+    # Whether labels decide who reads a field here, or only say what it
+    # holds -- the editor says which, because it changes what a label is.
+    label_enforcement: bool = False
+    # The data types a new field may be given -- the mirror's own list,
+    # so the form offers what the server will accept and nothing else.
+    data_types: list[str] = []
+
+
+class DescriptionChange(BaseModel):
+    object_type: str
+    # None describes the type itself.
+    field: str | None = None
+    key: str
+    # None REMOVES the key, as the settings editor's null does.
+    value: str | None = None
+
+
+class DescriptionEditRequest(BaseModel):
+    digest: str
+    changes: list[DescriptionChange]
+
+
+def _ontology_as_read(request: Request, read_digest: str) -> str:
+    """ontology_schema.yaml now, if it is still the file the editor read;
+    a 409 if it has moved -- an operator editing by hand and the UI
+    writing must not silently overwrite each other."""
+    from elysium.core.config_editing import ONTOLOGY_FILE, digest
+
+    current = _exact_text(request.app.state.runtime_paths.config_dir / ONTOLOGY_FILE)
+    if digest(current) != read_digest:
+        raise HTTPException(status_code=409, detail=(
+            f"{ONTOLOGY_FILE} has changed since you opened it. Load it again to see "
+            "the new version before changing it."))
+    return current
+
+
+def _proposed_descriptions(request: Request, body: DescriptionEditRequest) -> tuple[str, str]:
+    from elysium.core.config_editing import ConfigEditError, apply_descriptions
+
+    current = _ontology_as_read(request, body.digest)
+    try:
+        return current, apply_descriptions(current, [c.model_dump() for c in body.changes])
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+def _description_audit(body: DescriptionEditRequest) -> dict:
+    """The changes as the audit log's {dotted key: value}."""
+    return {".".join(p for p in (c.object_type, c.field, c.key) if p): c.value for c in body.changes}
+
+
+@router.get("/admin/ontology/descriptions", dependencies=[Depends(_no_store)],
+            response_model=OntologyDescriptionsResponse)
+def ontology_descriptions_route(request: Request,
+                                current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """What each type and field is called and described as, as
+    ontology_schema.yaml declares it -- absent as null, so the editor can
+    say a name is the humanised fallback rather than one somebody chose.
+
+    manage:deployment, as the settings: this is the deployment's
+    declaration, and a person who may change it may read all of it --
+    including types and fields their own role cannot see, whose NAMES
+    they are about to describe. Names and descriptions, never storage.
+    """
+    from elysium.core.config_editing import ONTOLOGY_FILE, current_descriptions, digest
+    from elysium.core.ontology.field_types import FIELD_DATA_TYPES
+
+    _require_manage_deployment(request, current_user)
+    text = _exact_text(request.app.state.runtime_paths.config_dir / ONTOLOGY_FILE)
+    return {"digest": digest(text), "types": current_descriptions(text),
+            "label_enforcement": bool(_generation(request).config.label_enforcement),
+            "data_types": list(FIELD_DATA_TYPES)}
+
+
+@router.post("/admin/ontology/descriptions/preview", dependencies=[Depends(_no_store)],
+             response_model=ConfigEditPreviewResponse)
+def preview_ontology_descriptions_route(body: DescriptionEditRequest, request: Request,
+                                        current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The lines that would change, and nothing written."""
+    from elysium.core.config_editing import ONTOLOGY_FILE, diff
+
+    _require_manage_deployment(request, current_user)
+    current, proposed = _proposed_descriptions(request, body)
+    return {"diff": diff(current, proposed, ONTOLOGY_FILE)}
+
+
+@router.put("/admin/ontology/descriptions", dependencies=[Depends(_no_store)],
+            response_model=ConfigEditResponse)
+def apply_ontology_descriptions_route(body: DescriptionEditRequest, request: Request,
+                                      current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Writes the descriptions to ontology_schema.yaml and reloads.
+
+    AT ONCE, NO SECOND PERSON (decided 16 October): these change what
+    things are called, not what anyone can see or what data exists --
+    the same footing as the settings editor. The reload is what puts
+    the new names in front of every reader and the agent.
+    """
+    from elysium.core.config_editing import ONTOLOGY_FILE
+
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        current, proposed = _proposed_descriptions(request, body)
+        return _write_config_file(request, current_user, ONTOLOGY_FILE, current, proposed,
+                                  _description_audit(body))
+
+
+# ---- Access labels (DEV_UI 13.7, decided 16 October) ----
+
+class LabelChange(BaseModel):
+    object_type: str
+    field: str
+    # The field's labels after; [] removes them all.
+    labels: list[str]
+
+
+class LabelEditRequest(BaseModel):
+    digest: str
+    changes: list[LabelChange]
+    # Required when the change widens access: shown to the approver.
+    reason: str | None = None
+
+
+class LabelPreviewResponse(BaseModel):
+    diff: list[str]
+    # core/role_impact.config_access_impact: {"widens", "roles": [...]}
+    impact: dict
+    needs_approval: bool
+    label_enforcement: bool
+
+
+class LabelEditResponse(BaseModel):
+    # "applied", or "waiting" for a second person.
+    status: str
+    diff: list[str]
+    to_generation: int | None = None
+    proposal_id: str | None = None
+
+
+def _proposed_labels(request: Request, body: LabelEditRequest) -> tuple[str, str]:
+    from elysium.core.config_editing import ConfigEditError, apply_labels
+
+    current = _ontology_as_read(request, body.digest)
+    try:
+        return current, apply_labels(current, [c.model_dump() for c in body.changes])
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+def _access_impact(request: Request, replacements: "dict[str, str]") -> tuple[Any, dict]:
+    """The candidate configuration, and what it would do to access
+    compared with the one running now."""
+    from elysium.core.role_impact import config_access_impact
+
+    # BOTH SIDES FROM THE FILES, NOT "BEFORE" FROM THIS REQUEST'S PIN.
+    # These run inside _config_edit_lock, and the pin was taken before
+    # the wait: a role change approved meanwhile would be counted as
+    # this change's doing, or could hide what this change opens. Loading
+    # what is on disk now is what the reload after it will start from.
+    # (The pin's one sanctioned exception, latest_generation, stays one.)
+    before = _load_candidate(request, {})
+    candidate = _load_candidate(request, replacements)
+    every, _active = _holders(request)
+    return candidate, config_access_impact(_generation(request).mediator, before, candidate, every)
+
+
+def _label_summary(body: LabelEditRequest, current: str) -> str:
+    """One line per field, "Customer.email: pii → none", for the approver."""
+    from elysium.core.config_editing import current_descriptions
+
+    described = current_descriptions(current)
+    lines = []
+    for change in body.changes:
+        was = (described.get(change.object_type, {}).get("fields", {})
+               .get(change.field, {}).get("labels") or [])
+        lines.append(f"{change.object_type}.{change.field}: {', '.join(was) or 'none'} → "
+                     f"{', '.join(change.labels) or 'none'}")
+    return "; ".join(lines)
+
+
+@router.post("/admin/ontology/labels/preview", dependencies=[Depends(_no_store)],
+             response_model=LabelPreviewResponse)
+def preview_labels_route(body: LabelEditRequest, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The lines that would change, what that does to access, and whether
+    it would wait for a second person. Nothing written."""
+    from elysium.core.config_editing import ONTOLOGY_FILE, diff
+
+    _require_manage_deployment(request, current_user)
+    current, proposed = _proposed_labels(request, body)
+    candidate, impact = _access_impact(request, {ONTOLOGY_FILE: proposed})
+    return {"diff": diff(current, proposed, ONTOLOGY_FILE), "impact": impact,
+            "needs_approval": impact["widens"],
+            "label_enforcement": bool(candidate.label_enforcement)}
+
+
+@router.put("/admin/ontology/labels", dependencies=[Depends(_no_store)],
+            response_model=LabelEditResponse)
+def apply_labels_route(body: LabelEditRequest, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Applies the labels now, or -- when anyone could read more
+    afterwards -- proposes them for a holder of manage:roles to approve.
+
+    THE RULE IS THE PERMISSION CODE'S ANSWER, not the edit's direction
+    (core/role_impact.config_access_impact): with enforcement off, labels
+    decide nothing and every change applies at once; with it on, adding
+    a label can open a field as surely as removing one can.
+    """
+    from elysium.core.config_editing import ONTOLOGY_FILE, diff, digest
+
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        current, proposed = _proposed_labels(request, body)
+        _candidate, impact = _access_impact(request, {ONTOLOGY_FILE: proposed})
+        changes = {f"{c.object_type}.{c.field}.classification": c.labels for c in body.changes}
+        if not impact["widens"]:
+            result = _write_config_file(request, current_user, ONTOLOGY_FILE, current, proposed, changes)
+            return {"status": "applied", "diff": result["diff"], "to_generation": result["to_generation"]}
+
+        reason = _reason(body.reason)
+        proposal_id = _proposals(request).propose(
+            "labels", _label_summary(body, current), {ONTOLOGY_FILE: proposed},
+            {ONTOLOGY_FILE: digest(current)}, reason, current_user.user_id)
+        _generation(request).mediator.audit_log.log_config_edit(
+            current_user.user_id, "proposed", ONTOLOGY_FILE, changes, digest(current), digest(proposed),
+            detail=f"proposal {proposal_id}: {reason}"[:500])
+        return {"status": "waiting", "diff": diff(current, proposed, ONTOLOGY_FILE),
+                "proposal_id": proposal_id}
+
+
+# ---- New fields (the ontology's shape, designed and agreed 26 October) ----
+
+class NewFieldRequest(BaseModel):
+    object_type: str
+    name: str
+    # One of the data types the mirror knows; absent is "string". Chosen
+    # here and never changed here: Iceberg will not change a column's
+    # type in place.
+    data_type: str | None = None
+    display_name: str | None = None
+    description: str | None = None
+    labels: list[str] = []
+    # The source column when it is not named like the field.
+    column: str | None = None
+
+
+class NewFieldsRequest(BaseModel):
+    digest: str
+    fields: list[NewFieldRequest]
+    # Required only if the change would widen access, when it waits.
+    reason: str | None = None
+
+
+class NewFieldConsequence(BaseModel):
+    object_type: str
+    field: str
+    column: str
+    # Whether the source table has that column: null when the source
+    # cannot be asked (only SQL sources can) or did not answer.
+    source_has_column: bool | None = None
+
+
+class NewFieldsPreviewResponse(BaseModel):
+    diff: list[str]
+    impact: dict
+    needs_approval: bool
+    fields: list[NewFieldConsequence]
+
+
+class NewFieldsResponse(BaseModel):
+    # "applied", or "waiting" for a second person.
+    status: str
+    diff: list[str]
+    to_generation: int | None = None
+    proposal_id: str | None = None
+    # Something the person should know that is not an error: a removal that
+    # could not record, in the lake, what an erasure will need.
+    notice: str | None = None
+
+
+def _proposed_new_fields(request: Request, body: NewFieldsRequest) -> "dict[str, tuple[str, str]]":
+    """{filename: (now, proposed)} for the files these fields change."""
+    from elysium.core.config_editing import BINDINGS_FILE, ONTOLOGY_FILE, ConfigEditError, apply_new_fields
+    from elysium.core.ontology.field_types import FIELD_DATA_TYPES
+
+    current = _ontology_as_read(request, body.digest)
+    bindings_path = request.app.state.runtime_paths.config_dir / BINDINGS_FILE
+    bindings = _exact_text(bindings_path) if bindings_path.exists() else None
+    try:
+        proposed, proposed_bindings = apply_new_fields(
+            current, bindings, [f.model_dump(exclude_none=True) for f in body.fields], FIELD_DATA_TYPES)
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    files = {ONTOLOGY_FILE: (current, proposed)}
+    if bindings is not None and proposed_bindings != bindings:
+        files[BINDINGS_FILE] = (bindings, proposed_bindings or "")
+    return files
+
+
+def _source_has_column(request: Request, object_type: str, column: str) -> "bool | None":
+    """Whether the type's source table has this column, or None when the
+    source cannot say. Asked of the adapter the way the sync asks it, and
+    an adapter that does not know, or does not answer, is not a fault
+    here: the preview says "not checked"."""
+    # THE SOURCE-SHAPED SCHEMA AND THE SOURCE ADAPTERS, not the mediator's:
+    # when reads come from gold the mediator's storage says "gold", which
+    # has every column by construction and answers nothing about the source.
+    storage = (_generation(request).config.schema.get(object_type) or {}).get("storage") or {}
+    adapter = live_source_adapters(request).get(storage.get("silo"))
+    probe = getattr(adapter, "columns_present", None)
+    if probe is None or not storage.get("table"):
+        return None
+    try:
+        present = probe(storage["table"])
+    except Exception:  # noqa: BLE001 - a source that is down is not this change's fault
+        return None
+    return column in present if present else None
+
+
+@router.post("/admin/ontology/fields/preview", dependencies=[Depends(_no_store)],
+             response_model=NewFieldsPreviewResponse)
+def preview_new_fields_route(body: NewFieldsRequest, request: Request,
+                             current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The lines that would be added, what that does to access (nothing,
+    unless a grant already names the field), whether the source has the
+    column, and whether it would wait for a second person. Nothing written."""
+    from elysium.core.config_editing import shown_diff
+
+    _require_manage_deployment(request, current_user)
+    files = _proposed_new_fields(request, body)
+    _candidate, impact = _access_impact(request, {name: proposed for name, (_, proposed) in files.items()})
+    return {
+        "diff": [line for name, (before, after) in files.items() for line in shown_diff(name, before, after)],
+        "impact": impact, "needs_approval": impact["widens"],
+        "fields": [{"object_type": f.object_type, "field": f.name, "column": f.column or f.name,
+                    "source_has_column": _source_has_column(request, f.object_type, f.column or f.name)}
+                   for f in body.fields],
+    }
+
+
+@router.put("/admin/ontology/fields", dependencies=[Depends(_no_store)],
+            response_model=NewFieldsResponse)
+def apply_new_fields_route(body: NewFieldsRequest, request: Request,
+                           current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Adds the fields now, or -- if anyone could read more afterwards --
+    proposes them for a holder of manage:roles to approve.
+
+    A NEW FIELD CANNOT NORMALLY WIDEN ACCESS: nobody reads a field that
+    no grant names, so it applies at once and the screen says that nobody
+    can read it yet. The question is still asked of the permission code
+    rather than answered from that reasoning, because a policy may
+    already grant a field that did not exist when it was written.
+    """
+    from elysium.core.config_editing import digest, shown_diff
+    from elysium.core.config_proposals import SHAPE
+
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        files = _proposed_new_fields(request, body)
+        proposed = {name: text for name, (_, text) in files.items()}
+        _candidate, impact = _access_impact(request, proposed)
+        changes = {f"{f.object_type}.{f.name}": f.data_type or "string" for f in body.fields}
+        if not impact["widens"]:
+            written = _write_config_files(request, current_user, files, changes)
+            return {"status": "applied", "diff": written["diff"], "to_generation": written["to_generation"]}
+
+        reason = _reason(body.reason)
+        summary = "; ".join(f"new field {key} ({kind})" for key, kind in changes.items())
+        proposal_id = _proposals(request).propose(
+            SHAPE, summary, proposed, {name: digest(before) for name, (before, _) in files.items()},
+            reason, current_user.user_id)
+        audit = _generation(request).mediator.audit_log
+        for name, (before, after) in files.items():
+            audit.log_config_edit(current_user.user_id, "proposed", name, changes, digest(before),
+                                  digest(after), detail=f"proposal {proposal_id}: {reason}"[:500])
+        return {"status": "waiting", "proposal_id": proposal_id,
+                "diff": [line for name, (before, after) in files.items()
+                         for line in shown_diff(name, before, after)]}
+
+
+class NewTypeFieldRequest(BaseModel):
+    name: str
+    column: str | None = None
+    data_type: str | None = None
+
+
+class NewTypeRequest(BaseModel):
+    digest: str
+    name: str
+    display_name: str | None = None
+    plural_display_name: str | None = None
+    description: str | None = None
+    silo: str
+    table: str
+    id_column: str
+    id_field: str | None = None
+    # "string" when absent. Integer ids come from sources keyed by number.
+    id_type: str | None = None
+    fields: list[NewTypeFieldRequest]
+    title_field: str | None = None
+    # "inherit", "unrestricted" or {"field": <one of the fields>}: never
+    # defaulted, because a type's row rule is a decision.
+    security: str | dict | None = None
+    # List the type to everyone by name (no ids, no counts, no data).
+    discoverable: bool = False
+    reason: str | None = None
+
+
+class NewTypeSourceResponse(BaseModel):
+    # The silos a type can be built over, each with the row rule it
+    # declares ("unrestricted", {"field": ...}) or null for none.
+    silos: list[dict]
+
+
+class SourceTablesResponse(BaseModel):
+    # Null when the source cannot be asked (a folder, an API, a failure):
+    # the form then takes the name by hand.
+    tables: list[str] | None = None
+
+
+class SourceColumnsResponse(BaseModel):
+    columns: list[str] | None = None
+
+
+class NewTypePreviewResponse(BaseModel):
+    diff: list[str]
+    impact: dict
+    needs_approval: bool
+    # Null when the source cannot be asked.
+    source_has_table: bool | None = None
+    columns_missing: list[str] = []
+    columns_checked: bool = False
+
+
+def _silo_rules_in_force(request: Request) -> "dict[str, dict | None]":
+    """{silo: the row rule it declares, or None} for every silo."""
+    from elysium.core.ontology.silo_security import silo_rules
+
+    silos = _generation(request).config.silo_configs
+    rules = silo_rules({"data_silos": silos})
+    return {name: rules.get(name) for name in silos}
+
+
+def _proposed_new_type(request: Request, body: NewTypeRequest) -> "dict[str, tuple[str, str]]":
+    """{filename: (now, proposed)} for the files this type changes."""
+    from elysium.core.config_editing import BINDINGS_FILE, ONTOLOGY_FILE, ConfigEditError, apply_new_type
+    from elysium.core.ontology.field_types import FIELD_DATA_TYPES
+
+    current = _ontology_as_read(request, body.digest)
+    bindings_path = request.app.state.runtime_paths.config_dir / BINDINGS_FILE
+    bindings = _exact_text(bindings_path) if bindings_path.exists() else None
+    addition = body.model_dump(exclude_none=True, exclude={"digest", "reason"})
+    addition["fields"] = [f.model_dump(exclude_none=True) for f in body.fields]
+    try:
+        proposed, proposed_bindings = apply_new_type(
+            current, bindings, addition, FIELD_DATA_TYPES, _silo_rules_in_force(request))
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    files = {ONTOLOGY_FILE: (current, proposed)}
+    if bindings is not None and proposed_bindings != bindings:
+        files[BINDINGS_FILE] = (bindings, proposed_bindings or "")
+    return files
+
+
+def _source_adapter(request: Request, silo: str):
+    return live_source_adapters(request).get(silo)
+
+
+@router.get("/admin/ontology/sources", dependencies=[Depends(_no_store)],
+            response_model=NewTypeSourceResponse)
+def new_type_sources_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The sources a type can be built over, and the row rule each declares.
+    Names and rules, never where a source is or how it is reached."""
+    _require_manage_deployment(request, current_user)
+    return {"silos": [{"silo": name, "rule": dict(rule) if rule else None}
+                      for name, rule in sorted(_silo_rules_in_force(request).items())]}
+
+
+@router.get("/admin/ontology/sources/{silo}/tables", dependencies=[Depends(_no_store)],
+            response_model=SourceTablesResponse)
+def source_tables_route(silo: str, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The tables a source holds, or null when it cannot say."""
+    _require_manage_deployment(request, current_user)
+    if silo not in _generation(request).config.silo_configs:
+        raise HTTPException(status_code=404, detail="Not found")
+    probe = getattr(_source_adapter(request, silo), "tables_present", None)
+    try:
+        present = probe() if probe else None
+    except Exception:  # noqa: BLE001 - a source that is down is not an error to show
+        present = None
+    # SQLite keeps its own bookkeeping tables beside the data (sqlite_sequence):
+    # not something anyone builds an object type over.
+    tables = sorted(t for t in (present or ()) if not t.startswith("sqlite_"))
+    return {"tables": tables or None}
+
+
+@router.get("/admin/ontology/sources/{silo}/columns", dependencies=[Depends(_no_store)],
+            response_model=SourceColumnsResponse)
+def source_columns_route(silo: str, table: str, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The columns of one table, or null when the source cannot say."""
+    _require_manage_deployment(request, current_user)
+    if silo not in _generation(request).config.silo_configs:
+        raise HTTPException(status_code=404, detail="Not found")
+    probe = getattr(_source_adapter(request, silo), "columns_present", None)
+    try:
+        present = probe(table) if probe else None
+    except Exception:  # noqa: BLE001
+        present = None
+    return {"columns": sorted(present) if present else None}
+
+
+@router.post("/admin/ontology/types/preview", dependencies=[Depends(_no_store)],
+             response_model=NewTypePreviewResponse)
+def preview_new_type_route(body: NewTypeRequest, request: Request,
+                           current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The lines that would be added, whether the source has the table and
+    columns, what it does to access (nothing, unless the type is listed to
+    everyone), and whether it would wait for a second person."""
+    from elysium.core.config_editing import shown_diff
+
+    _require_manage_deployment(request, current_user)
+    files = _proposed_new_type(request, body)
+    _candidate, impact = _access_impact(request, {name: proposed for name, (_, proposed) in files.items()})
+    tables = getattr(_source_adapter(request, body.silo), "tables_present", None)
+    try:
+        present_tables = tables() if tables else None
+    except Exception:  # noqa: BLE001
+        present_tables = None
+    columns = getattr(_source_adapter(request, body.silo), "columns_present", None)
+    try:
+        present_columns = columns(body.table) if columns else None
+    except Exception:  # noqa: BLE001
+        present_columns = None
+    wanted = [body.id_column] + [f.column or f.name for f in body.fields]
+    return {
+        "diff": [line for name, (before, after) in files.items() for line in shown_diff(name, before, after)],
+        "impact": impact, "needs_approval": impact["widens"],
+        "source_has_table": (body.table in present_tables) if present_tables else None,
+        "columns_checked": bool(present_columns),
+        "columns_missing": [c for c in wanted if c not in present_columns] if present_columns else [],
+    }
+
+
+@router.put("/admin/ontology/types", dependencies=[Depends(_no_store)],
+            response_model=NewFieldsResponse)
+def apply_new_type_route(body: NewTypeRequest, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Adds the type now, or -- if anyone could read more afterwards, which
+    only listing it to everyone does -- proposes it for a holder of
+    manage:roles to approve.
+
+    A NEW TYPE CANNOT NORMALLY WIDEN ACCESS: no role is granted it, so
+    nobody reads it until someone with manage:escalation grants it. The
+    question is still asked of the permission code, as for a field.
+    """
+    from elysium.core.config_editing import digest, shown_diff
+    from elysium.core.config_proposals import SHAPE
+
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        files = _proposed_new_type(request, body)
+        proposed = {name: text for name, (_, text) in files.items()}
+        _candidate, impact = _access_impact(request, proposed)
+        changes = {body.name: "new type"}
+        if not impact["widens"]:
+            written = _write_config_files(request, current_user, files, changes)
+            return {"status": "applied", "diff": written["diff"], "to_generation": written["to_generation"]}
+
+        reason = _reason(body.reason)
+        proposal_id = _proposals(request).propose(
+            SHAPE, f"new type {body.name}, listed to everyone by name", proposed,
+            {name: digest(before) for name, (before, _) in files.items()},
+            reason, current_user.user_id)
+        audit = _generation(request).mediator.audit_log
+        for name, (before, after) in files.items():
+            audit.log_config_edit(current_user.user_id, "proposed", name, changes, digest(before),
+                                  digest(after), detail=f"proposal {proposal_id}: {reason}"[:500])
+        return {"status": "waiting", "proposal_id": proposal_id,
+                "diff": [line for name, (before, after) in files.items()
+                         for line in shown_diff(name, before, after)]}
+
+
+class NewLinkSide(BaseModel):
+    object_type: str
+    api_name: str
+
+
+class NewLinkRequest(BaseModel):
+    digest: str
+    name: str
+    display_name: str | None = None
+    description: str | None = None
+    source: NewLinkSide
+    target: NewLinkSide
+    cardinality: str
+    # One-to-one and one-to-many: the column of the TARGET's table that holds
+    # the source's id.
+    foreign_key_column: str | None = None
+    # Many-to-many: {table, source_column, target_column}.
+    join_table: dict | None = None
+    reason: str | None = None
+
+
+class LinkableType(BaseModel):
+    name: str
+    display_name: str | None = None
+    silo: str | None = None
+
+
+class LinkableTypesResponse(BaseModel):
+    types: list[LinkableType]
+
+
+class NewLinkPreviewResponse(BaseModel):
+    diff: list[str]
+    impact: dict
+    needs_approval: bool
+    # What the source says about the columns and table named, in words;
+    # empty when all is as written or the source could not be asked.
+    problems: list[str] = []
+    checked: bool = False
+
+
+def _proposed_new_link(request: Request, body: NewLinkRequest) -> "dict[str, tuple[str, str]]":
+    """{filename: (now, proposed)} for the file this link changes."""
+    from elysium.core.config_editing import ONTOLOGY_FILE, ConfigEditError, apply_new_link
+
+    current = _ontology_as_read(request, body.digest)
+    addition = body.model_dump(exclude_none=True, exclude={"digest", "reason"})
+    try:
+        proposed = apply_new_link(current, addition)
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {ONTOLOGY_FILE: (current, proposed)}
+
+
+def _storage_of(request: Request, object_type: str) -> dict:
+    schema = _generation(request).config.schema
+    return (schema.get(object_type) or {}).get("storage") or {}
+
+
+def _ask_source(adapter, method: str, *given):
+    """What the source says, or None when it cannot or does not answer."""
+    probe = getattr(adapter, method, None)
+    try:
+        return probe(*given) if probe else None
+    except Exception:  # noqa: BLE001 - a source that is down just answers nothing
+        return None
+
+
+class UsedByRow(BaseModel):
+    kind: str
+    place: str
+    says: str
+
+
+class UsedByResponse(BaseModel):
+    referrers: list[UsedByRow]
+    # What this report does not look at, in words, so an empty list is
+    # never read as "nothing anywhere names it".
+    not_listed: str
+
+
+# Things kept beside the configuration, whose references are rows in
+# databases rather than lines in files (core/ontology/used_by.py).
+_USED_BY_NOT_LISTED = ("Saved views, frozen sets, enrichment recipes, proposals and notes that "
+                       "refer to it are not listed here yet.")
+
+
+@router.get("/admin/ontology/used-by", dependencies=[Depends(_no_store)],
+            response_model=UsedByResponse)
+def used_by_route(request: Request, object_type: str | None = None, field: str | None = None,
+                  link: str | None = None,
+                  current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Everything in the configuration that names a type, a field or a link.
+
+    Exactly one of: `object_type` (a type), `object_type` with `field`
+    (a field), or `link` (a link type). Read-only. An unknown name is
+    "Not found" and says nothing more, as everywhere else here.
+    """
+    from elysium.core.ontology.used_by import used_by_field, used_by_link, used_by_type
+
+    _require_manage_deployment(request, current_user)
+    config = _generation(request).config
+    schema = config.schema
+    shared = (schema, config.roles, config.action_types, config.declared_triggers)
+    if link is not None and object_type is None and field is None:
+        known = any(item.get("link_type") == link
+                    for definition in schema.values()
+                    for item in (definition.get("fields") or {}).values())
+        found = used_by_link(*shared, link) if known else None
+    elif object_type is not None and link is None:
+        definition = schema.get(object_type)
+        if definition is None:
+            found = None
+        elif field is None:
+            found = used_by_type(*shared, object_type)
+        elif field in (definition.get("fields") or {}) or field == definition.get("id_field"):
+            found = used_by_field(*shared, object_type, field)
+        else:
+            found = None
+    else:
+        raise HTTPException(status_code=400, detail="Ask for a type, a type's field, or a link.")
+    if found is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"referrers": [item.as_dict() for item in found], "not_listed": _USED_BY_NOT_LISTED}
+
+
+@router.get("/admin/ontology/linkable-types", dependencies=[Depends(_no_store)],
+            response_model=LinkableTypesResponse)
+def linkable_types_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The object types a link can join, and the source each is built over."""
+    _require_manage_deployment(request, current_user)
+    schema = _generation(request).config.schema
+    return {"types": [{"name": name, "display_name": definition.get("display_name"),
+                       "silo": (definition.get("storage") or {}).get("silo")}
+                      for name, definition in sorted(schema.items())]}
+
+
+@router.get("/admin/ontology/linkable-types/{object_type}/columns", dependencies=[Depends(_no_store)],
+            response_model=SourceColumnsResponse)
+def linkable_type_columns_route(object_type: str, request: Request,
+                                current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The columns of the table a type is built over, or null when the
+    source cannot say. A person choosing the column that joins two types
+    is offered what that type's table holds, without being told where it is."""
+    _require_manage_deployment(request, current_user)
+    if object_type not in _generation(request).config.schema:
+        raise HTTPException(status_code=404, detail="Not found")
+    storage = _storage_of(request, object_type)
+    present = _ask_source(live_source_adapters(request).get(storage.get("silo")), "columns_present",
+                          storage.get("table"))
+    return {"columns": sorted(present) if present else None}
+
+
+def _link_problems(request: Request, body: NewLinkRequest) -> tuple[list[str], bool]:
+    """(what the source lacks, in words, whether it could be asked)."""
+    adapters = live_source_adapters(request)
+    problems: list[str] = []
+    checked = False
+    if body.cardinality == "many_to_many":
+        join = body.join_table or {}
+        silo = _storage_of(request, body.source.object_type).get("silo")
+        table = join.get("table")
+        adapter = adapters.get(silo)
+        tables = _ask_source(adapter, "tables_present")
+        if tables:
+            checked = True
+            if table not in tables:
+                problems.append(f"The source has no table {table}.")
+        columns = _ask_source(adapter, "columns_present", table) if table else None
+        if columns:
+            checked = True
+            for key in ("source_column", "target_column"):
+                if join.get(key) not in columns:
+                    problems.append(f"The table {table} has no column {join.get(key)}.")
+    else:
+        storage = _storage_of(request, body.target.object_type)
+        columns = _ask_source(adapters.get(storage.get("silo")), "columns_present", storage.get("table"))
+        if columns:
+            checked = True
+            if body.foreign_key_column not in columns:
+                problems.append(f"The table {storage.get('table')} has no column {body.foreign_key_column}.")
+    return problems, checked
+
+
+@router.post("/admin/ontology/links/preview", dependencies=[Depends(_no_store)],
+             response_model=NewLinkPreviewResponse)
+def preview_new_link_route(body: NewLinkRequest, request: Request,
+                           current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The lines that would be added, whether the source has the column or
+    table named, what it does to access, and whether it would wait for a
+    second person. Nothing written."""
+    from elysium.core.config_editing import shown_diff
+
+    _require_manage_deployment(request, current_user)
+    files = _proposed_new_link(request, body)
+    _candidate, impact = _access_impact(request, {name: proposed for name, (_, proposed) in files.items()})
+    problems, checked = _link_problems(request, body)
+    return {
+        "diff": [line for name, (before, after) in files.items() for line in shown_diff(name, before, after)],
+        "impact": impact, "needs_approval": impact["widens"], "problems": problems, "checked": checked,
+    }
+
+
+@router.put("/admin/ontology/links", dependencies=[Depends(_no_store)], response_model=NewFieldsResponse)
+def apply_new_link_route(body: NewLinkRequest, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Adds the link now, or -- if anyone could read more afterwards --
+    proposes it for a holder of manage:roles to approve. A new link adds a
+    field to each type that nobody is granted yet, so it normally applies
+    at once; the permission code is asked all the same."""
+    from elysium.core.config_editing import digest, shown_diff
+    from elysium.core.config_proposals import SHAPE
+
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        files = _proposed_new_link(request, body)
+        proposed = {name: text for name, (_, text) in files.items()}
+        _candidate, impact = _access_impact(request, proposed)
+        changes = {body.name: "new link"}
+        if not impact["widens"]:
+            written = _write_config_files(request, current_user, files, changes)
+            return {"status": "applied", "diff": written["diff"], "to_generation": written["to_generation"]}
+
+        reason = _reason(body.reason)
+        proposal_id = _proposals(request).propose(
+            SHAPE, f"new link {body.name}", proposed,
+            {name: digest(before) for name, (before, _) in files.items()},
+            reason, current_user.user_id)
+        audit = _generation(request).mediator.audit_log
+        for name, (before, after) in files.items():
+            audit.log_config_edit(current_user.user_id, "proposed", name, changes, digest(before),
+                                  digest(after), detail=f"proposal {proposal_id}: {reason}"[:500])
+        return {"status": "waiting", "proposal_id": proposal_id,
+                "diff": [line for name, (before, after) in files.items()
+                         for line in shown_diff(name, before, after)]}
+
+
+class StatusRequest(BaseModel):
+    digest: str
+    # "type", "field" or "link"; object_type (and field) say which type or
+    # field, link says which link type.
+    kind: str
+    object_type: str | None = None
+    field: str | None = None
+    link: str | None = None
+    # "deprecated", or "active" to put it back.
+    status: str
+    # Why it is deprecated: required to deprecate, in words. This is the
+    # deprecation's reason, not the approval reason other edits carry.
+    reason: str | None = None
+    replaced_by: str | None = None
+    remove_after: str | None = None
+
+
+class StatusPreviewResponse(BaseModel):
+    diff: list[str]
+    impact: dict
+    needs_approval: bool
+
+
+def _proposed_status(request: Request, body: StatusRequest) -> "dict[str, tuple[str, str]]":
+    from elysium.core.config_editing import ONTOLOGY_FILE, ConfigEditError, apply_status
+    from elysium.core.ontology.deprecation import validate_deprecation
+
+    current = _ontology_as_read(request, body.digest)
+    change = body.model_dump(exclude_none=True, exclude={"digest"})
+    try:
+        proposed = apply_status(current, change, validate_deprecation)
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {ONTOLOGY_FILE: (current, proposed)}
+
+
+@router.post("/admin/ontology/status/preview", dependencies=[Depends(_no_store)],
+             response_model=StatusPreviewResponse)
+def preview_status_route(body: StatusRequest, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The lines that would be written to deprecate (or restore) a type,
+    a field or a link type, and what it does to access -- nothing, and the
+    permission code is asked rather than assumed. Nothing written."""
+    from elysium.core.config_editing import shown_diff
+
+    _require_manage_deployment(request, current_user)
+    files = _proposed_status(request, body)
+    _candidate, impact = _access_impact(request, {name: proposed for name, (_, proposed) in files.items()})
+    return {
+        "diff": [line for name, (before, after) in files.items() for line in shown_diff(name, before, after)],
+        "impact": impact, "needs_approval": impact["widens"],
+    }
+
+
+@router.put("/admin/ontology/status", dependencies=[Depends(_no_store)], response_model=NewFieldsResponse)
+def apply_status_route(body: StatusRequest, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Deprecates (or restores) now. A status changes no data and no
+    grant, so it never waits for a second person; if the permission code
+    says anyone could read more afterwards, something is wrong with the
+    edit and it is refused rather than proposed."""
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        files = _proposed_status(request, body)
+        _candidate, impact = _access_impact(request, {name: text for name, (_, text) in files.items()})
+        if impact["widens"]:
+            raise HTTPException(status_code=409, detail=(
+                "This would let someone read more than they can now, which a status never should. "
+                "Nothing was changed."))
+        what = body.link or (f"{body.object_type}.{body.field}" if body.field else body.object_type)
+        written = _write_config_files(request, current_user, files, {f"{what}.status": body.status})
+        return {"status": "applied", "diff": written["diff"], "to_generation": written["to_generation"]}
+
+
+# ---- Removing a field or a link type, core/ontology/removal.py ----
+
+class RemovalRequest(BaseModel):
+    digest: str
+    # "field", "link" or "type"; object_type and field say which field (or,
+    # alone, which type), link says which link type.
+    kind: str
+    object_type: str | None = None
+    field: str | None = None
+    link: str | None = None
+
+
+class RemovalPreviewResponse(BaseModel):
+    diff: list[str]
+    # What it does to access; None while something blocks it, because the
+    # candidate configuration would not load and its reason names things.
+    impact: dict | None = None
+    can_remove: bool
+    # Whether it is deprecated now -- removal is only ever the last of
+    # deprecate, wait, remove.
+    deprecated: bool
+    # The day the deprecation planned removal after, if it said one.
+    remove_after: str | None = None
+    # What would block it, as far as this person may see.
+    blockers: list[UsedByRow]
+    # How many more block it that name something they cannot discover.
+    hidden_blockers: int = 0
+    not_listed: str
+    # What becomes of the data already stored, in words.
+    stored_data: list[str]
+
+
+@dataclasses.dataclass
+class _Removal:
+    files: "dict[str, tuple[str, str]]"
+    deprecated: bool
+    remove_after: "str | None"
+    blockers: list
+    hidden: int
+    stored_data: list[str]
+    #: How a screen names it ("Customer.email", "link CustomerTags") and
+    #: how the audit log keys it ("Customer.email", "CustomerTags").
+    what: str
+    audited_as: str
+
+
+def _not_found() -> HTTPException:
+    # ONE ANSWER for a name that does not exist and one this person cannot
+    # discover, in the words the Used by report already uses.
+    return HTTPException(status_code=404, detail="Not found")
+
+
+def _planned_removal(request: Request, current_user: UserRecord, body: RemovalRequest) -> _Removal:
+    """Everything a removal needs to be judged, in one place for the
+    preview and the apply. A stale file is refused first (it says nothing
+    about any name); a name the deployment does not have is "Not found",
+    as in the Used by report; only then is the file edited and its blockers
+    worked out.
+
+    THE NAME ASKED ABOUT IS NOT GATED ON DISCOVERY, AND THE ROWS THAT STOP
+    IT ARE. A manager of the deployment reads every name in the declaration
+    (the descriptions route says so), and could not otherwise remove
+    anything: a field is discoverable only through a grant that names it,
+    and a grant naming it is what blocks its removal. What would be new
+    information is what ELSE names it -- another type's row rule, a rule
+    over a field they cannot discover -- so each blocker is shown only if
+    every name it carries is one they could find in Schema, and the rest
+    are counted."""
+    from elysium.core.config_editing import BINDINGS_FILE, ONTOLOGY_FILE, ConfigEditError, apply_removal
+    from elysium.core.functions.registry import get_enabled_functions
+    from elysium.core.mirror.incremental import incremental_tables_only_read_by
+    from elysium.core.ontology.deprecation import shown_deprecation
+    from elysium.core.ontology.removal import (
+        applied_writes,
+        field_blockers,
+        link_blockers,
+        link_ends,
+        stored_data,
+        type_blockers,
+        visible_to,
+    )
+
+    current = _ontology_as_read(request, body.digest)
+    mediator = _generation(request).mediator
+    running = mediator.schema
+    object_type, field, link = body.object_type or "", body.field or "", body.link or ""
+    if body.kind == "field":
+        if not object_type or not field:
+            raise HTTPException(status_code=400, detail="A field is named by its type and its name.")
+        ends = [(object_type, field)]
+        if field not in (running.get(object_type) or {}).get("fields", {}):
+            raise _not_found()
+        change = {"kind": "field", "object_type": object_type, "field": field}
+        what = audited_as = f"{object_type}.{field}"
+    elif body.kind == "link":
+        ends = link_ends(running, link)
+        if not ends:
+            raise _not_found()
+        change = {"kind": "link", "link": link}
+        what, audited_as = f"link {link}", link
+    elif body.kind == "type":
+        if not object_type or field or link:
+            raise HTTPException(status_code=400, detail="A type is named by its name alone.")
+        if object_type not in running:
+            raise _not_found()
+        ends = [(object_type, name) for name in running[object_type].get("fields", {})]
+        change = {"kind": "type", "object_type": object_type}
+        what, audited_as = f"type {object_type}", object_type
+    else:
+        raise HTTPException(status_code=400, detail="What is removed is a field, a link type or a type.")
+
+    bindings_path = request.app.state.runtime_paths.config_dir / BINDINGS_FILE
+    bindings = _exact_text(bindings_path) if bindings_path.exists() else None
+    try:
+        proposed, proposed_bindings = apply_removal(current, bindings, change)
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    files = {ONTOLOGY_FILE: (current, proposed)}
+    if bindings is not None and proposed_bindings != bindings:
+        files[BINDINGS_FILE] = (bindings, proposed_bindings or "")
+
+    # THE FILE ON DISK NOW, not the running generation: it is what a reload
+    # after this edit would start from (see _access_impact).
+    config = _load_candidate(request, {})
+    schema = config.schema
+    shared = (schema, config.roles, config.action_types, config.declared_triggers,
+              mediator.write_log)
+    if body.kind == "field":
+        marks = [schema[object_type]["fields"][field]]
+        found = field_blockers(*shared, object_type, field)
+    elif body.kind == "type":
+        marks = [schema[object_type]]
+        found = type_blockers(*shared, object_type, functions=get_enabled_functions(list(config.enabled_tools)),
+                              incremental=incremental_tables_only_read_by(schema, config.silo_configs, object_type))
+    else:
+        marks = [schema[owner]["fields"][name] for owner, name in link_ends(schema, link)]
+        found = link_blockers(*shared, link)
+    # A link follows its types (core/ontology/deprecation.link_status), so
+    # it may be removed once either it or a type it joins is deprecated.
+    deprecated = bool(marks) and all(mark.get("status") == "deprecated" for mark in marks)
+    block = shown_deprecation(marks[0].get("deprecation")) if marks else None
+    shown, hidden = visible_to(found, lambda subject: mediator.knows(current_user, subject))
+    return _Removal(
+        files=files, deprecated=deprecated, remove_after=block["remove_after"] if block else None,
+        blockers=shown, hidden=hidden,
+        stored_data=stored_data(body.kind, "many_to_many" if any("via_target_column" in mark for mark in marks)
+                                else None, applied_writes(mediator.write_log, ends)),
+        what=what, audited_as=audited_as)
+
+
+def _blocked_answer(plan: _Removal) -> "JSONResponse | None":
+    """The 409 for a removal that must wait, or None when nothing does."""
+    if not plan.deprecated:
+        reason = (f"{plan.what} is not deprecated. Deprecate it first, say why, and remove it later: "
+                  f"removing is always the last of three steps.")
+    elif plan.blockers or plan.hidden:
+        reason = f"Something still names {plan.what}. Nothing was changed."
+    else:
+        return None
+    return JSONResponse(status_code=409, content={
+        "detail": reason, "deprecated": plan.deprecated,
+        "blockers": [item.as_dict() for item in plan.blockers], "hidden_blockers": plan.hidden})
+
+
+@router.post("/admin/ontology/removal/preview", dependencies=[Depends(_no_store)],
+             response_model=RemovalPreviewResponse)
+def preview_removal_route(body: RemovalRequest, request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The lines that would go, whether it may go, and if not, what stops
+    it. Nothing written. The answer for a name this person cannot discover
+    is the answer for one that does not exist."""
+    from elysium.core.config_editing import shown_diff
+
+    _require_manage_deployment(request, current_user)
+    plan = _planned_removal(request, current_user, body)
+    ready = plan.deprecated and not plan.blockers and not plan.hidden
+    impact = None
+    if ready:
+        try:
+            _candidate, impact = _access_impact(request, {name: after for name, (_, after) in plan.files.items()})
+        except HTTPException as e:
+            raise _unloadable(plan) from e
+    return {
+        "diff": [line for name, (before, after) in plan.files.items() for line in shown_diff(name, before, after)],
+        "impact": impact, "can_remove": ready, "deprecated": plan.deprecated, "remove_after": plan.remove_after,
+        "blockers": [item.as_dict() for item in plan.blockers], "hidden_blockers": plan.hidden,
+        "not_listed": _USED_BY_NOT_LISTED, "stored_data": plan.stored_data,
+    }
+
+
+def _unloadable(plan: _Removal) -> HTTPException:
+    """A removal the loader refuses although nothing listed blocked it: the
+    Used by report missed a reference. What the loader says names the
+    reference, which may be something this person cannot discover, so they
+    are told only that it cannot be done."""
+    return HTTPException(status_code=409, detail=(
+        f"Removing {plan.what} would leave the configuration unable to load, which the list of what names it "
+        f"should have said. Nothing was changed."))
+
+
+@router.put("/admin/ontology/removal", dependencies=[Depends(_no_store)], response_model=NewFieldsResponse)
+def apply_removal_route(body: RemovalRequest, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> Any:
+    """Removes it now, if it is deprecated and nothing names it -- judged
+    again here, not trusted from the preview. 409 with the blockers they may
+    see when something does. No data is touched, and nobody gains access: if
+    the permission code says anyone could read more afterwards, something is
+    wrong with the edit and it is refused."""
+    from elysium.core.config_editing import BINDINGS_FILE
+
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        plan = _planned_removal(request, current_user, body)
+        blocked = _blocked_answer(plan)
+        if blocked is not None:
+            return blocked
+        files = plan.files
+        try:
+            _candidate, impact = _access_impact(request, {name: text for name, (_, text) in files.items()})
+        except HTTPException as e:
+            raise _unloadable(plan) from e
+        if impact["widens"]:
+            raise HTTPException(status_code=409, detail=(
+                "This would let someone read more than they can now, which a removal never should. "
+                "Nothing was changed."))
+        notice = _record_erasure_keys_before(request)
+        try:
+            # A field's binding goes first (a binding for a field the type does
+            # not declare stops the loader, a field without its binding loads).
+            # A TYPE HAS NO SUCH ORDER: with the ontology changed first the
+            # loader says the bindings bind a type it does not declare, with
+            # the bindings first it says the type has no binding, so a crash
+            # between the two renames (not a failure: those are undone) leaves
+            # a pair that does not load either way. The ontology goes first,
+            # because that refusal is the one a person can finish by hand:
+            # delete the named entry from source_bindings.yaml.
+            written = _write_config_files(request, current_user, files, {plan.audited_as: "removed"},
+                                          first=() if body.kind == "type" else (BINDINGS_FILE,))
+        except HTTPException as e:
+            if e.status_code == 400:
+                raise _unloadable(plan) from e
+            raise
+        return {"status": "applied", "diff": written["diff"], "to_generation": written["to_generation"],
+                "notice": notice}
+
+
+def _record_erasure_keys_before(request: Request) -> "str | None":
+    """Writes each lake table's key columns, from the schema as it is NOW,
+    before a removal takes the name out of it: the removed type's tables
+    stay in the lake, and an erasure afterwards needs them to say which
+    columns hold whose ids (core/mirror/erasure.py). A table that already
+    held data and recorded nothing stays partly known -- see
+    KEY_COLUMNS_PROPERTY -- but what this type kept in it is recorded.
+
+    NEVER FAILS THE EDIT. When the lake cannot be read, or a table cannot
+    take the record, the removal goes ahead and the reply says which tables
+    were not recorded: a removal that cannot be done because the lake is
+    unreachable would leave the type stuck, which is worse than a notice.
+
+    Called by EVERY path that can take a type out of the ontology: the
+    removal, approving a waiting proposal, restoring an older generation.
+    (A hand edit of the files, then a reload, is the one path it cannot see.)
+    It takes the sync lock without waiting, because a record is a commit to a
+    table a running sync may be committing to: if a sync is running it does
+    nothing and says so."""
+    from elysium.core.mirror.erasure import record_key_columns
+    from elysium.core.mirror.sync_lock import single_writer
+
+    failed: list[str] = []
+    try:
+        with single_writer(request.app.state.runtime_paths.data_dir / "sync.lock") as free:
+            if not free:
+                return ("A sync was running, so the tables of what was removed were not recorded as holding "
+                        "people's ids. Until they are adopted (python -m elysium.scripts.erase --adopt, or "
+                        "--adopt-all-current) an erasure may not be able to search them.")
+            record_key_columns(_mirror_catalog_for(request), _generation(request).config.schema,
+                               failed=failed)
+    except Exception as e:  # noqa: BLE001 - never fail the edit; say so
+        logger.warning("removal: the lake could not be read to record erasure keys (%s)", type(e).__name__)
+        return ("The lake could not be read, so the tables of what was removed were not recorded as "
+                "holding people's ids. Until they are adopted (python -m elysium.scripts.erase --adopt) an "
+                "erasure may not be able to search them.")
+    if failed:
+        return (f"{len(failed)} lake table(s) could not record their key columns ({', '.join(sorted(failed))}); "
+                f"an erasure may not be able to search them until they are adopted "
+                f"(python -m elysium.scripts.erase --adopt).")
+    return None
+
+
+# ---- Changing a field's data type, core/ontology/retype.py (slice R1) ----
+
+class RetypeRequest(BaseModel):
+    digest: str
+    object_type: str
+    field: str
+    data_type: str
+
+
+class RetypePreviewResponse(BaseModel):
+    diff: list[str]
+    from_type: str
+    to_type: str
+    # The "silo.table" names whose declared column types change.
+    tables: list[str]
+    # What becomes of the data already stored, in words.
+    stored_data: list[str]
+    # Places that name the field, as far as this person may see: notes, not
+    # blockers (a retype does not remove anything).
+    places: list[UsedByRow]
+    # How many more name it that name something they cannot discover.
+    hidden_places: int = 0
+    not_listed: str
+
+
+class RetypeResponse(BaseModel):
+    status: str
+    diff: list[str]
+    to_generation: int | None = None
+    # The tables THIS FIELD is stored in whose declared type changed.
+    tables: list[str] = []
+    # EVERY "silo.table" in the deployment whose silver now differs from the
+    # declared type and is refused by the sync until rebuilt, this field's or
+    # not (an earlier retype may have left some): [] when silver was never
+    # built. The names POST /admin/mirror/sync takes as `rebuild`.
+    rebuild: list[str] = []
+    # True when the mirror could not be read, so `rebuild` is [] because
+    # nobody can tell, not because nothing is owed. The edit has been applied.
+    rebuild_unknown: bool = False
+
+
+class _MirrorUnreadable(Exception):
+    """The lake could not be read to say which silver tables are owed a rebuild."""
+
+
+def _tables_needing_rebuild(request: Request, schema: dict) -> list[str]:
+    """Silver tables whose column types differ from what `schema` declares,
+    read from the lake as it is now. Derived each time, no marker.
+
+    Raises _MirrorUnreadable when the lake cannot be read at all (a catalog
+    whose metadata file is gone -- scripts/repair_catalog.py's case -- or
+    any other catalog error): the callers differ in what they do about it,
+    and none may answer 500 for it, least of all after an edit has landed.
+    A table or namespace that does not exist is an answer, not a failure:
+    it was never built."""
+    from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+
+    from elysium.core.mirror.iceberg_sync import SOURCE_COLUMNS_PROPERTY
+    from elysium.core.mirror.sync_targets import resolve_sync_targets
+    from elysium.core.ontology.retype import tables_needing_rebuild
+
+    def source_columns_of(identifier: str):
+        silo, _, table = identifier.partition(".")
+        try:
+            recorded = catalog.load_table(f"{BRONZE_PREFIX}{silo}.{table}").properties.get(SOURCE_COLUMNS_PROPERTY)
+        except (NoSuchTableError, NoSuchNamespaceError):
+            return None
+        return set(json.loads(recorded)) if recorded else None
+
+    def silver_schema_of(identifier: str):
+        try:
+            return catalog.load_table(identifier).schema().as_arrow()
+        except (NoSuchTableError, NoSuchNamespaceError):
+            return None
+
+    try:
+        catalog = _mirror_catalog_for(request)
+        return tables_needing_rebuild(resolve_sync_targets({"object_types": schema}), silver_schema_of,
+                                      source_columns_of)
+    except Exception as e:
+        logger.warning("the mirror could not be read to find the tables owed a rebuild: %s", type(e).__name__)
+        raise _MirrorUnreadable() from e
+
+
+def _conversions_to_count(request: Request, schema: dict, targets: list, tables: list[str],
+                          body: RetypeRequest) -> list:
+    """R3: the values of the retyped field's column that will not convert,
+    counted in bronze for the table it is stored in, when that table is one
+    the retype changes. Nothing is written. A mirror that cannot be opened
+    is "not counted" with the reason, never a count of zero."""
+    from elysium.core.mirror.retype_count import ConversionCount, count_unconvertible
+    from elysium.core.ontology.retype import column_of
+
+    silo, table, column = column_of(schema, body.object_type, body.field)
+    name = f"{silo}.{table}"
+    if name not in tables:
+        return []
+    target = next((each for each in targets if f"{each.silo_name}.{each.table_name}" == name), None)
+    if target is None:
+        return []
+    config = _generation(request).config
+    try:
+        catalog = _mirror_catalog_for(request)
+    except Exception as e:  # noqa: BLE001 - "cannot count" is an answer here
+        logger.warning("the mirror could not be opened to count values that will not convert: %s", type(e).__name__)
+        return [ConversionCount(name, column, False, why_not="the mirror could not be read just now")]
+    return [count_unconvertible(
+        catalog, silo, table, column, target.column_types.get(column, body.data_type),
+        standardisation=target.standardisation, locale=config.source_locales.get(silo),
+        excel_dates=silo in config.excel_date_silos, zero_dates=silo in config.zero_date_silos)]
+
+
+def _planned_retype(request: Request, current_user: UserRecord, body: RetypeRequest):
+    """(files, from_type, tables, notes, hidden) for a retype, in one place
+    for the preview and the apply. Order as for a removal: a stale file is
+    refused first (it says nothing about any name), a field the deployment
+    does not have is "Not found", only then the file is edited. As there, the
+    field asked about is not gated on discovery (a manager of the deployment
+    reads every name in the declaration); the places that name it are shown
+    only if every name they carry is one this person could find."""
+    from elysium.core.config_editing import ONTOLOGY_FILE, ConfigEditError, apply_retype
+    from elysium.core.mirror.sync_targets import resolve_sync_targets
+    from elysium.core.ontology.field_types import DEFAULT_FIELD_DATA_TYPE, FIELD_DATA_TYPES
+    from elysium.core.ontology.removal import visible_to
+    from elysium.core.ontology.retype import changed_tables, places_naming, refusal, stored_data
+
+    current = _ontology_as_read(request, body.digest)
+    mediator = _generation(request).mediator
+    running = mediator.schema
+    declared = (running.get(body.object_type) or {}).get("fields", {}).get(body.field)
+    if declared is None:
+        raise _not_found()
+    try:
+        proposed = apply_retype(
+            current, {"object_type": body.object_type, "field": body.field, "data_type": body.data_type},
+            tuple(FIELD_DATA_TYPES))
+    except ConfigEditError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    # THE FILE ON DISK NOW and the file as it would be, not the running
+    # generation: what a reload after this edit would start from.
+    before = _load_candidate(request, {})
+    # JUDGED ON THE LOADED SCHEMA and on the columns, not on the file's
+    # words: `security: inherit` is only a word in the file, and storage
+    # is per column (core/ontology/retype.refusal).
+    why_not = refusal(before.schema, resolve_sync_targets({"object_types": before.schema}),
+                      body.object_type, body.field)
+    if why_not:
+        raise HTTPException(status_code=400, detail=why_not)
+    after = _load_candidate(request, {ONTOLOGY_FILE: proposed})
+    tables = changed_tables(resolve_sync_targets({"object_types": before.schema}),
+                            resolve_sync_targets({"object_types": after.schema}))
+    found = places_naming(after.schema, after.roles, after.action_types, after.declared_triggers,
+                          body.object_type, body.field)
+    shown, hidden = visible_to(found, lambda subject: mediator.knows(current_user, subject))
+    # WHAT THE LAKE HOLDS NOW against the proposed declaration, so the
+    # sentences say which of the tables are really owed a rebuild; None
+    # when the mirror cannot be read, which they say.
+    try:
+        owed: list[str] | None = _tables_needing_rebuild(request, after.schema)
+    except _MirrorUnreadable:
+        owed = None
+    after_targets = resolve_sync_targets({"object_types": after.schema})
+    sharing = sorted({name for target in after_targets
+                      if f"{target.silo_name}.{target.table_name}" in tables for name in target.object_types})
+    conversions = _conversions_to_count(request, after.schema, after_targets, tables, body)
+    return ({ONTOLOGY_FILE: (current, proposed)}, declared.get("data_type", DEFAULT_FIELD_DATA_TYPE), tables,
+            stored_data(tables, sharing or [body.object_type], body.data_type, owed=owed,
+                        on_type_mismatch=_generation(request).config.on_type_mismatch,
+                        conversions=conversions), shown, hidden)
+
+
+@router.post("/admin/ontology/retype/preview", dependencies=[Depends(_no_store)],
+             response_model=RetypePreviewResponse)
+def preview_retype_route(body: RetypeRequest, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The line that would change, what it does to stored data, and what
+    names the field. Nothing written. A name this person cannot find answers
+    as one that does not exist."""
+    from elysium.core.config_editing import shown_diff
+
+    _require_manage_deployment(request, current_user)
+    files, from_type, tables, stored, shown, hidden = _planned_retype(request, current_user, body)
+    return {
+        "diff": [line for name, (before, after) in files.items() for line in shown_diff(name, before, after)],
+        "from_type": from_type, "to_type": body.data_type, "tables": tables, "stored_data": stored,
+        "places": [item.as_dict() for item in shown], "hidden_places": hidden,
+        "not_listed": _USED_BY_NOT_LISTED,
+    }
+
+
+@router.put("/admin/ontology/retype", dependencies=[Depends(_no_store)], response_model=RetypeResponse)
+def apply_retype_route(body: RetypeRequest, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> Any:
+    """Changes the field's data type now, judged again here and not trusted
+    from the preview (stale file: 409). No data is touched: the reply lists
+    the tables this field is stored in (`tables`) and every table whose
+    silver must now be rebuilt (`rebuild`), which the sync
+    refuses until a person names them to POST /admin/mirror/sync. The new
+    file is staged and renamed over the old one and the deployment reloaded,
+    or put back (_write_config_files)."""
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        files, _from, tables, _stored, _shown, _hidden = _planned_retype(request, current_user, body)
+        written = _write_config_files(request, current_user, files,
+                                      {f"{body.object_type}.{body.field}.data_type": body.data_type})
+        # THE EDIT HAS LANDED: nothing after this may fail the request. If
+        # the mirror cannot be read the answer is success with the list
+        # unknown, which the dialog says.
+        try:
+            # The schema the reload just made, not the one this request is
+            # pinned to (that is the one before the edit).
+            owed, unknown = _tables_needing_rebuild(request, written["new_schema"]), False
+        except _MirrorUnreadable:
+            owed, unknown = [], True
+        return {"status": "applied", "diff": written["diff"], "to_generation": written["to_generation"],
+                "tables": tables, "rebuild": owed, "rebuild_unknown": unknown}
+
+
+def _reason(text: "str | None") -> str:
+    from elysium.core.config_proposals import MAX_REASON
+
+    reason = (text or "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail=(
+            "This lets people read more than they can now, so it waits for someone who "
+            "manages roles to approve it. Say why, for them."))
+    if len(reason) > MAX_REASON:
+        raise HTTPException(status_code=400, detail=f"A reason is at most {MAX_REASON} characters.")
+    return reason
+
+
+def _proposals(request: Request):
+    from elysium.core.config_proposals import ConfigProposalStore
+
+    return ConfigProposalStore(request.app.state.runtime_paths.data_dir / "config_proposals.db")
+
+
+# ---- Configuration changes waiting for a second person ----
+
+class ConfigProposalResponse(BaseModel):
+    proposal_id: str
+    kind: str
+    summary: str
+    reason: str
+    proposed_by: str
+    proposed_at: str
+    diff: list[str]
+    # Recomputed against what runs NOW; null when it cannot be (the
+    # proposal no longer loads), with `problem` saying why.
+    impact: dict | None = None
+    # A file has changed since it was proposed: approving would refuse.
+    stale: bool
+    problem: str | None = None
+
+
+class ConfigProposalsResponse(BaseModel):
+    proposals: list[ConfigProposalResponse]
+
+
+def _require_roles_or_deployment(request: Request, current_user: UserRecord) -> None:
+    roles = _generation(request).config.roles
+    if not (authorize(current_user, roles, "manage:roles")
+            or authorize(current_user, roles, "manage:deployment")):
+        raise HTTPException(status_code=403, detail="Needs manage:roles or manage:deployment")
+
+
+def _proposal_state(request: Request, proposal) -> dict:
+    """What a waiting proposal would do if approved now."""
+    from elysium.core.config_editing import digest, shown_diff
+
+    config_dir = request.app.state.runtime_paths.config_dir
+    now = {name: _exact_text(config_dir / name) if (config_dir / name).exists() else ""
+           for name in proposal.files}
+    stale = any(digest(now[name]) != proposal.base.get(name) for name in proposal.files)
+    impact, problem = None, None
+    try:
+        _candidate, impact = _access_impact(request, proposal.files)
+    except HTTPException as e:
+        problem = e.detail
+    return {
+        "proposal_id": proposal.proposal_id, "kind": proposal.kind, "summary": proposal.summary,
+        "reason": proposal.reason, "proposed_by": proposal.proposed_by,
+        "proposed_at": proposal.proposed_at,
+        # Only the ontology's lines; any other file named, not shown
+        # (core/config_editing.shown_diff) -- an earlier version put
+        # back touches them all.
+        "diff": [line for name, text in sorted(proposal.files.items())
+                 for line in shown_diff(name, now[name], text)],
+        "impact": impact, "stale": stale, "problem": problem,
+    }
+
+
+@router.get("/admin/config-proposals", dependencies=[Depends(_no_store)],
+            response_model=ConfigProposalsResponse)
+def config_proposals_route(request: Request,
+                           current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Configuration changes waiting for a second person: to role
+    managers, who decide them, and to deployment managers, who propose
+    them and may withdraw their own."""
+    _require_roles_or_deployment(request, current_user)
+    return {"proposals": [_proposal_state(request, p) for p in _proposals(request).pending()]}
+
+
+@router.post("/admin/config-proposals/{proposal_id}/approve", dependencies=[Depends(_no_store)],
+             response_model=ConfigEditResponse)
+def approve_config_proposal_route(proposal_id: str, request: Request,
+                                  current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Writes a proposal's files and reloads, for a role manager who did
+    not propose it.
+
+    THE GUARDS, each refusing rather than guessing:
+      FOUR-EYES  the proposer cannot approve their own
+      STALE      a file changed since it was proposed: the approver would
+                 be agreeing to a merge nobody reviewed
+      AUTHORITY  the proposer must still be able to propose -- an active
+                 account holding manage:deployment -- as a role change's
+                 proposer must still hold what they hand out
+      VALID      the same load a reload does, on a copy, first
+    """
+    from elysium.core.config_editing import digest
+
+    _require_manage_roles(request, current_user)
+    store = _proposals(request)
+    with _config_edit_lock:
+        proposal = store.get(proposal_id)
+        if proposal is None or proposal.status != "pending":
+            raise HTTPException(status_code=404, detail="No such waiting change")
+        if proposal.proposed_by == current_user.user_id:
+            raise HTTPException(status_code=409, detail=(
+                "You proposed this; someone else who manages roles must approve it."))
+        # The roles in force NOW, from the files, for the same reason
+        # as _access_impact: this request's pin predates the lock.
+        config = _load_candidate(request, {})
+        proposer = _current_authority(request, proposal.proposed_by, config.roles)
+        if proposer is None or not proposer("manage:deployment"):
+            reason = (f"{proposal.proposed_by} can no longer change the deployment, so "
+                      "their proposal cannot be applied.")
+            store.decide(proposal_id, "stale", current_user.user_id, reason)
+            raise HTTPException(status_code=409, detail=reason)
+        config_dir = request.app.state.runtime_paths.config_dir
+        current = {name: _exact_text(config_dir / name) for name in proposal.files}
+        if any(digest(current[name]) != proposal.base.get(name) for name in proposal.files):
+            reason = ("The configuration has changed since this was proposed, so it no longer "
+                      "describes what approving it would do. It needs proposing again.")
+            store.decide(proposal_id, "stale", current_user.user_id, reason)
+            raise HTTPException(status_code=409, detail=reason)
+        notice = _record_erasure_keys_before(request)       # the proposal may drop a type
+        try:
+            result = _write_config_files(
+                request, current_user,
+                {name: (current[name], text) for name, text in proposal.files.items()},
+                {"proposal": proposal_id, "proposed_by": proposal.proposed_by})
+        except HTTPException as e:
+            store.decide(proposal_id, "failed", current_user.user_id, str(e.detail)[:500])
+            raise
+        store.decide(proposal_id, "applied", current_user.user_id)
+        return {**result, "notice": notice} if notice else result
+
+
+@router.post("/admin/config-proposals/{proposal_id}/reject", dependencies=[Depends(_no_store)])
+def reject_config_proposal_route(proposal_id: str, request: Request,
+                                 current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Declines a waiting change -- a role manager rejecting it, or its
+    proposer withdrawing it."""
+    _require_roles_or_deployment(request, current_user)
+    store = _proposals(request)
+    proposal = store.get(proposal_id)
+    if proposal is None or proposal.status != "pending":
+        raise HTTPException(status_code=404, detail="No such waiting change")
+    own = proposal.proposed_by == current_user.user_id
+    if not own:
+        _require_manage_roles(request, current_user)
+    if not store.decide(proposal_id, "withdrawn" if own else "rejected", current_user.user_id):
+        raise HTTPException(status_code=404, detail="No such waiting change")
+    return {"status": "withdrawn" if own else "rejected"}
+
+
+class GenerationSummary(BaseModel):
+    generation: int
+    loaded_at: str
+    source_digest: str
+
+
+class SlowRouteResponse(BaseModel):
+    route: str
+    requests: int
+    # NULL WHEN NOTHING SUCCEEDED in the window. Zero would read as
+    # "instantaneous", which is the opposite of "we do not know".
+    p99_ms: float | None = None
+
+
+class MetricsResponse(BaseModel):
+    """RED over a window: Rate, Errors, Duration.
+
+    Saturation -- the fourth golden signal -- is deliberately absent:
+    it is a property of the host, not of this process.
+    """
+
+    window_seconds: int
+    requests: int
+    rate_per_second: float
+    # A RATIO, NOT A COUNT: ten failures means nothing without knowing
+    # whether there were twelve requests or twelve thousand.
+    error_ratio: float
+    p50_ms: float | None = None
+    p99_ms: float | None = None
+    slowest_routes: list[SlowRouteResponse]
+
+
+class ConfigHistoryResponse(BaseModel):
+    """Which configurations this deployment has run.
+
+    SUMMARIES ONLY -- no file contents. The files carry silo hosts,
+    paths and credential references, which the /config route already
+    declines to return for exactly that reason. Listing what ran is a
+    different disclosure from handing over what it said.
+    """
+
+    current_generation: int
+    generations: list[GenerationSummary]
+
+
+def _mirror_catalog_for(request):
+    """The lake's catalog, opened read-only for a status query.
+
+    THROUGH THE ONE FACTORY, with the deployment's storage options
+    (PA001-F5). Hard-coding a local warehouse here meant this endpoint
+    reported on a lake it could not open whenever mirror.storage named
+    object storage.
+    """
+    from elysium.core.mirror.catalog import open_mirror_catalog
+
+    mirror_dir = request.app.state.runtime_paths.data_dir / "mirror"
+    return open_mirror_catalog(
+        mirror_dir, dict(_generation(request).config.mirror_storage or {}))
+
+
+class RuleSuggestionResponse(BaseModel):
+    """One cleaning-rule suggestion and what a person made of it (R31)."""
+
+    id: str
+    object_type: str
+    field: str
+    kind: str
+    value: str
+    seen: int
+    why: str
+    examples: list[str]
+    state: str
+    decided_by: str | None = None
+    decided_at: str | None = None
+    last_seen: str
+    #: The exact lines to add to ontology_schema.yaml. Shown for every
+    #: state but dismissed, so an accepted one says what to paste.
+    yaml: str | None = None
+
+
+class RuleSuggestionDecision(BaseModel):
+    decision: str
+
+
+def _rule_suggestions(request: Request):
+    from elysium.core.rule_suggestions import RuleSuggestionStore
+
+    return RuleSuggestionStore(request.app.state.runtime_paths.data_dir / "rule_suggestions.db")
+
+
+def _require_manage_deployment(request: Request, current_user: UserRecord) -> None:
+    if not authorize(current_user, _generation(request).config.roles, "manage:deployment"):
+        raise HTTPException(status_code=403, detail="Needs manage:deployment")
+
+
+def _suggestions_visible_to(request: Request, user: UserRecord) -> list:
+    """Suggestions on fields this caller may READ, and no others.
+
+    A suggestion carries values from the field it is about -- "N/A", or
+    a date of birth in the year 201 -- and the field may be one this
+    administrator is not cleared to read. manage:deployment says they
+    may judge cleaning rules; it does not say they may see a pii column.
+    A field they cannot read is a suggestion they are not shown, as an
+    object they cannot read is absent rather than refused.
+    """
+    roles = _generation(request).config.roles
+    return [item for item in _rule_suggestions(request).all()
+            if authorize(user, roles, f"read:{item.object_type}.{item.field}")]
+
+
+@router.get("/admin/rule-suggestions", response_model=list[RuleSuggestionResponse],
+            dependencies=[Depends(_no_store)])
+def rule_suggestions_route(request: Request,
+                           current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    """The cleaning-rule review queue (R31, decided 14 Oct: the YAML stays
+    the only source of rules; this keeps the judgement)."""
+    from elysium.core.mirror.rule_suggestion_scan import yaml_for
+    from elysium.core.rule_suggestions import DISMISSED
+
+    _require_manage_deployment(request, current_user)
+    return [{"id": item.suggestion_id, "object_type": item.object_type, "field": item.field,
+             "kind": item.kind, "value": item.value, "seen": item.seen, "why": item.why,
+             "examples": list(item.examples), "state": item.state,
+             "decided_by": item.decided_by, "decided_at": item.decided_at,
+             "last_seen": item.last_seen,
+             "yaml": None if item.state == DISMISSED else yaml_for(
+                 item.object_type, item.field, item.kind, [item.value])}
+            for item in _suggestions_visible_to(request, current_user)]
+
+
+@router.post("/admin/rule-suggestions/scan", dependencies=[Depends(_no_store)])
+async def scan_rule_suggestions_route(request: Request,
+                                      current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Read bronze for values that announce themselves as absences, and
+    merge them into the queue. Reads, never writes data or config; a
+    dismissed suggestion is not raised again."""
+    from elysium.core.mirror.rule_suggestion_scan import refresh
+
+    _require_manage_deployment(request, current_user)
+    generation = _generation(request)
+    catalog = _mirror_catalog_for(request)
+    store = _rule_suggestions(request)
+    return await asyncio.get_running_loop().run_in_executor(
+        request.app.state.executor,
+        functools.partial(refresh, catalog, generation.config.schema, store))
+
+
+@router.post("/admin/rule-suggestions/{suggestion_id}/decide", status_code=204)
+def decide_rule_suggestion_route(suggestion_id: str, body: RuleSuggestionDecision,
+                                 request: Request,
+                                 current_user: UserRecord = Depends(get_current_user)) -> Response:
+    """Accept or dismiss one. A suggestion this caller cannot see, or one
+    the schema has already settled, is a 404 -- uniform with unknown."""
+    from elysium.core.rule_suggestions import DECISIONS
+
+    _require_manage_deployment(request, current_user)
+    if body.decision not in DECISIONS:
+        raise HTTPException(status_code=422, detail=f"decision must be one of {list(DECISIONS)}")
+    visible = {item.suggestion_id for item in _suggestions_visible_to(request, current_user)}
+    if suggestion_id not in visible or not _rule_suggestions(request).decide(
+            suggestion_id, body.decision, current_user.user_id):
+        raise HTTPException(status_code=404, detail="Not found")
+    return Response(status_code=204)
+
+
+def _recent_snapshots(catalog, identifier: str, limit: int = 5) -> list[dict]:
+    """The newest snapshots of one table, newest first.
+
+    READ FROM METADATA, not by scanning. Iceberg records a snapshot per
+    commit with its timestamp, operation and row count, so this is
+    history the mirror already holds.
+
+    A TABLE THAT CANNOT BE READ RETURNS NOTHING rather than raising.
+    This decorates a panel; a missing history should cost its own row
+    and not the screen, and `check_mirror` is what reports a table
+    that has genuinely gone.
+    """
+    from datetime import UTC, datetime
+
+    try:
+        table = catalog.load_table(identifier)
+        current = table.current_snapshot()
+        current_id = current.snapshot_id if current else None
+        snapshots = list(table.metadata.snapshots)
+    except Exception:  # noqa: BLE001 - see the docstring
+        return []
+
+    recent = []
+    for snapshot in reversed(snapshots[-limit:]):
+        rows = snapshot.summary.get("total-records")
+        recent.append({
+            "at": datetime.fromtimestamp(
+                snapshot.timestamp_ms / 1000, tz=UTC,
+            ).isoformat(),
+            # str() BECAUSE IT IS AN ENUM. Operation.APPEND serialises
+            # as an object otherwise, and a panel showing
+            # "Operation.APPEND" reads worse than "APPEND".
+            "operation": str(snapshot.summary.operation).split(".")[-1],
+            "rows": int(rows) if rows is not None else None,
+            "current": snapshot.snapshot_id == current_id,
+        })
+    return recent
+
+
+class MirrorSnapshot(BaseModel):
+    """One point the mirror could be rolled back to."""
+
+    at: str
+    operation: str
+    rows: int | None
+    current: bool
+
+
+class QuarantineRuleResponse(BaseModel):
+    """One rule, on one column, and how many rows it held back.
+
+    THE COLUMN IS WHAT MAKES THE NUMBER DIVISIBLE. `quarantine_reason`
+    below names the loudest rule by reason text alone, and two columns
+    failing the same way in one row count twice there -- fine for
+    picking the loudest, wrong as the numerator of a rate. A row fails
+    a given (column, rule) pair at most once, so these rows can be
+    read against the table's size.
+
+    NO VALUES, DELIBERATELY, and `quarantine_report.py` says why at
+    length: a row quarantined for its CONTENT often failed on the
+    sensitive part of it. A count and a rule name are safe for anyone
+    who may see the table at all; the value needs the same
+    authorisation as the object.
+    """
+
+    column: str
+    reason: str
+    rows: int
+
+
+class ExpectationWarningResponse(BaseModel):
+    """One rule that fired and let the row through anyway.
+
+    THE PERMISSIVE POLICY WAS THE INVISIBLE ONE, which is the wrong
+    way round. A quarantined row is absent and the absence is
+    explained; a warned row is PRESENT, in silver, in gold and on
+    screen, identical to a row that broke no rule -- and a rule was
+    declared about it precisely because somebody wanted to know.
+
+    FROM THE LAST RUN ONLY, not summed over the retention window. A
+    rule fixed on Tuesday should stop being reported on Wednesday.
+    """
+
+    column: str
+    reason: str
+    rows: int
+
+
+class MirrorTableState(BaseModel):
+    silo: str
+    table: str
+    last_synced_at: str | None
+    silver_rows: int | None
+    bronze_rows: int | None
+    # HOW MANY ROWS THE RULES HELD BACK, which is what explains a
+    # silver count lower than bronze's. Absence reads as loss unless
+    # something says otherwise (the invisible-quarantine risk). The RULE that
+    # caught the most of them is named too, because "12 rows held
+    # back" is a fact and "12 rows held back by required:email" is a
+    # thing somebody can act on.
+    quarantined_rows: int = 0
+    quarantine_reason: str | None = None
+    # EVERY RULE, NOT ONLY THE LOUDEST, AND WHEN IT LAST FIRED. Both
+    # were computed by `quarantine_for` from the day it was written --
+    # its own comment says the breakdown exists "so an operator sees
+    # WHICH rule is rejecting rather than only that something is" --
+    # and both were dropped here, which made the intent unreachable.
+    #
+    # THIS IS DEV_UI.md 16.4's DISTRIBUTION PILLAR, the one it calls
+    # the furthest from built: "the quarantine RATE per rule: 0.1% is
+    # a data problem, 40% is a pipeline problem". The rate needs a
+    # per-rule row count and a table size, and both sides of that
+    # division are now in this response.
+    quarantine_rules: list[QuarantineRuleResponse] = []
+    # THE RULES THAT WARNED RATHER THAN HELD, from the last run.
+    # DEV_UI.md 5.6 asks for "failing expectations" beside the
+    # quarantined rows, and this is the half that had nowhere to come
+    # from: `warn` keeps the row, so the finding reached a log line and
+    # stopped there.
+    expectation_warnings: list[ExpectationWarningResponse] = []
+    # WHEN, because a standing count and a new one need different
+    # responses and the count alone cannot tell them apart.
+    quarantine_last_detected_at: str | None = None
+    # THE LAST ATTEMPT, as distinct from the last CHANGE. Snapshots
+    # record when data changed, so a sync that ran and was refused
+    # leaves exactly what a sync that ran and found nothing leaves.
+    # One is an incident; the other is Tuesday.
+    last_attempt_at: str | None
+    last_attempt_outcome: str | None
+    last_attempt_detail: str | None
+    # live, rebuilding or unavailable (core/mirror/object_state), and whether a
+    # retype has left its silver owed a rebuild.
+    state: str = "live"
+    rebuild_owed: bool = False
+    # WHEN THE DATA CHANGED, newest first. Iceberg records a snapshot
+    # per commit and keeps them, so this is history the mirror already
+    # holds rather than something new to store.
+    #
+    # THE NEWEST FEW, NOT ALL OF THEM. A long-running deployment
+    # accumulates snapshots -- nothing expires them, which is its own
+    # backlog item -- and a panel listing hundreds teaches less than
+    # one listing the last handful.
+    snapshots: list[MirrorSnapshot] = []
+
+
+class MirrorObjectState(BaseModel):
+    """One object type's state (core/mirror/object_state), the worst of the
+    silver tables it reads."""
+    object_type: str
+    state: str
+    # Some table it reads has silver that differs from the declared type.
+    # Not a state: the old silver keeps serving until "Rebuild now".
+    rebuild_owed: bool
+    tables: list[str]
+
+
+class MirrorStateResponse(BaseModel):
+    reading_from_mirror: bool
+    tables: list[MirrorTableState]
+    problems: list[str]
+    # R2: the "silo.table" names owed a rebuild right now, which are what
+    # POST /admin/mirror/sync takes as `rebuild`; and True when the lake could
+    # not be read, so the list is empty because nobody can tell.
+    rebuild_owed: list[str] = []
+    rebuild_owed_unknown: bool = False
+    object_states: list[MirrorObjectState] = []
+
+
+class ModulePermission(BaseModel):
+    """One permission a module declares (core/modules.declared_permissions)."""
+    grant: str
+    module: str
+    module_name: str
+    description: str
+
+
+class RolesResponse(BaseModel):
+    # WHERE THE ROLES IN FORCE CAME FROM: "policy.yaml" until somebody
+    # edits one, "role store" after. An editor saying which is how an
+    # administrator learns that editing policy.yaml has stopped working.
+    source: str
+    roles: dict[str, list[str]]
+    grantable: list[str]
+    module_permissions: list[ModulePermission] = []
+    unlisted: list[str] = []
+
+
+class RoleNamesResponse(BaseModel):
+    """Names only: what each role may do is /roles's, on manage:roles."""
+    names: list[str]
+
+
+@router.get("/roles/names", dependencies=[Depends(_no_store)], response_model=RoleNamesResponse)
+def role_names_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The roles that exist, by name, for somebody who manages accounts.
+
+    WHY IT EXISTS (24 October): an account administrator puts people in
+    roles, and may name any role as a Watch's recipient
+    (core/triggers.recipient_problem: "a manage:users holder may name ANY
+    role, which they already can"), so they need the names. They read
+    them in /config until /config became the server's, on
+    manage:deployment.
+
+    NAMES, NEVER CONTENTS -- the rule /config kept: the names answer
+    "what roles are there", the grants would answer "what could I
+    attack". The grants stay /roles's, on manage:roles.
+    """
+    _require_manage_users(request, current_user)
+    return {"names": sorted(_generation(request).config.roles)}
+
+
+@router.get("/roles", dependencies=[Depends(_no_store)],
+            response_model=RolesResponse)
+def roles_route(
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Every role and its grants, for somebody who may change them.
+
+    GATED ON manage:roles, NOT manage:users. Seeing exactly what every
+    role may do is the first half of changing it, and it reveals the
+    whole permission model -- a manage:users holder already sees role
+    NAMES through /config, not their contents.
+
+    `grantable` IS DERIVED FROM THE ONTOLOGY, so the editor offers every
+    grant this deployment could hold and no grant it could not.
+    """
+    from elysium.core.access.policy_validation import grantable
+    from elysium.core.role_store import RoleStore
+
+    generation = _generation(request)
+    config = generation.config
+    if not authorize(current_user, config.roles, "manage:roles"):
+        raise HTTPException(status_code=403, detail="Not authorized to manage roles")
+
+    stored = RoleStore(request.app.state.runtime_paths.data_dir / "roles.db").load()
+    declared = declared_permissions(config.modules)
+    known_modules = permissions_by_module(config.modules)
+    held = {grant for role in config.roles.values() for grant in role.get("allowed_actions", ())}
+    return {
+        "source": "role store" if stored is not None else "policy.yaml",
+        "roles": {
+            name: sorted(role.get("allowed_actions", ()))
+            for name, role in sorted(config.roles.items())
+        },
+        "grantable": grantable(
+            config.schema, config.action_types, config.enabled_tools,
+            module_grants=[p["grant"] for p in declared],
+        ),
+        # THE MODULES' PART OF THE REGISTRY, described, so the editor
+        # says what each permission allows and which module brings it.
+        "module_permissions": declared,
+        # HELD, AND FROM A MODULE NO LONGER LISTED: kept and inert
+        # (policy_validation), shown so they can be seen and removed.
+        "unlisted": sorted(g for g in held if g.startswith("module:")
+                           and g.split(":")[1] not in known_modules),
+    }
+
+
+class ProposeRoleChangeRequest(BaseModel):
+    role_name: str
+    # The role's COMPLETE grants after the change; null deletes it.
+    grants: list[str] | None
+
+
+class TypeAccessChange(BaseModel):
+    type: str
+    #: "read", "discover", or null (cannot know it exists).
+    from_: str | None = Field(None, alias="from")
+    to: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+class FieldAccessChange(TypeAccessChange):
+    field: str
+
+
+class RoleImpactResponse(BaseModel):
+    """A role change in ACCESS terms (DEV_UI 13.5), from the permission
+    code asked as it stands and as it would -- core/role_impact.py."""
+
+    role: str
+    #: How many people hold the role, and so gain or lose all of this.
+    holders: int
+    removes_role: bool
+    types_gained: list[TypeAccessChange]
+    types_lost: list[TypeAccessChange]
+    fields_gained: list[FieldAccessChange]
+    fields_lost: list[FieldAccessChange]
+    actions_gained: list[str]
+    actions_lost: list[str]
+    #: Administration, tools, labels: said as the grant.
+    other_gained: list[str]
+    other_lost: list[str]
+
+
+class RoleChangeResponse(BaseModel):
+    change_id: str
+    role_name: str
+    before: list[str] | None
+    after: list[str] | None
+    proposed_by: str
+    proposed_at: str
+    status: str
+    #: What approving it would do, against the roles in force NOW. Null
+    #: when it cannot be computed -- a change the grants no longer
+    #: validate against is refused on approval anyway, with the reason.
+    impact: RoleImpactResponse | None = None
+
+
+class RoleChangesResponse(BaseModel):
+    changes: list[RoleChangeResponse]
+
+
+# APPROVALS ARE SERIALISED. Two approvals of DIFFERENT roles each pass
+# their own stale check -- each touches only its role -- and the second
+# save would silently overwrite the first. One lock across compute,
+# save and reload makes them take turns -- ACROSS WORKERS, not only
+# threads; see core/role_changes.role_change_lock.
+def _role_change_lock(request: Request):
+    from elysium.core.role_changes import role_change_lock
+
+    return role_change_lock(request.app.state.runtime_paths.data_dir)
+
+
+def _role_paths(request: Request):
+    from elysium.core.role_changes import RoleChangeStore
+    from elysium.core.role_store import RoleStore
+
+    path = request.app.state.runtime_paths.data_dir / "roles.db"
+    return RoleStore(path), RoleChangeStore(path)
+
+
+class CompartmentStep(BaseModel):
+    type: str
+    field: str
+
+
+class CompartmentResponse(BaseModel):
+    #: The person's attribute compared -- "region".
+    attribute: str
+    #: Links followed to reach the type that holds the compartment, in
+    #: order; empty when the type holds its own.
+    path: list[CompartmentStep]
+    #: The type and field whose value is compared; field is null for an
+    #: unrestricted type, where nothing is.
+    type: str
+    field: str | None = None
+    #: `security: unrestricted` (core/ontology/unrestricted.py): no row
+    #: check -- anyone whose role reads the type sees every record. Said
+    #: outright, because "no compartment" read as an omission.
+    unrestricted: bool = False
+
+
+class RoleAccessResponse(BaseModel):
+    role: str
+    #: How many accounts hold the role.
+    holders: int | None = None
+    #: "read", or "discover" -- may know the type exists, not open it.
+    type: str
+    #: The actions that change this type which the role may run.
+    actions: list[str]
+    #: Every field: "read", "discover", or null when the role cannot
+    #: know the field exists.
+    fields: dict[str, str | None]
+
+
+class WhoCanSeeResponse(BaseModel):
+    object_type: str
+    roles: list[RoleAccessResponse]
+    #: Roles that cannot know the type exists.
+    no_access: list[str]
+    #: Which OBJECTS a person sees, as opposed to which fields: null
+    #: when the type declares no compartment.
+    compartment: CompartmentResponse | None = None
+
+
+@router.get("/schema/access", dependencies=[Depends(_no_store)],
+            response_model=dict[str, WhoCanSeeResponse])
+def who_can_see_route(request: Request,
+                      current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Who can see each type and each of its fields, by role (DEV_UI
+    13.3) -- and which objects a person sees, by compartment.
+
+    GATED ON manage:roles, like /roles: it is the permission model's
+    content. ASKED OF THE REAL PERMISSION CODE (core/ontology/
+    who_can_see.py), so it cannot disagree with what people are served.
+
+    EVERY TYPE IN ONE ANSWER: the Schema screen asks once and shows the
+    section on each type's card, rather than once per card -- and a
+    refusal hides it everywhere, so nobody without manage:roles meets a
+    button that leads to a 403.
+    """
+    from elysium.core.ontology.who_can_see import who_can_see
+
+    _require_manage_roles(request, current_user)
+    generation = _generation(request)
+    every, _active = _holders(request)
+    schema = generation.config.schema or {}
+    return {object_type: who_can_see(generation.mediator, schema, object_type,
+                                     generation.config.security_attribute, every,
+                                     generation.config.action_types)
+            for object_type in sorted(schema)}
+
+
+def _require_manage_roles(request: Request, current_user: UserRecord) -> None:
+    if not authorize(current_user, _generation(request).config.roles, "manage:roles"):
+        raise HTTPException(status_code=403, detail="Not authorized to manage roles")
+
+
+def _holders(request: Request) -> tuple[dict[str, int], dict[str, int]]:
+    """How many accounts hold each role: (every one, active ones).
+
+    TWO COUNTS, TWO QUESTIONS -- see core/role_changes.change_problem.
+    Stranding counts disabled accounts, which can be re-enabled; lockout
+    counts only active ones, which are the only ones that can edit.
+    """
+    every: dict[str, int] = {}
+    active: dict[str, int] = {}
+    for user in request.app.state.user_directory.list_users():
+        role = user["role_name"]
+        every[role] = every.get(role, 0) + 1
+        if not user["disabled"]:
+            active[role] = active.get(role, 0) + 1
+    return every, active
+
+
+def _current_authority(request: Request, username: str, roles):
+    """What `username` may do NOW, as `holds(grant)`, or None if they no
+    longer have an active account.
+
+    FOR THE PROPOSER OF A ROLE CHANGE, at approval: whether they may
+    hand out a grant is decided by what they hold when it takes effect,
+    not when they asked. A disabled account holds nothing.
+    """
+    directory = request.app.state.user_directory
+    if not directory.user_exists(username) or directory.is_user_disabled(username):
+        return None
+    record = directory.get_user_record(username)
+    return lambda grant: authorize(record, roles, grant)
+
+
+def _role_validator(config):
+    """The SAME validators loading runs, so nothing approved here can
+    fail to load afterwards."""
+    from elysium.core.access.policy_validation import (
+        validate_role_coherence,
+        validate_roles,
+    )
+    from elysium.core.deployment_loader import _freeze_roles, deep_freeze
+
+    def validate(result: dict) -> None:
+        frozen = deep_freeze(_freeze_roles(result))
+        validate_roles(frozen, config.schema, config.action_types, config.enabled_tools,
+                       permissions_by_module(config.modules))
+        validate_role_coherence(frozen)
+    return validate
+
+
+def _change_response(change) -> dict:
+    return {
+        "change_id": change.change_id, "role_name": change.role_name,
+        "before": change.before, "after": change.after,
+        "proposed_by": change.proposed_by, "proposed_at": change.proposed_at,
+        "status": change.status,
+    }
+
+
+@router.post("/roles/changes", dependencies=[Depends(_no_store)])
+def propose_role_change_route(
+    body: ProposeRoleChangeRequest,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Proposes one role's new grants. Somebody ELSE must approve it."""
+    from elysium.core.role_changes import grants_of, proposal_problem
+
+    _require_manage_roles(request, current_user)
+    config = _generation(request).config
+    every, active = _holders(request)
+    problem = proposal_problem(
+        config.roles, body.role_name, body.grants, current_user.role_name,
+        every, active, _role_validator(config),
+        holds=lambda grant: authorize(current_user, config.roles, grant),
+    )
+    if problem is not None:
+        raise HTTPException(status_code=400, detail=problem)
+
+    _, changes = _role_paths(request)
+    change_id = changes.propose(
+        body.role_name, grants_of(config.roles, body.role_name), body.grants,
+        current_user.user_id,
+    )
+    return {"change_id": change_id}
+
+
+@router.get("/roles/changes", dependencies=[Depends(_no_store)],
+            response_model=RoleChangesResponse)
+def role_changes_route(
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Role changes waiting for a decision."""
+    _require_manage_roles(request, current_user)
+    _, changes = _role_paths(request)
+    every, _active = _holders(request)
+    return {"changes": [{**_change_response(change),
+                         "impact": _impact_or_none(request, change.role_name, change.after, every)}
+                        for change in changes.pending()]}
+
+
+def _impact_or_none(request: Request, role_name: str, after, holders: dict) -> "dict | None":
+    """core/role_impact.role_change_impact, or None for grants that no
+    longer compile -- the listing must not fail over one stale change."""
+    from elysium.core.role_impact import role_change_impact
+
+    generation = _generation(request)
+    try:
+        return role_change_impact(generation.config, generation.mediator, role_name, after,
+                                  holders.get(role_name, 0))
+    except Exception:  # noqa: BLE001 - see the docstring
+        logger.warning("could not compute the impact of a change to role %s", role_name,
+                       exc_info=True)
+        return None
+
+
+@router.post("/roles/changes/preview", dependencies=[Depends(_no_store)],
+             response_model=RoleImpactResponse)
+def preview_role_change_route(
+    body: ProposeRoleChangeRequest,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """What proposing this would do, in access terms, before proposing
+    it (DEV_UI 13.5: "before saving, the diff"). Changes nothing.
+
+    The SAME checks as proposing run first, so the preview never
+    describes a change that would be refused -- the refusal is the
+    answer, with its reason.
+    """
+    from elysium.core.role_changes import proposal_problem
+
+    _require_manage_roles(request, current_user)
+    config = _generation(request).config
+    every, active = _holders(request)
+    problem = proposal_problem(
+        config.roles, body.role_name, body.grants, current_user.role_name,
+        every, active, _role_validator(config),
+        holds=lambda grant: authorize(current_user, config.roles, grant),
+    )
+    if problem is not None:
+        raise HTTPException(status_code=400, detail=problem)
+    from elysium.core.role_impact import role_change_impact
+
+    generation = _generation(request)
+    return role_change_impact(generation.config, generation.mediator, body.role_name,
+                              body.grants, every.get(body.role_name, 0))
+
+
+@router.post("/roles/changes/{change_id}/approve", dependencies=[Depends(_no_store)])
+def approve_role_change_route(
+    change_id: str,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Applies a change somebody else proposed, and reloads.
+
+    SAVE, RELOAD, AND UNDO THE SAVE IF THE RELOAD FAILS. The reload
+    rebuilds everything, so it can fail for a reason unrelated to roles
+    -- somebody broke an unrelated YAML file. Leaving the store saved
+    would make the next restart load roles nobody saw take effect.
+    """
+    from elysium.core.role_changes import approval_problem, resulting_roles
+
+    _require_manage_roles(request, current_user)
+    roles_store, changes = _role_paths(request)
+
+    with _role_change_lock(request):
+        change = changes.get(change_id)
+        if change is None:
+            raise HTTPException(status_code=404, detail="No such role change")
+        # THE LATEST GENERATION, NOT THIS REQUEST'S PIN -- the one
+        # sanctioned read past it; see latest_generation().
+        #
+        # The pin is taken at the FIRST _generation() call, which is the
+        # manage:roles check above -- before this lock. If another
+        # approval finished while this one waited, the pin holds the
+        # roles from BEFORE it; computing the new set from those and
+        # saving would silently undo the other approval. That lost
+        # update is what the lock exists to prevent, and the pin was
+        # quietly defeating it. Found by checking the per-request pin
+        # rather than assuming it helped here.
+        #
+        # Authorization above still uses the pin, which is right: this
+        # request was allowed to decide under the rules it arrived with.
+        config = latest_generation(request).config
+        every, active = _holders(request)
+        problem = approval_problem(
+            change, current_user.user_id, config.roles,
+            every, active, _role_validator(config),
+            proposer_holds=_current_authority(request, change.proposed_by, config.roles),
+        )
+        if problem is not None:
+            status, reason = problem
+            if status:
+                changes.decide(change_id, status, current_user.user_id, reason)
+            raise HTTPException(status_code=409, detail=reason)
+
+        previous = roles_store.load()
+        roles_store.save(resulting_roles(config.roles, change.role_name, change.after))
+        try:
+            reload_generation(request.app, requested_by=current_user.user_id)
+        except Exception as e:
+            if previous is None:
+                roles_store.unseed()
+            else:
+                roles_store.save(previous)
+            changes.decide(change_id, "failed", current_user.user_id, str(e))
+            raise HTTPException(
+                status_code=500,
+                detail=f"The change was not applied: the configuration would not reload ({e}).",
+            ) from e
+        changes.decide(change_id, "applied", current_user.user_id)
+    return {"applied": True}
+
+
+@router.post("/roles/changes/{change_id}/reject", dependencies=[Depends(_no_store)])
+def reject_role_change_route(
+    change_id: str,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Declines a change. Its author may withdraw it this way too."""
+    _require_manage_roles(request, current_user)
+    _, changes = _role_paths(request)
+    if not changes.decide(change_id, "rejected", current_user.user_id):
+        raise HTTPException(status_code=404, detail="No such pending role change")
+    return {"rejected": True}
+
+
+class TriggerResponse(BaseModel):
+    trigger_id: str
+    name: str
+    view_id: str
+    above: int | None
+    gained: int | None
+    fell: int | None
+    enabled: bool
+    created_at: str
+    action_type: str | None = None
+    recipient_roles: list[str] = []
+    # COMBINED TRIGGERS (17 October; core/trigger_states.py).
+    at_most: int | None = None
+    also: list[dict[str, Any]] = []
+    combine: str = "all"
+    hold_minutes: int | None = None
+    schedule: dict[str, Any] | None = None
+    #: The whole condition as a sentence, views by name -- what its
+    #: notices say. Null for a single trigger, which the list words.
+    description: str | None = None
+    action_view_id: str | None = None
+    #: PROJECTED TO CROSS (R68): the view counted per `projected_period`
+    #: of `projected_field`, forecast, told when it passes `projected_above`.
+    projected_field: str | None = None
+    projected_period: str | None = None
+    projected_above: float | None = None
+
+
+class TriggersResponse(BaseModel):
+    triggers: list[TriggerResponse]
+
+
+class CreateTriggerRequest(BaseModel):
+    name: str
+    view_id: str
+    above: int | None = None
+    gained: int | None = None
+    fell: int | None = None
+    # AN ACTION TO PROPOSE when the condition fires. Absent means the
+    # trigger only notifies.
+    action_type: str | None = None
+    action_parameter: str | None = None
+    action_values: dict[str, Any] = {}
+    # ROLES TO NOTIFY as well as the owner, each member counted with
+    # their own authority.
+    recipient_roles: list[str] = []
+    # COMBINED, HELD OR SCHEDULED (17 October; core/trigger_states.py):
+    # "at most N" as a state; more conditions on the caller's other
+    # views, [{view_id, above | at_most}], joined by all or any; true
+    # for at least hold_minutes; or checked only on a repeat --
+    # {"days": [...], "time": "HH:MM"} or {"every_minutes": N} -- in
+    # `timezone`.
+    at_most: int | None = None
+    also: list[dict[str, Any]] = []
+    combine: str = "all"
+    hold_minutes: int | None = None
+    schedule: dict[str, Any] | None = None
+    timezone: str = "UTC"
+    # WHICH CONDITION'S VIEW GIVES THE ACTION ITS OBJECTS, for a trigger
+    # with several; absent is the trigger's own view.
+    action_view_id: str | None = None
+    # PROJECTED TO CROSS (R68; core/projected_condition.py): the view's
+    # records counted per day, week or month of a date field, forecast,
+    # and told when the forecast passes the line. Stands alone.
+    projected_field: str | None = None
+    projected_period: str | None = None
+    projected_above: float | None = None
+
+
+def _combined_description(trigger, names: dict) -> "str | None":
+    from elysium.core.trigger_states import describe, is_state_trigger
+
+    return describe(trigger, names) if is_state_trigger(trigger) else None
+
+
+def _trigger_store(request: Request):
+    from elysium.core.triggers import TriggerStore
+
+    return TriggerStore(
+        request.app.state.runtime_paths.data_dir / "triggers.db",
+    )
+
+
+@router.get("/triggers", dependencies=[Depends(_no_store)],
+            response_model=TriggersResponse)
+def triggers_route(
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """The caller's own triggers.
+
+    NO GRANT REQUIRED. A trigger runs as its owner and notifies only
+    its owner, so making one grants nothing somebody did not already
+    have -- which is what makes it safe to offer here rather than in
+    configuration.
+    """
+    # THE CALLER'S OWN VIEW NAMES, for a combined trigger's sentence.
+    # Their own views only: a view somebody else owns is never named.
+    names = {view.view_id: view.name
+             for view in _saved_view_store(request).for_owner(current_user.user_id)}
+    return {
+        "triggers": [
+            {
+                "trigger_id": trigger.trigger_id,
+                "name": trigger.name,
+                "view_id": trigger.view_id,
+                "above": trigger.above,
+                "gained": trigger.gained,
+                "fell": trigger.fell,
+                "enabled": trigger.enabled,
+                "created_at": trigger.created_at,
+                "action_type": trigger.action_type,
+                "recipient_roles": list(trigger.recipient_roles),
+                "at_most": trigger.at_most,
+                "also": list(trigger.also),
+                "combine": trigger.combine,
+                "hold_minutes": trigger.hold_minutes,
+                "schedule": trigger.schedule,
+                "description": _combined_description(trigger, names),
+                "action_view_id": trigger.action_view_id,
+                "projected_field": trigger.projected_field,
+                "projected_period": trigger.projected_period,
+                "projected_above": trigger.projected_above,
+            }
+            for trigger in _trigger_store(request).for_owner(
+                current_user.user_id,
+            )
+        ],
+    }
+
+
+@router.post("/triggers", dependencies=[Depends(_no_store)])
+def create_trigger_route(
+    body: CreateTriggerRequest,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Creates one, watching a view the caller owns."""
+    projected = body.projected_field is not None or body.projected_period is not None \
+        or body.projected_above is not None
+    thresholds = [body.above, body.gained, body.fell, body.at_most]
+    if projected:
+        pass  # checked below, once the view's type is known
+    elif all(value is None for value in thresholds):
+        # A TRIGGER WITH NO CONDITION would evaluate forever and never
+        # fire, which reads as broken rather than as quiet.
+        raise HTTPException(
+            status_code=400,
+            detail="A trigger needs one of above, at most, gained or fell.",
+        )
+    if sum(value is not None for value in thresholds) > 1:
+        # ONE QUESTION PER TRIGGER. Two thresholds on one row would
+        # need an answer about which wins, and two triggers say it
+        # plainly instead.
+        raise HTTPException(
+            status_code=400,
+            detail="A trigger watches one of above, at most, gained or fell, not several.",
+        )
+
+    # THE VIEW MUST BE THE CALLER'S OWN, checked by looking in THEIR
+    # list rather than by fetching and comparing. `get` takes no owner
+    # -- it is the scheduler's call -- so using it here would be the
+    # one place this store's scoping could be bypassed.
+    owned = {
+        view.view_id
+        for view in _saved_view_store(request).for_owner(current_user.user_id)
+    }
+    if body.view_id not in owned:
+        raise HTTPException(status_code=404, detail="No such saved view")
+
+    if projected:
+        from elysium.core.projected_condition import problem as projected_problem
+
+        view = next(view for view in _saved_view_store(request).for_owner(current_user.user_id)
+                    if view.view_id == body.view_id)
+        refused = projected_problem(
+            view.object_type, _generation(request).config.schema, body.projected_field,
+            body.projected_period, body.projected_above,
+            others={"above": body.above, "gained": body.gained, "fell": body.fell,
+                    "at most": body.at_most, "more conditions": body.also,
+                    "a hold": body.hold_minutes, "a schedule": body.schedule,
+                    "an action": body.action_type})
+        if refused is not None:
+            raise HTTPException(status_code=400, detail=refused)
+
+    # COMBINED, HELD OR SCHEDULED: refused here, where the maker can
+    # fix it, rather than silently never firing (core/trigger_states.py).
+    schedule = None
+    if body.schedule is not None:
+        from elysium.core.timer_rules import RuleError, rule_from
+
+        try:
+            schedule = rule_from(body.schedule, body.timezone)
+        except RuleError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    from elysium.core.trigger_states import problem as combined_problem
+
+    # A PROJECTED CONDITION STANDS ALONE, and was checked as such above.
+    combined = None if projected else combined_problem(
+        above=body.above, gained=body.gained, fell=body.fell, at_most=body.at_most,
+        also=body.also, combine=body.combine, hold_minutes=body.hold_minutes,
+        schedule=schedule, action_type=body.action_type, owned_view_ids=owned,
+        view_id=body.view_id, action_view=body.action_view_id)
+    if combined is not None:
+        raise HTTPException(status_code=400, detail=combined)
+
+    if body.recipient_roles:
+        from elysium.core.triggers import recipient_problem
+
+        generation = _generation(request)
+        problem = recipient_problem(
+            body.recipient_roles, generation.config.roles,
+            current_user.role_name,
+            authorize(current_user, generation.config.roles, "manage:users"),
+        )
+        if problem is not None:
+            raise HTTPException(status_code=400, detail=problem)
+
+    if body.action_type is not None:
+        from elysium.core.triggers import action_problem
+
+        # THE VIEW WHOSE OBJECTS THE ACTION RECEIVES: the chosen
+        # condition's, or the trigger's own -- and the parameter must
+        # take that view's type.
+        view = next(
+            view for view in _saved_view_store(request).for_owner(
+                current_user.user_id,
+            )
+            if view.view_id == (body.action_view_id or body.view_id)
+        )
+        generation = _generation(request)
+        problem = action_problem(
+            generation.config.action_types, view.object_type,
+            body.action_type, body.action_parameter, body.action_values,
+            authorize(current_user, generation.config.roles,
+                      f"execute:{body.action_type}"),
+        )
+        if problem is not None:
+            raise HTTPException(status_code=400, detail=problem)
+
+    trigger_id = _trigger_store(request).create(
+        current_user.user_id, body.name, body.view_id,
+        body.above, body.gained, body.fell,
+        body.action_type, body.action_parameter, body.action_values,
+        body.recipient_roles,
+        at_most=body.at_most, also=body.also, combine=body.combine,
+        hold_minutes=body.hold_minutes, schedule=schedule,
+        action_view_id=body.action_view_id,
+        projected=(body.projected_field, body.projected_period, body.projected_above)
+        if projected else None,
+    )
+    if trigger_id is None:
+        raise HTTPException(status_code=500, detail="Could not create that trigger")
+    if schedule is not None:
+        # ITS REPEATING CHECK, owned by its maker (core/timers.py).
+        from elysium.core.trigger_states import arm_schedule
+
+        made = next(trigger for trigger in _trigger_store(request).for_owner(current_user.user_id)
+                    if trigger.trigger_id == trigger_id)
+        arm_schedule(_timer_store(request), made)
+    # ITS FIRST CHECK NOW, in the background: the "now watching" notice
+    # is how its maker knows it works, and with no clock for triggers
+    # that only data can move, the next sync might be a day away.
+    checks = getattr(request.app.state, "trigger_checks", None)
+    if checks is not None:
+        checks.after_made(trigger_id)
+    return {"trigger_id": trigger_id}
+
+
+@router.post("/triggers/{trigger_id}/enabled", dependencies=[Depends(_no_store)])
+def set_trigger_enabled_route(
+    trigger_id: str,
+    enabled: bool,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Turns one on or off.
+
+    ENABLED RATHER THAN DELETED is the common case: somebody
+    silencing a noisy trigger usually wants it back.
+    """
+    if not _trigger_store(request).set_enabled(
+        current_user.user_id, trigger_id, enabled,
+    ):
+        raise HTTPException(status_code=404, detail="No such trigger")
+    # OFF STOPS ITS TIMERS; ON SETS ITS SCHEDULE AGAIN. A trigger turned
+    # off must not keep waking, and one turned back on starts afresh --
+    # its states forgotten, so its next evaluation is a new baseline.
+    from elysium.core.trigger_states import TriggerStateStore, arm_schedule, disarm
+
+    timers = _timer_store(request)
+    disarm(timers, TriggerStateStore(request.app.state.runtime_paths.data_dir), trigger_id)
+    if enabled:
+        trigger = next(trigger for trigger in _trigger_store(request).for_owner(current_user.user_id)
+                       if trigger.trigger_id == trigger_id)
+        arm_schedule(timers, trigger)
+    return {"enabled": enabled}
+
+
+@router.delete("/triggers/{trigger_id}", dependencies=[Depends(_no_store)])
+def delete_trigger_route(
+    trigger_id: str,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """A 404 FOR SOMEBODY ELSE'S: the DELETE matches no row."""
+    if not _trigger_store(request).delete(current_user.user_id, trigger_id):
+        raise HTTPException(status_code=404, detail="No such trigger")
+    # AND EVERYTHING IT SET FOR ITSELF -- a deleted trigger's repeating
+    # schedule would otherwise wake forever to find nothing.
+    from elysium.core.trigger_states import TriggerStateStore, disarm
+
+    disarm(_timer_store(request), TriggerStateStore(request.app.state.runtime_paths.data_dir),
+           trigger_id)
+    return {"deleted": True}
+
+
+# --- Reminders (17 October) -------------------------------------------
+#
+# Timers a person makes for themselves (core/reminders.py): once, or
+# repeating in their own time zone; listed and cancelled by their owner
+# alone. A 404 for anybody else's, the same as for one that does not
+# exist -- uniform denial, as triggers and saved views.
+
+
+class CreateReminderRequest(BaseModel):
+    label: str
+    #: ISO 8601 with an offset: when a one-off fires, or when an
+    #: interval repeat starts.
+    at: str | None = None
+    #: {"every_minutes": N} or {"days": [0..6], "time": "HH:MM"}.
+    repeat: dict[str, Any] | None = None
+    #: IANA name; a weekday repeat keeps to this clock.
+    timezone: str = "UTC"
+    #: Past this many minutes late it was MISSED, and the owner is told
+    #: so instead; null delivers however late.
+    late_after_minutes: int | None = 60
+    #: ISO 8601 with an offset: a repeat's last moment.
+    until: str | None = None
+
+
+class ReminderResponse(BaseModel):
+    reminder_id: str
+    label: str
+    #: The next time it fires, ISO 8601 UTC.
+    next_at: str
+    timezone: str
+    #: How the repeat reads, or null for a one-off.
+    repeats: str | None = None
+    late_after_minutes: int | None = None
+
+
+class RemindersResponse(BaseModel):
+    reminders: list[ReminderResponse]
+
+
+def _timer_store(request: Request):
+    from elysium.core.timers import TimerStore
+
+    return TimerStore(request.app.state.runtime_paths.data_dir)
+
+
+@router.get("/reminders", dependencies=[Depends(_no_store)], response_model=RemindersResponse)
+def list_reminders_route(request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The caller's own reminders, soonest first."""
+    from datetime import UTC, datetime
+
+    from elysium.core.reminders import KIND, describe_repeat
+
+    return {"reminders": [
+        {
+            "reminder_id": timer.key,
+            "label": timer.payload.get("label", ""),
+            "next_at": datetime.fromtimestamp(timer.occurrence_at, UTC).isoformat(),
+            "timezone": timer.payload.get("timezone", "UTC"),
+            "repeats": describe_repeat(timer.repeat),
+            "late_after_minutes": None if timer.late_after is None else int(timer.late_after // 60),
+        }
+        for timer in _timer_store(request).owned_by(current_user.user_id, KIND)
+    ]}
+
+
+@router.post("/reminders", dependencies=[Depends(_no_store)], response_model=ReminderResponse)
+def create_reminder_route(body: CreateReminderRequest, request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Makes one, for the caller alone. Refused with the reason in words."""
+    from datetime import UTC, datetime
+
+    from elysium.core.reminders import KIND, MAX_PER_PERSON, ReminderError, describe_repeat, parse
+
+    store = _timer_store(request)
+    if len(store.owned_by(current_user.user_id, KIND)) >= MAX_PER_PERSON:
+        raise HTTPException(status_code=400, detail=(
+            f"You have {MAX_PER_PERSON} reminders, the most one person may have. "
+            f"Cancel one to make another."))
+    try:
+        spec = parse(body.model_dump(), datetime.now(UTC))
+    except ReminderError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    key = store.create_owned(KIND, current_user.user_id, spec.due_at,
+                             {"label": spec.label, "timezone": spec.timezone},
+                             late_after=spec.late_after, repeat=spec.repeat)
+    return {
+        "reminder_id": key, "label": spec.label,
+        "next_at": datetime.fromtimestamp(spec.due_at, UTC).isoformat(),
+        "timezone": spec.timezone, "repeats": describe_repeat(spec.repeat),
+        "late_after_minutes": None if spec.late_after is None else int(spec.late_after // 60),
+    }
+
+
+class CancelledResponse(BaseModel):
+    cancelled: bool
+
+
+@router.delete("/reminders/{reminder_id}", dependencies=[Depends(_no_store)],
+               response_model=CancelledResponse)
+def cancel_reminder_route(reminder_id: str, request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """A 404 FOR SOMEBODY ELSE'S: the DELETE matches no row."""
+    from elysium.core.reminders import KIND
+
+    if not _timer_store(request).cancel_owned(KIND, reminder_id, current_user.user_id):
+        raise HTTPException(status_code=404, detail="No such reminder")
+    return {"cancelled": True}
+
+
+class SavedViewResponse(BaseModel):
+    view_id: str
+    name: str
+    object_type: str
+    query_text: str
+    #: The conditions this caller may actually run -- re-authorised at
+    #: read time, not as they were written. See `_reauthorized`.
+    conditions: list[dict[str, Any]]
+    #: FIELD NAMES the caller can no longer filter on. Named rather
+    #: than dropped silently: "the user sees more rows than the search
+    #: promised and concludes their data changed".
+    #:
+    #: DECLARED HERE OR IT DISAPPEARS. Every route carries a
+    #: `response_model`, and pydantic drops what the model does not
+    #: name -- so the route could have returned this faithfully and the
+    #: client would never have seen it.
+    disabled_conditions: list[str] = []
+    presentation: dict[str, Any]
+    #: HOW THE PERSON GOT HERE: {type, id, field}, the one link they
+    #: followed to arrive at this search. DEV_UI.md 11.2 names it as
+    #: the third part of what a set IS -- "object type + conditions +
+    #: the traversal chain that produced it".
+    #:
+    #: IT CANNOT OUTLIVE ITS FILTER, and nothing here has to enforce
+    #: that. The trail renders only while a filter naming that exact
+    #: id is present, and `conditions` above is the RE-AUTHORISED
+    #: list -- so a caller who may no longer run the link filter gets
+    #: a view with neither the filter nor the trail, rather than a
+    #: sentence describing rows they are not seeing.
+    origin: dict[str, Any] = {}
+    created_at: str
+
+
+class SavedViewsResponse(BaseModel):
+    views: list[SavedViewResponse]
+
+
+class SaveViewRequest(BaseModel):
+    name: str
+    object_type: str
+    query_text: str = ""
+    conditions: list[dict[str, Any]] = []
+    presentation: dict[str, Any] = {}
+    origin: dict[str, Any] = {}
+
+
+def _saved_view_store(request: Request):
+    from elysium.core.saved_views import SavedViewStore
+
+    return SavedViewStore(
+        request.app.state.runtime_paths.data_dir / "saved_views.db",
+    )
+
+
+def _reauthorized(request: Request, current_user: UserRecord, view):
+    """A saved view's conditions, re-checked against this caller.
+
+    THE MEDIATOR DECIDES, not this route. `reauthorize_conditions`
+    walks the caller's own visible schema; asking the question here
+    would be a second place deciding it, which is what the
+    published-history route refused to be.
+
+    A VIEW WHOSE TYPE THE CALLER CANNOT SEE AT ALL yields nothing
+    runnable and names nothing disabled -- there is no field to name
+    without saying the type exists, and the caller may not know it
+    does.
+    """
+    from elysium.core.filters import FilterError, parse_filters
+    from elysium.core.ontology.mediator import ReauthorizedConditions
+
+    mediator = _generation(request).mediator
+    # THE STORE HOLDS DICTS; THE METHOD WANTS FieldFilters. That gap is
+    # part of why this was never wired -- it is not drop-in, and the
+    # mismatch only shows up at the call site that did not exist.
+    #
+    # `parse_filters` is the one place that already turns saved
+    # condition dicts into filters, including rejecting an unknown
+    # operator. Writing a second conversion here would be a second
+    # place deciding what a stored condition means.
+    try:
+        conditions = parse_filters(view.conditions or [])
+    except FilterError:
+        # A SAVED VIEW CAN HOLD A CONDITION THAT NO LONGER PARSES --
+        # an operator removed since it was saved. Treating that as
+        # "nothing runnable" is the same answer as "you may not run
+        # it", which is what the caller needs; raising would make one
+        # bad saved view break the whole list.
+        #
+        # BUT IT MUST STILL BE NAMED, and this returned runnable=[]
+        # AND disabled=[] -- so the view came back matching EVERY
+        # object of its type with nothing on screen saying a filter
+        # had been lost. That is exactly the failure
+        # `disabled_conditions` exists to prevent: "the user sees more
+        # rows than the search promised and concludes their data
+        # changed", reached by the one branch that bypassed it.
+        #
+        # SEEN FOR REAL, not imagined: the save path stored the URL's
+        # ChartFilter shape rather than a condition, so parse_filters
+        # threw on every saved view that had a filter. That is fixed
+        # at its source, and this stays because an operator removed in
+        # a later version would land here again.
+        #
+        # BEST EFFORT ON THE NAMES. The list did not parse, so there
+        # are no fields to report except whatever `field` keys can be
+        # read off the raw dicts. A name that is merely probable beats
+        # silence, because silence reads as "no filter was ever here".
+        return ReauthorizedConditions(
+            runnable=[],
+            disabled=sorted({
+                str(condition["field"])
+                for condition in (view.conditions or [])
+                if isinstance(condition, dict) and "field" in condition
+            }),
+        )
+    checked = mediator.reauthorize_conditions(
+        current_user, view.object_type, conditions)
+    # BACK TO THE STORED SHAPE. `runnable` holds FieldFilters; the
+    # response has always carried the saved dicts, and changing that
+    # would be a second, unannounced change to the same endpoint.
+    #
+    # Filtering the ORIGINAL dicts by what survived keeps every key the
+    # caller saved -- a presentation hint, a label, anything a future
+    # version adds -- rather than reconstructing a dict from the
+    # filter and quietly losing the rest.
+    disabled = set(checked.disabled)
+    runnable = [condition for condition in (view.conditions or [])
+                if condition.get("field") not in disabled]
+    return ReauthorizedConditions(runnable=runnable,
+                                  disabled=checked.disabled)
+
+
+class CanvasPosition(BaseModel):
+    x: float
+    y: float
+
+
+class SubjectArea(BaseModel):
+    name: str
+    types: list[str]
+
+
+class SecurityChainResponse(BaseModel):
+    type: str
+    # "via": borrowed through `field` from `target`; "field": its own.
+    kind: str
+    field: str
+    target: str | None = None
+
+
+class OntologyCanvasResponse(BaseModel):
+    positions: dict[str, CanvasPosition]
+    areas: list[SubjectArea]
+    # ABSENT, not empty, for a caller who may not see the permission
+    # model: an empty list would read as "nothing here is secured".
+    security_chains: list[SecurityChainResponse] | None = None
+    # The arrangement everyone starts from, cut to the types this person
+    # may see; theirs in `positions` lie over it.
+    shared_positions: dict[str, CanvasPosition] = {}
+    # Present (true) only for someone who may save the shared arrangement.
+    can_set_shared: bool | None = None
+
+
+def _canvas_store(request: Request):
+    from elysium.core.canvas_layout import CanvasLayoutStore
+
+    return CanvasLayoutStore(request.app.state.runtime_paths.data_dir / "canvas_layouts.db")
+
+
+def _canvas_response(request: Request, current_user: UserRecord, document: dict) -> dict:
+    from elysium.core.canvas_layout import clean_layout, security_chains
+
+    generation = _generation(request)
+    visible = generation.mediator.visible_schema(current_user)
+    try:
+        layout = clean_layout(document, visible)
+    except ValueError:
+        # A STORED LAYOUT THAT NO LONGER VALIDATES is a convenience lost,
+        # not an error to show: the canvas lays itself out without one.
+        layout = {"positions": {}, "areas": []}
+    if authorize(current_user, generation.config.roles, "manage:roles"):
+        layout["security_chains"] = security_chains(generation.config.schema, visible)
+    try:
+        layout["shared_positions"] = clean_layout(
+            {"positions": _canvas_store(request).get_shared()}, visible)["positions"]
+    except ValueError:
+        layout["shared_positions"] = {}
+    if authorize(current_user, generation.config.roles, "manage:deployment"):
+        layout["can_set_shared"] = True
+    return layout
+
+
+@router.get("/me/ontology-canvas", dependencies=[Depends(_no_store)],
+            response_model=OntologyCanvasResponse, response_model_exclude_none=True)
+def my_ontology_canvas_route(
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Where this person put the types, and their subject areas (DEV_UI 14).
+
+    NO GRANT REQUIRED beyond being signed in: it is their own
+    arrangement of the types they may already see, cleaned against that
+    on every read so a withdrawn grant is not named back to them.
+    """
+    return _canvas_response(request, current_user, _canvas_store(request).get(current_user.user_id))
+
+
+@router.put("/me/ontology-canvas", dependencies=[Depends(_no_store)],
+            response_model=OntologyCanvasResponse, response_model_exclude_none=True)
+def save_my_ontology_canvas_route(
+    body: dict,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Replaces this person's layout. Answers with what was KEPT -- a type
+    they may not see is dropped, not refused (uniform denial) -- so the
+    client draws what is stored rather than what it sent."""
+    from elysium.core.canvas_layout import CanvasLayoutError, clean_layout
+
+    visible = _generation(request).mediator.visible_schema(current_user)
+    try:
+        cleaned = clean_layout(body, visible)
+    except CanvasLayoutError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    _canvas_store(request).put(current_user.user_id, cleaned)
+    return _canvas_response(request, current_user, cleaned)
+
+
+class SharedCanvasRequest(BaseModel):
+    positions: dict[str, CanvasPosition]
+
+
+@router.put("/admin/ontology-canvas-default", dependencies=[Depends(_no_store)],
+            response_model=OntologyCanvasResponse, response_model_exclude_none=True)
+def save_shared_ontology_canvas_route(
+    body: SharedCanvasRequest,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Saves where the types are, as the arrangement everyone starts from.
+
+    manage:deployment. Only the types the caller may see are taken (the
+    rest are dropped, not refused), and they are merged over what is
+    saved, so a manager who sees fewer types does not erase the
+    placement of the others. A person's own moves lie over this.
+    """
+    from elysium.core.canvas_layout import CanvasLayoutError, clean_layout
+
+    _require_manage_deployment(request, current_user)
+    visible = _generation(request).mediator.visible_schema(current_user)
+    try:
+        cleaned = clean_layout({"positions": {k: v.model_dump() for k, v in body.positions.items()}}, visible)
+    except CanvasLayoutError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if not cleaned["positions"]:
+        raise HTTPException(status_code=400, detail="None of those types are ones you can place.")
+    store = _canvas_store(request)
+    store.merge_shared(cleaned["positions"], current_user.user_id)
+    return _canvas_response(request, current_user, store.get(current_user.user_id))
+
+
+@router.delete("/admin/ontology-canvas-default", dependencies=[Depends(_no_store)],
+               response_model=OntologyCanvasResponse, response_model_exclude_none=True)
+def clear_shared_ontology_canvas_route(
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Forgets the shared arrangement: everyone's picture goes back to the
+    automatic layout under their own moves."""
+    _require_manage_deployment(request, current_user)
+    store = _canvas_store(request)
+    store.clear_shared()
+    return _canvas_response(request, current_user, store.get(current_user.user_id))
+
+
+@router.get("/saved-views", dependencies=[Depends(_no_store)],
+            response_model=SavedViewsResponse)
+def saved_views_route(
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """The caller's own saved views.
+
+    NO GRANT REQUIRED: these are the caller's own searches, and the
+    store scopes by owner IN THE QUERY. There is no call that returns
+    everybody's.
+    """
+    # ONE RE-AUTHORISATION PER VIEW. The comprehension this replaced
+    # called it twice -- once for the runnable conditions and once for
+    # the disabled names -- which is the same schema walk done twice
+    # for every saved view the caller owns.
+    views = []
+    for view in _saved_view_store(request).for_owner(current_user.user_id):
+        checked = _reauthorized(request, current_user, view)
+        views.append({
+            "view_id": view.view_id,
+            "name": view.name,
+            "object_type": view.object_type,
+            "query_text": view.query_text,
+            # RE-AUTHORISED, NOT RETURNED VERBATIM -- `WIRED-1`.
+            #
+            # A saved view holds conditions written when it was saved.
+            # Between then and now the author may have lost read access
+            # to a field they filtered on, or the opener may be a
+            # colleague it was shared with who never had it.
+            # `reauthorize_conditions` checks each against the OPENER's
+            # own visible schema and says which it cannot run.
+            #
+            # It existed, was tested, and was called by nothing -- this
+            # route returned `view.conditions` as written. Its own
+            # docstring is the rule: "a saved artifact is a request,
+            # never an authority."
+            #
+            # THE PRECEDENT IS UNANIMOUS that this belongs at read time:
+            # a row-level rule "is evaluated at query time using the
+            # current user's identity", so "a change to the table is
+            # visible on the very next query, there is no sync delay".
+            "conditions": checked.runnable,
+            # NAMED, NOT DROPPED SILENTLY. Dropping silently is the
+            # worst option, because "the user sees more rows than the
+            # search promised and concludes their data changed".
+            "disabled_conditions": checked.disabled,
+            "presentation": view.presentation,
+            "origin": view.origin,
+            "created_at": view.created_at,
+        })
+    return {"views": views}
+
+
+@router.post("/saved-views", dependencies=[Depends(_no_store)])
+def save_view_route(
+    body: SaveViewRequest,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Saves one, replacing any of the same name.
+
+    THE OBJECT TYPE IS CHECKED AGAINST WHAT THE CALLER MAY SEE. A view
+    naming a type they cannot discover would be a view that always
+    matches nothing -- and the refusal says so at the moment they can
+    fix it.
+    """
+    visible = _generation(request).mediator.visible_schema(current_user)
+    if body.object_type not in visible:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No object type {body.object_type!r}",
+        )
+
+    view_id = _saved_view_store(request).save(
+        current_user.user_id, body.name, body.object_type,
+        body.query_text, body.conditions, body.presentation,
+        body.origin,
+    )
+    if view_id is None:
+        raise HTTPException(status_code=500, detail="Could not save that view")
+    return {"view_id": view_id}
+
+
+@router.delete("/saved-views/{view_id}", dependencies=[Depends(_no_store)])
+def delete_saved_view_route(
+    view_id: str,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Deletes one, if it belongs to the caller.
+
+    A 404 FOR SOMEBODY ELSE'S, not a 403: the DELETE matches no row,
+    which is the same answer as "no such view", and telling a caller
+    that one exists but is not theirs says more than refusing to say
+    anything.
+    """
+    if not _saved_view_store(request).delete(current_user.user_id, view_id):
+        raise HTTPException(status_code=404, detail="No such saved view")
+    return {"deleted": True}
+
+
+# --- Frozen sets (formerly BLOCKING 17, saved selections, DEV_UI 11.3) ---------------------------
+#
+# A saved VIEW is the live kind -- its query, re-run. A FROZEN SET is
+# the other kind DEV_UI 11.3 asks for: "membership fixed at an
+# instant". The precedent's static object sets are the precedent: "saved as a
+# list of primary keys", staying "the same regardless of any changes to
+# the input data". Membership is keys; values are read live, with the
+# reader's own authority, through every route that already takes a set
+# -- which is why those routes take `frozen_set` rather than this
+# module growing a second read path.
+
+
+def _frozen_set_store(request: Request):
+    from elysium.core.frozen_sets import FrozenSetStore
+
+    return FrozenSetStore(request.app.state.runtime_paths.data_dir / "frozen_sets.db")
+
+
+def _gold_table_for(mediator, object_type: str) -> "str | None":
+    return ((mediator.schema.get(object_type) or {}).get("storage") or {}).get("table")
+
+
+def _gold_connector(mediator):
+    from elysium.core.mirror.gold_connector import GoldConnector
+
+    return next((adapter for adapter in mediator.adapters.values()
+                 if isinstance(adapter, GoldConnector)), None)
+
+
+def _frozen_set_condition(request: Request, user: UserRecord, object_type: str,
+                          set_id: "str | None") -> "list[FieldFilter]":
+    """The condition a frozen set contributes: its members, by id.
+
+    A CONDITION, NOT A SEPARATE READ PATH. Expanded into `id in [...]`
+    and ANDed with whatever else the request carries, a frozen set goes
+    through the same mediator search every live set does -- so MAC, the
+    caller's own field grants, the scan ceiling and its truncation flag
+    all apply without being restated. Table, charts, facets, graph,
+    count and export work on it because they already work on
+    conditions.
+
+    BY REFERENCE, because a thousand ids do not fit in the search GET's
+    query string, and because the members are the OWNER's: a caller
+    naming somebody else's set gets the answer "no such set".
+
+    404 FOR NOT YOURS AND FOR NONE, identically, and for a set of a
+    different type -- applying a Customer set to Transactions would
+    match ids that merely collide.
+    """
+    if not set_id:
+        return []
+    found = _frozen_set_store(request).get(user.user_id, set_id)
+    if found is None or found.object_type != object_type or not found.member_ids:
+        raise HTTPException(status_code=404, detail="No such frozen set")
+    id_field = (_generation(request).mediator.schema.get(object_type) or {}).get("id_field")
+    if not id_field:
+        raise HTTPException(status_code=404, detail="No such frozen set")
+    return [FieldFilter(field=id_field, operator="in", value=list(found.member_ids))]
+
+
+def _set_conditions(request: Request, user: UserRecord, object_type: str,
+                    body: "ObjectSetQueryRequest") -> list:
+    """The request's own conditions, narrowed to its frozen set if any."""
+    return body.as_conditions() + _frozen_set_condition(
+        request, user, object_type, body.frozen_set)
+
+
+class FreezeSetRequest(BaseModel):
+    """What to freeze: the live set as described, or hand-picked ids.
+
+    ONE OR THE OTHER. `ids` freezes a selection; `q`/`conditions`
+    freezes "everything matching", resolved HERE, the way
+    `/matching-ids` resolves it, so the frozen membership is exactly
+    what the owner could see at the instant they froze it.
+    """
+
+    name: str
+    object_type: str
+    ids: list[str] | None = None
+    q: str = ""
+    conditions: list[dict[str, Any]] | None = None
+    #: Freezing "everything matching" INSIDE a frozen set narrows within
+    #: it, as every other set route does. Without this the criteria were
+    #: run over the whole type and the result was larger than the set on
+    #: screen.
+    frozen_set: str | None = None
+
+
+class FrozenSetResponse(BaseModel):
+    set_id: str
+    name: str
+    object_type: str
+    #: How many ids were frozen. The ids themselves are not listed --
+    #: a frozen set is opened through the routes that take one, which
+    #: apply the reader's authority to every member.
+    size: int
+    frozen_at: str
+    published_at: str | None = None
+    #: Whether gold still holds the publication it was frozen from.
+    #: Reported, never required -- membership does not depend on it.
+    publication_retained: bool | None = None
+    #: Present when it was frozen from criteria, so it can be handed
+    #: back to them (DEV_UI 11.3, "conversion both ways"). Absent for a
+    #: hand-picked selection, which has no criteria.
+    origin: dict[str, Any] = {}
+
+
+class FrozenSetDetailResponse(FrozenSetResponse):
+    #: Members the caller cannot see now -- deleted, or outside their
+    #: compartment, and deliberately not distinguished. Counted, so the
+    #: set never silently looks smaller than it is.
+    not_shown: int
+
+
+def _describe_frozen(request: Request, found) -> dict:
+    mediator = _generation(request).mediator
+    connector = _gold_connector(mediator)
+    table = _gold_table_for(mediator, found.object_type)
+    retained = None
+    if found.gold_snapshot_id and connector is not None and table:
+        retained = connector.snapshot_is_retained(table, int(found.gold_snapshot_id))
+    return {
+        "set_id": found.set_id, "name": found.name, "object_type": found.object_type,
+        "size": len(found.member_ids), "frozen_at": found.frozen_at,
+        "published_at": found.published_at, "publication_retained": retained,
+        "origin": found.origin,
+    }
+
+
+@router.post("/frozen-sets", response_model=FrozenSetResponse, status_code=201)
+def freeze_set_route(body: FreezeSetRequest, request: Request,
+                     current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Freezes a set: its members now, by id, under a name.
+
+    RESOLVED AS THE OWNER. Hand-picked ids are filtered through the
+    mediator too, not stored as given -- otherwise a caller could freeze
+    ids they cannot see and use the set's `not_shown` count to learn
+    whether they exist.
+
+    REFUSED OVER THE BULK CEILING and refused when EMPTY, never
+    truncated: a frozen set silently missing a third of what was asked
+    for is the failure `/matching-ids` already refuses, and an empty one
+    would expand to an `in` the filter vocabulary rightly rejects.
+    """
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="A frozen set needs a name.")
+    if body.ids is not None and (body.q or body.conditions):
+        raise HTTPException(
+            status_code=400,
+            detail="Freeze either a selection of ids or a filter, not both.")
+    mediator = _generation(request).mediator
+    id_field = (mediator.schema.get(body.object_type) or {}).get("id_field")
+    if not id_field:
+        raise HTTPException(status_code=404, detail="No such object type")
+
+    try:
+        if body.ids is not None:
+            wanted = [str(member) for member in body.ids]
+            if not wanted:
+                raise HTTPException(status_code=400, detail="Nothing is selected.")
+            if len(wanted) > MAX_BULK_OBJECTS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{len(wanted)} objects are selected, and at most "
+                           f"{MAX_BULK_OBJECTS} can be frozen at once.")
+            visible = {str(found) for found in mediator.search_object(
+                current_user, body.object_type,
+                [FieldFilter(field=id_field, operator="in", value=wanted)])}
+            # IN THE ORDER THEY WERE PICKED, which is the order a person
+            # will expect to see them in again.
+            members = [member for member in wanted if member in visible]
+            origin: dict = {}
+        else:
+            parsed = parse_filters(body.conditions) if body.conditions else []
+            parsed += _frozen_set_condition(
+                request, current_user, body.object_type, body.frozen_set)
+            members = [str(found) for found in mediator.search_object_free_text(
+                current_user, body.object_type, body.q, conditions=parsed or None)]
+            # NARROWED FROM A FROZEN SET, it has no live criteria of its
+            # own to hand back to -- returning to the filter alone would
+            # widen it to the whole type.
+            origin = ({"within": body.frozen_set} if body.frozen_set
+                      else {"q": body.q, "conditions": body.conditions or []})
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    if not members:
+        raise HTTPException(status_code=400, detail="Nothing matches, so there is nothing to freeze.")
+    if len(members) > MAX_BULK_OBJECTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{len(members)} objects match, and at most {MAX_BULK_OBJECTS} "
+                   f"can be frozen at once. Narrow the filter.")
+
+    connector = _gold_connector(mediator)
+    table = _gold_table_for(mediator, body.object_type)
+    snapshot = connector.snapshot_for(table) if connector is not None and table else None
+    set_id = _frozen_set_store(request).freeze(
+        current_user.user_id, name, body.object_type, members, origin=origin,
+        gold_snapshot_id=None if snapshot is None else str(snapshot),
+        published_at=_generation(request).gold_published_at.get(body.object_type),
+    )
+    if set_id is None:
+        raise HTTPException(status_code=500, detail="The set could not be saved.")
+    found = _frozen_set_store(request).get(current_user.user_id, set_id)
+    return _describe_frozen(request, found)
+
+
+@router.get("/frozen-sets", response_model=list[FrozenSetResponse],
+            dependencies=[Depends(_no_store)])
+def list_frozen_sets_route(request: Request,
+                           current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    """The caller's own frozen sets, newest first."""
+    return [_describe_frozen(request, found)
+            for found in _frozen_set_store(request).for_owner(current_user.user_id)]
+
+
+@router.get("/frozen-sets/{set_id}", response_model=FrozenSetDetailResponse,
+            dependencies=[Depends(_no_store)])
+def frozen_set_route(set_id: str, request: Request,
+                     current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """One set, with how many of its members the caller can see now."""
+    found = _frozen_set_store(request).get(current_user.user_id, set_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="No such frozen set")
+    condition = _frozen_set_condition(request, current_user, found.object_type, set_id)
+    try:
+        shown = _generation(request).mediator.count_objects(
+            current_user, found.object_type, condition)
+    except ValueError:
+        # THE ID FIELD IS NO LONGER READABLE BY THE OWNER, so nothing
+        # can be matched by it. Every member is then not shown, which is
+        # what the reader actually gets.
+        shown = 0
+    return {**_describe_frozen(request, found), "not_shown": len(found.member_ids) - shown}
+
+
+@router.delete("/frozen-sets/{set_id}", dependencies=[Depends(_no_store)])
+def delete_frozen_set_route(set_id: str, request: Request,
+                            current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Deletes one, if it belongs to the caller. 404 otherwise, for the
+    reason the saved-view route gives."""
+    if not _frozen_set_store(request).delete(current_user.user_id, set_id):
+        raise HTTPException(status_code=404, detail="No such frozen set")
+    return {"deleted": True}
+
+
+# --- Comparing two sets --------------------------------------------------------------------------
+#
+# THE PRECEDENT'S OBJECT-SET SERVICE: two sets combine by
+# `union`, `intersect` and `subtract`, and each result is a new set.
+# Comparing is those three read at once -- left minus right, left and
+# right, right minus left -- which is the Venn shape Amplitude's cohort
+# comparison and HubSpot's list overlap both show. A REGION IS THEN
+# KEPT AS A FROZEN SET, because "the customers in last quarter's
+# escalations who are not in this quarter's" is membership at an
+# instant, which is what a frozen set is.
+
+
+class SetReference(BaseModel):
+    """One side of a comparison: criteria, a frozen set, both (criteria
+    WITHIN a frozen set, as every set route takes them), or a saved
+    view ALONE -- a saved view with extra filters is a different set
+    from the saved view, and merging the two silently is how a
+    comparison ends up describing something nobody named."""
+
+    q: str = ""
+    conditions: list[dict[str, Any]] | None = None
+    frozen_set: str | None = None
+    saved_view: str | None = None
+
+
+class CompareSetsRequest(BaseModel):
+    object_type: str
+    left: SetReference
+    right: SetReference
+
+
+class CompareSetsResponse(BaseModel):
+    left_only: int
+    both: int
+    right_only: int
+    #: Either side read the scan ceiling and stopped. The counts are
+    #: then of what was read, and the UI says so -- as everywhere else.
+    scan_truncated: bool = False
+
+
+class CombineSetsRequest(CompareSetsRequest):
+    name: str
+    #: Which part to keep. `either` is the union.
+    region: str
+
+
+_REGIONS = ("left_only", "both", "right_only", "either")
+
+
+def _members_of(request: Request, user: UserRecord, object_type: str,
+                reference: SetReference, outcome: SearchOutcome) -> list[str]:
+    """The ids one side names, resolved AS THE CALLER, in their order.
+
+    THROUGH THE MEDIATOR, like every other set. A frozen set expands to
+    its id condition; a saved view runs its query with its conditions
+    re-authorized -- and is REFUSED, not silently widened, if any of
+    them can no longer be run, because comparing against a view that
+    lost a filter compares against a set its owner never saved.
+    """
+    narrowed = bool(reference.q.strip() or reference.conditions or reference.frozen_set)
+    if reference.saved_view and narrowed:
+        raise HTTPException(
+            status_code=400,
+            detail="A saved view is compared as it was saved, without further filters.")
+    mediator = _generation(request).mediator
+    query_text = reference.q
+    if reference.saved_view:
+        view = next((view for view in _saved_view_store(request).for_owner(user.user_id)
+                     if view.view_id == reference.saved_view), None)
+        if view is None or view.object_type != object_type:
+            raise HTTPException(status_code=404, detail="No such saved view")
+        checked = _reauthorized(request, user, view)
+        if checked.disabled:
+            raise HTTPException(
+                status_code=400,
+                detail=f"“{view.name}” filters on fields you can no longer read "
+                       f"({', '.join(checked.disabled)}), so it cannot be compared.")
+        conditions = parse_filters(checked.runnable) if checked.runnable else []
+        query_text = view.query_text
+    else:
+        conditions = (parse_filters(reference.conditions) if reference.conditions else [])
+        conditions += _frozen_set_condition(request, user, object_type, reference.frozen_set)
+    found = mediator.search_object_free_text(
+        user, object_type, query_text, conditions=conditions or None, outcome=outcome)
+    return [str(member) for member in found]
+
+
+def _compare(request: Request, user: UserRecord, body: CompareSetsRequest):
+    if not (_generation(request).mediator.schema.get(body.object_type) or {}).get("id_field"):
+        raise HTTPException(status_code=404, detail="No such object type")
+    outcome = SearchOutcome()
+    try:
+        left = _members_of(request, user, body.object_type, body.left, outcome)
+        right = _members_of(request, user, body.object_type, body.right, outcome)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return left, right, outcome.scan_truncated
+
+
+@router.post("/sets/compare", response_model=CompareSetsResponse,
+             dependencies=[Depends(_no_store)])
+def compare_sets_route(body: CompareSetsRequest, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """How two sets of one type overlap: counts only.
+
+    COUNTS, NOT IDS. The regions are opened by keeping one as a frozen
+    set, which applies the reader's authority to every member on the
+    way back out -- the same reason a frozen set's own response lists
+    no ids.
+    """
+    left, right, truncated = _compare(request, current_user, body)
+    left_set, right_set = set(left), set(right)
+    return {
+        "left_only": len(left_set - right_set),
+        "both": len(left_set & right_set),
+        "right_only": len(right_set - left_set),
+        "scan_truncated": truncated,
+    }
+
+
+@router.post("/sets/combine", response_model=FrozenSetResponse, status_code=201)
+def combine_sets_route(body: CombineSetsRequest, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Keeps one region of a comparison as a frozen set.
+
+    REFUSED, NOT TRUNCATED, over the bulk ceiling and when empty, for
+    the reasons `/frozen-sets` gives. And refused when either side was
+    truncated: a region computed from half a set is not the region, and
+    keeping it would freeze the error.
+    """
+    if body.region not in _REGIONS:
+        raise HTTPException(status_code=400, detail=f"region must be one of {', '.join(_REGIONS)}")
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="A frozen set needs a name.")
+    left, right, truncated = _compare(request, current_user, body)
+    if truncated:
+        raise HTTPException(
+            status_code=400,
+            detail="One of the sets is larger than a search reads, so its parts "
+                   "cannot be kept exactly. Narrow it first.")
+    left_set, right_set = set(left), set(right)
+    keep = {
+        "left_only": lambda member: member not in right_set,
+        "both": lambda member: member in left_set and member in right_set,
+        "right_only": lambda member: member not in left_set,
+        "either": lambda _member: True,
+    }[body.region]
+    # LEFT'S ORDER, THEN RIGHT'S, so a kept region reads in the order
+    # its sets did.
+    ordered = left + [member for member in right if member not in left_set]
+    members = [member for member in ordered if keep(member)]
+    if not members:
+        raise HTTPException(status_code=400, detail="That part is empty, so there is nothing to keep.")
+    if len(members) > MAX_BULK_OBJECTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{len(members)} objects are in that part, and at most "
+                   f"{MAX_BULK_OBJECTS} can be frozen at once.")
+
+    mediator = _generation(request).mediator
+    connector = _gold_connector(mediator)
+    table = _gold_table_for(mediator, body.object_type)
+    snapshot = connector.snapshot_for(table) if connector is not None and table else None
+    origin = {"compare": {"left": body.left.model_dump(exclude_defaults=True),
+                          "right": body.right.model_dump(exclude_defaults=True),
+                          "region": body.region}}
+    set_id = _frozen_set_store(request).freeze(
+        current_user.user_id, name, body.object_type, members, origin=origin,
+        gold_snapshot_id=None if snapshot is None else str(snapshot),
+        published_at=_generation(request).gold_published_at.get(body.object_type),
+    )
+    if set_id is None:
+        raise HTTPException(status_code=500, detail="The set could not be saved.")
+    return _describe_frozen(request, _frozen_set_store(request).get(current_user.user_id, set_id))
+
+
+class NotificationSubjectResponse(BaseModel):
+    object_type: str
+    object_id: str
+
+
+class NotificationResponse(BaseModel):
+    notification_id: str
+    created_at: str
+    kind: str
+    summary: str
+    detail: str | None
+    seen: bool
+    #: DOORS (DEV_UI 12: every inbox row "a DOOR into subject 1"): the
+    #: objects an answer was built from, those the caller may STILL read,
+    #: at most MAX_NOTIFICATION_DOORS.
+    subjects: list[NotificationSubjectResponse] = []
+    #: WHAT TO CALL ITS KIND, where the server knows better than the
+    #: page: an add-on's notice (`module:<id>`, step 2.4) is labelled
+    #: with its module's name. None: the page labels it as it always has.
+    label: str | None = None
+
+
+#: How many objects one notification links to. An answer that read
+#: fifty objects is better opened in Query than listed in a notice.
+MAX_NOTIFICATION_DOORS = 5
+
+
+class NotificationsResponse(BaseModel):
+    notifications: list[NotificationResponse]
+    unseen: int
+
+
+def _notification_store(request: Request):
+    from elysium.core.notifications import NotificationStore
+
+    return NotificationStore(
+        request.app.state.runtime_paths.data_dir / "notifications.db",
+    )
+
+
+def _check_the_sync_is_running(request: Request, user: UserRecord, store) -> None:
+    """R65: the dead man's switch, evaluated when an administrator looks.
+
+    ONLY FOR SOMEBODY WHO CAN FIX IT -- the grant that starts a sync, as
+    the sync's own health notice uses. NEVER FAILS THE REQUEST: a
+    notification list that could not be checked for one more entry is
+    still the caller's notifications.
+    """
+    from elysium.core.mirror.health_condition import RECIPIENT_GRANT, notify_sync_overdue
+
+    config = _generation(request).config
+    if not authorize(user, config.roles, RECIPIENT_GRANT):
+        return
+    try:
+        attempts = SyncAttempts(request.app.state.runtime_paths.data_dir / "mirror"
+                                / "sync_attempts.db")
+        last = [getattr(attempts.last_for(target.silo_name, target.table_name), "at", None)
+                for target in resolve_sync_targets({"object_types": config.schema})]
+        notify_sync_overdue(last, user.user_id, store)
+    except Exception as e:  # noqa: BLE001 - see the docstring
+        logger.warning(f"could not check whether the sync is running: {e}")
+
+
+@router.get("/notifications", dependencies=[Depends(_no_store)],
+            response_model=NotificationsResponse)
+def notifications_route(
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """What is waiting for the caller.
+
+    NO GRANT REQUIRED, because these are the caller's OWN
+    notifications and nobody else's. The store scopes by user_id IN
+    THE QUERY -- there is no call that returns everyone's, so there is
+    no privileged view for a bug to leak from.
+    """
+    store = _notification_store(request)
+    _check_the_sync_is_running(request, current_user, store)
+    modules = _generation(request).config.modules
+    names = {} if modules is None else {
+        notification_kind(m.id): m.name for m in [*modules.modules, *modules.off]}
+    return {
+        "notifications": [
+            {
+                "notification_id": n.notification_id,
+                "created_at": n.created_at,
+                "kind": n.kind,
+                "summary": n.summary,
+                "detail": n.detail,
+                "seen": n.seen,
+                "subjects": _doors(request, current_user, n.subjects),
+                # A module no longer listed keeps its notices, under its id.
+                "label": names.get(n.kind, n.kind.removeprefix("module:") if n.kind.startswith("module:")
+                                   else None),
+            }
+            for n in store.for_user(current_user.user_id)
+        ],
+        "unseen": store.unseen_count(current_user.user_id),
+    }
+
+
+def _doors(request: Request, user: UserRecord, subjects) -> list[dict]:
+    """The objects a notification may link to: ones the caller may read
+    NOW, checked through the mediator -- read once is not readable still,
+    and a link to an object they may no longer see would say it exists."""
+    mediator = _generation(request).mediator
+    doors: list[dict] = []
+    for object_type, object_id in subjects:
+        if len(doors) >= MAX_NOTIFICATION_DOORS:
+            break
+        if _may_read_object(mediator, user, object_type, object_id):
+            doors.append({"object_type": object_type, "object_id": object_id})
+    return doors
+
+
+@router.post("/notifications/{notification_id}/seen",
+             dependencies=[Depends(_no_store)])
+def mark_notification_seen_route(
+    notification_id: str,
+    request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Marks one seen, if it belongs to the caller.
+
+    A 404 FOR SOMEBODY ELSE'S, not a 403. Telling a caller that a
+    notification exists but is not theirs says more than refusing to
+    say anything -- and the store's UPDATE simply matches no row,
+    which is the same answer as "no such notification".
+    """
+    if not _notification_store(request).mark_seen(
+        current_user.user_id, notification_id,
+    ):
+        raise HTTPException(status_code=404, detail="No such notification")
+    return {"seen": True}
+
+
+class SyncStartedResponse(BaseModel):
+    started: bool
+    detail: str
+
+
+class SyncRequest(BaseModel):
+    # "silo.table" names whose silver is to be dropped and rebuilt from
+    # bronze, each of which must need it right now.
+    rebuild: list[str] = []
+
+
+@router.post("/admin/mirror/sync", dependencies=[Depends(_no_store)],
+             response_model=SyncStartedResponse)
+def admin_mirror_sync_route(
+    request: Request,
+    body: SyncRequest | None = None,
+    current_user: UserRecord = Depends(get_current_user),
+) -> dict:
+    """Starts a sync, and returns before it finishes.
+
+    A SYNC IS NOT INSTANT. Two seconds on the shipped fixtures, but
+    the roadmap (consumed) measured 500,000 rows in 2.46s and about a minute
+    for
+    ten million. A synchronous request would hold a connection for that long,
+    and the one worker process with it.
+
+    SO IT RUNS ON A THREAD and this returns immediately. The SAME
+    SHAPE as `install_sighup_handler`, which reloads configuration the
+    same way and injects its thread factory for exactly the reason
+    this one does.
+
+    OPTIONALLY `{"rebuild": ["silo.table", ...]}` (a retype, core/ontology/
+    retype.py): silver of each is dropped and rebuilt from bronze, at the
+    cost of its snapshot history. EVERY NAME MUST NEED IT RIGHT NOW -- be in
+    tables_needing_rebuild, i.e. its silver column types differ from the
+    declaration -- else 400 naming it and nothing starts: a name that merely
+    exists is refused, because a rebuild nobody needs destroys history for
+    nothing. The names are audited, and so is a refusal (action
+    "rebuild_refused"). If the mirror cannot be read to check them: 503, and
+    nothing starts. If another sync holds the lock: 409, "the rebuild was not
+    started" (the lock is tried and let go before the thread starts).
+
+    **NOTHING NEW REPORTS THE RESULT.** `run_sync()` already records
+    every attempt in `sync_attempts.db`, and the mirror panel already
+    polls every thirty seconds -- so the outcome arrives through
+    machinery that exists, rather than through a job id nobody would
+    poll.
+
+    **AND NOTHING NEW GUARDS IT.** `run_sync()` takes an exclusive
+    flock for the duration and yields False if another holds it, so a
+    second sync cannot start. A button pressed twice does one sync,
+    and the second press is told so.
+
+    GATED ON manage:deployment, the same grant that can reload -- and
+    a stricter bar than reading the panel, because this one DOES
+    something. A sync reads a customer's database and rewrites the
+    mirror every user then reads.
+    """
+    generation = _generation(request)
+    if not authorize(current_user, generation.config.roles, "manage:deployment"):
+        raise HTTPException(
+            status_code=403,
+            detail="You need manage:deployment to start a sync.",
+        )
+
+    rebuild = sorted(set(body.rebuild)) if body else []
+    audit_log = generation.mediator.audit_log
+
+    def refused(status: int, detail: str) -> HTTPException:
+        # A REFUSED REBUILD IS AUDITED TOO: someone asked to discard
+        # snapshot history and was told no. mac_allowed False: the
+        # request was not allowed to proceed (the access check has no
+        # MAC step of its own here, so this is the one honest way to
+        # record that allowed is False).
+        audit_log.log_access(current_user.user_id, "_mirror", rebuild, "rebuild_refused", False, True)
+        return HTTPException(status_code=status, detail=detail)
+
+    if rebuild:
+        try:
+            needed = set(_tables_needing_rebuild(request, generation.config.schema))
+        except _MirrorUnreadable:
+            raise refused(503, (
+                "The mirror could not be read, so it cannot be checked which tables need a rebuild. Nothing was "
+                "started. Look at the Mirror panel, or run scripts/repair_catalog.py, then try again.")) from None
+        for name in rebuild:
+            if name not in needed:
+                raise refused(400, (
+                    f"{name} does not need a rebuild: its silver matches what the ontology declares (or is not "
+                    f"built). Rebuilding it would discard its snapshot history for nothing. Nothing was started."))
+        # IS ANOTHER SYNC RUNNING? run_sync takes the lock and, finding it
+        # held, prints "another sync is already running" and returns 0 --
+        # after this route answered 200 and audited, the names would vanish
+        # without a word. Tried and let go at once, so the thread's own
+        # attempt follows; a sync that starts in between is the one case
+        # left, and it is the sync's own to report.
+        from elysium.core.mirror.sync_lock import single_writer
+
+        with single_writer(request.app.state.runtime_paths.data_dir / "sync.lock") as free:
+            if not free:
+                raise refused(409, "A sync is running; the rebuild was not started. Wait for it to finish, then "
+                                   "rebuild.")
+
+    # A LIVE DEPLOYMENT USED TO BE REFUSED A SYNC HERE. There is no
+    # such deployment since GOLD-9: every deployment fills the mirror,
+    # because that is the only thing reads come from.
+
+    # mac_allowed True: there is no row-level check on starting a sync,
+    # and None would be recorded as allowed False.
+    audit_log.log_access(current_user.user_id, "_mirror", "_sync", "start", True, True)
+    if rebuild:
+        audit_log.log_access(current_user.user_id, "_mirror", rebuild, "rebuild", True, True)
+
+    thread_factory = getattr(request.app.state, "sync_thread_factory",
+                             threading.Thread)
+    thread_factory(target=functools.partial(_run_sync_in_background, set(rebuild) or None), daemon=True).start()
+
+    return {
+        "started": True,
+        "detail": (
+            "A sync is running. Its outcome will appear in this panel's "
+            "last-attempt column."
+        ),
+    }
+
+
+def _a_sync_holds_the_lock(request: Request) -> "bool | None":
+    """Whether a sync is running now, by trying the lock and letting it go;
+    None when that could not be tried."""
+    from elysium.core.mirror.sync_lock import single_writer
+
+    try:
+        with single_writer(request.app.state.runtime_paths.data_dir / "sync.lock") as free:
+            return not free
+    except Exception as e:  # noqa: BLE001 - "cannot tell" is an answer here
+        logger.warning("could not try the sync lock: %s", type(e).__name__)
+        return None
+
+
+@dataclasses.dataclass
+class _MirrorStates:
+    """What the lake and the sync lock say about each table and object type
+    right now (core/mirror/object_state). ONE derivation, used by the Mirror
+    panel's route and by the hold on writes (_held_while_rebuilding), so the
+    two cannot disagree about whether a type is rebuilding."""
+    owed: "set[str] | None"
+    targets: list
+    last_attempts: dict
+    table_states: dict
+    object_states: list
+
+
+def _mirror_states(request: Request, generation, attempts: SyncAttempts) -> _MirrorStates:
+    # WHAT A RETYPE OWES, worked out from the lake each time (no marker), with
+    # the schema of the generation this request is pinned to.
+    try:
+        owed: set[str] | None = set(_tables_needing_rebuild(request, generation.config.schema))
+    except _MirrorUnreadable:
+        owed = None
+    targets = resolve_sync_targets({"object_types": generation.config.schema})
+    last_attempts = {(target.silo_name, target.table_name): attempts.last_for(target.silo_name, target.table_name)
+                     for target in targets}
+    # Only asked when some table says it is being rebuilt, since trying the
+    # lock is the one thing here that touches a running sync.
+    sync_running: bool | None = False
+    if any(each is not None and each.outcome == REBUILDING_OUTCOME for each in last_attempts.values()):
+        sync_running = _a_sync_holds_the_lock(request)
+    table_states = {
+        f"{target.silo_name}.{target.table_name}": table_state(
+            owed_known=owed is not None,
+            last_outcome=attempt.outcome if (attempt := last_attempts[(target.silo_name, target.table_name)])
+            else None,
+            sync_running=sync_running)
+        for target in targets}
+    reads: dict[str, list[str]] = {}
+    for target in targets:
+        for object_type in target.object_types:
+            reads.setdefault(object_type, []).append(f"{target.silo_name}.{target.table_name}")
+    object_states = [
+        {"object_type": object_type,
+         "state": type_state(table_states[name] for name in names),
+         "rebuild_owed": any(name in (owed or ()) for name in names),
+         "tables": sorted(names)}
+        for object_type, names in sorted(reads.items())]
+    return _MirrorStates(owed, targets, last_attempts, table_states, object_states)
+
+
+class RebuildOwedResponse(BaseModel):
+    rebuild: list[str]
+    # True when the mirror could not be read: `rebuild` is [] because nobody
+    # can tell, not because nothing is owed.
+    unknown: bool
+
+
+@router.get("/admin/mirror/rebuild-owed", dependencies=[Depends(_no_store)], response_model=RebuildOwedResponse)
+def admin_mirror_rebuild_owed_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The "silo.table" names whose silver is owed a rebuild right now: the
+    list POST /admin/mirror/sync accepts as `rebuild`, derived from the lake
+    each time. The retype dialog asks it again after a refused rebuild rather
+    than retry a set that has gone stale. manage:deployment, as the sync."""
+    _require_manage_deployment(request, current_user)
+    try:
+        return {"rebuild": _tables_needing_rebuild(request, _generation(request).config.schema), "unknown": False}
+    except _MirrorUnreadable:
+        return {"rebuild": [], "unknown": True}
+
+
+def _run_sync_in_background(rebuild: "set[str] | None" = None) -> None:
+    """Runs one sync, swallowing everything.
+
+    A THREAD THAT RAISES TAKES ITS EXCEPTION NOWHERE. Nobody is
+    waiting on it, so an escaping error would be lost entirely --
+    whereas run_sync() has already recorded what happened in
+    sync_attempts.db before any exception could reach here.
+    """
+    from elysium.scripts.run_sync import run_sync
+
+    try:
+        if rebuild:
+            run_sync(rebuild=rebuild)
+        else:
+            run_sync()
+    except Exception:  # noqa: BLE001 - see the docstring
+        logger.exception("a sync started from the mirror panel failed")
+
+
+@router.get("/admin/mirror", dependencies=[Depends(_no_store)],
+            response_model=MirrorStateResponse)
+def admin_mirror_route(request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """What the mirror holds, table by table.
+
+    WE BUILT AN INTEGRITY GUARANTEE AND LEFT IT INVISIBLE. A value that
+    cannot be coerced fails the whole table's sync, silver keeps its
+    previous snapshot, and bronze accepts the bad value so it can be
+    diagnosed. Proven, and correct. The only trace is stderr on
+    whatever ran the sync -- so a user sees data three days stale and
+    an administrator cannot find out why from inside the product.
+
+    That mattered less when the mirror was opt-in. It is now the read
+    path.
+
+    BRONZE AND SILVER COUNTS SIDE BY SIDE, because their DIVERGENCE is
+    the drift state: bronze took the new rows, silver refused to
+    interpret them, and the gap between the two numbers is what a
+    refused sync looks like from outside.
+
+    GATED ON manage:deployment, the same grant that can reload. Row
+    counts describe the deployment's plumbing rather than its data --
+    but a count is still a fact about how much there is, and an
+    ordinary user has no reason to see it.
+
+    RETYPE R2: each table and each object type also carries its STATE
+    (live, rebuilding or unavailable) and whether a rebuild is OWED,
+    both derived from the lake and the sync lock on every call
+    (core/mirror/object_state); nothing is stored, and nothing here
+    starts a rebuild -- the old silver serves until a person presses
+    "Rebuild now" and the sync swaps the new one in.
+
+    NO COUNTS FROM THE SOURCE. Answering "how far behind is the
+    mirror" would mean reading the customer's database on every page
+    load, which is what the mirror exists to avoid.
+    """
+    generation = _generation(request)
+    if not authorize(current_user, generation.config.roles, "manage:deployment"):
+        raise HTTPException(
+            status_code=403,
+            detail="You need manage:deployment to see the mirror's state.",
+        )
+
+    # The "reading live, no mirror state" answer this used to return is
+    # unreachable since GOLD-9: there is no deployment without a mirror.
+
+    # BUILT HERE RATHER THAN HELD ON THE GENERATION, because this is
+    # the only reader of it and a catalog pinned at load would go stale
+    # the moment a sync ran -- which is precisely the state this
+    # endpoint exists to report.
+    mirror_dir = request.app.state.runtime_paths.data_dir / "mirror"
+    mirror_dir.mkdir(parents=True, exist_ok=True)
+    from elysium.core.mirror.catalog import open_mirror_catalog
+    storage = dict(_generation(request).config.mirror_storage or {})
+    catalog = open_mirror_catalog(mirror_dir, storage)
+    # THE SAME STORAGE as the catalog beside it (PA001-F5): without it
+    # this read a local warehouse that an object-store deployment does
+    # not have.
+    sync = IcebergMirrorSync(mirror_dir, {}, storage=storage)
+    attempts = SyncAttempts(mirror_dir / "sync_attempts.db")
+    warnings = ExpectationWarnings(mirror_dir / "expectation_warnings.db")
+    states = _mirror_states(request, generation, attempts)
+    owed, targets = states.owed, states.targets
+    last_attempts, table_states = states.last_attempts, states.table_states
+    tables = []
+    for target in targets:
+        synced_at = sync.last_synced_at(target.silo_name, target.table_name)
+        attempt = last_attempts[(target.silo_name, target.table_name)]
+        quarantine = quarantine_for(catalog, target.silo_name, target.table_name)
+        tables.append({
+            "silo": target.silo_name,
+            "table": target.table_name,
+            "last_synced_at": synced_at.isoformat() if synced_at else None,
+            "silver_rows": _row_count(catalog, f"{target.silo_name}.{target.table_name}"),
+            "bronze_rows": _row_count(
+                catalog, f"{BRONZE_PREFIX}{target.silo_name}.{target.table_name}",
+            ),
+            # WHAT WAS HELD BACK, beside the row counts it explains
+            # (the invisible-quarantine risk). A quarantined row is absent from
+            # silver by design, and absence reads as LOSS: 4,000 rows
+            # where the source has 4,200 says nothing about whether
+            # 200 were rejected on purpose, dropped by a bug, or never
+            # existed.
+            "quarantined_rows": quarantine.rows,
+            "quarantine_reason": quarantine.worst_reason,
+            "quarantine_rules": [
+                {"column": rule.column, "reason": rule.reason, "rows": rule.rows}
+                for rule in quarantine.rules
+            ],
+            "quarantine_last_detected_at": quarantine.last_detected_at,
+            "expectation_warnings": [
+                {"column": each.column, "reason": each.reason, "rows": each.rows}
+                for each in warnings.latest_for(target.silo_name, target.table_name)
+            ],
+            "last_attempt_at": attempt.at.isoformat() if attempt else None,
+            "last_attempt_outcome": attempt.outcome if attempt else None,
+            "last_attempt_detail": attempt.detail if attempt else None,
+            "state": table_states[f"{target.silo_name}.{target.table_name}"],
+            "rebuild_owed": f"{target.silo_name}.{target.table_name}" in (owed or ()),
+            "snapshots": _recent_snapshots(
+                catalog, f"{target.silo_name}.{target.table_name}",
+            ),
+        })
+
+    report = check_mirror(
+        catalog, generation.config.schema,
+        mirror_dir / "warehouse",
+    )
+    return {
+        "reading_from_mirror": True,
+        "tables": tables,
+        "problems": list(report.problems),
+        "rebuild_owed": sorted(owed or ()),
+        "rebuild_owed_unknown": owed is None,
+        "object_states": states.object_states,
+    }
+
+
+@router.get("/admin/metrics", dependencies=[Depends(_no_store)],
+            response_model=MetricsResponse)
+def admin_metrics_route(request: Request, window_seconds: int = 3600,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Rate, errors and duration over a recent window.
+
+    THE RED METHOD, which is the canonical starting point for a
+    request-driven service because a single request-duration record
+    yields all three.
+
+    SATURATION IS ABSENT ON PURPOSE. It is the fourth golden signal and
+    a property of the HOST -- CPU, memory, queue depth -- so answering
+    it from inside the process would mean guessing at limits we do not
+    know. It belongs to whatever watches the machine, and a made-up
+    number here would be worse than the gap.
+
+    GATED ON manage:deployment, the same grant that can reload. Request
+    timings say which routes are used and how often, which is a shape
+    of the deployment's activity rather than of its data -- but it is
+    still more than an ordinary user should see about everyone else.
+
+    NO-STORE, because a cached metrics response is a lie that looks
+    like a measurement.
+    """
+    generation = _generation(request)
+    if not authorize(current_user, generation.config.roles, "manage:deployment"):
+        raise HTTPException(status_code=403, detail="Not permitted")
+
+    metrics = request.app.state.request_metrics
+    return {
+        **metrics.summary(window_seconds),
+        "slowest_routes": metrics.slowest_routes(window_seconds),
+    }
+
+
+@router.get("/admin/config-history", response_model=ConfigHistoryResponse)
+def config_history_route(request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """What configurations this deployment has run, most recent first.
+
+    Answers the question a reload otherwise leaves open. The audit log
+    records that generation 7 became 8; without this there is no way to
+    see what either WAS.
+
+    GATED ON manage:deployment, the same grant that can reload. Someone
+    who may replace the configuration may see which ones have run.
+    """
+    generation = _generation(request)
+    if not authorize(current_user, generation.config.roles, "manage:deployment"):
+        raise HTTPException(status_code=403, detail="Not authorized to view configuration history")
+
+    history = request.app.state.config_history
+    return {
+        "current_generation": generation.generation,
+        "generations": [
+            {"generation": r.generation, "loaded_at": r.loaded_at,
+             "source_digest": r.source_digest}
+            for r in history.list_generations()
+        ],
+    }
+
+
+class ConfigDiffResponse(BaseModel):
+    """What changed between two configurations, file by file."""
+
+    older: int
+    newer: int
+    changed_files: list[str]
+    unchanged: bool
+
+
+@router.get("/admin/config-history/{older}/{newer}", response_model=ConfigDiffResponse)
+def config_diff_route(older: int, newer: int, request: Request,
+                      current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """WHICH FILES differ between two generations, not their contents.
+
+    Naming the changed files is enough to answer "did the policy change
+    or only the models?" -- which is the question an operator has at
+    three in the morning -- without returning silo hosts and credential
+    references over HTTP. Reading the files themselves requires access
+    to the machine, which is the correct bar for that.
+    """
+    generation = _generation(request)
+    if not authorize(current_user, generation.config.roles, "manage:deployment"):
+        raise HTTPException(status_code=403, detail="Not authorized to view configuration history")
+
+    try:
+        changed = request.app.state.config_history.diff(older, newer)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+    return {
+        "older": older, "newer": newer,
+        "changed_files": sorted(changed),
+        # Explicit rather than inferred from an empty list: a reload of
+        # UNCHANGED files is a real and common event, and "nothing
+        # changed" should not look like "I found nothing".
+        "unchanged": not changed,
+    }
+
+
+# ---- Putting an earlier version back (DEV_UI 13.7, decided 16 October) ----
+
+class RestoreFileResponse(BaseModel):
+    name: str
+    # Its lines for the ontology; for any other file one line naming it
+    # (core/config_editing.shown_diff).
+    diff: list[str]
+
+
+class RestorePreviewResponse(BaseModel):
+    generation: int
+    loaded_at: str
+    # Of the files as they are now; applying sends it back, and is
+    # refused if any file has moved since the preview.
+    digest: str
+    files: list[RestoreFileResponse]
+    impact: dict
+    needs_approval: bool
+    # Roles are in the role store, which no version of the files holds:
+    # putting a version back leaves them as they are.
+    roles_in_store: bool
+
+
+class RestoreRequest(BaseModel):
+    digest: str
+    reason: str | None = None
+
+
+class RestoreResponse(BaseModel):
+    status: str
+    to_generation: int | None = None
+    proposal_id: str | None = None
+    notice: str | None = None
+
+
+def _files_now(request: Request) -> "dict[str, str]":
+    from elysium.core.deployment_loader import CONFIG_FILENAMES
+
+    config_dir = request.app.state.runtime_paths.config_dir
+    return {name: (config_dir / name).read_text()
+            for name in CONFIG_FILENAMES if (config_dir / name).exists()}
+
+
+def _files_digest(files: "dict[str, str]") -> str:
+    from elysium.core.config_editing import digest
+
+    return digest(json.dumps(sorted(files.items())))
+
+
+def _restoring(request: Request, generation: int) -> tuple[Any, dict, dict]:
+    """The recorded generation, the files as they are now, and the files
+    a restore would write -- or the reason it will not.
+
+    WHAT IT REFUSES, and why each is a refusal rather than a warning:
+      NOTHING TO DO   every file already says what that version said
+      A FILE COMES OR GOES   the version lacks a file there is now, or
+                      the reverse: putting it back would mean deleting a
+                      file, which a restore here never does
+      A DATA TYPE     the lake cannot follow a field back to its old
+                      type -- Iceberg refuses a change that is not a
+                      widening, and the table must be rebuilt first
+                      (CLAUDE.md). Data does not roll back with
+                      configuration; that is the one place it shows.
+    """
+    import yaml as plain_yaml
+
+    from elysium.core.config_editing import ONTOLOGY_FILE
+
+    recorded = request.app.state.config_history.get(generation)
+    if recorded is None:
+        raise HTTPException(status_code=404, detail=f"No recorded configuration for generation {generation}.")
+    now = _files_now(request)
+    then = dict(recorded.files)
+    if set(then) != set(now):
+        came = sorted(set(now) - set(then))
+        went = sorted(set(then) - set(now))
+        raise HTTPException(status_code=400, detail=(
+            f"Generation {generation} had a different set of files"
+            + (f" (no {', '.join(came)})" if came else "")
+            + (f" ({', '.join(went)}, which is not here now)" if went else "")
+            + ". Putting it back would mean adding or deleting a file, which this does not do."))
+    changed = {name: text for name, text in then.items() if now[name] != text}
+    if not changed:
+        raise HTTPException(status_code=400, detail=(
+            f"Every file already says what generation {generation} said. There is nothing to put back."))
+
+    def data_types(text: str) -> dict:
+        types = ((plain_yaml.safe_load(text) or {}).get("object_types") or {})
+        return {(t, f): (info or {}).get("data_type", "string")
+                for t, d in types.items() for f, info in ((d or {}).get("fields") or {}).items()}
+
+    if ONTOLOGY_FILE in changed:
+        old, new = data_types(then[ONTOLOGY_FILE]), data_types(now[ONTOLOGY_FILE])
+        moved = sorted(f"{t}.{f} from {new[(t, f)]} to {old[(t, f)]}"
+                       for (t, f) in set(old) & set(new) if old[(t, f)] != new[(t, f)])
+        if moved:
+            raise HTTPException(status_code=400, detail=(
+                f"Putting generation {generation} back would change {'; '.join(moved)}. A restore "
+                "does not change a data type: where the lake mirrors the field, its tables have to "
+                "be rebuilt for the new type first. Change it by hand, then put the rest back."))
+    return recorded, now, changed
+
+
+def _roles_in_store(request: Request) -> bool:
+    from elysium.core.role_store import RoleStore
+
+    return RoleStore(request.app.state.runtime_paths.data_dir / "roles.db").load() is not None
+
+
+@router.get("/admin/config-restore/{generation}", dependencies=[Depends(_no_store)],
+            response_model=RestorePreviewResponse)
+def preview_restore_route(generation: int, request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """What putting `generation` back would change, file by file, and what
+    it would do to access. Nothing written.
+
+    A RESTORE ADDS TO HISTORY, never rewrites it -- Grafana: restoring
+    "creates a new version ... so your previous dashboard versions are
+    not affected"; Terraform has "no native undo", only the old
+    configuration applied again. Applied, it is a new generation whose
+    files are that version's.
+    """
+    from elysium.core.config_editing import shown_diff
+
+    _require_manage_deployment(request, current_user)
+    recorded, now, changed = _restoring(request, generation)
+    _candidate, impact = _access_impact(request, changed)
+    return {
+        "generation": generation, "loaded_at": recorded.loaded_at, "digest": _files_digest(now),
+        "files": [{"name": name, "diff": shown_diff(name, now[name], text)}
+                  for name, text in sorted(changed.items())],
+        "impact": impact, "needs_approval": impact["widens"],
+        "roles_in_store": _roles_in_store(request),
+    }
+
+
+@router.post("/admin/config-restore/{generation}", dependencies=[Depends(_no_store)],
+             response_model=RestoreResponse)
+def restore_route(generation: int, body: RestoreRequest, request: Request,
+                  current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Puts `generation`'s files back and reloads -- at once, unless
+    anyone could read, know of or run more afterwards; then it waits,
+    with a reason, for a holder of manage:roles who did not propose it
+    (decided 16 October). A restore is often urgent -- AWS AppConfig's
+    revert even skips its alarms "during an application emergency" --
+    so only a widening one waits.
+    """
+    from elysium.core.config_editing import digest
+
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        recorded, now, changed = _restoring(request, generation)
+        if _files_digest(now) != body.digest:
+            raise HTTPException(status_code=409, detail=(
+                "The configuration has changed since you looked. Look again before putting "
+                f"generation {generation} back."))
+        _candidate, impact = _access_impact(request, changed)
+        audit_changes = {"restore_generation": generation}
+        if not impact["widens"]:
+            notice = _record_erasure_keys_before(request)       # the older generation may lack a type
+            result = _write_config_files(request, current_user,
+                                         {name: (now[name], text) for name, text in changed.items()},
+                                         audit_changes)
+            return {"status": "applied", "to_generation": result["to_generation"], "notice": notice}
+
+        reason = _reason(body.reason)
+        proposal_id = _proposals(request).propose(
+            "restore", f"Put generation {generation} back (from {recorded.loaded_at[:16].replace('T', ' ')})",
+            changed, {name: digest(now[name]) for name in changed}, reason, current_user.user_id)
+        for name in changed:
+            _generation(request).mediator.audit_log.log_config_edit(
+                current_user.user_id, "proposed", name, audit_changes, digest(now[name]),
+                digest(changed[name]), detail=f"proposal {proposal_id}: {reason}"[:500])
+        return {"status": "waiting", "proposal_id": proposal_id}
+
+
+@router.get("/admin/contracts/{object_type}", response_class=Response,
+            responses={200: {"content": {"application/yaml": {}}}})
+def data_contract_route(object_type: str, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> Response:
+    """One object type's gold table as an ODCS v3 data contract (R16).
+
+    GATED AS /config IS, on manage:users: a contract names every
+    column, its type and its classification -- deployment shape, which
+    /config is careful with for the same reason. It never names a
+    source table or a grant (core/mirror/data_contracts.py says why).
+
+    YAML, because that is what the standard's tools read; the response
+    is the file, to save as-is. `scripts/export_contracts.py` writes
+    every type's at once.
+    """
+    from elysium.core.mirror.data_contracts import contract_yaml, data_contract
+
+    _require_manage_users(request, current_user)
+    config = _generation(request).config
+    if object_type not in (config.schema or {}):
+        raise HTTPException(status_code=404, detail=f"No object type {object_type!r}")
+    contract = data_contract(object_type, config.schema,
+                             config.freshness_targets.get(object_type),
+                             namespace=config.lineage.get("namespace") or "elysium")
+    return Response(
+        content=contract_yaml(contract), media_type="application/yaml",
+        headers={"Content-Disposition": f'attachment; filename="{object_type}.odcs.yaml"'})
+
+
+def _describe_incremental(policy) -> str:
+    """"updated_at; full read every 7 days" -- how one R2 table is read."""
+    from elysium.core.mirror.incremental import describe_span
+
+    text = f"{policy.cursor}; full read every {describe_span(policy.full_read_every)}"
+    if policy.lookback:
+        text += f"; re-reads {describe_span(policy.lookback)} before the mark"
+    return text
+
+
+@router.get("/config", response_model=DeploymentConfigResponse)
+def deployment_config_route(request: Request,
+                             current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The deployment's own settings, for someone diagnosing behaviour.
+
+    GATED ON manage:deployment, the grant that runs the server (24
+    October, with the owner). It was manage:users from August, "the same
+    grant Admin uses", chosen when that was the only administrative
+    grant and the view sat in Admin; the view is the System sub-app's
+    now (System -> Server), offered on manage:deployment, and the gate
+    follows who the information is for. Configuration discloses
+    deployment shape -- which silos exist, which models run, how many
+    object types there are -- and while none of that is object DATA, it
+    is the kind of thing an attacker maps a system with.
+
+    ROLE NAMES, which an account administrator needs and used to read
+    here, are /roles/names's, on manage:users.
+
+    WHAT IS DELIBERATELY ABSENT: llm_connection, silo connection
+    details, and the users dict. The first two carry hosts, paths and
+    credential references -- exactly the material the Silo work says
+    must never reach a UI. The third is already served, properly
+    scoped, by /users.
+
+    Silos are named but not described, and roles are named but their
+    grants are not listed: the NAMES answer "what is configured", the
+    contents would answer "what could I attack".
+    """
+    _require_manage_deployment(request, current_user)
+    config = _generation(request).config
+    return {
+        "generation": config.generation,
+        "loaded_at": config.loaded_at.isoformat(),
+        "source_digest": config.source_digest,
+        "llm_provider": config.llm_provider,
+        "step_model": config.step_model,
+        "synthesis_model": config.synthesis_model,
+        "embedding_model": config.embedding_model,
+        "embedding_budget_seconds": config.embedding_budget_seconds,
+        "embedding_dimensions": config.embedding_dimensions,
+        "embedding_prefixes": (dict(config.embedding_prefixes)
+                               if config.embedding_prefixes is not None else None),
+        "max_hops": config.max_hops,
+        "max_consecutive_duplicates": config.max_consecutive_duplicates,
+        # THE OPERATIONAL TOGGLES. Each answers "why is it behaving
+        # like that" for a behaviour that is otherwise invisible: where
+        # writes may land, whose forwarded-for header is believed, what
+        # one bad cell costs, and whether bronze keeps undeclared
+        # columns.
+        "write_targets": config.write_targets,
+        "trusted_proxies": config.trusted_proxies,
+        "on_type_mismatch": config.on_type_mismatch,
+        "on_suspected_rename": config.on_suspected_rename,
+        "ingest_undeclared_columns": config.ingest_undeclared_columns,
+        # THE DECLARED CADENCE, read back off a resolved target rather
+        # than re-parsing the YAML: every type's window derives from
+        # the same interval, so any one of them carries it. An empty
+        # ontology has no target and therefore nothing to report.
+        "sync_interval_hours": _declared_sync_interval(config),
+        "max_consecutive_invalid_steps": config.max_consecutive_invalid_steps,
+        "constrain_steps": config.constrain_steps,
+        "agent_features": list(config.agent_features.names_on),
+        "max_tokens_per_query": config.max_tokens_per_query,
+        "bulk_action_limit": config.bulk_action_limit,
+        "deprecation_lead_days": config.deprecation_lead_days,
+        "label_enforcement": config.label_enforcement,
+        "lineage_service": bool(config.lineage.get("url")),
+        "lineage_namespace": config.lineage.get("namespace") or "elysium",
+        "source_locales": dict(config.source_locales),
+        "excel_date_silos": sorted(config.excel_date_silos),
+        "modules": [m.id for m in config.modules.modules] if config.modules else [],
+        "zero_date_silos": sorted(config.zero_date_silos),
+        "incremental_tables": {
+            f"{silo}.{table}": _describe_incremental(policy)
+            for (silo, table), policy in sorted(config.incremental.items())},
+        "max_concurrent_requests": config.max_concurrent_requests,
+        "security_attribute": config.security_attribute,
+        "read_from_mirror": config.read_from_mirror,
+        "enabled_tools": list(config.enabled_tools),
+        "silo_names": sorted(config.silo_configs),
+        "object_type_count": len(config.schema),
+        "action_type_count": len(config.action_types),
+        "role_names": sorted(config.roles),
+    }
+
+
+class SiloBackedField(BaseModel):
+    object_type: str
+    field: str
+    # The PHYSICAL column, which need not share the field's name --
+    # Customer.risk_score reads a column called score_val. When a query
+    # returns something unexpected, "which column is this actually
+    # reading" is the question, and today it is answerable only by
+    # reading YAML.
+    column: str
+    table: str
+    # The join key, which is not in `fields` at all -- id_field is
+    # declared beside `storage`. A wrong one does not return wrong
+    # values; it returns NOTHING, or another object's row.
+    is_identifier: bool = False
+
+
+class SiloStatusResponse(BaseModel):
+    name: str
+    adapter: str
+    object_types: list[str]
+    # OF THOSE, THE ONES THIS SILO IS THE PRIMARY STORAGE FOR.
+    #
+    # WHY IT IS A SECOND LIST RATHER THAN A FLAG PER TYPE. The route
+    # knows this -- `type_def["storage"]["silo"]` -- and the payload
+    # threw it away, which collapsed two different outages into one
+    # word. risk_sql backs exactly one thing, Customer.risk_score; when
+    # it stops answering, Customer keeps refreshing and ONE FIELD stops.
+    # When primary_sql stops answering, the whole of Customer stops,
+    # down to its identifier. A reader given only `object_types` sees
+    # "Customer" under both and cannot tell which happened.
+    #
+    # ADDITIVE, so an older client that ignores it is unaffected, and
+    # `object_types` keeps meaning what it meant: everything this silo
+    # backs, primarily or otherwise.
+    primary_for: list[str] = []
+    fields: list[SiloBackedField]
+    reachable: bool
+    # The KIND of failure, never the message. See the route.
+    failure: str | None = None
+
+
+class AccessTraceEntry(BaseModel):
+    object_type: str
+    object_id: str | None = None
+    action: str
+    timestamp: str
+
+
+@router.get("/requests/{request_id}/trace", response_model=list[AccessTraceEntry])
+def request_trace_route(request_id: str, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    """What was read while serving one of YOUR requests.
+
+    The trust story for putting an agent over sensitive data: an
+    answer arrives and this says what it was built from. It lists what
+    the caller was GRANTED and nothing they were refused: a refusal, in
+    any form, would tell them which of their guesses touched something
+    they cannot see (core/access/audit.py).
+
+    OWNERSHIP IS ENFORCED IN THE READER, not here. A route-level check
+    would be a second place for the rule to live, and the reader is
+    what every other caller would go through -- so it is the right
+    place for the rule to be true.
+
+    An empty list for someone else's request, rather than a 403: the
+    same uniform denial every read path uses, so the response never
+    distinguishes "no such request" from "not yours".
+    """
+    entries = _generation(request).mediator.audit_log.entries_for_request(
+        request_id, current_user.user_id,
+    )
+    return [
+        {
+            "object_type": entry.get("object_type", ""),
+            "object_id": (None if entry.get("object_id") is None
+                          else str(entry.get("object_id"))),
+            "action": entry.get("action", ""),
+            "timestamp": entry.get("timestamp", ""),
+        }
+        for entry in entries
+    ]
+
+
+class NoteResponse(BaseModel):
+    id: str
+    text: str
+    author: str
+    created_at: str
+
+
+class CreateNoteRequest(BaseModel):
+    text: str
+
+
+def _may_read_object(mediator, user_record, object_type: str, object_id: str) -> bool:
+    """Whether this caller can see this object at all.
+
+    COUNTING, not reading. get_object() never raises by contract -- an
+    unknown id returns a dict of Nones -- so a try/except around it
+    tests for something that cannot happen, and every note would be
+    accepted. Found by a test asserting a 404 and getting a 201.
+
+    count_objects applies the same RBAC and MAC the read path does, so
+    a zero means absent OR denied without distinguishing them, which is
+    exactly the answer both callers want.
+    """
+    try:
+        return mediator.count_objects(
+            user_record, object_type,
+            [FieldFilter(field=_id_field_for(mediator, object_type),
+                         operator="equals", value=object_id)],
+        ) > 0
+    except Exception:
+        # An unknown object type reaches here. Same answer as denial.
+        return False
+
+
+def _id_field_for(mediator, object_type: str) -> str:
+    return (mediator.schema.get(object_type, {}) or {}).get("id_field", "id")
+
+
+def _note_kind(object_type: str, object_id: str) -> str:
+    """One artifact kind per OBJECT, not one per note -- the format lives
+    in core/artifact_store.note_kind, where erasure finds notes too."""
+    return note_kind(object_type, object_id)
+
+
+class PublishedChangeResponse(BaseModel):
+    """One recorded change to an object, as the mirror saw it."""
+
+    change: str
+    changed_at: str
+    publication: "str | None" = None
+    values: dict
+
+
+def _client_source(request: Request) -> str:
+    """What the login-attempt bound counts this caller as.
+
+    E-02's residual answered: both call sites below passed nothing,
+    because there was no correct value. There is one -- the TCP peer,
+    unless the deployment has declared the peer a proxy it trusts.
+    """
+    from elysium.core.auth.client_source import client_source
+
+    config = getattr(_generation(request), "config", None)
+    return client_source(request, getattr(config, "trusted_proxies", ()) or ())
+
+
+class ObjectProvenanceResponse(BaseModel):
+    """Where one object's row came from.
+
+    DEV_UI.md 5.5 asks for "which source, which bronze snapshot, which
+    publication, when", and notes the lineage already exists. It does --
+    core/mirror/lineage.py has written it for months and nothing could
+    read it back for a single object.
+    """
+    silo: str | None = None
+    source_table: str | None = None
+    #: What this row's declared values were, so a change can be
+    #: recognised without comparing every column.
+    row_hash: str | None = None
+    #: Which bronze snapshot silver was derived from, "so any row traces
+    #: back to what the source said".
+    bronze_snapshot_id: str | None = None
+    #: R38: WHICH SOURCE SUPPLIED EACH VALUE, {field: source}, on a type
+    #: built from several storages. None on a single-source type, where
+    #: `silo` above already answers it for every field. Only fields the
+    #: caller may read are named.
+    field_sources: dict[str, str] | None = None
+
+
+class ValueConflictResponse(BaseModel):
+    """One disagreement two sources had about this object.
+
+    THE ONLY PER-FIELD, PER-SOURCE RECORD THIS SYSTEM HOLDS. Everything
+    else the lake records about origin is per ROW -- `_silo` names one
+    source for a whole object, and `_fused_from` names every storage
+    that contributed without saying which contributed what. These rows
+    say which source won a particular field, and what the other one
+    said.
+
+    VALUES ARE WITHHELD BY ABSENCE, exactly as MergeFieldResponse does
+    it and for the same reason: `chosen` and `losing` are real customer
+    data, not metadata, and a reader who may not read the field may
+    still be told that its sources disagreed. `response_model_exclude_
+    none` would make withheld and genuinely-null look identical on the
+    wire, which is why `readable` is a field rather than an inference.
+    """
+
+    #: "property" when two sources held different values for one field,
+    #: "security" when they disagreed about the object's compartment --
+    #: which has no field at all, and is the more serious of the two.
+    kind: str
+    #: None for a security conflict, which is about the whole object.
+    field: str | None = None
+    chosen_source: str | None = None
+    losing_source: str | None = None
+    recorded_at: str | None = None
+    #: Present only when the caller may read the field. See the model
+    #: docstring; absence here is not the same as a null value.
+    chosen: str | None = None
+    losing: str | None = None
+    #: Whether the values above were withheld rather than empty.
+    readable: bool = True
+    #: R60, EVIDENCE ONLY: when these two sources disagreed about this
+    #: field before and the disagreement ended, whose value both ended up
+    #: holding -- {"source": name, "about_percent": 80}. Rounded to ten
+    #: per cent, and only from ten ended disagreements (owner, 15 Oct):
+    #: they span every compartment, so a count would say how many exist
+    #: on objects this reader may not see. It changes nothing gold holds.
+    track_record: dict | None = None
+    #: R60's VOTE, where three or more sources hold this field: which of
+    #: THIS OBJECT'S sources hold the value most independent sources
+    #: agree on ({"majority": [...], "sources": [...], "copies": [[a, b]]};
+    #: an empty majority is a tie). About this object's own sources, so
+    #: names, not rates. `copies` are pairs that look like one copying
+    #: the other, counted as one voice. Evidence only.
+    vote: dict | None = None
+    #: How often each of the two sources named above agrees with the
+    #: majority on this field, across every object -- so rounded to ten
+    #: per cent, from ten votes, never a count, like `track_record`.
+    agreement: dict | None = None
+
+
+@router.get("/objects/{object_type}/{object_id}/provenance",
+            response_model=ObjectProvenanceResponse | None)
+def object_provenance_route(
+    object_type: str, object_id: str, request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> "dict | None":
+    """Where this object's row came from, for somebody who may ask.
+
+    GATED ON manage:users, DELIBERATELY, AND THIS IS THE WHOLE DESIGN
+    QUESTION. `_silo` and `_source_table` name the customer's own
+    systems. `/silos` already treats those names as admin-only -- "the
+    authenticated counterpart, gated on manage:users like the rest of
+    Admin" -- so serving them to every reader here would widen that
+    disclosure through a side door, and would do it quietly, which is
+    worse than doing it loudly.
+
+    The cost is real and worth stating: the analyst who most wants to
+    know why a value says what it says is the one who cannot see this.
+    Narrowing it later -- a grant that says "may see lineage" without
+    "may administer" -- is a policy change rather than a code one, and
+    is the right shape for it. Widening a route after people rely on it
+    is not.
+
+    NO ROW IS AN EMPTY ANSWER, not a 404. "No such object" and "an
+    object outside your compartment" must look the same, and an
+    administrator asking about an id that does not exist learns nothing
+    either way.
+    """
+    from elysium.core.mirror.gold_provenance import (
+        ProvenanceNotRecorded,
+        read_provenance,
+    )
+
+    _require_manage_users(request, current_user)
+    # THE GENERATION'S MEDIATOR, not app.state's. Configuration reloads
+    # swap a whole generation, and a route reading app.state directly
+    # answers from whichever one happened to be there at startup. The
+    # sibling route beside this one settled that; I copied the wrong
+    # line and three tests said so.
+    mediator = _generation(request).mediator
+
+
+    type_def = (mediator.schema.get(object_type) or {})
+    id_field = type_def.get("id_field")
+    if id_field is None:
+        return None
+
+    catalog = _deployment_catalog(mediator)
+    if catalog is None:
+        return None
+
+    try:
+        provenance = read_provenance(catalog, object_type, id_field, object_id)
+    except ProvenanceNotRecorded:
+        # Nothing published for this type yet. An absent answer, not a
+        # fault: the same shape a deployment that reads live gives.
+        return None
+    if provenance is not None and provenance.get("field_sources") is not None:
+        # PER-FIELD SOURCES ARE NOT OPAQUE, which is why they are gated
+        # as /conflicts is and the row's own identifiers are not. A field
+        # appears only when it holds a value, so the map says which of
+        # this object's fields are filled -- something about the data.
+        # So MAC first, as /conflicts does, and then only the fields the
+        # caller may read. The four identifiers above keep the decision
+        # /conflicts records: opaque, and served to manage:users as is.
+        if not _may_read_object(mediator, current_user, object_type, object_id):
+            provenance["field_sources"] = None
+        else:
+            readable = _readable_fields(request, current_user, object_type)
+            provenance["field_sources"] = {
+                name: source for name, source in provenance["field_sources"].items()
+                if name in readable}
+    return provenance
+
+
+
+@router.get("/objects/{object_type}/{object_id}/conflicts",
+            response_model=list[ValueConflictResponse])
+def object_conflicts_route(
+    object_type: str, object_id: str, request: Request,
+    current_user: UserRecord = Depends(get_current_user),
+) -> list[dict]:
+    """Why the golden record says what it says, where two sources
+    disagreed.
+
+    `core/mirror/survivorship.py` states the promise this serves, and
+    had no way to keep it: "deleting losing values destroys trust. A
+    person asking why the golden record says Leeds needs to see that
+    the CRM said Hull and was outranked -- otherwise the answer is an
+    assertion." The losing values have been written to an append-only
+    table since GOLD-6 and nothing could read them back.
+
+    GATED ON manage:users, FOLLOWING /provenance RATHER THAN DECIDING
+    AFRESH. `chosen_source` and `losing_source` name the customer's own
+    systems, which is the same disclosure `/silos` and `/provenance`
+    already treat as admin-only; serving them more widely here would
+    widen that through a side door. The cost is the one `/provenance`
+    already records -- the analyst who most wants to know why a value
+    says what it says is the one who cannot see this -- and the remedy
+    is the same policy change, a grant that says "may see lineage"
+    without "may administer". Making that decision inside a patch about
+    reading an existing table would be deciding it quietly.
+
+    AND MAC STILL APPLIES ON TOP, which the grant does not supply.
+    manage:users is not permission to read every object: an
+    administrator in one compartment must not learn that an object in
+    another exists, let alone what two systems said about it. An
+    invisible object yields an empty list, identical to an object with
+    no conflicts and to an id that was never real.
+
+    AND PER-FIELD READ GRANTS ON TOP OF THAT. The verdict -- that two
+    sources disagreed about `email` -- is safe to state and is the
+    thing the reader came for; the two email addresses are not, and are
+    withheld by absence the way masked_comparison withholds a merge
+    candidate's values. An administrator who cannot read a field does
+    not acquire it by asking this question.
+    """
+    from elysium.core.mirror.gold_conflicts import ConflictsNotRecorded, read_conflicts
+
+    _require_manage_users(request, current_user)
+    mediator = _generation(request).mediator
+
+    # UNIFORM DENIAL, and the reason it is first: every answer below
+    # this line says something about an object, so "you may not see
+    # this object" has to be settled before any of them is computed.
+    if not _may_read_object(mediator, current_user, object_type, object_id):
+        return []
+
+    catalog = _deployment_catalog(mediator)
+    if catalog is None:
+        return []
+
+    try:
+        rows = read_conflicts(catalog, object_type, object_id)
+    except ConflictsNotRecorded:
+        # No conflicts table for this type: a deployment that declares
+        # no identity resolution never creates one. An absent answer,
+        # not a fault.
+        return []
+
+    readable = _readable_fields(request, current_user, object_type)
+    records = _track_records(request, object_type)
+    votes, agreement, copies = _vote_evidence(request, object_type, object_id)
+    out = []
+    for row in rows:
+        field_name = row.get("field")
+        # A SECURITY CONFLICT HAS NO FIELD, so no field grant can admit
+        # it. It is served because an administrator deciding whether to
+        # trust a golden record has to know its compartment was
+        # contested -- and its values are security labels, which the
+        # Users screen already shows this same grant holder.
+        may_read = field_name is None or field_name in readable
+        entry = {
+            "kind": row.get("kind"),
+            "field": field_name,
+            "chosen_source": row.get("chosen_source"),
+            "losing_source": row.get("losing_source"),
+            "recorded_at": row.get("recorded_at"),
+            "readable": may_read,
+        }
+        if row.get("kind") == "property" and field_name is not None:
+            record = records.get((field_name, frozenset(
+                (row.get("chosen_source"), row.get("losing_source")))))
+            if record is not None:
+                entry["track_record"] = record.shown()
+            voted = votes.get(field_name)
+            if voted is not None:
+                among = set(voted["sources"])
+                entry["vote"] = {**voted, "copies": [
+                    pair for pair in copies if set(pair) <= among]}
+            rates = {source: agreement_shown(*agreement[(field_name, source)])
+                     for source in (row.get("chosen_source"), row.get("losing_source"))
+                     if (field_name, source) in agreement}
+            if any(rate is not None for rate in rates.values()):
+                entry["agreement"] = {k: v for k, v in rates.items() if v is not None}
+        if may_read:
+            # ABSENT WHEN NULL TOO, not only when withheld: a
+            # serialised None has been through this process and sits in
+            # anything that cached the response, and `readable` above
+            # already says which case this is.
+            if row.get("chosen") is not None:
+                entry["chosen"] = row["chosen"]
+            if row.get("losing") is not None:
+                entry["losing"] = row["losing"]
+        out.append(entry)
+    return out
+
+
+@router.get("/objects/{object_type}/{object_id}/published-history",
+            response_model=list[PublishedChangeResponse])
+def published_history_route(
+    object_type: str, object_id: str, request: Request,
+    limit: int = 50,
+    current_user: UserRecord = Depends(get_current_user),
+) -> list:
+    """What the MIRROR recorded changing about one object.
+
+    DISTINCT FROM /edit-history, and both are wanted. Edit history
+    answers "who changed this through Elysium"; this answers "what
+    changed in the SOURCE between publications". A row edited in the
+    customer's own database appears here and never there.
+
+    AUTHORIZED AS THE OBJECT IS, the rule edit_history settled from
+    the precedent, and the filtering is the mediator's job rather
+    than this route's -- a route that filtered would be a second place
+    deciding one question.
+
+    A caller who cannot read the object gets an empty list, not an
+    error: uniform denial, so the response never distinguishes "no
+    history" from "not allowed" from "no such object".
+    """
+    from elysium.core.mirror.gold_history import HistoryNotRecorded, read_history
+
+    mediator = _generation(request).mediator
+    type_def = (mediator.schema.get(object_type) or {})
+    id_field = type_def.get("id_field")
+    if id_field is None:
+        return []
+
+    # THE CATALOG COMES FROM AN ADAPTER THAT ALREADY HOLDS ONE. Every
+    # MirrorReadAdapter is handed the same catalog at construction, so
+    # asking one is asking the deployment's. A live-read deployment has
+    # none, and has published nothing either.
+    catalog = _deployment_catalog(mediator)
+    if catalog is None:
+        return []
+
+    try:
+        entries = read_history(catalog, object_type, id_field,
+                               object_id=object_id,
+                               limit=min(limit, MAX_PAGE_SIZE))
+    except HistoryNotRecorded:
+        # Nothing has ever changed for this type. Ordinary, and
+        # indistinguishable from denial by design.
+        return []
+
+    # ACCESS IS THE MEDIATOR'S, NOT THIS ROUTE'S. Reading the lake is
+    # I/O the ontology layer may not do; deciding who sees what is not
+    # a decision this route may make. Each does the half it owns.
+    return mediator.filter_published_history(
+        current_user, object_type, object_id, entries,
+        context=RequestContext.new(),
+    )
+
+
+@router.get("/objects/{object_type}/{object_id}/notes",
+            response_model=list[NoteResponse])
+def list_notes_route(object_type: str, object_id: str, request: Request,
+                      current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    """Notes attached to one object.
+
+    AUTHORIZED AS THE OBJECT IS, following the same rule edit_history
+    settled: a caller who may read the object may read what has been
+    written about it. A note referring to a field they cannot see is
+    still a note about an object they can, and inventing a second grant
+    would mean two places deciding one question.
+
+    A caller who cannot read the object gets an empty list rather than
+    an error -- uniform denial, so the response never distinguishes "no
+    notes" from "not allowed".
+    """
+    mediator = _generation(request).mediator
+    if not _may_read_object(mediator, current_user, object_type, object_id):
+        return []
+
+    notes = request.app.state.artifact_store.list_for(
+        current_user.user_id, current_user.role_name, kind=_note_kind(object_type, object_id),
+    )
+    return [
+        {
+            "id": note.artifact_id,
+            "text": note.body.get("text", ""),
+            "author": note.owner_user_id,
+            "created_at": note.created_at,
+        }
+        for note in notes
+    ]
+
+
+@router.post("/objects/{object_type}/{object_id}/notes", status_code=201,
+             response_model=NoteResponse)
+def create_note_route(object_type: str, object_id: str, body: CreateNoteRequest,
+                       request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Write a note about an object you can read.
+
+    SHARED WITH THE AUTHOR'S ROLE, not private. A note exists so the
+    next person handling this customer knows why the fee was waived --
+    a private one helps nobody, which is the whole point of writing it
+    down rather than remembering it.
+
+    NO EXPIRY. A judgement about why something was done does not stop
+    being true, and an operational note that vanished after ninety days
+    would be worse than not having written it.
+    """
+    if not body.text.strip():
+        raise HTTPException(status_code=400, detail="A note cannot be empty")
+
+    mediator = _generation(request).mediator
+    if not _may_read_object(mediator, current_user, object_type, object_id):
+        # Uniform denial: the same 404 whether the object is absent or
+        # unreadable, so writing a note cannot be used to probe for
+        # objects a caller may not see.
+        raise HTTPException(status_code=404, detail="Not found")
+
+    artifact_id = request.app.state.artifact_store.save(
+        kind=_note_kind(object_type, object_id),
+        title=f"Note on {object_type} {object_id}",
+        owner_user_id=current_user.user_id,
+        body={"text": body.text},
+        shared_role=current_user.role_name,
+    )
+    saved = request.app.state.artifact_store.get(
+        artifact_id, current_user.user_id, current_user.role_name,
+    )
+    return {
+        "id": artifact_id,
+        "text": body.text,
+        "author": current_user.user_id,
+        "created_at": saved.created_at if saved else "",
+    }
+
+
+class MemoryResponse(BaseModel):
+    id: str
+    text: str
+    author: str
+    created_at: str
+    # A field it was written from has changed since. Shown, so a person
+    # can see what was believed and decide; never given to the agent.
+    stale: bool
+    # Its author, or someone who may change the object (MemoryGuard).
+    may_forget: bool
+
+
+class CreateMemoryRequest(BaseModel):
+    text: str
+
+
+def _memory_guard(request: Request):
+    guard = _generation(request).memory
+    if guard is None:
+        # A generation built without a data directory. Not a state a
+        # served deployment reaches; said plainly rather than as a 404.
+        raise HTTPException(status_code=503, detail="Memory is not available in this deployment")
+    return guard
+
+
+def _memory_response(guard, user, memory, stale: bool) -> dict:
+    return {"id": memory.memory_id, "text": memory.text, "author": memory.author,
+            "created_at": memory.created_at, "stale": stale,
+            "may_forget": guard.may_forget(user, memory)}
+
+
+@router.get("/objects/{object_type}/{object_id}/memories", response_model=list[MemoryResponse])
+def list_memories_route(object_type: str, object_id: str, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    """What people asked Elysium to remember about one object (E-14).
+
+    EVERY ONE THIS CALLER MAY SEE, stale ones included and marked: the
+    object page is where a person notices a fact has gone out of date
+    and forgets it. Which ones they may see is MemoryGuard's question --
+    the object AND every field the memory was written from -- and an
+    empty list answers absent, unreadable and none alike.
+    """
+    guard = _memory_guard(request)
+    return [_memory_response(guard, current_user, memory, stale)
+            for memory, stale in guard.visible(current_user, object_type, object_id)]
+
+
+@router.post("/objects/{object_type}/{object_id}/memories", status_code=201,
+             response_model=MemoryResponse)
+def create_memory_route(object_type: str, object_id: str, body: CreateMemoryRequest,
+                        request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Remember a fact about an object you can read.
+
+    THE ONLY WAY A MEMORY IS WRITTEN. The owner's rule (14 Oct): only
+    when a person asks. The agent reads memories and has no step that
+    writes one, so neither the model's judgement nor an instruction
+    planted in the data it reads can put anything here.
+    """
+    guard = _memory_guard(request)
+    try:
+        memory = guard.remember(current_user, object_type, object_id, body.text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if memory is None:
+        # Uniform denial, as for notes: absent and unreadable alike.
+        raise HTTPException(status_code=404, detail="Not found")
+    return _memory_response(guard, current_user, memory, stale=False)
+
+
+@router.delete("/memories/{memory_id}", status_code=204)
+def forget_memory_route(memory_id: str, request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> Response:
+    """Forget one memory: its author, or anyone who may change its
+    object. 404 for a memory that does not exist, one this caller may
+    not see, and one they may see but not forget -- the last is
+    distinguishable from the list's may_forget anyway, so it says
+    nothing new, and one answer keeps the route from being a probe."""
+    if not _memory_guard(request).forget(current_user, memory_id):
+        raise HTTPException(status_code=404, detail="Not found")
+    return Response(status_code=204)
+
+
+def live_source_adapters(request: Request) -> dict:
+    """The adapters that reach each SOURCE, for the generation serving
+    this request -- built once per generation, not per request (/health
+    may be polled), and rebuilt when a reload changes the generation."""
+    app = request.app
+    generation = _generation(request)
+    cached = getattr(app.state, "live_source_adapters", None)
+    if cached is None or cached[0] is not generation:
+        adapters = build_live_read_adapters(app.state.runtime_paths, generation.config)
+        app.state.live_source_adapters = (generation, adapters)
+        return adapters
+    return cached[1]
+
+
+@router.get("/silos", response_model=list[SiloStatusResponse])
+def silos_route(request: Request,
+                 current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    """Which silos are configured, what they back, and whether they answer.
+
+    /health already reports reachability, but it is UNAUTHENTICATED and
+    therefore deliberately says nothing about why -- a connection error
+    routinely carries a host, a path or a username. This is the
+    authenticated counterpart, gated on manage:deployment -- the server's
+    own state, for whoever runs the server (24 October, with the owner;
+    manage:users before, when it was a view of Admin) -- and it can say
+    more.
+
+    MORE, BUT NOT THE MESSAGE. It reports a failure KIND from a closed
+    list (core/source_health.FAILURE_KINDS: "not found", "refused
+    credentials", "unreachable"...; E-06), which distinguishes "the file
+    is gone" from "the credentials are wrong" without echoing the path
+    back -- or naming the driver's exception class, which it used to. That is the
+    same line /config draws: names and shapes answer "what is
+    configured", contents answer "what could I attack".
+
+    An admin could read the YAML anyway. The point is not that the path
+    is secret; it is that a UI which never carries it cannot leak it
+    through a screenshot, a bug report, or a browser cache.
+    """
+    _require_manage_deployment(request, current_user)
+    config = _generation(request).config
+    # PRIMARY storage, from the declaration.
+    # PRIMARY storage, from silo_for_type.
+    types_by_silo: dict[str, list[str]] = {name: [] for name in config.silo_configs}
+    # FROM THE DECLARATION, NOT FROM THE READ BINDING (GOLD-9). This
+    # route answers "which of your databases holds what", and since
+    # reads moved to gold the mediator's silo_for_type says "gold" for
+    # every type -- which is true, and not what is being asked.
+    # AND THE SAME FACT KEPT SEPARATELY, because the merged list below
+    # cannot be unmerged. See SiloStatusResponse.primary_for: "this
+    # silo backs Customer" and "this silo IS Customer" are different
+    # outages, and only this loop knows which is which.
+    primary_by_silo: dict[str, list[str]] = {name: [] for name in config.silo_configs}
+    for object_type, type_def in config.schema.items():
+        silo_name = (type_def.get("storage") or {}).get("silo")
+        if silo_name:
+            types_by_silo.setdefault(silo_name, []).append(object_type)
+            primary_by_silo.setdefault(silo_name, []).append(object_type)
+
+    # AND additional storage, which silo_for_type does not carry.
+    #
+    # A multi-datasource field lives in a silo that backs no object
+    # type primarily -- risk_sql holds Customer.risk_score and nothing
+    # else. Listing only primary storage showed it with no types at
+    # all, which reads as "unused" and invites someone to remove a silo
+    # a field depends on. Found by looking at the screen.
+    for object_type, type_def in config.schema.items():
+        for storage in (type_def.get("additional_storage") or {}).values():
+            silo_name = storage.get("silo")
+            # The membership check is DEFENSIVE and unexercised by the
+            # fixtures -- no fixture silo holds both primary and
+            # additional storage for one type. A deployment where one
+            # does is entirely legal, and it would otherwise list the
+            # type twice. See test_api.py for why there is no test.
+            if silo_name and object_type not in types_by_silo.setdefault(silo_name, []):
+                types_by_silo[silo_name].append(object_type)
+
+    # Which FIELDS each silo backs, and the physical column behind
+    # each. Grouping fields under their silo is the encoding that
+    # scales: current research puts the limit for distinguishing
+    # categories by colour at SIX, so a palette cannot carry this for a
+    # deployment with many silos. Adjacency can, at any number.
+    fields_by_silo: dict[str, list[dict]] = {}
+    for object_type, type_def in config.schema.items():
+        primary = (type_def.get("storage") or {})
+        extra = (type_def.get("additional_storage") or {})
+        for field_name, field_info in (type_def.get("fields") or {}).items():
+            if field_info.get("type") == "link":
+                continue
+            storage_key = field_info.get("storage")
+            if storage_key and storage_key in extra:
+                silo_name = extra[storage_key].get("silo")
+                table = extra[storage_key].get("table", "")
+            else:
+                silo_name = primary.get("silo")
+                table = primary.get("table", "")
+            if not silo_name:
+                continue
+            fields_by_silo.setdefault(silo_name, []).append({
+                "object_type": object_type,
+                "field": field_name,
+                "column": get_field_column(field_info, field_name),
+                "table": table,
+                "is_identifier": False,
+            })
+
+        # The IDENTIFIER, once per storage that holds this type.
+        #
+        # It is not in `fields` -- id_field sits beside `storage` -- so
+        # the loop above never sees it, and the mismatch it can carry
+        # matters more than a renamed data column: Customer is keyed on
+        # customer_id in primary_sql and on cust_ref in risk_sql.
+        id_field = type_def.get("id_field")
+        if id_field:
+            for storage in [primary, *extra.values()]:
+                silo_name = storage.get("silo")
+                if not silo_name:
+                    continue
+                fields_by_silo.setdefault(silo_name, []).append({
+                    "object_type": object_type,
+                    "field": id_field,
+                    "column": storage.get("id_column", id_field),
+                    "table": storage.get("table", ""),
+                    "is_identifier": True,
+                })
+
+    statuses = []
+    # THE SOURCES, not the mediator's adapters: with read_from_mirror on,
+    # those are mirror adapters, and a deleted source reported healthy.
+    failures = source_failures(config.silo_configs, live_source_adapters(request))
+    for silo_name in sorted(config.silo_configs):
+        failure = failures.get(silo_name)
+        statuses.append({
+            "name": silo_name,
+            "adapter": config.silo_configs[silo_name].get("adapter", "unknown"),
+            "object_types": sorted(types_by_silo.get(silo_name, [])),
+            "primary_for": sorted(primary_by_silo.get(silo_name, [])),
+            "fields": sorted(
+                fields_by_silo.get(silo_name, []),
+                # Identifier FIRST within each object type. Sorting
+                # by name alone scattered it -- account_id before
+                # balance, tag_id after label -- so the key you need to
+                # check landed in a different place for every type.
+                key=lambda f: (f["object_type"], not f["is_identifier"], f["field"]),
+            ),
+            "reachable": failure is None,
+            "failure": failure,
+        })
+    return statuses
+
+
+@router.post("/users", status_code=201, response_model=CreateUserResponse)
+def create_user_route(body: CreateUserRequest, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    _require_manage_users(request, current_user)
+    _refuse_escalation(request, current_user, body.role_name)
+    _refuse_weak_password(body.password, body.username)
+
+    # UNDER THE ROLE-CHANGE LOCK, so an account cannot be created in a
+    # role at the instant an approval deletes it -- between the approval
+    # counting that role's holders and saving the change. The directory
+    # checks the role exists against the NEWEST roles, and inside this
+    # lock any approval has finished saving and reloading, so a role
+    # just deleted is already gone and the creation is refused.
+    #
+    # Recorded as a known race in patch 285 and fixed here. It failed
+    # closed -- an unknown role is denied everything -- but an account
+    # that can do nothing and no error explaining why is still wrong.
+    try:
+        with _role_change_lock(request):
+            request.app.state.user_directory.create_user(
+                body.username, body.password, body.mac_value, body.role_name
+            )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    _audit_account(request, current_user, "create", body.username,
+                   detail=f"role {body.role_name}")
+    return {"status": "created", "username": body.username}
+
+
+def _refuse_weak_password(password: str, username: str) -> None:
+    """NIST SP 800-63B-4, at the boundary where a PERSON chooses one --
+    see core/auth/password_policy.py for what, and why not deeper."""
+    from elysium.core.auth.password_policy import password_problem
+
+    problem = password_problem(password, username)
+    if problem is not None:
+        raise HTTPException(status_code=400, detail=problem)
+
+
+def _audit_account(request: Request, current_user: UserRecord, action: str,
+                   target: str, detail: str | None = None) -> None:
+    _generation(request).mediator.audit_log.log_account(
+        current_user.user_id, action, target, detail=detail,
+    )
+
+
+def _refuse_escalation(request: Request, current_user: UserRecord,
+                       role_name: str) -> None:
+    """Refuses putting somebody in a role that carries an ADMINISTRATIVE
+    grant the actor does not hold.
+
+    A REAL HOLE, MEASURED. `admin` holds only manage:users and is
+    refused /roles -- and could create an account in the `debug` role,
+    log in as it, and reach /roles. Patch 283 made manage:roles its own
+    grant; this path undid that for anybody who could create accounts.
+
+    KUBERNETES' RULE, and its reason: "you can only create/update a role
+    binding if you already have all the permissions contained in the
+    referenced role". Creating an account in a role IS a binding -- and
+    setting its password means the actor can then log in as it.
+
+    APPLIED TO THE ADMINISTRATIVE PLANE, not to every grant. The shipped
+    `admin` exists to create analysts whose DATA grants it does not
+    hold; Kubernetes would demand an explicit `bind` for that. So data
+    grants stay assignable by manage:users -- and policy.yaml now says
+    plainly what that means -- while manage:* grants must be held to be
+    handed out.
+    """
+    roles = _generation(request).config.roles
+    target = roles.get(role_name)
+    if target is None:
+        # UNKNOWN ROLES ARE THE DIRECTORY'S REFUSAL, with its own words.
+        return
+    missing = sorted(
+        grant for grant in target.get("allowed_actions", ())
+        if grant.startswith("manage:") and not authorize(current_user, roles, grant)
+    )
+    if missing:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"The {role_name!r} role carries {', '.join(missing)}, which you "
+                f"do not hold -- so you cannot put anybody in it."
+            ),
+        )
+
+
+def _require_manage_users(request: Request, current_user: UserRecord) -> None:
+    # Shared by every account-management route below -- one place for
+    # the check, rather than five copies of the same three lines.
+    roles = _generation(request).config.roles
+    if not authorize(current_user, roles, "manage:users"):
+        raise HTTPException(status_code=403, detail="Not authorized to manage users")
+
+
+# ---------------------------------------------------------------------------
+# THE SHELL'S CONTRACT (shell/README.md), version 1: the session and the
+# module feed. The shell in `shell/` reads only these and knows nothing
+# else about Elysium; the sub-apps it hosts are Elysium's modules
+# (core/modules.py, the removed BLOCKING.md item on modules).
+# ---------------------------------------------------------------------------
+
+
+@router.get("/shell/session", dependencies=[Depends(_no_store)])
+def shell_session_route(request: Request) -> dict:
+    """Who is signed in, and how to sign in. NOBODY IS AN ANSWER, not an
+    error: the contract's shell asks before it knows, and a 401 would
+    make every visit's first request a failure in the console."""
+    try:
+        user = get_current_user(request)
+    except HTTPException as refused:
+        if refused.status_code != 401:
+            raise
+        user = None
+    must_change = (user is not None
+                   and request.app.state.user_directory.must_change_password(user.user_id))
+    return {
+        "user": None if user is None else {"id": user.user_id, "name": user.user_id},
+        "sign_in": {"kind": "form", "submit": "/api/login"},
+        # ELYSIUM'S OWN, beside the contract's fields: an account an
+        # administrator reset may do nothing but choose a password.
+        "must_change_password": bool(must_change),
+    }
+
+
+@router.get("/shell/modules", dependencies=[Depends(_no_store)])
+def shell_modules_route(request: Request,
+                        current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The module feed for the signed-in person: only the modules their
+    role may be offered (core/modules.py, feed_for)."""
+    config = _generation(request).config
+    if config.modules is None:
+        return {"contract": CONTRACT_VERSION, "home": "/", "modules": []}
+    return feed_for(config.modules, current_user, config.roles)
+
+
+class ModuleArrangementRow(BaseModel):
+    id: str
+    name: str
+    version: str
+    enabled: bool
+    pinned: bool
+    pages: list[str]
+
+
+class ModuleArrangementResponse(BaseModel):
+    home: str
+    modules: list[ModuleArrangementRow]
+    #: Of modules.yaml as read: a save names it, and is refused if the
+    #: file has moved since -- the same no-merge rule as every editor.
+    digest: str
+
+
+class ModuleArrangementRequest(BaseModel):
+    home: str = Field(max_length=500)
+    #: Every module the deployment knows, in the rail order wanted.
+    modules: list[tuple[str, bool]] = Field(max_length=200)
+    digest: str = Field(max_length=64)
+
+
+def _modules_yaml_now(request: Request) -> str:
+    """modules.yaml as it stands -- or, while the deployment has none,
+    the file that says the same thing, so a failed save's undo writes
+    back an equivalent rather than an empty file."""
+    path = request.app.state.runtime_paths.config_dir / "modules.yaml"
+    if path.exists():
+        return path.read_text()
+    modules = _generation(request).config.modules
+    off = {m.id for m in modules.off}
+    return render_modules_yaml(modules, modules.home, [(i, i not in off) for i in modules.order])
+
+
+@router.get("/shell/modules/arrangement", dependencies=[Depends(_no_store)],
+            response_model=ModuleArrangementResponse)
+def module_arrangement_route(request: Request,
+                             current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Every module the deployment knows, on and off, for the module
+    manager (step 1.4c). For manage:deployment, the grant that edits and
+    reloads the configuration this changes."""
+    from elysium.core.config_editing import digest
+
+    _require_manage_deployment(request, current_user)
+    return {**arrangement(_generation(request).config.modules), "digest": digest(_modules_yaml_now(request))}
+
+
+@router.put("/shell/modules/arrangement", dependencies=[Depends(_no_store)],
+            response_model=ModuleArrangementResponse)
+def save_module_arrangement_route(body: ModuleArrangementRequest, request: Request,
+                                  current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Turns modules on and off, orders the rail and sets home, by
+    writing modules.yaml through _write_config_files: checked by loading
+    the candidate first, written atomically, reloaded, put back if the
+    reload fails, audited either way.
+
+    APPLIES AT ONCE, with no second person: turning a module on offers
+    pages whose every call the server still checks, so it widens nothing
+    anyone may read or run -- the rule core/config_proposals.py applies.
+    Every open page learns of it on its next request, which carries the
+    new generation, and fetches the feed again."""
+    from elysium.core.config_editing import digest
+
+    _require_manage_deployment(request, current_user)
+    with _config_edit_lock:
+        current = _modules_yaml_now(request)
+        if digest(current) != body.digest:
+            raise HTTPException(status_code=409, detail="The modules changed since you opened them. "
+                                                        "Reload the page to see the arrangement as it is now.")
+        try:
+            proposed = render_modules_yaml(_generation(request).config.modules, body.home, body.modules)
+        except ModuleError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        _write_config_file(request, current_user, "modules.yaml", current, proposed,
+                           {"home": body.home,
+                            "on": [i for i, enabled in body.modules if enabled],
+                            "off": [i for i, enabled in body.modules if not enabled]})
+    # THE ARRANGEMENT AS SAVED, from what was written: the generation this
+    # request is pinned to predates the save, and reading the new one off
+    # app.state would reach past the pin (tests/unit/test_generation_pin.py).
+    return {**arranged(_generation(request).config.modules, body.home, body.modules), "digest": digest(proposed)}
+
+
+#: The methods an add-on's server is reached with. No CONNECT or TRACE,
+#: and no WebSocket upgrade (api/addon_servers.py).
+_ADDON_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]
+
+
+@router.api_route("/addons/{module_id}/{path:path}", methods=_ADDON_METHODS)
+async def addon_proxy_route(module_id: str, path: str, request: Request,
+                            current_user: UserRecord = Depends(get_current_user)) -> StreamingResponse:
+    """A request to an add-on's own server (the removed BLOCKING.md item on modules, step 2):
+    core/addons.py says what passes, api/addon_servers.py forwards it.
+
+    ONLY FOR SOMEONE THE MODULE IS OFFERED TO, and a 404 otherwise --
+    uniform denial, as for its bundle's files: a module this person may
+    not use, one with no server, and one that does not exist answer
+    alike. A server that is not running is a 503, said to someone who
+    may use it.
+
+    THE PATH AS THE BROWSER SENT IT, still percent-encoded: decoding it
+    here would turn an encoded slash in a name into a path separator at
+    the add-on.
+    """
+    from elysium.api.addon_servers import Unavailable, forward
+
+    config = _generation(request).config
+    offered = [] if config.modules is None else offered_to(config.modules, current_user, config.roles)
+    module = next((m for m in offered if m.id == module_id and m.server is not None), None)
+    if module is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    prefix = f"/api/addons/{module_id}/".encode()
+    raw_path = request.scope.get("raw_path") or request.url.path.encode()
+    sent_path = raw_path[len(prefix):].decode("latin-1") if raw_path.startswith(prefix) else path
+    body = await request.body()
+    try:
+        upstream = await asyncio.to_thread(
+            forward, request.app.state.runtime_paths.data_dir, module_id, current_user.user_id,
+            method=request.method, path=sent_path, query=request.url.query,
+            headers=list(request.headers.items()), body=body,
+            permissions=[module_grant(module.id, name) for name, _ in module.permissions
+                         if authorize(current_user, config.roles, module_grant(module.id, name))])
+    except Unavailable as unavailable:
+        raise HTTPException(status_code=503, detail=str(unavailable)) from None
+    headers = dict(upstream.headers)
+    # PRIVATE UNLESS THE ADD-ON SAYS OTHERWISE: what it answers is
+    # answered for this person.
+    if not any(name.lower() == "cache-control" for name in headers):
+        headers["Cache-Control"] = "no-store"
+    # An event stream must not wait in a buffering proxy in front.
+    headers["X-Accel-Buffering"] = "no"
+    return StreamingResponse(upstream.body(), status_code=upstream.status, headers=headers)
+
+
+class AddonServerRow(BaseModel):
+    id: str
+    name: str
+    #: Turned on in modules.yaml: only then is its server run.
+    enabled: bool
+    #: not started | starting | running | backing-off | stopping | stopped
+    state: str
+    since: float | None = None
+    restarts: int = 0
+    last_exit: int | None = None
+    next_start_at: float | None = None
+
+
+class AddonServersResponse(BaseModel):
+    addons: list[AddonServerRow]
+
+
+@router.get("/system/addons", dependencies=[Depends(_no_store)], response_model=AddonServersResponse)
+def addon_servers_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Each add-on's server and how it is doing (step 2.2), for the System
+    sub-app: for manage:deployment, the grant that turns modules on and
+    off. Read from the state file the supervising worker writes, so any
+    worker answers alike. NEVER ITS SECRET, ADDRESS OR PROCESS: what a
+    person deciding whether to restart it needs, and no more."""
+    from elysium.api.addon_servers import read_state
+
+    _require_manage_deployment(request, current_user)
+    modules = _generation(request).config.modules
+    data_dir = request.app.state.runtime_paths.data_dir
+    rows = []
+    if modules is not None:
+        on = {m.id for m in modules.modules}
+        for module in [*modules.modules, *modules.off]:
+            if module.server is None:
+                continue
+            state = read_state(data_dir, module.id) or {}
+            rows.append({"id": module.id, "name": module.name, "enabled": module.id in on,
+                         "state": state.get("state", "not started"), "since": state.get("since"),
+                         "restarts": state.get("restarts", 0), "last_exit": state.get("lastExit"),
+                         "next_start_at": state.get("nextStartAt")})
+    return {"addons": rows}
+
+
+def _addon_with_server(request: Request, module_id: str):
+    modules = _generation(request).config.modules
+    known = [] if modules is None else [*modules.modules, *modules.off]
+    module = next((m for m in known if m.id == module_id and m.server is not None), None)
+    if module is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return module
+
+
+@router.get("/system/addons/{module_id}/log", dependencies=[Depends(_no_store)])
+def addon_server_log_route(module_id: str, request: Request,
+                           current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The end of an add-on server's log: its own output, and Elysium's
+    lines about it (started, exited, restarting in...)."""
+    from elysium.api.addon_servers import log_tail
+
+    _require_manage_deployment(request, current_user)
+    _addon_with_server(request, module_id)
+    return {"lines": log_tail(request.app.state.runtime_paths.log_dir, module_id)}
+
+
+@router.post("/system/addons/{module_id}/restart", status_code=202)
+def restart_addon_server_route(module_id: str, request: Request,
+                               current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Ask for an add-on's server to be restarted now, back-off forgotten.
+    ASKED, NOT DONE HERE: the worker supervising it -- perhaps not this
+    one -- does it within a round. Audited, as the deployment's other
+    changes are."""
+    from elysium.api.addon_servers import request_restart
+
+    _require_manage_deployment(request, current_user)
+    module = _addon_with_server(request, module_id)
+    request_restart(request.app.state.runtime_paths.data_dir, module.id)
+    _generation(request).mediator.audit_log.log_addon_restart(current_user.user_id, module.id)
+    return {"status": "asked"}
+
+
+#: What a module's bundle directory may serve, by suffix. Anything else is
+#: absent rather than guessed at: a bundle is scripts, stylesheets, their
+#: source maps, and the fonts and images its stylesheet names.
+_BUNDLE_MEDIA_TYPES = {
+    ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
+    ".map": "application/json", ".svg": "image/svg+xml", ".png": "image/png",
+    ".woff2": "font/woff2", ".woff": "font/woff",
+}
+
+
+@router.get("/modules/{module_id}/files/{relative:path}")
+def module_file_route(module_id: str, relative: str, request: Request,
+                      current_user: UserRecord = Depends(get_current_user)) -> FileResponse:
+    """A file of a module's bundle (the removed BLOCKING.md item on modules, step 1.2).
+
+    ONLY TO SOMEONE THE MODULE IS OFFERED TO, and ONLY FROM ITS BUNDLE'S
+    DIRECTORY (core/modules.bundle_file). Anything else is a 404 --
+    uniform denial: a module this person may not use, one that does not
+    exist, a path leaving the directory and a file not built all answer
+    alike, so the answer says nothing about which.
+
+    REVALIDATED, NOT CACHED BLIND, and PRIVATE: a bundle's name does not
+    change when it is rebuilt -- in development, on every save -- so the
+    browser asks again each time. The feed's address carries a
+    fingerprint of the file (core/modules._address), which this route
+    ignores, so a rebuilt bundle is a new module to the page.
+    """
+    config = _generation(request).config
+    modules = [] if config.modules is None else offered_to(config.modules, current_user, config.roles)
+    module = next((m for m in modules if m.id == module_id), None)
+    path = None if module is None else bundle_file(module, relative)
+    media_type = None if path is None else _BUNDLE_MEDIA_TYPES.get(path.suffix)
+    if path is None or media_type is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    # PRIVATE: served only to someone signed in and offered the module,
+    # so no shared cache may keep it for anyone else.
+    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "private, no-cache"})
+
+
+@router.get("/me", dependencies=[Depends(_no_store)], response_model=ProfileResponse)
+def my_profile_route(request: Request,
+                     current_user: UserRecord = Depends(get_current_user)) -> dict:
+    # A real "who am I" endpoint -- confirmed directly against how
+    # established identity platforms do this (OpenID Connect's own
+    # UserInfo endpoint; the precedent's own real, documented GET
+    # .../admin/users/getCurrent), not invented from scratch. Reuses
+    # get_current_user() exactly like every other protected route --
+    # no new auth logic, no new security surface. Returns the SAME
+    # three UserRecord fields GET /users/{username}/visible-schema's
+    # own sibling routes already expose about OTHER users to an admin
+    # (see list_users() in core/user_directory.py for the matching
+    # field names) -- this is just the self-service, CALLER-only
+    # version of that same shape, gated by nothing more than being
+    # logged in at all, the same as every other /me/* route.
+    #
+    # No "disabled" field -- unlike list_users()'s own response,
+    # there's nothing meaningful to say here: get_current_user() itself
+    # already rejects a disabled account with a 401 before this route
+    # ever runs (see api/auth_dependency.py's own docstring), so a
+    # disabled caller could never reach this line at all.
+    return {
+        "username": current_user.user_id,
+        "role_name": current_user.role_name,
+        "mac_value": current_user.security_value,
+        "must_change_password": request.app.state.user_directory.must_change_password(
+            current_user.user_id,
+        ),
+    }
+
+
+class TypeCountResponse(BaseModel):
+    count: int
+    #: The count stopped at the scan cap: "at least `count`".
+    scan_truncated: bool = False
+
+
+@router.get("/me/type-counts", dependencies=[Depends(_no_store)],
+            response_model=dict[str, TypeCountResponse])
+def my_type_counts_route(request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """How many objects of each type THIS CALLER can see, for the
+    ontology canvas's nodes (DEV_UI 14.5: "type name, key, counts,
+    health"). One request for every type rather than one per node.
+
+    THE CALLER'S COUNT, through the same count_objects every set count
+    uses, so MAC applies: two people see different numbers, and a count
+    never describes objects someone may not see. ONLY TYPES THEY MAY
+    READ -- a type they may only discover gets no count, since counting
+    its objects would say more than "it exists". A type whose count
+    fails (not yet published, say) is left out rather than failing the
+    rest: the canvas then shows no number for it, which is what
+    /data-freshness's "never published" already explains.
+    """
+    generation = _generation(request)
+    mediator = generation.mediator
+    counts = {}
+    for object_type in sorted(generation.config.schema or {}):
+        if not authorize(current_user, generation.config.roles, f"read:{object_type}"):
+            continue
+        outcome = SearchOutcome()
+        try:
+            count = mediator.count_objects(current_user, object_type, [], outcome=outcome)
+        except Exception:  # noqa: BLE001 - see the docstring: one type, not the answer
+            continue
+        counts[object_type] = {"count": count, "scan_truncated": outcome.scan_truncated}
+    return counts
+
+
+@router.get("/data-freshness", dependencies=[Depends(_no_store)], response_model=DataFreshnessResponse)
+def data_freshness_route(request: Request,
+                          _current_user: UserRecord = Depends(get_current_user)) -> dict:
+    # How current the data a caller is reading actually is -- the
+    # user-visible half of the read-only mirror architecture (see
+    # the roadmap (consumed)'s own "Real, visible data freshness" point).
+    #
+    # A SEPARATE route rather than a field on GET /me, deliberately:
+    # freshness is a property of the DEPLOYMENT, identical for every
+    # caller, and has nothing to do with who someone is. Folding a
+    # deployment-wide fact into an identity endpoint would make /me
+    # mean two unrelated things.
+    #
+    # Requires a login (like every route but /login) but no particular
+    # grant -- this exposes no business data whatsoever, only whether
+    # reads are live and, if not, when the mirror last synced.
+    # Gating it behind a permission would mean the people most likely
+    # to need it (anyone about to approve a write against possibly
+    # stale data) are the least likely to see it.
+    mediator = _generation(request).mediator
+
+    # THE "LIVE" ANSWER IS GONE (GOLD-9): every deployment reads the
+    # lake, so freshness is always a meaningful question.
+
+    published = dict(_generation(request).gold_published_at)
+    if published:
+        # THE OLDEST PUBLICATION is what "how current is this" means
+        # for a deployment reading several types: a caller comparing
+        # two objects is only as current as the staler of them.
+        #
+        # last_synced_at STAYS THE SOURCE-READ TIME, deliberately: the
+        # oldest of every table's, which is what "as current as" means
+        # for the deployment. The write overlay no longer runs from it
+        # but from each type's own data time since 21 October
+        # (DataMediator._overlay_since); it remains that overlay's
+        # fallback for a type with none recorded.
+        return {"source": "gold", "last_synced_at": mediator.mirror_synced_at,
+                "published_at": published,
+                "freshness": _freshness_verdicts(request, published)}
+    return {"source": "mirror", "last_synced_at": mediator.mirror_synced_at,
+            "freshness": _freshness_verdicts(request, {})}
+
+
+def _freshness_verdicts(request: Request, published: dict) -> dict:
+    """Each declared type's state against its own window.
+
+    EVERY DECLARED TYPE, not only the published ones. A type absent
+    from `published_at` is the one a reader most needs told about --
+    its reads fail -- and reporting only what published would be a
+    page of reassuring green that omits the failure, which is the
+    mistake the Silos panel already avoids.
+    """
+    from elysium.core.mirror.freshness import verdict
+
+    targets = _generation(request).config.freshness_targets
+    return {
+        object_type: {
+            "state": verdict(published.get(object_type), target),
+            "published_at": published.get(object_type),
+            # THE WINDOW IS WITHHELD FOR AN EXEMPT TYPE, because it
+            # has one only as a formality -- the resolver gives it the
+            # deployment default so the dataclass is total, and
+            # reporting that number would invite somebody to read a
+            # judgement that is not being made.
+            "warn_after_hours": None if target.exempt
+            else target.warn_after.total_seconds() / 3600,
+            "fail_after_hours": None if target.exempt
+            else target.fail_after.total_seconds() / 3600,
+        }
+        for object_type, target in targets.items()
+    }
+
+
+class InboxCountsResponse(BaseModel):
+    """What is waiting for the caller, by kind -- the Inbox badge."""
+
+    #: Writes this caller may decide on.
+    approvals: int
+    #: Their notifications not yet marked seen.
+    notifications: int
+    #: Merge proposals waiting on a decision this caller may make.
+    identity: int
+    #: Enrichment recipes waiting on a decision this caller may make.
+    enrichment: int = 0
+    #: Predicted fields waiting on a decision this caller may make (R48).
+    predictions: int = 0
+    #: Values unusual for their kind, undecided, this caller may decide (R51).
+    unusual: int = 0
+
+
+class EnrichmentRecipeResponse(BaseModel):
+    recipe_id: str
+    object_type: str
+    field_name: str
+    field_label: str
+    instruction: str
+    choices: list[str]
+    #: For a field whose value is taken from the text: its data type
+    #: (string, integer, decimal, date). None for choices.
+    extracts: str | None = None
+    inputs: list[str]
+    #: proposed | approved | rejected | superseded
+    status: str
+    #: Each rule in plain words, in order -- what the approver reads.
+    #: For a vote, every member's rules one after another; `rule_sets`
+    #: keeps them apart, with their weights.
+    rules: list[str]
+    #: [{weight, rules}]: one entry, weight null, for a lone rule set;
+    #: several that vote, each with its weight (17 October).
+    rule_sets: list[dict[str, Any]] = []
+    evaluation: dict[str, Any]
+    #: The model, sample, candidates and compartment that produced it.
+    provenance: dict[str, Any]
+    #: False when the field's question has changed since this was
+    #: compiled: it can no longer be approved, and no longer applies.
+    current: bool
+    proposed_at: str
+    decided_by: str | None = None
+    decided_at: str | None = None
+
+
+class EnrichmentRecipesResponse(BaseModel):
+    recipes: list[EnrichmentRecipeResponse]
+
+
+class EnrichmentDecisionRequest(BaseModel):
+    approve: bool
+
+
+def _inferred_fields_for(app, generation) -> dict:
+    """This deployment's enriched fields with their approved recipes'
+    held-out scores, for synthesis to name and to note (R63). A missing
+    recipe store is not created: the fields are still named, unscored."""
+    from elysium.core.enrichment_recipes import EnrichmentRecipeStore
+    from elysium.core.llm.inferred_values import inferred_fields
+
+    path = app.state.runtime_paths.data_dir / "enrichment_recipes.db"
+    return inferred_fields(generation.config.schema,
+                           EnrichmentRecipeStore(path) if path.exists() else None)
+
+
+def _inferred_fields(request: Request) -> dict:
+    return _inferred_fields_for(request.app, _generation(request))
+
+
+def _recipe_store(request: Request):
+    from elysium.core.enrichment_recipes import EnrichmentRecipeStore
+
+    return EnrichmentRecipeStore(request.app.state.runtime_paths.data_dir / "enrichment_recipes.db")
+
+
+def _visible_recipe(request: Request, current_user: UserRecord, recipe) -> "dict | None":
+    """The recipe as this caller may see it, or None.
+
+    FOUR CONDITIONS, each for a reason:
+      - manage:deployment: an approval decides what a field holds for
+        everyone, which is a deployment change, as editing config is;
+      - read on the field and EVERY input: the rules are made of words
+        from those inputs, so seeing them is reading them (the read gate
+        on the field itself, at load, asks the same);
+      - the recipe's COMPARTMENT is the caller's own: the words came from
+        rows in that compartment, and R61 says a reviewer must be cleared
+        for what they are shown;
+      - the field still exists and is still enriched.
+    None for any failure, and the routes answer it as "not found" --
+    uniform denial."""
+    from elysium.core.ontology.enriched_fields import declaration_hash, describe_recipe, enrichment_of
+
+    generation = _generation(request)
+    roles = generation.config.roles
+    if not authorize(current_user, roles, "manage:deployment"):
+        return None
+    if "compartment" in recipe.provenance and recipe.provenance["compartment"] is not None \
+            and recipe.provenance["compartment"] != current_user.security_value:
+        return None
+    type_def = generation.config.schema.get(recipe.object_type) or {}
+    field = (type_def.get("fields") or {}).get(recipe.field_name) or {}
+    enrichment = enrichment_of(field)
+    if enrichment is None:
+        return None
+    for name in (recipe.field_name, *enrichment.inputs):
+        if not authorize(current_user, roles, f"read:{recipe.object_type}.{name}"):
+            return None
+    return {
+        "recipe_id": recipe.recipe_id, "object_type": recipe.object_type,
+        "field_name": recipe.field_name,
+        "field_label": get_display_name(field, recipe.field_name),
+        "instruction": enrichment.instruction, "choices": list(enrichment.choices),
+        "extracts": enrichment.extract,
+        "inputs": list(enrichment.inputs), "status": recipe.status,
+        # EVERY RULE SET, with its vote's weight when several vote (None
+        # for a lone set) -- all of it read by the person approving.
+        "rule_sets": describe_recipe(recipe.rules),
+        "rules": [line for rule_set in describe_recipe(recipe.rules) for line in rule_set["rules"]],
+        "evaluation": recipe.evaluation, "provenance": recipe.provenance,
+        "current": recipe.declaration_hash == declaration_hash(
+            recipe.object_type, recipe.field_name, enrichment),
+        "proposed_at": recipe.proposed_at, "decided_by": recipe.decided_by,
+        "decided_at": recipe.decided_at,
+    }
+
+
+@router.get("/enrichment-recipes", dependencies=[Depends(_no_store)],
+            response_model=EnrichmentRecipesResponse)
+def enrichment_recipes_route(request: Request,
+                             current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Rules a model wrote for enriched fields (R41), newest first, as far
+    as this caller may review them. Nothing here is applied: an approved
+    recipe reaches gold at the next sync."""
+    shown = [_visible_recipe(request, current_user, recipe) for recipe in _recipe_store(request).all()]
+    return {"recipes": [recipe for recipe in shown if recipe is not None]}
+
+
+@router.post("/enrichment-recipes/{recipe_id}/decide", response_model=EnrichmentRecipeResponse)
+def decide_enrichment_recipe_route(recipe_id: str, body: EnrichmentDecisionRequest,
+                                   request: Request,
+                                   current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Approve or reject one proposal.
+
+    409, not a silent no-op, for a proposal already decided or one whose
+    question has changed since it was compiled: approving rules for a
+    question nobody is asking any more would publish answers to it."""
+    store = _recipe_store(request)
+    recipe = store.get(recipe_id)
+    shown = _visible_recipe(request, current_user, recipe) if recipe else None
+    if shown is None:
+        raise HTTPException(status_code=404, detail="No such recipe")
+    if recipe.status != "proposed":
+        raise HTTPException(status_code=409, detail=f"This recipe was already {recipe.status}.")
+    if not shown["current"]:
+        raise HTTPException(status_code=409, detail=(
+            "The field's question has changed since these rules were written; compile it again."))
+    decided = store.decide(recipe_id, approve=body.approve, by=current_user.user_id)
+    if decided is None:
+        raise HTTPException(status_code=409, detail="Someone decided it a moment ago.")
+    _generation(request).mediator.audit_log.log_enrichment_decision(
+        current_user.user_id, recipe_id, recipe.object_type, recipe.field_name,
+        "approved" if body.approve else "rejected", recipe.declaration_hash)
+    shown_after = _visible_recipe(request, current_user, decided)
+    # Visible a moment ago, and a decision changes nothing that decides
+    # visibility -- so this is the same recipe, now decided.
+    assert shown_after is not None
+    return shown_after
+
+
+class PredictionProposalResponse(BaseModel):
+    proposal_id: str
+    object_type: str
+    field_name: str
+    field_label: str
+    #: The field whose answer is learned, and its label.
+    target: str
+    target_label: str
+    #: chance | class | number
+    kind: str
+    chance_of: str | None = None
+    inputs: list[str]
+    #: The compartment it learned from and fills, as a string; None for none.
+    compartment: str | None = None
+    #: proposed | approved | rejected | superseded
+    status: str
+    #: Aggregates only (core/predictions.py): held-out score against the
+    #: naive guess, skill, the score per group, what it leans on.
+    evaluation: dict[str, Any]
+    provenance: dict[str, Any]
+    #: False when the field's question has changed since it was trained.
+    current: bool
+    #: Why it cannot be approved, in words; None when it can.
+    refusal: str | None = None
+    proposed_at: str
+    decided_by: str | None = None
+    decided_at: str | None = None
+
+
+class PredictionProposalsResponse(BaseModel):
+    proposals: list[PredictionProposalResponse]
+
+
+def _prediction_store(request: Request):
+    from elysium.core.prediction_proposals import PredictionProposalStore
+
+    return PredictionProposalStore(request.app.state.runtime_paths.data_dir / "prediction_proposals.db")
+
+
+def _visible_prediction(request: Request, current_user: UserRecord, proposal) -> "dict | None":
+    """The proposal as this caller may see it, or None.
+
+    THE ENRICHMENT RULE (_visible_recipe), for the same reasons:
+      - manage:deployment: an approval decides what a field holds;
+      - read on the field, its answer, EVERY input and the group field:
+        the scores and group values are aggregates of exactly those;
+      - the proposal's COMPARTMENT is the caller's own (the owner, 17
+        October): it learned from that compartment's records alone;
+      - the field still exists and is still predicted.
+    None for any failure, answered as "not found" -- uniform denial."""
+    from elysium.core.ontology.predicted_fields import declaration_hash, prediction_of
+    from elysium.core.predictions import refusal
+
+    generation = _generation(request)
+    roles = generation.config.roles
+    if not authorize(current_user, roles, "manage:deployment"):
+        return None
+    if proposal.compartment is not None and proposal.compartment != current_user.security_value:
+        return None
+    type_def = generation.config.schema.get(proposal.object_type) or {}
+    fields = type_def.get("fields") or {}
+    field = fields.get(proposal.field_name) or {}
+    prediction = prediction_of(field, fields)
+    if prediction is None:
+        return None
+    group_by = proposal.evaluation.get("group_by")
+    for name in (proposal.field_name, prediction.target, *prediction.inputs,
+                 *([group_by] if group_by else [])):
+        if not authorize(current_user, roles, f"read:{proposal.object_type}.{name}"):
+            return None
+    return {
+        "proposal_id": proposal.proposal_id, "object_type": proposal.object_type,
+        "field_name": proposal.field_name,
+        "field_label": get_display_name(field, proposal.field_name),
+        "target": prediction.target,
+        "target_label": get_display_name(fields.get(prediction.target) or {}, prediction.target),
+        "kind": prediction.kind, "chance_of": prediction.chance_of,
+        "inputs": list(prediction.inputs),
+        "compartment": None if proposal.compartment is None else str(proposal.compartment),
+        "status": proposal.status, "evaluation": proposal.evaluation,
+        "provenance": proposal.provenance,
+        "current": proposal.declaration_hash == declaration_hash(
+            proposal.object_type, proposal.field_name, prediction),
+        "refusal": refusal(proposal.evaluation),
+        "proposed_at": proposal.proposed_at, "decided_by": proposal.decided_by,
+        "decided_at": proposal.decided_at,
+    }
+
+
+@router.get("/prediction-proposals", dependencies=[Depends(_no_store)],
+            response_model=PredictionProposalsResponse)
+def prediction_proposals_route(request: Request,
+                               current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Predicted fields measured and waiting (R48), newest first, as far as
+    this caller may review them. Nothing here is applied: an approved one
+    is trained again, and fills its field, at the next sync."""
+    shown = [_visible_prediction(request, current_user, proposal)
+             for proposal in _prediction_store(request).all()]
+    return {"proposals": [proposal for proposal in shown if proposal is not None]}
+
+
+@router.post("/prediction-proposals/{proposal_id}/decide",
+             response_model=PredictionProposalResponse)
+def decide_prediction_proposal_route(proposal_id: str, body: EnrichmentDecisionRequest,
+                                     request: Request,
+                                     current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Approve or reject one proposal.
+
+    409 for one already decided, one whose question has changed, and --
+    on APPROVE only -- one predictions.refusal refuses: no better than
+    the naive guess, or no group breakdown. Rejecting is always allowed."""
+    store = _prediction_store(request)
+    proposal = store.get(proposal_id)
+    shown = _visible_prediction(request, current_user, proposal) if proposal else None
+    if shown is None:
+        raise HTTPException(status_code=404, detail="No such proposal")
+    if proposal.status != "proposed":
+        raise HTTPException(status_code=409, detail=f"This proposal was already {proposal.status}.")
+    if not shown["current"]:
+        raise HTTPException(
+            status_code=409,
+            detail="The field's question has changed since this was trained; propose it again.")
+    if body.approve and shown["refusal"]:
+        raise HTTPException(status_code=409, detail=f"Cannot be approved: {shown['refusal']}")
+    decided = store.decide(proposal_id, approve=body.approve, by=current_user.user_id)
+    if decided is None:
+        raise HTTPException(status_code=409, detail="Someone decided it a moment ago.")
+    _generation(request).mediator.audit_log.log_prediction_decision(
+        current_user.user_id, proposal_id, proposal.object_type, proposal.field_name,
+        "approved" if body.approve else "rejected", proposal.declaration_hash)
+    shown_after = _visible_prediction(request, current_user, decided)
+    assert shown_after is not None
+    return shown_after
+
+
+@router.get("/me/inbox", dependencies=[Depends(_no_store)], response_model=InboxCountsResponse)
+def my_inbox_counts_route(request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """How much is waiting, for the badge in the header (DEV_UI 15.3).
+
+    "Presence without prompting": the queue is visible from every screen
+    as a NUMBER, not a pop-up. Three counts rather than one so the Inbox's
+    tabs can say where the work is.
+
+    THE SAME ELIGIBILITY AS EACH QUEUE'S OWN LISTING, so the badge cannot
+    promise a decision the queue will not show:
+
+      approvals      execute:<Action> on the write -- what the confirm
+                     route and the awaiting listing both check;
+      notifications  the caller's own unseen ones -- scoped by user in
+                     the query, as the listing is;
+      identity       a waiting proposal whose BOTH sides this caller may
+                     read (the listing's rule, R61) and whose type they
+                     may write (the decide route's rule).
+      unusual        an undecided value the caller may decide about --
+                     the Unusual tab's own rule (_may_review_flag).
+
+    COUNTS ONLY. A count of proposals is a fact about the caller's own
+    queue, so it says nothing the queue does not.
+    """
+    from elysium.core.identity_decisions import PENDING
+
+    generation = _generation(request)
+    roles = generation.config.roles
+    approvals = len(request.app.state.pending_writes.awaiting(
+        lambda pending: authorize(current_user, roles, f"execute:{pending.action_type_name}")))
+    notifications = _notification_store(request).unseen_count(current_user.user_id)
+    identity = 0
+    for proposal in _merge_store(request).proposals(decision=PENDING):
+        if (authorize(current_user, roles, f"write:{proposal.object_type}")
+                and _proposal_sides(request, current_user, proposal) is not None):
+            identity += 1
+    # ENRICHMENT RECIPES on the listing's own rule, and only those still
+    # decidable: proposed, for the field's current question.
+    enrichment = sum(
+        1 for recipe in _recipe_store(request).all()
+        if recipe.status == "proposed"
+        and (shown := _visible_recipe(request, current_user, recipe)) is not None
+        and shown["current"])
+    # PREDICTIONS likewise: the listing's rule, and still decidable. One
+    # that can only be rejected still waits on that decision.
+    predictions = sum(
+        1 for proposal in _prediction_store(request).all()
+        if proposal.status == "proposed"
+        and (shown := _visible_prediction(request, current_user, proposal)) is not None
+        and shown["current"])
+    # UNUSUAL VALUES on the queue's own rule, undecided only.
+    unusual = sum(1 for flag in _reviewable_flags(request, current_user) if flag.decision is None)
+    return {"approvals": approvals, "notifications": notifications, "identity": identity,
+            "enrichment": enrichment, "predictions": predictions, "unusual": unusual}
+
+
+@router.get("/me/visible-apps", dependencies=[Depends(_no_store)], response_model=list[VisibleAppResponse])
+def my_visible_apps_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> list[dict]:
+    # The shell's own nav, made real: which apps exist for THIS
+    # specific caller, computed from their actual grants -- not a
+    # hardcoded, always-shown list every logged-in user saw regardless
+    # of what they could actually use (Admin, before this route
+    # existed, was visible to everyone in the nav even though every
+    # single action inside it was already, separately, gated server-
+    # side by manage:users -- the button itself just never reflected
+    # that). Matches the exact same discipline already applied to
+    # action buttons (see discover:action_types/"executable" on
+    # ObjectDetailPanel.jsx) -- never show a nav entry for something
+    # the caller genuinely cannot use.
+    #
+    # `gating_permission` deliberately excluded from the HTTP response
+    # itself -- a real, third finding of the exact same class as GET
+    # /me/visible-schema's own and GET /me/visible-action-types' own
+    # (see mediator.py's and this file's own AI-notes for both):
+    # confirmed directly, not assumed, that no frontend code anywhere
+    # reads `.gating_permission` off a visible-apps entry (a direct
+    # grep found only a TYPE DECLARATION, never an actual read) --
+    # this backend ALREADY does the real filtering (visible_apps_for()
+    # itself, just above, already excludes any app the caller can't
+    # use at all), so the raw internal permission-STRING NAME gating
+    # each entry (e.g. "manage:users") has no legitimate reason to
+    # travel to the browser at all. The grant is now a module's
+    # `permission` in its module.json (core/modules.py), which
+    # feed_for reads to filter; neither this shape nor the module feed
+    # carries it -- "filter at the boundary, not the shared internal
+    # source", as both prior fixes.
+    roles = _generation(request).config.roles
+    # `subject` travels, `gating_permission` does not. The projection
+    # above is deliberate -- it exists to keep the internal permission
+    # string off the wire -- and that is exactly why a new field has to
+    # be added here as well as to the response model. I added it to
+    # both api/apps.py and VisibleAppResponse, rebuilt, and watched the
+    # rail reorder correctly while every heading rendered nothing:
+    # `subject: None` on every entry, because this line still named two
+    # keys.
+    return [{"name": app["name"], "path": app["path"],
+             "subject": app.get("subject")}
+            for app in visible_apps_for(current_user, roles, _generation(request).config.modules)]
+
+
+@router.get("/me/visible-schema", dependencies=[Depends(_no_store)],
+            response_model=dict[str, VisibleObjectTypeResponse])
+def my_visible_schema_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:
+    # The self-service counterpart to GET /users/{username}/visible-
+    # schema above -- that one is an ADMIN debugging view (manage:
+    # users required, targets ANY username); this one needs nothing
+    # beyond a valid login, and always returns the CALLER's own view.
+    # The real, concrete reason this exists: the new browse/search UI
+    # (see /objects/{object_type}/search below) needs to know which
+    # object types even exist and are visible BEFORE a person can pick
+    # one to search -- there was no self-service way to ask that at
+    # all before this route.
+    mediator = _generation(request).mediator
+    return mediator.visible_schema(current_user)
+
+
+# Hard cap on how many search_object_free_text() matches get expanded
+# into full result rows below -- a real, deliberate safety limit, not
+# genuine pagination (there is no way to ask for "the next page" of
+# results yet). Prevents a broad/empty query on a large table from
+# triggering an unbounded number of get_object() calls (each already
+# its own N-field loop of get_field() calls -- see DataMediator.
+# get_object()'s own docstring), not just an unbounded RESPONSE size.
+# Paging, matching the precedent's own model: pageSize + pageToken in, and
+# nextPageToken + totalCount back. Their documented default is 1,000
+# with the default also acting as the maximum; ours is smaller because
+# each result costs a real per-object field read, and a UI table shows
+# far fewer than a thousand rows at once anyway.
+DEFAULT_PAGE_SIZE = 50
+MAX_PAGE_SIZE = 500
+
+
+# Page tokens are OPAQUE, following the precedent's own format: a version
+# prefix and a base64 payload ("v1.QnVpbGQgdGhlIEZ1dHVyZTo..."). This
+# is about coupling, not secrecy. A bare offset like page_token=3 is
+# something a client can construct, guess, or build logic around, and
+# every such client breaks the day the encoding changes. A version
+# prefix also means the encoding CAN change: a v2 token is
+# distinguishable from a v1 one rather than silently misread.
+#
+# Deliberately NOT signed or encrypted. It carries no secret -- a
+# caller already knows their own position in their own result set --
+# and signing would imply a tamper guarantee this does not make.
+_PAGE_TOKEN_VERSION = "v1"
+
+
+def _encode_page_token(start: int) -> str:
+    payload = base64.urlsafe_b64encode(str(start).encode()).decode().rstrip("=")
+    return f"{_PAGE_TOKEN_VERSION}.{payload}"
+
+
+def _decode_page_token(token: str) -> int | None:
+    """The offset a token encodes, or None if it is not one of ours.
+
+    Returns None rather than raising for ANY malformed input --
+    wrong version, bad base64, non-numeric payload. The precedent's guidance
+    is that a client should treat a token as opaque and pass it back
+    unchanged, so a garbled token is a client bug; but failing the
+    whole request would turn a display glitch into an error page, and
+    restarting at page one is both recoverable and obvious.
+    """
+    version, _, payload = token.partition(".")
+    if version != _PAGE_TOKEN_VERSION or not payload:
+        return None
+    try:
+        padded = payload + "=" * (-len(payload) % 4)
+        return int(base64.urlsafe_b64decode(padded).decode())
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+
+def _page_bounds(page_size: int | None, page_token: str | None, total: int) -> tuple[int, int]:
+    """Resolves a request's paging parameters into (start, size).
+
+    CONSISTENCY, stated because the precedent states it: this is their
+    "default" pagination behaviour, which "returns the latest results"
+    and "may lead to duplicate entries or missing items as data changes
+    between page requests". Their opt-in "snapshot" mode, which
+    captures the result set before paging begins, is not implemented --
+    see the roadmap (consumed). Tokens are short-lived and intended for
+    immediate
+    sequential use.
+
+    An oversized page_size is clamped rather than rejected, matching
+    the precedent: "Requests for more than the maximum page size will be
+    reduced to the maximum."
+    """
+    size = DEFAULT_PAGE_SIZE if page_size is None else max(1, min(page_size, MAX_PAGE_SIZE))
+    start = 0
+    if page_token:
+        decoded = _decode_page_token(page_token)
+        if decoded is not None:
+            start = decoded
+    if start < 0 or start >= total:
+        start = 0
+    return start, size
+
+
+def _sorted_by_field(mediator, user_record, object_type: str, object_ids: list,
+                      order_by: str) -> list:
+    """Orders ids by a field value, `field` or `field:desc`.
+
+    The precedent's own orderBy syntax, simplified to ONE field: theirs
+    accepts a comma-separated list, and multi-field ordering is a real
+    but separate piece of work rather than something to half-build
+    here.
+
+    An unknown or ungranted field leaves the order untouched rather
+    than raising. get_field() already returns None for anything the
+    caller cannot read, so an ungranted sort column would otherwise
+    order everything by None -- silently scrambling results while
+    looking successful. Falling back to the stable id order is both
+    honest and more useful.
+    """
+    field_name, _, direction = order_by.partition(":")
+    descending = direction.strip().lower() == "desc"
+
+    visible = mediator.visible_schema(user_record).get(object_type) or {}
+    field_def = (visible.get("fields") or {}).get(field_name)
+    # A DISCOVER-ONLY FIELD IS IN THE VISIBLE SCHEMA, marked unreadable.
+    # Sorting by it ordered every row by None -- the id order anyway --
+    # after a get_field per matching row, each one a DENIED read in the
+    # access log: a sort request that looked like hundreds of attempts
+    # to read a field the caller is not cleared for.
+    if field_def is None or field_def.get("readable") is False:
+        return object_ids
+
+    values = {
+        object_id: mediator.get_field(user_record, object_type, object_id, field_name)
+        for object_id in object_ids
+    }
+    # Secondary sort on the id itself, so rows sharing a value keep a
+    # deterministic order across pages rather than drifting.
+    return sorted(
+        object_ids,
+        key=lambda object_id: (sort_key(values[object_id]), id_sort_key(object_id)),
+        reverse=descending,
+    )
+
+
+def _track_records(request: Request, object_type: str) -> dict:
+    """R60's track records for a type, or nothing when none were kept.
+    Read without creating the store: a deployment that never resolved a
+    disagreement has no file, and asking should not make one."""
+    from elysium.core.mirror.source_record import SourceRecordStore
+
+    path = request.app.state.runtime_paths.data_dir / "source_record.db"
+    if not path.exists():
+        return {}
+    return SourceRecordStore(path).track_records(object_type)
+
+
+def _vote_evidence(request: Request, object_type: str, object_id: str):
+    """R60's vote for one object, the type's agreement rates and its
+    copying pairs -- or nothing, without creating the store."""
+    from elysium.core.mirror.source_record import SourceRecordStore
+
+    path = request.app.state.runtime_paths.data_dir / "source_record.db"
+    if not path.exists():
+        return {}, {}, []
+    store = SourceRecordStore(path)
+    return (store.votes_for(object_type, object_id), store.vote_agreement(object_type),
+            [[row["source_a"], row["source_b"]] for row in store.copying(object_type)])
+
+
+def _merge_store(request: Request) -> MergeDecisionStore:
+    return MergeDecisionStore(
+        request.app.state.runtime_paths.data_dir / "identity_decisions.db")
+
+
+
+def _deployment_catalog(mediator):
+    """The Iceberg catalog this deployment reads, or None.
+
+    THREE ROUTES ASKED FOR THIS AND ALL THREE GOT None. Each looked for
+    a `_catalog` attribute on one of the mediator's adapters.
+    MirrorReadAdapter has one; GoldConnector does not, because it holds
+    its catalog inside the IcebergNamespaceReader it delegates to. And
+    GOLD-9 made reads gold-only -- `read_from_mirror` has been
+    always-true since, and deployment_loader REFUSES a config that asks
+    otherwise -- so `mediator.adapters` is `{"gold": GoldConnector}` on
+    every real deployment.
+
+    SO /provenance AND /published-history HAVE ANSWERED "NOTHING" SINCE
+    GOLD-9, and their tests did not notice because both guard their
+    assertions with `if body is not None`. Found while adding a third
+    route that copied the same lookup.
+
+    A PUBLIC `catalog` ON BOTH ADAPTERS, asked for here, rather than
+    this function reaching through `_reader._catalog`. Two private hops
+    from a route is how the next adapter to store its catalog elsewhere
+    breaks this again, silently and in three places at once.
+
+    None IS A REAL ANSWER: a deployment whose adapters hold no catalog
+    has published nothing to have lineage for, and every caller treats
+    that as an absent answer rather than a fault.
+    """
+    return next(
+        (adapter.catalog for adapter in mediator.adapters.values()
+         if getattr(adapter, "catalog", None) is not None),
+        None,
+    )
+
+
+def _readable_fields(request: Request, user: UserRecord, object_type: str) -> set[str]:
+    """Which fields of this type THIS caller may read.
+
+    Taken from visible_schema rather than from the policy directly,
+    because that is already "what can this user see" computed once and
+    correctly -- including the mandatory-access half, which a grant
+    check alone would miss.
+
+    IT RETURNED THE EMPTY SET, ALWAYS, AND HAD SINCE IT WAS WRITTEN.
+    `visible_schema` returns `{object_type: {...}}` -- it is built only
+    as `visible[object_type] = {...}` and the string "object_types"
+    appears nowhere in it -- so the extra `.get("object_types", {})`
+    here found nothing, every time, for every caller. Every other call
+    site in this file reaches the type directly; this one did not.
+
+    WHAT THAT COST IS NOT AN EMPTY LIST. Its one caller fetches
+    `readable & set(agreement)` fields, so BOTH rows came back `{}`,
+    and `masked_review._verdict` checks presence before agreement --
+    so a merge reviewer was told "one side missing" about every field
+    of every proposal, including fields both records hold, while the
+    true agree/differ verdict sat unread in `agreement`. A fabricated
+    claim about the data, shown to the person being asked to judge it,
+    with `withheld` listing every field so the masking looked as
+    though it were working.
+
+    Found by the R52 sweep for imputation -- looking for a value
+    substituted for a missing one, which is what this is, one level up.
+    """
+    schema = _generation(request).mediator.visible_schema(user)
+    type_def = (schema or {}).get(object_type) or {}
+    return {
+        name for name, field in (type_def.get("fields") or {}).items()
+        if field.get("readable", True)
+    }
+
+
+@router.get("/example-questions", response_model=list[str],
+            dependencies=[Depends(_no_store)])
+def example_questions_route(request: Request,
+                            current_user: UserRecord = Depends(get_current_user)):
+    """Questions this deployment chooses to show in an empty query box.
+
+    WHY THE SCREEN NEEDED THIS. A first-time user met a text field and
+    nothing else: no indication of what the ontology accepts, what a
+    question may ask for, or that refusals are a normal answer. The
+    file was already loaded and validated on every start and then
+    thrown away.
+
+    ONLY THOSE MARKED `display: true`, and the distinction is a
+    security one rather than editorial. An example without the flag
+    belongs to the demo runner, executes as a named user with MAC
+    applied, and may name a real object -- which is a query. The same
+    text rendered as placeholder text to anybody who opens the screen
+    would be a disclosure, so core/display_safety.py refuses a
+    displayable example naming an identifier-shaped token, and refuses
+    it at LOAD rather than at render.
+
+    NOT FILTERED PER CALLER. These name no objects by construction, so
+    there is nothing in them to withhold -- and a user whose grants
+    would refuse the question still learns the SHAPE of what can be
+    asked, which is what an empty box fails to teach.
+    """
+    return list(_generation(request).display_examples)
+
+
+@router.get("/merge-proposals", response_model=list[MergeProposalResponse],
+            response_model_exclude_none=True,
+            dependencies=[Depends(_no_store)])
+def merge_proposals_route(request: Request, object_type: str | None = None,
+                          decision: str | None = None,
+                          current_user: UserRecord = Depends(get_current_user)):
+    """Proposed merges, masked to what the caller may read.
+
+    WHY THIS ROUTE EXISTS AT ALL. core/mirror/matching.py proposes that
+    two entities might be one, core/identity_decisions.py stores what
+    was decided, and core/masked_review.py shows a reviewer the verdict
+    without the value. All three were built, tested, and reached by
+    nothing -- 580 lines of finished feature with no way to use it.
+
+    THE MASKING IS NOT COSMETIC. "A reviewer may not be cleared to see
+    the fields that decide the match": the person best placed to judge
+    whether two customers are the same may not be permitted to read the
+    email address that settles it. Every field carries a verdict; only
+    readable fields carry values, and the rest are ABSENT from the
+    response rather than nulled.
+
+    APPROVING A MERGE IS NOT A READ. It requires `write:<Type>`, the
+    same grant any other change to that type needs, because an approved
+    inference "becomes STORED DATA, not edited config" -- it changes
+    what the ontology returns. Seeing the queue needs only read access
+    to the type, so a clerical reviewer can work without being able to
+    rewrite the data they are judging.
+    """
+    generation = _generation(request)
+    roles = generation.config.roles
+    mediator = generation.mediator
+    store = _merge_store(request)
+
+    out = []
+    calibrations: dict[str, Any] = {}
+    for proposal in store.proposals(object_type=object_type, decision=decision):
+        if not authorize(current_user, roles, f"read:{proposal.object_type}"):
+            continue
+        sides = _proposal_sides(request, current_user, proposal)
+        if sides is None:
+            continue
+        left_entity, right_entity = sides
+        readable = _readable_fields(request, current_user, proposal.object_type)
+        try:
+            agreement = json.loads(proposal.agreement or "{}")
+        except (TypeError, ValueError):
+            agreement = {}
+        if not isinstance(agreement, dict):
+            agreement = {}
+        # ONLY THE READABLE FIELDS ARE FETCHED. `masked_comparison`
+        # already withholds by absence, so the RESPONSE is identical
+        # either way -- this is defence in depth, not the mechanism: a
+        # value never retrieved cannot leak through an exception, a
+        # trace, or a future caller that forgets to mask.
+        #
+        # I CLAIMED MORE THAN THIS AND IT WAS NOT TRUE. The comment here
+        # said the audit log would then record no access to a field the
+        # caller may not read. A control removed the intersection and
+        # every test still passed; a test written specifically to catch
+        # it also passed, because the mediator does not name a refused
+        # field in the log either way. The narrower claim is the one
+        # that survives.
+        wanted = sorted(readable & set(agreement))
+        left = mediator.get_object(current_user, proposal.object_type,
+                                   left_entity, wanted) or {}
+        right = mediator.get_object(current_user, proposal.object_type,
+                                    right_entity, wanted) or {}
+        entries = masked_comparison(agreement, left, right, readable)
+        out.append(MergeProposalResponse(
+            proposal_id=proposal.proposal_id,
+            object_type=proposal.object_type,
+            left_id=proposal.left_id,
+            right_id=proposal.right_id,
+            proposed_at=proposal.proposed_at,
+            decision=proposal.decision,
+            decided_by=getattr(proposal, "decided_by", None),
+            pattern=agreement_pattern(entries),
+            fields=[MergeFieldResponse(**entry) for entry in entries],
+            withheld=withheld_fields(entries),
+            **_preselection(generation.config.schema, store, proposal, calibrations),
+            provenance=_provenance_of(proposal),
+            **_group_fields(request, current_user, store, proposal),
+        ))
+    return out
+
+
+def _group_fields(request: Request, user: UserRecord, store, proposal) -> dict:
+    """`group` and `group_hidden` for a waiting proposal that would join
+    more than its own pair (R58), or nothing.
+
+    NAMED ONLY WHERE READABLE. A record in the chain may be in a
+    compartment this reviewer cannot see; its name would say it exists.
+    It is counted instead, so the reviewer still knows the group is
+    bigger than what they were shown.
+    """
+    from elysium.core.identity_decisions import PENDING
+    from elysium.core.mirror.identity import entity_id_of
+
+    if proposal.decision != PENDING:
+        return {}
+    group = store.group_if_approved(proposal)
+    if len(group) <= 2:
+        return {}
+    generation = _generation(request)
+    type_def = (generation.config.schema or {}).get(proposal.object_type) or {}
+    shown = [name for name in group
+             if name in (proposal.left_id, proposal.right_id)
+             or _may_read_object(generation.mediator, user, proposal.object_type,
+                                 entity_id_of(type_def, name))]
+    return {"group": shown, "group_hidden": len(group) - len(shown)}
+
+
+def _proposal_sides(request: Request, user: UserRecord, proposal) -> "tuple[str, str] | None":
+    """The two entities a proposal is about, or None if this caller may
+    not see it.
+
+    FOUND 14 OCT BY A CHECKLIST SWEEP (R61), two faults in one place:
+
+    THE NAMES. A proposal names rows as the matcher does --
+    `primary:cust_001` -- and they were handed to get_object as if they
+    were entity ids, so every readable field read "one side missing".
+    core/mirror/identity.entity_id_of turns them into what is served.
+
+    MAC. Only RBAC (`read:<Type>`) was checked, so a reviewer in one
+    region was shown a proposal pairing a record they can see with one
+    they cannot -- its id, and whether its email agreed with the
+    visible record's. That is a fact about an object MAC hides.
+
+    THE RULE: a waiting or rejected proposal needs BOTH sides readable.
+    An approved one needs either: once merged, the absorbed side's name
+    no longer exists, and D2 refuses any merge across security values,
+    so the surviving entity is readable exactly when the absorbed one
+    was. Absent and unreadable are answered alike, as everywhere.
+    """
+    from elysium.core.identity_decisions import APPROVED
+    from elysium.core.mirror.identity import entity_id_of
+
+    generation = _generation(request)
+    type_def = (generation.config.schema or {}).get(proposal.object_type) or {}
+    left = entity_id_of(type_def, proposal.left_id)
+    right = entity_id_of(type_def, proposal.right_id)
+    readable = [_may_read_object(generation.mediator, user, proposal.object_type, side)
+                for side in (left, right)]
+    visible = any(readable) if proposal.decision == APPROVED else all(readable)
+    return (left, right) if visible else None
+
+
+def _provenance_of(proposal) -> "dict | None":
+    """What produced a proposal (R62), or None for one from before it was
+    recorded. A row that does not parse is None too: an explanation that
+    cannot be read is not one."""
+    try:
+        found = json.loads(getattr(proposal, "provenance", "") or "null")
+    except (TypeError, ValueError):
+        return None
+    return found if isinstance(found, dict) and found else None
+
+
+def _preselection(schema: dict, store, proposal, calibrations: dict) -> dict:
+    """`high_confidence`, `preselected_by` and `calibration` for one
+    proposal (WIRED-3, R57). Nothing when the type declares no inference
+    or declares it badly -- a malformed block is the loader's to report,
+    not this listing's to fail on.
+
+    ABOVE `auto_propose_above`: pre-selected by the declaration, as
+    before. BELOW IT, only when the type is calibrated and BH selected
+    it; core/mirror/match_calibration.py has the method and its limits.
+
+    CALIBRATED OVER EVERY PROPOSAL OF THE TYPE, not the ones this
+    reviewer may read: the guarantee is about the matcher's scores, and
+    a reference set filtered per viewer would give each viewer a
+    different, smaller, weaker one. What reaches the viewer is a tick on
+    a pair they can already see and a status with no counts. Computed
+    once per type per listing (`calibrations`), not per proposal.
+    """
+    from elysium.core.identity_decisions import PENDING
+    from elysium.core.mirror.match_calibration import CALIBRATED, calibrate
+    from elysium.core.mirror.matching import SplinkMatcher, settings_for
+
+    type_def = (schema or {}).get(proposal.object_type) or {}
+    try:
+        settings = settings_for(type_def)
+    except ValueError:
+        return {}
+    if settings is None:
+        return {}
+    if proposal.object_type not in calibrations:
+        calibrations[proposal.object_type] = calibrate(
+            store.proposals(object_type=proposal.object_type),
+            SplinkMatcher().provenance(type_def), settings.false_merge_rate)
+    calibration = calibrations[proposal.object_type]
+    by = None
+    if proposal.decision == PENDING:
+        if float(proposal.score) >= settings.auto_propose_above:
+            by = "declared"
+        elif calibration.status == CALIBRATED and proposal.proposal_id in calibration.selected:
+            by = "calibrated"
+    return {
+        "high_confidence": by is not None,
+        "preselected_by": by,
+        "calibration": {"status": calibration.status,
+                        "false_merge_rate": calibration.false_merge_rate},
+    }
+
+
+@router.post("/merge-proposals/{proposal_id}/decide", status_code=204)
+def decide_merge_route(proposal_id: str, body: MergeDecisionRequest,
+                       request: Request,
+                       current_user: UserRecord = Depends(get_current_user)):
+    """Approve or reject one proposed merge.
+
+    THE DECISION IS RECORDED, NEVER APPLIED HERE. The store keeps
+    decisions as rows and `approved_pairs` is what the gold build
+    consults; nothing in this path edits an object. A reviewer saying
+    "yes" is evidence for the next build, not a write to a silo.
+    """
+    if body.decision not in (APPROVED, REJECTED):
+        raise HTTPException(
+            status_code=422,
+            detail=f"decision must be {APPROVED!r} or {REJECTED!r}")
+
+    store = _merge_store(request)
+    found = [p for p in store.proposals() if p.proposal_id == proposal_id]
+    if not found:
+        raise HTTPException(status_code=404, detail="Unknown proposal")
+    proposal = found[0]
+    # A PROPOSAL THIS CALLER MAY NOT SEE IS ONE THEY MAY NOT DECIDE, and
+    # is answered as if it did not exist (R61, 14 Oct).
+    if _proposal_sides(request, current_user, proposal) is None:
+        raise HTTPException(status_code=404, detail="Unknown proposal")
+
+    roles = _generation(request).config.roles
+    if not authorize(current_user, roles, f"write:{proposal.object_type}"):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Deciding a {proposal.object_type} merge needs "
+                   f"write:{proposal.object_type}")
+
+    # A CHAIN IS APPROVED ONLY AS A GROUP SOMEBODY SAW (R58). The
+    # closure is recomputed here, at the moment of approval, so a stale
+    # screen -- or the bulk approval, which never shows a group -- cannot
+    # approve one that grew while nobody was looking.
+    if body.decision == APPROVED:
+        shown = _group_fields(request, current_user, store, proposal)
+        if shown and (sorted(body.confirm_group or []) != shown["group"]):
+            raise HTTPException(status_code=409, detail={
+                "message": (f"Approving this makes {len(shown['group']) + shown['group_hidden']} "
+                            f"records one {proposal.object_type}, not two. Review the group "
+                            f"and approve it as a group."),
+                **shown,
+            })
+
+    store.decide(proposal_id, body.decision, current_user.user_id, body.note)
+
+
+@router.get("/objects/{object_type}/matching-ids",
+         response_model=MatchingIdsResponse, response_model_exclude_none=True)
+def matching_ids_route(object_type: str, request: Request, q: str = "",
+                        conditions: str | None = None,
+                        frozen_set: str | None = None,
+                        current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Every id the current filter matches, for "select all matching".
+
+    WHY IDS AND NOT A FILTER PASSED ONWARD. The precedent's approvals model
+    settles this: "a task is an individual change in the precedent. All tasks
+    associated with a request must be approved for the request to be
+    invoked." What a reviewer approves is a set of SPECIFIC CHANGES,
+    never a rule to be resolved later. Their bulk action types take an
+    object reference list for the same reason.
+
+    So the filter is resolved HERE, at the moment of selection, and
+    what travels onward is the list it produced. A filter that outlived
+    the selection would mean a reviewer approving a count that could
+    change before they looked -- overnight, twenty more rows match, and
+    an approval of 500 quietly becomes 520.
+
+    CAPPED AT THE SAME CEILING THE WRITE MEDIATOR ENFORCES, and refused
+    rather than truncated. Returning the first 1000 of 1500 would hand
+    back a selection that silently omits a third of what was asked for,
+    and nothing downstream could tell.
+
+    MAC APPLIES AS IT DOES EVERYWHERE: this returns what the CALLER can
+    see, so two users selecting "all matching" get different sets from
+    the same filter, which is correct.
+    """
+    mediator = _generation(request).mediator
+    try:
+        parsed = parse_filters(json.loads(conditions)) if conditions else None
+    except (json.JSONDecodeError, TypeError) as e:
+        raise HTTPException(status_code=400, detail="conditions must be a JSON list") from e
+    except FilterError as e:
+        # A MALFORMED CONDITION IS THE CALLER'S MISTAKE, AND SAYS WHICH.
+        # Uncaught, it surfaced as a 500 -- found when Browse's "select
+        # all matching" sent its chart filters in the wrong shape and
+        # got "Request failed (500)" for any filter at all.
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    # "SELECT ALL MATCHING" WITHIN A FROZEN SET selects within it, which
+    # is what bulk action over a frozen set needs.
+    narrowed = _frozen_set_condition(request, current_user, object_type, frozen_set)
+    if narrowed:
+        parsed = (parsed or []) + narrowed
+
+    try:
+        matching_ids = mediator.search_object_free_text(
+            current_user, object_type, q, conditions=parsed,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    # THE DEPLOYMENT'S BULK LIMIT, not the ceiling: a selection exists
+    # to be acted on, and one larger than an action may name is one the
+    # person cannot use.
+    limit = _generation(request).config.bulk_action_limit
+    if len(matching_ids) > limit:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{len(matching_ids)} objects match, and at most {limit} "
+                f"can be selected at once. Narrow the filter."
+            ),
+        )
+
+    return {"object_ids": [str(object_id) for object_id in matching_ids]}
+
+
+@router.post("/objects/{object_type}/export")
+def export_objects_route(object_type: str, body: ObjectSetQueryRequest, request: Request,
+                          q: str = "",
+                          current_user: UserRecord = Depends(get_current_user)):
+    """The set on screen, as a CSV.
+
+    DEV_UI.md section 5 item 1 lists "exported" among what makes a set
+    a real thing, and section 3 records what the prior art's object
+    explorer does: "search, filter, work with the resulting set, and
+    export it. Needs no pre-configuration."
+
+    A POST, THOUGH IT READS NOTHING. Two reasons, and neither is
+    ceremony. A set's conditions can be long -- `in` with two hundred
+    values is an ordinary facet selection -- and a GET would put that
+    in a URL with no stated length limit. And CSRF exempts safe
+    methods, so a GET export is one `<a download>` away from being
+    triggered cross-site; the response is not READABLE cross-origin,
+    but a file landing in somebody's downloads folder because they
+    visited a page is a thing worth not doing.
+
+    CAPPED AND REFUSED, NEVER TRUNCATED, at the same ceiling
+    /matching-ids uses. A file that silently held the first 1000 of
+    1500 rows is worse than no file: a spreadsheet gives no sign it is
+    short, and every total computed from it would be wrong in a way
+    nobody could see. The refusal names the real count.
+
+    ONLY COLUMNS THE CALLER MAY READ. A field they may discover but
+    not read is OMITTED rather than blanked -- DEV_UI.md 9.7 wants
+    "'Not permitted', 'restricted' and a real NULL" to look like three
+    different things, and a CSV has exactly one empty cell for all
+    three. Dropping the column is the one honest option left: the
+    reader can see the column is not there, where a column of blanks
+    would read as "nobody has an email address".
+
+    MAC APPLIES AS IT DOES EVERYWHERE, so two people exporting the
+    same set get different files, which is correct.
+
+    AUDITED BY THE PATH IT USES rather than by anything here. Every id
+    goes through `search_object_free_text` and every field through
+    `get_object`, both of which write their own access records, so an
+    export leaves the same trail as reading the same rows on screen --
+    which is what it is.
+    """
+    mediator = _generation(request).mediator
+    visible = mediator.visible_schema(current_user)
+    if object_type not in (visible or {}):
+        # THE SAME ANSWER AS A TYPE THAT DOES NOT EXIST. Saying "you
+        # may not export that" would confirm it does.
+        raise HTTPException(status_code=404, detail=f"No object type {object_type!r}")
+
+    try:
+        matching_ids = mediator.search_object_free_text(
+            current_user, object_type, q,
+            conditions=_set_conditions(request, current_user, object_type, body),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    if len(matching_ids) > MAX_BULK_OBJECTS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{len(matching_ids)} objects match, and at most {MAX_BULK_OBJECTS} "
+                f"can be exported at once. Narrow the filter."
+            ),
+        )
+
+    type_def = visible[object_type]
+    # THE ID FIRST, because a row without one cannot be matched back to
+    # anything -- and it is what a person pastes into a filter when
+    # they come back to ask about one row.
+    id_field = type_def.get("id_field")
+    readable = [
+        name for name, field in (type_def.get("fields") or {}).items()
+        if field.get("readable") and field.get("type") == "data"
+    ]
+    columns = ([id_field] if id_field else []) + [
+        name for name in readable if name != id_field
+    ]
+
+    rows = []
+    request_context = RequestContext.new()
+    for object_id in matching_ids:
+        fields = mediator.get_object(
+            current_user, object_type, object_id,
+            [name for name in columns if name != id_field],
+            context=request_context,
+        )
+        row = dict(fields or {})
+        if id_field:
+            row[id_field] = object_id
+        rows.append(row)
+
+    from datetime import UTC, datetime
+
+    when = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    return Response(
+        content=to_csv(columns, rows),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition":
+                f'attachment; filename="{filename_for(object_type, when)}"',
+            # THE SAME NO-STORE THE REST OF THE READ SURFACE CARRIES.
+            # A set is a live thing and a cached copy of one is a lie
+            # with a timestamp on it.
+            "Cache-Control": "no-store",
+        },
+    )
+
+def _declared_fields(mediator, object_type: str) -> dict:
+    """The ontology's field declarations for a type -- where a
+    decimal's `decimal_places` lives (PA001-G12)."""
+    return ((mediator.schema or {}).get(object_type) or {}).get("fields") or {}
+
+
+@router.get("/objects/{object_type}/search", response_model=SearchResponse)
+def search_objects_route(object_type: str, request: Request, q: str = "",
+                          page_size: int | None = None, page_token: str | None = None,
+                          order_by: str | None = None,
+                          # JSON-encoded conditions, because this is a
+                          # GET: the URL is what makes a result set
+                          # shareable and bookmarkable, and moving it to
+                          # a POST body to avoid encoding would cost
+                          # that.
+                          conditions: str | None = None,
+                          # A FROZEN SET, BY REFERENCE: a thousand ids
+                          # will not fit in this GET's query string, and
+                          # the set's id is what makes a frozen set's URL
+                          # shareable with its owner's other tabs.
+                          frozen_set: str | None = None,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    # The human-facing browse/search endpoint -- DataMediator.search_
+    # object_free_text() underneath, a forgiving CONTAINS match across
+    # every field a real end user could plausibly recognize (name,
+    # email, ...), not the model's own exact-match search_object()
+    # step. No manage:users or other extra gate here, unlike /users/
+    # {username}/visible-schema above -- this operates on the CURRENT,
+    # logged-in user's own view, same pattern /query itself uses;
+    # search_object_free_text() and get_object() below already enforce
+    # every real RBAC/MAC decision internally, so there is nothing
+    # further for this route to check on top.
+    #
+    # Each result includes a real, useful SUMMARY (every field that
+    # actually participated in the search, via the SAME free_text_
+    # searchable_fields() DataMediator itself used -- never a second,
+    # independently-guessed set that could silently drift out of sync
+    # with what was actually searched), not just a bare id the UI would
+    # otherwise need a SEPARATE call per result to make sense of.
+    mediator = _generation(request).mediator
+    try:
+        parsed = parse_filters(json.loads(conditions)) if conditions else None
+    except (json.JSONDecodeError, TypeError) as e:
+        raise HTTPException(status_code=400, detail="conditions must be a JSON list") from e
+    except FilterError as e:
+        # A MALFORMED CONDITION IS THE CALLER'S MISTAKE, AND SAYS WHICH.
+        # Uncaught, it surfaced as a 500 -- found when Browse's "select
+        # all matching" sent its chart filters in the wrong shape and
+        # got "Request failed (500)" for any filter at all.
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    narrowed = _frozen_set_condition(request, current_user, object_type, frozen_set)
+    if narrowed:
+        parsed = (parsed or []) + narrowed
+
+    # ONE CONTEXT FOR THE WHOLE REQUEST, created before the first read
+    # so the search and every per-object read that follows share an id.
+    # A search returning fifty objects writes fifty-one audit lines,
+    # and without this they were fifty-one unrelated facts.
+    request_context = RequestContext.new()
+    try:
+        # THE OUT-PARAMETER IS CREATED HERE because this is the
+        # caller that reports it. search_object_free_text returns a
+        # list of ids to many call sites; changing that shape to
+        # carry one boolean would touch every one for a fact most
+        # of them do not want.
+        search_outcome = SearchOutcome()
+        matching_ids = mediator.search_object_free_text(
+            current_user, object_type, q, conditions=parsed,
+            context=request_context, outcome=search_outcome,
+        )
+    except ValueError as e:
+        # A bad filter is the caller's mistake, not a server fault. The
+        # message is already uniform -- an unreadable field reads the
+        # same as an absent one -- so it is safe to pass through.
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    summary_fields = mediator.free_text_searchable_fields(current_user, object_type)
+
+    # SORTED BEFORE PAGING, always. Pagination is only correct if the
+    # order is stable: without it a row can silently appear on two
+    # pages or on none. The underlying SELECT has no ORDER BY, and
+    # while SQLite happens to return primary-key order today, that is
+    # an implementation detail -- verified directly, and not something
+    # paging should rest on.
+    matching_ids = sorted(matching_ids, key=id_sort_key)
+    if order_by:
+        matching_ids = _sorted_by_field(
+            mediator, current_user, object_type, matching_ids, order_by
+        )
+
+    start, size = _page_bounds(page_size, page_token, len(matching_ids))
+    page_ids = matching_ids[start:start + size]
+    next_start = start + size
+
+    # STRINGIFIED AT THE BOUNDARY, because every other endpoint already
+    # says an id is a string and this one did not.
+    #
+    # ObjectDetailResponse declares `id: str` and FastAPI coerces it;
+    # SearchResponse declares `results: list[dict[str, Any]]`, so the
+    # raw value passed straight through. The SAME OBJECT therefore had
+    # a string id on one endpoint and an integer on another.
+    #
+    # WHAT IT BROKE. "Select all N matching" returns ids from
+    # /matching-ids, which stringifies. The selection set then held "1"
+    # while each checkbox asked has(1) -- so the bar said 64 selected
+    # and not one row looked it, with nothing to untick.
+    #
+    # WHY NOBODY NOTICED: Customer ids are already strings, so every
+    # manual check on Customer agreed. Only integer-keyed types --
+    # Transaction here -- diverged.
+    results = [
+        {
+            "id": str(object_id),
+            "fields": exact_decimals(mediator.get_object(
+                current_user, object_type, object_id, summary_fields,
+                context=request_context,
+            ), _declared_fields(mediator, object_type)),
+        }
+        for object_id in page_ids
+    ]
+    return {
+        "results": results,
+        "total_matches": len(matching_ids),
+        "request_id": request_context.request_id,
+        "scan_truncated": search_outcome.scan_truncated,
+        # Absent, not empty, when there is no further page -- the precedent's
+        # own contract is that "the presence of the nextPageToken field
+        # indicates that there are more results."
+        "next_page_token": (_encode_page_token(next_start)
+                            if next_start < len(matching_ids) else None),
+    }
+
+
+class MeaningResponse(BaseModel):
+    """Rows ranked by meaning (R45): nearest first, each with the same
+    summary fields a search result carries. No scores -- a cosine has no
+    meaning a person could act on, and differs by model."""
+    #: False when this person cannot rank this type by meaning, or there
+    #: is nothing to rank yet; `reason` says which in words.
+    available: bool
+    #: Whether this person could ever rank this type by meaning: False
+    #: hides the feature; True with `available` False says why not now.
+    offered: bool = True
+    reason: str | None = None
+    results: list[dict[str, Any]] = []
+    #: The fields the ranking read -- what a result is best named by,
+    #: since it is why the result is near. Empty when not offered.
+    text_fields: list[str] = []
+
+
+def _meaning_response(request: Request, current_user: UserRecord, object_type: str,
+                      ranked, context) -> dict:
+    """A ranking (core/meaning_search.py) as the routes answer it: each
+    record with the same summary fields a search result carries."""
+    if not ranked.available:
+        return {"available": False, "offered": ranked.offered, "reason": ranked.reason,
+                "results": []}
+    mediator = _generation(request).mediator
+    summary_fields = mediator.free_text_searchable_fields(current_user, object_type)
+    return {"available": True, "text_fields": ranked.text_fields,
+            "results": [{"id": str(object_id),
+                         "fields": exact_decimals(mediator.get_object(
+                             current_user, object_type, object_id, summary_fields,
+                             context=context), _declared_fields(mediator, object_type))}
+                        for object_id in ranked.ids]}
+
+
+def _not_offered() -> dict:
+    from elysium.core.meaning_search import NOT_OFFERED
+
+    return {"available": False, "offered": False, "reason": NOT_OFFERED, "results": []}
+
+
+@router.get("/objects/{object_type}/related-in-meaning", response_model=MeaningResponse,
+            dependencies=[Depends(_no_store)])
+def related_in_meaning_route(object_type: str, request: Request, q: str = "", k: int = 10,
+                             current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Rows nearest in meaning to a search's text that its WORDS did not
+    match (R45) -- shown beside the word matches, never mixed into them,
+    because the word matches are the set every count, chart and trigger
+    shares (core/ontology/semantic_search.py)."""
+    if not q.strip():
+        return {"available": False, "reason": "Type something to search for.", "results": []}
+    generation = _generation(request)
+    if generation.meaning is None:
+        return _not_offered()
+    context = RequestContext.new()
+    mediator = generation.mediator
+    if not mediator.may_search_by_meaning(current_user, object_type):
+        return _not_offered()
+    word_matches = {str(found) for found in mediator.search_object_free_text(
+        current_user, object_type, q, context=context)}
+    ranked = generation.meaning.related(mediator, current_user, object_type, q, k,
+                                        context=context, exclude=word_matches)
+    return _meaning_response(request, current_user, object_type, ranked, context)
+
+
+@router.get("/objects/{object_type}/{object_id}/similar", response_model=MeaningResponse,
+            dependencies=[Depends(_no_store)])
+def similar_objects_route(object_type: str, object_id: str, request: Request, k: int = 5,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The rows nearest in meaning to this one (R45); no model call."""
+    generation = _generation(request)
+    if generation.meaning is None:
+        return _not_offered()
+    context = RequestContext.new()
+    ranked = generation.meaning.similar(generation.mediator, current_user, object_type,
+                                        object_id, k, context=context)
+    return _meaning_response(request, current_user, object_type, ranked, context)
+
+
+@router.get("/objects/{object_type}/{object_id}", response_model=ObjectDetailResponse)
+def get_object_detail_route(object_type: str, object_id: str, request: Request,
+                             current_user: UserRecord = Depends(get_current_user)) -> dict:
+    # The Object View backend -- every field the CALLER can see for one
+    # specific object, not just the free-text-searchable summary subset
+    # above. Deliberately thin: visible_schema() already computes
+    # "every field this user is granted," and get_object() already
+    # fetches any given field list in one call (including LINK fields
+    # -- get_field() already resolves those to the linked id(s), one
+    # id for cardinality "one", a list for "many"). No new DataMediator
+    # method needed at all; this endpoint is pure composition of two
+    # things that already existed for other reasons.
+    #
+    # SECURITY: object_id is never trusted for anything beyond
+    # constructing the get_object() call itself -- every real
+    # authorization decision (RBAC per field, MAC per object) happens
+    # INSIDE get_object() -> get_field() -> check_access(), exactly
+    # once per field, the SAME mechanism every other read path in this
+    # project already uses. A caller pointed at an object outside
+    # their own MAC boundary, or a field they lack a grant for, gets
+    # None back for it -- never a different code path, never a
+    # shortcut around the real check.
+    #
+    # An UNKNOWN object_type, and a real object_type with a NONEXISTENT
+    # or MAC-denied object_id, both resolve to the SAME shape: every
+    # field null. Deliberate, not an oversight -- matches get_field()'s
+    # own "unknown and denied look identical" security property (see
+    # that method's own docstring), now extended to the whole object,
+    # not just a single field. A real, considered trade-off, decided
+    # explicitly with the user: knowing whether a SPECIFIC id exists,
+    # even within a type the caller can otherwise see, is itself a
+    # real enumeration primitive worth denying, not merely a REST-
+    # idiom nicety to relax for a cleaner 404. NEVER "fix" this to a
+    # 404 without re-reading this reasoning first.
+    mediator = _generation(request).mediator
+    visible = mediator.visible_schema(current_user)
+    type_def = visible.get(object_type)
+    if type_def is None:
+        # NO request_id HERE, deliberately: this returns before any
+        # read happens, so there is no trace to ask for. An id
+        # promising an empty trace is worse than no id.
+        return {"id": object_id, "fields": {}}
+
+    field_names = list(type_def["fields"].keys())
+    # ONE CONTEXT PER REQUEST, so every access decision made while
+    # serving it carries the same id. RequestContext and the audit
+    # field both already existed -- only the Query route created one,
+    # so twelve object-reading call sites wrote UNTRACKED audit lines
+    # and "what did this request touch" was unanswerable for all of
+    # them.
+    request_context = RequestContext.new()
+    fields = mediator.get_object(
+        current_user, object_type, object_id, field_names,
+        context=request_context,
+    )
+    # ONLY FIELDS THE CALLER WAS GIVEN A VALUE FOR. A field withheld, or
+    # an object outside their compartment (every field None), is never
+    # described -- "an approved write touched this" would otherwise say
+    # something about an object the read did not show.
+    overlaid = mediator.overlaid_fields(
+        object_type, object_id,
+        [name for name, value in fields.items() if value is not None])
+    return {"id": object_id,
+            "fields": exact_decimals(fields, _declared_fields(mediator, object_type)),
+            "overlaid": overlaid, "request_id": request_context.request_id}
+
+
+class ProposeActionRequest(BaseModel):
+    parameters: dict = {}
+
+
+@router.get("/me/visible-action-types", dependencies=[Depends(_no_store)],
+            response_model=dict[str, VisibleActionTypeResponse], response_model_exclude_none=True)
+def my_visible_action_types_route(request: Request, current_user: UserRecord = Depends(get_current_user)) -> dict:
+    # Self-service counterpart to GET /me/visible-schema above, same
+    # pattern -- the browse/search UI needs to know which object TYPES
+    # exist before a person can pick one; Stage 3's direct action
+    # invocation (POST /actions/{action_type_name} below) needs to
+    # know which ACTIONS exist, and what parameters each one declares,
+    # before a person can be shown a button or a form for one at all.
+    # WriteMediator.visible_action_types() already existed for the
+    # model-facing prompt (core/llm/agent_step_prompt.py).
+    #
+    # EXPLICIT INCLUSION, not `{**action_def, ...}` -- a real, second
+    # fix, alongside GET /me/visible-schema's own (see mediator.py's
+    # own AI-notes for the first): a spread-then-override here would
+    # have leaked `sub_writes` (each mutation's own literal "set
+    # property X to parameter.Y" mechanical logic -- including things
+    # like CreateCustomer silently auto-populating the MAC field from
+    # user.security_value) out to any browser, unfiltered, over HTTP.
+    # Confirmed directly, not assumed, that nothing real needs this
+    # HERE: `affected_object_types` already, independently covers the
+    # only legitimate "what does this action touch" need (a real,
+    # separate, top-level key, never derived from sub_writes at all);
+    # ActionForm.tsx, the real, only frontend consumer of this
+    # response, never references sub_writes anywhere (confirmed by a
+    # direct grep, not assumed); and the model's own real need for
+    # sub_writes (agent_step_prompt.py's own _describe_actions(), for
+    # object_type per sub-write) is entirely INTERNAL --
+    # agentic_loop.py calls WriteMediator.visible_action_types()
+    # directly, inside the same Python process, never through this
+    # HTTP route or across the network at all. Same reasoning `check
+    # in with the person before removing something with real,
+    # confirmed use elsewhere` already correctly held THIS key back
+    # from a same-commit fix as visible_schema()'s own -- resolved
+    # once actually confirmed here, not assumed either way.
+    #
+    # "executable" is added HERE, at this HTTP layer, deliberately NOT
+    # inside visible_action_types() itself -- that method's own return
+    # shape is shared with the model-facing prompt path and has real,
+    # existing tests asserting exact dict equality against the raw
+    # action_type definition; this flag is a UI-only concern (which
+    # actions can grow a real button, not just appear in a catalog),
+    # with no reason to touch that shared, already-correct method or
+    # its own callers/tests at all.
+    #
+    # For a role WITHOUT discover:action_types, every entry it sees is
+    # already execute:-filtered (visible_action_types()'s own existing
+    # behavior), so "executable" is always true there -- correct,
+    # if redundant, information. Only meaningfully varies once
+    # discover:action_types is held (see that grant's own docstring on
+    # visible_action_types() for the full reasoning): a role can see
+    # an action's shape without being able to invoke it, and the UI
+    # needs to know which is which to decide whether to offer a
+    # button at all (see ObjectDetailPanel.jsx's own comment).
+    write_mediator: WriteMediator = _generation(request).write_mediator
+    roles = _generation(request).config.roles
+    visible = write_mediator.visible_action_types(current_user)
+    return {
+        action_name: {
+            "affected_object_types": action_def["affected_object_types"],
+            "parameters": action_def["parameters"],
+            "executable": authorize(current_user, roles, f"execute:{action_name}"),
+            # WHETHER A TRIGGER MAY PROPOSE IT. Exposed so the Watch
+            # dialog offers only actions the server will accept, rather
+            # than offering one and showing a refusal afterwards.
+            # Absent means true -- the validator's own default.
+            "automatable": action_def.get("automatable") is not False,
+            # Said in the Watch dialog BEFORE an automation is made: one
+            # that needs a second person every time it fires is worth
+            # knowing about while choosing it.
+            "automation_needs_another_approver": automation_needs_another_approver(action_def),
+            # HOW MANY OBJECTS ONE PROPOSAL MAY NAME, on a bulk action
+            # only -- one with an object_reference_list parameter. The
+            # deployment's limit (decided 14 Oct), sent so the selection
+            # bar can say "over the limit" before anyone fills in a form.
+            "max_objects": write_mediator.bulk_limit if any(
+                (spec or {}).get("type") == "object_reference_list"
+                for spec in (action_def["parameters"] or {}).values()) else None,
+        }
+        for action_name, action_def in visible.items()
+    }
+
+
+@router.post("/actions/{action_type_name}")
+def propose_action_route(action_type_name: str, body: ProposeActionRequest, request: Request,
+                          current_user: UserRecord = Depends(get_current_user)) -> JSONResponse:
+    # Stage 3's real backend: direct, UI-driven action invocation, NOT
+    # routed through the LLM at all. WriteMediator.propose_action()
+    # already takes explicit, caller-supplied parameters -- it has
+    # ZERO dependency on the agent loop or a model's own reasoning;
+    # core/agent/agentic_loop.py's own propose_action step is just ONE
+    # caller of this same method, not a prerequisite for it. Every
+    # real authorization decision (RBAC via execute:, MAC per object,
+    # submission_criteria) is enforced INSIDE propose_action() itself,
+    # identically for both callers -- this route adds no security
+    # logic of its own, and must never be tempted to.
+    #
+    # Returns the EXACT SAME "pending_write" response shape /query
+    # already returns for a proposed write -- deliberately, so the
+    # EXISTING PendingWriteCard.jsx component (built for the /query
+    # path) can be reused completely unchanged for this one too. Two
+    # phases, same as every other write path in this project: this
+    # only PROPOSES: nothing is applied until a separate, later POST
+    # /writes/{id}/confirm call, same real confirmation gate a model-
+    # initiated write already goes through.
+    #
+    # ERROR HANDLING -- decided explicitly with the user, a real,
+    # deliberate DEPARTURE from the precedent's own documented default
+    # (verified directly, not assumed: the precedent's real docs state
+    # action type metadata -- title, description, rules -- is visible
+    # to every user with Ontology access by default, whether or not
+    # they can actually execute it, and their real API returns
+    # standard, differentiated HTTP status codes with specific
+    # messages for permission failures). Elysium's OWN, already-
+    # established posture is more conservative by DEFAULT -- unknown/
+    # denied already look identical for objects and fields throughout
+    # this project (see get_object_detail_route's own docstring) --
+    # and this route extends that SAME posture to actions too, for
+    # every role EXCEPT one holding discover:action_types (see
+    # visible_action_types()'s own docstring for that grant's full
+    # reasoning): such a role already sees the WHOLE action catalog
+    # via GET /me/visible-action-types, so "unknown vs denied" is not
+    # a new leak for them specifically -- the real reason this
+    # generic-by-default design exists doesn't apply once someone
+    # already has that visibility. For that role only, the real
+    # exception message is surfaced, and PermissionError gets its own,
+    # differentiated 403 (matching standard HTTP semantics and
+    # the precedent's own real API, both safe to do ONLY because this
+    # specific role isn't the audience the generic default protects).
+    # Every OTHER role keeps the fully generic, undifferentiated
+    # response exactly as before.
+    write_mediator: WriteMediator = _generation(request).write_mediator
+    try:
+        # origin="human": this route IS the person-filled form. The
+        # agent reaches propose_action() through AgentLoop instead,
+        # and passes "agent" there.
+        pending_write = write_mediator.propose_action(
+            current_user, action_type_name, body.parameters, origin="human",
+        )
+    except (ValueError, TypeError, PermissionError) as e:
+        logger.warning(f"propose_action_route: {action_type_name!r} rejected for {current_user.user_id!r}: {e}")
+        roles = _generation(request).config.roles
+        if authorize(current_user, roles, "discover:action_types"):
+            status_code = 403 if isinstance(e, PermissionError) else 400
+            raise HTTPException(status_code=status_code, detail=str(e)) from e
+        raise HTTPException(
+            status_code=400,
+            detail="That action could not be proposed. Check the action name and parameters, "
+                   "and that you're authorized to perform it.",
+        ) from e
+
+    write_id = request.app.state.pending_writes.store(pending_write)
+    return JSONResponse(
+        status_code=202,
+        content={
+            "pending_write": {
+                "id": write_id,
+                "action_type_name": pending_write.action_type_name,
+                "description": pending_write.description,
+                "sub_writes": [
+                    {
+                        "object_type": sw.object_type, "object_id": sw.object_id,
+                        "changes": sw.changes, "expected_current_values": sw.expected_current_values,
+                    }
+                    for sw in pending_write.sub_writes
+                ],
+            }
+        },
+    )
+
+
+@router.post("/query")
+async def query(body: QueryRequest, request: Request,
+                 current_user: UserRecord = Depends(get_current_user)):
+    # Checked BEFORE any real, expensive work below -- reject a caller
+    # already over their own limit before the agent loop, or the real
+    # LLM itself, ever spends any real work on this specific request.
+    # NOT recorded as a new query here (see query_rate_limiter.py's own
+    # docstring) -- a rejected request never actually ran one. Two
+    # real, separate instances now, not one -- see core/auth/
+    # query_rate_limiter.py's own module docstring (Reader/Writer,
+    # extending core/internal_storage.py's own hierarchy); the check
+    # genuinely only ever needs to read, the increment genuinely only
+    # ever needs to write, and neither needs the other's capability.
+    # ATOMIC, not check-then-act (001's F-05, fixed by the security
+    # agent and inert until this line changed -- they may not edit
+    # this file).
+    #
+    # The sequence was the defect, not either method: another caller
+    # checks between the check and the increment, sees the same count,
+    # and is let through. MEASURED by them at 19 of 20, two callers
+    # both admitted. try_record_query does both in one transaction.
+    if not request.app.state.query_rate_limiter.try_record_query(
+            current_user.user_id):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many queries -- please wait before asking again.",
+        )
+
+    # SHOWN AS IT HAPPENS, WHEN ASKED (19 October): a client accepting
+    # NDJSON gets each step as it is done, then one last line with the
+    # status and body this route would otherwise have answered with.
+    # Every other client -- the bench, a script, an older UI -- is
+    # answered exactly as before.
+    if "application/x-ndjson" in request.headers.get("accept", ""):
+        return _streamed_query(body, request, current_user)
+    return await _answer_query(body, request, current_user)
+
+
+class _QueryProgress:
+    """What a person waiting on a question is shown, as it happens.
+
+    "10 seconds is about the limit for keeping the user's attention
+    focused on the dialogue"; past it, people "should be given feedback
+    indicating when the computer expects to be done" (Nielsen, Response
+    Times: The 3 Important Limits). A question here takes minutes on a
+    CPU, and the page said nothing until the end.
+
+    NOTHING THE ANSWER WOULD NOT CARRY: each update is the read-back --
+    the sentences the answer ends with, from what synthesis is given,
+    refusals stripped (core/agent/answer_context.py) -- recomputed over
+    what has been gathered so far. And NOT UNDER AN AUTHORITY NO LONGER
+    HELD: before each update the asker is looked up again, as the loop
+    does between hops; if they have changed, nothing is sent, and the
+    loop stops at its next hop as it always has.
+
+    The answer itself is NOT streamed (the owner, 19 October): it is
+    checked after it is written -- citations, emails, numbers -- and
+    thrown away whole if a check fails, so it is shown whole, checked.
+    """
+
+    def __init__(self, event_loop, queue):
+        self._event_loop = event_loop
+        self._queue = queue
+        self._last: list[str] = []
+        self._still_them: Callable[[], bool] | None = None
+        self._schema: dict = {}
+        self._cancels: list[threading.Event] = []
+        self._left = False
+
+    def bind(self, still_them, schema: dict) -> None:
+        self._still_them = still_them
+        self._schema = schema
+
+    def watch(self, cancel: threading.Event) -> None:
+        """A cancel event of the question's own: set if the person leaves,
+        so it ends the way a question always has when they do -- stopped
+        between hops or mid-call (AL-11), and audited as cancelled."""
+        self._cancels.append(cancel)
+        if self._left:
+            cancel.set()
+
+    def left(self) -> None:
+        self._left = True
+        for cancel in self._cancels:
+            cancel.set()
+
+    def _send(self, event: dict) -> None:
+        self._event_loop.call_soon_threadsafe(self._queue.put_nowait, event)
+
+    def _lines(self, gathered: list[dict]) -> list[str]:
+        from elysium.core.agent.answer_context import read_back
+
+        return read_back(AgentLoop.filter_real_data(gathered), self._schema)
+
+    def steps(self, gathered: list[dict]) -> None:
+        """From the loop's thread, between hops."""
+        if self._still_them is None or not self._still_them():
+            return
+        lines = self._lines(gathered)
+        if lines != self._last:
+            self._last = lines
+            self._send({"type": "steps", "lines": lines})
+
+    def answering(self, real_data: list[dict]) -> None:
+        if self._still_them is None or not self._still_them():
+            return
+        from elysium.core.agent.answer_context import read_back
+
+        self._send({"type": "answering", "lines": read_back(real_data, self._schema)})
+
+
+#: What a person is told when the model cannot be reached, by the plain
+#: route (api/app.py's handler) and the streamed one alike.
+MODEL_UNAVAILABLE_DETAIL = ("The assistant cannot reach its model right now. Try again shortly, "
+                            "or ask an administrator to check it.")
+
+
+def _streamed_query(body: QueryRequest, request: Request, current_user: UserRecord):
+    """The query, as NDJSON: progress lines, then {"type": "done",
+    "status", "body"} -- the status and body the plain route returns.
+    NDJSON because Ollama streams the same way, and a POST cannot be read
+    by an EventSource. The stream's own status is 200; the question's is
+    in its last line."""
+    from elysium.core.llm.interface import LLMUnavailable
+
+    queue: asyncio.Queue = asyncio.Queue()
+    progress = _QueryProgress(asyncio.get_running_loop(), queue)
+
+    async def outcome() -> dict:
+        try:
+            answered = await _answer_query(body, request, current_user, progress)
+        except HTTPException as e:
+            return {"type": "done", "status": e.status_code, "body": {"detail": e.detail}}
+        except LLMUnavailable as e:
+            # THE STREAM'S 200 IS ALREADY SENT, so app.py's handler for
+            # this (a 503) cannot run: the exception escaped the task,
+            # was raised again inside the generator, and the person was
+            # told "Could not reach the server" -- found in a browser
+            # with no model running -- while the server logged a
+            # traceback. It is the question's own status in the last
+            # line, as for every other outcome. THE KIND, NOT THE
+            # MESSAGE: it names the model's host and port.
+            logger.warning("model unavailable during /query: %s", e)
+            return {"type": "done", "status": 503, "body": {"detail": MODEL_UNAVAILABLE_DETAIL}}
+        except Exception:
+            # Anything else, for the same reason: after the first byte
+            # there is no 500 to send, only a last line to write.
+            logger.exception("streamed /query failed")
+            return {"type": "done", "status": 500, "body": {"detail": "Internal Server Error"}}
+        if isinstance(answered, Response):
+            return {"type": "done", "status": answered.status_code,
+                    "body": json.loads(bytes(answered.body))}
+        return {"type": "done", "status": 200, "body": jsonable_encoder(answered)}
+
+    async def lines():
+        task = asyncio.create_task(outcome())
+        waiting: asyncio.Task | None = None
+        try:
+            while True:
+                waiting = asyncio.create_task(queue.get())
+                done, _ = await asyncio.wait({task, waiting}, return_when=asyncio.FIRST_COMPLETED)
+                if waiting in done:
+                    yield json.dumps(waiting.result()) + "\n"
+                    continue
+                waiting.cancel()
+                while not queue.empty():
+                    yield json.dumps(queue.get_nowait()) + "\n"
+                yield json.dumps(task.result(), default=str) + "\n"
+                return
+        finally:
+            # THE PERSON LEFT (Stop, or the tab closed). The question is
+            # NOT cancelled from outside: its own cancel events are set,
+            # so it stops as it always has when someone leaves -- between
+            # hops or mid-call (AL-11) -- and its audit entry is written.
+            # Found in a browser: cancelling the task instead stopped the
+            # run and skipped the `query_cancelled` entry.
+            if waiting is not None and not waiting.done():
+                waiting.cancel()
+            if not task.done():
+                progress.left()
+                task.add_done_callback(lambda finished: finished.cancelled() or finished.exception())
+
+    return StreamingResponse(lines(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-store"})
+
+
+async def _answer_query(body: QueryRequest, request: Request, current_user: UserRecord,
+                        progress: "_QueryProgress | None" = None):
+    # THE QUESTION AS THE AGENT RECEIVES IT: the asker's words, then --
+    # when asked from Browse -- the set on screen in words, validated
+    # against what this asker may see. Used everywhere below, so the
+    # audit, a paused question and the answer all see what was asked.
+    question = body.query
+    if body.about is not None:
+        from elysium.core.agent.set_context import SetContextError, describe_set, question_about
+
+        try:
+            sentence = describe_set(
+                _generation(request).mediator.visible_schema(current_user, for_agent=True),
+                body.about.object_type, body.about.conditions, body.about.text)
+        except SetContextError as e:
+            raise HTTPException(status_code=400,
+                                detail=f"That set cannot be asked about: {e}") from e
+        question = question_about(body.query, sentence)
+
+    loop: AgentLoop = _generation(request).loop
+    synthesis_client = _generation(request).synthesis_client
+    executor = request.app.state.executor
+    event_loop = asyncio.get_running_loop()
+
+    cancel_event = threading.Event()
+    if progress is not None:
+        progress.watch(cancel_event)
+    watcher_task = asyncio.create_task(_watch_for_disconnect(request, cancel_event))
+    try:
+        # ONE context per query, created here and threaded down. Every
+        # access decision the agent makes while serving this request
+        # carries the id, which is what lets a user be shown what was
+        # read on their behalf.
+        #
+        # Created at the ROUTE rather than inside the loop: the request
+        # is the unit of work, and the loop is one thing that happens
+        # during it.
+        # E-11: a deadline for the gathering, and a tally of tokens.
+        request_context = RequestContext.new(
+            deadline_seconds=_generation(request).config.query_deadline_seconds,
+        )
+        # refresh_user lets the loop notice a changed or revoked
+        # authority BETWEEN HOPS rather than only at the end. The
+        # post-query re-verification below still runs and still
+        # matters -- it catches a change during the final hop -- but on
+        # this deployment a query can run for minutes, and discovering
+        # a revocation only after all of it has executed is a long way
+        # from "takes effect".
+        #
+        # Returns None when the account is gone or disabled, which the
+        # loop treats the same as a change.
+        user_directory = request.app.state.user_directory
+
+        def refresh_user():
+            if user_directory.is_user_disabled(current_user.user_id):
+                return None
+            return user_directory.get_user_record(current_user.user_id)
+
+        if progress is not None:
+            progress.bind(lambda: refresh_user() == current_user,
+                          _generation(request).mediator.visible_schema(current_user, for_agent=True))
+        result = await event_loop.run_in_executor(
+            executor,
+            functools.partial(
+                loop.run, current_user, question, cancel_event, request_context,
+                refresh_user=refresh_user,
+                progress=progress.steps if progress is not None else None,
+            ),
+        )
+    finally:
+        cancel_event.set()
+        watcher_task.cancel()
+
+    if result.cancelled:
+        _generation(request).mediator.audit_log.log_query_cancelled(
+            current_user.user_id, question, len(result.gathered)
+        )
+        raise HTTPException(status_code=499, detail="Client disconnected")
+
+    if result.authority_changed:
+        # The loop stopped because the acting user's authority moved
+        # underneath it. Same 409 as the post-query check below, and
+        # deliberately the same message: from the caller's side these
+        # are one situation, differing only in how early it was
+        # noticed.
+        _generation(request).mediator.audit_log.log_query_cancelled(
+            current_user.user_id, question, len(result.gathered)
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="Your permissions changed while this request was processing -- please try again",
+        )
+
+    # THE re-verification -- see module docstring. Applies before
+    # EITHER branch below.
+    #
+    # DISABLED IS CHECKED SEPARATELY, because a record comparison
+    # cannot see it. get_user_record() returns the same UserRecord
+    # whether or not the account is disabled -- verified directly, not
+    # assumed -- so a user disabled mid-request with unchanged MAC and
+    # role compares EQUAL here and the answer is served.
+    #
+    # The per-hop refresh_user() above already checks is_user_disabled,
+    # so the exposure was narrow: disabled after the last hop but
+    # before synthesis finished. Narrow is not none, and the asymmetry
+    # was the tell -- two checks of the same thing disagreeing about
+    # what "still authorized" means.
+    user_directory = request.app.state.user_directory
+    current_record_now = user_directory.get_user_record(current_user.user_id)
+    if user_directory.is_user_disabled(current_user.user_id) or current_record_now != current_user:
+        raise HTTPException(
+            status_code=409,
+            detail="Your permissions changed while this request was processing -- please try again",
+        )
+
+    if result.pending_write is not None:
+        write_id = request.app.state.pending_writes.store(result.pending_write)
+        # KEPT SO IT CAN BE FINISHED (WIRED-2): when the write is decided,
+        # the question resumes and its answer goes to the asker. Best
+        # effort -- a question that cannot be kept still gets its 202.
+        try:
+            _paused_queries(request.app).save(
+                write_id, current_user.user_id, question, result.gathered,
+                result.hops_used, result.fabricated_finishes)
+        except Exception:  # noqa: BLE001 - the proposal itself must still be returned
+            logger.warning("could not keep the paused question for %s", write_id, exc_info=True)
+        # ALWAYS a list of sub_writes now, one entry or many -- matches
+        # confirm_and_execute()'s own object_ids response shape (see
+        # its own docstring: uniform representation, not a shape that
+        # changes based on how much happened). object_type included on
+        # each entry too -- the old flat "changes" dict never named
+        # which object it belonged to at all, meaningless once a
+        # response can describe more than one. expected_current_values
+        # included too -- lets the UI show a real "old -> new"
+        # transition per field, not just the new value in isolation;
+        # empty for a "create" sub_write (nothing existed to have an
+        # old value), which the UI treats as "nothing to show a
+        # transition from," not an error. action_type_name (a real,
+        # already-existing PendingWrite field, e.g. "TransferFunds")
+        # included as a clean, separate label -- the UI shows this as
+        # the primary identifier, not description, which is a full,
+        # technical audit string (raw parameter dict syntax) never
+        # designed as user-facing copy. ui/src/components/
+        # PendingWriteCard.jsx updated to match -- a real, polished
+        # multi-object confirmation UI, no longer deferred now that
+        # TransferFunds exists as a real multi-object action to design
+        # it against (see this file's own AI-notes at the bottom).
+        return JSONResponse(
+            status_code=202,
+            content={
+                # Also on the pending-write path: a proposed write is
+                # the outcome of reads, and "what did it look at before
+                # proposing this" is exactly the question a reviewer
+                # has.
+                "request_id": request_context.request_id,
+                "pending_write": {
+                    "id": write_id,
+                    "action_type_name": result.pending_write.action_type_name,
+                    "description": result.pending_write.description,
+                    "sub_writes": [
+                        {
+                            "object_type": sw.object_type, "object_id": sw.object_id,
+                            "changes": sw.changes, "expected_current_values": sw.expected_current_values,
+                        }
+                        for sw in result.pending_write.sub_writes
+                    ],
+                }
+            },
+        )
+
+    real_data = AgentLoop.filter_real_data(result.gathered)
+    if progress is not None:
+        progress.answering(real_data)
+    # SYNTHESIS IS WATCHED TOO (AL-11). It is a model call like any
+    # other, often the longest, and the loop's event was set on the way
+    # out of the loop -- so it gets its own, and its own watcher.
+    synthesis_cancel = threading.Event()
+    if progress is not None:
+        progress.watch(synthesis_cancel)
+    synthesis_watcher = asyncio.create_task(_watch_for_disconnect(request, synthesis_cancel))
+    try:
+        insight = await event_loop.run_in_executor(
+            executor,
+            functools.partial(
+                synthesize_insight, synthesis_client, question, real_data,
+                # EVERY EARLY STOP, not three of them (LB-3): repeating
+                # itself, invalid steps, blocked by rules and an
+                # unrecognised step ended as complete-sounding answers
+                # while the result knew better. The result decides; the
+                # route asks.
+                result.possibly_incomplete,
+                usage=request_context.token_usage,
+                cancel=synthesis_cancel,
+                inferred=_inferred_fields(request),
+                brief=loop.features.brief_answers,
+            ),
+        )
+    finally:
+        disconnected = synthesis_cancel.is_set()
+        synthesis_cancel.set()
+        synthesis_watcher.cancel()
+    if disconnected:
+        _generation(request).mediator.audit_log.log_query_cancelled(
+            current_user.user_id, question, len(result.gathered)
+        )
+        raise HTTPException(status_code=499, detail="Client disconnected")
+    usage = request_context.token_usage
+    if usage is not None:
+        # E-11: the counts providers sent back, no longer dropped.
+        logger.info("query %s used %d model calls: %d input and %d output tokens reported, "
+                    "%d calls unreported", request_context.request_id, usage.calls,
+                    usage.input_tokens, usage.output_tokens, usage.unreported)
+        # WHERE THE SECONDS WENT, per part of the question (19 October):
+        # what to make smaller -- the steps or the answer, the reading or
+        # the writing -- is a different fix each time.
+        logger.info("query %s time: %s", request_context.request_id, usage.describe())
+    # BUILT FROM real_data, what synthesis was given, and named from the
+    # agent's own schema: nothing here the answer itself could not say.
+    from elysium.core.agent.answer_context import doors, follow_ons, read_back
+
+    agent_schema = _generation(request).mediator.visible_schema(current_user, for_agent=True)
+    return QueryResponse(
+        answer=insight, request_id=request_context.request_id,
+        read_back=read_back(real_data, agent_schema),
+        doors=doors(real_data, agent_schema),
+        # THE ASKER'S OWN WORDS, not `question`: a follow-on is put back
+        # in their box, and the set sentence Browse appends is not theirs.
+        follow_ons=follow_ons(body.query, real_data, agent_schema),
+    )
+
+
+class HelpRequest(BaseModel):
+    question: str
+    #: Which screen the person is on, as the rail names it, if known.
+    screen: str | None = None
+
+
+class HelpResponse(BaseModel):
+    answer: str
+
+
+@router.post("/help", response_model=HelpResponse)
+async def help_route(body: HelpRequest, request: Request,
+                     current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """The help assistant: how to use Elysium, for THIS caller.
+
+    Everything the model is told is already the caller's -- the screens
+    the rail shows them, their visible schema without a single value,
+    their own grants. core/agent/help_assistant.py says why that is the
+    whole security design. One call to the synthesis model, in the
+    request pool, under the deployment's query deadline.
+    """
+    import time
+
+    from elysium.core.agent.help_assistant import answer, build_context
+    from elysium.core.llm.interface import LLMUnavailable
+
+    generation = _generation(request)
+    roles = generation.config.roles
+    screens = visible_apps_for(current_user, roles, generation.config.modules)
+    visible = await asyncio.to_thread(generation.mediator.visible_schema, current_user)
+    grants = (roles.get(current_user.role_name) or {}).get("allowed_actions") or ()
+    screen = body.screen if body.screen in {app["name"] for app in screens} else None
+    context = build_context(screens, visible, grants, screen)
+    deadline = time.monotonic() + generation.config.query_deadline_seconds
+    try:
+        reply = await asyncio.get_running_loop().run_in_executor(
+            request.app.state.executor,
+            functools.partial(answer, generation.synthesis_client, body.question, context,
+                              deadline=deadline))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except LLMUnavailable as e:
+        # THE KIND, NOT THE MESSAGE. The adapter's message names the
+        # model's host and port -- connection details /config withholds
+        # from every caller. Found in a browser, where the first version
+        # showed "http://localhost:11434" to an ordinary user. Logged in
+        # full for the operator.
+        logger.warning("help assistant: model unavailable: %s", e)
+        raise HTTPException(
+            status_code=503,
+            detail="The help assistant cannot reach its model right now. Try again later, "
+                   "or ask an administrator.") from e
+    return {"answer": reply}
+
+
+#: A sub-write's operation, as core/change_hints.py's vocabulary says it.
+_CHANGE_VERB = {"create": "created", "update": "updated", "delete": "deleted"}
+
+
+@router.get("/events")
+async def change_events_route(request: Request,
+                              current_user: UserRecord = Depends(get_current_user)):
+    """Live updates: a stream of "a <Type> was <verb>", and nothing more.
+
+    See api/live_updates.py. EACH HINT IS FILTERED BY THIS CALLER'S OWN
+    visible schema, computed here at connect; the stream then ends after
+    a few minutes and the browser reconnects through this same
+    authentication, so a revoked grant stops the hints within that.
+    """
+    from fastapi.responses import StreamingResponse
+
+    from elysium.api.live_updates import event_stream
+
+    mediator = _generation(request).mediator
+    visible = await asyncio.to_thread(mediator.visible_schema, current_user)
+    return StreamingResponse(
+        event_stream(request.app.state.change_bus, visible, request.is_disconnected,
+                     user_id=current_user.user_id),
+        media_type="text/event-stream",
+        # NO CACHING AND NO BUFFERING: a proxy that buffers an event
+        # stream delivers every hint at once, when the stream ends.
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/writes/{write_id}/confirm", response_model=ConfirmWriteResponse)
+async def confirm_write_route(write_id: str, body: ConfirmWriteRequest, request: Request,
+                               current_user: UserRecord = Depends(get_current_user)) -> dict:
+    store: PendingWriteStore = request.app.state.pending_writes
+    def may_confirm(candidate) -> bool:
+        # THE GRANT, not ownership. Whoever may EXECUTE an action may
+        # decide on a proposal of it -- which is what makes an approvals
+        # flow possible at all: owner-equality meant the only person who
+        # could confirm a write was the one person a four-eyes rule
+        # forbids.
+        #
+        # This is a real widening for a deployment that declares no
+        # criteria: previously only the proposer could confirm, now any
+        # holder of the grant can. That is the intended model rather
+        # than a side effect, and the OPPOSITE policy is now
+        # expressible where it was previously hardcoded -- a criterion
+        # of `check: user, field: user_id, operator: equals, value:
+        # proposer.user_id` restores owner-only confirmation for a
+        # deployment that wants it.
+        #
+        # MAC and the criteria are NOT checked here. Both are evaluated
+        # inside confirm_and_execute() against the objects actually
+        # touched, which is where they can see what they are deciding
+        # about; duplicating them here would be a second, weaker copy.
+        return authorize(
+            current_user, _generation(request).config.roles,
+            f"execute:{candidate.action_type_name}",
+        )
+
+    # RESERVED, NOT CLAIMED, and the difference is a lost write.
+    # claim() removed the proposal and handed it back, and the decision
+    # could then fail -- a four-eyes rule refusing a self-approval, or
+    # a field the ontology no longer declares. The write was already
+    # gone, so the colleague entitled to approve it never got the
+    # chance and nothing told them it had existed.
+    #
+    # The reservation is released by the context manager on ANY
+    # exception, which is exactly the set of cases where the decision
+    # did not happen.
+    with store.reserved(write_id, may_confirm) as pending:
+        return await _decide_reserved_write(
+            request, write_id, pending, body.approved, current_user,
+        )
+
+
+def _proposer_as_they_are_now(request: Request, user_id: str) -> UserRecord | None:
+    """The proposer's CURRENT record, or None if the account is gone or
+    disabled (NEW-3). The pending write holds a snapshot taken at
+    proposal; the authority a write runs on is the proposer's today."""
+    directory = request.app.state.user_directory
+    if not directory.user_exists(user_id) or directory.is_user_disabled(user_id):
+        return None
+    return directory.get_user_record(user_id)
+
+
+def _held_while_rebuilding(request: Request, pending) -> "str | None":
+    """Why this write must wait, or None (retype slice R4).
+
+    THE STATE IS THE MIRROR PANEL'S (_mirror_states), not a second opinion.
+    FAILS CLOSED: if the states cannot be worked out at all, every type the
+    write touches reads as unavailable and the write is held, never guessed
+    live."""
+    touched = {sub.object_type for sub in pending.sub_writes}
+    try:
+        mirror_dir = request.app.state.runtime_paths.data_dir / "mirror"
+        mirror_dir.mkdir(parents=True, exist_ok=True)
+        states = _mirror_states(request, _generation(request),
+                                SyncAttempts(mirror_dir / "sync_attempts.db"))
+        by_type = {each["object_type"]: each["state"] for each in states.object_states}
+    except Exception as e:  # noqa: BLE001 - "cannot tell" holds the write
+        logger.warning("could not tell whether a type is rebuilding: %s", type(e).__name__)
+        by_type = dict.fromkeys(touched, UNAVAILABLE)
+    return hold_reason(by_type, touched)
+
+
+async def _decide_reserved_write(request: Request, write_id: str, pending, approved: bool,
+                                 current_user: UserRecord):
+    if pending is None:
+        # Uniform denial -- wrong user, unknown ID, and expired ID all
+        # look identical. See module docstring.
+        raise HTTPException(status_code=404, detail="Unknown or expired pending write")
+
+    if approved:
+        # HELD BEFORE ANY DECISION IS RECORDED (R4): a 409 releases the
+        # reservation, so the proposal stays in the queue and the same
+        # approval can be made once the rebuild is over. A rejection is
+        # not a write and is never held. Off the event loop: it reads the lake.
+        held = await asyncio.to_thread(_held_while_rebuilding, request, pending)
+        if held is not None:
+            raise HTTPException(status_code=409, detail=held)
+
+    write_mediator: WriteMediator = _generation(request).write_mediator
+    # Offloaded to the SAME executor /query uses -- no longer "a
+    # single, already-atomic SQL statement," which used to be why this
+    # ran synchronously on the request-handling thread. Once an update
+    # spans multiple storages (see core/ontology/write_log.py's own
+    # module docstring), this can now be a log INSERT, several
+    # sequential cross-file write_fields() calls under a lock, and a
+    # log UPDATE -- real, sequential I/O that could otherwise block
+    # the event loop for meaningfully longer than intended. Caught by
+    # directly tracing this call chain, not just reasoned about.
+    executor = request.app.state.executor
+    event_loop = asyncio.get_running_loop()
+    # THE APPROVER IS PASSED, which is what lets submission criteria be
+    # re-evaluated against the person deciding rather than the person
+    # who proposed. A four-eyes rule says nothing at propose time --
+    # there is no approver yet -- so evaluating only once is why it
+    # could not be enforced at all before.
+    #
+    # functools.partial rather than more positional arguments: the
+    # executor call already has four, and a fifth that silently lands
+    # in the wrong slot is the kind of mistake this file has made
+    # before.
+    # RECORD THE DECISION PER TASK, THEN ASK WHETHER THE REQUEST IS
+    # WHOLE.
+    #
+    # The precedent separates the two: approval is per task, invocation is
+    # not -- "all tasks associated with a request must be approved for
+    # the request to be invoked". A reviewer approves what they can and
+    # the request waits for the rest.
+    #
+    # ONLY THE TASKS THIS REVIEWER MAY DECIDE. The precedent scopes the
+    # action to what the reviewer is eligible for: "approve or reject
+    # all tasks in the request THAT YOU ARE ELIGIBLE TO REVIEW".
+    #
+    # What differs between tasks is the OBJECT. Every task shares the
+    # request's action type, so the execute: grant is the same for all
+    # of them; MAC is what separates them, and a reviewer in one
+    # security partition decides the tasks touching it and leaves the
+    # rest for someone who can see them.
+    store: PendingWriteStore = request.app.state.pending_writes
+    eligible = write_mediator.eligible_task_indexes(
+        pending, current_user, _generation(request).config.roles,
+    )
+    for task_index in sorted(eligible):
+        store.record_task_decision(write_id, task_index, current_user.user_id, approved)
+
+    if approved and not store.is_fully_approved(write_id):
+        # NOT AN ERROR, AND NOT A REFUSAL EITHER. The request is
+        # waiting for reviewers who have not decided yet, which is the
+        # normal state of a multi-reviewer request rather than a fault.
+        #
+        # REACHABLE NOW that eligibility exists. A reviewer who can see
+        # only part of a request approves their part and gets told the
+        # rest is still waiting, rather than a success that did not
+        # happen or an error that misdescribes an ordinary state.
+        undecided = len(pending.sub_writes) - sum(
+            1 for decision in store.task_decisions(write_id).values() if decision.approved
+        )
+        return {
+            "status": "awaiting_other_reviewers",
+            "write_id": write_id,
+            "tasks_outstanding": undecided,
+        }
+
+    try:
+        outcome = await event_loop.run_in_executor(
+            executor,
+            functools.partial(
+                write_mediator.confirm_and_execute, pending, approved,
+                approver=current_user,
+                proposer_now=_proposer_as_they_are_now(request, pending.user_id),
+            ),
+        )
+    except (SubmissionCriteriaViolation, ValueError) as e:
+        # A REFUSAL IS A 409, NOT A 500, and the message is the point.
+        # These are decisions the system made for a stated reason -- a
+        # four-eyes rule declining a self-approval, a field the
+        # ontology no longer declares -- and the reviewer needs the
+        # reason, not a generic failure.
+        #
+        # Raising HTTPException here also leaves the reservation
+        # released: the context manager releases on ANY exception, and
+        # an HTTPException is one. The write goes back in the queue for
+        # somebody who can approve it.
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+    if outcome is not None and outcome.get("status") == "written":
+        # LIVE UPDATES: each type this write touched, with its verb --
+        # never the ids, which is core/change_hints.py's whole rule.
+        # Every open screen whose caller may know the type exists is
+        # told to refetch through the routes that authorise.
+        bus = getattr(request.app.state, "change_bus", None)
+        if bus is not None:
+            for sub in pending.sub_writes:
+                bus.publish(sub.object_type, _CHANGE_VERB.get(sub.operation, "updated"))
+        # TRIGGERS, AS SOON AS THE CHANGE IS SAVED (16 October): the
+        # ones watching the types it wrote, in the background. The
+        # read-your-writes overlay serves this change at once; waiting
+        # for the next sync to notice it would be waiting for nothing.
+        checks = getattr(request.app.state, "trigger_checks", None)
+        if checks is not None:
+            checks.after_change({sub.object_type for sub in pending.sub_writes})
+
+    # THE ASKER'S QUESTION, FINISHED IN THE BACKGROUND (WIRED-2). Not
+    # awaited: the approver's request is about the write, and the agent
+    # may take minutes on this hardware. A refused write ends its
+    # question too, with a notice saying so.
+    future = event_loop.run_in_executor(
+        executor, functools.partial(_finish_paused_query, request.app, _generation(request),
+                                    write_id, pending, outcome))
+    future.add_done_callback(_log_background_failure)
+
+    return outcome if outcome is not None else {"status": "rejected"}
+
+
+def _paused_queries(app):
+    from elysium.core.paused_queries import PausedQueryStore
+
+    return PausedQueryStore(app.state.runtime_paths.data_dir / "paused_queries.db")
+
+
+def _log_background_failure(future) -> None:
+    if not future.cancelled() and future.exception() is not None:
+        logger.error("a paused question could not be finished", exc_info=future.exception())
+
+
+#: The notification kind an answered question arrives as.
+QUERY_ANSWER_KIND = "query_answer"
+
+
+def _finish_paused_query(app, generation, write_id: str, pending, outcome: "dict | None") -> None:
+    """Resumes the question that proposed this write, and tells the asker.
+
+    THE OWNER'S DECISION (WIRED-2 / AL-12, 14 Oct): after an approval the
+    agent finishes the question, and the answer goes to the ASKER as a
+    notification -- one row, theirs, like every notification here.
+
+    AS THE ASKER, RE-READ NOW. They are looked up in the user directory
+    before anything is read; gone or disabled ends it silently, and a
+    change of authority during the resume ends it with a notice
+    (AgentLoop.resume's rule). The approver's authority covers the
+    write, never the answer.
+
+    ANOTHER WRITE IS ANOTHER PAUSE: queued, kept, and the asker told.
+
+    THE DECIDING REQUEST'S GENERATION, passed in rather than read from
+    app.state: the answer is built under the configuration the approval
+    was made under, as every route's work is.
+    """
+    from elysium.core.agent.agentic_loop import AgentLoopResult
+    from elysium.core.erased_ids import ids_in_gathered
+    from elysium.core.notifications import NotificationStore
+
+    paused = _paused_queries(app).take(write_id)
+    if paused is None:
+        return
+    notes = NotificationStore(app.state.runtime_paths.data_dir / "notifications.db")
+    # WHAT EACH NOTICE BELOW WAS BUILT FROM, so an erasure can find it
+    # (R13): the question's reads and the write's targets.
+    subjects = [*ids_in_gathered(paused.gathered),
+                *((sub.object_type, sub.object_id) for sub in pending.sub_writes)]
+    asked = paused.query_text if len(paused.query_text) <= 120 else paused.query_text[:117] + "..."
+    if outcome is None or outcome.get("status") != "written":
+        notes.notify(paused.user_id, QUERY_ANSWER_KIND,
+                     f"The change your question proposed was declined: {asked}",
+                     detail=f"{pending.description}. Ask again if it is still wanted.",
+                     subjects=subjects)
+        return
+
+    directory = app.state.user_directory
+
+    def asker_now():
+        if not directory.user_exists(paused.user_id) or directory.is_user_disabled(paused.user_id):
+            return None
+        return directory.get_user_record(paused.user_id)
+
+    asker = asker_now()
+    if asker is None:
+        return
+    context = RequestContext.new(deadline_seconds=generation.config.query_deadline_seconds)
+    previous = AgentLoopResult(gathered=paused.gathered, pending_write=pending,
+                               hops_used=paused.hops_used,
+                               fabricated_finishes=paused.fabricated_finishes)
+    try:
+        result = generation.loop.resume(
+            previous, asker, paused.query_text,
+            {"status": "approved", "object_ids": outcome.get("object_ids")},
+            context=context, refresh_user=asker_now)
+    except Exception:  # noqa: BLE001 - the asker is told, the operator gets the trace
+        logger.exception("resuming the question behind write %s failed", write_id)
+        notes.notify(paused.user_id, QUERY_ANSWER_KIND,
+                     f"The change was made, but your question could not be finished: {asked}",
+                     detail="Ask it again to get the answer.", subjects=subjects)
+        return
+
+    if result.authority_changed:
+        notes.notify(paused.user_id, QUERY_ANSWER_KIND,
+                     f"The change was made, but your permissions changed before your question "
+                     f"was answered: {asked}", detail="Ask it again to get the answer.",
+                     subjects=subjects)
+        return
+    if result.pending_write is not None:
+        next_id = app.state.pending_writes.store(result.pending_write)
+        _paused_queries(app).save(next_id, paused.user_id, paused.query_text, result.gathered,
+                                  result.hops_used, result.fabricated_finishes)
+        notes.notify(paused.user_id, QUERY_ANSWER_KIND,
+                     f"Your question proposed another change, now awaiting approval: {asked}",
+                     detail=result.pending_write.description,
+                     subjects=[*subjects, *ids_in_gathered(result.gathered),
+                               *((sub.object_type, sub.object_id)
+                                 for sub in result.pending_write.sub_writes)])
+        return
+    # LB-3's rule for a resumed answer too: any early stop is told to
+    # synthesis, so a cut-short answer does not read as complete.
+    cut_short = result.possibly_incomplete
+    answer = synthesize_insight(generation.synthesis_client, paused.query_text,
+                                AgentLoop.filter_real_data(result.gathered),
+                                cut_short, usage=context.token_usage,
+                                inferred=_inferred_fields_for(app, generation),
+                                brief=generation.loop.features.brief_answers)
+    notes.notify(paused.user_id, QUERY_ANSWER_KIND, f"Answer to: {asked}", detail=answer,
+                 subjects=[*subjects, *ids_in_gathered(result.gathered)])
+
+# --- Object Set operations: the analytical half of the read surface.
+# The precedent's own object-set service serves "searching, filtering,
+# aggregating, and loading"; Elysium had the first two exposed over
+# HTTP and neither of the last, so count/aggregate/search-around were
+# reachable in DataMediator but not from any UI.
+#
+# POST rather than GET for all three, deliberately: each takes a
+# structured criteria object, and encoding nested JSON into query
+# parameters would be both uglier and length-limited. These are reads
+# with no side effects despite the verb -- the same trade every
+# search-with-a-body API makes.
+
+
+@router.post("/objects/{object_type}/count", response_model=CountResponse)
+def count_objects_route(object_type: str, body: TextSetQueryRequest, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    # The count is of objects THIS CALLER can see, never the raw row
+    # count -- two users legitimately get different answers, and a
+    # count ignoring MAC would leak the existence of rows outside the
+    # caller's boundary.
+    mediator = _generation(request).mediator
+    # AND WHETHER IT IS THE WHOLE COUNT. Without an outcome to write
+    # into, search_object records the ceiling only in a server log, so a
+    # short count arrived indistinguishable from a complete one -- a
+    # wrong number reported as a right one.
+    search_outcome = SearchOutcome()
+    try:
+        count = mediator.count_objects(
+            current_user, object_type, _set_conditions(request, current_user, object_type, body),
+            outcome=search_outcome, query_text=body.q)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"count": count, "scan_truncated": search_outcome.scan_truncated}
+
+
+def _aggregate_group(group: Any) -> Any:
+    """A group's value for the answer. Dates and instants are ISO 8601
+    (str() of a time puts a space where the T goes); everything else is
+    left as it is for the encoder, so a number stays a number."""
+    import datetime
+
+    if isinstance(group, datetime.date):
+        return group.isoformat()
+    return group
+
+
+@router.post("/objects/{object_type}/aggregate", response_model=AggregateResponse)
+def aggregate_objects_route(object_type: str, body: AggregateRequest, request: Request,
+                             current_user: UserRecord = Depends(get_current_user)) -> dict:
+    mediator = _generation(request).mediator
+    # SEE count_objects_route. A chart is the surface where a silently
+    # short number does the most damage, because a bar reads as a fact.
+    search_outcome = SearchOutcome()
+    try:
+        grouped = mediator.aggregate_measures(
+            current_user, object_type,
+            _set_conditions(request, current_user, object_type, body),
+            group_by=body.group_by,
+            measures=[{"name": m.name, "aggregate": m.aggregate, "field": m.field}
+                      for m in body.measures],
+            outcome=search_outcome, query_text=body.q, period=body.period,
+            duration=body.duration, time_zone=body.time_zone,
+        )
+    except ValueError as e:
+        # An unknown aggregate name or a missing field is a caller
+        # mistake, not a server fault.
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    return {"rows": [{"group": ({} if body.group_by is None
+                                else {body.group_by: _aggregate_group(group)}),
+                      "metrics": metrics}
+                     for group, metrics in grouped.items()],
+            "scan_truncated": search_outcome.scan_truncated}
+
+
+class ForecastRequest(TextSetQueryRequest):
+    """A count or a sum per period of a date field, and where it is heading
+    (R68). The same set definition as /aggregate."""
+
+    aggregate: str = "count"
+    field: str | None = None
+    group_by: str
+    period: str
+
+
+class ForecastResponse(BaseModel):
+    #: {period start: total} for every FINISHED period, gaps zero, carried
+    #: on to the last finished period before today.
+    history: dict[str, Any]
+    #: The period still running -- {start, value} -- shown, never fitted.
+    running: dict[str, Any] | None = None
+    #: [{start, value, low, high}]: the periods ahead, with the 80% band.
+    #: Empty when `refusal` says why there is no forecast.
+    points: list[dict[str, Any]] = []
+    #: Periods per season it learned, or None.
+    season: int | None = None
+    #: How it did when tested from past points in time: {origins,
+    #: horizon, typical_miss, naive_miss, share}.
+    backtest: dict[str, Any] = {}
+    refusal: str | None = None
+    scan_truncated: bool = False
+
+
+@router.post("/objects/{object_type}/forecast", response_model=ForecastResponse)
+def forecast_route(object_type: str, body: ForecastRequest, request: Request,
+                   current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """Where a total per period is heading (R68), worked out from the
+    caller's OWN totals -- what /aggregate gives them -- so it crosses no
+    compartment and needs no approval: nothing is stored or served as
+    data (the owner, 18 October). core/forecasts.py says how it is made
+    and tested; a forecast that does not beat the naive one comes back
+    as a refusal, with the history still there to draw."""
+    import datetime
+
+    from elysium.core.forecasts import cached_forecast, finished_series
+
+    if body.aggregate not in ("count", "sum"):
+        raise HTTPException(status_code=400, detail=(
+            "A forecast extends a count or a sum per period; an average, minimum or maximum "
+            "of an empty period is not zero, so its series has gaps."))
+    mediator = _generation(request).mediator
+    search_outcome = SearchOutcome()
+    try:
+        totals = mediator.aggregate_by_field(
+            current_user, object_type, _set_conditions(request, current_user, object_type, body),
+            group_by=body.group_by, aggregate=body.aggregate, field_name=body.field,
+            outcome=search_outcome, query_text=body.q, period=body.period)
+        series = finished_series(totals, body.period, datetime.datetime.now(datetime.UTC).date())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    answer: dict[str, Any] = {
+        "history": {start.isoformat(): value
+                    for start, value in zip(series.starts, series.values, strict=True)},
+        "running": None if series.running is None else {
+            "start": series.running[0].isoformat(), "value": series.running[1]},
+        "scan_truncated": search_outcome.scan_truncated,
+    }
+    if search_outcome.scan_truncated:
+        # A SHORT TOTAL IS NOT A TREND: counted from a cut-off set, every
+        # period is a floor, and a forecast of floors is a guess about
+        # where the cut fell.
+        return {**answer, "refusal": "Only part of the set was counted, so there is no "
+                "forecast; narrow the set to forecast all of it."}
+    starts, values = series.to_fit
+    made = cached_forecast(values, starts, body.period, body.aggregate == "count")
+    return {**answer, **made.as_dict()}
+
+
+@router.post("/objects/{object_type}/search-around", response_model=SearchAroundResponse)
+def search_around_route(object_type: str, body: SearchAroundRequest, request: Request,
+                         current_user: UserRecord = Depends(get_current_user)) -> dict:
+    # MAC applies on BOTH sides: the caller only traverses from objects
+    # they can see, and every returned id is authorized individually.
+    # An ungranted or non-link field yields an empty list rather than
+    # an error -- the same uniform denial every other read path uses,
+    # so a caller learns nothing about whether the field exists.
+    mediator = _generation(request).mediator
+    search_outcome = SearchOutcome()
+    ids = mediator.search_around(
+        current_user, object_type, _set_conditions(request, current_user, object_type, body),
+        body.link_field,
+        outcome=search_outcome,
+    )
+    return {
+        "ids": ids,
+        "total": len(ids),
+        "scan_truncated": search_outcome.scan_truncated,
+    }
+
+
+@router.get("/objects/{object_type}/{object_id}/link-counts",
+            response_model=LinkCountsResponse)
+def link_counts_route(object_type: str, object_id: str, request: Request,
+                       current_user: UserRecord = Depends(get_current_user)) -> dict:
+    """How many objects each link leads to, before following any.
+
+    COUNTS BEFORE EXPANSION is the whole design of the link explorer: a
+    person deciding whether to follow a link needs to know it leads to
+    four things or four thousand BEFORE they commit. Fan-out should
+    never be a surprise.
+
+    Every count is what THIS caller would actually receive -- MAC and
+    RBAC apply on the far side -- so it cannot disagree with the
+    expansion that follows, and cannot leak the size of data they are
+    not permitted to see.
+
+    A GET, because it is a question rather than a change, and a person
+    sharing a link explorer view should be able to share this too.
+    """
+    mediator = _generation(request).mediator
+    return {"links": mediator.link_counts(current_user, object_type, object_id)}
+
+@router.get("/objects/{object_type}/{object_id}/history", response_model=EditHistoryResponse)
+def object_history_route(object_type: str, object_id: str, request: Request,
+                          page_size: int | None = None, page_token: str | None = None,
+                          current_user: UserRecord = Depends(get_current_user)) -> dict:
+    # The precedent's Edit History widget, answering "what changed, by whom,
+    # and when?" over the write log this project already keeps.
+    #
+    # Authorization is the SAME check as reading the object, following
+    # the precedent directly: "Users who have access to the current state of
+    # an object can access the entire history of the object." A caller
+    # who cannot read it gets an empty list rather than an error --
+    # uniform denial, so the response never distinguishes "no history"
+    # from "not allowed" from "no such object".
+    #
+    # Paged with the same machinery as search, rather than a second
+    # scheme: an object with a long edit history is exactly what a
+    # timeline widget scrolls through.
+    mediator = _generation(request).mediator
+
+    # Bounds resolved against the COUNT, then only that page is read --
+    # rather than reading the whole history and slicing it in Python,
+    # which wasted exactly the work paging exists to avoid.
+    _empty, total = mediator.edit_history(current_user, object_type, object_id, limit=0)
+    start, size = _page_bounds(page_size, page_token, total)
+    page, _total = mediator.edit_history(
+        current_user, object_type, object_id, limit=size, offset=start
+    )
+    next_start = start + size
+    return {
+        "entries": page,
+        "total": total,
+        "next_page_token": (_encode_page_token(next_start)
+                            if next_start < total else None),
+    }
+
+@router.get("/health", response_model=HealthResponse)
+def health_route(request: Request) -> dict:
+    """Whether this service is up and its dependencies are reachable.
+
+    UNAUTHENTICATED, deliberately. A health check that requires a
+    session cannot be used by the thing that most needs it -- a load
+    balancer, a container orchestrator, or an engineer establishing
+    whether the process is even running. It therefore reports only
+    whether subsystems ANSWER, never what they contain: no counts, no
+    names, no configuration. "reachable" or "unreachable", nothing
+    more.
+
+    Returns 200 even when degraded, with the detail in the body. A
+    caller distinguishing "the service is down" from "the service is up
+    but its database is not" needs both answers to arrive, and a
+    non-200 collapses them into one.
+    """
+    checks: dict[str, str] = {}
+
+    # Through the PIN, not app.state -- which no longer has a mediator
+    # at all (step 2e). The getattr default this replaced was written
+    # to tolerate a not-yet-wired app, and after the attribute was
+    # deleted it silently returned None and reported "unconfigured" on
+    # a perfectly healthy deployment. A defensive default outliving the
+    # thing it defended against is worse than no default: it turns a
+    # missing dependency into a plausible-looking answer.
+    mediator = getattr(_generation(request), "mediator", None)
+    checks["ontology"] = "ready" if mediator is not None else "unconfigured"
+
+    # SILOS ARE REPORTED IN AGGREGATE, not by name. Each entry was
+    # previously keyed "silo:{silo_name}", so an UNAUTHENTICATED caller
+    # learned every data source's name and how many there were.
+    #
+    # The docstring already promised "no counts, names, paths or
+    # configuration", and the test enforcing it checked the VALUES and
+    # grepped for paths and passwords -- never the KEYS, which is where
+    # the names were.
+    #
+    # A silo name is deployment-chosen and usually descriptive:
+    # `risk_sql`, `hr_payroll`, `claims`. On an anonymous endpoint that
+    # is reconnaissance, saying what a deployment holds before anyone
+    # has logged in.
+    #
+    # One entry still answers what this endpoint is FOR. A connection
+    # indicator needs to know the deployment is degraded, not which
+    # part; anyone entitled to the detail has GET /silos, which is
+    # authenticated and already backs the Silos screen.
+    # THE SOURCES THEMSELVES (E-13). This checked the mediator's adapters,
+    # which with read_from_mirror on are the MIRROR's: a deleted source
+    # database still read "reachable". The mirror is reported beside
+    # them, since reads come from it -- a source down with the mirror up
+    # still serves its last synced contents, and the two differ.
+    #
+    # The reason is deliberately NOT reported. This endpoint is
+    # unauthenticated, and a connection error routinely carries a host, a
+    # path, or a username -- so only "reachable" or "unreachable".
+    generation = _generation(request)
+    silo_names = list(getattr(getattr(generation, "config", None), "silo_configs", {}) or {})
+    if silo_names:
+        down = source_failures(silo_names, live_source_adapters(request))
+        checks["silos"] = "unreachable" if down else "reachable"
+    if mediator is not None:
+        mirror_down = source_failures(mediator.adapters, mediator.adapters)
+        checks["mirror"] = "unreachable" if mirror_down else "reachable"
+        # HELD BACK IS NOT UNREACHABLE. A deployment whose rules are
+        # working is not degraded -- quarantine is the pipeline doing
+        # its job -- so this is its own key with its own vocabulary,
+        # and it does not make /health say "degraded".
+        #
+        # A FIXED WORD, not a count and not a table name: /health is
+        # unauthenticated, and the test that guards its keys exists
+        # because silo names once leaked through them.
+        try:
+            from elysium.core.mirror.quarantine_report import quarantine_summary
+            from elysium.core.mirror.sync_targets import resolve_sync_targets
+            held = quarantine_summary(
+                _mirror_catalog_for(request),
+                resolve_sync_targets({"object_types": generation.config.schema}),
+            )
+            checks["quarantine"] = "holding" if held["rows"] else "clear"
+        except Exception as e:  # noqa: BLE001 - health must not fail over a count
+            logger.warning(f"quarantine count unavailable for /health: {e!r}")
+            checks["quarantine"] = "unknown"
+
+    degraded = any(value == "unreachable" for value in checks.values())
+    return {"status": "degraded" if degraded else "ok", "checks": checks}
+

@@ -13,10 +13,10 @@ is REPLAYABLE, because bronze holds every `before`.
 import json
 import sqlite3
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.standardise import rules_for, standardise_explained
-from core.mirror.sync_targets import resolve_sync_targets
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.standardise import rules_for, standardise_explained
+from elysium.core.mirror.sync_targets import resolve_sync_targets
 
 SCHEMA = {"Person": {
     "id_field": "id", "storage": {"silo": "s", "table": "people", "id_column": "id"},
@@ -90,20 +90,20 @@ def test_nothing_cleaned_creates_nothing(tmp_path):
 
 
 def test_it_carries_the_labels_of_what_it_holds():
-    from core.mirror.classifications import classifications_by_table
+    from elysium.core.mirror.classifications import classifications_by_table
 
     labels = classifications_by_table(SCHEMA)["cleaning_s.people"]
     assert "pii" in labels["before"] and "pii" in labels["after"]
 
 
 def test_an_erased_person_s_cells_go_with_them():
-    from core.mirror.erasure import table_key_columns
+    from elysium.core.mirror.erasure import table_key_columns
 
     assert table_key_columns(SCHEMA, "cleaning_s.people") == {"object_id": {"Person"}}
 
 
 def test_a_silo_may_not_be_called_cleaning_something():
-    from core.deployment_loader import RESERVED_SILO_PREFIXES
+    from elysium.core.deployment_loader import RESERVED_SILO_PREFIXES
 
     assert "cleaning_" in RESERVED_SILO_PREFIXES
     assert json.dumps(RESERVED_SILO_PREFIXES)  # a tuple of strings, as the loader reads
@@ -152,7 +152,7 @@ def test_the_record_is_bounded_and_says_so(tmp_path, monkeypatch, caplog):
     the record would hold several times the rows' own memory."""
     import logging
 
-    import core.mirror.transform as transform
+    import elysium.core.mirror.transform as transform
 
     monkeypatch.setattr(transform, "MAX_CLEANED_CELLS", 2)
     with caplog.at_level(logging.WARNING):
@@ -165,7 +165,7 @@ def test_the_record_is_bounded_and_says_so(tmp_path, monkeypatch, caplog):
 def test_one_batch_is_bounded_too(monkeypatch):
     """The cap applies WITHIN a batch -- 50,000 rows of padded columns
     are the memory this protects -- not only when batches merge."""
-    import core.mirror.transform as transform
+    import elysium.core.mirror.transform as transform
 
     monkeypatch.setattr(transform, "MAX_CLEANED_CELLS", 2)
     result = transform.transform_rows([{"id": str(i), "n": f" n{i} "} for i in range(5)],

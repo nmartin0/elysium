@@ -17,7 +17,7 @@ import sqlite3
 
 from fastapi.testclient import TestClient
 
-import core.ontology.mediator as mediator_module
+import elysium.core.ontology.mediator as mediator_module
 from tests.integration.test_api import _login
 
 PW = "a-long-and-unremarkable-passphrase"
@@ -44,8 +44,8 @@ def _move_cust_001_to(client, region):
     import contextlib
     import io
 
-    from core.deployment_loader import build_generation
-    from scripts.run_sync import run_sync
+    from elysium.core.deployment_loader import build_generation
+    from elysium.scripts.run_sync import run_sync
 
     paths = client.app.state.runtime_paths
     conn = sqlite3.connect(paths.data_dir / "dev_fixtures" / "mediator.db")

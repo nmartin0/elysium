@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from core.deployment_loader import load_deployment
+from elysium.core.deployment_loader import load_deployment
 
 OTHER = Path(__file__).parent / "fixtures" / "other_deployment"
 

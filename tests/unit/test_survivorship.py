@@ -21,11 +21,11 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.gold import build_gold
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.identity import resolve
-from core.mirror.survivorship import FILLED, PROPERTY_CONFLICT, SECURITY_CONFLICT, fuse_entities
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.gold import build_gold
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.identity import resolve
+from elysium.core.mirror.survivorship import FILLED, PROPERTY_CONFLICT, SECURITY_CONFLICT, fuse_entities
 
 TYPE = {
     "id_field": "customer_id",

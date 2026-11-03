@@ -21,10 +21,10 @@ import io
 
 import pytest
 
-from core.agent.evaluation import aggregate, grade
-from core.deployment_loader import build_generation
-from core.intermediate_layer.auth import resolve_user_record
-from scripts.llm_bench import CASES, USER_ID, Timed
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.agent.evaluation import aggregate, grade
+from elysium.core.deployment_loader import build_generation
+from elysium.scripts.llm_bench import CASES, USER_ID, Timed
 
 
 class Scripted:
@@ -211,8 +211,8 @@ def test_an_outage_reports_what_was_collected_instead_of_crashing(generation_and
     costs real minutes at ~1.5 tokens/s, and a model evicted or
     restarted halfway through would lose all of them.
     """
-    from core.llm.interface import LLMUnavailable
-    from scripts.llm_bench import run
+    from elysium.core.llm.interface import LLMUnavailable
+    from elysium.scripts.llm_bench import run
 
     generation, user = generation_and_user
     calls = {"n": 0}
@@ -229,7 +229,7 @@ def test_an_outage_reports_what_was_collected_instead_of_crashing(generation_and
     generation.loop.client = DiesAfterOne()
     # run() builds its own generation, so drive the same path the
     # script does through the pieces it uses.
-    from core.agent.evaluation import aggregate as _aggregate
+    from elysium.core.agent.evaluation import aggregate as _aggregate
 
     results = []
     with contextlib.redirect_stdout(io.StringIO()):
@@ -250,7 +250,7 @@ def test_a_single_case_can_be_run_alone(generation_and_user):
     config records, one hop is minutes. Running every case three times
     before knowing what a single trial costs is how a bench gets
     abandoned halfway."""
-    from scripts.llm_bench import CASES, run
+    from elysium.scripts.llm_bench import CASES, run
 
     names = {case.name for case in CASES}
 
@@ -268,7 +268,7 @@ def test_the_default_is_one_trial(generation_and_user):
     import argparse
     import inspect
 
-    from scripts.llm_bench import main
+    from elysium.scripts.llm_bench import main
 
     source = inspect.getsource(main)
     assert '"--trials", type=int, default=1' in source
@@ -278,7 +278,7 @@ def test_the_default_is_one_trial(generation_and_user):
 def test_every_case_name_is_selectable(generation_and_user):
     """A typo in --cases should list what IS known rather than run
     nothing and report success."""
-    from scripts.llm_bench import CASES
+    from elysium.scripts.llm_bench import CASES
 
     for case in CASES:
         assert case.name.isidentifier(), f"{case.name} is awkward to type"
@@ -298,10 +298,10 @@ def test_the_plan_can_be_shown(generation_and_user, caplog):
     """
     import logging
 
-    from scripts.llm_bench import _show_plans
+    from elysium.scripts.llm_bench import _show_plans
 
     _show_plans()
-    plan_logger = logging.getLogger("core.llm.agent_step_prompt")
+    plan_logger = logging.getLogger("elysium.core.llm.agent_step_prompt")
 
     assert plan_logger.level == logging.DEBUG
     # Turned up on that ONE logger, not the root, or the output is
@@ -323,7 +323,7 @@ def test_the_warm_up_uses_the_real_system_prompt(generation_and_user):
     """
     import inspect
 
-    from scripts.llm_bench import run
+    from elysium.scripts.llm_bench import run
 
     source = inspect.getsource(run)
 
@@ -346,7 +346,7 @@ def test_the_warm_up_matches_the_mode(generation_and_user):
     untrusted-data framing and appends the plan instructions, so
     warming the step prompt would cache a prefix the plan calls never
     use -- all of the cost, none of the benefit."""
-    from core.llm.agent_step_prompt import PLAN_INSTRUCTIONS, _build_system_prompt
+    from elysium.core.llm.agent_step_prompt import PLAN_INSTRUCTIONS, _build_system_prompt
 
     schema = {"Customer": {"id_field": "customer_id",
                            "fields": {"name": {"type": "data"}}}}
@@ -380,8 +380,8 @@ def test_a_slow_call_is_flagged_rather_than_killed():
     import contextlib
     import io
 
-    from core.agent.evaluation import TrialResult
-    from scripts.llm_bench import _report
+    from elysium.core.agent.evaluation import TrialResult
+    from elysium.scripts.llm_bench import _report
 
     class Calls:
         calls = [(6000, 120.0), (6000, 700.0)]
@@ -411,7 +411,7 @@ def test_the_warm_up_is_exempt_from_the_deployment_timeout(generation_and_user):
     """
     import inspect
 
-    from scripts.llm_bench import WARM_UP_TIMEOUT_SECONDS, run
+    from elysium.scripts.llm_bench import WARM_UP_TIMEOUT_SECONDS, run
 
     assert WARM_UP_TIMEOUT_SECONDS >= 1200, "too short to absorb a cold call"
 
@@ -434,7 +434,7 @@ def test_the_generous_timeout_is_not_restored_and_that_is_deliberate():
     """
     import inspect
 
-    from scripts.llm_bench import run
+    from elysium.scripts.llm_bench import run
 
     source = inspect.getsource(run)
 
@@ -477,7 +477,7 @@ class _Answering:
 
 def _bench(monkeypatch, synced_deployment, **options):
     """scripts/llm_bench.run(), end to end, on scripted models."""
-    import scripts.llm_bench as bench
+    import elysium.scripts.llm_bench as bench
 
     generation = build_generation(synced_deployment.config_dir, synced_deployment.data_dir,
                                   synced_deployment.log_dir)
@@ -516,10 +516,10 @@ def test_the_answer_can_be_left_out(monkeypatch, synced_deployment):
 
 
 def test_another_model_through_every_wrapper():
-    from adapters.ollama_adapter import OllamaAdapter
-    from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
-    from core.llm.retrying_adapter import RetryingLLMAdapter
-    from scripts.llm_bench import use_model
+    from elysium.adapters.ollama_adapter import OllamaAdapter
+    from elysium.core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
+    from elysium.core.llm.retrying_adapter import RetryingLLMAdapter
+    from elysium.scripts.llm_bench import use_model
 
     inner = OllamaAdapter("phi4-mini", {"base_url": "http://ollama.invalid/api/chat"})
     use_model(ConcurrencyLimitedLLMAdapter(RetryingLLMAdapter(inner)), "qwen3:4b")

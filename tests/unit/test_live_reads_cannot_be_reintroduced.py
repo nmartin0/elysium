@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from core.deployment_loader import _refuse_live_reads
+from elysium.core.deployment_loader import _refuse_live_reads
 
 FIXTURE_CONFIGS = (
     "tests/integration/fixtures/config.yaml",

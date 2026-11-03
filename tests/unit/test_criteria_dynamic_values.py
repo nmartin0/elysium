@@ -15,8 +15,8 @@ differently.
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.submission_criteria import (
+from elysium.core.access.auth import UserRecord
+from elysium.core.ontology.submission_criteria import (
     SubmissionCriteriaViolation,
     evaluate_submission_criteria,
 )

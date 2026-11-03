@@ -1,7 +1,7 @@
 """The timer store (core/timers.py): persisted, keyed, at least once,
 retried then dropped."""
 
-from core.timers import MAX_ATTEMPTS, RETRY_SECONDS, TimerStore, on_set
+from elysium.core.timers import MAX_ATTEMPTS, RETRY_SECONDS, TimerStore, on_set
 
 
 def test_a_timer_is_due_at_its_time_and_not_before(tmp_path):

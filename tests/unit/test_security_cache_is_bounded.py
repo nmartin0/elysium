@@ -25,13 +25,13 @@ from unittest.mock import patch
 
 import pytest
 
-import core.ontology.mediator as mediator_module
-from core.intermediate_layer.auth import UserRecord
+import elysium.core.ontology.mediator as mediator_module
+from elysium.core.access.auth import UserRecord
 
 
 @pytest.fixture
 def mediator(synced_deployment):
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     # E-08: a deployment of its own, not the developer's.
     paths = synced_deployment

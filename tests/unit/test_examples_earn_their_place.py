@@ -28,7 +28,7 @@ This file exists so the next person to notice 119 seconds of examples
 finds the experiment already run.
 """
 
-from core.llm.agent_step_prompt import EXAMPLES_SECTION, _build_system_prompt
+from elysium.core.llm.agent_step_prompt import EXAMPLES_SECTION, _build_system_prompt
 
 SCHEMA = {
     "Customer": {
@@ -88,7 +88,7 @@ def test_nothing_can_switch_them_off():
     to come back by accident."""
     import inspect
 
-    import core.llm.agent_step_prompt as step_prompt
+    import elysium.core.llm.agent_step_prompt as step_prompt
 
     assert not hasattr(step_prompt, "INCLUDE_EXAMPLES")
     assert "include_examples" not in inspect.signature(

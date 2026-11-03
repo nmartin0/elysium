@@ -36,7 +36,7 @@ it) and would be false now (the type-level form is checked).
 
 import pytest
 
-from core.intermediate_layer.policy_validation import _validate_one_grant
+from elysium.core.access.policy_validation import _validate_one_grant
 
 TYPES = {"Order": {}, "Customer": {}}
 ACTIONS = {"TransferFunds": {}}
@@ -99,7 +99,7 @@ class TestF12cTheFalseClaim:
     def test_the_source_no_longer_carries_the_claim(self):
         from pathlib import Path
 
-        source = Path("core/intermediate_layer/policy_validation.py").read_text()
+        source = Path("src/elysium/core/access/policy_validation.py").read_text()
         # THE MESSAGE, not the prose. The phrase survives in a comment
         # explaining that the claim was false, which is the opposite of
         # making it -- a substring check cannot tell those apart.
@@ -126,7 +126,7 @@ class TestF03TheDeleteKeyError:
     def test_the_cross_type_check_no_longer_indexes_mutations(self):
         from pathlib import Path
 
-        source = Path("core/ontology/write_mediator.py").read_text()
+        source = Path("src/elysium/core/ontology/write_mediator.py").read_text()
         i = source.index("affected_types = {sw[")
         block = source[i:i + 1800]
         code = [line for line in block.splitlines()
@@ -137,7 +137,7 @@ class TestF03TheDeleteKeyError:
     def test_it_iterates_types_rather_than_mutations(self):
         from pathlib import Path
 
-        source = Path("core/ontology/write_mediator.py").read_text()
+        source = Path("src/elysium/core/ontology/write_mediator.py").read_text()
         i = source.index("affected_types = {sw[")
         block = source[i:i + 1800]
 
@@ -150,7 +150,7 @@ class TestF03TheDeleteKeyError:
         source of the same KeyError would make this fix partial."""
         from pathlib import Path
 
-        source = Path("core/ontology/action_types.py").read_text()
+        source = Path("src/elysium/core/ontology/action_types.py").read_text()
         i = source.index('if not isinstance(sub_write["mutations"], list)')
         before = source[max(0, i - 600):i]
 

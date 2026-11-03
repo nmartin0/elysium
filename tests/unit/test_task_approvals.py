@@ -25,9 +25,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord
-from core.ontology.write_mediator import PendingWrite, SubWrite
-from core.pending_write_store import PendingWriteStore
+from elysium.core.access.auth import UserRecord
+from elysium.core.ontology.write_mediator import PendingWrite, SubWrite
+from elysium.core.pending_write_store import PendingWriteStore
 
 
 def _pending(task_count: int) -> PendingWrite:
@@ -267,7 +267,7 @@ class TestEligibility:
 
     @staticmethod
     def _write_mediator(mediator):
-        from core.ontology.write_mediator import WriteMediator
+        from elysium.core.ontology.write_mediator import WriteMediator
 
         stub = WriteMediator.__new__(WriteMediator)
         stub.mediator = mediator
@@ -347,7 +347,7 @@ class TestEligibility:
         This branch went untested at first, and a control removing the
         grant check passed because every fixture used `update`.
         """
-        from core.ontology.write_mediator import SubWrite
+        from elysium.core.ontology.write_mediator import SubWrite
 
         pending = _pending(1)
         pending = type(pending)(

@@ -36,7 +36,7 @@ that the full tier corrected a premise my own targeted tests endorsed.
 
 import pytest
 
-from core.ontology.write_mediator import WriteMediator
+from elysium.core.ontology.write_mediator import WriteMediator
 
 SCHEMA = {"Customer": {
     "id_field": "customer_id",
@@ -138,7 +138,7 @@ class TestTheGuardIsActuallyCalled:
         import re
         from pathlib import Path
 
-        source = Path("core/ontology/write_mediator.py").read_text()
+        source = Path("src/elysium/core/ontology/write_mediator.py").read_text()
         i = source.index("self._refuse_a_chosen_compartment(")
         enclosing = None
         for match in re.finditer(r"^    def (\w+)", source[:i], re.M):
@@ -152,7 +152,7 @@ class TestTheGuardIsActuallyCalled:
         action."""
         from pathlib import Path
 
-        source = Path("core/ontology/write_mediator.py").read_text()
+        source = Path("src/elysium/core/ontology/write_mediator.py").read_text()
         i = source.index("self._refuse_a_chosen_compartment(")
         before = source[:i]
 

@@ -26,7 +26,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from core.ontology.used_by import Referrer
+from elysium.core.ontology.used_by import Referrer
 from tests.conftest import read_audit_log, with_roles
 from tests.integration import test_editing_config_from_the_ui as editing
 from tests.integration.test_api import _csrf_headers, _login
@@ -133,7 +133,7 @@ class TestRetyping:
         assert any("could not be read just now" in line for line in response.json()["stored_data"])
 
     def test_a_table_bronze_does_not_hold_is_said_to_be_not_counted_and_never_zero(self, retyper):
-        from core.mirror.catalog import open_mirror_catalog
+        from elysium.core.mirror.catalog import open_mirror_catalog
 
         open_mirror_catalog(retyper.app.state.runtime_paths.data_dir / "mirror").drop_table(
             "bronze_primary_sql.transactions")
@@ -151,7 +151,7 @@ class TestRetyping:
                    for line in said)
 
     def test_where_silver_was_never_built_there_is_nothing_to_rebuild(self, retyper):
-        from core.mirror.catalog import open_mirror_catalog
+        from elysium.core.mirror.catalog import open_mirror_catalog
 
         open_mirror_catalog(retyper.app.state.runtime_paths.data_dir / "mirror").drop_table(SILVER)
 
@@ -178,7 +178,7 @@ class TestRetyping:
     def test_the_loader_has_the_last_word(self, retyper, config_dir, monkeypatch):
         before = (config_dir / FILE).read_text()
         broken = before.replace("  Customer:\n", "  Customer:\n    not_a_known_key_at_all: [\n", 1)
-        monkeypatch.setattr("core.config_editing.apply_retype", lambda *given: broken)
+        monkeypatch.setattr("elysium.core.config_editing.apply_retype", lambda *given: broken)
 
         for preview in (True, False):
             response = _retype(retyper, preview=preview)
@@ -207,7 +207,7 @@ class TestRetyping:
         def failing(*given, **asked):
             raise RuntimeError("the reload broke")
 
-        monkeypatch.setattr("api.routes.reload_generation", failing)
+        monkeypatch.setattr("elysium.api.routes.reload_generation", failing)
 
         response = _retype(retyper)
 
@@ -242,7 +242,7 @@ class TestRetyping:
 
 class TestWhatNamesTheField:
     def test_the_places_are_the_used_by_report_as_notes_and_do_not_stop_it(self, retyper):
-        from api import routes  # noqa: F401  (the report below is the Used by route's)
+        from elysium.api import routes  # noqa: F401  (the report below is the Used by route's)
 
         used_by = retyper.get("/api/admin/ontology/used-by",
                               params={"object_type": "Transaction", "field": "amount"}).json()["referrers"]
@@ -256,7 +256,7 @@ class TestWhatNamesTheField:
     def test_places_naming_what_the_person_cannot_discover_are_counted_not_named(self, retyper, monkeypatch):
         rows = [Referrer("grant", "role everyone", "names it", ()),
                 Referrer("rule", "type Secret, row rule", "reads it", ("Secret.thing",))]
-        monkeypatch.setattr("core.ontology.retype.places_naming", lambda *given: rows)
+        monkeypatch.setattr("elysium.core.ontology.retype.places_naming", lambda *given: rows)
         with_roles(retyper.app, narrow={"allowed_actions": frozenset(["manage:deployment"])})
         _login_as(retyper, "nar", "narrow")
 
@@ -291,7 +291,7 @@ class TestWhoMay:
 
 
 def _digest_of(config_dir):
-    from core.config_editing import digest
+    from elysium.core.config_editing import digest
 
     return digest((config_dir / FILE).read_text())
 
@@ -334,17 +334,17 @@ def broken_catalog(monkeypatch):
     def broken(request):
         raise RuntimeError("the catalog cannot be read")
 
-    monkeypatch.setattr("api.routes._mirror_catalog_for", broken)
+    monkeypatch.setattr("elysium.api.routes._mirror_catalog_for", broken)
 
 
 class TestSyncRebuildNames:
     @staticmethod
     def _run(target, monkeypatch):
         """What the thread the route started would call run_sync with."""
-        import scripts.run_sync
+        import elysium.scripts.run_sync
 
         calls = []
-        monkeypatch.setattr(scripts.run_sync, "run_sync", lambda *given, **asked: calls.append((given, asked)))
+        monkeypatch.setattr(elysium.scripts.run_sync, "run_sync", lambda *given, **asked: calls.append((given, asked)))
         target()
         return calls
 
@@ -385,7 +385,7 @@ class TestSyncRebuildNames:
         assert captured.started == []
 
     def test_the_names_reach_the_sync_and_no_names_start_it_as_it_always_ran(self, monkeypatch):
-        from api.routes import _run_sync_in_background
+        from elysium.api.routes import _run_sync_in_background
 
         assert self._run(_run_sync_in_background, monkeypatch) == [((), {})]
         assert self._run(lambda: _run_sync_in_background({SILVER}), monkeypatch) == [((), {"rebuild": {SILVER}})]
@@ -410,7 +410,7 @@ class TestSyncRebuildNames:
 
     def test_while_another_sync_holds_the_lock_the_rebuild_is_refused_and_not_dropped_silently(
             self, retyper, captured):
-        from core.mirror.sync_lock import single_writer
+        from elysium.core.mirror.sync_lock import single_writer
 
         _retype(retyper)
         lock = retyper.app.state.runtime_paths.data_dir / "sync.lock"
@@ -428,7 +428,7 @@ class TestSyncRebuildNames:
         assert _post_sync(retyper, rebuild=[SILVER]).status_code == 200
 
     def test_a_sync_with_no_names_is_not_held_back_by_the_lock_check(self, retyper, captured):
-        from core.mirror.sync_lock import single_writer
+        from elysium.core.mirror.sync_lock import single_writer
 
         with single_writer(retyper.app.state.runtime_paths.data_dir / "sync.lock"):
             assert _post_sync(retyper).status_code == 200
@@ -471,7 +471,7 @@ class _Lake:
     `amount`, and the history rows as stored."""
 
     def __init__(self, paths):
-        from core.mirror.catalog import open_mirror_catalog
+        from elysium.core.mirror.catalog import open_mirror_catalog
 
         tables = _layers(open_mirror_catalog(paths.data_dir / "mirror"))
         self.snapshots = {layer: [s.snapshot_id for s in table.snapshots()] if table else None
@@ -493,9 +493,9 @@ class _Flow:
 
 @pytest.fixture(scope="class")
 def flow(tmp_path_factory):
-    from api.app import create_app
-    from core.deployment_loader import RuntimePaths
-    from scripts.run_sync import run_sync
+    from elysium.api.app import create_app
+    from elysium.core.deployment_loader import RuntimePaths
+    from elysium.scripts.run_sync import run_sync
     from tests.integration import conftest as integration_conftest
 
     tmp_path = tmp_path_factory.mktemp("retype")
@@ -554,7 +554,7 @@ def flow(tmp_path_factory):
 
     # THE STATE WHILE THE REBUILD RUNS, asked through the route from inside the
     # sync: its lock is held, and silver is still the old one.
-    from core.mirror.iceberg_sync import IcebergMirrorSync
+    from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
     real_sync_table = IcebergMirrorSync.sync_table
     during: dict = {}
@@ -740,7 +740,7 @@ class TestTheStateOfTheObject:
 class TestTheStateWhenItCannotBeTold:
     @staticmethod
     def _attempt(client, outcome):
-        from core.mirror.sync_attempts import SyncAttempts
+        from elysium.core.mirror.sync_attempts import SyncAttempts
 
         mirror = client.app.state.runtime_paths.data_dir / "mirror"
         mirror.mkdir(parents=True, exist_ok=True)
@@ -767,7 +767,7 @@ class TestTheStateWhenItCannotBeTold:
         assert table == object_type == "live" and mirror["rebuild_owed"] == [SILVER]
 
     def test_a_recorded_rebuild_is_rebuilding_while_a_sync_holds_the_lock(self, retyper):
-        from core.mirror.sync_lock import single_writer
+        from elysium.core.mirror.sync_lock import single_writer
 
         _retype(retyper)
         self._attempt(retyper, "rebuilding")
@@ -779,7 +779,7 @@ class TestTheStateWhenItCannotBeTold:
         assert table == object_type == "rebuilding"
 
     def test_a_sync_that_is_not_a_rebuild_does_not_make_a_table_rebuilding(self, retyper):
-        from core.mirror.sync_lock import single_writer
+        from elysium.core.mirror.sync_lock import single_writer
 
         _retype(retyper)
         self._attempt(retyper, "refused")
@@ -797,7 +797,7 @@ class TestTheStateWhenItCannotBeTold:
         def broken(path):
             raise OSError("no lock")
 
-        monkeypatch.setattr("core.mirror.sync_lock.single_writer", broken)
+        monkeypatch.setattr("elysium.core.mirror.sync_lock.single_writer", broken)
 
         _mirror, table, object_type = self._state(retyper)
 
@@ -1035,8 +1035,8 @@ class TestTheRebuildListIsTheSyncsOwn:
         """The sync drops a column the source lost before it compares, so a
         rebuild for it would discard history for nothing: the route reads the
         columns bronze recorded at the last sync."""
-        from core.mirror.catalog import open_mirror_catalog
-        from core.mirror.iceberg_sync import SOURCE_COLUMNS_PROPERTY
+        from elysium.core.mirror.catalog import open_mirror_catalog
+        from elysium.core.mirror.iceberg_sync import SOURCE_COLUMNS_PROPERTY
 
         bronze = open_mirror_catalog(retyper.app.state.runtime_paths.data_dir / "mirror").load_table(
             "bronze_primary_sql.transactions")

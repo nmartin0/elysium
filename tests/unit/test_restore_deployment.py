@@ -16,8 +16,8 @@ import sqlite3
 
 import pytest
 
-from scripts.backup_deployment import OWNED_DATABASES, WAREHOUSE, backup
-from scripts.restore_deployment import UnusableBackup, inspect_backup, restore
+from elysium.scripts.backup_deployment import OWNED_DATABASES, WAREHOUSE, backup
+from elysium.scripts.restore_deployment import UnusableBackup, inspect_backup, restore
 
 
 @pytest.fixture
@@ -141,6 +141,6 @@ class TestRestoring:
 def test_the_inventory_is_shared_with_the_backup():
     """ONE LIST, NOT TWO. A database added to the backup and not the
     restore is a database silently dropped on the way back."""
-    import scripts.restore_deployment as module
+    import elysium.scripts.restore_deployment as module
 
     assert module.OWNED_DATABASES is OWNED_DATABASES

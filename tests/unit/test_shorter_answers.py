@@ -6,13 +6,13 @@ the answer itself, so a shorter one cannot quietly drop its facts."""
 import pytest
 import requests
 
-import adapters.ollama_adapter as ollama_module
-from adapters.ollama_adapter import OllamaAdapter
-from adapters.vllm_adapter import VLLMAdapter
-from core.agent.evaluation import EvalCase, ExpectedAggregate, ExpectedFact, answer_states
-from core.llm.agent_features import features_from_config
-from core.llm.synthesis_prompt import CUT_SHORT_NOTE, synthesize_insight
-from core.request_context import TokenUsage
+import elysium.adapters.ollama_adapter as ollama_module
+from elysium.adapters.ollama_adapter import OllamaAdapter
+from elysium.adapters.vllm_adapter import VLLMAdapter
+from elysium.core.agent.evaluation import EvalCase, ExpectedAggregate, ExpectedFact, answer_states
+from elysium.core.llm.agent_features import features_from_config
+from elysium.core.llm.synthesis_prompt import CUT_SHORT_NOTE, synthesize_insight
+from elysium.core.request_context import TokenUsage
 
 RECORDS = [{"object_type": "Customer", "object_id": "cust_001", "field": "email",
             "value": "ada.okafor@example.com"}]
@@ -173,7 +173,7 @@ class TestTheAnswerIsGraded:
 
 
 def test_only_the_answers_client_is_given_the_limit(synced_deployment):
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     generation = build_generation(synced_deployment.config_dir, synced_deployment.data_dir,
                                   synced_deployment.log_dir)
@@ -189,23 +189,23 @@ def test_only_the_answers_client_is_given_the_limit(synced_deployment):
 
 class TestTheBriefVerdict:
     def _arm(self, said, tokens):
-        from scripts.feature_bench import ORIGINAL
+        from elysium.scripts.feature_bench import ORIGINAL
 
         return {name: {"passed": 1, "trials": 1, "hops": [2], "seconds": [60.0],
                        "said": [said], "answer_tokens": [tokens]} for name in ORIGINAL}
 
     def test_on_when_shorter_and_nothing_lost(self):
-        from scripts.feature_bench import _brief_verdict
+        from elysium.scripts.feature_bench import _brief_verdict
 
         assert _brief_verdict(self._arm(True, 90), self._arm(True, 40))[0] == "ON"
 
     def test_off_when_an_answer_stops_stating_its_facts(self):
-        from scripts.feature_bench import _brief_verdict
+        from elysium.scripts.feature_bench import _brief_verdict
 
         verdict, why = _brief_verdict(self._arm(True, 90), self._arm(False, 20))
         assert verdict == "OFF" and "stopped stating" in why
 
     def test_off_when_not_shorter(self):
-        from scripts.feature_bench import _brief_verdict
+        from elysium.scripts.feature_bench import _brief_verdict
 
         assert _brief_verdict(self._arm(True, 40), self._arm(True, 45))[0] == "OFF"

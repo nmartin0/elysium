@@ -24,7 +24,7 @@ tells you to remove something load-bearing is worse than one that says
 nothing.
 """
 
-from core.ontology.action_types import _collect_parameter_references
+from elysium.core.ontology.action_types import _collect_parameter_references
 
 PARAMETERS = {"ticket_id": {"type": "string"}, "approver": {"type": "string"}}
 
@@ -69,7 +69,7 @@ def test_an_action_with_no_criteria_is_unchanged():
 def test_the_validator_no_longer_calls_a_criterion_parameter_unused():
     # THE ACTUAL DAMAGE, end to end: the validator told an author to
     # delete a declaration the criterion depends on.
-    from core.ontology.action_types import validate_action_types
+    from elysium.core.ontology.action_types import validate_action_types
 
     schema = {"Ticket": {"id_field": "ticket_id", "fields": {"state": {"data_type": "string"}}}}
     actions = {

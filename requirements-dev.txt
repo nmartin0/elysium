@@ -23,8 +23,8 @@ mypy            # lint.sh -- type checking (see pyproject.toml's own [tool.mypy]
 # An undeclared dependency that happens to be present is not a
 # dependency that is satisfied; it is one that has not been tested
 # yet.
-types-PyYAML    # core/config.py, core/mirror/manifest.py, sim's loader
-types-requests  # adapters/ollama_adapter.py, adapters/vllm_adapter.py
+types-PyYAML    # src/elysium/core/config.py, src/elysium/core/mirror/manifest.py, sim's loader
+types-requests  # src/elysium/adapters/ollama_adapter.py, src/elysium/adapters/vllm_adapter.py
 types-PyMySQL   # sim/simulator/silos/mariadb.py, sim/simulator/health.py
 vulture         # lint.sh -- whole-program dead-code detection (see lint.sh's own top comment for why)
 import-linter   # lint.sh -- architectural import-boundary enforcement (see pyproject.toml's own [tool.importlinter] section)
@@ -44,7 +44,7 @@ hypothesis      # DEP-2: property tests (tests/unit/test_properties.py) -- a rul
                 # smallest one. MPL-2.0, file-level copyleft; a dev tool, never
                 # installed on a deployment
 mutmut          # DEP-2: mutation testing, one module at a time through
-                # scripts/mutation_test.py. BSD-3. Its first run found a gap
+                # src/elysium/scripts/mutation_test.py. BSD-3. Its first run found a gap
                 # the hand-written controls had not (see that script)
 httpx2          # test-only -- Starlette's TestClient imports it (as httpx) for
                 # tests/integration/test_api.py. Not a typosquat despite the name:

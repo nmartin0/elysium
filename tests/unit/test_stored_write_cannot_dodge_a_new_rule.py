@@ -39,7 +39,7 @@ inventing violations on writes that are perfectly fine.
 
 import pytest
 
-from core.ontology.write_mediator import WriteMediator
+from elysium.core.ontology.write_mediator import WriteMediator
 
 
 def _mediator(action_types: dict) -> WriteMediator:
@@ -168,7 +168,7 @@ class TestTheRefusalIsActuallyReached:
         import re
         from pathlib import Path
 
-        lines = Path("core/ontology/write_mediator.py").read_text().splitlines()
+        lines = Path("src/elysium/core/ontology/write_mediator.py").read_text().splitlines()
         call = next(n for n, line in enumerate(lines)
                     if "self._refuse_criteria_this_write_cannot_answer(" in line)
         enclosing = None
@@ -185,7 +185,7 @@ class TestTheRefusalIsActuallyReached:
         mean the skipped criterion had already been treated as passed."""
         from pathlib import Path
 
-        source = Path("core/ontology/write_mediator.py").read_text()
+        source = Path("src/elysium/core/ontology/write_mediator.py").read_text()
         i = source.index("self._refuse_criteria_this_write_cannot_answer(")
         after = source[i:i + 400]
 

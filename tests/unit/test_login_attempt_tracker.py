@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from core.auth.database import connection
-from core.auth.login_attempt_tracker import (
+from elysium.core.auth.database import connection
+from elysium.core.auth.login_attempt_tracker import (
     MAX_ATTEMPTS,
     WINDOW,
     LoginAttemptTracker,

@@ -18,15 +18,15 @@ import sqlite3
 import pytest
 from pyiceberg.exceptions import NoSuchTableError
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.duplicates import (
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.duplicates import (
     DuplicateKeys,
     DuplicatePolicy,
     policy_for_storage,
     split_duplicates,
 )
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.sync_targets import resolve_sync_targets
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.sync_targets import resolve_sync_targets
 
 TWICE = [{"id": "a", "v": 1}, {"id": "a", "v": 2}, {"id": "b", "v": 3}]
 

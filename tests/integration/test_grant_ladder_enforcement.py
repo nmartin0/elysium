@@ -20,7 +20,7 @@ steps the mediator then denies.
 
 import pytest
 
-from core.intermediate_layer.auth import UserRecord
+from elysium.core.access.auth import UserRecord
 
 
 def _role(mediator, name, actions):
@@ -125,7 +125,7 @@ def test_the_agent_loop_asks_for_the_agent_view(mediator):
     quietly receive types it cannot search. A control removing the flag
     from agentic_loop.py failed nothing until this existed.
     """
-    from core.agent.agentic_loop import AgentLoop
+    from elysium.core.agent.agentic_loop import AgentLoop
 
     asked = {}
     original = type(mediator).visible_schema

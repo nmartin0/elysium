@@ -28,10 +28,10 @@ import sqlite3
 
 import pytest
 
-from core.notifications import NotificationStore
-from core.role_store import RoleStore
-from scripts.backup_deployment import backup
-from scripts.restore_deployment import restore
+from elysium.core.notifications import NotificationStore
+from elysium.core.role_store import RoleStore
+from elysium.scripts.backup_deployment import backup
+from elysium.scripts.restore_deployment import restore
 
 
 def _summaries(path):
@@ -125,10 +125,10 @@ class TestARestoredDeploymentWorks:
     mirror answers a search."""
 
     def test_end_to_end(self, tmp_path, synced_deployment):
-        from core.deployment_loader import build_generation
-        from core.intermediate_layer.auth import UserRecord
-        from core.triggers import TriggerStore
-        from core.user_directory import UserDirectory
+        from elysium.core.access.auth import UserRecord
+        from elysium.core.deployment_loader import build_generation
+        from elysium.core.triggers import TriggerStore
+        from elysium.core.user_directory import UserDirectory
 
         # E-08: a deployment of its own. This COPIED the developer's data
         # directory -- whose copied warehouse still read the developer's

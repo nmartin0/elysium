@@ -1,7 +1,7 @@
 """An audit entry survives whatever type an id field declares
 (SEC-25).
 
-FOUND READING core/intermediate_layer/audit.py.
+FOUND READING core/access/audit.py.
 
 `_write()` used a bare `json.dumps(entry)`. `object_id` is typed `Any`
 and comes from the object's `id_field`, whose `data_type` an ontology
@@ -36,8 +36,8 @@ from decimal import Decimal
 
 import pytest
 
-from core.intermediate_layer.audit import AuditLog
-from core.ontology.object_type_validation import validate_object_types
+from elysium.core.access.audit import AuditLog
+from elysium.core.ontology.object_type_validation import validate_object_types
 
 
 @pytest.fixture

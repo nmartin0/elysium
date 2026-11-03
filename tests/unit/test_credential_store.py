@@ -9,8 +9,8 @@ from unittest.mock import patch
 
 import pytest
 
-from core.auth.credential_store import CredentialStore
-from core.auth.password_hashing import DUMMY_HASH
+from elysium.core.auth.credential_store import CredentialStore
+from elysium.core.auth.password_hashing import DUMMY_HASH
 
 
 @pytest.fixture
@@ -57,7 +57,7 @@ def test_nonexistent_username_still_performs_real_verification(store):
     # which usernames are real.
     store.create_credential("alice", "hunter2")
 
-    with patch("core.auth.credential_store.verify_password") as mock_verify:
+    with patch("elysium.core.auth.credential_store.verify_password") as mock_verify:
         mock_verify.return_value = False
         store.verify_credential("totally_fake_user", "anything")
         assert mock_verify.called

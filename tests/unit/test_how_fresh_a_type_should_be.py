@@ -22,8 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from core.deployment_loader import load_deployment
-from core.mirror.freshness import (
+from elysium.core.deployment_loader import load_deployment
+from elysium.core.mirror.freshness import (
     DEFAULT_SYNC_INTERVAL_HOURS,
     EXEMPT,
     FAILING,

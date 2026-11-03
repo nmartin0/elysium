@@ -17,7 +17,7 @@ real HTTP dependency to isolate away, unlike full AgentLoop tests.
 import json
 from unittest.mock import MagicMock
 
-from core.llm.agent_step_prompt import (
+from elysium.core.llm.agent_step_prompt import (
     MALFORMED_STEP,
     UNPARSEABLE_REPLY,
     UNRECOGNISED_STEP,

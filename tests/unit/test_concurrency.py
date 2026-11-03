@@ -36,8 +36,8 @@ import time
 
 import pytest
 
-from core.concurrency import ConcurrencyLimiter, KeyedLockManager
-from core.ontology.mediator import DataMediator
+from elysium.core.concurrency import ConcurrencyLimiter, KeyedLockManager
+from elysium.core.ontology.mediator import DataMediator
 
 JOIN_TIMEOUT = 5.0  # generous for correct code, still bounds a hang
 

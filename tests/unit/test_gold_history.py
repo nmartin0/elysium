@@ -23,11 +23,11 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.changelog import diff_snapshots
-from core.mirror.gold import build_gold
-from core.mirror.gold_history import CHANGELOG_NAMESPACE, history_for, record_publication
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.changelog import diff_snapshots
+from elysium.core.mirror.gold import build_gold
+from elysium.core.mirror.gold_history import CHANGELOG_NAMESPACE, history_for, record_publication
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 TYPE = {
     "id_field": "customer_id",
@@ -190,7 +190,7 @@ class TestItNeverBreaksAPublication:
         sync, publish, change = deployment
         publish()
         change("UPDATE customers SET region='eu' WHERE cust_pk='c1'")
-        import core.mirror.gold_history as history_module
+        import elysium.core.mirror.gold_history as history_module
 
         def explode(*args, **kwargs):
             raise RuntimeError("the changelog is broken")

@@ -9,7 +9,7 @@ declares (cust_ref is the Customer id, score_val is risk_score).
 
 import yaml
 
-from core.mirror.binding_suggestions import suggest, yaml_skeleton
+from elysium.core.mirror.binding_suggestions import suggest, yaml_skeleton
 
 SCHEMA = {
     "Customer": {

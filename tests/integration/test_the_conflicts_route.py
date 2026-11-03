@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 
 import pyarrow as pa
 
-from core.mirror.gold import CONFLICT_NAMESPACE, CONFLICT_SCHEMA
+from elysium.core.mirror.gold import CONFLICT_NAMESPACE, CONFLICT_SCHEMA
 from tests.conftest import with_roles
 
 
@@ -246,7 +246,7 @@ class TestTheTrackRecord:
     (owner, 15 October)."""
 
     def _ended(self, client, crm_held, primary_held, field="name"):
-        from core.mirror.source_record import Ended, SourceRecordStore
+        from elysium.core.mirror.source_record import Ended, SourceRecordStore
 
         store = SourceRecordStore(client.app.state.runtime_paths.data_dir / "source_record.db")
         store.record("Customer", [Ended(f"e{i}", field, "t", "crm", "primary")
@@ -287,8 +287,8 @@ class TestTheVote:
     like copies, and rounded agreement rates."""
 
     def _voted(self, client):
-        from core.mirror.source_record import SourceRecordStore
-        from core.mirror.source_vote import vote
+        from elysium.core.mirror.source_record import SourceRecordStore
+        from elysium.core.mirror.source_vote import vote
 
         current = {"cust_001": {"name": {"crm": "Ada Okafor", "primary": "Ada",
                                          "erp": "Ada"}}}

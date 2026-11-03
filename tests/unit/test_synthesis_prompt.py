@@ -11,8 +11,8 @@ tests/unit/ tests mechanisms in isolation from model behavior.
 """
 
 
-from core.llm.interface import LLMUnavailable
-from core.llm.synthesis_prompt import _has_only_valid_citations, synthesize_insight
+from elysium.core.llm.interface import LLMUnavailable
+from elysium.core.llm.synthesis_prompt import _has_only_valid_citations, synthesize_insight
 
 
 class _FakeClient:
@@ -208,13 +208,13 @@ def test_synthesize_insight_never_mutates_the_shared_system_prompt_constant():
     # itself (rather than building a local string) would leak the
     # incomplete-search note into EVERY subsequent call, including ones
     # that never asked for it.
-    from core.llm.synthesis_prompt import SYSTEM_PROMPT
+    from elysium.core.llm.synthesis_prompt import SYSTEM_PROMPT
     original = SYSTEM_PROMPT
 
     client = _FakeClient("Ada works in engineering [R1].")
     synthesize_insight(client, "test", [{"department": "engineering"}], possibly_incomplete=True)
 
-    from core.llm.synthesis_prompt import SYSTEM_PROMPT as system_prompt_after
+    from elysium.core.llm.synthesis_prompt import SYSTEM_PROMPT as system_prompt_after
     assert system_prompt_after == original
 
 
@@ -222,25 +222,25 @@ def test_synthesize_insight_never_mutates_the_shared_system_prompt_constant():
 # into the citation check or generalized -- see module docstring.
 
 def test_verified_email_present_in_records_is_valid():
-    from core.llm.synthesis_prompt import _has_only_verified_emails
+    from elysium.core.llm.synthesis_prompt import _has_only_verified_emails
     records = [{"name": "Ada Okafor", "email": "ada.okafor@example.com"}]
     assert _has_only_verified_emails("Contact her at ada.okafor@example.com.", records) is True
 
 
 def test_fabricated_email_not_in_records_is_invalid():
-    from core.llm.synthesis_prompt import _has_only_verified_emails
+    from elysium.core.llm.synthesis_prompt import _has_only_verified_emails
     records = [{"name": "Ada Okafor", "department": "engineering"}]  # no email field at all
     assert _has_only_verified_emails("Her email is ada.okafor@example.com.", records) is False
 
 
 def test_zero_emails_is_vacuously_valid():
-    from core.llm.synthesis_prompt import _has_only_verified_emails
+    from elysium.core.llm.synthesis_prompt import _has_only_verified_emails
     records = [{"name": "Ada Okafor"}]
     assert _has_only_verified_emails("Ada works in engineering.", records) is True
 
 
 def test_multiple_verified_emails_all_present_is_valid():
-    from core.llm.synthesis_prompt import _has_only_verified_emails
+    from elysium.core.llm.synthesis_prompt import _has_only_verified_emails
     records = [{"email": "alice@example.com"}, {"email": "bob@example.com"}]
     assert _has_only_verified_emails("Contact alice@example.com or bob@example.com.", records) is True
 
@@ -249,13 +249,13 @@ def test_one_fabricated_email_among_real_ones_is_invalid():
     # ANY unverified email fails the whole check -- fail closed, not
     # "salvage the valid parts," matching the citation check's own
     # all-or-nothing behavior.
-    from core.llm.synthesis_prompt import _has_only_verified_emails
+    from elysium.core.llm.synthesis_prompt import _has_only_verified_emails
     records = [{"email": "alice@example.com"}]
     assert _has_only_verified_emails("Contact alice@example.com or fake@nowhere.com.", records) is False
 
 
 def test_email_verification_is_case_insensitive():
-    from core.llm.synthesis_prompt import _has_only_verified_emails
+    from elysium.core.llm.synthesis_prompt import _has_only_verified_emails
     records = [{"email": "Ada.Okafor@Example.com"}]
     assert _has_only_verified_emails("Contact ada.okafor@example.com.", records) is True
 

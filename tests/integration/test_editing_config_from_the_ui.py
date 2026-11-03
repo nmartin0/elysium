@@ -113,7 +113,7 @@ def test_a_file_that_would_not_load_never_reaches_the_disk(deployer, config_dir,
     """The editor's own checks pass this; the LOADER refuses it. Forced
     here by making the loader refuse, so the test does not depend on
     which settings happen to have cross-checks."""
-    import core.deployment_loader as loader
+    import elysium.core.deployment_loader as loader
 
     path = config_dir / "config.yaml"
     before = path.read_text()
@@ -132,7 +132,7 @@ def test_a_file_that_would_not_load_never_reaches_the_disk(deployer, config_dir,
 
 
 def test_a_reload_that_fails_puts_the_old_file_back(deployer, config_dir, monkeypatch):
-    import api.routes as routes
+    import elysium.api.routes as routes
 
     path = config_dir / "config.yaml"
     before = path.read_text()

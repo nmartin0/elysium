@@ -10,7 +10,7 @@ threshold, they are told, once per lapse.
 import sqlite3
 import time
 
-from core.mirror.sync_attempts import SyncAttempts
+from elysium.core.mirror.sync_attempts import SyncAttempts
 from tests.conftest import with_roles
 
 

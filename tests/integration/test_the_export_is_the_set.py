@@ -199,7 +199,7 @@ class TestItRefusesRatherThanTruncates:
         worse than no file: a spreadsheet gives no sign it is short,
         and every total computed from it would be wrong in a way
         nobody could see."""
-        import api.routes as routes
+        import elysium.api.routes as routes
 
         _as(client, "alice")
         monkeypatch.setattr(routes, "MAX_BULK_OBJECTS", 1)
@@ -209,7 +209,7 @@ class TestItRefusesRatherThanTruncates:
         assert response.status_code == 400
 
     def test_the_refusal_names_the_real_count(self, client, monkeypatch):
-        import api.routes as routes
+        import elysium.api.routes as routes
 
         _as(client, "alice")
         monkeypatch.setattr(routes, "MAX_BULK_OBJECTS", 1)
@@ -220,7 +220,7 @@ class TestItRefusesRatherThanTruncates:
         assert "Narrow the filter" in detail
 
     def test_a_set_at_the_ceiling_is_allowed(self, client, monkeypatch):
-        import api.routes as routes
+        import elysium.api.routes as routes
 
         _as(client, "alice")
         everything = len(_rows(_export(client))) - 1

@@ -659,7 +659,7 @@ is an audit artefact the precedent cannot offer.
 
 AUDIT FINDING -- MY FIRST NAMING WAS WRONG. I proposed calling a
 frozen set a "snapshot", on the grounds that the word already means
-this in the lake. It does -- api/routes.py already exposes Iceberg
+this in the lake. It does -- src/elysium/api/routes.py already exposes Iceberg
 table snapshots to the admin UI -- which makes it AMBIGUOUS, not
 elegant: "the snapshot" would mean a table version in one screen and a
 frozen set in another, and the two appear together in exactly the
@@ -1108,7 +1108,7 @@ has more of this than the discussion assumed.
 
   - A NOTIFICATIONS STORE: notify / for_user / mark_seen /
     unseen_count, per user.
-  - MIRROR HEALTH ALREADY ALERTS, from core/mirror/health_condition.py
+  - MIRROR HEALTH ALREADY ALERTS, from src/elysium/core/mirror/health_condition.py
     and run_sync's _notify_mirror_health, on refused syncs and on
     tables that have not changed in over a threshold -- freshness and
     failure, two of the five pillars below.

@@ -38,7 +38,7 @@ with a removal condition in the vulture whitelist.
 
 import pytest
 
-from core.masked_review import (
+from elysium.core.masked_review import (
     AGREE,
     DIFFER,
     ONE_SIDE_MISSING,
@@ -208,7 +208,7 @@ class TestItDecidesNoAccessQuestion:
     def test_the_module_imports_nothing_from_core(self):
         from pathlib import Path
 
-        source = Path("core/masked_review.py").read_text()
+        source = Path("src/elysium/core/masked_review.py").read_text()
         imports = [line for line in source.splitlines()
                    if line.startswith(("import ", "from "))]
 

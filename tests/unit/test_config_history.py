@@ -14,7 +14,7 @@ an operator's machine and no relationship to any repository.
 
 import pytest
 
-from core.config_history import ConfigHistory
+from elysium.core.config_history import ConfigHistory
 
 
 @pytest.fixture
@@ -120,7 +120,7 @@ def test_recording_never_raises_into_the_caller(tmp_path):
     # archived has already been loaded and validated.
     from types import SimpleNamespace
 
-    from core.config_history import record_generation
+    from elysium.core.config_history import record_generation
 
     unwritable = ConfigHistory(tmp_path / "no_such_dir" / "h.db")
     generation = SimpleNamespace(

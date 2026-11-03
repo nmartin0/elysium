@@ -26,14 +26,14 @@ reviews it can tell a condition proposed it.
 
 import pytest
 
-from core.count_condition import propose_action_effect
-from core.intermediate_layer.auth import UserRecord
-from core.saved_views import SavedView
+from elysium.core.access.auth import UserRecord
+from elysium.core.count_condition import propose_action_effect
+from elysium.core.saved_views import SavedView
 
 
 @pytest.fixture
 def generation(synced_deployment):
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     # E-08: a deployment of its own, not the developer's.
     paths = synced_deployment

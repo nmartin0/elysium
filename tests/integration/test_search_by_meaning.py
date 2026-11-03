@@ -31,7 +31,7 @@ class ConceptModel:
         return "concepts@1"
 
     def embed(self, texts, timeout=None):
-        from core.llm.interface import LLMUnavailable
+        from elysium.core.llm.interface import LLMUnavailable
 
         if self.fail:
             raise LLMUnavailable("the model is down")
@@ -55,16 +55,16 @@ class ConceptModel:
 
 @pytest.fixture
 def model(monkeypatch):
-    import core.deployment_loader
+    import elysium.core.deployment_loader
 
     stand_in = ConceptModel()
-    monkeypatch.setattr(core.deployment_loader, "build_embedder", lambda config: stand_in)
+    monkeypatch.setattr(elysium.core.deployment_loader, "build_embedder", lambda config: stand_in)
     return stand_in
 
 
 @pytest.fixture
 def deployment(tmp_path, monkeypatch, model):
-    from core.deployment_loader import RuntimePaths
+    from elysium.core.deployment_loader import RuntimePaths
 
     monkeypatch.setenv("ELYSIUM_COOKIE_SECURE", "false")
     config = tmp_path / "config"
@@ -99,7 +99,7 @@ def deployment(tmp_path, monkeypatch, model):
         integration_conftest._build_sqlite_db(integration_conftest.FIXTURES_DIR / sql, fixtures / db)
     (tmp_path / "log").mkdir()
     paths = RuntimePaths(config_dir=config, data_dir=data, log_dir=tmp_path / "log")
-    from scripts.run_sync import run_sync
+    from elysium.scripts.run_sync import run_sync
 
     output = io.StringIO()
     with contextlib.redirect_stdout(output):
@@ -109,7 +109,7 @@ def deployment(tmp_path, monkeypatch, model):
 
 
 def _client(paths, username="ops", role="debug"):
-    from api.app import create_app
+    from elysium.api.app import create_app
 
     client = TestClient(create_app(paths))
     with contextlib.suppress(ValueError):
@@ -124,7 +124,7 @@ def _subjects(response) -> list:
 
 
 def test_the_sync_embeds_every_ticket_once(deployment, model):
-    from core.embeddings import EmbeddingStore
+    from elysium.core.embeddings import EmbeddingStore
 
     printed = (deployment.data_dir.parent / "sync_output.txt").read_text()
     assert "embeddings  SupportTicket: 3 embedded, 0 unchanged, 0 removed" in printed
@@ -221,13 +221,13 @@ def test_a_record_in_another_region_has_no_similar_records_for_you(deployment):
 
 
 def test_a_failure_to_embed_never_fails_the_sync(deployment, monkeypatch):
-    import core.deployment_loader
-    from scripts.run_sync import run_sync
+    import elysium.core.deployment_loader
+    from elysium.scripts.run_sync import run_sync
 
     def broken(config):
         raise RuntimeError("no embedder today")
 
-    monkeypatch.setattr(core.deployment_loader, "build_embedder", broken)
+    monkeypatch.setattr(elysium.core.deployment_loader, "build_embedder", broken)
     output = io.StringIO()
     with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
         run_sync(deployment)
@@ -237,8 +237,8 @@ def test_a_failure_to_embed_never_fails_the_sync(deployment, monkeypatch):
 
 
 def test_a_type_no_longer_declared_loses_its_vectors(deployment):
-    from core.embeddings import EmbeddingStore
-    from scripts.run_sync import run_sync
+    from elysium.core.embeddings import EmbeddingStore
+    from elysium.scripts.run_sync import run_sync
 
     schema_path = deployment.config_dir / "ontology_schema.yaml"
     ontology = yaml.safe_load(schema_path.read_text())
@@ -265,7 +265,7 @@ def test_the_query_agent_ranks_by_meaning_through_the_same_rules(deployment):
     """The configured loop, its model scripted: a search_meaning step
     reaches the deployment's embedder and store, and keeps what Browse
     keeps -- the refund ticket first, never the other region's."""
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.core.access.auth import UserRecord
     from tests.conftest import scripted_llm_client
 
     client = _client(deployment)
@@ -291,7 +291,7 @@ def test_the_visible_schema_says_which_types_rank_by_meaning(deployment):
 
 
 def test_the_agent_step_without_an_embedding_model_is_refused_at_load(deployment):
-    from core.deployment_loader import build_generation
+    from elysium.core.deployment_loader import build_generation
 
     settings_path = deployment.config_dir / "config.yaml"
     settings = yaml.safe_load(settings_path.read_text())

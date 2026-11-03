@@ -1,0 +1,728 @@
+"""
+sqlite_adapter.py  (SQLite-specific -- the only place SQL syntax exists)
+
+Two real, separate classes -- SQLiteReadAdapter(ExternalReadAdapter) and
+SQLiteWriteAdapter(ExternalWriteAdapter) -- not the single, combined
+SQLiteAdapter this file used to define. A real, direct request, worked
+through carefully: "adapters/ should just be the veneer that extends
+down the implementation-specific interfacing" against the real,
+structural ExternalReadAdapter/ExternalWriteAdapter split in core/
+ontology/interface.py -- see that file's own module docstring for the
+fuller design reasoning. Each class here holds ONLY the SQLite-specific
+connection/query mechanics for its own real role; the shared, module-
+level _run_query()/_run_query_one() helpers below are pure, stateless
+query-execution mechanics, not adapter state or capability, so staying
+shared between both classes doesn't blur the real read/write line this
+whole split exists to draw.
+
+The raw SQLite mechanics (_connect/_run_query/_run_query_one) are only
+ever used by the two classes below -- a real 1:1 relationship, not a
+shared layer serving many adapters. Splitting them into a separate
+connectors/ package would have added a file without adding a real
+architectural seam (see design discussion: adapters/ is pluggable via
+config + registry; there is no equivalent second mechanism for a
+"connector" layer to plug into).
+
+Purely mechanical -- no security logic, no policy judgment.
+core/ontology/mediator.py's DataMediator (reads) and core/ontology/
+write_mediator.py's WriteMediator (writes) are the only real callers,
+and only ever call a method here after their own checks have already
+passed.
+
+CONCURRENCY: SQLiteWriteAdapter declares max_concurrent_writes=1
+(SQLite's write lock is whole-FILE -- see core/ontology/interface.py's
+own docstring for why this is a real, honest exception, not the
+default). Reads are otherwise handled by DataMediator's own per-object
+lock plus this adapter's atomic conditional write_fields() -- see that
+method's docstring for the actual lost-update-prevention mechanism.
+
+Used by: core/deployment_loader.py (constructs one READ instance and
+         one, genuinely SEPARATE, WRITE instance per silo declared in
+         a deployment's data_silos.yaml -- see that file's own
+         _build_adapters() and its own AI-notes for why two, not one)
+"""
+
+import sqlite3
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any
+
+from sqlalchemy.dialects.sqlite import dialect as sqlite_dialect
+
+from elysium.core.filters import FilterError, UnsupportedFilter
+from elysium.core.ontology.bindings import link_route
+from elysium.core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter, StorageUnavailable
+from elysium.core.sqlite_connection import open_connection as _connect
+
+
+def _describe_failure(error: sqlite3.OperationalError, db_path) -> str:
+    """A storage error a reader can act on.
+
+    THE PATH IS PASSED IN, not asked of the connection. A first version
+    used `PRAGMA database_list` and got "(unknown database)" every
+    time: this adapter reads through an authorizer permitting only
+    SELECT, READ and FUNCTION, and PRAGMA is denied -- the same control
+    that shaped columns_present(). The adapter knows its own path
+    anyway, so asking SQLite for it was the wrong instinct twice over.
+
+    "no such table: transactions" propagated raw through the mediator,
+    the route and FastAPI, arriving as an opaque 500. The information
+    needed to diagnose it -- WHICH database, and that the ontology
+    declares a table the source does not have -- was available at the
+    point of failure and discarded.
+
+    core/mirror/drift_policy.py already argues this for the sync path:
+    storage behaviour must not become policy by default. The same
+    applies on the READ path, where a dropped source table is a
+    deployment problem with a specific remedy, not a server fault.
+    """
+    message = str(error)
+    if "no such table" in message:
+        table = message.rsplit(":", 1)[-1].strip()
+        return (
+            f"{db_path}: the ontology declares table {table!r} and the database "
+            f"does not have it. Either the source table was dropped or renamed, "
+            f"or this database was restored from a state that predates it."
+        )
+    if "no such column" in message:
+        column = message.rsplit(":", 1)[-1].strip()
+        return (
+            f"{db_path}: the ontology declares column {column!r} and the database "
+            f"does not have it. See core/mirror/drift_policy.py for what a sync "
+            f"does about the same change."
+        )
+    return f"{db_path}: {message}"
+
+
+def _run_query(conn: sqlite3.Connection, sql: str, params: tuple = (),
+                db_path: str = "(unknown database)") -> list[dict]:
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    except sqlite3.OperationalError as error:
+        raise StorageUnavailable(_describe_failure(error, db_path)) from error
+    return [dict(row) for row in rows]
+
+
+def _run_query_one(conn: sqlite3.Connection, sql: str, params: tuple = (),
+                    db_path: str = "(unknown database)") -> dict | None:
+    try:
+        row = conn.execute(sql, params).fetchone()
+    except sqlite3.OperationalError as error:
+        raise StorageUnavailable(_describe_failure(error, db_path)) from error
+    return dict(row) if row is not None else None
+
+
+def _run_query_in_batches(conn: sqlite3.Connection, sql: str, batch_size: int,
+                          db_path: str = "(unknown database)", params: tuple = ()):
+    """_run_query, a batch at a time (R5): ONE query, fetched in pieces.
+    Beside its siblings so that whatever counts queries counts this."""
+    try:
+        cursor = conn.execute(sql, params)
+        while batch := cursor.fetchmany(batch_size):
+            yield [dict(row) for row in batch]
+    except sqlite3.OperationalError as error:
+        raise StorageUnavailable(_describe_failure(error, db_path)) from error
+
+
+def _clause_for(condition, declared_type: str | None = None) -> tuple[str, list]:
+    """One condition as a SQL fragment plus its bound values.
+
+    A separate function because the mapping from operator to SQL is
+    the part worth testing directly: whether `in` produces the right
+    number of placeholders is not observable from a query's results
+    when the fixture happens to have one matching row.
+
+    Every branch returns placeholders, never a value spliced into the
+    string. `field` is a column name the mediator has already checked
+    against the caller's own visible schema.
+    """
+    field, operator, value = condition.field, condition.operator, condition.value
+
+    # NUMERIC COMPARISON ON A TEXT COLUMN IS LEXICOGRAPHIC, and SQLite
+    # will not tell you. A customer database that stores money as TEXT
+    # -- which many do -- answers `amount BETWEEN 10 AND 50` with
+    # 100.00, because the column's TEXT affinity converts the bounds
+    # to text and "100.00" sorts between "10" and "50". REPRODUCED
+    # before fixing.
+    #
+    # The CAST is applied only where the ONTOLOGY declares a numeric
+    # type. Guessing from the value would make a string field whose
+    # contents happen to look numeric compare differently from one
+    # whose do not, which is a worse surprise than this one.
+    column = _q(field)
+    if declared_type in NUMERIC_TYPES:
+        column = f"CAST({column} AS NUMERIC)"
+
+    if operator == "equals":
+        return f"{column} = ?", [value]
+    if operator in ("in", "not_in"):
+        # An empty set would emit `IN ()`, which is not valid SQL.
+        # validate_filter() rejects it upstream; this raises rather
+        # than trusting that, because an adapter that produces broken
+        # SQL when a caller forgets to validate is a worse failure than
+        # one that says so.
+        if not value:
+            raise FilterError(f"{field!r}: {operator} needs at least one value.")
+        placeholders = ", ".join("?" for _ in value)
+        keyword = "IN" if operator == "in" else "NOT IN"
+        return f"{column} {keyword} ({placeholders})", list(value)
+    if operator == "range":
+        return _bounded_clause(field, value.get("min"), value.get("max"), column)
+    if operator == "date_range":
+        # Compared as TEXT, which is correct for ISO-8601: lexical
+        # order matches chronological order, which is the property the
+        # format was designed for. A non-ISO date column would compare
+        # wrongly, and that is why date_range requires ISO input.
+        return _bounded_clause(field, value.get("start"), value.get("end"), column)
+    if operator == "contains":
+        # LIKE with the wildcards in the BOUND value, not the pattern,
+        # so a value containing % or _ cannot widen its own match.
+        return f"{column} LIKE ?", [f"%{_escape_like(value)}%"]
+
+    raise UnsupportedFilter(f"SQLite adapter cannot express {operator!r}")
+
+
+def _limit_clause(limit: int | None) -> str:
+    """` LIMIT n`, or nothing at all.
+
+    INTERPOLATED RATHER THAN BOUND, which is safe here and nowhere
+    else: SQLite will not accept a placeholder in LIMIT, and the value
+    is an int the adapter has just checked -- never a string, never
+    user text. Every other value in this module is bound.
+
+    A NON-POSITIVE LIMIT IS NO LIMIT. Asking for at most zero rows is
+    almost always a caller bug rather than an intention, and returning
+    nothing would look like an empty table.
+    """
+    if limit is None or not isinstance(limit, int) or limit <= 0:
+        return ""
+    return f" LIMIT {int(limit)}"
+
+
+def _bounded_clause(field: str, low, high, column: str | None = None) -> tuple[str, list]:
+    # `column` is the QUOTED and possibly CAST expression; `field` is
+    # the bare name, kept for the error message, which an operator
+    # reads and which should not contain SQL.
+    column = column or _q(field)
+    # Both absent would emit `field <= ?` bound to None, which matches
+    # NOTHING and reports no error -- the hardest kind of wrong answer
+    # to debug. Rejected here as well as in validation.
+    if low is None and high is None:
+        raise FilterError(f"{field!r}: a range needs at least one bound.")
+    if low is not None and high is not None:
+        return f"{column} BETWEEN ? AND ?", [low, high]
+    if low is not None:
+        return f"{column} >= ?", [low]
+    return f"{column} <= ?", [high]
+
+
+
+# QUOTING IDENTIFIERS IS NOT OURS TO INVENT (LIB-3). Every table and
+# column name below is interpolated into SQL text, and a name that is
+# a reserved word or contains a space -- `order details`, both legal in
+# SQLite -- produced a syntax error, so a customer database using one
+# simply could not be mapped. REPRODUCED before fixing.
+#
+# SQLAlchemy is already a dependency (rule 18 prefers one we have), and
+# its IdentifierPreparer knows this dialect's rules: which words are
+# reserved, when quotes are needed, and how to escape a quote inside a
+# name. Writing that by hand is the sort of thing that looks right for
+# years and then meets a column called `group`.
+_PREPARER = sqlite_dialect().identifier_preparer
+
+
+def _q(identifier: str) -> str:
+    """One table or column name, safely quoted for SQLite."""
+    return _PREPARER.quote(identifier)
+
+
+# The ontology's numeric types -- `decimal` included, because money is
+# exactly what a range filter is for.
+NUMERIC_TYPES = ("integer", "number", "decimal")
+
+
+def _escape_like(value: str) -> str:
+    # Without this, searching for "50%" matches anything starting "50".
+    return value.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+
+
+class SQLiteReadAdapter(ExternalReadAdapter):
+    # Reads are genuinely fine concurrently -- SQLite handles that
+    # natively.
+    max_concurrent_reads = None
+
+    def __init__(self, connection: dict):
+        # connection comes straight from this silo's config.yaml block,
+        # e.g. {"path": "dev_fixtures/mediator.db"} -- opaque to
+        # DataMediator, meaningful only here.
+        self.db_path = Path(connection["path"])
+        # A DEADLINE THIS SILO MAY SET FOR ITSELF. Absent means the
+        # default, which is what nearly every deployment should use --
+        # the option exists because a silo on a slow link has a
+        # different idea of "too long" than one on local disk, not
+        # because anyone should be tuning it routinely.
+        self.query_timeout_seconds = connection.get("query_timeout_seconds")
+
+    @contextmanager
+    def _connection(self):
+        # read_only=True -- a REAL, structural, SQLite-engine-enforced
+        # guarantee (core/sqlite_connection.py's own open_connection(),
+        # using sqlite3.Connection.set_authorizer(); confirmed
+        # directly, empirically, before being relied on anywhere:
+        # SELECT succeeds while INSERT/UPDATE/DELETE/DROP are all
+        # genuinely denied at the engine level itself). Phase 1 of the
+        # read-only mirror initiative (see the roadmap (consumed)'s own
+        # "Read-only data mirror architecture" section).
+        #
+        # Phase 0 gave DataMediator its own, SEPARATE adapter
+        # instances of a genuinely read-only TYPE
+        # (ExternalReadAdapter, no write methods declared at all) --
+        # real, but only half the guarantee: nothing stopped a future
+        # bug, or a raw conn.execute() somewhere in this class, from
+        # issuing a write through the connection anyway. This closes
+        # that: the customer's own, external, third-party business
+        # data is now structurally unwritable through DataMediator's
+        # own read path, in code, regardless of what any caller
+        # intends.
+        #
+        # This is the CODE-LEVEL half of a deliberately two-layer
+        # guarantee. The other half -- a genuinely separate,
+        # SELECT-only DATABASE CREDENTIAL, enforced by the database
+        # itself rather than by Elysium's own code -- is a real,
+        # separate, still-outstanding deployment concern (see
+        # the roadmap (consumed), and INSTALL.md once written): confirmed
+        # directly
+        # against the precedent's own real, documented practice that the
+        # credential is the primary enforcement point, with
+        # application code as defense in depth, never the reverse.
+        # Neither layer alone is the whole guarantee.
+        conn = _connect(self.db_path, read_only=True,
+                        timeout_seconds=self.query_timeout_seconds)
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    # SQL expresses every operator in the vocabulary.
+    pushable_operators = frozenset(
+        {"equals", "in", "not_in", "range", "date_range", "contains"}
+    )
+
+    def find_ids(self, object_type: str, conditions: list, type_config: dict,
+                 limit: int | None = None) -> list[Any]:
+        table = type_config["storage"]["table"]
+        id_column = type_config["storage"]["id_column"]
+
+        # Column NAMES are validated by DataMediator before this is ever
+        # called; VALUES are always bound params, never interpolated.
+        # That split is what makes the operator set safe to widen: every
+        # clause below builds placeholders and hands the values
+        # separately, so a value can never become SQL.
+        clauses: list[str] = []
+        values: list[Any] = []
+        for condition in conditions:
+            declared = ((type_config.get("fields") or {}).get(condition.field)
+                        or {}).get("data_type")
+            clause, bound = _clause_for(condition, declared)
+            clauses.append(clause)
+            values.extend(bound)
+
+        where_clause = " AND ".join(clauses)
+
+        with self._connection() as conn:
+            if where_clause:
+                rows = _run_query(
+                    conn,
+                    f"SELECT {_q(id_column)} FROM {_q(table)} WHERE {where_clause}"
+                    + _limit_clause(limit),
+                    tuple(values),
+                    db_path=str(self.db_path),
+                )
+            else:
+                rows = _run_query(
+                    conn,
+                    f"SELECT {_q(id_column)} FROM {_q(table)}" + _limit_clause(limit),
+                    db_path=str(self.db_path),
+                )
+        return [row[id_column] for row in rows]
+
+    def find_ids_matching_text(self, object_type: str, columns: list[str], query_text: str,
+                                type_config: dict) -> list[Any]:
+        # Free-text, CONTAINS (not exact-match) search across several
+        # columns at once, ORed together -- the human-facing browse/
+        # search counterpart to find_ids()'s own exact-match filtering,
+        # which stays completely untouched by this addition (a genuinely
+        # different KIND of match, not a mode flag bolted onto the
+        # existing method -- see core/ontology/mediator.py's own AI-
+        # notes for the fuller reasoning). SQLite's LIKE is already
+        # case-insensitive for ASCII by default (verified directly, not
+        # assumed) -- no explicit LOWER() needed on either side.
+        #
+        # query_text is escaped for LIKE's own wildcard characters (%, _)
+        # before being wrapped in %...% -- verified directly (not
+        # assumed) that an unescaped search for a literal "50%" would
+        # otherwise ALSO match "50X" and similar, since % is a genuine
+        # SQL wildcard, not a literal character, unless told otherwise
+        # via ESCAPE. Column NAMES are validated by DataMediator before
+        # this is ever called, same as find_ids(); the query VALUE is
+        # always a bound param, never interpolated, same discipline.
+        table = type_config["storage"]["table"]
+        id_column = type_config["storage"]["id_column"]
+
+        if not columns:
+            return []
+
+        escaped = query_text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        where_clause = " OR ".join(f"{_q(column)} LIKE ? ESCAPE '\\'" for column in columns)
+        values = tuple(pattern for _ in columns)
+
+        with self._connection() as conn:
+            rows = _run_query(
+                conn, f"SELECT {_q(id_column)} FROM {_q(table)} WHERE {where_clause}", values,
+                db_path=str(self.db_path),
+            )
+            return [row[id_column] for row in rows]
+
+    def get_raw_field(self, object_type: str, object_id: Any, field_name: str, type_config: dict) -> Any:
+        table = type_config["storage"]["table"]
+        id_column = type_config["storage"]["id_column"]
+
+        with self._connection() as conn:
+            row = _run_query_one(
+                conn, f"SELECT {_q(field_name)} FROM {_q(table)} WHERE {_q(id_column)} = ?", (object_id,),
+                db_path=str(self.db_path),
+            )
+            return row[field_name] if row else None
+
+    def resolve_reverse_links_batch(self, object_ids: list, field_config: dict,
+                                     target_id_column: str) -> dict:
+        # ONE query for every source object, grouped in Python. The
+        # via_column is selected alongside the target id specifically so
+        # the results can be grouped back to their source without a
+        # second lookup.
+        #
+        # Table and column names come from the ontology, exactly as in
+        # resolve_reverse_link() above; only the id VALUES are
+        # parameterised, and they are placeholder-bound rather than
+        # interpolated.
+        if not object_ids:
+            return {}
+
+        route = link_route(field_config, target_id_column)
+        via_table, via_column, result_column = route.table, route.column, route.result_column
+        placeholders = ", ".join("?" for _ in object_ids)
+        with self._connection() as conn:
+            rows = _run_query(
+                conn,
+                f"SELECT {_q(result_column)}, {_q(via_column)} FROM {_q(via_table)} "
+                f"WHERE {_q(via_column)} IN ({placeholders})",
+                tuple(object_ids),
+                db_path=str(self.db_path),
+            )
+
+        grouped: dict = {}
+        for row in rows:
+            grouped.setdefault(row[via_column], []).append(row[result_column])
+        return grouped
+
+    def health_check(self) -> None:
+        # THE FILE'S EXISTENCE IS CHECKED FIRST, and that is not
+        # belt-and-braces. sqlite3.connect() CREATES a missing database
+        # rather than failing, so a connection and a SELECT 1 succeed
+        # against a brand-new empty file -- verified directly by moving
+        # a silo's database away and watching this report "reachable".
+        # A health check that goes green when the customer's data has
+        # vanished is worse than none: it is the alert that will not
+        # fire on the incident it exists for.
+        if not Path(self.db_path).exists():
+            raise FileNotFoundError(f"No database at {self.db_path}")
+        with self._connection() as conn:
+            conn.execute("SELECT 1").fetchone()
+            # AND THAT IT HAS TABLES, which SELECT 1 does not tell you.
+            # The comment above stopped one step short: a file that
+            # EXISTS but is empty passes every check here and fails
+            # every read, because sqlite3.connect() creates an empty
+            # database and an empty database answers SELECT 1 happily.
+            #
+            # Found the hard way. A dev database was restored to a
+            # state with no tables; Silos reported all three reachable
+            # while every object read returned a raw 500. A health
+            # check that goes green on an unusable database is the same
+            # failure the paragraph above describes, one layer in.
+            tables = conn.execute(
+                "SELECT count(*) AS n FROM sqlite_master WHERE type = 'table'"
+            ).fetchone()["n"]
+            if tables == 0:
+                raise RuntimeError(
+                    f"Database at {self.db_path} exists but contains no tables -- "
+                    f"it was created empty, truncated, or restored from a state "
+                    f"that had none. Every read against this silo will fail."
+                )
+
+    def read_fields_for_ids(self, table_name: str, id_column: str, object_ids: list,
+                             columns: list[str], type_config: dict) -> list[dict]:
+        if not object_ids:
+            return []
+        # Table and column names come from the ontology; only the id
+        # VALUES are parameterised, and they are placeholder-bound
+        # rather than interpolated -- the same split every other query
+        # in this adapter uses.
+        placeholders = ", ".join("?" for _ in object_ids)
+        selected = ", ".join(_q(name) for name in dict.fromkeys([id_column, *columns]))
+        with self._connection() as conn:
+            rows = _run_query(
+                conn,
+                f"SELECT {selected} FROM {_q(table_name)} WHERE {_q(id_column)} IN ({placeholders})",
+                tuple(object_ids),
+                db_path=str(self.db_path),
+            )
+        return [dict(row) for row in rows]
+
+    def read_all_rows(self, table_name: str, columns: list[str], type_config: dict) -> list[dict]:
+        # ONE query for the whole table, versus one per field per row
+        # through get_raw_field(). Column NAMES come from the ontology
+        # (resolved by core/mirror/sync_targets.py) and are validated
+        # before reaching any adapter, same as find_ids() -- never
+        # caller-supplied strings, so interpolating them here carries
+        # the same, already-established trust as every other query in
+        # this file.
+        if not columns:
+            return []
+        column_list = ", ".join(_q(name) for name in columns)
+        with self._connection() as conn:
+            return _run_query(conn, f"SELECT {column_list} FROM {_q(table_name)}", db_path=str(self.db_path))
+
+    def iter_all_rows(self, table_name: str, columns: list[str], type_config: dict,
+                      batch_size: int = 50_000):
+        """read_all_rows, a batch at a time (R5): one query, fetched in
+        pieces, so the rows are never all Python dicts at once. The
+        connection's deadline still bounds the whole read, as it did."""
+        if not columns:
+            return
+        column_list = ", ".join(_q(name) for name in columns)
+        with self._connection() as conn:
+            yield from _run_query_in_batches(conn, f"SELECT {column_list} FROM {_q(table_name)}",
+                                             batch_size, db_path=str(self.db_path))
+
+    def iter_rows_since(self, table_name: str, columns: list[str], cursor_column: str,
+                        since, batch_size: int = 50_000):
+        """iter_all_rows WHERE cursor >= since (R2). SQLite compares
+        what it stores, so a text timestamp is compared as text --
+        correct when the source writes one format, which is the
+        source's promise to keep, and the full read repairs it when it
+        does not."""
+        if not columns:
+            return
+        column_list = ", ".join(_q(name) for name in columns)
+        with self._connection() as conn:
+            yield from _run_query_in_batches(
+                conn, f"SELECT {column_list} FROM {_q(table_name)} WHERE {_q(cursor_column)} >= ?",
+                batch_size, db_path=str(self.db_path), params=(since,))
+
+    def source_column_types(self, table_name: str) -> dict[str, str]:
+        """NOTHING, and the reason is worth stating.
+
+        SQLITE CANNOT REPORT COLUMN TYPES THROUGH A READ-ONLY
+        CONNECTION. The two ways to ask both fail here:
+
+        PRAGMA table_info RETURNS "not authorized". The authorizer
+        this adapter uses permits SQLITE_SELECT, READ and FUNCTION and
+        denies everything else -- PRAGMA included, which is exactly
+        the guarantee that makes a read adapter unable to write.
+        `columns_present` hit this first and documents it.
+
+        AND THE ALLOWED PATH CARRIES NO TYPES. `SELECT * LIMIT 0` gives
+        `cursor.description` with a name per column and None for every
+        other field, verified.
+
+        SO THIS RETURNS {} -- "cannot say" -- and drift detection skips
+        the comparison rather than reporting every column as changed.
+        Routing around the authorizer to answer it would trade a
+        structural write guarantee for a diagnostic, which is a bad
+        trade.
+
+        A REAL DATABASE ANSWERS THIS PROPERLY. The SQLAlchemy adapter
+        returns verbatim types through Core's Inspector, uniformly
+        across every dialect -- and a customer's data lives there,
+        while SQLite is the embedded fixture case.
+        """
+        return {}
+
+    def columns_present(self, table_name: str) -> set[str]:
+        """Which columns this table ACTUALLY has, right now.
+
+        A ZERO-ROW SELECT, not PRAGMA table_info, and the reason is a
+        security control rather than taste. This adapter reads through
+        a connection whose authorizer permits SQLITE_SELECT, READ and
+        FUNCTION and denies everything else -- PRAGMA included, because
+        PRAGMA can write (journal_mode, synchronous, and others).
+        Reaching for PRAGMA here returned "not authorized", and the fix
+        is to use the operation that IS permitted, never to widen the
+        authorizer for the convenience of one query.
+
+        `LIMIT 0` reads no rows at all, so the answer is the table's
+        SHAPE and costs nothing on a large table -- and, unlike
+        inspecting a returned row, it is still correct for an empty
+        table. A table can be emptied and reshaped in the same
+        migration.
+
+        Interpolated, for the reason read_all_rows() above already
+        states: table names come from ontology_schema.yaml, validated
+        at load, never caller-supplied.
+        """
+        try:
+            with self._connection() as conn:
+                cursor = conn.execute(f"SELECT * FROM {_q(table_name)} LIMIT 0")
+                return {description[0] for description in cursor.description}
+        except sqlite3.Error:
+            # An absent table, an unopenable file, a denied read: all
+            # answer the caller's question the same way. Nothing here
+            # satisfies a declared field, and a caller asking which
+            # columns exist should not also have to handle "the file is
+            # gone" separately.
+            return set()
+
+    #: SQLite matches table names without regard to case.
+    table_names_ignore_case = True
+
+    def tables_present(self) -> "set[str] | None":
+        """Tables and views, by a SELECT on sqlite_master: the operation
+        the read-only authorizer permits (see columns_present)."""
+        try:
+            with self._connection() as conn:
+                return {row[0] for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')")}
+        except sqlite3.Error:
+            return None
+
+    def resolve_reverse_link(self, object_id: Any, field_config: dict, target_id_column: str) -> list[Any]:
+        # For a MANY-TO-MANY link the row lives in a join table, so the
+        # id to return is that table's own target column -- the join
+        # table does not have the target type's id column at all. A
+        # foreign-key link declares no via_target_column and reads the
+        # target's id column as before. core/ontology/bindings.link_route.
+        route = link_route(field_config, target_id_column)
+        via_table, via_column, result_column = route.table, route.column, route.result_column
+        with self._connection() as conn:
+            rows = _run_query(
+                conn, f"SELECT {_q(result_column)} FROM {_q(via_table)} WHERE {_q(via_column)} = ?", (object_id,),
+                db_path=str(self.db_path),
+            )
+            return [row[result_column] for row in rows]
+
+
+class SQLiteWriteAdapter(SQLiteReadAdapter, ExternalWriteAdapter):
+    # Extends SQLiteReadAdapter directly -- not a second, parallel
+    # implementation of find_ids/get_raw_field/etc, and not ONLY
+    # ExternalWriteAdapter either. A real, necessary correction caught
+    # directly, not assumed away: WriteMediator's own write flow
+    # genuinely needs to READ a field's current value before writing
+    # it (the optimistic-concurrency check -- see write_mediator.py's
+    # own _read_group_fields()), so the write-side adapter needs BOTH
+    # real capabilities, not write-only. This is the SAME real,
+    # established pattern already cited when choosing the whole
+    # ReadAdapter/WriteAdapter split in the first place (Python's own
+    # typeshed: a concrete type needing both SupportsRead and
+    # SupportsWrite composes them via real inheritance from the
+    # separate, atomic pieces -- never a third, redundant "does
+    # everything" interface invented from scratch). Inheriting from
+    # SQLiteReadAdapter directly, rather than re-declaring the same
+    # four read methods here, means there is exactly ONE real
+    # implementation of find_ids/find_ids_matching_text/get_raw_field/
+    # resolve_reverse_link in this whole file, not two to keep in
+    # sync.
+    #
+    # SQLite's write lock is whole-FILE -- coarser than DataMediator's
+    # per-object correctness lock, which is why this is a real, honest
+    # exception rather than None (see core/ontology/interface.py's own
+    # docstring).
+    max_concurrent_writes = 1
+    supports_atomic_conditional_write = True
+
+    @contextmanager
+    def _connection(self):
+        # Overrides SQLiteReadAdapter's own, now read-only
+        # _connection() -- necessary, not incidental: this class
+        # genuinely writes, and inherits from SQLiteReadAdapter
+        # specifically to reuse its four real read implementations
+        # (WriteMediator's own optimistic-concurrency check genuinely
+        # needs to read current values before writing -- see this
+        # class's own docstring above). Without this override, every
+        # inherited read would work but every write would be denied by
+        # the engine, which is exactly the read-only guarantee working
+        # correctly, just applied to the wrong half.
+        #
+        # The real asymmetry this creates is the entire point of the
+        # Phase 0/1 split: DataMediator's own adapters are
+        # structurally unwritable; WriteMediator's own -- reached only
+        # through the two-phase propose/confirm flow, after RBAC/MAC
+        # and a human approval -- genuinely are.
+        # THE SAME DEADLINE APPLIES TO WRITES, inherited from the read
+        # adapter this subclasses. A hung write blocks the one worker
+        # exactly as a hung read does, and a write that cannot finish
+        # in thirty seconds is not a write anyone is waiting for.
+        #
+        # SQLite ABORTS CLEANLY: the interrupt rolls the statement
+        # back, so a timed-out write leaves nothing half-applied.
+        conn = _connect(self.db_path, timeout_seconds=self.query_timeout_seconds)
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    def write_fields(self, object_type: str, object_id: Any, changes: dict,
+                      expected_current_values: dict, type_config: dict) -> bool:
+        # ONE atomic SQL statement -- all fields in `changes` written
+        # together, all-or-nothing, AND conditional on every field in
+        # expected_current_values still matching. If another writer
+        # changed the row in between, the WHERE clause simply matches
+        # nothing: rowcount == 0, we return False, nothing is written.
+        # This is a genuine database-level atomicity guarantee -- holds
+        # even across separate OS processes, not just threads within
+        # this one (see core/ontology/interface.py's own
+        # supports_atomic_conditional_write docstring for why that
+        # distinction matters).
+        table = type_config["storage"]["table"]
+        id_column = type_config["storage"]["id_column"]
+
+        set_clause = ", ".join(f"{_q(key)} = ?" for key in changes)
+        # "IS ?", not "= ?" -- a REAL, confirmed bug otherwise: in SQL,
+        # "column = NULL" always evaluates to NULL/unknown, never TRUE,
+        # even when the actual stored value genuinely IS NULL. This
+        # made the lost-update check silently, always fail for any
+        # field whose CURRENT value happens to be NULL -- confirmed
+        # directly (a real ValueError, "changed since this write was
+        # proposed," on a field that had never actually changed at
+        # all) while testing propose_action() against a field that
+        # legitimately started NULL. SQLite's "IS" is null-safe
+        # equality -- identical to "=" for non-NULL values, but
+        # correctly treats NULL as a real, comparable value.
+        condition_clause = " AND ".join(f"{_q(key)} IS ?" for key in expected_current_values)
+        where_clause = f"{_q(id_column)} = ?" + (f" AND {condition_clause}" if condition_clause else "")
+
+        with self._connection() as conn:
+            cursor = conn.execute(
+                f"UPDATE {_q(table)} SET {set_clause} WHERE {where_clause}",
+                (*changes.values(), object_id, *expected_current_values.values()),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def create_object(self, object_type: str, fields: dict, type_config: dict) -> Any:
+        table = type_config["storage"]["table"]
+        id_column = type_config["storage"]["id_column"]
+
+        columns = ", ".join(_q(name) for name in fields)
+        placeholders = ", ".join("?" for _ in fields)
+
+        with self._connection() as conn:
+            cursor = conn.execute(
+                f"INSERT INTO {_q(table)} ({columns}) VALUES ({placeholders})", tuple(fields.values())
+            )
+            conn.commit()
+            new_id = cursor.lastrowid
+            # For non-autoincrement / string-keyed tables, lastrowid is
+            # meaningless -- fall back to whatever the caller supplied
+            # as the id_column value directly, if present.
+            return fields.get(id_column, new_id)

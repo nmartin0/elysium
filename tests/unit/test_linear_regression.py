@@ -2,7 +2,7 @@
 
 import pytest
 
-from functions.linear_regression import LinearRegressionFunction
+from elysium.functions.linear_regression import LinearRegressionFunction
 
 
 @pytest.fixture

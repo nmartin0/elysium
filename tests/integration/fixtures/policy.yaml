@@ -106,7 +106,7 @@ roles:
   # Deliberately grants name but NOT email -- for
   # tests/integration/test_field_denial_e2e.py, proving a real model
   # never sees (and, via the citation/email verification in
-  # core/llm/synthesis_prompt.py, can never leak) a field it was
+  # src/elysium/core/llm/synthesis_prompt.py, can never leak) a field it was
   # genuinely never granted access to.
   customer_service_no_email:
     allowed_actions:

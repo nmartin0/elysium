@@ -6,9 +6,9 @@ import random
 
 import pytest
 
-from core.ontology.unusual_checks import validate_unusual_checks
-from core.unusual import MAX_FLAGS, MIN_GROUP, find_unusual
-from core.unusual_flags import UnusualFlagStore
+from elysium.core.ontology.unusual_checks import validate_unusual_checks
+from elysium.core.unusual import MAX_FLAGS, MIN_GROUP, find_unusual
+from elysium.core.unusual_flags import UnusualFlagStore
 
 
 def _records(count=3_000, seed=0):

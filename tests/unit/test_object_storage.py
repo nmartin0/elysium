@@ -32,8 +32,8 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
 COLUMNS = ["id", "a"]
 TYPES = {"id": "string", "a": "string"}
@@ -208,7 +208,7 @@ class TestReachableFromConfig:
         return target
 
     def test_no_mirror_section_means_local(self, tmp_path):
-        from core.deployment_loader import load_deployment
+        from elysium.core.deployment_loader import load_deployment
 
         config = load_deployment(self._deployment(tmp_path, ""))
 
@@ -223,7 +223,7 @@ class TestReachableFromConfig:
         linter the moment the example was written, which is what it is
         for.
         """
-        from core.deployment_loader import load_deployment
+        from elysium.core.deployment_loader import load_deployment
 
         config = load_deployment(self._deployment(tmp_path, "mirror:\n  # nothing but comments\n"))
 
@@ -235,7 +235,7 @@ class TestReachableFromConfig:
         assert config.read_from_mirror is True
 
     def test_storage_settings_reach_the_config(self, tmp_path):
-        from core.deployment_loader import load_deployment
+        from elysium.core.deployment_loader import load_deployment
 
         section = (
             "mirror:\n"
@@ -261,7 +261,7 @@ def test_run_sync_passes_the_storage_setting_to_the_mirror(tmp_path, monkeypatch
     That is the third instance of this shape recorded in AGENTS.md, and
     the second time I have introduced it while fixing an earlier one.
     """
-    import scripts.run_sync as run_sync
+    import elysium.scripts.run_sync as run_sync
 
     seen = {}
 

@@ -22,10 +22,10 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteWriteAdapter
-from core.filters import as_equality_conditions
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.mediator import DataMediator
+from elysium.adapters.sqlite_adapter import SQLiteWriteAdapter
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.filters import as_equality_conditions
+from elysium.core.ontology.mediator import DataMediator
 from tests.conftest import author_book_mediator
 
 TEST_USERS = {

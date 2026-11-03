@@ -17,7 +17,7 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
 
 
 @pytest.fixture
@@ -89,10 +89,10 @@ def test_the_mirror_reports_what_IT_holds(tmp_path):
     # honestly: what was copied here, not what the source has now. The
     # sync asks the SOURCE adapter; asking the mirror is meaningful but
     # means something else.
-    from adapters.sqlite_adapter import SQLiteReadAdapter as Source
-    from core.mirror.iceberg_sync import IcebergMirrorSync
-    from core.mirror.lineage import LINEAGE_COLUMNS
-    from core.mirror.mirror_adapter import MirrorReadAdapter
+    from elysium.adapters.sqlite_adapter import SQLiteReadAdapter as Source
+    from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+    from elysium.core.mirror.lineage import LINEAGE_COLUMNS
+    from elysium.core.mirror.mirror_adapter import MirrorReadAdapter
 
     path = tmp_path / "src.db"
     conn = sqlite3.connect(path)
@@ -112,8 +112,8 @@ def test_the_mirror_reports_what_IT_holds(tmp_path):
 
 
 def test_an_unmirrored_table_is_an_empty_set(tmp_path):
-    from core.mirror.iceberg_sync import IcebergMirrorSync
-    from core.mirror.mirror_adapter import MirrorReadAdapter
+    from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+    from elysium.core.mirror.mirror_adapter import MirrorReadAdapter
 
     sync = IcebergMirrorSync(tmp_path / "mirror", {})
 

@@ -22,9 +22,9 @@ fixture storage against a customer's real database.
 
 import pytest
 
-from adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
-from core.filters import FieldFilter
-from core.ontology.interface import StorageUnavailable
+from elysium.adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
+from elysium.core.filters import FieldFilter
+from elysium.core.ontology.interface import StorageUnavailable
 
 
 @pytest.fixture(scope="module")
@@ -277,7 +277,7 @@ class TestItReadsOnlyWhatChanged:
         assert sorted(r["tid"] for r in rows) == ["t2", "t3"], "t2 sits ON the mark: inclusive"
 
     def test_the_mark_read_back_is_the_mark_sent(self, adapter):
-        from core.mirror.incremental import decode_mark, encode_mark
+        from elysium.core.mirror.incremental import decode_mark, encode_mark
 
         newest = max(r["seen"] for batch in adapter.iter_all_rows("txns", ["seen"], {})
                      for r in batch)

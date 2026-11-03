@@ -8,8 +8,8 @@ completeness against the real loader is test_used_by_is_complete.py.
 
 from types import SimpleNamespace
 
-from core.ontology.used_by import used_by_field, used_by_link, used_by_type
-from core.saved_views import SavedView
+from elysium.core.ontology.used_by import used_by_field, used_by_link, used_by_type
+from elysium.core.saved_views import SavedView
 
 
 def _schema() -> dict:

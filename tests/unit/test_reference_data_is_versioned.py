@@ -12,10 +12,10 @@ import json
 import logging
 import sqlite3
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import REFERENCE_DATA_PROPERTY, IcebergMirrorSync
-from core.mirror.sync_targets import resolve_sync_targets
-from core.ontology.constraints import validate_constraints
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import REFERENCE_DATA_PROPERTY, IcebergMirrorSync
+from elysium.core.mirror.sync_targets import resolve_sync_targets
+from elysium.core.ontology.constraints import validate_constraints
 
 SCHEMA = {"Person": {
     "id_field": "id", "storage": {"silo": "s", "table": "people", "id_column": "id"},

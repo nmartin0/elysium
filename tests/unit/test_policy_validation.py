@@ -1,5 +1,5 @@
 """
-Tests for core/intermediate_layer/policy_validation.py's validate_roles()
+Tests for core/access/policy_validation.py's validate_roles()
 -- schema-load-time validation for policy.yaml's role grants. See that
 module's own docstring for the full reasoning: authorize() itself does
 a bare exact-string match with no existence-checking of its own, so a
@@ -14,7 +14,7 @@ uses for the sibling ontology_schema.yaml validator.
 
 import pytest
 
-from core.intermediate_layer.policy_validation import validate_role_coherence, validate_roles
+from elysium.core.access.policy_validation import validate_role_coherence, validate_roles
 
 OBJECT_TYPES = {
     "Widget": {"id_field": "widget_id", "fields": {"name": {"type": "data"}}},

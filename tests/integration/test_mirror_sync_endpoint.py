@@ -269,7 +269,7 @@ class TestWhatWasHeldBack:
     def test_the_rules_are_the_REPORT_S_rules(self, client):
         """Wired to the reader rather than agreeing by luck, which is
         the same reason the count below is compared this way."""
-        from core.mirror.quarantine_report import quarantine_for
+        from elysium.core.mirror.quarantine_report import quarantine_for
         _as_admin(client)
         catalog = _mirror_catalog(client)
 
@@ -314,8 +314,8 @@ class TestWhatWasHeldBack:
         whatever ran the sync and stopped there. DEV_UI.md 5.6 asks
         for "failing expectations" beside the quarantined rows, and
         this is where that half comes from."""
-        from core.mirror.expectation_warnings import ExpectationWarnings
-        from core.mirror.expectations import RuleCount
+        from elysium.core.mirror.expectation_warnings import ExpectationWarnings
+        from elysium.core.mirror.expectations import RuleCount
         _as_admin(client)
         store = ExpectationWarnings(
             _mirror_dir(client) / "expectation_warnings.db")
@@ -342,8 +342,8 @@ class TestWhatWasHeldBack:
         """The two are different things and the panel must not merge
         them. A warned row is in silver; a quarantined one is not, and
         `quarantined_rows` is what explains a bronze/silver gap."""
-        from core.mirror.expectation_warnings import ExpectationWarnings
-        from core.mirror.expectations import RuleCount
+        from elysium.core.mirror.expectation_warnings import ExpectationWarnings
+        from elysium.core.mirror.expectations import RuleCount
         _as_admin(client)
         store = ExpectationWarnings(
             _mirror_dir(client) / "expectation_warnings.db")
@@ -361,7 +361,7 @@ class TestWhatWasHeldBack:
         violates no rules, so every count is zero and a mutation
         hard-coding zero passed. Comparing against the report proves
         the panel is WIRED to it rather than agreeing by luck."""
-        from core.mirror.quarantine_report import quarantine_for
+        from elysium.core.mirror.quarantine_report import quarantine_for
         _as_admin(client)
         catalog = _mirror_catalog(client)
 

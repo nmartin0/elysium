@@ -1,6 +1,6 @@
 # example_queries.yaml  (TEMPLATE -- copy into deployment/etc/ and edit)
 #
-# Optional demo queries for scripts/run_deployment.py -- a different
+# Optional demo queries for src/elysium/scripts/run_deployment.py -- a different
 # deployment lists its own users/queries here; the runner script
 # itself never needs to change. Each user_id must exist in policy.yaml.
 
@@ -17,7 +17,7 @@ examples:
 #
 # An example WITH it is rendered to anybody who opens the query screen,
 # before they have asked anything and whatever they are cleared to see.
-# `core/display_safety.py` refuses any that names an identifier-shaped
+# `src/elysium/core/display_safety.py` refuses any that names an identifier-shaped
 # token, and refuses it at LOAD so a deployment cannot start with a
 # leak in its placeholder text.
 #

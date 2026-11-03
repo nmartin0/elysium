@@ -215,7 +215,7 @@ late_after_minutes
 automatable
 
 # __getattr__ (api/app.py) -- a module-level __getattr__ (PEP 562), called
-# by Python for `api.app.app`; uvicorn reaches it by name.
+# by Python for `elysium.api.app.app`; uvicorn reaches it by name.
 __getattr__
 
 # should_exit (tests/integration/test_graceful_shutdown.py) -- read by

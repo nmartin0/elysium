@@ -31,7 +31,7 @@ is the username, the password is the username with padding.
 
 import pytest
 
-from core.auth.password_policy import password_problem
+from elysium.core.auth.password_policy import password_problem
 
 
 class TestWhatIsStillRefused:
@@ -81,7 +81,7 @@ class TestTheComparisonItself:
         SEC-22 found and what the standard forbids."""
         import inspect
 
-        from core.auth.password_policy import _is_the_username_or_a_derivative
+        from elysium.core.auth.password_policy import _is_the_username_or_a_derivative
 
         source = inspect.getsource(_is_the_username_or_a_derivative)
         code = source[source.index('"""', source.index('"""') + 3):]

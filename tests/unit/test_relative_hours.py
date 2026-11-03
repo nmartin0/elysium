@@ -9,10 +9,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from core.agent.set_context import condition_clause
-from core.filters import FieldFilter, FilterError, relative_window, resolve_relative_date, validate_filter
-from core.saved_views import SavedView
-from core.trigger_windows import next_crossing
+from elysium.core.agent.set_context import condition_clause
+from elysium.core.filters import FieldFilter, FilterError, relative_window, resolve_relative_date, validate_filter
+from elysium.core.saved_views import SavedView
+from elysium.core.trigger_windows import next_crossing
 
 NOW = datetime(2026, 7, 20, 12, tzinfo=UTC)
 

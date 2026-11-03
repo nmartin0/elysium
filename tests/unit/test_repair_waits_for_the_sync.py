@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from core.mirror.sync_lock import single_writer
+from elysium.core.mirror.sync_lock import single_writer
 
 
 class TestTheLockItself:
@@ -77,26 +77,26 @@ class TestBothWritersUseIt:
     is rejected."""
 
     def test_the_sync_takes_it(self):
-        source = Path("scripts/run_sync.py").read_text()
+        source = Path("src/elysium/scripts/run_sync.py").read_text()
 
-        assert "from core.mirror.sync_lock import single_writer" in source
+        assert "from elysium.core.mirror.sync_lock import single_writer" in source
         assert "single_writer(runtime_paths.data_dir" in source
 
     def test_and_so_does_the_repair(self):
-        source = Path("scripts/repair_catalog.py").read_text()
+        source = Path("src/elysium/scripts/repair_catalog.py").read_text()
 
-        assert "from core.mirror.sync_lock import single_writer" in source
+        assert "from elysium.core.mirror.sync_lock import single_writer" in source
         assert "single_writer(" in source
 
     def test_the_repair_refuses_rather_than_waiting(self):
-        source = Path("scripts/repair_catalog.py").read_text()
+        source = Path("src/elysium/scripts/repair_catalog.py").read_text()
 
         assert "NOTHING WAS REPAIRED" in source
 
     def test_they_name_the_same_lock_file(self):
         """Two locks would be no lock at all."""
-        sync = Path("scripts/run_sync.py").read_text()
-        repair = Path("scripts/repair_catalog.py").read_text()
+        sync = Path("src/elysium/scripts/run_sync.py").read_text()
+        repair = Path("src/elysium/scripts/repair_catalog.py").read_text()
 
         assert '"sync.lock"' in sync
         assert '"sync.lock"' in repair

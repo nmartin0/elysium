@@ -18,9 +18,9 @@ import pyarrow as pa
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from core.mirror.changelog import diff_snapshot_tables, diff_snapshots
-from core.mirror.incremental import decode_mark, encode_mark, higher, read_from
-from core.ontology.derived_fields import compute, derivation_of, finished
+from elysium.core.mirror.changelog import diff_snapshot_tables, diff_snapshots
+from elysium.core.mirror.incremental import decode_mark, encode_mark, higher, read_from
+from elysium.core.ontology.derived_fields import compute, derivation_of, finished
 
 # -- the changelog's two diffs agree (R5) --------------------------------
 
@@ -151,7 +151,7 @@ _source_values = st.one_of(
 def test_bronze_text_decodes_to_the_value_it_was_given(value):
     """THE ROUND TRIP R3 asked to be guaranteed: whatever a source sends,
     bronze's text and its recorded encoding give it back."""
-    from core.mirror.bronze_text import bronze_encoding, bronze_text, bronze_value
+    from elysium.core.mirror.bronze_text import bronze_encoding, bronze_text, bronze_value
 
     decoded = bronze_value(bronze_text(value), bronze_encoding(value))
     assert decoded == value and type(decoded) is type(value)

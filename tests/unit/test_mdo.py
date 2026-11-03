@@ -25,13 +25,13 @@ import sqlite3
 
 import pytest
 
-from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
-from core.filters import as_equality_conditions
-from core.intermediate_layer.audit import AuditLog
-from core.intermediate_layer.auth import resolve_user_record
-from core.ontology.mediator import DataMediator
-from core.ontology.write_log import WriteLogWriter
-from core.ontology.write_mediator import WriteMediator
+from elysium.core.access.audit import AuditLog
+from elysium.core.access.auth import resolve_user_record
+from elysium.core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+from elysium.core.filters import as_equality_conditions
+from elysium.core.ontology.mediator import DataMediator
+from elysium.core.ontology.write_log import WriteLogWriter
+from elysium.core.ontology.write_mediator import WriteMediator
 from tests.conftest import read_audit_log
 
 TEST_SCHEMA = {
@@ -425,7 +425,7 @@ def test_create_without_setting_security_field_produces_an_unreadable_row(mediat
     # than assuming.
     #
     # THIS is also the ACTUAL, real-world example
-    # log_security_resolution_failed() (core/intermediate_layer/
+    # log_security_resolution_failed() (core/access/
     # audit.py) was built for, and its own docstring names this test
     # by name as "the clearest real example" -- but until this
     # addition, this test never actually verified the log entry fires

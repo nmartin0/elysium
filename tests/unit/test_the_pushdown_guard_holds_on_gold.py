@@ -37,7 +37,7 @@ doing it: the entry asked for "a second pair of eyes before it
 merges", and measuring first is what makes that review cheap.
 """
 
-from core.ontology.gold_view import GOLD_NAMESPACE, build_gold_view
+from elysium.core.ontology.gold_view import GOLD_NAMESPACE, build_gold_view
 
 
 class TestGoldKeepsOneTablePerType:
@@ -103,7 +103,7 @@ class TestTheComparisonIsStillThere:
         a MAC filter reach a table that never held that column."""
         from pathlib import Path
 
-        source = Path("core/ontology/mediator.py").read_text()
+        source = Path("src/elysium/core/ontology/mediator.py").read_text()
 
         assert ('security_config["storage"] != searched_config["storage"]'
                 in source)
@@ -113,7 +113,7 @@ class TestTheComparisonIsStillThere:
         all, and that is checked first."""
         from pathlib import Path
 
-        source = Path("core/ontology/mediator.py").read_text()
+        source = Path("src/elysium/core/ontology/mediator.py").read_text()
         i = source.index("if searched_adapter is not security_adapter:")
         j = source.index('security_config["storage"] != searched_config')
 

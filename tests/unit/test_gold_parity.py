@@ -37,17 +37,17 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.filters import FieldFilter
-from core.intermediate_layer.audit import AuditLog
-from core.intermediate_layer.auth import UserRecord
-from core.mirror.gold import build_gold
-from core.mirror.gold_connector import GoldConnector
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.mirror_adapter import MirrorReadAdapter
-from core.ontology.gold_view import build_gold_view
-from core.ontology.mediator import DataMediator
-from core.ontology.write_log import WriteLogWriter
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.access.audit import AuditLog
+from elysium.core.access.auth import UserRecord
+from elysium.core.filters import FieldFilter
+from elysium.core.mirror.gold import build_gold
+from elysium.core.mirror.gold_connector import GoldConnector
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.mirror_adapter import MirrorReadAdapter
+from elysium.core.ontology.gold_view import build_gold_view
+from elysium.core.ontology.mediator import DataMediator
+from elysium.core.ontology.write_log import WriteLogWriter
 
 SCHEMA = {
     "Customer": {

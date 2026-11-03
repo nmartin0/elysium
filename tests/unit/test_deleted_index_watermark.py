@@ -28,7 +28,7 @@ import sqlite3
 
 import pytest
 
-from core.ontology.write_log import WriteLogWriter
+from elysium.core.ontology.write_log import WriteLogWriter
 
 
 def _append(database, entries):
@@ -212,7 +212,7 @@ class TestTheWatermark:
 
 class TestTheOperatorScript:
     def test_it_rebuilds_and_reports(self, log, capsys):
-        from scripts.rebuild_deleted_index import rebuild
+        from elysium.scripts.rebuild_deleted_index import rebuild
 
         _append(log.db_path, [("w1", "Customer", "c1", "delete", "applied", "2026-01-01")])
 
@@ -223,7 +223,7 @@ class TestTheOperatorScript:
         assert _deleted(log) == [("Customer", "c1")]
 
     def test_it_says_so_when_there_is_no_log(self, tmp_path, capsys):
-        from scripts.rebuild_deleted_index import rebuild
+        from elysium.scripts.rebuild_deleted_index import rebuild
 
         assert rebuild(tmp_path) == 1
         assert "no write log" in capsys.readouterr().err

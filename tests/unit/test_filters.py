@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from core.filters import (
+from elysium.core.filters import (
     FieldFilter,
     FilterError,
     as_equality_conditions,
@@ -213,7 +213,7 @@ def test_a_filter_error_is_a_value_error():
 
 
 def test_in_produces_one_placeholder_per_value():
-    from adapters.sqlite_adapter import _clause_for
+    from elysium.adapters.sqlite_adapter import _clause_for
 
     clause, values = _clause_for(FieldFilter("region", "in", ["a", "b", "c"]))
 
@@ -224,7 +224,7 @@ def test_in_produces_one_placeholder_per_value():
 def test_a_value_never_becomes_sql():
     # The whole reason the operator set could be widened safely: every
     # branch binds values separately, so a value cannot be a fragment.
-    from adapters.sqlite_adapter import _clause_for
+    from elysium.adapters.sqlite_adapter import _clause_for
 
     hostile = "'; DROP TABLE customers; --"
     clause, values = _clause_for(FieldFilter("region", "equals", hostile))
@@ -234,7 +234,7 @@ def test_a_value_never_becomes_sql():
 
 
 def test_a_one_sided_range_does_not_bind_a_missing_bound():
-    from adapters.sqlite_adapter import _clause_for
+    from elysium.adapters.sqlite_adapter import _clause_for
 
     assert _clause_for(FieldFilter("n", "range", {"min": 10})) == ("n >= ?", [10])
     assert _clause_for(FieldFilter("n", "range", {"max": 10})) == ("n <= ?", [10])
@@ -245,7 +245,7 @@ def test_a_one_sided_range_does_not_bind_a_missing_bound():
 
 def test_contains_escapes_wildcards_in_the_search_text():
     # Without this, searching for "50%" matches anything starting "50".
-    from adapters.sqlite_adapter import _clause_for
+    from elysium.adapters.sqlite_adapter import _clause_for
 
     _, values = _clause_for(FieldFilter("name", "contains", "50%"))
 
@@ -261,8 +261,8 @@ def test_the_mirror_declines_contains_rather_than_approximating_it():
     wrong answer reporting success, which is the failure this project
     keeps finding.
     """
-    from core.filters import UnsupportedFilter
-    from core.mirror.iceberg_reader import IcebergNamespaceReader
+    from elysium.core.filters import UnsupportedFilter
+    from elysium.core.mirror.iceberg_reader import IcebergNamespaceReader
 
     # The mechanics live on the reader now, shared by the mirror
     # adapter and the gold connector (GOLD-3).
@@ -295,7 +295,7 @@ def test_python_evaluation_matches_the_sql_semantics(condition, row, expected):
     # The fallback path uses these when a storage cannot push an
     # operator down. Two definitions of "what does `in` mean" drifting
     # apart would make results depend on which storage answered.
-    from core.filters import row_matches
+    from elysium.core.filters import row_matches
 
     assert row_matches(row, condition) is expected
 
@@ -308,9 +308,9 @@ def _mediator_with(rows: int, tmp_path):
 
     import yaml
 
-    from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
-    from core.ontology.link_types import expand_link_types
-    from core.ontology.mediator import DataMediator
+    from elysium.core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+    from elysium.core.ontology.link_types import expand_link_types
+    from elysium.core.ontology.mediator import DataMediator
 
     fixtures = "tests/integration/fixtures/"
     schema = yaml.safe_load(open(fixtures + "ontology_schema.yaml"))
@@ -439,7 +439,7 @@ def test_the_sql_mapping_rejects_what_validation_would_have(condition, label):
     reachable, because validate_filter() was written and called by
     nothing.
     """
-    from adapters.sqlite_adapter import _clause_for
+    from elysium.adapters.sqlite_adapter import _clause_for
 
     with pytest.raises(FilterError):
         _clause_for(condition)
@@ -463,7 +463,7 @@ def test_the_adapter_guards_are_what_actually_fire_today():
     caller-supplied condition list. That is a 114-call-site signature
     change and is the next piece of work, not this one.
     """
-    from adapters.sqlite_adapter import _clause_for
+    from elysium.adapters.sqlite_adapter import _clause_for
 
     with pytest.raises(FilterError):
         _clause_for(FieldFilter("n", "range", {}))
@@ -480,7 +480,7 @@ def test_the_adapter_guards_are_what_actually_fire_today():
 
 
 def test_search_rejects_an_operator_the_field_type_forbids(tmp_path):
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.core.access.auth import UserRecord
 
     mediator = _mediator_with(20, tmp_path)
     user = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
@@ -493,7 +493,7 @@ def test_search_rejects_an_operator_the_field_type_forbids(tmp_path):
 
 
 def test_search_rejects_a_malformed_range(tmp_path):
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.core.access.auth import UserRecord
 
     mediator = _mediator_with(20, tmp_path)
     user = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
@@ -508,7 +508,7 @@ def test_search_applies_a_set_filter_end_to_end(tmp_path):
     """The interaction the whole vocabulary exists for: two values
     selected on a chart, which the old dict could not express at all.
     """
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.core.access.auth import UserRecord
 
     mediator = _mediator_with(60, tmp_path)
     user = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
@@ -526,7 +526,7 @@ def test_search_applies_a_set_filter_end_to_end(tmp_path):
 
 
 def test_search_applies_a_range_end_to_end(tmp_path):
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.core.access.auth import UserRecord
 
     mediator = _mediator_with(60, tmp_path)
     user = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
@@ -547,7 +547,7 @@ def test_a_filter_on_an_unreadable_field_looks_like_an_unknown_one(tmp_path):
     filtering on one they cannot read -- the message is the same as for
     a field that does not exist at all.
     """
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.core.access.auth import UserRecord
 
     mediator = _mediator_with(20, tmp_path)
     user = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
@@ -585,7 +585,7 @@ def test_every_read_path_rejects_an_unreadable_field_like_an_unknown_one(
     delegate to search_object. Nothing tested it, which is how a later
     change that stopped delegating would have gone unnoticed.
     """
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.core.access.auth import UserRecord
 
     mediator = _mediator_with(20, tmp_path)
     user = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
@@ -610,7 +610,7 @@ def test_every_read_path_rejects_an_unreadable_field_like_an_unknown_one(
 def test_the_rejection_names_no_valid_fields(tmp_path):
     # Listing what WOULD have been valid is the same disclosure by
     # another route.
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.core.access.auth import UserRecord
 
     mediator = _mediator_with(20, tmp_path)
     user = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
@@ -639,9 +639,9 @@ def _full_mediator(tmp_path):
 
     import yaml
 
-    from core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
-    from core.ontology.link_types import expand_link_types
-    from core.ontology.mediator import DataMediator
+    from elysium.core.deployment_loader import _WRITE_ADAPTER_REGISTRY, _build_adapters
+    from elysium.core.ontology.link_types import expand_link_types
+    from elysium.core.ontology.mediator import DataMediator
 
     fixtures = "tests/integration/fixtures/"
     schema = yaml.safe_load(open(fixtures + "ontology_schema.yaml"))
@@ -668,7 +668,7 @@ SAVED = [
 
 
 def test_conditions_the_opener_can_read_stay_runnable(tmp_path):
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.core.access.auth import UserRecord
 
     mediator = _full_mediator(tmp_path)
     opener = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
@@ -687,7 +687,7 @@ def test_conditions_on_unreadable_fields_are_disabled_and_NAMED(tmp_path):
     condition written in the artifact. We are explaining their own
     saved query, not revealing what they cannot see.
     """
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.core.access.auth import UserRecord
 
     mediator = _full_mediator(tmp_path)
     opener = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
@@ -702,7 +702,7 @@ def test_a_shared_search_is_checked_against_the_OPENER_not_the_author(tmp_path):
     # email and shares it with a role that cannot read email. The
     # colleague opening it gets the email filter disabled, whatever
     # alice could see.
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.core.access.auth import UserRecord
 
     mediator = _full_mediator(tmp_path)
     colleague = UserRecord(
@@ -716,7 +716,7 @@ def test_a_shared_search_is_checked_against_the_OPENER_not_the_author(tmp_path):
 
 
 def test_losing_the_whole_type_disables_everything(tmp_path):
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.core.access.auth import UserRecord
 
     mediator = _full_mediator(tmp_path)
     accountant = UserRecord(user_id="w", security_value="us-west", role_name="accountant")
@@ -729,7 +729,7 @@ def test_losing_the_whole_type_disables_everything(tmp_path):
 
 def test_a_filter_with_nothing_disabled_reports_an_empty_list(tmp_path):
     # So the UI can test `if disabled:` rather than special-case None.
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.core.access.auth import UserRecord
 
     mediator = _full_mediator(tmp_path)
     opener = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")
@@ -745,7 +745,7 @@ def test_a_filter_with_nothing_disabled_reports_an_empty_list(tmp_path):
 def test_runnable_conditions_survive_unchanged(tmp_path):
     # Operator and value must come through intact -- re-authorization
     # filters the LIST, it does not rewrite what is in it.
-    from core.intermediate_layer.auth import UserRecord
+    from elysium.core.access.auth import UserRecord
 
     mediator = _full_mediator(tmp_path)
     opener = UserRecord(user_id="u", security_value="us-west", role_name="customer_service")

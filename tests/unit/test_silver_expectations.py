@@ -18,15 +18,15 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.expectations import (
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.expectations import (
     ExpectationFailed,
     apply_expectations,
     expectations_for,
     policy_for,
 )
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from core.mirror.sync_targets import resolve_sync_targets
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.core.mirror.sync_targets import resolve_sync_targets
 
 ONE_OF = {"type": "data", "data_type": "string", "constraints": {"one_of": ["us-west", "us-east"]}}
 ROWS = [{"id": "a", "region": "us-west"}, {"id": "b", "region": "mars"}, {"id": "c", "region": None}]

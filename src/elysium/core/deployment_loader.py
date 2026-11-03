@@ -1,0 +1,2348 @@
+"""
+deployment_loader.py  (generic -- org-agnostic)
+
+Reads a deployment's config.yaml, ontology_schema.yaml, policy.yaml,
+and data_silos.yaml from a given directory and returns them bundled
+into one DeploymentConfig object. Contains zero knowledge of any
+specific organization -- only the fixed file names and key names this
+project's deployment convention expects.
+
+resolve_runtime_paths() is THE single source of truth for where
+config, data, and logs live -- three genuinely independent locations,
+always, not "one folder with environment variables as a special
+override." Local development's own defaults (deployment/etc,
+deployment/var/lib, deployment/var/log) already mirror the exact same
+structure a real install uses (/etc/elysium, /var/lib/elysium,
+/var/log/elysium) -- see that function's own docstring.
+
+Three registries live here -- _READ_ADAPTER_REGISTRY and
+_WRITE_ADAPTER_REGISTRY (data silos) and _LLM_ADAPTER_REGISTRY (LLM backends) -- both hardcoded dicts today,
+both exactly the place a future entry-points-based third-party
+discovery mechanism would replace, without changing anything else in
+this file, DataMediator, or AgentLoop.
+
+Called by: scripts/run_deployment.py, scripts/serve_requests.py,
+           api/app.py, tests/integration/conftest.py
+"""
+
+import hashlib
+import itertools
+import logging
+import os
+import threading
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, cast
+
+from elysium.adapters.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
+from elysium.adapters.csv_folder_adapter import CsvFolderAdapter
+from elysium.adapters.ollama_adapter import OllamaAdapter
+from elysium.adapters.rest_adapter import RestAdapter
+from elysium.adapters.sqlalchemy_adapter import SQLAlchemyReadAdapter
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter, SQLiteWriteAdapter
+from elysium.adapters.vllm_adapter import VLLMAdapter
+from elysium.core.config import load_yaml
+from elysium.core.declared_triggers import load_declared_triggers
+from elysium.core.modules import Modules, load_modules, permissions_by_module
+from elysium.core.ontology.constraints import validate_constraints
+from elysium.core.secret_references import expand_secrets
+
+if TYPE_CHECKING:
+    from elysium.core.agent.agentic_loop import AgentLoop
+    from elysium.core.meaning_search import MeaningSearch
+    from elysium.core.memory.guard import MemoryGuard
+    from elysium.core.ontology.write_mediator import WriteMediator
+from elysium.core.access.audit import AuditLog
+from elysium.core.access.policy_validation import validate_role_coherence, validate_roles
+from elysium.core.config_schema import unknown_keys
+from elysium.core.functions.registry import validate_function_declarations
+from elysium.core.immutable import deep_freeze
+from elysium.core.lake_names import RESERVED_SILO_NAMES, RESERVED_SILO_PREFIXES
+from elysium.core.llm.agent_features import OFF as OFF_FEATURES
+from elysium.core.llm.agent_features import AgentFeatures, features_from_config
+from elysium.core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
+from elysium.core.llm.interface import LLMAdapter
+from elysium.core.llm.retrying_adapter import RetryingLLMAdapter
+from elysium.core.mirror.catalog import open_mirror_catalog
+from elysium.core.mirror.freshness import FreshnessTarget
+from elysium.core.mirror.freshness import targets_for as freshness_targets_for
+from elysium.core.mirror.mirror_adapter import MirrorReadAdapter
+from elysium.core.mirror.openlineage import validate_lineage_block
+from elysium.core.ontology.action_types import validate_action_types
+from elysium.core.ontology.bindings import TYPE_BINDING_KEYS, merge_bindings
+from elysium.core.ontology.deprecation_alerts import lead_days_from
+from elysium.core.ontology.derived_fields import (
+    fill_result_types,
+    refuse_rules_over_derived,
+    validate_derived_fields,
+)
+from elysium.core.ontology.enriched_fields import fill_enriched_types, validate_enriched_fields
+from elysium.core.ontology.field_rules import validate_dependencies, validate_field_rules
+from elysium.core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
+from elysium.core.ontology.link_types import expand_link_types, validate_link_types
+from elysium.core.ontology.mediator import DataMediator
+from elysium.core.ontology.object_type_validation import validate_object_types
+from elysium.core.ontology.predicted_fields import fill_predicted_types, validate_predicted_fields
+from elysium.core.ontology.semantic_search import validate_semantic_search
+from elysium.core.ontology.silo_security import resolve_inherited_security
+from elysium.core.ontology.submission_criteria import validate_action_type_criteria
+from elysium.core.ontology.unrestricted import normalise_security_blocks
+from elysium.core.ontology.unusual_checks import validate_unusual_checks
+from elysium.core.ontology.write_log import WriteLogReader, WriteLogWriter
+
+# Two real, SEPARATE registries -- not one, mapping to a (read, write)
+# tuple -- confirmed this is the clearer shape: _build_adapters() below
+# takes an explicit `registry` parameter naming exactly which one it's
+# building from, so a caller (and a reader) can see directly which real
+# capability a given call produces, rather than needing to also track
+# an index into a tuple. See core/ontology/interface.py's own AI-notes
+# for the fuller story behind why DataSiloAdapter itself split into
+# ExternalReadAdapter/ExternalWriteAdapter, which is the real reason
+# this registry split exists at all.
+_READ_ADAPTER_REGISTRY: dict[str, type] = {
+    "sqlite": SQLiteReadAdapter,
+    # EXTERNAL DATABASES, through SQLAlchemy Core. One entry serves
+    # PostgreSQL, MySQL, Oracle and SQL Server, because what differs
+    # between them for queries this simple is what Core's dialects
+    # handle -- placeholders, quoting, row-limit syntax and schema
+    # introspection.
+    #
+    # The `sqlite` entry above stays on the stdlib module: it serves
+    # Elysium's OWN storage, it works, and churning it would buy
+    # nothing.
+    "sqlalchemy": SQLAlchemyReadAdapter,
+    # A FOLDER OF CSV FILES (19 October): read only, by the sync only.
+    # adapters/csv_folder_adapter.py says which precedent chose what.
+    "csv_folder": CsvFolderAdapter,
+    # A REST/JSON API (19 October): read only, by the sync only.
+    # adapters/rest_adapter.py says which precedent chose what.
+    "rest": RestAdapter,
+}
+
+_WRITE_ADAPTER_REGISTRY: dict[str, type] = {
+    "sqlite": SQLiteWriteAdapter,
+}
+
+_LLM_ADAPTER_REGISTRY: dict[str, type] = {
+    "ollama": OllamaAdapter,
+    # vLLM, for a deployment with concurrent users and a GPU: at one
+    # request it and Ollama are within about 20%, and past four to
+    # eight concurrent requests vLLM leads by two to nine times
+    # (measured: see _default_concurrency). An OpenAI-compatible endpoint, so this also
+    # reaches anything else speaking that dialect.
+    "vllm": VLLMAdapter,
+    # Runs the local `claude` CLI, so calls draw on the operator's
+    # Claude subscription Agent SDK credit rather than separately
+    # billed API credits. See the adapter's own module docstring.
+    "claude_agent_sdk": ClaudeAgentSDKAdapter,
+}
+
+
+
+@dataclass(frozen=True)
+class DeploymentConfig:
+    """What this deployment IS. Immutable, and enforced rather than
+    asked for.
+
+    frozen=True stops a FIELD being rebound. It does nothing about
+    mutating what is inside one, so the dicts below are additionally
+    deep-frozen by load_deployment() -- see core/immutable.py for the
+    two concrete hazards that closes and why enforcement was chosen
+    over a convention.
+    """
+
+    base_path: Path
+    llm_provider: str            # e.g. "ollama" -- key into _LLM_ADAPTER_REGISTRY
+    llm_connection: dict           # opaque to core/ -- e.g. {"base_url": ..., "request_timeout_seconds": ...}
+    step_model: str
+    synthesis_model: str
+    max_hops: int
+    # How long one query may spend GATHERING (E-11): the hop loop, not
+    # the one synthesis call after it, which keeps its own timeout.
+    query_deadline_seconds: float
+    max_consecutive_duplicates: int
+    max_consecutive_invalid_steps: int
+    max_concurrent_requests: int   # dispatch-layer thread pool size
+    # How long a proposed write waits for a decision.
+    #
+    # WAS A HARDCODED 15 MINUTES, which was right when the proposer
+    # confirmed their own write seconds later and is wrong for an
+    # approvals queue: the whole point is that the reviewer is somebody
+    # else, and somebody else is not necessarily at their desk. A
+    # colleague had fifteen minutes to notice, open and decide.
+    #
+    # Configurable rather than a new hardcoded number, because the
+    # right value is a property of how a deployment works -- a trading
+    # desk and a quarterly compliance review want different answers,
+    # and neither is Elysium's to pick.
+    pending_write_ttl_minutes: int
+    schema: dict
+    users: dict
+    roles: dict                    # role name -> {"allowed_actions": [...]} -- RBAC
+    security_attribute: str         # MAC -- e.g. "region"
+    silo_configs: dict          # silo name -> {"adapter": ..., "connection": {...}}
+    enabled_tools: list[str]      # from config.yaml tools.enabled -- GENUINELY optional,
+                                   # unlike everything else here (see load_deployment())
+    mirror_storage: dict          # Where the Iceberg warehouse lives, and how to reach it.
+                                   # EMPTY MEANS LOCAL, which is correct for one host and what
+                                   # every deployment does today. A `warehouse` key moves it --
+                                   # to an s3:// URI for object storage -- and any other keys
+                                   # are passed to pyiceberg verbatim (s3.endpoint,
+                                   # s3.access-key-id and so on), deliberately: this layer
+                                   # should not invent its own vocabulary for someone else's
+                                   # options.
+                                   #
+                                   # Matters once a changelog exists, since the mirror then
+                                   # holds history no source can return. See
+                                   # the ELT roadmap's reversibility line.
+    retain_publications: int      # How many `published-N` tags to keep per gold table.
+                                   # Bounds the LIST, not the disk -- see gold.py.
+    identity_inference: bool      # GOLD-6: propose inferred merges. Never applies one --
+                                   # approval is not configurable.
+    ingest_undeclared_columns: "bool | None"
+                                  # WHETHER BRONZE HOLDS COLUMNS NOBODY
+                                  # DECLARED. None means the key is absent,
+                                  # which keeps today's behaviour (hold them)
+                                  # and warns at sync naming them. False is
+                                  # the shipped default for new deployments.
+    on_suspected_rename: str
+                                  # WHAT A SUSPECTED RENAME COSTS: "hold" keeps
+                                  # the table at its last good copy (the
+                                  # default), "serve_empty" serves the field
+                                  # empty. See core/mirror/drift_policy.py.
+    on_type_mismatch: "str | None"
+                                  # WHAT A VALUE THAT WILL NOT COERCE COSTS:
+                                  # "refuse" stops the whole table, "quarantine"
+                                  # sets the offending ROWS aside and syncs the
+                                  # rest. None means the key is absent, which
+                                  # keeps the old behaviour (refuse) and warns.
+                                  # See core/mirror/transform.py.
+    trusted_proxies: "tuple[str, ...]"
+                                  # PEERS WHOSE `X-Forwarded-For` IS BELIEVED,
+                                  # as addresses or CIDRs. EMPTY BY DEFAULT: a
+                                  # deployment that has not said it sits behind
+                                  # a proxy ignores the header entirely, so a
+                                  # client cannot pick its own rate-limit
+                                  # bucket by sending one. See
+                                  # core/auth/client_source.py.
+    write_targets: "tuple[str, ...] | None"
+                                  # WHICH SILOS A CONFIRMED WRITE MAY REACH.
+                                  # None means the key is ABSENT, which is a
+                                  # deployment predating this and keeps its
+                                  # old behaviour with a warning; an empty
+                                  # tuple means declared-and-empty, which is
+                                  # the new default and refuses every external
+                                  # write. See _resolve_write_targets.
+    read_from_mirror: bool        # ALWAYS TRUE since GOLD-9: live reads are gone, and a
+                                   # deployment that asks for them is refused at load. Kept
+                                   # as a field because the API reports it, and because a
+                                   # reader of an old config diff should find the answer.
+                                   # Phase 4 of the read-only mirror architecture -- serve
+                                   # READS from the local Iceberg mirror rather than querying
+                                   # the customer's own databases live. Writes are unaffected
+                                   # either way: they always go to the real database. False by
+                                   # default, so the live path stays the default until a
+                                   # deployment explicitly opts in. See the
+                                   # roadmap (consumed).
+    action_types: dict            # NAMED action types (action-types-redesign branch) --
+                                   # a deployment with none declared (the overwhelmingly
+                                   # common case today) gets {} here, populated explicitly
+                                   # by load_deployment() below via schema_raw.get(...),
+                                   # not a dataclass-level default -- same "explicit, not
+                                   # silently inferred" discipline as writes_enabled/
+                                   # visible_action_types in agent_step_prompt.py.
+
+    # --- WHICH CONFIGURATION THIS IS -------------------------------
+    #
+    # Elysium reads these four files once at startup. Nothing today can
+    # say WHICH configuration was in force for a given audit entry or a
+    # given pending write, because there has only ever been one. That
+    # stops being true the moment configuration can be reloaded while
+    # running, and it is already not quite true now: a restart with
+    # edited files produces a second configuration that the log cannot
+    # distinguish from the first.
+    #
+    # Stamped on the audit log and on pending writes rather than kept
+    # here alone -- see the hot-reload rule "evaluate at every point of
+    # access, never snapshot". This is the whole of
+    # step 1a: identity only, no reloading, no behaviour change.
+    #
+    # Modelled on the precedent treating version as a PARAMETER carried by
+    # each operation rather than a global the server swaps: every
+    # the precedent Ontology call names the ontology it acts against.
+    # The four files' text, exactly as read. Carried so that whoever
+    # builds a generation can record it (core/config_history.py)
+    # without re-reading and possibly getting different bytes.
+    source_text: Mapping[str, str]
+    generation: int               # monotonic within one process, first load is 1
+    loaded_at: datetime           # when this configuration was read, UTC and aware
+    source_digest: str            # sha256 over the four files' bytes -- see _source_digest()
+    # TRIGGERS THE DEPLOYMENT DECLARES in config.yaml's `triggers:`
+    # block, validated at load. LAST AND DEFAULTED because every field
+    # above is required, and a deployment without the block is the
+    # ordinary case. See core/declared_triggers.py.
+    # {object type: how current it is expected to be}, from
+    # config.yaml's freshness block and each type's own override.
+    # Every declared type has an entry; one that declares nothing gets
+    # the deployment default.
+    freshness_targets: Mapping[str, "FreshnessTarget"] = MappingProxyType({})
+    declared_triggers: tuple = ()
+    # Whether each step's reply is constrained to the step schema (AR-5).
+    # OFF until the bench on the deployment's own model says it helps --
+    # see core/llm/step_schema.py.
+    constrain_steps: bool = False
+    # FOUR AGENT CHANGES WAITING ON A MEASUREMENT, each off until the
+    # bench on the deployment's own model says otherwise -- see
+    # core/llm/agent_features.py. `agent:` in config.yaml.
+    agent_features: AgentFeatures = OFF_FEATURES
+    # CLASSIFICATION LABELS DECIDE FIELD ACCESS (formerly BLOCKING 6): a labelled
+    # field needs read:label:<each label>, and read:label:<L> grants every
+    # L field in the types a role can read. OFF until a deployment turns
+    # it on -- applying the code changes nobody's access -- and
+    # scripts/label_access_diff.py says who would gain and lose what.
+    label_enforcement: bool = False
+    # WHERE LINEAGE EVENTS GO (R15): always lineage.jsonl in the log
+    # directory; also `url` when set. Empty means file only.
+    lineage: Mapping[str, Any] = MappingProxyType({})
+    # HOW SOURCES WRITE NUMBERS AND DATES (DEP-1): {silo: "pt_BR" | None},
+    # from config.yaml's source_locale and each silo's own `locale:`.
+    # None for a silo means machine formats only -- the behaviour before
+    # this existed, and what an absent declaration still means.
+    source_locales: Mapping[str, "str | None"] = MappingProxyType({})
+    # THE MODEL THAT EMBEDS TEXT FOR SEARCH BY MEANING (R45), from
+    # config.yaml's `llm.embedding_model`. None when no type declares
+    # `semantic_search`, which load requires it for.
+    embedding_model: "str | None" = None
+    # HOW LONG ONE SYNC MAY SPEND EMBEDDING, in seconds. A first pass
+    # over a large table on a CPU can take far longer than a sync should;
+    # the rest is embedded by the next one (core/embeddings.py).
+    embedding_budget_seconds: float = 300.0
+    # HOW MANY NUMBERS PER VECTOR, when the model can give fewer than its
+    # full size (Matryoshka); None for its own size.
+    embedding_dimensions: "int | None" = None
+    # {document, query} task prefixes; None for the model family's own.
+    embedding_prefixes: "Mapping[str, str] | None" = None
+    # Where the embedding server is, when it is not the chat server.
+    # May hold a credential, so never shown.
+    embedding_connection: Mapping[str, Any] = MappingProxyType({})
+    # SILOS WHOSE DATE COLUMNS MAY HOLD EXCEL SERIALS (ZOO-22): those
+    # declaring `excel_dates: true` in data_silos.yaml. Declared, never
+    # inferred -- a bare number in a date column is ambiguous.
+    excel_date_silos: frozenset = frozenset()
+    # SILOS WHOSE ZERO DATES ('0000-00-00') ARE READ AS NULL: those
+    # declaring `zero_dates_as_null: true`. Declared, never inferred.
+    zero_date_silos: frozenset = frozenset()
+    # TABLES READ BY CHANGED ROWS (R2): {(silo, table): IncrementalPolicy},
+    # from each silo's `incremental:` in data_silos.yaml. Empty means
+    # every table is read in full every sync, as before this existed.
+    incremental: Mapping = MappingProxyType({})
+    # AL-10: the most tokens one query may spend, as providers report
+    # them. None: no budget. `agent: max_tokens_per_query:` in config.yaml.
+    max_tokens_per_query: "int | None" = None
+    # HOW MANY OBJECTS ONE BULK ACTION -- one proposal, one approval --
+    # may name. Decided 14 Oct: 256 unless a deployment says otherwise,
+    # and never more than 1,024. `bulk_action_limit:` in config.yaml.
+    bulk_action_limit: int = 256
+    # HOW MANY DAYS BEFORE A DEPRECATED ITEM'S `remove_after` DATE the people
+    # who manage the deployment are told. `deprecation_lead_days:` in
+    # config.yaml; default and reasoning in core/ontology/deprecation_alerts.py.
+    deprecation_lead_days: int = 30
+    # THE SUB-APPS THIS DEPLOYMENT LOADS, as modules (the removed BLOCKING.md item on modules):
+    # `modules.yaml`, or the five Elysium ships when it is absent. None
+    # only for a config built by hand in a test, which loads none.
+    modules: "Modules | None" = None
+
+
+logger = logging.getLogger(__name__)
+
+# Assigned by the loader, never by a caller, so two callers cannot mint
+# the same number. Guarded because a reload triggered by a signal
+# handler and one triggered by an HTTP request could otherwise race
+# (step 3), and getting the counter right later is harder than getting
+# it right now.
+_generation_lock = threading.Lock()
+_generation_counter = itertools.count(1)
+
+
+def _next_generation() -> int:
+    with _generation_lock:
+        return next(_generation_counter)
+
+
+# The four files that ARE the deployment. Named once so that
+# _source_digest() and load_deployment() cannot drift into disagreeing
+# about what a deployment consists of -- the same reasoning as the step
+# vocabulary probe in tests/unit/test_step_vocabulary_consistency.py.
+CONFIG_FILENAMES = ["config.yaml", "ontology_schema.yaml", "source_bindings.yaml",
+                     "policy.yaml", "data_silos.yaml", "modules.yaml", "addons.yaml"]
+
+
+def _source_digest(base_path: Path, filenames: list[str]) -> str:
+    """A stable fingerprint of the configuration files on disk.
+
+    Over the RAW BYTES, not the parsed structures, and deliberately:
+    the question this answers is "are these the same files as last
+    time", which is about what was read, not about what it meant.
+    Comparing parsed dicts would call a comment change identical and a
+    key reordering different, both backwards for this purpose.
+
+    Sorted by filename so the digest does not depend on iteration
+    order, and each file's name is fed in alongside its content so that
+    moving text between two files changes the digest.
+
+    A missing file is fed as its name with no content rather than
+    raising. load_deployment() below reports a missing file far better
+    than a hash function could, and this must not become a second,
+    worse place that error surfaces.
+    """
+    digest = hashlib.sha256()
+    for name in sorted(filenames):
+        digest.update(name.encode())
+        path = base_path / name
+        if path.exists():
+            digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def _freeze_roles(roles_raw: dict) -> dict:
+    # Converts each role's allowed_actions from a plain list to a
+    # frozenset, ONCE, here, at load time -- authorize() is called on
+    # every object touched, every field read, every write, every tool
+    # call, so a real role's allowed_actions (a dozen-plus entries in
+    # a typical deployment) being a list would mean a genuine O(n)
+    # linear scan on every single one of those checks. Converting once
+    # here makes every downstream authorize() call real O(1), for free.
+    return {
+        role_name: {**role_def, "allowed_actions": frozenset(role_def.get("allowed_actions", []))}
+        for role_name, role_def in roles_raw.items()
+    }
+
+
+def _require_str(value, description: str) -> None:
+    # Catches the "Norway problem" directly: YAML's own implicit type
+    # coercion (an unquoted no/yes/on/off/true/false becomes a real
+    # bool; an unquoted date-like value like 2024-01-01 becomes a real
+    # datetime.date; a leading-zero numeral like 010 becomes octal-
+    # interpreted 8) can silently turn what an admin plainly INTENDED
+    # as a string identifier -- an object type name, a field name, a
+    # role name, a grant string -- into something else entirely. Every
+    # position this checks is later matched via an EXACT string
+    # comparison against a genuinely runtime-supplied string (
+    # authorize()'s own action_id in role["allowed_actions"], a dict
+    # lookup by object_type/field name) -- a coerced, non-string value
+    # here doesn't just look wrong, it silently, permanently never
+    # matches anything real again, exactly the class of bug this
+    # deployment's own config loading now refuses to let through.
+    # Found directly, empirically, not assumed -- see core/
+    # deployment_loader.py's own AI-notes for the real test that
+    # confirmed this (a role literally named "no" resolving to the
+    # Python boolean False, not the string "no").
+    if not isinstance(value, str):
+        raise ValueError(
+            f"{description} is {value!r} ({type(value).__name__}), not a string -- "
+            f"quote it in the YAML (e.g. \"no\" instead of no)."
+        )
+
+
+# Namespaces the pipeline writes for itself (core/lake_names.py, which
+# lists them all): a silo may not be called one of these, nor anything
+# that would produce one (PA001-G10).
+# (RESERVED_SILO_NAMES and RESERVED_SILO_PREFIXES are imported above.)
+
+
+def _refuse_unknown_keys(base_path: Path, config, schema_raw, policy_raw, data_silos_raw) -> None:
+    """Every unknown key in the configuration files, in one error.
+
+    The source_bindings.yaml file is read here only to check its keys;
+    _merged_with_bindings reads it again to merge it. A file written in
+    the older flat form (types at the top, no `object_types:`) is
+    checked as if it were wrapped.
+    """
+    problems = []
+    for filename, data in (("config.yaml", config), ("ontology_schema.yaml", schema_raw),
+                           ("policy.yaml", policy_raw), ("data_silos.yaml", data_silos_raw)):
+        problems += unknown_keys(filename, data)
+    bindings_path = base_path / "source_bindings.yaml"
+    if bindings_path.exists():
+        bindings = load_yaml(bindings_path)
+        if isinstance(bindings, dict) and "object_types" not in bindings:
+            bindings = {"object_types": bindings}
+        problems += unknown_keys("source_bindings.yaml", bindings)
+    if problems:
+        raise ValueError("\n".join(problems))
+
+
+def _refuse_system_column_names(schema_raw: dict) -> None:
+    """A declared field may not be named after a system column.
+
+    The pipeline writes `_silo`, `_source_table`, `_row_hash`,
+    `_fused_from`, `_field_sources` and `_link_id` itself. A DECLARED field of the same
+    name makes gold's schema gain the column twice and the build
+    raises "Column _silo does not exist in schema" -- opaque, at
+    gold-build time, and (per PA001-G5) it used to take every later
+    type down with it.
+
+    REFUSED AT LOAD instead, naming the field and the column, because
+    this is a configuration mistake and the moment to say so is before
+    any data moves.
+
+    THE COLUMN the field reads is checked as well as the field NAME:
+    `region: {column: _silo}` collides just as surely and reads less
+    obviously.
+    """
+    from elysium.core.mirror.lineage import collides_with_a_system_column
+
+    for object_type, type_def in (schema_raw.get("object_types") or {}).items():
+        declared = type_def.get("fields") or {}
+        names = set(declared)
+        names.update(
+            config.get("column", name)
+            for name, config in declared.items()
+            if isinstance(config, dict)
+        )
+        id_column = (type_def.get("storage") or {}).get("id_column")
+        if id_column:
+            names.add(id_column)
+        clashes = collides_with_a_system_column(names)
+        if clashes:
+            raise ValueError(
+                f"{object_type} declares {', '.join(repr(c) for c in clashes)}, "
+                f"which the pipeline writes for itself. Rename the field or "
+                f"its `column:` -- a column of that name is overwritten with "
+                f"Elysium's own value, and a type whose SECURITY field "
+                f"collided would compare every reader against the same string."
+            )
+
+
+def _refuse_reserved_silo_names(data_silos_raw: dict) -> None:
+    """A silo may not be named after a layer (PA001-G10).
+
+    THE PIPELINE WRITES ITS LAYERS AS NAMESPACES: a silo `p` produces
+    `p` (silver), `bronze_p`, `changelog_p` and `quarantine_p`, and
+    gold lives in `gold` with its history in `gold_history`. A silo
+    called `gold` therefore has its SILVER table at `gold.Thing` --
+    which is exactly where the gold publication goes.
+
+    MEASURED: with a silo named `gold`, silver and gold became the
+    same table. No error, no warning; the publication simply
+    overwrote the copy it was derived from, and every read after that
+    served a table that was its own source.
+
+    A PREFIX COLLIDES TOO, less obviously. A silo named `bronze_x` has
+    its silver at `bronze_x`, which is where silo `x` keeps its
+    bronze. The two deployments' tables would interleave in one
+    namespace.
+
+    REFUSED AT LOAD, with the layer named, because this is a
+    CONFIGURATION mistake and the moment to say so is before any data
+    moves. It is also unfixable afterwards: by the time the collision
+    shows, the tables have already been written over each other.
+    """
+    silos = (data_silos_raw or {}).get("data_silos") or {}
+    for name in silos:
+        if name in RESERVED_SILO_NAMES:
+            raise ValueError(
+                f"A data silo may not be called {name!r}: the pipeline "
+                f"writes its own {name!r} namespace, so this silo's silver "
+                f"tables and the gold publications would be the same tables. "
+                f"Rename the silo."
+            )
+        if name.startswith(RESERVED_SILO_PREFIXES):
+            layer = next(p for p in RESERVED_SILO_PREFIXES if name.startswith(p))
+            raise ValueError(
+                f"A data silo may not be called {name!r}: {layer!r} is the "
+                f"prefix the pipeline uses for its own {layer.rstrip('_')} "
+                f"namespaces, so this silo's tables would share a namespace "
+                f"with another silo's {layer.rstrip('_')}. Rename the silo."
+            )
+
+
+def validate_identifier_types(schema_raw: dict, policy_raw: dict) -> None:
+    # Runs BEFORE anything else below even attempts to interpret
+    # schema_raw/policy_raw's own contents -- core/ontology/action_
+    # types.py's own validate_action_types() and core/intermediate_
+    # layer/policy_validation.py's own validate_roles() both assume
+    # every name they're comparing is already a genuine string; this
+    # is the check that makes that assumption safe to make, catching
+    # the "looks like a string, silently isn't" class of mistake
+    # BEFORE either of them ever runs. See _require_str()'s own
+    # docstring for the full reasoning.
+    object_types = schema_raw.get("object_types", {})
+    for object_type_name, object_type_def in object_types.items():
+        _require_str(object_type_name, "An object_type name")
+        if "id_field" in object_type_def:
+            _require_str(object_type_def["id_field"], f"{object_type_name!r}'s own id_field")
+        if "title_field" in object_type_def:
+            _require_str(object_type_def["title_field"], f"{object_type_name!r}'s own title_field")
+        security = object_type_def.get("security", {})
+        if not isinstance(security, dict):
+            raise ValueError(
+                f"Object type {object_type_name!r}: security must be a block with `field` or "
+                f"`via_field`, or the word `unrestricted`; got {security!r}.")
+        if "field" in security:
+            _require_str(security["field"], f"{object_type_name!r}'s own security.field")
+        if "via_field" in security:
+            _require_str(security["via_field"], f"{object_type_name!r}'s own security.via_field")
+        for field_name in object_type_def.get("fields", {}):
+            _require_str(field_name, f"A field name on {object_type_name!r}")
+
+    action_types = schema_raw.get("action_types", {})
+    for action_type_name, action_def in action_types.items():
+        _require_str(action_type_name, "An action_type name")
+        for param_name in action_def.get("parameters", {}):
+            _require_str(param_name, f"A parameter name on {action_type_name!r}")
+        for affected_type in action_def.get("affected_object_types") or []:
+            _require_str(affected_type, f"An affected_object_types entry on {action_type_name!r}")
+        for i, sub_write in enumerate(action_def.get("sub_writes") or []):
+            if "object_type" in sub_write:
+                _require_str(sub_write["object_type"], f"{action_type_name!r}'s sub_writes[{i}].object_type")
+
+    roles = policy_raw.get("roles", {})
+    for role_name, role_def in roles.items():
+        _require_str(role_name, "A role name")
+        for grant in role_def.get("allowed_actions") or []:
+            _require_str(grant, f"A grant in role {role_name!r}'s allowed_actions")
+
+    for user_id in policy_raw.get("users", {}):
+        _require_str(user_id, "A user_id in policy.yaml's own users section")
+
+
+def _resolve_models(llm_config: dict) -> tuple[str, str]:
+    """Returns (step_model, synthesis_model) from either config form.
+
+    TWO FORMS, and exactly one per deployment:
+
+        model: "phi4-mini"          # one model serves every call
+        step_model / synthesis_model  # a different model for each
+
+    The single form exists because running two models means Ollama
+    loading and evicting between them -- measured at 12-47 seconds per
+    load on CPU-only hardware, paid at least once per query. One model
+    stays resident.
+
+    Naming BOTH forms is rejected rather than resolved by precedence.
+    A deployment that sets `model` and `step_model` has two plausible
+    intentions and no way to signal which, and silently preferring one
+    means the operator's next debugging session starts from a false
+    belief about which model ran. Fails at load, like every other
+    deployment-configuration error.
+    """
+    single = llm_config.get("model")
+    step = llm_config.get("step_model")
+    synthesis = llm_config.get("synthesis_model")
+
+    if single is not None:
+        if step is not None or synthesis is not None:
+            raise ValueError(
+                "config.yaml llm: set EITHER 'model' (one model for every call) "
+                "OR both 'step_model' and 'synthesis_model', never both forms."
+            )
+        return single, single
+
+    if step is None or synthesis is None:
+        missing = [name for name, value in (("step_model", step), ("synthesis_model", synthesis))
+                   if value is None]
+        raise ValueError(
+            f"config.yaml llm: missing {missing}. Set 'model' for one model serving "
+            f"every call, or both 'step_model' and 'synthesis_model' for two."
+        )
+    return step, synthesis
+
+
+def load_deployment(base_path: Path) -> DeploymentConfig:
+    # Digested BEFORE parsing, so the fingerprint describes exactly the
+    # bytes this load saw. Taking it afterwards would leave a window in
+    # which a file changed between being read and being hashed.
+    source_digest = _source_digest(base_path, CONFIG_FILENAMES)
+    # The same bytes the digest was taken over, kept so a generation
+    # can later be inspected, diffed or restored -- see
+    # core/config_history.py. Read HERE rather than re-read later for
+    # the same reason the digest is taken here: anything else leaves a
+    # window in which a file changed between the two reads, and the
+    # history would then describe a configuration that never ran.
+    source_text = {
+        name: (base_path / name).read_text()
+        for name in CONFIG_FILENAMES if (base_path / name).exists()
+    }
+
+    config = load_yaml(base_path / "config.yaml")
+    # A setting that was REMOVED has its own refusal, which says what
+    # replaced it; that is a better message than "unknown key".
+    _no_trigger_clock(config)
+    schema_raw = load_yaml(base_path / "ontology_schema.yaml")
+    policy_raw = load_yaml(base_path / "policy.yaml")
+    data_silos_raw = load_yaml(base_path / "data_silos.yaml")
+    # A KEY NOTHING READS IS REFUSED, before anything interprets the
+    # files: `agnet:` or a field's `colum:` used to load and do nothing.
+    # Every file at once, so one edit fixes them all (core/config_schema.py).
+    _refuse_unknown_keys(base_path, config, schema_raw, policy_raw, data_silos_raw)
+    # WHERE THE DATA COMES FROM, kept apart from what an object IS
+    # (GOLD-3c). Merged here so everything downstream sees exactly the
+    # schema it always saw; only the files a person edits changed.
+    schema_raw = _merged_with_bindings(base_path, schema_raw)
+    # `security: unrestricted` becomes {"unrestricted": True} before
+    # anything reads it (core/ontology/unrestricted.py).
+    normalise_security_blocks(schema_raw)
+    # `security: inherit` becomes its silo's declared rule, so a reload
+    # after editing the silo changes every type that follows it
+    # (core/ontology/silo_security.py).
+    resolve_inherited_security(schema_raw, data_silos_raw)
+
+    validate_identifier_types(schema_raw, policy_raw)
+    _refuse_reserved_silo_names(data_silos_raw)
+    _refuse_system_column_names(schema_raw)
+
+    # tools.enabled is genuinely OPTIONAL -- a deployment with no tools
+    # declared (or no "tools" section at all) is completely valid, unlike
+    # every other field below. Uses .get() with a default specifically
+    # so this stays outside the strict required-key error handling.
+    enabled_tools = config.get("tools", {}).get("enabled", [])
+
+    # Validated HERE, at load, alongside every other deployment config
+    # error. A function declaring an object type the ontology does not
+    # have would otherwise surface mid-conversation, after a user has
+    # already asked a question, as a failure whose message names
+    # nothing useful. The precedent runs its own compatibility checks before
+    # publishing a function for the same reason.
+    # LINK TYPES: validated then expanded into the per-field entries
+    # every read path already consumes. The authoring surface is
+    # link_types; the field form is internal and never authored -- see
+    # core/ontology/link_types.py for why the old per-field
+    # declarations had to go rather than be extended.
+    object_types_raw = schema_raw.get("object_types", {})
+    link_types_raw = schema_raw.get("link_types", {})
+    validate_link_types(link_types_raw, object_types_raw)
+    # VALUE TYPES FIRST (R28): each expands into the constraint and
+    # standardise rules it stands for, which the validators below then
+    # check like any written by hand.
+    from elysium.core.ontology.value_types import validate_and_expand_value_types
+
+    validate_and_expand_value_types(object_types_raw)
+    # A MALFORMED CONSTRAINT STOPS THE LOAD: one that silently never
+    # fires, or fires on everything, is worse than none.
+    validate_constraints(object_types_raw)
+    # Rules between two fields (R29), checked at load like the rest.
+    validate_field_rules(object_types_raw)
+    # ...and across rows: functional dependencies (R29), silver only.
+    validate_dependencies(object_types_raw)
+    # Unusual-value flags (R30), declared per field, warn only.
+    from elysium.core.mirror.outliers import validate_outliers
+
+    validate_outliers(object_types_raw)
+    # Fields computed from other fields (R37): checked, then typed by
+    # what their formula yields, before anything reads the schema.
+    validate_derived_fields(object_types_raw)
+    # Fields filled in by approved enrichment rules (R41): checked --
+    # including that no classified field is ever an input -- and typed.
+    validate_enriched_fields(object_types_raw)
+    # Fields a model fills in from the records whose answer is known
+    # (R48): checked -- never a classified input or answer -- and typed.
+    validate_predicted_fields(object_types_raw)
+    # Search by meaning (R45): text inputs only, never a classified one,
+    # and a model to embed with.
+    embedding = _embedding_settings(config["llm"])
+    validate_semantic_search(object_types_raw, embedding.model)
+    validate_unusual_checks(object_types_raw)
+    refuse_rules_over_derived(object_types_raw)
+    fill_result_types(object_types_raw)
+    fill_enriched_types(object_types_raw)
+    fill_predicted_types(object_types_raw)
+    schema_raw["object_types"] = expand_link_types(link_types_raw, object_types_raw)
+
+    validate_function_declarations(enabled_tools, schema_raw["object_types"])
+
+    step_model, synthesis_model = _resolve_models(config["llm"])
+
+    # Named before the config is built, because the VALIDATORS below run
+    # against this RAW form rather than against the frozen config.
+    #
+    # WHY: deep_freeze turns lists into tuples, and several validators
+    # type-check with isinstance(..., list) -- correctly, since their
+    # job is to check what was parsed out of a YAML file, and that
+    # genuinely is a list. Validating the raw parse and freezing the
+    # RESULT keeps both honest: validators check the document, the
+    # frozen config is what the running system holds.
+    #
+    # Found by the tests, not by inspection. An earlier version of this
+    # commit froze first, and every action type in every deployment
+    # failed with "'sub_writes' must be a non-empty list".
+    action_types_raw = schema_raw.get("action_types", {})
+
+    try:
+        # DEEP-FROZEN as it is built, not afterwards. Freezing a
+        # constructed object would mean constructing a mutable one
+        # first and trusting nothing touched it in between; this way
+        # there is no window and no mutable version to leak.
+        deployment_config = DeploymentConfig(
+            source_text=deep_freeze(source_text),
+            generation=_next_generation(),
+            loaded_at=datetime.now(UTC),
+            source_digest=source_digest,
+            base_path=base_path,
+            llm_provider=config["llm"]["provider"],
+            llm_connection=deep_freeze(config["llm"]["connection"]),
+            step_model=step_model,
+            synthesis_model=synthesis_model,
+            max_hops=config["agent"]["max_hops"],
+            # 300 s, the owner's default "until we can test on better
+            # hardware" (September 22).
+            query_deadline_seconds=config["agent"].get("query_deadline_seconds", 300),
+            max_consecutive_duplicates=config["agent"]["max_consecutive_duplicates"],
+            max_consecutive_invalid_steps=config["agent"]["max_consecutive_invalid_steps"],
+            constrain_steps=bool(config["agent"].get("constrain_steps", False)),
+            agent_features=features_from_config(config["agent"]),
+            label_enforcement=bool((config.get("access") or {}).get("label_enforcement", False)),
+            lineage=deep_freeze(validate_lineage_block(config.get("lineage"))),
+            embedding_model=embedding.model,
+            embedding_budget_seconds=embedding.budget_seconds,
+            embedding_dimensions=embedding.dimensions,
+            embedding_prefixes=(MappingProxyType(dict(embedding.prefixes))
+                                if embedding.prefixes is not None else None),
+            embedding_connection=MappingProxyType(dict(embedding.connection)),
+            source_locales=MappingProxyType(
+                _source_locales(config, data_silos_raw["data_silos"])),
+            excel_date_silos=_excel_date_silos(data_silos_raw["data_silos"]),
+            zero_date_silos=_excel_date_silos(data_silos_raw["data_silos"],
+                                              key="zero_dates_as_null"),
+            incremental=MappingProxyType(
+                _incremental_policies(data_silos_raw["data_silos"], schema_raw["object_types"])),
+            max_tokens_per_query=_token_budget(config["agent"].get("max_tokens_per_query")),
+            bulk_action_limit=_bulk_action_limit(config.get("bulk_action_limit")),
+            deprecation_lead_days=lead_days_from(config.get("deprecation_lead_days")),
+            modules=load_modules(base_path),
+            max_concurrent_requests=_default_concurrency(config),
+            # FOUR HOURS by default, not fifteen minutes. Long enough
+            # that a reviewer can be in a meeting; short enough that a
+            # forgotten proposal does not outlive the context that
+            # produced it. A proposal that expires leaves an audit
+            # trail either way -- see log_write_expired().
+            pending_write_ttl_minutes=config.get("writes", {}).get(
+                "pending_write_ttl_minutes", 240,
+            ),
+            schema=deep_freeze(schema_raw["object_types"]),
+            # HOW CURRENT EACH TYPE IS EXPECTED TO BE (DEV_UI.md 16.6).
+            #
+            # RESOLVED HERE RATHER THAN VALIDATED SEPARATELY, because
+            # the resolution IS the validation: a target tighter than
+            # the sync interval cannot be turned into a window, so the
+            # function that builds one is the function that refuses.
+            # Two passes would mean two places that must agree about
+            # what a legal declaration is.
+            #
+            # AND ONCE PER LOAD, NOT PER REQUEST. The route serving
+            # this answers on every page; re-reading YAML to decide
+            # what 26 hours means would be work done thousands of
+            # times to get the same number.
+            freshness_targets=MappingProxyType(
+                freshness_targets_for(config, schema_raw["object_types"])),
+            users=deep_freeze(policy_raw["users"]),
+            roles=deep_freeze(_freeze_roles(policy_raw["roles"])),
+            security_attribute=policy_raw["security_attribute"],
+            silo_configs=deep_freeze(data_silos_raw["data_silos"]),
+            enabled_tools=deep_freeze(enabled_tools),
+            # GENUINELY optional in the YAML itself -- .get() with a {}
+            # default, same as enabled_tools above, NOT inside the
+            # strict required-key try/except: a deployment predating
+            # named actions entirely (or simply not using them) has no
+            # "action_types:" key in ontology_schema.yaml at all, and
+            # that must remain completely valid.
+            action_types=deep_freeze(action_types_raw),
+            # GENUINELY optional, defaulting to False -- a deployment
+            # that has never run a sync (or simply wants live reads)
+            # must stay completely valid, and the live path stays the
+            # default until a deployment explicitly opts in. Phase 4 of
+            # the read-only mirror architecture; see the roadmap (consumed).
+            # `or {}` AS WELL AS A DEFAULT, because a YAML section whose
+            # every line is a comment parses as None rather than an empty
+            # mapping -- and a commented-out example is exactly what a
+            # deployment ships with. get("mirror", {}) returns None there,
+            # and None has no .get(). Found by the deployment linter the
+            # moment the example was written.
+            mirror_storage=deep_freeze((config.get("mirror") or {}).get("storage") or {}),
+            # DEFAULTS TO TRUE. The mirror was always meant to be the
+            # read path -- it is what makes reads independent of a
+            # source's availability and latency, and it is the layer
+            # where types are enforced. It shipped opt-in and
+            # commented out, which made a plain Elysium the opposite
+            # of its own design.
+            #
+            # A DEPLOYMENT MAY STILL TURN IT OFF, and the direct-read
+            # path stays for now: see the unified roadmap phase 0.5. It is
+            # a secondary option on the way to deprecation, and its
+            # likely future is as the refresh mechanism behind a
+            # read-through cache rather than as a serving path.
+            ingest_undeclared_columns=_resolve_undeclared_columns(config),
+            on_type_mismatch=_resolve_type_mismatch_policy(config),
+            on_suspected_rename=_resolve_suspected_rename(config),
+            trusted_proxies=_resolve_trusted_proxies(config),
+            write_targets=_resolve_write_targets(config),
+            read_from_mirror=_refuse_live_reads(config),
+
+            # GOLD-6: may the pipeline PROPOSE merges it inferred?
+            # Defaults to FALSE, as the fusion-and-identity design requires --
+            # and note the other half is NOT here: whether a proposal
+            # needs approval is not configurable, "because a setting is
+            # a thing someone turns off".
+            identity_inference=(config.get("mirror") or {}).get("identity_inference", False),
+            # HOW MANY NAMED PUBLICATIONS GOLD KEEPS (the gold-layer risk
+            # register item
+            # 3). Thirty is a month of nightlies; 0 keeps every one,
+            # which is what every deployment did before this.
+            retain_publications=_retain_publications(config),
+            # VALIDATED HERE, at load, so a mistake in a declared
+            # trigger stops the deployment starting -- where whoever
+            # wrote it is looking -- rather than surfacing when it was
+            # meant to fire.
+            declared_triggers=load_declared_triggers(
+                config.get("triggers"), schema_raw["object_types"],
+                action_types_raw, policy_raw["roles"],
+            ),
+        )
+    except KeyError as e:
+        raise ValueError(f"Missing expected key {e} in config.yaml/ontology_schema.yaml/policy.yaml.") from e
+
+    # A SEPARATE validation pass, deliberately after the try/except
+    # above -- by this point every basic required key is already
+    # confirmed present; this checks the DEEPER structure of every
+    # action_type (see core/ontology/action_types.py's own module
+    # docstring for the full reasoning on why this belongs here, at
+    # load time, not deferred to propose_action() -- including why a
+    # missing "sub_writes" is now REJECTED, not silently skipped).
+    validate_action_types(action_types_raw, schema_raw["object_types"])
+    # Separate call because core/ontology/action_types.py may not
+    # import core/ontology/submission_criteria.py -- they are siblings
+    # in pyproject.toml's elysium.core.ontology layering. See that function's
+    # own docstring.
+    validate_action_type_criteria(action_types_raw)
+
+    # title_field -- an OPTIONAL, per-object-type display-name
+    # declaration (see core/ontology/object_type_validation.py's own
+    # module docstring for the full reasoning, including what's
+    # DELIBERATELY still deferred).
+    validate_object_types(schema_raw["object_types"])
+
+
+    # Every role's own grants, checked against what they actually
+    # reference -- see core/access/policy_validation.py's
+    # own module docstring for the full reasoning: authorize() itself
+    # does a bare exact-string match with no existence-checking of its
+    # own, so a typo'd grant here would otherwise never fail loudly
+    # anywhere, just silently never match.
+    validate_roles(deployment_config.roles, deployment_config.schema, deployment_config.action_types,
+                    deployment_config.enabled_tools, permissions_by_module(deployment_config.modules))
+    # Cross-grant coherence, which validate_roles() deliberately does
+    # not do -- see validate_role_coherence()'s own docstring for why
+    # it cannot live inside a function the linter calls per grant.
+    validate_role_coherence(deployment_config.roles)
+
+    return deployment_config
+
+
+@dataclass(frozen=True)
+class EmbeddingSettings:
+    model: "str | None"
+    budget_seconds: float
+    dimensions: "int | None"
+    prefixes: "dict | None"
+    connection: dict
+
+
+def _embedding_settings(llm_config) -> EmbeddingSettings:
+    """`llm.embedding_*`, checked at load (R45, 18 October)."""
+    model = llm_config.get("embedding_model")
+    if model is not None and (not isinstance(model, str) or not model.strip()):
+        raise ValueError("llm.embedding_model is the name of an embedding model, such as "
+                         "nomic-embed-text.")
+    budget = llm_config.get("embedding_budget_seconds", 300)
+    if isinstance(budget, bool) or not isinstance(budget, (int, float)) or budget <= 0:
+        raise ValueError("llm.embedding_budget_seconds is a number of seconds above 0.")
+    dimensions = llm_config.get("embedding_dimensions")
+    if dimensions is not None and (isinstance(dimensions, bool) or not isinstance(dimensions, int)
+                                   or not 16 <= dimensions <= 8192):
+        raise ValueError("llm.embedding_dimensions is a whole number of numbers per vector, "
+                         "16 to 8192 -- 512, say, for nomic-embed-text.")
+    prefixes = llm_config.get("embedding_prefixes")
+    if prefixes is not None and (not hasattr(prefixes, "items")
+                                 or set(prefixes) - {"document", "query"}
+                                 or not all(isinstance(value, str) for value in prefixes.values())):
+        raise ValueError("llm.embedding_prefixes is {document: <text>, query: <text>}; use "
+                         "empty text for none.")
+    connection = llm_config.get("embedding_connection") or {}
+    if not hasattr(connection, "items") or set(connection) - {
+            "base_url", "api_key", "request_timeout_seconds"}:
+        raise ValueError("llm.embedding_connection is {base_url, api_key?, "
+                         "request_timeout_seconds?}.")
+    # A CREDENTIAL BY REFERENCE, as a silo's is: ${ENV_NAME} in the file,
+    # the value from the environment.
+    connection = expand_secrets(dict(connection), where="config.yaml: llm.embedding_connection")
+    return EmbeddingSettings((model.strip() if model else None), float(budget), dimensions,
+                             dict(prefixes) if prefixes is not None else None, connection)
+
+
+def build_embedder(config: DeploymentConfig):
+    """The deployment's embedder, or None when no embedding model is set.
+
+    ANY PROVIDER: the request is the one every embedding server speaks
+    (adapters/embedding_adapter.py). Sent to `llm.embedding_connection`
+    when given, else to the chat server's own origin -- which a provider
+    with no server of its own (the Claude CLI) does not have, and is
+    told so at load."""
+    from elysium.adapters.embedding_adapter import OpenAICompatibleEmbedder, server_origin
+
+    if not config.embedding_model:
+        return None
+    connection = dict(config.embedding_connection or {})
+    url = connection.get("base_url") or dict(config.llm_connection).get("base_url")
+    if not url:
+        raise ValueError(f"llm.embedding_model is set, but provider {config.llm_provider!r} "
+                         f"has no server to embed with: set llm.embedding_connection.base_url.")
+    try:
+        origin = server_origin(str(url))
+    except ValueError as e:
+        raise ValueError(f"llm.embedding_connection: {e}") from e
+    return OpenAICompatibleEmbedder(
+        config.embedding_model, origin, dimensions=config.embedding_dimensions,
+        prefixes=dict(config.embedding_prefixes) if config.embedding_prefixes is not None else None,
+        timeout_seconds=float(connection.get("request_timeout_seconds")
+                              or dict(config.llm_connection).get("request_timeout_seconds")
+                              or 180),
+        api_key=connection.get("api_key"))
+
+
+def build_llm_adapter(config: DeploymentConfig, model: str, *,
+                      prose_max_tokens: "int | None" = None) -> LLMAdapter:
+    # The one place an LLM adapter gets constructed -- used for BOTH the
+    # step-selection and synthesis clients. Always wrapped in
+    # ConcurrencyLimitedLLMAdapter -- concrete adapters never throttle
+    # themselves, core/ enforces uniformly based on what each declares.
+    adapter_class = _LLM_ADAPTER_REGISTRY.get(config.llm_provider)
+    if adapter_class is None:
+        raise ValueError(
+            f"Unknown LLM provider {config.llm_provider!r} -- registered "
+            f"providers: {sorted(_LLM_ADAPTER_REGISTRY.keys())}"
+        )
+    # RETRY OUTSIDE THE LIMITER, NOT INSIDE (AL-R1, requested by the
+    # agent-loop agent and checked here before wiring).
+    #
+    # ConcurrencyLimitedLLMAdapter.chat holds `with
+    # self._limiter.limit()` around the call, so a retry nested INSIDE
+    # it would sleep while holding a slot -- turning a transient
+    # failure into a throughput collapse for every other caller.
+    # Outside, a sleeping retry holds nothing and re-queues like any
+    # other request.
+    #
+    # WITHOUT THIS WIRING THE WRAPPER WAS INERT: built, tested, and
+    # constructed by nothing, so AL-5's retry behaviour did not exist
+    # in any running deployment. It could not be wired from the
+    # backend branch either -- the module only arrived with the
+    # agentloop merge, so this is the first commit where the import
+    # resolves.
+    #
+    # ONLY `retryable` FAILURES ARE RETRIED, which the wrapper
+    # enforces: a refusal, a bad request or a timeout that has already
+    # passed its deadline raises on the first attempt.
+    # AN ANSWER'S LENGTH LIMIT reaches only the client built with it --
+    # the answer's (agent.answer_max_tokens) -- as a connection key each
+    # adapter that can honour it reads. The step client already caps its
+    # JSON replies; a prose limit there would cap nothing.
+    connection = config.llm_connection
+    if prose_max_tokens is not None:
+        connection = {**dict(config.llm_connection), "prose_max_tokens": prose_max_tokens}
+    return RetryingLLMAdapter(
+        ConcurrencyLimitedLLMAdapter(adapter_class(model, connection))
+    )
+
+
+def _mirror_last_synced_at(config: DeploymentConfig, data_dir: Path,
+                           sync=None) -> str | None:
+    # The OLDEST last-sync time across every mirrored table, not the
+    # newest -- deliberately conservative: a write applied after ANY
+    # table's own last sync may not be reflected in the mirror yet, so
+    # taking the newest would silently drop the overlay for tables that
+    # happen to lag behind. Returns None if nothing has synced at all,
+    # which correctly means "overlay everything applied so far."
+    from elysium.core.mirror.sync_targets import resolve_sync_targets
+
+    sync = sync or _mirror_for_reading(config, data_dir)
+    timestamps = []
+    for target in resolve_sync_targets({"object_types": config.schema}):
+        synced_at = sync.last_synced_at(target.silo_name, target.table_name)
+        if synced_at is None:
+            # A table that has never synced -- nothing in the mirror to
+            # be stale relative to, so no lower bound to impose.
+            continue
+        timestamps.append(synced_at.isoformat())
+    return min(timestamps) if timestamps else None
+
+
+def _mirror_for_reading(config: DeploymentConfig, data_dir: Path):
+    """The mirror, opened to read its records, with no sources."""
+    from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+
+    # WITH THE DEPLOYMENT'S STORAGE (PA001-F5, found again in the 14 Oct
+    # sweep). Without it an object-store mirror is opened as a local one
+    # and the very first read raises -- so a generation could not build.
+    return IcebergMirrorSync(data_dir / "mirror", {},
+                             storage=dict(config.mirror_storage or {}))
+
+
+def _gold_data_as_of(config: DeploymentConfig, data_dir: Path, sync=None) -> dict[str, str]:
+    """Each type's published gold's data time, where recorded."""
+    from elysium.core.mirror.gold import data_as_of
+
+    sync = sync or _mirror_for_reading(config, data_dir)
+    found = {}
+    for object_type in config.schema:
+        recorded = data_as_of(sync.catalog, object_type)
+        if recorded is not None:
+            found[object_type] = recorded
+    return found
+
+
+def build_live_read_adapters(runtime_paths: "RuntimePaths | None" = None,
+                             config: "DeploymentConfig | None" = None) -> dict:
+    """Read adapters that always talk to the SOURCE, never the mirror.
+
+    THE SYNC NEEDS THESE AND CANNOT USE THE MEDIATOR'S. When
+    read_from_mirror is on -- which is now the default -- the
+    mediator's adapters are MirrorReadAdapters, so a sync built from
+    them reads the mirror to build the mirror. The source is never
+    touched.
+
+    That is not a subtle failure. Found within an hour of flipping the
+    default, on a real deployment, where dropping silver and
+    re-syncing reported a source column "gone" -- because the thing
+    being read was the empty silver table rather than the database.
+
+    SEPARATE FROM THE MEDIATOR'S, not a flag on it, because the two
+    answer different questions. The mediator serves reads and should
+    obey the deployment's choice; the sync FILLS what those reads come
+    from and has no choice to obey.
+
+    THE PATHS ARE THE CALLER'S. This took only a config directory and
+    resolved the DATA directory itself, so run_sync(runtime_paths) wrote
+    its mirror under the paths it was given and read the silos from the
+    default ones. In production both come from one environment and agree,
+    which is why it went unnoticed. Given anything else, the silo path
+    resolved into the OTHER deployment -- where SQLite, opening a file
+    that is not there, created an empty one -- and the sync reported
+    every column "gone": the symptom above, by a different road. Found
+    building a synced deployment for the tests (E-08).
+    """
+    paths = runtime_paths or resolve_runtime_paths()
+    # A GENERATION'S OWN config, when given -- the one it serves -- rather
+    # than whatever the files say now (E-13's health checks).
+    config = config or load_deployment(paths.config_dir)
+
+    # THE SAME RESOLUTION build_generation() DOES, which is inline
+    # there rather than a function. A relative silo path is relative to
+    # the DATA directory, and an adapter built without that resolution
+    # opens a file that is not there.
+    resolved = {}
+    for silo_name, silo_config in config.silo_configs.items():
+        # ${VAR} RESOLVED HERE, at the one place a connection
+        # block becomes a live thing. A credential belongs in the
+        # process environment -- where systemd's EnvironmentFile=,
+        # a container's secret mount and every CI system already
+        # put them -- rather than in a file that lands in every
+        # backup and usually in version control.
+        connection = expand_secrets(
+            dict(silo_config["connection"]),
+            where=f"data_silos.yaml: {silo_name}.connection",
+        )
+        if "path" in connection:
+            connection["path"] = paths.data_dir / connection["path"]
+        resolved[silo_name] = {**silo_config, "connection": connection}
+
+    return cast(
+        "dict[str, ExternalReadAdapter]",
+        _build_adapters(resolved, _READ_ADAPTER_REGISTRY),
+    )
+
+
+def _default_concurrency(config: dict) -> int:
+    """How many agent queries this process runs at once.
+
+    THE DEFAULT FOLLOWS THE ENGINE, because the limit exists because
+    of the engine (INFER-1). Ollama inherits llama.cpp's server and
+    caps parallel requests at four, queuing the rest, so a larger
+    number here would only build a queue in a second place. vLLM's
+    continuous batching is the opposite: it wants requests in flight,
+    and past four to eight concurrent it leads Ollama by two to nine
+    times -- Red Hat's GuideLLM on an A100 measured 793 output
+    tokens/sec against Ollama's 41, p99 80 ms against 673 ms, and an
+    independent test found the same direction on other hardware.
+
+    THE OLD DEFAULT WAS FOUR FOR EVERYONE, which matched Ollama's cap
+    BY COINCIDENCE -- so a deployment that swapped to vLLM and changed
+    nothing else would have seen no improvement at all, and would have
+    had no reason to suspect the limit was ours rather than the
+    engine's.
+
+    A deployment that states a number keeps it, whatever the engine.
+    """
+    declared = config["agent"].get("max_concurrent_requests")
+    if declared is not None:
+        return int(declared)
+    provider = (config.get("llm") or {}).get("provider")
+    return 16 if provider == "vllm" else 4
+
+
+def _source_locales(config: dict, silos: dict) -> dict:
+    """{silo: locale or None}: each silo's own `locale:`, else the
+    deployment's `source_locale:`, else None.
+
+    THE LOCALE IS THE SOURCE'S, NOT THE SERVER'S. A deployment in Sao
+    Paulo reading a US SaaS export needs en_US for that one silo, which
+    is why the deployment default can be overridden per silo -- and why
+    nothing here looks at the machine's own locale settings.
+    """
+    from elysium.core.ontology.localised_values import normalise_locale
+
+    default = normalise_locale(config.get("source_locale"), "config.yaml source_locale")
+    resolved = {}
+    for silo_name, silo in (silos or {}).items():
+        if "locale" in (silo or {}):
+            resolved[silo_name] = normalise_locale(
+                silo["locale"], f"data_silos.yaml {silo_name}.locale")
+        else:
+            resolved[silo_name] = default
+    return resolved
+
+
+def _bulk_action_limit(declared) -> int:
+    """How many objects one bulk action may name (decided 14 Oct).
+
+    256 BY DEFAULT, 1,024 AT MOST. The precedent allows 1,000 object references
+    in one list parameter; the owner chose a lower default a reviewer can
+    plausibly read, and a ceiling a deployment may raise to. Past it, a
+    change is a pipeline's job rather than one person's approval.
+    """
+    from elysium.core.ontology.write_mediator import DEFAULT_BULK_OBJECTS, MAX_BULK_OBJECTS
+
+    if declared is None:
+        return DEFAULT_BULK_OBJECTS
+    if isinstance(declared, bool) or not isinstance(declared, int) \
+            or not 1 <= declared <= MAX_BULK_OBJECTS:
+        raise ValueError(
+            f"config.yaml bulk_action_limit must be a whole number from 1 to "
+            f"{MAX_BULK_OBJECTS}, got {declared!r}.")
+    return declared
+
+
+def _token_budget(declared) -> "int | None":
+    """AL-10's budget: a positive whole number of tokens, or absent."""
+    if declared is None:
+        return None
+    if isinstance(declared, bool) or not isinstance(declared, int) or declared <= 0:
+        raise ValueError(
+            f"config.yaml agent.max_tokens_per_query must be a positive whole number of "
+            f"tokens, got {declared!r}.")
+    return declared
+
+
+def _incremental_policies(silos: dict, object_types: dict) -> dict:
+    """R2's declarations, checked against the tables the sync actually
+    reads. JOIN TABLES ARE LEFT OUT of what may be declared: a join row
+    has no id of its own to merge a changed row by, and what changes in
+    one is mostly DELETION, which a cursor read cannot see anyway."""
+    from elysium.core.mirror.incremental import incremental_policies
+    from elysium.core.mirror.sync_targets import resolve_sync_targets
+
+    if not any((silo or {}).get("incremental") is not None for silo in (silos or {}).values()):
+        return {}
+    readable = {(target.silo_name, target.table_name)
+                for target in resolve_sync_targets({"object_types": object_types})
+                if not target.link_pair}
+    return incremental_policies(silos, readable)
+
+
+def _excel_date_silos(silos: dict, key: str = "excel_dates") -> frozenset:
+    """The silos declaring `excel_dates: true` -- or another `key` of the
+    same kind, `zero_dates_as_null`. Anything but a boolean is refused:
+    `excel_dates: yes-please` silently read as false would leave every
+    serial set aside with nothing pointing at why."""
+    declared = set()
+    for silo_name, silo in (silos or {}).items():
+        value = (silo or {}).get(key, False)
+        if not isinstance(value, bool):
+            raise ValueError(
+                f"data_silos.yaml {silo_name}.{key} must be true or false, got {value!r}.")
+        if value:
+            declared.add(silo_name)
+    return frozenset(declared)
+
+
+def _no_trigger_clock(config: dict) -> None:
+    """Refuses the trigger-clock settings, which no longer exist.
+
+    TWO NAMES IN TWO DAYS, both gone (16 October): the clock checked
+    every trigger, then only date-filtered ones, and is now replaced by
+    timers set for the exact moment a date window next changes
+    (core/trigger_windows.py). A setting left in config.yaml would read
+    as governing something; refused at load, where whoever wrote it is
+    looking, rather than ignored."""
+    for key in ("check_triggers_every_minutes", "check_date_triggers_every_minutes"):
+        if key in config:
+            raise ValueError(
+                f"{key} no longer exists: triggers are checked when data arrives, and a "
+                f"date-filtered trigger at the moment a record next crosses its window. "
+                f"Remove the key from config.yaml.")
+
+
+def _retain_publications(config: dict) -> int:
+    """How many `published-N` tags a gold table keeps.
+
+    IMPORTED LATE, like every other elysium.core.mirror name in this file:
+    importing gold at module scope pulls PyIceberg into the import
+    graph of everything that loads a deployment, including the tests
+    that never touch a lake.
+    """
+    from elysium.core.mirror.gold import DEFAULT_RETAINED_PUBLICATIONS
+
+    return int((config.get("mirror") or {}).get(
+        "retain_publications", DEFAULT_RETAINED_PUBLICATIONS))
+
+
+def _writable_silo_configs(config: "DeploymentConfig",
+                            resolved: dict) -> dict:
+    """The silo configs a confirmed write may reach.
+
+    THE DEPLOYMENT THAT HAS NEVER HEARD OF THIS KEEPS WRITING, and
+    says so once at startup. Every project that ships a
+    secure-by-default flip does it this way -- the new default applies
+    to fresh installations, existing ones keep their setting until an
+    operator changes it -- and the alternative is breaking a working
+    deployment on upgrade to make a point it has not been told about.
+
+    A DECLARED NAME THAT IS NOT A SILO IS AN ERROR, not an empty
+    writable set. Silently writing nowhere because of a typo is the
+    failure this whole feature exists to prevent, inverted.
+    """
+    targets = config.write_targets
+    if targets is None:
+        # THE EXISTING BEHAVIOUR WAS ONLY EVER WRITES TO SILOS THAT CAN
+        # BE WRITTEN, which is SQLite's alone. Found 20 October by the
+        # first run over a simulated world: with every silo kept here, a
+        # deployment reading PostgreSQL, a CSV folder or an API without a
+        # `write_targets` line failed to load at all -- "Unknown adapter
+        # type 'rest' ... registered adapters: ['sqlite']" -- for a write
+        # it never asked for.
+        resolved = {name: silo for name, silo in resolved.items()
+                    if silo.get("adapter") in _WRITE_ADAPTER_REGISTRY}
+        if not resolved:
+            return {}
+        logger.warning(
+            "NO write_targets DECLARED, so confirmed writes still reach "
+            "every configured silo that can be written (SQLite) -- which is "
+            "this deployment's existing behaviour and is kept deliberately. "
+            "To make it explicit, add "
+            "to config.yaml:\n"
+            "\n    write_targets: []            # refuse all external writes"
+            "\n\nor name the silos a write may reach:\n"
+            "\n    write_targets:\n      - %s",
+            next(iter(resolved), "your_silo"),
+        )
+        return resolved
+
+    unknown = [name for name in targets if name not in resolved]
+    if unknown:
+        raise ValueError(
+            f"write_targets names {unknown}, which is not a configured "
+            f"silo. Configured silos: {sorted(resolved)}"
+        )
+    unwritable = [name for name in targets
+                  if resolved[name].get("adapter") not in _WRITE_ADAPTER_REGISTRY]
+    if unwritable:
+        raise ValueError(
+            f"write_targets names {unwritable}, which Elysium can only read: "
+            f"writes reach {sorted(_WRITE_ADAPTER_REGISTRY)} silos alone."
+        )
+    return {name: resolved[name] for name in targets}
+
+
+ON_TYPE_MISMATCH = ("refuse", "quarantine")
+
+
+def _resolve_undeclared_columns(config: dict) -> "bool | None":
+    """Whether bronze holds columns the ontology never declared.
+
+    IT HOLDS THEM TODAY, deliberately and documented -- bronze keeps
+    every raw value so a column declared next year can be re-derived
+    from history rather than starting empty.
+
+    THE COST IS AN UNDECLARED SSN IN PARQUET with no field grant and
+    no read path, and nothing saying so. Not reachable through
+    Elysium: the mediator reads from the silo a type names, which is
+    silver or gold, and `bronze_` is a reserved prefix no silo may
+    use. Reachable by anyone with access to the lake's files.
+
+    SO THE TRADE IS MINIMISATION AGAINST RECOVERABILITY, and the
+    owner chose minimisation for new deployments. The precedent is on
+    that side -- schema-on-read "directly undermines the GDPR
+    principles of data minimization and purpose limitation", and the
+    consistent advice is to "control data before it lands" because
+    "doing this at ingestion time is dramatically easier than
+    remediating sensitive data later across petabytes".
+
+    ABSENT KEEPS TODAY'S BEHAVIOUR AND WARNS, naming the columns. An
+    existing deployment has history in bronze that the new default
+    would stop extending, and silently narrowing what it keeps would
+    destroy exactly the recoverability the old default was for.
+    """
+    if "ingest_undeclared_columns" not in config:
+        return None
+    return bool(config.get("ingest_undeclared_columns"))
+
+
+def _resolve_type_mismatch_policy(config: dict) -> "str | None":
+    """What one uncoercible value costs: the row, or the table.
+
+    AN ABSENT KEY STILL COSTS THE TABLE: an `N/A` in an integer column
+    stops that table's sync, the behaviour seven ZOO findings collapse
+    into. `quarantine` costs the row, and is what the shipped config and
+    the template set.
+
+    THE PRECEDENT SEPARATES TWO THINGS this does not. Databricks'
+    parsers treat a MALFORMED RECORD and a TYPE MISMATCH differently --
+    "only incomplete and malformed CSV records are considered corrupt",
+    while a type mismatch is rescued into a column rather than failing
+    the read. Their default is PERMISSIVE, and the guidance is explicit:
+    "use PERMISSIVE + audit the corrupt record column instead of
+    failing the pipeline."
+
+    QUARANTINE IS NOT DROPPING, which is the objection this answers.
+    The row is set aside where an operator can see it, counted, and
+    reported -- the machinery already exists in
+    `core/mirror/duplicates.py` and the expectations policy.
+
+    ABSENT KEEPS THE OLD BEHAVIOUR. An existing deployment that has
+    never heard of this keeps refusing and is told how to change it,
+    for the same reason `write_targets` does: a secure-by-default flip
+    applies to new installations, and breaking a working pipeline to
+    make a point it has not been told about is not an upgrade.
+    """
+    if "on_type_mismatch" not in config:
+        return None
+    declared = str(config.get("on_type_mismatch") or "").strip().lower()
+    if declared not in ON_TYPE_MISMATCH:
+        raise ValueError(
+            f"on_type_mismatch must be one of {list(ON_TYPE_MISMATCH)}, "
+            f"not {declared!r}"
+        )
+    return declared
+
+
+def _resolve_suspected_rename(config: dict) -> str:
+    """`on_suspected_rename`: "hold" (the default) or "serve_empty".
+
+    ABSENT MEANS HOLD, unlike `on_type_mismatch`, whose absence keeps an
+    old behaviour. Serving a field empty where the source holds values is
+    a wrong value by Elysium's own rule, and a deployment meets this only
+    when a source has just changed shape -- not a working pipeline
+    broken by an upgrade. See core/mirror/drift_policy.py for the
+    precedent.
+    """
+    from elysium.core.mirror.drift_policy import ON_SUSPECTED_RENAME
+
+    declared = str(config.get("on_suspected_rename") or "hold").strip().lower()
+    if declared not in ON_SUSPECTED_RENAME:
+        raise ValueError(f"on_suspected_rename must be one of {list(ON_SUSPECTED_RENAME)}, "
+                         f"not {declared!r}")
+    return declared
+
+
+def _resolve_trusted_proxies(config: dict) -> "tuple[str, ...]":
+    """Peers whose forwarded-for header may be believed.
+
+    EMPTY BY DEFAULT, and that is the whole safety property. Without
+    it, "any client can send `X-Forwarded-For: 1.2.3.4` to be
+    rate-limited as 1.2.3.4 instead of their real IP", and worse, can
+    "spoof a victim's IP address and intentionally trigger rate
+    limits, causing a Denial of Service for innocent users behind
+    corporate NATs".
+
+    A STRING IS REFUSED rather than iterated, the same trap
+    `write_targets` has: one unquoted entry read as a list of
+    characters would trust a list of single-character CIDRs, each of
+    which parses as nothing and silently trusts no one -- a fail-open
+    by way of a fail-closed, which is the hardest kind to notice.
+    """
+    declared = config.get("trusted_proxies") or []
+    if isinstance(declared, str):
+        raise ValueError(
+            "trusted_proxies must be a list of addresses or CIDRs, not a "
+            f"string. Write it as:\n\n    trusted_proxies:\n      - {declared}"
+        )
+    return tuple(str(entry) for entry in declared)
+
+
+def _resolve_write_targets(config: dict) -> "tuple[str, ...] | None":
+    """Which silos a confirmed write may reach, as declared.
+
+    OFF BY DEFAULT, AND NOT EVEN POINTING ANYWHERE. Today every
+    deployment writes to the customer's real database with no toggle at
+    all: `write_adapters` are built from the same silo entries the
+    readers use, so a deployment installed to LOOK at data can be made
+    to CHANGE it, and nothing in the configuration says so.
+
+    A SEPARATE BLOCK rather than a `writable:` flag on each silo, which
+    is the owner's decision and the stronger shape: a silo you only
+    meant to read cannot become writable by someone editing the entry
+    you read it through. The write target has to be named on purpose,
+    in its own place.
+
+        write_targets:
+          - primary_sql
+
+    THREE STATES, NOT TWO, and the third is the one the precedent
+    demands. Absent means a deployment written before this existed:
+    it keeps writing, because secure-by-default is applied to NEW
+    installations and existing ones keep their behaviour until an
+    operator changes it -- that is what every project shipping this
+    kind of flip does, and flipping it silently would break a working
+    deployment to make a point. Declared-and-empty means off. Declared
+    with names means those silos and no others.
+    """
+    if "write_targets" not in config:
+        return None
+    declared = config.get("write_targets") or []
+    if isinstance(declared, str):
+        # ONE NAME UNQUOTED IS THE OBVIOUS TYPO, and silently treating a
+        # string as a list of characters would make every single-letter
+        # silo name writable.
+        raise ValueError(
+            "write_targets must be a list of silo names, not a string. "
+            f"Write it as:\n\n    write_targets:\n      - {declared}"
+        )
+    return tuple(str(name) for name in declared)
+
+
+def _refuse_live_reads(config: dict) -> bool:
+    """Always True, and REFUSES a deployment that asked for False.
+
+    LIVE READS ARE GONE (GOLD-9). They bypassed everything the pipeline
+    does -- standardisation, the declared expectations and their
+    quarantine, duplicate-key handling, lineage, identity resolution
+    and gold itself -- and answered from the customer's database as
+    though that were the same data. It is not: it is the data BEFORE
+    the ontology was applied to it.
+
+    REFUSED RATHER THAN IGNORED. A deployment that set this
+    deliberately expects the old behaviour, and silently giving it the
+    new one would be the worst of both: the operator believes reads
+    bypass the lake, and they do not. So the load fails and says what
+    to do instead.
+    """
+    declared = (config.get("mirror") or {}).get("read_from_mirror")
+    if declared is False:
+        raise ValueError(
+            "read_from_mirror: false is no longer supported. Reads are served from "
+            "published gold, which is the only layer where the ontology has been "
+            "applied. Remove the setting and run `python -m elysium.scripts.run_sync`."
+        )
+    return True
+
+
+def _merged_with_bindings(base_path: Path, schema_raw: dict) -> dict:
+    """The declaration and its source bindings, as one schema.
+
+    A DEPLOYMENT THAT HAS NOT SPLIT ITS FILE STILL WORKS. Where
+    source_bindings.yaml is absent, the ontology file is taken as
+    already merged -- which is what every deployment written before
+    GOLD-3c looks like. Where it is present, the ontology file must
+    NOT also carry bindings: two places declaring where a table lives
+    is the ambiguity this split exists to remove, and guessing which
+    wins would be worse than refusing.
+    """
+    bindings_path = base_path / "source_bindings.yaml"
+    if not bindings_path.exists():
+        return schema_raw
+
+    declaration = dict(schema_raw.get("object_types") or schema_raw)
+    stray = sorted(
+        object_type for object_type, type_def in declaration.items()
+        if any(key in (type_def or {}) for key in TYPE_BINDING_KEYS)
+    )
+    if stray:
+        raise ValueError(
+            f"ontology_schema.yaml still binds {', '.join(stray)} to a source while "
+            f"source_bindings.yaml exists. Move the storage blocks into the bindings "
+            f"file, or delete it."
+        )
+    bindings_raw = load_yaml(bindings_path)
+    merged = merge_bindings(declaration, dict(bindings_raw.get("object_types") or bindings_raw))
+    if "object_types" in schema_raw:
+        return {**schema_raw, "object_types": merged}
+    return merged
+
+
+def _build_read_adapters(config: DeploymentConfig, resolved_silo_configs: dict,
+                          data_dir: Path) -> dict[str, ExternalReadAdapter]:
+    # THE Phase 4 cutover, and deliberately the whole of it: which
+    # adapters DataMediator holds, nothing else. Confirmed directly by
+    # reading the real code before designing this -- every read in
+    # DataMediator resolves its adapter through _adapter_for() or
+    # _resolve_shared_storage(), so a MirrorReadAdapter satisfying the
+    # same ExternalReadAdapter contract slots straight in. search_object(),
+    # get_field(), MDO resolution and reverse links all work unchanged;
+    # there is no branch threaded through any read path.
+    #
+    # WRITES ARE UNAFFECTED either way. load_deployment_bundle()'s own
+    # write_adapters are always built live, against the customer's real
+    # database -- a confirmed write must never land in a copy that the
+    # next sync would simply overwrite. See the roadmap (consumed)'s own
+    # Phase 4
+    # section on why the mirror stays sync-written, sole writer.
+    if not config.read_from_mirror:
+        return cast(
+            "dict[str, ExternalReadAdapter]",
+            _build_adapters(resolved_silo_configs, _READ_ADAPTER_REGISTRY),
+        )
+
+    # One shared catalog across every silo -- they all read the same
+    # mirror, and each silo maps to its own Iceberg namespace, matching
+    # exactly what core/mirror/iceberg_sync.py writes.
+    mirror_dir = data_dir / "mirror"
+    # CREATED ON DEMAND, because reading from the mirror is now the
+    # default and a fresh deployment has never synced. SqlCatalog opens
+    # a SQLite file, and SQLite will not create one in a directory that
+    # does not exist -- so without this, every deployment that has not
+    # yet run a sync fails at startup with "unable to open database
+    # file", which says nothing about mirrors.
+    #
+    # An empty catalog is the CORRECT state for a fresh deployment. The
+    # adapter returns no rows, data-freshness reports a mirror with no
+    # last_synced_at, and Browse says so rather than claiming the data
+    # is empty.
+    mirror_dir.mkdir(parents=True, exist_ok=True)
+    catalog = open_mirror_catalog(mirror_dir, dict(config.mirror_storage or {}))
+    # Computed HERE, where the catalog already exists, and passed into
+    # each adapter rather than set on it afterwards. Setting it after
+    # construction would leave a window in which an adapter existed
+    # unpinned, and "mostly immutable" is the shape of object this
+    # project keeps finding bugs in.
+    snapshot_ids = _snapshot_ids_from_catalog(catalog, config)
+    return {
+        silo_name: MirrorReadAdapter(
+            catalog, silo_name,
+            snapshot_ids={
+                table: snapshot for (silo, table), snapshot in snapshot_ids.items()
+                if silo == silo_name
+            },
+        )
+        for silo_name in resolved_silo_configs
+    }
+
+
+class MirrorCatalogStranded(OSError):
+    """The catalog points at a metadata file that is not on disk.
+
+    A SEPARATE TYPE because the remedy is specific and nothing else
+    raises it: `scripts/repair_catalog.py`, which existed before this
+    exception and was not reachable from the failure.
+    """
+
+
+def _snapshot_ids_from_catalog(catalog, config: DeploymentConfig) -> dict:
+    # {(silo, table): snapshot_id} for every mirrored table that has
+    # actually synced. A table that never has is ABSENT rather than
+    # present with a null: there is no snapshot to pin, and a
+    # placeholder would look like one.
+    from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+
+    from elysium.core.mirror.sync_targets import resolve_sync_targets
+
+    ids = {}
+    for target in resolve_sync_targets({"object_types": config.schema}):
+        try:
+            table = catalog.load_table(f"{target.silo_name}.{target.table_name}")
+        except (NoSuchTableError, NoSuchNamespaceError):
+            continue
+        except (FileNotFoundError, OSError) as missing:
+            # THE CATALOG POINTS AT METADATA THAT IS NOT THERE. Iceberg
+            # commits in two steps -- write the metadata, then swap the
+            # catalog's pointer -- and only the pointer is made durable
+            # by SQLite. A disk filling or a power loss between them
+            # strands the table.
+            #
+            # THIS RAN BEFORE THE SYNC EVEN STARTED, inside deployment
+            # load, so the operator got a bare pyarrow traceback and
+            # NOT ONE TABLE SYNCED -- including the healthy ones.
+            # the backlog (consumed) asked for the sync to "fail when the
+            # catalog
+            # and warehouse disagree, rather than reporting 0/2 with no
+            # explanation"; it was worse than that.
+            #
+            # THE REMEDY ALREADY EXISTS. scripts/repair_catalog.py was
+            # written for exactly this failure, and nothing pointed at
+            # it from the place the failure surfaces.
+            raise MirrorCatalogStranded(
+                f"{target.silo_name}.{target.table_name}: the mirror's "
+                f"catalog points at metadata that is not on disk "
+                f"({missing}). This happens when a write was interrupted "
+                f"-- a full disk, or a power loss -- between writing the "
+                f"metadata and swapping the pointer to it.\n"
+                f"\n"
+                f"To see what is stranded, and then repair it:\n"
+                f"    python -m elysium.scripts.repair_catalog\n"
+                f"    python -m elysium.scripts.repair_catalog --write\n"
+                f"\n"
+                f"Bronze and silver can also be rebuilt from source. THE "
+                f"CHANGELOG CANNOT: it is the one layer nothing can "
+                f"derive again, so repair before rebuilding."
+            ) from missing
+        snapshot = table.current_snapshot()
+        if snapshot is not None:
+            ids[(target.silo_name, target.table_name)] = snapshot.snapshot_id
+    return ids
+
+
+def _build_adapters(
+    silo_configs: dict, registry: dict[str, type]
+) -> dict[str, ExternalReadAdapter | ExternalWriteAdapter]:
+    adapters = {}
+    for silo_name, silo_config in silo_configs.items():
+        adapter_key = silo_config["adapter"]
+        adapter_class = registry.get(adapter_key)
+        if adapter_class is None:
+            raise ValueError(
+                f"Unknown adapter type {adapter_key!r} for silo {silo_name!r} "
+                f"-- registered adapters: {sorted(registry.keys())}"
+            )
+        adapters[silo_name] = adapter_class(silo_config["connection"])
+    return adapters
+
+
+def _build_silo_for_type(schema: dict) -> dict[str, str]:
+    return {object_type: type_def["storage"]["silo"] for object_type, type_def in schema.items()}
+
+
+@dataclass(frozen=True)
+class RuntimePaths:
+    config_dir: Path
+    data_dir: Path
+    log_dir: Path
+
+    @property
+    def secrets_dir(self) -> Path:
+        """Where generated secrets live, under data rather than config.
+
+        DERIVED, not a fourth environment variable. A secret is state
+        the application produces, not configuration an operator
+        supplies -- so it belongs with the databases, and giving it its
+        own variable would invite pointing it somewhere world-readable.
+
+        Nothing writes here yet. It exists because the generated
+        first-run password needs a location with a documented mode
+        before it needs a password, and adding the location afterwards
+        means deciding permissions in a hurry.
+        """
+        return self.data_dir / "secrets"
+
+
+def resolve_runtime_paths() -> RuntimePaths:
+    # THE one place any of Elysium's three runtime locations get
+    # decided -- config, data, and logs are three genuinely
+    # independent locations ALWAYS, not "one deployment/ folder, with
+    # environment variables as a special production-only override."
+    # deployment/etc, deployment/var/lib, and deployment/var/log (local
+    # development's own defaults) already mirror the SAME structure a
+    # real install uses (/etc/elysium, /var/lib/elysium,
+    # /var/log/elysium) -- local dev isn't a different, older
+    # convention env vars deviate from; it's the same three-location
+    # model, just with defaults that happen to live under one
+    # project-relative root.
+    config_dir = Path(os.environ["ELYSIUM_CONFIG_DIR"]) if "ELYSIUM_CONFIG_DIR" in os.environ \
+        else Path("deployment/etc")
+    data_dir = Path(os.environ["ELYSIUM_DATA_DIR"]) if "ELYSIUM_DATA_DIR" in os.environ \
+        else Path("deployment/var/lib")
+    log_dir = Path(os.environ["ELYSIUM_LOG_DIR"]) if "ELYSIUM_LOG_DIR" in os.environ \
+        else Path("deployment/var/log")
+    paths = RuntimePaths(config_dir, data_dir, log_dir)
+    # 0700 on the secrets directory, set on creation AND on every
+    # startup. Creating it correctly once is not enough: a restore from
+    # backup, an unpacked archive or a careless chmod leaves it
+    # readable, and the failure is silent.
+    paths.secrets_dir.mkdir(parents=True, exist_ok=True)
+    paths.secrets_dir.chmod(0o700)
+    return paths
+
+
+@dataclass(frozen=True)
+class DeploymentGeneration:
+    """Everything derived from one load of the configuration files.
+
+    THE POINT IS THAT THESE MOVE TOGETHER OR NOT AT ALL. Until now they
+    were five separate attributes on api/app.py's `app.state`, and a
+    route read `app.state.mediator` and `app.state.config` as two
+    independent reads. Replacing them one at a time gives a window
+    where a request sees a new mediator and an old config -- schema and
+    grants disagreeing inside one request, which is an authorization
+    bug rather than a cosmetic one.
+
+    That is not hypothetical. Step 2a hit it directly: a test replaced
+    config.roles and the MEDIATOR carried on authorizing against the
+    old grants, because it holds its own reference. Mutation had only
+    ever "worked" because all three held the same dict object.
+
+    Frozen, and holding a deep-frozen DeploymentConfig, because the
+    read path takes no lock: a request reads this reference once and
+    uses it throughout. That is read-copy-update, and it is only sound
+    while the shared object genuinely cannot be mutated.
+
+    WHAT IS DELIBERATELY NOT HERE: sessions, credentials, the user
+    directory, lockout counters, rate limiters, pending writes, the
+    artifact store, the thread pool. Those are RUNTIME STATE and must
+    SURVIVE a reload. Rebuilding them would log out every user, discard
+    every pending write, and reset every lockout counter -- which would
+    let an attacker clear their own rate limit by triggering a reload.
+    See the hot-reload plan for the full split.
+    """
+
+    generation: int
+    loaded_at: datetime
+    source_digest: str
+
+    config: DeploymentConfig
+    mediator: DataMediator
+    write_mediator: "WriteMediator"
+    loop: "AgentLoop"
+    synthesis_client: LLMAdapter
+    write_adapters: dict
+
+    # WHICH DATA this generation reads, per mirrored table, as
+    # {"silo.table": snapshot_id}. The config digest answers "did the
+    # DEFINITION change"; this answers "which data does it describe".
+    # Two questions, two fields, deliberately not conflated -- folding
+    # snapshot state into the digest would make "did the config
+    # change?" unanswerable whenever a sync ran.
+    #
+    # Present from the start rather than added later because a
+    # generation's SHAPE is decided once; adding a field afterwards
+    # means changing every construction site twice.
+    #
+    # Empty when read_from_mirror is off: there is no mirror being read,
+    # so there is nothing to pin.
+    mirror_snapshots: Mapping[str, int]
+    # {object type: when its gold was published}, for the types this
+    # generation reads from gold. Empty when none are -- which is what
+    # tells a caller which layer it is looking at (GOLD-3).
+    gold_published_at: Mapping[str, str] = MappingProxyType({})
+    # WHAT PEOPLE ASKED TO HAVE REMEMBERED about objects (E-14): the one
+    # gate to core/memory. None for a generation built without a data
+    # directory (some scripts and tests), which simply has no memory.
+    memory: "MemoryGuard | None" = None
+    # SEARCH BY MEANING (R45): the rules every caller ranks by -- Browse's
+    # routes and the Query agent alike. None without a data directory or
+    # an embedding model.
+    meaning: "MeaningSearch | None" = None
+
+    #: Example questions a deployment chooses to SHOW in the query
+    #: screen -- those marked `display: true`. They are kept here
+    #: because an empty query box tells a first-time user nothing about
+    #: what the ontology accepts, and the file was being loaded,
+    #: validated and thrown away.
+    #:
+    #: Only the displayable ones. An example without the flag is the
+    #: demo runner's, executes as a named user with MAC applied, and
+    #: may legitimately name a real object -- which is exactly why it
+    #: must not appear as placeholder text.
+    display_examples: tuple[str, ...] = ()
+
+
+def repointed_silos(before: DeploymentConfig, after: DeploymentConfig) -> list[str]:
+    """Silos whose CONNECTION changed between two configurations.
+
+    THE MOST SECURITY-RELEVANT CHANGE A RELOAD CAN MAKE, and until this
+    it was invisible: repointing a silo changes WHERE THE CUSTOMER'S
+    DATA COMES FROM, and the audit entry said only that generation 7
+    became 8. Someone reviewing that log could not tell a model-timeout
+    tweak from a database being swapped underneath the ontology.
+
+    COMPARES THE CONNECTION ONLY, not the whole silo entry. Changing
+    the adapter TYPE is already a different silo in every way that
+    matters and shows up here too; changing an unrelated key does not,
+    because an audit line that fires on every edit is one nobody reads.
+
+    A silo ADDED or REMOVED is deliberately not reported as a repoint.
+    Neither redirects an existing read: a new silo has nothing pointed
+    at it yet, and a removed one fails validation at load if anything
+    still declares it.
+    """
+    changed = []
+    for name, new_silo in after.silo_configs.items():
+        old_silo = before.silo_configs.get(name)
+        if old_silo is None:
+            continue
+        if old_silo.get("connection") != new_silo.get("connection") or \
+                old_silo.get("adapter") != new_silo.get("adapter"):
+            changed.append(name)
+    return sorted(changed)
+
+
+def _mirror_snapshot_ids(mediator: DataMediator) -> Mapping[str, int]:
+    """What the READ ADAPTERS are actually pinned to, as
+    {"silo.table": snapshot_id}.
+
+    READ OFF THE ADAPTERS rather than re-enumerated from the catalog,
+    and that is the whole point. An independent second walk would be a
+    second source of truth: it could disagree with what the adapters
+    pinned -- a sync committing between the two would be enough -- and
+    the generation would then REPORT a snapshot nobody was reading.
+
+    Same reasoning as mediator.roles being the same OBJECT as
+    config.roles rather than an equal copy.
+    """
+    ids = {}
+    for silo_name, adapter in mediator.adapters.items():
+        for table_name, snapshot_id in getattr(adapter, "_snapshot_ids", {}).items():
+            ids[f"{silo_name}.{table_name}"] = snapshot_id
+    return deep_freeze(ids)
+
+
+def build_generation(
+    config_dir: Path, data_dir: Path | None = None, log_dir: Path | None = None,
+    *, serving: bool = False,
+) -> DeploymentGeneration:
+    """Builds one complete, immutable generation from the files on disk.
+
+    PURE with respect to process state: it touches no global, mutates
+    nothing, and either returns a whole generation or raises. That is
+    what lets a failed reload leave the running generation untouched
+    (the hot-reload rule "consistency semantics documented per backend"),
+    and what lets this be tested without
+    a server.
+
+    NOT included, deliberately: resume_pending_writes(). It recovers
+    writes interrupted by a crash and belongs to STARTING UP, not to
+    loading configuration. A reload must not repeat it -- the writes
+    it recovers are already recovered, and re-running it against
+    in-flight state is a different operation with different risks.
+    api/app.py calls it once, after the first generation is built.
+    """
+    from elysium.core.agent.agentic_loop import AgentLoop
+    from elysium.core.ontology.write_mediator import WriteMediator
+
+    config, mediator, write_adapters = load_deployment_bundle(config_dir, data_dir, log_dir, serving=serving)
+
+    # A STARTER QUESTION MAY NOT NAME AN OBJECT. Checked at load, on
+    # the SHAPE of the text rather than against the data: an example
+    # naming `cust_999` is safe today and a leak the day somebody
+    # creates that customer, so existence is the wrong test.
+    #
+    # Only examples marked `display: true`. The demo runner's queries
+    # execute AS a named user with MAC applied, where naming a real
+    # object is a query rather than a disclosure.
+    from elysium.core.display_safety import refuse_unsafe_display_examples
+
+    try:
+        examples = load_example_queries(config_dir)
+    except (FileNotFoundError, KeyError, TypeError):
+        examples = []
+    refuse_unsafe_display_examples(examples)
+    display_examples = tuple(
+        str(example.get("query", ""))
+        for example in examples
+        if isinstance(example, dict) and example.get("display")
+    )
+    write_mediator = WriteMediator(
+        mediator, write_adapters, access_roles(config), config.action_types, config.generation,
+        # WRITES DESCRIBE THE SOURCE (D3), whatever reads are bound to.
+        source_schema=config.schema,
+        source_silo_for_type=_build_silo_for_type(config.schema),
+        bulk_limit=config.bulk_action_limit,
+    )
+    memory = None
+    if data_dir is not None:
+        from elysium.core.memory.guard import MemoryGuard
+        from elysium.core.memory.store import MemoryStore
+
+        memory = MemoryGuard(MemoryStore(Path(data_dir) / "memories.db"), mediator,
+                             access_roles(config))
+    meaning = None
+    if data_dir is not None and config.embedding_model:
+        from elysium.core.embeddings import store_at
+        from elysium.core.meaning_search import MeaningSearch
+
+        meaning = MeaningSearch(store_at(Path(data_dir) / "embeddings.db"),
+                                build_embedder(config), config.schema)
+    if config.agent_features.meaning_search and meaning is None and data_dir is not None:
+        # SAID AT LOAD, not discovered on the first question.
+        raise ValueError("config.yaml agent.meaning_search needs llm.embedding_model: the "
+                         "agent ranks by the same embeddings Browse does.")
+    return DeploymentGeneration(
+        generation=config.generation,
+        loaded_at=config.loaded_at,
+        source_digest=config.source_digest,
+        config=config,
+        mediator=mediator,
+        write_mediator=write_mediator,
+        loop=AgentLoop.from_deployment(config, mediator, write_mediator=write_mediator,
+                                       memory=memory, meaning=meaning),
+        memory=memory,
+        meaning=meaning,
+        synthesis_client=build_llm_adapter(
+            config, config.synthesis_model,
+            prose_max_tokens=config.agent_features.answer_max_tokens),
+        write_adapters=write_adapters,
+        display_examples=display_examples,
+        mirror_snapshots=_mirror_snapshot_ids(mediator),
+        gold_published_at=_gold_published_at(mediator),
+    )
+
+
+def _with_shared_generation(config: DeploymentConfig, data_dir: Path) -> DeploymentConfig:
+    """The configuration, numbered from the SHARED sequence.
+
+    load_deployment() numbers from a per-process counter because it
+    knows only the configuration directory. That number restarts at 1 on
+    every start and is duplicated by every worker, and config history
+    keys on it -- so a restart's generation 1 was silently dropped.
+    Here, where the data directory is known, the number is replaced by
+    one allocated from config_history.db before anything reads it.
+    """
+    import dataclasses
+
+    from elysium.core.config_history import ConfigHistory
+
+    return dataclasses.replace(
+        config,
+        generation=ConfigHistory(data_dir / "config_history.db").allocate_generation(),
+    )
+
+
+def access_roles(config: DeploymentConfig) -> dict:
+    """The roles the MEDIATORS decide reads with (formerly BLOCKING 6).
+
+    The declared roles, unless the deployment has turned label
+    enforcement on -- then the same roles with every classification
+    label compiled into ordinary field grants. config.roles stays as
+    declared: it is what the role editor shows and saves, and a compiled
+    grant saved back would become a declared one nobody wrote.
+    """
+    from elysium.core.ontology.derived_fields import gate_derived_grants
+
+    roles = config.roles
+    if config.label_enforcement:
+        from elysium.core.ontology.classifications import compile_label_access
+
+        roles = compile_label_access(roles, config.schema)
+    # AFTER THE LABELS, which can grant a read too: a derived field (R37)
+    # is readable only by a role that may read every field it is
+    # computed from, however that role came by its grants.
+    gated = gate_derived_grants(roles, config.schema)
+    if gated is config.roles:
+        return config.roles
+    return deep_freeze(gated)
+
+
+def _with_effective_roles(config: DeploymentConfig, data_dir: Path) -> DeploymentConfig:
+    """The configuration with the roles actually in force.
+
+    UNCHANGED UNTIL SOMEBODY EDITS A ROLE. The store does not exist
+    before the first edit, so this returns `config` as policy.yaml
+    produced it -- same roles, same digest, nothing written.
+
+    ONCE THE STORE IS SEEDED IT GOVERNS, and its roles go through the
+    SAME freeze and the SAME two validators policy.yaml's do. A role
+    that would be refused in a file is refused here, and refused at
+    load, so a bad edit cannot become the running generation.
+
+    THE DIGEST COVERS THE EFFECTIVE ROLES. Trigger baselines reset when
+    the digest changes, because a count taken under different grants
+    answers a different question; hashing policy.yaml's bytes alone
+    would stop seeing grant changes the moment roles live in the store.
+    """
+    import dataclasses
+
+    from elysium.core.role_store import RoleStore, canonical
+
+    stored = RoleStore(data_dir / "roles.db").load()
+    if stored is None:
+        return config
+
+    roles = deep_freeze(_freeze_roles(stored))
+    validate_roles(roles, config.schema, config.action_types, config.enabled_tools,
+                   permissions_by_module(config.modules))
+    validate_role_coherence(roles)
+
+    if canonical(config.roles) != canonical(stored):
+        # LOUD, BECAUSE THE FAILURE IT PREVENTS IS SILENT. Somebody
+        # edits policy.yaml, reloads, and their change does nothing --
+        # with no hint why. Naming both sources says where to look.
+        logger.warning(
+            "roles come from the role store (%s), which somebody has "
+            "edited; the `roles:` section of policy.yaml differs and is "
+            "NOT in effect -- it is only the bootstrap for a store that "
+            "has never been edited",
+            data_dir / "roles.db",
+        )
+
+    return dataclasses.replace(
+        config,
+        roles=roles,
+        source_digest=hashlib.sha256(
+            (config.source_digest + canonical(stored)).encode(),
+        ).hexdigest(),
+    )
+
+
+def load_deployment_bundle(
+    config_dir: Path, data_dir: Path | None = None, log_dir: Path | None = None,
+    *, serving: bool = True,
+) -> tuple[DeploymentConfig, DataMediator, dict[str, ExternalWriteAdapter]]:
+    # Loads config, builds one adapter instance per declared silo (see
+    # _ADAPTER_REGISTRY above), and wires them into a DataMediator that
+    # knows which object types route to which silo.
+    #
+    # data_dir defaults to config_dir if not given at all -- a
+    # defensive fallback for a caller that doesn't go through
+    # resolve_runtime_paths() (e.g. a quick script or test constructing
+    # paths directly), not the normal case. Normally config_dir and
+    # data_dir are genuinely different directories even in local
+    # development -- see resolve_runtime_paths()'s own docstring for
+    # why they're never meant to collapse to one "deployment/" folder.
+    if data_dir is None:
+        data_dir = config_dir
+
+    config = _with_effective_roles(load_deployment(config_dir), data_dir)
+    config = _with_shared_generation(config, data_dir)
+
+    # database.path-equivalent connection fields (e.g. SQLite's "path")
+    # resolve against data_dir, NOT config_dir -- the one place those
+    # two directories genuinely need to differ.
+    resolved_silo_configs = {}
+    for silo_name, silo_config in config.silo_configs.items():
+        # ${VAR} RESOLVED HERE, at the one place a connection
+        # block becomes a live thing. A credential belongs in the
+        # process environment -- where systemd's EnvironmentFile=,
+        # a container's secret mount and every CI system already
+        # put them -- rather than in a file that lands in every
+        # backup and usually in version control.
+        connection = expand_secrets(
+            dict(silo_config["connection"]),
+            where=f"data_silos.yaml: {silo_name}.connection",
+        )
+        if "path" in connection:
+            connection["path"] = data_dir / connection["path"]
+        resolved_silo_configs[silo_name] = {**silo_config, "connection": connection}
+
+    adapters = _build_read_adapters(config, resolved_silo_configs, data_dir)
+    # A SECOND, genuinely independent set of adapter instances --
+    # real, separate connection objects, not a second reference to the
+    # same ones -- built specifically for a WriteMediator a caller may
+    # go on to construct around the returned mediator. Phase 0 of the
+    # read-only mirror initiative: a real, found prerequisite -- see
+    # WriteMediator's own AI-notes and __init__ docstring for the full
+    # story. Both sets are built from the exact same resolved_silo_
+    # configs today (same credentials, same real permissions) --
+    # deliberately unchanged behavior for this phase; a LATER phase
+    # is what actually narrows `adapters` above to a genuinely
+    # read-only credential, once DataMediator's own read path is ready
+    # to move. A caller with no need for a WriteMediator at all (e.g.
+    # scripts/serve_requests.py) is free to simply ignore this return
+    # value -- building it unconditionally here, rather than lazily on
+    # first use, keeps this function's own real behavior simple and
+    # predictable regardless of what a given caller goes on to do with
+    # it.
+    # ONLY THE SILOS DECLARED AS WRITE TARGETS get a write adapter, and
+    # a silo with no adapter cannot be written to by any path: the
+    # WriteMediator looks one up by silo name and there is nothing to
+    # find. The refusal is the ABSENCE rather than a check somebody
+    # could forget to call.
+    writable = _writable_silo_configs(config, resolved_silo_configs)
+    write_adapters = cast(
+        "dict[str, ExternalWriteAdapter]",
+        _build_adapters(writable, _WRITE_ADAPTER_REGISTRY),
+    )
+    silo_for_type = _build_silo_for_type(config.schema)
+    # DataMediator no longer takes users/security_attribute -- identity
+    # is resolved ONCE per request by the caller (see core/
+    # access/auth.py's resolve_user_record()), not held by
+    # the long-lived mediator itself.
+    #
+    # write_log lives alongside credentials.db, under the same
+    # data_dir -- see core/ontology/write_log.py's own module
+    # docstring for the mechanism. This ONE instance is the single
+    # source of truth for the whole deployment -- a caller building a
+    # WriteMediator around this same DataMediator reads it back via
+    # mediator.write_log (see WriteMediator's own __init__), never
+    # constructs or is passed a second, separate one.
+    # A real, explicit schema-creation step, run once, here, before
+    # the WriteLogReader below is ever constructed -- necessary, not
+    # defensive boilerplate: this store's schema used to be created
+    # lazily by whichever half touched the database first, but a
+    # genuinely read-only WriteLogReader structurally cannot run
+    # CREATE TABLE (see its own _connection() docstring). Constructing
+    # the WRITER first, and opening one real connection through it, is
+    # what actually creates the schema -- the same explicit,
+    # order-independent guarantee api/app.py's own equivalent step
+    # already provides for credentials.db's own four internal stores.
+    write_log_writer = WriteLogWriter(data_dir / "write_log.db")
+    with write_log_writer._connection():
+        pass
+    write_log = WriteLogReader(data_dir / "write_log.db")
+    # audit_log is genuinely OPTIONAL here, unlike write_log above --
+    # log_dir defaults to None (not resolved against data_dir or
+    # config_dir, since it's a genuinely third, independent location --
+    # see resolve_runtime_paths()'s own docstring). When None,
+    # DataMediator's own constructor supplies a real, working default
+    # AuditLog itself (see its own docstring for why that default
+    # exists and this store is never left without one) -- nothing
+    # further to do here in that case.
+    audit_log = (
+        AuditLog(log_dir / "audit.log", generation=config.generation)
+        if log_dir is not None else None
+    )
+    # The mirror's own last-sync time -- what bounds the read-your-writes
+    # overlay (see DataMediator._read_field_with_log_check()). None for a
+    # live deployment, which disables the overlay entirely.
+    # ONE MIRROR OPENED FOR BOTH: it holds a catalog connection nothing
+    # closes, and opening it twice per generation doubled that.
+    mirror = _mirror_for_reading(config, data_dir) if config.read_from_mirror else None
+    mirror_synced_at = (_mirror_last_synced_at(config, data_dir, mirror)
+                        if config.read_from_mirror else None)
+    # AND EACH TYPE'S OWN, from its published gold (21 October): see
+    # core/mirror/gold.py, DATA_AS_OF_PROPERTY. A type with none recorded
+    # uses the deployment's, above.
+    synced_by_type = (_gold_data_as_of(config, data_dir, mirror)
+                      if config.read_from_mirror else {})
+    read_schema, adapters, silo_for_type = _bind_reads_to_gold(
+        config, adapters, silo_for_type, data_dir, serving=serving,
+    )
+    mediator = DataMediator(read_schema, adapters, silo_for_type, access_roles(config),
+                             write_log=write_log, audit_log=audit_log,
+                             mirror_synced_at=mirror_synced_at,
+                             mirror_synced_at_by_type=synced_by_type,
+                             # The SOURCE binding travels with it, for the
+                             # write path (D3) -- see DataMediator.__init__.
+                             source_schema=config.schema,
+                             source_silo_for_type=_build_silo_for_type(config.schema))
+    return config, mediator, write_adapters
+
+
+def _gold_published_at(mediator) -> Mapping[str, str]:
+    """When each gold-bound type was published, for this generation.
+
+    Asked of the MEDIATOR rather than passed down, because the
+    mediator is where the binding ended up: whichever types point at
+    the connector are the ones a reader sees gold for, and anything
+    else would be a second place to keep the same fact.
+    """
+    from elysium.core.mirror.gold import published_at
+    from elysium.core.mirror.gold_connector import GoldConnector
+    from elysium.core.ontology.gold_view import GOLD_NAMESPACE
+
+    connector = mediator.adapters.get(GOLD_NAMESPACE)
+    if not isinstance(connector, GoldConnector):
+        return MappingProxyType({})
+    bound = [object_type for object_type, silo in mediator.silo_for_type.items()
+             if silo == GOLD_NAMESPACE]
+    return MappingProxyType(published_at(connector._reader._catalog, bound))
+
+
+def _bind_reads_to_gold(config: DeploymentConfig, adapters: dict,
+                         silo_for_type: dict, data_dir: Path,
+                         serving: bool = True) -> tuple[dict, dict, dict]:
+    """(the schema reads use, the adapters, the type->silo map).
+
+    PER OBJECT TYPE, not all-or-nothing. Gold does not build every
+    type yet -- one with several sources waits for GOLD-5 -- so a type
+    gold publishes is bound to the connector and every other type
+    keeps the binding it already had. A deployment is therefore never
+    asked to choose between "all of gold" and "none of it".
+
+    WHAT IS NOT REBOUND: the write path and the sync, both of which
+    keep config.schema. A write goes to the customer's database
+    (decision D3), and the sync's job is to FILL gold from the source
+    it describes.
+
+    OFF BY DEFAULT while this is proven. Off is today's behaviour
+    exactly: the same schema, the same adapters, the same map.
+    """
+    if not config.read_from_mirror:
+        return config.schema, adapters, silo_for_type
+
+    from elysium.core.mirror.gold import published_snapshot_ids
+    from elysium.core.mirror.gold_connector import GoldConnector
+    from elysium.core.ontology.gold_view import GOLD_NAMESPACE, build_gold_view
+
+    view, excluded = build_gold_view(config.schema)
+    if not view:
+        # Nothing gold can build at all, which for a non-serving
+        # caller (the sync) means carry on with the source schema it
+        # is about to build gold FROM.
+        return config.schema, adapters, silo_for_type
+
+    if excluded and serving:
+        # A TYPE GOLD CANNOT BUILD CANNOT BE SERVED. Silver is not a
+        # lesser gold: it has not been conformed to the ontology, its
+        # links are not re-keyed, and its columns are the source's
+        # words. Serving it would answer the same question with worse
+        # data and say nothing about the difference.
+        named = "; ".join(f"{object_type} ({why})" for object_type, why in sorted(excluded.items()))
+        raise ValueError(
+            f"gold cannot be built for: {named}. Every object type must be servable "
+            f"from gold. Fix the declaration, or remove the type."
+        )
+
+    # The same catalog the mirror adapters read, named identically:
+    # gold lives in its own namespace inside it, not in a second lake.
+    mirror_dir = data_dir / "mirror"
+    mirror_dir.mkdir(parents=True, exist_ok=True)
+    catalog = open_mirror_catalog(mirror_dir, dict(config.mirror_storage or {}))
+    # PINNED AT BUILD TIME, so every read in a request sees ONE
+    # publication -- a build finishing mid-request cannot move the
+    # ground under it (D3's second half).
+    pinned = published_snapshot_ids(catalog, view)
+    unpublished = sorted(set(view) - set(pinned))
+    # AN UNPUBLISHED TYPE IS STILL BOUND TO GOLD. There is no fallback
+    # to silver anywhere: a read of a type gold has not published
+    # raises GoldPublicationMissing, which names the type and says to
+    # run a sync. Binding it to the source instead would answer the
+    # question with worse data and say nothing about the difference.
+    if unpublished and serving:
+        # NOT YET PUBLISHED IS NOT A REASON TO SERVE SOMETHING ELSE,
+        # and it is not a reason to refuse to START either: a
+        # deployment's first sync happens after its first boot, and an
+        # API that cannot start until gold exists cannot tell anyone
+        # why. So this is LOUD AND NOT FATAL -- and a read of one of
+        # these types still raises GoldPublicationMissing, naming the
+        # type and the command. Nothing serves silver in the meantime,
+        # because there is no path that could.
+        logger.error(
+            f"gold has not been published for: {', '.join(unpublished)}. "
+            f"Reads of those types will fail until `python -m elysium.scripts.run_sync` runs."
+        )
+
+    read_schema = {**config.schema, **view}
+    bound_silos = {**silo_for_type, **{object_type: GOLD_NAMESPACE for object_type in view}}
+    connector = GoldConnector(catalog, pinned)
+    if set(bound_silos.values()) == {GOLD_NAMESPACE}:
+        # GOLD ONLY, STRUCTURALLY (GOLD-8). When every type is bound to
+        # gold, the read mediator holds ONE adapter: the connector.
+        # Keeping the source adapters around "just in case" is how a
+        # fallback comes back -- there would be something for a future
+        # line of code to find. The sync keeps its own adapters, which
+        # is where source reads belong.
+        bound_adapters = {GOLD_NAMESPACE: connector}
+    else:
+        # A NON-SERVING caller (the sync) may have types gold cannot
+        # build yet; those keep their source adapters until it can.
+        bound_adapters = {**adapters, GOLD_NAMESPACE: connector}
+    logger.info(
+        f"reading {len(view)} object type(s) from published gold: {', '.join(sorted(view))}"
+    )
+    return read_schema, bound_adapters, bound_silos
+
+
+def load_example_queries(config_dir: Path) -> list[dict]:
+    # example_queries.yaml is config-like (ships with the deployment,
+    # human-authored), not real runtime data -- always resolved against
+    # config_dir, never data_dir.
+    raw = load_yaml(config_dir / "example_queries.yaml")
+    return raw["examples"]

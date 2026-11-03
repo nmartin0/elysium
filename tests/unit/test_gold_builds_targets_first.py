@@ -34,10 +34,10 @@ from types import SimpleNamespace
 
 import pytest
 
-import scripts.run_sync as run_sync
-from adapters.sqlite_adapter import SQLiteReadAdapter
-from core.mirror.iceberg_sync import IcebergMirrorSync
-from scripts.run_sync import _targets_before_referrers
+import elysium.scripts.run_sync as run_sync
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+from elysium.scripts.run_sync import _targets_before_referrers
 
 
 def _link(target):
@@ -206,7 +206,7 @@ class TestALinkCycle:
     then refused."""
 
     def test_the_cycles_are_found(self):
-        from scripts.run_sync import _cycles
+        from elysium.scripts.run_sync import _cycles
 
         schema = {"A": {"fields": {"b": _link("B")}}, "B": {"fields": {"a": _link("A")}},
                   "C": {"fields": {"a": _link("A")}}, "D": {"fields": {"d": _link("D")}}}

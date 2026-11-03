@@ -27,7 +27,7 @@ import io
 
 import pytest
 
-from core.export import RISKY_PREFIXES, escape_cell, filename_for, to_csv
+from elysium.core.export import RISKY_PREFIXES, escape_cell, filename_for, to_csv
 
 
 def _parsed(text: str) -> list[list[str]]:

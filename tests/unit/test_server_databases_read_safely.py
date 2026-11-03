@@ -17,8 +17,8 @@ tests/mariadb_server.py). Neither is skipped when missing: it fails.
 import pytest
 from sqlalchemy import text
 
-from adapters.sqlalchemy_adapter import MYSQL_POOL_RECYCLE_SECONDS, SQLAlchemyReadAdapter
-from core.ontology.interface import RowsHidden, StorageUnavailable
+from elysium.adapters.sqlalchemy_adapter import MYSQL_POOL_RECYCLE_SECONDS, SQLAlchemyReadAdapter
+from elysium.core.ontology.interface import RowsHidden, StorageUnavailable
 
 
 @pytest.fixture(scope="module")
@@ -232,9 +232,9 @@ def test_a_sync_carries_the_warning_onto_its_result(tmp_path):
     """The adapter's answer reaches the attempt the Mirror screen reads."""
     import sqlite3
 
-    from adapters.sqlite_adapter import SQLiteReadAdapter
-    from core.mirror.iceberg_sync import IcebergMirrorSync
-    from scripts.run_sync import _detail_for
+    from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+    from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
+    from elysium.scripts.run_sync import _detail_for
 
     class Hiding(SQLiteReadAdapter):
         def rows_hidden_from_this_reader(self, table_name):
@@ -259,8 +259,8 @@ def test_a_refused_empty_read_names_the_likely_cause_first(tmp_path):
     replaced the whole copy with an empty one."""
     import sqlite3
 
-    from adapters.sqlite_adapter import SQLiteReadAdapter
-    from core.mirror.iceberg_sync import IcebergMirrorSync
+    from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+    from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
     class Hiding(SQLiteReadAdapter):
         warn = None
@@ -302,8 +302,8 @@ class TestAnEmptyReadWithRowsHidden:
     def _sync(self, tmp_path, rows, warn):
         import sqlite3
 
-        from adapters.sqlite_adapter import SQLiteReadAdapter
-        from core.mirror.iceberg_sync import IcebergMirrorSync
+        from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
+        from elysium.core.mirror.iceberg_sync import IcebergMirrorSync
 
         class Hiding(SQLiteReadAdapter):
             def rows_hidden_from_this_reader(self, table_name):
@@ -316,7 +316,7 @@ class TestAnEmptyReadWithRowsHidden:
         return IcebergMirrorSync(tmp_path / "mirror", {"s": Hiding({"path": str(db)})})
 
     def test_a_first_sync_that_reads_nothing_is_refused_and_says_why(self, tmp_path):
-        from core.mirror.iceberg_sync import SuspectedPartialRead
+        from elysium.core.mirror.iceberg_sync import SuspectedPartialRead
 
         sync = self._sync(tmp_path, 0, EVERY_ROW)
 
@@ -328,7 +328,7 @@ class TestAnEmptyReadWithRowsHidden:
         assert not sync._catalog.namespace_exists("bronze_s"), "nothing is written"
 
     def test_accepting_deletions_does_not_wave_it_through(self, tmp_path):
-        from core.mirror.iceberg_sync import SuspectedPartialRead
+        from elysium.core.mirror.iceberg_sync import SuspectedPartialRead
 
         sync = self._sync(tmp_path, 0, EVERY_ROW)
 

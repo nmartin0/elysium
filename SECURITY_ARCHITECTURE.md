@@ -58,13 +58,13 @@ no rule, or on a type with no storage, is refused at load -- inheritance
 never becomes "everyone sees every row" by omission, and a missing block
 on any other type is still an error. A resolved unrestricted rule meets
 the same refusals as a written one (a via_field chain may not end at it).
-core/ontology/silo_security.py; tests/unit/test_silo_security.py.
+src/elysium/core/ontology/silo_security.py; tests/unit/test_silo_security.py.
 
 ## CLOSED: Elysium used to enforce half of MAC
 
 **CLOSED (E-18).** What follows is kept because the reasoning is the
 design: the write-down check below was built as
-`WriteMediator._refuse_cross_compartment` (core/ontology/
+`WriteMediator._refuse_cross_compartment` (src/elysium/core/ontology/
 write_mediator.py), which compares the security values of the objects
 an action reads against those it writes, and refuses a write-down. It
 is pinned by tests/unit/test_cross_compartment_write.py. The section

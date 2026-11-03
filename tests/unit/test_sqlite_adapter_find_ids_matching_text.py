@@ -21,7 +21,7 @@ import sqlite3
 
 import pytest
 
-from adapters.sqlite_adapter import SQLiteReadAdapter
+from elysium.adapters.sqlite_adapter import SQLiteReadAdapter
 
 TYPE_CONFIG = {
     "storage": {"silo": "test", "table": "widgets", "id_column": "widget_id"},

@@ -2,7 +2,7 @@
 Test for scripts/serve_requests.py -- this had ZERO test coverage
 before, and was silently broken: it called AgentLoop.run() with a raw
 user_id string, which stopped working the moment run() was refactored
-to require a resolved UserRecord (core/intermediate_layer/auth.py).
+to require a resolved UserRecord (core/access/auth.py).
 Nothing caught this until it was found by inspection, not by a test --
 this file exists so that never happens silently again.
 
@@ -18,9 +18,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.agent.agentic_loop import AgentLoopResult
-from core.deployment_loader import RuntimePaths
-from scripts.serve_requests import serve
+from elysium.core.agent.agentic_loop import AgentLoopResult
+from elysium.core.deployment_loader import RuntimePaths
+from elysium.scripts.serve_requests import serve
 
 pytestmark = pytest.mark.mocked_llm
 
@@ -34,7 +34,7 @@ def test_serve_dispatches_multiple_users_concurrently_without_crashing(tmp_path)
         response.raise_for_status.return_value = None
         return response
 
-    with patch("adapters.http_transport.post", side_effect=fake_post):
+    with patch("elysium.adapters.http_transport.post", side_effect=fake_post):
         # A DEPLOYMENT OF ITS OWN (E-08c). Called without paths, serve()
         # falls back to the developer's and wrote config_history.db,
         # write_log.db and a mirror there -- the last integration test to.

@@ -14,11 +14,11 @@ from pathlib import Path
 
 import pytest
 
-import core.trigger_windows
-from api.timer_service import Firing, fire_due
-from api.trigger_checks import hold_timer, schedule_timer
-from core.timers import TimerStore
-from core.trigger_states import HOLD_KIND, SCHEDULE_KIND
+import elysium.core.trigger_windows
+from elysium.api.timer_service import Firing, fire_due
+from elysium.api.trigger_checks import hold_timer, schedule_timer
+from elysium.core.timers import TimerStore
+from elysium.core.trigger_states import HOLD_KIND, SCHEDULE_KIND
 from tests.integration.test_trigger_checks import _csrf, _inline, _notes
 
 GRACE = [{"field": "name", "operator": "equals", "value": "Grace Hopper"}]
@@ -68,7 +68,7 @@ def _met(client):
 class _Clock:
     def __init__(self, monkeypatch, at):
         self.at = at
-        monkeypatch.setattr(core.trigger_windows, "now", lambda: self.at)
+        monkeypatch.setattr(elysium.core.trigger_windows, "now", lambda: self.at)
 
 
 class TestAllOrAny:
@@ -276,8 +276,8 @@ def test_a_scheduled_config_yaml_trigger_is_checked_by_its_timer(client):
     -- it is not in the store -- and tells its owner at the check."""
     import dataclasses
 
-    from core.declared_triggers import load_declared_triggers
-    from core.trigger_states import arm_declared
+    from elysium.core.declared_triggers import load_declared_triggers
+    from elysium.core.trigger_states import arm_declared
 
     client.app.state.user_directory.create_user("alice", "pw", "us-west", "customer_service")
     client.post("/api/login", json={"username": "alice", "password": "pw"})
@@ -305,10 +305,10 @@ def test_a_reload_sets_the_check_of_a_scheduled_config_yaml_trigger(client, monk
     reload's build is wrapped to add one, as an edited config.yaml would."""
     import dataclasses
 
-    import api.reload
-    from core.declared_triggers import load_declared_triggers
+    import elysium.api.reload
+    from elysium.core.declared_triggers import load_declared_triggers
 
-    real = api.reload.build_generation
+    real = elysium.api.reload.build_generation
 
     def with_a_scheduled_trigger(*args, **kwargs):
         built = real(*args, **kwargs)
@@ -318,9 +318,9 @@ def test_a_reload_sets_the_check_of_a_scheduled_config_yaml_trigger(client, monk
             built.config.schema, built.config.action_types, built.config.roles)
         return dataclasses.replace(built, config=dataclasses.replace(built.config,
                                                                      declared_triggers=(declared,)))
-    monkeypatch.setattr(api.reload, "build_generation", with_a_scheduled_trigger)
+    monkeypatch.setattr(elysium.api.reload, "build_generation", with_a_scheduled_trigger)
 
-    api.reload.reload_generation(client.app, requested_by="test")
+    elysium.api.reload.reload_generation(client.app, requested_by="test")
 
     timers = TimerStore(Path(client.app.state.runtime_paths.data_dir))
     assert timers.get(SCHEDULE_KIND, "declared/Morning refunds") is not None

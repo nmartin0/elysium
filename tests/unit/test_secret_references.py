@@ -20,7 +20,7 @@ the one worth making first.
 
 import pytest
 
-from core.secret_references import MissingSecret, PlaintextSecret, expand_secrets
+from elysium.core.secret_references import MissingSecret, PlaintextSecret, expand_secrets
 
 
 class TestItSubstitutes:
@@ -115,7 +115,7 @@ class TestAgainstARealDeployment:
         whether the loader calls it."""
         import shutil
 
-        from core.deployment_loader import build_generation
+        from elysium.core.deployment_loader import build_generation
 
         paths = private_deployment  # E-08: never the developer's deployment
         config = tmp_path / "etc"
@@ -143,7 +143,7 @@ class TestNestedFrozenBlocks:
     never refused."""
 
     def test_a_reference_inside_a_frozen_nested_block_is_filled(self, monkeypatch):
-        from core.immutable import deep_freeze
+        from elysium.core.immutable import deep_freeze
 
         monkeypatch.setenv("BOOKS_TOKEN", "t0k")
         frozen = deep_freeze({"auth": {"type": "bearer", "token": "${BOOKS_TOKEN}"},
@@ -155,7 +155,7 @@ class TestNestedFrozenBlocks:
         assert expanded["tables"]["t"]["files"] == ["a", "t0k"]
 
     def test_a_plaintext_credential_there_is_refused(self):
-        from core.immutable import deep_freeze
+        from elysium.core.immutable import deep_freeze
 
         frozen = deep_freeze({"auth": {"type": "bearer", "token": "literally-the-token"}})
 

@@ -29,7 +29,7 @@ query rather than of a schema.
 
 import pytest
 
-from core.ontology.action_types import validate_action_types
+from elysium.core.ontology.action_types import validate_action_types
 
 SCHEMA = {
     "Ticket": {

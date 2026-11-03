@@ -33,7 +33,7 @@ without.
 import pytest
 import yaml
 
-from core.mirror.manifest import (
+from elysium.core.mirror.manifest import (
     PUBLISHABLE,
     SILO_KEYS_PUBLISHED,
     _silos_without_connections,
