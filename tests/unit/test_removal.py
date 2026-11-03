@@ -199,8 +199,8 @@ class TestWhatATypeLeavesBehind:
         text = " ".join(stored_data("type", None, 0))
 
         for words in ("Nothing is deleted from your source", "exactly as they were", "history",
-                      "rebuild", "Nothing serves the type", "erasure request cannot reach",
-                      "reads the same source table"):
+                      "rebuild", "Nothing serves the type", "erasure request still reaches",
+                      "before that record existed", "reads the same source table"):
             assert words in text
 
     def test_it_does_not_claim_a_column_is_emptied(self):

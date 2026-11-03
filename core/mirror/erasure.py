@@ -39,6 +39,7 @@ links, so a type added later is covered by declaring its link.
 """
 
 import hashlib
+import json
 import logging
 import secrets
 import time
@@ -235,11 +236,127 @@ def table_key_columns(schema: dict, identifier: str) -> dict[str, set[str]]:
             if info.get("type") == "link" and info.get("cardinality") == "one":
                 columns.setdefault(field_name, set()).add(info.get("target"))
         return columns
+    if namespace == "gold":
+        # A JOIN TABLE'S GOLD COPY (gold.customer_tags), which is no object
+        # type. It carries the source table's own columns, so it has the
+        # source table's keys. Matched by table name in any silo -- gold
+        # does not say which -- and a column too many is harmless, a value
+        # being erased only when its hash is in the register.
+        found: dict[str, set[str]] = {}
+        for (_silo, source_table), columns in source_key_columns(schema).items():
+            if source_table == table:
+                for column, types in columns.items():
+                    found.setdefault(column, set()).update(types)
+        return found
     if namespace == "gold_history" and table in schema:
         return {schema[table]["id_field"]: {table}}
     if namespace == "gold_conflicts" and table in schema:
         return {"entity_id": {table}}
     return source_key_columns(schema).get((namespace, table), {})
+
+
+# --- What each table says about its own keys --------------------------
+
+#: THE KEY COLUMNS OF A TABLE, AND THE OBJECT TYPES THEY IDENTIFY, kept on
+#: the table itself (Iceberg table property, like iceberg_sync's
+#: SOURCE_COLUMNS_PROPERTY) and written by every sync. The current schema
+#: only knows the types that still exist, and removing a type deliberately
+#: keeps its tables (core/ontology/removal.py): without this, the day a type
+#: was removed an erasure would stop reaching its tables, for good, with
+#: nothing saying so. A property travels with the table -- a backup, a
+#: restore, a copy of the warehouse -- so there is no second list to go stale.
+KEY_COLUMNS_PROPERTY = "elysium.erasure_keys"
+
+
+def _encode(columns: dict[str, set[str]]) -> str:
+    return json.dumps({column: sorted(types) for column, types in sorted(columns.items())
+                       if types}, sort_keys=True)
+
+
+def recorded_key_columns(table) -> dict[str, set[str]]:
+    """What a table says its key columns are. Empty when it says nothing --
+    a table written before this property existed, or one that could not
+    be decoded (never guessed at)."""
+    raw = table.properties.get(KEY_COLUMNS_PROPERTY)
+    if not raw:
+        return {}
+    try:
+        recorded = json.loads(raw)
+        return {str(column): {str(name) for name in types}
+                for column, types in recorded.items()}
+    except (ValueError, AttributeError, TypeError):
+        return {}
+
+
+def known_key_columns(schema: dict, identifier: str, table) -> dict[str, set[str]]:
+    """The key columns of one table: the current schema's answer, plus
+    whatever the table recorded.
+
+    THE UNION, NOT EITHER ALONE. A type that was removed leaves its tables
+    to the property. A source table that another type still reads is
+    known to the schema only by the columns THAT type maps, so the removed
+    type's own key columns there would be missed if the schema were taken
+    at its word. Extra columns are harmless: a value is erased only when
+    its hash is in the register."""
+    merged = {column: set(types) for column, types in table_key_columns(schema, identifier).items()}
+    for column, types in recorded_key_columns(table).items():
+        merged.setdefault(column, set()).update(types)
+    return merged
+
+
+def record_key_columns(catalog, schema: dict) -> list[str]:
+    """Writes each table's key columns where they differ; returns the
+    tables changed. Called by every sync, after the layers are written.
+
+    NEVER NARROWS. What the table already recorded stays in the union, so
+    a type removed from the ontology cannot take its tables' keys with
+    it. And nothing is written for a table the schema does not know and
+    that recorded nothing: an empty answer here would read, later, as
+    "holds no keys", which is precisely what is not known.
+
+    PER TABLE, NEVER FATAL, like record_classifications: a table that
+    cannot take a property is named in the log, and erasure will then
+    report it as unreachable rather than skip it.
+    """
+    changed = []
+    for namespace in catalog.list_namespaces():
+        for parts in catalog.list_tables(namespace):
+            identifier = ".".join(parts)
+            try:
+                table = catalog.load_table(identifier)
+                wanted = known_key_columns(schema, identifier, table)
+                if not wanted or wanted == recorded_key_columns(table):
+                    continue
+                with table.transaction() as tx:
+                    tx.set_properties({KEY_COLUMNS_PROPERTY: _encode(wanted)})
+                changed.append(identifier)
+            except Exception as e:  # noqa: BLE001 - see the docstring
+                logger.warning("could not record the key columns of %s: %s", identifier, e)
+    return changed
+
+
+def recorded_object_types(catalog) -> set[str]:
+    """Every object type some table says it holds the keys of -- so an
+    erasure can name a type that has since been removed."""
+    found: set[str] = set()
+    for namespace in catalog.list_namespaces():
+        for parts in catalog.list_tables(namespace):
+            try:
+                table = catalog.load_table(".".join(parts))
+            except Exception:  # noqa: BLE001 - unreadable here is reported where it matters
+                continue
+            for types in recorded_key_columns(table).values():
+                found |= types
+    return found
+
+
+@dataclass(frozen=True)
+class ErasureResult:
+    """removed: {table: rows removed}. unreachable_tables: lake tables that
+    hold data and that erasure could not search, because neither the
+    current schema nor the table itself says which columns are keys."""
+    removed: dict[str, int]
+    unreachable_tables: list[str]
 
 
 # --- Applying it ------------------------------------------------------
@@ -294,11 +411,14 @@ def cascade(catalog, schema: dict, keys: list[tuple[str, str]]) -> list[tuple[st
     return sorted(erased)
 
 
-def purge(catalog, schema: dict, register: ErasureRegister) -> dict[str, int]:
+def purge(catalog, schema: dict, register: ErasureRegister) -> ErasureResult:
     """Rewrites every mirror table without the erased rows, and drops
     every older snapshot and tag that still holds them.
 
-    {table: rows removed}. The caller then deletes the unreferenced
+    The result names the rows removed per table AND every table it could
+    not search (ErasureResult.unreachable_tables): a table written before
+    key columns were recorded, whose type has since left the ontology. It
+    is reported and logged, never skipped quietly. The caller then deletes the unreferenced
     files (integrity.orphaned_data_files with no margin) under the sync
     lock -- this function leaves the warehouse with the old files
     unreferenced, not yet gone.
@@ -308,13 +428,16 @@ def purge(catalog, schema: dict, register: ErasureRegister) -> dict[str, int]:
     hashes = register.hashes_by_type()
     key_hash = register.hasher()
     removed: dict[str, int] = {}
+    unreachable: list[str] = []
     for namespace in catalog.list_namespaces():
         for parts in catalog.list_tables(namespace):
             identifier = ".".join(parts)
-            columns = table_key_columns(schema, identifier)
-            if not columns:
-                continue
             table = catalog.load_table(identifier)
+            columns = known_key_columns(schema, identifier, table)
+            if not columns:
+                if table.current_snapshot() is not None or table.snapshots():
+                    unreachable.append(identifier)
+                continue
             if table.current_snapshot() is None:
                 continue
             current = table.scan().to_arrow()
@@ -332,8 +455,13 @@ def purge(catalog, schema: dict, register: ErasureRegister) -> dict[str, int]:
                     # tag -- move to the erased version.
                     _tag_publication(catalog.load_table(identifier))
             _forget_every_other_snapshot(catalog.load_table(identifier))
+    if unreachable:
+        logger.warning(
+            "erasure could not search %d table(s) that hold data: neither the ontology nor the "
+            "table says which columns are keys (written before they were recorded, type since "
+            "removed): %s", len(unreachable), ", ".join(unreachable))
     register.mark_purged()
-    return removed
+    return ErasureResult(removed, unreachable)
 
 
 def _older_snapshots_hold_them(table, columns, key_hash, hashes) -> bool:
@@ -406,20 +534,20 @@ def suppress_rows(rows: list[dict], columns: dict[str, set[str]], key_hash,
 
 
 def apply_erasures(catalog, schema: dict, register: ErasureRegister,
-                   mirror_dir: Path) -> dict[str, int]:
+                   mirror_dir: Path) -> ErasureResult:
     """purge(), then delete the files it left unreferenced -- with NO
     age margin, which the orphan sweep keeps for writes in flight. The
     caller holds the sync lock (run_sync does), so none is in flight."""
     from core.mirror.integrity import orphaned_data_files
 
-    removed = purge(catalog, schema, register)
+    result = purge(catalog, schema, register)
     tables = {".".join(parts) for namespace in catalog.list_namespaces()
               for parts in catalog.list_tables(namespace)}
     for files in orphaned_data_files(catalog, mirror_dir / "warehouse", tables,
                                      older_than_hours=0, now=time.time() + 1).values():
         for path in files:
             path.unlink()
-    return removed
+    return result
 
 
 #: What a person is told when an erasure took something of theirs away:

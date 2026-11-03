@@ -61,7 +61,12 @@ from core.deployment_loader import (
     resolve_runtime_paths,
 )
 from core.mirror.classifications import record_classifications
-from core.mirror.erasure import ErasureRegister, apply_erasures, suppression_for
+from core.mirror.erasure import (
+    ErasureRegister,
+    apply_erasures,
+    record_key_columns,
+    suppression_for,
+)
 from core.mirror.expectation_warnings import ExpectationWarnings
 from core.mirror.gold import build_gold, published_ids
 from core.mirror.iceberg_sync import IcebergMirrorSync
@@ -1226,6 +1231,17 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
                                  unsynced=unsynced, run_id=run_id, accepted=accepted,
                                  lineage=lineage)
 
+        # EVERY TABLE'S KEY COLUMNS, written on the table itself, so an
+        # erasure still reaches the tables of a type removed later
+        # (erasure.KEY_COLUMNS_PROPERTY). BEFORE the erasures below, so a
+        # table this run created can be searched by them. Per table, never
+        # the sync's verdict: a table that could not record is reported by
+        # erasure as unreachable, not skipped.
+        try:
+            record_key_columns(sync._catalog, config.schema)
+        except Exception as exc:  # noqa: BLE001 - metadata, never the sync's verdict
+            print(f"WARNING erasure keys not recorded: {exc}", file=sys.stderr)
+
         # ERASURES NOT YET APPLIED TO THE LAKE -- a new request, or a
         # restore that brought an older lake back -- are applied before
         # anything else reads it, and the files removed outright.
@@ -1235,10 +1251,15 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
                 print(f"ERASURE  {len(sync.erased_still_in_source)} erased key(s) are still "
                       f"returned by a source; suppressed, and still to be erased there")
         if erasures.unpurged():
-            removed = apply_erasures(sync._catalog, config.schema, erasures,
+            outcome = apply_erasures(sync._catalog, config.schema, erasures,
                                      runtime_paths.data_dir / "mirror")
+            removed = outcome.removed
             print(f"ERASURE  applied: {sum(removed.values())} row(s) removed from "
                   f"{len(removed)} table(s), older snapshots and their files deleted")
+            if outcome.unreachable_tables:
+                print(f"WARNING erasure could not search {len(outcome.unreachable_tables)} table(s) "
+                      f"that hold data (no key columns known): "
+                      f"{', '.join(outcome.unreachable_tables)}", file=sys.stderr)
 
         # CLASSIFICATIONS, CARRIED TO EVERY COPY (R12) -- after gold, so
         # a table created by this run is labelled by this run, and never

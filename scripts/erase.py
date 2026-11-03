@@ -39,6 +39,7 @@ from core.mirror.erasure import (
     apply_erasures,
     cascade,
     forget_beyond_the_mirror,
+    recorded_object_types,
 )
 from core.mirror.sync_lock import single_writer
 
@@ -47,15 +48,17 @@ def run(object_type: str, object_id: str, reason: str, write: bool = False,
         paths=None, requested_by: "str | None" = None) -> int:
     paths = paths or resolve_runtime_paths()
     config = load_deployment(paths.config_dir)
-    if object_type not in config.schema:
-        print(f"No object type {object_type!r}.", file=sys.stderr)
-        return 1
     if not reason.strip():
         print("An erasure needs a reason: it is the record of why this was done.",
               file=sys.stderr)
         return 1
     mirror_dir = paths.data_dir / "mirror"
     catalog = open_mirror_catalog(mirror_dir, dict(config.mirror_storage))
+    # A TYPE REMOVED FROM THE ONTOLOGY is still a type whose people the lake
+    # holds: its tables say so (core/mirror/erasure.KEY_COLUMNS_PROPERTY).
+    if object_type not in config.schema and object_type not in recorded_object_types(catalog):
+        print(f"No object type {object_type!r}.", file=sys.stderr)
+        return 1
 
     with single_writer(paths.data_dir / "sync.lock") as acquired:
         if not acquired:
@@ -71,7 +74,8 @@ def run(object_type: str, object_id: str, reason: str, write: bool = False,
         register = ErasureRegister(paths.data_dir / "erasures.db")
         who = requested_by or getpass.getuser()
         erasure_id = register.record(keys, who, reason)
-        removed = apply_erasures(catalog, config.schema, register, mirror_dir)
+        result = apply_erasures(catalog, config.schema, register, mirror_dir)
+        removed = result.removed
         # AND EVERYWHERE ELSE (decided 14 Oct): every store but the audit
         # log, matched by the register's hashes -- the same call a
         # restore makes, so the two cannot forget differently.
@@ -83,6 +87,15 @@ def run(object_type: str, object_id: str, reason: str, write: bool = False,
     print(f"Erased ({erasure_id}): {sum(removed.values())} row(s) from {len(removed)} table(s), "
           f"older snapshots and their files deleted"
           f"{'; and ' + elsewhere if elsewhere else ''}. Restart or reload the server.")
+    if result.unreachable_tables:
+        # NOT A SUCCESS, and not silent: these tables hold data that this
+        # erasure could not search, so the person may still be in them.
+        print(f"NOT COMPLETE: {len(result.unreachable_tables)} table(s) hold data that could not be "
+              f"searched, because nothing says which of their columns are keys (written before "
+              f"sync recorded them, and their type has since been removed): "
+              f"{', '.join(result.unreachable_tables)}. Drop them in the lake, or restore the type "
+              f"and sync once so they record their keys, then erase again.", file=sys.stderr)
+        return 2
     return 0
 
 

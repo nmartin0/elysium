@@ -163,9 +163,11 @@ _TYPE_TABLES = [
     "history of its changes: nothing is dropped, and no sync reads or refreshes them again. (If another type "
     "reads the same source table, that table keeps syncing for the other type only, and the columns only this "
     "type mapped are emptied the way a removed field's column is.)",
-    "A later erasure request cannot reach these tables, because erasure finds a table's key columns from the "
-    "types that exist. Personal data already in them stays until a person deletes the tables in the lake, so "
-    "do that, or erase the people concerned first, before removing a type that holds any.",
+    "A later erasure request still reaches these tables: every sync records on each table which of its "
+    "columns hold people's ids, and erasure reads that record once the type is gone. A table last synced "
+    "before that record existed has none, so erasure cannot search it: it says so, naming the table, "
+    "instead of skipping it, and the person stays in it until the table is dropped in the lake. Run one "
+    "sync before removing the type and the record is made.",
     "Asking for a rebuild of its silver table does nothing, because the sync no longer knows the table. Dropping "
     "the tables is done in the lake itself, by a person.",
 ]
