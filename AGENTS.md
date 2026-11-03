@@ -161,7 +161,8 @@ Numbered in order, applied in order, checked with
 ## You do not push
 
 You have no write access to the remote. Produce a patch and hand it
-over:
+over (the integrator does this for merged waves; a swarm worker hands back
+its branch instead):
 
 ```bash
 git format-patch origin/dev..HEAD --stdout > /tmp/change.patch
@@ -387,7 +388,7 @@ the code deliberately; if the test still passes, it was never testing
 that. This has caught more real gaps than any other practice here.
 
 **Verify against the real thing, not a description of it.** The API
-returns a dict keyed by name, not a list. Blueprint attaches props to
+returns a dict keyed by name, not a list. The UI toolkit attaches props to
 the input, not the label. jsdom forwards a label click. Each was found
 by rendering or calling it and looking -- and each had a plausible
 wrong answer that would have survived a whole commit.
@@ -601,16 +602,29 @@ awk '{ if (length($0) > 72) print NR": "length($0)" chars" }' /tmp/msg.txt
 ## The planning file
 
 `docs/roadmap.md` is the one planning file; nothing else plans work. Section 1
-holds the design rules, section 2 the checklist and invariants I1-I8, section
-3 the layout; Tier 0 (section 4) is the core-wide work a strong model does in
-order; section 5 holds task cards for efficient models, each naming the files
-it owns; section 6 is what is blocked on the owner (a decision, a machine);
-section 7 gives the dependency graph and the waves; section 8 is the worker
-brief. Decisions are in `docs/decisions.md`; measured runs and the older
-plan are in `docs/archive/planning-history.md`. Cite work by id (T0.7, ADM-14, N9, Q-KEY), not by section
-title or number. A merged card is marked in the roadmap's status column in
-the same change; a measured fact the roadmap holds moves into a comment
-beside the code when the work that needed it lands.
+is how to take a card (the worker brief, the card header, the parallel rules,
+the conventions); section 2 holds the design rules, the checklist and
+invariants I1-I8; section 3 the contracts cards build on (with the layout and
+the CLI tree); Tier 0 (section 4) is the core-wide work done one numbered step
+at a time, in order; section 5 holds the task cards, each with a header block
+naming its wave, dependencies and the files it owns; section 6 is the wave
+table; section 7 is what is blocked on the owner (a decision, a machine);
+section 8 points to history. Decisions are in `docs/decisions.md`; measured
+runs and the older plan are in `docs/archive/planning-history.md`. Cite work
+by id (T0.7, ADM-14, C-API, N9, Q-KEY), not by section title or number. A
+merged card gets `status: DONE <sha>` in its header in the same change; a
+measured fact the roadmap holds moves into a comment beside the code when the
+work that needed it lands.
+
+## Working as a swarm worker
+
+Given one card or one Tier 0 step, follow `docs/roadmap.md` section 1: it is
+the complete brief and wins over the patch and push passages here. Work in
+`../elysium-wt/<ID>` on branch `card/<ID>`; plain commits with the trailers
+section 1.1 lists (`Card:`, `Controls-Added:`, `Controls-Deleted:`,
+`Invariants:`, `Large-change:`) and no other; no patch, no push; hand back
+the branch and the report. The patch sections below are the integrator's and
+the interactive session's flow (roadmap section 1.3, N66).
 
 ## Schema changes
 

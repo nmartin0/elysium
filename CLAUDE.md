@@ -14,18 +14,20 @@ that have gone wrong repeatedly.
 3. **`docs/principles.md`** — why the design is the way it is, and the
    reasoning behind decisions that look odd from outside.
 4. **`docs/roadmap.md`** — **the one planning file, and the only one.**
-   It is organised as: section 1, the design philosophy and the design
-   rules (DR1-DR7); section 2, the goal, the production-ready checklist
-   (P1-P13) and the security invariants (I1-I8); section 3, the layout
-   (the repository, what Elysium reads and produces, the CLI tree);
-   section 4, **Tier 0**, sixteen core-wide items (T0.1, T0.1B,
-   T0.2-T0.15) that a strong model does in order, each ending in a
-   contract that later work builds on; section 5, **task cards** for
-   efficient models (MEAS, SEC, API, ADM, CLI, OPS, INS, DOC, CI, QA,
-   REF, ADD), each naming the files it owns; section 6, **blocked on the
-   owner** (the exact question and the default meanwhile); section 7,
-   sequencing (the dependency graph and the **waves**); section 8, the
-   brief a swarm worker gets with its card. Decisions are in
+   It is organised as: section 1, **how to take a card** (the worker
+   brief, the card header, the parallel-execution rules, the conventions);
+   section 2, the design philosophy, the design rules (DR1-DR7), the
+   production-ready checklist (P1-P13) and the security invariants
+   (I1-I8); section 3, the **contracts** every card builds on (C-API,
+   C-JOBS and the rest, each with an anchor, including the layout, what
+   Elysium reads and produces, and the CLI tree); section 4, **Tier 0**,
+   seventeen core-wide items (T0.1, T0.1B, T0.2-T0.6, T0.6B, T0.7-T0.15)
+   done one at a time in order, each in numbered one-commit steps; section
+   5, **task cards** (MEAS, SEC, API, ADM, CLI, OPS, INS, DOC, CI, QA, REF,
+   ADD), each with a header block naming its wave, dependencies and the
+   files it owns; section 6, the **waves** (one table of card ids per
+   wave); section 7, **blocked on the owner** (the exact question and the
+   default meanwhile); section 8, pointers to history. Decisions are in
    **`docs/decisions.md`**, cited by id (B1, D4, N23); measured runs,
    consumed lists and the older plan are in
    `docs/archive/planning-history.md`. Anything that could be built and
@@ -53,9 +55,25 @@ from twenty-six places, all of them by STEP NUMBER. A comment saying
 "see step 5h" is worth nothing without the document. A comment saying
 "snapshot retention must respect pinned generations" is worth
 something on its own.
+
+## Working as a swarm worker
+
+If you were given ONE card or ONE Tier 0 step (a card packet, or
+`docs/roadmap.md` section 1 with a card), **section 1 of the roadmap is
+your whole brief** and it wins over anything below that seems to differ:
+you work in your own git worktree `../elysium-wt/<ID>` on branch
+`card/<ID>`, commit only there with the trailers it lists, make no patch,
+never push, and hand back the branch and the report. The integrator
+merges cards, runs the wave's full suite and turns merged waves into
+patches with the scripts below (roadmap section 1.3). Everything else in
+this file is background for you and the working method for interactive
+sessions and the integrator.
+
 ## You do not push. The workflow is patches.
 
-You have no credentials. The user applies everything.
+You have no credentials. The user applies everything. (A swarm worker
+makes no patch; the integrator makes them from merged waves, one patch
+per commit, as below.)
 
 ```
 scripts/make_patch.sh <name>-<date><suffix> <number-of-commits>
@@ -141,9 +159,17 @@ happened. Do not present the patch until it is.
 
 **Start every session with `git fetch origin && git reset --hard
 origin/dev`.** Three patches went missing in one session because local
-and remote had silently diverged.
+and remote had silently diverged. (Interactive sessions and the
+integrator only: a swarm worker never resets; its worktree was made for
+it from `dev`.)
 
 ## The user runs the application. You do not.
+
+This is about the owner's running instance and the checks they make in a
+browser. A swarm worker's gate 7 (roadmap section 1.1) is different and
+allowed: it starts its OWN temporary server on a free port with its own
+state through `tools/with_server.sh`, run under `tools/heavy.sh`, and
+stops it; it never starts, stops or uses the owner's server.
 
 They test in a browser and paste what they see. **Those pastes have
 caught more real bugs than the test suite has** — a preview panel
@@ -354,7 +380,9 @@ is how the mistakes below happen.
    agreed design (the `docs/roadmap.md` tier item or card), and tell it to report
    correctness gaps only and to skip style. Check each finding against
    the code yourself; fix the real ones. The author cannot see its own
-   blind spots (docs/principles.md section 13). Skip it only for a change
+   blind spots (docs/principles.md section 13). For a swarm card the
+   integrator runs this review after the hand-off (roadmap section 1.5).
+   Skip it only for a change
    with no behaviour (a typo, a comment) and say that you did.
    **A rule with no exceptions is a script, not a sentence**: if you
    catch yourself adding "always" to this file, write the script or
@@ -367,7 +395,8 @@ is how the mistakes below happen.
    parallelism, about enforcement, and about a script that did not
    exist.
 9. **Make the patch with `scripts/make_patch.sh`, present it**, and say what to
-   look at in the browser.
+   look at in the browser. (A swarm worker stops at the commit on its card
+   branch and hands back the branch and its report; roadmap section 1.)
 
 **Numbers in a commit message are measurements, not estimates.** If
 it says 548 frontend tests, that number came from a run in that
