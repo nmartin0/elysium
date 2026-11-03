@@ -180,8 +180,8 @@ CONTROLS = [
         path="sim/simulator/runner.py",
         old="            context.picked[name] = context.rng.choice(candidates)",
         new="            context.picked[name] = candidates[0]",
-        tests=["sim/tests/test_field_service.py::"
-               "test_a_pair_can_repeat_and_that_is_the_documented_behaviour"],
+        tests=["sim/tests/test_sqlite_relational.py::"
+               "test_a_seed_step_s_picks_vary_and_reach_the_row_being_built"],
     ),
     Control(
         describes="a resume with no live entities refuses rather than continuing",
@@ -607,7 +607,7 @@ CONTROLS = [
         old="        if field_name == security_field:",
         new="        if False:",
         tests=["tests/unit/test_silver_standardisation.py::TestDeclaringTheRules::test_the_rules_reach_the_sync_target",
-               "tests/unit/test_the_pipeline_does_not_move_access.py::TestTheTwoPathsAgreeAboutVisibility::test_whatever_whitespace_the_source_holds[us-west"],
+               "tests/unit/test_the_pipeline_does_not_move_access.py::TestTheTwoPathsAgreeAboutVisibility::test_whatever_whitespace_the_source_holds"],
     ),
     Control(
         describes="an approval re-reads the generation inside the lock",
@@ -776,8 +776,7 @@ CONTROLS = [
         path="core/ontology/constraints.py",
         old='    if constraints.get("no_invisible_characters"):',
         new="    if False:",
-        tests=["tests/unit/test_invisible_characters_can_be_declared.py::TestTheDeclaredRule::test_a_violation_is_reported[Acme",
-               "tests/unit/test_invisible_characters_can_be_declared.py::TestTheDeclaredRule::test_a_violation_is_reported[Acme"],
+        tests=["tests/unit/test_invisible_characters_can_be_declared.py::TestTheDeclaredRule::test_a_violation_is_reported"],
     ),
     Control(
         describes="a field declaring no_misleading_text is enforced",
@@ -5926,7 +5925,7 @@ CONTROLS = [
         new='    if False:',
         tests=[
             ('tests/unit/test_source_type_drift.py::'
-             'TestCapturingWhatTheSourceSaid::test_postgresql_can'),
+             'TestWhatEachAdapterCanSay::test_postgresql_can'),
         ],
     ),
     Control(
@@ -9281,6 +9280,15 @@ CONTROLS = [
         new='        if request.url.path.startswith("/api/"):\n',
         tests=["tests/integration/test_api.py::test_a_modules_bundle_is_served_to_whoever_is_offered_it"],
     ),
+    Control(
+        describes="a control fires only when pytest reports a failed test",
+        path="scripts/check_controls.py",
+        old="    if returncode == 1:\n        return FIRES, _PYTEST_EXIT[1]\n",
+        new="    if returncode != 0:\n        return FIRES, _PYTEST_EXIT[1]\n",
+        tests=["tests/unit/test_check_controls.py::test_only_a_failed_test_counts_as_firing",
+               "tests/unit/test_check_controls.py::"
+               "test_a_control_citing_a_missing_test_is_broken_not_firing"],
+    ),
 ]
 
 
@@ -9335,8 +9343,37 @@ def apply(control: Control) -> str:
     return original
 
 
-def run(control: Control) -> tuple[bool, str]:
-    """Run the control's tests, expecting them to fail."""
+#: What pytest's exit status means. Only 1 says "tests ran and some
+#: failed", which is the one outcome that shows a control fired. The
+#: others used to be counted as firing too, so a control citing a test
+#: that does not exist (exit 4) passed for as long as nobody looked.
+FIRES, SILENT, BROKEN = "fires", "silent", "broken"
+_PYTEST_EXIT = {
+    0: "all the tests passed",
+    1: "tests failed",
+    2: "the run was interrupted, or collection failed (the break may have "
+       "made a test module unimportable)",
+    3: "pytest hit an internal error",
+    4: "pytest was used wrongly: usually a test id that does not exist",
+    5: "no tests were collected",
+}
+
+
+def classify(returncode: int) -> tuple[str, str]:
+    """A pytest exit status as (outcome, why)."""
+    if returncode == 1:
+        return FIRES, _PYTEST_EXIT[1]
+    if returncode == 0:
+        return SILENT, _PYTEST_EXIT[0]
+    return BROKEN, f"pytest exited {returncode}: " + _PYTEST_EXIT.get(
+        returncode, "an unknown status")
+
+
+def run(control: Control) -> tuple[str, str]:
+    """Run the control's tests, expecting them to fail.
+
+    Returns (outcome, output) where outcome is FIRES, SILENT or BROKEN.
+    """
     # NO BYTECODE WRITTEN FROM BROKEN CODE. Python trusts a cached .pyc
     # whose source has the same size and the same whole-second mtime, so
     # two breaks of one file that change it by the same number of bytes,
@@ -9348,7 +9385,15 @@ def run(control: Control) -> tuple[bool, str]:
         cwd=ROOT, capture_output=True, text=True,
         env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
     )
-    return result.returncode != 0, (result.stdout or result.stderr).strip()
+    outcome, why = classify(result.returncode)
+    output = (result.stdout or result.stderr).strip()
+    # A run in which every test was skipped exits 0, which reads as
+    # "the tests passed the broken code". Nothing was run: say so.
+    if outcome == SILENT and " skipped" in output and " passed" not in output:
+        outcome, why = BROKEN, "every cited test was skipped (a missing binary or service?)"
+    if outcome == BROKEN:
+        output = f"{why}\n{output}"
+    return outcome, output
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -9368,18 +9413,24 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     silent = []
+    broken = []
     for control in controls:
         original = apply(control)
         try:
-            fired, output = run(control)
+            outcome, output = run(control)
         finally:
             # Restored whatever happened, including on Ctrl-C. A broken
             # file left behind would look like a bug in the code rather
             # than in this script.
             (ROOT / control.path).write_text(original)
             IN_PROGRESS.unlink(missing_ok=True)
-        if fired:
+        if outcome == FIRES:
             print(f"  fires   {control.describes}")
+        elif outcome == BROKEN:
+            broken.append(control)
+            print(f"  BROKEN  {control.describes}")
+            print(f"          {output.splitlines()[0] if output else ''}")
+            print("          this does NOT show the tests notice the break")
         else:
             silent.append(control)
             print(f"  SILENT  {control.describes}")
@@ -9387,10 +9438,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"          {output.splitlines()[-1] if output else ''}")
 
     print()
+    if broken:
+        print(f"{len(broken)} control(s) could not be run: pytest did not report a "
+              f"failed test, so nothing is known about them.")
     if silent:
         print(f"{len(silent)} control(s) did not fire. Either the break is not the "
               f"break it claims, or the tests do not check what they appear to -- "
               f"and it is usually the second.")
+    if silent or broken:
         return 1
     print(f"All {len(controls)} controls fire.")
     return 0

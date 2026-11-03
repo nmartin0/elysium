@@ -67,7 +67,7 @@ def test_a_control_that_does_not_fire_is_reported(tmp_path, monkeypatch, capsys)
                 old="VALUE = 1", new="VALUE = 2", tests=[]),
     ])
     # No tests named, so pytest exits zero and the control is silent.
-    monkeypatch.setattr(check_controls, "run", lambda control: (False, "1 passed"))
+    monkeypatch.setattr(check_controls, "run", lambda control: (check_controls.SILENT, "1 passed"))
 
     assert main([]) == 1
     printed = capsys.readouterr().out
@@ -148,3 +148,114 @@ def test_an_unreadable_record_shouts_rather_than_carrying_on(tmp_path, monkeypat
 
     with pytest.raises(SystemExit, match="unreadable"):
         check_controls.restore_anything_left_behind()
+
+
+@pytest.mark.parametrize("code,expected", [
+    (1, "fires"), (0, "silent"),
+    (2, "broken"), (3, "broken"), (4, "broken"), (5, "broken"), (99, "broken"),
+])
+def test_only_a_failed_test_counts_as_firing(code, expected):
+    # Exit 4 (a test id not found) and 2 (collection broken by the
+    # break) used to count as "fires" because the runner asked only
+    # whether the status was non-zero.
+    from scripts.check_controls import classify
+
+    outcome, why = classify(code)
+    assert outcome == expected
+    assert str(code) in why or code in (0, 1)
+
+
+def test_a_control_citing_a_missing_test_is_broken_not_firing(tmp_path, monkeypatch, capsys):
+    # End to end through the real pytest: the id does not exist, pytest
+    # exits 4, and the run must say so and fail.
+    from scripts import check_controls
+
+    (tmp_path / "subject.py").write_text("VALUE = 1\n")
+    (tmp_path / "test_subject.py").write_text("def test_real():\n    assert True\n")
+    monkeypatch.setattr(check_controls, "ROOT", tmp_path)
+    monkeypatch.setattr(check_controls, "IN_PROGRESS", tmp_path / ".in-progress.json")
+    monkeypatch.setattr(check_controls, "CONTROLS", [
+        Control(describes="cites a test that is not there", path="subject.py",
+                old="VALUE = 1", new="VALUE = 2",
+                tests=["test_subject.py::test_that_does_not_exist"]),
+    ])
+
+    assert check_controls.main([]) == 1
+    printed = capsys.readouterr().out
+    assert "BROKEN" in printed
+    assert "fires " not in printed
+    assert "exited 4" in printed
+
+
+def _resolves(test_id: str) -> str | None:
+    """None if the id names something that exists, else why not.
+
+    By AST rather than by running pytest, so checking every id costs
+    milliseconds: the file exists, and each `::` part is a function or
+    class defined (nested for the parts after the first) in it. A
+    parametrization suffix `[...]` is dropped, since it is chosen at
+    collection.
+    """
+    import ast
+    import re
+
+    from scripts.check_controls import ROOT
+
+    path, *parts = test_id.split("::")
+    if not parts:
+        return "no ::name"
+    parts[-1] = re.sub(r"\[.*\]$", "", parts[-1])
+    file = ROOT / path
+    if not file.is_file():
+        return f"{path} does not exist"
+    body = ast.parse(file.read_text()).body
+    for name in parts:
+        found = next((node for node in body
+                      if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                      and node.name == name), None)
+        if found is None:
+            return f"{name} is not defined in {path}" + (
+                "" if name is parts[0] else " at that nesting")
+        body = found.body
+    return None
+
+
+def test_every_test_a_control_cites_exists():
+    # The check the runner could not make: that the break is guarded by
+    # tests that are really there.
+    missing = [f"{control.describes!r}: {test_id} ({why})"
+               for control in CONTROLS for test_id in control.tests
+               if (why := _resolves(test_id)) is not None]
+    assert not missing, "controls citing tests that do not exist:\n" + "\n".join(missing)
+
+
+def test_the_resolver_notices_a_missing_function_class_and_file():
+    # Its own control: a resolver that answered None for everything
+    # would make the test above pass for ever.
+    assert _resolves("tests/unit/test_check_controls.py::test_there_are_controls_to_run") is None
+    assert _resolves("tests/unit/test_check_controls.py::test_nothing_of_the_kind") is not None
+    assert _resolves("tests/unit/test_check_controls.py::NoSuchClass::test_x") is not None
+    assert _resolves("tests/unit/no_such_file.py::test_x") is not None
+    assert _resolves("tests/unit/test_check_controls.py") is not None
+
+
+def test_a_control_whose_tests_were_all_skipped_is_broken_not_silent(tmp_path, monkeypatch, capsys):
+    # Exit status 0, but nothing ran: the code was not shown to be
+    # noticed OR missed.
+    from scripts import check_controls
+
+    (tmp_path / "subject.py").write_text("VALUE = 1\n")
+    (tmp_path / "test_subject.py").write_text(
+        "import pytest\n\n@pytest.mark.skip(reason='no server')\ndef test_it():\n    assert False\n")
+    monkeypatch.setattr(check_controls, "ROOT", tmp_path)
+    monkeypatch.setattr(check_controls, "IN_PROGRESS", tmp_path / ".in-progress.json")
+    monkeypatch.setattr(check_controls, "CONTROLS", [
+        Control(describes="guarded by a skipped test", path="subject.py",
+                old="VALUE = 1", new="VALUE = 2", tests=["test_subject.py::test_it"]),
+    ])
+
+    assert check_controls.main([]) == 1
+    printed = capsys.readouterr().out
+    assert "BROKEN" in printed
+    assert "skipped" in printed
+    assert "SILENT" not in printed

@@ -338,3 +338,65 @@ def test_a_pack_may_not_withhold_a_table_in_a_file(tmp_path):
 
     with pytest.raises(PackError, match="no account to withhold a table from"):
         load_pack(path)
+
+
+# -- a seed step that picks from another table ------------------------
+
+PICKING_PACK = textwrap.dedent("""
+    pack: picking
+    silos:
+      ops: {kind: sqlite, database: ops}
+    schemas:
+      ops:
+        tables:
+          people:
+            columns:
+              person_id: {type: text, length: 32, primary_key: true, nullable: false}
+          tickets:
+            columns:
+              ticket_id: {type: text, length: 32, primary_key: true, nullable: false}
+          held:
+            columns:
+              held_id:   {type: text, length: 32, primary_key: true, nullable: false}
+              person_id: {type: text, length: 32, nullable: false}
+              ticket_id: {type: text, length: 32, nullable: false}
+    seed:
+      - table: ops.people
+        count: 12
+        columns:
+          person_id: {generator: id, prefix: p}
+      - table: ops.tickets
+        count: 6
+        columns:
+          ticket_id: {generator: id, prefix: t}
+      - table: ops.held
+        per: ops.people
+        count: 2
+        picks: [ops.tickets]
+        columns:
+          held_id:   {generator: id, prefix: h}
+          person_id: {generator: reference, from: subject.person_id}
+          ticket_id: {generator: reference, from: picked.tickets.ticket_id}
+    """)
+
+
+def test_a_seed_step_s_picks_vary_and_reach_the_row_being_built(tmp_path):
+    # Replaces a control's cited test that never existed
+    # (test_a_pair_can_repeat_and_that_is_the_documented_behaviour).
+    # Without `distinct_picks`, each row draws independently, so 24 rows
+    # over 6 tickets name several tickets and every one is a real ticket.
+    # A pick that always took the first candidate names exactly one. In
+    # SQLite so it runs anywhere, unlike the PostgreSQL pack tests.
+    path = tmp_path / "picking.yaml"
+    path.write_text(PICKING_PACK)
+    world = runner.build(load_pack(path), tmp_path / "var", seed=7)
+    try:
+        runner.seed(world)
+        silo = world.silos["ops"]
+        named = {t for (t,) in raw(silo, "SELECT ticket_id FROM held")}
+        real = {t for (t,) in raw(silo, "SELECT ticket_id FROM tickets")}
+        assert count_rows(silo, "ops", "held") == 24
+        assert named <= real
+        assert len(named) > 1, named
+    finally:
+        runner.stop(world)
