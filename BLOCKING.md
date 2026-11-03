@@ -2630,9 +2630,42 @@ its text leaves this file for the code, by the rule at the top.
 **Goal.** Reduce the number of mechanisms per concern to one, without losing any capability, and expose a standard, versioned API that matches what precedent and the common open conventions share. Invariants that do not change: writes only through actions; MAC and RBAC both required at `check_access()`; uniform denial; authority never stored; single machine; single tenant; SSE only; no historian; no question leaves the VM.
 
 **Phase 1: Standard read surface and programmatic identity.**
-1. Add `core/ontology/object_sets.py`: a JSON `ObjectSet` union (`base, filter, union, intersect, subtract, searchAround, static, reference, similarTo`) evaluated in the mediator after MAC. Filter grammar: `eq, in, lt, lte, gt, gte, isNull, contains, startsWith, and, or, not`.
-2. Add `/api/v2` routers, one file per resource (`schema`, `objects`, `objectSets`, `actions`, `proposals`, `queries`, `subscriptions`, `automations`, `admin`), replacing the single `api/routes.py`. Paging is `pageSize`/`pageToken`/`nextPageToken`; select, orderBy and expand follow the shapes in the research report. Errors are RFC 9457 problem details with `errorName`, `errorInstanceId` = `request_id`, and `parameters`; denial stays a uniform 404.
-3. Serve `/api/v2/openapi.json` to authenticated callers. This is safe because type names are path parameters.
+
+*Built, slice 1 (3 November 2026), additive: nothing removed, no existing route changed.*
+`core/ontology/object_sets.py` is the object-set union (`base, filter, union,
+intersect, subtract, searchAround, static`) and the filter grammar (`eq, in, lt,
+lte, gt, gte, isNull, contains, startsWith, and, or, not`), with named caps for
+depth, node count, `in` values and static keys. It parses to a typed tree, checks
+it against ONE caller's visible schema (a field the caller cannot read is refused
+in the same words as an unknown one; a type the caller cannot read is the same
+404 as an unknown type), and evaluates through the mediator only: sets come from
+`search_object()` and the new `search_around_from()`, values for filtering and
+sorting from the new `field_values_for_ids()`, and both re-run `check_access()` on
+every id they are handed. `api/v2/` serves `GET /api/v2/schema`,
+`GET /api/v2/objects/{type}` and `/{pk}`, and `POST /api/v2/objectSets/loadObjects`,
+`/count` and `/aggregate` (one exact grouping; count, sum, min, max, avg over
+readable numeric fields), behind the same session, CSRF check and generation pin
+as `/api`. Paging is `pageSize` (default 100, max 500) / `pageToken` /
+`nextPageToken`; a token is signed to the caller and the query and expires.
+Errors are problem details with `errorName`, `errorInstanceId` (the request id)
+and `parameters`; denial is a uniform 404.
+
+*Still to do in Phase 1:*
+1. The set kinds `reference` (a stored, named set; needs the store that replaces
+   saved views and frozen sets) and `similarTo` (gated by its own grant). Text
+   operators beyond `contains` and `startsWith`, and filtering on computed
+   (derived, enriched, predicted) fields, which are refused today.
+2. The rest of the routers, one file per resource: per-type schema discovery,
+   `expand`, `GET /objects/{type}/{pk}/links/{link}` and `/history`,
+   `POST /objects/{type}/search` and `/aggregate`, `objectSets/export`, `actions`,
+   `proposals`, `queries`, `subscriptions`, `automations`, `admin`. Aggregation
+   groupings other than exact (ranges, fixed width, duration) and distinct counts.
+   A snapshot paging mode (today a page is the latest result, like the existing
+   search). Pushing more than text equality into the search, so a filter over a
+   table larger than the scan ceiling is not cut short before it applies.
+3. Serve `/api/v2/openapi.json` to authenticated callers. Not served yet; the
+   disabled `/openapi.json` is unchanged. This is safe because type names are
+   path parameters.
 4. Add API tokens (argon2id-hashed) and service principals as real user records with explicit grants only; token power = scopes ∩ user grants. Add OIDC login with claim-to-role mapping. Allow several roles per user, combined additively.
 5. Exit: Browse uses only `/api/v2` for search, sets, saved views and frozen sets. Frozen sets become stored `static` sets; saved views become stored named sets.
 
