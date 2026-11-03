@@ -70,12 +70,13 @@ pauses while the tab is hidden and runs one overdue update on return.
 
 ## Drawing and files
 
+The Import control loads GeoJSON, KML, KMZ and GPX files for the session
+(`src/data/geoFileImport.js`).
+
 DISPLAY ▸ **Draw**: pick Area, Line or Pin, click the vertices on the globe,
 double-click or press Enter to finish, label it. Backspace removes the last
 vertex and Esc cancels. A shape holds at most 512 vertices. Marks are draped
-on terrain and 3D tiles, and a line is labelled with its length. The Import
-control loads GeoJSON, KML, KMZ and GPX files for the session
-(`src/data/geoFileImport.js`).
+on terrain and 3D tiles, and a line is labelled with its length.
 
 ## Share links
 
