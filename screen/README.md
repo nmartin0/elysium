@@ -73,9 +73,11 @@ tuning variables.
 - **Search** by place name or coordinates, and a **share link** that restores
   camera, followed object, style, layers and panels
   ([docs/SHARE-LINK-FORMAT.md](docs/SHARE-LINK-FORMAT.md)).
+- **Imported files**: GeoJSON, KML, KMZ or GPX files can be imported for the
+  session.
 - **Annotations**: DISPLAY ▸ **Draw** lets you pick Area, Line or Pin, click
   the vertices on the globe and label the shape; it drapes on terrain and 3D
-  tiles. Files in GeoJSON, KML, KMZ or GPX can be imported for the session.
+  tiles.
 - **Languages**: English, German, Spanish, French, Italian, Japanese,
   Portuguese, Russian, Ukrainian, Simplified and Traditional Chinese
   ([docs/I18N.md](docs/I18N.md)).
