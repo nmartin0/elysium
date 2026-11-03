@@ -1589,15 +1589,15 @@ CONTROLS = [
     Control(
         describes="R13 adopt all: the operator's statement is kept in the record",
         path="core/mirror/erasure.py",
-        old='                                  NOTHING_REMOVED_OR_UNMAPPED if unmapped else NO_TYPE_REMOVED)',
-        new='                                  "")',
+        old='                              NOTHING_REMOVED_OR_UNMAPPED if unmapped else NO_TYPE_REMOVED)',
+        new='                              "")',
         tests=["tests/unit/test_erasure_removed_types.py::TestAdoptAllCurrent::test_it_adopts_what_the_schema_maps_and_only_that"],
     ),
     Control(
         describes="R13 adopt all: it unions with what is known and never narrows",
         path="core/mirror/erasure.py",
-        old='                known = known_columns(schema, identifier, table)\n                record = Recorded(known.keys,',  # noqa: E501
-        new='                known = schema_columns(schema, identifier)\n                record = Recorded(known.keys,',
+        old='            known = known_columns(schema, identifier, table)\n            record = Recorded(known.keys, known.ids, known.links, True, COMPLETE, True,',  # noqa: E501
+        new='            known = schema_columns(schema, identifier)\n            record = Recorded(known.keys, known.ids, known.links, True, COMPLETE, True,',  # noqa: E501
         tests=["tests/unit/test_erasure_removed_types.py::TestAdoptAllCurrent::test_it_never_narrows"],
     ),
     Control(
