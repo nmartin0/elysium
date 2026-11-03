@@ -14,9 +14,13 @@ that have gone wrong repeatedly.
 3. **`PRINCIPLES.md`** — why the design is the way it is, and the
    reasoning behind decisions that look odd from outside.
 4. **`BLOCKING.md`** — **the one planning file, and the only one.**
-   Everything in it needs a person: a decision, a product judgement,
-   or a machine nobody has. Anything that could be built has been
-   built, and the document it came from has been deleted.
+   It holds what needs a person (a decision, a machine nobody has) and
+   the roadmap, "Converge on precedent": the target architecture, the
+   security invariants and the ordered steps of the breaking refactor.
+   Anything that could be built has been built, and the document it
+   came from has been deleted. No deployment exists, so nothing is kept
+   for compatibility; read PRINCIPLES.md section 8 before you touch a
+   format.
 5. **`AUDIT_CHECKLIST.csv`** — one row per verifiable claim, with its
    source, severity, where to look, and a status. Sortable, so "did we
    cover everything?" is a question a command answers rather than a
@@ -181,22 +185,15 @@ a UI change that is about LAYOUT, HIT-TESTING or the CASCADE has not
 been verified until these run. If a fix is for something a person
 reported seeing, assume jsdom cannot see it either.
 
-**CHANGING A FIELD'S `data_type` NEEDS SILVER DROPPED.** Iceberg
-refuses an incompatible column change -- "Cannot change column type:
-amount: string -> decimal(38, 9)" -- because it is not a widening, and
-it is right to.
-
-BRONZE MAKES THE RECOVERY FREE, which is what bronze is for:
-
-    python -c "..."   # drop the silver table
-    python -m scripts.run_sync
-
-Silver rebuilds FROM BRONZE, without re-reading the customer's
-database. Verified on the live mirror when `amount` became `decimal`
-and `transaction_date` became `date`.
-
-The mirror administration surface (the unified roadmap 0.5.4) should offer
-this as a button; today it needs a person with a Python prompt.
+**CHANGING A FIELD'S `data_type` NEEDS A REBUILD.** Iceberg refuses an
+incompatible column change -- "Cannot change column type: amount: string
+-> decimal(38, 9)" -- because it is not a widening, and it is right to.
+Bronze makes the rebuild free: `python -m scripts.run_sync --rebuild
+silo.table` rebuilds silver from bronze without re-reading the source
+(the Mirror panel's "Rebuild now" does the same). When no deployment
+holds data worth keeping, delete the mirror and sync again. The roadmap
+turns this into `elysium sync --rebuild`, or removes it if silver becomes
+a transient stage.
 
 **Backend changes need `uvicorn` restarted.** Frontend changes do not
 — Vite hot-reloads. Say so when a patch touches Python.
@@ -260,8 +257,10 @@ uvicorn api.app:app --port 8000     # terminal 1
 cd ui && npm run dev                # terminal 2
 ```
 
-**`/tmp` is cleared on reboot and has eaten their state twice.**
-Recovery:
+**`/tmp` is cleared on reboot and has eaten their state twice.** Nothing
+under it is state worth keeping (no deployment exists), so rebuilding the
+development state is the whole recovery. These scripts do it today, and the
+roadmap folds them into `elysium dev reset`:
 
 - `scripts/seed_dev_silos.py` — the three silo databases. Without
   these, every silo reads unreachable, which is CORRECT and the Silos
@@ -294,12 +293,7 @@ rather than assuming a script exists; one would have to be written.
 
 Pointing `ELYSIUM_DATA_DIR` somewhere under `$HOME` would end this.
 
-**Pending writes survive a restart now.** This paragraph used to warn
-against `uvicorn --reload` because the pending-write store was
-in-process memory and a restart emptied it. It is a database
-(`core/pending_write_store.py`: "THE DATABASE IS THE STORE"), so
-proposals no longer vanish between steps (E-16). Configuration still
-needs no restart at all: `POST /api/admin/reload` applies it.
+Configuration needs no restart at all: `POST /api/admin/reload` applies it.
 
 ## The loop, every change
 
@@ -373,15 +367,18 @@ Beyond the synopsis, these were asked for explicitly and apply to
 every session.
 
 **Research real precedent before inventing a pattern**, and say what
-it says. This project models Foundry, so "what does Palantir do here"
-is usually answerable and usually changes the design — relative
+it says. This project models a reference ontology platform, the
+precedent, so "what does the precedent do here" is usually answerable and usually changes the design — relative
 timestamps, colour limits, the ontology graph's features, and the
 Naked Objects precedent all came from looking rather than reasoning
 from first principles. `PRINCIPLES.md` §9 is the rule; the practice
 is to quote the source in the commit message so the next reader can
 weigh it.
 
-**Prefer extending over rewriting.** Inheritance or composition where
+**Prefer extending over rewriting**, except during the breaking
+refactor (BLOCKING.md "Converge on precedent"), where the replaced code
+is deleted in the same change and nothing is kept beside its replacement
+as a shim. Outside it: inheritance or composition where
 functionality is being added, rather than changing a signature that
 four callers depend on. Use judgement: it was the right call for the
 shared UI components and the wrong call for the request context,

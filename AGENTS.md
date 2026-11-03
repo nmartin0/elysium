@@ -562,8 +562,8 @@ never sees a `UserRecord`.
 
 ## Before designing anything new
 
-Check what Palantir Foundry does first, and quote their documentation
-in the commit. Three designs in one session were wrong until
+Check what the precedent (the reference ontology platform this project
+models) does first, and quote its documentation in the commit. Three designs in one session were wrong until
 researched: delete (they never touch the source row), Phase 3 (a
 transform stage is for drift detection, not join performance), and
 functions (their authors cannot see the calling user either).
@@ -587,12 +587,16 @@ committing:
 awk '{ if (length($0) > 72) print NR": "length($0)" chars" }' /tmp/msg.txt
 ```
 
-## Schema changes are breaking
+## Schema changes
 
-`ontology_schema.yaml` is a real format with three live deployments
-(`tests/integration/fixtures`, `templates`, `deployment/etc`). Change
-it only with explicit authorization, migrate all three, and confirm
-each still loads and lints.
+No deployment exists, so a change to `ontology_schema.yaml` or any other
+configuration format needs no authorization, no migration and no
+compatibility reading of the old form: change the format, delete the
+old one, and say what broke in the commit message. The sample
+configuration sets (`tests/integration/fixtures`, `templates`,
+`deployment/etc`) are copies for tests and templates, not deployments.
+They must still load and lint, which a test checks; generate the demo
+from the templates rather than keeping a third copy by hand.
 
 The deployment linter (`scripts/lint_deployment.py`) must know about
 any new schema construct. It reads raw YAML on its error path, so
@@ -602,11 +606,12 @@ expanding there too, or it will blame the wrong file.
 ## Files you should not hand-edit
 
 `ui/module-api.report.md` is generated: the public module API, written
-down (BLOCKING.md item 3, step 4). `python -m scripts.module_api_report`
+down (module platform, step 4). `python -m scripts.module_api_report`
 rewrites it, and a test fails while it is stale -- so a change to what
 modules may rely on arrives as a diff of it, to be reviewed as an API
-change rather than regenerated without a look.
+change rather than regenerated without a look. It goes when the module
+platform collapses (BLOCKING.md "Converge on precedent", S11); the
+generated `openapi.json` is then the reviewed artefact.
 
 `vulture_whitelist.py` is append-only, and each entry needs a comment
-saying why. Fixture schemas under `tests/integration/fixtures/` are
-one of three deployments that must change together.
+saying why.

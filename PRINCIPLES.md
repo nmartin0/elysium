@@ -213,17 +213,26 @@ deliberately deferred until `TransferFunds` existed as a real,
 second, multi-object action to design *against* — building it earlier
 would have meant guessing at a shape with only one data point.
 
-## 8. Backward-incompatible changes need explicit authorization.
+## 8. Breaking changes are the default while there is no deployment.
 
-This project has made real, deliberate breaking changes — replacing
-a top nav bar with a sidebar, moving the session from a JS-readable
-token to an `httponly` cookie, rebuilding nav from three hardcoded
-links to a real, permission-driven list. Every one of them happened
-*because* it was discussed and explicitly authorized first, not
-because it seemed like an improvement in isolation. "Little to
-nothing important enough to preserve" is a real, quoted decision that
-licensed a full rebuild — the license came from the conversation, not
-from Claude's own judgment that the change was good.
+Nobody has an Elysium deployment, so nothing is kept for compatibility
+(owner rule, 3 November 2026). Break freely when it makes Elysium more
+usable and maintainable, or simpler without losing power. A change
+replaces what it replaces **in place**: the old code, its callers, its
+tests and its controls are deleted in the same change, with no shim, no
+migration, no deprecation period, no freeze and no transition window
+(BLOCKING.md "Converge on precedent" is the roadmap that applies this).
+
+Two things do not bend. Each change still lands with its tests, and
+the commit message records what broke. And the security invariants
+(uniform denial, authorization in one place, MAC and RBAC on every
+read, writes only through actions, re-authorisation at approval,
+erasure completeness, read-only source access, no question leaving the
+machine) are never relaxed without the owner.
+
+This replaces an earlier rule that every backward-incompatible change
+needed explicit authorization. That rule protected deployments that do
+not exist, and made every break a conversation.
 
 ## 9. Research real precedent before inventing a pattern.
 
@@ -231,7 +240,7 @@ When adopting an established UX or API pattern, find the real,
 existing thing being emulated and confirm the design against it
 directly, rather than improvise something plausible. `GET /me` was
 built after confirming how OpenID Connect's own UserInfo endpoint and
-Palantir Foundry's own documented `getCurrent` route actually shape
+the precedent's own documented `getCurrent` route actually shape
 this exact "who am I" response. The sidebar's own collapsed/expanded
 defaults were checked against a real reference platform's own actual
 behavior, detail by detail, with the deliberate departures (a
@@ -240,7 +249,7 @@ each justified against *why* the original pattern works the way it
 does, not copied blindly at a scale this project doesn't operate at.
 The sub-app priorities the (since consumed) roadmap set were this same
 principle applied at a larger scale -- a real, structured research pass against
-Foundry's own documentation, translated deliberately, feature by
+the precedent's own documentation, translated deliberately, feature by
 feature, into what a smaller, single-tenant architecture actually
 needs, not a wishlist of what a bigger platform happens to have.
 
@@ -327,9 +336,9 @@ negative control; check anything visual in a real, live browser,
 since the unit suite structurally cannot; keep security explicit and
 fail-safe, never inferred; leave an honest, findable trail of what's
 still open and why; extract only real, at-risk duplication; build
-only what's concretely needed now; never make a breaking change, or
-invent a new pattern from scratch, without checking real precedent
-or getting real authorization first; and never modify a third-party
+only what's concretely needed now; never invent a new pattern from
+scratch without checking real precedent, and never relax a security
+invariant without the owner; and never modify a third-party
 dependency's own source, ever, without treating it as a rare,
 serious decision in its own right.
 
