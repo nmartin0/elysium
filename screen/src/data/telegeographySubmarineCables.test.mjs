@@ -188,7 +188,13 @@ test('cable ground lines classify against exactly the active surface on every st
     Cesium.ClassificationType.CESIUM_3D_TILE,
   );
   // Every globe stack renders imagery on the shown globe — terrain pass only.
-  for (const stackId of ['bing-aerial', 'bing-labels', 'esri-imagery', 'osm']) {
+  for (const stackId of [
+    'bing-aerial',
+    'bing-labels',
+    'esri-imagery',
+    'osm',
+    'natural-earth',
+  ]) {
     assert.equal(
       cableClassificationTypeForStack(stackId),
       Cesium.ClassificationType.TERRAIN,
