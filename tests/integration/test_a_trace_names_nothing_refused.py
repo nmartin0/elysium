@@ -9,9 +9,12 @@ that exist, and a filter on a link recorded its hidden targets -- all
 readable back by the caller who made the request, on v1 routes as much as v2.
 
 THE RULE, in the reader (api/routes.py only maps what the reader returns):
-a refusal by the row check is not shown at all; a refusal by the grants alone
-is shown without its object id; a bulk-read record carries no count of
-what was denied or considered. The full lines stay in the audit log.
+the trace holds what the caller was GRANTED and no refusal in any form (a
+refusal by the grants alone, kept without its id, still showed which guess
+touched something, by its presence, its order and its flags); no record
+carries mac_allowed or rbac_allowed; a bulk-read record is returned only
+when it granted something and carries no count of what was denied or
+considered. The full lines stay in the audit log file.
 """
 
 import json
@@ -57,23 +60,37 @@ class TestTheReader:
         assert "cust_003" not in named(shown)
         assert not [e for e in shown if e.get("mac_allowed") is False]
 
-    def test_a_refusal_by_the_grants_alone_is_shown_without_its_id(self, tmp_path):
+    def test_a_refusal_by_the_grants_alone_is_not_shown_either(self, tmp_path):
         shown = self.log(tmp_path).entries_for_request("r", "alice")
 
-        email = [e for e in shown if e.get("action") == "read:Customer.email"]
-        assert len(email) == 1 and email[0]["object_id"] is None and email[0]["rbac_allowed"] is False
+        assert not [e for e in shown if e.get("action") == "read:Customer.email"]
+        assert not [e for e in shown if e.get("action") == "read:Customer" and e.get("object_id") is None
+                    and e.get("stage") != "bulk_read"]
+
+    def test_no_record_carries_the_flags(self, tmp_path):
+        shown = self.log(tmp_path).entries_for_request("r", "alice")
+
+        assert shown and not [e for e in shown if {"mac_allowed", "rbac_allowed"} & set(e)]
+
+    def test_a_bulk_read_that_granted_nothing_is_not_returned(self, tmp_path):
+        audit = AuditLog(log_path=tmp_path / "audit.log")
+        audit.log_bulk_read("alice", "Customer", "read:Customer", considered=3,
+                            denied_object_ids=["a", "b", "c"], fields_read=[],
+                            security_values_seen=set(), request_id="r")
+
+        assert audit.entries_for_request("r", "alice") == []
 
     def test_a_grant_keeps_its_id(self, tmp_path):
         shown = self.log(tmp_path).entries_for_request("r", "alice")
 
         assert [e["object_id"] for e in shown if e.get("action") == "read:Customer"
-                and e.get("rbac_allowed")] == ["cust_001"]
+                and e.get("stage") == "access_check"] == ["cust_001"]
 
     def test_a_bulk_record_counts_nothing_hidden(self, tmp_path):
         shown = self.log(tmp_path).entries_for_request("r", "alice")
 
         bulk = [e for e in shown if e.get("stage") == "bulk_read"]
-        assert len(bulk) == 1
+        assert len(bulk) == 1  # it granted one object of its four
         assert not {"denied", "denied_object_ids", "considered"} & set(bulk[0])
         assert "cust_003" not in json.dumps(shown)
 
@@ -160,7 +177,7 @@ class TestThroughTheRoute:
         shown = self.trace(client, search)
 
         assert not named(shown) & HIDDEN_TRANSACTIONS
-        assert not [e for e in shown if e["mac_allowed"] is False]
+        assert not [e for e in shown if {"mac_allowed", "rbac_allowed"} & set(e)]
         if detail.status_code == 200 and detail.json().get("request_id"):
             assert not named(self.trace(client, detail.json()["request_id"])) & HIDDEN_CUSTOMERS
 
@@ -173,3 +190,27 @@ class TestThroughTheRoute:
 
         assert not named(shown) & HIDDEN_TRANSACTIONS
         assert shown, "the grants and the bulk read are still shown"
+
+
+class TestARefusalOnALinkLeavesNoSignInTheTrace:
+    """A role that reads Transaction but not Customer: the trace of reading
+    each transaction's customer_id must be the same whatever the link holds."""
+
+    def test_the_trace_of_a_masked_link_read_has_no_refusal_and_no_flag(self, mediator, deployment, monkeypatch):
+        import types
+
+        alice = resolve_user_record(deployment.users, "user_alice", deployment.security_attribute)
+        role = dict(mediator.roles[alice.role_name])
+        role["allowed_actions"] = frozenset(a for a in role["allowed_actions"] if not a.startswith("read:Customer"))
+        roles = dict(mediator.roles)
+        roles[alice.role_name] = types.MappingProxyType(role)
+        monkeypatch.setattr(mediator, "roles", types.MappingProxyType(roles))
+        context = RequestContext.new()
+
+        for transaction in mediator.search_object(alice, "Transaction", [], context=context):
+            assert mediator.get_field(alice, "Transaction", transaction, "customer_id", context) is None
+        shown = mediator.audit_log.entries_for_request(context.request_id, alice.user_id)
+
+        assert shown, "the grants on Transaction are still shown"
+        assert not [e for e in shown if e.get("object_type") == "Customer"]
+        assert not [e for e in shown if {"mac_allowed", "rbac_allowed"} & set(e)]

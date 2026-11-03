@@ -12,7 +12,6 @@
  */
 
 import { useState } from 'react'
-import StatusTag from '@elysium/shell-api/components/StatusTag'
 import { Button } from '@blueprintjs/core'
 import { getErrorMessage, getRequestTrace, handleIfSessionExpired } from '@elysium/shell-api/api'
 import ErrorState from '@elysium/shell-api/components/ErrorState'
@@ -24,8 +23,6 @@ interface TraceEntry {
   object_type: string
   object_id: string | null
   action: string
-  rbac_allowed: boolean
-  mac_allowed: boolean | null
   timestamp: string
 }
 
@@ -69,7 +66,7 @@ export default function AnswerTrace({
 
       {open && error && <ErrorState>{error}</ErrorState>}
 
-      {open && entries !== null && <TraceSummary entries={entries} />}
+      {open && entries !== null && <TraceSummary count={entries.length} />}
       {open &&
         entries !== null &&
         (entries.length === 0 ? (
@@ -83,7 +80,6 @@ export default function AnswerTrace({
               <tr>
                 <th>Object type</th>
                 <th>Which</th>
-                <th>Allowed</th>
               </tr>
             </thead>
             <tbody>
@@ -91,18 +87,6 @@ export default function AnswerTrace({
                 <tr key={`${entry.timestamp}-${index}`}>
                   <td>{entry.object_type}</td>
                   <td>{entry.object_id ?? '—'}</td>
-                  <td>
-                    {/* A DENIED read is the interesting row. It says
-                        the agent tried to look at something and was
-                        refused -- which is the authorization working,
-                        and exactly what someone auditing wants to
-                        see rather than have hidden. */}
-                    {entry.rbac_allowed && entry.mac_allowed !== false ? (
-                      <StatusTag state="granted">yes</StatusTag>
-                    ) : (
-                      <StatusTag state="pending">refused</StatusTag>
-                    )}
-                  </td>
                 </tr>
               ))}
             </tbody>

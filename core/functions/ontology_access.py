@@ -42,10 +42,14 @@ class _Outcome:
     NOT IMPORTED: core.functions sits BELOW core.ontology in the layer
     contract, so it may not name the mediator's class. The mediator only
     ever sets `scan_truncated` on what it is handed, so an object with
-    that attribute is all the contract is.
+    that attribute is all the contract is. (It also records whether the
+    row check was part of the query, `row_check_pushed`, which the object-set
+    algebra reads and a function does not; it is only ever ASSIGNED, never
+    read-modified, so a stand-in needs no more than the name.)
     """
 
     scan_truncated = False
+    row_check_pushed = False
 
 
 def _refuse_if_truncated(outcome, what: str) -> None:

@@ -8,45 +8,25 @@
  * uncommon one." That reasoning still holds, so the trace stays lazy
  * and this summarises it once somebody has asked for it.
  *
- * WHY THE COUNTS CANNOT COME FROM THE ANSWER INSTEAD. A denied read
- * and a genuinely NULL field return the same value, deliberately --
- * `filter_real_data` strips both and the mediator's uniform denial
- * makes them indistinguishable on purpose. A summary derived from what
- * the answer was built from could therefore say "3 values used" but
- * never "2 refused", because counting refusals from that side would
- * reconstruct exactly what uniform denial exists to hide.
- *
- * THE TRACE IS A DIFFERENT MATTER, and this is the distinction worth
- * holding. It reports the caller's OWN accesses during their OWN
- * request, which they are entitled to know: the route returns an empty
- * list for somebody else's request rather than a 403, so the response
- * never distinguishes "no such request" from "not yours". Telling you
- * that YOUR question was refused a field is the trust story. Telling
- * you a field exists that somebody ELSE could read is the leak, and
- * nothing here does that.
+ * THE TRACE LISTS WHAT WAS GRANTED AND NOTHING ELSE. It used to count
+ * refusals too, and each refused read carried the object it was
+ * refused. That was a way to read back which of a caller's guesses
+ * touched something hidden from them, so the route no longer returns a
+ * refusal in any form. A denied read and a genuinely NULL field return
+ * the same value, deliberately, and a summary must not undo that: it
+ * says how many reads were served and nothing about what was not.
  */
 
 import StatusTag from '@elysium/shell-api/components/StatusTag'
 
-interface TraceEntry {
-  rbac_allowed: boolean
-  mac_allowed: boolean | null
-}
-
-export default function TraceSummary({ entries }: { entries: TraceEntry[] }) {
-  if (entries.length === 0) return null
-
-  const refused = entries.filter((entry) => !entry.rbac_allowed || entry.mac_allowed === false).length
-  const served = entries.length - refused
+export default function TraceSummary({ count }: { count: number }) {
+  if (count === 0) return null
 
   return (
     <p className="answer-trace__summary">
-      <StatusTag state="granted">{served} served</StatusTag>{' '}
-      {refused > 0 && <StatusTag state="refused">{refused} refused</StatusTag>}{' '}
+      <StatusTag state="granted">{count} served</StatusTag>{' '}
       <span className="answer-trace__summary-note">
-        {refused > 0
-          ? 'A refusal is a normal answer: the question asked for something your grants do not cover.'
-          : 'Every field this answer needed was one you may read.'}
+        Only the reads you were granted are listed. A field your grants do not cover is simply absent.
       </span>
     </p>
   )

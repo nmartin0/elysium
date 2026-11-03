@@ -285,35 +285,50 @@ class TestOneBudgetForTheWholeRequest:
         assert predicate({"amount": 5000}) is False
         assert len(compared) <= 4
 
-    def test_rows_considered_are_counted_across_every_leaf(self, mediator, alice, monkeypatch):
-        # Seven transactions exist and alice may see four: the budget is
-        # spent on what the search LOOKED AT.
-        monkeypatch.setattr(sets, "MAX_SCANNED_ROWS", 8)
+    def test_the_budget_is_charged_from_the_shape_before_anything_runs(self, mediator, alice, monkeypatch):
+        # A search leaf is worth the scan ceiling (10,000), whatever it finds.
+        monkeypatch.setattr(sets, "MAX_SCANNED_ROWS", 15_000)
         both = {"type": "union", "objectSets": [TRANSACTIONS, TRANSACTIONS]}
+        searched = []
+        real = mediator.search_object
+        monkeypatch.setattr(mediator, "search_object",
+                            lambda *a, **k: searched.append(1) or real(*a, **k))
 
-        assert len(ids(mediator, alice, TRANSACTIONS)) == 4  # alone: 7 looked at <= 8
-        with pytest.raises(ObjectSetError, match="more than 8 objects"):
-            ids(mediator, alice, both)
-        with pytest.raises(ObjectSetError, match="more than 8 objects"):
-            ids(mediator, alice, {"type": "searchAround", "link": "customer_id", "objectSet": both})
+        assert len(ids(mediator, alice, TRANSACTIONS)) == 4
+        with pytest.raises(ObjectSetError, match="more than 15000 objects"):
+            prepared(mediator, alice, both)
+        with pytest.raises(ObjectSetError, match="more than 15000 objects"):
+            prepared(mediator, alice, {"type": "searchAround", "link": "customer_id", "objectSet": TRANSACTIONS})
+        assert searched == [1], "only the first, affordable request searched"
 
-    def test_a_caller_who_sees_nothing_is_still_stopped(self, mediator, isolated_audit_log, monkeypatch):
-        from core.request_context import RequestContext
+    def test_a_static_leaf_costs_its_keys(self, mediator, alice, monkeypatch):
+        monkeypatch.setattr(sets, "MAX_SCANNED_ROWS", 3)
+        keys = {"type": "static", "objectType": "Transaction"}
 
-        monkeypatch.setattr(sets, "MAX_SCANNED_ROWS", 8)
+        prepared(mediator, alice, {**keys, "primaryKeys": ["1", "2", "3"]})
+        with pytest.raises(ObjectSetError, match="more than 3 objects"):
+            prepared(mediator, alice, {**keys, "primaryKeys": ["1", "2", "3", "4"]})
+
+    @pytest.mark.parametrize("cap", [1, 100_000])
+    def test_a_guessed_id_never_changes_whether_the_request_is_refused(self, mediator, monkeypatch, cap):
+        """THE ORACLE. A budget charged by what each leaf looked at refused
+        a request naming an id only if a hidden row had that id: a caller
+        who sees nothing could ask about 1, 5, 7 (refused) and 9, 12, 99999
+        (served) and learn which exist. Charged from the shape of the set,
+        every guess gets the same answer."""
+        monkeypatch.setattr(sets, "MAX_SCANNED_ROWS", cap)
         nobody = UserRecord("n", "nowhere", "customer_service")
-        context = RequestContext.new()
-        sixty = {"type": "union", "objectSets": [TRANSACTIONS] * 60}
-        view, step = prepared(mediator, nobody, sixty)
+        outcomes = set()
+        for guess in ("1", "5", "7", "9", "12", "99999"):
+            raw = {"type": "union", "objectSets": [where(
+                TRANSACTIONS, leaf("eq", "transaction_id", guess))] * 2}
+            try:
+                ids(mediator, nobody, raw)
+                outcomes.add("served")
+            except ObjectSetError as error:
+                outcomes.add(str(error))
 
-        with pytest.raises(ObjectSetError, match="more than 8 objects"):
-            evaluate(mediator, nobody, step, view, context)
-        shown = mediator.audit_log.entries_for_request(context.request_id, "n")
-        assert all(e.get("object_id") is None for e in shown)  # nothing refused is shown back
-        with open(isolated_audit_log / "audit.log") as handle:
-            lines = [json.loads(line) for line in handle if line.strip()]
-        written = [e for e in lines if e.get("request_id") == context.request_id and e["stage"] == "access_check"]
-        assert len(written) <= 2 * 7, "the cap stopped the work after the second leaf, not the sixtieth"
+        assert len(outcomes) == 1
 
 
 class TestNeverASilentCut:

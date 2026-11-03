@@ -9022,7 +9022,7 @@ CONTROLS = [
     Control(
         describes="v2 sets: a source id handed to search-around is checked again, not trusted",
         path="core/ontology/mediator.py",
-        old="        sources = self._still_readable(user_record, object_type, source_ids, context, outcome)\n",
+        old="        sources = self._still_readable(user_record, object_type, source_ids, context)\n",
         new="        sources = list(source_ids)\n",
         tests=["tests/integration/test_object_sets_evaluation.py::"
                "TestARowTheCallerCannotSeeNeverAppears::test_only_the_sources_that_pass_the_check_are_followed"],
@@ -9417,12 +9417,13 @@ CONTROLS = [
         tests=['tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_in_matches_by_lookup_not_by_scanning_every_value'],
     ),
     Control(
-        describes='v2 sets: the rows the leaves of one request produce are capped in total and refused',
+        describes='v2 sets: what the leaves of one request may cost is capped in total and refused before it runs',
         path='core/ontology/object_sets.py',
-        old='        if self.scanned > MAX_SCANNED_ROWS:\n',
-        new='        if False:\n',
-        tests=['tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_rows_considered_are_counted_across_every_leaf',
-               'tests/integration/test_api_v2.py::TestWhatAnErrorMayReveal::test_a_request_that_reads_too_many_objects_is_refused_not_cut_short'],
+        old='    if _cost(node) > MAX_SCANNED_ROWS:\n',  # noqa: E501
+        new='    if False:\n',
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_the_budget_is_charged_from_the_shape_before_anything_runs',
+               'tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_a_static_leaf_costs_its_keys',
+               'tests/integration/test_api_v2.py::TestWhatAnErrorMayReveal::test_a_request_that_reads_too_many_objects_is_refused_not_cut_short'],  # noqa: E501
     ),
     Control(
         describes='v2 sets: a forward search-around reads its sources as one logged bulk read',
@@ -9465,18 +9466,19 @@ CONTROLS = [
     Control(
         describes='trace: a refusal by the row check is not shown to the caller',
         path='core/intermediate_layer/audit.py',
-        old='            if entry.get("mac_allowed") is False:\n                return None\n',  # noqa: E501
-        new='            if False:\n                return None\n',
+        old='entry.get("mac_allowed") is False or ',  # noqa: E501
+        new='',
         tests=['tests/integration/test_a_trace_names_nothing_refused.py::TestTheReader::test_a_refusal_by_the_row_check_is_not_shown',
                'tests/integration/test_a_trace_names_nothing_refused.py::TestEveryWayOfTouchingAHiddenRowLeavesNoNameInTheTrace::test_a_scan_of_a_type',
                'tests/integration/test_a_trace_names_nothing_refused.py::TestThroughTheRoute::test_a_v1_search_and_a_v1_get_of_a_hidden_row'],  # noqa: E501
     ),
     Control(
-        describes='trace: a refusal by the grants alone is shown without its object id',
+        describes='trace: a refusal by the grants alone is not shown either',
         path='core/intermediate_layer/audit.py',
-        old='            return {**entry, "object_id": None}\n',  # noqa: E501
-        new='            return entry\n',
-        tests=['tests/integration/test_a_trace_names_nothing_refused.py::TestTheReader::test_a_refusal_by_the_grants_alone_is_shown_without_its_id'],  # noqa: E501
+        old=' or not entry.get("rbac_allowed")',  # noqa: E501
+        new='',
+        tests=['tests/integration/test_a_trace_names_nothing_refused.py::TestTheReader::test_a_refusal_by_the_grants_alone_is_not_shown_either',
+               'tests/integration/test_a_trace_names_nothing_refused.py::TestARefusalOnALinkLeavesNoSignInTheTrace::test_the_trace_of_a_masked_link_read_has_no_refusal_and_no_flag'],  # noqa: E501
     ),
     Control(
         describes='trace: a bulk-read record carries no count of what was denied or considered',
@@ -9484,6 +9486,20 @@ CONTROLS = [
         old='if key not in ("denied", "denied_object_ids", "considered")}',  # noqa: E501
         new='if key not in ("x",)}',
         tests=['tests/integration/test_a_trace_names_nothing_refused.py::TestTheReader::test_a_bulk_record_counts_nothing_hidden'],  # noqa: E501
+    ),
+    Control(
+        describes='trace: no returned record carries mac_allowed or rbac_allowed',
+        path='core/intermediate_layer/audit.py',
+        old='if key not in ("mac_allowed", "rbac_allowed")}',  # noqa: E501
+        new='if key not in ("x",)}',
+        tests=['tests/integration/test_a_trace_names_nothing_refused.py::TestTheReader::test_no_record_carries_the_flags'],  # noqa: E501
+    ),
+    Control(
+        describes='trace: a bulk read that granted nothing is not returned',
+        path='core/intermediate_layer/audit.py',
+        old='            if int(entry.get("considered") or 0) - int(entry.get("denied") or 0) <= 0:\n',  # noqa: E501
+        new='            if False:\n',
+        tests=['tests/integration/test_a_trace_names_nothing_refused.py::TestTheReader::test_a_bulk_read_that_granted_nothing_is_not_returned'],  # noqa: E501
     ),
     Control(
         describes='trace: a record of any other stage is not returned to the caller',
@@ -9508,12 +9524,11 @@ CONTROLS = [
         tests=['tests/integration/test_object_sets_hidden_links.py::TestNeverASilentCut::test_a_cut_of_the_callers_own_answer_is_reported'],  # noqa: E501
     ),
     Control(
-        describes='v2 sets: the request budget counts what a leaf looked at, not what survived',
+        describes='v2 sets: a search leaf is charged the scan ceiling from the shape of the set',
         path='core/ontology/object_sets.py',
-        old='        self.scanned += max(outcome.considered, len(ids))\n',  # noqa: E501
-        new='        self.scanned += len(ids)\n',
-        tests=['tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_rows_considered_are_counted_across_every_leaf',
-               'tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_a_caller_who_sees_nothing_is_still_stopped'],  # noqa: E501
+        old='        return int(mediator_module.MAX_SEARCH_SCAN)\n    if isinstance(node, Static):\n',  # noqa: E501
+        new='        return 0\n    if isinstance(node, Static):\n',
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_the_budget_is_charged_from_the_shape_before_anything_runs'],  # noqa: E501
     ),
     Control(
         describes='v2 sets: a link equality narrows the search by the targets the caller may read only',

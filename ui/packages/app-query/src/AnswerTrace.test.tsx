@@ -19,8 +19,6 @@ beforeEach(() => {
       object_type: 'Customer',
       object_id: 'c1',
       action: 'read',
-      rbac_allowed: true,
-      mac_allowed: true,
       timestamp: '2026-09-09T10:00:00Z',
     },
   ])
@@ -47,49 +45,20 @@ describe('AnswerTrace', () => {
     expect(screen.getByText('c1')).toBeInTheDocument()
   })
 
-  it('marks a REFUSED read rather than hiding it', async () => {
+  it('has no column for a refusal, because the trace holds none', async () => {
     /**
-     * The interesting row. It says the agent tried to look at
-     * something and was refused -- which is the authorization working,
-     * and exactly what someone auditing wants to see rather than have
-     * hidden.
+     * The route returns what was GRANTED and nothing else: a refusal in
+     * any form would show a caller which of their guesses touched
+     * something hidden from them. So there is no "Allowed" column and
+     * no "refused" tag to render.
      */
-    getRequestTrace.mockResolvedValue([
-      {
-        object_type: 'Customer',
-        object_id: 'c9',
-        action: 'read',
-        rbac_allowed: false,
-        mac_allowed: null,
-        timestamp: '2026-09-09T10:00:00Z',
-      },
-    ])
     render(<AnswerTrace {...props} />)
 
     fireEvent.click(screen.getByRole('button', { name: /Every field it read/ }))
 
-    expect(await screen.findByText('refused')).toBeInTheDocument()
-  })
-
-  it('treats a MAC denial as refused too', async () => {
-    // rbac_allowed true and mac_allowed false is a real combination:
-    // the role permits the field, the security value does not permit
-    // the row. Showing it as allowed would be wrong.
-    getRequestTrace.mockResolvedValue([
-      {
-        object_type: 'Customer',
-        object_id: 'c9',
-        action: 'read',
-        rbac_allowed: true,
-        mac_allowed: false,
-        timestamp: '2026-09-09T10:00:00Z',
-      },
-    ])
-    render(<AnswerTrace {...props} />)
-
-    fireEvent.click(screen.getByRole('button', { name: /Every field it read/ }))
-
-    expect(await screen.findByText('refused')).toBeInTheDocument()
+    await screen.findByText('Customer')
+    expect(screen.queryByText('Allowed')).toBeNull()
+    expect(screen.queryByText('refused')).toBeNull()
   })
 
   it('does not refetch when closed and reopened', async () => {

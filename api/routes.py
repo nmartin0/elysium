@@ -6678,8 +6678,6 @@ class AccessTraceEntry(BaseModel):
     object_type: str
     object_id: str | None = None
     action: str
-    rbac_allowed: bool
-    mac_allowed: bool | None = None
     timestamp: str
 
 
@@ -6689,7 +6687,10 @@ def request_trace_route(request_id: str, request: Request,
     """What was read while serving one of YOUR requests.
 
     The trust story for putting an agent over sensitive data: an
-    answer arrives and this says what it was built from.
+    answer arrives and this says what it was built from. It lists what
+    the caller was GRANTED and nothing they were refused: a refusal, in
+    any form, would tell them which of their guesses touched something
+    they cannot see (core/intermediate_layer/audit.py).
 
     OWNERSHIP IS ENFORCED IN THE READER, not here. A route-level check
     would be a second place for the rule to live, and the reader is
@@ -6709,8 +6710,6 @@ def request_trace_route(request_id: str, request: Request,
             "object_id": (None if entry.get("object_id") is None
                           else str(entry.get("object_id"))),
             "action": entry.get("action", ""),
-            "rbac_allowed": bool(entry.get("rbac_allowed")),
-            "mac_allowed": entry.get("mac_allowed"),
             "timestamp": entry.get("timestamp", ""),
         }
         for entry in entries

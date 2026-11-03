@@ -218,7 +218,7 @@ class TestItStillReturnsTheSameAnswers:
         with open(log, "a") as f:
             for i in range(20):
                 f.write(json.dumps({
-                    "user_id": "alice", "request_id": "req-abc",
+                    "user_id": "alice", "request_id": "req-abc", "mac_allowed": True, "rbac_allowed": True,
                     "object_type": "Customer", "object_id": f"t{i}",
                 }) + "\n")
 
@@ -244,7 +244,7 @@ class TestItStillReturnsTheSameAnswers:
             f.write("\n" * 100)
             for i in range(3):
                 f.write(json.dumps({
-                    "user_id": "alice", "request_id": "req-abc",
+                    "user_id": "alice", "request_id": "req-abc", "mac_allowed": True, "rbac_allowed": True,
                     "object_type": "Customer", "object_id": f"t{i}",
                 }) + "\n")
 

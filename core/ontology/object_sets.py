@@ -70,6 +70,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.filters import FieldFilter
+from core.ontology import mediator as mediator_module
 from core.ontology.field_types import coerce
 from core.ontology.mediator import SearchOutcome
 from core.ontology.schema import (
@@ -97,10 +98,10 @@ MAX_IN_VALUES = 1000
 #: shape this closes.
 MAX_TOTAL_IN_VALUES = 2000
 MAX_STATIC_KEYS = 10_000
-#: Objects the leaves of one request (base, static, searchAround) may
-#: produce in total, across all nodes. Each leaf is bounded by the
-#: mediator's own scan ceiling; this bounds their SUM, and a request over
-#: it is refused, never silently cut short.
+#: What the leaves of one request may cost in total, charged BEFORE it runs
+#: from the shape of the set alone (see _cost): a search leaf is worth the
+#: scan ceiling, a static leaf its keys. A request over it is refused, never
+#: silently cut. Nothing about the budget may depend on the data.
 MAX_SCANNED_ROWS = 50_000
 #: The longest text a filter value may be.
 MAX_VALUE_LENGTH = 1000
@@ -727,17 +728,8 @@ class Run:
     #: Some leaf stopped at the scan ceiling with the row check part of its
     #: query, so what it returned is a truncated ANSWER. See take().
     truncated: bool = False
-    #: Objects the leaves have CONSIDERED so far (before the row check),
-    #: across the whole request.
-    scanned: int = 0
-
     def take(self, ids: list, outcome: SearchOutcome) -> list:
-        """Budgets what a leaf looked at, and refuses a set it could not
-        read completely.
-
-        THE BUDGET COUNTS CANDIDATES, not survivors: a caller who can see
-        nothing still costs a check_access() and an audit line per row the
-        search looked at.
+        """Refuses a set it could not read completely.
 
         NEVER A SILENT CUT. When the mediator stopped at its scan ceiling:
         if the row check was part of the query (a `field:` security column,
@@ -747,17 +739,17 @@ class Run:
         incomplete whatever its size, and reporting the mediator's flag
         would say how many hidden rows exist; the set is refused, in a
         sentence that names no count. v1 reports the mediator's flag as it
-        is; this is v2's rule, and v1 is unchanged.
+        is; this is v2's rule, and v1 is unchanged. (That the refusal
+        itself turns on whether a scan went past the ceiling is a limit v1
+        shares: BLOCKING.md, item 12.)
+
+        THE REQUEST BUDGET IS NOT SPENT HERE. It is charged by prepare(),
+        from the shape of the set alone, before any data is read.
         """
         if outcome.scan_truncated:
             if not outcome.row_check_pushed:
                 raise ObjectSetError(TOO_LARGE_SENTENCE)
             self.truncated = True
-        self.scanned += max(outcome.considered, len(ids))
-        if self.scanned > MAX_SCANNED_ROWS:
-            raise ObjectSetError(
-                f"This request reads more than {MAX_SCANNED_ROWS} objects across its sets; "
-                f"narrow them with filters.", {"limit": MAX_SCANNED_ROWS})
         return ids
 
 
@@ -862,15 +854,41 @@ class _AroundStep(Prepared):
             context=run.context, outcome=outcome)), outcome)
 
 
+def _cost(node: ObjectSet) -> int:
+    """What evaluating a set may cost, in objects looked at, worked out from
+    its SHAPE ALONE: a search leaf costs the scan ceiling whatever it finds,
+    a static leaf costs its keys. Nothing here may depend on the data, or
+    the refusal would tell a caller what exists (a budget charged by what
+    each leaf considered refused a guessed id only if a hidden row had it)."""
+    if isinstance(node, Base):
+        return int(mediator_module.MAX_SEARCH_SCAN)
+    if isinstance(node, Static):
+        return len(node.primary_keys)
+    if isinstance(node, Filter):
+        return _cost(node.object_set)
+    if isinstance(node, SearchAround):
+        return _cost(node.object_set) + int(mediator_module.MAX_SEARCH_SCAN)
+    return sum(_cost(member) for member in node.object_sets)
+
+
 def prepare(node: ObjectSet, view: SchemaView) -> Prepared:
-    """Checks a parsed set against the caller's schema, reading no data."""
+    """Checks a parsed set against the caller's schema, reading no data, and
+    charges the request budget (MAX_SCANNED_ROWS) before anything runs."""
+    if _cost(node) > MAX_SCANNED_ROWS:
+        raise ObjectSetError(
+            f"This request may read more than {MAX_SCANNED_ROWS} objects across its sets; "
+            f"use fewer sets or narrow them.", {"limit": MAX_SCANNED_ROWS})
+    return _prepare(node, view)
+
+
+def _prepare(node: ObjectSet, view: SchemaView) -> Prepared:
     if isinstance(node, Base):
         view.require_type(node.object_type)
         return _BaseStep(node.object_type)
     if isinstance(node, Static):
         return _StaticStep(node.object_type, view.id_field(node.object_type), node.primary_keys)
     if isinstance(node, Filter):
-        child = prepare(node.object_set, view)
+        child = _prepare(node.object_set, view)
         fields: dict[str, FieldSpec] = {}
         predicate = compile_filter(node.where, view, child.object_type, fields)
         view.one_storage(child.object_type, list(fields))
@@ -878,9 +896,9 @@ def prepare(node: ObjectSet, view: SchemaView) -> Prepared:
             child = _BaseStep(child.object_type, *_pushdown(node.where, view, child.object_type))
         return _FilterStep(child, predicate, fields)
     if isinstance(node, SearchAround):
-        child = prepare(node.object_set, view)
+        child = _prepare(node.object_set, view)
         return _AroundStep(child, node.link, view.link(child.object_type, node.link))
-    members = [prepare(member, view) for member in node.object_sets]
+    members = [_prepare(member, view) for member in node.object_sets]
     if len({member.object_type for member in members}) != 1:
         raise ObjectSetError(f"A {node.kind} combines sets of ONE object type; these differ.")
     return _CombineStep(node.kind, members)

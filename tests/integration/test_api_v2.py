@@ -557,13 +557,13 @@ class TestWhatAnErrorMayReveal:
     def test_a_request_that_reads_too_many_objects_is_refused_not_cut_short(self, client, monkeypatch):
         from core.ontology import object_sets as sets
 
-        monkeypatch.setattr(sets, "MAX_SCANNED_ROWS", 8)
+        monkeypatch.setattr(sets, "MAX_SCANNED_ROWS", 15_000)
         login(client, "v2scanned")
         twice = {"type": "union", "objectSets": [TRANSACTIONS, TRANSACTIONS]}
 
         for path in ("objectSets/loadObjects", "objectSets/count"):
             response = post(client, path, {"objectSet": twice})
-            assert response.status_code == 400 and "more than 8 objects" in response.json()["detail"], path
+            assert response.status_code == 400 and "more than 15000 objects" in response.json()["detail"], path
         assert post(client, "objectSets/count", {"objectSet": TRANSACTIONS}).json()["count"] == 4
 
 

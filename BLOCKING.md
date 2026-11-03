@@ -2650,6 +2650,25 @@ as `/api`. Paging is `pageSize` (default 100, max 500) / `pageToken` /
 Errors are problem details with `errorName`, `errorInstanceId` (the request id)
 and `parameters`; denial is a uniform 404.
 
+*Known limits of the caller-facing reads, shared by v1 and v2, left as they are
+(third review, November 2026).* Two things a caller can still infer, both
+because they already hold for the existing search and trace:
+1. A scan that reaches the scan ceiling (`MAX_SEARCH_SCAN`) where the row check
+   could not be part of the query is reported by v1 as `scan_truncated` and
+   refused by v2 with a fixed sentence. Either way, whether a type has more rows
+   than the ceiling turns on rows the caller cannot see: one bit about the
+   total, not about any row. The proper fix is to page the scan past the ceiling
+   under a budget that does not depend on the data, so a set is either complete
+   or refused for a reason fixed by its shape.
+2. The timestamps of a request's trace. The trace now lists only what the caller
+   was granted, but each record carries a time, and a request that took longer
+   than its visible result explains is a signal. The proper fix is to round the
+   timestamps in the caller's trace (to the second, or to the request) or to omit
+   them.
+The request budget itself IS data-independent: `prepare()` charges each leaf from
+the shape of the set (a search leaf is worth the scan ceiling, a static leaf its
+keys) before anything runs.
+
 *Still to do in Phase 1:*
 1. The set kinds `reference` (a stored, named set; needs the store that replaces
    saved views and frozen sets) and `similarTo` (gated by its own grant). Text

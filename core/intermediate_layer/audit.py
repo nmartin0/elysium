@@ -279,26 +279,33 @@ class AuditLog:
         OWN request and no other: ANOTHER user's trace would disclose
         what that user looked at.
 
-        AND A TRACE NEVER NAMES WHAT THE CALLER WAS REFUSED. This
+        AND A TRACE SHOWS ONLY WHAT THE CALLER WAS GRANTED. This
         docstring used to say the entries name only ids the caller
         already read, which was false: check_access() writes one line
         per DENIED object, so a scan over a type, a static set of
         guessed ids or a filter on a link recorded the id (and the
         existence) of every hidden row it touched, and the caller read
-        them back here. The rule lives in this reader, because it is
-        what every caller goes through:
+        them back here. A refusal that keeps its type, its action or
+        its place in the sequence still tells the caller which of
+        several guesses hit something, so no refusal is kept in any
+        form. The rule lives in this reader, because it is what every
+        caller goes through:
 
-          - an access_check refused by the ROW check (mac_allowed False)
-            is omitted: it can only describe an object the caller may
-            not see;
-          - one refused by the grants alone (the object passed the row
-            check, so the caller can see it) stays, as a refusal, WITHOUT
-            its object id;
-          - a bulk-read record loses its list and count of denied ids and
-            the count considered, both of which count hidden rows;
+          - an access_check that was refused, by the row check or by
+            the grants, is omitted, and an access_check that remains
+            carries neither mac_allowed nor rbac_allowed (every one
+            returned was granted, so the flags say nothing);
+          - a bulk-read record is returned only when it granted at
+            least one object, and without its list or count of denied
+            ids or the count considered, all of which count hidden rows;
           - no other record is returned.
 
-        The full entries stay in the audit log, for administrators.
+        The full lines stay in the audit log FILE (JSONL), which an
+        operator reads on the host; no route serves them.
+
+        What remains of a record is its timestamp, which can still show
+        that a request took longer than its visible result explains
+        (BLOCKING.md, item 12).
 
         SCANNED BACKWARDS, WITH A CAP, and that is the design decision
         rather than an optimisation. The log is append-only JSONL, so
@@ -368,12 +375,13 @@ class AuditLog:
         # log had before stages were named).
         stage = entry.get("stage", "access_check")
         if stage == "access_check":
-            if entry.get("mac_allowed") is False:
+            if entry.get("mac_allowed") is False or not entry.get("rbac_allowed"):
                 return None
-            if entry.get("rbac_allowed"):
-                return entry
-            return {**entry, "object_id": None}
+            return {key: value for key, value in entry.items()
+                    if key not in ("mac_allowed", "rbac_allowed")}
         if stage == "bulk_read":
+            if int(entry.get("considered") or 0) - int(entry.get("denied") or 0) <= 0:
+                return None
             return {key: value for key, value in entry.items()
                     if key not in ("denied", "denied_object_ids", "considered")}
         return None
