@@ -1,5 +1,4 @@
 import * as Cesium from 'cesium';
-import { STUBBED_LAYER_IDS } from './layerState.js';
 
 /**
  * Mirrors `KEYLESS_TERRAIN_STUB` in maps/terrain.js (kept here so the data
@@ -588,6 +587,14 @@ export function registerDynamicCredit(viewer, credit) {
 }
 
 /**
+ * Mirrors `STUBBED_LAYER_IDS` in layerState.js (kept here so the data credits
+ * do not import the layer-state module, which other packages own): a credit
+ * keyed by one of these ids is not shown. Keep the two lists the same;
+ * ghostMapsStub.test.mjs checks that the S2 credit is not shown.
+ */
+const STUBBED_CREDIT_KEYS = ['s2-ghostmaps'];
+
+/**
  * Register every per-layer data credit into the viewer's credit display.
  * Idempotent: safe to call once at init. Credits are static and always
  * present in the "Data attribution" popover.
@@ -599,7 +606,7 @@ export function registerDataCredits(viewer, credits = DATA_CREDITS) {
     return;
   }
   for (const { key, html } of credits) {
-    if (STUBBED_LAYER_IDS.includes(key)) continue;
+    if (STUBBED_CREDIT_KEYS.includes(key)) continue;
     // The Re:Earth terrain is stubbed off, so it is not credited (FORK.md).
     if (key === 'reearth-terrain' && REEARTH_TERRAIN_CREDIT_STUBBED) continue;
     // showOnScreen=false → lives in the expandable "Data attribution" popover,
