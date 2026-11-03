@@ -786,6 +786,15 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
 
     app.include_router(router, prefix="/api")
 
+    # THE STANDARD, VERSIONED READ SURFACE (api/v2), beside the routes
+    # above and not instead of them. Same session cookie, same CSRF
+    # check, same generation pin; its errors are problem details, and
+    # only for paths under /api/v2/.
+    from api.v2 import install_problem_handlers
+    from api.v2 import router as v2_router
+    app.include_router(v2_router, prefix="/api/v2")
+    install_problem_handlers(app)
+
     if UI_DIST_DIR.is_dir():
         # app.frontend() -- FastAPI's own, real, native SPA-serving
         # mechanism (shipped 2026-06-20, FastAPI 0.138.0; confirmed

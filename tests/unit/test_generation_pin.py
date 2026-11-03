@@ -179,3 +179,27 @@ def test_the_one_read_past_the_pin_stays_one():
 
     locked = source.split("with _role_change_lock(request):", 1)[1].split("\ndef ", 1)[0]
     assert "latest_generation(request)" in locked
+
+
+def test_v2_routes_read_the_pin_rather_than_app_state():
+    # The same guard for the standard read surface. Every module in
+    # api/v2 takes its generation from api.v2.context.call, which takes it
+    # from the pin; ANY read of app.state.generation here, and any of the
+    # five derived objects, would reopen the torn read.
+    import re
+    from pathlib import Path
+
+    package = Path(__file__).resolve().parent.parent.parent / "api" / "v2"
+    modules = sorted(package.glob("*.py"))
+    assert {"context.py", "objects.py", "object_sets.py", "schema.py"} <= {m.name for m in modules}
+
+    for module in modules:
+        source = module.read_text()
+        assert "app.state.generation" not in source, (
+            f"api/v2/{module.name} reads app.state.generation; use the pinned generation"
+        )
+        assert "latest_generation" not in source, f"api/v2/{module.name} reaches past the pin"
+        for attribute in ("config", "mediator", "write_mediator", "loop", "synthesis_client"):
+            assert not re.search(rf"app\.state\.{attribute}\b(?!_)", source), (
+                f"api/v2/{module.name} reads app.state.{attribute} directly"
+            )

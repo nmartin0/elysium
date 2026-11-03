@@ -681,3 +681,8 @@ rebuild_unknown  # RetypeResponse.rebuild_unknown, read by the browser
 rebuild_owed  # MirrorStateResponse / MirrorTableState / MirrorObjectState fields (R2), read by the Mirror panel
 rebuild_owed_unknown  # MirrorStateResponse.rebuild_owed_unknown (R2), read by the Mirror panel
 broken_catalog  # a pytest fixture taken as a parameter for its effect (tests/integration/test_retype_from_the_ui.py)
+
+# /api/v2, slice 1 (3 November): FastAPI routes, reached through their decorators.
+get_schema  # GET /api/v2/schema
+list_objects  # GET /api/v2/objects/{type}
+load_objects  # POST /api/v2/objectSets/loadObjects

@@ -2119,6 +2119,66 @@ class DataMediator:
         linking to the same target should yield it once.
         """
         source_ids = self.search_object(user_record, object_type, conditions)
+        return self._follow_link(user_record, object_type, source_ids, link_field, context, outcome)
+
+    @_security_scoped
+    def search_around_from(self, user_record: UserRecord, object_type: str, source_ids: list,
+                           link_field: str, context: RequestContext | None = None,
+                           outcome: "SearchOutcome | None" = None) -> list:
+        """search_around() from sources the caller NAMES rather than
+        describes: the object-set algebra (core/ontology/object_sets.py)
+        has already evaluated a set and wants its far side.
+
+        THE SOURCES ARE CHECKED AGAIN HERE, not trusted. A reverse link is
+        resolved from the other table in one batch, without reading each
+        source, so a source the caller may not see would still yield the
+        targets it links to. Ids handed in by a caller are therefore only
+        ever a request: the ones that still pass check_access() are the
+        sources, and the rest vanish as they would from a search.
+        """
+        sources = self._still_readable(user_record, object_type, source_ids, context)
+        return self._follow_link(user_record, object_type, sources, link_field, context, outcome)
+
+    def _still_readable(self, user_record: UserRecord, object_type: str, object_ids: list,
+                        context: RequestContext | None = None) -> list:
+        """The ids, in order, that the caller may read today: the same
+        deletion filter and the same per-object check_access() that
+        search_object() ends with, for ids that arrived from somewhere
+        other than a search."""
+        candidates = self._without_deleted(object_type, list(dict.fromkeys(object_ids)))
+        self._prefetch_security_values(object_type, candidates)
+        action = f"read:{object_type}"
+        return [object_id for object_id in candidates
+                if check_access(self, user_record, self.roles, object_type, object_id, action,
+                                context, part_of_bulk_read=True)]
+
+    @_security_scoped
+    def field_values_for_ids(self, user_record: UserRecord, object_type: str, object_ids: list,
+                             field_names: list[str],
+                             context: RequestContext | None = None) -> dict:
+        """{str(id): {field: value}} for the ids the caller may read.
+
+        THE PUBLIC FORM OF _read_fields_for_ids, which trusts its ids. This
+        one does not: every id passes check_access() here, so a caller
+        cannot read a value of an object it could not have searched for,
+        whatever it was handed. Fields the caller has no read grant on are
+        left out of every row, as _read_fields_for_ids leaves them. An id
+        with no row is absent. Plain stored columns only: a derived,
+        enriched or predicted field is computed per object by get_field()
+        and is not one of these.
+        """
+        allowed = self._still_readable(user_record, object_type, object_ids, context)
+        if not allowed or not field_names:
+            return {}
+        rows = self._read_fields_for_ids(user_record, object_type, set(allowed), field_names)
+        return {str(object_id): row for object_id, row in rows.items()}
+
+    def _follow_link(self, user_record: UserRecord, object_type: str, source_ids: list,
+                     link_field: str, context: RequestContext | None,
+                     outcome: "SearchOutcome | None") -> list:
+        """The far side of a link from sources that have ALREADY passed
+        check_access(): search_around()'s body, shared with
+        search_around_from()."""
         if not source_ids:
             return []
 
@@ -2492,8 +2552,15 @@ class DataMediator:
                            group_by: str | None, measures: list[dict],
                            outcome: "SearchOutcome | None" = None, query_text: str = "",
                            period: "str | None" = None, duration: "str | None" = None,
-                           time_zone: "str | None" = None) -> dict:
+                           time_zone: "str | None" = None,
+                           members: "list | None" = None) -> dict:
         """SEVERAL MEASURES OVER ONE READ: {group: {name: value}}.
+
+        `members`, when given, is the set to aggregate AS IDS (the
+        object-set algebra evaluates a set before asking for numbers over
+        it). They are checked again, not trusted: only those that still
+        pass check_access() are counted, and `conditions` and `query_text`
+        are then not consulted.
 
         Each measure is {"name", "aggregate", "field"} and is exactly what
         aggregate_by_field() computes for it alone -- aggregate_by_field
@@ -2593,7 +2660,10 @@ class DataMediator:
                                 length=None if duration is None else parse_duration(duration),
                                 zone=zone_named(time_zone), dated=declared == "date")
 
-        visible_ids = set(self._set_members(user_record, object_type, conditions, outcome, query_text))
+        if members is not None:
+            visible_ids = set(self._still_readable(user_record, object_type, members))
+        else:
+            visible_ids = set(self._set_members(user_record, object_type, conditions, outcome, query_text))
         if not visible_ids:
             return {}
 

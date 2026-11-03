@@ -9018,6 +9018,244 @@ CONTROLS = [
         new='            deprecation_lead_days=lead_days_from(None),',
         tests=["tests/unit/test_deprecation_alerts.py::TestTheSettingReachesTheLoadedConfiguration::test_a_declared_value_is_carried"],
     ),
+
+    # --- the standard read surface (core/ontology/object_sets.py, api/v2/) ---
+    Control(
+        describes="v2 sets: a source id handed to search-around is checked again, not trusted",
+        path="core/ontology/mediator.py",
+        old="        sources = self._still_readable(user_record, object_type, source_ids, context)\n",
+        new="        sources = list(source_ids)\n",
+        tests=["tests/integration/test_object_sets_evaluation.py::"
+               "TestARowTheCallerCannotSeeNeverAppears::test_only_the_sources_that_pass_the_check_are_followed"],
+    ),
+    Control(
+        describes="v2 sets: values are withheld for ids the caller cannot see",
+        path="core/ontology/mediator.py",
+        old="        allowed = self._still_readable(user_record, object_type, object_ids, context)\n",
+        new="        allowed = list(object_ids)\n",
+        tests=["tests/integration/test_object_sets_evaluation.py::"
+               "TestARowTheCallerCannotSeeNeverAppears::test_field_values_are_withheld_for_ids_the_caller_cannot_see"],
+    ),
+    Control(
+        describes="v2 sets: an aggregate over named members checks them again",
+        path="core/ontology/mediator.py",
+        old="            visible_ids = set(self._still_readable(user_record, object_type, members))\n",
+        new="            visible_ids = set(members)\n",
+        tests=["tests/integration/test_object_sets_evaluation.py::"
+               "TestAggregating::test_members_are_checked_again_by_the_mediator"],
+    ),
+    Control(
+        describes="v2 sets: a field that may only be discovered cannot be used",
+        path="core/ontology/object_sets.py",
+        old='        if info is None or info.get("readable") is not True:\n            raise _unknown_field(object_type, name)',  # noqa: E501
+        new='        if info is None:\n            raise _unknown_field(object_type, name)',
+        tests=["tests/integration/test_object_sets_evaluation.py::"
+               "TestAFieldTheCallerCannotReadIsIndistinguishableFromOneThatDoesNotExist::test_filtering",
+               "tests/integration/test_object_sets_evaluation.py::"
+               "TestAFieldTheCallerCannotReadIsIndistinguishableFromOneThatDoesNotExist::"
+               "test_sorting_selecting_and_measuring"],
+    ),
+    Control(
+        describes="v2 sets: a withheld field is refused in different words from an absent one",
+        path="core/ontology/object_sets.py",
+        old="            raise _unknown_field(object_type, name)\n        return info",
+        new='            raise (_unknown_field(object_type, name) if info is None\n'
+            '                   else ObjectSetError(f"Field {name!r} is not readable."))\n        return info',
+        tests=["tests/integration/test_object_sets_evaluation.py::"
+               "TestAFieldTheCallerCannotReadIsIndistinguishableFromOneThatDoesNotExist::test_filtering",
+               "tests/integration/test_api_v2.py::TestOneObject::"
+               "test_a_withheld_field_cannot_be_selected_and_is_the_same_400_as_a_missing_one"],
+    ),
+    Control(
+        describes="v2 sets: a type nobody may read is refused as a 404, as an unknown one is",
+        path="api/v2/loading.py",
+        old="    except ObjectSetNotFound:\n        raise not_found() from None",
+        new='    except ObjectSetNotFound:\n        raise invalid_argument("Unknown object type.") from None',
+        tests=["tests/integration/test_api_v2.py::TestOneObject::"
+               "test_unknown_hidden_and_denied_are_one_404_in_the_same_words",
+               "tests/integration/test_api_v2.py::TestObjectSets::"
+               "test_an_unknown_or_ungranted_type_in_a_set_is_the_same_404"],
+    ),
+    Control(
+        describes="v2 sets: a text operator on a non-text field is refused",
+        path="core/ontology/object_sets.py",
+        old='        if spec.data_type != "string" or spec.is_link:\n',
+        new="        if False:\n",
+        tests=["tests/integration/test_object_sets_evaluation.py::"
+               "TestOperatorsAgainstTheDeclaredType::"
+               "test_a_wrong_operator_or_value_is_refused_before_any_data_is_read"],
+    ),
+    Control(
+        describes="v2 sets: an ordering operator on a field with no order is refused",
+        path="core/ontology/object_sets.py",
+        old="    if node.operator != \"eq\" and (spec.is_link or spec.is_id or spec.data_type not in _ORDERED_TYPES):\n",  # noqa: E501
+        new="    if False:\n",
+        tests=["tests/integration/test_object_sets_evaluation.py::"
+               "TestOperatorsAgainstTheDeclaredType::"
+               "test_a_wrong_operator_or_value_is_refused_before_any_data_is_read"],
+    ),
+    Control(
+        describes="v2 sets: search-around follows declared links only",
+        path="core/ontology/object_sets.py",
+        old='        if info is None or info.get("readable") is not True or not is_link_field(info):\n',
+        new='        if info is None or info.get("readable") is not True:\n',
+        tests=["tests/integration/test_object_sets_evaluation.py::"
+               "TestOperatorsAgainstTheDeclaredType::test_search_around_follows_declared_links_only"],
+    ),
+    Control(
+        describes="v2 sets: a metric over a non-numeric field is refused",
+        path="core/ontology/object_sets.py",
+        old="            if spec.is_link or spec.data_type not in _NUMERIC_TYPES:\n",
+        new="            if False:\n",
+        tests=["tests/integration/test_object_sets_evaluation.py::"
+               "TestAggregating::test_a_metric_needs_a_readable_numeric_field"],
+    ),
+    Control(
+        describes="v2 sets: nesting depth is capped",
+        path="core/ontology/object_sets.py",
+        old="    if depth > MAX_SET_DEPTH:\n",
+        new="    if False:\n",
+        tests=["tests/unit/test_object_sets_parse.py::TestTheCaps::test_set_nesting_stops_at_the_depth_cap",
+               "tests/integration/test_api_v2.py::TestObjectSets::test_the_depth_cap_is_a_400"],
+    ),
+    Control(
+        describes="v2 sets: the node count of a request is capped",
+        path="core/ontology/object_sets.py",
+        old="        if self.left < 0:\n",
+        new="        if False:\n",
+        tests=["tests/unit/test_object_sets_parse.py::TestTheCaps::test_width_alone_cannot_make_a_request_huge"],
+    ),
+    Control(
+        describes="v2 sets: a static set's key count is capped",
+        path="core/ontology/object_sets.py",
+        old="        if len(keys) > MAX_STATIC_KEYS:\n",
+        new="        if False:\n",
+        tests=["tests/unit/test_object_sets_parse.py::TestTheCaps::test_a_static_set_is_capped"],
+    ),
+    Control(
+        describes="v2 sets: intersect keeps only what every set holds",
+        path="core/ontology/object_sets.py",
+        old="            return [object_id for key, object_id in first.items() if all(key in other for other in others)]\n",  # noqa: E501
+        new="            return list(first.values())\n",
+        tests=["tests/integration/test_object_sets_evaluation.py::TestTheSetAlgebra::"
+               "test_union_intersect_and_subtract_over_what_alice_sees"],
+    ),
+    Control(
+        describes="v2 sets: subtract removes what any later set holds",
+        path="core/ontology/object_sets.py",
+        old="        return [object_id for key, object_id in first.items() if not any(key in other for other in others)]\n",  # noqa: E501
+        new="        return list(first.values())\n",
+        tests=["tests/integration/test_object_sets_evaluation.py::TestTheSetAlgebra::"
+               "test_union_intersect_and_subtract_over_what_alice_sees"],
+    ),
+    Control(
+        describes="v2 sets: union includes the later sets",
+        path="core/ontology/object_sets.py",
+        old="                    merged.setdefault(str(object_id), object_id)\n",
+        new="                    pass\n",
+        tests=["tests/integration/test_object_sets_evaluation.py::TestTheSetAlgebra::"
+               "test_the_laws_hold_over_filters"],
+    ),
+    Control(
+        describes="v2 sets: the whole filter is applied again after the search",
+        path="core/ontology/object_sets.py",
+        old="        return [object_id for object_id in candidates if self.predicate(rows.get(str(object_id), {}))]\n",
+        new="        return candidates\n",
+        tests=["tests/integration/test_object_sets_evaluation.py::TestWhatTheOperatorsMean::test_each_operator"],
+    ),
+    Control(
+        describes="v2 sets: only text equality is handed to the search",
+        path="core/ontology/object_sets.py",
+        old='        if spec.data_type == "string" and all(isinstance(v, str) for v in values):\n',
+        new="        if all(isinstance(v, str) for v in values):\n",
+        tests=["tests/integration/test_object_sets_evaluation.py::TestThroughTheMediatorAndNowhereElse::"
+               "test_only_text_equality_is_pushed_down"],
+    ),
+    Control(
+        describes="v2 sets: nulls sort last",
+        path="core/ontology/object_sets.py",
+        old="        result = present + missing\n",
+        new="        result = missing + present\n",
+        tests=["tests/integration/test_object_sets_evaluation.py::TestOrdering::test_nulls_go_last_whichever_way_it_runs"],
+    ),
+    Control(
+        describes="v2 sets: a key sorts as a number when it is only digits",
+        path="core/ontology/object_sets.py",
+        old="        order = id_sort_key if spec.is_id else sort_key\n",
+        new="        order = sort_key\n",
+        tests=["tests/integration/test_object_sets_evaluation.py::TestOrdering::"
+               "test_ordering_by_the_key_is_numeric_not_lexical"],
+    ),
+    Control(
+        describes="v2 paging: a page token is bound to the caller it was issued to",
+        path="api/v2/paging.py",
+        old='    message = "\\0".join([user_id, query, payload]).encode()\n',
+        new='    message = "\\0".join([query, payload]).encode()\n',
+        tests=["tests/unit/test_v2_paging.py::test_another_caller_cannot_use_it",
+               "tests/integration/test_api_v2.py::TestPageTokens::test_another_user_cannot_use_my_token"],
+    ),
+    Control(
+        describes="v2 paging: a page token is bound to the query it pages through",
+        path="api/v2/paging.py",
+        old='    message = "\\0".join([user_id, query, payload]).encode()\n',
+        new='    message = "\\0".join([user_id, payload]).encode()\n',
+        tests=["tests/unit/test_v2_paging.py::test_another_query_cannot_use_it"],
+    ),
+    Control(
+        describes="v2 paging: the query a token is bound to includes the set and the ordering",
+        path="api/v2/loading.py",
+        old="    query = paging.fingerprint(raw_query, [(t.field, t.descending) for t in order_by], list(select))\n",
+        new="    query = paging.fingerprint()\n",
+        tests=["tests/integration/test_api_v2.py::TestPageTokens::"
+               "test_every_way_a_token_can_be_wrong_looks_the_same",
+               "tests/integration/test_api_v2.py::TestPageTokens::"
+               "test_the_set_posted_for_load_objects_binds_its_tokens_too"],
+    ),
+    Control(
+        describes="v2 paging: a page token expires",
+        path="api/v2/paging.py",
+        old="    if offset < 0 or (time.time() if now is None else now) > expires:\n",
+        new="    if offset < 0:\n",
+        tests=["tests/unit/test_v2_paging.py::test_a_token_expires",
+               "tests/integration/test_api_v2.py::TestPageTokens::test_an_expired_token_is_refused"],
+    ),
+    Control(
+        describes="v2 paging: a page size over the maximum is clamped",
+        path="api/v2/paging.py",
+        old="    return max(1, min(requested, MAX_PAGE_SIZE))\n",
+        new="    return max(1, requested)\n",
+        tests=["tests/unit/test_v2_paging.py::test_the_default_and_the_maximum_are_named_and_applied"],
+    ),
+    Control(
+        describes="v2 errors: the error instance id is the request id",
+        path="api/v2/context.py",
+        old="    request.state.v2_request_id = context.request_id\n",
+        new='    request.state.v2_request_id = "not-the-request-id"\n',
+        tests=["tests/integration/test_api_v2.py::TestErrorsAndTheRequestId::"
+               "test_the_error_instance_id_is_the_request_id_the_call_was_given"],
+    ),
+    Control(
+        describes="v2 routes: a call needs a signed-in session",
+        path="api/v2/context.py",
+        old="         user: UserRecord = Depends(get_current_user),\n",
+        new='         user: UserRecord = UserRecord("anyone", "us-west", "customer_service"),\n',
+        tests=["tests/integration/test_api_v2.py::TestBehindTheSameDoor::"
+               "test_every_route_needs_a_session_and_says_so_as_a_problem"],
+    ),
+    Control(
+        describes="v2 routes: a call is pinned to one generation, never read from app state",
+        path="api/v2/context.py",
+        old="    return Call(request=request, user=user, generation=generation, context=context)\n",
+        new="    return Call(request=request, user=user, generation=request.app.state.generation, context=context)\n",
+        tests=["tests/unit/test_generation_pin.py::test_v2_routes_read_the_pin_rather_than_app_state"],
+    ),
+    Control(
+        describes="v2 schema: the served schema passes through the filtered response model",
+        path="api/v2/schema.py",
+        old="        name: VisibleObjectTypeResponse.model_validate(definition).model_dump()\n",
+        new="        name: definition\n",
+        tests=["tests/integration/test_api_v2.py::TestTheSchema::test_no_storage_or_security_internals_are_served"],
+    ),
 ]
 
 

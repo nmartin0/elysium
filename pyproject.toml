@@ -439,7 +439,9 @@ type = "layers"
 # Middleware that imported a dependency would make the two orderable,
 # and they are not.
 layers = [
-    "app", "routes",
+    # v2 (the standard read surface) sits between app and routes: it reuses
+    # routes' response models for the schema, and routes never import it.
+    "app", "v2", "routes",
     "apps | auth_dependency | generation_dependency | reload | addon_servers | csrf_middleware | request_size_limit_middleware | generation_header_middleware | request_metrics_middleware | live_updates | timer_service | trigger_checks | reminders | deprecation_alerts",
 ]
 containers = ["api"]
@@ -465,6 +467,10 @@ layers = [
     # sits beside them: it reads only `deprecation`, and only the loader and
     # the timer handler read it.
     "removal | retype | deprecation_alerts",
+    # The object-set algebra (core/ontology/object_sets.py) is handed a
+    # mediator and asks it, never the reverse: it sits with the other
+    # things that read the mediator and nothing reads back but the API.
+    "object_sets",
     "who_can_see | used_by",
     "write_mediator",
     "mediator",
