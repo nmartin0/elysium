@@ -23,7 +23,8 @@ WHO MAY FORGET ONE: its author, or anyone who may change the object
 """
 
 from core.filters import FieldFilter
-from core.intermediate_layer.auth import UserRecord, authorize
+from core.intermediate_layer.auth import UserRecord
+from core.intermediate_layer.rbac import authorize
 from core.memory.store import Memory, MemoryStore, fingerprint
 from core.ontology.mediator import DataMediator
 

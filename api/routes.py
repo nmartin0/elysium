@@ -147,7 +147,8 @@ from core.deployment_loader import build_live_read_adapters
 from core.export import filename_for, to_csv
 from core.filters import FieldFilter, FilterError, as_equality_conditions, parse_filters
 from core.identity_decisions import APPROVED, REJECTED, MergeDecisionStore
-from core.intermediate_layer.auth import UserRecord, authorize
+from core.intermediate_layer.auth import UserRecord
+from core.intermediate_layer.rbac import authorize
 from core.lake_names import BRONZE_PREFIX
 from core.llm.synthesis_prompt import synthesize_insight
 from core.masked_review import agreement_pattern, masked_comparison, withheld_fields

@@ -78,7 +78,8 @@ from core.filters import agent_conditions, as_equality_conditions
 from core.functions.interface import Function
 from core.functions.ontology_access import OntologyAccess
 from core.functions.registry import get_enabled_functions
-from core.intermediate_layer.auth import UserRecord, authorize
+from core.intermediate_layer.auth import UserRecord
+from core.intermediate_layer.rbac import authorize
 from core.llm.agent_features import OFF as OFF_FEATURES
 from core.llm.agent_features import AgentFeatures
 from core.llm.agent_step_prompt import next_plan, next_step

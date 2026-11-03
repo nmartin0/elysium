@@ -35,7 +35,7 @@ def arm(app) -> None:
 
 
 def deprecation_timer(app, firing) -> None:
-    from core.intermediate_layer.auth import authorize
+    from core.intermediate_layer.rbac import authorize
     from core.notifications import NotificationStore
     from core.ontology.deprecation_alerts import MANAGE_PERMISSION, findings, send
     from core.ontology.used_by import used_by_field, used_by_link, used_by_type

@@ -25,7 +25,8 @@ import copy
 import dataclasses
 from typing import Any
 
-from core.intermediate_layer.auth import UserRecord, authorize
+from core.intermediate_layer.auth import UserRecord
+from core.intermediate_layer.rbac import authorize
 from core.ontology.classifications import LABEL_GRANT_PREFIX
 
 

@@ -26,7 +26,8 @@ a chain is where the surprises have been (F-19).
 
 from typing import Any
 
-from core.intermediate_layer.auth import UserRecord, authorize
+from core.intermediate_layer.auth import UserRecord
+from core.intermediate_layer.rbac import authorize
 from core.ontology.unrestricted import is_unrestricted
 
 READ = "read"

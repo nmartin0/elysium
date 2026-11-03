@@ -430,6 +430,53 @@ name = "authentication (core.auth) and authorization (core.intermediate_layer) s
 type = "independence"
 modules = ["core.auth", "core.intermediate_layer"]
 
+# Contract -- invariant I2, "authorization in one place". The low-level
+# role-grant check, core.intermediate_layer.rbac.authorize, is imported
+# by access_control (the access layer, which combines it with the
+# MAC check) and by the modules below. Nothing else may import it; a
+# new caller goes through check_access(), or through the mediators.
+#
+# These are the existing exceptions, each a direct role-grant check on
+# something that is not "an object that exists" (a type, a field, an
+# action, a module, a page), which check_access() does not answer. They
+# are a debt list, not a licence: the refactor plan retires them as the
+# API moves onto Depends(require(grant)) and the facades, and the list
+# must only ever shrink.
+#   api.routes             about 60 inline checks on manage:/read:/
+#                          execute:/write: grants in handlers
+#   api.app                which modules to offer a user (startup)
+#   api.deprecation_alerts who holds manage:deployment, to be alerted
+#   core.agent.agentic_loop the RBAC half of tool-call authorization
+#   core.modules           which modules a person is offered
+#   core.role_impact       what a role can read or only discover
+#   core.ontology.mediator / write_mediator / who_can_see
+#                          type and field discovery, action execute
+#                          grants: the mediators' own RBAC checks
+#   core.memory.guard      MemoryGuard's per-field and author checks
+# MAC (row-level) cannot be linted: DataMediator._security_allowed is a
+# method, reached only from access_control by convention.
+[[tool.importlinter.contracts]]
+name = "authorization has one decision point (only the access layer and listed exceptions import rbac)"
+type = "forbidden"
+# "core.*" and not "core": a source that contains the forbidden module
+# is not checked against it.
+source_modules = ["core.*", "api", "adapters"]
+forbidden_modules = ["core.intermediate_layer.rbac"]
+allow_indirect_imports = true
+ignore_imports = [
+    "core.intermediate_layer.access_control -> core.intermediate_layer.rbac",
+    "api.routes -> core.intermediate_layer.rbac",
+    "api.app -> core.intermediate_layer.rbac",
+    "api.deprecation_alerts -> core.intermediate_layer.rbac",
+    "core.agent.agentic_loop -> core.intermediate_layer.rbac",
+    "core.modules -> core.intermediate_layer.rbac",
+    "core.role_impact -> core.intermediate_layer.rbac",
+    "core.ontology.mediator -> core.intermediate_layer.rbac",
+    "core.ontology.write_mediator -> core.intermediate_layer.rbac",
+    "core.ontology.who_can_see -> core.intermediate_layer.rbac",
+    "core.memory.guard -> core.intermediate_layer.rbac",
+]
+
 # The remaining contracts below map the real, internal shape of each
 # multi-file package individually -- the three above cover the
 # BETWEEN-package picture; these cover WITHIN each package, mapped the
@@ -536,9 +583,9 @@ containers = ["core.ontology"]
 exhaustive = true
 
 [[tool.importlinter.contracts]]
-name = "core/intermediate_layer/ internal layering (access_control wraps auth; audit, policy_validation stay leaves)"
+name = "core/intermediate_layer/ internal layering (access_control wraps rbac wraps auth; audit, policy_validation stay leaves)"
 type = "layers"
-layers = ["access_control", "auth | audit | policy_validation"]
+layers = ["access_control", "rbac", "auth | audit | policy_validation"]
 containers = ["core.intermediate_layer"]
 exhaustive = true
 

@@ -119,7 +119,8 @@ from core.concurrency import ConcurrencyLimiter, KeyedLockManager
 from core.filters import FieldFilter, resolved, row_matches, validate_filter
 from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.audit import AuditLog
-from core.intermediate_layer.auth import UserRecord, authorize
+from core.intermediate_layer.auth import UserRecord
+from core.intermediate_layer.rbac import authorize
 from core.ontology.deprecation import shown_deprecation
 from core.ontology.derived_fields import compute, derivation_of, finished
 from core.ontology.enriched_fields import enrichment_of

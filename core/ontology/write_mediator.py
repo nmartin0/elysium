@@ -43,7 +43,8 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from core.intermediate_layer.access_control import check_access
 from core.intermediate_layer.audit import AuditLog
-from core.intermediate_layer.auth import UserRecord, authorize
+from core.intermediate_layer.auth import UserRecord
+from core.intermediate_layer.rbac import authorize
 from core.ontology.field_types import is_computed
 from core.ontology.interface import ExternalReadAdapter, ExternalWriteAdapter
 from core.ontology.mediator import DataMediator

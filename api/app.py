@@ -332,7 +332,7 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
         paths = getattr(_app.state, "runtime_paths", None)
         if paths is not None and getattr(_app.state, "generation", None) is not None:
             from api.addon_servers import Supervisor, wanted_from
-            from core.intermediate_layer.auth import authorize
+            from core.intermediate_layer.rbac import authorize
             from core.notifications import NotificationStore
 
             def offered_to(module) -> set[str]:

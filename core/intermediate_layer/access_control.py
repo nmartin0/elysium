@@ -47,7 +47,8 @@ Used by: core/ontology/mediator.py (every read), core/ontology/
          (every memory read)
 """
 
-from core.intermediate_layer.auth import UserRecord, authorize
+from core.intermediate_layer.auth import UserRecord
+from core.intermediate_layer.rbac import authorize
 from core.request_context import RequestContext
 
 

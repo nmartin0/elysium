@@ -82,7 +82,8 @@ from types import MappingProxyType
 
 from core.addons import AddonError, ServerSpec, parse_server
 from core.config import load_yaml
-from core.intermediate_layer.auth import UserRecord, authorize
+from core.intermediate_layer.auth import UserRecord
+from core.intermediate_layer.rbac import authorize
 from core.secret_references import expand_secrets
 
 #: The contract version the feed speaks (shell/core/src/contract.ts).
