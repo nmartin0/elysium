@@ -71,6 +71,7 @@ from core.mirror.mirror_adapter import MirrorReadAdapter
 from core.mirror.openlineage import validate_lineage_block
 from core.ontology.action_types import validate_action_types
 from core.ontology.bindings import TYPE_BINDING_KEYS, merge_bindings
+from core.ontology.deprecation_alerts import lead_days_from
 from core.ontology.derived_fields import (
     fill_result_types,
     refuse_rules_over_derived,
@@ -343,6 +344,10 @@ class DeploymentConfig:
     # may name. Decided 14 Oct: 256 unless a deployment says otherwise,
     # and never more than 1,024. `bulk_action_limit:` in config.yaml.
     bulk_action_limit: int = 256
+    # HOW MANY DAYS BEFORE A DEPRECATED ITEM'S `remove_after` DATE the people
+    # who manage the deployment are told. `deprecation_lead_days:` in
+    # config.yaml; default and reasoning in core/ontology/deprecation_alerts.py.
+    deprecation_lead_days: int = 30
     # THE SUB-APPS THIS DEPLOYMENT LOADS, as modules (BLOCKING.md item 3):
     # `modules.yaml`, or the five Elysium ships when it is absent. None
     # only for a config built by hand in a test, which loads none.
@@ -776,6 +781,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
                 _incremental_policies(data_silos_raw["data_silos"], schema_raw["object_types"])),
             max_tokens_per_query=_token_budget(config["agent"].get("max_tokens_per_query")),
             bulk_action_limit=_bulk_action_limit(config.get("bulk_action_limit")),
+            deprecation_lead_days=lead_days_from(config.get("deprecation_lead_days")),
             modules=load_modules(base_path),
             max_concurrent_requests=_default_concurrency(config),
             # FOUR HOURS by default, not fifteen minutes. Long enough

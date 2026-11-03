@@ -1715,6 +1715,7 @@ class DeploymentConfigResponse(BaseModel):
     max_tokens_per_query: int | None = None
     #: Decided 14 Oct: how many objects one bulk action may name.
     bulk_action_limit: int = 256
+    deprecation_lead_days: int = 30
     #: Formerly BLOCKING 6: classification labels decide field access.
     label_enforcement: bool = False
     #: R15: whether lineage events also go to a service. WHETHER, never
@@ -6609,6 +6610,7 @@ def deployment_config_route(request: Request,
         "agent_features": list(config.agent_features.names_on),
         "max_tokens_per_query": config.max_tokens_per_query,
         "bulk_action_limit": config.bulk_action_limit,
+        "deprecation_lead_days": config.deprecation_lead_days,
         "label_enforcement": config.label_enforcement,
         "lineage_service": bool(config.lineage.get("url")),
         "lineage_namespace": config.lineage.get("namespace") or "elysium",

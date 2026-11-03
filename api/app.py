@@ -308,6 +308,12 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
             # AND EVERY SCHEDULED config.yaml TRIGGER'S CHECK, set; the
             # same after each reload (api/reload.py).
             arm_declared_schedules(_app)
+            from api.deprecation_alerts import KIND as DEPRECATION_DATES
+            from api.deprecation_alerts import arm as arm_deprecation_dates
+            from api.deprecation_alerts import deprecation_timer
+
+            # THE DAILY LOOK AT `remove_after` DATES, on this same service.
+            arm_deprecation_dates(_app)
             from api.reminders import reminder_timer
             from api.trigger_checks import hold_timer, schedule_timer
             from core.reminders import KIND as REMINDER
@@ -316,6 +322,7 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
             clock = asyncio.create_task(run_timer_service(_app, {
                 TRIGGER_WINDOW: window_timer, REMINDER: reminder_timer,
                 HOLD_KIND: hold_timer, SCHEDULE_KIND: schedule_timer,
+                DEPRECATION_DATES: deprecation_timer,
             }))
         # ADD-ONS' OWN SERVERS (BLOCKING.md item 3, step 2.2): started,
         # watched and restarted by api/addon_servers.py, following the

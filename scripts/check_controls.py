@@ -8934,6 +8934,90 @@ CONTROLS = [
         new='        False\n        for field in arrow_schema',
         tests=[f"{T}::TestWhatHappensToStoredData::test_gold_is_rebuilt_and_its_publication_tags_restart"],
     ),
+    Control(
+        describes='deprecation alert: a date that has arrived counts as overdue, not still ahead',
+        path='core/ontology/deprecation_alerts.py',
+        old='        elif when <= today:',
+        new='        elif when < today:',
+        tests=['tests/unit/test_deprecation_alerts.py::TestWhichStage::test_the_stage_from_the_date'],
+    ),
+    Control(
+        describes='deprecation alert: a date that is not a date is a visible problem, not skipped',
+        path='core/ontology/deprecation_alerts.py',
+        old='        if when is None:\n            found.append(Finding(PROBLEM',
+        new='        if False:\n            found.append(Finding(PROBLEM',
+        tests=['tests/unit/test_deprecation_alerts.py::TestWhichStage::test_a_date_that_is_not_one_is_a_problem_not_silence_or_a_crash'],
+    ),
+    Control(
+        describes='deprecation alert: the lead window is the configured number of days',
+        path='core/ontology/deprecation_alerts.py',
+        old='<= timedelta(days=lead_days):',
+        new='<= timedelta(days=30):',
+        tests=['tests/unit/test_deprecation_alerts.py::TestWhichStage::test_the_window_is_the_config_value'],
+    ),
+    Control(
+        describes='deprecation alert: the default lead window is thirty days',
+        path='core/ontology/deprecation_alerts.py',
+        old='DEFAULT_LEAD_DAYS = 30',
+        new='DEFAULT_LEAD_DAYS = 7',
+        tests=['tests/unit/test_deprecation_alerts.py::TestLeadWindowSetting::test_absent_is_the_default'],
+    ),
+    Control(
+        describes='deprecation alert: a notice is written with a dedupe key, so a repeat is one notice',
+        path='core/ontology/deprecation_alerts.py',
+        old='summary, detail, dedupe_key=f"{finding.key}/{user_id}")',
+        new='summary, detail)',
+        tests=['tests/unit/test_deprecation_alerts.py::TestOncePerItemPerStagePerPerson::test_a_repeat_is_one_notice', 'tests/unit/test_deprecation_alerts.py::TestWhoIsToldAndWhere::test_only_active_holders_of_manage_deployment'],  # noqa: E501
+    ),
+    Control(
+        describes="deprecation alert: the dedupe key is per person, so one person's notice does not stand for another's",  # noqa: E501
+        path='core/ontology/deprecation_alerts.py',
+        old='dedupe_key=f"{finding.key}/{user_id}")',
+        new='dedupe_key=finding.key)',
+        tests=['tests/unit/test_deprecation_alerts.py::TestOncePerItemPerStagePerPerson::test_a_repeat_is_one_notice'],
+    ),
+    Control(
+        describes='deprecation alert: the dedupe key names the stage, so overdue is a second notice after the lead one',
+        path='core/ontology/deprecation_alerts.py',
+        old='return f"deprecation/{self.stage}/',
+        new='return f"deprecation/',
+        tests=['tests/unit/test_deprecation_alerts.py::TestOncePerItemPerStagePerPerson::test_the_next_stage_is_a_second_notice_and_a_moved_date_a_new_one'],
+    ),
+    Control(
+        describes='deprecation alert: only holders of manage:deployment are told',
+        path='api/deprecation_alerts.py',
+        old='            if authorize(directory.get_user_record(account["username"]), config.roles, MANAGE_PERMISSION):',  # noqa: E501
+        new='            if True:',
+        tests=['tests/unit/test_deprecation_alerts.py::TestWhoIsToldAndWhere::test_only_active_holders_of_manage_deployment'],
+    ),
+    Control(
+        describes='deprecation alert: a disabled account is not told',
+        path='api/deprecation_alerts.py',
+        old='        if account["disabled"]:\n            continue',
+        new='        if False:\n            continue',
+        tests=['tests/unit/test_deprecation_alerts.py::TestWhoIsToldAndWhere::test_only_active_holders_of_manage_deployment'],
+    ),
+    Control(
+        describes='deprecation alert: arming at start does not move a check already set',
+        path='api/deprecation_alerts.py',
+        old='        if timers.get(KIND, KEY) is None:',
+        new='        if True:',
+        tests=['tests/unit/test_deprecation_alerts.py::TestArming::test_set_once_daily_and_not_moved_by_a_restart'],
+    ),
+    Control(
+        describes='deprecation alert: the check runs on the existing timer service',
+        path='api/app.py',
+        old='                DEPRECATION_DATES: deprecation_timer,\n',
+        new='',
+        tests=['tests/unit/test_deprecation_alerts.py::test_the_app_runs_the_check_on_the_timer_service_it_already_has'],
+    ),
+    Control(
+        describes="deprecation alert: config.yaml's deprecation_lead_days reaches the loaded configuration",
+        path="core/deployment_loader.py",
+        old='            deprecation_lead_days=lead_days_from(config.get("deprecation_lead_days")),',
+        new='            deprecation_lead_days=lead_days_from(None),',
+        tests=["tests/unit/test_deprecation_alerts.py::TestTheSettingReachesTheLoadedConfiguration::test_a_declared_value_is_carried"],
+    ),
 ]
 
 

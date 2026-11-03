@@ -1496,6 +1496,27 @@ one Inbox. Built so far, each checked in a real browser:
   (the reason shows when someone tries to approve, in the Approvals panel
   and on the pending-write card, which already print a refusal's text),
   and holding writes that do not go through a proposal (none were found).
+  REMOVE_AFTER ALERT BUILT (3 November, core/ontology/deprecation_alerts.py,
+  api/deprecation_alerts.py): a daily timer on the existing timer service
+  (api/timer_service.py; no new thread) sends a notice, kind "deprecation",
+  to every active account holding manage:deployment, once per item per
+  stage per person (dedupe key names item, stage, date and person): LEAD
+  when the date is within `deprecation_lead_days` (config.yaml, default 30,
+  0 to 365) and OVERDUE when it has arrived and the item is still in the
+  configuration. An unparseable date gives a "not a date" notice and a log
+  line, never silence or a crash. Nothing is removed. READINGS TAKEN, the
+  conservative ones: (1) ACTIONS ARE NOT COVERED -- action types have no
+  status or deprecation block, so there is no date to alert on; (2) the
+  notice carries only a COUNT of configuration references from the Used by
+  report, with no names, because a name in a notice reaches people who may
+  not be allowed to discover it; saved views, notes and the rest are not
+  counted, and it says so; (3) deprecation.py promises "the removal step"
+  will ask the operator to approve removal on the day; that is left as it
+  was -- the alert informs and the Schema screen's Remove is still the
+  person's action; (4) a changed date is a new notice, a reload does not
+  re-send, and an item removed before its date is simply not evaluated;
+  (5) dates are compared as UTC days. Not built: a UI badge or a banner,
+  email, and re-alerting an overdue item that stays overdue.
   A field declared later is not empty history:
   bronze keeps every column the source has. Order: add a field (built),
   then add a type with its binding picked from the source, then add a

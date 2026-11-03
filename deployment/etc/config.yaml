@@ -311,6 +311,14 @@ trusted_proxies: []
 #   sync_interval_hours: 24
 
 
+# HOW MANY DAYS BEFORE A DEPRECATED ITEM'S `remove_after` DATE the people
+# who hold manage:deployment are sent a notice (and again if the date
+# passes while the item is still there). Whole days, 0 to 365; 0 means
+# only the overdue notice. 30 IS THE DEFAULT. The notice only informs:
+# nothing is ever removed because a date arrived.
+# deprecation_lead_days: 30
+
+
 # WHAT ONE VALUE THAT WILL NOT COERCE COSTS: the row, or the table.
 #
 #   refuse      stop the whole table (the behaviour before this key
