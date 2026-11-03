@@ -21,10 +21,7 @@ function services() {
     'render',
     'recession',
   ];
-  return {
-    ...Object.fromEntries(names.map((name) => [name, {}])),
-    groundSnap: { createGroundSnap: () => ({ clear() {} }) },
-  };
+  return Object.fromEntries(names.map((name) => [name, {}]));
 }
 
 test('constructing independent flight layers performs no source request and isolates selection', () => {
@@ -60,9 +57,8 @@ test('flight state owns distinct mutable records, scratch objects and floor samp
     '_billboards',
     '_positionHistory',
     '_displayFloorState',
-    '_groundSnap',
     '_scratchCarto',
-    '_models',
+    '_cullPositions',
     'lifetime',
   ]) {
     assert.notEqual(first[key], second[key], key);

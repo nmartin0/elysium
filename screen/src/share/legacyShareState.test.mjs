@@ -99,7 +99,11 @@ test('the HAL example survives the round trip and shrinks to 39 characters', () 
     'flights',
     'satellites',
   ]);
-  assert.equal(state.layerState.options.flights.models3d, true);
+  // The link carries the retired 3D-model options (`f.e.1`); they are dropped.
+  assert.deepEqual(state.layerState.options.flights, {
+    selectedFlightsTrackingId: null,
+    selectedMilitaryTrackingId: null,
+  });
   assert.equal(state.layerState.options.wind.overlay, 'none');
   assert.deepEqual(
     state.panelState.specs.find((spec) => spec.id === 'cctv-panel'),
@@ -139,9 +143,17 @@ test('links from earlier long-form versions keep their historical meaning', () =
     [50, 1],
     'legacy bloom scale',
   );
-  // `l=f` without `e` is a v2 link with 3D models OFF; the codec writes that.
-  const off = fromLegacyShareState(parseLegacy('v=2&lat=1&lon=2&l=f'));
-  assert.equal(off.layerState.options.flights.models3d, false);
+  // The retired 3D-model options are dropped whether the link wrote them or not.
+  for (const hash of [
+    'v=2&lat=1&lon=2&l=f',
+    'v=2&lat=1&lon=2&l=f&lo=f.e.1_f.m.a',
+  ]) {
+    const opened = fromLegacyShareState(parseLegacy(hash));
+    assert.deepEqual(opened.layerState.options.flights, {
+      selectedFlightsTrackingId: null,
+      selectedMilitaryTrackingId: null,
+    });
+  }
 });
 
 test('a tracking selection becomes a thing view and back', () => {

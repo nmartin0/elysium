@@ -56,12 +56,10 @@ export function createFlightSnapshotRenderer({
         if (dupe) {
           flightState._billboardCollection.remove(dupe);
           flightState._billboards.delete(icao24);
-          rendering._releaseModel(icao24); // military-suppression: drop any 3D model too
           records.forget(icao24);
           flightState._cullPositions.delete(icao24);
           flightState._positionHistory.delete(icao24);
           flightState._displayCourse.delete(icao24);
-          flightState._groundSnap.forget(icao24);
         }
         continue;
       }
@@ -81,8 +79,6 @@ export function createFlightSnapshotRenderer({
         meta.rawLat,
         meta.renderAltitudeM,
       );
-      // Either flip retires the previous one-shot ground sample.
-      if (groundFlipped) flightState._groundSnap.forget(icao24);
       flightState._cullPositions.set(
         icao24,
         meta.renderAltitudeM < 10
@@ -127,10 +123,7 @@ export function createFlightSnapshotRenderer({
         // surface-clamped via the surfaceM chain, so the ground leg drapes).
         if (isTracked) tracking._appendTrailFix(position.clone());
       } else {
-        const modelOwnsGroundVisual = rendering._modelOwnsVisual(icao24);
-        if (!modelOwnsGroundVisual) {
-          liftRepeatedGroundFix(newest, position, meta.onGround);
-        }
+        liftRepeatedGroundFix(newest, position, meta.onGround);
         // Apply fresh kinematics only from a forward synthetic fix. Mutating
         // the historical fix reprojects the entire stale interval and snaps
         // the rendered aircraft when course or speed changes late.
@@ -168,15 +161,9 @@ export function createFlightSnapshotRenderer({
             ._fleetBillboardColor(icao24)
             .withAlpha(cyberSonarBaseAlpha(bb));
         }
-        if (
-          prevMeta?.klass !== meta.klass ||
-          groundFlipped
-        ) {
+        if (prevMeta?.klass !== meta.klass || groundFlipped) {
           rendering._applyFleetBillboardPresentation(icao24, bb);
         }
-        // Poll-path class change (category updates): same model resync rule
-        // as the enrichment path — the class's GLB/scale may have changed.
-        if (prevMeta?.klass !== meta.klass) rendering._syncModelToClass(icao24);
       } else {
         // Start where the fleet pass will draw it: the fleet renders behind
         // real time, so a fresh contact's displayed position is its fix
@@ -191,7 +178,6 @@ export function createFlightSnapshotRenderer({
               icao24,
               flightState.records.data.get(icao24) || meta,
               delayed,
-              rendering._modelOwnsVisual(icao24),
             )) ||
           position;
         const bb = flightState._billboardCollection.add({
@@ -269,12 +255,10 @@ export function createFlightSnapshotRenderer({
 
       flightState._billboardCollection.remove(bb);
       flightState._billboards.delete(icao24);
-      rendering._releaseModel(icao24); // aged-out aircraft: drop its 3D model (no orphan / cap leak)
       records.forget(icao24);
       flightState._cullPositions.delete(icao24);
       flightState._positionHistory.delete(icao24);
       flightState._displayCourse.delete(icao24);
-      flightState._groundSnap.forget(icao24);
       flightState._displayFloorState.delete(icao24);
     }
 
@@ -301,14 +285,10 @@ export function createFlightSnapshotRenderer({
     warmGroundFloor(floorWarmPoints);
     // Round 4: sample the RENDERED mesh for those same cells (one-shot per
     // cell, budget-capped, viewer-proximate, google-3d regime only). Own
-    // billboards/models are excluded so a vertical probe can't land on an
-    // aircraft instead of the pavement.
+    // billboards are excluded so a vertical probe can't land on an aircraft
+    // instead of the pavement.
     sampleMeshFloorCells(flightState._viewer?.scene, floorWarmPoints, {
-      excludeObjects: [
-        ...flightState._billboards.values(),
-        ...flightState._models.values(),
-        flightState._trackedModel,
-      ].filter(Boolean),
+      excludeObjects: [...flightState._billboards.values()],
       viewerLat: viewerLatDeg,
       viewerLon: viewerLonDeg,
     });

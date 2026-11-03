@@ -4,7 +4,6 @@ import * as Cesium from 'cesium';
 import {
   clampTrackedCameraPosition,
   trackedDisplayPositionForCamera,
-  trackedModelScaleForPixelCap,
 } from './trackedCamera.js';
 
 test('tracked camera origin crossing returns to the prior side at the minimum range', () => {
@@ -42,33 +41,6 @@ test('tracked camera leaves a safe approach unchanged', () => {
   const before = Cesium.Cartesian3.clone(camera.position);
   assert.equal(clampTrackedCameraPosition(camera, previous, 150), false);
   assert.deepEqual(camera.position, before);
-});
-
-test('tracked model keeps calibrated scale when it projects below the pixel cap', () => {
-  const scale = trackedModelScaleForPixelCap({
-    baseScale: 24,
-    nativeRadiusM: 1.43,
-    rangeM: 1000,
-    viewportHeightPx: 800,
-    fovyRad: Math.PI / 3,
-    maximumPixelSize: 104,
-  });
-  assert.equal(scale, 24);
-});
-
-test('tracked model shrinks smoothly when close enough to exceed the pixel cap', () => {
-  const scale = trackedModelScaleForPixelCap({
-    baseScale: 24,
-    nativeRadiusM: 1.43,
-    rangeM: 150,
-    viewportHeightPx: 800,
-    fovyRad: Math.PI / 3,
-    maximumPixelSize: 104,
-  });
-  const focalLengthPx = 800 / (2 * Math.tan(Math.PI / 6));
-  const projectedDiameterPx = (2 * 1.43 * scale * focalLengthPx) / 150;
-  assert.ok(scale < 24);
-  assert.ok(Math.abs(projectedDiameterPx - 104) < 1e-9);
 });
 
 test('tracked camera prefers the already-rendered display cache', () => {

@@ -11,15 +11,11 @@ import { createEvidence } from './evidence.js';
 import { createTesting } from './testing.js';
 import { createQueries } from './queries.js';
 /** Compose one civil-flight layer with application-owned scene services. */
-export function createCivilFlightLayer({
-  source,
-  services,
-  resolveAsset = (url) => url,
-} = {}) {
+export function createCivilFlightLayer({ source, services } = {}) {
   const flightState = createFlightState({ source, services });
   const parts = {};
   const layer = {};
-  const context = { flightState, services, parts, layer, resolveAsset };
+  const context = { flightState, services, parts, layer };
   parts.rendering = createRendering(context);
   parts.motion = createMotion(context);
   parts.tracking = createTracking(context);
@@ -62,4 +58,3 @@ export function createCivilFlightLayer({
   Object.defineProperty(layer, 'testing', { value: parts.testing });
   return layer;
 }
-export { TRACKED_MODEL_MAX_PX } from './policy.js';

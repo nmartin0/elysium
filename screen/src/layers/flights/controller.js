@@ -1,12 +1,6 @@
 import * as Cesium from 'cesium';
 
-export function createController({
-  flightState,
-  services,
-  parts,
-  layer,
-  resolveAsset,
-}) {
+export function createController({ flightState, services, parts, layer }) {
   function _abortActiveUpdates() {
     for (const controller of flightState.feed._activeUpdateControllers)
       controller.abort();

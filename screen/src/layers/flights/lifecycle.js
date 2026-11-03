@@ -1,13 +1,6 @@
 import * as Cesium from 'cesium';
-import { PLANE_MODEL_URL } from './policy.js';
 
-export function createLifecycle({
-  flightState,
-  services,
-  parts,
-  layer,
-  resolveAsset,
-}) {
+export function createLifecycle({ flightState, services, parts, layer }) {
   const { clearFocusTarget } = services.focus;
   const {
     registerSpriteCollection,
@@ -51,40 +44,12 @@ export function createLifecycle({
       flightState._billboardCollection = new Cesium.BillboardCollection();
       viewer.scene.primitives.add(flightState._billboardCollection);
       registerSpriteCollection('flights', flightState._billboardCollection);
-      flightState._modelCollection = new Cesium.PrimitiveCollection();
-      viewer.scene.primitives.add(flightState._modelCollection);
-      // Warm the glTF cache so the tracked plane's model instantiates instantly when first needed
-      // (keeps the retained instance referenced; never rendered). Captured against this epoch so a
-      // destroy/re-init mid-load doesn't flip the flag for a torn-down lifecycle.
-      if (!flightState._preloadModel) {
-        const epoch = flightState._modelEpoch;
-        Cesium.Model.fromGltfAsync({
-          url: resolveAsset(PLANE_MODEL_URL),
-          asynchronous: false,
-        })
-          .then((m) => {
-            if (epoch === flightState._modelEpoch) {
-              flightState._preloadModel = m;
-              flightState._planeModelLoaded = true;
-            } else {
-              try {
-                m.destroy();
-              } catch {
-                /* gone */
-              }
-            }
-          })
-          .catch(() => {
-            /* tracked plane just stays a billboard a beat longer */
-          });
-      }
       flightState._billboards = new Map();
       flightState._cullPositions.clear();
       flightState._detectionObjects = new Map();
       flightState.records.data = new Map();
       flightState._positionHistory = new Map();
       flightState._displayCourse.clear();
-      flightState._groundSnap.clear();
       flightState.feed._count = 0;
       flightState.feed._lastUpdate = null;
       flightState.feed._backoff = false;
@@ -95,7 +60,6 @@ export function createLifecycle({
         flightState.feed._source.label || 'Aircraft';
       flightState.feed._lastCoverage = 'worldwide upstream snapshot';
       flightState._trackedIcao = null;
-      parts.tracking._resetTrackedSelectionState();
       flightState._trackedEntity = null;
       // Fresh session — full bucket, anchor re-seeded on the first sweep.
       flightState._enrichAmbientBudget =
@@ -125,8 +89,6 @@ export function createLifecycle({
       if (flightState._billboardCollection)
         flightState._billboardCollection.show = true;
       holdContinuousRender('flights'); // per-frame animator (perf wave 2)
-      if (flightState._modelCollection)
-        flightState._modelCollection.show = true;
       // Height-datum fix: warm the geoid grid once per layer-enable. The poll loop
       // only reads geoidHeight() synchronously after this resolves (guarded by
       // _geoidReady) — never awaited per-aircraft, never blocking a poll tick.
@@ -150,12 +112,6 @@ export function createLifecycle({
         flightState._preRenderRemove = viewer.scene.preRender.addEventListener(
           parts.rendering._fleetTick,
         );
-      }
-      if (!flightState._trackedModelPreUpdateRemove && viewer?.scene) {
-        flightState._trackedModelPreUpdateRemove =
-          viewer.scene.preUpdate.addEventListener(
-            parts.rendering._updateTrackedModel,
-          );
       }
       if (!flightState._moveEndRemove && viewer?.camera) {
         // Arrival polish (field test 2026-07-03: "planes look weird when you first
@@ -188,9 +144,6 @@ export function createLifecycle({
       if (flightState._billboardCollection)
         flightState._billboardCollection.show = false;
       releaseContinuousRender('flights');
-      parts.rendering._releaseModels();
-      if (flightState._modelCollection)
-        flightState._modelCollection.show = false;
       parts.tracking._clearTracking();
       parts.tracking._destroyTrail();
       // Remove click handler + keydown listener while disabled to avoid
@@ -208,10 +161,6 @@ export function createLifecycle({
       if (flightState._preRenderRemove) {
         flightState._preRenderRemove();
         flightState._preRenderRemove = null;
-      }
-      if (flightState._trackedModelPreUpdateRemove) {
-        flightState._trackedModelPreUpdateRemove();
-        flightState._trackedModelPreUpdateRemove = null;
       }
       if (flightState._moveEndRemove) {
         flightState._moveEndRemove();
@@ -251,42 +200,20 @@ export function createLifecycle({
         flightState._preRenderRemove();
         flightState._preRenderRemove = null;
       }
-      if (flightState._trackedModelPreUpdateRemove) {
-        flightState._trackedModelPreUpdateRemove();
-        flightState._trackedModelPreUpdateRemove = null;
-      }
       if (flightState._moveEndRemove) {
         flightState._moveEndRemove();
         flightState._moveEndRemove = null;
       }
-      parts.rendering._releaseModels();
       if (flightState._billboardCollection) {
         viewer.scene.primitives.remove(flightState._billboardCollection);
         flightState._billboardCollection = null;
       }
-      if (flightState._modelCollection) {
-        viewer.scene.primitives.remove(flightState._modelCollection); // removing destroys it + its models
-        flightState._modelCollection = null;
-      }
-      flightState._modelEpoch += 1; // invalidate any in-flight load from this lifecycle (settles post-destroy)
-      flightState._modelPending.clear();
-      flightState._modelGen.clear();
-      if (flightState._preloadModel) {
-        try {
-          flightState._preloadModel.destroy();
-        } catch {
-          /* gone */
-        }
-        flightState._preloadModel = null;
-      }
-      flightState._planeModelLoaded = false;
       flightState._billboards.clear();
       flightState._cullPositions.clear();
       flightState._detectionObjects.clear();
       flightState.records.data.clear();
       flightState._positionHistory.clear();
       flightState._displayCourse.clear();
-      flightState._groundSnap.clear();
       flightState._displayFloorState.clear();
       flightState._enrichQueue.length = 0;
       flightState._enrichSeen.clear();
@@ -306,7 +233,6 @@ export function createLifecycle({
         source: flightState.feed._lastSource,
         coverage: flightState.feed._lastCoverage,
       };
-      parts.tracking._resetTrackedSelectionState(); // next lifecycle re-evaluates against the ENTER ceiling
       flightState._viewer = null;
     },
   };

@@ -141,7 +141,6 @@ function openPage(t, href, { managerOptions = {}, tracking = null } = {}) {
       _stampNavigation() {},
     },
     syncShareState() {},
-    syncModels3d() {},
     showStatus() {},
     feedback: {},
     updateFeedback() {},

@@ -19,9 +19,7 @@ export const EMERGENCY_TINT =
 // updating normally. Landing/takeoff is a TRANSITION — the on_ground flip restyles
 // the existing billboard in place, never a removal. Ground planes draw no trails
 // and are excluded from the ambient enrichment sweep (click-to-enrich still
-// works). In 3D mode they take model slots like airborne planes (owner decision
-// 2026-07-03 — no air/ground distinction), placed by the one-shot ground snap
-// (see _modelDisplayPosition).
+// works).
 //
 // TINT: full-strength, same pipeline as airborne (white / amber-military /
 // cyan-tracked). Day 1 shipped a slate-gray 50%-alpha "muted" ground tint; the
@@ -32,82 +30,6 @@ export const EMERGENCY_TINT =
 /** Ground billboards render slightly smaller so airport clutter stays visually minor. */
 
 export const GROUND_SCALE = 0.8;
-
-// --- 3D model rendering (B3) ---------------------------------------------------------
-// When enabled, aircraft render as 3D glTF models once the camera is below MODEL_ALT_CEIL_M
-// (zoomed in); higher up they stay flat billboards. Eligibility is FRUSTUM-based (on-screen), and
-// the slots go to either the nearest planes ('proximity') or every in-view plane ('all'), each
-// backed by a hard cap so a draw-call explosion can't tank the frame (no instancing yet).
-
-/**
- * Fork: the glTF aircraft models were removed (public/models is gone), so no
- * contact is ever drawn as a 3D model. The model code paths stay behind this
- * switch; every aircraft is a 2D sprite.
- */
-export const MODELS_3D_AVAILABLE = false;
-
-export const PLANE_MODEL_URL = '/models/airplane.glb';
-
-export const MODEL_ALT_CEIL_M = 800000;
-// m: below this camera altitude, draw 3D models (raised so it's easy to trigger)
-
-export const MODEL_MIN_PX = 24;
-// floor so distant models stay visible WITHOUT ballooning into a giant
-// min-pixel blob (was 54 — far planes at the All radius became white
-// star-bursts); ~matches the 2D icon size so the model↔billboard read is consistent
-
-export const TRACKED_MODEL_MIN_PX = 40;
-// keep the glTF silhouette comparable to the selected 2D glyph at handoff
-
-export const TRACKED_MODEL_MAX_PX = 200;
-// owner-selected close-range tracked-target feel
-
-export const MODEL_NATIVE_RADIUS_M = 34.41;
-
-export const MODEL_SCALE = 1;
-// airplane.glb is transform-applied and baked to real-world meters
-// Per-mode caps. Each model is its own draw call (no instancing yet), so these bound the frame cost.
-
-export const MODEL_MAX = 150;
-// 'proximity' cap (the planes immediately around you)
-
-export const MODEL_MAX_ALL = 350;
-// 'all' cap (everything out to ~the horizon)
-// Per-mode ADD / KEEP radii. The two modes differ by RADIUS, not just cap — otherwise they look
-// IDENTICAL whenever fewer than a cap's worth of planes are in range (field bug: Proximity and All
-// rendered the same). 'proximity' = a tight ring; 'all' = roughly to the horizon (state-scale). Each
-// band has hysteresis (KEEP > ADD) so a plane doesn't release+reload its model when it straddles the
-// add edge (the zoom/pan flicker). Beyond ADD a model would force-clamp to minimumPixelSize into a
-// giant floating blob (the old 422 km airport-cluster bug), so far planes stay 2D dots; the cap +
-// on-screen priority then spend the model slots on planes you can actually see.
-
-export const MODEL_PROX_ADD_M = 150000;
-// proximity: model NEW planes within 150 km
-
-export const MODEL_PROX_KEEP_M = 185000;
-// proximity: KEEP modeled planes out to 185 km
-
-export const MODEL_ALL_ADD_M = 400000;
-// all: model NEW planes within 400 km (~to the horizon)
-
-export const MODEL_ALL_KEEP_M = 450000;
-// all: KEEP modeled planes out to 450 km
-
-export const MODEL_HEADING_OFFSET_DEG = 180;
-// airplane.glb nose is opposite Cesium heading-0
-// Owner launch-polish direction: models should read as clean light silhouettes,
-// with only a weak diffuse contribution from the existing approved textures.
-
-export const MODEL_COLOR_BLEND_AMOUNT = 0.94;
-
-// Grounded-model belly offset: airplane.glb's centred origin sits 6.719 m ABOVE its
-// lowest vertex (glTF Y-up scene AABB with node transforms applied — same reader as
-// modelScale.test.mjs, measured after its 24× transform bake). × class multiplier ≈ 5.0–9.7 m
-// of lift, so a ground-snapped model rests its lowest geometry (gear/belly) ON the sampled
-// tile skin instead of sinking to the fuselage-centerline origin. Locked against the GLB
-// by modelScale.test.mjs.
-
-export const MODEL_BELLY_OFFSET_NATIVE = 6.719;
 
 export const CYAN_TRANSPARENT = Cesium.Color.CYAN.withAlpha(0);
 
@@ -212,7 +134,7 @@ export const COURSE_SLEW_DT_MAX_SEC = 0.25;
 // (≤5/s — adsbdb is a free community API; the dev-server proxy additionally
 // caches successful and 404 responses per key for 24 hours, so later sessions
 // may refresh them). Each key is requested at most once per
-// session. Priority jobs (tracked plane, model-eligible planes) jump the
+// session. Priority jobs (the tracked plane) jump the
 // queue; the ambient fleet sweep (below) fills the back at poll cadence.
 // ---------------------------------------------------------------------------
 
@@ -226,8 +148,8 @@ export const ENRICH_DISPATCH_GAP_MS = 200;
 // Ambient fleet type enrichment (2026-07-02 field data: OpenSky's live
 // category field is 0/"no info" for ~94% of planes, so ambient classification
 // defaulted nearly the whole fleet to the airliner silhouette). Each poll,
-// ON-SCREEN planes — same horizon-occluder + frustum tests the fleet tick's
-// model-eligibility pass uses; no new per-plane raycast — that haven't been
+// ON-SCREEN planes — same horizon-occluder + frustum tests the fleet tick
+// uses; no new per-plane raycast — that haven't been
 // requested this session are enqueued NEAREST-TO-CAMERA FIRST, bounded by:
 //   - the shared queue's 4-concurrent / 200 ms-drip dispatch (above),
 //   - ≤ ENRICH_AMBIENT_PER_SWEEP new enqueues per poll (= one poll interval
@@ -277,19 +199,6 @@ export const ENRICH_AMBIENT_PER_SWEEP = 150;
 // ---------------------------------------------------------------------------
 
 export const DR_CORRECTION_MS = 900;
-
-/** Bounded on-demand loading for the tracked model. The tracked regime is
- *  DEFAULT-ON and its driver runs every `scene.preUpdate`, so a missing or
- *  corrupt GLB — or a dead network — would otherwise spin load→reject at frame
- *  rate for as long as the contact stays selected. Failures are counted PER
- *  SELECTION: a short backoff absorbs a transient blip, then the layer stops
- *  asking until the operator selects something else. The billboard is the
- *  visual throughout (the handoff only fades it once a model actually renders),
- *  so a latched failure degrades to exactly the pre-3D presentation. */
-
-export const TRACKED_MODEL_MAX_LOAD_FAILS = 3;
-
-export const TRACKED_MODEL_RETRY_BACKOFF_MS = 1500;
 
 /** @constant {number} Cap on NEW cells the display corridors may add to one
  *  poll's warm/sample batch — a view full of ground traffic must not balloon
@@ -419,18 +328,3 @@ export const FLOOR_EASE_EPSILON_M = 0.02;
  *  airborne long enough to have gone anywhere. */
 
 export const FLOOR_SEED_GRACE_MS = 90_000;
-
-/** Flip the whole 3D fleet's boost state by dropping models so the eligibility
- *  pass reloads them with creation-time boost options (both directions — a
- *  boosted model must not stay flat white back in Normal). Destroying 350
- *  GPU-backed models synchronously inside the style handler stalls the render
- *  thread (review P1; same failure the cockpit path documents), so the release
- *  is BATCHED through the fleet tick: each tick drops a bounded slice, showing
- *  each plane's billboard first (gap-proof per plane, no double-image window).
- *  Models are tagged with the boost state they loaded under, so queue entries
- *  whose model already matches the current state (rapid style cycling, or a
- *  reload that already happened) are skipped. In-flight loads are invalidated
- *  immediately (cheap gen bumps); the tracked model is a single primitive and
- *  reloads synchronously. */
-
-export const IR_RELOAD_BATCH = 40;

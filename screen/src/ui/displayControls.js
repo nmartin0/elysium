@@ -24,7 +24,6 @@ export function bindDisplayControls({ elements, actions }) {
     ['hudButton', 'toggleHud'],
     ['sonarButton', 'toggleSonar'],
     ['detectionButton', 'cycleDetection'],
-    ['modelsButton', 'toggleModels'],
   ])
     listen(elements[name], 'click', action);
   for (const [name, action] of [
@@ -51,11 +50,6 @@ export function bindDisplayControls({ elements, actions }) {
       elements.allocationButtons || [],
       (el) => el.dataset.allocation,
       'setAllocation',
-    ],
-    [
-      elements.modelModeButtons || [],
-      (el) => (el.dataset.mode === 'all' ? 'all' : 'proximity'),
-      'setModelsMode',
     ],
   ]) {
     const control = createSegmentedControl({

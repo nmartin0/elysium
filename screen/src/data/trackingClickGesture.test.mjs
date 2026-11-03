@@ -6,7 +6,6 @@ import {
   isTrackingClickGesture,
   isTrackingSelectionGesture,
 } from './trackingClickGesture.js';
-import { TRACKED_MODEL_MAX_PX as CIVIL_TRACKED_MODEL_MAX_PX } from './flights.js';
 
 const TYPES = {
   LEFT_DOWN: 'left-down',
@@ -122,6 +121,3 @@ test('civilian click handler apply duration only at the deselect branch', () => 
   );
 });
 
-test('civilian tracked model cap exposes the owner-selected 200 px feel', () => {
-  assert.equal(CIVIL_TRACKED_MODEL_MAX_PX, 200);
-});

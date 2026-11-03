@@ -279,10 +279,7 @@ test('invalid style parameters keep the style’s own value', () => {
 test('every registered field round-trips at once', () => {
   const layerState = createDefaultLayerState();
   layerState.enabledLayerIds = ['flights', 'satellites', 'recent-imagery'];
-  Object.assign(layerState.options.flights, {
-    models3d: true,
-    models3dMode: 'all',
-  });
+  Object.assign(layerState.options.satellites, { catalog: 'dense' });
   Object.assign(layerState.options['recent-imagery'], {
     west: -12345678,
     east: 12345678,
@@ -1057,7 +1054,6 @@ test('size: a camera-only place view', () => {
 test('size: following an aircraft', () => {
   const layerState = createDefaultLayerState();
   layerState.enabledLayerIds = ['flights'];
-  layerState.options.flights.models3d = true;
   const view = (offset) => ({
     kind: 'thing',
     entity: { kind: 'aircraft', id: 'a1b2c3' },
@@ -1269,4 +1265,35 @@ test('future panel values and style tokens are skipped, not applied', () => {
     SHARE_VIEW_STYLE_DEFAULTS.anime.styleParams,
   );
   assert.equal(styleResult.unknownFields.length, 2);
+});
+
+test('codes written while the 3D aircraft models existed open as before, with the retired options dropped', () => {
+  // Written by the encoder of that era, for a flights-only view at the same
+  // camera; each carries models3d and/or models3dMode as layer options (the
+  // first one rode in on the omission).
+  const old = {
+    on: 'ARCg-SQYrah3ILAJUgIAgDE',
+    off: 'ARCg-SQYrah3ILAJUgIAgFoDDxwAxQ',
+    all: 'ARCg-SQYrah3ILAJUgIAgFoEDy0BYcM',
+    offAll: 'ARCg-SQYrah3ILAJUgIAgFoHDxwADy0BYZ0',
+  };
+  for (const [name, code] of Object.entries(old)) {
+    const result = decodeOk(code);
+    assert.equal(
+      result.unknownFields,
+      undefined,
+      `${name}: nothing is unknown`,
+    );
+    assert.deepEqual(
+      result.state.layerState.enabledLayerIds,
+      ['flights'],
+      name,
+    );
+    assert.deepEqual(
+      result.state.layerState.options.flights,
+      { selectedFlightsTrackingId: null, selectedMilitaryTrackingId: null },
+      name,
+    );
+    assert.equal(result.state.lat, 30.2672, name);
+  }
 });

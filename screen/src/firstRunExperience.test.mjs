@@ -704,11 +704,8 @@ test('no mission writes a preference the visitor did not choose by picking it', 
     '_applyDetectionPreset',
     '_setDetectionAllocation',
     'setDetectionTuning',
-    // 3D models and feather default to origin 'user' and would persist a choice
-    // nobody made by picking a mission.
-    '_setModels3dEnabled',
-    '_setModels3dMode',
-    '_setModels3dParams',
+    // Feather defaults to origin 'user' and would persist a choice nobody made
+    // by picking a mission.
     'setFeather',
   ]) {
     assert.doesNotMatch(

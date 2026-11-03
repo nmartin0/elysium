@@ -12,12 +12,15 @@ import {
   LAYER_STATE_TOKEN_ALPHABET,
   LAYER_STATE_TOKEN_RESERVATIONS,
   REGISTERED_LAYER_IDS,
+  RETIRED_LAYER_OPTION_TOKENS,
   SHARE_TRACKING_RESTORE_POLICIES,
   createDefaultLayerState,
   decodeLayerStateParams,
   encodeLayerStateParams,
+  isRetiredLayerOption,
   nextLayerStateToken,
   normalizeLayerState,
+  optionSpecs,
   parseStoredLayerState,
   serializeStoredLayerState,
   validateLayerStateAllocations,
@@ -37,7 +40,7 @@ function deferred() {
 
 function paramsForLayer(id) {
   if (id === 'flights' || id === 'military') {
-    return { models3d: false, models3dMode: 'proximity', irBoost: true };
+    return { irBoost: true };
   }
   if (id === 'satellites')
     return { catalog: 'core', showPoints: false, showOrbits: false };
@@ -438,7 +441,7 @@ test('v2 codec distinguishes absent from empty and keeps canonical deterministic
   const first = normalizeLayerState({
     enabledLayerIds: ['transit', 'wind', 'earthquakes', 'wind'],
     options: {
-      flights: { models3dMode: 'all', models3d: true },
+      wind: { units: 'mph', paused: true },
       satellites: { catalog: 'dense' },
     },
   });
@@ -446,7 +449,7 @@ test('v2 codec distinguishes absent from empty and keeps canonical deterministic
     enabledLayerIds: ['earthquakes', 'wind', 'transit'],
     options: {
       satellites: { catalog: 'dense' },
-      flights: { models3d: true, models3dMode: 'all' },
+      wind: { paused: true, units: 'mph' },
     },
   });
   assert.equal(encode(first), encode(second));
@@ -460,7 +463,8 @@ test('all production layers and options round-trip through a v2 share URL', () =
   const allEnabled = normalizeLayerState({
     enabledLayerIds: REGISTERED_LAYER_IDS,
     options: {
-      flights: { models3d: true, models3dMode: 'all' },
+      wind: { units: 'mph', paused: true },
+      satellites: { catalog: 'dense' },
     },
   });
   const shareUrl = new URL('https://example.invalid/');
@@ -513,8 +517,6 @@ test('unknown and forbidden option fields are ignored while missing options use 
   );
   assert.deepEqual(decoded.enabledLayerIds, ['earthquakes', 'wind']);
   assert.deepEqual(decoded.options.flights, {
-    models3d: true,
-    models3dMode: 'all',
     selectedFlightsTrackingId: null,
     selectedMilitaryTrackingId: null,
   });
@@ -522,7 +524,7 @@ test('unknown and forbidden option fields are ignored while missing options use 
   const raw = normalizeLayerState({
     enabledLayerIds: ['wind', 'unknown-layer'],
     options: {
-      flights: { models3d: true, irBoost: true },
+      flights: { irBoost: true },
       satellites: { catalog: 'dense', showPoints: false, showOrbits: false },
     },
   });
@@ -549,15 +551,7 @@ test('compact URL omits absent-meaning option state and still resolves to it', (
   // this is the ledger of what an OMITTED token means, so changing any of these
   // fails HERE and forces the change to be acknowledged.
   //
-  // Note this is the absent-meaning ledger, NOT the default ledger — the two
-  // diverged for `models3d` on 2026-08-22. Its default moved to `true`, but an
-  // omitted `e` still means `false` because that is what schema v2 has always
-  // meant to the links already in the wild, so `false` is what belongs in a
-  // URL-omission test. The default's own value is pinned in the fresh-boot test
-  // below, and the divergence itself in the two codec tests above.
   state.options.flights = {
-    models3d: false,
-    models3dMode: 'proximity',
     selectedFlightsTrackingId: null,
     selectedMilitaryTrackingId: null,
   };
@@ -571,95 +565,55 @@ test('compact URL omits absent-meaning option state and still resolves to it', (
   const params = encodeLayerStateParams(new URLSearchParams('v=2'), state);
   assert.equal(params.has('lo'), false);
   const roundTrip = decodeLayerStateParams(params);
-  assert.equal(roundTrip.options.flights.models3d, false);
-  assert.equal(roundTrip.options.flights.models3dMode, 'proximity');
   assert.deepEqual(roundTrip.options.flights.selectedFlightsTrackingId, null);
   assert.deepEqual(roundTrip.options.flights.selectedMilitaryTrackingId, null);
   assert.deepEqual(roundTrip.options.satellites.selectedSatTrackingId, null);
 });
 
-test('a v2 link written before the flip still means what its author saw: 3D OFF', () => {
-  // The regression this pins, caught in review: schema v2 shipped with 3D OFF as
-  // the OMITTED default, so every link already in the wild says "off" by saying
-  // nothing. Moving the default without moving the codec turned all of them ON —
-  // the same omission meaning two different things inside one schema version.
-  //
-  // `v=2&l=f` is the canonical parent-era link. It must decode OFF forever.
-  const parentEra = decodeLayerStateParams(new URLSearchParams('v=2&l=f'));
+test('links written while the 3D aircraft models existed still open, and the retired options are dropped', () => {
+  // `e` (models3d) and `m` (models3dMode) were written by every flights link of
+  // that era, in both the on and off spellings. They are permanent tokens: the
+  // decoder recognizes them and ignores the value, the encoder never writes them.
+  const defaults = {
+    selectedFlightsTrackingId: null,
+    selectedMilitaryTrackingId: null,
+  };
+  for (const link of [
+    'v=2&l=f',
+    'v=2&l=f&lo=f.e.1',
+    'v=2&l=f&lo=f.e.0',
+    'v=2&l=f&lo=f.m.a',
+    'v=2&l=f&lo=f.e.1_f.m.a',
+  ]) {
+    const decoded = decodeLayerStateParams(new URLSearchParams(link));
+    assert.deepEqual(decoded.enabledLayerIds, ['flights'], link);
+    assert.deepEqual(decoded.options.flights, defaults, link);
+  }
+
+  // The rest of the payload survives next to a retired token.
+  const withTracking = decodeLayerStateParams(
+    new URLSearchParams('v=2&l=f&lo=f.e.1_f.t.abc123_f.m.a'),
+  );
   assert.equal(
-    parentEra.options.flights.models3d,
-    false,
-    'an omitted `e` is a v2 author saying OFF, not "whatever today\'s default is"',
+    withTracking.options.flights.selectedFlightsTrackingId,
+    'abc123',
   );
 
-  // The nastier one: an OFF link that DID remember a non-default mode. Reading
-  // the omission as the new default would resurrect it as ON + All.
-  const parentEraAll = decodeLayerStateParams(
-    new URLSearchParams('v=2&l=f&lo=f.m.a'),
-  );
-  assert.equal(parentEraAll.options.flights.models3d, false);
-  assert.equal(
-    parentEraAll.options.flights.models3dMode,
-    'all',
-    'the mode it really carried survives; only the omission is read as OFF',
-  );
+  assert.deepEqual(RETIRED_LAYER_OPTION_TOKENS.flights, {
+    e: 'models3d',
+    m: 'models3dMode',
+  });
+  assert.equal(isRetiredLayerOption('flights', 'e'), true);
+  assert.equal(isRetiredLayerOption('flights', 'm'), true);
+  assert.equal(isRetiredLayerOption('flights', 't'), false);
+  assert.equal(isRetiredLayerOption('satellites', 'e'), false);
+  // No live flights option may reuse a retired token.
+  for (const spec of optionSpecs('flights'))
+    assert.equal(isRetiredLayerOption('flights', spec.token), false, spec.key);
 
-  // A parent-era link that carried 3D ON wrote it explicitly (ON was non-default
-  // then), so it still restores ON. Both eras round-trip.
-  assert.equal(
-    decodeLayerStateParams(new URLSearchParams('v=2&l=f&lo=f.e.1')).options
-      .flights.models3d,
-    true,
-  );
-});
-
-test('the new default is written EXPLICITLY, so no omission is ambiguous', () => {
-  // Because an absent `e` is pinned to the historical OFF above, the new ON
-  // default cannot ride in on the omission — it has to be emitted. This is the
-  // other half of the same invariant: break it and fresh ON links silently become
-  // OFF links for their recipients.
-  const on = createDefaultLayerState();
-  on.enabledLayerIds = ['flights'];
-  assert.equal(
-    on.options.flights.models3d,
-    true,
-    'precondition: ON is the default',
-  );
-  const onEncoded = encode(on);
-  assert.match(
-    onEncoded,
-    /(^|&)lo=[^&]*f\.e\.1/,
-    'a fresh ON link states ON outright rather than relying on omission',
-  );
-  assert.equal(
-    decodeLayerStateParams(new URLSearchParams(onEncoded)).options.flights
-      .models3d,
-    true,
-  );
-
-  // And OFF is the omission, matching what v2 already meant — one meaning, one
-  // encoding, across both eras.
-  const off = createDefaultLayerState();
-  off.enabledLayerIds = ['flights'];
-  off.options.flights = { ...off.options.flights, models3d: false };
-  const offEncoded = encode(off);
-  assert.doesNotMatch(
-    offEncoded,
-    /f\.e\./,
-    'OFF is the absent token, exactly as it was before the flip',
-  );
-  assert.equal(
-    decodeLayerStateParams(new URLSearchParams(offEncoded)).options.flights
-      .models3d,
-    false,
-  );
-
-  // An interim build briefly emitted `f.e.0`; it must still decode as OFF.
-  assert.equal(
-    decodeLayerStateParams(new URLSearchParams('v=2&l=f&lo=f.e.0')).options
-      .flights.models3d,
-    false,
-  );
+  const state = createDefaultLayerState();
+  state.enabledLayerIds = ['flights'];
+  assert.doesNotMatch(encode(state), /f\.[em]\./);
 });
 
 test('explicit navigation tracking clear removes the active durable ID from the generated hash', async () => {
@@ -831,9 +785,7 @@ test('unrelated explicit params retain the family live active ID while cancellin
   assert.equal(
     manager.setLayerParams(
       'flights',
-      {
-        models3d: true,
-      },
+      { irBoost: true },
       { origin: 'user' },
     ),
     true,
@@ -848,7 +800,6 @@ test('unrelated explicit params retain the family live active ID while cancellin
 test('stored state is deterministic, rejects other versions, and stays within a tested URL bound', () => {
   const state = createDefaultLayerState();
   state.enabledLayerIds = [...REGISTERED_LAYER_IDS].reverse();
-  state.options.flights = { models3d: true, models3dMode: 'all' };
   state.options.satellites = { catalog: 'dense' };
   state.options.cctv = {
     coverageMode: 'viewshed',
@@ -888,17 +839,14 @@ test('restore applies sanitized params after init and before enable', async () =
     'flights',
     {
       enabled: true,
-      params: { models3d: true, models3dMode: 'all' },
+      params: { irBoost: true },
     },
     { origin: 'share-restore' },
   );
   assert.deepEqual(order, ['init', 'params', 'enable', 'update']);
   assert.equal(outcome.succeeded, true);
   assert.equal(outcome.persistenceWrite, false);
-  assert.deepEqual(outcome.appliedOptions, {
-    models3d: true,
-    models3dMode: 'all',
-  });
+  assert.deepEqual(outcome.appliedOptions, { irBoost: true });
 });
 
 test('manager forwards passive restore origin into module parameter application', async () => {
@@ -945,7 +893,7 @@ test('explicit manager params and visibility revoke module-owned pending trackin
     'passive restoration cannot cancel itself',
   );
 
-  manager.setLayerParams('flights', { models3d: true }, { origin: 'voice' });
+  manager.setLayerParams('flights', { irBoost: true }, { origin: 'voice' });
   await manager.setEnabled('flights', false, { origin: 'user' });
   assert.deepEqual(cancellations, [
     { origin: 'voice', reason: 'explicit-params' },
@@ -1254,8 +1202,6 @@ test('later explicit params during init replace options without cancelling visib
   const state = createDefaultLayerState();
   state.enabledLayerIds = ['flights'];
   state.options.flights = {
-    models3d: true,
-    models3dMode: 'all',
     selectedFlightsTrackingId: 'late001',
   };
   const share = shareSink();
@@ -1265,10 +1211,7 @@ test('later explicit params during init replace options without cancelling visib
   assert.equal(
     manager.setLayerParams(
       'flights',
-      {
-        models3d: false,
-        models3dMode: 'proximity',
-      },
+      { irBoost: false },
       { origin: 'user' },
     ),
     true,
@@ -1277,8 +1220,6 @@ test('later explicit params during init replace options without cancelling visib
   const results = await restore;
   assert.equal(manager.isEnabled('flights'), true);
   assert.deepEqual(coordinator.getDurableState().options.flights, {
-    models3d: false,
-    models3dMode: 'proximity',
     selectedFlightsTrackingId: null,
     selectedMilitaryTrackingId: null,
   });
@@ -1316,8 +1257,6 @@ test('explicit navigation preserves unrelated visibility and option restoration'
   const state = createDefaultLayerState();
   state.enabledLayerIds = ['flights'];
   state.options.flights = {
-    models3d: true,
-    models3dMode: 'all',
     selectedFlightsTrackingId: 'stale-flight',
     selectedMilitaryTrackingId: null,
   };
@@ -1331,12 +1270,7 @@ test('explicit navigation preserves unrelated visibility and option restoration'
   initGate.resolve();
   const results = await restore;
   assert.equal(manager.isEnabled('flights'), true);
-  assert.deepEqual(paramsCalls, [
-    {
-      models3d: true,
-      models3dMode: 'all',
-    },
-  ]);
+  assert.deepEqual(paramsCalls, []);
   assert.equal(
     results.find((result) => result.layerId === 'flights').succeeded,
     true,
@@ -1368,8 +1302,6 @@ test('startup gesture clears passive Follow but preserves slow layer and display
   const state = createDefaultLayerState();
   state.enabledLayerIds = ['flights', 'satellites'];
   state.options.flights = {
-    models3d: true,
-    models3dMode: 'all',
     selectedFlightsTrackingId: 'late-share',
     selectedMilitaryTrackingId: null,
   };
@@ -1398,8 +1330,6 @@ test('startup gesture clears passive Follow but preserves slow layer and display
   assert.equal(manager.isEnabled('flights'), true);
   assert.equal(manager.isEnabled('satellites'), true);
   assert.deepEqual(manager.getLayerParams('flights'), {
-    models3d: true,
-    models3dMode: 'all',
     irBoost: true,
     selectedFlightsTrackingId: null,
   });
@@ -1464,7 +1394,6 @@ test('shared flight selection is deferred until destination refresh and then fol
   state.enabledLayerIds = ['flights'];
   state.options.flights = {
     ...state.options.flights,
-    models3d: true,
     selectedFlightsTrackingId: 'abc123',
   };
   const coordinator = new LayerStateCoordinator(manager, shareSink(), {
@@ -1472,9 +1401,7 @@ test('shared flight selection is deferred until destination refresh and then fol
     onTrackingRestoreStatus: (status) => statuses.push(status),
   });
   await coordinator.start({ shareLayerState: state, shareCreatedAtMs: 1_000 });
-  assert.deepEqual(paramsCalls, [
-    { models3d: true, models3dMode: 'proximity' },
-  ]);
+  assert.deepEqual(paramsCalls, []);
 
   const result = await coordinator.restoreShareTrackingSelection();
   assert.equal(result.status, 'found');
@@ -1506,8 +1433,6 @@ test('authoritative missing target clears only the passive ID and uses strict ex
     state.enabledLayerIds = ['flights'];
     state.options.flights = {
       ...state.options.flights,
-      models3d: true,
-      models3dMode: 'all',
       selectedFlightsTrackingId: 'gone001',
     };
     // The subject is absent, so the verdict now lands only after the pending
@@ -1551,8 +1476,6 @@ test('authoritative missing target clears only the passive ID and uses strict ex
     boundary.durable.options.flights.selectedFlightsTrackingId,
     null,
   );
-  assert.equal(boundary.durable.options.flights.models3d, true);
-  assert.equal(boundary.durable.options.flights.models3dMode, 'all');
   assert.deepEqual(boundary.writes, []);
 
   const expired = await run({ nowMs: 190_001, copiedAtMs: 100_000 });
@@ -2007,11 +1930,6 @@ test('oversized and out-of-grammar tracking IDs are rejected, never truncated', 
   );
   assert.deepEqual(longish.enabledLayerIds, ['flights']);
   assert.equal(longish.options.flights.selectedFlightsTrackingId, null);
-  assert.equal(
-    longish.options.flights.models3d,
-    true,
-    'sibling options survive',
-  );
 
   for (const bad of [
     'ab cd',
@@ -2091,7 +2009,7 @@ test('an explicit parameter change revokes the pending watch, not just its contr
   // module latch on exactly this event, so nothing is restoring any more.
   await f.manager.setLayerParams(
     'flights',
-    { models3d: true },
+    { irBoost: true },
     { origin: 'user' },
   );
   f.timers.runUntilIdle();

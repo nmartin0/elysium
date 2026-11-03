@@ -9,7 +9,6 @@ const flightsLayer = createApplicationFlights({
   source: createFlightSource(),
   militaryRegistry: createMilitaryRegistry(),
 });
-export { TRACKED_MODEL_MAX_PX } from '../layers/flights/policy.js';
 export const _floorGroundedDisplayPositionForTest =
   flightsLayer.testing._floorGroundedDisplayPositionForTest;
 export const _clearDisplayFloorStateForTest =
@@ -28,15 +27,5 @@ export const _pendingFlightTrackingRestoreForTest =
   flightsLayer.testing._pendingFlightTrackingRestoreForTest;
 export const _applyPendingFlightTrackingRestoreForTest =
   flightsLayer.testing._applyPendingFlightTrackingRestoreForTest;
-export const _trackedModelRegimeActiveForTest =
-  flightsLayer.testing._trackedModelRegimeActiveForTest;
-export const _updateTrackedModelForTest =
-  flightsLayer.testing._updateTrackedModelForTest;
-export const _trackedBillboardColorForTest =
-  flightsLayer.testing._trackedBillboardColorForTest;
-export const _driveFleetModelHandoffForTest =
-  flightsLayer.testing._driveFleetModelHandoffForTest;
-export const _ensureFleetModelForTest =
-  flightsLayer.testing._ensureFleetModelForTest;
 export const mapAnalystRecord = flightsLayer.mapAnalystRecord;
 export default flightsLayer;

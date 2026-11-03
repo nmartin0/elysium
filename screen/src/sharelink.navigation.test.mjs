@@ -262,7 +262,6 @@ function restorationHarness(t, initialHash, navigationOverrides = {}) {
       ...navigationOverrides,
     },
     syncShareState() {},
-    syncModels3d() {},
     showStatus() {},
     feedback: {},
     updateFeedback() {},

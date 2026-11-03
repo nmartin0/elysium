@@ -80,12 +80,9 @@ export function environmentalLabel(choice = ENVIRONMENTAL_LABEL_CHOICE) {
  *                         kill the CRT/NVG/FLIR auto-preset contract for the
  *                         whole session. Missions run through setContextMode and
  *                         DataManager.setEnabled, neither of which writes it.
- *   NOT TOUCHED           detection allocation (`gev:detection-allocation:v1`),
- *                         3D aircraft models, scope feather. All are defaults or
- *                         separate durable prefs the visitor did not choose here.
- *                         In particular nothing calls `_setModels3dEnabled` /
- *                         `_setModels3dMode`, which default to origin 'user' and
- *                         would persist a 3D choice nobody made.
+ *   NOT TOUCHED           detection allocation (`gev:detection-allocation:v1`)
+ *                         and scope feather. Both are defaults or separate
+ *                         durable prefs the visitor did not choose here.
  *
  * The two Context missions deliberately reuse `styleManager.setContextMode`, the
  * same facade the visible tabs and voice use, so Contacts detection ownership,

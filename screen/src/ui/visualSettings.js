@@ -320,8 +320,6 @@ export class VisualSettings {
       effective === 'surveillance' ||
       effective === 'thermal' ||
       effective === 'nvg';
-    this._dataManager?.setLayerParams('flights', { irBoost });
-    this._dataManager?.setLayerParams('military', { irBoost });
     // Layers whose in-scene sprites restyle for a sensor preset need the
     // EFFECTIVE style.
     window.dispatchEvent(
@@ -332,11 +330,8 @@ export class VisualSettings {
       }),
     );
     // Fog blends distant geometry toward an effectively-BLACK color in this
-    // app (the Cesium globe is hidden), so beyond ~100 km every 3D aircraft
-    // fogs to a black silhouette — lighting and shaders can't reach past it.
-    // IR sensors see through
-    // haze, so the boost styles simply turn fog off; the prior state restores
-    // on exit. Transition-guarded so repeated syncs don't clobber the saved value.
+    // app (the Cesium globe is hidden). IR sensors see through haze, so the
+    // boost styles simply turn fog off; the prior state restores on exit. Transition-guarded so repeated syncs don't clobber the saved value.
     const scene = this.viewer?.scene;
     if (scene?.fog && irBoost !== this._irBoostActive) {
       this._irBoostActive = irBoost;
@@ -1606,8 +1601,6 @@ export class VisualSettings {
     if (!this._irBoostActive) return;
     if (this._irFogWasEnabled != null && this.viewer?.scene?.fog)
       this.viewer.scene.fog.enabled = this._irFogWasEnabled;
-    this._dataManager?.setLayerParams('flights', { irBoost: false });
-    this._dataManager?.setLayerParams('military', { irBoost: false });
     this._irBoostActive = false;
     this._irFogWasEnabled = null;
   }

@@ -2,7 +2,6 @@ import { approxDistanceKm as _approxDistanceKm } from './recordPolicy.js';
 import { displayedKinematics } from '../../data/motionModel.js';
 import * as Cesium from 'cesium';
 import { isExplicitLayerStateOrigin } from '../../data/layerState.js';
-import { modelVisualAnchor } from '../../data/modelVisualAnchor.js';
 import {
   rankContactMatch,
   contactMatchWins,
@@ -22,7 +21,6 @@ export function createQueries({
   services,
   parts,
   layer,
-  resolveAsset,
 }) {
   const { formatFlightLevel } = services.labels;
   const { isMilitaryIcao } = services.militaryRegistry;
@@ -303,12 +301,7 @@ export function createQueries({
 
     /**
      * Live layer params.
-     * `models3d` toggles 3D glTF model rendering for the FLEET (altitude-gated): when on,
-     * surrounding aircraft become 3D models once the camera is zoomed in past MODEL_ALT_CEIL_M.
-     * The TRACKED contact is NOT gated by this — it takes its 3D model by camera distance
-     * regardless (see `_trackedModelRegimeActive` / trackedModelRegime.js).
-     * `models3dMode` is 'proximity' (nearest MODEL_MAX in view) or 'all' (every in-view plane).
-     * @param {{models3d?: boolean, models3dMode?: 'proximity'|'all', selectedFlightsTrackingId?: string|null}} params
+     * @param {{selectedFlightsTrackingId?: string|null}} params
      */
     setParams(params = {}, { origin = 'programmatic' } = {}) {
       if (
@@ -316,38 +309,6 @@ export function createQueries({
         !Object.hasOwn(params, 'selectedFlightsTrackingId')
       ) {
         parts.tracking._cancelPendingTrackingRestore();
-      }
-      if (
-        typeof params.models3d === 'boolean' &&
-        params.models3d !== flightState._models3dEnabled
-      ) {
-        flightState._models3dEnabled = params.models3d;
-        if (!flightState._models3dEnabled) {
-          parts.rendering._releaseModels();
-          parts.tracking._syncTracked2dRotation();
-          // Restore fleet billboards (the horizon-cull pass re-asserts next tick), but NEVER the
-          // tracked plane's own fleet billboard — its tracked entity is the visual, so re-showing it
-          // here would double-image the tracked plane when 3D is turned off mid-track.
-          if (flightState._billboardCollection)
-            for (const [icao, bb] of flightState._billboards) {
-              if (icao !== flightState._trackedIcao) bb.show = true;
-            }
-        }
-      }
-      if (
-        (params.models3dMode === 'proximity' ||
-          params.models3dMode === 'all') &&
-        params.models3dMode !== flightState._models3dMode
-      ) {
-        // The next fleet tick re-derives the eligible set under the new cap and releases the overflow.
-        flightState._models3dMode = params.models3dMode;
-      }
-      if (
-        typeof params.irBoost === 'boolean' &&
-        params.irBoost !== flightState._irBoost
-      ) {
-        flightState._irBoost = params.irBoost;
-        parts.rendering._reloadModelsForIrBoost();
       }
       if (Object.hasOwn(params, 'selectedFlightsTrackingId')) {
         const requested = _normalizeTrackedIcao(
@@ -376,9 +337,6 @@ export function createQueries({
 
     getParams() {
       return {
-        models3d: flightState._models3dEnabled,
-        models3dMode: flightState._models3dMode,
-        irBoost: flightState._irBoost,
         selectedFlightsTrackingId: flightState._trackedIcao,
       };
     },
@@ -421,43 +379,21 @@ export function createQueries({
         idx++;
         if (!shouldTake) continue;
         const isTracked = icao24 === flightState._trackedIcao;
-        // Keep planes rendered as a 3D model (billboard hidden) so the detection box
-        // doesn't vanish on the 2D→3D handoff; bb.position stays current while hidden.
-        const model = flightState._models.get(icao24) ?? null;
-        const modelOwnsVisual = parts.rendering._modelOwnsVisual(icao24, model);
-        if (!isTracked && !bb.show && !modelOwnsVisual) continue;
+        if (!isTracked && !bb.show) continue;
         const info = flightState.records.data.get(icao24);
         let object = flightState._detectionObjects.get(icao24);
         if (!object) {
           object = {
             sourceId: icao24,
             type: 'AIR',
-            _weldPos: new Cesium.Cartesian3(),
           };
           flightState._detectionObjects.set(icao24, object);
         }
-        // WELD: anchor to whatever actually owns the visual. A model-owned contact is
-        // read straight off the translation the fleet tick already wrote into its
-        // modelMatrix, so bracket and label sit on the aircraft you can see instead of
-        // on the buried billboard position, which for a grounded plane is ~100 m below
-        // and rises only as the coarse ground-floor cell warms. Zero extra sampling and
-        // no `_modelDisplayPosition` call from postRender. Sprite-owned contacts keep
-        // `bb.position` — sprite and bracket are co-located there, so association holds.
-        const spec = modelOwnsVisual
-          ? parts.rendering._modelSpec(info?.klass)
-          : null;
+        // Anchor to the sprite: the tracked contact reads the cached display
+        // position, every other contact its billboard position.
         const pos = isTracked
-          ? parts.motion._trackedVisualCached() || bb.position
-          : modelOwnsVisual
-            ? modelVisualAnchor(
-                model.modelMatrix,
-                spec.visualCenterNative,
-                Number.isFinite(model.computedScale)
-                  ? model.computedScale
-                  : spec.scale,
-                object._weldPos || (object._weldPos = new Cesium.Cartesian3()),
-              )
-            : bb.position;
+          ? parts.motion._trackedDisplayCached() || bb.position
+          : bb.position;
         if (!pos) continue;
         object.position = pos;
         object.skipLabel = isTracked;
@@ -566,13 +502,10 @@ export function createQueries({
 
       for (const [icao24, bb] of flightState._billboards) {
         const isTracked = icao24 === flightState._trackedIcao;
-        // Keep planes rendered as a 3D model (billboard hidden) so proximity counts
-        // don't drop to zero on the 2D→3D handoff; bb.position stays current while hidden.
         if (
           !aircraftIncludedInNearby({
             isTracked,
             billboardShown: bb.show,
-            modelRendering: parts.rendering._modelOwnsVisual(icao24),
             includeHidden,
           })
         )

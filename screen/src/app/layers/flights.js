@@ -16,13 +16,10 @@ export function createApplicationFlights({
   surface,
   source,
   militaryRegistry,
-  resolveAsset = (url) =>
-    `${import.meta.env?.BASE_URL || '/'}${url.replace(/^\//, '')}`,
 }) {
-  const { groundFloor, meshFloor, groundSnap } = surface;
+  const { groundFloor, meshFloor } = surface;
   return createCivilFlightLayer({
     source,
-    resolveAsset,
     services: {
       picking,
       sprites,
@@ -37,7 +34,6 @@ export function createApplicationFlights({
       readout,
       context,
       render,
-      groundSnap,
       recession,
     },
   });

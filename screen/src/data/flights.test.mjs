@@ -640,7 +640,7 @@ test('real civil track path creates no native label and publishes every cached h
       { origin: 'share-restore' },
     );
     assert.equal(_pendingFlightTrackingRestoreForTest(), 'late003');
-    flightsLayer.setParams({ models3d: false }, { origin: 'user' });
+    flightsLayer.setParams({}, { origin: 'user' });
     assert.equal(
       _pendingFlightTrackingRestoreForTest(),
       null,
@@ -1010,7 +1010,7 @@ test('civil tracked readout: a callsign-less enriched contact reads as its regis
 // graded apron (KAUS spans ~119–140 m ellipsoidal) the sprite then renders
 // under the mesh it drifted over — measured to −15.5 m. These pin the fix at
 // the point of DISPLAY: read-only against the shared floor cache, grounded
-// contacts only, never when a 3D model owns the visual (T7 one-shot).
+// contacts only.
 // ---------------------------------------------------------------------------
 
 const _floorCarto = (pos) =>
@@ -1119,11 +1119,7 @@ test('display floor: a grounded contact that drifted onto a higher cell is lifte
   // Fix cell floor was 124.7; the display has taxied into a 140.2 m cell.
   reportMeshFloorCell(30.2004, -97.6604, 140.2);
   const pos = Cesium.Cartesian3.fromDegrees(-97.6604, 30.2004, 124.7);
-  const out = _floorGroundedDisplayPositionForTest(
-    { onGround: true },
-    pos,
-    false,
-  );
+  const out = _floorGroundedDisplayPositionForTest({ onGround: true }, pos);
   const c = _floorCarto(out);
   assert.ok(
     Math.abs(c.height - (140.2 + GROUND_FLOOR_LIFT_M)) < 0.05,
@@ -1140,30 +1136,8 @@ test('display floor: an AIRBORNE contact over the same cell is never lifted', ()
   setMeshFloorPreferred(true);
   reportMeshFloorCell(30.2004, -97.6604, 140.2);
   const pos = Cesium.Cartesian3.fromDegrees(-97.6604, 30.2004, 124.7);
-  const out = _floorGroundedDisplayPositionForTest(
-    { onGround: false },
-    pos,
-    false,
-  );
+  const out = _floorGroundedDisplayPositionForTest({ onGround: false }, pos);
   assert.equal(out, pos, 'airborne display positions pass through untouched');
-});
-
-test('display floor: T7 — a model-owned grounded contact keeps its billboard datum', () => {
-  _clearDisplayFloorStateForTest();
-  _clearMeshFloorCellsForTest();
-  setMeshFloorPreferred(true);
-  reportMeshFloorCell(30.2004, -97.6604, 140.2);
-  const pos = Cesium.Cartesian3.fromDegrees(-97.6604, 30.2004, 124.7);
-  const out = _floorGroundedDisplayPositionForTest(
-    { onGround: true },
-    pos,
-    true,
-  );
-  assert.equal(
-    out,
-    pos,
-    'moving it would drag groundSnap past its 50 m re-sample threshold',
-  );
 });
 
 test('display floor: a contact already above the floor is passed through unchanged', () => {
@@ -1172,11 +1146,7 @@ test('display floor: a contact already above the floor is passed through unchang
   setMeshFloorPreferred(true);
   reportMeshFloorCell(30.2004, -97.6604, 124.7);
   const pos = Cesium.Cartesian3.fromDegrees(-97.6604, 30.2004, 140.2);
-  const out = _floorGroundedDisplayPositionForTest(
-    { onGround: true },
-    pos,
-    false,
-  );
+  const out = _floorGroundedDisplayPositionForTest({ onGround: true }, pos);
   assert.equal(out, pos, 'no rebuild when nothing needs lifting');
 });
 
@@ -1185,11 +1155,7 @@ test('display floor: a cold display cell leaves the contact where it is', () => 
   _clearMeshFloorCellsForTest();
   setMeshFloorPreferred(true);
   const pos = Cesium.Cartesian3.fromDegrees(-97.6604, 30.2004, 124.7);
-  const out = _floorGroundedDisplayPositionForTest(
-    { onGround: true },
-    pos,
-    false,
-  );
+  const out = _floorGroundedDisplayPositionForTest({ onGround: true }, pos);
   assert.equal(out, pos, 'no floor data → no clamp (never invent a surface)');
 });
 
@@ -1200,11 +1166,7 @@ test('display floor: mesh cells are ignored outside the google-3d regime', () =>
   reportMeshFloorCell(30.2004, -97.6604, 140.2);
   setMeshFloorPreferred(false); // globe stack: the DEM IS the rendered terrain
   const pos = Cesium.Cartesian3.fromDegrees(-97.6604, 30.2004, 124.7);
-  const out = _floorGroundedDisplayPositionForTest(
-    { onGround: true },
-    pos,
-    false,
-  );
+  const out = _floorGroundedDisplayPositionForTest({ onGround: true }, pos);
   assert.equal(out, pos);
   setMeshFloorPreferred(true);
 });
@@ -1222,7 +1184,6 @@ test('display floor: jitter across a cell edge does not alternate the floor', ()
     const out = _floorGroundedDisplayPositionForTest(
       { onGround: true },
       Cesium.Cartesian3.fromDegrees(-97.6604, lat, 120),
-      false,
       'jitter',
     );
     return _floorCarto(out).height;
@@ -1251,7 +1212,6 @@ test('display floor: a real crossing does adopt the next cell', () => {
       _floorGroundedDisplayPositionForTest(
         { onGround: true },
         Cesium.Cartesian3.fromDegrees(-97.6604, lat, 120),
-        false,
         'crossing',
       ),
     ).height;
@@ -1278,13 +1238,11 @@ test('display floor: a clamped stationary contact reuses its previous output', (
   const first = _floorGroundedDisplayPositionForTest(
     { onGround: true },
     pos,
-    false,
     'parked',
   );
   const second = _floorGroundedDisplayPositionForTest(
     { onGround: true },
     pos,
-    false,
     'parked',
   );
   assert.notEqual(
@@ -1306,24 +1264,14 @@ test('display floor: the cached output is dropped when the floor changes under i
   reportMeshFloorCell(30.2004, -97.6604, 140);
   const pos = Cesium.Cartesian3.fromDegrees(-97.6604, 30.2004, 120);
   const before = _floorCarto(
-    _floorGroundedDisplayPositionForTest(
-      { onGround: true },
-      pos,
-      false,
-      'warming',
-    ),
+    _floorGroundedDisplayPositionForTest({ onGround: true }, pos, 'warming'),
   ).height;
   // A late mesh sample raises this cell (a fresh module state stands in for the
   // one-shot latch, which never overwrites).
   _clearMeshFloorCellsForTest();
   reportMeshFloorCell(30.2004, -97.6604, 175);
   const after = _floorCarto(
-    _floorGroundedDisplayPositionForTest(
-      { onGround: true },
-      pos,
-      false,
-      'warming',
-    ),
+    _floorGroundedDisplayPositionForTest({ onGround: true }, pos, 'warming'),
   ).height;
   assert.ok(Math.abs(before - 141.5) < 0.05, `before ${before}`);
   assert.ok(
@@ -1351,7 +1299,6 @@ test('display floor: a cold cell HOLDS the last floor that resolved for this con
   const warm = _floorGroundedDisplayPositionForTest(
     { onGround: true },
     Cesium.Cartesian3.fromDegrees(-97.6604, 30.2004, 124.7),
-    false,
     'held',
   );
   assert.ok(
@@ -1363,7 +1310,6 @@ test('display floor: a cold cell HOLDS the last floor that resolved for this con
   const cold = _floorGroundedDisplayPositionForTest(
     { onGround: true },
     Cesium.Cartesian3.fromDegrees(-97.6604, 30.2054, 124.7),
-    false,
     'held',
   );
   const h = _floorCarto(cold).height;
@@ -1381,7 +1327,6 @@ test('display floor: with NO prior anywhere the contact is left exactly where it
   const out = _floorGroundedDisplayPositionForTest(
     { onGround: true },
     pos,
-    false,
     'fresh',
   );
   assert.equal(
@@ -1403,7 +1348,6 @@ test('display floor: a fresh contact on a cold cell adopts a resolved NEIGHBOUR'
   const out = _floorGroundedDisplayPositionForTest(
     { onGround: true },
     Cesium.Cartesian3.fromDegrees(-97.6604, 30.2004, 124.7),
-    false,
     'neighbour',
   );
   const h = _floorCarto(out).height;
@@ -1419,13 +1363,7 @@ test('display floor: a fresh contact on a cold cell adopts a resolved NEIGHBOUR'
 // mid-approach.
 function _driveEase(id, pos, fromMs, ticks, mutate = () => {}) {
   let previous = _floorCarto(
-    _floorGroundedDisplayPositionForTest(
-      { onGround: true },
-      pos,
-      false,
-      id,
-      fromMs,
-    ),
+    _floorGroundedDisplayPositionForTest({ onGround: true }, pos, id, fromMs),
   ).height;
   const opened = previous;
   let maxStepM = 0;
@@ -1435,7 +1373,6 @@ function _driveEase(id, pos, fromMs, ticks, mutate = () => {}) {
       _floorGroundedDisplayPositionForTest(
         { onGround: true },
         pos,
-        false,
         id,
         fromMs + i * 80,
       ),
@@ -1479,13 +1416,7 @@ test('display floor: a hold released onto a HIGHER floor rises immediately', () 
   const pos = Cesium.Cartesian3.fromDegrees(-97.6604, 30.2004, 124.7);
   const at = (ms) =>
     _floorCarto(
-      _floorGroundedDisplayPositionForTest(
-        { onGround: true },
-        pos,
-        false,
-        'rise',
-        ms,
-      ),
+      _floorGroundedDisplayPositionForTest({ onGround: true }, pos, 'rise', ms),
     ).height;
   reportMeshFloorCell(30.2014, -97.6604, 160.0);
   reportMeshFloorCell(30.1994, -97.6604, 190.0);
@@ -1514,7 +1445,6 @@ test('display floor: a STATIONARY unresolved contact still adopts a floor that a
     _floorGroundedDisplayPositionForTest(
       { onGround: true },
       pos,
-      false,
       'parked-cold',
       ms,
     );
@@ -1540,7 +1470,6 @@ test('display floor: a stationary contact FOLLOWS the neighbourhood as it fills 
       _floorGroundedDisplayPositionForTest(
         { onGround: true },
         pos,
-        false,
         'upgrade',
         ms,
       ),
@@ -1582,7 +1511,6 @@ test('display floor: an on_ground FLAP mid-takeoff-roll never dips below the run
     const out = _floorGroundedDisplayPositionForTest(
       { onGround },
       Cesium.Cartesian3.fromDegrees(LON, lat, GEOID),
-      false,
       'VIR138M',
       1000 + i * 80,
     );
@@ -1615,7 +1543,6 @@ test('display floor: the rehydration seed EXPIRES on its own age, with NO calls 
         _floorGroundedDisplayPositionForTest(
           { onGround: true },
           field,
-          false,
           'longhaul',
           1000,
         ),
@@ -1633,7 +1560,6 @@ test('display floor: the rehydration seed EXPIRES on its own age, with NO calls 
   _floorGroundedDisplayPositionForTest(
     { onGround: false },
     field,
-    false,
     'longhaul',
     2000,
   );
@@ -1643,7 +1569,6 @@ test('display floor: the rehydration seed EXPIRES on its own age, with NO calls 
     _floorGroundedDisplayPositionForTest(
       { onGround: true },
       back,
-      false,
       'longhaul',
       200000,
     ),
@@ -1662,7 +1587,6 @@ test('display floor: the seed expires the same way when the contact keeps report
   _floorGroundedDisplayPositionForTest(
     { onGround: true },
     field,
-    false,
     'cruise',
     1000,
   );
@@ -1671,14 +1595,12 @@ test('display floor: the seed expires the same way when the contact keeps report
   _floorGroundedDisplayPositionForTest(
     { onGround: false },
     field,
-    false,
     'cruise',
     2000,
   );
   _floorGroundedDisplayPositionForTest(
     { onGround: false },
     field,
-    false,
     'cruise',
     200000,
   );
@@ -1688,7 +1610,6 @@ test('display floor: the seed expires the same way when the contact keeps report
     _floorGroundedDisplayPositionForTest(
       { onGround: true },
       back,
-      false,
       'cruise',
       201000,
     ),
@@ -1714,7 +1635,6 @@ test('display floor: a rehydrated seed ranks BELOW fresh neighbour evidence', ()
         _floorGroundedDisplayPositionForTest(
           { onGround: true },
           departed,
-          false,
           'short-hop',
           1000,
         ),
@@ -1726,7 +1646,6 @@ test('display floor: a rehydrated seed ranks BELOW fresh neighbour evidence', ()
   _floorGroundedDisplayPositionForTest(
     { onGround: false },
     departed,
-    false,
     'short-hop',
     2000,
   );
@@ -1741,7 +1660,6 @@ test('display floor: a rehydrated seed ranks BELOW fresh neighbour evidence', ()
     _floorGroundedDisplayPositionForTest(
       { onGround: true },
       moved,
-      false,
       'short-hop',
       3000,
     ),
@@ -1761,26 +1679,13 @@ test('display floor: with nothing fresh to contradict it, the seed still answers
   // warmed either. Demoting the seed must not mean discarding it.
   const pos = Cesium.Cartesian3.fromDegrees(-97.6604, 30.2004, 50);
   reportMeshFloorCell(30.2004, -97.6604, 200.0);
-  _floorGroundedDisplayPositionForTest(
-    { onGround: true },
-    pos,
-    false,
-    'flap',
-    1000,
-  );
-  _floorGroundedDisplayPositionForTest(
-    { onGround: false },
-    pos,
-    false,
-    'flap',
-    2000,
-  );
+  _floorGroundedDisplayPositionForTest({ onGround: true }, pos, 'flap', 1000);
+  _floorGroundedDisplayPositionForTest({ onGround: false }, pos, 'flap', 2000);
   _clearMeshFloorCellsForTest(); // the whole neighbourhood goes cold
   const held = _floorCarto(
     _floorGroundedDisplayPositionForTest(
       { onGround: true },
       Cesium.Cartesian3.fromDegrees(-97.6604, 30.2014, 50),
-      false,
       'flap',
       3000,
     ),
@@ -1800,14 +1705,12 @@ test('display floor: re-measuring its own cell makes a seeded contact authoritat
   _floorGroundedDisplayPositionForTest(
     { onGround: true },
     pad,
-    false,
     'relatch',
     1000,
   );
   _floorGroundedDisplayPositionForTest(
     { onGround: false },
     pad,
-    false,
     'relatch',
     2000,
   );
@@ -1819,7 +1722,6 @@ test('display floor: re-measuring its own cell makes a seeded contact authoritat
         _floorGroundedDisplayPositionForTest(
           { onGround: true },
           pad,
-          false,
           'relatch',
           3000,
         ),
@@ -1838,7 +1740,6 @@ test('display floor: re-measuring its own cell makes a seeded contact authoritat
     _floorGroundedDisplayPositionForTest(
       { onGround: true },
       Cesium.Cartesian3.fromDegrees(-97.6604, 30.2024, 100),
-      false,
       'relatch',
       4000,
     ),
@@ -1862,7 +1763,6 @@ test('display floor: taking off and landing elsewhere does NOT inherit the old f
         _floorGroundedDisplayPositionForTest(
           { onGround: true },
           field,
-          false,
           'trip',
           1000,
         ),
@@ -1879,7 +1779,6 @@ test('display floor: taking off and landing elsewhere does NOT inherit the old f
         _floorGroundedDisplayPositionForTest(
           { onGround: true },
           heldAt,
-          false,
           'trip',
           1500,
         ),
@@ -1893,7 +1792,6 @@ test('display floor: taking off and landing elsewhere does NOT inherit the old f
   _floorGroundedDisplayPositionForTest(
     { onGround: false },
     heldAt,
-    false,
     'trip',
     2000,
   );
@@ -1903,7 +1801,6 @@ test('display floor: taking off and landing elsewhere does NOT inherit the old f
     _floorGroundedDisplayPositionForTest(
       { onGround: true },
       Cesium.Cartesian3.fromDegrees(-97.6604, 31.5004, 60),
-      false,
       'trip',
       3000,
     ),
@@ -1911,105 +1808,6 @@ test('display floor: taking off and landing elsewhere does NOT inherit the old f
   assert.ok(
     Math.abs(landed - (100.0 + GROUND_FLOOR_LIFT_M)) < 0.05,
     `landed at ${landed} — a stale hold would arrive at 201.5 and ease down from it`,
-  );
-});
-
-test('display floor: a model-owned interval retires the hold too', () => {
-  _clearDisplayFloorStateForTest();
-  _clearMeshFloorCellsForTest();
-  setMeshFloorPreferred(true);
-  const pos = Cesium.Cartesian3.fromDegrees(-97.6604, 30.2004, 124.7);
-  reportMeshFloorCell(30.2004, -97.6604, 200.0);
-  _floorGroundedDisplayPositionForTest(
-    { onGround: true },
-    pos,
-    false,
-    'handoff',
-    1000,
-  );
-  // It moves onto unresolved ground, so 200 m is being HELD.
-  const heldAt = Cesium.Cartesian3.fromDegrees(-97.6604, 30.2034, 124.7);
-  _floorGroundedDisplayPositionForTest(
-    { onGround: true },
-    heldAt,
-    false,
-    'handoff',
-    1500,
-  );
-  // T7: the 3D model takes the visual. Our state is retired (nothing visual is
-  // touched — groundSnap's one-shot input is untouched either way).
-  _floorGroundedDisplayPositionForTest(
-    { onGround: true },
-    heldAt,
-    true,
-    'handoff',
-    2000,
-  );
-  // The billboard resumes over ground that has since resolved LOWER. A stale
-  // heldActive would read this as a hold release and ease; it is a fresh start.
-  reportMeshFloorCell(30.2034, -97.6604, 150.0);
-  const back = _floorCarto(
-    _floorGroundedDisplayPositionForTest(
-      { onGround: true },
-      heldAt,
-      false,
-      'handoff',
-      3000,
-    ),
-  ).height;
-  assert.ok(
-    Math.abs(back - (150.0 + GROUND_FLOOR_LIFT_M)) < 0.05,
-    `resumed at ${back} — no ease, because there was no hold to release`,
-  );
-});
-
-test('display floor: a model handoff back onto a COLD cell takes the neighbourhood, not the seed', () => {
-  _clearDisplayFloorStateForTest();
-  _clearMeshFloorCellsForTest();
-  setMeshFloorPreferred(true);
-  // Same handoff as above with the FAVOURABLE half removed: the cell the
-  // billboard resumes on is still cold, so the live read cannot overrule the
-  // seed and the tier order is the only thing standing between the contact and
-  // a floor it measured 330 m ago. Two adjacent cells have resolved at 150 m.
-  const pos = Cesium.Cartesian3.fromDegrees(-97.6604, 30.2004, 124.7);
-  reportMeshFloorCell(30.2004, -97.6604, 200.0);
-  _floorGroundedDisplayPositionForTest(
-    { onGround: true },
-    pos,
-    false,
-    'cold-handoff',
-    1000,
-  );
-  const heldAt = Cesium.Cartesian3.fromDegrees(-97.6604, 30.2034, 124.7);
-  _floorGroundedDisplayPositionForTest(
-    { onGround: true },
-    heldAt,
-    false,
-    'cold-handoff',
-    1500,
-  );
-  _floorGroundedDisplayPositionForTest(
-    { onGround: true },
-    heldAt,
-    true,
-    'cold-handoff',
-    2000,
-  );
-  _clearMeshFloorCellsForTest();
-  reportMeshFloorCell(30.2024, -97.6604, 150.0);
-  reportMeshFloorCell(30.2044, -97.6604, 155.0);
-  const back = _floorCarto(
-    _floorGroundedDisplayPositionForTest(
-      { onGround: true },
-      heldAt,
-      false,
-      'cold-handoff',
-      3000,
-    ),
-  ).height;
-  assert.ok(
-    Math.abs(back - (150.0 + GROUND_FLOOR_LIFT_M)) < 0.05,
-    `resumed at ${back} — a seed that outranked the neighbourhood would resume at 201.5`,
   );
 });
 
@@ -2038,7 +1836,6 @@ test('display floor: every grounded contact is floored on the tick it asks', () 
         _floorGroundedDisplayPositionForTest(
           { onGround: true },
           Cesium.Cartesian3.fromDegrees(-97.66, latOf(i), 100),
-          false,
           `q${i}`,
           1000,
         ),
@@ -2118,7 +1915,6 @@ test('display floor: a DELAYED tick cannot close more of the gap than a prompt o
       _floorGroundedDisplayPositionForTest(
         { onGround: true },
         pos,
-        false,
         'stall',
         ms,
       ),
@@ -2160,7 +1956,6 @@ test('display floor: a floor rising MID-APPROACH is taken whole, on that tick', 
       _floorGroundedDisplayPositionForTest(
         { onGround: true },
         pos,
-        false,
         'riseMid',
         ms,
       ),
@@ -2190,7 +1985,6 @@ test('display floor: a held floor is dropped once the contact leaves the ground 
     _floorGroundedDisplayPositionForTest(
       { onGround: true },
       Cesium.Cartesian3.fromDegrees(-97.6604, lat, 124.7),
-      false,
       'drift',
       ms,
     );
@@ -2213,7 +2007,6 @@ test('display floor: a held floor is dropped once the contact leaves the ground 
     _floorGroundedDisplayPositionForTest(
       { onGround: true },
       far,
-      false,
       'drift',
       3000,
     ),
@@ -2236,7 +2029,6 @@ test('display floor: an ordinary cell-to-cell floor DROP keeps its existing timi
       _floorGroundedDisplayPositionForTest(
         { onGround: true },
         Cesium.Cartesian3.fromDegrees(-97.6604, lat, 124.7),
-        false,
         'plain',
         ms,
       ),
@@ -2248,33 +2040,18 @@ test('display floor: an ordinary cell-to-cell floor DROP keeps its existing timi
   );
 });
 
-test('display floor: the hold never applies to an airborne contact or a modelled one', () => {
+test('display floor: the hold never applies to an airborne contact', () => {
   _clearDisplayFloorStateForTest();
   _clearMeshFloorCellsForTest();
   setMeshFloorPreferred(true);
   reportMeshFloorCell(30.2004, -97.6604, 140.2);
   const on = Cesium.Cartesian3.fromDegrees(-97.6604, 30.2004, 124.7);
-  _floorGroundedDisplayPositionForTest({ onGround: true }, on, false, 'gates');
+  _floorGroundedDisplayPositionForTest({ onGround: true }, on, 'gates');
   const cold = Cesium.Cartesian3.fromDegrees(-97.6704, 30.2104, 124.7);
   assert.equal(
-    _floorGroundedDisplayPositionForTest(
-      { onGround: false },
-      cold,
-      false,
-      'gates',
-    ),
+    _floorGroundedDisplayPositionForTest({ onGround: false }, cold, 'gates'),
     cold,
     'airborne heights belong to the fix-time clamp, held floor or not',
-  );
-  assert.equal(
-    _floorGroundedDisplayPositionForTest(
-      { onGround: true },
-      cold,
-      true,
-      'gates',
-    ),
-    cold,
-    'T7: a model-owned contact keeps its billboard datum, held floor or not',
   );
 });
 
@@ -2286,13 +2063,11 @@ test('display floor: two contacts on the same cell get their own outputs', () =>
   const a = _floorGroundedDisplayPositionForTest(
     { onGround: true },
     Cesium.Cartesian3.fromDegrees(-97.6604, 30.2004, 120),
-    false,
     'A',
   );
   const b = _floorGroundedDisplayPositionForTest(
     { onGround: true },
     Cesium.Cartesian3.fromDegrees(-97.66041, 30.20041, 121),
-    false,
     'B',
   );
   assert.notEqual(

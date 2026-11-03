@@ -47,7 +47,6 @@ export function createApplicationCatalog({
   signal,
   metadata = APPLICATION_LAYER_METADATA,
   vesselOptions,
-  resolveAsset,
 }) {
   if (!signal?.addEventListener)
     throw new TypeError('An application lifetime signal is required');
@@ -70,7 +69,6 @@ export function createApplicationCatalog({
       surface,
       source: sources.flights,
       militaryRegistry,
-      resolveAsset,
     });
     const vessels = createApplicationVessels({
       source: sources.vessels,

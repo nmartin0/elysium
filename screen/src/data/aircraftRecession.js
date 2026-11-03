@@ -240,33 +240,3 @@ export function applyAircraftBillboardTreatment({
   _treatmentResult.alphaWrites = alphaWrites;
   return _treatmentResult;
 }
-
-/**
- * Apply layer-owned hue and composed aircraft alpha to an ambient glTF model without
- * disturbing Cesium's existing MIX/colorBlendAmount presentation semantics.
- * @param {object} input
- * @param {object} input.model
- * @param {{withAlpha:(alpha:number)=>object}} input.baseColor
- * @param {number} input.alpha
- * @param {Partial<typeof DEFAULT_AIRCRAFT_RECESSION_PARAMS>} [input.params]
- * @returns {number} One when a color write occurred, otherwise zero.
- */
-export function applyAircraftModelTreatment({
-  model,
-  baseColor,
-  alpha,
-  params,
-}) {
-  const tuning = resolvedParams(params);
-  if (!model || !baseColor || !Number.isFinite(alpha)) return 0;
-  if (
-    Number.isFinite(model.color?.alpha) &&
-    Math.abs(model.color.alpha - alpha) <= tuning.writeEpsilon &&
-    model.color.red === baseColor.red &&
-    model.color.green === baseColor.green &&
-    model.color.blue === baseColor.blue
-  )
-    return 0;
-  model.color = baseColor.withAlpha(alpha);
-  return 1;
-}

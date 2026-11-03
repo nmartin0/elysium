@@ -22,6 +22,7 @@ import {
   REGISTRY_BY_ID,
   SHARE_TRACKING_RESTORE_POLICIES,
   TRACKING_ID_GRAMMAR,
+  isRetiredLayerOption,
   normalizeLayerState,
   optionSpecs,
 } from '../data/layerState.js';
@@ -247,7 +248,8 @@ export const SHARE_VIEW_FLAGS = freezeAll([
 /**
  * What an omitted layer option means, per option owner and key. Frozen like
  * every other default here: it is today's app default, and it stays even if
- * that default moves (the long form learned this with `models3d`). A new
+ * that default moves (the long form learned this with `models3d`, which is now
+ * retired: see `RETIRED_LAYER_OPTION_TOKENS`). A new
  * option needs an entry before it ships; until it has one it is always
  * written explicitly.
  */
@@ -267,8 +269,6 @@ export const SHARE_VIEW_LAYER_OPTION_ABSENT = Object.freeze({
     paused: false,
   }),
   flights: Object.freeze({
-    models3d: true,
-    models3dMode: 'proximity',
     selectedFlightsTrackingId: null,
     selectedMilitaryTrackingId: null,
   }),
@@ -1114,6 +1114,9 @@ function decodeLayers(bitsReader, optionsReader, unknown) {
         ? layerEntry?.optionOwner
         : null;
     const optionToken = LAYER_STATE_TOKEN_ALPHABET[Math.floor(key / 2)];
+    // A retired option (3D models): an old link carries it, it opens as
+    // before, and the value is dropped without being reported as unknown.
+    if (ownerId && isRetiredLayerOption(ownerId, optionToken)) continue;
     const spec = ownerId
       ? optionSpecs(ownerId).find(
           (candidate) => candidate.token === optionToken,

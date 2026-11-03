@@ -2,13 +2,7 @@ import * as Cesium from 'cesium';
 import { aircraftIcon } from '../../data/aircraftIcons.js';
 import { FOCUS_EVIDENCE_DEV } from './policy.js';
 
-export function createEvidence({
-  flightState,
-  services,
-  parts,
-  layer,
-  resolveAsset,
-}) {
+export function createEvidence({ flightState, services, parts, layer }) {
   /** Resolve a JSON-safe evidence position into ECEF. DEV-only caller. */
 
   function _focusEvidencePosition(record) {
@@ -46,7 +40,6 @@ export function createEvidence({
     )
       return { ok: false, count: 0 };
     if (flightState._trackedIcao) parts.tracking._clearTracking();
-    parts.rendering._releaseModels();
     for (const bb of flightState._billboards.values())
       flightState._billboardCollection.remove(bb);
     flightState._billboards.clear();

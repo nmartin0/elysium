@@ -12,14 +12,8 @@ import {
 } from '../../data/motionModel.js';
 import { CLASS_SCALE_2D } from '../../data/aircraftClass.js';
 import {
-  modelVisualAnchor,
-  modelAnchorWorld,
-} from '../../data/modelVisualAnchor.js';
-import {
   FOCUS_EVIDENCE_DEV,
   RENDER_DELAY_SEC,
-  TRACKED_MODEL_MAX_PX,
-  TRACKED_MODEL_MIN_PX,
   TRACKED_BILLBOARD_SCALE_BY_DISTANCE,
   DR_CORRECTION_MS,
   COURSE_SLEW_DT_MAX_SEC,
@@ -36,13 +30,7 @@ import {
   DISPLAY_CORRIDOR_FAIR_SHARE,
 } from './policy.js';
 
-export function createMotion({
-  flightState,
-  services,
-  parts,
-  layer,
-  resolveAsset,
-}) {
+export function createMotion({ flightState, services, parts, layer }) {
   const {
     cachedGroundFloor,
     GROUND_FLOOR_LIFT_M,
@@ -53,7 +41,6 @@ export function createMotion({
     corridorFloorCells,
     allocateCorridorCells,
   } = services.groundFloor;
-  const { trackedModelScaleForPixelCap } = services.camera;
   const {
     nearFarScalarValueAtDistance,
     clearFocusTarget,
@@ -346,28 +333,6 @@ export function createMotion({
     const scene = flightState._viewer?.scene;
     if (!camera?.positionWC || !position || !scene) return 28;
     const rangeM = Cesium.Cartesian3.distance(camera.positionWC, position);
-    if (parts.rendering._modelOwnsVisual(icao24)) {
-      const spec = parts.rendering._modelSpec(
-        flightState.records.data.get(icao24)?.klass,
-      );
-      const scale = trackedModelScaleForPixelCap({
-        baseScale: spec.scale,
-        nativeRadiusM: spec.nativeRadiusM,
-        rangeM,
-        viewportHeightPx: scene.canvas.clientHeight,
-        fovyRad: camera.frustum.fovy,
-        maximumPixelSize: TRACKED_MODEL_MAX_PX,
-      });
-      const focalLengthPx =
-        scene.canvas.clientHeight / (2 * Math.tan(camera.frustum.fovy / 2));
-      const projectedDiameterPx =
-        (2 * spec.nativeRadiusM * scale * focalLengthPx) / rangeM;
-      return Math.max(
-        TRACKED_MODEL_MIN_PX,
-        Math.min(TRACKED_MODEL_MAX_PX, projectedDiameterPx),
-      );
-    }
-
     const billboard = flightState._trackedEntity?.billboard;
     const time = flightState._viewer.clock.currentTime;
     const width = billboard?.width?.getValue(time) ?? 28;
@@ -453,16 +418,8 @@ export function createMotion({
     // readout anchor, detection bracket, trail head and follow-camera all read
     // the one floored value (the anti-jitter contract forbids recomputing per
     // consumer). NOT the single point for DATA: `_describeFlight` deliberately
-    // reports sensor truth — see the note there. Skipped while a tracked 3D model
-    // owns the visual: it rides groundSnap's one-shot sample and moving its input
-    // would force a re-sample (T7).
-    display = _floorGroundedDisplayPosition(
-      icao24,
-      info,
-      display,
-      parts.rendering._modelOwnsVisual(icao24),
-      nowMs,
-    );
+    // reports sensor truth — see the note there.
+    display = _floorGroundedDisplayPosition(icao24, info, display, nowMs);
 
     Cesium.Cartesian3.clone(raw, flightState._drPrevRaw);
     Cesium.Cartesian3.clone(display, flightState._drPrevDisplay);
@@ -500,101 +457,6 @@ export function createMotion({
       flightState._drReconcileIcao === flightState._trackedIcao
       ? flightState._cachedDRPosition
       : null;
-  }
-
-  /**
-   * The position the tracked aircraft is VISUALLY at this frame — the translation its
-   * 3D model is actually rendering with when the model owns the visual, otherwise the
-   * cached dead-reckoned position the billboard uses.
-   *
-   * This exists because a grounded plane's model rides a one-shot ground snap while its
-   * billboard deliberately stays at the reported (buried) altitude — a ~100 m vertical
-   * split at an inland airport. Anything anchored to the display position while the model
-   * is what you can see drifts below the aircraft and only converges as the coarse floor
-   * cell warms ("the buoy"), sometimes never.
-   *
-   * It reads `modelMatrix`, which `_updateTrackedModel` already wrote this frame — no
-   * sampling, no `_modelDisplayPosition` call from postRender, and no new dead reckoning,
-   * so the follow-camera anti-jitter contract on `gevDisplayPosition` is untouched.
-   */
-
-  function _trackedVisualCached() {
-    if (
-      flightState._trackedIcao &&
-      parts.rendering._modelOwnsVisual(flightState._trackedIcao)
-    ) {
-      const spec = parts.rendering._modelSpec(
-        flightState.records.data.get(flightState._trackedIcao)?.klass,
-      );
-      return modelVisualAnchor(
-        flightState._trackedModel.modelMatrix,
-        spec.visualCenterNative,
-        Number.isFinite(flightState._trackedModel.computedScale)
-          ? flightState._trackedModel.computedScale
-          : spec.scale,
-        flightState._trackedVisualPos,
-      );
-    }
-    return _trackedDisplayCached();
-  }
-
-  /** Trail endpoint for the rendered tracked owner. Brackets/readouts stay on
-   * the visual centre; only the trail moves to the model's lower-centre hardpoint. */
-  /** The tracked model's rendered bounding radius (m), or 0 when no model of this
-   *  contact is drawing. Carries Cesium's effective `computedScale`, which may be
-   *  above `scale` to satisfy minimumPixelSize — the trail head has to be judged
-   *  against the size the operator SEES, not the nominal one. */
-  /** World-space origin of the tracked model, or null when no model of this
-   *  contact is drawing. This is the centre the rendered bounding sphere is
-   *  measured from, so the trail clip and the envelope agree on one frame. */
-
-  function _trackedModelCenterWorld() {
-    if (
-      !flightState._trackedIcao ||
-      !flightState._trackedModel ||
-      !parts.rendering._modelOwnsVisual(flightState._trackedIcao)
-    )
-      return null;
-    return Cesium.Matrix4.getTranslation(
-      flightState._trackedModel.modelMatrix,
-      flightState._scratchTrailClip,
-    );
-  }
-
-  function _trackedModelEnvelopeM() {
-    if (
-      !flightState._trackedIcao ||
-      !flightState._trackedModel ||
-      !parts.rendering._modelOwnsVisual(flightState._trackedIcao)
-    )
-      return 0;
-    const spec = parts.rendering._modelSpec(
-      flightState.records.data.get(flightState._trackedIcao)?.klass,
-    );
-    const scale = Number.isFinite(flightState._trackedModel.computedScale)
-      ? flightState._trackedModel.computedScale
-      : spec.scale;
-    return spec.nativeRadiusM * scale;
-  }
-
-  function _trackedTrailCached() {
-    if (
-      flightState._trackedIcao &&
-      parts.rendering._modelOwnsVisual(flightState._trackedIcao)
-    ) {
-      const spec = parts.rendering._modelSpec(
-        flightState.records.data.get(flightState._trackedIcao)?.klass,
-      );
-      // Through the model's OWN render chain (modelVisualAnchor's hand-rolled
-      // half-correction put this offset on the lateral axis — see
-      // modelAnchorWorld).
-      return modelAnchorWorld(
-        flightState._trackedModel,
-        spec.trailAnchorNative,
-        flightState._trackedTrailPos,
-      );
-    }
-    return _trackedDisplayCached();
   }
 
   /** Smoothed world course for the tracked aircraft this frame. Reads the
@@ -771,13 +633,12 @@ export function createMotion({
   }
 
   /** Retires a contact's display-floor state. Called the moment it stops being a
-   *  grounded billboard — airborne, model-owned, or gone.
+   *  grounded billboard — airborne or gone.
    *
    *  The floor itself is kept as a rehydration seed for FLOOR_SEED_GRACE_MS (see
    *  above) and MARKED as one; everything that describes the contact's CURRENT
    *  rendering is cleared, so a re-ground recomputes from scratch and cannot be
-   *  mistaken for a hold release. Nothing visual is touched, so the T7
-   *  model-ownership gate is unaffected.
+   *  mistaken for a hold release. Nothing visual is touched.
    *  @param {string} icao24 @param {number} nowMs - Tick clock. */
 
   function _retireDisplayFloorState(icao24, nowMs) {
@@ -825,20 +686,10 @@ export function createMotion({
    *    Still never an invented surface: every tier is a measurement, and when
    *    none exists the position passes through as before.
    *  - Grounded contacts only. Airborne heights are the fix-time clamp's job.
-   *  - NEVER when a 3D model owns the visual (T7): the model rides groundSnap's
-   *    one-shot tileset sample and the billboard hides behind it, so clamping the
-   *    hidden billboard would put a SECOND ground chain on one contact — and the
-   *    one the operator is not looking at. (The original rationale was narrower:
-   *    lifting the datum dragged groundSnap's input past its 50 m
-   *    move-invalidation and forced a re-sample every frame. groundSnap now
-   *    measures that distance on the ellipsoid, so a purely vertical change costs
-   *    nothing; the gate stays for the reason above.) Same gate the military
-   *    layer's grounded billboard lift uses.
    *
    * @param {string} icao24 - Contact key (owns one `_displayFloorState` entry).
    * @param {object|null|undefined} info - `_flightData` record for this contact.
    * @param {Cesium.Cartesian3|null} pos - Dead-reckoned display position.
-   * @param {boolean} modelOwnsVisual - Whether a 3D model is drawing this contact.
    * @param {number} [nowMs] - Tick clock, passed by both callers so the release
    *   ease advances on the same clock the rest of the tick uses.
    * @returns {Cesium.Cartesian3|null} `pos` itself when nothing moves (the common
@@ -849,10 +700,9 @@ export function createMotion({
     icao24,
     info,
     pos,
-    modelOwnsVisual,
     nowMs = Date.now(),
   ) {
-    if (!pos || !info?.onGround || modelOwnsVisual) {
+    if (!pos || !info?.onGround) {
       _retireDisplayFloorState(icao24, nowMs);
       return pos;
     }
@@ -1045,8 +895,6 @@ export function createMotion({
     const candidates = [];
     for (const [icao24, info] of flightState.records.data) {
       if (!info?.onGround) continue;
-      // T7: a contact whose 3D model is the visual never reads a display floor.
-      if (parts.rendering._modelOwnsVisual(icao24)) continue;
       if (!Number.isFinite(info.rawLat) || !Number.isFinite(info.rawLon))
         continue;
       if (
@@ -1116,10 +964,6 @@ export function createMotion({
     _trackedFocusSizePx,
     _trackedDisplayPosition,
     _trackedDisplayCached,
-    _trackedVisualCached,
-    _trackedModelCenterWorld,
-    _trackedModelEnvelopeM,
-    _trackedTrailCached,
     _trackedDisplayCourse,
     _resetTrackedDisplay,
     _heldDisplayFloorM,

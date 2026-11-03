@@ -286,16 +286,16 @@ test('tracking layers write gevLabelModel and expose only their cached display p
   assert.equal(sources['satellites.js'].includes('_trackedEntity.label.text'), false);
 });
 
-test('civilian trail heads use the lower-centre model anchor and weak-texture tint', async () => {
+test('civilian trail heads end on the tracked display position', async () => {
   const files = await Promise.all(['flights.js'].map(async (name) => (
     [name, readLayerSource(new URL(`./${name}`, import.meta.url))]
   )));
   for (const [name, source] of files) {
     assert.ok(
-      (/const\s*head\s*=\s*(?:parts\.motion\.)?_trackedTrailCached\(\s*,?\s*\)\s*\|\|\s*(?:parts\.motion\.)?_trackedDisplayPosition\(\s*(?:flightState\.)?_trackedIcao,?\s*\);/).test(source),
-      `${name} trail head uses the dedicated lower-centre model anchor`,
+      (/const\s*head\s*=\s*(?:parts\.motion\.)?_trackedDisplayPosition\(\s*(?:flightState\.)?_trackedIcao,?\s*\);/).test(source),
+      `${name} trail head is the tracked display position`,
     );
-    assert.ok(source.includes('const MODEL_COLOR_BLEND_AMOUNT = 0.94;'),
-      `${name} keeps diffuse texture contribution weak through code-side MIX`);
+    assert.ok(!source.includes('_trackedTrailCached'),
+      `${name} has no model trail anchor`);
   }
 });

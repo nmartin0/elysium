@@ -213,6 +213,13 @@ zigzag varint (an option whose long-form spelling is a canonical integer),
 kind 1 means a varint length and ASCII text (the long-form spelling). Values
 are decoded by the layer-state codec's own option decoders.
 
+Retired options (`RETIRED_LAYER_OPTION_TOKENS` in `layerState.js`): flights
+`e` (`models3d`) and `m` (`models3dMode`) were written by every link made while
+the 3D aircraft models existed. Both decoders still accept them and drop the
+value, without reporting it as unknown, so those links open as they always did.
+Encoders never write them, and `e` and `m` are never given to another flights
+option.
+
 A followed aircraft, military aircraft or satellite is a thing view in the
 compact form, not a tracking option: the encoder moves it out of the layer
 options, and the converter moves it back for the long form.

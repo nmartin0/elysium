@@ -80,8 +80,10 @@ function booleanOption(
  * different things inside a single schema version. Both sides of the codec read
  * this function so they cannot disagree about which it is.
  *
- * (This is the same rule `scf` follows in sharelink.js by hand. `models3d` is the
- * first option in THIS codec to need it — flipped to default-ON on 2026-08-22.)
+ * (This is the same rule `scf` follows in sharelink.js by hand. `models3d` was
+ * the first option in THIS codec to need it; that option is retired, see
+ * `RETIRED_LAYER_OPTION_TOKENS`. No live option uses `absentValue` today, but
+ * the rule stays for the next one.)
  */
 function absentTokenValue(spec) {
   return Object.hasOwn(spec, 'absentValue')
@@ -297,30 +299,6 @@ const OPTION_GROUPS = Object.freeze({
     booleanOption('paused', 'p', false),
   ]),
   flights: Object.freeze([
-    // Owner directive 2026-08-22: the fleet's 3D models are DEFAULT-ON in
-    // PROXIMITY mode. Proximity is itself the altitude/count gate — models only
-    // materialize once the camera is close enough and only for the nearest
-    // contacts in view — so "on" costs nothing at globe scale, and an operator
-    // who wants every in-view plane still opts into `all` deliberately.
-    // This default must stay in lockstep with `_models3dEnabled` in BOTH flight
-    // layers, `this._models3dEnabled` in ui.js, and the `active` / `visible`
-    // classes in index.html: the fresh-boot path skips restoration entirely (see
-    // `start()` below), so nothing ever pushes this value into the layers — those
-    // four initializers ARE the agreement, and they are pinned together in
-    // layerState.test.mjs.
-    //
-    // `absentValue: false` is what keeps the flip out of links already in the
-    // wild. Schema v2 shipped with OFF as the omitted default, so `v=2&l=f`
-    // MEANS off — and it has to keep meaning that. Moving the default without
-    // this would have silently turned 3D on for every existing v2 link, and
-    // `v=2&l=f&lo=f.m.a` (an OFF link that remembered mode All) would have come
-    // back as ON+All. The price is that ON is now written explicitly (`f.e.1`)
-    // instead of ridden in on the omission; see `absentTokenValue`.
-    booleanOption('models3d', 'e', true, { absentValue: false }),
-    enumOption('models3dMode', 'm', 'proximity', ['proximity', 'all'], {
-      proximity: 'p',
-      all: 'a',
-    }),
     trackingIdOption('selectedFlightsTrackingId', 't', null),
     trackingIdOption('selectedMilitaryTrackingId', 'u', null),
   ]),
@@ -629,6 +607,24 @@ const OPTION_OWNER_IDS = Object.freeze([
   ),
 ]);
 
+/**
+ * Option tokens that links in the wild still carry but that no longer mean
+ * anything. The 3D aircraft models are gone; `models3d` (`e`) and
+ * `models3dMode` (`m`) were written by every flights link made while they
+ * existed. Decoders recognize these tokens and DROP the value, so an old link
+ * opens exactly as it did (nothing is reported as unknown), and encoders never
+ * write them. Tokens here are permanent: never give `e` or `m` to a new flights
+ * option, because an old link's value would then be read as the new option's.
+ */
+export const RETIRED_LAYER_OPTION_TOKENS = Object.freeze({
+  flights: Object.freeze({ e: 'models3d', m: 'models3dMode' }),
+});
+
+/** Whether `token` names a retired option of `ownerId` (see above). */
+export function isRetiredLayerOption(ownerId, token) {
+  return Object.hasOwn(RETIRED_LAYER_OPTION_TOKENS[ownerId] ?? {}, token);
+}
+
 export function optionSpecs(ownerId) {
   return OPTION_GROUPS[ownerId] || [];
 }
@@ -871,10 +867,9 @@ export function decodeLayerStateParams(params) {
     rawOptions[ownerId][spec.key] = decoded;
   }
   // Fill every token the link did NOT carry with its absent-meaning before
-  // normalization, which would otherwise substitute the CURRENT default. For all
-  // but one option those are identical and this is a no-op; for `models3d` it is
-  // the whole point — an omitted `e` is a v2 author saying OFF, not a v2 author
-  // saying "whatever the default happens to be today". See `absentTokenValue`.
+  // normalization, which would otherwise substitute the CURRENT default. For
+  // every live option those are identical and this is a no-op. See
+  // `absentTokenValue`.
   for (const ownerId of OPTION_OWNER_IDS) {
     for (const spec of optionSpecs(ownerId)) {
       if (rawOptions[ownerId] && Object.hasOwn(rawOptions[ownerId], spec.key))

@@ -4,7 +4,6 @@ import {
   DEFAULT_AIRCRAFT_RECESSION_PARAMS,
   aircraftRecessionFactors,
   applyAircraftBillboardTreatment,
-  applyAircraftModelTreatment,
   cameraLimbDistanceM,
 } from './aircraftRecession.js';
 
@@ -132,25 +131,4 @@ test('applyAircraftBillboardTreatment returns its documented module singleton', 
   const second = applyAircraftBillboardTreatment({ ...input, baseScale: 0.5 });
   assert.strictEqual(first, second);
   assert.equal(first.scale, 0.5, 'the prior reference reflects the next call');
-});
-
-test('ambient model presentation receives composed alpha without changing blend semantics', () => {
-  const model = { color: { alpha: 1 }, colorBlendAmount: 0.9 };
-  const color = { withAlpha: (alpha) => ({ alpha, rgb: 'amber' }) };
-  assert.equal(applyAircraftModelTreatment({ model, baseColor: color, alpha: 0.2, params }), 1);
-  assert.deepEqual(model.color, { alpha: 0.2, rgb: 'amber' });
-  assert.equal(model.colorBlendAmount, 0.9);
-  assert.equal(applyAircraftModelTreatment({ model, baseColor: color, alpha: 0.2, params }), 0);
-});
-
-
-test('model hue changes at constant alpha, then clears without redundant writes', () => {
-  const color = (red,green,blue) => ({red,green,blue,withAlpha(alpha){return {red,green,blue,alpha};}});
-  const model = {color:color(1,1,1).withAlpha(0.65)};
-  assert.equal(applyAircraftModelTreatment({model,baseColor:color(1,0.2,0.2),alpha:0.65}),1);
-  assert.equal(model.color.green,0.2);
-  assert.equal(model.color.alpha,0.65);
-  assert.equal(applyAircraftModelTreatment({model,baseColor:color(1,0.2,0.2),alpha:0.65}),0);
-  assert.equal(applyAircraftModelTreatment({model,baseColor:color(1,1,1),alpha:0.65}),1);
-  assert.equal(model.color.green,1);
 });

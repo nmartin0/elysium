@@ -10,19 +10,13 @@ import {
   ENRICH_AMBIENT_PER_SWEEP,
 } from './policy.js';
 
-export function createEnrichment({
-  flightState,
-  services,
-  parts,
-  layer,
-  resolveAsset,
-}) {
+export function createEnrichment({ flightState, services, parts, layer }) {
   function _enqueueEnrich(key, query, onData, priority = false) {
     if (flightState.lifetime.signal.aborted) return;
     if (flightState._enrichSeen.has(key)) return;
     flightState._enrichSeen.add(key);
     const job = { query, onData };
-    // Priority (tracked / model-eligible) goes to the FRONT so a deep ambient
+    // Priority (tracked) goes to the FRONT so a deep ambient
     // backlog can never delay the plane the user just clicked or zoomed into.
     if (priority) flightState._enrichQueue.unshift(job);
     else flightState._enrichQueue.push(job);
@@ -96,9 +90,6 @@ export function createEnrichment({
             const bb = flightState._billboards.get(icao24);
             if (bb)
               parts.rendering._applyFleetBillboardPresentation(icao24, bb);
-            // Hangar fleet: the class's GLB/scale may have changed — resync the
-            // live model, any in-flight load, and the tracked standalone model.
-            parts.rendering._syncModelToClass(icao24);
           }
         }
         if (icao24 === flightState._trackedIcao && flightState._trackedEntity)
@@ -200,12 +191,9 @@ export function createEnrichment({
         if (!/^[0-9a-f]{6}$/i.test(icao24)) continue; // adsbdb keys are 6-char hex only
         if (flightState.records.data.get(icao24)?.onGround) continue; // ground traffic never spends ambient budget (click-to-enrich still works)
         if (!bb.position || !occluder.isPointVisible(bb.position)) continue; // beyond the limb
-        Cesium.Cartesian3.clone(
-          bb.position,
-          flightState._scratchModelBS.center,
-        );
+        Cesium.Cartesian3.clone(bb.position, flightState._scratchCullBS.center);
         if (
-          cull.computeVisibility(flightState._scratchModelBS) ===
+          cull.computeVisibility(flightState._scratchCullBS) ===
           Cesium.Intersect.OUTSIDE
         )
           continue; // off-screen
