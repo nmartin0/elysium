@@ -1,6 +1,6 @@
 # How real sources behave, and how the simulator's compare
 
-BLOCKING.md item 11, step one (19 October): research how each real kind
+the removed BLOCKING.md item on the simulator, step one (19 October): research how each real kind
 of source behaves, write it down, and probe the simulator against it.
 This is that list. Each row says what the REAL thing does (with its
 source and default), what the SIMULATOR does today (from reading its
@@ -101,3 +101,77 @@ returning nothing silently (P2); zone handling (P4, M4); zero dates
 and regional delimiters (F3), Excel's conversions (F4), changing headers
 (F5). APIs: expiring tokens (R1), rate limits in their many forms (R2),
 records shifting during paging (R4), formats (R5) and deletions (R6).
+
+## What running Elysium over a world found, and what was decided
+
+Moved here from BLOCKING.md when its simulator items were removed (3
+November 2026), because these are measured facts about sources, not
+planning. All of it is built.
+
+**The simulator stays outside Elysium.** Its founding rule, "the
+databases are the only interface", and that it does not import Elysium
+or know it exists, is kept: an Elysium that controlled the world it reads
+would know a rename was coming, and a product shipping a way to create
+and alter databases has one more door. The control channel is
+`POST /control` on loopback with a token in an owner-only `control.json`.
+
+**Runs on 19 to 26 October** (`scripts/live_world.py` starts a world,
+configures a deployment from its `connections.json` alone, and each round
+syncs and compares every object type with an independent plain reader and
+the watched totals with the simulator's oracle). Every table ended in
+agreement or in a refusal that names its reason. What they found in
+Elysium: a deployment reading anything but SQLite without a
+`write_targets` line failed to load; the API reader had no login for
+expiring tokens; the CSV reader could not open a zip or gzip; a first sync
+under row-level security with no policy PUBLISHED AN EMPTY TABLE (refused
+now); MariaDB zero dates refused a whole table (`zero_dates_as_null`,
+declared per silo); a time with no zone did not say to declare one; a
+renamed or dropped table gave "could not read the columns of 'skills'" and
+now says the table has gone and names the source tables the mirror does
+not hold. In the simulator: a replica did not carry its source's grants;
+`zero_dates` wrote none for columns an application leaves out; a type
+change that did not say `nullable` stopped the world on its own check.
+Five migrations over two weeks: a RESCALE of invoice totals by 100 was
+served (it is what the source now says) and flagged by the profile
+monitor ("average 8.167e+04, was 842.4 (214.1 standard deviations)"); a
+decimal retyped to integer was named; an added table was left alone.
+
+**Decided 21 October, after the precedent.**
+- A suspected rename (a column the ontology reads gone, and a new column
+  arrived) HOLDS the table at its last good copy until the field is
+  repointed or removed. Fivetran and Airbyte carry on, but Fivetran keeps
+  the old values and blanks only new rows; Elysium serves the current
+  state, so carrying on blanked every row. dlt's `freeze`, Auto Loader's
+  `failOnNewColumns` and Airbyte's "Pause connection" stop instead. One
+  rename is not caught: made in two releases, the new column added in one
+  and the old dropped in the next; by the drop the new column is not new.
+  The message names the undeclared columns its values may be in. An API
+  source never holds, since a key it leaves out may only be null.
+- A CSV ending part-way through a line is REFUSED and the table keeps its
+  last good copy; a silo whose writer never ends its last line says
+  `allow_unterminated_last_line: true`. "Done" marker files are not built.
+- Replica lag: a PostgreSQL source says whether it is a standby that has
+  received more than it has replayed (received against replayed, not
+  against the clock, which reads an idle primary as lag), and the copy is
+  dated from its last replayed change. Not seen: WAL not yet received.
+- The overlay of Elysium's own writes runs per type, from the time the
+  type's gold was built from data read, and a write is timed by when it
+  was APPLIED, not asked for. A running server takes a type's new data
+  time only when its gold publishes, so the overlay may run wider than
+  needed, never narrower.
+- SQLite in the simulator keeps declared types as hints, money by NUMERIC
+  affinity, booleans 1/0, times as ISO text in UTC with no zone, so it is
+  refused as an instant until the zone is declared (`timezone: UTC`).
+
+**Joint requests from Astrolabe and Heliograph (1 November)**, ranked for
+design: live push through the add-on proxy, a time-series chart in the
+kit, event subscription and triggers on arriving data, audit for live
+data, jobs, source terms and feed health, large results, secret
+references and add-on data under backup. They are now requirements of
+BLOCKING.md "Converge on precedent" (S9, S10, S12). Decided: a signal is
+an Elysium object a source creates, and "took it" and "skipped" are
+actions on it; accounts, positions and decisions are objects; Elysium
+governs ACCESS to market data and does not hold the bars; an add-on copies
+`elysium_addon_checks.py` into its own tests; `PORT` is honoured only in
+add-on mode. Heliograph has no sign-in of its own (it binds 127.0.0.1);
+behind the proxy it must verify `X-Elysium-Identity`.

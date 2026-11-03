@@ -16,6 +16,14 @@ almost every request, and a starting worker's crash recovery could take
 a write another worker was still applying. Both are fixed and unit
 tested; this is how to see the whole thing work on a real machine.
 
+WHAT WAS OBSERVED (14 Oct, uvicorn --workers 2 on a seeded deployment):
+sessions, lockouts, proposals confirmed on another worker, and a
+withdrawn grant refused by every worker after one reload all held. The
+generation header alternated between workers (9, 10, 9, 10); the UI now
+watches `x-elysium-configuration`, the shared reload epoch. Applying and
+resuming a write share an flock; the two-process reproduction was an
+IntegrityError, the write done but reported failed.
+
 HOW IT KNOWS BOTH WORKERS ANSWERED, rather than assuming: every request
 opens a fresh connection, so the kernel hands it to whichever worker
 accepts next, and the server's access log carries each worker's pid.

@@ -29,8 +29,16 @@ RANKED EXACTLY. Cosine similarity of unit vectors is their dot product,
 so ranking a question against a table is ONE matrix product -- numpy, in
 milliseconds at tens of thousands of rows. Exact, not approximate: an
 index (HNSW, say) is for when a table outgrows this, and measuring that
-comes first. Foundry's own nearest-neighbour search returns at most a
+comes first. The precedent's own nearest-neighbour search returns at most a
 few hundred; so does this.
+
+NOT A SEPARATE VECTOR SERVER (the owner, 18 October; Qdrant was the
+design). Exact search in this process was measured at 10.8 ms a question
+at 100,000 rows of 768 numbers, 38 ms at 500,000 of 512 and 52 ms at a
+million of 256, so speed does not force one. MEMORY would: every server
+process holds its own copy of the vectors (977 MB at a million of 256),
+where a vector server holds one. Revisit when a declared table nears a
+million rows, or several processes each hold a large copy.
 
 NEVER SERVED. Nothing here returns a vector to a caller outside the
 server, and no score reaches the screen: a cosine of 0.83 has no meaning
@@ -61,7 +69,7 @@ BATCH = 16
 #: a person may see. Bounded so a person who may see few rows of a large
 #: table costs a bounded read, not the table.
 MAX_SCAN = 2_000
-#: The most results one ranking returns (Foundry's KNN: 1 to 100 in
+#: The most results one ranking returns (the precedent's KNN: 1 to 100 in
 #: Workshop, up to 500 in its v2 functions).
 MAX_K = 100
 

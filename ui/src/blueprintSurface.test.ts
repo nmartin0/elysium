@@ -5,6 +5,23 @@
 /**
  * How much of Blueprint this project actually depends on.
  *
+ * THE DECISION BEHIND THIS PIN (kept from the planning file when its item
+ * was removed). Do not move off Blueprint to avoid depending on one
+ * company: the risk is abandonment, not capture, because Blueprint is
+ * Apache-2.0 and a granted licence cannot be revoked, and a BIGGER vendor
+ * is the wrong direction. Three wrappers (`Action`, `StatusTag`, `Notice`
+ * in shell-api/components) cover the 97 call sites with the most
+ * repetition; they deliver "the gained consistency of reducing the used
+ * API surface", not swappability. `Dialog` (two uses) and `InputGroup`
+ * (three) are left unwrapped on purpose: a wrapper over a component used
+ * twice "will just become a copy of the component". Blueprint 6.20.0
+ * shipped 2026-09-17; Radix has slowed since WorkOS acquired it. THE
+ * TRIGGERS that change the answer, either alone: (1) Blueprint misses a
+ * React major release or goes six months without a security fix; (2) a
+ * screen cannot be built because Blueprint's components will not do it.
+ * Then the wrappers are the call-site layer and the 97 sites do not move.
+ *
+ *
  * CONFIG_ROUND_TRIP_AND_UI_KIT.md Part 2 rests on one measurement:
  * "the coupling is shallow -- 49 import sites, 22 distinct
  * components ... Most of what Blueprint provides here is a button with

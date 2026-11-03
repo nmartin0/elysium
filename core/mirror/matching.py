@@ -14,6 +14,20 @@ becomes a proposal without anyone asking; between the two it goes to
 review; below, nothing. Both are declared per type, because only a
 deployment knows what a false merge costs it.
 
+MEASURED (scripts/evaluate_matching.py, 15 October). The first run on the
+development deployment found recall of 0% at the review threshold, because
+comparison was exact-match only and one typo lost a duplicate, and an
+auto-propose threshold that two compared fields could never reach. After
+the cascade (rule, blocking, scoring with an optional CLOSE level per
+field, a person) recall on that deployment's copies went from 15% to 65%
+at the review threshold. One edit is the default level because two halved
+precision on a crowded population; a deployment allowing more should run
+the harness on its own rows first. Reviewers' rejections calibrate
+`auto_propose_above` only, leaving out pairs shown pre-selected. The
+cascade has no LLM stage (owner, 15 October): fuzzy comparison levels
+first, an LLM only if the harness shows a band they cannot settle, and
+then as a note on the card, never a score.
+
 WEIGHTS ARE DECLARED, NOT ESTIMATED, and that is a decision rather
 than a limitation (GOLD-6's technology note). A
 governed system should tell a reviewer why two records scored as they

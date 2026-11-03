@@ -27,1533 +27,207 @@ Step 4 is the one that costs. `SCALABILITY.md` was cited six times
 from `core/`, `adapters/` and `tests/`; those citations now carry the
 numbers themselves.
 
-## Run, and therefore closed
-
-| was | what was observed |
-| --- | --- |
-| 2. `--workers` for real | RUN, 14 Oct, `uvicorn --workers 2` on a seeded deployment, with every request on a fresh connection and each worker's pid in the access log so a check that reached one worker fails. Sessions, lockouts, proposals confirmed on another worker, and a withdrawn grant refused by every worker after one reload: all held. TWO FAULTS FOUND AND FIXED: the generation header alternated between workers (9, 10, 9, 10), so the UI refetched its schema on almost every request -- it now watches `x-elysium-configuration`, the shared reload epoch; and a starting worker's crash recovery applied a write another worker was still applying (reproduced with two processes: IntegrityError, write done but reported failed) -- applying and resuming now share an flock. `python -m scripts.check_workers` repeats the run on any machine. |
-| 17. The watch layout check | RUN AND PASSES. The item said it was "not known to be broken ... known to be unobserved, which is a different thing -- a test nobody has watched run is not evidence". It has now been watched: the recipient control computes `flexDirection: row` and measures 21px tall, against the spec's limits of `row` and under 40. A screenshot confirms the checkbox and `customer_service` sit on one line with the label. |
-
-NOT BY THE COMMAND THE ITEM GAVE, and that is worth recording rather
-than glossing. `npx playwright test` could not run: the pinned
-@playwright/test wants a Chromium revision this environment cannot
-download, and the one present is older. The spec's assertions were
-run instead through the Python binding against the same built bundle
-served by the same uvicorn -- same page, same selectors, same two
-measurements. Somebody with a working `npx playwright install` should
-still run the file itself; this closes the question the item asked,
-which was whether the layout holds.
-
-THE FILE ITSELF HAS NOW RUN (14 Oct): `npx playwright test`, all 16
-of layout.spec.ts and shell.spec.ts passing against the built bundle,
-using the Chromium already on disk through playwright.config.ts's
-existing `PLAYWRIGHT_CHROMIUM_PATH`. Two setup traps worth knowing: the
-layout tests log in as `debug` (scripts/create_debug_user.py), and a
-run made before that user exists LOCKS IT OUT for fifteen minutes,
-because failed logins count for usernames that do not exist yet.
-
-## Consumed so far
-
-| document | outcome |
-| --- | --- |
-| `SCALABILITY.md` | both decisions already built; benchmark numbers moved into the code that cited them |
-| `QUERY_PLAN.md` | four unbuilt UI features, all product direction; its deferred MAC argument kept below |
-| `LAKE_METADATA_NOTE.md` | three of its four answers were built; the fourth -- a reader -- is built here. Its one deferral kept below |
-| `AUDIT_INTAKE.md` | superseded by `AUDIT_CHECKLIST.csv` by its own words; all 67 findings verified present there first; its alias table folded into the ten rows it concerns |
-| `AUDIT_INTAKE_PIPELINE.md` | same; 50 ids checked, every one tracked |
-| the nine agent files | `HANDOVER_*`, `REQUESTS_*`, `STATUS_*` -- 8,662 lines from three agents that no longer exist. 25 SEC findings rescued into the CSV first; every other id verified already tracked |
-| `000COORDINATION.md` | the protocol for four agents that no longer exist, and all four branches are merged. Its ownership table was already wrong -- `SEC-06` measured it matching 89 of 145 source files. Consuming it surfaced a real conversion that had been unblocked for forty patches |
-| `LIBRARY_AUDIT.md` | 1.1 superseded by its own Part 4.6; 1.2 MEASURED AND REJECTED, with the numbers now in `request_metrics.py` and eight tests enforcing it; 1.3 is available work, below. Parts 2-4 are reasoning about when to take a dependency, kept in `PRINCIPLES.md`'s territory |
-| `OPEN_RISKS.md` | all five resolved or measured: 1, 2 and 5 fixed by earlier patches, 3 built and wired, 4's premise shown out of date in patch 490. Its 24 code citations now name what each risk WAS |
-| `GOLD_MIGRATION_SURVEY.md` | every file it named was reworked; its proposed shape IS `build_gold_view`. Its parity test exists and passes (42) |
-| `ACCESS_CONTROL_PROPOSAL.md` | not built, and a change to what a grant MEANS. Below |
-| `CONFIG_ROUND_TRIP_AND_UI_KIT.md` | not built; needs a dependency decision and product direction. Below |
-| `Triggers` (item 4) | all of it built, 14-17 October: four-eyes per action (`owner_may_approve_automation`), evaluation after each sync and at a date window's crossing, one durable timer service, reminders with how-late-is-too-late, combined triggers, queue flooding. Checked 26 October against `core/timers.py`, `core/trigger_windows.py`, `core/trigger_states.py` and `api/timer_service.py`, which already carry the precedent (Temporal, Quartz, Prometheus, Foundry Automate, GitHub's four-eyes loophole). Nothing was open |
-| `OBJECT_EXPLORER_PLAN.md` | phases 1 and 2 (backend) built, and the blocker they existed to remove is gone -- `in` and `not_in` are in the filter vocabulary. Phases 3-5 are frontend; below |
-| `THIRD_PARTY_EXTENSIONS.md` | a design, unbuilt. Its finding about module federation kept below, because it is the kind of thing a later reader would otherwise rediscover the hard way |
-| `TRIAGE.md` | fully absorbed: its 45 ids are CSV rows, its mutation sweep is the 70 declared controls in `scripts/check_controls.py`, its reachability sweep is the `WIRED-` rows |
-| `LIVE_UPDATES_AND_PIPELINE_BUILDER.md` | nothing built; its security decision kept below because it is the reason the design is shaped as it is |
-| `TRIGGERS_AND_PLUGINS.md` | part one built (patches 264-280), including the automation refusal; part two superseded by its own successor, now the plugin-API item. Its three unanswered risks are the triggers item |
-| `MEDALLION_PIPELINE.md` | the pipeline is built and all five owner decisions (D1-D5) were answered in September. Its rule S1 now lives in `standardise.py`, and the test that READ this file at runtime is behavioural instead |
-| `FUSION_AND_IDENTITY.md` | the backend is built -- `matching.py`, `identity.py`, `identity_decisions.py` with a `merge_decisions` table, and inference OFF by default. The reviewer screen has since been built (Identity), showing which fields agree rather than their values -- its answer to the MAC problem the old item named |
-| `ELT_ROADMAP.md` | every phase it defines (0, 0b, 1) is DONE. What remains is a dependency chain, not a plan, and it is below with the measurement that corrected it |
-| `HOT_RELOAD_PLAN.md` | built. Its six rules are named in the 26 places that cited step numbers; its most fragile assumption is now a test; and one of its open questions (`DeploymentConfig` not frozen) has since been answered |
-| `DEV_UI.md` | **RESTORED, AND THE ROW ABOVE WAS WRONG TWICE.** It claimed 1,271 lines of interface design were "none of it buildable without a front-end agent" and pointed at an item that renumbering had long since made something else. Both halves were disproved by building from it: the measured palette, the type scale, the density ladder and the spine are being built straight out of the file. It is NOT consumed, it is not deleted, and it should not be again -- a measured fact in a deleted file is a measured fact lost, and this one cost a whole type scale reinvented wrong at every step |
-| `IDEAS.md` | investigations. Most are SHIPPED or ANSWERED; what is open needs a capable model, and is the agent-loop efficiency item |
-| `UI_ROADMAP.md` | 2,143 lines of front-end plan. Its one backend finding -- an unbounded search filling the model's context -- is the context-rot item, with the code evidence |
-| `BACKLOG.md` | its sections are absorbed: 0c, 0d4 and 0d5 were worked in patches 475-480; section 1 is the agent-loop efficiency item; section 2's one open piece (the keyboard model's roving-focus half) has since left this file; section 5 pointed here already |
-| `ROADMAP.md` | its numbered backend list is done or explicitly NOT DOING; pagination shipped as `page_token`. Its one unbuilt track, external writeback, was decided and built -- see the `write_targets` row |
-| `UNIFIED_ROADMAP.md` | the file that started this method: on 21 September it read every plan against the CODE and found seven built things described as open. Its remaining entries are items 30-35; its one correction to me is in item 12 |
-| `gold_history` (was item 1) | DECIDED and BUILT, patches 507-509: the owner wanted both a reader and a route. It leaves this file by its own rule -- the decision survives in the code, the `NEW-7` checklist row and the commits |
-| saved selections (was item 17) | BUILT as frozen sets: `core/frozen_sets.py`, `/api/frozen-sets`, a `frozen_set` reference on every route that takes a set, and Browse's Frozen sets popover. Unblocked by precedent -- Foundry's static object sets are "a list of primary keys" -- which made "what happens when the publication is forgotten" dissolve: membership is keys, the publication is metadata. DEV_UI 11.5's write-path question about bulk ACTION is unchanged and lives with item 6 |
-| `write_targets` (was item 17) | DECIDED and BUILT: off by default, a separate block, existing deployments warned rather than broken |
-| `check_controls` in CI (was item 4) | the 70 controls now run as their own CI job. Inert until Actions is enabled, which only the owner can do -- but the mechanism exists rather than being a suggestion |
-| `AUDIT_CHECKLIST.csv`'s SEC rows (was item 3) | all 25 inherited findings closed. Three real and fixed (SEC-09, SEC-19, SEC-22), three were guards whose call sites nothing held (SEC-14, SEC-27, and the one behind SEC-04), the rest covered, moot or unactionable |
-| `E-02` residual (was item 1) | BUILT from settled precedent: the peer address by default, `X-Forwarded-For` believed only from a declared proxy, rightmost hop, malformed falls back loudly. `trusted_proxies` is empty in the template |
-| `on_type_mismatch`, Batch C (was item 1) | BUILT from precedent: a type mismatch quarantines the ROW and syncs the rest; an absent key keeps refusing. Measured on a real deployment -- 2 rows quarantined, 5 synced, where before the table was refused entirely. Closes ZOO-11, -12, -15, -17, -18, -21, -22, R22, R27 |
-| `NEW-6` (was item 1) | BUILT, tiered: tag characters and bidi controls refused without being asked, zero-width still opt-in because emoji and several scripts use it. The compilers made the same call -- GCC ships `-Wbidi-chars=unpaired` as the default, not `any` |
-| `display_safety` (was item 6) | BUILT: an example marked `display: true` may not hold an identifier-shaped token, checked at deployment load. SHAPE not existence -- an example naming `cust_999` is safe today and a leak the day that customer exists |
-| `NEW-5` (was item 1) | DECIDED and BUILT: new deployments keep only declared columns; an absent key keeps everything and WARNS, naming them. Measured -- an undeclared SSN is absent from bronze under the shipped default and kept under an absent key |
-| `F-02`, `F-03`, `F-12c` (item 1) | DECIDED and BUILT, option C: `execute:<Action>` plus `write:<Type>` for every type the action edits, which is Foundry's. The per-field form stays rejected because nothing checks it. `F-03`'s KeyError goes with it -- asking per type removed the `["mutations"]` access |
-| `NEW-4` (was item 1) | DECIDED and BUILT: a missing gold TABLE raises `GoldPublicationMissing`, matching what `find_ids` has always done; a missing ROW still returns None, which `write_mediator`'s uniqueness check needs |
-| `WIRED-1` (was item 1) | DECIDED and BUILT: `/api/saved-views` re-authorises at read time and names what it disabled. It caught a test asserting the bug on its first run -- a Customer view filtering on `amount`, a Transaction field |
-| `LLM3-3` (was item 1) | DECIDED and BUILT, a third option the entry did not contain: the value is COPIED into `_security` at sync and MAC reads that, so no later stage can change who sees what by touching the data. Proven by overwriting every `region` in gold and watching MAC partition unchanged. NOT the side table -- four stages had to be told to carry the column, which is the cost a side table would not have |
-| `manifest` bootstrap (was item 6) | CLOSED PERMANENTLY: the lake's manifest is read-only input and must never become configuration. The reason now lives in `read_manifests`' own docstring, where somebody would reach for it, because planning documents get consumed and a reason in a deleted list is rediscovered the hard way |
-| `A6` (was item 1) | RESOLVED, not deferred: leave it. Cross-table snapshot consistency is a CATALOG feature and a REST catalog is a service to run, back up and secure for a property no wrong answer has been observed from. THE TRIGGER, recorded so it is not re-argued: when a SECOND process writes to the lake |
-| `read:label:` grants (was item 6) | DECIDED and BUILT, 12 October: a classification label both GRANTS and RESTRICTS -- `read:label:pii` reads every pii field of a type the role can read, and a pii field is unreadable without it whatever was granted by name (demoted to `discover:`). A label never opens a type. Opt-in per deployment (`access: label_enforcement`), compiled into ordinary grants at load; `scripts/label_access_diff.py` says who gains and loses what before the switch is flipped |
-| `pgserver` on Python 3.13 (was item 3) | DECIDED and BUILT, 12 October: the real-PostgreSQL tests fall back to the machine's own `initdb`/`pg_ctl` when `pgserver` has no wheel, on a unix socket only, and FAIL rather than skip when neither exists. Found because it had already happened: the gating machine is now 3.13 and 32 tests of the production read path were skipping, green. With the fallback, the same 32 pass against PostgreSQL 16 |
-| `/api/events` live updates (was item 8) | DECIDED and BUILT, 12 October: GET /api/events, server-sent events carrying a type and a verb and nothing else, filtered per caller by `core/change_hints.py` (built first, while this waited). Building it found that a running server never served a new publication; `api/reload.follow_publications` now moves it, from the running configuration's own bytes. Mail delivery stays out of scope |
-| `/api/help` help assistant (was item 14) | DECIDED and BUILT, 12 October, in the shape decided 5 October: `POST /api/help` answers from the caller's screens, visible schema (names and types, never a value) and own grants -- nothing they may not already know. `core/agent/help_assistant.py`; a Help drawer in the header |
-| Object Explorer phases 3-5 (was item 5) | DECIDED 14 October, and ALREADY BUILT: one proposal per bulk action via an `object_reference_list` parameter, driven by Browse's selection bar. The decision set the limit: 256 by default (`bulk_action_limit`), 1,024 at most. See the `BULK-1` row |
-| `R58` (was item 1) | DECIDED by precedent and BUILT, 14 October: a pair whose approval would join records already approved together shows the whole group on its card ("Approve the group of 3") and the server refuses the approval (409) unless it names exactly that group -- Informatica MDM's "pre-merge review", Tamr's cluster-level verification. Records the reviewer cannot see are counted, not named; a bulk approval skips chains and says why |
-| `R13`, the rest of erasure (was item 1) | DECIDED and BUILT, 14 October: every store but the audit log forgets an erased person -- frozen-set membership (and criteria that named them), the write log, waiting writes (withdrawn, audited by id and proposer only), paused questions (the asker told, not about whom), answer notifications (found by the objects they were built from), and merge proposals naming them with their decisions. The audit log keeps a `stage: erasure` entry: who asked, counts per type, never an id. One call, `forget_beyond_the_mirror`, serves both an erasure and a restore |
-| `DEP-1` to `DEP-6` (was item 1) | ALL DECIDED, 12-13 October. DEP-1 babel, built 12 October. DEP-2 hypothesis and mutmut, adopted with `tests/unit/test_properties.py` and `scripts/mutation_test.py`, whose first runs found a sync mark that could have moved backwards. DEP-3 splink was already the `identity` extra; scikit-learn approved and NOT added until something imports it. DEP-4 all four adopted, each used only where a field declares it. DEP-5 answered itself (permissive replacements), DEP-6 rejections. See their CSV rows |
----
+Removing a document is not a licence to lose what it measured. The
+simulator items, the module platform, the interface notes, the Triggers
+and other consumed documents were removed on 3 November 2026 (S0 of the
+plan under "Converge on precedent"): what each measured moved into a
+comment beside the code it describes (`core/embeddings.py`,
+`core/mirror/matching.py`, `core/ontology/mediator.py`,
+`scripts/check_workers.py`, `ui/playwright.config.ts`,
+`ui/src/blueprintSurface.test.ts`) or into `sim/docs/REAL_SOURCES.md`, or
+it is carried in the roadmap item below. The record of what was consumed,
+and when, is `git log -- BLOCKING.md`; every finding that came out of
+them is a row in `AUDIT_CHECKLIST.csv`. `DEV_UI.md` is NOT consumed and
+must not be deleted: it holds the measured palette, type scale and
+density ladder the interface is built from.
 
 # Blocked on a decision
 
-## 1. Owner questions the checklist still holds
+## 1. Who can read Elysium's copied data without going through Elysium
 
-**FOUND ON 13 OCTOBER, when 59 checklist rows were checked against the
-code.** This file had said nothing was waiting on a decision. The CSV
-disagreed: these rows are decisions only the owner can take, each
-verified still open, each with its evidence in its own row. Grouped so
-they can be answered together.
 
-**DECIDED 26 OCTOBER, by the owner:**
-- `D3` and `AR-9` -- NO. A question never leaves the VM for a hosted
-  model, and no escalation path is built. A deployment may still run a
-  whole different model; that is its own choice. Recorded in
-  PRINCIPLES.md section 4.
-- `D6` and `AR-10` -- NO. Elysium does not fine-tune on its own
-  traces, which hold customers' data.
-- `E-21` -- left to the owner: the repository and the LICENSE stay as
-  they are, and the owner decides when to change either. Nothing
-  waits on it.
-- `Q1` -- GDPR and UK GDPR, and HIPAA. SOC 2 and ISO 27001 are not
-  declared. What this changes is in the compliance item below.
+**REWRITTEN 19 October, with the owner.** This item was "PostgreSQL
+row-level security for MAC": push the row check into the customer's
+database so it held for any caller. It does not fit how Elysium works.
+Questions are answered from Elysium's own copy (GOLD-9); the only thing
+that touches the customer's database is the sync, which must read every
+row to make a whole copy -- Fivetran tells its customers to grant its
+account BYPASSRLS for exactly that reason. A policy in the source would
+bind the sync and nobody else. The precedent draws the line the same way: its
+restricted views enforce rows on the precedent's copy, at read time.
 
-**Still the owner's, and measurements rather than opinions**
-- `D1` -- switch phi4-mini to Qwen3-4B-Instruct after the bench? The
-  shipped config is still phi4-mini. A MEASUREMENT (19 October):
-  `python -m scripts.compare_models phi4-mini <other>` runs the bench's
-  seven questions on each, answers included, and tabulates how many
-  each got right and where a whole question's seconds went -- steps
-  and answer, reading and writing, as the server reported them.
-- `D2` -- stay on Ollama, or run llama-server? The OpenAI-compatible
-  adapter already reaches it, and reads its timings; prompt caching
-  (AR-3) and speculative decoding (AR-8) need it -- llama.cpp's n-gram
-  drafting (`--spec-type ngram-simple`) needs no second model, and
-  suits replies that copy names and values out of their prompt. Run
-  compare_models once per server, with --config naming each. BOTH WAIT
-  ON A MACHINE with a capable model (the agent-loop item below).
+**What was built instead:** the sync now asks PostgreSQL whether
+row-level security applies to its own account on each table, and warns
+-- in the run and on System -> Server -> Mirror -- when it does, because PostgreSQL
+with no policy for that account "returns no rows without raising an
+error" and the copy would be silently partial.
 
-**Access, and what a person sees**
-- `R47` -- review of inferred special-category data (health, religion
-  and so on). The one part of D5 not decided. HIPAA and GDPR's special
-  categories, now declared under `Q1`, are the reason to decide it.
+**What remains, and is this item now:** the copy itself. The mediator
+applies the row check to everyone who asks through Elysium; anyone who
+can read the lake's files on disk gets past it. Today file permissions
+(the sync warns on a mirror directory others can read) and disk
+encryption are what stand in the way. Whether that is enough, or the
+lake's files need their own per-compartment protection, is the
+question.
 
-**Blocked on:** `R47`, and the machine that `D1` and `D2` need. None blocks building anything else.
+**THE OWNER'S STATED TARGET, 26 October:** only Elysium reads the lake,
+and the lake is portable -- an administrator can copy it for a backup or
+a move to a new computer. The two pull against each other: files that
+only Elysium can read are files an administrator cannot simply copy.
+What exists: a dedicated service account with a 0700 directory, a
+volume-encryption check, and encrypted backups
+(`scripts/backup_deployment.py`, `restore_deployment.py`), which are the
+portable form. What cannot be had: protection from root on the running
+host, because Elysium must read the files to serve them. What could be
+built: Elysium-held encryption of the lake's own files (pyiceberg
+writes without table encryption, so this means encrypting around it),
+and a documented, tested migration (backup, restore elsewhere, verify)
+as the supported way to move.
+
+**DECIDED 27 OCTOBER, by the owner:** Elysium-held encryption of the
+lake's own files, with a key that only Elysium holds AND that can be
+moved, so an installation can move and still read its lake while a
+copied lake is useless without the key.
+
+**THE SPIKE (27 October) says it can be done, and cheaply.** Every byte
+pyiceberg 0.12 reads or writes goes through `FileIO.new_input(...).open()`
+and `new_output(...).create()`, and a FileIO is a configuration property
+(`py-io-impl`), which `open_mirror_catalog` already passes through
+(`mirror.storage`). A prototype FileIO encrypting each file in 64 KiB
+AES-256-GCM chunks (a per-file key wrapped by the master key, chunk
+number in the nonce, a last-chunk flag against truncation) ran a real
+table: 2,000,000 rows appended, scanned and filtered correctly;
+data files, manifests and metadata JSON were all ciphertext, and a
+unique email address appeared nowhere on disk, catalog.db included;
+a wrong key, a flipped byte and a truncated file were each refused.
+Cost on that table: write 0.49s against 0.42s, full read 0.16s against
+0.12s. The prototype lives only in the session's scratch space; the build
+is a proper module, not that file.
+
+**THE SHAPE TO BUILD:** a master key held by Elysium outside the data
+directory (a 0400 file, a KMS later), never in a backup beside the
+data; a header per file holding that file's wrapped key, so ROTATING
+the master key rewrites headers and not data; `export-key` and
+`import-key` carrying the master key under a passphrase, which is the
+portability; a migration (backup, restore elsewhere with the key,
+verify) as the supported move; and Elysium refusing to start when
+encryption is configured and the key is absent, rather than writing
+plaintext.
+
+**WHAT MUST BE SAID PLAINLY, and decided with the owner before the
+build:** (1) LOSING THE KEY LOSES THE LAKE, and the changelog and bronze
+are systems of record -- a source holds "now", not last March -- so the
+setup REQUIRES a second copy of the key (a recovery key shown once,
+checked back) before it will encrypt anything. (2) Root on the running
+host can still read the key from the file or the process; this guards
+copied files, stolen disks, backups and other accounts, not a hostile
+administrator of the live machine. (3) ENCRYPTION IS REQUIRED FROM THE FIRST SYNC (decided with the plan
+under "Converge on precedent", 3 November 2026): no installed lake exists,
+so there is no path for turning it on for one. It lands after S7 (the new
+state and lake layout); scripts that read lake files directly
+(repair_catalog, the orphan-file remover) need the key too. (4) catalog.db
+holds table names and file locations, not values; it stays a plain file
+with the other private files.
+
+**Blocked on:** the owner agreeing the two points above (the required
+recovery key; the limit against a hostile administrator). Nothing else.
+
+## 2. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
+
+**Blocked on:** the owner, and on money and calendar time rather than
+engineering.
+
+Asked for directly. Four of the five things named are not engineering
+deliverables and saying so once, here, is cheaper than saying it again
+each time:
+
+- **SOC 2** is an attestation a licensed CPA firm issues after
+  observing controls operating. Type II needs a 3-12 month window.
+  Most of what it tests is not code -- onboarding and offboarding,
+  vendor management, risk assessment, incident response, change
+  management.
+- **ISO 27001** is a certificate from an accredited body and requires
+  an ISMS: scope statement, risk assessment, Statement of
+  Applicability against 93 Annex A controls, internal audit,
+  management review. Roughly a fifth of it is technical.
+- **A penetration test cannot be done by whoever wrote the code.** The
+  value is an adversary who did not.
+- **HIPAA has no certification.** There is no issuing body; "HIPAA
+  compliant" means the Security Rule safeguards are implemented and
+  the vendor will sign a BAA. The obligation attaches to the operator.
+
+**The fifth was real engineering, and is DECIDED and BUILT (14
+October):** the volume encrypts and Elysium checks
+(`core/storage_encryption.py`, reported at startup); backups are
+AES-256-GCM envelope-encrypted files with the key kept apart
+(`core/encrypted_archive.py`). SQLCipher and field-level encryption
+were weighed and not taken: they guard against the same
+file-leaves-the-machine threat with more machinery, and neither can
+reach the mirror, which pyiceberg writes without table encryption.
+INSTALL.md's "Encryption at rest" has the reasoning and the sources.
+
+All four frameworks test an overlapping set of technical controls, and
+building them is worth doing on its own merits regardless of whether
+an audit is ever bought:
+
+    encryption at rest       BUILT: volume check, encrypted backups
+    key management           the backup key is a file; a KMS is next
+    session controls         idle timeout, absolute timeout, revocation
+    password policy          enforced rather than advised
+    access review            export who holds what grant, as of when
+    audit integrity          tamper-evidence on the existing log
+    backup verification      restore tested rather than assumed
+
+Months, not a patch.
+
+**THE REGIMES, ANSWERED 26 OCTOBER:** GDPR and UK GDPR, and HIPAA. THE
+OWNER THEN ASKED FOR SOC 2, ISO 27001 AND A PENETRATION TEST TO BE
+ADDED to the plan (26 October, later the same day). What that makes
+mine: the technical controls below, the control mapping and evidence
+each audit asks for, and the policies as drafts. What stays the owner's:
+choosing a CPA firm, a certification body and an independent tester,
+the budget, and the observation window.
+For GDPR the engineering is largely built (erasure, retention,
+encrypted storage and backups). For HIPAA it is the Security Rule
+safeguards above, which the operator carries, and a BAA, which is a
+contract and not a patch. The list's remaining rows are therefore not
+optional: key management, session controls, a password policy,
+access review, audit integrity and backup verification.
+
+Erasure, for these audits, is the ledger and the `Erasable` registry of
+S7 in the roadmap below: the adopt and vouch machinery, its typed phrase
+and exit codes 2 and 3 are deleted there, not extended. Three limits of
+the present design are kept as requirements of that step: the record never
+narrows, so a column re-pointed from one type to another keeps the old
+type and erasing it also removes rows of whoever now owns those values
+(erasing too much is the lesser failure, and the output must say so); a
+quarantine or cleaning record of a table several types keep rows in is
+matched against each of those types' ids; and a gold join table whose name
+two silos share is keyed by both silos' columns. While an erasure cannot
+reach a table, every erasure is reported incomplete and `--write` refuses;
+that stays.
+
+The idle timeout, the audit hash chain and the access-review export ride on
+S5 and S10 of the roadmap below.
+
 
 # Blocked on a machine or a person running something
 
-Three of the numbered items below wait on a machine as much as on a
-decision: agent-loop efficiency and context rot need a capable model
-on real hardware, and row-level security needs a production
-PostgreSQL silo. They are filed by what decides whether that machine
-is worth having.
+## 3. Agent-loop efficiency, context rot, and which model and server to ship
 
-# Blocked because it is product direction
-
-## 2. Thirty-odd recommendations that are not engineering questions
-
-`R41`, `R42`, `R45`, `R48`, `R51`, `R53`, `R56` to `R62` and their
-neighbours are LLM enrichment, embeddings, model predictions,
-statistical matching and truth discovery. These are not "should we do
-this well" questions; they are "is Elysium this product" questions,
-and they should not be picked off a list by whoever is next.
-
-**THE DIRECTION WAS GIVEN** (the owner, 14 October: "we'll build each
-of them", in the order LLM enrichment, statistical matching, a plugin
-API).
-
-**LLM ENRICHMENT IS BUILT, choices only** (R41, R42, R38; decided 15
-October: approve first, data rules never code, no classified input,
-served everywhere and marked inferred). A field declares `enrich: {from,
-instruction, choices}`; `scripts/compile_enrichment.py` has the model
-label a sample from one security compartment, write rules from half of
-it and be scored on the other half; the rules wait in Inbox →
-Enrichment; once approved, the next sync fills the field in gold.
-SEVERAL CANDIDATES MAY VOTE (17 October, EVAPORATE-Code+): rule sets
-better than even odds on the examples are weighted by their log-odds,
-and the vote is kept only when it beats the best single set there; the
-approver sees every set and its weight. A VALUE TAKEN FROM THE TEXT
-(17 October): `extract: true` with the field's data_type (string,
-integer, decimal, date); rules are context words plus a fixed shape the
-model picks but never writes, the value is always a span of the row, and
-numbers and dates are typed by the source's declared locale. Dates
-relative to something, times of day, and dates or numbers written in
-words are NOT BUILT, BY THE OWNER'S CHOICE (26 October): each needs its
-own rule on what "relative to" means and how wrong it may be, and
-nothing asks for them. SEARCH BY MEANING (R45, 17
-October): a type declares `semantic_search: {from: [fields]}`; the sync
-embeds changed rows with `llm.embedding_model` through the local Ollama,
-within a time budget, versioned by the model's digest; Browse shows
-"Related in meaning" beside a search's word matches -- never inside
-them, since the word matches are the set counts and triggers share --
-and "Similar records" on an object. Never a classified input (D3), only
-for someone who may read every input, no vector or score ever served.
-Since 18 October: any embedding server through the OpenAI-style
-/v1/embeddings request, and the task prefixes nomic-embed-text's card
-requires (missing from the first version); and a search_meaning step
-for Query's agent behind `agent.meaning_search`, through the same rules
-Browse ranks by -- not yet measured on a real model, as the other
-switches were (scripts/llm_bench.py); and smaller vectors through
-`llm.embedding_dimensions`, whose cost in quality on a deployment's own
-data is unmeasured. Its use for statistical
-matching and enrichment is not built.
-
-**MODEL PREDICTIONS: THE FIRST LEVEL IS BUILT** (R48; the owner, 18 October: all
-three levels -- a prediction per record, forecasts of totals, learned
-checks -- with scikit-learn, retrained when gold is rebuilt, and the
-score broken down by a group the approver chooses). A field declares
-`predict: {of, from, chance_of?}`: the chance of one answer, the most
-likely answer, or a likely number, filled only where the answer is not
-known, never from or about a classified field, readable only by someone
-who may read the answer and every input, and marked "predicted from …".
-Training and measuring are built: a fifth of the known records held out,
-skill against the naive guess, the score per group, which inputs
-matter, and a warning when a score is too good to be true.
-`scripts/propose_prediction.py Type.field --group-by F` measures and
-proposes; Inbox → Predictions approves, refusing anything no better than
-the naive guess or without its group breakdown. ONE MODEL PER SECURITY
-COMPARTMENT (the owner, 17 October): a guess must not be shaped by
-records its reader cannot see -- Foundry's "mandatory controls propagate
-through derivation" -- so each is learned from one compartment, fills
-only it, and is approved by someone in it. Learning across compartments
-is NOT BUILT, BY THE OWNER'S CHOICE (26 October): the rule stays
-absolute, to be reopened only if a compartment proves too small to
-learn from. Once approved, gold trains the
-model again whenever it is rebuilt -- and only then -- measures it again,
-and fills the field only if the skill is above 0 and within 0.05 of the
-approved one (a judgement, not a measurement); otherwise it stays empty
-and the run log says why. An answer resting on a prediction says so, by
-code (R63). Not yet measured on a real deployment's records.
-
-**FORECASTS OF TOTALS ARE BUILT** (R68; the owner, 18 October:
-statsmodels, triggers on totals per period, no approval). A date field
-is counted or summed per day, week or month and drawn as a line in
-Browse, the period still running marked "so far"; a Forecast switch
-extends it, dashed, with an 80% range -- exponential smoothing in the
-form AICc chooses, tested from four past points against carrying the
-last period on, and not drawn when it does not beat that. Worked out per
-request from what the viewer may see, so it crosses no compartment and
-is never stored. A trigger may watch a view "per week, projected above
-50": told once when the forecast line -- not the top of its range --
-passes the line, as each recipient from their own totals, and silent
-while the forecast is not trusted. Checked when triggers are, not at the
-turn of a period with no new data. Not yet measured on a real
-deployment's records.
-
-**UNUSUAL RECORDS ARE BUILT** (R51; the owner, 19 October: shown to
-every reader of the fields and queued for review, judged within context
-by a published cut-off). A type declares `unusual: {numbers: [amount],
-within: [category]}`; each number is compared with the records sharing
-its `within` values, per compartment, by Iglewicz and Hoaglin's modified
-z-score above 3.5 -- chosen over an Isolation Forest after measuring both
-on planted oddities: the forest flagged 48% of records at its default
-threshold, changed its picks with the random seed, and missed most
-amounts ordinary for the table but wrong for their kind, all of which
-the within-kind score caught. Found when a type's gold is rebuilt, at
-most 50 per type and compartment, each with its reason in words.
-Marked on the row and under the field in Browse for whoever may read the
-type, the number and every field it was compared within, in the
-compartment it was judged in; decided in the Inbox's Unusual tab by
-someone who may also edit the type -- "expected" clears the marker for
-everyone until the value changes, "worth a look" keeps it -- each
-decision audited. LLM-WRITTEN RULES, the other half of R51, are
-NOT BUILT, BY THE OWNER'S CHOICE (26 October): the measured score
-stays. A calibrated cut-off
-(conformal, as the merge thresholds are) needs records known to be
-normal; people's "expected" decisions will be that set.
-
-**NOT BUILT, BY THE OWNER'S CHOICE (18 October)**, each with what would
-change that:
-
-- A SEPARATE VECTOR SERVER (Qdrant was the design: Apache-2.0, a single
-  program, filtering by compartment while it searches, Elysium's own
-  access check still deciding). Not worth running at this size --
-  "built for the sake of being built". Exact search in-process measured
-  10.8 ms a question at 100,000 rows of 768 numbers, 38 ms at 500,000
-  of 512, 52 ms at a million of 256; speed does not force it. MEMORY
-  would: every server process holds its own copy of the vectors (977 MB
-  at a million of 256), where a vector server holds one. Revisit when a
-  declared table nears a million rows, or several processes each hold
-  a large copy.
-- AN MCP SERVER, letting outside language models call Elysium's search
-  as a tool. DECIDED NO (26 October, with D3: a question does not leave
-  the VM), since reaching an outside model is its whole purpose. If the
-  owner ever reopens D3: every call as the asking person, under the same
-  access checks as the routes; MCP's own record (tool poisoning,
-  CVE-2025-6514, the NSA's May 2026 note that its spread "outpaced the
-  development of its security model") is the reason to start from that
-  rule.
-
-**STATISTICAL MATCHING HAS ITS YARDSTICK** (R59, 15 October):
-`scripts/evaluate_matching.py` measures the matcher against synthetic
-copies, a labels file or reviewers' decisions, with intervals. Its first
-run on the development deployment found recall of 0% at the review
-threshold -- comparison is exact-match only, so one typo loses a
-duplicate -- and an auto-propose threshold two compared fields can
-never reach.
-
-**PRE-SELECTION IS CALIBRATED** (R57, decided and built 15 October):
-reviewers' rejections calibrate `auto_propose_above` only, leaving out
-pairs shown pre-selected, at a declared `false_merge_rate`; the
-Identity screen says UNCALIBRATED until there are enough. The cascade
-gets NO LLM stage (owner, 15 October): fuzzy comparison levels first,
-an LLM only if the harness shows a band they cannot settle, and then
-as a note on the card, never a score.
-
-**THE CASCADE IS BUILT** (R56, 15 October): rule, blocking, scoring with
-an optional CLOSE level per field, a person. Recall on the development
-deployment's copies went from 15% to 65% at the review threshold. One
-edit is the default because two halved precision on a crowded
-population -- a deployment allowing more should run the harness on its
-own rows first.
-
-**WHICH SOURCE TENDS TO BE RIGHT IS SHOWN, NOT APPLIED** (R60, 15
-October): when two sources' disagreement ends, the one that changed to
-match the other is recorded; the Provenance panel shows a rounded share
-from ten such endings. Where three or more sources hold a field, they
-vote, with a source that looks like a copy of another counted once.
-
-**AN ANSWER RESTING ON AN INFERENCE SAYS SO** (R63, 15 October): the
-model is told which values were inferred and how their rules scored,
-and code appends a note naming them to every such answer.
-
-**Statistical matching is done** (R56, R57, R59, R60, R63).
-
-**Blocked on:** nothing. Every question this item held is answered
-(26 October); what remains unmeasured is on a real deployment's records,
-which is a machine and data rather than a decision. (The plugin API this
-line used to say was next is item 3, done.)
-
-## 3. Modules: a generic shell, and every sub-app an equal
-
-**AGREED WITH THE OWNER, 21 October.** Elysium is a CORE -- sign-in, the
-ontology and its security, the mirror and sync, the write path and its
-approvals, audit, configuration -- and its API is the ONE API every
-sub-app uses. Everything else is a module, and modules are equals:
-
-- A SUB-APP FOR A SYSTEM COMPONENT (Query, Browse, Schema, Admin, the
-  Inbox) has no server of its own; it is the GUI for core functions
-  and calls the core API, management included.
-- AN ADD-ON may bring its own server, run as its own process, which
-  Elysium starts, watches, restarts and stops. Its frontend talks to
-  it; both may call the core API.
-- "SYSTEM" IS NOT A TIER. Management calls are permissions in the same
-  API; any sub-app may declare them, and the signed-in user's role
-  decides. No sub-app has code inside Elysium's server -- so loading,
-  unloading and refreshing are live everywhere (Python cannot truly
-  unload code: "restarting the entire process is the only generally
-  reliable way to get a clean state").
-- TRUSTED FOR NOW, as Backstage, JupyterLab and Grafana treat their
-  plugins by default: in the page and sharing one React. The shell can
-  only ADVISE which API a module declared; enforcement stays where it
-  is, the user's role on the server. Untrusted third-party code needs
-  the isolation layer below, later.
-- CORE INTERFACE IS THE SHELL ONLY -- frame, sign-in, session, palette,
-  the module manager and a SAFE MODE that loads no modules. All seven
-  of today's sub-apps become modules, each failing safely when
-  unloaded (approvals wait in their queue; links to an object page with
-  no module to open it say so).
-
-**THE GENERIC SHELL, `shell/` (`@shell/*`)**, a top-level package that
-knows nothing about Elysium; Elysium and the simulator depend on it, it
-depends on neither. Its backend contract is plain HTTP: the session
-and how to sign in; a FEED of modules filtered for the user (id,
-version, bundle address and integrity, shared-library versions,
-static contributions -- Piral's feed service lists `name`, `version`,
-`link`, `integrity`, `config`); change events; and enable, disable and
-refresh, authorised by the backend. It replaces api/apps.py.
-
-**DECIDED IN DISCUSSION:**
-- CONTRIBUTIONS ARE STATIC, CODE IS LAZY: a manifest declares routes,
-  navigation entries and commands -- VS Code's `contributes`, "static
-  declarations" -- and the bundle's `activate(context)` runs when one
-  is first used; `deactivate()` on unload.
-- SHARED LIBRARIES ARE FIXED AT PAGE LOAD (React, the router,
-  Blueprint, `@shell/*`, the backend's client), by import map: import
-  maps follow "initialization is finalization". A module needing a
-  version the page lacks is refused until a reload, and the module
-  manager says why.
-- SLOTS -- a module adding a tab or section inside another module's
-  screen, Backstage's `attachTo` -- come later in step 1, after pages,
-  navigation and commands.
-- UNLOADING removes a module's contributions and unmounts it; the
-  browser keeps its imported code until the next page load.
-
-**BUILD ORDER:** (1) `shell/` and the contract, Elysium implementing
-it, then the Schema graph as the first module through the feed, then
-the module manager and safe mode, then slots; (2) the SIMULATOR as a
-loadable sub-app with its own server -- first to test the API's shape,
-then for simulation itself (it need not run without Elysium); (3) the
-remaining sub-apps moved one at a time; (4) the sub-app API written
-down and versioned from what (1)-(3) used.
-
-**THE FRAME AND THE SUB-APP, agreed with the owner 21 October.** The
-shell owns the FRAME -- the rail and the header. A sub-app owns
-everything inside the content area: its own panes or none, its own
-canvas, its own libraries. It touches the frame only two ways:
-
-- DECLARED, for what appears in the frame, which the shell draws in its
-  own style: rail tabs, palette commands, a badge on its tab, help
-  text. No sub-app renders into the rail or the header.
-- REQUESTED, for what the frame does: navigate, a notice or a
-  confirmation, who is signed in, the page title, the theme, and
-  FULL SCREEN -- which the shell grants, controls and always offers a
-  way back from. A sub-app never hides the frame itself.
-
-TODAY'S SHELL BREAKS THIS IN THREE PLACES, written before sub-apps were
-modules; step 1.3 fixes them, and they are its test of being generic:
-(a) the palette knows Browse -- `Shell.tsx` checks for `/browse` and
-builds object-type commands, saved views and search suggestions itself;
-they become Browse's declared commands; (b) the Inbox button and its
-count are wired into the header -- the Inbox declares a tab with a
-badge, and if it keeps a place in the header the shell offers that
-place generically; (c) the shell is handed Elysium's schema -- a generic
-shell does not know what an object type is.
-
-**THE SHELL AND THE SERVER EACH HAVE A SYSTEM SUB-APP**, the hybrid
-applied to the two central components. THE SHELL'S holds the frame's
-controls: the module manager (load, unload, refresh), safe mode, which
-tabs appear and in what order, the theme, and grants such as full
-screen; the frame itself only draws what it configured. THE SERVER'S
-holds Elysium's server controls: configuration and reload, silos and
-the mirror, add-on processes and their logs -- much of today's Admin,
-which splits into the server and people-and-roles.
-
-THIS REFINES "SYSTEM IS NOT A TIER" AND "A SAFE MODE THAT LOADS NO
-MODULES" rather than reversing them. System sub-apps are built like
-any other and call the same API; they differ only in being PINNED: they
-load in safe mode and cannot be unloaded from the interface, because
-safe mode exists for when a module breaks the page, and a module must
-not be able to take away the tool that fixes it. Safe mode therefore
-loads the pinned system sub-apps and nothing else. The last resort is
-still `modules.yaml`, from a terminal.
-
-**THE LOOK: A BASELINE EVERY SUB-APP INHERITS, AND MAY OVERRIDE INSIDE
-ITSELF.** Three layers: (1) DESIGN TOKENS -- colour, font, type sizes,
-spacing, radii -- as CSS custom properties defined for light and dark,
-promised as a public, versioned part of the API rather than internals;
-(2) THE KIT -- table, chart, forms, empty, loading and error states --
-built on the tokens, so a sub-app using it looks native for free; (3)
-THE SUB-APP'S OWN overrides and libraries, scoped to its own root. Its
-obligations: overrides derive from the tokens or supply both themes;
-no global CSS, no styling of `body`; no reaching into another
-module's DOM (that is what slots are for). VS Code is the precedent:
-webviews inherit theme colours as `--vscode-*` variables and style
-their own content freely, without touching the workbench.
-
-**LIBRARIES: SHARED OR PRIVATE.** Shared libraries are the page's,
-fixed by the import map (React, the router, the kit and whatever else
-the API promises -- ECharts, Blueprint); a module uses those copies or
-hooks and context break. Anything else -- a trading chart, a graph
-editor -- a module BUNDLES PRIVATELY, loaded only when one of its pages
-opens, so nothing Elysium does pays for it and Elysium never adopts a
-domain library. Open for step 1.2: whether a module's bundle and assets
-are served by Elysium from its folder or by an add-on's own server
-through the proxy (self-contained, but needs the proxy).
-
-**TESTING FOLLOWS THE LAYERS, agreed 21 October.** The shell is the
-PROVIDER; each sub-app, system ones included, is an entity of its own
-that uses the provider's API and has its own tests. Today all seven
-sub-app packages already import only `@elysium/shell-api` -- none
-imports another -- but none can test alone: one root config runs them
-all under the host's `ui/src/setupTests.ts`, and 52 test files each
-mock the API by hand. The layers:
-
-1. THE SHELL (`shell/`) -- its own suite (it has one, 13 tests).
-2. THE PROVIDER'S API AND KIT -- its own suite, and it SHIPS A TEST
-   HOST: fakes for every declared and requested frame call and for the
-   API client, so a sub-app's tests render inside a faithful frame
-   instead of hand-mocking. Backstage's precedent exactly:
-   `renderInTestApp` with `mockApis`, where a mock "returns a working
-   fake" and its `.mock()` form makes "every method ... a
-   `jest.fn()`".
-3. EACH SUB-APP -- its own package, test config and setup (a preset the
-   provider ships, carrying today's act-warning guard), runnable alone,
-   depending only on the provider's public API and test host, never on
-   the host app or another sub-app; including a check that its
-   `module.json` is valid against the contract.
-4. THE HOST (`ui/src`) -- composition only: the feed becomes routes and
-   a rail, safe mode, the frame's grants.
-5. THE FAKES ARE CHECKED AGAINST THE REAL THING. One conformance suite
-   runs against the test host AND the real shell, so a fake cannot
-   drift -- this project's oldest failure, "a fixture that does not
-   match the API is a test that proves nothing". For the backend half,
-   Pact's provider verification is the model: "each request generates
-   a response that contains at least the data" the consumer described;
-   Elysium's HTTP tests of the shell routes are that side today.
-6. IN A REAL BROWSER, per sub-app, with fixtures the shell provides for
-   the frame -- Grafana's `@grafana/plugin-e2e` precedent, whose APIs
-   are "guaranteed to work with all the latest minor versions" so a
-   plugin's tests need not track the host's markup.
-
-**COMMON BEHAVIOUR IS TESTED ONCE, BY DEFAULT, UNTIL OVERRIDDEN --
-agreed 21 October.** Measured first: the problem is less duplication
-than GAPS. Of the seven sub-app packages, three test an expired
-session, two a loading state, two an error state, four cleanup on
-unmount -- the same behaviours, tested in some sub-apps and not others.
-So the baseline is INHERITED, never copied: a template is copied once
-and drifts, while an inherited baseline carries every fix to every
-sub-app. A template (a generator, as Backstage's `new`) only STARTS a
-package. Three inherited layers:
-
-1. A CONFIG PRESET the provider ships -- environment, the non-UTC time
-   zone, the act-warning guard (now `ui/packages/testing/src/setup.ts`), the test
-   host -- which a sub-app's config extends in a few lines. Vitest's
-   projects are the mechanism: options "are merged with the project's
-   own options", and `setupFiles` "are concatenated, not overridden",
-   so a sub-app adds its setup to the provider's. Backstage's CLI is
-   the same shape: "a default configuration included in the CLI".
-2. A CONFORMANCE SUITE generated from each `module.json` and run on
-   EVERY PAGE IT DECLARES, ON BY DEFAULT -- Storybook's precedent, where
-   "a basic story is also a smoke test" and every story carries the
-   `test` tag implicitly. Candidate checks: renders in the test host;
-   a loading state while the API is pending; an announced error when it
-   fails; asks to sign out on an expired session; leaves nothing behind
-   when unmounted; automated accessibility checks; no global CSS; a
-   valid manifest.
-3. THE SUB-APP'S OWN LOCAL TESTS, for everything specific to it.
-
-OVERRIDES, from the same precedents. Each check is `error`, `todo` or
-`off` -- Storybook's accessibility test: "'todo': Run accessibility
-tests; violations return a warning", "'error': ... a failing test" --
-set for all sub-apps, one sub-app or one page, the NARROWEST WINNING
-(Storybook's tags cascade project, component, story, and `!` removes
-one). `todo` and `off` need a written reason. A sub-app may SUPPLY A
-CHECK'S INPUTS -- how to make its own API fail -- as RSpec's
-`it_behaves_like "auditable"` takes a block providing the subject; or
-REPLACE a check with a stronger test of its own, naming it, and the
-suite verifies the named test exists, so the behaviour stays covered.
-ONE REPORT lists every softened or replaced check and its reason, as
-WITHHELD_FROM_CONFIG_RESPONSE does for the config panel.
-
-THE SUITE IS TESTED ITSELF: a deliberately broken sample sub-app must
-fail each check, or a check that cannot fail passes every sub-app for
-ever. AND THE SAME SHAPE FOR ADD-ON SERVERS: Elysium ships a pytest
-plugin of its HTTP-contract checks (health, stop within the deadline,
-honouring the identity header) that an add-on runs against its own
-server in its own repository.
-
-ADOPTION, `todo` FIRST: the Schema graph adopts the preset and suite in
-step 1.2, the rest as they move in step 3. An existing sub-app that
-fails a check today starts with that check as `todo`, reason written,
-listed in the report -- so the suite runs from the first day and the
-list only shrinks. A NEW sub-app starts with every check at `error`.
-
-An ADD-ON'S SERVER is tested in its own repository; Elysium tests only
-the HTTP contract it offers add-ons. The Inbox, still in `ui/src`,
-no longer imports its three queues (slots, step 1.5b) and can become a
-package.
-The Schema graph, the first separately built module (step 1.2), is
-the first sub-app to run its tests alone.
-
-**GENERIC SERVICES FOR ADD-ONS, from Heliograph's request (21
-October), recorded with the owner.** Heliograph, a trading-signal
-add-on, asked for sixteen features; checked against the code, most
-have a base already. What is generic and worth building, by step:
-
-- STEP 2, with the simulator, which needs each one: who the user is,
-  told to an add-on's server (a signed header from the proxy); a
-  SAME-ORIGIN PROXY to add-on servers that passes SSE and WebSocket
-  upgrades through (Elysium keeps SSE for itself); a written
-  LIFECYCLE contract (health, restart with back-off, logs, config and
-  secrets at start, stop with a deadline -- sim/simulator's control,
-  health and lifecycle are the precedent); POSTING TO THE INBOX for
-  kinds the manifest declares, with the existing `dedupe_key`;
-  declared permissions listed in the manifest for the role editor;
-  a manifest field naming the contract version a module was built for.
-- ASYNC AT THE EDGES, NOT IN THE CORE: request handling stays
-  synchronous (audit context cannot leak between requests); add-ons
-  have their own processes and loops. What they need: JOBS -- a record
-  with owner, state, progress, cancel and result, outliving the tab
-  (mirror sync's polled status is the base; its docstring's objection
-  to "a job id nobody would poll" falls away once add-ons run long
-  work); TIMER CALLBACKS to an add-on's server for its own kinds
-  (`/api/reminders` is the one kind on HTTP today); and an EVENT
-  SUBSCRIPTION -- tell an add-on's server when a trigger fires, a sync
-  finishes or an object changes -- which Heliograph did not ask for
-  and every add-on with a server would want.
-- TIME-SERIES READS OVER WHAT ELYSIUM ALREADY MIRRORS -- still not
-  infrastructure: no historian, no high-rate ingest, no store add-ons
-  write into. `/aggregate` already buckets by day, ISO week and month,
-  labelled by start, gaps honest, the filling period kept apart
-  (`/forecast`'s `running`). To add: hour and minute buckets, a time
-  zone, FIRST and LAST -- with min and max, a candlestick is first, max,
-  min, last per bucket, so OHLC is generic -- several series at once, a
-  declared time property per object type, `period` in the agent's
-  aggregate step (the real gap for trend questions), and a tail cursor.
-  NOT a type-wide as-of read from snapshots: erasure drops older
-  snapshots "time travel included", and gold keeps 30 publications;
-  per-object change history already answers "what did we know".
-- THE KIT: a time-series chart (Browse's `OverTimeChart` promoted, with
-  a time axis, several series and zoom), a virtualised table, forms from
-  JSON Schema, a job panel. Later: a profile needing no model (storage
-  is already SQLite; the mandatory `llm:` block is the gap).
-
-What stays in an add-on is its domain: Heliograph keeps market data,
-bars, indicators, its charts, strategies, backtests and signals. The
-reply sent to its developer is "Building Heliograph for Elysium"
-(PDF, 21 October).
-
-**AND STILL TRUE FROM THE EARLIER DESIGN (THIRD_PARTY_EXTENSIONS.md,
-consumed):** for UNTRUSTED code, module federation is the wrong answer
--- "a federated module runs in your page, in your origin" with the same
-cookies and API access; the isolation layer is a sandboxed iframe
-(`allow-scripts` WITHOUT `allow-same-origin`) speaking the same API as
-JSON-RPC 2.0 over `postMessage`, as MCP Apps do ("all UI content runs
-in sandboxed iframes"). A third-party data source is a SILO, and an
-ontology fragment is DATA, not code.
-
-**DEFERRED, by the owner:** separating the simulator from Elysium at
-the code level (tests importing it, its contracts in pyproject.toml,
-its controls in scripts/check_controls.py) waits until modules work.
-
-**WHERE IT STANDS (21 October):** step 1's first part is built. `shell/`
-holds `@shell/core` -- the contract (shell/README.md), the registry and
-the routes -- and Elysium serves `GET /api/shell/session` and `GET
-/api/shell/modules` from a `module.json` beside each shipped sub-app,
-with `modules.yaml` choosing which load (core/modules.py). The rail and
-every route in `ui/src/App.tsx` now come from the feed; the code is
-still built into the page, found through `BUILT_IN_PAGES`. ONE CHANGE
-OF BEHAVIOUR, on purpose: someone without `manage:users` who opens
-/admin is now sent home, because the module is not in their feed --
-before, the route existed for everyone and the panel refused inside it.
-
-**STEP 1.2, PART A BUILT (22 October): THE SHARED LIBRARIES.** Decided
-with the owner on 21 October: Elysium serves a module's bundle from the
-module's folder; development loads the built bundle too (one path); the
-shared set is the kit's own dependencies. `@shell/build` registers the
-PAGE'S OWN copies (one instance, so the kit's module-level state is one)
-and serves a shim per library through the import map
-(shell/README.md). Proved in Chromium both ways: a separately built
-module renders with the page's React, router, Blueprint and kit; the
-same module with a private React throws and renders nothing
-(ui/e2e/sharedLibraries.spec.ts). MEASURED COST: the first load went
-from 131 KB to 229 KB compressed, because Blueprint's core and the
-router are shared whole; libraries load lazily, so ECharts costs
-nothing until a module asks; `@blueprintjs/icons` is NOT shared, since
-sharing it put 1.4 MB on every first load (ui/src/sharedLibraries.ts).
-FOUND ON THE WAY: `npm run dev` could not load @shell/core at all since
-the commit adding it -- Vite answered 403 for ../shell -- now allowed and
-tested against a real dev server (ui/src/devServer.test.ts).
-
-**STEP 1.2, PARTS B AND D BUILT (22 October): THE SCHEMA GRAPH IS A
-MODULE.** It builds its own bundle (packages/app-schema/vite.config.ts,
-`@shell/build/moduleBuild`), Elysium serves it at
-`/api/modules/schema/files/` -- only to someone the module is offered to,
-only from its bundle's directory, a uniform 404 otherwise -- and the
-shell's loader (`@shell/core/moduleLoader`) fetches it when /schema is
-first opened, adds its stylesheet and mounts the page its `activate`
-returns. Elysium's page no longer imports or depends on it; what it used
-to pass as props it PUBLISHES through the kit's host store
-(`@elysium/shell-api/host`), which a module reads with a hook. Checked in
-Chromium against the real server, signed in: all 26 browser tests pass,
-the ontology canvas's included.
-
-FOUND BY THAT TEST, AND FIXED: the import map had never worked against
-Elysium itself. It is an inline script, and the Content-Security-Policy
-(`default-src 'self'`) refused it, so no shared library resolved; part A's
-browser test used a static server that sends no policy. Now allowed by
-its hash, recomputed when the built page changes (api/app.py). Part A
-shipped with this -- harmless then, since nothing used the map, but every
-page load logged a CSP error.
-
-AND BY AN INDEPENDENT REVIEW, FIXED BEFORE SHIPPING: the browser imports
-an address once per page, so a rebuilt bundle at the same address would
-have been the old code -- the feed now adds a fingerprint of the file
-(`?v=`); a module unloaded while loading could be activated with no
-`deactivate` to follow -- now cancelled; a failed page retried and
-remounted on every render -- now it stays until the feed is next
-applied; module pages read empty host values in their first render --
-now staged during the page's render; `react-router` itself was not
-shared, so a module importing it would have had a second router.
-
-DEFERRED, ON PURPOSE: INTEGRITY. A bundle served by Elysium from its own
-disk gains nothing from an integrity check, and the import map is fixed
-at build, before the server knows which modules are installed. It
-matters when bundles come from elsewhere -- add-on servers, step 2 --
-and is to be built then, with the map's `integrity` key (Chrome 127,
-Safari 18, Firefox 138) written by the server.
-
-**STEP 1.2, PART C BUILT (22 October): THE TEST BASELINE.** Three
-inherited layers, as agreed. THE PRESET is `@shell/build/testPreset`
-(generic: environment, the New York time zone, threads, timeouts, with
-the measurements behind each moved there from `ui/vite.config.ts`); the
-page and the Schema graph both call it, as Vitest projects of one run --
-`npx vitest run --project app-schema` runs the module alone. THE KIT is
-a new package, `@elysium/testing`: the provider's setup file (the old
-`ui/src/setupTests.ts`, moved), the TEST HOST (`renderInTestHost`, the
-shell's frame with the host values published; `stubServer`, the server
-stubbed at `fetch` so one switch makes every call hang, fail or find the
-session expired) and the CONFORMANCE SUITE, `describeModule({ folder,
-activate })`: manifest, renders, loading, error, session-expired,
-unmount (no interval or listener left running) and layered-css, on every
-declared page. Overrides are `module.conformance.json`, levels todo /
-off / replaced with a reason, the narrowest winning; a todo that passes
-FAILS, so the list only shrinks; a replacement must name a test that
-exists. Each check is shown to fail a sample page built to fail it.
-`python -m scripts.conformance_report` lists every exception, and a
-Python test refuses a bundled module with no conformance test.
-
-THE SCHEMA GRAPH ADOPTED IT with two exceptions: `loading` replaced by
-its own spinner test (its schema is the host's to load), and `error` as
-todo -- its own reads (who can see each type, the descriptions) fail
-silently and the graph never says something is missing.
-
-FOUND BY THE SUITE ON ITS FIRST RUN, AND FIXED: the kit's `AsyncPanel`
-showed a failure WITHOUT `role="alert"`, so ten panels across five
-sub-apps never announced one. And a test that failed intermittently
-(ObjectDetailPanel's slow-response race) resolved its promises outside
-`act`; it failed on most runs of the file alone.
-
-NOT YET BUILT, of the agreed design: a sub-app SUPPLYING a check's
-inputs (the server is stubbed at `fetch`, which covers every sub-app
-today, so nothing needs it yet); automated accessibility checks; the
-fakes checked against the real shell (the frame calls they would fake
-arrive with step 1.3); per-sub-app browser fixtures. The other sub-apps
-adopt as they become modules, in step 3.
-
-THE ADD-ON CONTRACT CHECKS ARE BUILT (23 October), the "pytest plugin"
-of step 2: sdk/python/elysium_addon_checks.py, a class an add-on's tests
-subclass -- health; the identity token honoured and a good one taken;
-loopback only; SIGTERM ends it within its deadline with status 0;
-standard input closing ends it. Elysium runs it against the example
-add-on and against that add-on broken one way per check; the
-simulator's panel runs it from its own copy.
-
-**STEP 1.3, IN THREE PARTS, agreed with the owner 21 October:** (a)
-the frame moves into `@shell/core`, looking and behaving exactly as it
-did; (b) a module SUPPLIES palette commands and search suggestions from
-its code, loading when the palette opens (VS Code's activation events),
-and Browse's move out of the shell -- which also ends the shell being
-handed the schema; (c) a rail entry declares a BADGE whose number the
-module's code supplies, loading at startup, and the Inbox's count
-becomes its badge. Decided: THE INBOX KEEPS NO HEADER BUTTON -- the rail
-is present at every width, so its badge is on every screen, and the
-header has no module slots at all; and Blueprint is the shell's peer
-dependency, being a library the page already shares.
-
-**STEP 1.3a BUILT (21 October): THE FRAME IS THE SHELL'S.**
-`@shell/core/Frame` draws the rail, the header and the command palette
-(the palette and its matching moved from Elysium's kit with it) and owns
-their behaviour: grouping by subject, collapsing and its narrow-screen
-rules, Ctrl/Cmd+B, Ctrl/Cmd+K, navigation commands. The host supplies
-the brand, the header's actions, overlays, icons, its commands, the
-loading fallback and the storage key. `ui/src/Shell.tsx` is now
-Elysium's composition of it; its 96 tests with App's pass unchanged,
-and the shell has 21 tests of its own for the frame, each behaviour
-with a control. Styled by the host for now, through the frame's stable
-class names.
-
-**STEP 1.3b BUILT (21 October): BROWSE SUPPLIES ITS OWN COMMANDS.** A
-module's manifest may name ACTIVATION EVENTS (`onPalette`; VS Code's
-`activationEvents`), carried by the feed, refused by Elysium at load when
-misspelt and ignored by the shell when unknown. Its code may return a
-palette HOOK (`usePalette({ open })` -> commands before and after
-navigation, and suggestions), which the frame mounts in a component of
-its own the first time the palette opens. Browse's types, saved views,
-actions-in-scope and searches moved from `ui/src` into
-`packages/app-browse` (`palette.ts`), with the fetch-on-open; its
-manifest names `onPalette`, and App imports its hook only when the shell
-asks. VIOLATIONS (a) AND (c) ARE GONE: `Shell.tsx` no longer knows
-Browse's routes, and the shell is no longer handed the schema -- Browse
-reads it from the host values like any module. A Python test refuses a
-module whose palette the page supplies without `onPalette`.
-
-**STEP 1.3c BUILT (21 October): THE INBOX'S COUNT IS ITS RAIL BADGE.**
-A second activation event, `onStartup`, activates a module as soon as
-the frame is drawn; its code may return `useBadges()`, badges keyed by
-the paths of ITS OWN rail entries (a badge for another module's entry is
-ignored), each a count and words for a screen reader. The frame draws it
-on the entry's icon, so a collapsed rail shows it, announces it after
-the name ("Inbox, 3 waiting"), shows nothing for zero and "99+" above
-99. The header's Inbox button is gone (the owner's decision); the
-Inbox's manifest names onStartup and its `badges.ts` (now in
-ui/packages/app-inbox, step 3) supplies the count. VIOLATION (b) IS GONE, AND WITH IT ALL THREE: `Shell.tsx`
-holds nothing of any sub-app.
-
-ONE WAY IN FOR BOTH: the host passes the frame the feed and an
-`activate(module)` (`@shell/core/activation`) -- its bundle's
-activation, or the host's own code for a module built into the page --
-and the shell decides when, by the events the manifest names, and reads
-`usePalette` or `useBadges`. This replaced 1.3b's palette-only prop
-before it shipped. Checked in Chromium: the badge is drawn, on top and
-inside the rail, open and collapsed.
-
-FOUND BY THAT BROWSER TEST, AND FIXED BEFORE SHIPPING: the count's words,
-first put in a visually hidden span, made Chrome name the entry
-"Inbox , 3 waiting" -- it computes an absolutely positioned element as a
-block of its own -- where jsdom gave "Inbox, 3 waiting". The entry now
-takes an aria-label built from its own title when it has a badge.
-
-AND IN THE PYTHON SUITE, which 1.3b's commit had not fully run: the API
-test freezing the feed's key set did not know `activationEvents`; fixed
-in that commit. A full run made while the browser tests and a build ran
-beside it failed 67 tests and errored 208; rerun alone, 248 of the 249
-it selected passed, the 249th being that key-set test -- load, not code.
-The Python suite is best not run beside other work.
-
-**STEP 1.4, IN FOUR PARTS, agreed with the owner 22 October.**
-Precedent: Firefox's Troubleshoot Mode, which disables add-ons and is
-temporary ("These changes are temporary"), entered from a menu or by
-holding Shift; VS Code's extension bisect, which "starts the first round
-by disabling all extensions"; Grafana, where installing a plugin is a
-server administrator's power apart from configuring one. (a) the
-shell's system sub-app, PINNED, with a Modules page; (b) SAFE MODE, this
-browser only and temporary, loading only pinned modules, reached from
-the user menu, from any "could not be loaded" message (a link -- it
-never switches on by itself, the owner's choice) and at `/?safe`; (c)
-the module manager CHANGES THE DEPLOYMENT -- on, off, order, home,
-refresh -- by writing modules.yaml through the existing validated,
-atomic, audited settings path, for manage:deployment; and (d) BOTH,
-SEPARATELY (the owner's choice): anyone may also hide a tab for
-themselves. The system sub-app sits LAST on the rail, under "System".
-Per-person tab ORDER and full screen wait until after slots.
-
-**STEP 1.4a BUILT (22 October): THE SYSTEM SUB-APP, PINNED.** Elysium
-always loads its system sub-apps (`SYSTEM_MODULES`, today
-`ui/src/system`), after every module modules.yaml names; modules.yaml
-cannot list one, a module cannot take one's id, and a manifest cannot
-pin itself -- the backend decides. The feed says `pinned`. The page is
-the shell's, generic (`@shell/core/ModulesPage`): every module offered,
-its version, its code (own bundle, or built into the page) and its
-state in this browser, live from the loader. Offered with
-manage:deployment; a browser-test user, `opsuser`, holds it.
-
-FOUND ON THE WAY: the Schema graph's API names asked for Blueprint 4's
-`--pt-font-family-monospace`, gone since Blueprint 6, and rendered in
-the browser's default monospace rather than IBM Plex Mono. theme.test.ts
-now refuses any variable a stylesheet reads that nothing defines.
-
-**STEP 1.4b BUILT (22 October): SAFE MODE.** `@shell/core/safeMode`:
-the page with only the pinned modules, in THIS TAB, until left -- the
-switch is the tab's session storage, nothing on the server changes, and
-other tabs load everything. Entering and leaving reload the page,
-because a module's imported code stays until a reload (Firefox restarts
-for the same reason). Reached from the user menu ("Reload in safe
-mode"), the palette, a link in every "could not be loaded" message --
-never switched on by itself -- and `/?safe`, read once at load and taken
-out of the address. A strip above every page says so, with "Leave safe
-mode"; the Modules page marks what it left out. Someone offered no
-pinned module gets the frame and the way out. Checked in Chromium: the
-reload, the rail reduced to Modules, persistence across a reload, the
-way out, and a second tab unaffected.
-
-**STEP 1.4c BUILT (22 October): THE MODULE MANAGER CHANGES THE
-DEPLOYMENT.** For manage:deployment, on the Modules page: each module
-on or off, up or down, where people land, saved as one -- through
-`GET`/`PUT /api/shell/modules/arrangement`, which writes modules.yaml by
-the same path as every configuration edit: the candidate loaded first
-(home opening nothing is refused, nothing written), written atomically,
-reloaded, put back if the reload fails, audited either way, and a save
-against an arrangement that has since changed refused rather than
-merged. It applies at once, with no second person: turning a module on
-widens nothing anyone may read or run, every call still being checked.
-Every open page notices on its next request (it carries the new
-generation) and fetches the feed again; "Refresh modules" does the same
-on request, which also loads a rebuilt bundle from its new address.
-modules.yaml gains `disabled:`, marking which of the listed modules are
-off -- in their place, so one turned on again comes back where it was.
-
-FOUND ON THE WAY: YAML 1.1 reads a bare `off:` key as the boolean
-false, so that name would have meant nothing in a hand edit -- the key
-is `disabled`, and `off:` is refused by name. And the first format kept
-turned-off modules in a list apart, so turning one off and on sent it to
-the end of the rail; seen in a screenshot, fixed. The browser test that
-saves an arrangement WRITES modules.yaml, so it runs only against a
-server on a copy of the configuration, opted into with
-E2E_MAY_WRITE_CONFIG=1, one test at a time.
-
-**STEP 1.4d BUILT (22 October): YOUR OWN RAIL TABS.** Anyone can hide
-a tab from their own rail -- "Your rail tabs…" in the user menu, applied
-as ticked, remembered per person in this browser like the theme. The
-RAIL ONLY: the palette still offers a hidden tab's pages and their
-addresses still open them, so hiding never loses anything; pinned tabs
-cannot be hidden, even by a preference that names one. The frame takes
-the hidden paths (`hiddenPaths`) and the dialog is the shell's
-(`@shell/core/RailTabsDialog`). Per-person ORDER waits, as agreed.
-
-STEP 1.4 IS DONE.
-
-**STEP 1.5, SLOTS, IN TWO PARTS, agreed with the owner 22 October:** (a)
-the mechanism; (b) the Inbox as the first slot owner, with Approvals,
-Notifications and Identity made modules of their own (the owner's
-choice), each contributing its tabs, so each can be turned off on its
-own and the Inbox stops importing them. The OWNER decides the order of
-its slot (the owner's choice: the Inbox keeps today's tab order), and a
-contribution it does not list follows in feed order. Precedent:
-Backstage's extension inputs and `attachTo`; Grafana's extension points,
-whose extensions must be listed in plugin.json.
-
-**STEP 1.5a BUILT (22 October): SLOTS.** A manifest declares the slots
-its pages offer (`slots: [{id, order?}]`) and its contributions to
-others' (`into: [{slot, id, title, icon?}]`), statically, so the shell
-and the module manager know every contribution without loading code.
-Elysium refuses at load a contribution to a slot no module declares, a
-slot declared twice, or a contribution declared twice by one module; a
-slot whose owner is turned off keeps its contributions, unshown. The
-owner draws its slot with `useSlot(id)` (`@shell/core/slots`), from the
-modules the feed offers -- permissions and safe mode applying untouched
--- and each contribution's component comes from its module's code on
-first showing, inside an error boundary of its own, so a failing one
-says so in its place and leaves the page standing.
-
-**STEP 1.5b BUILT (22 October): THE INBOX'S TABS ARE A SLOT.** The Inbox
-declares `inbox.tabs`, with today's order; Approvals (four tabs:
-Approvals, Enrichment, Predictions, Unusual), Notifications and Identity
-are modules of their own -- shipped by default, no rail entry, each
-switchable alone in the module manager -- and contribute them, their
-code in each package's `contributions.ts` (since step 3, in each one's
-own bundle). The Inbox no longer imports
-any of them. A queue module turned off, or not offered, has no tab, and
-the rest stand. A Python test holds every declared contribution to its
-code and back. Moving the Inbox itself into a package -- the step this
-file said slots would allow -- is now possible and not yet done.
-
-STEP 1.5 IS DONE, and with it STEP 1.
-
-**STEP 2, AGREED WITH THE OWNER 22 October:** ELYSIUM STARTS an add-on's
-server (rather than a person starting it beside Elysium), A SIGNED TOKEN
-tells it who is asking (rather than trusting loopback), and the
-simulator's panel lives in `sim/`, its bundle served by Elysium like any
-module's. In four parts: 2.1 the proxy and who-is-asking, 2.2 the
-lifecycle, 2.3 the simulator's panel as a module, 2.4 posting to the
-Inbox and the contract-version field. WebSocket pass-through waits for
-an add-on that uses one.
-
-**2.1 AND 2.2 ARE BUILT.** A module may declare `server` in its
-manifest; `addons.yaml` gives each its options, `${VAR}` filled from the
-environment (core/modules.py, core/addons.py). Elysium starts it with a
-port, a start file and a bare environment, checks `/health`, restarts it
-with back-off (1 s doubling to 60 s), keeps its log, and stops it with
-SIGTERM then SIGKILL at its `stopSeconds`; one worker supervises each,
-by flock, and another takes over if that worker dies; standard input is
-a pipe whose closing tells the server Elysium has gone
-(api/addon_servers.py). `/api/addons/{id}/...` forwards to it for anyone
-the module is offered to, adding `X-Elysium-Identity`, an HS256 JWT made
-with a secret per add-on per start, good for a minute; cookies,
-`Authorization` and the CSRF token never reach it, `Set-Cookie` never
-comes back, and what comes back is served sandboxed. Event streams pass
-(at most 8 open per worker, each ended after 10 minutes, as /api/events
-does). `sdk/python/elysium_addon.py` is the contract and a verifier
-needing only the standard library, for an add-on that may not import
-Elysium. The System sub-app has an Add-on servers page: state, log,
-Restart (audited). Checked live under two uvicorn workers: one server,
-reached from both; the supervising worker killed with SIGKILL, the old
-server left by itself and the other worker started a new one; a
-graceful stop exited 0.
-
-**2.3 IS BUILT, the owner's two answers of 22 October with it.**
-
-PERMISSIONS A MODULE DECLARES: "loadable modules [should] have their
-own permissions that dynamically get added to Elysium's permissions
-list". A module.json lists `permissions` (`{id, description}`), granted
-as `module:<module id>:<id>`. One REGISTRY -- Elysium's own grants and
-every listed module's -- worked out from the manifests at each load (the
-owner chose that over a stored table), offered by the role editor in a
-group per module with each description. Checked as every grant is; one
-from a module no longer listed is kept, grants nothing, and is shown as
-such rather than stopping the load. An add-on's token says which of its
-own permissions the person holds.
-
-THE WORLD RUNS ON ITS OWN: Elysium "should be able to be probed as if
-it went offline while the remote resources continued on their
-functioning per normal". The panel's server (sim/panel/server.py)
-starts `simulator run --follow` in a session of its own and keeps
-nothing about it in memory; killing Elysium -- the panel's server's
-whole process group, SIGKILL -- leaves the world running, and the next
-panel finds it through control.json. It stops on Stop, `simulator
-stop`, or SIGTERM, each through the run's teardown. A run lock held for
-a run's whole life says "busy" while building or tidying up.
-
-THE PANEL (sim/panel, module `simulator`, offered to
-`module:simulator:operate`): start from a pack or resume the stopped
-world with its own pack, pause, move on, speed, take a database offline
-and restore it, each database's connection details to copy, the run's
-log, discard. Its page's source is in sim/panel/web, built by ui/'s
-build into sim/panel/dist; the simulator carries no Node packages and
-imports nothing of Elysium's (its copy of the SDK is checked identical).
-Drift from the panel waits, the owner's choice.
-
-**2.4 IS BUILT, AND WITH IT STEP 2 (23 October).** An add-on posts to
-the Inbox by dropping a file in an OUTBOX folder Elysium gives it (the
-owner's choice over an HTTP call: no new door, and a notice written
-while Elysium is offline arrives when it is back). Delivered only to
-people offered the module -- named, or "everyone" -- each notice tagged
-in the Inbox with the module's name; a file Elysium cannot take moved
-aside with the reason in the add-on's log; a file read twice delivered
-once, its name the dedupe key (api/addon_servers.deliver_outbox; the
-SDK's `post()`). The simulator's panel watches its world and tells
-everyone who may operate it when it is running, when it crashed (even
-while Elysium was down) and when it never got going; a stop someone
-asked for says nothing.
-
-DOUBLE-CHECKED WITH THE OWNER AND DROPPED: notification kinds declared
-in module.json (a label kept in two places; Android's channels earn
-theirs by letting a person mute one, which Elysium has no use for) and
-a per-module contract version, moved to step 4 -- the feed already
-carries one, and versioning is designed when there is a version 2.
-
-STEP 2'S LAST AGREED PIECE, the add-on contract checks, followed on 23
-October (above, under the conformance suite).
-
-**STEP 3, AGREED WITH THE OWNER 23 October:** the remaining sub-apps
-move one per patch, smallest first -- Identity, Notifications,
-Approvals, Query, the Inbox (into a package), Admin, Browse -- each to
-its own bundle, its host values from the kit, its palette, badges and
-tabs from its own `activate()`, its own test project and the
-conformance suite (`todo` with a reason for what fails today).
-
-**STEP 3, IDENTITY MOVED (23 October):** its own bundle, loaded when the
-Inbox first shows its tab; its styles out of the kit's stylesheet and
-into its own; its own test project; and the conformance suite, which
-now checks a module's slot CONTRIBUTIONS as it checks pages -- rendered
-with the context Elysium's slots give, `onSessionExpired` -- passing
-every check with no exceptions. The page no longer imports or depends
-on it.
-
-**NOTIFICATIONS MOVED (23 October)**, the same way, passing every check.
-Breaking it on purpose found what the suite cannot see: it checks a tab
-as a whole, and this tab also mounts its Watching and Reminders panels,
-which hand over an expired session by themselves -- so a notification
-list that ignored one passed, hidden behind them. Its own test now
-covers its list alone. The suite's limit stands, said here: a check on a
-page is a check on everything the page mounts.
-
-**APPROVALS MOVED (23 October)**, its four Inbox tabs (Approvals,
-Enrichment, Predictions, Unusual) in one bundle, passing every check.
-It was the last sub-app whose slot code Elysium's page carried, so
-App.tsx's table of built-in contributions is gone, and a Python test now
-refuses any module that fills a slot without a bundle of its own.
-Approvals is the Inbox's first tab, so its bundle arrives when the Inbox
-opens rather than when a tab is clicked.
-
-**QUERY MOVED (23 October)**, the first page rather than a tab: it reads
-the session hand-over from the host store, as Schema does. It is where a
-person lands, so its bundle is asked for straight after login. The suite
-running on it found one real fault, fixed: an expired session found
-while fetching the example questions was swallowed with every other
-failure of them, so the person learnt of it only on asking. Its other
-two exceptions are deliberate and replaced by tests of their own: the
-page waits on nothing, so has no spinner, and a failure of the examples
-is not shown, since it must not stand between someone and their
-question.
-
-**THE INBOX MOVED (23 October)**, into a package of its own
-(ui/packages/app-inbox, from ui/src/inbox and ui/src/InboxPanel.tsx) and
-from there to its own bundle, with its badge. Its manifest names
-`onStartup`, since the count is on every screen, so the bundle comes as
-the frame is drawn; the tabs' code still waits for their own bundles.
-With it the page's table of built-in badges is gone. A modules.yaml
-naming the old folder is read as naming the new one, with a warning
-saying which file to change (the owner's choice, 23 October, over
-refusing the file); the module manager writes the new folder on its
-next save (core/modules.py, MOVED_MODULES). Its conformance exceptions
-are all its tabs': the Inbox draws no data of its own, and its counts
-are quiet on failure by design.
-
-**ADMIN SPLIT (24 October)**, before it moves, as this file planned
-("much of today's Admin, which splits into the server and
-people-and-roles"). The owner's decision, after the analysis: the
-server's views -- Deployment, Silos, Metrics, Mirror, Cleaning -- are
-the System sub-app's Server page (ui/src/system/ServerPage.tsx, at
-/system/server, the view in `?view=`), pinned and offered on
-manage:deployment; Admin keeps Users and Roles. Before, the five sat in
-Admin, offered on manage:users, so an account administrator was shown
-Metrics, Mirror and Cleaning and refused by the server, and an operator
-was not shown them at all. The server's checks followed the same day,
-in a patch of their own (below, after step 4). A fresh install's `root`
-(manage:users only) no longer sees these views; INSTALL.md, "Seeing
-the server's own pages", says how to give manage:deployment, and the
-installer says so when it finishes. ConfigProposals, used by both
-sides, is the kit's now.
-
-**ADMIN MOVED (24 October)**, Users and Roles in its own bundle, loaded
-when /admin is first opened, passing every check with no exceptions. Its
-own rules (the user table, the create-user form, the roles editor) moved
-with it; what it shares with the kit -- a role change's impact, the
-waiting configuration changes -- kept theirs there.
-
-**BROWSE MOVED (24 October), AND WITH IT STEP 3 IS DONE.** Its own
-bundle: a small entry carrying its palette commands, which the shell
-asks for when the palette first opens, and each of its two pages a chunk
-of its own beside it (React's `lazy`), fetched when first opened -- so
-opening the palette on Query fetches 3 KB of Browse, not all of it, as
-when the page held it. Its 134 rules moved into browse.css; what it
-shares with the kit (data tables, field values, the filter bar) kept
-theirs. Elysium's page now carries no module's code: its tables of
-built-in pages and palettes hold only the System sub-app's pages, and a
-Python test refuses any module naming an activation event without a
-bundle.
-
-TWO THINGS THE MOVE FOUND, both fixed:
-- "Ask about this set" had drawn its subject line as a sunken box since
-  19 October, when the question-in-progress rules were pasted in between
-  `.ask-panel__subject,` and `.ask-panel__note {`. The pair is back
-  together, and the progress rules, which are the kit's QuestionProgress
-  component's, stayed in the kit.
-- The tokens test read only the kit's and Schema's stylesheets, so every
-  rule moved in step 3 had gone unchecked for raw colours and undefined
-  tokens. It now finds every package's stylesheet itself.
-
-THE CONFORMANCE SUITE NOW HANDLES A PAGE LOADED ON DEMAND: the test host
-renders inside a Suspense boundary, as the frame does, and each check
-first waits for the page's code to arrive, so no check sees the
-fallback and passes for it. And a module may give the suite its host
-values -- Browse gives a schema with one type, without which its search
-page reads nothing. Both of Browse's pages pass every check. The suite's
-known limit holds there too: breaking Search's own hand-over of an
-expired session did not fail its check, because the panels it mounts
-hand over themselves. Search's own test does catch it.
-
-**STEP 4, AGREED WITH THE OWNER 24 October**, in three patches: the
-public surface is WHAT MODULES USE TODAY (measured: 194 names from 38
-entry points of the kit and the shell, by the eight modules and the
-simulator's panel), plus the manifest, `activate()`, host values, tokens
-and the add-on contract; everything else the kit exports is internal.
-Written down as an API REPORT with a short guide -- API Extractor's
-precedent, which Backstage runs on every package -- and versioned by ONE
-number each module.json declares, as VS Code's `engines.vscode` ("the
-versions of VS Code that the extension is compatible with").
-
-**4.1, THE REPORT, BUILT (24 October):** ui/module-api.report.md,
-generated by scripts/module_api_report.py from the declarations
-TypeScript 7 emits: every name a module imports, and every declaration
-those lead to (a public function's options type, say), signatures only.
-A test fails while it is stale -- so a public signature changed, or a
-module importing a name no module used before, arrives as a diff of the
-report; a change to an internal export does not touch it. Not API
-Extractor itself: it bundles TypeScript 5.9 and drives the compiler
-through a JavaScript API TypeScript 7 does not have, and it reports
-whole entry points where the agreed surface is the names used.
-
-**4.2, THE VERSION, BUILT (24 October):** the page offers module API
-1.0 (`MODULE_API_VERSION`, shell/core/src/contract.ts), MAJOR.MINOR --
-an addition raises the minor, a change or removal the major. Each
-module.json says what it needs, `"api": "^1.0"`, VS Code's `engines`
-form; every shipped one, the System sub-app's and the simulator's panel
-say ^1.0. A module needing one the page does not offer, or naming none,
-is left out of the routes, the rail and activation (compatibleFeed),
-and the Modules page lists it with why ("Not loaded: it needs the module
-API ^2.0, and this page offers 1.0") -- refused as a module, never as
-Elysium's start. The server refuses a version written wrong at load, as
-it does a misspelt activation event. The conformance suite requires a
-loadable `api`, and the report heads itself with the version.
-
-THE ADD-ON SERVER'S START FILE keeps its own `"contract": 1`, which the
-SDK checks: it is the wire format of one file, and the module's `api`
-already says which API its server was built for. Folding it in would
-change the SDK every add-on carries for no reader who needs it now.
-
-**4.3, THE GUIDE, WRITTEN (24 October), AND WITH IT STEP 4 AND ITEM 3'S
-BUILD ORDER ARE DONE.** ui/MODULE_API.md, for someone writing a module:
-the version rules, the manifest's keys and what the server checks,
-`contributes`, activation events, what `activate()` returns, the host
-values, the shared libraries, styles (tokens, the `components` layer,
-a module's own stylesheet), building and testing with the conformance
-suite, and the add-on server's contract, pointing at the SDK's
-docstring for the whole of it. A GUIDE DRIFTS where a report does not,
-so tests/unit/test_the_module_api_guide_matches_the_code.py holds its
-LISTS -- manifest keys, contributions, events, what activate returns,
-host values, shared libraries, the version, every file it names -- to
-the code that decides them.
-
-What this item offered and deferred is unchanged: WebSocket pass-through,
-jobs, timer callbacks, event subscriptions, time-series buckets, kit
-components (above, "GENERIC SERVICES FOR ADD-ONS"); drift from the
-simulator's panel.
-
-**/config AND /silos RE-GATED (24 October), with the owner:** both need
-manage:deployment, the grant the System sub-app's Server page is
-offered on, where they had kept manage:users from August, "the same
-grant Admin uses", when it was the only administrative grant. ONE THING
-DEPENDED ON THE OLD GATE: /config was how an account administrator
-learnt the roles' names, to put people in them and to name any as a
-Watch's recipient (core/triggers.recipient_problem). That is
-GET /roles/names now, names only, on manage:users; the Watch dialog
-reads it. Tests now hold the boundary itself -- an account-only role
-refused the server's state, an operator-only role refused the names --
-which the existing ones, using the debug role holding both, could not.
-
-**THE ADD-ON SERVICES, CHOSEN 26 October, with the owner:** time-series
-reads first, then the kit's time chart, then event subscriptions. Jobs,
-timer callbacks and WebSocket pass-through wait for an add-on that
-calls them. The time-series reads come in four parts, buckets written as
-ISO 8601 durations as Foundry's aggregate takes them (the owner's
-choice): (1) `duration` and `time_zone` on the aggregate; (2) first and
-last per bucket; (3) the assistant's aggregate step taking a period;
-(4) several measures in one request. A time property declared per type
-and a tail cursor wait for a caller.
-
-PART 1 IS BUILT: `duration` (PT15M, PT1H, P3D) beside `period`, and
-`time_zone` for either, aligned as TimescaleDB aligns its buckets --
-from midnight on 3 January 2000, in the zone asked for -- with the
-autumn's repeated hour holding both and the spring's skipped hour never
-offered (core/periods.py).
-
-PART 2 IS BUILT: `first` and `last`, the value at the earliest and
-the latest moment of each time bucket, as TimescaleDB's are; two at one
-moment told apart by id, so the answer does not depend on read order;
-refused outside time buckets, where there is no time to order by.
-
-PART 3 IS BUILT: the assistant's aggregate step takes a `period`
-(day, week or month) for a type with a date, so a trend is one step
-rather than one per period. The grammar offers it only where there is a
-date, the parser finishes on a period it does not know, each period is
-named by the ISO date it starts on (JSON cannot key on a date), and the
-account of the work says "per week". It takes a period, not a
-duration: the model has been given the three words it can use well.
-
-PART 4 IS BUILT, and it broke `/aggregate` on purpose (no installation
-depends on it): `measures` -- a list of {name, aggregate, field}, up to
-eight, names unique plain identifiers -- replaces the single `aggregate`
-and `field`, and the answer is `rows`, each {group, metrics}, from ONE
-read of the set. After Foundry's aggregate (aggregation list in;
-`group` and `metrics` per row out), except that metrics are an object
-keyed by name rather than a list: a name is an identifier, so the object
-is never reordered. A LIST of rows rather than an object keyed by group,
-because JavaScript reorders integer-like keys (`{"b":1,"10":2,"2":3}`
-reads back 2, 10, b) and a year or a status code is one; and group values
-keep their types. The mediator's `aggregate_by_field` is the same code
-with one measure, so its callers are unchanged; the charts ask for one
-count and read it with `countsByGroup`. The assistant's step still takes
-one measure -- it gets more when something needs them.
-
-**Blocked on:** nothing. Next: the kit's shared time chart.
-
-## 4. What the interface should be
-
-`DEV_UI.md`, written after the owner said the interface is BOTH
-unfinished and disjointed. **Its diagnosis is the part worth keeping**,
-because it is why a redesign would fail:
-
-> Those are two different faults with two different fixes, and
-> treating them as one is how a redesign fails: new paint on the same
-> dead ends, or a new structure that still looks like a prototype.
-
-**UNFINISHED is a craft problem** -- inconsistent spacing, tables that
-are HTML tables, empty states that say nothing useful, loading that
-flashes, iconography borrowed from whatever Blueprint offered.
-"Nothing is wrong, and nothing looks decided." **DISJOINTED is a
-structure problem**, and a different fix.
-
-**AND A LIST OF REFUSALS**, which is the half a summary always drops:
-
-> - An app-building platform (Workshop). An app inside an app.
-> - Analysis notebooks (Contour, Quiver). Charts over a set, yes; a
->   second analytical language, no.
-> - Model management, a marketplace, time-series infrastructure,
->   geospatial.
->
-> Palantir has thousands of engineers and customers demanding those.
-> Elysium's edge is the agent, the security model and governed writes.
-
-One measured fact worth not relearning: white on pure black causes
-**halation** -- the text bleeds across the corneal lens, worst for
-readers with astigmatism and worse the longer the session. 21:1
-contrast is not a target.
-
-**THE REDESIGN IS UNDERWAY, decided 14 October**: foundations first,
-then the shell; dark by default; the agent inside Browse AND in Query;
-one Inbox. Built so far, each checked in a real browser:
-
-- DEV_UI 8.3's navy palette and Blueprint retinted onto it, IBM Plex
-  self-hosted, 9.5's radii, elevation by step, a dot on every state.
-- One DataTable for every table -- hairlines, hover, sticky header,
-  right-aligned numbers, no zebra -- with the reader's row density
-  (9.3) in the user menu; Browse's results are a real table.
-- The four states: loading by expected wait (a skeleton after a second,
-  rows dimming under 1s), EmptyState requiring a reason.
-- One Inbox with three tabs, a count in the header (15.3), and each
-  object in a write under review a door to its page.
-- "Ask about this set" as a panel in Browse sending the set itself.
-- 15.3's approvals ergonomics: no approve without the diff open, sort
-  by consequence, a pending marker on the object and on the set.
-- Notification rows as doors to the objects they concern; sortable
-  DataTable headers.
-- The E4 partial state as one component (FieldValue): "Not permitted"
-  and a real null look different on every surface. "Restricted" -- a
-  readable field withheld for one object -- is deliberately NOT a third
-  state: MAC withholds whole objects, and a link to a hidden object
-  reads as null, because marking it would disclose that it exists.
-- The command palette beyond "go to": object types, saved views, the
-  actions on the object in front of you (greyed with the reason when
-  your role may not run one), the shell's own settings, and a search
-  of each type for whatever was typed. Scoped to where you are, as
-  GitHub's palette is.
-- Section 14's ontology canvas: layered (dagre), orthogonal edges, a
-  moved type kept per person apart from the declaration, actions as a
-  count on the type, subject areas (the ontology's own groups offered
-  first), and security chains on a layer for manage:roles.
-- 13.3's "who can see this?", on each type's card in the Object types
-  catalogue, for manage:roles: per role, its people, whether it reads
-  the type, which fields it reads, only knows exist or cannot see, and
-  which actions on the type it may run; and which OBJECTS a person
-  sees, as one sentence followed through any compartment chain. Asked
-  of visible_schema per role, so it cannot disagree with what people
-  are served.
-- 13.5's "what would this change do?", on the Roles screen: a change
-  in ACCESS terms ("can now read Account", "can no longer read
-  Customer.email", "can now run UpdateCustomerName", and how many
-  people hold the role) -- previewed under the editor as grants are
-  ticked, and on every waiting change for the approver. Gains carry the
-  warning colour (13.6). The proposed grants are compiled as the
-  mediators compile them, so a label grant shows as the fields it opens.
-- 13.7's describing the ontology, from the schema map's preview and each
-  type's card, for manage:deployment: a type's name, plural,
-  description, group and title field, and each field's name and
-  description, written to ontology_schema.yaml line by line with every
-  comment kept, the loader run on the result before it lands, reloaded
-  and recorded as a generation. Applied at once (decided 16 October):
-  it changes what things are called, not who sees what. The allowlist
-  is the server's and cannot reach `security`, storage or a field's
-  type.
-- Access labels on fields, from the same places, decided 16 October: a
-  change that lets anyone read, know of or run more -- asked of the
-  permission code, NOT of the edit's direction, because with enforcement
-  on, ADDING a label opens a field to a role holding that label's grant
-  -- waits, with a reason, for a holder of manage:roles who did not
-  propose it (Foundry: removing a marking needs "the Expand Access
-  permission on the marking itself"; Purview asks a reason to lower a
-  label). Anything else applies at once, which with enforcement off is
-  everything. The approver sees, on Roles, who asked and why, what it
-  does to each role recomputed against what runs now, and the exact
-  lines; a file moved since is STALE, refused rather than merged.
-- "Put this version back" on configuration history, decided 16
-  October: a version's files written back as a NEW generation (Grafana,
-  Terraform: history grows, never rewinds), at once unless anyone could
-  read more -- then the same queue and the same second person as a
-  label. The preview shows the ontology's lines and only NAMES any other
-  file, as /admin/config-history always has, because data_silos.yaml
-  says where each source is. Refused rather than half-done: a field's
-  data type going back (the lake cannot follow without a rebuild), a
-  file that would have to be added or deleted, or nothing to do. Roles
-  in the role store are in no version, and it says so.
-- EDITING THE ONTOLOGY'S SHAPE, designed and agreed 26 October, built
-  in pieces. The request is a list of OPERATIONS (add a field, add a
-  type, add a link), never free YAML: the server renders the lines,
-  keeps every comment, and the loader judges the result before it lands,
-  as 13.7's descriptions do. A change touching both ontology_schema.yaml
-  and source_bindings.yaml is one generation, so history and "put this
-  version back" need no change. What the preview says besides the diff:
-  which gold tables rebuild at the next sync (a changed column set
-  rebuilds the type's gold table from silver; publication tags restart
-  and the first build records no history), whether the source column
-  exists (asked of the adapter where it can say -- SQL only), and that
-  NOBODY CAN READ A NEW FIELD OR TYPE until policy.yaml grants it, which
-  is why adding is access-neutral. Applied at once when the permission
-  code (core/role_impact.config_access_impact) says nothing widens,
-  otherwise queued for a second person like a label. Decided: grants
-  stay on the Roles screen (a pointer after the change, no bundled
-  grant). REVISED 26 OCTOBER, by the owner: removing a field or type, and
-  changing an existing field's data type, are to be possible from the
-  same screens, not left to hand edits. DESIGN AGREED 27 OCTOBER
-  (Foundry: an active resource cannot be deleted, and a breaking change
-  waits for a migration -- object-edits/schema-migrations and
-  ontology-manager/cleanup in their docs): (1) a "used by" report first,
-  BUILT 27 October (core/ontology/used_by.py; "Used by" on the Schema
-  screens) -- configuration references only, saved views, frozen sets,
-  recipes, proposals and notes still to be listed; (2) DEPRECATE FIRST:
-  only a deprecated field, link or type may be removed, with a reason and
-  an optional replacement; (3) REMOVAL IS BLOCKED while anything names the
-  thing, the dialog listing each place for its owner to change -- it does
-  not strip other people's grants and actions; (4) removal never drops
-  lake data (erasure stays its own feature) and applies at once, since it
-  cannot widen; (5) A TYPE CHANGE REBUILDS FROM THE EARLIEST LAYER IT
-  TOUCHES rather than adding a new field: a field added or removed
-  restarts gold from silver (already so), a data type change restarts
-  silver from bronze with the old table serving until the new one swaps
-  in and a count of rows that will not convert, a changed source column or
-  table restarts from the source and states that cost first; (6) AN OBJECT
-  HAS A STATE, live, rebuilding or unavailable, shown on screens and in
-  answers ("data as of 14:02, rebuilding"); writes proposed meanwhile are
-  held and re-checked against the new shape when released; a rebuild is
-  never a change event, so triggers and history do not fire for it; an
-  object whose state cannot be told counts as unavailable. STILL TO CHECK
-  before the retype patch: what the history tables do when a field is
-  retyped or removed. Order: used by (built), deprecate, remove a field or
-  link, remove a type (built: deprecated, nothing names it, its tables stay in
-  the lake), retype with rebuild.
-  RETYPE, CHECKED AND SLICED (2 November): HISTORY IS SAFE -- gold_history
-  keeps each row as JSON in one text column, so retyping a field breaks
-  nothing there and old entries keep the values they had, in the old
-  type; the gold rebuild a type change already causes (gold._columns_
-  changed) drops only gold.<Type>: publication tags restart and the
-  first publication afterwards records no diff, but the changelog stays.
-  Silver is refused on a changed declared type until `run_sync --rebuild
-  silo.table` names it (iceberg_sync._refuse_a_changed_declared_type),
-  and POST /admin/mirror/sync runs run_sync() on a thread with no
-  rebuild names. SLICES: R1 the edit -- "Change type" on a data field
-  (config_editing line edit, preview then apply with the stale-digest
-  409, the dialog saying what is rebuilt and what is kept, and the
-  silo.table names that now need a rebuild, found by comparing the
-  declared type with silver, so no marker file exists to go stale), and
-  the sync route taking those names, refused for any table that does not
-  actually mismatch; R2 the object STATE (live, rebuilding,
-  unavailable) derived the same way, served in answers and on screens
-  ("data as of ..., rebuilding"), the old silver serving until the new
-  one swaps in, and gold not rebuilt from silver of the old type
-  meanwhile; R3 the count of values that will not convert, from bronze,
-  before applying; R4 proposed writes held while rebuilding and
-  re-checked against the new shape when released. A retype is not a
-  change event: triggers and history do not fire for it.
-  R1 BUILT (2 November): "Change type" on a data field of Schema
-  (config_editing.apply_retype, core/ontology/retype.py, POST
-  /admin/ontology/retype/preview and PUT /admin/ontology/retype, and
-  POST /admin/mirror/sync taking `{"rebuild": [...]}`, each name checked
-  against the lake right now). MEASURED for R2: while silver is refused,
-  the sync SKIPS gold of that type ("skipped gold.Transaction: ... did not
-  sync, so its silver is stale", scripts/run_sync.py) -- it neither
-  rebuilds gold from the old-typed silver nor fails it, so gold keeps its
-  old column type, tags and changelog while reads already use the new
-  declared type. Not retypable from the screen, on purpose: a link field, a
-  computed field (derived, enriched or predicted: its type is what its
-  rule produces), a type's identifier, and the field its row security
-  reads (comparing its value as text decides who sees a row). THE LAST
-  THREE ARE JUDGED ON THE LOADED SCHEMA AND PER COLUMN, not on the file's
-  words and field names (core/ontology/retype.refusal): `security:
-  inherit` is only a word in the file, and storage is per column, so a
-  field stored in a column that is any sync target's id or security column,
-  or that a link joins on, is refused whatever it is called and whichever
-  type declares it. After review (2 November): the screen's edits read and
-  write the bytes of the file, so CRLF stays CRLF; the apply never fails for
-  want of a readable mirror (`rebuild_unknown`); a rebuild is refused with
-  409 while another sync holds the lock, and a refused one is audited; the
-  tables owed leave out a column the source lost, as far as the last sync
-  recorded (it cannot know the source's columns now without reading it); and
-  the dialog says what a value that will not convert does under the
-  deployment's `on_type_mismatch` (refuse stops the sync and the rebuild;
-  quarantine sets the row aside at every sync). tests/integration/
-  test_retype_from_the_ui.py runs a real sync before and after.
-  R2 BUILT IN PART (3 November, owner's order): GET /admin/mirror carries,
-  per silver table and per object type, a STATE and whether a rebuild is
-  OWED (core/mirror/object_state.py), and the Mirror panel shows them.
-  Derived on every call, nothing stored: OWED is tables_needing_rebuild;
-  REBUILDING is "the table's last sync attempt is `rebuilding` (run_sync
-  records it just before it drops that silver) AND a sync holds the lock
-  now", so a rebuild that died is live again and owed again; UNAVAILABLE is
-  "the lake could not be read or the lock could not be tried", never
-  guessed live; a type is the worst of its tables. "Rebuild now" is a button
-  pressed each time (it sends the names owed at that moment; the server
-  checks each again), never automatic and not the default on apply; the old
-  silver keeps serving until the swap, and gold of the type is skipped
-  meanwhile (measured in R1, unchanged). NOT BUILT of R2: the state in
-  answers ("data as of 14:02, rebuilding") and on screens other than the
-  Mirror panel. R3 and R4 are untouched.
-  R3 BUILT (3 November): the retype preview (POST /admin/ontology/retype/
-  preview, shown in the dialog's "what happens to stored data" lines before
-  Apply) carries a COUNT of the values of the field's column that will not
-  convert, "N of M values of <column> in <silo.table> will not convert to
-  <type>", counted in BRONZE with the rebuild's own conversion (transform_rows:
-  the column's cleaning rules, the silo's locale for text, the silo's date
-  quirks; core/mirror/retype_count.py). The line says it is bronze, as of
-  the time of bronze's last snapshot, that a value changed at the source
-  since is not in it, and the next line says what the deployment's
-  `on_type_mismatch` does with such a value (refuse: the sync and the
-  rebuild stop with an error; quarantine: the row is set aside at every
-  sync). NEVER A GUESSED ZERO: a bronze table that does not exist, one
-  without the column, a mirror that cannot be opened or read, and a table of
-  more than 2,000,000 rows (not counted while a person waits, and not
-  counted in part) are each said to be NOT counted, with the reason.
-  Not claimed: the count is of values, not of rows the sync would drop for
-  other reasons, and it is not re-run at Apply (the dialog's figure is the
-  one shown). No screen changed: the lines are text the dialog already
-  lists. Only the field's own column is counted, in the table the retype
-  changes.
-  R4 BUILT IN PART (3 November): APPROVING a proposal is the write (the
-  proposal itself writes nothing), so POST /writes/{id}/confirm with
-  `approved: true` is HELD with a 409 and a reason while any object type
-  the write touches is REBUILDING, by the SAME derivation as the Mirror
-  panel (api/routes._mirror_states, core/mirror/object_state.hold_reason):
-  one way to decide "rebuilding". Held before any reviewer's decision is
-  recorded; the 409 releases the reservation, so the proposal STAYS in the
-  queue and the same approval goes through once the rebuild is over. A
-  rejection is not a write and is never held. FAIL CLOSED: a state that
-  cannot be told (lake unreadable, lock not tryable, anything raised while
-  working it out) holds the write and says it cannot tell. Conservative
-  readings taken: a type that is only OWED a rebuild (old silver serving) is
-  not held, as R2 says it is not a state; proposing is not held; a type
-  reading no silver table is not held. "RE-CHECKED AGAINST THE NEW SHAPE
-  WHEN RELEASED" is what confirm_and_execute already does at every approval
-  (constraints and rules judged on the schema as it is then, fields still
-  declared, MAC, the proposer's grant); nothing new was added, and no
-  check that a value fits the new data type exists beyond the field's
-  constraints. NOT BUILT: a "held" marker in the approvals inbox listing
-  (the reason shows when someone tries to approve, in the Approvals panel
-  and on the pending-write card, which already print a refusal's text),
-  and holding writes that do not go through a proposal (none were found).
-  REMOVE_AFTER ALERT BUILT (3 November, core/ontology/deprecation_alerts.py,
-  api/deprecation_alerts.py): a daily timer on the existing timer service
-  (api/timer_service.py; no new thread) sends a notice, kind "deprecation",
-  to every active account holding manage:deployment, once per item per
-  stage per person (dedupe key names item, stage, date and person): LEAD
-  when the date is within `deprecation_lead_days` (config.yaml, default 30,
-  0 to 365) and OVERDUE when it has arrived and the item is still in the
-  configuration. An unparseable date gives a "not a date" notice and a log
-  line, never silence or a crash. Nothing is removed. READINGS TAKEN, the
-  conservative ones: (1) ACTIONS ARE NOT COVERED -- action types have no
-  status or deprecation block, so there is no date to alert on; (2) the
-  notice carries only a COUNT of configuration references from the Used by
-  report, with no names, because a name in a notice reaches people who may
-  not be allowed to discover it; saved views, notes and the rest are not
-  counted, and it says so; (3) deprecation.py promises "the removal step"
-  will ask the operator to approve removal on the day; that is left as it
-  was -- the alert informs and the Schema screen's Remove is still the
-  person's action; (4) a changed date is a new notice, a reload does not
-  re-send, and an item removed before its date is simply not evaluated;
-  (5) dates are compared as UTC days. Not built: a UI badge or a banner,
-  email, and re-alerting an overdue item that stays overdue.
-  A field declared later is not empty history:
-  bronze keeps every column the source has. Order: add a field (built),
-  then add a type with its binding picked from the source, then add a
-  link. Still to check: whether "put this version back" refuses
-  dropping a field or type that holds data.
-
-THE NODE NOW CARRIES 14.5's COUNT AND HEALTH, and properties at close
-zoom (16 October): how many objects of the type the reader can see
-(GET /me/type-counts, one request, MAC applied, readable types only),
-a dot for whether its data is current against its own window (from
-/data-freshness: fresh, later than expected, overdue, a ring for never
-published, nothing for exempt), and from 1.5x its fields, the key
-first, in place of the summary -- the box keeps its size, because rows
-are 40 apart and a taller box would land on its neighbour.
-
-Edges are routed AROUND the types in their way (a search over grid lines
-beside the nearby types, fewest bends first).
-
-THE SHARED STARTING ARRANGEMENT (built 27 October, owner's wish of 26
-October: everyone starts from a similar picture). Someone who manages the
-deployment arranges the types and chooses "Start everyone here" (after a
-confirmation, since it moves where everybody starts); it is stored once
-for the deployment (`canvas_shared`, positions only) and served to each
-person cut down to the types they may see, so a type sits in the same
-place for everyone who sees it and a gap reveals nothing. A person's own
-moves lie over it, and Auto-layout returns them to it. A manager who sees
-fewer types merges rather than erases the others' places. "Clear shared
-start" returns everyone to the automatic layout. Not done: a type that
-nobody who manages the deployment can see stays automatically placed.
-
-**Blocked on:** nothing.
-
-## 5. Agent-loop efficiency, which needs a machine with a model
 
 `IDEAS.md`'s open investigations all need traces from a real model on
 real hardware. The measurements already taken are kept because
 re-taking them costs an afternoon of somebody's GPU.
+
+**The benchmark runs again after S15 of the roadmap below**, on the new
+step vocabulary (one `Step` table that generates the prompt fragment, the
+JSON Schema and the validator), so the unmeasured switches below are
+measured once, on the code that will ship. The two commands at the end of
+this item run against the present vocabulary and are only worth running if
+S15 is far off. The method lessons below (a grep or a prompt theory is not
+a measurement; the refusal message is what teaches the model) move into
+comments beside the code when S15 lands.
 
 **THE ANSWER WAS NEVER TIMED** (found 19 October): every run below
 timed the loop's step calls and stopped, though the answer is prose
@@ -1747,7 +421,7 @@ measured.
 
 **FOUR MORE ARE BUILT AND OFF, 2026-10-14** (`core/llm/agent_features.py`,
 each under `agent:` in config.yaml): filter operators (F-18/LB-2), a
-search-result cap (AL-3, item 9), a free-text `search_text` step
+search-result cap (AL-3, below), a free-text `search_text` step
 (LB-8), and a `remember` step honoured only when the question itself
 asks (E-14). Off, the step prompt is byte for byte what it was --
 measured by its sha256 before and after. `scripts/feature_bench.py`
@@ -1815,7 +489,52 @@ messages had already taught the model"), applied where it was missing.
 It changes model behaviour, so it is measured before anything is
 switched on.
 
-**Blocked on:** two runs --
+
+**Two decisions that wait on the same machine** (merged from the former
+owner-questions item, 26 October): `D1`, whether to switch phi4-mini to
+Qwen3-4B-Instruct after the bench (the shipped config is still phi4-mini;
+`python -m scripts.compare_models phi4-mini <other>` runs the bench's seven
+questions on each and tabulates how many each got right and where a whole
+question's seconds went), and `D2`, whether to stay on Ollama or run
+llama-server (the OpenAI-compatible adapter already reaches it and reads
+its timings; prompt caching (AR-3) and speculative decoding (AR-8) need
+it, and llama.cpp's n-gram drafting (`--spec-type ngram-simple`) needs no
+second model and suits replies that copy names and values out of their
+prompt). They are ONE decision, "pick one stack", taken after S15, because
+the roadmap keeps one inference server and one set of switches (D23).
+Decided earlier and recorded in PRINCIPLES.md section 4: no question
+leaves the VM (`D3`, `AR-9`), and no fine-tuning on Elysium's traces
+(`D6`, `AR-10`).
+
+**Context rot, and a 10,000-id search behind it** (merged from its own
+item). A model's effective recall degrades as the context grows, well
+before the hard limit, and the agent accumulates `gathered` across every
+step and feeds it back each hop, so a query touching many objects gets a
+worse answer before it errors. Where that begins has never been measured.
+`MAX_SEARCH_SCAN` is 10,000 in `mediator.py`, applied by asking for
+`MAX_SEARCH_SCAN + 1` so that "we stopped looking" can be told from "that
+was all of them" (patch 502 recorded this as an unbounded search of
+200,000 ids; that was wrong, corrected in patch 505). What is true:
+`_step_search_object` appends the ids whole, 10,000 ids is tens of
+thousands of tokens re-sent per hop against an agent that runs eight, and
+`get_object` is bounded (`MAX_OBJECT_IDS = 20`) while search output is not.
+`agent.search_result_cap` (off) shows the first N ids, the exact total and a
+note naming `aggregate_object`. After S15 result size is bounded by
+`pageSize` and the cap disappears into a constant (D23). What a measurement
+must still answer is task completion against context size at the midpoint
+of a task; and the `agentic_loop.py` comment beside `MAX_OBJECT_IDS` says
+why a cap chosen without measuring is dangerous: told its limit was 20 when
+given 32 ids, a real model "came back asking for TWO, then spent the rest
+of its hops fetching one object at a time until the duplicate guard
+stopped it".
+
+**Open owner question, now part of S9:** `R47`, review of inferred
+special-category data (health, religion and so on). HIPAA and GDPR's
+special categories (declared under `Q1`) are the reason. The roadmap's
+answer is a rule rather than a screen: an edit proposed on a
+special-category field needs `approval: second_person`.
+
+**Blocked on:** a machine with a capable model, and two runs --
 
     python -m scripts.llm_bench --features free_text_search,remember_from_query --cases count_by_aggregate
     python -m scripts.llm_bench --features none --cases dependent_choice --show-steps
@@ -1827,783 +546,55 @@ and nudge of the baseline regression, which is what diagnosing it needs.
 Beyond that, nothing on this hardware: a GPU, or a larger model, would
 reopen plan mode and constrained decoding.
 
-## 6. Context rot, and a 10,000-id search behind it
-
-`UI_ROADMAP.md` calls this "a risk to what already exists, not a
-feature", and it is the only part of that file that is not front-end
-work.
-
-> **Context rot.** Current research describes "a model's effective
-> recall degrading as the token count grows, WELL BEFORE the hard
-> context limit is reached", driven by tool responses carrying
-> metadata "beyond what is decision-relevant".
->
-> Our agent accumulates `gathered` across every step and feeds it back
-> each hop. A query touching many objects therefore degrades the
-> answer BEFORE it errors -- the failure mode is a worse answer, not a
-> crash, which is the hard kind to notice. We have never measured
-> where that begins.
-
-**CORRECTED, patch 505.** Patch 502 recorded this as an UNBOUNDED
-search putting 200,000 ids into `gathered`. **That was wrong.**
-`MAX_SEARCH_SCAN` is 10,000 in `mediator.py`, applied by asking for
-`MAX_SEARCH_SCAN + 1` so that "we stopped looking" can be told apart
-from "that was all of them", and truncating with `scan_truncated` set
-on the outcome. I read `search_object`'s signature, saw no `limit`
-parameter, and did not read far enough into its body.
-
-**What is actually true is still worth recording.** The cap is 10,000
-ids, `_step_search_object` builds `entry = {**step, "result":
-object_ids}` and appends it whole, and `gathered` goes back to the
-model on every remaining hop. Ten thousand ids is on the order of
-tens of thousands of tokens re-sent per hop, against an agent that
-runs eight hops.
-
-Compare `get_object`, which IS bounded: `MAX_OBJECT_IDS = 20`, with a
-refusal that names the batch and the remainder. The input side is
-capped and the output side is not.
-
-**Two things are wanted, and only one is mine to do.** Item 17 is
-measurement -- task completion rate against context size at the
-midpoint of a task, which needs a capable model and is the agent-loop
-efficiency item's blocker too. Item 18 is the cap itself.
-
-**THE CAP IS BUILT AND OFF** (`agent.search_result_cap`): over it, the
-model is shown the first N ids, the exact total, and a note naming
-`aggregate_object` or a narrower filter -- the alternative the
-MAX_OBJECT_IDS story below says a bare limit fails to offer. The
-feature bench's `cap` arm runs the original seven under a cap of 1, the
-only cap that truncates anything on the fixture data.
-
-**Blocked on:** a model to validate the cap against (the feature
-bench's `cap` arm is the first half of that), and the
-`agentic_loop.py` comment beside `MAX_OBJECT_IDS` says exactly why
-that matters: told its limit was 20 when given 32 ids, a real model
-"came back asking for TWO, then spent the rest of its hops fetching
-one object at a time until the duplicate guard stopped it". A cap
-chosen without measuring is how that happens again.
-
-## 7. Who can read Elysium's copied data without going through Elysium
-
-**REWRITTEN 19 October, with the owner.** This item was "PostgreSQL
-row-level security for MAC": push the row check into the customer's
-database so it held for any caller. It does not fit how Elysium works.
-Questions are answered from Elysium's own copy (GOLD-9); the only thing
-that touches the customer's database is the sync, which must read every
-row to make a whole copy -- Fivetran tells its customers to grant its
-account BYPASSRLS for exactly that reason. A policy in the source would
-bind the sync and nobody else. Foundry draws the line the same way: its
-restricted views enforce rows on Foundry's copy, at read time.
-
-**What was built instead:** the sync now asks PostgreSQL whether
-row-level security applies to its own account on each table, and warns
--- in the run and on System -> Server -> Mirror -- when it does, because PostgreSQL
-with no policy for that account "returns no rows without raising an
-error" and the copy would be silently partial.
-
-**What remains, and is this item now:** the copy itself. The mediator
-applies the row check to everyone who asks through Elysium; anyone who
-can read the lake's files on disk gets past it. Today file permissions
-(the sync warns on a mirror directory others can read) and disk
-encryption are what stand in the way. Whether that is enough, or the
-lake's files need their own per-compartment protection, is the
-question.
-
-**THE OWNER'S STATED TARGET, 26 October:** only Elysium reads the lake,
-and the lake is portable -- an administrator can copy it for a backup or
-a move to a new computer. The two pull against each other: files that
-only Elysium can read are files an administrator cannot simply copy.
-What exists: a dedicated service account with a 0700 directory, a
-volume-encryption check, and encrypted backups
-(`scripts/backup_deployment.py`, `restore_deployment.py`), which are the
-portable form. What cannot be had: protection from root on the running
-host, because Elysium must read the files to serve them. What could be
-built: Elysium-held encryption of the lake's own files (pyiceberg
-writes without table encryption, so this means encrypting around it),
-and a documented, tested migration (backup, restore elsewhere, verify)
-as the supported way to move.
-
-**DECIDED 27 OCTOBER, by the owner:** Elysium-held encryption of the
-lake's own files, with a key that only Elysium holds AND that can be
-moved, so an installation can move and still read its lake while a
-copied lake is useless without the key.
-
-**THE SPIKE (27 October) says it can be done, and cheaply.** Every byte
-pyiceberg 0.12 reads or writes goes through `FileIO.new_input(...).open()`
-and `new_output(...).create()`, and a FileIO is a configuration property
-(`py-io-impl`), which `open_mirror_catalog` already passes through
-(`mirror.storage`). A prototype FileIO encrypting each file in 64 KiB
-AES-256-GCM chunks (a per-file key wrapped by the master key, chunk
-number in the nonce, a last-chunk flag against truncation) ran a real
-table: 2,000,000 rows appended, scanned and filtered correctly;
-data files, manifests and metadata JSON were all ciphertext, and a
-unique email address appeared nowhere on disk, catalog.db included;
-a wrong key, a flipped byte and a truncated file were each refused.
-Cost on that table: write 0.49s against 0.42s, full read 0.16s against
-0.12s. The prototype lives only in the session's scratch space; the build
-is a proper module, not that file.
-
-**THE SHAPE TO BUILD:** a master key held by Elysium outside the data
-directory (a 0400 file, a KMS later), never in a backup beside the
-data; a header per file holding that file's wrapped key, so ROTATING
-the master key rewrites headers and not data; `export-key` and
-`import-key` carrying the master key under a passphrase, which is the
-portability; a migration (backup, restore elsewhere with the key,
-verify) as the supported move; and Elysium refusing to start when
-encryption is configured and the key is absent, rather than writing
-plaintext.
-
-**WHAT MUST BE SAID PLAINLY, and decided with the owner before the
-build:** (1) LOSING THE KEY LOSES THE LAKE, and the changelog and bronze
-are systems of record -- a source holds "now", not last March -- so the
-setup REQUIRES a second copy of the key (a recovery key shown once,
-checked back) before it will encrypt anything. (2) Root on the running
-host can still read the key from the file or the process; this guards
-copied files, stolen disks, backups and other accounts, not a hostile
-administrator of the live machine. (3) TURNING IT ON FOR A LAKE THAT
-EXISTS means rewriting every table through pyiceberg, because
-manifests record file sizes; scripts that read lake files directly
-(repair_catalog, the orphan-file remover) need the key too. (4) catalog.db
-holds table names and file locations, not values; it stays a plain file
-with the other private files.
-
-**Blocked on:** the owner agreeing the two points above (the required
-recovery key; the limit against a hostile administrator). Nothing else.
-
----
-
-# Not blocked, and not here
-
-No infrastructure recommendation is open. `R5` (bounded-memory
-batched sync) was built on 13 October, `R4` (one consistent read per
-silo per run) on 12 October, and `R10` (the SCD2 changelog) and `R20`
-(ontology previews) before them -- see their rows in the CSV.
-
-**The ELT chain joins them too**, and its ORDER is the part worth
-keeping, because it was re-derived from the dependencies rather than
-guessed:
-
-- the changelog diff NEEDS a query engine -- it is an anti-join;
-- the changelog NEEDS durable storage, because it becomes a system of
-  record: a source database holds "now" and has no record that a
-  customer's region was us-west last March, so losing the changelog
-  loses history nothing can return. That is the REVERSIBILITY LINE,
-  the point at which the mirror stops being a cache;
-- a materialised MAC column NEEDS somewhere to put it, which is the
-  transform stage.
-
-Its phase 0 is why the order is trustworthy. The measurement that
-justified the original phase 1 was real and measured THE WRONG THING:
-counting 50,000 transactions took 35 seconds, and a synthetic
-benchmark grouped 200,000 rows in 0.3s. Profiling found **200,023
-SQLite connections** -- four per object, from per-object write-log
-consultation. **DuckDB would have optimised the 0.24s and left the
-38.7s alone.** Fixed instead: 34.90s to 1.29s, 27x.
-
-**`LIB-3`, folding the SQLite adapter into the SQLAlchemy one as a
-dialect**, joins them, and `LIBRARY_AUDIT.md` called it the strongest
-of its three because it adds NO new dependency. `sqlite_adapter.py`
-builds SQL by string interpolation at 50 sites while
-`sqlalchemy_adapter.py` uses the expression API for the same job.
-
-THE QUOTING RISK THIS PARAGRAPH USED TO NAME IS CLOSED, so the fold
-is consolidation now, not a fix. Every name goes through `_q`, which is
-SQLAlchemy's own IdentifierPreparer (tests/unit/test_identifier_
-quoting.py), and SQLite's double-quoted-string misfeature is off on
-every connection (CONCERN-1), so an unknown name raises rather than
-reading as text. The contract both adapters keep is written on
-ExternalReadAdapter (CONCERN-2). What remains is one adapter instead
-of two -- worth it when the SQLite adapter next needs real work, not
-before.
-
-Write-path first, with the existing tests as the parity check. 75
-files reference the SQLite adapter, most of them tests using it as the
-cheap real database, and the write path is where a mistake reaches a
-customer's database. Days, not hours -- but no decision, so not here.
-
-## 8. Compliance: SOC 2, ISO 27001, HIPAA, and a penetration test
-
-**Blocked on:** the owner, and on money and calendar time rather than
-engineering.
-
-Asked for directly. Four of the five things named are not engineering
-deliverables and saying so once, here, is cheaper than saying it again
-each time:
-
-- **SOC 2** is an attestation a licensed CPA firm issues after
-  observing controls operating. Type II needs a 3-12 month window.
-  Most of what it tests is not code -- onboarding and offboarding,
-  vendor management, risk assessment, incident response, change
-  management.
-- **ISO 27001** is a certificate from an accredited body and requires
-  an ISMS: scope statement, risk assessment, Statement of
-  Applicability against 93 Annex A controls, internal audit,
-  management review. Roughly a fifth of it is technical.
-- **A penetration test cannot be done by whoever wrote the code.** The
-  value is an adversary who did not.
-- **HIPAA has no certification.** There is no issuing body; "HIPAA
-  compliant" means the Security Rule safeguards are implemented and
-  the vendor will sign a BAA. The obligation attaches to the operator.
-
-**The fifth was real engineering, and is DECIDED and BUILT (14
-October):** the volume encrypts and Elysium checks
-(`core/storage_encryption.py`, reported at startup); backups are
-AES-256-GCM envelope-encrypted files with the key kept apart
-(`core/encrypted_archive.py`). SQLCipher and field-level encryption
-were weighed and not taken: they guard against the same
-file-leaves-the-machine threat with more machinery, and neither can
-reach the mirror, which pyiceberg writes without table encryption.
-INSTALL.md's "Encryption at rest" has the reasoning and the sources.
-
-All four frameworks test an overlapping set of technical controls, and
-building them is worth doing on its own merits regardless of whether
-an audit is ever bought:
-
-    encryption at rest       BUILT: volume check, encrypted backups
-    key management           the backup key is a file; a KMS is next
-    session controls         idle timeout, absolute timeout, revocation
-    password policy          enforced rather than advised
-    access review            export who holds what grant, as of when
-    audit integrity          tamper-evidence on the existing log
-    backup verification      restore tested rather than assumed
-
-Months, not a patch.
-
-**THE REGIMES, ANSWERED 26 OCTOBER:** GDPR and UK GDPR, and HIPAA. THE
-OWNER THEN ASKED FOR SOC 2, ISO 27001 AND A PENETRATION TEST TO BE
-ADDED to the plan (26 October, later the same day). What that makes
-mine: the technical controls below, the control mapping and evidence
-each audit asks for, and the policies as drafts. What stays the owner's:
-choosing a CPA firm, a certification body and an independent tester,
-the budget, and the observation window.
-For GDPR the engineering is largely built (erasure, retention,
-encrypted storage and backups). For HIPAA it is the Security Rule
-safeguards above, which the operator carries, and a BAA, which is a
-contract and not a patch. The list's remaining rows are therefore not
-optional: key management, session controls, a password policy,
-access review, audit integrity and backup verification.
-
-ERASURE AND A REMOVED TYPE (3 November): what holds, and the limits that
-remain. Every sync records on each lake table the columns that hold ids,
-which of them identify its own rows and which link to another object
-(and which type owns each link), as `elysium.erasure_keys`. So an erasure
-still reaches the tables of a type removed from the ontology, and follows
-its links from an erased person to the removed type's own rows and their
-history, conflicts and findings. Removing a type through the UI records the
-lake's tables first; if the lake cannot be read the removal still goes
-ahead and the reply carries a notice.
-
-WHAT NO SYNC CAN DO, plainly. A record can only say what the ontology
-mapped on the day it was written. So the first record of a table is
-`complete` only if EVERY column the table has is one the ontology maps now
-(columns beginning "_" and the fixed shapes of join, quarantine, cleaning,
-history and conflict tables count as mapped; quarantine and cleaning inherit
-from the source table they record). Whatever its age or history. A table with
-any other column -- the usual case for a bronze or changelog table that keeps
-the source's extra columns -- is `partial` and stays so however often a sync
-records it again: a type, link or field removed earlier may have kept person
-ids there, and nothing can tell. Erasure searches such a table by the
-columns known, lists it as `partly known` with the unmapped column names,
-and marks EVERY erasure `incomplete` (`erase --list`; every sync says so and
-works the erasure out again from its seed keys). A table with no record whose
-type is gone is `unreachable` and is not searched at all. Both are resolved by
-an operator, not by a sync. THE NORMAL REMEDY AFTER AN UPGRADE, for a
-deployment that never removed an object type, is
-`python -m scripts.erase --adopt-all-current --confirm-no-type-was-ever-removed`:
-it marks every table whose every column the ontology maps complete on that
-statement (kept in the record), and lists, never touches, the rest with their
-unmapped column names. Adding `--including-unmapped-columns` also adopts
-those, on the stronger statement that no type, link or field was ever removed
-or re-pointed and the unmapped columns hold no person ids. Nothing can check that
-statement, so this form also needs a TYPED CONFIRMATION (2 November, owner): it
-prints every table with the unmapped column names it is about to vouch for, then
-the operator types `I VOUCH FOR THESE COLUMNS` exactly. With no terminal it is
-refused unless the phrase is given with `--typed-confirmation "<phrase>"` (so
-scripts are possible but deliberate; the flag alone, without
-`--including-unmapped-columns`, is a usage error). A wrong or empty phrase, or
-tables that changed while the operator was typing, exit 1 with nothing adopted.
-Otherwise, per table:
-`python -m scripts.erase --adopt TABLE --keys column=Type [--ids ...]
-[--links column=Owner:Target]` states what the table holds (`--adopt-none`:
-no person's id), or the table is dropped in the lake. Adopt BEFORE erasing:
-an erasure run first removes the rows that linked a person to what depended
-on them, and those cannot then be followed -- so `erase --write` REFUSES
-(exit 3, nothing erased) while any table is partly known or unreachable, and
-`--erase-reachable-now` erases what can be reached and records the erasure
-incomplete (exit 2). Exit codes: 0 done, 1 bad arguments or a sync running,
-2 erased but incomplete, 3 refused. The dry run says which it would do.
-In practice, on an upgraded deployment every erasure is refused until its
-partly known tables are adopted: that is the honest state, not a fault.
-
-WHICH PATHS RECORD. Removing a type through the UI, approving a waiting
-change, and putting an older generation back each record the lake's tables
-first (never failing the edit; the reply carries a `notice` when it could
-not, and the Remove dialog shows it). The record is skipped, with a notice,
-while a sync is running, because it commits to tables the sync may be
-committing to. A hand edit of the configuration files followed by a reload is
-the one path that cannot be hooked: the next sync records, but a type
-removed that way before any sync is unrecorded, and its tables are then
-unreachable until adopted.
-
-COST. While any erasure stays incomplete, every sync works each such erasure
-out again from its seeds (one pass over the gold tables and the removed types'
-tables per erasure) and then purges, which scans every snapshot of every keyed
-table. It is idempotent and does no harm, but it repeats until the tables
-are adopted or dropped. Not optimised.
-
-OTHER LIMITS. (1) The record never narrows, so a column re-pointed from one
-type to another keeps the old type: erasing it also removes rows of whoever
-now owns those values. That is chosen (erasing too much is the lesser
-failure) and shown: the erase output, the dry run and the sync print a
-WARNING naming table, column and type. (2) Every partly known or unreachable
-table is counted against every erasure, because its unknown columns may hold
-ids of any type; so one such table makes all erasures incomplete (and refuses
-`--write`) until it is adopted or dropped. (3) Quarantine and cleaning records
-of a table several types keep rows in are matched against each of those types'
-ids (reported as shared); a join table's records are matched part by part
-against the type that owns each. (4) A gold join table whose name two silos
-share is keyed by both silos' columns and reported partly known. An incomplete
-erasure does not stop the server; what could be reached has been erased.
-
-## 9. Owning the UI kit, and when to start
-
-**Blocked on:** nothing. This is a DECISION ALREADY TAKEN, recorded
-here so the next person does not reopen it from scratch.
-
-The question was whether to move off Blueprint to avoid depending on
-one company. `CONFIG_ROUND_TRIP_AND_UI_KIT.md` Part 2 -- consumed in
-patch f55eee5 -- answered it: the risk is abandonment rather than
-capture, because Blueprint is Apache-2.0 and a granted licence cannot
-be revoked; and a BIGGER vendor is the wrong direction. Its proposal
-stands: own the twelve simple components, vendor headless primitives
-for the six behavioural ones.
-
-**WHAT WAS DONE INSTEAD, AND WHY NOT THE REST.** Three wrappers now
-sit in `shell-api/components` -- `Action`, `StatusTag`, `Notice` --
-covering the 97 call sites with the most repetition. They deliver the
-benefit the literature actually credits to wrapping: "the gained
-consistency of reducing the used API surface", not swappability, which
-it names as the weak argument.
-
-`Dialog` at two uses and `InputGroup` at three were LEFT ALONE
-deliberately. A wrapper over a component used twice "will just become
-a copy of the component and thus not be helpful at all".
-
-**WHY NOT FINISH THE MIGRATION NOW.** The plan's strongest argument
-was drift -- the surface widened from 22 components to 33 in a
-fortnight "and nothing noticed, because nothing was looking".
-`ui/src/blueprintSurface.test.ts` closed that: growth is now a diff
-someone justifies, and it caught the three wrappers' type imports the
-day they were written. The urgency is gone; the option is not.
-
-Against spending the month now: Blueprint 6.20.0 shipped 2026-09-17,
-so abandonment is not near. Radix, the obvious destination, has slowed
-since WorkOS acquired it and shadcn/ui has already moved its default
-foundation away from it. And the plan is honest that "the six
-behavioural ones are the real work ... it is easy to build a dialog
-that looks right and traps nobody" -- which would risk the keyboard
-work just paid for.
-
-**THE TRIGGERS THAT CHANGE THE ANSWER**, either one on its own:
-
-1. Blueprint misses a React major release, or goes six months without
-   a security fix.
-2. The design language becomes a constraint -- a screen that cannot be
-   built because Blueprint's components will not do it.
-
-When either fires, the wrappers are already the call-site layer: the
-implementation changes underneath them and the 97 call sites do not
-move.
-
-## 10. The simulator as Elysium's live test, and five kinds of source
-
-**AGREED WITH THE OWNER, 19 October.** Mostly built since: Elysium reads
-all five kinds, and a running world can be operated from outside it
-(item 11, step 1). What is left is the control panel as a page.
-
-**THE SIMULATOR STAYS OUTSIDE ELYSIUM.** `sim/` operates real
-PostgreSQL, MariaDB, SQLite, CSV-folder and REST sources for a
-simulated organisation, changing their contents on a clock and their
-structure on a schedule. Its founding rule -- "the databases are the
-only interface", and it "does not import [Elysium], depend on it, or
-know it exists" (sim/README.md, sim/AGENTS.md) -- is kept: an Elysium
-that controlled the world it reads would know a rename was coming,
-and a product shipping a way to create and alter databases is a
-product with one more door. So:
-
-- A CONTROL PANEL SERVED BY THE SIMULATOR ITSELF, its own page on its
-  own port: start and stop, speed, choose a pack, and each database's
-  connection details to copy. THE CHANNEL UNDER IT IS BUILT
-  (sim/simulator/control.py, 20 October): POST /control on loopback
-  with a token kept in an owner-only `control.json`, carrying status,
-  pause, resume, advance, live drift, outage and restore per source, and
-  the oracle as JSON; `simulator pause`, `outage ops` and the rest send
-  to it. The page is what remains, and it would call the same commands.
-  It may borrow Elysium's look; it is not part of the product.
-- Elysium keeps reading only the databases, wired by an ordinary
-  `data_silos.yaml`.
-
-**THE SIMULATOR AS A LIVE TEST OF ELYSIUM.** Point a deployment at a
-running world and check, from outside, that what Elysium serves follows
-what the world did -- rows that arrive, change and vanish, and the
-drifts a pack schedules or an operator applies live. The
-simulator's own oracle (`verify`, `watches`) is the yardstick.
-
-**ELYSIUM SHOULD READ ALL FIVE KINDS** -- PostgreSQL, MariaDB, SQLite,
-CSV files and REST. Since 19 October PostgreSQL and MariaDB are read
-through the SQLAlchemy adapter, checked against the simulator's real
-servers and tested against real ones (tests/postgres_server.py,
-tests/mariadb_server.py): read-only sessions, a server-side time limit
-on both, a column's time zone reported as part of its type. A FOLDER OF
-CSV FILES since 19 October too (`adapter: csv_folder`): each table's
-files chosen by a pattern, `latest` or `combined`, a broken line
-stopping the table by name -- checked against the simulator's weekly
-supplier files, which matched the till's own rows exactly. And a REST
-API (`adapter: rest`), with declared pagination, retries that honour
-Retry-After, and a refused login stopping at once -- checked against the
-simulator's bookkeeping API, whose 26 invoices matched its PostgreSQL
-exactly. ALL FIVE KINDS ARE NOW READ. Writes reach SQLite alone.
-
-**Found on the way, both closed:** a live drift crashed the running
-world on its next write -- fixed 20 October, the simulated business now
-follows renames and drops (sim/simulator/lineage.py); and shared
-reference data is now declarable (`security: unrestricted`,
-SECURITY_ARCHITECTURE.md).
-
-**THE PANEL IS BUILT** (item 3, step 2.3): sim/panel, loaded as a module,
-its server started by Elysium, the world running on its own.
-
-**SCHEMA CHANGES FROM THE PANEL, 26 October, with the owner** (after
-item 11's runs, which used every kind): a database, a table and one of
-the eight changes the pack vocabulary has, its details, Apply; and the
-list of what has changed, scheduled or not, read from the history table
-each database keeps. Laid out as Gremlin lays out an experiment ("Select
-the type of target ... click on the experiment name ... Click Run
-Experiment", then "view reports of historical experiments"). Only what
-exists can be picked: the world's new `schema` command gives each
-silo's tables as they are now, a replica left out since its source's
-change reaches it. A breaking change asks twice, and which are breaking
-is the world's word, from each change's class -- every one but the two
-additions, a rescale included, because every value means something else
-after it. None can be undone; only discarding the world goes back.
-(sim/panel/web/src/SchemaChanges.tsx, sim/simulator/control.py.)
-
-**Blocked on:** nothing; built. Superseded wording below kept for its
-reasons:
-
-**Was blocked on:** nothing but order: the page comes after item 11, whose
-runs will show which controls an operator actually reaches for.
-
-## 11. Make the simulator's sources behave like real ones, then run Elysium over it
-
-**AGREED WITH THE OWNER, 19 October.** Next up once the item above
-(five kinds of source: CSV and REST still to build) is complete. Two
-halves, in this order.
-
-**1. Polish the simulator until each source behaves authentically.** For
-each kind it operates -- PostgreSQL, MariaDB, SQLite, a CSV drop folder,
-a REST API, and a lagged replica (`replicates:`) -- research how the real
-thing behaves, probe the simulated one, and close the differences.
-Research first, from primary sources (vendor documentation, the
-connector guides of Fivetran, Airbyte and Foundry), then write the
-expected behaviours down as the checklist the probes are run against.
-Starting points, each to be confirmed by that research rather than
-assumed:
-
-- *Server databases:* real accounts and grants (a SELECT-only reader, an
-  owner, row-level security that can be switched on), idle-connection
-  limits, statement time limits, isolation and what a long read sees
-  while writes continue, server-side defaults (time zones, collation,
-  charset), types as each engine reports them.
-- *Schema change:* renames, drops, added columns and changed types, both
-  scheduled in a pack and triggered live -- today a live `simulator
-  drift` crashes the running world on its next write to a moved column,
-  and no shipped pack declares `migrations`.
-- *CSV drops:* how real exports arrive -- partial files mid-write,
-  late and duplicate files, encodings and byte-order marks, delimiters,
-  quoting, header changes, Excel-style dates.
-- *REST:* authentication and expiring tokens, page and cursor pagination,
-  rate limits with 429 and Retry-After, transient 5xx, eventual
-  consistency, changed response shapes.
-- *Operations:* a pause (missing), outages and slow responses on demand,
-  and the control panel this file's item above asks for.
-
-Each difference found is fixed in `sim/`, keeping its founding rule:
-the databases are the only interface, and it does not know Elysium
-exists.
-
-**2. Run Elysium over it, and debug both.** Point a deployment at a
-running world covering every kind, sync on a schedule while time passes
-and the pack's changes land, and compare what Elysium serves against
-the simulator's own oracle (`verify`, `watches`). Every disagreement is
-a bug in one or the other, and is fixed where it lives. The runs on 19
-October already found four in Elysium and one in the simulator: a
-column's time zone dropped from its reported type; a rename recorded as
-a plain success; an empty read whose refusal advised accepting the
-deletions; row-level security hiding rows silently; and the live-drift
-crash above.
-
-**Progress, 20 October.** The checklist is `sim/docs/REAL_SOURCES.md`.
-Step 1 of the order agreed for it -- the simulator's own bugs and
-controls -- is done: a world now has a control channel (`control.json`,
-owner-only, never in `connections.json`) with pause, resume, advance,
-live drift, per-source outages and the oracle as JSON; a live rename no
-longer crashes it, because the simulated business follows renames and
-drops (`sim/simulator/lineage.py`) and keeps that record across a
-resume; migrations no longer repeat after a resume; MariaDB no longer
-reads the host's configuration; the REST rate limit rolls over and
-says when; and, found in review, a world with a replica can be
-resumed at all. One behaviour changed on purpose: a pack migration that
-drops a column its own events still write used to crash the world, and
-now the business stops writing it, as an application shipped with its
-migration does.
-
-**Step 2 done, 20 October: realism options per source**, each a pack
-option, off unless set, so existing packs read exactly as before. REST:
-expiring client-credentials tokens, server errors and latency at a set
-rate, an If-Modified-Since filter. CSV drops: a Windows code page,
-semicolons and decimal commas, Excel's own conversions, reordered
-columns, zips, half-written, re-sent, late and expiring files.
-PostgreSQL: no default privileges for later tables, row-level security
-with no policy, statement and idle limits on the reader. MariaDB: idle
-and statement limits on consumer accounts, zero dates. Both servers'
-time zones are now pinned to UTC rather than the host's. A replica must
-run its source's engine. Next: step 3, Elysium over a world with all of
-it on.
-
-**Step 3 begun, 20 October: Elysium over a world, and what it found.**
-`scripts/live_world.py` starts a world as an operator would, configures a
-deployment from its `connections.json` alone, and each round syncs and
-compares every object type with an independent plain reader of the same
-source, and the watched totals with the simulator's oracle. Over
-field_service and retail with every realism option on -- expiring tokens,
-API faults and an outage, Windows-encoded, semicolon, decimal-comma,
-zipped, Excel-saved, reordered, re-sent and late files, zero dates,
-row-level security, a column dropped mid-run -- every table ends in
-agreement or in a refusal that names its reason. (Half-written files
-were on too, but no round happened to meet one; see the limit below.)
-What it took:
-
-- Elysium: a deployment reading anything but SQLite without a
-  `write_targets` line failed to LOAD ("Unknown adapter type 'rest'");
-  the API reader had no login for tokens that expire (OAuth client
-  credentials, added); the CSV reader could not open a zip or gzip
-  (added); a first sync under row-level security with no policy
-  PUBLISHED AN EMPTY TABLE, the warning in the log its only sign
-  (refused now); MariaDB's zero dates refused a whole table with no way
-  through (`zero_dates_as_null: true`, declared per silo); and the
-  refusal of a time with no zone did not say to declare one.
-- The simulator: a replica did not carry its source's grants, so
-  withheld pay lines were readable through `office`; and `zero_dates`
-  wrote none for the columns an application leaves out.
-
-**Decided 21 October, with the owner, after the precedent:**
-
-- A suspected rename -- a column the ontology reads gone, and a column
-  that was not there last sync arrived -- HOLDS the table at its last
-  good copy, saying why, until the field is repointed or removed.
-  Fivetran and Airbyte carry on by default, but Fivetran keeps the old
-  values and blanks only new rows; Elysium serves the current state, so
-  carrying on blanked every row. dlt's `freeze`, Auto Loader's
-  `failOnNewColumns` and Airbyte's "Pause connection" stop instead.
-  `on_suspected_rename: serve_empty` in config.yaml is the old answer.
-  ONE RENAME IS NOT CAUGHT: one made in two releases -- the new column
-  added and filled in one, the old dropped in the next. By the drop the
-  new column is not new, and cannot be told from one that was always
-  there, so the field is served empty as on a plain drop; the sync's
-  message names the undeclared columns its values may be in. An API
-  source never holds, since a key it leaves out may only be null.
-- A CSV ending part-way through a line is REFUSED, the table keeping its
-  last good copy: cut inside its last value, nothing else about it looks
-  wrong. No tool found does this check -- the precedent says the reader
-  cannot be sure and the writer's write-then-rename is the defence -- so
-  a silo whose writer never ends its last line says
-  `allow_unterminated_last_line: true`. "Done" marker files, the next
-  best defence, are not built: no deployment has asked.
-
-**Two weeks with five migrations, 21 October.** `--migration` adds to a
-pack's timeline. Over field_service with every realism option on: a
-RESCALE of invoice totals by 100 was served -- it is what the source now
-says -- and flagged by the profile monitor ("average 8.167e+04, was
-842.4 (214.1 standard deviations)"); a decimal column retyped to integer
-was named ("CHANGED from NUMERIC(19, 4) to INTEGER ... a value may still
-parse and mean something else"); an added table was left alone; a
-renamed and a dropped table kept their last good copies. Every round
-agreed or refused with a reason. What it took:
-
-- Elysium: the reason a renamed or dropped table gave was "could not
-  read the columns of 'skills': skills" -- and on SQLite "source column
-  'id' ... is gone". The sync now says the table has gone and names the
-  source's tables the mirror does not hold, where a renamed table's new
-  name is.
-- The simulator: a type change that did not say `nullable` made the
-  column nullable in the declared schema while the engine kept NOT
-  NULL, and the world stopped on its own check.
-
-**NOT DONE, AND WHY:**
-
-- A SQLite SOURCE. The simulator's SQLite silo cannot hold tables: it
-  has no SQL dialect, and every relational silo there assumes a server
-  with roles, grants and named databases. Elysium's SQLite reader is
-  the one most of its own suite reads through; driving it from a live
-  simulated application would need a SQLite dialect and session in the
-  simulator, which is buildable.
-
-**Replica lag, 21 October.** The simulator's replica can now be a real
-PostgreSQL standby (`replication: streaming`, made by pg_basebackup),
-with replay paused and resumed through the control channel. The time a
-sync records is when its read began, and it means "everything
-committed before this is in the copy" -- freshness is shown from it,
-and the overlay rests on it. A lagging standby broke both: its data
-stops at the last change it replayed. A PostgreSQL source now says
-whether it is a standby that has received more than it has replayed --
-received against replayed rather than against the clock, which reads an
-idle primary as lag -- and the copy is dated from its last replayed
-change, with the reason on the Mirror screen. Over field_service with
-`office` a standby and replay paused for two rounds, it froze, Elysium
-said so, and every table agreed. What it cannot see: WAL not yet
-received ("the replica doesn't know the current transaction position of
-the primary"); measuring that needs the primary, which Elysium does not
-reach. Long reads cancelled by `max_standby_streaming_delay` are not
-provoked; a cancelled read is an ordinary failed read, keeping the
-last good copy.
-
-THE OVERLAY RUNS PER TYPE since 21 October, with the owner. It ran
-from one time for the whole deployment, the oldest of every table's,
-so a standby with replay paused held it back for everything, and in a
-type read from a current source a write Elysium made earlier was laid
-over a newer change made at the source. Each gold publication now
-records when the data it was built from was read
-(core/mirror/gold.py, DATA_AS_OF_PROPERTY), and a type's overlay runs
-from that -- also right where silver's time was wrong, a refused gold
-build having left gold older than its silver. A publication from
-before the record uses the deployment's time, as before. And a write
-is now timed by when it was APPLIED, not asked for: a sync whose read
-began between the two held a copy without it yet counted as newer, so
-it was hidden until the next sync -- older than this change, but the
-deployment-wide hold-back had mostly masked it (found in review).
-
-One limit, conservative: a running server takes a type's new data
-time when its gold PUBLISHES. A build that finds gold unchanged moves
-the time forward without a new publication, and a running server only
-notices new publications, so until the next one or a restart that
-type's overlay runs wider than it need be -- never narrower.
-
-**THE SIMULATOR'S SQLITE SOURCE HOLDS TABLES (24 October), with the
-owner:** a SQLite dialect and session in sim/, so a SQLite silo is
-provisioned, written, read back and drifted through the same relational
-layer as the servers. Written as an ordinary application writes (the
-owner's choice over STRICT tables): declared types as hints, money by
-NUMERIC affinity (19.99 a double, 20.00 the integer 20), booleans 1/0,
-times as ISO text in UTC; a retype is SQLite's documented rebuild, in
-one transaction; no accounts, so `withheld` is refused and `simulator
-verify` checks a read-only reader instead.
-
-**THE FIELD-SERVICE PACK HAS A PARTS DESK (26 October), with the
-owner:** its fifth system, a desktop stock program on the office PC,
-in SQLite. A finished job books out a part against its work order id
--- the desk's only link to dispatch, by convention -- and takes it off
-the shelf, never below zero; a merchant delivery every two days puts a
-line back; a part is discontinued fortnightly, marked and kept. A
-fitted part keeps the cost it was fitted at. The tests reconcile every
-part's count against the shelf at the start, deliveries and usage
-(sim/tests/test_field_service.py).
-
-**A FULL RUN OVER EVERY SOURCE KIND, 26 October.** Field service (two
-PostgreSQL servers, one a replica, a REST API, a CSV folder and the
-SQLite parts desk) and retail (MariaDB, PostgreSQL, a CSV folder), five
-rounds each with every realism option on: every table agrees, or is
-refused with its reason -- pay lines withheld from the reader, a weekly
-file not yet arrived. What the first run found was the harness's, not
-Elysium's, and Elysium's own refusal said how to fix it: SQLite keeps
-a time as text with no zone, refused as an instant until the zone is
-declared (`timezone: UTC`, as for MariaDB). It also showed that a
-deployment without `write_targets` lets a confirmed write reach any
-SQLite silo -- here another program's database. The harness declares
-`write_targets: []`; Elysium's default, kept deliberately and warned
-about at load, is unchanged.
-
-**Step 3 is done**, and with it this item; item 10's drift controls,
-which these runs were to inform, are built.
-
-**Blocked on:** nothing.
-
-**JOINT REQUESTS FROM ASTROLABE AND HELIOGRAPH (1 November), read from
-both sub-apps' code and plans, with file evidence in the analysis the
-reader returned.** The owner decided to develop Elysium, Astrolabe and
-Heliograph together so that what is generic lands here and what is
-domain stays in each. Where BOTH ask, that is the strong signal; one
-asking is weak evidence and waits. Both ask for: live push of records to
-screens through the add-on proxy (Elysium keeps SSE for itself and the
-proxy refuses WebSocket upgrades); time series / observations beside the
-lake (Elysium has refused a historian so far); triggers and event
-subscription on arriving data with a dedupe per condition; large
-results (paging, spans, compact transfer); source terms and feed health
-as data (Heliograph's `personal_only` / `non_commercial` flags and
-`health_check` are the same shape as Astrolabe's E8, E9); audit per
-subscription, not per row (E13); a large non-React app hosted in a
-module page (Heliograph's NiceGUI cannot sit behind the proxy because it
-uses WebSockets); provider secrets kept in Elysium. Only Heliograph:
-jobs (long backtests; this item waited for a caller and has one now),
-timer callbacks for add-on kinds, forms from JSON Schema. Only
-Astrolabe: geography (E5), map layers that are not objects (E12), one
-permission check for objects and live data (E11), rules at the door
-(E3). Ranked for design, in this order: (1) live push through the
-proxy, (2) the kit's time-series chart (OHLC, zoom, several series),
-(3) event subscription and triggers on arriving data, (4) audit for live
-data, (5) jobs, (6) source terms and feed health, (7) large results, (8)
-secret references and add-on data under backup. Open questions for the
-owner: are Heliograph's "took it / skipped" answers Elysium actions
-(approval, audit) or local; are paper positions and equity Elysium
-objects or only a published SQLite read as a silo; is market data
-governed by Elysium or kept local. Heliograph today has no sign-in (its
-`serve` binds 127.0.0.1 with no authentication); behind the proxy it
-must verify `X-Elysium-Identity`.
-
-**DECIDED WITH THE OWNER (1 November), for Heliograph and Astrolabe.**
-(1) A signal is an Elysium object a source creates; "took it" and
-"skipped" are Elysium actions on it, so approval, audit and who decided
-belong to Elysium (Foundry's action log is the precedent: a submission is
-data, linked to what it edited, and only action edits are logged);
-Heliograph keeps its journal for replay. (2) Accounts, positions, signals
-and decisions are objects; the equity history is a time series that
-references the account (needs the observations feature) and until then
-Heliograph publishes low-rate current-state records, which today means a
-SQLite file the deployment declares as a silo. (3) Elysium governs ACCESS
-to market data (who may open a dataset, its licence terms as data, an
-audit of access) and does not hold the bars: exchange practice entitles
-and logs every user and treats an output the inputs can be rebuilt from as
-the input. (4) An add-on copies Elysium's `elysium_addon_checks.py` into
-its own tests, as that file's header says, with a provenance note.
-(5) `PORT` is honoured only in add-on mode.
-WHAT HELIOGRAPH'S FIRST SLICE FOUND ELYSIUM LACKS (it runs read-only as
-an add-on today): a manifest key for an ontology fragment (object, link
-and action types, namespaced by module id); a way to put objects in
-(idempotency key, retract); delivery of a confirmed action back to the
-add-on; `user.user_id` and the approver as a mutation value so
-`decided_by` can be stored; a single-step action for low-risk
-single-user actions (`auto_execute` exists but only the agent loop reads
-it, and it is refused when a mutation uses `parameter.*`); a module
-declaring a gated resource and asking whether a person may open it, the
-answer audited. Time series later.
-
-## 12. Converge on precedent: fewer mechanisms, one standard surface
-
-**Owner decision, 2 November 2026: these two lists are the roadmap.**
-Research into precedent (the reference platform this project models, and
-the other platforms that do the same job) found that Elysium's skeleton is
-right and that its complexity comes from running several parallel
-mechanisms per concern where precedent uses one general mechanism each.
-
-What to deprecate, in ranked order:
-
-1. The seven separate approval queues, each with its own database and approval logic. They would become one proposal pipeline, which is the single biggest simplification.
-2. The two-step propose-then-confirm flow. It would become one apply call with an approval policy set per action.
-3. The separate routes for combining, comparing, freezing and saving sets. They would become one object-set model.
-4. The 17 schema preview/apply route pairs. They would become one schema-change endpoint with a dry run.
-5. The six trigger-condition modules. They would become one condition-plus-effects model.
-6. The enriched and predicted field kinds. They would become functions that propose edits.
-7. The ~10 overlapping value-quality vocabularies. They would become value types plus one checks model.
+# Decided, and being built in order
+
+## 4. Converge on precedent: fewer mechanisms, one breaking refactor
+
+**Owner decision, 2 November 2026: the two lists below are the roadmap. Owner
+decision, 3 November 2026: the refactor plan is accepted as the roadmap, and
+all 23 recommendations in its decision list (D1 to D23) are accepted.** It
+replaces the phased plan that stood here.
+
+Research into precedent (the reference ontology platform this project
+models, and the other platforms that do the same job) found that Elysium's
+skeleton is right and that its complexity comes from running several
+parallel mechanisms per concern where precedent uses one general mechanism
+each. The goal is a monolithic Python mini-clone of that precedent that is
+more usable and maintainable and simpler without losing power.
+
+**The owner's rule, 3 November 2026.** Nobody has an Elysium deployment, so
+nothing is kept for compatibility: no migrations, deprecation periods,
+freezes, shims or legacy formats. Any break is allowed if it makes Elysium
+more usable and maintainable, and simpler without losing power. Each break
+still lands with its tests and keeps the security invariants of section 2.
+
+**Working rule: replace in place.** Each step deletes what it replaces in
+the same reviewable unit, together with its callers, its tests and its
+controls. There is no build-beside, no freeze and no transition window.
+This is also written into AGENTS.md and PRINCIPLES.md section 8.
+
+**How to read the evidence.** Tags such as `[A:14]`, `[O:21]`, `[S:23]`,
+`[R:90]` and `[P:96]` cite line numbers of the research notes behind the
+plan (API and UI, ontology and configuration, storage and operations,
+roadmap scan, precedent architecture). Those notes are kept outside the
+repository, as are the audit notes; code locations (`file.py:line`) were
+read from them and drift as the tree changes. Every statement is labelled:
+**F** is fact (measured, or read in a note or the code), **J** is
+judgement, **E** is estimate, not measured. Counts re-measured on 3
+November 2026: 1,166 `Control(` records in `scripts/check_controls.py`
+(the 1,097 and 490 quoted elsewhere were stale), 488 unit and 111
+integration test files (599 backend test files), 51 simulator test files.
+
+What to delete, in ranked order (the original wording said "deprecate"; the
+rule now is delete in the step that replaces it):
+
+1. The seven separate approval queues, each with its own database and approval logic. They become one proposal pipeline, which is the single biggest simplification.
+2. The two-step propose-then-confirm flow. It becomes one apply call with an approval policy set per action.
+3. The separate routes for combining, comparing, freezing and saving sets. They become one object-set model.
+4. The 17 schema preview/apply route pairs. They become one schema-change endpoint with a dry run.
+5. The six trigger-condition modules. They become one condition-plus-effects model.
+6. The enriched and predicted field kinds. They become functions that propose edits.
+7. The ~10 overlapping value-quality vocabularies. They become value types plus one checks model.
 
 What's missing, in ranked order:
 
@@ -2622,152 +613,823 @@ Kept, because they go beyond what precedent documents: per-person erasure,
 the compartment write-down check, uniform denial, and re-checking the
 approver's permissions at approval time.
 
-**The phased plan.** The phases below order the two lists. Each phase's
-shape is agreed with the owner before it is built (CLAUDE.md: get the
-shape agreed for anything larger than one commit); as a phase is built,
-its text leaves this file for the code, by the rule at the top.
+**Goal and invariants that do not change.** Reduce the number of mechanisms
+per concern to one, without losing any capability, and expose a standard,
+versioned API that matches what precedent and the common open conventions
+share. Writes only through actions; MAC and RBAC both required at
+`check_access()`; uniform denial; authority never stored; single machine;
+single tenant; SSE only; no historian; no question leaves the VM.
 
-**Goal.** Reduce the number of mechanisms per concern to one, without losing any capability, and expose a standard, versioned API that matches what precedent and the common open conventions share. Invariants that do not change: writes only through actions; MAC and RBAC both required at `check_access()`; uniform denial; authority never stored; single machine; single tenant; SSE only; no historian; no question leaves the VM.
+**Built before the plan, slice 1 of the v2 read surface (3 November 2026).**
+`core/ontology/object_sets.py` is the object-set union (`base, filter,
+union, intersect, subtract, searchAround, static`) and the filter grammar
+(`eq, in, lt, lte, gt, gte, isNull, contains, startsWith, and, or, not`),
+with named caps for depth, node count, `in` values and static keys. It
+parses to a typed tree, checks it against ONE caller's visible schema (a
+field the caller cannot read is refused in the same words as an unknown
+one; a type the caller cannot read is the same 404 as an unknown type), and
+evaluates through the mediator only: sets come from `search_object()` and
+`search_around_from()`, values for filtering and sorting from
+`field_values_for_ids()`, and both re-run `check_access()` on every id they
+are handed. `api/v2/` serves `GET /api/v2/schema`, `GET
+/api/v2/objects/{type}` and `/{pk}`, and `POST
+/api/v2/objectSets/loadObjects`, `/count` and `/aggregate` (one exact
+grouping; count, sum, min, max, avg over readable numeric fields), behind
+the same session, CSRF check and generation pin as `/api`. Paging is
+`pageSize` (default 100, max 500) / `pageToken` / `nextPageToken`; a token
+is signed to the caller and the query and expires. Errors are problem
+details with `errorName`, `errorInstanceId` (the request id) and
+`parameters`; denial is a uniform 404.
 
-**Phase 1: Standard read surface and programmatic identity.**
+**Known limits of the caller-facing reads, shared by v1 and v2 (third
+review, November 2026).** Two things a caller can still infer, both because
+they already hold for the existing search and trace:
+1. A scan that reaches the scan ceiling (`MAX_SEARCH_SCAN`) where the row
+   check could not be part of the query is reported by v1 as
+   `scan_truncated` and refused by v2 with a fixed sentence. Either way,
+   whether a type has more rows than the ceiling turns on rows the caller
+   cannot see: one bit about the total, not about any row. The proper fix
+   is to page the scan past the ceiling under a budget that does not depend
+   on the data, so a set is either complete or refused for a reason fixed
+   by its shape.
+2. The timestamps of a request's trace. The trace lists only what the caller
+   was granted, but each record carries a time, and a request that took
+   longer than its visible result explains is a signal. The proper fix is to
+   round the timestamps in the caller's trace (to the second, or to the
+   request) or to omit them.
+The request budget itself IS data-independent: `prepare()` charges each
+leaf from the shape of the set (a search leaf is worth the scan ceiling, a
+static leaf its keys) before anything runs.
 
-*Built, slice 1 (3 November 2026), additive: nothing removed, no existing route changed.*
-`core/ontology/object_sets.py` is the object-set union (`base, filter, union,
-intersect, subtract, searchAround, static`) and the filter grammar (`eq, in, lt,
-lte, gt, gte, isNull, contains, startsWith, and, or, not`), with named caps for
-depth, node count, `in` values and static keys. It parses to a typed tree, checks
-it against ONE caller's visible schema (a field the caller cannot read is refused
-in the same words as an unknown one; a type the caller cannot read is the same
-404 as an unknown type), and evaluates through the mediator only: sets come from
-`search_object()` and the new `search_around_from()`, values for filtering and
-sorting from the new `field_values_for_ids()`, and both re-run `check_access()` on
-every id they are handed. `api/v2/` serves `GET /api/v2/schema`,
-`GET /api/v2/objects/{type}` and `/{pk}`, and `POST /api/v2/objectSets/loadObjects`,
-`/count` and `/aggregate` (one exact grouping; count, sum, min, max, avg over
-readable numeric fields), behind the same session, CSRF check and generation pin
-as `/api`. Paging is `pageSize` (default 100, max 500) / `pageToken` /
-`nextPageToken`; a token is signed to the caller and the query and expires.
-Errors are problem details with `errorName`, `errorInstanceId` (the request id)
-and `parameters`; denial is a uniform 404.
+**Still to build from the v2 read surface**, now steps S5 and S10: the set
+kinds `reference` (a stored, named set that replaces saved views and
+frozen sets) and `similarTo` (gated by its own grant); text operators
+beyond `contains` and `startsWith` and filtering on computed fields;
+per-type schema discovery, `expand`, link and history reads, search and
+aggregate on objects, `objectSets/export`; aggregation groupings other than
+exact (ranges, fixed width, duration) and distinct counts; a snapshot paging
+mode; pushing more than text equality into the search so a filter over a
+table larger than the scan ceiling is not cut short before it applies;
+`/api/v2/openapi.json` served to authenticated callers (safe because type
+names are path parameters), with the disabled `/openapi.json` unchanged.
 
-*Known limits of the caller-facing reads, shared by v1 and v2, left as they are
-(third review, November 2026).* Two things a caller can still infer, both
-because they already hold for the existing search and trace:
-1. A scan that reaches the scan ceiling (`MAX_SEARCH_SCAN`) where the row check
-   could not be part of the query is reported by v1 as `scan_truncated` and
-   refused by v2 with a fixed sentence. Either way, whether a type has more rows
-   than the ceiling turns on rows the caller cannot see: one bit about the
-   total, not about any row. The proper fix is to page the scan past the ceiling
-   under a budget that does not depend on the data, so a set is either complete
-   or refused for a reason fixed by its shape.
-2. The timestamps of a request's trace. The trace now lists only what the caller
-   was granted, but each record carries a time, and a request that took longer
-   than its visible result explains is a signal. The proper fix is to round the
-   timestamps in the caller's trace (to the second, or to the request) or to omit
-   them.
-The request budget itself IS data-independent: `prepare()` charges each leaf from
-the shape of the set (a search leaf is worth the scan ceiling, a static leaf its
-keys) before anything runs.
 
-*Still to do in Phase 1:*
-1. The set kinds `reference` (a stored, named set; needs the store that replaces
-   saved views and frozen sets) and `similarTo` (gated by its own grant). Text
-   operators beyond `contains` and `startsWith`, and filtering on computed
-   (derived, enriched, predicted) fields, which are refused today.
-2. The rest of the routers, one file per resource: per-type schema discovery,
-   `expand`, `GET /objects/{type}/{pk}/links/{link}` and `/history`,
-   `POST /objects/{type}/search` and `/aggregate`, `objectSets/export`, `actions`,
-   `proposals`, `queries`, `subscriptions`, `automations`, `admin`. Aggregation
-   groupings other than exact (ranges, fixed width, duration) and distinct counts.
-   A snapshot paging mode (today a page is the latest result, like the existing
-   search). Pushing more than text equality into the search, so a filter over a
-   table larger than the scan ceiling is not cut short before it applies.
-3. Serve `/api/v2/openapi.json` to authenticated callers. Not served yet; the
-   disabled `/openapi.json` is unchanged. This is safe because type names are
-   path parameters.
-4. Add API tokens (argon2id-hashed) and service principals as real user records with explicit grants only; token power = scopes ∩ user grants. Add OIDC login with claim-to-role mapping. Allow several roles per user, combined additively.
-5. Exit: Browse uses only `/api/v2` for search, sets, saved views and frozen sets. Frozen sets become stored `static` sets; saved views become stored named sets.
+---
 
-**Phase 2: One write contract, one proposal queue.**
-1. `POST /api/v2/actions/{a}/apply` with `options.mode = validate | propose | execute` and `returnEdits`; `applyBatch` for one action type (default cap 20, all-or-nothing). `validate` stores nothing.
-2. Per-action `approval: none | confirm | second_person`. Agent- and automation-originated calls are always at least `confirm`. `owner_may_approve_automation` folds in.
-3. Submission criteria gain `all/any/none` nesting and a `current_user` check; the operator set stays fixed.
-4. Per-object ETag (gold publication + latest write-log entry); `If-Match` / `expectedVersions` → 412; `require_versions` → 428. Re-validate at approval.
-5. Re-express merge decisions, prediction acceptance, enrichment-recipe approval, rule-suggestion decisions and unusual-record review as system action types through `pending_write_store`. Re-express config and role changes as change proposals in one store using the same reservation, expiry, four-eyes and re-authorisation code. One `GET /api/v2/proposals` feeds the Inbox.
-6. Derive a queryable action log from `write_log.py`; later, single-object undo of the most recent edit.
-7. Exit: `config_proposals.py`, `role_changes.py`, `identity_decisions.py`, `prediction_proposals.py`, `enrichment_recipes.py`, `rule_suggestions.py` and `unusual_flags.py` have no store of their own.
+### 1. Target architecture (one page)
 
-**Phase 3: One automation model and object-set subscriptions.**
-1. Add `automation {condition, effects[], recipients, grouping}` on `core/timers.py`. Conditions: `added | removed | modified | threshold | schedule | combined` over an ObjectSet. Effects: `notify | propose_action` (with an idempotency key on the event id; at-least-once). Recipients: users, roles or a user-reference field, evaluated per recipient.
-2. Migrate user triggers, declared triggers, trigger states, count conditions, projected conditions, reminders and deprecation alerts; then delete those modules.
-3. SSE subscriptions: `PUT /api/v2/subscriptions/{streamId}` replaces the set; events are CloudEvents-shaped with keys and change state, never values; a `refresh` event tells clients to reload. The add-on proxy passes `text/event-stream`.
-4. Exit: one automation table; the Inbox and notifications read one model.
+#### 1.1 Packages: one distribution `elysium` (src layout), one console script
 
-**Phase 4: Schema change and data-quality consolidation.**
-1. `POST /api/v2/admin/schemaChanges {changes[], dryRun}` replaces the 17 preview/apply routes, using the existing `config_editing.py` round-trip and the change-proposal store.
-2. Encode precedent's breaking changes: datasource change, key change, type change, and rename, delete or retype of a field that has write-log edits. Require a migration choice (`drop_edits | move_edits | cast`) before apply. Active types and fields cannot be removed or renamed without first being deprecated.
-3. Declare the edit/source merge policy per type: `edits: win` (default) or `edits: most_recent` with a timestamp field.
-4. Replace expectations, field rules, constraints, unusual/outlier scans, freshness and integrity reports with `checks {target, kind, config, severity: moderate|critical, on_fail: warn|quarantine|refuse}`, reported as passed / failed / warning / error / not_applicable / not_computable. Rule suggestions become proposed checks. `value_type` stays.
-5. Replace `enriched:` and `predicted:` with functions that emit proposed edits through a system action; `derived:` remains the only computed field kind.
-6. Exit: one check table; three computed kinds reduced to one.
+| Package | Owns | Replaces today (F) |
+|---|---|---|
+| `elysium.metadata` | Typed, immutable `Ontology` model (types, properties, links, actions, functions, automations, checks, roles). Validators, import/export, versions and change sets. | Dict-and-mutate loader `deployment_loader.py:655` with 16 in-place passes `:715-756` [O:14]. `config_schema.py` with 143 fields typed `Any` [O:9]. `config_editing.py` 1,666 lines, `config_history.py` 276, `config_proposals.py` 141 [O:22]. |
+| `elysium.access` | Principal (user, role set, security attribute, token scope). One `decide()` / `check_access()`. Label compilation. Visible schema. | `core/intermediate_layer/` (64 refs, 314 test files import it [O:167]) and `core/auth` user resolution (two resolvers [O:19]). |
+| `elysium.audit` | Append-only JSONL with `v` and `category`. Read API source. | `intermediate_layer/audit.py` 826 lines, stored in the log dir and left out of the backup [S:146]. |
+| `elysium.index` | Mirror: `pipeline/` (phases as data), `lake.py` (layer registry), `SyncSource` adapters, gold, erasure ledger. | `core/mirror` 16,308 lines in 58 files [S:15]. `scripts/run_sync.py` 1,374 lines [S:133]. Four adapters, two of which duplicate each other [S:138]. |
+| `elysium.query` | Object sets, filter grammar, mediator facade, search, aggregate. | `object_sets.py` 977 lines (kept) [O:122], plus the read mediator. |
+| `elysium.actions` | `apply(mode=validate\|propose\|execute)`, write mediator, write log, one proposals table, ETags. | 7 approval stores (1,487 lines) plus pending writes (903 lines) [O:21]. |
+| `elysium.automation` | One `{condition, effects, recipients, grouping}` model on timers. Notifications. Object-set subscriptions. | 11 modules, 3,050 lines [O:25]. `live_updates.py` 228 lines [A:77]. |
+| `elysium.checks` | `value_type` plus one `checks` list. Six result statuses. | 20 modules, 4,005 lines [O:23]. |
+| `elysium.functions` | Registry with declared signatures. Two kinds: `query` and `edit_proposer`. | `core/functions/registry.py` (56 lines, two hard-coded entries) and the top-level `functions/` package, which is missing from `packages` [S:23]. Enriched and predicted fields: 8 modules, 2,118 lines [O:24]. |
+| `elysium.agent` | Agent loop over `query` and `actions` (the same service layer, in process). One declarative step table. LLM adapters. | `agentic_loop.py` 2,195 lines, `AgentLoop` 1,576, step vocabulary written three times [O:27, O:154]. |
+| `elysium.api` | `/api/v2` only. One router file per resource. `Call` context. RFC 9457 problems. OpenAPI exported at build time. | `api/routes.py` 10,644 lines, 141 routes [A:14-15]. |
+| `elysium.apps` | Add-on server supervision, same-origin proxy, scoped tokens, built UI as package data. | `addon_servers.py`, `core/modules.py` 673 lines, `/api/addons` proxy [A:103]. |
+| `elysium.cli` | `elysium <group> <verb>` with a shared `OperatorContext`. | 50 scripts, 19,042 lines; 130 `python -m scripts.` mentions [S:23, S:47]. |
+| `elysium.db` | `schema.sql`, connection factory, `PRAGMA user_version` check. | 31 per-store `SCHEMA` strings. `connection_with_schema` and `add_column_if_missing` with 109 call sites [S:20]. |
 
-**Phase 5: Add-on contract.**
-1. `module.json` `ontology:` fragments: schema only, never data, validated at load, optional type-name prefix.
-2. Add-ons call `/api/v2` with scoped tokens; idempotent ingestion is an action applied with an idempotency key.
-3. Confirmed-action delivery: an action may name a loopback add-on effect, invoked after commit, best-effort, keyed by write id.
-4. `timeseries_ref` field type: points read through `/objects/{t}/{pk}/timeseries/{field}/points`, authorised against the owning object, proxied to the add-on. Elysium stores no series.
+Dependencies run one way (J): `metadata` <- `access` <- `query` <- `actions` <- {`automation`, `functions`, `agent`, `checks`} <- {`api`, `cli`, `apps`}. Enforced by import-linter contracts (pyproject already has 16 [A:158]).
 
-**Phase 6: Removals and measurements.**
-1. Move inferred identity matching to an add-on; deterministic identity and survivorship stay.
-2. Remove unmeasured agent switches from the main line; `filter_operators` returns as the public filter grammar.
-3. Fold `sqlite_adapter.py` into the SQLAlchemy adapter (LIB-3); fold `artifact_store.py` into a notes table; fold the help assistant into the agent loop.
-4. Measure, then decide: one application SQLite database instead of ~32 files; silver as a transform stage instead of a persisted layer.
-5. Freeze the v1 routes, then delete them once the UI and add-ons use `/api/v2` only.
+The UI (`ui/`) stays an npm workspace and talks to the API only through a client generated from the committed `openapi.json` [A:53]. The simulator leaves the product package (section 5, D13).
 
-**Revisit list (decisions, not work).** Approval as a per-action policy rather than universal; the `propose_action` effect in automations; content-free email notices; service principals; more than one security attribute. Each is compatible with the invariants above when framed as described.
+#### 1.2 Application state: three SQLite files (recommended), plus the lake and the audit log
 
-**Blocked on:** the owner's decisions in the revisit list above, and the
-owner's agreement to each phase's shape before it is built. Nothing in a
-phase removes an existing route or store until its replacement is in use;
-Phase 6 removes the old ones.
+| File | Holds | Why separate (F) |
+|---|---|---|
+| `elysium.db` | All durable application state in one schema with one `user_version`: model versions (Option A), proposals, write log, users and credentials, notifications, saved sets, automations, timers. | Makes backup atomic. Today each database is snapshotted separately and the set is not mutually consistent (`backup_deployment.py:190-205`) [S:70]. |
+| `erasure.db` | The erasure register, plus the key-column ledger (section 1.3). | "THE ONE STORE A RESTORE MUST NOT ROLL BACK" (`restore_deployment.py:164-193`) [S:65]. |
+| `scratch.db` | Rebuildable, write-hot data: request metrics, login attempts, sync attempts, embeddings and column profiles (if decision D4 calls them caches). Not backed up. | `request_metrics.py:81-91` inserts once per request [S:66]. SQLite allows one writer per file. |
 
-**Further findings from the same research (owner, 2 November 2026: add to the roadmap).**
+The notes disagree on the count. `[O:143]` proposes one `elysium.db`; `[S:64-67]` proposes three. Section 5, D4 sets out the one, two and three options.
 
-1. Fourteen API conventions are shared by three or more precedents and are adopted wholesale in Phase 1 and 2: field selection; a structured filter with and/or/not; sort; paging that returns a continuation (cursor); expanding along links; named operations separate from create/read/update/delete; a validate-only dry run; optimistic concurrency (If-Match, 412 on mismatch, 428 when required and missing); batch requests; 201 with Location on create, 204 on delete, 202 with Location for work that completes later; one structured error body (RFC 9457 problem details); a change feed; a typed event envelope (id, type, time, source); discoverable schema. The last shared convention, permissions enforced on the caller inside the API, is already Elysium's strongest point.
-2. The deliberate refusals mostly survive: single machine, SSE only, writes only through actions, no general expression language, single tenant, and row security evaluated in Python rather than pushed into storage are all supported by precedent. No historian also survives: precedent's own time-series property is a reference to data held elsewhere, so the fit is a `timeseries_ref` field whose points an add-on serves, authorised against the owning object, with Elysium storing no series (Phase 5).
-3. Four refusals are worth an owner decision (the revisit list above): approval for every write (precedent applies a person's own edits directly and stages only agent and automation edits, so approval becomes a per-action policy); notify-only triggers (allow an automation to propose an action that a person still approves); no service accounts (a real user record with explicit grants does not break "nothing synthesised"); and optionally content-free email ("you have 3 items").
-4. Schema change: precedent names seven breaking changes (datasource change, key change, data type change, and rename, delete or retype of a field or struct field that has user edits) and refuses to save until a migration is chosen for each (drop edits, move edits, cast, backfill or revert), with a cap of 500 migrations at once and none on the primary key. An active item cannot be removed or renamed until it has been deprecated, with a reason and a deadline. The retype work (R1 to R4) already follows this pattern; Phase 4 extends it to every schema change.
-5. The agent should be a client of the public API. Today it has read paths of its own beside the UI's; calling `/api/v2` removes the duplicate paths and gives it the same permission checks for free.
+The Iceberg catalog stays as pyiceberg's `SqlCatalog` [S:67]. Audit and lineage JSONL move under `state/audit/`, segmented monthly in process. They are included in backup and are never rolled back by a restore [S:147].
+
+Each file is stamped with `user_version` at creation. On a mismatch Elysium refuses to start and prints the path with "delete this file". There is no migrator [A:97, R:293].
+
+#### 1.3 Lake layout
+
+- **Namespaces are layers** (F, [S:108]): `bronze`, `changelog`, `gold`, `gold_history`, plus `silver` only if it stays persisted (D9).
+- **Tables** are `<silo>__<table>` in source layers and `<ObjectType>` in gold layers.
+- **One module.** `elysium/index/lake.py` holds a `Layer` enum, `identifier()`, `layer_of()` and `iter_tables()`.
+- **What this deletes:**
+  - the silo-name prefixes, which have caused two recorded collision bugs (`lake_names.py:6-8, 44-50`) [S:110];
+  - `RESERVED_SILO_*` and `NON_SOURCE_*`;
+  - about 14 copies of the namespace walk [S:114].
+- **Findings tables** (`quarantine`, `cleaning`, `gold_conflicts`) move to `elysium.db` if D10 agrees. In SQLite, erasing them is one DELETE instead of a rewrite, snapshot expiry and file deletion [S:116].
+- **Erasure** reads a ledger of every `(silo, table, column, object_type, kind, link_target, first_generation)` ever mapped. The ledger is written when a generation is accepted and is never narrowed [S:94]. It replaces the per-table `elysium.erasure_keys` record and the partial/complete/adopt machinery [S:85-98].
+
+#### 1.4 The ontology: a typed model, its authoring, and its versions
+
+**Shape (F proposal, [O:63-66]).** Frozen pydantic models:
+
+- `Ontology{types, links, actions, functions, automations, checks, roles}`
+- `ObjectType{name, key, title, properties, security, backing, status, checks}`
+- `Property{name, type, labels, value_type, derived, backing, status}`
+
+The format changes are:
+
+- `type:` means the data type.
+- `derived:` is the only computed kind.
+- Links are authored only as links.
+- Expressions use `$param`, `$user.<attr>` and `$proposer.id`.
+- Operators are the v2 grammar: `eq ne in lt lte gt gte isNull contains startsWith`.
+- Every action carries `approval: none|confirm|second_person`.
+- Grants are structured (examples at [O:194-283]).
+
+Operator settings move to one file of about 10 lines, `elysium.yaml` [O:285-293].
+
+**Authoring and versioning.** The notes present two options; the owner chooses (D1).
+
+| | Option A: versioned data in the database (recommended, J) | Option B: canonical whole files |
+|---|---|---|
+| Source of truth | A `model_versions` row in `elysium.db`: `(version, parent_version, author, reason, content_json, status)` [O:89] | `model/` directory of YAML, one file per type, link, action and role set [O:181-192] |
+| Change path | `POST /api/v2/admin/schemaChanges {changes[], dryRun}` and `elysium model apply <dir>`. Both create a proposal against `base_version`; a stale base is refused. | The UI writes a whole canonical file (PyYAML dump, sorted, no comments). The same proposal pipeline runs. |
+| Git | `elysium model export <dir>` writes canonical YAML. An empty table is seeded from `model/` on first start. | Files are the history. |
+| Deletes (F) | `config_editing.py` 1,666 (a change-set applier of about 200 lines remains), `config_history.py` 276, `config_proposals.py` 141, `role_store.py` 215, the ruamel dependency, the 9 preview/apply route pairs. About 2,000 lines net [O:93]. | ruamel and about 1,300 of the 1,666 lines [O:92]. |
+| Keeps | One authority. Diff, restore and approve share one code path. Matches the precedent, where metadata is stored as data and YAML is only import/export [P:96]. | Hand edit plus reload stays possible. The dual sources stay: roles from file vs database (D9 of [O:45]) and users from file vs database (D10). There is a hand-edit race. |
+| Risk | A write to the model DB can rewrite `security:` blocks. Mitigations: one audit event per version, and `manage:deployment` as the only writer [O:95]. | A load error loses its file:line only in Option A; no new risk here. |
+
+**Identity: immutable ids vs names.** Today YAML names do the work of id, API name and display name at once, so a rename breaks stored data, audit rows and the write log [P:67] (J inference). The precedent separates three things [P:54-63]:
+
+- an opaque immutable id,
+- a client-facing API name,
+- a display name.
+
+Objects are identified by `(type, primary key)`, never by a global id [P:55].
+
+Recommendation (J, D2): every schema element (type, property, link, action, function, role) gets a generated id at creation, `ely.<kind>.<uuid>`. Ids are stored in the write log, audit, proposals, saved sets and resolved grants. Names stay unique, user-facing and renameable through a change set. This is cheapest to do now, while nothing is stored. It fits Option A naturally; under Option B the files must carry the ids.
+
+#### 1.5 One policy decision point
+
+- **One entry point.** `access.check_access(principal, verb, resource)` is the only decision site (24 audited call sites today [A:158]). It ANDs MAC (one security attribute and labels) with RBAC. RBAC is the union of the user's roles; there are no deny rules [O:103].
+- **Structured grants.** Grants are `Grant(verb, type, property)` tuples. `read` implies `discover`. There are no wildcards [O:283, O:335].
+- **Same rules everywhere.** Submission criteria, label gates and derived-field gating all run on the union [O:106].
+- **Who must go through it.** Reads, `apply`, approval, export, subscriptions, automations, functions and the agent. An import-linter contract forbids `authorize` outside `elysium.access` [O:324].
+
+#### 1.6 One proposal pipeline
+
+One `proposals` table [O:111]:
+
+`(id, kind, subject, payload_json, base_version, proposer, state, decided_by, expires_at, reason, idempotency_key)`
+
+- **Kinds:** `action`, `model_change` (absorbs role and config changes under Option A), `identity_merge`, `check_suggestion`, `function_edit`.
+- **Shared code:** atomic reservation, expiry, four-eyes, re-authorisation at approval against the current generation, stale-base refusal, erasure hook.
+- **Per-kind approval policy.** Each kind keeps the safeguard its old store had: escalation check, stale digest, reason required, compartment write-down, erasure respected [O:114].
+- **API:** `POST /actions/{a}/apply`, `GET /proposals`, `POST /proposals/{id}/approve|reject` [A:71].
+
+#### 1.7 One automation model
+
+`automation {condition: {on: <ObjectSet>, when: added|removed|modified|threshold|schedule|combined}, effects: [notify|propose_action], recipients, grouping}`, running on `timers.py` [O:120, B:2701].
+
+- Reminders become `schedule` automations.
+- An automation's `propose_action` effect runs as a real owner account and always stages [O:122].
+- Every condition is evaluated per recipient, under that recipient's grants.
+- Subscriptions are an SSE stream of CloudEvents that carry keys, never values [A:78].
+
+#### 1.8 One checks model
+
+`value_type` expands into default checks. Each type has a `checks: [{target, kind, config, severity: moderate|critical, on_fail: warn|quarantine|refuse}]` list [O:134].
+
+- Results take one of six statuses: passed, failed, warning, error, not_applicable, not_computable.
+- Rule suggestions and unusual-value reviews become `check_suggestion` proposals.
+
+#### 1.9 One CLI; packaging and install
+
+| Area | Target | Evidence |
+|---|---|---|
+| CLI | `elysium serve \| sync \| lake \| user \| erase \| backup \| restore \| lint \| doctor \| init \| service install \| model \| contracts \| dev`. One exit-code table; report by default, change only with `--write`. | [S:45] |
+| Packaging | `[project.scripts] elysium = "elysium.cli:main"`. The built UI ships as package data. Extras `[identity]` and `[dev]`. | [S:43] |
+| Install | `pipx install elysium`, then `elysium init [--demo]`, then `elysium service install`. Two roots, `ELYSIUM_CONFIG` and `ELYSIUM_STATE`, with no relative fallback. | [S:153] |
+| Dev tools | `check_controls`, the benches and the seeders move to `elysium dev` or `tools/`, outside the wheel. About 25 files and 14,000 lines leave the shipped package (E). | [S:50] |
+
+
+---
+
+### 2. Security invariants that must survive every step
+
+| # | Invariant | Proved by (test or control) | Where it can break | Steps at high risk |
+|---|---|---|---|---|
+| I1 | **Uniform denial.** An unknown or unreadable type, key, field or proposal looks exactly like a nonexistent one. | A byte-for-byte comparison of the 404 bodies for "unknown" and "denied", with no distinguishing audit write [A:160]. A parametrised test over the generated route table: a role with no grant and a role in the wrong compartment each get the unknown-response [A:159]. Per-endpoint "hidden == nonexistent" tests for schema, proposals and change sets [O:323]. | Porting v1's "200 with null fields" (`routes.py ~9309`) [A:160]. Typed errors that are more specific than "unknown". | S6, S9, S10 |
+| I2 | **Authorization in one place.** | An import-linter contract: `api`, `agent`, `automation` and `functions` may import only the `query` and `actions` facades, never stores or adapters [A:158]. Only `elysium.access` may call `authorize` [O:324]. | A new v2 router reading storage directly. The multi-role union implemented twice. | S5, S6, S10, S15 |
+| I3 | **MAC and RBAC on every read.** | The existing per-id `check_access` in `search_object`, `field_values_for_ids` and `search_around_from` [A:159]. The route-table denial test from I1. A model validator requiring `security` or an explicit `unrestricted: true` [O:325]. A compartment write-down test. Subscription keys filtered through `check_access` before they are emitted [A:83]. | Subscriptions, expand, links, export and history are each a new read path. `via:` chains resolved from the DB-stored model. Label and derived gating run per role instead of on the union [O:106]. | S6, S10, S12 |
+| I4 | **Writes only through actions.** | A forbidden-import contract for write APIs in `api` except through `apply` [A:161]. A test that `model_versions` never writes object rows. A test that `edit_proposer` functions and `quarantine` checks land only through a system action in the write log [O:326]. | The approve route writing directly. Function proposers. Checks that quarantine. | S9, S13, S14 |
+| I5 | **Re-authorisation at approval.** | Per kind: revoke the approver's grant between propose and approve, and approval returns the uniform refusal [A:162]. One test row per safeguard each old store carried, each cited by a control [O:114]. | The unified pipeline losing a per-store check: `may_confirm` (`routes.py ~10020`), `escalation_problem`, stale digest, `_refuse_cross_compartment` [A:74, O:114]. | S9 (highest) |
+| I6 | **Erasure completeness.** | An `Erasable` registry, with a test that fails when a table with a data-subject id column is neither registered nor exempted [S:71, O:175]. A test that fails if any lake table's keys cannot be derived from ledger plus schema [S:101]. A table-driven `layer_of`/`iter_tables` test over every namespace the sync writes [S:114]. Keep the never-narrow union rule (`erasure.py:542-559`). | A forgotten store or namespace. The ledger written after the first sync that uses a mapping. `erasure.db` folded into the restorable database. | S7 (highest), S8 |
+| I7 | **Read-only source access.** | A control proving that a write through the SQLite dialect of the SQLAlchemy adapter is refused. That adapter has no authorizer today (`sqlalchemy_adapter.py`, no `authorizer` or `mode=ro`) [S:140]. Keep `default_transaction_read_only` and the `READ ONLY` session for PostgreSQL and MariaDB (`sqlalchemy_adapter.py:235-278`). | The SQLite adapter fold (R7). | S8 |
+| I8 | **No question leaves the machine.** | A test that the installed product has no adapter able to reach a hosted model (`claude_agent_sdk_adapter.py` moves to `elysium dev` benches) [O:162]. The existing no-outbound rule; no telemetry exporter. | The agent rewrite. The LLM adapter consolidation. | S15 |
+
+Supporting invariants, carried by the same tests:
+
+- **CSRF.** A cookie request without the CSRF header gets 403. A request with both cookie and bearer is refused. A bearer alone is allowed [A:165].
+- **Constant-time compare and login throttle.** Kept in `test_csrf_constant_time.py`, and the throttle moves with the login route [A:168].
+- **Pinned generation.** The scanner is extended to the whole tree [A:163].
+- **No-store.** Set as the default in `Call` [A:164].
+- **Audit.** Stays fail-closed and append-only [S:148].
+- **The agent stages only.** Its handlers call `apply(mode=propose)` [O:155].
+
+**Rule for every step (J).** A step may delete a control only together with the code it guards. Each step's review lists the controls it deleted, the controls it added, and which invariants (I1-I8) it touched. A step touching I5 or I6 gets a second fresh-reader review aimed only at that invariant.
+
+---
+
+### 3. Ordered refactor steps
+
+Each step is one reviewable unit of a few commits, and each deletes what it replaces. Line counts are F where they cite a note, otherwise E. Effort figures are J.
+
+#### Phase 0. Mechanical moves that make later steps cheaper
+
+**S0. Rules and roadmap reset (docs only). DONE, 3 November 2026.**
+- Deleted: PRINCIPLES.md section 8 as written; the AGENTS.md section "Schema changes are breaking", its three-deployments premise and the fixture-schemas sentence; the "old spellings" message rule; this item's compatibility sentences ("additive", the build-beside phases, "Freeze the v1 routes"); the stale silver-drop recipe, the "Pending writes survive a restart" narrative and the development-state recovery narrative in CLAUDE.md; the consumed-documents tables and the items that were built.
+- Replaced with: the rule that no deployment exists, so break freely, replace in place, no shims, migrations or transition periods, each break landing with its tests and keeping the security invariants of section 2. Without it, agents keep asking for authorization on every break [R:368].
+- Tests: `tests/unit/test_blocking_is_intact.py` no longer pins the consumed-documents table or the "Not blocked" heading.
+- Risk: none.
+
+**S1. Tooling preconditions**
+- Deletes:
+  - the `check_controls` defect that remains: a control citing a test that does not exist must not pass (only the failed-exit-code half is built);
+  - the 141 `_route` names in `vulture_whitelist.py` [A:132].
+- Replaces with:
+  - a runner that requires pytest's failure exit code and checks that every cited test exists;
+  - content anchoring: when `path` no longer holds `old`, the runner searches the package for the unique occurrence and reports a control whose anchor vanished as "retired", needing an explicit deletion. Without this, the 1,166 records (`routes.py` alone holds 198) need hand edits after every move [S:24, A:174];
+  - `ignore_decorators = ["@router.*"]` in the vulture config;
+  - import-linter contracts for I2.
+- Together with: nothing.
+- Tests: the runner gets its own tests.
+- Preconditions: none.
+- Risk: low.
+
+**S2. Package rename (rename only, no behaviour change)**
+- Deletes: top-level `core`, `api`, `adapters`, `scripts` and `functions` (`functions` is missing from `packages` [S:23]); the name `core/intermediate_layer`.
+- Replaces with: `src/elysium/...`, with `intermediate_layer` renamed `access` [O:167]; a `[project.scripts]` stub.
+- Together with: 743 files of imports [S:23]; 27 `mock.patch("core....")` strings [S:56]; 1,166 control paths, handled by S1's anchoring; pyproject import-linter layers (`pyproject.toml:189-204, 405-427`) [O:167].
+- Tests: import lines only. 314 test files import `intermediate_layer` [O:167].
+- Preconditions: S1.
+- Risk: none to invariants. Do it with a script (libcst or sed) so the diff is purely a rename.
+
+**S3. Pure subtraction of compatibility code**
+- Deletes (F):
+
+  | Item | Evidence |
+  |---|---|
+  | Tri-states D5-D8, D11, D13, D15: `write_targets` absent = all writable, `ingest_undeclared_columns`, `on_type_mismatch`, default module list, `read_from_mirror`, delete `mutations: []`, required agent keys. About 105-350 lines in total. | [O:41-51, O:148, O:314] |
+  | `on_suspected_rename: serve_empty` | [R:158] |
+  | The gold `DATA_AS_OF` fallback for older publications | [R:160] |
+  | `DEFAULT_RETAINED_PUBLICATIONS` "0 = old behaviour" | [R:371] |
+  | `MOVED_MODULES` (about 45 lines), its test class, and the 124-line e2e spec | [A:105] |
+  | `add_column_if_missing` (30 call sites in 10 files) and 2 inline migrations (`core/auth/database.py:81,89`) | [S:19] |
+  | Older-server optionals in the UI (`api.ts` 1088, 1233, 1238, 1244, 1698, 3105; `useInboxCounts.ts:59`; `typeHealth.ts:52,88`) and old localStorage keys (`Shell.tsx:48,71-75`) | [A:96, A:140-141] |
+  | `scripts/split_ontology_bindings.py` 93 lines, `find_fabricated_creates` 88, `rebuild_deleted_index` 58 | [S:49] |
+  | `label_enforcement` as a switch (it becomes always on) and `scripts/label_access_diff.py` | [R:258] |
+  | `/me/visible-apps`, `/logout-all`, `countObjects`, `searchAround` and their routes (no UI caller, 100-130 lines) | [A:145] |
+
+- Replaces with: safe defaults (`write_targets` absent means no writes); a `user_version` stamp per file with refusal on mismatch [A:97].
+- Together with: `add_column_if_missing` and the `user_version` rule land in one commit [A:188].
+- Tests: the migration tests and the tests of the "absent" branches are deleted.
+- Preconditions: owner decisions D11 (`ingest_undeclared_columns`) and D15 (label enforcement).
+- Risk: low. The `write_targets` flip is a security gain [O:150]. Do not delete `TestAdoptingALegacyTable`: it tests domain behaviour, not a shim [A:100].
+- Size (E): about 700-1,000 lines out.
+
+**S4. Test builders**
+- Adds:
+  - `make_ontology()` and model builders;
+  - a parser in `tests/` only that turns `"read:Customer.email"` into structured grants (test tooling, not product compatibility) [O:105];
+  - one `app_db` fixture [S:73];
+  - a route-table test scaffold.
+- Why: later steps then touch helpers instead of hundreds of literals. 120 test files mention `object_types`, 141 mention `storage`, 241 mention `allowed_actions`, and 250 touch `.db` paths [O:28, O:17, S:21].
+- Preconditions: S2.
+- Risk: none.
+
+**S5. v2 plumbing, the OpenAPI spec, the client generator, sessions and tokens**
+- Deletes (on v2, and never ported from v1): the per-route patterns of 138 `Depends(get_current_user)`, 153 `_generation()` calls, 93 `_no_store` decorators, 22 store builders and 50 try/except blocks [A:18, A:64]; the v2 problem handler's fall-through to v1's handlers [A:17]; `/logout` and the `/me/*` duplicates.
+- Replaces with:
+  - router-level `authenticated` with a three-route public router;
+  - `Depends(require(grant))` on each route;
+  - `Call.stores` and `Call.visible_type()`;
+  - pure-ASGI middleware in one ordered list;
+  - a request-id middleware;
+  - a build-time `openapi.json` with a test that it is current;
+  - the generated client skeleton with one middleware for CSRF, generation notice, 401 handling and problem parsing [A:53, A:62-65];
+  - `POST/GET/DELETE /session`;
+  - bearer API tokens (argon2id) and service principals, where token power = scopes AND grants [A:87, B:2688].
+- Together with: the login UI and `scripts/check_workers.py` (`/api/login`, `/api/me`) [A:25].
+- Tests: the CSRF and session tests; the route-table tests (auth required, grant listed, no-store).
+- Preconditions: S2. Owner decision D20 (service principals) for the token half.
+- Risk: **high on the session half (I2, CSRF)**. Keep constant-time compare. Never accept a bearer token and a cookie together [A:90].
+
+#### Phase 1. The breaking core
+
+**S6. Typed ontology, new format, roles and renames (one program, landed together)** (HIGH RISK: I1, I3)
+- Deletes:
+  - the raw-dict model and its 16 mutation passes;
+  - 143 `Any` fields and about 16 `_resolve_*` functions (about 370 lines) [O:65];
+  - `bindings.py` 155 lines, `_merged_with_bindings` 31, the wrapper handling (D1);
+  - per-field link authoring (D3);
+  - the `step_model` / `synthesis_model` split (D4, 40 lines);
+  - the `object_reference` / `object_reference_list` duality (D12) and action-level `submission_criteria` (D14);
+  - four of five operator vocabularies (D16) and the `type` vs `data_type` overload (D17) [O:37-53];
+  - string-prefix grants and `_validate_one_grant` (141 lines) [O:101];
+  - single `role_name` (173 lines, 135 test files) [O:18];
+  - `policy.yaml users:` with `resolve_user_record` (17 call sites) [O:19];
+  - `tools:` and the `tool:` grant (50 lines) [O:128];
+  - any special message for a removed or renamed key: the strict-key check already says "did you mean" [R:343].
+- Replaces with:
+  - the models of section 1.4;
+  - `UserRecord(user_id, security_value, roles: frozenset)`;
+  - immutable element ids if decision D2 says so;
+  - `property` as the authored word if D5 says so;
+  - one user source (the credentials database);
+  - a generated JSON Schema for editors;
+  - `scripts/lint_deployment.py` (405 lines) reduced to a thin CLI over the same models [O:67].
+- Together with: BC1, BC2, BC4 and the renames in one window [O:307-308]. A translation layer between old and new would itself be compatibility code. The four shipped configuration sets (ontology 867 lines, policy 554 lines [O:16]) are rewritten by script, and become two (templates and test fixtures) plus a generated demo [S:153].
+- Tests: about 120 + 141 + 241 + 135 test files, overlapping, through the S4 builders. `object_type_validation.py` (556), `action_types.py` (799), `link_types.py` (227), `derived_fields.py` (372), `field_types.py` (582) and the readers in `mediator.py` (3,083) and `write_mediator.py` (2,570) are rewritten against attributes, not keys [O:69].
+- Oracle: for each of the four old configuration sets, diff `visible_schema` and effective grants before and after the translation [O:81].
+- Preconditions: S2, S3, S4; owner decisions D1, D2, D3, D5, D7.
+- Risk:
+  - every `security:`, `via` and classification block must survive the translation;
+  - the escalation check must evaluate the union of roles;
+  - an unknown role is logged and denied;
+  - `discover` stays strictly weaker than `read` [O:106].
+- Size (E): about 900 lines of validators deleted [O:316]. Effort 3-5 weeks [O:69].
+
+**S7. Application state, lake layout, erasure ledger, audit directory (one design pass)** (HIGH RISK: I6)
+- Deletes:
+  - 32 database files and 31 per-store schemas, moved into `schema.sql`;
+  - `connection_with_schema` and `_schema_verified` (about 90 lines);
+  - `OWNED_DATABASES` (28 names) and its inventory test;
+  - `internal_storage.py` (73 lines) [S:61, S:76];
+  - the layer-in-silo-name scheme and `lake_names.py` (58 lines);
+  - the reserved-name checks and about 14 namespace walks [S:108-114];
+  - from `erasure.py`, the per-table `erasure_keys` record with its three decode forms and the adopt machinery: about 400 of its 1,319 lines [S:98];
+  - about 150 of the 374 lines of `scripts/erase.py` (`--adopt*`, the typed phrase, exits 2 and 3) [S:98];
+  - `_record_erasure_keys_before` (`routes.py:3299-3340`) and its 3 call sites;
+  - `removal.py:167-182`;
+  - the hand-written list of 9 stores in `forget_beyond_the_mirror` (`erasure.py:1244-1319`) [S:71];
+  - the logrotate unit [S:148].
+- Replaces with: the three files of section 1.2; `lake.py`; the ledger in `erasure.db`; the `Erasable` registry; `state/audit/` with `v`, `category` and monthly segments.
+- Together with: R2, R3 and R4 land together. Ledger rows are keyed by the new identifiers, and the ledger lives in the new state layout [S:178]. Findings layers move to SQLite here if D10 says so. Only tables that survive S9-S13 are squashed; there is no deployment, so `schema.sql` is simply edited later [S:78].
+- Tests: `test_erasure_removed_types.py` (580 lines) and `test_erasure_after_removal.py` (585 lines) are rewritten against the ledger [S:98]; 328 layer-name mentions in 61 test files [S:22]; 250 `.db` test files through `app_db`.
+- Preconditions: S3 (`ingest_undeclared_columns` false makes "partial" impossible by construction [S:91]); S6 (identifiers and types); owner decisions D4, D10, D12; measurements M6 and M7.
+- Risk:
+  - the ledger must be written before any sync uses a new mapping, on every path: loader, `build_generation`, reload, restore and CLI;
+  - keep the write log's read-only authorizer handle (`sqlite_connection.py:133`);
+  - keep `incomplete` only for unreadable tables [S:101-103].
+- Size (E): about 1,000-1,300 lines out.
+
+**S8. Pipeline into the package, silver decision, source adapters** (HIGH RISK: I7)
+- Deletes:
+  - the pipeline living in `scripts/run_sync.py` (1,374 lines; `run_sync()` 336, `_build_gold` 260);
+  - `IcebergMirrorSync.sync_table`'s 577 lines and 12 parameters;
+  - the sync thread inside the web server (`routes.py:6003-6107`);
+  - the api-to-scripts import (`routes.py:6103`) [S:133, S:57];
+  - if silver becomes transient (D9): the silver layer, the `rebuild` flag, the `rebuilding` state, retype's drop-silver refusal and CLAUDE.md's "CHANGING A FIELD'S data_type NEEDS SILVER DROPPED" section [S:129];
+  - `sqlite_adapter.py` (728 lines);
+  - the six `_gold_only` stubs and the pushdown surface on source adapters [S:138-142];
+  - `SQLiteWriteAdapter`, if D16 says so;
+  - the `serve_empty` remnants.
+- Replaces with:
+  - `elysium/index/pipeline/` with `PHASES` and `after=` edges;
+  - `elysium sync`, which the panel launches as a subprocess;
+  - a `SyncSource` interface implemented by SQLAlchemy (including its SQLite dialect with an authorizer or `mode=ro`), CSV and REST;
+  - `GoldConnector` as the only query surface;
+  - gold provenance = bronze snapshot id + transform hash [S:126].
+- Together with: R5 and R6 land together, because the stage boundary is the same code [S:179].
+- Tests: 247 `sync_table` call sites in 92 test files; 61 imports of `scripts.run_sync` [S:134].
+- Preconditions: S7; measurements M1-M5; owner decisions D9 and D16.
+- Risk:
+  - gold must never publish from a partial read (`iceberg_sync.py:1533-1545`);
+  - erasures run before embeddings (encoded as an edge);
+  - the read-only control on SQLite (I7).
+- Size (E): 700-900 lines from the adapters [S:142]; silver is unmeasured.
+
+**S9. One proposal pipeline, model versions, the schema-change endpoint, actions and proposals on v2** (HIGHEST RISK: I4, I5)
+- Deletes:
+  - 7 stores (1,487 lines) and the `pending_write_*` code (903 lines) [O:21];
+  - `auto_execute`, `owner_may_approve_automation` and three "absent means" defaults (`action_types.py:557, 581, 620`) [O:112];
+  - Option A deletions (section 1.4, about 2,000 lines) or Option B deletions (about 1,300 lines);
+  - the 17 schema preview/apply pairs (`routes.py:1942-3533`) [B:2603, O:22];
+  - v1 `/writes/*`, `/merge-proposals/*`, `/enrichment-recipes/*/decide`, `/prediction-proposals/*/decide`, `/admin/rule-suggestions/*/decide`, `/unusual-review/decide`, `/admin/config-proposals/*`, `/roles/changes/*` and direct `/actions/{a}` [A:70];
+  - the UI's five decision-queue tabs and their clients (`app-approvals` 1,154 lines, `app-identity` 516, `app-inbox` 165) [A:73];
+  - the Inbox slot mechanism [R:59].
+- Replaces with: section 1.6; `POST /api/v2/actions/{a}/apply|applyBatch` (cap 20); `GET /api/v2/proposals`; approve and reject; `POST /api/v2/admin/schemaChanges {changes[], dryRun}` over the existing impact reports (`removal.py`, `used_by.py`, `who_can_see.py`, `role_impact.py`) [O:94]; ETags with 412 and 428; one Inbox list filtered by kind; the queryable action log from `write_log.py`.
+- Together with: stores, routes and the Inbox UI in one step [A:73, A:185]. Model versions are a proposal kind [O:309].
+- Tests: 68 non-test call sites and 123 test files for `propose_action` and `confirm_and_execute`; 130 test files that touch pending writes [O:113]; 35 config-edit test files [O:93].
+- Preconditions: S5, S6, S7; owner decisions D1, D17 (per-action approval), D8 (deprecate-first).
+- Risk: write the per-kind safeguard table first, one row per safeguard, each with a control. Approve calls the same write mediator, never a write of its own [A:74].
+- Size (E): net 1,500-2,000 lines from the stores [O:111], plus the Option A or B deletions.
+
+**S10. The rest of v2, resource by resource; v1 deleted; UI on the generated client** (HIGH RISK: I1, I3)
+- Deletes: `api/routes.py` (10,644 lines, 185 classes, 114 `*Response` models, 129 helpers [A:43]); `api.ts`'s 104 hand-written types and 145 wrappers (2,500-3,000 of its 3,197 lines) [A:55]; `messageFromErrorBody`; 93 copies of `handleIfSessionExpired`; 21 unencoded interpolations [A:52]; `saved_views.py` (260) and `frozen_sets.py` (239) [R:174]; the `conditions` string/JSON duality (`routes.py:8913, 9101`) [A:117]; the `/api` mount (`app.py:799`).
+- Replaces with: one router per resource (`api/v2/{schema, objects, object_sets, queries, notifications, users, roles, tokens, admin_*, addons, modules, health}.py`, models next to routes [A:131]); stored object sets (`reference` kind); `{data, nextPageToken}` on every list; the audit read API; `useApi` and `useAction` hooks [A:59].
+- Order of commits [A:196]:
+  1. schema, objects, objectSets (moves Browse);
+  2. users, roles, sessions (Admin);
+  3. stored sets;
+  4. admin config and history;
+  5. mirror, silos, system;
+  6. shell, modules, add-ons;
+  7. delete `routes.py` once it is empty.
+- Together with: each resource lands with its v2 router, regenerated client, UI call sites, tests and the deletion of its v1 routes [A:184].
+- Tests: 87 backend test files with 1,046 path literals; `test_api.py` (4,574 lines) split by resource; 18 files that monkeypatch `api.routes.*`; 76 UI test files; `api.test.ts` (919 lines) [A:24, A:206].
+- Preconditions: S5, S9; measurement M9 for each resource.
+- Risk: do not port v1's three denial conventions. The route-table tests from I1 and I3 must pass for every new route before the v1 counterpart is deleted.
+- Size (E): net 5,000-6,500 lines from `routes.py` [A:46]; 2,500-3,000 from `api.ts`.
+
+**S11. UI platform collapse (only if owner decision D6 says collapse)**
+- Deletes: the indirection in the generic `shell/` package (4,947 lines, 14 test files [A:112]); import maps and CSP hashes; per-module bundles; `describeModule` overrides and `module.conformance.json`; `scripts/conformance_report.py`; safe mode; the module manager; `modules.yaml`; `SYSTEM_MODULES`; `MODULE_API_VERSION`; `compatibleFeed`; `_API_RANGE`; `ui/MODULE_API.md`; `ui/module-api.report.md` (1,808 lines) and its currency test [R:54-64, A:56, A:103].
+- Replaces with: one SPA with route-level code splitting; the add-on server supervisor and proxy (kept); add-on permissions as plain config [R:384].
+- Together with: S10's shell and modules resources; sim/panel rebuilt [A:57].
+- Tests: the conformance suite becomes a shared page helper [R:56].
+- Preconditions: S10 in progress.
+- Risk: low to invariants. The proxy's "offered to you" check stays in one function [A:106].
+- Size: the platform beyond `shell/` is unmeasured.
+
+**S12. One automation model and subscriptions**
+- Deletes: 11 modules (3,050 lines): triggers, declared_triggers, trigger_states, trigger_runs, trigger_windows, count_condition, projected_condition, reminders, deprecation_alerts (plus `deprecation.py` and the `deprecation_lead_days` key if D8 says so) [O:25, R:383]; `api/trigger_checks.py`, `api/reminders.py`, `api/deprecation_alerts.py`; `GET /api/events` with its hint vocabulary, `core/change_hints.py`, and `liveUpdates.ts` (107 lines) [A:77]; the add-on file outbox (150-250 lines), once scoped tokens exist [A:107].
+- Replaces with: section 1.7; `PUT /subscriptions/{streamId}` and an SSE `GET /subscriptions/stream`, both built on sse-starlette; `/automations` and `/notifications` routers.
+- Together with: the UI consumers of the hints (Browse refresh, Inbox badge) in one commit [A:187]; outbox removal together with add-on back-calls on tokens [A:186].
+- Tests: 49 test files [O:25]; the live-update tests.
+- Preconditions: S9 (`proposal.decided`, `propose_action`), S10 (object sets); owner decisions D18 and D19.
+- Risk: I3. Keys are filtered per recipient before emission. The stream keeps a maximum duration so a revoked grant stops within minutes [A:79]. Notification bodies stay free of unreadable data.
+- Size (E): about 1,500 lines net [O:316].
+
+**S13. One checks model**
+- Deletes: 20 modules (4,005 lines) of overlapping vocabularies; the field keys `constraints`, `on_violation`, `standardise`, `outliers`; the type keys `rules`, `dependencies`, `unusual`, `freshness` [O:23, O:133]; `rule_suggestions` and `unusual_flags` (already gone as stores in S9).
+- Replaces with: section 1.8; a checks engine (about 800 lines, E); `check_suggestion` proposals.
+- Together with: the silver and gold stages that call these (`expectations.py`, `standardise.py`, `outliers.py`, `integrity.py` 687, `freshness.py` 240) [O:135].
+- Tests: more than 40 test files.
+- Preconditions: S6, S8, S9.
+- Risk: quarantined rows stay invisible to anyone without read access. The invisible-text and misleading-text refusals stay on the display path [O:135].
+- Size (E): about 2,000 lines net [O:316].
+
+**S14. Functions in place of enriched and predicted fields**
+- Deletes: the `enriched:` and `predicted:` blocks and 8 modules (2,118 lines) [O:24]; scikit-learn and statsmodels as core dependencies (they become extras); the scripts `propose_prediction`, `compile_enrichment` and the `suggest_*` reports, unless the owner keeps those features [S:49]; inferred identity matching from the main line (to an add-on, per D14).
+- Replaces with: the function registry with declared signatures and the kinds `query` and `edit_proposer`. Edits from an `edit_proposer` land as `function_edit` proposals through a system action [O:127]. The agent step `use_tool` becomes `call_function`.
+- Together with: removal of the Inbox Enrichment and Predictions tabs (already merged in S9).
+- Tests: 25 test files.
+- Preconditions: S9; owner decision D14.
+- Risk: I4. The "never a classified input" rule becomes a validator on the function declaration [O:129].
+- Size (E): about 1,800 lines net [O:316].
+
+**S15. Agent on the same service layer** (I2, I8)
+- Deletes:
+  - the agent's direct mediator calls (about 12 methods) [O:154];
+  - the step vocabulary written three times (prompt text, `step_schema.py` 257 lines, validators);
+  - `agent_features.py` (108 lines) with its six switches and the byte-for-byte prompt check [A:121, R:90];
+  - `/query` with its NDJSON streaming and the 499 convention (`_answer_query` 229 lines, `_streamed_query` 67) [A:126];
+  - `claude_agent_sdk_adapter.py` (300 lines) from the product [O:162];
+  - the inference server adapter the owner does not choose [R:34].
+- Replaces with: one `Step` table that generates the prompt fragment, the JSON Schema and the validator; handlers that call `query` and `actions.apply(mode=propose)` in process, which is the same service layer, not an HTTP loopback [R:341]; `POST /agent/sessions` and `/continue` over SSE; `filter_operators` as the public grammar; result size bounded by `pageSize`, so the search-result cap of item 3 disappears [R:100].
+- Together with: QueryPanel (718 lines) [A:126].
+- Tests: the agent tests; the bench on the new vocabulary (M11).
+- Preconditions: S9, S10, S12 (one streaming idiom); owner decision D19 (which switches); a model machine for M11.
+- Risk: the agent acts as the calling user; the step grammar is generated from the caller's visible schema; the re-verification after the answer is preserved [A:126, O:157].
+
+#### Phase 2. Operations
+
+**S16. One CLI**
+- Deletes: about 17 operator scripts as separate entry points; 11 triple-setups; 130 mentions of `python -m scripts.` [S:47-54]; four user-creation scripts plus the ceremony of `--yes-this-is-development` (collapsed to `elysium user create --dev-fixture`); the developer recovery scripts, collapsed into `elysium dev reset` [R:365].
+- Replaces with: section 1.9 and `OperatorContext`, which makes the `show_history.py:64` class of bug impossible [S:45].
+- Tests: the script tests become CLI tests.
+- Preconditions: S8 (the pipeline lives in the package).
+- Risk: `erase` keeps `--write` gating and the sync lock [S:56].
+
+**S17. Install**
+- Deletes: `install/install.sh` (213 lines); `deployment/var`; `deployment/logrotate`; the demo-as-production template; the silent relative fallback in `resolve_runtime_paths()` (`deployment_loader.py:1752-1764`); the third environment variable (64 mentions) [S:152-154]; the install-inventory tests [S:166].
+- Replaces with: `pipx install`, `elysium init [--demo]`, `elysium service install` (a unit file with `EnvironmentFile=` and `ExecStartPre=elysium lint`, plus sync and backup timers), and `elysium doctor`.
+- Tests: the install tests are rewritten.
+- Preconditions: S16, S7.
+- Risk: `secrets_dir` stays at mode 700 [S:154]. Lake encryption (item 1 above) can now be required from the first sync, if the owner agrees [R:110].
+
+**S18. Simulator and test layout**
+- Deletes: `sim/` as part of the product tree's configuration (the shared `pytest.ini:8-25`, the mypy list, the vulture paths, 85 controls) [S:170].
+- Replaces with: `packages/elysium-sim/` (own pyproject, own test job) or a separate repository (D13). Tests are split by cost (`tests/fast`, `tests/api`, `tests/lake`, `tests/live`) and run in parallel in CI after M10 [S:166].
+- Preconditions: S2.
+- Risk: none to invariants. Elysium must never import the simulator.
+
+#### Phase 3. Cleanup
+
+**S19. Controls regenerated**
+- Deletes: `scripts/check_controls.py` as 9,726 lines of Python records [S:24], and the records whose target code is gone (150-250, E) [S:161].
+- Replaces with: TOML under `controls/<area>.toml` and a runner of about 150 lines, kept as a dev tool. Records are anchored by exact string, with an optional marker [S:159].
+- Preconditions: everything else is done.
+- Risk: every invariant in section 2 must still have at least one control. A coverage table from I1-I8 to controls is part of this step.
+
+**S20. Docs and planning file**
+- Rewrites:
+  - BLOCKING.md, which should then hold only what still needs a person (items 1 to 3 above) and the unfinished steps of this item;
+  - AGENTS.md, SECURITY_ARCHITECTURE.md and README.md (stale counts, and the `write:` grant at README.md:315, 426, 452-455 [R:312]);
+  - INSTALL.md (619 lines, down to the CLI flow) [S:152];
+  - `templates/README.md`;
+  - the SDK docstring, and the add-on contract as part of the OpenAPI document.
+- Risk: none.
+
+---
+
+### 5. Decided (owner, 3 November 2026: all recommendations accepted)
+
+One line each: the question and the chosen option. Conditional choices
+say what settles them; the measurements are in section 6.
+
+- **D1** Where the ontology lives: versioned data in the database (`model_versions` in `elysium.db`), with YAML import and export (option A). Blocks S6, S9.
+- **D2** Schema element ids: immutable generated ids (`ely.<kind>.<uuid>`) for types, properties, links, actions, functions and roles; names stay unique and renameable; objects stay `(type, pk)`. Blocks S6.
+- **D3** Storage bindings: inline `backing:` last in each type file. This reverses the 2 November "separate bindings file" decision. Blocks S6.
+- **D4** State files: three (`elysium.db`, `erasure.db`, `scratch.db`), confirmed by measurement M8. Blocks S7.
+- **D5** Naming: "property" (not "field") in the model, API and UI. Blocks S6.
+- **D6** UI platform: "app" (not "module"); collapse to one SPA; keep add-on supervision, the proxy and scoped tokens. Blocks S10, S11.
+- **D7** Roles: additive only, a union with no deny rules; escalation is checked on the union. Blocks S6.
+- **D8** Schema evolution: drop deprecate-first and its dated alerts; keep the "used by" guard and the migration choices `drop_edits|move_edits|cast`. Blocks S9, S12.
+- **D9** Silver: a transient stage between bronze and gold, if measurements M1 to M3 confirm; otherwise stays persisted. Blocks S8.
+- **D10** Findings layers (quarantine, cleaning, conflicts): SQLite tables in `elysium.db`, if M6 shows they are small. Blocks S7.
+- **D11** `ingest_undeclared_columns`: removed; the lake always drops undeclared columns. Blocks S3, S7.
+- **D12** S3-style lake (`mirror.storage`, `durability.py`, `lake_permissions.py`): dropped; local lake only. Blocks S7.
+- **D13** Simulator: an in-tree package with its own pyproject and CI job. Blocks S18.
+- **D14** Enrichment, prediction and inferred identity matching: re-express enrichment and prediction as `edit_proposer` functions only if wanted when S14 is reached, otherwise delete; inferred identity moves to an add-on; deterministic identity and survivorship stay. Blocks S9, S14.
+- **D15** Label enforcement: always on; `label_access_diff.py` deleted. Blocks S3.
+- **D16** Write-back to a source database (`SQLiteWriteAdapter`): deleted, after M5 confirms nothing relies on it. Blocks S8.
+- **D17** Approval: a per-action policy, `approval: none|confirm|second_person`; agent and automation calls are always at least `confirm`. Blocks S9.
+- **D18** Automations: may propose an action (`propose_action` effect); it always stages and runs as a real owner account. Blocks S12.
+- **D19** Email notices: content-free only, off by default. Blocks S12.
+- **D20** Service principals: yes, as real user records with explicit grants; token power is scopes AND grants. Blocks S5.
+- **D21** Security attributes: one for now; `UserRecord` holds a mapping so a second is additive later. Blocks S6.
+- **D22** Path: keep `/api/v2` once v1 is gone. Blocks S5.
+- **D23** Agent switches and server: `filter_operators` on; `search_result_cap` becomes a constant; the other switches are deleted unless M11 shows value; one inference server. Blocks S15.
+
+
+---
+
+### 6. Measurements to take before specific steps
+
+| # | Measure | How | Decides | Before |
+|---|---|---|---|---|
+| M1 | Silver derivation cost: wall time and peak memory for the largest table, compared with the whole sync. A known data point: 200 MB of a 650 MB peak for 200,000 rows held as dicts [S:128]. | Profile one sync on the simulator's largest table. | D9: is a transient silver affordable? | S8 |
+| M2 | Readers of silver other than gold (`suggest_*`, `quarantine_report`, `profiles.py`, `duplicates.py`, `retype_count.py`). | A call trace during a full sync and the test suite, plus grep. | D9: what must read bronze plus transform, or gold, instead. | S8 |
+| M3 | How often gold is rebuilt with no bronze change. | Count over simulator runs. | Whether a fingerprint skip (bronze snapshot plus transform hash) is needed. | S8 |
+| M4 | Whether any production path reaches the pushdown methods on source adapters (`_clause_for`, `find_ids`, reverse links). | A runtime call trace over the API tests and a live run [S:139]. | Delete the query surface from source adapters. | S8 |
+| M5 | Whether `SQLiteWriteAdapter` write-back is relied on (`write_mediator.py:621, 650, 950`). | Call trace. | D16. | S8 |
+| M6 | Row counts and bytes of the quarantine, cleaning, conflicts and changelog tables on a realistic lake. | Simulator lake after a week of drift. | D10. | S7 |
+| M7 | Rebuild cost of `embeddings.db` and `column_profiles.db`. | Time a rebuild. | Whether they go in `scratch.db` or `elysium.db`. | S7 |
+| M8 | Write contention with one file: per-request inserts against the approval path. | Load test with and without `scratch.db`. | D4. | S7 |
+| M9 | The real v1 caller set: dynamic paths and test helpers missed by the literal grep [A:220-221]. | Log every `/api/` path during the e2e and integration runs. | Whether each resource can be deleted in its S10 commit. | each S10 commit |
+| M10 | Test durations. | `pytest --durations`. | The test split and pytest-xdist. | S18 |
+| M11 | Agent quality and latency on the new step vocabulary (needs a model machine). | `scripts/llm_bench.py` after S15. | D23 and the stack choice in item 3. | after S15 |
+| M12 | Controls that die with deleted code, counted per record. | Runner report after each step (S1's "retired" list). | The size of S19; checks that no invariant lost its last control. | every step, S19 |
+| M13 | Callers of `pending_write_store.claim()` [A:144] and of `change_hints.py` outside `live_updates.py` [A:223]. | grep and call trace. | Whether either is deleted outright in S9 and S12. | S9, S12 |
+| M14 | Recount of stale numbers. DONE 3 November 2026: 1,166 `Control(` records; 488 unit and 111 integration test files (599, not 604); 51 simulator test files. | Commands. | Accurate baselines in the commit messages. | S0 |
+
+---
+
+### 7. Estimated size of the change
+
+**Every figure in this section is an estimate (E).** The inputs are measured section sizes from the notes, not trial refactors. Product Python today is about 97,000 lines (core 60,238, api 14,639, adapters 3,355, scripts 19,042) [S:15].
+
+| Area | Deleted | Added | Net | Source |
+|---|---|---|---|---|
+| v1 API (`routes.py` 10,644, F) | 10,644 | 4,000-5,500 | -5,000 to -6,500 | [A:46] |
+| v2 plumbing | (about 600 lines of repetition never ported) | about 150 | — | [A:65] |
+| UI `api.ts` (3,197, F) | 2,500-3,000 | generated code (not counted) | -2,500 to -3,000 | [A:55] |
+| UI decision queues and live updates | about 2,000 (approvals 1,154, identity 516, inbox 165, `liveUpdates.ts` 107: F) | about 800 | about -1,200 | [A:73, A:77] |
+| Module platform (if D6 = collapse) | `shell/` 4,947 (F) plus unmeasured parts | small | about -5,000 or more | [A:112] |
+| Core: loader and validators | 600-900 | — | -600 to -900 | [O:68] |
+| Core: config editing, history, proposals, `role_store` | about 2,300 | about 200 | about -2,000 | [O:93] |
+| Core: proposal stores | 2,390 (F) | about 500-800 | -1,500 to -2,000 | [O:111] |
+| Core: automation | 3,050 (F) | about 1,500 | about -1,500 | [O:316] |
+| Core: checks | 4,005 (F) | about 800-2,000 | about -2,000 | [O:316] |
+| Core: enriched and predicted | 2,118 (F) | about 300 | about -1,800 | [O:316] |
+| LLM adapters and agent switches | about 400-550 | — | -250 to -550 | [O:163] |
+| Migrations and compatibility branches | 700-1,000 | about 50 | about -800 | S3 |
+| Erasure adopt machinery | about 550 | about 150 (ledger) | about -400 | [S:98] |
+| State and lake plumbing | about 300 (`lake_names`, `internal_storage`, `connection_with_schema`, walks) | about 300 (`lake.py`, `db/`) | about 0 to -300 | [S:76, S:114] |
+| Source adapters | 700-900 | — | -700 to -900 | [S:142] |
+| Silver (if transient) | unmeasured | — | unmeasured | [S:129] |
+| Scripts: deleted | about 240 or more (F for three scripts) | — | -240 or more | [S:49] |
+| Scripts: moved out of the wheel | about 14,000 moved, not deleted (`check_controls` 9,726: F) | — | 0 | [S:50] |
+| `install.sh` and logrotate | 213 or more (F) | about 200 (`init`, `service`) | about 0 | [S:154] |
+| Simulator moved out | 33,069 moved (F) | — | 0 | [S:15] |
+| **Product total** | | | **about -20,000 to -27,000 lines net (20-28% of product Python plus UI client code), about 47,000 lines moved** | |
+
+**Files.** About 740 Python files see the rename (S2) [S:23]. About 300-400 product files change in substance. About 60 UI source files change import (63 import `shell-api` [A:56]).
+
+**Tests.** Most of the 599 backend test files are edited at least mechanically, because the overlapping sets are large: 241 use `allowed_actions`, 250 touch `.db` paths, 141 mention `storage`, 135 use `role_name`, 130 touch pending writes, 123 call propose or confirm, 120 mention `object_types`, and 87 hold v1 paths [O:17-28, S:21, A:24]. About 2,500 test lines are rewritten in substance for erasure and the API split alone: `test_api.py` 4,574 split, the erasure tests 1,165 rewritten. Across everything, perhaps 20,000-35,000 test lines change. On the UI side, 76 test files are re-mocked [A:23]. Controls: 150-250 of 1,166 retire, about 50-100 are added for new guards, and all are converted to TOML in S19 [S:161].
+
+**Effort (J).** About 6-8 weeks of focused work for S6-S9 alone, using the notes' figures: S6 3-5 weeks [O:69], S9 3 weeks [O:314]. S10 is the largest piece by line count [A:48]. The whole plan is roughly 4-6 months of sequential steps, with S16-S18 able to run in parallel after S8.
+
+
+---
+
+### Facts and requirements carried from items removed on 3 November 2026
+
+Items 2 (enrichment and statistics), 3 (modules), 4 (the interface), 9
+(the UI kit), 10 and 11 (the simulator) and the consumed-documents tables
+were built, and left this file by its own rule. What they measured and
+decided, and that a step above must keep, is here; the rest is in the code
+and in `sim/docs/REAL_SOURCES.md`.
+
+**Requirements of S9, S10 and S12 from the add-ons (Astrolabe, Heliograph).**
+Where both ask, the signal is strong; one asking is weak and waits. Ranked
+for design: live push through the add-on proxy; the kit's time-series chart
+(OHLC, zoom, several series); event subscription and triggers on arriving
+data; audit for live data (per subscription, not per row); jobs (a record
+with owner, state, progress, cancel and result, outliving the tab); source
+terms and feed health as data; large results; secret references and add-on
+data under backup. What an add-on's first slice found Elysium lacks: a way
+to put objects in (idempotency key, retract); delivery of a confirmed
+action back to the add-on; `user.user_id` and the approver as a mutation
+value so `decided_by` can be stored; a single-step action for low-risk
+single-user actions; a module declaring a gated resource and asking
+whether a person may open it, the answer audited. Open owner questions:
+whether paper positions and equity are Elysium objects or only a published
+SQLite read as a silo (the decision so far: accounts, positions, signals
+and decisions are objects, the equity history is a time series that
+references the account). Already decided: a signal is an object a source
+creates and "took it" and "skipped" are actions on it; Elysium governs
+ACCESS to market data and does not hold the bars. Time-series reads that
+exist: `duration` (ISO 8601, aligned as TimescaleDB aligns its buckets from
+midnight on 3 January 2000, in the zone asked for, `core/periods.py`),
+`time_zone`, `first` and `last` per bucket, the assistant's `period`, and
+`measures`. Still to build: a declared time property per type, a tail
+cursor, and `timeseries_ref` (points read through
+`/objects/{t}/{pk}/timeseries/{field}/points`, authorised against the owning
+object and proxied to the add-on; Elysium stores no series; not a type-wide
+as-of read, because erasure drops older snapshots and gold keeps 30
+publications). WebSocket pass-through and timer callbacks wait for an
+add-on that calls them. The add-on contract also needs: `module.json`
+`ontology:` fragments (schema only, never data, validated at load,
+optional type-name prefix); add-ons calling `/api/v2` with scoped tokens,
+ingestion as an action applied with an idempotency key; confirmed-action
+delivery (an action may name a loopback add-on effect, invoked after
+commit, best-effort, keyed by write id).
+
+**What the add-on proxy must keep when the module platform collapses
+(S11).** The server is started, watched, restarted with back-off (1 s
+doubling to 60 s) and stopped (SIGTERM then SIGKILL at `stopSeconds`) by one
+supervising worker chosen by flock, with another taking over if it dies;
+standard input is a pipe whose closing tells the server Elysium has gone.
+`/api/addons/{id}/...` forwards only for someone the add-on is offered to,
+adds `X-Elysium-Identity` (a JWT, a secret per add-on per start, good for a
+minute), never forwards cookies, `Authorization` or the CSRF token, never
+returns `Set-Cookie`, and serves what comes back sandboxed. Event streams
+pass (at most 8 open per worker, each ended after 10 minutes). Declared
+permissions are granted as `module:<id>:<permission>` and shown by the role
+editor; a grant from a module no longer listed is kept, grants nothing, and
+is shown as such. Untrusted third-party code is a different question: module
+federation is the wrong answer ("a federated module runs in your page, in
+your origin"); the isolation layer is a sandboxed iframe (`allow-scripts`
+WITHOUT `allow-same-origin`) speaking the same API as JSON-RPC 2.0 over
+`postMessage`. A third-party data source is a silo and an ontology fragment
+is data, not code. Measured when the shared-library import map existed:
+sharing Blueprint's core and the router took the first load from 131 KB to
+229 KB compressed, and sharing `@blueprintjs/icons` put 1.4 MB on every
+first load. A conformance suite checks a page, and "a check on a page is a
+check on everything the page mounts": a hand-over of an expired session
+that a nested panel makes by itself hides a page that ignores it.
+
+**Interface decisions to keep (S10, S11).** The diagnosis that the
+interface is BOTH unfinished (a craft problem) and disjointed (a structure
+problem), and that treating them as one fails. The refusals: no
+app-building platform, no analysis notebooks, no model management,
+marketplace, time-series infrastructure or geospatial; the precedent has
+thousands of engineers on those and Elysium's edge is the agent, the
+security model and governed writes. "Not permitted" and a real null look
+different on every surface; "Restricted" is deliberately not a third state,
+because MAC withholds whole objects and a link to a hidden object reads as
+null (marking it would disclose that it exists). A change to access
+labels, or a configuration version put back, that lets anyone read, know of
+or run more waits for a second holder of `manage:roles`; anything else
+applies at once. Retype refusals: not retypable from the screen are a link
+field, a computed field, a type's identifier and the field its row security
+reads, judged on the loaded schema and per column (a column that is any
+sync target's id or security column, or that a link joins on, is refused
+whatever it is called).
+
+**Facts for S7, S8 and S9 from the retype and rebuild work.**
+`gold_history` keeps each row as JSON in one text column, so retyping a
+field breaks nothing there and old entries keep their old-typed values; the
+gold rebuild a type change causes drops only `gold.<Type>`, publication
+tags restart, the first publication afterwards records no diff, and the
+changelog stays. While silver is refused for a changed declared type the
+sync SKIPS gold of that type, so gold keeps its old column type and tags
+while reads already use the new declared type. The "values that will not
+convert" count is taken in bronze with the rebuild's own conversion and is
+never a guessed zero (a missing table or column, an unreadable mirror and a
+table over 2,000,000 rows are each said to be not counted). Approving a
+proposal while any type it touches is rebuilding is held with a 409 and the
+reservation released; a state that cannot be told holds the write. These
+rules go with silver if D9 makes it transient; the held-while-rebuilding
+rule and the "never a guessed zero" rule stay in some form either way. The
+deprecation alert design (daily timer, content-free: a count of references,
+never names, because a name in a notice reaches people who may not be
+allowed to discover it) is dropped by D8, but the "never a name in a
+notice" rule is S12's. A "used by" report lists configuration references
+only; saved views, frozen sets, recipes, proposals and notes were never
+listed and should be, in S9.
+
+**Surviving rules from the enrichment, prediction and statistics work
+(S14).** Never a classified input; served everywhere and marked inferred;
+approved before it applies; one model per security compartment (a guess
+must not be shaped by records its reader cannot see, and the rule stays
+absolute unless a compartment proves too small to learn from); an answer
+resting on an inference says so by code. The unusual-record score is the
+modified z-score above 3.5, chosen over an Isolation Forest after measuring
+both (`core/unusual.py`). None of enrichment, prediction or forecasts was
+measured on a real deployment's records.
+
+**Decided NOs, so they are not re-argued.** No separate vector server
+(measured in `core/embeddings.py`; revisit near a million declared rows). No
+MCP server letting outside models call Elysium's search: a question does not
+leave the VM; if ever reopened, every call as the asking person under the
+same checks as the routes (MCP's own record, tool poisoning, CVE-2025-6514
+and the NSA's May 2026 note that its spread "outpaced the development of
+its security model", is the reason to start from that rule). No REST
+catalog for the lake until a SECOND process writes to it. The lake's
+manifest is read-only input and must never become configuration. DuckDB was
+considered for the changelog diff and rejected: profiling found 200,023
+SQLite connections behind a 35-second count, not a slow query engine
+(`core/ontology/write_log.py`).
+
+**The ELT dependency order, kept because it was derived rather than
+guessed.** The changelog diff needs a query engine (it is an anti-join);
+the changelog needs durable storage because it becomes a system of record (a
+source holds "now", and has no record that a customer's region was us-west
+last March), which is the REVERSIBILITY LINE where the mirror stops being a
+cache; a materialised MAC column needs somewhere to put it, which is the
+transform stage. Folding `sqlite_adapter.py` into the SQLAlchemy adapter
+(LIB-3) adds no dependency; 75 files reference the SQLite adapter, mostly
+tests using it as the cheap real database, and the write path is where a
+mistake reaches a customer's database, so the existing tests are the parity
+check. Quoting is closed (`tests/unit/test_identifier_quoting.py`; SQLite's
+double-quoted-string misfeature is off on every connection).
+
+**Details of the earlier phased plan that the steps above do not repeat.**
+Submission criteria gain `all/any/none` nesting and a `current_user` check
+with the operator set fixed (S6). Per-object ETag is the gold publication
+plus the latest write-log entry; `If-Match` or `expectedVersions` gives 412
+and `require_versions` gives 428; approval re-validates (S9). A later
+single-object undo of the most recent edit comes from the queryable action
+log (S9). An automation's `propose_action` carries an idempotency key on
+the event id and is at-least-once; recipients are users, roles or a
+user-reference field, evaluated per recipient (S12). Schema changes encode
+precedent's breaking changes (datasource change, key change, type change,
+and rename, delete or retype of a field that has write-log edits) and
+require a migration choice (`drop_edits | move_edits | cast`) before apply;
+an edit and source merge policy per type, `edits: win` (default) or
+`edits: most_recent` with a timestamp field (S9). `artifact_store.py` folds
+into a notes table and the help assistant into the agent loop (S15).
+Subscriptions are `PUT /api/v2/subscriptions/{streamId}` with
+CloudEvents-shaped events carrying keys and change state, never values, and
+a `refresh` event (S12).
+
+**Blocked on:** nothing from the owner; every decision is made. Each step
+needs its listed measurements (section 6) and its preconditions, and the
+owner's agreement to a step's shape before it is built (CLAUDE.md: agree the
+shape for anything larger than one commit). Step S0 (the rules and this
+file) is done.
+
+**Further findings from the same research (owner, 2 November 2026: add to the
+roadmap).**
+
+1. Fourteen API conventions are shared by three or more precedents and are adopted wholesale in S5, S9 and S10: field selection; a structured filter with and/or/not; sort; paging that returns a continuation (cursor); expanding along links; named operations separate from create/read/update/delete; a validate-only dry run; optimistic concurrency (If-Match, 412 on mismatch, 428 when required and missing); batch requests; 201 with Location on create, 204 on delete, 202 with Location for work that completes later; one structured error body (RFC 9457 problem details); a change feed; a typed event envelope (id, type, time, source); discoverable schema. The last shared convention, permissions enforced on the caller inside the API, is already Elysium's strongest point.
+2. The deliberate refusals mostly survive: single machine, SSE only, writes only through actions, no general expression language, single tenant, and row security evaluated in Python rather than pushed into storage are all supported by precedent. No historian also survives: precedent's own time-series property is a reference to data held elsewhere, so the fit is a `timeseries_ref` field whose points an add-on serves, authorised against the owning object, with Elysium storing no series.
+3. Four refusals were put to the owner and are decided (D17 to D21): approval is a per-action policy (precedent applies a person's own edits directly and stages only agent and automation edits); an automation may propose an action that a person still approves; service principals are real user records with explicit grants, which does not break "nothing synthesised"; email is content-free ("you have 3 items") and off by default.
+4. Schema change: precedent names seven breaking changes (datasource change, key change, data type change, and rename, delete or retype of a field or struct field that has user edits) and refuses to save until a migration is chosen for each (drop edits, move edits, cast, backfill or revert), with a cap of 500 migrations at once and none on the primary key. An active item cannot be removed or renamed until it has been deprecated, with a reason and a deadline; D8 keeps the migration choices and the "used by" guard and drops the deprecation clock. The retype work (R1 to R4) already follows this pattern; S9 extends it to every schema change.
+5. The agent should be a client of the public service layer. Today it has read paths of its own beside the UI's; S15 moves it onto `query` and `actions` in process, which removes the duplicate paths and gives it the same permission checks for free.
 6. Not worth building yet: interfaces (precedent's own support is partial), an app builder (Browse already does the object explorer's job), and a pipeline builder (the fixed bronze/silver/gold pipeline is enough).
-7. Storage, judgement rather than precedent and therefore "measure first": about 32 separate SQLite files sit beside the lake; merging them into one application database, and making silver a transient stage rather than a stored layer (Phase 6, item 4).
-8. Built but switched off and waiting on a measurement: six agent-loop switches, label enforcement, identity inference, enrichment, prediction and semantic search. Inferred identity matching moves to an add-on and the unmeasured switches leave the main line (Phase 6).
-9. README.md is stale: it gives 459 unit files, 82 integration files and 490 controls (measured 485, 107 and 1,097), names a `tools/` directory that is `functions/`, and documents a `write:<Type>.<field>` grant that the code rejects. Fixing it is buildable now.
-10. The largest single lever is Phase 2: one proposal pipeline removes seven stores and their duplicated four-eyes code, and both the automation work (Phase 3) and the sub-apps' add-on requests (Phase 5) depend on it.
+7. Storage, judgement rather than precedent and therefore "measure first": about 32 separate SQLite files sit beside the lake; D4 merges them into three, and D9 makes silver a transient stage rather than a stored layer, subject to M1 to M3.
+8. Built but switched off and waiting on a measurement: six agent-loop switches, label enforcement, identity inference, enrichment, prediction and semantic search. D15 turns label enforcement on for good, D14 moves inferred identity to an add-on and decides enrichment and prediction, and D23 removes the unmeasured switches.
+9. README.md was stale: it gave 459 unit files, 82 integration files and 490 controls, named a `tools/` directory that is `functions/`, and documented a `write:<Type>.<field>` grant that the code rejects. The counts and the directory were fixed in 5e79226e; measured on 3 November 2026 the counts are 488 unit files, 111 integration files and 1,166 controls. The `write:` grant text at README.md lines 315, 426 and 452 to 455 is rewritten in S20.
+10. The largest single lever is S9: one proposal pipeline removes seven stores and their duplicated four-eyes code, and both the automation work (S12) and the add-ons' requests depend on it.
 
 **Audit of the codebase for simplifications that keep every function (2 November 2026; owner: fix the defects now, add the rest to the roadmap).** Evidence with file and line is in the audit notes kept outside the repository; the counts here were measured.
 
-Defects, fixed first:
+Defects, all six BUILT (3 November 2026):
 
-1. An action-level `submission_criteria` loads cleanly and is never enforced (`core/ontology/submission_criteria.py` says so in its own docstring); only the per-sub-write criteria are evaluated. Refuse it at load.
-2. 21 GET routes in `api/routes.py` carry no `Cache-Control: no-store`, including object search, object detail, history, notes, users and config; only the `/me/*` routes and a few special cases set it. Make no-store the default for every API response.
-3. `scripts/check_controls.py` counts any non-zero pytest exit as "fires", so a control that cites a test that does not exist passes; at least one does. Require pytest's failure exit code and check that every cited test exists.
-4. `install/install.sh` copies a `tools/` directory that does not exist (under `set -e`) and never copies `functions/`, so a fresh install stops; it also installs without the lockfiles.
-5. The reserved lake names are listed in three places that disagree; `gold_conflicts` and `_elysium` are not in `RESERVED_SILO_NAMES`.
-6. Unknown or misspelt keys are silently ignored in nearly every configuration file; only about six places check keys, each by hand. One validated model per file, refusing unknown keys with the file, the path and the nearest valid key.
+1. BUILT, 395bb6bd. An action-level `submission_criteria` loaded cleanly and was never enforced; it is refused at load.
+2. BUILT, 1593944a. `Cache-Control: no-store` is the default for every `/api` response. (S5 still replaces the per-route `_no_store` decorators with the default in `Call`.)
+3. BUILT, a25f4e00. `scripts/check_controls.py` counted any non-zero pytest exit as "fires"; only a failed test counts now. (S1 still adds the existence check and content anchoring.)
+4. BUILT, b146cc91 and 5e79226e. `install/install.sh` copies `functions/` and installs from the lockfiles. (S17 deletes the script.)
+5. BUILT, 8e9ce837. One list of the names the pipeline reserves; a silo named for any is refused.
+6. BUILT, c102d6be. Unknown or misspelt keys are refused in the configuration files, naming the nearest valid key. (S6 carries this to the typed model with file and line.)
 
-Naming, decided (owner, 2 November 2026: unify and break now, no transition period): one comparison-operator vocabulary, the one the `/api/v2` filter grammar uses (`eq`, `in`, `lt`, `lte`, `gt`, `gte`, `isNull`, `contains`, `startsWith`); one model setting (`llm.model` versus `step_model` and `synthesis_model`); one place for storage bindings (the separate bindings file); one name for callable functions (`functions`, replacing `tools:` and the `tool:` grant); one name for what plugs into the shell (module, add-on, sub-app and app today). Old spellings stop loading, with a message naming the new one.
+Naming, decided (owner, 2 November 2026: unify and break now, no transition period): one comparison-operator vocabulary, the one the `/api/v2` filter grammar uses (`eq`, `in`, `lt`, `lte`, `gt`, `gte`, `isNull`, `contains`, `startsWith`); one model setting (`llm.model` versus `step_model` and `synthesis_model`); storage bindings inline as `backing:` in each type (D3 reverses the earlier choice of a separate bindings file); one name for callable functions (`functions`, replacing `tools:` and the `tool:` grant); one name for what plugs into the shell: "app" (D6). A misspelt or removed key is refused by the strict-key check, whose "did you mean" names the new spelling; there is no special old-spelling message.
 
-Simplifications, in a suggested order:
+Simplifications, in a suggested order, each now landing in the step named:
 
-1. API: authentication as the router default with a small public router (the login dependency is repeated 138 times); one request-context dependency in place of 153 `_generation()` calls and 22 store-builder helpers; domain errors mapped once (50 hand-written try/except blocks); a request-id middleware so every response carries an id; then split `api/routes.py` (10,644 lines) by resource with no URL change.
-2. UI: one data-loading hook in place of four patterns and 93 copies of the session-expiry catch; `getJson` and `sendJson` helpers in `shell-api/src/api.ts`, which also fix 21 calls that put names into URLs unencoded; one shared change dialog in place of eight schema dialogs (2,860 lines); the shared `EmptyState` used everywhere; sub-app styles out of the shared kit; internal file and layer names kept out of user-facing text.
-3. Operator surface: one `elysium` command with subcommands in place of 45 scripts, with one dry-run and exit-code convention; the four user-creation scripts become one command; install reduced from 17 manual steps (an environment file, shipped sync and backup timers, a configuration lint before start, a `doctor` command); production no longer installed from the demo configuration; no silent fallback to a relative runtime tree.
-4. Mirror: one layer registry and one table iterator in place of 14 copies of the namespace walk and hand-built layer names; `sync_table` (577 lines, 12 parameters) takes one target; the pipeline moves from `scripts/run_sync.py` into `core/` and its post-sync steps become data; the panel's "sync now" stops running the sync inside the web server, as the documented separate-process design says; one read-only view of the storage layout; table property names in one registry.
-5. Core: erasure fans out through a registry of stores, with a test that fails if a store that holds personal data is left out; configuration errors collected all at once with file and line, shared by startup and the lint script, and a JSON Schema generated for editors; defaults for the three required agent keys so a minimal `config.yaml` is about ten lines, and the two undocumented options documented; the read mediator (2,665 lines) split behind one facade that stays the single access-check site, after Phases 1 and 2.
-6. Tooling and docs: one root `./check.sh`; unit and integration tests as parallel jobs; the simulator tests and `shell/` covered by CI; controls that find their anchor by content, since 198 of them sit in `api/routes.py`, which is about to be split; built and unblocked items moved out of this file by its own rule; rules that repeat across AGENTS.md, RULES.md, PRINCIPLES.md and CLAUDE.md said once; stale statements corrected.
+1. API (S5, S10): authentication as the router default with a small public router (the login dependency is repeated 138 times); one request-context dependency in place of 153 `_generation()` calls and 22 store-builder helpers; domain errors mapped once (50 hand-written try/except blocks); a request-id middleware so every response carries an id; then replace `api/routes.py` (10,644 lines) resource by resource.
+2. UI (S10): one data-loading hook in place of four patterns and 93 copies of the session-expiry catch; `getJson` and `sendJson` helpers in `shell-api/src/api.ts`, which also fix 21 calls that put names into URLs unencoded; one shared change dialog in place of eight schema dialogs (2,860 lines); the shared `EmptyState` used everywhere; sub-app styles out of the shared kit; internal file and layer names kept out of user-facing text.
+3. Operator surface (S16, S17): one `elysium` command with subcommands in place of 45 scripts, with one dry-run and exit-code convention; the four user-creation scripts become one command; install reduced from 17 manual steps (an environment file, shipped sync and backup timers, a configuration lint before start, a `doctor` command); production no longer installed from the demo configuration; no silent fallback to a relative runtime tree.
+4. Mirror (S7, S8): one layer registry and one table iterator in place of 14 copies of the namespace walk and hand-built layer names; `sync_table` (577 lines, 12 parameters) takes one target; the pipeline moves from `scripts/run_sync.py` into the package and its post-sync steps become data; the panel's "sync now" stops running the sync inside the web server, as the documented separate-process design says; one read-only view of the storage layout; table property names in one registry.
+5. Core (S6, S7, S9): erasure fans out through a registry of stores, with a test that fails if a store that holds personal data is left out; configuration errors collected all at once with file and line, shared by startup and the lint script, and a JSON Schema generated for editors; defaults for the three required agent keys so a minimal `config.yaml` is about ten lines, and the two undocumented options documented; the read mediator (2,665 lines) split behind one facade that stays the single access-check site.
+6. Tooling and docs (S1, S18, S19, S20): one root `./check.sh`; unit and integration tests as parallel jobs; the simulator tests and `shell/` covered by CI; controls that find their anchor by content, since 198 of them sit in `api/routes.py`; rules that repeat across AGENTS.md, RULES.md, PRINCIPLES.md and CLAUDE.md said once; stale statements corrected.
 
 **Libraries and standards (research, 3 November 2026; owner: add them all).** Library facts rest on registry release dates and licences; the notes behind this paragraph are kept outside the repository. Most hand-written code here is tied to Elysium's own model or its single-machine rule and stays.
 
-Libraries. Adopt: PyJWT in place of the hand-built HS256 token in `core/addons.py` (`sign_identity()`), done first. Consider: one place in the request function for session expiry (about 149 hand-written catches in the UI), then a pilot of TanStack Query on one screen; a typed client generated by openapi-typescript and openapi-fetch from a `/api/v2` spec exported at build time and committed rather than served; sse-starlette for disconnect and ping handling in live updates; tenacity for the REST adapter's retries only (the LLM retry adapter's deadline semantics are deliberate); one schema-version rule for the SQLite stores, using SQLite's own `PRAGMA user_version` (71 `CREATE TABLE` statements in 35 files have no version today, which has already caused one shipped bug; Alembic is too heavy for this); pytest-xdist once slow tests have been measured with `--durations`; pip-audit and npm audit or OSV-Scanner as a scheduled CI job; the browser tests in CI; a small Makefile over `lint.sh`, pytest and the UI scripts. Check: the splink 5 upgrade (Elysium pins below 5). Keep ours: the CLI parsing, login lockout and rate limiting (SQLite-backed so workers share state; the library alternative needs Redis), timers, file locking, add-on supervision, in-product notifications, the closed filter vocabulary, the audit log, data quality (no library fits), no OpenTelemetry exporter (no outbound network), the ontology canvas.
+Libraries. Adopt: PyJWT in place of the hand-built HS256 token in `core/addons.py` (`sign_identity()`), BUILT first (0a693d06). Consider: one place in the request function for session expiry (about 149 hand-written catches in the UI), then a pilot of TanStack Query on one screen; a typed client generated by openapi-typescript and openapi-fetch from a `/api/v2` spec exported at build time and committed rather than served; sse-starlette for disconnect and ping handling in live updates; tenacity for the REST adapter's retries only (the LLM retry adapter's deadline semantics are deliberate); one schema-version rule for the SQLite stores: stamp `PRAGMA user_version` at creation and refuse to start on a mismatch, with no upgrade path (71 `CREATE TABLE` statements in 35 files have no version today, which has already caused one shipped bug; Alembic is too heavy and nothing is installed that would need migrating); pytest-xdist once slow tests have been measured with `--durations`; pip-audit and npm audit or OSV-Scanner as a scheduled CI job; the browser tests in CI; a small Makefile over `lint.sh`, pytest and the UI scripts. Check: the splink 5 upgrade (Elysium pins below 5). Keep ours: the CLI parsing, login lockout and rate limiting (SQLite-backed so workers share state; the library alternative needs Redis), timers, file locking, add-on supervision, in-product notifications, the closed filter vocabulary, the audit log, data quality (no library fits), no OpenTelemetry exporter (no outbound network), the ontology canvas.
 
 Standards. Already used: OpenLineage events (`core/mirror/openlineage.py`; check the pinned schema version) and ODCS v3 data contracts (`core/mirror/data_contracts.py`; current is v3.2.0). Adopt: OpenAPI 3.1 for `/api/v2`; RFC 9110 conditional requests (ETag, If-Match, 412, 428); RFC 9457 problem details, including its `type`, `title` and `status` members; the Idempotency-Key header, labelled an IETF draft until it is an RFC; CloudEvents 1.0 envelopes on the SSE stream; OpenID Connect login with the authorization-code flow and PKCE (OAuth 2.1 is still a draft, so it is not claimed); W3C Trace Context for request ids (accept an incoming `traceparent`, always issue a fresh span id so a caller cannot forge log correlation); JSON Schema 2020-12 as an export of object types and action parameters. Align, as exports only: LinkML as a bridge to OWL, SHACL and Schema.org; an OCSF export of the audit log, with JSONL kept as the source of truth; the W3C Data Privacy Vocabulary for classification labels; data-quality results in the OpenLineage and ODCS quality formats; optional `Link` headers for paging. Not adopted: OData, JSON:API and GraphQL as wire formats (a second parallel surface works against one mechanism per concern); JSON Patch and Merge Patch (writes go through actions); SCIM for now; Cedar, OPA and XACML as policy engines (a second evaluator beside `check_access()` would drift from it, and the compartment write-down check and uniform denial need Elysium's own logic), though Cedar's principal, action and resource vocabulary is borrowed in the docs and the audit log; CADF and ISO/IEC 27701 as engineering formats.

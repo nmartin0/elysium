@@ -41,8 +41,7 @@ class TestTheSectionsExist:
         "# Blocking",
         "# Blocked on a decision",
         "# Blocked on a machine or a person running something",
-        "# Blocked because it is product direction",
-        "# Not blocked, and not here",
+        "# Decided, and being built in order",
     ])
     def test_the_top_level_heading_is_present(self, heading):
         """Each is a category. Losing one silently reclassifies
@@ -79,24 +78,22 @@ class TestTheNumberingIsSound:
             assert title.strip(), number
 
 
-class TestTheTableIsAboveTheItems:
-    def test_consumed_documents_are_listed(self):
-        rows = [line for line in LINES
-                if line.startswith("| `") and line.endswith("|")]
+class TestNoLongerATableOfConsumedDocuments:
+    """THE CONSUMED-DOCUMENTS TABLE WAS REMOVED on 3 November 2026 (the
+    owner accepted the refactor plan, whose step S0 deletes it: the
+    record of what was consumed is `git log -- BLOCKING.md`). The old
+    check here pinned the table's position above the first section,
+    which was the failure that beheaded item 1 in patch 493. With no
+    table there is no insertion point to get wrong, so what remains is
+    that nothing has crept back in above the first section."""
 
-        assert len(rows) >= 15, f"only {len(rows)} consumed rows"
-
-    def test_the_table_ends_before_the_first_section(self):
-        """THE EXACT FAILURE: a row inserted after the table's last
-        line landed on the heading that followed it."""
-        last_row = max(n for n, line in enumerate(LINES)
-                       if line.startswith("| `"))
+    def test_nothing_but_prose_sits_above_the_first_section(self):
         first_section = min(n for n, line in enumerate(LINES)
                             if line.strip() == "# Blocked on a decision")
+        table_rows = [line for line in LINES[:first_section]
+                      if line.startswith("| ")]
 
-        assert last_row < first_section
-        between = [line.strip() for line in LINES[last_row + 1:first_section]]
-        assert all(text in ("", "---") for text in between), between
+        assert table_rows == [], table_rows
 
 
 class TestEveryItemSaysWhatItWaitsOn:

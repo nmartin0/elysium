@@ -10,9 +10,9 @@ SAME family of architecture as virtual knowledge graphs / ontology-
 based data access (e.g. the Ontop system): a schema layer resolved
 LIVE against genuinely separate, un-copied data sources at query time,
 not a materialized/indexed copy of them. Worth naming explicitly
-because it's a meaningfully different mechanism from Palantir Foundry's
+because it's a meaningfully different mechanism from the precedent's
 own Ontology, despite the shared "ontology" vocabulary for the schema
-concepts themselves (object types, link types) -- Foundry's Ontology
+concepts themselves (object types, link types) -- the precedent's Ontology
 is a heavily materialized, pre-indexed layer (a separate ingestion
 pipeline copies source data in before anything is queried); this
 system deliberately never copies anything, resolving every link live
@@ -28,7 +28,7 @@ understand SQL table names, and vice versa.
 
 MDO (MULTI-DATASOURCE OBJECT TYPES): one object type's DIFFERENT
 properties can each be backed by a genuinely different silo, matching
-Palantir's own column-wise MDO concept -- see _resolve_shared_storage()
+the precedent's own column-wise MDO concept -- see _resolve_shared_storage()
 below for the full mechanism. A field opts in via its own "storage" key
 naming an entry in the type's "additional_storage" block; a field with
 no "storage" key uses the type's own primary "storage" block, exactly
@@ -44,7 +44,7 @@ search_object() filter or get_field() call may only touch fields from
 ONE storage at a time -- see _resolve_shared_storage()'s own docstring
 for why (federated cross-silo intersection is a real, unsolved
 problem, intentionally left for later, separately-justified work).
-This mirrors Palantir's own MDO scope choice -- they support
+This mirrors the precedent's own MDO scope choice -- they support
 column-wise MDO but explicitly not the row-wise case, handled through
 an entirely different mechanism instead of generalizing one to cover
 both.
@@ -52,7 +52,7 @@ both.
 Cross-database WRITE atomicity for an "update" is now solved, when
 write_log is configured -- see core/ontology/write_log.py's
 own module docstring for the full mechanism (verified directly against
-Palantir Foundry's own actual approach, not assumed) and its still-real,
+the precedent's own actual approach, not assumed) and its still-real,
 explicitly stated remaining scope boundaries (multi-storage "create,"
 crash recovery, search_object() integration). READS still enforce the
 single-storage boundary above unconditionally; only WRITES gained a
@@ -549,7 +549,7 @@ class DataMediator:
         # storage search (federated intersection across adapters) is a
         # real, unsolved problem, deliberately left for later,
         # separately-justified work rather than silently attempted
-        # here. This mirrors Palantir's own MDO scope choice -- they
+        # here. This mirrors the precedent's own MDO scope choice -- they
         # support column-wise MDO but explicitly not the row-wise
         # case, handling that through an entirely different mechanism
         # instead of trying to generalize one mechanism to cover both.
@@ -1314,7 +1314,7 @@ class DataMediator:
         # not a divergence, for get_field()'s own existing use.
         if self.write_log is not None:
             # A deleted object is not visible in the ontology, matching
-            # Foundry's own rule: when the latest edit is a delete the
+            # the precedent's own rule: when the latest edit is a delete the
             # object is hidden "regardless of whether any corresponding
             # row is in one of the data sources". Checked BEFORE any
             # masking or adapter read, so a deleted object never leaks
@@ -2112,7 +2112,7 @@ class DataMediator:
         """Follows a link from every object matching criteria, returning
         the ids on the far side that the caller can also see.
 
-        Foundry's own Search Around: "takes an incoming object set and
+        The precedent's own Search Around: "takes an incoming object set and
         runs a secondary filter on another object set based on a
         certain property of the incoming set." Asking "every
         transaction belonging to a us-west customer" is one call here
@@ -2442,7 +2442,7 @@ class DataMediator:
         other way -- the route filtering -- would put access control in
         two places, which is what `edit_history` refused to do.
 
-        THE SAME RULE edit_history SETTLED, from Foundry: "users who
+        THE SAME RULE edit_history SETTLED, from the precedent: "users who
         have access to the current state of an object can access the
         entire history of the object". Authorization is the SAME check
         as reading the object. No separate grant, and no way to learn
@@ -2492,7 +2492,7 @@ class DataMediator:
         """Every applied write to one object, newest first, if the
         caller may read that object.
 
-        Foundry's own rule, quoted because it settles the security
+        The precedent's own rule, quoted because it settles the security
         question cleanly: "Users who have access to the current state
         of an object (object with the same primary key) can access the
         entire history of the object." So authorization is the SAME
@@ -2551,7 +2551,7 @@ class DataMediator:
         but MAC is applied per object in Python afterwards (following
         security.via_field chains that can cross silos), so a
         engine-side COUNT would count rows the caller cannot see. That
-        is the same constraint Foundry's own Object Set Service works
+        is the same constraint the precedent's own Object Set Service works
         under, and the reason it is a service rather than exposed SQL.
 
         AND BECAUSE IT IS BUILT ON search_object(), IT INHERITS THE
@@ -2613,13 +2613,13 @@ class DataMediator:
         either on that zone's clock (core/periods.py says how).
 
         `aggregate` is one of count/sum/avg/min/max -- the same set
-        Foundry's own aggregate API exposes. `field_name` is required
+        the precedent's own aggregate API exposes. `field_name` is required
         for every aggregate except count, which needs no field.
         `group_by` of None aggregates the whole matching set into a
         single result under the key None.
 
         Returns {group_value: metric}. Null group values are EXCLUDED,
-        matching Foundry's documented behaviour: "null properties are
+        matching the precedent's documented behaviour: "null properties are
         never included in groupBy or aggregation computations."
 
         Reads in BULK. The naive version -- get_object() per matching
@@ -2665,11 +2665,18 @@ class DataMediator:
         disagree about which rows they saw, and the cost of a second
         measure is its arithmetic, not another scan.
 
+        WHY THE ANSWER IS A LIST OF ROWS, {group, metrics}, and not an
+        object keyed by group: JavaScript reorders integer-like keys
+        (`{"b":1,"10":2,"2":3}` reads back 2, 10, b) and a year or a status
+        code is one, and group values keep their types in a list. Metrics
+        are an object keyed by measure name, because a name is an
+        identifier and is never reordered.
+
         A group is present when ANY measure has a value in it. A measure
         with none there is 0 for a count or a sum, as an empty period is,
         and None for the others -- there is no average of nothing.
 
-        Foundry's aggregate takes a list of {type, field, name} and
+        The precedent's aggregate takes a list of {type, field, name} and
         answers each group with its metrics by name; names are the
         caller's, unique, and plain identifiers so that an object keyed
         by them is never reordered by a reader (a key that looks like an
@@ -2820,7 +2827,7 @@ class DataMediator:
         for object_id, row in rows.items():
             group_value = row.get(group_by) if group_by is not None else None
             if group_by is not None and group_value is None:
-                # Excluded, per Foundry's own documented rule.
+                # Excluded, per the precedent's own documented rule.
                 continue
             value = row.get(field_name) if field_name is not None else object_id
             if field_name is not None and value is None:

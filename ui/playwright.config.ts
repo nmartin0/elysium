@@ -11,6 +11,14 @@ import { defineConfig } from '@playwright/test'
 // real server, not a fully self-orchestrating pipeline. See e2e/
 // shell.spec.ts's own header comment for the exact setup this
 // expects.
+//
+// TWO SETUP TRAPS. The layout specs log in as `debug`
+// (scripts/create_debug_user.py): a run made before that user exists LOCKS
+// IT OUT for fifteen minutes, because failed logins count for usernames
+// that do not exist yet. And a pinned @playwright/test may want a Chromium
+// revision the machine cannot download; PLAYWRIGHT_CHROMIUM_PATH below
+// points at one already on disk (the 16 layout and shell specs passed that
+// way on 14 October).
 export default defineConfig({
   testDir: './e2e',
   // ONE AT A TIME when a spec may write the configuration
