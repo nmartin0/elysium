@@ -60,7 +60,7 @@ core/            Generic engine, built around the **ontology** --
 adapters/        Concrete backends -- one file per real technology
                  (SQLite, SQLAlchemy, Ollama, vLLM, the Claude Agent SDK). core/ only ever
                  talks to these through a generic contract.
-tools/           Stateless computational capabilities the LLM may
+functions/       Stateless computational capabilities the LLM may
                  invoke (e.g. linear regression) -- zero data access.
 api/             The HTTP layer -- session-based auth, user
                  management, the query endpoint, and the two-phase
@@ -604,9 +604,9 @@ left behind.
 
 | suite | how to run | size |
 | --- | --- | --- |
-| unit | `pytest tests/unit` | 459 files |
-| integration | `pytest tests/integration` | 82 files |
-| controls | declared in CI | 490 |
+| unit | `pytest tests/unit` | 488 files |
+| integration | `pytest tests/integration` | 109 files |
+| controls | declared in CI | 1141 |
 | front end | `cd ui && npm run test` | vitest |
 | site | `bash site/check.sh` | ruff + pytest, some in a real browser |
 
