@@ -598,6 +598,19 @@ committing:
 awk '{ if (length($0) > 72) print NR": "length($0)" chars" }' /tmp/msg.txt
 ```
 
+## The planning file
+
+`ROADMAP.md` is the one planning file; nothing else plans work. Tier 0
+(section 3) is the core-wide work a strong model does in order; section 4
+holds task cards for efficient models, each naming the files it owns;
+section 5 is what is blocked on the owner (a decision, a machine); section
+6 gives the dependency graph and the waves; section 7 is the worker brief;
+section 8 keeps the design detail, invariants I1-I8 and measurements the
+older plan held. Cite work by id (T0.7, ADM-14, N9, Q-KEY), not by section
+title or number. A merged card is marked in the roadmap's status column in
+the same change; a measured fact the roadmap holds moves into a comment
+beside the code when the work that needed it lands.
+
 ## Schema changes
 
 No deployment exists, so a change to `ontology_schema.yaml` or any other
@@ -621,7 +634,7 @@ down (module platform, step 4). `python -m elysium.scripts.module_api_report`
 rewrites it, and a test fails while it is stale -- so a change to what
 modules may rely on arrives as a diff of it, to be reviewed as an API
 change rather than regenerated without a look. It goes when the module
-platform collapses (BLOCKING.md "Converge on precedent", S11); the
+platform collapses (ROADMAP.md section 8.4, "Converge on precedent", S11); the
 generated `openapi.json` is then the reviewed artefact.
 
 `vulture_whitelist.py` is append-only, and each entry needs a comment

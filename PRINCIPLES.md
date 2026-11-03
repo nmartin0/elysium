@@ -221,7 +221,7 @@ usable and maintainable, or simpler without losing power. A change
 replaces what it replaces **in place**: the old code, its callers, its
 tests and its controls are deleted in the same change, with no shim, no
 migration, no deprecation period, no freeze and no transition window
-(BLOCKING.md "Converge on precedent" is the roadmap that applies this).
+(ROADMAP.md is the roadmap that applies this: Tier 0 for the strong model, cards for efficient ones, section 8.4 for the original plan).
 
 Two things do not bend. Each change still lands with its tests, and
 the commit message records what broke. And the security invariants
@@ -410,7 +410,7 @@ because it matches a mistake this project already made, or fixes one.
    stay small and the tests stay strong
    (https://www.infoq.com/news/2025/09/dora-state-of-ai-in-dev-2025).
 7. **Write the spec, then build from it, in notes that outlive the
-   conversation.** `BLOCKING.md` holds agreed designs. A compacted
+   conversation.** `ROADMAP.md` holds agreed designs and the order of work. A compacted
    conversation summary is a claim to re-check against the code, not a
    fact (https://anthropic.com/engineering/effective-harnesses-for-long-running-agents).
 8. **End-to-end over mocks.** Mocked tests pass while the screen is

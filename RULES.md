@@ -42,6 +42,12 @@ project were wrong on inspection, all in the same direction --
 **describing a defect that reading the code would have ruled out.**
 Re-verify before building from a note you wrote a month ago.
 
+Keep ONE planning file (here `ROADMAP.md`): the order of work in tiers
+and cards, what waits on a person in its own section, and the design
+evidence behind them. Several overlapping plans disagree within a month.
+A card names the files it owns so parallel workers never touch the same
+file, and cards are cited by id because titles move.
+
 ---
 
 ## 2. Audit your own work before delivering it

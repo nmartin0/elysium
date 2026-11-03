@@ -13,13 +13,23 @@ that have gone wrong repeatedly.
    want the method without the project's specifics.
 3. **`PRINCIPLES.md`** — why the design is the way it is, and the
    reasoning behind decisions that look odd from outside.
-4. **`BLOCKING.md`** — **the one planning file, and the only one.**
-   It holds what needs a person (a decision, a machine nobody has) and
-   the roadmap, "Converge on precedent": the target architecture, the
-   security invariants and the ordered steps of the breaking refactor.
-   Anything that could be built has been built, and the document it
-   came from has been deleted. No deployment exists, so nothing is kept
-   for compatibility; read PRINCIPLES.md section 8 before you touch a
+4. **`ROADMAP.md`** — **the one planning file, and the only one.**
+   It is organised as: section 1, the goal and the production-ready
+   checklist (P1-P12); section 2, the decisions (D1-D23 and N1-N21, all
+   accepted by the owner); section 3, **Tier 0**, fifteen core-wide items
+   (T0.1-T0.15) that a strong model does in order, each ending in a
+   contract that later work builds on; section 4, **task cards** for
+   efficient models (MEAS, SEC, API, ADM, CLI, OPS, INS, DOC, CI, REF,
+   ADD), each naming the files it owns; section 5, **blocked on a
+   person** (the exact question for the owner and the default meanwhile);
+   section 6, sequencing (the dependency graph and the **waves**);
+   section 7, the brief a swarm worker gets with its card; section 8, the
+   evidence and design detail (the target architecture, the security
+   invariants I1-I8, steps S0-S20, measurements M1-M14, and every
+   measured fact the older planning file held). Anything that could be
+   built and has been built lives in the code; the document it came
+   from has been deleted. No deployment exists, so nothing is kept for
+   compatibility; read PRINCIPLES.md section 8 before you touch a
    format.
 5. **`AUDIT_CHECKLIST.csv`** — one row per verifiable claim, with its
    source, severity, where to look, and a status. Sortable, so "did we
@@ -31,7 +41,7 @@ that have gone wrong repeatedly.
 **THERE USED TO BE THIRTY-FIVE MORE.** They were worked to exhaustion
 one at a time: every item checked against the CODE rather than taken
 at its word, what could be done done, what could not moved to
-`BLOCKING.md` with what would unblock it, and everything else worth
+`ROADMAP.md` (section 5) with what would unblock it, and everything else worth
 keeping moved into the code it describes — a measured fact in a
 deleted file is a measured fact lost.
 
@@ -63,7 +73,7 @@ each sub-app's branch (`astrolabe`, `heliograph`) are developed
 together, each in its own worktree: `/home/claude/elysium`,
 `../elysium-globe`, `../elysium-heliograph`. Only the Elysium lane edits
 core; a sub-app that needs something generic files a request in
-`BLOCKING.md` and waits. If the user has not applied the last patches,
+`ROADMAP.md` section 5 and waits. If the user has not applied the last patches,
 make ONE bundle of everything not yet applied instead of more patches:
 
 ```
@@ -339,7 +349,7 @@ is how the mistakes below happen.
 
 7. **Have a fresh reader review the change before the commit.** Start
    a subagent that has not seen the work, give it the diff and the
-   agreed design (the `BLOCKING.md` paragraph), and tell it to report
+   agreed design (the `ROADMAP.md` tier item or card), and tell it to report
    correctness gaps only and to skip style. Check each finding against
    the code yourself; fix the real ones. The author cannot see its own
    blind spots (PRINCIPLES.md section 13). Skip it only for a change
@@ -376,7 +386,7 @@ is to quote the source in the commit message so the next reader can
 weigh it.
 
 **Prefer extending over rewriting**, except during the breaking
-refactor (BLOCKING.md "Converge on precedent"), where the replaced code
+refactor (ROADMAP.md section 8.4, "Converge on precedent"), where the replaced code
 is deleted in the same change and nothing is kept beside its replacement
 as a shim. Outside it: inheritance or composition where
 functionality is being added, rather than changing a signature that
@@ -462,12 +472,12 @@ they drift.
 
 ## Where the work stands
 
-`BLOCKING.md` is where the work stands; its item numbers move as
-items are consumed, so name an item by its TITLE when writing about
-it anywhere else. Two things worth carrying that are not features:
+`ROADMAP.md` is where the work stands. Name a Tier 0 item or a card by
+its id (T0.7, ADM-14) and a decision by its number (D4, N9) when writing
+about it anywhere else; section titles move, ids do not. Two things worth carrying that are not features:
 
 **Query is slow on this hardware**, and the agent-loop work that
-measured it is BLOCKING.md's "Agent-loop efficiency" item. What this
+measured it is ROADMAP.md section 8.3 ("Agent-loop efficiency"; Q-MODEL in section 5). What this
 paragraph used to say blocked it -- `LLMAdapter.chat()` having nowhere
 to put a timeout and discarding token counts -- is no longer true:
 `chat()` takes `deadline=` and `usage=` (src/elysium/core/llm/interface.py), and
@@ -487,7 +497,7 @@ What remains true is the other half: `search_around`'s `total` is
 expand must call `/count` separately rather than read `total`. The
 clients for both are built and tested and have **zero UI callers** —
 `searchAround` and `countObjects` are referenced nowhere outside
-`api.ts` and its own test. `BLOCKING.md` has what survived of the
+`api.ts` and its own test. `ROADMAP.md` has what survived of the
 rest.
 
 **And the lesson is the one already written above: READ BEFORE
