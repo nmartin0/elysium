@@ -60,7 +60,7 @@ exporter is none of those things: it has no user, applies no MAC or
 RBAC, and lands in an observability backend with its own, different,
 usually broader access rules. Putting prompt content in a span
 creates a SECOND COPY of customer data outside the ontology, which is
-exactly what SECURITY_ARCHITECTURE.md means by data reached without
+exactly what docs/security/architecture.md means by data reached without
 going through the mediator.
 
 So the helpers below accept a fixed set of non-content attributes --

@@ -1,7 +1,7 @@
 /**
  * The whole product as search, on Cmd/Ctrl-K.
  *
- * DEV_UI.md section 5 item 8: "A COMMAND PALETTE AND GLOBAL SEARCH.
+ * docs/ui/development.md section 5 item 8: "A COMMAND PALETTE AND GLOBAL SEARCH.
  * Keyboard-first is most of what makes a tool feel like a tool." And
  * 10.1 on why this product needs one rather than a bigger menu: "menus
  * do not scale. Elysium has object types, saved views, actions per

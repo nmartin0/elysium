@@ -65,7 +65,7 @@ class TestTheRefusal:
 class TestTheDocumentation:
     def _install(self):
         from pathlib import Path
-        return Path("INSTALL.md").read_text()
+        return Path("docs/install.md").read_text()
 
     def test_install_says_reads_come_from_gold(self):
         assert "READS COME FROM THE GOLD TABLES" in self._install().upper()

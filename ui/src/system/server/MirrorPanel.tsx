@@ -33,7 +33,7 @@ import DataTable from '@elysium/shell-api/components/DataTable'
  * WHAT SHARE OF THE TABLE ONE RULE HELD BACK, or null when there is
  * nothing to divide by.
  *
- * DEV_UI.md 16.4 names this as the DISTRIBUTION pillar and calls it
+ * docs/ui/development.md 16.4 names this as the DISTRIBUTION pillar and calls it
  * the one Elysium is furthest from: "the quarantine RATE per rule:
  * 0.1% is a data problem, 40% is a pipeline problem (the owner's D4
  * decision)". The two numbers read completely differently with the
@@ -73,7 +73,7 @@ export function formatShare(share: number): string {
  * -- 0.1% is a data problem, 40% is a pipeline problem -- and said
  * nothing about the range between them. Putting a verdict on 12%
  * would be inventing a threshold nobody set, which is the thing
- * DEV_UI.md 16.2 warns produces a channel people stop reading.
+ * docs/ui/development.md 16.2 warns produces a channel people stop reading.
  *
  * The low end gets no label either, for a different reason: an
  * ordinary data problem is what a rule firing normally LOOKS like,
@@ -549,7 +549,7 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
 
                         AND NO SHARE. A rate exists to say whether an
                         absence is a data problem or a pipeline one
-                        (DEV_UI.md 16.4's D4 reading); nothing is
+                        (docs/ui/development.md 16.4's D4 reading); nothing is
                         absent here, so the question does not arise and
                         a percentage would invite it. */}
                     <td colSpan={5} className="mirror__warnings">

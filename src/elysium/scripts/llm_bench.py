@@ -199,7 +199,8 @@ CASES = (
             ExpectedFact("Transaction", "2", "category", "hardware"),
         ),
     ),
-    # ROADMAP.md section 8.3 (agent-loop efficiency): its observed question, verbatim. It took FIVE model
+    # docs/archive/planning-history.md 8.3 (agent-loop efficiency): its
+    # observed question, verbatim. It took FIVE model
     # calls and fetched `transaction_date` twice; one aggregate step
     # answers it. Passes ONLY if the model chose `aggregate_object` --
     # counting ids from a search is the behaviour under test, not an

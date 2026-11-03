@@ -353,7 +353,7 @@ describe('a view whose filters are no longer all authorised', () => {
 
 describe('how you got here, which a save used to drop', () => {
   /**
-   * DEV_UI.md 11.2 names the traversal chain as the third part of what
+   * docs/ui/development.md 11.2 names the traversal chain as the third part of what
    * a set IS -- "object type + conditions + the traversal chain that
    * produced it". The first two were saved and this was not, so "Ada
    * Okafor's transactions" came back as transactions filtered by

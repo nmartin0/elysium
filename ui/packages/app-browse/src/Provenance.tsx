@@ -1,7 +1,7 @@
 /**
  * Where this object's row came from.
  *
- * DEV_UI.md section 5 item 5: "A PROVENANCE PANEL: which source, which
+ * docs/ui/development.md section 5 item 5: "A PROVENANCE PANEL: which source, which
  * bronze snapshot, which publication, when. The lineage for this now
  * exists." It does, and since the previous patch there is a route that
  * reads it back. And item 3 says where it belongs: "THE OBJECT VIEW AS

@@ -1,6 +1,6 @@
 """How current an object type should be, and whether it is.
 
-DEV_UI.md 16.6's decision, built. The rule every precedent converges
+docs/ui/development.md 16.6's decision, built. The rule every precedent converges
 on is that freshness is derived from the DECISION THE DATA FEEDS, not
 from what the pipeline can manage -- "a freshness number without a
 threshold is trivia".
@@ -53,7 +53,7 @@ def _type(freshness=None):
 
 class TestTheDeploymentsOwnInterval:
     def test_it_defaults_to_nightly(self):
-        """INSTALL.md leaves scheduling to the operator and nightly is
+        """docs/install.md leaves scheduling to the operator and nightly is
         what an unattended on-prem deployment does."""
         assert sync_interval({}) == timedelta(hours=DEFAULT_SYNC_INTERVAL_HOURS)
         assert DEFAULT_SYNC_INTERVAL_HOURS == 24
@@ -145,7 +145,7 @@ class TestWhatIsRefusedAtLoad:
     discovering them in production."""
 
     def test_A_TARGET_TIGHTER_THAN_THE_SYNC_INTERVAL(self):
-        """The refusal DEV_UI.md 16.6 point 6 asks for. A type
+        """The refusal docs/ui/development.md 16.6 point 6 asks for. A type
         declaring two hours on a nightly deployment is not ambitious,
         it is guaranteed to alert forever."""
         with pytest.raises(ValueError) as caught:

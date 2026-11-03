@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Read this first, then `AGENTS.md` and `PRINCIPLES.md`. Those two hold
+Read this first, then `AGENTS.md` and `docs/principles.md`. Those two hold
 the rules; this holds how to work, what to read when, and the things
 that have gone wrong repeatedly.
 
@@ -8,40 +8,42 @@ that have gone wrong repeatedly.
 
 1. **`AGENTS.md`** — commands, invariants, commit style, what not to
    hand-edit. Non-negotiable.
-2. **`RULES.md`** — the working method as generic rules, distilled
-   from this file, `AGENTS.md` and `PRINCIPLES.md`. Read it if you
+2. **`docs/rules.md`** — the working method as generic rules, distilled
+   from this file, `AGENTS.md` and `docs/principles.md`. Read it if you
    want the method without the project's specifics.
-3. **`PRINCIPLES.md`** — why the design is the way it is, and the
+3. **`docs/principles.md`** — why the design is the way it is, and the
    reasoning behind decisions that look odd from outside.
-4. **`ROADMAP.md`** — **the one planning file, and the only one.**
-   It is organised as: section 1, the goal and the production-ready
-   checklist (P1-P12); section 2, the decisions (D1-D23 and N1-N21, all
-   accepted by the owner); section 3, **Tier 0**, fifteen core-wide items
-   (T0.1-T0.15) that a strong model does in order, each ending in a
-   contract that later work builds on; section 4, **task cards** for
-   efficient models (MEAS, SEC, API, ADM, CLI, OPS, INS, DOC, CI, REF,
-   ADD), each naming the files it owns; section 5, **blocked on a
-   person** (the exact question for the owner and the default meanwhile);
-   section 6, sequencing (the dependency graph and the **waves**);
-   section 7, the brief a swarm worker gets with its card; section 8, the
-   evidence and design detail (the target architecture, the security
-   invariants I1-I8, steps S0-S20, measurements M1-M14, and every
-   measured fact the older planning file held). Anything that could be
-   built and has been built lives in the code; the document it came
-   from has been deleted. No deployment exists, so nothing is kept for
-   compatibility; read PRINCIPLES.md section 8 before you touch a
-   format.
-5. **`AUDIT_CHECKLIST.csv`** — one row per verifiable claim, with its
-   source, severity, where to look, and a status. Sortable, so "did we
-   cover everything?" is a question a command answers rather than a
-   memory.
-6. **`SECURITY_ARCHITECTURE.md`** — the security model as built.
-7. **`INSTALL.md`** and **`README.md`** — for running it.
+4. **`docs/roadmap.md`** — **the one planning file, and the only one.**
+   It is organised as: section 1, the design philosophy and the design
+   rules (DR1-DR7); section 2, the goal, the production-ready checklist
+   (P1-P13) and the security invariants (I1-I8); section 3, the layout
+   (the repository, what Elysium reads and produces, the CLI tree);
+   section 4, **Tier 0**, sixteen core-wide items (T0.1, T0.1B,
+   T0.2-T0.15) that a strong model does in order, each ending in a
+   contract that later work builds on; section 5, **task cards** for
+   efficient models (MEAS, SEC, API, ADM, CLI, OPS, INS, DOC, CI, QA,
+   REF, ADD), each naming the files it owns; section 6, **blocked on the
+   owner** (the exact question and the default meanwhile); section 7,
+   sequencing (the dependency graph and the **waves**); section 8, the
+   brief a swarm worker gets with its card. Decisions are in
+   **`docs/decisions.md`**, cited by id (B1, D4, N23); measured runs,
+   consumed lists and the older plan are in
+   `docs/archive/planning-history.md`. Anything that could be built and
+   has been built lives in the code; the document it came from has been
+   deleted. No deployment exists, so nothing is kept for compatibility;
+   read `docs/principles.md` section 8 before you touch a format.
+5. **`docs/security/audit-checklist.csv`** — one row per verifiable
+   claim, with its source, severity, where to look, and a status.
+   Sortable, so "did we cover everything?" is a question a command
+   answers rather than a memory.
+6. **`docs/security/architecture.md`** — the security model as built.
+7. **`docs/install.md`** and **`README.md`** — for running it;
+   `docs/README.md` indexes every document.
 
 **THERE USED TO BE THIRTY-FIVE MORE.** They were worked to exhaustion
 one at a time: every item checked against the CODE rather than taken
 at its word, what could be done done, what could not moved to
-`ROADMAP.md` (section 5) with what would unblock it, and everything else worth
+`docs/roadmap.md` (section 6) with what would unblock it, and everything else worth
 keeping moved into the code it describes — a measured fact in a
 deleted file is a measured fact lost.
 
@@ -64,7 +66,7 @@ dry-runs the patch on a throwaway branch from `origin/dev`, printing
 `DRYRUN_OK`. Then `SendUserFile` it. Suffixes run `da`, `db`, `dc`...
 (next is `dn`) so successive patches sort and never collide. Why a
 script: these checks were paragraphs here, and a paragraph gets
-skipped (PRINCIPLES.md section 13). The manual form, if the script is
+skipped (docs/principles.md section 13). The manual form, if the script is
 unavailable, is `git format-patch origin/dev..HEAD --stdout`, a
 `grep -c '^From '` count and a dry-run `git am` on a branch.
 
@@ -73,7 +75,7 @@ each sub-app's branch (`astrolabe`, `heliograph`) are developed
 together, each in its own worktree: `/home/claude/elysium`,
 `../elysium-globe`, `../elysium-heliograph`. Only the Elysium lane edits
 core; a sub-app that needs something generic files a request in
-`ROADMAP.md` section 5 and waits. If the user has not applied the last patches,
+`docs/roadmap.md` section 6 and waits. If the user has not applied the last patches,
 make ONE bundle of everything not yet applied instead of more patches:
 
 ```
@@ -349,10 +351,10 @@ is how the mistakes below happen.
 
 7. **Have a fresh reader review the change before the commit.** Start
    a subagent that has not seen the work, give it the diff and the
-   agreed design (the `ROADMAP.md` tier item or card), and tell it to report
+   agreed design (the `docs/roadmap.md` tier item or card), and tell it to report
    correctness gaps only and to skip style. Check each finding against
    the code yourself; fix the real ones. The author cannot see its own
-   blind spots (PRINCIPLES.md section 13). Skip it only for a change
+   blind spots (docs/principles.md section 13). Skip it only for a change
    with no behaviour (a typo, a comment) and say that you did.
    **A rule with no exceptions is a script, not a sentence**: if you
    catch yourself adding "always" to this file, write the script or
@@ -381,12 +383,12 @@ it says. This project models a reference ontology platform, the
 precedent, so "what does the precedent do here" is usually answerable and usually changes the design — relative
 timestamps, colour limits, the ontology graph's features, and the
 Naked Objects precedent all came from looking rather than reasoning
-from first principles. `PRINCIPLES.md` §9 is the rule; the practice
+from first principles. `docs/principles.md` §9 is the rule; the practice
 is to quote the source in the commit message so the next reader can
 weigh it.
 
 **Prefer extending over rewriting**, except during the breaking
-refactor (ROADMAP.md section 8.4, "Converge on precedent"), where the replaced code
+refactor (docs/archive/planning-history.md section 8.4, "Converge on precedent"), where the replaced code
 is deleted in the same change and nothing is kept beside its replacement
 as a shim. Outside it: inheritance or composition where
 functionality is being added, rather than changing a signature that
@@ -472,12 +474,12 @@ they drift.
 
 ## Where the work stands
 
-`ROADMAP.md` is where the work stands. Name a Tier 0 item or a card by
+`docs/roadmap.md` is where the work stands. Name a Tier 0 item or a card by
 its id (T0.7, ADM-14) and a decision by its number (D4, N9) when writing
 about it anywhere else; section titles move, ids do not. Two things worth carrying that are not features:
 
 **Query is slow on this hardware**, and the agent-loop work that
-measured it is ROADMAP.md section 8.3 ("Agent-loop efficiency"; Q-MODEL in section 5). What this
+measured it is docs/archive/planning-history.md section 8.3 ("Agent-loop efficiency"; Q-MODEL in section 6). What this
 paragraph used to say blocked it -- `LLMAdapter.chat()` having nowhere
 to put a timeout and discarding token counts -- is no longer true:
 `chat()` takes `deadline=` and `usage=` (src/elysium/core/llm/interface.py), and
@@ -497,7 +499,7 @@ What remains true is the other half: `search_around`'s `total` is
 expand must call `/count` separately rather than read `total`. The
 clients for both are built and tested and have **zero UI callers** —
 `searchAround` and `countObjects` are referenced nowhere outside
-`api.ts` and its own test. `ROADMAP.md` has what survived of the
+`api.ts` and its own test. `docs/roadmap.md` has what survived of the
 rest.
 
 **And the lesson is the one already written above: READ BEFORE

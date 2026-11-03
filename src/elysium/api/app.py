@@ -457,7 +457,7 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
     # termination is typically a deployment/reverse-proxy concern, not
     # this application's own code; setting it here risks either
     # conflicting with, or duplicating, whatever the real front-facing
-    # proxy in a given deployment already sets. See README.md's own
+    # proxy in a given deployment already sets. See docs/limitations.md's
     # "Known limitations, honestly" section for this noted as a real,
     # deployment-specific responsibility, not silently assumed handled.
     @app.middleware("http")

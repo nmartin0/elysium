@@ -109,7 +109,7 @@ describe('the canvas starts from the set', () => {
   })
 
   /**
-   * COLOUR CARRIES KIND, which DEV_UI.md 13.1 states for the ontology
+   * COLOUR CARRIES KIND, which docs/ui/development.md 13.1 states for the ontology
    * canvas and holds here: a node labelled `3` beside one labelled
    * `cust_002` says nothing about being a Transaction otherwise, and
    * prefixing every label with its type would be noise on a graph of

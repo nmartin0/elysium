@@ -311,7 +311,7 @@ class TestWhatWasHeldBack:
     def test_a_RULE_THAT_WARNED_reaches_the_panel(self, client):
         """`warn` keeps the row, so unlike a quarantined one it leaves
         no trace in the lake -- the finding reached a log line on
-        whatever ran the sync and stopped there. DEV_UI.md 5.6 asks
+        whatever ran the sync and stopped there. docs/ui/development.md 5.6 asks
         for "failing expectations" beside the quarantined rows, and
         this is where that half comes from."""
         from elysium.core.mirror.expectation_warnings import ExpectationWarnings

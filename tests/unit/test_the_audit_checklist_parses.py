@@ -1,5 +1,5 @@
 """
-AUDIT_CHECKLIST.csv is readable by something other than a human.
+docs/security/audit-checklist.csv is readable by something other than a human.
 
 WHY THIS EXISTS: I have broken this file twice in one day, both times
 while recording a finding in it.
@@ -25,7 +25,7 @@ actually gone wrong here.
 import csv
 from pathlib import Path
 
-CHECKLIST = Path("AUDIT_CHECKLIST.csv")
+CHECKLIST = Path("docs/security/audit-checklist.csv")
 COLUMNS = ("id", "set", "source", "severity", "claim", "where", "probe",
             "status")
 

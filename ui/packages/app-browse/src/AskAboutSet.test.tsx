@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 
 /**
- * DEV_UI.md section 4's symptom: "the agent lives in its own app, so a
+ * docs/ui/development.md section 4's symptom: "the agent lives in its own app, so a
  * question about what you are looking at means starting again in
  * another tab, describing in words what was already on screen."
  * Decided 14 Oct: a panel over Browse that sends the set itself.

@@ -1,7 +1,7 @@
 /**
  * A way into the agent from whatever you are already looking at.
  *
- * DEV_UI.md section 4 names the symptom: "the agent lives in its own
+ * docs/ui/development.md section 4 names the symptom: "the agent lives in its own
  * app, so a question about what you are looking at means starting
  * again in another tab, describing in words what was already on
  * screen." Section 5 item 4 names the fix -- "THE AGENT EVERYWHERE" --

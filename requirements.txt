@@ -37,7 +37,7 @@ starlette>=1.0.1,<2.0  # FastAPI's ASGI layer -- pinned: versions before this ha
                   # building an authentication system on top of this, this floor is load-bearing,
                   # not a routine version bump.
 # pyiceberg -- the local read-only mirror's own versioned storage (Phase 2 of the
-# read-only mirror architecture; see ROADMAP.md). The [sql-sqlite] extra is the
+# read-only mirror architecture; see docs/roadmap.md). The [sql-sqlite] extra is the
 # real, deliberate choice: PyIceberg's catalog is backed by a plain SQLite file
 # here, matching every other piece of this project's own internal infrastructure,
 # rather than requiring a separate catalog SERVICE (Hive, Glue, REST) that would

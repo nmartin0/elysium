@@ -19,7 +19,7 @@ from elysium.core.modules import Modules, feed_for
 
 #: WHAT A PERSON IS WORKING ON, not which feature built the screen.
 #:
-#: DEV_UI.md 12: "Elysium has six apps -- browse, query, approvals,
+#: docs/ui/development.md 12: "Elysium has six apps -- browse, query, approvals,
 #: notifications, schema, admin -- which is a decomposition BY FEATURE,
 #: the way software gets built, not BY WHAT THE USER IS WORKING ON.
 #: That is why moving between them feels like changing tools rather

@@ -168,7 +168,7 @@ design: live push through the add-on proxy, a time-series chart in the
 kit, event subscription and triggers on arriving data, audit for live
 data, jobs, source terms and feed health, large results, secret
 references and add-on data under backup. They are now requirements of
-ROADMAP.md section 8.4, "Converge on precedent" (S9, S10, S12). Decided: a signal is
+docs/archive/planning-history.md section 8.4, "Converge on precedent" (S9, S10, S12). Decided: a signal is
 an Elysium object a source creates, and "took it" and "skipped" are
 actions on it; accounts, positions and decisions are objects; Elysium
 governs ACCESS to market data and does not hold the bars; an add-on copies

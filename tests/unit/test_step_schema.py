@@ -2,7 +2,8 @@
 cannot express, and that it reaches the model server.
 
 THE REJECTIONS ARE THE BENCH'S OWN STEPS, verbatim from its logs on the
-deployment's model (ROADMAP.md section 8.3, agent-loop efficiency). Each was emitted, refused by the
+deployment's model (docs/archive/planning-history.md 8.3, agent-loop
+efficiency). Each was emitted, refused by the
 loop, and cost a hop. Under the schema none of them can be emitted.
 
 THE ACCEPTANCES ARE THE CONTROL. A grammar that admitted nothing would

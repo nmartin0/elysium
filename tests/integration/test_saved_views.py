@@ -163,7 +163,7 @@ class TestAnonymousCallers:
 class TestHowYouGotHere:
     """The traversal chain, which a save used to drop.
 
-    DEV_UI.md 11.2 names it the third part of what a set IS: "a set
+    docs/ui/development.md 11.2 names it the third part of what a set IS: "a set
     needs a REPRESENTATION (object type + conditions + the traversal
     chain that produced it)". Object type and conditions were already
     stored; this was not, so "Ada Okafor's transactions" saved and

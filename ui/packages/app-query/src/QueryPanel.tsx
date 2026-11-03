@@ -52,7 +52,7 @@ export default function QueryPanel({ onSessionExpired }: QueryPanelProps) {
    * SEEDED FROM THE URL, so another screen can hand the agent a
    * question about what was on it.
    *
-   * DEV_UI.md section 5 item 4: "THE AGENT EVERYWHERE: 'ask about this
+   * docs/ui/development.md section 5 item 4: "THE AGENT EVERYWHERE: 'ask about this
    * set' inside Browse, seeded with what is on screen. Elysium's actual
    * edge over the prior art, where AI sits alongside rather than
    * inside." And section 4's symptom it answers: "the agent lives in

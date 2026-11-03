@@ -36,7 +36,7 @@ export interface FrameNavEntry {
    * WHAT A PERSON IS WORKING ON. The rail groups by this rather than
    * listing modules: listing them is "a decomposition BY FEATURE, the way
    * software gets built, not BY WHAT THE USER IS WORKING ON" (Elysium's
-   * DEV_UI.md 12). An entry with none gets no heading, so a feed without
+   * docs/ui/development.md 12). An entry with none gets no heading, so a feed without
    * subjects gives the flat list it always did.
    */
   subject?: string

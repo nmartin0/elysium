@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # 3.12: what the lock files were generated for and every test has
-      # run on. INSTALL.md said "3.10 or later" when this was written and
+      # run on. docs/install.md said "3.10 or later" when this was written and
       # nothing tested it; it says 3.12 now, which is what pyproject had
       # required all along, and a test holds the two files together.
       # Twenty-six modules import `datetime.UTC`, so 3.10 could never

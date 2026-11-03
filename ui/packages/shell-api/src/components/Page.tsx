@@ -8,7 +8,7 @@
  * rail and then six unrelated interiors.
  *
  * That is a STRUCTURE problem rather than a craft one, and the
- * distinction matters -- DEV_UI.md's own diagnosis is that treating
+ * distinction matters -- docs/ui/development.md's own diagnosis is that treating
  * them as one fault "is how a redesign fails: new paint on the same
  * dead ends, or a new structure that still looks like a prototype".
  * The type scale fixed paint. This is the structure, and it is

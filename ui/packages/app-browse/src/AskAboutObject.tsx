@@ -1,7 +1,7 @@
 /**
  * Hand the agent the object that is on screen.
  *
- * DEV_UI.md section 5 item 4 is "THE AGENT EVERYWHERE", and the object
+ * docs/ui/development.md section 5 item 4 is "THE AGENT EVERYWHERE", and the object
  * page was the half that did not have it. Item 3 says why this is the
  * page that needs it: "THE OBJECT VIEW AS A HUB: properties, links,
  * history, notes, provenance and the actions available on THIS object,

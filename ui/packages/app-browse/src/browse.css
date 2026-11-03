@@ -419,7 +419,7 @@
 
   /* ---- THE SET'S NAME -----------------------------------------------
    *
-   * DEV_UI.md 11.1: "everything on screen IS a set, named by how it was
+   * docs/ui/development.md 11.1: "everything on screen IS a set, named by how it was
    * built (`Customer · 3 filters · 1,284`)". 11.6 puts it where a
    * document's name sits, so it reads as the subject rather than as a
    * status line -- the type at the page-title step, the rest beside it
@@ -443,7 +443,7 @@
    * another name. */
   /* ---- THE GRAPH CANVAS ---------------------------------------------
    *
-   * DEV_UI.md 12's third MODE of one workspace, so it sits in the
+   * docs/ui/development.md 12's third MODE of one workspace, so it sits in the
    * canvas where the table and the charts do and takes no chrome of
    * its own.
    */
@@ -740,7 +740,7 @@
   /* Explore related -- where each link leads, and how far. A list rather
  * than a canvas: one hop at a time is the whole design, and a layout
  * engine is the "full graph canvas" item. */
-  /* A SECTION WITHIN A PAGE, which is the step DEV_UI.md 9.2 specifies
+  /* A SECTION WITHIN A PAGE, which is the step docs/ui/development.md 9.2 specifies
    * between the page title and a panel heading. "Related" had no rule
    * at all and was rendering at whatever Blueprint gives an h3 -- which
    * is how it ended up visually louder than NOTES and HISTORY beside

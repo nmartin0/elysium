@@ -447,7 +447,7 @@ def test_data_freshness_reports_gold_and_its_publication(client):
 
 
 def test_data_freshness_says_whether_each_type_is_as_current_as_it_should_be(client):
-    # DEV_UI.md 16.6 point 7: "SHOWN, NOT ONLY ALERTED ON." The
+    # docs/ui/development.md 16.6 point 7: "SHOWN, NOT ONLY ALERTED ON." The
     # publication time alone is trivia -- a reader told "published 30
     # hours ago" cannot tell whether that is normal, and one told
     # "expected within 26" can.
@@ -738,7 +738,7 @@ def test_visible_apps_never_leaks_gating_permission(client):
     #
     # `subject` WAS SUCH A DECISION, and this test caught it late. It
     # is "Objects", "Ontology", "Inbox" or "Settings" -- the rail's
-    # grouping label (DEV_UI.md 12: the rail "is not an app switcher.
+    # grouping label (docs/ui/development.md 12: the rail "is not an app switcher.
     # It is a SUBJECT switcher"), chosen from a fixed tuple in
     # api/apps.py and carrying nothing about why the caller may see
     # the app. The filtering still happens on the server: an app the

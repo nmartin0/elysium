@@ -122,7 +122,7 @@ fi
 
 python3 -m venv "$OPT_DIR/venv"
 "$OPT_DIR/venv/bin/pip" install --upgrade pip
-# From the hashed lockfile when there is one, exactly as INSTALL.md says
+# From the hashed lockfile when there is one, exactly as docs/install.md says
 # (--require-hashes refuses anything whose hash is not listed);
 # requirements.txt carries only bounds and is the fallback for a checkout
 # without a lock.
@@ -210,4 +210,4 @@ echo "Install complete. Start the service with: systemctl start elysium.service"
 echo ""
 echo "root manages accounts (Admin). The server's own pages -- System -> Server,"
 echo "Modules, Add-on servers -- need manage:deployment, which no role holds yet;"
-echo "INSTALL.md, 'Seeing the server's own pages', says how to give it."
+echo "docs/install.md, 'Seeing the server's own pages', says how to give it."

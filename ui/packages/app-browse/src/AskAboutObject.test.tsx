@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import AskAboutObject from './AskAboutObject'
 
 /**
- * DEV_UI.md section 5 item 4, "THE AGENT EVERYWHERE", on the half that
+ * docs/ui/development.md section 5 item 4, "THE AGENT EVERYWHERE", on the half that
  * did not have it. Item 3 is why this page in particular: a hub you
  * have to leave in order to ask a question about what is in it is not
  * one.

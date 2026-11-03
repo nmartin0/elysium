@@ -26,7 +26,7 @@ does everywhere else: import-linter enforces layering on every
 ./lint.sh rather than a document asking nicely, and
 require_assertions_enabled() refuses to start rather than trusting an
 inspection -- its own history records that the inspection HAD been
-wrong once. PRINCIPLES.md section 10 states the rule directly:
+wrong once. docs/principles.md section 10 states the rule directly:
 "explicit layers, enforced, not aspirational".
 
 It is also finishing a job already half done. _freeze_roles() in

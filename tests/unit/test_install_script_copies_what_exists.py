@@ -6,7 +6,7 @@ fresh install stopped at step 3; and it never copied `functions/`,
 which core/functions/registry.py imports, so an install that got past
 that would have started a server that could not import.
 
-It also installed without the lockfiles. INSTALL.md says
+It also installed without the lockfiles. docs/install.md says
 `pip install --require-hashes -r requirements.lock`, and AGENTS.md says
 `npm ci`, never `npm install`.
 """

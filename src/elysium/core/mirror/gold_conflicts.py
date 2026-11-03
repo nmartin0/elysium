@@ -31,7 +31,7 @@ branch where two sources both had something to say and said different
 things. A null filled in from a lower-preference source writes nothing,
 so "the primary had this" and "the primary was silent and the CRM
 supplied it" are indistinguishable afterwards. That gap is
-`AUDIT_CHECKLIST.csv` R67(a) and is not this module's to close.
+`docs/security/audit-checklist.csv` R67(a) and is not this module's to close.
 
 NO ACCESS CONTROL HERE, AND THAT IS DELIBERATE -- the contract
 `read_provenance` and `read_history` beside it both state: this reads

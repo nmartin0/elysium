@@ -1,6 +1,6 @@
 """A CSV handed to a spreadsheet is code unless something stops it.
 
-THE PROJECT'S OWN AUDIT ASKED FOR THIS FILE. `AUDIT_CHECKLIST.csv`
+THE PROJECT'S OWN AUDIT ASKED FOR THIS FILE. `docs/security/audit-checklist.csv`
 R35, "export-time formula escaping": "NOT APPLICABLE YET, verified:
 there is no CSV or spreadsheet export anywhere in api/ or ui/.
 Nothing produces a file a formula could execute in. Becomes live the

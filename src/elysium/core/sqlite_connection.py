@@ -237,7 +237,7 @@ def require_assertions_enabled() -> None:
     the same time; if they did, they should be told what it costs.
 
     This check was added because the claim "asserts are live in
-    production" had been made in PRINCIPLES.md and a commit message
+    production" had been made in docs/principles.md and a commit message
     after checking install/ and scripts/ -- and NOT the systemd unit or
     any container entrypoint, which are the paths that would actually
     carry the setting. The claim happened to be true. It was not
@@ -344,7 +344,7 @@ def _enable_wal(conn: sqlite3.Connection, db_path: Path) -> None:
     return value is checked.
 
     It also creates -wal and -shm files beside the database, which a
-    backup has to account for. Noted in INSTALL.md.
+    backup has to account for. Noted in docs/install.md.
     """
     mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]
     if mode.lower() != "wal":

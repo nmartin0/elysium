@@ -1,6 +1,6 @@
 """Frozen sets: membership fixed at an instant (formerly planning-file item 17, saved selections).
 
-DEV_UI.md 11.3 decided the shape and left one question open. "Live by
+docs/ui/development.md 11.3 decided the shape and left one question open. "Live by
 default, frozen deliberately -- and both are named": HubSpot's active
 and static lists, Amplitude's dynamic and static cohorts, the precedent's
 object sets. A saved VIEW here is the live kind -- `saved_views.py`

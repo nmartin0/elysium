@@ -1,7 +1,7 @@
 /**
  * What you are looking at, named by how it was built.
  *
- * DEV_UI.md 11.1: "everything on screen IS a set, named by how it was
+ * docs/ui/development.md 11.1: "everything on screen IS a set, named by how it was
  * built (`Customer · 3 filters · 1,284`), so the interface always has a
  * subject and saving is a PROMOTION rather than a creation."
  *
@@ -117,7 +117,7 @@ export default function SetName({
       ) : (
         <StatusTag state="active">Live</StatusTag>
       )}
-      {/* The agent, where the subject is. DEV_UI.md 5.4 wants it "inside
+      {/* The agent, where the subject is. docs/ui/development.md 5.4 wants it "inside
           Browse, seeded with what is on screen" rather than in its own
           app -- and the set's name is exactly what is on screen. */}
       {/* BOTH ACT ON THE SUBJECT, so both sit beside it. The export

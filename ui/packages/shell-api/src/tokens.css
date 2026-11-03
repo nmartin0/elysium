@@ -44,7 +44,7 @@
  * Named by WHAT THEY ARE, not what they are for: --navy-800 says
  * nothing about whether it is a panel or a well, which is the point.
  *
- * DEV_UI.md 8.3, NOT BLUEPRINT'S GREYS ANY MORE. These were Blueprint's
+ * docs/ui/development.md 8.3, NOT BLUEPRINT'S GREYS ANY MORE. These were Blueprint's
  * own palette "so a surface sits flush against a Blueprint widget" --
  * and so the app looked like Blueprint, which is the "nothing looks
  * decided" half of the diagnosis. The palette the owner chose on 22
@@ -172,7 +172,7 @@
      * by the parser entirely, taking the size and weight with it. The
      * stack is the one body already used, moved here so the scale can
      * name it. */
-    /* IBM PLEX SANS, per DEV_UI.md 9.1, chosen because "it separates
+    /* IBM PLEX SANS, per docs/ui/development.md 9.1, chosen because "it separates
      * 1 / l / I and 0 / O at 13px, which is the size our tables
      * actually run at". The fallbacks carry the stack until the woff2
      * files are bundled -- SELF-HOSTED when they are, never a CDN,
@@ -181,14 +181,14 @@
      * privacy leak on every page load. */
     --font-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 
-    /* ---- TYPE: DEV_UI.md 9.2, NOT INVENTED HERE --------------------
+    /* ---- TYPE: docs/ui/development.md 9.2, NOT INVENTED HERE --------------------
      *
      * A 1.2 scale on a 14px base, capped at 28px: "a tool that shows
      * tables does not need display type, and every heading step costs
      * rows."
      *
      * THE PREVIOUS VERSION OF THIS BLOCK WAS WRONG AT EVERY STEP.
-     * DEV_UI.md had been deleted after being "consumed", so a later
+     * docs/ui/development.md had been deleted after being "consumed", so a later
      * session found the diagnosis without the answers and derived a
      * scale from scratch: 20px titles where 28 was specified, 15px
      * headings where 17 was, 12px labels where 11 was, and no `section`

@@ -17,7 +17,7 @@ within it that looks like a command" all along. The planner had
 nothing -- and the planner is the call that CHOOSES STEPS, the weaker
 call being the guarded one.
 
-WHAT THIS IS AND IS NOT. SECURITY_ARCHITECTURE.md is explicit that the
+WHAT THIS IS AND IS NOT. docs/security/architecture.md is explicit that the
 model is an envelope rather than a principal: effective authority is
 the human's grants intersected with what the agent may reach, and no
 prompt text changes that. A planted instruction that persuades the

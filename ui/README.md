@@ -6,7 +6,7 @@ direct action invocation (Browse); approve or reject a proposed write;
 see notifications and watches; read the ontology; and (for admins)
 manage users, roles, silos, the mirror and deployment config. React +
 TypeScript + Vite, no state management library, built on **Blueprint**
-(`@blueprintjs/core`) — see the main project README's "Two ways to run
+(`@blueprintjs/core`) — see docs/development.md's "Two ways to run
 this" section for what `src/elysium/api/` actually exposes.
 
 This paragraph once denied having a design system at all, which was

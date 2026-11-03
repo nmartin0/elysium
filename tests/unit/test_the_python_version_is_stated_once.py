@@ -1,8 +1,8 @@
 """
-INSTALL.md and pyproject.toml agree about which Python this needs
+docs/install.md and pyproject.toml agree about which Python this needs
 (the unified roadmap's item 1d).
 
-WHAT THEY SAID. INSTALL.md: "Python 3.10 or later". pyproject.toml:
+WHAT THEY SAID. docs/install.md: "Python 3.10 or later". pyproject.toml:
 `requires-python = ">=3.12"`. The roadmap recorded the disagreement
 and the reason it mattered -- "the locks were generated on 3.12 and
 nothing has ever run on 3.10. Test it (a CI matrix, with locks valid
@@ -28,7 +28,7 @@ import tomllib
 from pathlib import Path
 
 PYPROJECT = tomllib.loads(Path("pyproject.toml").read_text())
-INSTALL = Path("INSTALL.md").read_text()
+INSTALL = Path("docs/install.md").read_text()
 
 
 def _declared_floor() -> str:
@@ -41,7 +41,7 @@ def _declared_floor() -> str:
 
 class TestTheTwoFilesAgree:
     def test_install_names_the_version_pyproject_requires(self):
-        """THE REGRESSION TEST. INSTALL.md said 3.10 while pyproject
+        """THE REGRESSION TEST. docs/install.md said 3.10 while pyproject
         said 3.12, and both were read as authoritative."""
         assert f"Python {_declared_floor()}" in INSTALL
 

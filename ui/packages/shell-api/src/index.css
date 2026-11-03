@@ -1272,7 +1272,7 @@
     }
   }
 
-  /* A SUBJECT HEADING IN THE RAIL. DEV_UI.md 12: the rail "is not an
+  /* A SUBJECT HEADING IN THE RAIL. docs/ui/development.md 12: the rail "is not an
    * app switcher. It is a SUBJECT switcher". These are labels, so they
    * take the label step -- 11px semibold uppercase with the document's
    * 0.06em tracking -- and sit on the chrome, which has its own text
@@ -2119,7 +2119,7 @@
 
   /* ---- THE COMMAND PALETTE -----------------------------------------
    *
-   * DEV_UI.md 10.1: "A palette turns the whole product into search --
+   * docs/ui/development.md 10.1: "A palette turns the whole product into search --
    * and people prefer search to menus, which only help if you already
    * understand how the menus were organised."
    *

@@ -61,7 +61,7 @@ version = "0.0.0"
 requires-python = ">=3.12"
 
 [project.scripts]
-# A stub until the real command line lands (ROADMAP.md section 8.4, "Converge on
+# A stub until the real command line lands (docs/archive/planning-history.md section 8.4, "Converge on
 # precedent", step S16, "One CLI"): it lists the scripts that exist.
 elysium = "elysium.cli:main"
 

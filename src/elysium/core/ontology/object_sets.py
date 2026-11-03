@@ -741,7 +741,7 @@ class Run:
         sentence that names no count. v1 reports the mediator's flag as it
         is; this is v2's rule, and v1 is unchanged. (That the refusal
         itself turns on whether a scan went past the ceiling is a limit v1
-        shares: ROADMAP.md section 8.4, "Converge on precedent".)
+        shares: docs/archive/planning-history.md section 8.4, "Converge on precedent".)
 
         THE REQUEST BUDGET IS NOT SPENT HERE. It is charged by prepare(),
         from the shape of the set alone, before any data is read.

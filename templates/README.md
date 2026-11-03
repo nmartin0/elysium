@@ -1,8 +1,8 @@
 # Configuration templates
 
 Copy these into `deployment/etc/` (or `/etc/elysium/` for a real
-install) and edit them for your organization. See the main project
-README's "Configuring your organization's deployment" section for the
+install) and edit them for your organization. See
+`docs/configuration.md` for the
 full explanation of each field -- these files use the SAME illustrative
 `Employee`/`ExpenseReport` example that section walks through, so the
 two stay consistent with each other rather than telling two different

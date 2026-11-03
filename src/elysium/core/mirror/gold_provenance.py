@@ -1,6 +1,6 @@
 """Where one gold row came from: the reader for lineage already written.
 
-DEV_UI.md section 5 item 5 asks for "A PROVENANCE PANEL: which source,
+docs/ui/development.md section 5 item 5 asks for "A PROVENANCE PANEL: which source,
 which bronze snapshot, which publication, when", and notes that "the
 lineage for this now exists". It does -- and like the changelog before
 it, nothing could read it back for one object.

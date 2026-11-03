@@ -16,7 +16,7 @@ running the other script. REPRODUCED before fixing:
 That is what two copies of a security check drifting looks like: the
 guarded path is the one nobody takes. The property at risk -- "a known
 password never lands outside development" -- is exactly the kind
-PRINCIPLES.md 6 says to extract, because copies quietly stop agreeing.
+docs/principles.md 6 says to extract, because copies quietly stop agreeing.
 
 ONE CALLER TODAY, DELIBERATELY, AND THE REASON IS NOT TASTE.
 DONE, patch 488. create_debug_user.py and create_e2e_users.py both

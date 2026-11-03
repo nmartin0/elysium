@@ -599,7 +599,7 @@ describe('a field on the middle rung of the grant ladder', () => {
 
 describe('three kinds of nothing, which must not look alike', () => {
   /**
-   * DEV_UI.md 9.7's fourth state, "the state that is ours alone":
+   * docs/ui/development.md 9.7's fourth state, "the state that is ours alone":
    * "'Not permitted', 'restricted' and a real NULL must look like three
    * different things. A hidden field is not an empty field, and neither
    * is an absent one."
@@ -657,7 +657,7 @@ describe('three kinds of nothing, which must not look alike', () => {
 
 describe('the agent, reachable from the object', () => {
   /**
-   * DEV_UI.md section 5 item 4, "THE AGENT EVERYWHERE". `AskAboutObject`
+   * docs/ui/development.md section 5 item 4, "THE AGENT EVERYWHERE". `AskAboutObject`
    * has its own tests for what it puts in the link; what is tested here
    * is the half that makes the claim true -- that the link is on this
    * page at all, beside the subject rather than somewhere a person has

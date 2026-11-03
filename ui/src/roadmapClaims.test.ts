@@ -8,7 +8,7 @@
  *
  * WHAT WAS DROPPED: two assertions that the roadmap's PROSE no longer
  * described two solved problems. There is no prose now, so there is
- * nothing to guard; ROADMAP.md has its own guard,
+ * nothing to guard; docs/roadmap.md has its own guard,
  * tests/unit/test_roadmap_is_intact.py.
  *
  * WHAT WAS KEPT, and why it is worth keeping without the document: the

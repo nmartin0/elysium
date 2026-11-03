@@ -95,7 +95,7 @@ def report(data_dir: Path, logger, **probe) -> StorageEncryption:
             f"object, every region and every classification, and a disk that is not encrypted "
             f"gives them to whoever has the disk. Put the data directory on LUKS or on an "
             f"encrypted cloud volume; if it already is one Elysium cannot see (a cloud "
-            f"provider's disk encryption), set {DECLARED_VARIABLE} to say which. INSTALL.md, "
+            f"provider's disk encryption), set {DECLARED_VARIABLE} to say which. docs/install.md, "
             f"'Encryption at rest'.")
     else:
         logger.info(f"storage encryption: {found.detail}")

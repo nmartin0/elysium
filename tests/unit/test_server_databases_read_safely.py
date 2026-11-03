@@ -7,7 +7,7 @@ correctly -- and showed three gaps, each only visible on a real engine:
     the only one, so one slow query could hold a MariaDB sync forever.
   - MariaDB closes an idle connection after eight hours, and pooled
     connections were never recycled before that.
-  - Neither session was READ ONLY. INSTALL.md asks for a SELECT-only
+  - Neither session was READ ONLY. docs/install.md asks for a SELECT-only
     account; this is the second lock, for the account given more.
 
 A real server for each, started once per module (tests/postgres_server.py,

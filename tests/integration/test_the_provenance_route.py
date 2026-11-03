@@ -1,7 +1,7 @@
 """
 GET /objects/{type}/{id}/provenance.
 
-DEV_UI.md section 5 item 5 asks for "A PROVENANCE PANEL: which source,
+docs/ui/development.md section 5 item 5 asks for "A PROVENANCE PANEL: which source,
 which bronze snapshot, which publication, when", and notes that "the
 lineage for this now exists". It did -- core/mirror/lineage.py has
 written `_silo`, `_source_table` and `_row_hash` per row, and

@@ -1,6 +1,6 @@
 """The set on screen, as a file somebody opens in a spreadsheet.
 
-DEV_UI.md section 5 item 1 lists "exported" among what makes a set a
+docs/ui/development.md section 5 item 1 lists "exported" among what makes a set a
 real thing, and section 3 records what the prior art's object explorer
 does: "search, filter, work with the resulting set, and export it.
 Needs no pre-configuration."
@@ -118,7 +118,7 @@ class TestItIsTheSet:
 
 class TestWhatTheCallerMayNotRead:
     def test_a_field_they_cannot_read_is_NOT_A_COLUMN(self, client):
-        """DEV_UI.md 9.7 wants "'Not permitted', 'restricted' and a
+        """docs/ui/development.md 9.7 wants "'Not permitted', 'restricted' and a
         real NULL" to look like three different things, and a CSV has
         exactly ONE empty cell for all three. Dropping the column is
         the only honest option left: a reader can see a column is
@@ -161,7 +161,7 @@ class TestWhatTheCallerMayNotRead:
 
 
 class TestNoCellCanExecute:
-    """`AUDIT_CHECKLIST.csv` R35: "Becomes live the moment an export is
+    """`docs/security/audit-checklist.csv` R35: "Becomes live the moment an export is
     built, and should be built WITH the escaping rather than after".
 
     The unit tests beside `core/export.py` cover the escaping itself;

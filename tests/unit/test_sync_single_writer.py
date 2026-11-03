@@ -12,7 +12,7 @@ transparently; PyIceberg's equivalent is still an open pull request).
 Confirmed directly by running two syncs at once: one succeeded, the
 other failed with "Added data files were found matching the filter".
 
-And it is genuinely reachable, not hypothetical -- INSTALL.md tells
+And it is genuinely reachable, not hypothetical -- docs/install.md tells
 operators to schedule syncs with cron or a systemd timer, and nothing
 stops a slow run from overlapping the next scheduled one.
 """

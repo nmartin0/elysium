@@ -1,4 +1,4 @@
-# DEV_UI.md -- what Elysium's interface should be
+# docs/ui/development.md -- what Elysium's interface should be
 
 > **RESTORED, AND NOT TO BE CONSUMED AGAIN.** This file was deleted in
 > patch 99e721d, "Consume the interface design, keeping its diagnosis".
@@ -16,7 +16,7 @@
 > that gave all seven feature-apps a title when section 12 says the rail
 > should not be an app switcher at all.
 >
-> The planning file's own rule for consuming a document (ROADMAP.md section 8.0) is that "anything
+> The planning file's own rule for consuming a document (docs/archive/planning-history.md section 8.0) is that "anything
 > else in the file that is worth keeping moves into the code it
 > describes". Sixteen sections of measured decisions had nowhere in the
 > code to move to. A measured fact in a deleted file is a measured fact
@@ -1260,7 +1260,7 @@ warn -- a tight pair, for a table that loads hourly.
 ### The decision
 
   1. THE DEPLOYMENT DECLARES ITS EXPECTED SYNC INTERVAL -- one number,
-     default 24 HOURS, since INSTALL.md leaves scheduling to the
+     default 24 HOURS, since docs/install.md leaves scheduling to the
      operator and nightly is what an unattended on-prem deployment
      does. Everything else is derived from it, so an operator who runs
      hourly changes ONE number and every threshold follows.

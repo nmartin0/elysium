@@ -16,14 +16,14 @@ still needed to see a product at all.
 THREE RULES, agreed with the owner:
 
   1. WRITTEN OUT ON PURPOSE. `security: unrestricted`, exactly; a missing
-     block is still an error ("nothing is implicit", PRINCIPLES.md). A
+     block is still an error ("nothing is implicit", docs/principles.md). A
      via_field chain may not END at an unrestricted type either, because
      that would make the linking type unrestricted without anyone having
      written so (object_type_validation refuses it).
   2. THE ROLE CHECK STILL APPLIES. Only the per-object comparison of the
      object's value to the user's is skipped -- so a user with no value
      of the security attribute can still see unrestricted objects.
-  3. THE LOWEST LABEL, NOT "NO LABEL". SECURITY_ARCHITECTURE.md treats
+  3. THE LOWEST LABEL, NOT "NO LABEL". docs/security/architecture.md treats
      security values as compartments; unrestricted is the empty set.
      Reading from it crosses nothing; WRITING INTO it from a labelled
      object is a write-down, and refused -- otherwise an unrestricted

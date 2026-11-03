@@ -310,7 +310,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
       <p className="object-detail__type">{objectType}</p>
       {/* THE AGENT WHERE THE SUBJECT IS, which is the same placement
           `SetName` uses in Browse: beside the thing being asked about,
-          not in a toolbar. DEV_UI.md 5.4 wants it "seeded with what is
+          not in a toolbar. docs/ui/development.md 5.4 wants it "seeded with what is
           on screen", and on this page the heading IS what is on
           screen. */}
       <div className="object-detail__heading">
@@ -335,7 +335,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
       )}
       <dl className="object-detail__fields">
         {/* THE SCHEMA, NOT THE RESPONSE, and this is the fourth state
-              DEV_UI.md 9.7 calls ours alone: "'Not permitted',
+              docs/ui/development.md 9.7 calls ours alone: "'Not permitted',
               'restricted' and a real NULL must look like three different
               things. A hidden field is not an empty field, and neither is
               an absent one."
@@ -458,7 +458,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
       </section>
 
       {/* PROVENANCE LAST, after everything about the object itself.
-          DEV_UI.md 5.3 wants it on the hub -- "properties, links,
+          docs/ui/development.md 5.3 wants it on the hub -- "properties, links,
           history, notes, provenance and the actions available on THIS
           object, together" -- and this is the end of that list for a
           reason: it answers a question about the DEPLOYMENT rather

@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS saved_views (
     -- the presentation being thrown away.
     presentation TEXT NOT NULL DEFAULT '{}',
     -- HOW THE PERSON GOT HERE: {type, id, field}, the one link they
-    -- followed to arrive at this search. DEV_UI.md 11.2 names it as
+    -- followed to arrive at this search. docs/ui/development.md 11.2 names it as
     -- the third part of what a set IS -- "object type + conditions +
     -- the traversal chain that produced it" -- and it was the part
     -- this table dropped.

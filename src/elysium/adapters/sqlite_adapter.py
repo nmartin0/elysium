@@ -290,7 +290,7 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         # SELECT-only DATABASE CREDENTIAL, enforced by the database
         # itself rather than by Elysium's own code -- is a real,
         # separate, still-outstanding deployment concern (see
-        # the roadmap (consumed), and INSTALL.md once written): confirmed
+        # the roadmap (consumed), and docs/install.md once written): confirmed
         # directly
         # against the precedent's own real, documented practice that the
         # credential is the primary enforcement point, with

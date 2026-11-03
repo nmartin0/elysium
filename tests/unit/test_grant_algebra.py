@@ -1,7 +1,7 @@
 """
 The invariants every authority decision in Elysium must satisfy.
 
-WHY A FILE RATHER THAN A PARAGRAPH. SECURITY_ARCHITECTURE.md said
+WHY A FILE RATHER THAN A PARAGRAPH. docs/security/architecture.md said
 "once 2 and 3 exist there is something worth specifying, and the
 properties above become testable rather than aspirational". They do,
 and these are them.
@@ -108,7 +108,7 @@ class TestTheInvariantsAreNamedWhereSomebodyWillLook:
         """
         import pathlib
 
-        document = pathlib.Path("SECURITY_ARCHITECTURE.md").read_text()
+        document = pathlib.Path("docs/security/architecture.md").read_text()
         # THE SECTION, NOT THE WHOLE FILE. A first version searched
         # everywhere and a control removing the phrase from the
         # algebra section still passed -- the words appear in the

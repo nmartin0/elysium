@@ -15,7 +15,7 @@ readable by Elysium's own user only:
 
 The supervisor writes it; the proxy reads it. So with several workers
 the proxy in any of them reaches the server one of them started -- they
-already coordinate through files on the shared data directory (README,
+already coordinate through files on the shared data directory (docs/limitations.md,
 "One machine") -- and the proxy needs nothing of the supervisor but
 that file.
 

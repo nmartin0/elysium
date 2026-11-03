@@ -9,7 +9,7 @@ llm:
   # Two backends ship: "ollama" (a local model over HTTP) and
   # "claude_agent_sdk" (runs the local claude CLI, so calls draw on
   # your Claude subscription's Agent SDK credit rather than separately
-  # billed API credits -- see INSTALL.md for setup).
+  # billed API credits -- see docs/install.md for setup).
   provider: ollama                 # key into src/elysium/core/deployment_loader.py's LLM
                                     # adapter registry -- see that file's
                                     # _LLM_ADAPTER_REGISTRY for what's built in
@@ -160,7 +160,7 @@ tools:
 # actually experiences. A source read hourly but published daily is a
 # day stale to the person looking at it.
 #
-# 24 IS THE DEFAULT, because INSTALL.md leaves scheduling to you and
+# 24 IS THE DEFAULT, because docs/install.md leaves scheduling to you and
 # nightly is what an unattended deployment does.
 #
 # A TYPE MAY DECLARE ITS OWN PAIR in ontology_schema.yaml, or declare

@@ -130,7 +130,7 @@ describe('CommandPalette -- the keyboard', () => {
 
 describe('CommandPalette -- a command that cannot be run', () => {
   /**
-   * DEV_UI.md 10.1: unavailable is "shown disabled WITH THE REASON
+   * docs/ui/development.md 10.1: unavailable is "shown disabled WITH THE REASON
    * rather than hidden". Both halves are load-bearing -- hiding it is
    * the easier code and the worse interface, and greying it without the
    * sentence tells somebody they are stuck without telling them why.

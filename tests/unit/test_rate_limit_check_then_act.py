@@ -11,7 +11,7 @@ atomic is CHECK-THEN-ACT across the two calls. api/routes.py does:
 Between those two lines another caller can check, see the same count,
 and be let through. Neither method is wrong; the SEQUENCE is.
 
-THESE TESTS FORCE THE INTERLEAVING, THEY DO NOT RACE FOR IT. RULES.md
+THESE TESTS FORCE THE INTERLEAVING, THEY DO NOT RACE FOR IT. docs/rules.md
 3 records why: under the GIL the losing order is rare, so a test that
 starts N threads at a barrier and hopes passes against broken code --
 which happened three times on this project. The threaded case below
@@ -22,7 +22,7 @@ WHAT THESE TESTS ASSERT IS TODAY'S BEHAVIOUR, NOT CORRECT BEHAVIOUR.
 They pin a KNOWN, MEASURED GAP so it cannot drift silently while the
 fix is scheduled. The fix needs one atomic check-and-record and a
 change to api/routes.py, which this agent does not own -- see
-AUDIT_CHECKLIST.csv. When that lands, these tests flip from "pins the
+docs/security/audit-checklist.csv. When that lands, these tests flip from "pins the
 overshoot" to "proves it is gone", and the flip is the point: they
 fail loudly the moment the behaviour changes, in either direction.
 """

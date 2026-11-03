@@ -488,7 +488,7 @@ describe('when the request fails', () => {
 
 describe('the quarantine rate per rule', () => {
   /**
-   * DEV_UI.md 16.4's DISTRIBUTION pillar, which it calls the one
+   * docs/ui/development.md 16.4's DISTRIBUTION pillar, which it calls the one
    * Elysium is furthest from: "the quarantine RATE per rule: 0.1% is
    * a data problem, 40% is a pipeline problem (the owner's D4
    * decision)". Tested as arithmetic rather than through the DOM
@@ -532,7 +532,7 @@ describe('the reading put on a rate', () => {
   /**
    * ONLY THE LOUD END IS LABELLED. D4 decided two points and said
    * nothing between them, so a verdict on 12% would be a threshold
-   * nobody set -- and DEV_UI.md 16.2 is blunt that invented
+   * nobody set -- and docs/ui/development.md 16.2 is blunt that invented
    * thresholds are how a channel stops being read.
    */
   it('says nothing about a rate in the range D4 did not decide', () => {
@@ -701,7 +701,7 @@ describe('the rules that warned rather than held', () => {
    * THE GAP THIS CLOSES. `warn` keeps the row, so unlike a quarantined
    * one it leaves no gap in the counts and no finding in the lake --
    * the rule reached a log line on whatever ran the sync and stopped
-   * there. DEV_UI.md 5.6 asks for "failing expectations" beside the
+   * there. docs/ui/development.md 5.6 asks for "failing expectations" beside the
    * quarantined rows.
    */
   it('names every rule that warned', async () => {

@@ -55,7 +55,7 @@ def _verdict(agreement: "bool | str | None", left_has_value: bool,
     """What may be said about a pair without saying the values.
 
     THREE THINGS THAT MUST NOT LOOK ALIKE, which is this project's own
-    rule stated in DEV_UI.md 9.7: "'Not permitted', 'restricted' and a
+    rule stated in docs/ui/development.md 9.7: "'Not permitted', 'restricted' and a
     real NULL must look like three different things." A field the
     reviewer MAY NOT READ, a field one record genuinely LACKS, and a
     field the matcher COULD NOT COMPARE are three different facts, and

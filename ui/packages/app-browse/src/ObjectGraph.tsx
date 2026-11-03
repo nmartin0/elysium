@@ -1,7 +1,7 @@
 /**
  * The set as a canvas -- objects and the links between them.
  *
- * DEV_UI.md section 5 item 7: "A GRAPH CANVAS for instance-level
+ * docs/ui/development.md section 5 item 7: "A GRAPH CANVAS for instance-level
  * exploration -- objects and links, expanded by search-around. The
  * resolution exists; this is rendering."
  *
@@ -122,7 +122,7 @@ export default function ObjectGraph({
   }
 
   // ONE CATEGORY PER TYPE, which is what carries kind on a canvas that
-  // mixes them. DEV_UI.md 13.1 states the rule for the ontology
+  // mixes them. docs/ui/development.md 13.1 states the rule for the ontology
   // canvas and it holds here: "Colour carries kind, not decoration."
   //
   // A LEGEND RATHER THAN A PREFIX ON EVERY LABEL. `Transaction 3`

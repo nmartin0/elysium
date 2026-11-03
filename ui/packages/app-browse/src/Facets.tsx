@@ -1,7 +1,7 @@
 /**
  * What values a field holds, how many of each, and one click to narrow.
  *
- * DEV_UI.md section 5 item 2: "FACETED FILTERS WITH PILLS AND COUNTS,
+ * docs/ui/development.md section 5 item 2: "FACETED FILTERS WITH PILLS AND COUNTS,
  * replacing form-style filtering: distributions, filter-to and
  * filter-out, applied filters always visible." It is the fourth of the
  * six patterns section 2 draws out of the precedent's own tools -- graph canvas

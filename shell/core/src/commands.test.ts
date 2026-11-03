@@ -45,7 +45,7 @@ describe('the binding', () => {
 })
 
 describe('never while the person is typing', () => {
-  /** DEV_UI.md 10.1's first rule. */
+  /** docs/ui/development.md 10.1's first rule. */
   const element = (tag: string, editable = false) =>
     ({ tagName: tag, isContentEditable: editable }) as unknown as EventTarget
 

@@ -2,7 +2,7 @@
 
 THE RULE THEY WAIT ON: this project does not change what the model sees
 or the steps it may take without measuring the change on a real model
-(ROADMAP.md section 8.3, agent-loop efficiency). Every one of these does. So each
+(docs/archive/planning-history.md section 8.3, agent-loop efficiency). Every one of these does. So each
 is BUILT, tested without a model, and OFF -- until one bench session
 (scripts/feature_bench.py) on the deployment's own model says which to
 turn on. Off, the prompt is byte-for-byte what it was.

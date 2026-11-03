@@ -1,7 +1,7 @@
 /**
  * The set on screen, as a file.
  *
- * DEV_UI.md section 5 item 1 lists "exported" among what makes a set a
+ * docs/ui/development.md section 5 item 1 lists "exported" among what makes a set a
  * real thing, and section 3 records what the prior art's object
  * explorer does: "search, filter, work with the resulting set, and
  * export it. Needs no pre-configuration."

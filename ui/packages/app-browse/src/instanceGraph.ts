@@ -65,7 +65,7 @@ export interface InstanceGraph {
 /**
  * THE MOST OBJECTS ON ONE CANVAS.
  *
- * DEV_UI.md 14.1, on what the studies found: force-directed
+ * docs/ui/development.md 14.1, on what the studies found: force-directed
  * "performed better at graphs with 20 nodes but become less readable
  * as the amount of nodes increased". So this is not a performance
  * ceiling -- ECharts would draw a thousand -- it is a legibility one,

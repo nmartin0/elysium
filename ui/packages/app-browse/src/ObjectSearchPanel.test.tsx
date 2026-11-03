@@ -1752,7 +1752,7 @@ describe('the panel knows no ontology nouns of its own', () => {
     renderPanel(FLEET)
 
     // THE SELECT, NOT ANY ELEMENT SAYING 'Vessel'. The set's name now
-    // renders the object type too -- DEV_UI.md 11.1's
+    // renders the object type too -- docs/ui/development.md 11.1's
     // `Customer · 3 filters · 1,284` -- so a bare text query matches
     // twice. This test is about what the DROPDOWN offers, which is
     // what the option asserts.
@@ -1895,7 +1895,7 @@ describe('the results list is one tab stop', () => {
 
 describe('whether the publication is late', () => {
   /**
-   * DEV_UI.md 16.6 point 7: "SHOWN, NOT ONLY ALERTED ON. Every object
+   * docs/ui/development.md 16.6 point 7: "SHOWN, NOT ONLY ALERTED ON. Every object
    * view carries 'published 14:22', so staleness is visible before it
    * becomes an alert."
    *

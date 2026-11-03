@@ -1,7 +1,7 @@
 """
-The UI's tokens, checked against DEV_UI.md.
+The UI's tokens, checked against docs/ui/development.md.
 
-WHY THIS EXISTS. DEV_UI.md was deleted in patch 99e721d after being
+WHY THIS EXISTS. docs/ui/development.md was deleted in patch 99e721d after being
 "consumed" into a planning-file item that kept its DIAGNOSIS and dropped its
 ANSWERS. Three weeks later a session read the surviving item, found a
 problem statement with no solution, and researched the same questions
@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-DESIGN = (ROOT / "DEV_UI.md").read_text(encoding="utf-8")
+DESIGN = (ROOT / "docs/ui/development.md").read_text(encoding="utf-8")
 TOKENS = (ROOT / "ui/packages/shell-api/src/tokens.css").read_text(encoding="utf-8")
 
 
@@ -47,10 +47,10 @@ class TestTheTypeScaleMatchesSection92:
         ("label", "11px"),
     ])
     def test_each_step_is_the_documented_size(self, step, size):
-        assert f"{size}" in DESIGN, f"DEV_UI.md 9.2 no longer lists {size}"
+        assert f"{size}" in DESIGN, f"docs/ui/development.md 9.2 no longer lists {size}"
         assert token(f"type-{step}-size") == size, (
             f"--type-{step}-size is {token(f'type-{step}-size')}, "
-            f"DEV_UI.md 9.2 says {size}. One of them is wrong.")
+            f"docs/ui/development.md 9.2 says {size}. One of them is wrong.")
 
     def test_nothing_is_larger_than_the_cap(self):
         """"Capped deliberately: nothing above 28px. A tool that shows
@@ -103,9 +103,9 @@ class TestThePaletteMatchesSection83:
         ("red-400", "#e88479"), ("red-700", "#b23b2e"),
     ])
     def test_each_colour_is_the_documented_one(self, primitive, value):
-        assert value in DESIGN, f"DEV_UI.md 8.3 no longer lists {value}"
+        assert value in DESIGN, f"docs/ui/development.md 8.3 no longer lists {value}"
         assert token(primitive) == value, (
-            f"--{primitive} is {token(primitive)}, DEV_UI.md 8.3 says {value}. "
+            f"--{primitive} is {token(primitive)}, docs/ui/development.md 8.3 says {value}. "
             f"One of them is wrong.")
 
     def test_dark_is_the_default(self):
@@ -146,7 +146,7 @@ class TestTheSpacingScaleMatchesSection95:
 
 class TestTheDocumentIsStillHere:
     def test_it_was_not_consumed_again(self):
-        """The failure this whole file exists to prevent. If DEV_UI.md
+        """The failure this whole file exists to prevent. If docs/ui/development.md
         is deleted, every test above passes vacuously -- `DESIGN` would
         raise on read, so this is really a guard on the header's
         instruction rather than on the file's existence."""

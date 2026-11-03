@@ -1,7 +1,7 @@
 """
 The upstream team changed the database. What do the users see?
 
-`AUDIT_CHECKLIST.csv` R19 asks for a "source-mutation matrix and
+`docs/security/audit-checklist.csv` R19 asks for a "source-mutation matrix and
 live-parity suite in CI". Two thirds of that existed and were checked
 rather than assumed: `test_gold_matches_the_source.py` is the
 live-parity suite, comparing gold against SQLite itself on the

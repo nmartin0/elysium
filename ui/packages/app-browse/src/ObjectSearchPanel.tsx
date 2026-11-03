@@ -122,7 +122,7 @@ interface ObjectSearchPanelProps extends SubAppProps {
 const BROWSE_VIEWS: readonly ViewOption[] = [
   { id: 'table', label: 'Table', icon: 'th' },
   { id: 'charts', label: 'Charts', icon: 'chart' },
-  // THE THIRD MODE DEV_UI.md 12 ASKS FOR: "one workspace with MODES --
+  // THE THIRD MODE docs/ui/development.md 12 ASKS FOR: "one workspace with MODES --
   // table, graph, chart -- and switching mode must not lose the set,
   // which today it does, because they are different apps." Behind the
   // same `view` key as the other two, so it inherits the set and the
@@ -697,7 +697,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           )}
           {/* FACETS, BELOW THE FILTER BAR AND NOT REPLACING IT.
           
-              DEV_UI.md 5.2 asks for pills and counts "replacing
+              docs/ui/development.md 5.2 asks for pills and counts "replacing
               form-style filtering". The bar stays because it reaches
               operators a facet cannot -- ranges, contains, the set
               operators -- and removing it would lose capability to gain
@@ -794,7 +794,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
         </>
       }
     >
-      {/* THE SUBJECT, ABOVE EVERYTHING THAT IS ABOUT IT. DEV_UI.md
+      {/* THE SUBJECT, ABOVE EVERYTHING THAT IS ABOUT IT. docs/ui/development.md
           11.6: "the set is the SUBJECT, so it belongs in the top bar,
           where a document's name sits. Everything else is about it:
           left is ways to change the set, centre is the set viewed
@@ -1053,7 +1053,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           caller was not given. */}
       {publishedAt !== null && searchable ? (
         /* AND WHETHER THAT IS LATE, which the timestamp alone cannot
-           say. DEV_UI.md 16.6: "a freshness number without a threshold
+           say. docs/ui/development.md 16.6: "a freshness number without a threshold
            is trivia" -- a reader told "published 30 hours ago" has no
            way to know whether that is normal for this deployment, and
            one told the window does.

@@ -313,7 +313,7 @@ class TypeFreshnessResponse(BaseModel):
     """Whether one object type is as current as it is meant to be.
 
     THE VERDICT AND THE WINDOW IT WAS JUDGED AGAINST, together.
-    DEV_UI.md 16.6: "a freshness number without a threshold is
+    docs/ui/development.md 16.6: "a freshness number without a threshold is
     trivia" -- a reader told "published 30 hours ago" cannot tell
     whether that is normal, and one told "expected within 26" can.
 
@@ -339,7 +339,7 @@ class DataFreshnessResponse(BaseModel):
     # read hourly but published daily is a day stale to the person
     # looking at it.
     published_at: dict[str, str] | None = None
-    # PER TYPE, AGAINST ITS OWN DECLARED WINDOW (DEV_UI.md 16.6).
+    # PER TYPE, AGAINST ITS OWN DECLARED WINDOW (docs/ui/development.md 16.6).
     # `published_at` above says WHEN; this says whether that is late,
     # which is a question only the deployment's declared sync interval
     # can answer. Point 7 of that decision: "shown, not only alerted
@@ -352,7 +352,7 @@ class VisibleAppResponse(BaseModel):
     name: str
     path: str
     #: WHAT A PERSON IS WORKING ON, so the rail can group rather than
-    #: list. DEV_UI.md 12: the rail "is not an app switcher. It is a
+    #: list. docs/ui/development.md 12: the rail "is not an app switcher. It is a
     #: SUBJECT switcher".
     #:
     #: DECLARED HERE OR IT DISAPPEARS. Pydantic drops what the model
@@ -1754,7 +1754,7 @@ class DeploymentConfigResponse(BaseModel):
     on_suspected_rename: str = "hold"
     ingest_undeclared_columns: "bool | None" = None
     # HOW OFTEN THIS DEPLOYMENT EXPECTS TO SYNC, and therefore every
-    # freshness threshold a reader is judged against (DEV_UI.md 16.6).
+    # freshness threshold a reader is judged against (docs/ui/development.md 16.6).
     #
     # THE DECLARED NUMBER, NOT THE DERIVED WINDOWS. `freshness_targets`
     # on the config is a mapping per object type, computed from this
@@ -3991,14 +3991,14 @@ class MirrorTableState(BaseModel):
     # WHICH rule is rejecting rather than only that something is" --
     # and both were dropped here, which made the intent unreachable.
     #
-    # THIS IS DEV_UI.md 16.4's DISTRIBUTION PILLAR, the one it calls
+    # THIS IS docs/ui/development.md 16.4's DISTRIBUTION PILLAR, the one it calls
     # the furthest from built: "the quarantine RATE per rule: 0.1% is
     # a data problem, 40% is a pipeline problem". The rate needs a
     # per-rule row count and a table size, and both sides of that
     # division are now in this response.
     quarantine_rules: list[QuarantineRuleResponse] = []
     # THE RULES THAT WARNED RATHER THAN HELD, from the last run.
-    # DEV_UI.md 5.6 asks for "failing expectations" beside the
+    # docs/ui/development.md 5.6 asks for "failing expectations" beside the
     # quarantined rows, and this is the half that had nowhere to come
     # from: `warn` keeps the row, so the finding reached a log line and
     # stopped there.
@@ -4970,7 +4970,7 @@ class SavedViewResponse(BaseModel):
     disabled_conditions: list[str] = []
     presentation: dict[str, Any]
     #: HOW THE PERSON GOT HERE: {type, id, field}, the one link they
-    #: followed to arrive at this search. DEV_UI.md 11.2 names it as
+    #: followed to arrive at this search. docs/ui/development.md 11.2 names it as
     #: the third part of what a set IS -- "object type + conditions +
     #: the traversal chain that produced it".
     #:
@@ -6786,7 +6786,7 @@ def _client_source(request: Request) -> str:
 class ObjectProvenanceResponse(BaseModel):
     """Where one object's row came from.
 
-    DEV_UI.md 5.5 asks for "which source, which bronze snapshot, which
+    docs/ui/development.md 5.5 asks for "which source, which bronze snapshot, which
     publication, when", and notes the lineage already exists. It does --
     core/mirror/lineage.py has written it for months and nothing could
     read it back for a single object.
@@ -8958,7 +8958,7 @@ def export_objects_route(object_type: str, body: ObjectSetQueryRequest, request:
                           current_user: UserRecord = Depends(get_current_user)):
     """The set on screen, as a CSV.
 
-    DEV_UI.md section 5 item 1 lists "exported" among what makes a set
+    docs/ui/development.md section 5 item 1 lists "exported" among what makes a set
     a real thing, and section 3 records what the prior art's object
     explorer does: "search, filter, work with the resulting set, and
     export it. Needs no pre-configuration."
@@ -8979,7 +8979,7 @@ def export_objects_route(object_type: str, body: ObjectSetQueryRequest, request:
     nobody could see. The refusal names the real count.
 
     ONLY COLUMNS THE CALLER MAY READ. A field they may discover but
-    not read is OMITTED rather than blanked -- DEV_UI.md 9.7 wants
+    not read is OMITTED rather than blanked -- docs/ui/development.md 9.7 wants
     "'Not permitted', 'restricted' and a real NULL" to look like three
     different things, and a CSV has exactly one empty cell for all
     three. Dropping the column is the one honest option left: the

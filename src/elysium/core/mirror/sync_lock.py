@@ -30,7 +30,7 @@ def single_writer(lock_path: Path):
     Confirmed by running two syncs at once: one committed, the other
     failed with "Added data files were found matching the filter".
 
-    Genuinely reachable rather than hypothetical -- INSTALL.md tells
+    Genuinely reachable rather than hypothetical -- docs/install.md tells
     operators to schedule syncs with cron or a systemd timer, and
     nothing stops a slow run from overlapping the next scheduled one.
 

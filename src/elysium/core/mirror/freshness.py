@@ -1,6 +1,6 @@
 """How current an object type should be, and whether it is.
 
-THE RULE EVERY PRECEDENT CONVERGES ON, and DEV_UI.md 16.6 records the
+THE RULE EVERY PRECEDENT CONVERGES ON, and docs/ui/development.md 16.6 records the
 reading: freshness is derived from the DECISION THE DATA FEEDS, not
 from what the pipeline can manage -- "a freshness number without a
 threshold is trivia". The published tiers are by consequence: hours
@@ -52,7 +52,7 @@ from datetime import UTC, datetime, timedelta
 
 # ONE NUMBER THE DEPLOYMENT DECLARES, and everything derives from it.
 #
-# TWENTY-FOUR HOURS BY DEFAULT because INSTALL.md leaves scheduling to
+# TWENTY-FOUR HOURS BY DEFAULT because docs/install.md leaves scheduling to
 # the operator and nightly is what an unattended on-prem deployment
 # does. A deployment that syncs hourly says so once.
 DEFAULT_SYNC_INTERVAL_HOURS = 24.0

@@ -49,7 +49,7 @@ data_silos:
 #      # abandon the query -- a client-side timeout only stops waiting,
 #      # and leaves the database working on something nobody will read.
 #      # Every session is also opened READ ONLY on all three, a second
-#      # lock behind the SELECT-only account INSTALL.md asks for.
+#      # lock behind the SELECT-only account docs/install.md asks for.
 #
 #  shop_mariadb:
 #    adapter: sqlalchemy

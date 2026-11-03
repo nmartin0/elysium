@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import SetName from './SetName'
 
 /**
- * DEV_UI.md 11.1: "everything on screen IS a set, named by how it was
+ * docs/ui/development.md 11.1: "everything on screen IS a set, named by how it was
  * built (`Customer · 3 filters · 1,284`), so the interface always has a
  * subject and saving is a PROMOTION rather than a creation."
  */

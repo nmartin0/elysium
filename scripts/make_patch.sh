@@ -8,7 +8,7 @@
 # paragraph is a guideline the one following it may skip. Skipped, they
 # cost real time: a patch of the wrong size, an old patch left in the
 # outputs folder. A rule with no exceptions belongs
-# in something that enforces it (PRINCIPLES.md section 13).
+# in something that enforces it (docs/principles.md section 13).
 #
 # CHECKS, each refusing with what to do: a clean tracked tree; at least one
 # commit ahead of the base, and exactly `expected-commits` when given; the

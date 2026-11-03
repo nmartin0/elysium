@@ -1,7 +1,7 @@
 """A proposer's execute grant is re-checked when the rules change
 (SEC-14).
 
-THE INVARIANT THIS WAS MISSING. `SECURITY_ARCHITECTURE.md`:
+THE INVARIANT THIS WAS MISSING. `docs/security/architecture.md`:
 
     AUTHORITY IS NEVER STORED. It is re-evaluated at the point of use,
     against the CURRENT generation. A pending write survives a restart
@@ -32,7 +32,7 @@ WHAT IT DOES NOT CATCH, tested below so the gap is visible rather than
 implied: `pending.proposer` is a snapshot, so a proposer who has since
 been DISABLED, DELETED or MOVED TO ANOTHER ROLE is not detected here.
 That needs the user directory, which this mediator does not hold.
-Filed with the security agent; see AUDIT_CHECKLIST.csv.
+Filed with the security agent; see docs/security/audit-checklist.csv.
 """
 
 from datetime import UTC, datetime

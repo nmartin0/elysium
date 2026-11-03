@@ -2180,7 +2180,7 @@ class WriteMediator:
                                                proposer: UserRecord | None = None) -> None:
         """Refuses a write whose proposer may no longer run this action.
 
-        THE INVARIANT THIS WAS MISSING. SECURITY_ARCHITECTURE.md:
+        THE INVARIANT THIS WAS MISSING. docs/security/architecture.md:
         "AUTHORITY IS NEVER STORED. It is re-evaluated at the point of
         use, against the CURRENT generation. A pending write survives a
         restart and a reload, so a decision taken at proposal would be

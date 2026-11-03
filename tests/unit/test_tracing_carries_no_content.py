@@ -17,7 +17,7 @@ exporter is none of those things: no user, no MAC, no RBAC, and it
 lands in a backend with its own and usually broader access rules. A
 prompt in a span is a second copy of customer data outside the
 ontology -- data reached without going through the mediator, which is
-the one thing SECURITY_ARCHITECTURE.md does not allow.
+the one thing docs/security/architecture.md does not allow.
 
 So the permitted attributes are a closed list and this asserts it.
 """

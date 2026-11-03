@@ -1158,7 +1158,7 @@ export interface ServerSavedView {
   /** How the person got here: {type, id, field}, the one link they
    *  followed to arrive at this search.
    *
-   *  DEV_UI.md 11.2 names it the third part of what a set IS --
+   *  docs/ui/development.md 11.2 names it the third part of what a set IS --
    *  "object type + conditions + the traversal chain that produced
    *  it" -- and it was the part a save dropped. Optional because a
    *  view saved before the column existed has none, and most views
@@ -3039,7 +3039,7 @@ export interface PublishedChange {
 /**
  * Where one object's row came from.
  *
- * DEV_UI.md 5.5: "which source, which bronze snapshot, which
+ * docs/ui/development.md 5.5: "which source, which bronze snapshot, which
  * publication, when". The lineage has been written for months;
  * `/provenance` is the reader for it.
  *

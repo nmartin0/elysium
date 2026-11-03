@@ -6,7 +6,7 @@ do something the requesting user could not already do -- anything else
 is a confused deputy.
 
 VERIFIED RATHER THAN ASSUMED, and the assumption was wrong in an
-interesting direction. SECURITY_ARCHITECTURE.md listed "intersection
+interesting direction. docs/security/architecture.md listed "intersection
 for action authority" as work to do, on the premise that an action
 "declares at most what it may touch". It declares no authority at all,
 so there is no second authority to intersect with -- every write is

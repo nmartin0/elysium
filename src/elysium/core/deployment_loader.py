@@ -823,7 +823,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
                 "pending_write_ttl_minutes", 240,
             ),
             schema=deep_freeze(schema_raw["object_types"]),
-            # HOW CURRENT EACH TYPE IS EXPECTED TO BE (DEV_UI.md 16.6).
+            # HOW CURRENT EACH TYPE IS EXPECTED TO BE (docs/ui/development.md 16.6).
             #
             # RESOLVED HERE RATHER THAN VALIDATED SEPARATELY, because
             # the resolution IS the validation: a target tighter than

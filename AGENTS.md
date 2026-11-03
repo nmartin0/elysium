@@ -9,7 +9,7 @@ this file contains only what you would get **wrong** without being
 told. Everything else — structure, dependencies, what the code does —
 read from the code.
 
-For the reasoning behind these rules, see `PRINCIPLES.md`. This file is
+For the reasoning behind these rules, see `docs/principles.md`. This file is
 the *how*; that one is the *why*.
 
 ## Commands
@@ -133,7 +133,7 @@ and the work being correct are different states, and the gap between
 them is where most defects live.
 
 The generic form of this and every other rule here lives in
-`RULES.md`.
+`docs/rules.md`.
 
 ## One patch per commit, in the order they were made
 
@@ -600,13 +600,14 @@ awk '{ if (length($0) > 72) print NR": "length($0)" chars" }' /tmp/msg.txt
 
 ## The planning file
 
-`ROADMAP.md` is the one planning file; nothing else plans work. Tier 0
-(section 3) is the core-wide work a strong model does in order; section 4
-holds task cards for efficient models, each naming the files it owns;
-section 5 is what is blocked on the owner (a decision, a machine); section
-6 gives the dependency graph and the waves; section 7 is the worker brief;
-section 8 keeps the design detail, invariants I1-I8 and measurements the
-older plan held. Cite work by id (T0.7, ADM-14, N9, Q-KEY), not by section
+`docs/roadmap.md` is the one planning file; nothing else plans work. Section 1
+holds the design rules, section 2 the checklist and invariants I1-I8, section
+3 the layout; Tier 0 (section 4) is the core-wide work a strong model does in
+order; section 5 holds task cards for efficient models, each naming the files
+it owns; section 6 is what is blocked on the owner (a decision, a machine);
+section 7 gives the dependency graph and the waves; section 8 is the worker
+brief. Decisions are in `docs/decisions.md`; measured runs and the older
+plan are in `docs/archive/planning-history.md`. Cite work by id (T0.7, ADM-14, N9, Q-KEY), not by section
 title or number. A merged card is marked in the roadmap's status column in
 the same change; a measured fact the roadmap holds moves into a comment
 beside the code when the work that needed it lands.
@@ -634,7 +635,7 @@ down (module platform, step 4). `python -m elysium.scripts.module_api_report`
 rewrites it, and a test fails while it is stale -- so a change to what
 modules may rely on arrives as a diff of it, to be reviewed as an API
 change rather than regenerated without a look. It goes when the module
-platform collapses (ROADMAP.md section 8.4, "Converge on precedent", S11); the
+platform collapses (docs/archive/planning-history.md section 8.4, "Converge on precedent", S11); the
 generated `openapi.json` is then the reviewed artefact.
 
 `vulture_whitelist.py` is append-only, and each entry needs a comment

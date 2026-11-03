@@ -919,7 +919,7 @@ describe('Shell -- the command palette', () => {
    * SHELL owns: the binding, the guard that stops it firing mid-typing,
    * and the fact that the commands come from the rail the server sent.
    *
-   * THE SHELL IS WHERE IT LIVES because DEV_UI.md 10.1 quotes
+   * THE SHELL IS WHERE IT LIVES because docs/ui/development.md 10.1 quotes
    * Superhuman's own guidance to make the palette available EVERYWHERE,
    * and a palette that works on four screens out of seven is one people
    * stop reaching for. Mounting it here is what makes that true, so it
@@ -1005,7 +1005,7 @@ describe('Shell -- the command palette', () => {
   })
 
   it('groups each command under the subject its app belongs to', async () => {
-    // The rail is a SUBJECT switcher (DEV_UI.md 12), and the palette
+    // The rail is a SUBJECT switcher (docs/ui/development.md 12), and the palette
     // should say the same words the rail does rather than inventing a
     // second vocabulary for the same screens.
     renderShell([{ name: 'Admin', path: '/admin', subject: 'Settings' }])

@@ -5,7 +5,7 @@ spreadsheet is CODE unless something stops it, and the thing that stops
 it has to run on every cell of every export. One place deciding what a
 cell may contain is the only arrangement where that is checkable.
 
-THE PROJECT'S OWN AUDIT PREDICTED THIS FILE. `AUDIT_CHECKLIST.csv`
+THE PROJECT'S OWN AUDIT PREDICTED THIS FILE. `docs/security/audit-checklist.csv`
 R35, "export-time formula escaping": "NOT APPLICABLE YET, verified:
 there is no CSV or spreadsheet export anywhere in api/ or ui/. Nothing
 produces a file a formula could execute in. Becomes live the moment an
@@ -97,7 +97,7 @@ def escape_cell(value: Any) -> str:
     say the first.
 
     WHAT THIS DOES NOT DO is distinguish a value the caller may not
-    read from a value that is genuinely absent -- DEV_UI.md 9.7's
+    read from a value that is genuinely absent -- docs/ui/development.md 9.7's
     fourth state. A CSV has no tag to render, so the export omits the
     COLUMN for a field the caller cannot read rather than filling it
     with blanks that mean two different things. That decision is the

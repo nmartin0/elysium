@@ -660,7 +660,7 @@ describe('searchAround', () => {
 
 describe('worstFreshness', () => {
   /**
-   * DEV_UI.md 16.6 point 7, "shown, not only alerted on". A screen
+   * docs/ui/development.md 16.6 point 7, "shown, not only alerted on". A screen
    * shows several types; this is the one rule for which verdict it
    * reports.
    */

@@ -1,6 +1,6 @@
 # RULES
 
-The working method, in one place. Distilled from `PRINCIPLES.md`,
+The working method, in one place. Distilled from `docs/principles.md`,
 `AGENTS.md` and `CLAUDE.md`, which hold the same rules mixed with
 this project's specifics. **This file is the generic part** -- what
 would still apply on a different codebase.
@@ -42,7 +42,7 @@ project were wrong on inspection, all in the same direction --
 **describing a defect that reading the code would have ruled out.**
 Re-verify before building from a note you wrote a month ago.
 
-Keep ONE planning file (here `ROADMAP.md`): the order of work in tiers
+Keep ONE planning file (here `docs/roadmap.md`): the order of work in tiers
 and cards, what waits on a person in its own section, and the design
 evidence behind them. Several overlapping plans disagree within a month.
 A card names the files it owns so parallel workers never touch the same

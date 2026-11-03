@@ -237,7 +237,7 @@ model_name
 # vulture sees neither side.
 quarantined_rows
 quarantine_reason
-# The per-rule breakdown beside them, added when DEV_UI.md 16.4's
+# The per-rule breakdown beside them, added when docs/ui/development.md 16.4's
 # DISTRIBUTION pillar needed a divisible row count. Same reason
 # vulture cannot see them: set by name in the route's dict, read in
 # TypeScript.
@@ -247,7 +247,7 @@ quarantine_last_detected_at
 # reason vulture cannot see them: set by name in the route's dict,
 # read in TypeScript.
 expectation_warnings
-# TypeFreshnessResponse's window (DEV_UI.md 16.6). Same reason: set by
+# TypeFreshnessResponse's window (docs/ui/development.md 16.6). Same reason: set by
 # name in the route's dict, read in TypeScript.
 warn_after_hours
 fail_after_hours

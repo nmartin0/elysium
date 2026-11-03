@@ -1,7 +1,7 @@
 /**
  * FieldValue -- one field's value, or which kind of absence it is.
  *
- * DEV_UI.md 9.7's fourth state, "ours alone" (specimen E4): "'Not
+ * docs/ui/development.md 9.7's fourth state, "ours alone" (specimen E4): "'Not
  * permitted', 'restricted' and a real NULL must look like three
  * different things. A hidden field is not an empty field." Three
  * surfaces each had an answer -- a pending tag on the object page and

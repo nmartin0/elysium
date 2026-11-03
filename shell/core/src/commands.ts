@@ -1,7 +1,7 @@
 /**
  * One registry, and everything that invokes a command goes through it.
  *
- * DEV_UI.md 10.1: "ONE command registry as the single source of truth
+ * docs/ui/development.md 10.1: "ONE command registry as the single source of truth
  * for id, label, default binding, availability and help text. Buttons,
  * shortcuts and the palette all invoke the SAME command. Then shortcut
  * help is generated and cannot drift, and a command that is unavailable
@@ -40,7 +40,7 @@ export interface Command {
 /**
  * Whether a global shortcut may fire right now.
  *
- * DEV_UI.md 10.1's first rule: "never fire a global shortcut while the
+ * docs/ui/development.md 10.1's first rule: "never fire a global shortcut while the
  * person is typing". Cmd/Ctrl-K is safe in a text field on most
  * platforms, but the rule is about the CLASS of mistake rather than
  * this one binding, and the registry is where the next binding will be

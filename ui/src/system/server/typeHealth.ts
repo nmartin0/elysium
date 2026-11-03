@@ -2,7 +2,7 @@
  * Is THIS OBJECT TYPE healthy -- the question the Silos screen could
  * not answer.
  *
- * `AUDIT_CHECKLIST.csv` R6 asks for "health checks per table and
+ * `docs/security/audit-checklist.csv` R6 asks for "health checks per table and
  * object type". Per TABLE largely existed: the Mirror panel already
  * judges every table it lists -- never synced, refused, N held back,
  * serving more than was last fetched -- and `health_condition.py`

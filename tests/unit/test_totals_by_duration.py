@@ -1,4 +1,4 @@
-"""Totals by a fixed length, on a zone's clock (core/periods.py, ROADMAP.md section 8.4
+"""Totals by a fixed length, on a zone's clock (core/periods.py, docs/archive/planning-history.md section 8.4
 ("Facts and requirements": the time-series reads); the owner's choice of ISO 8601 durations,
 26 October, after the precedent's aggregate).
 

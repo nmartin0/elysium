@@ -13,7 +13,7 @@ warned row is PRESENT, in silver, in gold and on screen, identical to
 a row that broke no rule -- and the deployment declared a rule about
 it precisely because somebody wanted to know.
 
-DEV_UI.md section 5 item 6 asks for "failing expectations" beside the
+docs/ui/development.md section 5 item 6 asks for "failing expectations" beside the
 quarantined rows, and this is the half that had nowhere to come from.
 
 COUNTS PER RULE PER RUN, NOT A ROW PER FINDING, and the asymmetry with

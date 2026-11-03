@@ -232,7 +232,7 @@ class SQLAlchemyReadAdapter(ExternalReadAdapter):
         buried.
         """
         if self._url.startswith("postgresql"):
-            # READ ONLY AS WELL (19 October): INSTALL.md asks for a
+            # READ ONLY AS WELL (19 October): docs/install.md asks for a
             # SELECT-only account, and this is the second lock, for the
             # account that was given more. Every transaction this
             # adapter opens refuses to write.

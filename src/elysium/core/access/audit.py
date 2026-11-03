@@ -305,7 +305,7 @@ class AuditLog:
 
         What remains of a record is its timestamp, which can still show
         that a request took longer than its visible result explains
-        (ROADMAP.md section 8.4, "Converge on precedent").
+        (docs/archive/planning-history.md section 8.4, "Converge on precedent").
 
         SCANNED BACKWARDS, WITH A CAP, and that is the design decision
         rather than an optimisation. The log is append-only JSONL, so
