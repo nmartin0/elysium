@@ -1083,9 +1083,26 @@ export interface MirrorTableState {
   /** Why it was refused, in full. A reader who sees a refusal wants
    *  the column and the value, not a category. */
   last_attempt_detail: string | null
+  /** 'live', 'rebuilding' or 'unavailable': whether this table is being
+   *  rebuilt from bronze after a retype, or cannot be told. Derived by the
+   *  server on every call; absent from a server that predates it. */
+  state?: ObjectStateName
+  /** A retype left this table's silver different from the declared type.
+   *  The previous silver keeps serving until a person presses "Rebuild now". */
+  rebuild_owed?: boolean
   /** When the data changed, newest first. Iceberg keeps a snapshot
    *  per commit, so this is history the mirror already holds. */
   snapshots?: MirrorSnapshot[]
+}
+
+export type ObjectStateName = 'live' | 'rebuilding' | 'unavailable'
+
+/** One object type's state: the worst of the silver tables it reads. */
+export interface MirrorObjectState {
+  object_type: string
+  state: ObjectStateName
+  rebuild_owed: boolean
+  tables: string[]
 }
 
 /** One rule that fired and let the row through anyway.
@@ -1123,6 +1140,12 @@ export interface MirrorState {
   reading_from_mirror: boolean
   tables: MirrorTableState[]
   problems: string[]
+  /** The "silo.table" names owed a rebuild: what startMirrorSync takes. */
+  rebuild_owed?: string[]
+  /** True when the lake could not be read: `rebuild_owed` is empty because
+   *  nobody can tell, and every state is 'unavailable'. */
+  rebuild_owed_unknown?: boolean
+  object_states?: MirrorObjectState[]
 }
 
 export interface ServerSavedView {

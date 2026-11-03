@@ -1682,14 +1682,14 @@ CONTROLS = [
         path="core/mirror/object_state.py",
         old='        return REBUILDING if sync_running else LIVE',
         new='        return REBUILDING',
-        tests=['tests/unit/test_object_state.py::TestTableState::test_a_recorded_rebuild_is_rebuilding_only_while_a_sync_runs', 'tests/integration/test_retype_from_the_ui.py::TestTheStateWhenItCannotBeTold::test_a_rebuild_that_died_is_not_rebuilding_for_ever'],
+        tests=['tests/unit/test_object_state.py::TestTableState::test_a_recorded_rebuild_is_rebuilding_only_while_a_sync_runs', 'tests/integration/test_retype_from_the_ui.py::TestTheStateWhenItCannotBeTold::test_a_rebuild_that_died_is_not_rebuilding_for_ever'],  # noqa: E501
     ),
     Control(
         describes="R2 state: an unreadable lake reads as live",
         path="core/mirror/object_state.py",
         old='    if not owed_known:\n        return UNAVAILABLE',
         new='    if not owed_known:\n        return LIVE',
-        tests=['tests/unit/test_object_state.py::TestTableState::test_an_unreadable_lake_is_unavailable_whatever_else_is_known', 'tests/integration/test_retype_from_the_ui.py::TestTheStateWhenItCannotBeTold::test_a_mirror_that_cannot_be_read_is_unavailable_never_live'],
+        tests=['tests/unit/test_object_state.py::TestTableState::test_an_unreadable_lake_is_unavailable_whatever_else_is_known', 'tests/integration/test_retype_from_the_ui.py::TestTheStateWhenItCannotBeTold::test_a_mirror_that_cannot_be_read_is_unavailable_never_live'],  # noqa: E501
     ),
     Control(
         describes="R2 state: the mirror panel never says a rebuild is owed",
@@ -1717,7 +1717,7 @@ CONTROLS = [
         path="core/mirror/object_state.py",
         old='    if last_outcome == REBUILDING_OUTCOME:',
         new='    if last_outcome is not None:',
-        tests=['tests/integration/test_retype_from_the_ui.py::TestTheStateWhenItCannotBeTold::test_a_sync_that_is_not_a_rebuild_does_not_make_a_table_rebuilding', 'tests/unit/test_object_state.py::TestTableState::test_any_other_attempt_is_live_even_with_a_sync_running'],
+        tests=['tests/integration/test_retype_from_the_ui.py::TestTheStateWhenItCannotBeTold::test_a_sync_that_is_not_a_rebuild_does_not_make_a_table_rebuilding', 'tests/unit/test_object_state.py::TestTableState::test_any_other_attempt_is_live_even_with_a_sync_running'],  # noqa: E501
     ),
     Control(
         describes="R13 adopt: a link stated alone makes its column a key of the target",

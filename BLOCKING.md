@@ -1439,6 +1439,21 @@ one Inbox. Built so far, each checked in a real browser:
   deployment's `on_type_mismatch` (refuse stops the sync and the rebuild;
   quarantine sets the row aside at every sync). tests/integration/
   test_retype_from_the_ui.py runs a real sync before and after.
+  R2 BUILT IN PART (3 November, owner's order): GET /admin/mirror carries,
+  per silver table and per object type, a STATE and whether a rebuild is
+  OWED (core/mirror/object_state.py), and the Mirror panel shows them.
+  Derived on every call, nothing stored: OWED is tables_needing_rebuild;
+  REBUILDING is "the table's last sync attempt is `rebuilding` (run_sync
+  records it just before it drops that silver) AND a sync holds the lock
+  now", so a rebuild that died is live again and owed again; UNAVAILABLE is
+  "the lake could not be read or the lock could not be tried", never
+  guessed live; a type is the worst of its tables. "Rebuild now" is a button
+  pressed each time (it sends the names owed at that moment; the server
+  checks each again), never automatic and not the default on apply; the old
+  silver keeps serving until the swap, and gold of the type is skipped
+  meanwhile (measured in R1, unchanged). NOT BUILT of R2: the state in
+  answers ("data as of 14:02, rebuilding") and on screens other than the
+  Mirror panel. R3 and R4 are untouched.
   A field declared later is not empty history:
   bronze keeps every column the source has. Order: add a field (built),
   then add a type with its binding picked from the source, then add a

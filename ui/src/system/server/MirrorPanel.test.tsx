@@ -16,6 +16,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { MirrorState } from '@elysium/shell-api/api'
 import MirrorPanel, { formatShare, quarantineShare, readingFor } from './MirrorPanel'
 
 vi.mock('@elysium/shell-api/api', () => ({
@@ -790,5 +791,135 @@ describe('the rules that warned rather than held', () => {
     expect(held).not.toContain('email')
     expect(warnings).toContain('email')
     expect(warnings).not.toContain('name')
+  })
+})
+
+/**
+ * RETYPE R2: what a changed field type leaves behind. The server derives
+ * every word of it (live, rebuilding, unavailable, rebuild owed); the panel
+ * shows it, and "Rebuild now" is a button pressed each time, never
+ * something the panel does by itself.
+ */
+describe('after a field type was changed', () => {
+  const OWED = 'primary_sql.transactions'
+  const owedState = (overrides: Partial<MirrorState> = {}): MirrorState => ({
+    reading_from_mirror: true,
+    tables: [table({ state: 'live', rebuild_owed: true })],
+    problems: [],
+    rebuild_owed: [OWED],
+    rebuild_owed_unknown: false,
+    object_states: [{ object_type: 'Transaction', state: 'live', rebuild_owed: true, tables: [OWED] }],
+    ...overrides,
+  })
+
+  it('says nothing when no rebuild is owed and every object is live', async () => {
+    mocked.mockResolvedValue({
+      reading_from_mirror: true,
+      tables: [table({ state: 'live', rebuild_owed: false })],
+      problems: [],
+      rebuild_owed: [],
+      rebuild_owed_unknown: false,
+      object_states: [{ object_type: 'Transaction', state: 'live', rebuild_owed: false, tables: [OWED] }],
+    })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    await screen.findByText(OWED)
+    expect(screen.queryByRole('button', { name: /rebuild now/i })).toBeNull()
+    expect(screen.queryByText(/rebuild owed/i)).toBeNull()
+  })
+
+  it('shows what is owed, says the old data keeps serving, and does not rebuild by itself', async () => {
+    mocked.mockResolvedValue(owedState())
+    mockedSync.mockReset()
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/A rebuild is owed for 1 table/)).toBeInTheDocument()
+    expect(screen.getByText(/the previous data keeps being served/)).toBeInTheDocument()
+    expect(screen.getByText('rebuild owed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /rebuild now/i })).toBeEnabled()
+    expect(mockedSync).not.toHaveBeenCalled()
+  })
+
+  it('rebuilds exactly the owed tables each time the button is pressed, and asks the state again', async () => {
+    mocked.mockResolvedValue(owedState())
+    mockedSync.mockReset()
+    mockedSync.mockResolvedValue({ started: true, detail: 'A sync is running.' })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+    await screen.findByText(/A rebuild is owed/)
+    const asked = mocked.mock.calls.length
+
+    fireEvent.click(screen.getByRole('button', { name: /rebuild now/i }))
+    await waitFor(() => expect(mockedSync).toHaveBeenCalledTimes(1))
+    expect(mockedSync).toHaveBeenLastCalledWith([OWED])
+    await waitFor(() => expect(mocked.mock.calls.length).toBeGreaterThan(asked))
+
+    // Still owed (the server says so): pressing again is a new decision, a new request.
+    fireEvent.click(await screen.findByRole('button', { name: /rebuild now/i }))
+    await waitFor(() => expect(mockedSync).toHaveBeenCalledTimes(2))
+    expect(mockedSync).toHaveBeenLastCalledWith([OWED])
+  })
+
+  it('shows the server refusal instead of pretending the rebuild started', async () => {
+    mocked.mockResolvedValue(owedState())
+    mockedSync.mockReset()
+    mockedSync.mockRejectedValue(new Error('A sync is running; the rebuild was not started.'))
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /rebuild now/i }))
+
+    expect(await screen.findByText(/the rebuild was not started/)).toBeInTheDocument()
+  })
+
+  it('shows a rebuild under way as rebuilding, with no button, and no longer offers its table', async () => {
+    mocked.mockResolvedValue(
+      owedState({
+        tables: [table({ state: 'rebuilding', rebuild_owed: true })],
+        object_states: [{ object_type: 'Transaction', state: 'rebuilding', rebuild_owed: true, tables: [OWED] }],
+      }),
+    )
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/Rebuilding: Transaction/)).toBeInTheDocument()
+    expect(screen.getByText(/the data people read is the previous data/)).toBeInTheDocument()
+    expect(screen.getByText('rebuilding')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /rebuild now/i })).toBeNull()
+    expect(screen.queryByText(/A rebuild is owed/)).toBeNull()
+    expect(screen.queryByText('rebuild owed')).toBeNull()
+  })
+
+  it('keeps the button off for a second table while another is being rebuilt', async () => {
+    mocked.mockResolvedValue(
+      owedState({
+        tables: [
+          table({ state: 'rebuilding', rebuild_owed: true }),
+          table({ table: 'accounts', state: 'live', rebuild_owed: true }),
+        ],
+        rebuild_owed: [OWED, 'primary_sql.accounts'],
+        object_states: [
+          { object_type: 'Transaction', state: 'rebuilding', rebuild_owed: true, tables: [OWED] },
+          { object_type: 'Account', state: 'live', rebuild_owed: true, tables: ['primary_sql.accounts'] },
+        ],
+      }),
+    )
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/A rebuild is owed for 1 table/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /rebuild now/i })).toBeDisabled()
+  })
+
+  it('does not call an unreadable mirror live, and offers no rebuild it cannot name', async () => {
+    mocked.mockResolvedValue({
+      reading_from_mirror: true,
+      tables: [table({ state: 'unavailable', rebuild_owed: false })],
+      problems: [],
+      rebuild_owed: [],
+      rebuild_owed_unknown: true,
+      object_states: [{ object_type: 'Transaction', state: 'unavailable', rebuild_owed: false, tables: [OWED] }],
+    })
+    render(<MirrorPanel onSessionExpired={vi.fn()} />)
+
+    expect(await screen.findByText(/cannot tell whether a rebuild is owed/)).toBeInTheDocument()
+    expect(screen.getByText('unavailable')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /rebuild now/i })).toBeNull()
   })
 })

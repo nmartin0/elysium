@@ -6,6 +6,7 @@ import {
   getErrorMessage,
   getMirrorState,
   handleIfSessionExpired,
+  type MirrorObjectState,
   type MirrorState,
   startMirrorSync,
 } from '@elysium/shell-api/api'
@@ -86,6 +87,90 @@ export function readingFor(share: number | null): string | null {
   return 'most of the table — likely the rule or the mapping, not the data'
 }
 
+/**
+ * WHAT A RETYPE LEFT BEHIND (retype slice R2), or nothing at all.
+ *
+ * An object is LIVE, REBUILDING or UNAVAILABLE, and a rebuild can be OWED
+ * on top of live: a field's type changed, silver still has the old one, and
+ * the sync skips that table until a person rebuilds it. All of it comes from
+ * the server, derived from the lake each time -- this component stores
+ * nothing, so a rebuild finished by hand elsewhere stops being owed on the
+ * next poll.
+ *
+ * "REBUILD NOW" IS A BUTTON AND NEVER AUTOMATIC, because it discards the
+ * silver table's snapshot history. While it runs the previous silver keeps
+ * serving, which the text says in those words; the button goes while any
+ * table is rebuilding, since the server refuses a second rebuild anyway
+ * (409, a sync holds the lock).
+ *
+ * RENDERS NOTHING WHEN ALL IS WELL, so a healthy mirror's panel is the one
+ * it always was.
+ */
+function RetypeState({
+  state,
+  pressed,
+  onRebuild,
+}: {
+  state: MirrorState
+  pressed: boolean
+  onRebuild: (names: string[]) => void
+}) {
+  // A table being rebuilt is still "owed" until the swap; it is shown as
+  // rebuilding, not offered again.
+  const busy = new Set(
+    state.tables.filter((each) => each.state === 'rebuilding').map((each) => `${each.silo}.${each.table}`),
+  )
+  const owed = (state.rebuild_owed ?? []).filter((name) => !busy.has(name))
+  const objects: MirrorObjectState[] = state.object_states ?? []
+  const rebuilding = objects.filter((each) => each.state === 'rebuilding')
+  const unavailable = objects.filter((each) => each.state === 'unavailable')
+  const waiting = objects.filter((each) => each.rebuild_owed && each.state === 'live')
+  const unknown = state.rebuild_owed_unknown === true
+  const names = (list: MirrorObjectState[]) => list.map((each) => each.object_type).join(', ')
+
+  return (
+    <>
+      {unknown && (
+        <Notice state="pending" title="This cannot tell whether a rebuild is owed" className="mirror__rebuild-unknown">
+          The mirror could not be read just now, so the data of{' '}
+          {unavailable.length > 0 ? names(unavailable) : 'every type'} is shown as unavailable rather than guessed to be
+          live. Look at the problems above, or run <code>scripts/repair_catalog.py</code>.
+        </Notice>
+      )}
+      {rebuilding.length > 0 && (
+        <Notice state="active" title={`Rebuilding: ${names(rebuilding)}`} className="mirror__rebuilding">
+          The silver of a changed field type is being rebuilt from bronze. Until the new table is swapped in, the data
+          people read is the previous data — as of the last sync before the change — and the type is not republished
+          meanwhile.
+        </Notice>
+      )}
+      {!unknown && owed.length > 0 && (
+        <Notice
+          state="pending"
+          title={`A rebuild is owed for ${owed.length} table${owed.length === 1 ? '' : 's'}`}
+          className="mirror__rebuild-owed"
+        >
+          <p>
+            A field's data type was changed, so the silver of <strong>{owed.join(', ')}</strong>
+            {waiting.length > 0 ? ` (read by ${names(waiting)})` : ''} no longer matches it. Nothing rebuilds by itself:
+            the previous data keeps being served, and the sync skips {owed.length === 1 ? 'this table' : 'these tables'}{' '}
+            until you press the button. Rebuilding discards the silver table's snapshot history and rebuilds the types
+            stored in it from bronze, which is kept.
+          </p>
+          <Button
+            icon="build"
+            intent="warning"
+            disabled={pressed || rebuilding.length > 0}
+            onClick={() => onRebuild(owed)}
+          >
+            Rebuild now
+          </Button>
+        </Notice>
+      )}
+    </>
+  )
+}
+
 export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: () => void }) {
   const [state, setState] = useState<MirrorState | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -95,6 +180,10 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
   // last-attempt column on the next poll, which is the honest
   // account of what it can see.
   const [syncMessage, setSyncMessage] = useState<string | null>(null)
+  // A "Rebuild now" PRESS IN FLIGHT. Only to stop a second press while the
+  // request is out: the rebuild itself is shown from the server's own
+  // derived state, never remembered here.
+  const [rebuildPressed, setRebuildPressed] = useState(false)
 
   async function handleSync() {
     setSyncMessage(null)
@@ -103,6 +192,26 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
     } catch (caught: unknown) {
       if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
       setSyncMessage(getErrorMessage(caught))
+    }
+  }
+
+  // "REBUILD NOW" IS PRESSED EVERY TIME. Nothing rebuilds on its own: the
+  // names are the ones the server says are owed at this moment, and the
+  // server checks each again (a name that no longer needs it is refused, so
+  // a stale button cannot discard a history for nothing). Afterwards the
+  // state is asked again instead of guessed, so "rebuilding" appears only
+  // when the server says it is.
+  async function handleRebuild(names: string[]) {
+    setSyncMessage(null)
+    setRebuildPressed(true)
+    try {
+      setSyncMessage((await startMirrorSync(names)).detail)
+      setState(await getMirrorState())
+    } catch (caught: unknown) {
+      if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
+      setSyncMessage(getErrorMessage(caught))
+    } finally {
+      setRebuildPressed(false)
     }
   }
 
@@ -242,6 +351,8 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
         </Notice>
       )}
 
+      <RetypeState state={state} pressed={rebuildPressed} onRebuild={handleRebuild} />
+
       <div className="mirror__actions">
         <Button icon="refresh" onClick={handleSync}>
           Sync now
@@ -295,7 +406,24 @@ export default function MirrorPanel({ onSessionExpired }: { onSessionExpired: ()
             return (
               <React.Fragment key={identifier}>
                 <tr>
-                  <td>{identifier}</td>
+                  <td>
+                    {identifier}
+                    {table.state === 'rebuilding' && (
+                      <StatusTag state="pending" style={{ marginInlineStart: '0.5rem' }}>
+                        rebuilding
+                      </StatusTag>
+                    )}
+                    {table.state === 'unavailable' && (
+                      <StatusTag state="refused" style={{ marginInlineStart: '0.5rem' }}>
+                        unavailable
+                      </StatusTag>
+                    )}
+                    {table.rebuild_owed && table.state !== 'rebuilding' && (
+                      <StatusTag state="pending" style={{ marginInlineStart: '0.5rem' }}>
+                        rebuild owed
+                      </StatusTag>
+                    )}
+                  </td>
                   <td>
                     {table.last_synced_at ? (
                       formatTimestamp(table.last_synced_at)
