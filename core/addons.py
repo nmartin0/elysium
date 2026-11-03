@@ -40,9 +40,11 @@ made for that add-on each time its server starts, so
 person holds (core/modules.py), and no other grant of Elysium's.
 
 A JWT and not a format of Elysium's own, so an add-on in any language
-verifies it with the library it already has. `sdk/python/
-elysium_addon.py` is a verifier needing nothing but Python's standard
-library, for an add-on that may not import Elysium (the simulator).
+verifies it with the library it already has. Elysium signs with PyJWT.
+`sdk/python/elysium_addon.py` is a verifier needing nothing but Python's
+standard library, for an add-on that may not import Elysium (the
+simulator); it accepts what PyJWT signs, and tests/unit/test_addons.py
+holds the two to each other.
 
 WHAT PASSES. Both directions are ALLOWLISTS, not denylists: a header
 nobody thought of is dropped rather than forwarded.
@@ -66,12 +68,9 @@ it, as a document with an origin of its own and no script. An add-on's
 pages are its module's bundle, served by Elysium like any module's; its
 server answers the bundle's calls.
 
-Standard library only: this is a leaf of core.
+PyJWT and the standard library only: this is a leaf of core.
 """
 
-import base64
-import hashlib
-import hmac
 import json
 import secrets
 import sys
@@ -79,6 +78,8 @@ import time
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+
+import jwt
 
 #: The header carrying who is asking, to the add-on's server.
 IDENTITY_HEADER = "X-Elysium-Identity"
@@ -182,28 +183,21 @@ def new_secret() -> str:
     return secrets.token_urlsafe(32)
 
 
-def _b64(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
-
-
-#: The JOSE header, fixed: the algorithm is the signer's choice, never
-#: the token's (RFC 8725 §3.1, "Perform Algorithm Verification").
-_HEADER = _b64(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
-
-
 def sign_identity(secret: str, *, audience: str, user_id: str, now: "float | None" = None,
                   permissions: "Iterable[str]" = ()) -> str:
     """A token saying that `user_id` is asking add-on `audience`, holding
     `permissions` -- of the add-on's OWN declared permissions, those this
     person holds (step 2.3), so an add-on with several can tell who may do
     what without asking Elysium. Never Elysium's other grants: an add-on
-    has no business knowing who may read Customer."""
+    has no business knowing who may read Customer.
+
+    PyJWT signs it. The algorithm is the signer's choice, never the
+    token's (RFC 8725 section 3.1), so it is named here and a verifier
+    names it too."""
     issued = int(time.time() if now is None else now)
     claims = {"iss": ISSUER, "aud": audience, "sub": user_id, "name": user_id,
               "iat": issued, "exp": issued + TOKEN_SECONDS, "permissions": sorted(permissions)}
-    body = _b64(json.dumps(claims, separators=(",", ":"), sort_keys=True).encode())
-    signature = hmac.new(secret.encode(), f"{_HEADER}.{body}".encode(), hashlib.sha256).digest()
-    return f"{_HEADER}.{body}.{_b64(signature)}"
+    return jwt.encode(claims, secret, algorithm="HS256")
 
 
 # --- what passes ---------------------------------------------------------------

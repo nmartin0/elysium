@@ -6772,6 +6772,22 @@ CONTROLS = [
         tests=["tests/integration/test_addon_proxy.py::test_what_this_person_may_not_reach_is_a_404_alike"],
     ),
     Control(
+        describes="ADD-ON: an identity token expires, so one copied out of a log is good for a minute",
+        path="core/addons.py",
+        old='"iat": issued, "exp": issued + TOKEN_SECONDS,',
+        new='"iat": issued, "exp": issued + 10**9,',
+        tests=["tests/unit/test_addons.py::TestTheToken::test_a_standard_library_refuses_an_expired_token",
+               "tests/unit/test_addons.py::TestTheToken::test_the_add_on_reads_who_is_asking"],
+    ),
+    Control(
+        describes="ADD-ON: an identity token is signed HS256, the one algorithm a verifier names",
+        path="core/addons.py",
+        old='return jwt.encode(claims, secret, algorithm="HS256")',
+        new='return jwt.encode(claims, secret, algorithm="HS512")',
+        tests=["tests/unit/test_addons.py::TestTheToken::test_a_standard_jwt_library_reads_it_too",
+               "tests/unit/test_addons.py::TestTheToken::test_the_add_on_reads_who_is_asking"],
+    ),
+    Control(
         describes="ADD-ON: the token names only the add-on's own permissions this person holds",
         path="api/routes.py",
         old="                         if authorize(current_user, config.roles, module_grant(module.id, name))])",

@@ -6,14 +6,18 @@ copy (sdk/python/elysium_addon.py), so the two cannot drift apart."""
 import base64
 import json
 import sys
+import time
+import warnings
 from pathlib import Path
 
+import jwt
 import pytest
 
 from core.addons import (
     AddonError,
     ServerSpec,
     command_line,
+    new_secret,
     parse_server,
     request_headers,
     response_headers,
@@ -26,6 +30,9 @@ import elysium_addon  # noqa: E402
 
 HERE = Path("module.json")
 NOW = 1_800_000_000.0
+#: Long enough for HS256 (RFC 7518 section 3.2): PyJWT warns of a shorter key,
+#: and Elysium makes 43 characters (new_secret).
+SECRET = "a-secret-at-least-32-bytes-long-ok"
 
 
 class TestTheServerDeclaration:
@@ -72,7 +79,7 @@ class TestTheServerDeclaration:
             _load_manifest(tmp_path)
 
 
-def _start(secret="s3cret", audience="sim") -> dict:
+def _start(secret=SECRET, audience="sim") -> dict:
     return {"identity": {"header": "X-Elysium-Identity", "secret": secret,
                          "issuer": "elysium", "audience": audience}}
 
@@ -85,7 +92,7 @@ def _forge(claims: dict, header: dict) -> str:
 
 class TestTheToken:
     def test_the_add_on_reads_who_is_asking(self):
-        token = sign_identity("s3cret", audience="sim", user_id="ada", now=NOW)
+        token = sign_identity(SECRET, audience="sim", user_id="ada", now=NOW)
 
         claims = elysium_addon.identity({"X-Elysium-Identity": token}, _start(), now=NOW + 1)
 
@@ -94,41 +101,85 @@ class TestTheToken:
 
     def test_a_standard_jwt_library_reads_it_too(self):
         # INTEROPERABILITY, which is why it is a JWT: an add-on in any
-        # language verifies it with the library it has. PyJWT is not one
-        # of Elysium's dependencies; where it is installed, it agrees.
-        jwt = pytest.importorskip("jwt")
-        token = sign_identity("a-secret-at-least-32-bytes-long-ok", audience="sim", user_id="ada")
+        # language verifies it with the library it has. Elysium signs
+        # with PyJWT; PyJWT reads it back, with exp REQUIRED and enforced.
+        token = sign_identity(SECRET, audience="sim", user_id="ada", permissions=["module:sim:b", "module:sim:a"])
 
-        claims = jwt.decode(token, "a-secret-at-least-32-bytes-long-ok", algorithms=["HS256"],
-                            audience="sim", issuer="elysium")
+        claims = jwt.decode(token, SECRET, algorithms=["HS256"], audience="sim", issuer="elysium",
+                            options={"require": ["exp", "iat", "iss", "aud", "sub"]})
 
-        assert claims["sub"] == "ada"
+        assert claims["sub"] == "ada" and claims["name"] == "ada"
+        assert claims["permissions"] == ["module:sim:a", "module:sim:b"]
+        assert jwt.get_unverified_header(token) == {"alg": "HS256", "typ": "JWT"}
+
+    def test_a_token_made_with_a_real_secret_raises_no_warning(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            sign_identity(new_secret(), audience="sim", user_id="ada")
+
+    @pytest.mark.parametrize("secret, audience, said", [
+        ("another-secret-of-at-least-32-bytes!", "sim", jwt.InvalidSignatureError),
+        (SECRET, "heliograph", jwt.InvalidAudienceError),
+    ])
+    def test_a_standard_library_refuses_the_wrong_secret_or_audience(self, secret, audience, said):
+        token = sign_identity(SECRET, audience="sim", user_id="ada")
+
+        with pytest.raises(said):
+            jwt.decode(token, secret, algorithms=["HS256"], audience=audience, issuer="elysium")
+
+    def test_a_standard_library_refuses_an_expired_token(self):
+        token = sign_identity(SECRET, audience="sim", user_id="ada", now=time.time() - 3600)
+
+        with pytest.raises(jwt.ExpiredSignatureError):
+            jwt.decode(token, SECRET, algorithms=["HS256"], audience="sim", issuer="elysium")
+
+    def test_a_standard_library_refuses_alg_none_and_the_wrong_algorithm(self):
+        claims = {"iss": "elysium", "aud": "sim", "sub": "root", "iat": NOW, "exp": NOW + 60}
+        unsigned = jwt.encode(claims, None, algorithm="none")
+
+        with pytest.raises(jwt.InvalidAlgorithmError):
+            jwt.decode(unsigned, SECRET, algorithms=["HS256"], audience="sim", issuer="elysium",
+                       options={"verify_exp": False})
+        with pytest.raises(jwt.InvalidAlgorithmError):
+            jwt.decode(sign_identity(SECRET, audience="sim", user_id="ada", now=NOW), SECRET,
+                       algorithms=["HS512"], audience="sim", issuer="elysium", options={"verify_exp": False})
+
+    def test_the_stdlib_verifier_refuses_what_pyjwt_would_not_have_signed(self):
+        # The same refusals, by the verifier add-ons copy: an unsigned token
+        # made by PyJWT itself, and a token signed with a different secret.
+        claims = {"iss": "elysium", "aud": "sim", "sub": "root", "iat": int(NOW), "exp": int(NOW) + 60}
+
+        with pytest.raises(elysium_addon.NotSignedIn, match="HS256"):
+            elysium_addon.verify(jwt.encode(claims, None, algorithm="none"), secret=SECRET, audience="sim", now=NOW)
+        with pytest.raises(elysium_addon.NotSignedIn, match="signature"):
+            elysium_addon.verify(jwt.encode(claims, "x" * 40, algorithm="HS256"), secret=SECRET, audience="sim",
+                                 now=NOW)
 
     @pytest.mark.parametrize("secret, audience, at, said", [
         ("other", "sim", NOW, "signature does not match"),
-        ("s3cret", "heliograph", NOW, "made for another add-on"),
-        ("s3cret", "sim", NOW + 66, "expired"),
-        ("s3cret", "sim", NOW - 66, "issued in the future"),
+        (SECRET, "heliograph", NOW, "made for another add-on"),
+        (SECRET, "sim", NOW + 66, "expired"),
+        (SECRET, "sim", NOW - 66, "issued in the future"),
     ])
     def test_it_is_refused_by_another_secret_another_add_on_and_out_of_time(self, secret, audience, at, said):
-        token = sign_identity("s3cret", audience="sim", user_id="ada", now=NOW)
+        token = sign_identity(SECRET, audience="sim", user_id="ada", now=NOW)
 
         with pytest.raises(elysium_addon.NotSignedIn, match=said):
             elysium_addon.identity({"X-Elysium-Identity": token}, _start(secret, audience), now=at)
 
     def test_an_altered_body_is_refused(self):
-        header, _body, signature = sign_identity("s3cret", audience="sim", user_id="ada", now=NOW).split(".")
+        header, _body, signature = sign_identity(SECRET, audience="sim", user_id="ada", now=NOW).split(".")
         claims = {"iss": "elysium", "aud": "sim", "sub": "root", "name": "root", "iat": NOW, "exp": NOW + 60}
         body = base64.urlsafe_b64encode(json.dumps(claims).encode()).rstrip(b"=").decode()
 
         with pytest.raises(elysium_addon.NotSignedIn, match="signature"):
-            elysium_addon.verify(f"{header}.{body}.{signature}", secret="s3cret", audience="sim", now=NOW)
+            elysium_addon.verify(f"{header}.{body}.{signature}", secret=SECRET, audience="sim", now=NOW)
 
     def test_alg_none_is_refused_not_believed(self):
         claims = {"iss": "elysium", "aud": "sim", "sub": "root", "iat": NOW, "exp": NOW + 60}
 
         with pytest.raises(elysium_addon.NotSignedIn, match="HS256"):
-            elysium_addon.verify(_forge(claims, {"alg": "none"}), secret="s3cret", audience="sim", now=NOW)
+            elysium_addon.verify(_forge(claims, {"alg": "none"}), secret=SECRET, audience="sim", now=NOW)
 
     @pytest.mark.parametrize("headers", [{}, {"X-Elysium-Identity": ""}, {"X-Elysium-Identity": "a.b"}])
     def test_none_or_garbage_is_not_signed_in(self, headers):

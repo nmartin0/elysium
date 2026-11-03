@@ -55,7 +55,7 @@ def write_state(data_dir: Path, module_id: str, **state) -> None:
 
 
 def serve(data_dir: Path, module_id: str, options: "dict | None" = None):
-    secret = f"secret-of-{module_id}"
+    secret = f"secret-of-{module_id}-at-least-32-bytes-long"
     info = {"contract": 1, "id": module_id, "options": options or {},
             "identity": {"header": "X-Elysium-Identity", "secret": secret,
                          "issuer": "elysium", "audience": module_id}}
@@ -160,8 +160,8 @@ def _closed_port() -> int:
 
 @pytest.mark.parametrize("state", [
     None,
-    {"state": "starting", "url": "http://127.0.0.1:9", "secret": "x"},
-    {"state": "running", "url": f"http://127.0.0.1:{_closed_port()}", "secret": "x"},
+    {"state": "starting", "url": "http://127.0.0.1:9", "secret": "x" * 32},
+    {"state": "running", "url": f"http://127.0.0.1:{_closed_port()}", "secret": "x" * 32},
 ])
 def test_a_server_not_running_is_a_503_saying_so(alice, state):
     data_dir = alice.app.state.runtime_paths.data_dir

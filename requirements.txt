@@ -21,6 +21,7 @@
 #
 # sqlite3 is NOT listed here -- it ships built into Python itself.
 requests<3.0        # HTTP calls to the local Ollama API
+pyjwt>=2.15.1,<3.0  # core/addons.py -- signs the identity token an add-on's server is sent (HS256 JWT)
 pyyaml<7.0          # reading deployment config/schema/policy YAML files
 ruamel.yaml>=0.19,<0.20  # WRITING config.yaml from the UI -- round-trip mode keeps every comment (core/config_editing.py)
 argon2-cffi<26.0     # password hashing for core/auth/ -- argon2id, the current OWASP-recommended algorithm
