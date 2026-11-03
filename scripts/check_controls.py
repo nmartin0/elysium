@@ -1720,6 +1720,48 @@ CONTROLS = [
         tests=['tests/integration/test_retype_from_the_ui.py::TestTheStateWhenItCannotBeTold::test_a_sync_that_is_not_a_rebuild_does_not_make_a_table_rebuilding', 'tests/unit/test_object_state.py::TestTableState::test_any_other_attempt_is_live_even_with_a_sync_running'],  # noqa: E501
     ),
     Control(
+        describes="R4 hold: an approval goes ahead while its type is rebuilding",
+        path="api/routes.py",
+        old='        if held is not None:\n            raise HTTPException(status_code=409, detail=held)',
+        new='        if False:\n            raise HTTPException(status_code=409, detail=held)',
+        tests=['tests/integration/test_writes_held_while_rebuilding.py::TestHeldWhileRebuilding::test_the_approval_is_held_with_the_reason_and_nothing_is_written'],
+    ),
+    Control(
+        describes="R4 hold: a rejection is held like an approval",
+        path="api/routes.py",
+        old='    if approved:\n        # HELD BEFORE ANY DECISION IS RECORDED (R4)',
+        new='    if True:\n        # HELD BEFORE ANY DECISION IS RECORDED (R4)',
+        tests=['tests/integration/test_writes_held_while_rebuilding.py::TestHeldWhileRebuilding::test_a_rejection_is_not_a_write_and_is_not_held'],
+    ),
+    Control(
+        describes="R4 hold: a state that cannot be worked out is guessed live",
+        path="api/routes.py",
+        old='        by_type = dict.fromkeys(touched, UNAVAILABLE)',
+        new='        by_type = {}',
+        tests=['tests/integration/test_writes_held_while_rebuilding.py::TestHeldWhenItCannotBeTold::test_a_state_that_cannot_be_worked_out_at_all_holds_the_write', 'tests/integration/test_writes_held_while_rebuilding.py::TestHeldWhenItCannotBeTold::test_a_mirror_that_cannot_be_read_holds_the_write_and_says_it_cannot_tell'],  # noqa: E501
+    ),
+    Control(
+        describes="R4 hold: an unavailable type does not hold a write",
+        path="core/mirror/object_state.py",
+        old='    if unknown:\n        return',
+        new='    if False:\n        return',
+        tests=['tests/unit/test_object_state.py::TestHoldReason::test_unavailable_is_held_and_says_it_cannot_be_told_even_beside_a_rebuilding_type'],
+    ),
+    Control(
+        describes="R4 hold: a rebuilding type does not hold a write",
+        path="core/mirror/object_state.py",
+        old='    if rebuilding:\n        return',
+        new='    if False:\n        return',
+        tests=['tests/unit/test_object_state.py::TestHoldReason::test_rebuilding_is_held_and_names_the_type', 'tests/integration/test_writes_held_while_rebuilding.py::TestHeldWhileRebuilding::test_the_approval_is_held_with_the_reason_and_nothing_is_written'],  # noqa: E501
+    ),
+    Control(
+        describes="R4 hold: a write is held for a type it does not touch",
+        path="core/mirror/object_state.py",
+        old='    rebuilding = sorted({name for name in object_types if states.get(name) == REBUILDING})',
+        new='    rebuilding = sorted({name for name in states if states.get(name) == REBUILDING})',
+        tests=['tests/unit/test_object_state.py::TestHoldReason::test_only_the_types_the_write_touches_count', 'tests/integration/test_writes_held_while_rebuilding.py::TestHeldWhileRebuilding::test_a_type_whose_tables_are_not_rebuilding_is_not_held'],  # noqa: E501
+    ),
+    Control(
         describes="R13 adopt: a link stated alone makes its column a key of the target",
         path="core/mirror/erasure.py",
         old="    keys = _union(keys, {column: {target for _owner, target in pairs}\n                         for column, pairs in (links or {}).items()})",  # noqa: E501

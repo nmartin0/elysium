@@ -1454,6 +1454,28 @@ one Inbox. Built so far, each checked in a real browser:
   meanwhile (measured in R1, unchanged). NOT BUILT of R2: the state in
   answers ("data as of 14:02, rebuilding") and on screens other than the
   Mirror panel. R3 and R4 are untouched.
+  R4 BUILT IN PART (3 November): APPROVING a proposal is the write (the
+  proposal itself writes nothing), so POST /writes/{id}/confirm with
+  `approved: true` is HELD with a 409 and a reason while any object type
+  the write touches is REBUILDING, by the SAME derivation as the Mirror
+  panel (api/routes._mirror_states, core/mirror/object_state.hold_reason):
+  one way to decide "rebuilding". Held before any reviewer's decision is
+  recorded; the 409 releases the reservation, so the proposal STAYS in the
+  queue and the same approval goes through once the rebuild is over. A
+  rejection is not a write and is never held. FAIL CLOSED: a state that
+  cannot be told (lake unreadable, lock not tryable, anything raised while
+  working it out) holds the write and says it cannot tell. Conservative
+  readings taken: a type that is only OWED a rebuild (old silver serving) is
+  not held, as R2 says it is not a state; proposing is not held; a type
+  reading no silver table is not held. "RE-CHECKED AGAINST THE NEW SHAPE
+  WHEN RELEASED" is what confirm_and_execute already does at every approval
+  (constraints and rules judged on the schema as it is then, fields still
+  declared, MAC, the proposer's grant); nothing new was added, and no
+  check that a value fits the new data type exists beyond the field's
+  constraints. NOT BUILT: a "held" marker in the approvals inbox listing
+  (the reason shows when someone tries to approve, in the Approvals panel
+  and on the pending-write card, which already print a refusal's text),
+  and holding writes that do not go through a proposal (none were found).
   A field declared later is not empty history:
   bronze keeps every column the source has. Order: add a field (built),
   then add a type with its binding picked from the source, then add a

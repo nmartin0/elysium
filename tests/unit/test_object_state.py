@@ -4,7 +4,7 @@ lock, the worst of a type's tables for the type."""
 
 import pytest
 
-from core.mirror.object_state import LIVE, REBUILDING, UNAVAILABLE, table_state, type_state
+from core.mirror.object_state import LIVE, REBUILDING, UNAVAILABLE, hold_reason, table_state, type_state
 
 
 class TestTableState:
@@ -33,3 +33,22 @@ class TestTypeState:
 
     def test_a_type_reading_no_table_is_live(self):
         assert type_state([]) == LIVE
+
+
+class TestHoldReason:
+    def test_a_live_type_and_a_type_with_no_state_are_not_held(self):
+        assert hold_reason({"A": LIVE}, ["A"]) is None
+        assert hold_reason({"A": LIVE}, ["B"]) is None
+
+    def test_rebuilding_is_held_and_names_the_type(self):
+        reason = hold_reason({"A": REBUILDING, "B": LIVE}, ["A", "B"])
+
+        assert reason is not None and reason.startswith("A is being rebuilt")
+
+    def test_unavailable_is_held_and_says_it_cannot_be_told_even_beside_a_rebuilding_type(self):
+        reason = hold_reason({"A": UNAVAILABLE, "B": REBUILDING}, ["A", "B"])
+
+        assert reason is not None and "cannot be told" in reason and "A" in reason
+
+    def test_only_the_types_the_write_touches_count(self):
+        assert hold_reason({"A": REBUILDING}, ["B"]) is None

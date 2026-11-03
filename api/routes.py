@@ -153,7 +153,7 @@ from core.masked_review import agreement_pattern, masked_comparison, withheld_fi
 from core.mirror.expectation_warnings import ExpectationWarnings
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.integrity import _row_count, check_mirror
-from core.mirror.object_state import REBUILDING_OUTCOME, table_state, type_state
+from core.mirror.object_state import REBUILDING_OUTCOME, UNAVAILABLE, hold_reason, table_state, type_state
 from core.mirror.quarantine_report import quarantine_for
 from core.mirror.source_record import agreement_shown
 from core.mirror.sync_attempts import SyncAttempts
@@ -5992,6 +5992,54 @@ def _a_sync_holds_the_lock(request: Request) -> "bool | None":
         return None
 
 
+@dataclasses.dataclass
+class _MirrorStates:
+    """What the lake and the sync lock say about each table and object type
+    right now (core/mirror/object_state). ONE derivation, used by the Mirror
+    panel's route and by the hold on writes (_held_while_rebuilding), so the
+    two cannot disagree about whether a type is rebuilding."""
+    owed: "set[str] | None"
+    targets: list
+    last_attempts: dict
+    table_states: dict
+    object_states: list
+
+
+def _mirror_states(request: Request, generation, attempts: SyncAttempts) -> _MirrorStates:
+    # WHAT A RETYPE OWES, worked out from the lake each time (no marker), with
+    # the schema of the generation this request is pinned to.
+    try:
+        owed: set[str] | None = set(_tables_needing_rebuild(request, generation.config.schema))
+    except _MirrorUnreadable:
+        owed = None
+    targets = resolve_sync_targets({"object_types": generation.config.schema})
+    last_attempts = {(target.silo_name, target.table_name): attempts.last_for(target.silo_name, target.table_name)
+                     for target in targets}
+    # Only asked when some table says it is being rebuilt, since trying the
+    # lock is the one thing here that touches a running sync.
+    sync_running: bool | None = False
+    if any(each is not None and each.outcome == REBUILDING_OUTCOME for each in last_attempts.values()):
+        sync_running = _a_sync_holds_the_lock(request)
+    table_states = {
+        f"{target.silo_name}.{target.table_name}": table_state(
+            owed_known=owed is not None,
+            last_outcome=attempt.outcome if (attempt := last_attempts[(target.silo_name, target.table_name)])
+            else None,
+            sync_running=sync_running)
+        for target in targets}
+    reads: dict[str, list[str]] = {}
+    for target in targets:
+        for object_type in target.object_types:
+            reads.setdefault(object_type, []).append(f"{target.silo_name}.{target.table_name}")
+    object_states = [
+        {"object_type": object_type,
+         "state": type_state(table_states[name] for name in names),
+         "rebuild_owed": any(name in (owed or ()) for name in names),
+         "tables": sorted(names)}
+        for object_type, names in sorted(reads.items())]
+    return _MirrorStates(owed, targets, last_attempts, table_states, object_states)
+
+
 class RebuildOwedResponse(BaseModel):
     rebuild: list[str]
     # True when the mirror could not be read: `rebuild` is [] because nobody
@@ -6093,27 +6141,9 @@ def admin_mirror_route(request: Request,
     sync = IcebergMirrorSync(mirror_dir, {}, storage=storage)
     attempts = SyncAttempts(mirror_dir / "sync_attempts.db")
     warnings = ExpectationWarnings(mirror_dir / "expectation_warnings.db")
-    # WHAT A RETYPE OWES, worked out from the lake each time (no marker), with
-    # the schema of the generation this request is pinned to.
-    try:
-        owed: set[str] | None = set(_tables_needing_rebuild(request, generation.config.schema))
-    except _MirrorUnreadable:
-        owed = None
-    targets = resolve_sync_targets({"object_types": generation.config.schema})
-    last_attempts = {(target.silo_name, target.table_name): attempts.last_for(target.silo_name, target.table_name)
-                     for target in targets}
-    # Only asked when some table says it is being rebuilt, since trying the
-    # lock is the one thing here that touches a running sync.
-    sync_running: bool | None = False
-    if any(each is not None and each.outcome == REBUILDING_OUTCOME for each in last_attempts.values()):
-        sync_running = _a_sync_holds_the_lock(request)
-    table_states = {
-        f"{target.silo_name}.{target.table_name}": table_state(
-            owed_known=owed is not None,
-            last_outcome=attempt.outcome if (attempt := last_attempts[(target.silo_name, target.table_name)])
-            else None,
-            sync_running=sync_running)
-        for target in targets}
+    states = _mirror_states(request, generation, attempts)
+    owed, targets = states.owed, states.targets
+    last_attempts, table_states = states.last_attempts, states.table_states
     tables = []
     for target in targets:
         synced_at = sync.last_synced_at(target.silo_name, target.table_name)
@@ -6158,23 +6188,13 @@ def admin_mirror_route(request: Request,
         catalog, generation.config.schema,
         mirror_dir / "warehouse",
     )
-    reads: dict[str, list[str]] = {}
-    for target in targets:
-        for object_type in target.object_types:
-            reads.setdefault(object_type, []).append(f"{target.silo_name}.{target.table_name}")
-    object_states = [
-        {"object_type": object_type,
-         "state": type_state(table_states[name] for name in names),
-         "rebuild_owed": any(name in (owed or ()) for name in names),
-         "tables": sorted(names)}
-        for object_type, names in sorted(reads.items())]
     return {
         "reading_from_mirror": True,
         "tables": tables,
         "problems": list(report.problems),
         "rebuild_owed": sorted(owed or ()),
         "rebuild_owed_unknown": owed is None,
-        "object_states": object_states,
+        "object_states": states.object_states,
     }
 
 
@@ -10016,12 +10036,41 @@ def _proposer_as_they_are_now(request: Request, user_id: str) -> UserRecord | No
     return directory.get_user_record(user_id)
 
 
+def _held_while_rebuilding(request: Request, pending) -> "str | None":
+    """Why this write must wait, or None (retype slice R4).
+
+    THE STATE IS THE MIRROR PANEL'S (_mirror_states), not a second opinion.
+    FAILS CLOSED: if the states cannot be worked out at all, every type the
+    write touches reads as unavailable and the write is held, never guessed
+    live."""
+    touched = {sub.object_type for sub in pending.sub_writes}
+    try:
+        mirror_dir = request.app.state.runtime_paths.data_dir / "mirror"
+        mirror_dir.mkdir(parents=True, exist_ok=True)
+        states = _mirror_states(request, _generation(request),
+                                SyncAttempts(mirror_dir / "sync_attempts.db"))
+        by_type = {each["object_type"]: each["state"] for each in states.object_states}
+    except Exception as e:  # noqa: BLE001 - "cannot tell" holds the write
+        logger.warning("could not tell whether a type is rebuilding: %s", type(e).__name__)
+        by_type = dict.fromkeys(touched, UNAVAILABLE)
+    return hold_reason(by_type, touched)
+
+
 async def _decide_reserved_write(request: Request, write_id: str, pending, approved: bool,
                                  current_user: UserRecord):
     if pending is None:
         # Uniform denial -- wrong user, unknown ID, and expired ID all
         # look identical. See module docstring.
         raise HTTPException(status_code=404, detail="Unknown or expired pending write")
+
+    if approved:
+        # HELD BEFORE ANY DECISION IS RECORDED (R4): a 409 releases the
+        # reservation, so the proposal stays in the queue and the same
+        # approval can be made once the rebuild is over. A rejection is
+        # not a write and is never held. Off the event loop: it reads the lake.
+        held = await asyncio.to_thread(_held_while_rebuilding, request, pending)
+        if held is not None:
+            raise HTTPException(status_code=409, detail=held)
 
     write_mediator: WriteMediator = _generation(request).write_mediator
     # Offloaded to the SAME executor /query uses -- no longer "a

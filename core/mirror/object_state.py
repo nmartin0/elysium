@@ -24,7 +24,7 @@ then live.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 LIVE = "live"
 REBUILDING = "rebuilding"
@@ -59,3 +59,32 @@ def type_state(states: Iterable[str]) -> str:
         if state in found:
             return state
     return LIVE
+
+
+def hold_reason(states: Mapping[str, str], object_types: Iterable[str]) -> str | None:
+    """Why a write to these object types is held, or None when it may go on (R4).
+
+    `states` is {object type: state}, from the SAME derivation the Mirror
+    panel shows (api/routes._mirror_states): this module is the only place
+    that decides what "rebuilding" means, and a write asks it rather than
+    deciding again. A type with no entry reads no silver table, so there is
+    nothing to rebuild and it is not held.
+
+    A WRITE IS HELD, NOT REFUSED: the proposal stays in the queue and the
+    same approval goes through once the state is live again, judged then
+    against the schema as it is by then (confirm_and_execute re-runs every
+    check at the point of use). REBUILDING is held because the plan says so
+    (BLOCKING.md, "RETYPE, CHECKED AND SLICED": writes proposed meanwhile
+    are held), so that a write does not race the rebuild. UNAVAILABLE is
+    held too: a state that cannot be told is never guessed live."""
+    rebuilding = sorted({name for name in object_types if states.get(name) == REBUILDING})
+    unknown = sorted({name for name in object_types if states.get(name) == UNAVAILABLE})
+    if unknown:
+        return (f"Whether {', '.join(unknown)} is being rebuilt cannot be told just now (the mirror or the "
+                f"sync could not be read), so this change is held rather than guessed safe. It stays in the "
+                f"queue: try again shortly.")
+    if rebuilding:
+        return (f"{', '.join(rebuilding)} {'is' if len(rebuilding) == 1 else 'are'} being rebuilt after a "
+                f"change of data type, so this change is held until the rebuild has finished. It stays in the "
+                f"queue, and when it goes ahead it is checked again against the type as it is by then.")
+    return None
