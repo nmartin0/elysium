@@ -17,7 +17,7 @@ a field; compile_label_access below is that rule, decided by the owner
 on 2026-10-12 (formerly BLOCKING 6, "grant by TAG rather than by field
 name").
 
-WHY IT MUST PROPAGATE, which is the whole of R12. Foundry: "If a
+WHY IT MUST PROPAGATE, which is the whole of R12. The precedent: "If a
 dataset has a file marking, every dataset that depends on it inherits
 that marking", and "restricting access to a dataset always restricts
 access to any data derived from it". A label on the ontology property
@@ -32,7 +32,7 @@ identifier-like -- so "PII" and "pii " cannot quietly become three
 labels for one thing.
 
 CHANGING ONE IS AN ONTOLOGY EDIT, recorded as one (config history), and
-since 16 October a widening one is two people's. Foundry calls removal
+since 16 October a widening one is two people's. The precedent calls removal
 "a sensitive action" requiring its own permission; here a label change
 from the UI that lets anyone read more waits for a holder of
 manage:roles other than its proposer (api/routes.apply_labels_route).
@@ -101,10 +101,10 @@ def compile_label_access(roles: dict, object_types: dict) -> dict:
     GRANT: `read:label:pii` replaces a list of read:T.f strings for
     every pii field -- the 160-to-3,120-grants-per-role burden the original
     proposal counted. RESTRICT: a field labelled pii is unreadable without the
-    label, whatever per-field grant a role was given -- Foundry's
+    label, whatever per-field grant a role was given -- the precedent's
     markings, "every dataset that depends on it inherits that marking",
     and conjunctive: [pii, financial] needs both. DEMOTED, NOT REMOVED:
-    Foundry likewise lets a user see that a marked dataset exists
+    The precedent likewise lets a user see that a marked dataset exists
     without its data, which is this project's discover: rung.
 
     A LABEL NEVER OPENS A TYPE: no field of a type the role lacks

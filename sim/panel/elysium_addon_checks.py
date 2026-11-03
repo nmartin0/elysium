@@ -2,7 +2,7 @@
 elysium_addon_checks.py  (the checks Elysium's add-on contract makes of an
 add-on's server, for the add-on's own tests)
 
-BLOCKING.md item 3, step 2: "Elysium ships a pytest plugin of its
+the removed BLOCKING.md item on modules, step 2: "Elysium ships a pytest plugin of its
 HTTP-contract checks (health, stop within the deadline, honouring the
 identity header) that an add-on runs against its own server in its own
 repository." COPY THIS FILE BESIDE elysium_addon.py, and in your tests:

@@ -182,7 +182,7 @@ The evidence for making it unconditional is that every design decision
 in this project that held up came from somebody else's written
 experience, and it was consistently NARROWER than the principle that
 would have been reasoned out -- twice it contradicted the plan
-outright. Foundry's writeback dataset settled where an edit to a fused
+outright. The precedent's writeback dataset settled where an edit to a fused
 object goes. Iceberg's reader semantics settled what happens when the
 mirror changes mid-read. Databricks and dbt between them settled
 warn-versus-fail. APCA settled a palette that WCAG had already passed.

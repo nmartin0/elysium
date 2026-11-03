@@ -1,5 +1,5 @@
 /**
- * THE SERVER (BLOCKING.md item 3, step 3): Elysium's own server controls
+ * THE SERVER (the removed BLOCKING.md item on modules, step 3): Elysium's own server controls
  * -- its configuration and reload, the silos it reads, its metrics, the
  * mirror, and the cleaning rules waiting on a decision. They were five
  * views of Admin; they are the System sub-app's now, as BLOCKING.md's

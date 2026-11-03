@@ -1,7 +1,7 @@
 /**
  * Which actions can be applied to a selection.
  *
- * THE ONTOLOGY DECIDES, not the UI. Foundry: "in 'bulk' contexts...
+ * THE ONTOLOGY DECIDES, not the UI. The precedent: "in 'bulk' contexts...
  * only actions that accept object list parameters of the correct type
  * will be shown". An action without an object_reference_list parameter
  * for THIS object type is not a bulk action, and offering it would be

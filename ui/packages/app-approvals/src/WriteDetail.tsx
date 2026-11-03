@@ -9,7 +9,7 @@
  * its worst form, because it produces MORE confidence rather than
  * less.
  *
- * Following Foundry, whose review surface "redacts certain resources
+ * Following the precedent, whose review surface "redacts certain resources
  * or users contained in a record if you do not have the necessary
  * permissions to view that item".
  */

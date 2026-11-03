@@ -1,5 +1,5 @@
 /**
- * THE NOTIFICATIONS TAB AS A MODULE (BLOCKING.md item 3, step 3): the entry
+ * THE NOTIFICATIONS TAB AS A MODULE (the removed BLOCKING.md item on modules, step 3): the entry
  * of its own bundle, built apart from Elysium's page by vite.config.ts in
  * this folder and loaded by the shell when the Inbox first shows its tab.
  * Elysium's page no longer imports it.

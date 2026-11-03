@@ -2,7 +2,7 @@
  * Shared libraries: ONE COPY of React, the router, the kit and the rest,
  * used by the page and by every module built apart from it.
  *
- * BLOCKING.md item 3: "SHARED LIBRARIES ARE FIXED AT PAGE LOAD ... by
+ * the removed BLOCKING.md item on modules: "SHARED LIBRARIES ARE FIXED AT PAGE LOAD ... by
  * import map". A module is built with these left as bare imports
  * (`import { useState } from 'react'`). The page's import map sends each
  * one to a small SHIM here, and the shim hands out the copy the page

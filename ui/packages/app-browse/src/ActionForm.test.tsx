@@ -430,7 +430,7 @@ describe('one action serves a detail page and a selection', () => {
    * TWO ACTIONS DIFFERING BY ONE PARAMETER TYPE put a choice in front
    * of a person that only the ontology cared about.
    * RecategorizeTransaction and RecategorizeTransactions did exactly
-   * that, and Foundry's reason for separating them -- a "bulk action
+   * that, and the precedent's reason for separating them -- a "bulk action
    * type" is one "using an object reference list parameter" -- is a
    * MODELLING constraint, not a user-facing one.
    *

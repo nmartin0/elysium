@@ -159,7 +159,7 @@ _IMPORT_MAP = re.compile(r'<script type="importmap">(.*?)</script>', re.DOTALL)
 def import_map_script_src(index_html: Path) -> str:
     """A `script-src` directive allowing the page's import map, and only it.
 
-    THE IMPORT MAP IS AN INLINE SCRIPT (BLOCKING.md item 3, step 1.2:
+    THE IMPORT MAP IS AN INLINE SCRIPT (the removed BLOCKING.md item on modules, step 1.2:
     the page's shared libraries, @shell/build), and `default-src 'self'`
     forbids inline scripts -- so the browser ignored it and no module
     could resolve `react`. Found by the first browser test against this
@@ -324,7 +324,7 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
                 HOLD_KIND: hold_timer, SCHEDULE_KIND: schedule_timer,
                 DEPRECATION_DATES: deprecation_timer,
             }))
-        # ADD-ONS' OWN SERVERS (BLOCKING.md item 3, step 2.2): started,
+        # ADD-ONS' OWN SERVERS (the removed BLOCKING.md item on modules, step 2.2): started,
         # watched and restarted by api/addon_servers.py, following the
         # current generation's modules; stopped with their deadlines on
         # the way out. Only where there is a deployment, like the timers.

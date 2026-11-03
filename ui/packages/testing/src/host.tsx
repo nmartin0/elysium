@@ -2,7 +2,7 @@
  * THE TEST HOST: a module's page rendered inside a faithful frame, and a
  * server whose answers a test chooses.
  *
- * BLOCKING.md item 3: the provider "SHIPS A TEST HOST ... so a sub-app's
+ * the removed BLOCKING.md item on modules: the provider "SHIPS A TEST HOST ... so a sub-app's
  * tests render inside a faithful frame instead of hand-mocking". The
  * precedent is Backstage's `renderInTestApp` with `mockApis`, where a
  * mock "returns a working fake".

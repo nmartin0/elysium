@@ -1,5 +1,5 @@
 /**
- * THE IDENTITY REVIEW AS A MODULE (BLOCKING.md item 3, step 3, the first
+ * THE IDENTITY REVIEW AS A MODULE (the removed BLOCKING.md item on modules, step 3, the first
  * sub-app moved): the entry of its own bundle, built apart from Elysium's
  * page by vite.config.ts in this folder and loaded by the shell when the
  * Inbox first shows its tab. Elysium's page no longer imports it.

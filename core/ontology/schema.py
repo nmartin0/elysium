@@ -85,7 +85,7 @@ def is_discoverable(type_def: dict) -> bool:
     An opt-in, declared on the type (`discoverable: true`) and absent
     means no: a type nobody has granted you does not exist as far as you
     are concerned, which is the safe default and what every existing
-    deployment already does. Foundry is the precedent for the default --
+    deployment already does. The precedent is the precedent for the default --
     a type is invisible until some grant or marking says otherwise.
 
     IT IS EXACTLY `discover:{type}` GIVEN TO EVERY ROLE, and no more: the

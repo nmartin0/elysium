@@ -160,7 +160,7 @@ object_types:
 # Action types -- the ONLY way data in this deployment is ever
 # changed. Every write is a NAMED, independently-governed operation
 # with its own execute: grant, its own declared parameters and its own
-# declared mutations, matching Palantir Foundry's action-type model.
+# declared mutations, matching the precedent's action-type model.
 # There is deliberately no generic "update this field" verb.
 #
 # Declaring an action type here is NOT enough to make it usable: it

@@ -7,7 +7,7 @@ disappeared from the source produced whatever the adapter's SELECT
 happened to do. Nobody decided that, and nobody could say what a NEW
 shape would do without running it.
 
-That is the fault Palantir spent a major version escaping. Object
+That is the fault the precedent spent a major version escaping. Object
 Storage v1's semantics were "generally dictated by the behavior of the
 underlying data store, given its tight coupling with the underlying
 distributed document store and search engine" -- it did not have a
@@ -20,7 +20,7 @@ So every shape here is named. A shape with no entry has no verdict
 function to call, which means it cannot be handled by accident -- the
 caller has to add one, and adding one is where the decision gets made.
 
-THE RULE FOR DESTRUCTIVE CHANGE IS FOUNDRY'S, and it is sharper than
+THE RULE FOR DESTRUCTIVE CHANGE IS THE PRECEDENT'S, and it is sharper than
 "always refuse". In Object Storage v2 a schema change is breaking only
 if the property HAS RECEIVED USER EDITS; deleting one nobody ever
 edited is not breaking at all. The write log is the same thing under
@@ -87,7 +87,7 @@ def verdict_for_removed_column(silo: str, table: str, column: str, field: str | 
                                 undeclared_earlier: "tuple[str, ...]" = ()) -> DriftVerdict:
     """A column the ontology declares has gone from the source.
 
-    BREAKING ONLY IF SOMETHING WROTE TO IT -- Foundry's line, not an
+    BREAKING ONLY IF SOMETHING WROTE TO IT -- the precedent's line, not an
     arbitrary one. See the module docstring.
 
     `edits` is None when the caller could not consult a write log. That

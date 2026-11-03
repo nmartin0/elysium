@@ -1,6 +1,6 @@
 """Field classifications, carried to every table that holds the values (R12).
 
-THE RULE IS FOUNDRY'S: "If a dataset has a file marking, every dataset
+THE RULE IS THE PRECEDENT'S: "If a dataset has a file marking, every dataset
 that depends on it inherits that marking." A field declared
 `classification: pii` in the ontology is one property, and its values
 live in up to seven tables here. Each gets the label, on the column
@@ -17,7 +17,7 @@ that holds them, as the Iceberg table property CLASSIFICATIONS_PROPERTY:
 WHERE ONE COLUMN HOLDS VALUES OF MANY FIELDS it carries the union of
 their labels. That is conservative by construction -- a quarantine row
 refusing a non-PII column is labelled as though it might hold PII --
-and it is the same direction Foundry errs in: a derived dataset
+and it is the same direction the precedent errs in: a derived dataset
 inherits every marking of everything it depends on, and removing one is
 "a sensitive action", never an inference.
 

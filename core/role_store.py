@@ -2,7 +2,7 @@
 
 WHY THEY MOVE. policy.yaml is read at load and cannot be edited while
 the application runs -- short of rewriting a file under /etc, which
-fights whatever deployment tooling manages it. Foundry treats roles as
+fights whatever deployment tooling manages it. The precedent treats roles as
 RUNTIME data, administered in Control Panel rather than in files.
 
 POLICY.YAML BECOMES THE BOOTSTRAP, and nothing changes until somebody

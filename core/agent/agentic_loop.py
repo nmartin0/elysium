@@ -103,13 +103,13 @@ logger = logging.getLogger(__name__)
 # max_hops bounds how much a single query can read, and an uncapped
 # list of ids would let one hop read arbitrarily much -- the same
 # reasoning as MAX_SUB_WRITES in core/ontology/action_types.py, which
-# cites Palantir capping their own batched action calls.
+# cites the precedent capping their own batched action calls.
 #
 # 20, matching MAX_SUB_WRITES rather than being picked independently:
 # both answer "how much may one step do", and two different answers to
 # one question is a thing to remember rather than derive. Exceeding it
 # is a NAMED error the model can recover from, never a silent short
-# read -- Palantir errors with ObjectsExceededLimit for the same
+# read -- the precedent errors with ObjectsExceededLimit for the same
 # reason.
 MAX_OBJECT_IDS = 20
 
@@ -484,7 +484,7 @@ def _what_a_truncated_aggregate_may_say(step: dict, grouped):
     EVERYTHING ELSE IS REFUSED. A sum, average, minimum or maximum over
     part of a set is not a bound on the whole -- the missing rows could
     move it either way -- so there is no true sentence to hand over.
-    Palantir's ObjectsExceededLimit is the precedent, already followed
+    The precedent's ObjectsExceededLimit is the precedent, already followed
     for get_object's id cap: a named refusal, never a short answer.
     The refusal says what to do, which is narrow the filter.
     """
@@ -785,7 +785,7 @@ class AgentLoop:
         built before it does cites an id at the user.
 
         THE DECLARATION ALREADY EXISTED AND WAS WIRED TO NOTHING.
-        `title_field` is Palantir's "title key" ("the property that
+        `title_field` is the precedent's "title key" ("the property that
         acts as a display name for objects of this type"), validated
         at schema load by object_type_validation.py, declared in the
         shipped deployment as `title_field: name`, with a runtime
@@ -1210,7 +1210,7 @@ class AgentLoop:
         batch within. So the vocabulary has to change, which is what
         REST does when transparent batching is impossible.
 
-        Shaped after Palantir's ObjectSet rather than as a batch
+        Shaped after the precedent's ObjectSet rather than as a batch
         variant of a singular verb: their read primitive takes a SET
         plus a `select` of which properties to return, and a
         single-object fetch is the special case. `object_id` (singular)
@@ -1287,7 +1287,7 @@ class AgentLoop:
             # A NAMED refusal, never a silent truncation -- answering
             # about some of a list and quietly skipping the rest is the
             # exact failure the prompt already warns the model against.
-            # Palantir does the same at their own scale, erroring with
+            # The precedent does the same at their own scale, erroring with
             # ObjectsExceededLimit rather than returning a short page.
             #
             # A cap exists at all because max_hops bounds how much a

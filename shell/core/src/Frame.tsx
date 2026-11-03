@@ -1,6 +1,6 @@
 /**
  * THE FRAME: the rail, the header and the command palette around every
- * page (BLOCKING.md item 3, "THE FRAME AND THE SUB-APP", step 1.3).
+ * page (the removed BLOCKING.md item on modules, "THE FRAME AND THE SUB-APP", step 1.3).
  *
  * The shell owns the frame; a sub-app owns everything inside the content
  * area. GENERIC: the host supplies what is its own -- the product's name,

@@ -1,11 +1,11 @@
 """
 interface.py  (the Function contract)
 
-Elysium's equivalent of Foundry's Functions: logic a deployment
+Elysium's equivalent of the precedent's Functions: logic a deployment
 provides, invocable by the agent, described to the model from its own
 declaration rather than hardcoded prompt text.
 
-FOUNDRY'S FUNCTIONS ARE DEFINED BY ONTOLOGY ACCESS -- "first-class
+THE PRECEDENT'S FUNCTIONS ARE DEFINED BY ONTOLOGY ACCESS -- "first-class
 support for reading the properties of various object types, traversing
 links, and flexibly making Ontology edits", which is what makes them
 "go far beyond commonly used Functions-as-a-Service platforms". A
@@ -18,7 +18,7 @@ These functions are invoked by an LLM that chooses their arguments
 function with ambient access to the ontology is a function the model
 can aim at data the caller may not see.
 
-Foundry solves this at the platform level, and their own Q&A gives the
+The precedent solves this at the platform level, and their own Q&A gives the
 tell: "there is no way to get the executing user's ID within a
 function without passing it as a parameter". Their function authors do
 not write permission checks -- they cannot, because they do not know

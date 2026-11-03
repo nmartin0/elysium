@@ -1,7 +1,7 @@
 """
 apps.py  (the rail entries backing GET /me/visible-apps)
 
-FROM THE MODULES, since 21 October (BLOCKING.md item 3): each sub-app's
+FROM THE MODULES, since 21 October (the removed BLOCKING.md item on modules): each sub-app's
 `module.json` declares its rail entry and the permission a person needs
 to be offered it, and core/modules.py loads them. This file only turns
 them into the rail's {name, path, subject} entries, in subject order --
@@ -44,7 +44,7 @@ from core.modules import Modules, feed_for
 #:              fine where it is."
 SUBJECTS: tuple[str, ...] = ("Objects", "Ontology", "Inbox", "Settings")
 
-# THE APPS ARE MODULES NOW (BLOCKING.md item 3, 21 October): each
+# THE APPS ARE MODULES NOW (the removed BLOCKING.md item on modules, 21 October): each
 # sub-app's `module.json` declares its rail entry and its permission, and
 # this reads them -- the hand-written list that lived here is gone, so
 # there is one declaration of an app rather than two to keep agreeing.

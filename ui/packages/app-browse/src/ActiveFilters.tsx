@@ -10,13 +10,13 @@
  *
  * A UI stating something false is worse than one stating nothing.
  *
- * FOUNDRY TREATS THIS AS A FIRST-CLASS CONCERN rather than a detail.
+ * THE PRECEDENT TREATS THIS AS A FIRST-CLASS CONCERN rather than a detail.
  * Object Views ships a dedicated "Active Filters" widget for "a
  * summary of all filters currently applied", and Workshop ships
  * "Exploration Filter Pills" to "visualize and apply filters". A pill
  * row is the established idiom, not an invention.
  *
- * REMOVAL IS THE WAY BACK, and that is Foundry's answer to "how did I
+ * REMOVAL IS THE WAY BACK, and that is the precedent's answer to "how did I
  * get here" too -- their Exploration Search Bar has explicit modes for
  * read-only versus remove-only display, and nothing in Object Explorer
  * offers a breadcrumb trail for search-around. Removing the filter

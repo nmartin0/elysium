@@ -10,7 +10,7 @@ SQLite without ever calling it that: it is embedded in desktop
 point-of-sale software, in line-of-business applications, in the
 accounting package on the back-office PC. The business does not have
 "a SQLite database" -- it has an application, and the application's
-file is what a data platform ends up pointing at. Foundry lists SQLite
+file is what a data platform ends up pointing at. The precedent lists SQLite
 among its relational connectors for exactly this reason.
 
 It was dropped from an earlier version of this design on the grounds
@@ -329,7 +329,7 @@ class SqliteCursor:
 # conclusion was recognised as the wrong one. The requirement was that a
 # consumer reach the silos directly; it was never that every silo be a server.
 # Small businesses genuinely run SQLite inside desktop applications, and
-# Foundry lists it as a relational connector.
+# the precedent lists it as a relational connector.
 #
 # RESOLVED: is_reachable() checks the sixteen-byte file header, not just that
 # the file opens. Opening is not enough, and this was found by a test that

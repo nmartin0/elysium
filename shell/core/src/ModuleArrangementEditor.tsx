@@ -1,5 +1,5 @@
 /**
- * THE MODULE MANAGER'S EDITOR (BLOCKING.md item 3, step 1.4c): turn
+ * THE MODULE MANAGER'S EDITOR (the removed BLOCKING.md item on modules, step 1.4c): turn
  * modules on and off, order the rail, choose where people land -- FOR
  * EVERYONE on the deployment, saved by the backend (Elysium writes
  * modules.yaml through its validated, audited configuration path).

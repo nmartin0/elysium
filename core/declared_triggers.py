@@ -1,7 +1,7 @@
 """Triggers a deployment declares in config.yaml.
 
 NOT MORE POWERFUL THAN ONE A PERSON MAKES, and that is the precedent
-followed. Foundry's analogue of "declared centrally" is an automation
+followed. The precedent's analogue of "declared centrally" is an automation
 owned by a SERVICE USER rather than a person -- for "team continuity:
 automations continue running when team members leave" -- and it runs
 with "the service user's permissions". Its own grants; nothing extra.

@@ -33,7 +33,7 @@ Everything below is a continuation of that, not a departure from it.
 
 **19 October, with the owner.** A type may declare `security:
 unrestricted` -- no row check, the role check still applies, as a
-Foundry object type with no object security policy is governed by its
+the precedent object type with no object security policy is governed by its
 ordinary permissions. In the lattice below it is the EMPTY SET of
 compartments: reading it crosses nothing, and writing a labelled value
 INTO it is a write-down, refused by the same check as any other
@@ -49,7 +49,7 @@ has_no_row_check.
 
 **27 October, with the owner.** A silo may declare `security:
 unrestricted` or `security: {field: <name>}` in data_silos.yaml, and a
-type over it may write `security: inherit` (Foundry: an object type's
+type over it may write `security: inherit` (the precedent: an object type's
 permissions come from where its backing datasource lives). It is
 resolved at load into the silo's ordinary block, so every check above
 sees a block it already knew, and the inheritance is live: edit the
@@ -101,7 +101,7 @@ another, which is information flow control.
 
 **ACTIONS CARRYING THEIR OWN AUTHORITY IS A CONFUSED DEPUTY.** If an
 action can do something its caller cannot, it is a privilege
-escalation vector wearing a feature's clothes. Foundry avoids this by
+escalation vector wearing a feature's clothes. The precedent avoids this by
 executing as the automation's owner and checking submission criteria
 against them.
 
@@ -240,10 +240,10 @@ predicates are simple, total, decidable functions on integer ranks
 plus subset tests on compartment sets".
 
 **AND THE REMAINING CHOICE IS SETTLED TOO: COMPARTMENTS ONLY.**
-Researched against Foundry, which Elysium models itself on, and the
+Researched against the precedent, which Elysium models itself on, and the
 answer is the opposite of adopting the pair up front.
 
-**FOUNDRY KEEPS THEM APART, and ships only one by default.** Markings
+**THE PRECEDENT KEEPS THEM APART, and ships only one by default.** Markings
 are compartments -- "to access a resource, a user must be a member of
 ALL Markings applied to a resource", which is set containment exactly.
 Classification-based Access Controls are levels -- "every user can
@@ -253,12 +253,12 @@ with markings or organizations on the same mandatory control
 property".
 
 **CBAC IS OFF BY DEFAULT**, and "configuration of classification
-markings requires Palantir involvement". So the system this design
+markings requires the vendor's involvement". So the system this design
 follows treats compartments as the default and levels as an opt-in
 extension needing vendor setup.
 
 **AND DEFERRING LEVELS COSTS NO EXPRESSIVENESS**, which is why that
-works. Foundry notes markings can express hierarchy anyway: "the data
+works. The precedent notes markings can express hierarchy anyway: "the data
 tiers are hierarchical, and users who have access to the Identifiable
 Data Marking also have access to the De-identified Data Marking". A
 level hierarchy is a CHAIN OF NESTED COMPARTMENT SETS -- `{secret}`
@@ -272,7 +272,7 @@ with today's single-string values that is the equality already in the
 code -- applied between two OBJECTS instead of object-and-user.
 
 **ONE THING NEITHER MODEL COVERS**, recorded before somebody asks for
-it: Foundry's classification markings have DISJUNCTIVE components,
+it: the precedent's classification markings have DISJUNCTIVE components,
 where "users belonging to one of the groups... can satisfy the CBAC
 access condition. This is commonly used to define releasability." OR
 rather than AND. Neither Bell-LaPadula nor Elysium has it, and
@@ -304,7 +304,7 @@ matters. What remains is the RBAC side, and that is deliberate rather
 than missing: a user needs `execute:ActionName` and NOT a write grant
 on the underlying type, because an action IS the capability. Granting
 "may transfer funds" without granting "may write Account" is the
-reason named actions exist, and Foundry's model is the same.
+reason named actions exist, and the precedent's model is the same.
 
 **WHAT THE ENTRY WAS REACHING FOR**, if anything: making the bound
 `_validate_effects_are_reachable` computes at config load into

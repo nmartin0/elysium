@@ -473,7 +473,7 @@ class VisibleObjectTypeResponse(BaseModel):
     readable: bool = True
     id_field: str | None
     title_field: str | None
-    # Matching Foundry's own object type metadata (displayName,
+    # Matching the precedent's own object type metadata (displayName,
     # pluralDisplayName, description), in this project's snake_case.
     display_name: str
     plural_display_name: str
@@ -676,7 +676,7 @@ class ConfirmWriteResponse(BaseModel):
 class ObjectSetQueryRequest(BaseModel):
     """Criteria selecting the object set an operation runs over.
 
-    Mirrors Foundry's own aggregate API, where a `query` field "can be
+    Mirrors the precedent's own aggregate API, where a `query` field "can be
     used to select which objects to aggregate" -- the set is chosen
     first, then the operation applies to it. An empty criteria dict
     means every object of the type the caller can see, which is a
@@ -737,7 +737,7 @@ class TextSetQueryRequest(ObjectSetQueryRequest):
 
 
 class AggregateMeasure(BaseModel):
-    """One thing to compute per group, after Foundry's aggregation item
+    """One thing to compute per group, after the precedent's aggregation item
     ({type, field, name}). `field` is required for every aggregate except
     count, which aggregates the set itself rather than a property."""
 
@@ -751,7 +751,7 @@ class AggregateMeasure(BaseModel):
 
 
 class AggregateRequest(TextSetQueryRequest):
-    # Named to match Foundry's own vocabulary: an aggregation with an
+    # Named to match the precedent's own vocabulary: an aggregation with an
     # optional groupBy, one or more measures to compute per group, all
     # from ONE read of the set.
     measures: list[AggregateMeasure]
@@ -761,7 +761,7 @@ class AggregateRequest(TextSetQueryRequest):
     #: day, ISO 8601; empty periods are 0 for a count or a sum.
     period: str | None = None
     #: Or by a fixed length, an ISO 8601 duration -- PT15M, PT1H, P3D --
-    #: as Foundry's aggregate groups by one. Each group is a bucket's
+    #: as the precedent's aggregate groups by one. Each group is a bucket's
     #: start, ISO 8601, with its offset when the field is an instant.
     duration: str | None = None
     #: An IANA zone, such as Europe/London, whose clock the period or the
@@ -787,7 +787,7 @@ class CountResponse(BaseModel):
 class AggregateRow(BaseModel):
     #: {group_by: value}, the value as it is (a number stays a number, a
     #: bucket is its ISO 8601 start); {} when no group_by was asked, so
-    #: the whole set is one row. Null groups are not rows, as in Foundry.
+    #: the whole set is one row. Null groups are not rows, as in the precedent.
     group: dict[str, Any]
     #: {measure name: value}. None for an average, minimum, maximum, first
     #: or last of nothing; 0 for a count or sum of nothing.
@@ -839,7 +839,7 @@ class EditHistoryEntryResponse(BaseModel):
     description: str
     created_at: str
     # Present when the edit was part of a multi-object action, so a UI
-    # can group the writes that happened together -- Foundry links a
+    # can group the writes that happened together -- the precedent links a
     # single action log to every object it edited for the same reason.
     batch_id: str | None = None
 
@@ -1370,7 +1370,7 @@ def awaiting_writes_route(request: Request,
 
     def relevant(candidate) -> bool:
         # EITHER YOURS TO DECIDE OR YOURS TO WAIT ON, following
-        # Foundry's inbox, which filters "Your inbox" and "Created by
+        # the precedent's inbox, which filters "Your inbox" and "Created by
         # you" rather than showing only one.
         #
         # A proposer needs the second especially once four-eyes is on:
@@ -1428,7 +1428,7 @@ class FieldChangeResponse(BaseModel):
     reviewer may read them, and a field they may not read is marked
     REDACTED rather than omitted.
 
-    That follows Foundry, whose review surfaces "redact certain
+    That follows the precedent, whose review surfaces "redact certain
     resources or users contained in a record if you do not have the
     necessary permissions to view that item" -- and it is a deliberate
     reversal of an earlier design here that omitted such fields and
@@ -1488,7 +1488,7 @@ def write_detail_route(write_id: str, request: Request,
     of every changed field, which means a gated read per field per
     object. A pending write can touch twenty objects; doing that for
     every row of an inbox would cost hundreds of reads to render a
-    queue somebody is scanning rather than reading. Foundry splits it
+    queue somebody is scanning rather than reading. The precedent splits it
     the same way -- the inbox lists requests, and you open one to see
     its tasks.
 
@@ -1730,7 +1730,7 @@ class DeploymentConfigResponse(BaseModel):
     source_locales: dict[str, str | None] = {}
     #: ZOO-22: silos whose date columns may hold Excel serials.
     excel_date_silos: list[str] = []
-    #: BLOCKING item 3: the modules loaded, by id, in rail order. Ids,
+    #: the removed BLOCKING.md item on modules: the modules loaded, by id, in rail order. Ids,
     #: never folders -- a folder is a path, and names-not-contents.
     modules: list[str] = []
     # Silos whose 0000-00-00 dates are read as empty (`zero_dates_as_null`).
@@ -5331,7 +5331,7 @@ def delete_saved_view_route(
 #
 # A saved VIEW is the live kind -- its query, re-run. A FROZEN SET is
 # the other kind DEV_UI 11.3 asks for: "membership fixed at an
-# instant". Foundry's static object sets are the precedent: "saved as a
+# instant". The precedent's static object sets are the precedent: "saved as a
 # list of primary keys", staying "the same regardless of any changes to
 # the input data". Membership is keys; values are read live, with the
 # reader's own authority, through every route that already takes a set
@@ -5577,7 +5577,7 @@ def delete_frozen_set_route(set_id: str, request: Request,
 
 # --- Comparing two sets --------------------------------------------------------------------------
 #
-# FOUNDRY'S OBJECT SET SERVICE is the precedent: two sets combine by
+# THE PRECEDENT'S OBJECT SET SERVICE is the precedent: two sets combine by
 # `union`, `intersect` and `subtract`, and each result is a new set.
 # Comparing is those three read at once -- left minus right, left and
 # right, right minus left -- which is the Venn shape Amplitude's cohort
@@ -7062,7 +7062,7 @@ def published_history_route(
     customer's own database appears here and never there.
 
     AUTHORIZED AS THE OBJECT IS, the rule edit_history settled from
-    Foundry's precedent, and the filtering is the mediator's job rather
+    the precedent, and the filtering is the mediator's job rather
     than this route's -- a route that filtered would be a second place
     deciding one question.
 
@@ -7516,7 +7516,7 @@ def _require_manage_users(request: Request, current_user: UserRecord) -> None:
 # THE SHELL'S CONTRACT (shell/README.md), version 1: the session and the
 # module feed. The shell in `shell/` reads only these and knows nothing
 # else about Elysium; the sub-apps it hosts are Elysium's modules
-# (core/modules.py, BLOCKING.md item 3).
+# (core/modules.py, the removed BLOCKING.md item on modules).
 # ---------------------------------------------------------------------------
 
 
@@ -7646,7 +7646,7 @@ _ADDON_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]
 @router.api_route("/addons/{module_id}/{path:path}", methods=_ADDON_METHODS)
 async def addon_proxy_route(module_id: str, path: str, request: Request,
                             current_user: UserRecord = Depends(get_current_user)) -> StreamingResponse:
-    """A request to an add-on's own server (BLOCKING.md item 3, step 2):
+    """A request to an add-on's own server (the removed BLOCKING.md item on modules, step 2):
     core/addons.py says what passes, api/addon_servers.py forwards it.
 
     ONLY FOR SOMEONE THE MODULE IS OFFERED TO, and a 404 otherwise --
@@ -7782,7 +7782,7 @@ _BUNDLE_MEDIA_TYPES = {
 @router.get("/modules/{module_id}/files/{relative:path}")
 def module_file_route(module_id: str, relative: str, request: Request,
                       current_user: UserRecord = Depends(get_current_user)) -> FileResponse:
-    """A file of a module's bundle (BLOCKING.md item 3, step 1.2).
+    """A file of a module's bundle (the removed BLOCKING.md item on modules, step 1.2).
 
     ONLY TO SOMEONE THE MODULE IS OFFERED TO, and ONLY FROM ITS BUNDLE'S
     DIRECTORY (core/modules.bundle_file). Anything else is a 404 --
@@ -7813,7 +7813,7 @@ def my_profile_route(request: Request,
                      current_user: UserRecord = Depends(get_current_user)) -> dict:
     # A real "who am I" endpoint -- confirmed directly against how
     # established identity platforms do this (OpenID Connect's own
-    # UserInfo endpoint; Palantir Foundry's own real, documented GET
+    # UserInfo endpoint; the precedent's own real, documented GET
     # .../admin/users/getCurrent), not invented from scratch. Reuses
     # get_current_user() exactly like every other protected route --
     # no new auth logic, no new security surface. Returns the SAME
@@ -8381,7 +8381,7 @@ def my_visible_schema_route(request: Request, current_user: UserRecord = Depends
 # triggering an unbounded number of get_object() calls (each already
 # its own N-field loop of get_field() calls -- see DataMediator.
 # get_object()'s own docstring), not just an unbounded RESPONSE size.
-# Paging, matching Foundry's own model: pageSize + pageToken in, and
+# Paging, matching the precedent's own model: pageSize + pageToken in, and
 # nextPageToken + totalCount back. Their documented default is 1,000
 # with the default also acting as the maximum; ours is smaller because
 # each result costs a real per-object field read, and a UI table shows
@@ -8390,7 +8390,7 @@ DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 500
 
 
-# Page tokens are OPAQUE, following Foundry's own format: a version
+# Page tokens are OPAQUE, following the precedent's own format: a version
 # prefix and a base64 payload ("v1.QnVpbGQgdGhlIEZ1dHVyZTo..."). This
 # is about coupling, not secrecy. A bare offset like page_token=3 is
 # something a client can construct, guess, or build logic around, and
@@ -8413,7 +8413,7 @@ def _decode_page_token(token: str) -> int | None:
     """The offset a token encodes, or None if it is not one of ours.
 
     Returns None rather than raising for ANY malformed input --
-    wrong version, bad base64, non-numeric payload. Foundry's guidance
+    wrong version, bad base64, non-numeric payload. The precedent's guidance
     is that a client should treat a token as opaque and pass it back
     unchanged, so a garbled token is a client bug; but failing the
     whole request would turn a display glitch into an error page, and
@@ -8432,7 +8432,7 @@ def _decode_page_token(token: str) -> int | None:
 def _page_bounds(page_size: int | None, page_token: str | None, total: int) -> tuple[int, int]:
     """Resolves a request's paging parameters into (start, size).
 
-    CONSISTENCY, stated because Foundry states it: this is their
+    CONSISTENCY, stated because the precedent states it: this is their
     "default" pagination behaviour, which "returns the latest results"
     and "may lead to duplicate entries or missing items as data changes
     between page requests". Their opt-in "snapshot" mode, which
@@ -8442,7 +8442,7 @@ def _page_bounds(page_size: int | None, page_token: str | None, total: int) -> t
     sequential use.
 
     An oversized page_size is clamped rather than rejected, matching
-    Foundry: "Requests for more than the maximum page size will be
+    the precedent: "Requests for more than the maximum page size will be
     reduced to the maximum."
     """
     size = DEFAULT_PAGE_SIZE if page_size is None else max(1, min(page_size, MAX_PAGE_SIZE))
@@ -8460,7 +8460,7 @@ def _sorted_by_field(mediator, user_record, object_type: str, object_ids: list,
                       order_by: str) -> list:
     """Orders ids by a field value, `field` or `field:desc`.
 
-    Foundry's own orderBy syntax, simplified to ONE field: theirs
+    The precedent's own orderBy syntax, simplified to ONE field: theirs
     accepts a comma-separated list, and multi-field ordering is a real
     but separate piece of work rather than something to half-build
     here.
@@ -8890,8 +8890,8 @@ def matching_ids_route(object_type: str, request: Request, q: str = "",
                         current_user: UserRecord = Depends(get_current_user)) -> dict:
     """Every id the current filter matches, for "select all matching".
 
-    WHY IDS AND NOT A FILTER PASSED ONWARD. Foundry's approvals model
-    settles this: "a task is an individual change in Foundry. All tasks
+    WHY IDS AND NOT A FILTER PASSED ONWARD. The precedent's approvals model
+    settles this: "a task is an individual change in the precedent. All tasks
     associated with a request must be approved for the request to be
     invoked." What a reviewer approves is a set of SPECIFIC CHANGES,
     never a rule to be resolved later. Their bulk action types take an
@@ -9185,7 +9185,7 @@ def search_objects_route(object_type: str, request: Request, q: str = "",
         "total_matches": len(matching_ids),
         "request_id": request_context.request_id,
         "scan_truncated": search_outcome.scan_truncated,
-        # Absent, not empty, when there is no further page -- Foundry's
+        # Absent, not empty, when there is no further page -- the precedent's
         # own contract is that "the presence of the nextPageToken field
         # indicates that there are more results."
         "next_page_token": (_encode_page_token(next_start)
@@ -9449,8 +9449,8 @@ def propose_action_route(action_type_name: str, body: ProposeActionRequest, requ
     # initiated write already goes through.
     #
     # ERROR HANDLING -- decided explicitly with the user, a real,
-    # deliberate DEPARTURE from Palantir's own documented default
-    # (verified directly, not assumed: Palantir's real docs state
+    # deliberate DEPARTURE from the precedent's own documented default
+    # (verified directly, not assumed: the precedent's real docs state
     # action type metadata -- title, description, rules -- is visible
     # to every user with Ontology access by default, whether or not
     # they can actually execute it, and their real API returns
@@ -9469,7 +9469,7 @@ def propose_action_route(action_type_name: str, body: ProposeActionRequest, requ
     # already has that visibility. For that role only, the real
     # exception message is surfaced, and PermissionError gets its own,
     # differentiated 403 (matching standard HTTP semantics and
-    # Palantir's own real API, both safe to do ONLY because this
+    # the precedent's own real API, both safe to do ONLY because this
     # specific role isn't the audience the generic default protects).
     # Every OTHER role keeps the fully generic, undifferentiated
     # response exactly as before.
@@ -10131,12 +10131,12 @@ async def _decide_reserved_write(request: Request, write_id: str, pending, appro
     # RECORD THE DECISION PER TASK, THEN ASK WHETHER THE REQUEST IS
     # WHOLE.
     #
-    # Foundry separates the two: approval is per task, invocation is
+    # The precedent separates the two: approval is per task, invocation is
     # not -- "all tasks associated with a request must be approved for
     # the request to be invoked". A reviewer approves what they can and
     # the request waits for the rest.
     #
-    # ONLY THE TASKS THIS REVIEWER MAY DECIDE. Foundry scopes the
+    # ONLY THE TASKS THIS REVIEWER MAY DECIDE. The precedent scopes the
     # action to what the reviewer is eligible for: "approve or reject
     # all tasks in the request THAT YOU ARE ELIGIBLE TO REVIEW".
     #
@@ -10330,7 +10330,7 @@ def _finish_paused_query(app, generation, write_id: str, pending, outcome: "dict
                  subjects=[*subjects, *ids_in_gathered(result.gathered)])
 
 # --- Object Set operations: the analytical half of the read surface.
-# Foundry's own Object Set Service serves "searching, filtering,
+# The precedent's own Object Set Service serves "searching, filtering,
 # aggregating, and loading"; Elysium had the first two exposed over
 # HTTP and neither of the last, so count/aggregate/search-around were
 # reachable in DataMediator but not from any UI.
@@ -10525,11 +10525,11 @@ def link_counts_route(object_type: str, object_id: str, request: Request,
 def object_history_route(object_type: str, object_id: str, request: Request,
                           page_size: int | None = None, page_token: str | None = None,
                           current_user: UserRecord = Depends(get_current_user)) -> dict:
-    # Foundry's Edit History widget, answering "what changed, by whom,
+    # The precedent's Edit History widget, answering "what changed, by whom,
     # and when?" over the write log this project already keeps.
     #
     # Authorization is the SAME check as reading the object, following
-    # Foundry directly: "Users who have access to the current state of
+    # the precedent directly: "Users who have access to the current state of
     # an object can access the entire history of the object." A caller
     # who cannot read it gets an empty list rather than an error --
     # uniform denial, so the response never distinguishes "no history"

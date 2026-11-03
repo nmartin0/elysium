@@ -2,7 +2,7 @@
 transform.py  (the raw -> clean stage: type casting and drift detection)
 
 Phase 3 of the read-only mirror architecture. This is the middle stage
-of the three-stage pipeline Foundry's own architecture uses, and which
+of the three-stage pipeline the precedent's own architecture uses, and which
 Elysium previously skipped:
 
     raw  ->  clean  ->  ontology
@@ -14,7 +14,7 @@ WHY THIS EXISTS, and why the earlier decision to skip it was wrong.
 The phase was originally deferred on the grounds that it "pre-computes
 an MDO join" the local mirror already makes cheap. That reasoning was
 entirely about join PERFORMANCE, which is not what a transform stage
-is for. Checked against Foundry's own documented guidance rather than
+is for. Checked against the precedent's own documented guidance rather than
 assumed:
 
   - Type casting is drift DETECTION, not speed. Their build guidance
@@ -24,23 +24,23 @@ assumed:
     breaking changes from the source system if a column type changes
     or an invalid value creates an incorrect inference during the
     sync."
-  - The ingest stage is meant to stay dumb. Foundry's own connection
+  - The ingest stage is meant to stay dumb. The precedent's own connection
     layer "deliberately offer[s] minimal options for transforming the
     data before it arrives in the destination dataset (the starting
-    point of the Foundry pipeline)."
+    point of the precedent pipeline)."
 
 WHAT THIS FIXES CONCRETELY. Phase 4 added ontology-declared field types
 (core/ontology/field_types.py) and wired the casting directly INTO
 core/mirror/iceberg_sync.py -- the raw -> clean responsibility bolted
 onto the ingest stage. It worked, but it put transformation in the one
-place Foundry's architecture deliberately keeps free of it, and it
+place the precedent's architecture deliberately keeps free of it, and it
 meant a type mismatch surfaced as a sync failure rather than as a
 distinct, diagnosable drift report.
 
 WHAT THIS DELIBERATELY IS NOT. Not a materialization of per-object-type
 tables, and not a pre-computed MDO join -- that was the original
 Phase 3 plan and its justification did not hold up. MDO resolution
-stays where it is, at read time in DataMediator, exactly as Foundry
+stays where it is, at read time in DataMediator, exactly as the precedent
 keeps MDOs a first-class read-time concept rather than flattening them
 in a pipeline.
 

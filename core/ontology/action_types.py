@@ -4,8 +4,8 @@ action_types.py  (schema-load-time validation for action_types)
 Every action_type is REQUIRED to use the sub_writes shape -- there is
 no supported "flat," single-object shorthand anymore (see propose_
 action()'s own docstring for the full reasoning: the object(s) an
-action touches are always just ordinary parameters, matching Palantir
-Foundry's own model directly). An action_type missing "sub_writes"
+action touches are always just ordinary parameters, matching the precedent
+the precedent's own model directly). An action_type missing "sub_writes"
 entirely is REJECTED here, loudly, at load time -- see this module's
 own AI-notes at the bottom for the real, concrete gap this closes: the
 old version of this module silently SKIPPED validating an action_type
@@ -52,7 +52,7 @@ arrive, and is therefore safe to reject at load time, before any
 request exists. The full check, against REAL resolved ids, belongs
 at propose_action() time and is a separate, later piece of work.
 
-MAX_SUB_WRITES exists for the same reason Palantir caps their own
+MAX_SUB_WRITES exists for the same reason the precedent caps their own
 batched action calls (10,000, at their scale) -- holding N locks for
 N sequential round-trips has a real, growing latency/contention cost.
 Elysium's actual use cases (a transfer, a multi-line-item order, a
@@ -65,12 +65,12 @@ mutations already is; there is no code path where a model composes
 one.
 
 object_reference PARAMETERS -- {type: "object_reference",
-object_type: "Author"} -- matches Palantir Foundry's own action
+object_type: "Author"} -- matches the precedent's own action
 parameter model directly (verified against their docs, not assumed:
 "Modify object(s): can be used to modify an existing object whose
 primary key is derived from object reference parameters" -- the
 object being acted on is ALWAYS just a parameter, never a separate,
-out-of-band field, at every scale Palantir itself supports). A
+out-of-band field, at every scale the precedent itself supports). A
 sub_write's object_id, when it's a "parameter.<name>" expression,
 MUST reference a parameter declared this way, with its own object_type
 matching the sub_write's own -- this is what let a later increment
@@ -92,7 +92,7 @@ check about it at load time.
 default_to_current_object -- an OPTIONAL, per-parameter marker on an
 object_reference parameter, e.g. {type: "object_reference",
 object_type: "Account", default_to_current_object: true} -- confirmed
-directly against Palantir Foundry's own documented mechanism for
+directly against the precedent's own documented mechanism for
 exactly this case before designing it (their Action-widget "Default
 value" -> "Environment variable" -> "Current object" binding, set on
 ONE specific parameter by its own unique ID, not inferred from type).
@@ -106,7 +106,7 @@ case is exactly this: from_account_id AND to_account_id both
 reference Account -- before this marker existed, BOTH got pre-filled
 and locked to the SAME current account's id, with no way to specify a
 different "to" account through the form at all. Explicit, by
-parameter identity, exactly matching Palantir's own model, never
+parameter identity, exactly matching the precedent's own model, never
 inferred from object_type alone -- see this module's own validation
 below for the three things checked about it: only valid on an
 object_reference parameter; a real boolean, not some other YAML-
@@ -310,8 +310,8 @@ def _validate_object_reference_parameters(action_type_name: str, declared_params
         # real, live TransferFunds case: from_account_id AND
         # to_account_id both reference Account -- both used to get
         # locked to the SAME id, with no way to specify a different
-        # "to" account at all). Confirmed directly against Palantir's
-        # own documented mechanism for exactly this case (Foundry's
+        # "to" account at all). Confirmed directly against the precedent's
+        # own documented mechanism for exactly this case (the precedent's
         # own Action-widget "Default value" -> "Environment variable"
         # -> "Current object" binding) before designing this: THEIRS
         # is also explicit, by parameter ID, never inferred from type
@@ -352,7 +352,7 @@ def _validate_object_reference_parameters(action_type_name: str, declared_params
 
     if len(default_to_current_object_params) > 1:
         # Exactly one, or none -- never more than one. Matches
-        # Palantir's own model directly: their binding names ONE
+        # the precedent's own model directly: their binding names ONE
         # specific parameter by its own unique ID, never several at
         # once -- two parameters both claiming to be "the current
         # object" is exactly the same class of ambiguity this whole
@@ -399,7 +399,7 @@ PARAMETER_PREFIX = "parameter."
 # authorization check, its own submission criteria, and its own place
 # in the atomic batch.
 #
-# Foundry draws the line identically: a "bulk action type" is one
+# The precedent draws the line identically: a "bulk action type" is one
 # "using an object reference list parameter". Bulk is a property of the
 # ACTION, declared in the ontology, rather than a mode an application
 # switches into -- which is what makes it reviewable before anyone runs
@@ -609,7 +609,7 @@ def _validate_owner_may_approve_automation(action_type_name: str, action_def: di
 def _validate_auto_execute(action_type_name: str, action_def: dict) -> None:
     """Checks the optional auto_execute flag.
 
-    Foundry's own Action tool "can be configured to run automatically
+    The precedent's own Action tool "can be configured to run automatically
     or to run after confirmation from the user", and their governance
     model puts that decision in the ACTION config -- "controls which
     business mutations the agent can perform, and whether confirmation
@@ -766,7 +766,7 @@ def _validate_one_sub_write(action_type_name: str, index: int, sub_write: dict, 
         # getting its own authorization check, its own submission
         # criteria and its own place in the atomic batch.
         #
-        # Foundry draws the line here too: a "bulk action type" is one
+        # The precedent draws the line here too: a "bulk action type" is one
         # "using an object reference list parameter", a property of the
         # ACTION rather than a mode the UI switches into.
         if param_spec.get("type") not in OBJECT_REFERENCE_TYPES:

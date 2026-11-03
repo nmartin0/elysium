@@ -743,7 +743,7 @@ export async function getVisibleSchema(username: string): Promise<unknown> {
 
 // A real "who am I" endpoint -- confirmed directly against how
 // established identity platforms do this (OpenID Connect's own
-// UserInfo endpoint; Palantir Foundry's own real, documented GET
+// UserInfo endpoint; the precedent's own real, documented GET
 // .../admin/users/getCurrent) before adding it, not invented from
 // scratch. Server-side, the response carries Cache-Control: no-store
 // (see api/routes.py's own _no_store dependency) -- session-specific
@@ -812,7 +812,7 @@ export async function saveModuleArrangement(change: ModuleArrangementChange): Pr
 }
 
 /**
- * A CALL TO AN ADD-ON'S OWN SERVER (BLOCKING.md item 3, step 2), for the
+ * A CALL TO AN ADD-ON'S OWN SERVER (the removed BLOCKING.md item on modules, step 2), for the
  * add-on's pages: through Elysium's proxy at /api/addons/<id>/<path>, with
  * this page's session and CSRF header like any call -- the proxy adds who
  * is asking and keeps the session from the add-on. The answer is JSON; a
@@ -989,8 +989,8 @@ export async function similarObjects(objectType: string, objectId: string, k = 5
 
 /** Every id the current filter matches, for "select all matching".
  *
- * IDS, NOT A FILTER PASSED ONWARD. Foundry's approvals model settles
- * the design: "a task is an individual change in Foundry. All tasks
+ * IDS, NOT A FILTER PASSED ONWARD. The precedent's approvals model settles
+ * the design: "a task is an individual change in the precedent. All tasks
  * associated with a request must be approved for the request to be
  * invoked." A reviewer approves specific changes, never a rule to be
  * resolved later -- so the filter is resolved at SELECTION time and
@@ -1302,7 +1302,7 @@ export async function decideMergeProposal(
 /**
  * A frozen set: membership fixed at an instant (DEV_UI 11.3).
  *
- * KEYS, NOT A SNAPSHOT OF VALUES -- Foundry's static object sets are
+ * KEYS, NOT A SNAPSHOT OF VALUES -- the precedent's static object sets are
  * "saved as a list of primary keys". Values are read live, with the
  * reader's authority, by passing the set's id to the routes that
  * already take a set. The ids themselves are never sent here.
@@ -2076,7 +2076,7 @@ export function getVisibleActionTypesCached(): Promise<unknown> {
 /** The periods a date can be counted by. */
 export type TimePeriod = 'day' | 'week' | 'month'
 
-/** One thing to compute per group, after Foundry's aggregation item. */
+/** One thing to compute per group, after the precedent's aggregation item. */
 export interface AggregateMeasure {
   /** Yours, unique in the request, a plain identifier (lower-case letters,
    *  digits, underscores): the answer is an object keyed by it. */

@@ -18,7 +18,7 @@ moves nothing and says what failed.
 WHAT THE AUDIT CHECKS is the contract an ontology needs from the table
 behind an object type:
 
-  the key         unique and non-null. Foundry fails an indexing run
+  the key         unique and non-null. The precedent fails an indexing run
                   over a duplicate primary key, because the ontology
                   cannot say which row the object is. Silver already
                   holds duplicates back; this is the promise, restated

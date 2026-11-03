@@ -1,4 +1,4 @@
-// The module API a page offers and a module needs (BLOCKING.md item 3,
+// The module API a page offers and a module needs (the removed BLOCKING.md item on modules,
 // step 4): VS Code's `engines.vscode`, "^1.0" meaning 1.0 or any later
 // 1.x, and nothing loaded that asks for more.
 import { describe, expect, it } from 'vitest'

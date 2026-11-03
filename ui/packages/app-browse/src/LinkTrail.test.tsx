@@ -1,7 +1,7 @@
 /**
  * "Customer Ada Okafor › Transactions" -- the trail above a linked view.
  *
- * BY TITLE, as Foundry shows linked objects, with the id as fallback --
+ * BY TITLE, as the precedent shows linked objects, with the id as fallback --
  * and a failed fetch keeps the id rather than hiding the trail, which
  * is still true without a title.
  */

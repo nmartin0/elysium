@@ -7,7 +7,7 @@ statement arrives as a CSV download. Its supplier's price list arrives
 as a spreadsheet by email. Its payroll provider drops a file on a
 share every fortnight. Its card processor publishes a settlement file
 nightly. None of that is a database and all of it is real operational
-data that a platform ends up reading -- which is why Foundry lists
+data that a platform ends up reading -- which is why the precedent lists
 plain directories, SMB shares, SFTP and FTP alongside its database
 connectors.
 
@@ -473,7 +473,7 @@ def as_excel_saves(value: object) -> str:
 # publisher that works that way.
 #
 # DEFERRED: CSV only. Supplier price lists and payroll files are frequently
-# .xlsx, and Foundry reads those too. Writing real xlsx means a dependency
+# .xlsx, and the precedent reads those too. Writing real xlsx means a dependency
 # (openpyxl); worth it when a pack needs one, not before.
 #
 # DEFERRED: no file-size or retention limit. A pack publishing daily for a

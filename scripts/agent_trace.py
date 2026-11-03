@@ -92,7 +92,7 @@ def _tools_used(result) -> tuple[str, ...]:
 def _repeat(loop, user_record, query: str, times: int) -> int:
     """Runs the same query several times and reports what varied.
 
-    Foundry's own guidance for evaluating LLM-backed functions is to
+    The precedent's own guidance for evaluating LLM-backed functions is to
     run each case "at least three times", because a single run of a
     non-deterministic system tells you almost nothing -- and, more
     usefully, that "a high variance in numeric evaluators can indicate

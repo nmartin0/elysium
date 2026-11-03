@@ -49,7 +49,7 @@ function readAll(): Array<[string, string]> {
 const tokens = read('packages/shell-api/src/tokens.css')
 // EVERY STYLESHEET A PACKAGE AUTHORS, found rather than listed: the list
 // this replaced named the kit's and Schema's, and went stale as each
-// module took its rules into its own (BLOCKING.md item 3, step 3) -- a
+// module took its rules into its own (the removed BLOCKING.md item on modules, step 3) -- a
 // token used only by Browse's rules read as unused the day they moved.
 const stylesheets = readdirSync(resolve(process.cwd(), 'packages'), { withFileTypes: true })
   .filter((entry) => entry.isDirectory())

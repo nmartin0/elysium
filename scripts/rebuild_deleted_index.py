@@ -15,7 +15,7 @@ what the log says it should be", which only re-reading the log can
 answer -- and which costs, MEASURED, about 22 ms per 10,000 log rows.
 
 THE LOG IS THE AUTHORITY, which is what makes this safe to run at any
-time: the index is a cache, and Foundry's own framing applies -- "all
+time: the index is a cache, and the precedent's own framing applies -- "all
 indexed data in object databases are considered ephemeral, requiring
 persistent storing of all Ontology data in other ways".
 

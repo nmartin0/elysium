@@ -1,7 +1,7 @@
 /**
  * THE CONFORMANCE SUITE, TESTED: every check fails the page built to
  * fail it and passes the page built to pass (samples.tsx). A check that
- * could not fail would pass every module for ever -- BLOCKING.md item 3:
+ * could not fail would pass every module for ever -- the removed BLOCKING.md item on modules:
  * "the suite is tested itself, with a broken sample".
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'

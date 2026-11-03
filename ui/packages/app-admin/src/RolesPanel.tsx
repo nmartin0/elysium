@@ -3,7 +3,7 @@
  *
  * A CHANGE IS A PROPOSAL. Editing a role here never changes it: it
  * proposes the new grants, and somebody ELSE with manage:roles must
- * approve before they take effect. Foundry's rule, "approval from a
+ * approve before they take effect. The precedent's rule, "approval from a
  * user... other than the change request author". The screen says so
  * at the point of proposing, so nobody believes a change has happened
  * when it has only been asked for.

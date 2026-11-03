@@ -9,7 +9,7 @@
  *   - "Worth a look": kept, and the marker stays, saying someone has
  *     looked and kept it. Fixing the value is an edit, made as any is.
  *
- * THE PRECEDENT: Foundry's data health checks notify the people
+ * THE PRECEDENT: the precedent's data health checks notify the people
  * subscribed to a dataset, who decide what a failure means; Atlan with
  * Soda puts the result on the asset for its owner; Stripe Radar shows
  * each reviewer why a payment was flagged, beside the decision. So: the

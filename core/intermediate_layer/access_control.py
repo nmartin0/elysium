@@ -26,7 +26,7 @@ security_attribute at all -- UserRecord already carries the resolved
 MAC value, a real reduction in what this function needs to know, not
 just a relocation of the same parameters.
 
-TWO gates, both required, matching Palantir's own Markings (MAC) +
+TWO gates, both required, matching the precedent's own Markings (MAC) +
 role (RBAC) pattern:
   1. MAC -- DataMediator._security_allowed(), using user_record.
      security_value. Re-derived live from the OBJECT's own data on

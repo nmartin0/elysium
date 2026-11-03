@@ -1,5 +1,5 @@
 // @elysium/testing/setup -- the PROVIDER'S setup, run once before every test
-// file of Elysium's page AND of every module (BLOCKING.md item 3: "a
+// file of Elysium's page AND of every module (the removed BLOCKING.md item on modules: "a
 // preset the provider ships, carrying today's act-warning guard"). It
 // was ui/src/setupTests.ts, the page's alone, until modules needed to
 // test on their own. Adds jest-dom's own matchers (toBeInTheDocument,

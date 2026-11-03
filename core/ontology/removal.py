@@ -10,7 +10,7 @@ This adds the one thing that report does not read, because it is not in
 the configuration: PENDING WRITES. A write proposed against a field and not
 yet decided can only be applied to a field that exists, so removing the
 field would leave it in the queue forever (core/mirror/drift_policy.py makes
-the same distinction for a column the source dropped, after Foundry: an
+the same distinction for a column the source dropped, after the precedent: an
 applied edit is history, a pending one is an obligation). When there is no
 write log to ask, the answer is "cannot tell", which refuses -- the drift
 policy's rule too: a check that did not happen must not look like a check

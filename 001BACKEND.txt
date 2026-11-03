@@ -176,7 +176,7 @@ Nothing below should be decided by an instance. Each is recorded with
 its evidence in UNIFIED_ROADMAP.md and AUDIT_CHECKLIST.csv.
 
     F-02       the grant model for cross-type actions. Three options,
-               with Foundry precedent favouring a per-TYPE read check.
+               with the precedent favouring a per-TYPE read check.
                Blocked on the creates-and-deletes analysis.
     NEW-1      should a FORWARD single-valued link return its target's
                id when that object is hidden? Today it does; that id is

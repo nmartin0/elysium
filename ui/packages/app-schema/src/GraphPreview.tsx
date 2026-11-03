@@ -4,7 +4,7 @@
  * WITHOUT LEAVING THE GRAPH, which is the point. Clicking used to
  * navigate to Object types, and coming back re-laid the graph out --
  * so exploring cost you your place every time. That is the difference
- * between a diagram and a tool, and it is the gap Foundry's own
+ * between a diagram and a tool, and it is the gap the precedent's own
  * version closes with "a quick view of an object type without moving
  * into the more comprehensive exploration page".
  *

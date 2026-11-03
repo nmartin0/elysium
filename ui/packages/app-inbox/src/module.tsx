@@ -1,5 +1,5 @@
 /**
- * THE INBOX AS A MODULE (BLOCKING.md item 3, step 3): the entry of its
+ * THE INBOX AS A MODULE (the removed BLOCKING.md item on modules, step 3): the entry of its
  * own bundle, built apart from Elysium's page by vite.config.ts in this
  * folder. Elysium's page no longer imports it. It was ui/src/inbox and
  * ui/src/InboxPanel.tsx; a modules.yaml naming the old folder is read as

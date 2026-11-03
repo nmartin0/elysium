@@ -20,7 +20,7 @@ export interface GrantGroup {
 
 /** Administration first: those are the grants that change who may do
  *  what, and they should be the first thing an editor sees. Then each
- *  MODULE'S DECLARED PERMISSIONS (BLOCKING.md item 3, step 2.3), a group
+ *  MODULE'S DECLARED PERMISSIONS (the removed BLOCKING.md item on modules, step 2.3), a group
  *  per module, described -- and last, any held from a module no longer
  *  listed, so they can be seen and taken away. */
 export function groupGrants(

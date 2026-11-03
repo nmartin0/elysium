@@ -7,7 +7,7 @@
  * reads as "there are 2 transactions in the system". A UI stating
  * something false is worse than one stating nothing.
  *
- * FOUNDRY TREATS THIS AS FIRST-CLASS: Object Views ships a dedicated
+ * THE PRECEDENT TREATS THIS AS FIRST-CLASS: Object Views ships a dedicated
  * "Active Filters" widget for a summary of all filters currently
  * applied, and Workshop ships "Exploration Filter Pills". A pill row
  * is the established idiom rather than an invention.
@@ -37,7 +37,7 @@ describe('ActiveFilters', () => {
   })
 
   it('removes one filter by field', () => {
-    // REMOVAL IS THE WAY BACK, which is Foundry's answer to "how did I
+    // REMOVAL IS THE WAY BACK, which is the precedent's answer to "how did I
     // get here" too -- their Exploration Search Bar has explicit
     // remove-only modes, and Object Explorer offers no breadcrumb
     // trail for search-around.

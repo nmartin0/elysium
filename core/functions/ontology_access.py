@@ -9,7 +9,7 @@ arguments -- being able to reach past the caller's own permissions.
 WHY A CAPABILITY RATHER THAN A MEDIATOR. Handing a function the
 mediator plus a UserRecord would make every function author
 responsible for MAC correctness, and an LLM picks the arguments.
-Foundry does not do this either: their own documentation states there
+The precedent does not do this either: their own documentation states there
 is "no way to get the executing user's ID within a function without
 passing it as a parameter" -- function authors cannot write permission
 checks because they never learn who is calling. The platform enforces
@@ -22,7 +22,7 @@ TWO INDEPENDENT RESTRICTIONS, both enforced here:
     with the same audit logging.
   - The DECLARED object types. A function that declared Customer
     cannot read Account, even if the caller could. This is defence in
-    depth beyond what Foundry offers: it bounds what a compromised or
+    depth beyond what the precedent offers: it bounds what a compromised or
     buggy function can reach to what its author said it would.
 
 Deliberately exposes the SAME operations the HTTP surface does --

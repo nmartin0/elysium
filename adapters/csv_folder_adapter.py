@@ -13,12 +13,12 @@
         # null_values: [""]
 
 HOW THE PRECEDENT SHAPED IT, checked with the owner (Fivetran's file
-connectors, Airbyte's file-based sources, Foundry's file-based syncs,
+connectors, Airbyte's file-based sources, the precedent's file-based syncs,
 BigQuery and Snowflake loads):
 
   - A PATTERN PICKS THE FILES, and many files make one table -- every tool
     does this.
-  - TWO SHAPES, chosen per table, as every tool offers both (Foundry's
+  - TWO SHAPES, chosen per table, as every tool offers both (the precedent's
     SNAPSHOT and APPEND, BigQuery's WRITE_TRUNCATE and WRITE_APPEND):
       latest    each file is a whole export; only the newest counts, so a
                 row deleted at the source leaves Elysium too.

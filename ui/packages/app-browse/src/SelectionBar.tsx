@@ -1,7 +1,7 @@
 /**
  * SelectionBar -- what an action would apply to, said before it does.
  *
- * FOUNDRY'S RULE, and it is the one that shapes this: an action
+ * THE PRECEDENT'S RULE, and it is the one that shapes this: an action
  * receives "the current set of selected objects in your exploration
  * (or all objects, if none are selected)". So selecting nothing does
  * not mean acting on nothing -- it means acting on everything the
@@ -13,7 +13,7 @@
  * always, in the same words the action will use.
  *
  * THE COUNT IS THE SAFETY FEATURE. "Selection count appears in the
- * toolbar" in Foundry's own results table, and the reason is that
+ * toolbar" in the precedent's own results table, and the reason is that
  * "apply to 3" and "apply to 4,000" are different decisions that
  * otherwise look identical.
  *
@@ -64,7 +64,7 @@ export default function SelectionBar({
   if (matchCount === 0) return null
 
   // WHAT AN ACTION WOULD ACTUALLY REACH, which is the page rather than
-  // every match when nothing is selected. Foundry's select-all "selects
+  // every match when nothing is selected. The precedent's select-all "selects
   // all objects matching the applied filters, not just the objects on
   // the current page"; we hold one page, so promising every match would
   // be a quiet under-application -- fewer objects touched than the

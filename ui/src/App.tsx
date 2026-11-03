@@ -152,7 +152,7 @@ function SystemServerPage() {
 
 /**
  * THE MODULES WHOSE CODE IS BUILT INTO THIS PAGE, by `module:page` as each
- * module.json names them (BLOCKING.md item 3). Which of them a person is
+ * module.json names them (the removed BLOCKING.md item on modules). Which of them a person is
  * OFFERED, and where each is mounted, is the feed's to say; this only
  * says where the code is. A page the feed names and this does not know
  * is shown as "nothing loaded opens this page" by the shell.
@@ -199,7 +199,7 @@ async function fetchCheckedFeed(): Promise<FeedState> {
 }
 
 /**
- * THE MODULES WITH BUNDLES OF THEIR OWN (BLOCKING.md item 3, step 1.2),
+ * THE MODULES WITH BUNDLES OF THEIR OWN (the removed BLOCKING.md item on modules, step 1.2),
  * loaded when one of their pages is first opened. One loader for the
  * page's life: a module's code, once imported, stays until the page
  * reloads, and the loader hands out one component per page so React never
@@ -623,7 +623,7 @@ function LoggedIn({
   )
   // WHAT THE REGISTRY COULD NOT HONOUR -- two modules claiming a path, a
   // rail entry leading elsewhere -- said in the console until the module
-  // manager (BLOCKING.md item 3, step 1) has somewhere to show it.
+  // manager (the removed BLOCKING.md item on modules, step 1) has somewhere to show it.
   useEffect(() => {
     for (const problem of registry?.problems ?? []) console.warn(`[modules] ${problem}`)
   }, [registry])
@@ -745,7 +745,7 @@ function LoggedIn({
 //   logged in" is a genuinely different concern from either of those,
 //   even though all three fire at the same moment. Researched and
 //   confirmed directly against how established identity platforms do
-//   this (OpenID Connect's own UserInfo endpoint; Palantir Foundry's
+//   this (OpenID Connect's own UserInfo endpoint; the precedent's
 //   own real, documented GET .../admin/users/getCurrent) before
 //   building it, not invented from scratch.
 // - Sub-app routes (QueryPanel, ObjectSearchPanel, ObjectDetailPanel,

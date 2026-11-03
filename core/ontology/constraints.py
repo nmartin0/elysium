@@ -1,6 +1,6 @@
 """Constraints on the VALUES a field may hold.
 
-FOUNDRY'S VALUE TYPES are the precedent: "a minimum value, maximum
+THE PRECEDENT'S VALUE TYPES are the precedent: "a minimum value, maximum
 value, or range of allowed values", a regex "that the string must
 match", an enum -- and they "enforce data validation in a manner
 reusable across the platform". Declared on the PROPERTY, so every
@@ -15,7 +15,7 @@ schema. A proposal made before a constraint existed must not slip
 through by being approved after it -- the grant algebra's own rule,
 "re-evaluated at the point of use".
 
-ONE DELIBERATE DEPARTURE FROM FOUNDRY. Its `range` on a STRING
+ONE DELIBERATE DEPARTURE FROM THE PRECEDENT. Its `range` on a STRING
 constrains the string's LENGTH, so `min: 3` would mean different things
 on different fields. Here lengths have their own keys, and a key never
 changes meaning with the field it is on.
@@ -216,7 +216,7 @@ def violation(field_def: dict, value) -> str | None:
         if misleading is not None:
             return f"{misleading}"
     if "pattern" in constraints and not re.fullmatch(constraints["pattern"], str(value)):
-        # FULL MATCH. Foundry lets a pattern pass on a substring as an
+        # FULL MATCH. The precedent lets a pattern pass on a substring as an
         # option; a pattern meant to shape a whole value that passes on
         # any part of it lets almost anything through.
         return f"{value!r} does not match the pattern {constraints['pattern']!r}."

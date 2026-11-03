@@ -10,7 +10,7 @@ Everything else applies at once.
 
 WHO DECIDES. A holder of manage:roles who is not the proposer: the
 people who already approve role changes, because this IS a change to
-who sees what by another route. Foundry likewise makes removing a
+who sees what by another route. The precedent likewise makes removing a
 marking a power of its own ("the Expand Access permission on the
 marking itself ... is required to remove a marking"), apart from owning
 the data.

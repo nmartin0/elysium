@@ -52,7 +52,7 @@ async function openPalette(
  * a prop of the shell.
  */
 /** THE INBOX'S BADGE, STOOD IN FOR: the Inbox brings its own in its
- *  bundle (BLOCKING.md item 3, step 3), tested in its package
+ *  bundle (the removed BLOCKING.md item on modules, step 3), tested in its package
  *  (app-inbox/src/badges.test.tsx). What is tested here is the frame
  *  drawing whatever badge a module gives. */
 let waitingInTheInbox = 0
@@ -61,7 +61,7 @@ function useStandInBadges() {
 }
 
 /** BROWSE'S PALETTE COMMANDS, STOOD IN FOR: Browse brings its own in its
- *  bundle (BLOCKING.md item 3, step 3), tested in its package
+ *  bundle (the removed BLOCKING.md item on modules, step 3), tested in its package
  *  (app-browse/src/palette.test.tsx, paletteCommands.test.ts). What is
  *  tested here is the frame offering what a module's palette hook gives:
  *  its commands before and after the rail's, and what it makes of typed

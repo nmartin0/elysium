@@ -4,7 +4,7 @@
  * columns that join them -- written to ontology_schema.yaml as one link
  * type, whose two directions both come from that one declaration.
  *
- * FOUNDRY'S TWO SHAPES, as the loader adopted them. "Each Customer has
+ * THE PRECEDENT'S TWO SHAPES, as the loader adopted them. "Each Customer has
  * many Transactions" is a FOREIGN KEY: one column of the Transactions
  * table holds the customer's id. "Customers and Tags have many of each
  * other" is a JOIN TABLE: a table of pairs of ids, and the two columns

@@ -1,5 +1,5 @@
 /**
- * The simulator's control panel (sim/panel/web, BLOCKING.md item 3, step
+ * The simulator's control panel (sim/panel/web, the removed BLOCKING.md item on modules, step
  * 2.3): what it shows in each phase, what it sends, and what it says when
  * the panel's server refuses. Here rather than beside its source because
  * it runs with this page's test tools, which the simulator does not carry.

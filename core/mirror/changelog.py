@@ -12,7 +12,7 @@ first, and why this is the REVERSIBILITY LINE.
 
 WHAT THIS IS NOT. It is not change data capture. Real CDC receives a
 feed from the source; this DIFFS two snapshots we took ourselves, which
-Foundry documents as the fallback for exactly our case: "my source
+the precedent documents as the fallback for exactly our case: "my source
 system sends a full snapshot every sync. My transforms apply CDC to
 detect inserts, updates, and deletes, then write only the changes as
 APPEND transactions."
@@ -23,7 +23,7 @@ changelog can only describe consecutive syncs. A sync that is missed
 loses the intervening state permanently. Diffing sees where the data
 got to, never the path it took.
 
-IDENTIFIER MODE, which we qualify for. Foundry describes two: an
+IDENTIFIER MODE, which we qualify for. The precedent describes two: an
 "identifier changelog (recommended): one or more identifier columns
 provided", which is "more performant" and gives "richer semantics,
 including update-before and update-after records", and a "net changes"
@@ -47,7 +47,7 @@ INSERT = "INSERT"
 UPDATE = "UPDATE"
 DELETE = "DELETE"
 # THE ROW AS IT STOOD BEFORE AN UPDATE (R10). Iceberg's changelog view
-# calls the pair UPDATE_BEFORE / UPDATE_AFTER and Foundry's identifier
+# calls the pair UPDATE_BEFORE / UPDATE_AFTER and the precedent's identifier
 # mode promises "update-before and update-after records"; the AFTER
 # half keeps the name UPDATE it has always had here, so every changelog
 # row written before this change still means what it said.
@@ -63,7 +63,7 @@ UPDATE_BEFORE = "UPDATE_BEFORE"
 # place that cannot be undone by re-syncing.
 #
 # So a drop beyond this fraction is treated as a failed read rather
-# than as news. Foundry's equivalent instinct is the rule that
+# than as news. The precedent's equivalent instinct is the rule that
 # retention "will never delete transactions that are in the latest view
 # of any branch" -- when in doubt about destruction, refuse.
 MAX_DELETED_FRACTION = 0.5

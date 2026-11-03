@@ -74,7 +74,7 @@ different thing from a permission and is why the two were confused.
     grant gating schema visibility itself (core/ontology/mediator.py).
 
   - "module:<module id>:<name>" -- a permission a MODULE DECLARES in
-    its module.json (core/modules.py, BLOCKING.md item 3, step 2.3), the
+    its module.json (core/modules.py, the removed BLOCKING.md item on modules, step 2.3), the
     module's own to check: the simulator's panel is offered to
     module:simulator:operate. For a module the deployment lists, on or
     off, <name> must be one it declares. For a module it does NOT list
@@ -268,7 +268,7 @@ def _validate_one_grant(role_name: str, grant: str, object_types: dict, action_t
         return
     if grant == "manage:roles":
         # EDITING WHAT A ROLE MAY DO, while the application runs. A
-        # SEPARATE grant from manage:users, following both Foundry --
+        # SEPARATE grant from manage:users, following both the precedent --
         # "Manage permissions" is distinct from "Manage membership", and
         # customising roles needs an administrator of its own -- and this
         # file's own precedent for manage:deployment below: different
@@ -301,7 +301,7 @@ def _validate_one_grant(role_name: str, grant: str, object_types: dict, action_t
         return
 
     if grant.startswith("write:"):
-        # TYPE-LEVEL ONLY, which is `F-02` option C and Foundry's
+        # TYPE-LEVEL ONLY, which is `F-02` option C and the precedent's
         # model: "you must hold edit permissions on the action type
         # AND on all ontology resource types edited by the action".
         #

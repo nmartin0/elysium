@@ -51,7 +51,7 @@ interface ObjectDetailPanelProps extends SubAppProps {
   visibleSchema: VisibleSchema | null
 }
 
-// Stage 2 of the Palantir-parity UI plan -- Object View. A real,
+// Stage 2 of the precedent-parity UI plan -- Object View. A real,
 // dedicated page for one specific object: every field the caller can
 // see, with LINK fields rendered as real, clickable navigation to
 // another object's own Object View, not just a raw id string. Reached
@@ -514,7 +514,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
 // whenever something genuinely open, deferred, or rejected comes up here.
 // =============================================================================
 //
-// CONTEXT: Stage 2 of the Palantir-parity UI plan -- see api/
+// CONTEXT: Stage 2 of the precedent-parity UI plan -- see api/
 // routes.py's own AI-notes for the backend (GET /objects/{type}/{id}),
 // and ObjectSearchPanel.jsx's own for Stage 1. Stage 3 (direct action
 // invocation from this page) is now built too -- see ActionForm.jsx's
@@ -551,7 +551,7 @@ export default function ObjectDetailPanel({ visibleSchema, onSessionExpired }: O
 // role (which sees actions it cannot invoke -- see that grant's own
 // docstring on WriteMediator.visible_action_types()) never gets shown
 // a button for one of them. Deliberately HIDDEN, not shown disabled --
-// decided explicitly with the user after checking both Palantir's own
+// decided explicitly with the user after checking both the precedent's own
 // real Object View convention (which supports either, but frames
 // disable as for a condition the user could fix by changing form
 // input) and the general, converging UX consensus for permission-

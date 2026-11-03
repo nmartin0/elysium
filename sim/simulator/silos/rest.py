@@ -5,7 +5,7 @@ The fourth way a small business'S data is reached, after a database on
 a port, a database in a file, and a folder of CSV. Square, Stripe,
 Shopify, QuickBooks Online, ServiceTitan, Jobber: none of them hand
 anyone a database connection. They expose a paginated Json api behind
-a bearer token, and that is the only way in. Foundry connects to these
+a bearer token, and that is the only way in. The precedent connects to these
 through its Rest api source type.
 
 What makes this authentic is not "it returns JSON". It is the four

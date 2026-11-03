@@ -4,7 +4,7 @@ the medallion design's rule S4).
 WHY THIS IS NOT AN ORDINARY EXPECTATION. Every other rule is about one
 row's values; this is about two rows disagreeing about who they are. An
 object type is BACKED BY a table keyed on its id, and the precedent is
-blunt about what that requires: Foundry fails an indexing run outright
+blunt about what that requires: the precedent fails an indexing run outright
 when a batch holds duplicate primary keys, because the ontology cannot
 say which row the object is.
 
@@ -23,7 +23,7 @@ THE ALTERNATIVES ARE DECLARED, per table:
                         badly wrong upstream.
   keep_last_by: COLUMN  the copy with the greatest value in COLUMN
                         survives; the others are quarantined, never
-                        silently dropped. This is Foundry's own
+                        silently dropped. This is the precedent's own
                         resolution rule -- the most recent transaction
                         wins -- and needs a column that says which is
                         most recent. A tie leaves it ambiguous, so

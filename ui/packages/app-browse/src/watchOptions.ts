@@ -69,7 +69,7 @@ export function actionsFor(actions: Record<string, VisibleAction>, objectType: s
 
 /** Roles this person may name as recipients.
  *
- *  FOUNDRY'S RULE: name only groups you have permission to see. In
+ *  THE PRECEDENT'S RULE: name only groups you have permission to see. In
  *  Elysium role names are visible to manage:users holders -- and
  *  `allRoles` is null for anybody else, because /config refused them.
  *  So: every role if they can see them all, otherwise their own.

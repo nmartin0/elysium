@@ -150,7 +150,7 @@ object_types:
 # operation/mutations. This is required for EVERY action, even one
 # touching only a single object (like both examples below) -- there
 # is no separate, flatter shorthand: the object(s) an action touches
-# are always just ordinary parameters, matching Palantir Foundry's
+# are always just ordinary parameters, matching the precedent's
 # own action model directly (verified against their own docs: "an
 # existing object whose primary key is derived from object reference
 # parameters" -- never a separate, special field). A parameter that

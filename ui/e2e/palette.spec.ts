@@ -1,5 +1,5 @@
 // palette.spec.ts -- a module's commands in the shell's palette, supplied
-// by the module's own code (BLOCKING.md item 3, step 1.3b).
+// by the module's own code (the removed BLOCKING.md item on modules, step 1.3b).
 //
 // Only a browser against the real server shows the whole chain: the feed
 // carrying Browse's `onPalette` activation event from its module.json,

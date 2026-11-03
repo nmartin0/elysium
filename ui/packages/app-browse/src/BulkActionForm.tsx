@@ -10,7 +10,7 @@
  * differently depending on a parameter type nobody can see.
  *
  * WHICH ACTIONS APPEAR IS DECIDED BY THE ONTOLOGY, not by this
- * component. Foundry: "in 'bulk' contexts... only actions that accept
+ * component. The precedent: "in 'bulk' contexts... only actions that accept
  * object list parameters of the correct type will be shown". An action
  * without a list parameter is not a bulk action, and no amount of UI
  * makes it one.

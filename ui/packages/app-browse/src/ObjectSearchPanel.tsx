@@ -86,7 +86,7 @@ import { readPreference, writePreference } from '@elysium/shell-api/browserPrefe
 import { asConditions, type ChartFilter } from './aggregateCharts'
 import ChartsPanel from './ChartsPanel'
 
-// The human-facing browse/search screen -- Palantir's own Object
+// The human-facing browse/search screen -- the precedent's own Object
 // Explorer is the closest real-world analog (a real research +
 // architecture conversation with the user), scaled down to a fixed,
 // hand-built screen rather than a generic app-building tool: pick a
@@ -223,7 +223,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
   const [scanTruncated, setScanTruncated] = useState(false)
 
   // WHICH OBJECTS AN ACTION WOULD APPLY TO, by id rather than by row,
-  // so a selection survives paging and re-sorting. Foundry's rule:
+  // so a selection survives paging and re-sorting. The precedent's rule:
   // "when results span multiple pages, selecting the header checkbox
   // selects all objects matching the applied filters, not just the
   // objects on the current page".
@@ -880,7 +880,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
           used to render nowhere in table view, so arriving from a link
           the panel said "Showing 2 of 2 matches" with no sign a filter
           was in force -- which reads as "there are 2 in the system".
-          Foundry treats this as a first-class concern: Object Views
+          The precedent treats this as a first-class concern: Object Views
           ships a dedicated Active Filters widget for exactly it. */}
       <ActiveFilters filters={crossFilter} onRemove={removeCrossFilter} />
 
@@ -951,13 +951,13 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
         <BulkActionForm
           action={bulkAction}
           objectType={currentType}
-          // NO SELECTION MEANS THE WHOLE FILTERED SET -- Foundry's rule
+          // NO SELECTION MEANS THE WHOLE FILTERED SET -- the precedent's rule
           // -- and it is resolved HERE rather than in the form, so the
           // rule lives in one place. The form is told the ids and does
           // not know how they were chosen.
           // THE PAGE, NOT EVERY MATCH, and the selection bar says so.
           //
-          // Foundry's rule is that an action applies to "all objects,
+          // The precedent's rule is that an action applies to "all objects,
           // if none are selected", and their select-all "selects all
           // objects matching the applied filters, not just the objects
           // on the current page". We cannot honour that half: the
@@ -1347,7 +1347,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
 // =============================================================================
 //
 // CONTEXT: the first real screen for a genuine, staged architecture
-// direction (Palantir's own Object Explorer/Object View/Actions
+// direction (the precedent's own Object Explorer/Object View/Actions
 // widgets as the real-world reference, scaled to fixed, hand-built
 // screens rather than a generic app-building tool -- see api/
 // routes.py's own AI-notes for the backend side, core/ontology/
@@ -1380,7 +1380,7 @@ export default function ObjectSearchPanel({ visibleSchema, username, onSessionEx
 //   object_type_validation.py) -- getDisplayTitle() above (shared, in
 //   ../format) uses it when a type declares one and the caller can
 //   actually see that field's own value, falling back to the raw id
-//   otherwise. Matches Palantir's own Object Explorer, which has the
+//   otherwise. Matches the precedent's own Object Explorer, which has the
 //   equivalent concept ("title key").
 // - A real, pre-existing React warning ("a component is changing an
 //   uncontrolled input to be controlled") is fixed -- the <select>'s

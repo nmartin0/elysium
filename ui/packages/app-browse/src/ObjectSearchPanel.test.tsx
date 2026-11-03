@@ -1392,7 +1392,7 @@ describe('selecting objects to act on', () => {
 
 describe('acting on a selection', () => {
   /**
-   * FOUNDRY'S RULE LIVES IN THE PANEL, not the form: an action
+   * THE PRECEDENT'S RULE LIVES IN THE PANEL, not the form: an action
    * receives "the current set of selected objects in your exploration
    * (or all objects, if none are selected)". Resolving it here keeps
    * it in one place -- the form is told the ids and does not know how

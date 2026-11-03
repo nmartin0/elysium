@@ -6,7 +6,7 @@ name a security field, and a catalogue has none to name -- the rule was
 mechanical (the mediator read `type_schema["security"]` directly, and a
 missing block crashed it), not a decision anyone made.
 
-THE PRECEDENT. Foundry's object security policies are optional: without
+THE PRECEDENT. The precedent's object security policies are optional: without
 one, an object type is governed by its ordinary permissions (Viewer on
 the type and its data source); with one, the policy overrides those.
 Databricks' row filters apply only to tables matching their condition.
@@ -28,7 +28,7 @@ THREE RULES, agreed with the owner:
      Reading from it crosses nothing; WRITING INTO it from a labelled
      object is a write-down, and refused -- otherwise an unrestricted
      type is a door for moving restricted values somewhere everyone can
-     read them. Foundry warns that object policies do not follow data
+     read them. The precedent warns that object policies do not follow data
      into downstream outputs; this is the part of that Elysium can stop.
 
      WHAT "FROM A LABELLED OBJECT" COVERS, said precisely after review

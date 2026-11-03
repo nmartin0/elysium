@@ -102,7 +102,7 @@ class Trigger:
     # every time it is true then.
     schedule: dict | None = None
     # WHOSE OBJECTS THE ACTION RECEIVES when the trigger has several
-    # conditions: one of their views, chosen by the maker -- Foundry's
+    # conditions: one of their views, chosen by the maker -- the precedent's
     # rule that an action parameter takes the objects a condition
     # exposes, "the type of the action parameter needs to align". NULL
     # is the trigger's own view.
@@ -352,7 +352,7 @@ def action_problem(action_types, view_object_type: str, action_type: str,
     time, because the owner's grants and the action's definition can
     change after the trigger is made.
 
-    Foundry's rule is the model: "the owner configuring an action must
+    The precedent's rule is the model: "the owner configuring an action must
     pass the submission criteria for that action". So the owner must
     hold `execute:` for it -- a trigger grants nothing its owner lacks.
     """
@@ -396,7 +396,7 @@ def recipient_problem(roles, existing_roles, creator_role: str | None,
                       creator_may_see_all_roles: bool) -> str | None:
     """Why the creator may not name these roles, or None.
 
-    FOUNDRY'S RULE, TRANSLATED. Its recipient picker "will only display
+    THE PRECEDENT'S RULE, TRANSLATED. Its recipient picker "will only display
     users and groups for which the person configuring the Action has
     adequate permissions". In Elysium a group is a ROLE, and role names
     are visible only to `manage:users` holders, through /roles/names.

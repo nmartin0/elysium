@@ -1496,7 +1496,7 @@ def apply_new_type(ontology: str, bindings: "str | None", addition: dict,
 # type, which both of its types read -- the two directions come from this
 # one declaration (core/ontology/link_types.py), so they cannot drift.
 #
-# FOUNDRY'S SHAPE, which link_types.py adopted: a foreign-key link
+# THE PRECEDENT'S SHAPE, which link_types.py adopted: a foreign-key link
 # (one-to-one, one-to-many) names the column on the TARGET's table that
 # holds the source's id; a many-to-many link names a join table and the
 # two columns of key pairs in it. Nothing else is asked of the person.

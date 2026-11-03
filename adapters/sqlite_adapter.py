@@ -292,7 +292,7 @@ class SQLiteReadAdapter(ExternalReadAdapter):
         # separate, still-outstanding deployment concern (see
         # the roadmap (consumed), and INSTALL.md once written): confirmed
         # directly
-        # against Palantir's own real, documented practice that the
+        # against the precedent's own real, documented practice that the
         # credential is the primary enforcement point, with
         # application code as defense in depth, never the reverse.
         # Neither layer alone is the whole guarantee.

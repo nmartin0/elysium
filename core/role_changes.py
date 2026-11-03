@@ -1,6 +1,6 @@
 """Changes to a role, proposed by one person and approved by another.
 
-FOUNDRY'S MODEL. Security changes are approval requests -- "Group
+THE PRECEDENT'S MODEL. Security changes are approval requests -- "Group
 membership: Add a user as a member of a group", decided by somebody
 with Manage permissions -- and changes to access policy "require
 approval from a user... other than the change request author". So a
@@ -9,7 +9,7 @@ role edit here is a PROPOSAL, and its author cannot approve it.
 NOT THE PENDING-WRITE QUEUE. That queue carries ontology writes,
 executed by the write mediator; a role change is a different thing with
 a different executor. Folding it in would add risk to the store under
-every approval. Foundry keeps group membership as its own task type too.
+every approval. The precedent keeps group membership as its own task type too.
 
 ONE ROLE PER CHANGE. The approver sees exactly one role before and
 after, which is what they are agreeing to.

@@ -2,7 +2,7 @@
  * LinkTrail -- "Customer Ada Okafor › Transactions", above a view
  * reached by following a link.
  *
- * BY TITLE, as Foundry shows linked objects: "Ada Okafor", not
+ * BY TITLE, as the precedent shows linked objects: "Ada Okafor", not
  * "cust_001", where the type declares a title_field. The id is the
  * fallback, and so it stays if the origin cannot be fetched -- the
  * trail is still TRUE without the title, so a failed fetch is no reason

@@ -2,7 +2,7 @@
 submission_criteria.py  (business-state validation on named actions --
 generic, org-agnostic)
 
-Matches Palantir Foundry's own concept and name (their own docs:
+Matches the precedent's own concept and name (their own docs:
 "submission criteria... support encoding business logic into data
 editing permissions"), verified directly against their documentation
 before this was built, not assumed. Closes a real gap this project's
@@ -15,21 +15,21 @@ mechanical check.
 
 Structurally a property of a named ACTION TYPE, not a generic
 validation bolted onto whatever "update" happens to mean for an object
-type -- confirmed directly against Palantir's own docs, which attach
+type -- confirmed directly against the precedent's own docs, which attach
 submission criteria to actions specifically, not objects. See
 core/ontology/write_mediator.py's propose_action() for the only real
 caller.
 
 DELIBERATELY structured conditions, not a string-expression language --
 unsafely evaluating arbitrary expressions is a well-understood risk
-class, and Palantir's own UI is condition-template-based for the same
+class, and the precedent's own UI is condition-template-based for the same
 reason, not raw-expression-based. A fixed, small operator set instead:
 equals, not_equals, greater_than, less_than, greater_than_or_equal,
 less_than_or_equal, in. Covers the large majority of real business
 rules (state locks, range checks, enum checks) without a general
 expression evaluator.
 
-ALLOW-framed, matching Palantir's own naming ("submission CRITERIA" --
+ALLOW-framed, matching the precedent's own naming ("submission CRITERIA" --
 conditions required to submit, not conditions that block): every
 criterion in an action's submission_criteria list must evaluate TRUE
 for the action to proceed. The FIRST one that evaluates False raises,
@@ -103,7 +103,7 @@ CheckKind = Literal["current_state", "parameter", "user"]
 
 # What a "user" criterion may read: the acting principal's own
 # attributes, and nothing else. All three of UserRecord's fields are
-# allowed, following Foundry's Current User template directly -- their
+# allowed, following the precedent's Current User template directly -- their
 # docs describe checking "a user's ID, group memberships via group
 # IDs, or any other multipass attribute available", so role (our
 # nearest thing to a group) and security_value (our nearest thing to
@@ -111,10 +111,10 @@ CheckKind = Literal["current_state", "parameter", "user"]
 #
 # NOTE the deliberate overlap with RBAC that this accepts. A criterion
 # on role_name says something an execute: grant can also say, and the
-# two could disagree. Foundry lives with that because criteria are its
+# two could disagree. The precedent lives with that because criteria are its
 # ONLY fine-grained "who" mechanism; we have grants as well. Kept
 # anyway, on precedent, because the alternative is a rule a deployment
-# author has to learn from an error message rather than from Foundry's
+# author has to learn from an error message rather than from the precedent's
 # own documented model.
 UserField = Literal["user_id", "security_value", "role_name"]
 OperatorName = Literal[

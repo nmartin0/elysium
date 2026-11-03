@@ -6,11 +6,11 @@ TITLE_FIELD -- an OPTIONAL, per-object-type declaration of which
 field's own value acts as a human-readable display name (see
 core/ontology/schema.py's own get_title_field() for the runtime-lookup
 counterpart, and README.md's own section 3.3 for the deployer-facing
-explanation). Matches Palantir's own "title key" concept directly
+explanation). Matches the precedent's own "title key" concept directly
 (verified against their docs, not assumed: "Title key: The property
 that acts as a display name for objects of this type") -- named
 title_field here instead to match this project's OWN existing
-id_field naming convention, not Palantir's own "key" terminology.
+id_field naming convention, not the precedent's own "key" terminology.
 
 SECURITY.FIELD / SECURITY.VIA_FIELD -- the actual MAC boundary itself
 (core/ontology/mediator.py's own _get_security_value()). A real,
@@ -141,7 +141,7 @@ VISIBILITIES = ("prominent", "normal", "hidden")
 # ontology says a field is a number and says nothing about its scale,
 # and two decimals is wrong for a coordinate and for a count alike.
 #
-# Foundry puts this in the same place -- value formatting is property
+# The precedent puts this in the same place -- value formatting is property
 # metadata that transforms "raw values into more readable versions in
 # user applications" -- and it sits beside `visibility` and `status`
 # here for the same reason: all three are things the ontology author

@@ -40,7 +40,7 @@ interface HistoryEntry {
    * Set when this edit was part of a MULTI-OBJECT ACTION.
    *
    * The server sends it for a stated reason -- "so a UI can group the
-   * writes that happened together; Foundry links a single action log
+   * writes that happened together; the precedent links a single action log
    * to every object it edited for the same reason" -- and no UI did.
    * `getObjectHistory` returns `Promise<unknown>`, so this interface
    * is the only declaration of the shape, and it simply omitted the

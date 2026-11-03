@@ -268,7 +268,7 @@ describe('identical proposals', () => {
 
 describe('a request a reviewer can only partly decide', () => {
   /**
-   * Foundry scopes the action to what a reviewer is eligible for:
+   * The precedent scopes the action to what a reviewer is eligible for:
    * "approve or reject all tasks in the request THAT YOU ARE ELIGIBLE
    * TO REVIEW". A request spanning security partitions is approved in
    * parts.

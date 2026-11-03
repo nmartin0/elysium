@@ -1,4 +1,4 @@
-// The simulator's control panel's bundle (BLOCKING.md item 3, step 2.3).
+// The simulator's control panel's bundle (the removed BLOCKING.md item on modules, step 2.3).
 // Its source and its built bundle live with the simulator, in sim/panel;
 // this config lives here because it builds with this page's tools and
 // against this page's shared libraries (@shell/build, the kit's list), so

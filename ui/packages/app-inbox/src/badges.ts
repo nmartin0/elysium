@@ -1,5 +1,5 @@
 /**
- * THE INBOX'S BADGE (BLOCKING.md item 3, step 1.3c): how much is waiting,
+ * THE INBOX'S BADGE (the removed BLOCKING.md item on modules, step 1.3c): how much is waiting,
  * on the Inbox's rail entry, on every screen (DEV_UI 15.3: "a number on
  * every screen and nothing that pops up"). Decisions and unread notices
  * together; the Inbox's own tabs say which.

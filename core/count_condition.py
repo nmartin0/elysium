@@ -316,7 +316,7 @@ def evaluate_one_trigger(trigger, view, mediator, notification_store,
         fell=trigger.fell,
     )
     # THE OWNER SEPARATELY, because two things hang on the owner's
-    # count and only one on the others'. Foundry: "Condition
+    # count and only one on the others'. The precedent: "Condition
     # evaluation: Uses automation owner's permissions" -- while
     # "notification effects use each recipient's".
     #
@@ -351,7 +351,7 @@ def _propose_for(trigger, view, owner, mediator, write_mediator,
                  pending_store) -> None:
     """Proposes the trigger's action, as its owner, into the queue.
 
-    FOUNDRY EXECUTES; THIS PROPOSES. Their automations run the action
+    THE PRECEDENT EXECUTES; THIS PROPOSES. Their automations run the action
     outright -- "the action will be run on behalf of the owner of the
     automation". Elysium puts it in the approvals queue, where somebody
     still decides. Strictly more conservative than what it follows.
@@ -402,7 +402,7 @@ def propose_action_effect(write_mediator, mediator, view, owner_record,
                           already_waiting: "set[str] | None" = None):
     """Proposes an action on whatever the view matches NOW.
 
-    AS THE OWNER, which is Foundry's split and the one this file
+    AS THE OWNER, which is the precedent's split and the one this file
     already states: "action effects execute AS the owner. Submission
     criteria are evaluated against the owner; the audit log records
     the owner." A notification is evaluated per RECIPIENT; an action

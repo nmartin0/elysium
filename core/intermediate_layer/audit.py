@@ -305,7 +305,7 @@ class AuditLog:
 
         What remains of a record is its timestamp, which can still show
         that a request took longer than its visible result explains
-        (BLOCKING.md, item 12).
+        (BLOCKING.md "Converge on precedent").
 
         SCANNED BACKWARDS, WITH A CAP, and that is the design decision
         rather than an optimisation. The log is append-only JSONL, so

@@ -19,7 +19,7 @@
  *                  grouping field worth splitting by.
  *
  * NAMES ARE OURS, not the reference implementation's. "Listogram" is
- * jargon nobody outside Foundry knows; "value counts" describes it.
+ * jargon nobody outside the precedent knows; "value counts" describes it.
  */
 
 import type { AggregateResult } from '@elysium/shell-api/api'

@@ -1,5 +1,5 @@
 /**
- * CHOOSING ONE'S OWN RAIL TABS (BLOCKING.md item 3, step 1.4d): a person
+ * CHOOSING ONE'S OWN RAIL TABS (the removed BLOCKING.md item on modules, step 1.4d): a person
  * hides tabs they do not use, for themselves alone. The owner's choice,
  * 22 October: BOTH, SEPARATELY -- the module manager turns modules on and
  * off for everyone; this only tidies one person's rail.

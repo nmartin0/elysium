@@ -1,4 +1,4 @@
-// Query's own bundle (BLOCKING.md item 3, step 3): built apart from
+// Query's own bundle (the removed BLOCKING.md item on modules, step 3): built apart from
 // Elysium's page, leaving the page's shared libraries as bare imports.
 // Built by `npm run build` and rebuilt on save by `npm run dev`
 // (ui/vite.config.ts, builtModules); served from dist/ by Elysium's

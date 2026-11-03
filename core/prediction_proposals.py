@@ -9,7 +9,7 @@ trains afresh and measures again before it serves (core/predictions.py).
 
 ONE MODEL PER COMPARTMENT (the owner, 17 October). A model learns
 patterns from every record it is given, and a guess shown in one
-compartment must not be shaped by records of another -- Foundry's rule
+compartment must not be shaped by records of another -- the precedent's rule
 that "mandatory controls propagate through derivation". So each proposal
 is for one security compartment: trained only on its records, filling
 only its records, and seen and decided only by someone in it, as

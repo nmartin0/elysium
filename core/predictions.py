@@ -23,7 +23,7 @@ approval at or below 0.
 BROKEN DOWN BY GROUP. An average can hide a group the model fails: 93%
 right for most customers and 60% for a small region still averages
 well. The same held-out score is shown per value of a field the approver
-chooses -- Foundry's evaluation "subsets", and Model Cards' "benchmarked
+chooses -- the precedent's evaluation "subsets", and Model Cards' "benchmarked
 evaluation ... across different ... groups" (Mitchell et al., 2019) --
 and a group too small to judge says so rather than showing a
 percentage.

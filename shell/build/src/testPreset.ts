@@ -1,5 +1,5 @@
 /**
- * The test configuration every module inherits (BLOCKING.md item 3,
+ * The test configuration every module inherits (the removed BLOCKING.md item on modules,
  * "COMMON BEHAVIOUR IS TESTED ONCE, BY DEFAULT, UNTIL OVERRIDDEN").
  *
  * INHERITED, NEVER COPIED: a module's `vitest.config.ts` is a few lines

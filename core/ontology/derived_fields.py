@@ -20,7 +20,7 @@ A FIXED SET OF FORMULAS, chosen by the owner on 13 October over
 free-form expressions: each one is checked when the configuration
 loads -- its inputs exist, are the right types, and yield a known type
 -- so a derived field is as typed and as validated as a stored one.
-Foundry draws the same line: a derived property is a declared
+The precedent draws the same line: a derived property is a declared
 computation over other properties of the same object, not a scripting
 hook. Free-form expressions were offered and declined as harder to
 check up front and to keep safe.

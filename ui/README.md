@@ -33,7 +33,7 @@ MODULE_API.md              THE MODULE API'S GUIDE, for someone writing
                            a module: the manifest, activate(), host
                            values, styles, building and testing, the
                            add-on server, and the version rules.
-module-api.report.md       THE PUBLIC MODULE API (BLOCKING.md item 3,
+module-api.report.md       THE PUBLIC MODULE API (the removed BLOCKING.md item on modules,
                            step 4): every name a module may rely on,
                            generated -- `python -m scripts.module_api_report`
                            -- and held current by a test. Not edited by

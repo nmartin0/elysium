@@ -1,5 +1,5 @@
 /**
- * THE SIMULATOR'S CONTROL PANEL (BLOCKING.md items 11 and 3, step 2.3):
+ * THE SIMULATOR'S CONTROL PANEL (the removed BLOCKING.md items on the simulator and modules, step 2.3):
  * start a world from a pack, or resume the one stopped here; run it at a
  * speed; pause it, move it on, take a database offline and bring it back;
  * change its schema (SchemaChanges.tsx); copy each database's connection

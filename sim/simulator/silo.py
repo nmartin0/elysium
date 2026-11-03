@@ -14,7 +14,7 @@ one kind of thing:
   - and, more often than any of those, a folder of CSV and Excel that
     somebody's bank, supplier or payroll provider drops files into.
 
-Every one of those appears on Palantir Foundry's own connector list --
+Every one of those appears on the precedent's own connector list --
 MariaDB, MySQL, PostgreSQL and SQLite are all named relational
 sources, and plain directories, SMB shares and SFTP are all named file
 sources. So this is not a set invented here; it is the intersection of
@@ -213,7 +213,7 @@ class Silo(ABC):
 # project exists to avoid -- one engine had been chosen and every domain was
 # going to be expressed in it, partly because a downstream consumer had an
 # adapter for it. Small businesses run MariaDB, SQLite, PostgreSQL and folders
-# of CSV, often several at once, and all four are on Foundry's own connector
+# of CSV, often several at once, and all four are on the precedent's own connector
 # list. The set is the intersection of what these businesses run with what a
 # platform of this kind reads, not a set invented here.
 #
@@ -226,7 +226,7 @@ class Silo(ABC):
 # any given moment is a worse lie than a mapping that carries what it has.
 #
 # DEFERRED (known, intentional, not yet built): no FileDropSilo (a folder of
-# CSV/Excel that a pack writes into) and no RestSilo. Both are on Foundry's
+# CSV/Excel that a pack writes into) and no RestSilo. Both are on the precedent's
 # connector list, both are genuinely how small businesses integrate -- a bank
 # export dropped on a share is more common than any database connection -- and
 # both are next. They are not written yet because the abstraction above should

@@ -8,11 +8,11 @@ path in Phase 4) sees only the MirrorSync interface.
 
 STORAGE SHAPE: one Iceberg namespace per silo, one Iceberg table per
 real source table, named `{silo_name}.{table_name}`. Deliberately a
-flat, 1:1 mapping of the customer's own tables -- matching Foundry's
+flat, 1:1 mapping of the customer's own tables -- matching the precedent's
 own "ingest as-is, with no external preprocessing" philosophy for the
 RAW layer specifically (any cleaning/joining/reshaping belongs to
 Phase 3's own transform pass, never here). Confirmed directly against
-Foundry's own documented raw-ingest behavior, not assumed.
+the precedent's own documented raw-ingest behavior, not assumed.
 
 CATALOG: a plain SQLite file, alongside the Parquet data itself, both
 under the deployment's own data_dir. A real, deliberate choice over
@@ -777,7 +777,7 @@ class IcebergMirrorSync(MirrorSync):
         # and adding an ontology field meant RE-READING THE SILO rather
         # than re-transforming what we already held.
         #
-        # Foundry's reason for ingesting "as-is from its most raw
+        # The precedent's reason for ingesting "as-is from its most raw
         # source, with no external preprocessing" is exactly this:
         # "every Ontology property value traces back to a specific row
         # in a specific raw file".
@@ -1051,7 +1051,7 @@ class IcebergMirrorSync(MirrorSync):
         # The mirror then serves its last good contents forever while
         # the ontology says something else.
         #
-        # Additive change is the SAFE direction and Foundry treats it
+        # Additive change is the SAFE direction and the precedent treats it
         # as a non-event -- "additive changes to the backing dataset do
         # not interfere with the synchronization process". A column
         # nothing previously read cannot have been read wrongly.
@@ -2266,7 +2266,7 @@ class IcebergMirrorSync(MirrorSync):
         # already cleaned -- this method no longer casts anything
         # itself. Phase 3 moved that out: type casting is a raw ->
         # clean responsibility, and the ingest stage is deliberately
-        # kept as dumb as Foundry's own ("minimal options for
+        # kept as dumb as the precedent's own ("minimal options for
         # transforming the data before it arrives in the destination
         # dataset"). See core/mirror/transform.py.
         #

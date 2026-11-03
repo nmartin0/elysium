@@ -1,5 +1,5 @@
 // sharedLibraries.spec.ts -- a module built apart from the page gets the
-// PAGE'S OWN copies of the shared libraries (BLOCKING.md item 3, step 1.2).
+// PAGE'S OWN copies of the shared libraries (the removed BLOCKING.md item on modules, step 1.2).
 //
 // Only a browser can show this: jsdom never reads the import map. The
 // module here is written by hand, with nothing but bare imports, exactly

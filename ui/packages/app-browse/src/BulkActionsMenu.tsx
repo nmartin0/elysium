@@ -1,7 +1,7 @@
 /**
  * BulkActionsMenu -- which actions can be applied to a selection.
  *
- * THE ONTOLOGY DECIDES WHAT APPEARS, not this component. Foundry: "in
+ * THE ONTOLOGY DECIDES WHAT APPEARS, not this component. The precedent: "in
  * 'bulk' contexts... only actions that accept object list parameters
  * of the correct type will be shown". An action without an
  * object_reference_list parameter for THIS object type is not a bulk

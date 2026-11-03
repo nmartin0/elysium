@@ -131,7 +131,7 @@ describe('GraphPreview -- a link type', () => {
   it('names what the edge joins, which the edge could not', () => {
     /**
      * The edge carries a cardinality; which end is which needs words.
-     * Foundry's own version does this too -- "click on a link symbol
+     * The precedent's own version does this too -- "click on a link symbol
      * to show the type of links between the object types".
      */
     render(

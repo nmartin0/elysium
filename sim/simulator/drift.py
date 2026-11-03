@@ -15,12 +15,12 @@ class also carries the part that must not vary: verify the result
 against the engine's own catalogue, then record it. A bag of functions
 would repeat that epilogue eight times and one copy would drift.
 
-is_breaking follows PALANTIR'S taxonomy rather than a judgement made
+is_breaking follows THE PRECEDENT'S taxonomy rather than a judgement made
 here. Their documentation states that additive changes to a backing
 dataset do not interfere with synchronization, while destructive ones
 are refused by default and need the property unmapped and the table
 re-registered by hand. Their named errors map onto these operations
-directly -- FoundryColumnNameNotFound when a column backing a property
+directly -- a column-not-found error when a column backing a property
 is removed -- and their breaking list is property type change, backing
 datasource change, primary key change.
 
@@ -185,7 +185,7 @@ class AddTable(SchemaChange):
 
 @dataclass(frozen=True)
 class DropColumn(SchemaChange):
-    """Remove a column. Foundry's FoundryColumnNameNotFound case."""
+    """Remove a column. The precedent's a column-not-found error case."""
 
     is_breaking: ClassVar[bool] = True
 
@@ -253,7 +253,7 @@ class RenameColumn(SchemaChange):
 class ChangeColumnType(SchemaChange):
     """Retype a column, keeping what is already in it.
 
-    On Foundry's own breaking-change list as "changing the data type
+    On the precedent's own breaking-change list as "changing the data type
     of an existing property", and the operation the two engines spell
     most differently -- see dialect.py.
     """
@@ -470,7 +470,7 @@ def history(silo: Silo, database: str) -> list[dict[str, Any]]:
 # the database untouched would satisfy any assertion made against that object,
 # because the object is what it edited.
 #
-# RESOLVED: is_breaking follows Palantir's taxonomy rather than a local
+# RESOLVED: is_breaking follows the precedent's taxonomy rather than a local
 # judgement -- additive backing-dataset changes do not interfere with
 # synchronization; property type change, backing datasource change and primary
 # key change are breaking. RescaleColumn is the deliberate extension: breaking

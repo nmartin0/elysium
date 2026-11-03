@@ -124,7 +124,7 @@ describe('an entry whose fields are all unreadable', () => {
 describe('an edit that was part of a bulk action', () => {
   /**
    * The server sends `batch_id` for a stated reason -- "so a UI can
-   * group the writes that happened together; Foundry links a single
+   * group the writes that happened together; the precedent links a single
    * action log to every object it edited for the same reason" -- and no
    * UI used it. `getObjectHistory` returns `Promise<unknown>`, so this
    * component's local interface was the only declaration of the shape,

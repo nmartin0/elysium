@@ -189,7 +189,7 @@ class SqlDialect(ABC):
     #
     # The engines agree about adding, dropping and renaming, and
     # disagree completely about retyping -- which is the one that
-    # matters most, since it is on Foundry's own breaking-change list.
+    # matters most, since it is on the precedent's own breaking-change list.
 
     def add_column(self, table_name: str, column: Column) -> str:
         return (f"ALTER TABLE {self.quote(table_name)} "

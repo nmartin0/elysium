@@ -2,7 +2,7 @@
  * ApprovalsPanel -- proposals waiting for a decision.
  *
  * WHY THIS IS ITS OWN SUB-APP rather than a tab inside Browse or
- * Admin. Foundry's equivalent is a separate application consolidating
+ * Admin. The precedent's equivalent is a separate application consolidating
  * "compliance, governance, and peer-review workflows", reachable
  * directly rather than only through their admin console. Browse is
  * object-centric and an inbox is about no particular object; Admin is

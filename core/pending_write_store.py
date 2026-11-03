@@ -92,7 +92,7 @@ def _stamp(moment: datetime) -> str:
 class TaskApproval:
     """One reviewer's decision about one task.
 
-    A TASK IS ONE SUB-WRITE, which is Foundry's own unit: "a task is an
+    A TASK IS ONE SUB-WRITE, which is the precedent's own unit: "a task is an
     individual change". A bulk action naming fifty objects is fifty
     tasks, and a reviewer may be eligible for some and not others.
 
@@ -275,7 +275,7 @@ class PendingWriteStore:
         rather than dressed up: the route consumes the write on any
         rejection, so no rejected write survives for a second reviewer
         to find. This closes it at the store, because the store is what
-        a future partial-rejection feature would call -- Foundry scopes
+        a future partial-rejection feature would call -- the precedent scopes
         a decision to "all tasks in the request that you are eligible
         to review", which is exactly the shape that would leave a
         rejected task sitting beside undecided ones.
@@ -553,7 +553,7 @@ class PendingWriteStore:
 
         SURFACED, NOT PREVENTED. A second identical proposal might be a
         double-click, a colleague re-requesting something forgotten, or
-        a deliberate nudge; Elysium cannot tell which, and Foundry
+        a deliberate nudge; Elysium cannot tell which, and the precedent
         allows duplicates too and relies on the reviewer seeing them
         together.
 

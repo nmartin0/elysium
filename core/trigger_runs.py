@@ -10,7 +10,7 @@ happens, and nothing else is checked at all:
 - A CHANGE SAVED IN ELYSIUM is read at once through the read-your-
   writes overlay, before any sync: the triggers watching the object
   types it touched, straight after it is written
-  (api/trigger_checks.py). Foundry the same -- live monitoring
+  (api/trigger_checks.py). The precedent the same -- live monitoring
   "within minutes of an object change appearing in the Ontology",
   and its user edits "process faster" than dataset updates.
 - A NEW TRIGGER is checked the moment it is made, so its "now watching"
@@ -20,7 +20,7 @@ happens, and nothing else is checked at all:
   also changes as records cross the edge of the window, which is
   predictable: each evaluation sets a timer for the next crossing
   (core/trigger_windows.py, core/timers.py), and the timer evaluates
-  it again. Foundry cannot monitor "relative time conditions" live and
+  it again. The precedent cannot monitor "relative time conditions" live and
   falls back to "scheduled monitoring" for them; a timer at the
   crossing is sooner than any schedule and does nothing in between.
 

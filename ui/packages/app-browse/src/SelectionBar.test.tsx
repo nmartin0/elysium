@@ -1,7 +1,7 @@
 /**
  * What an action would apply to, said before it does.
  *
- * FOUNDRY'S RULE SHAPES THIS: an action receives "the current set of
+ * THE PRECEDENT'S RULE SHAPES THIS: an action receives "the current set of
  * selected objects in your exploration (or all objects, if none are
  * selected)". Selecting nothing does not mean acting on nothing -- it
  * means acting on everything the filter matched.
@@ -19,7 +19,7 @@ import SelectionBar from './SelectionBar'
 
 describe('SelectionBar', () => {
   it('counts what is selected', () => {
-    // "Selection count appears in the toolbar" in Foundry's own
+    // "Selection count appears in the toolbar" in the precedent's own
     // results table, and the reason is that "apply to 3" and "apply to
     // 4,000" are different decisions that otherwise look identical.
     render(<SelectionBar selectedCount={3} matchCount={40} pageCount={40} onClear={vi.fn()} />)
@@ -117,7 +117,7 @@ describe('paging, where the promise could quietly overstate', () => {
    * page and they diverge: the action touches fewer objects than the
    * person was just told, and nothing looks wrong afterwards.
    *
-   * Foundry's select-all "selects all objects matching the applied
+   * The precedent's select-all "selects all objects matching the applied
    * filters, not just the objects on the current page". We cannot
    * honour that half, so the PROMISE is narrowed rather than the
    * behaviour faked.

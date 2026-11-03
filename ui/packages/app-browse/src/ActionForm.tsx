@@ -5,7 +5,7 @@ import ErrorState from '@elysium/shell-api/components/ErrorState'
 import { formatFieldName } from '@elysium/shell-api/format'
 import PendingWriteCard, { type PendingWrite } from '@elysium/shell-api/components/PendingWriteCard'
 
-// Stage 3 of the Palantir-parity UI plan: direct, form-driven action
+// Stage 3 of the precedent-parity UI plan: direct, form-driven action
 // invocation from an Object View, no LLM involved at all. Owns its
 // own small, local lifecycle -- parameter form, then (once proposed)
 // the EXISTING PendingWriteCard, reused genuinely unchanged except
@@ -254,7 +254,7 @@ export default function ActionForm({
 //   Fixed via a real, explicit, per-parameter schema marker
 //   (default_to_current_object -- see core/ontology/action_types.py's
 //   own docstring for the full design and its own validation),
-//   confirmed directly against Palantir Foundry's own documented
+//   confirmed directly against the precedent's own documented
 //   mechanism for exactly this case before designing it (their own
 //   Action-widget "Default value" -> "Environment variable" ->
 //   "Current object" binding -- also explicit, by parameter identity,

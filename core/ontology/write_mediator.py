@@ -14,7 +14,7 @@ time (per-object lock + adapter.write_fields()'s conditional SQL),
 preventing lost updates. PendingWrite is frozen -- nothing about a
 proposed write can change between human approval and execution.
 
-NAMED ACTIONS -- matches Palantir Foundry's own action-type model
+NAMED ACTIONS -- matches the precedent's own action-type model
 directly (verified against their docs, not assumed): a proposal names
 a NAMED, independently-governed operation (execute:{action_name}, one
 grant per action), not a generic CRUD verb with free-form field input.
@@ -272,7 +272,7 @@ def _describe_action(action_type_name: str, action_def: dict, parameters: dict) 
 
 # THE MOST OBJECTS ONE ACTION MAY WRITE.
 #
-# Matches Foundry, which makes actions "unavailable if the number of
+# Matches the precedent, which makes actions "unavailable if the number of
 # selected objects exceeds 1000" -- and the reasoning is the same. An
 # atomic batch has no natural ceiling, so without one a bulk write of
 # fifty thousand would hold a lock for minutes, produce an audit entry
@@ -342,7 +342,7 @@ def _compartment_crossings(read_labels: dict, write_labels: dict) -> list[tuple]
     "not a superset".
 
     COMPARTMENTS, NOT LEVELS, and the two are separate for a reason.
-    Foundry keeps markings (compartments, conjunctive) apart from
+    The precedent keeps markings (compartments, conjunctive) apart from
     Classification-based Access Controls (levels, hierarchical) and
     says "classifications can not be used together with markings...
     on the same mandatory control property". CBAC is off by default
@@ -974,10 +974,10 @@ class WriteMediator:
         # discover:action_types -- a real, deliberate DEPARTURE from
         # this project's own earlier, more conservative default,
         # decided explicitly with the user after directly researching
-        # Palantir's own real, documented behavior: by default, every
+        # the precedent's own real, documented behavior: by default, every
         # user with Ontology access sees every action type's own
         # title/description/rules, whether or not they can actually
-        # execute it (verified directly against Palantir's real docs,
+        # execute it (verified directly against the precedent's real docs,
         # not assumed). A role holding this ONE, single, blanket grant
         # -- matching manage:users' own "not per-resource" shape, not
         # a new per-action-type discover:{name} vocabulary, since the
@@ -994,7 +994,7 @@ class WriteMediator:
         # would correctly see every action's own shape here while
         # being unable to invoke a single one of them -- discovery and
         # execution are two genuinely separate axes, same as
-        # Palantir's own real model keeps them.
+        # the precedent's own real model keeps them.
         if authorize(user_record, self.roles, "discover:action_types"):
             return dict(self.action_types)
         return {
@@ -1319,7 +1319,7 @@ class WriteMediator:
         than about either end of it.
 
         THE READ SET IS THE OBJECT-REFERENCE PARAMETERS. Those are the
-        objects the action was handed, and Foundry's model is the
+        objects the action was handed, and the precedent's model is the
         same: "an existing object whose primary key is derived from
         object reference parameters". An action can only carry what it
         was given.
@@ -1416,12 +1416,12 @@ class WriteMediator:
 
     def propose_action(self, user_record: UserRecord, action_type_name: str, parameters: dict,
                        origin: Origin) -> PendingWrite:
-        # Matches Palantir Foundry's own action-type model directly
+        # Matches the precedent's own action-type model directly
         # (verified against their docs, not assumed): a NAMED,
         # independently-governed operation, not a generic CRUD verb.
         # The object(s) being acted on are always just PARAMETERS too
         # -- "an existing object whose primary key is derived from
-        # object reference parameters," Palantir's own words -- never
+        # object reference parameters," the precedent's own words -- never
         # a separate, out-of-band argument the way object_id used to
         # be here. See SubWrite's and core/ontology/action_types.py's
         # own docstrings for the full reasoning behind that change.
@@ -1430,7 +1430,7 @@ class WriteMediator:
         # one "execute:{action_type_name}" grant, not one write:{type}.
         # {field} grant per field the action's mutations happen to
         # touch, AS LONG AS every sub_write targets the SAME object
-        # type. This is CLOSER to Palantir's real model and easier for
+        # type. This is CLOSER to the precedent's real model and easier for
         # whoever is actually configuring roles to reason about ("this
         # role may perform this named business operation," not "this
         # role may touch these raw columns") -- but it means a role's
@@ -1518,7 +1518,7 @@ class WriteMediator:
         affected_types = {sw["object_type"] for sw in sub_write_defs}
         if len(affected_types) > 1:
             # PER TYPE, NOT PER FIELD -- `F-02` option C, which is
-            # Foundry's: "you must hold edit permissions on the action
+            # the precedent's: "you must hold edit permissions on the action
             # type AND on all ontology resource types edited by the
             # action".
             #
@@ -1565,7 +1565,7 @@ class WriteMediator:
             # criteria, the duplicate guard. Nothing is skipped
             # because there are many.
             #
-            # Foundry draws the line in the same place: a "bulk
+            # The precedent draws the line in the same place: a "bulk
             # action type" is one "using an object reference list
             # parameter", so it is a property of the ACTION rather
             # than a mode the UI switches into.
@@ -1587,7 +1587,7 @@ class WriteMediator:
             # bulk action safe at small sizes is what makes it
             # dangerous at large ones.
             #
-            # Foundry stops at the same number: actions "are
+            # The precedent stops at the same number: actions "are
             # unavailable if the number of selected objects exceeds
             # 1000". Refused at PROPOSE time rather than at confirm, so
             # nobody assembles a selection they will not be allowed to
@@ -1713,7 +1713,7 @@ class WriteMediator:
                                roles: dict) -> set[int]:
         """Which of a request's tasks this reviewer may decide.
 
-        FOUNDRY SCOPES A REVIEWER TO WHAT THEY CAN REVIEW: "approve or
+        THE PRECEDENT SCOPES A REVIEWER TO WHAT THEY CAN REVIEW: "approve or
         reject all tasks in the request THAT YOU ARE ELIGIBLE TO
         REVIEW". This is that set.
 
@@ -2053,7 +2053,7 @@ class WriteMediator:
         choice is the whole design of this function.
 
         I FIRST CHECKED THE APPROVER -- they are live, they are
-        deciding now, and Foundry requires the submitter to see what
+        deciding now, and the precedent requires the submitter to see what
         they edit. Three existing tests failed, and reading them
         settled it: the same fixture asserts that `bob` CANNOT PROPOSE
         against auth_001 because he is in another org ("MAC boundary
@@ -2476,7 +2476,7 @@ class WriteMediator:
 
         # LAST EDIT WINS: a write after a delete makes the object
         # visible again, so the derived index must drop it -- the same
-        # rule Foundry's own indexing uses ("most recent update wins").
+        # rule the precedent's own indexing uses ("most recent update wins").
         # Unconditional rather than guarded by a lookup: clearing an
         # object that was never deleted is a no-op, and a lookup on
         # every write would cost more than the clear it avoids.
@@ -2487,7 +2487,7 @@ class WriteMediator:
                            description: str) -> Any:
         """Records a delete. Writes NOTHING to the customer's database.
 
-        Following Foundry directly: a delete there is an EDIT, written
+        Following the precedent directly: a delete there is an EDIT, written
         to the writeback layer rather than the backing datasource, so
         "users have access to both the original data and the edited
         data." Their resolution rule is that when an object's latest
@@ -2545,10 +2545,10 @@ class WriteMediator:
         # batch-logging this is always called from within. Requires
         # sub_write.changes to already include the type's own id_field,
         # explicitly -- propose_action() enforces this upfront; matches
-        # Palantir Foundry's own MDO requirement that an object's
+        # the precedent's own MDO requirement that an object's
         # primary key already exist, matching, in every backing
         # datasource (verified directly, not assumed -- see
-        # https://www.palantir.com/docs/foundry/object-permissioning/multi-datasource-objects).
+        # the precedent's documentation).
         id_field = self._adapter_mediator._type_schema(sub_write.object_type)["id_field"]
         log_id = self.write_log.log_pending_create(
             sub_write.object_type, sub_write.object_id,

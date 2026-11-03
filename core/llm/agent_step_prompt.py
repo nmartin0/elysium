@@ -366,7 +366,7 @@ def _example_value(param_info: dict) -> str:
     iterating it -- so no character-by-character walk, the harm is
     bounded -- but the result is an action proposed on ONE object when
     the whole point of an object_reference_list is that it is many.
-    Foundry calls an action using one a "bulk action type"; ours was
+    The precedent calls an action using one a "bulk action type"; ours was
     demonstrated in a form that cannot be bulk.
 
     THE OBJECT TYPE IS NAMED because an id placeholder that does not
@@ -991,8 +991,8 @@ def validated_step(parsed: dict, allow_handles: bool = False,
         # job, surfacing back to core/agent/agentic_loop.py as a caught
         # ValueError/PermissionError exactly like an unknown object_type
         # or field_name already does for the other step kinds.
-        # No separate object_id field anymore -- matches Palantir
-        # Foundry's own action parameter model directly (verified
+        # No separate object_id field anymore -- matches the precedent
+        # the precedent's own action parameter model directly (verified
         # against their docs, not assumed): the object being acted on
         # is always just an ordinary parameter, never a special,
         # out-of-band one. See core/ontology/action_types.py's own

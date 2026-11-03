@@ -100,7 +100,7 @@ export default function WatchDialog({ view, onClose, onSessionExpired }: WatchDi
   // objects it would receive (below), so it is filtered during render.
   const [visibleActions, setVisibleActions] = useState<Record<string, VisibleAction>>({})
   // WHICH CONDITION'S VIEW GIVES THE ACTION ITS OBJECTS -- '' is this
-  // view. Foundry's rule: an action parameter takes the objects a
+  // view. The precedent's rule: an action parameter takes the objects a
   // condition exposes, of the matching type (17 October).
   const [actionFrom, setActionFrom] = useState('')
   const [roles, setRoles] = useState<string[]>([])

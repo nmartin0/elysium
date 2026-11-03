@@ -76,7 +76,7 @@ interface DeploymentConfigBody {
   source_locales?: Record<string, string | null>
   /** ZOO-22: silos whose date columns may hold Excel serials. */
   excel_date_silos?: string[]
-  /** BLOCKING item 3: the modules loaded, by id, in rail order. */
+  /** the removed BLOCKING.md item on modules: the modules loaded, by id, in rail order. */
   modules?: string[]
   incremental_tables?: Record<string, string>
   max_concurrent_requests: number

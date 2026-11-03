@@ -5,7 +5,7 @@
  * they are written -- to ontology_schema.yaml (and source_bindings.yaml
  * for where it comes from) as one generation.
  *
- * THE PRECEDENT IS FOUNDRY'S: creating an object type from a dataset maps
+ * THE PRECEDENT IS THE PRECEDENT'S: creating an object type from a dataset maps
  * every column as a property at once, which you then untick, and the
  * object type takes its permissions from where the datasource lives.
  * So every column starts ticked, and "follow the source" is the row rule
@@ -171,7 +171,7 @@ export default function AddType({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [silo])
 
-  // The table's columns, when it is chosen: all ticked, as Foundry maps them.
+  // The table's columns, when it is chosen: all ticked, as the precedent maps them.
   useEffect(() => {
     setColumns(undefined)
     setPicked({})

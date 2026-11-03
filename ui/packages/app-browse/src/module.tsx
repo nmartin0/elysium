@@ -1,5 +1,5 @@
 /**
- * BROWSE AS A MODULE (BLOCKING.md item 3, step 3, the last sub-app
+ * BROWSE AS A MODULE (the removed BLOCKING.md item on modules, step 3, the last sub-app
  * moved): the entry of its own bundle, built apart from Elysium's page by
  * vite.config.ts in this folder. Elysium's page no longer imports it, and
  * with it goes the page's last code for a module: its palette commands.

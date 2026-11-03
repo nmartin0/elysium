@@ -1,5 +1,5 @@
 /**
- * THE APPROVALS MODULE AS A MODULE (BLOCKING.md item 3, step 3): the
+ * THE APPROVALS MODULE AS A MODULE (the removed BLOCKING.md item on modules, step 3): the
  * entry of its own bundle, built apart from Elysium's page by
  * vite.config.ts in this folder and loaded by the shell when the Inbox
  * first shows one of its tabs. Elysium's page no longer imports it.

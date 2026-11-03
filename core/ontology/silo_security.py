@@ -1,7 +1,7 @@
 """A silo's row rule, and `security: inherit` (27 October, owner-agreed).
 
 THE DECISION. A type created over a source should take its row rule from
-where the source lives, as Foundry does (the object type's permissions
+where the source lives, as the precedent does (the object type's permissions
 come from its backing datasource's location). Elysium's 19 October rule
 still holds -- "nothing is implicit": a type with no `security` block is
 an error -- so inheritance is WRITTEN OUT TWICE, on purpose, by a person:

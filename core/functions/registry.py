@@ -35,7 +35,7 @@ def get_enabled_functions(enabled_names: list[str]) -> list[Function]:
 def validate_function_declarations(enabled_names: list[str], object_types: dict) -> None:
     """Checks every enabled function against the ontology, at LOAD time.
 
-    Foundry runs backward-compatibility checks before publishing a
+    The precedent runs backward-compatibility checks before publishing a
     function, warning about breaks like dropping a function or adding a
     required parameter. Elysium has no versioning to protect (see
     the roadmap (consumed) for why), but the same class of mistake is worth

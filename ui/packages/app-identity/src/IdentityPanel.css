@@ -1,4 +1,4 @@
-/* THE IDENTITY REVIEW'S OWN STYLES (BLOCKING.md item 3, step 3): moved
+/* THE IDENTITY REVIEW'S OWN STYLES (the removed BLOCKING.md item on modules, step 3): moved
  * from the kit's stylesheet with the module into its own bundle, so they
  * load with it and nowhere else. IN THE `components` LAYER -- see
  * shell-api/src/index.css. */

@@ -9,7 +9,7 @@ three real reasons: it matches how every other entry point in
 scripts/ already works; a sync copies entire tables, which would
 otherwise compete with request handling in the same process (and
 under the GIL, measurably slow it), while a badly-failing sync could
-take the web server down with it; and it matches Foundry's own
+take the web server down with it; and it matches the precedent's own
 precedent of running syncs as scheduled builds, separate from the
 service answering queries.
 

@@ -10,7 +10,7 @@ import ChangePasswordForm from './ChangePasswordForm'
 // Backed by a real, minimal "who am I" endpoint (GET /me, see api.ts's
 // own comment on it) -- confirmed directly against how established
 // identity platforms do this (OpenID Connect's own UserInfo endpoint;
-// Palantir Foundry's own real, documented GET .../admin/users/
+// the precedent's own real, documented GET .../admin/users/
 // getCurrent) before building this, not invented from scratch.
 //
 // Deliberately does NOT include a "Settings" item -- there is no real

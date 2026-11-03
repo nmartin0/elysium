@@ -1,7 +1,7 @@
 """
 link_types.py  (link types as first-class ontology entities)
 
-Foundry's model, adopted directly: a link type is "the schema
+The precedent's model, adopted directly: a link type is "the schema
 definition of a relationship between two object types" -- an entity in
 its own right, not an attribute of a field. It names both object
 types, their cardinality, and how the relationship is backed.
@@ -24,7 +24,7 @@ declarations. Four real limitations followed:
     Point 10; links got none, so a UI rendered "owner_customer_id".
   - No place for a relationship's own identity or status.
 
-BACKING MECHANISMS, matching Foundry's own two:
+BACKING MECHANISMS, matching the precedent's own two:
   - foreign_key (one-to-one, one-to-many): "a property of one object
     type (the foreign key) refers to the primary key property of the
     other object type".
@@ -32,7 +32,7 @@ BACKING MECHANISMS, matching Foundry's own two:
     keys defines the links between two objects... along with mapping
     these keys".
 
-Foundry's third, object-backed links (a join carrying its own
+The precedent's third, object-backed links (a join carrying its own
 properties), is deliberately NOT adopted -- see the roadmap (consumed). It is
 already expressible as two ordinary one-to-many links through a real
 object type, which is arguably clearer, and their own documentation
@@ -88,7 +88,7 @@ def _validate_one(name: str, link: dict, object_types: dict, link_types: dict) -
         join = link.get("join_table")
         if not join:
             raise ValueError(
-                f"Link type {name!r}: many_to_many requires a join_table -- Foundry's own "
+                f"Link type {name!r}: many_to_many requires a join_table -- the precedent's own "
                 f"rule, since neither object can hold the other's key without duplicating rows."
             )
         for key in ("table", "source_column", "target_column"):

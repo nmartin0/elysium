@@ -26,7 +26,7 @@ can read and a forecast nobody should fit. Asking for more than
 MAX_PERIODS is refused with the longer period to ask for instead.
 
 FIXED LENGTHS TOO, AS ISO 8601 DURATIONS (the owner's choice, 26
-October, after Foundry): `PT15M`, `PT1H`, `P3D`. Foundry's aggregate
+October, after the precedent): `PT15M`, `PT1H`, `P3D`. The precedent's aggregate
 groups "according to a date or timestamp interval" written so, and
 "Date properties only support grouping by days (e.g. `P3D` but not
 `PT3H`)", which is the rule here. A week and a month are not fixed
@@ -69,7 +69,7 @@ _DURATION = re.compile(r"P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?")
 
 def parse_duration(text: str) -> datetime.timedelta:
     """An ISO 8601 duration of days, hours, minutes and seconds, as
-    Foundry's aggregate takes one. Weeks, months and years are refused
+    the precedent's aggregate takes one. Weeks, months and years are refused
     with the period to ask for: they are not fixed lengths."""
     cleaned = str(text).strip().upper()
     if re.fullmatch(r"P\d+[WMY]", cleaned):

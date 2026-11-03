@@ -1,5 +1,5 @@
 /**
- * WHAT EVERY MODULE IS PROMISED (BLOCKING.md item 3, step 1.2; decided
+ * WHAT EVERY MODULE IS PROMISED (the removed BLOCKING.md item on modules, step 1.2; decided
  * 21 October: "the kit's own dependencies"). A module built apart from
  * this page leaves these as bare imports and gets THIS page's copy
  * through the import map (@shell/build/sharedLibraries); anything else it

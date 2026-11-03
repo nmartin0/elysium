@@ -9,7 +9,7 @@ depend on Elysium -- the simulator, whose rule is that it "does not
 import [Elysium], depend on it, or know it exists" -- can carry it.
 Elysium's own tests run their example add-on against this very file.
 
-THE CONTRACT (BLOCKING.md item 3, step 2; Elysium's side in
+THE CONTRACT (the removed BLOCKING.md item on modules, step 2; Elysium's side in
 core/addons.py and api/addon_servers.py):
 
   STARTED BY ELYSIUM, in the module's folder, with the command its

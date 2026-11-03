@@ -1,4 +1,4 @@
-// system.spec.ts -- the system sub-app (BLOCKING.md item 3, steps 1.4,
+// system.spec.ts -- the system sub-app (the removed BLOCKING.md item on modules, steps 1.4,
 // 2.2 and 3): the Modules, Add-on servers and Server pages, pinned,
 // offered only with manage:deployment.
 //

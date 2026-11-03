@@ -1,5 +1,5 @@
 /**
- * SAFE MODE (BLOCKING.md item 3, step 1.4b): the page loaded with only
+ * SAFE MODE (the removed BLOCKING.md item on modules, step 1.4b): the page loaded with only
  * the PINNED modules -- the system's own sub-apps -- for when a module
  * breaks it.
  *

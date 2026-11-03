@@ -270,9 +270,9 @@ class DeploymentConfig:
     # access, never snapshot". This is the whole of
     # step 1a: identity only, no reloading, no behaviour change.
     #
-    # Modelled on Palantir treating version as a PARAMETER carried by
+    # Modelled on the precedent treating version as a PARAMETER carried by
     # each operation rather than a global the server swaps: every
-    # Foundry Ontology call names the ontology it acts against.
+    # the precedent Ontology call names the ontology it acts against.
     # The four files' text, exactly as read. Carried so that whoever
     # builds a generation can record it (core/config_history.py)
     # without re-reading and possibly getting different bytes.
@@ -350,7 +350,7 @@ class DeploymentConfig:
     # who manage the deployment are told. `deprecation_lead_days:` in
     # config.yaml; default and reasoning in core/ontology/deprecation_alerts.py.
     deprecation_lead_days: int = 30
-    # THE SUB-APPS THIS DEPLOYMENT LOADS, as modules (BLOCKING.md item 3):
+    # THE SUB-APPS THIS DEPLOYMENT LOADS, as modules (the removed BLOCKING.md item on modules):
     # `modules.yaml`, or the five Elysium ships when it is absent. None
     # only for a config built by hand in a test, which loads none.
     modules: "Modules | None" = None
@@ -705,7 +705,7 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # error. A function declaring an object type the ontology does not
     # have would otherwise surface mid-conversation, after a user has
     # already asked a question, as a failure whose message names
-    # nothing useful. Foundry runs its own compatibility checks before
+    # nothing useful. The precedent runs its own compatibility checks before
     # publishing a function for the same reason.
     # LINK TYPES: validated then expanded into the per-field entries
     # every read path already consumes. The authoring surface is
@@ -1216,7 +1216,7 @@ def _source_locales(config: dict, silos: dict) -> dict:
 def _bulk_action_limit(declared) -> int:
     """How many objects one bulk action may name (decided 14 Oct).
 
-    256 BY DEFAULT, 1,024 AT MOST. Foundry allows 1,000 object references
+    256 BY DEFAULT, 1,024 AT MOST. The precedent allows 1,000 object references
     in one list parameter; the owner chose a lower default a reviewer can
     plausibly read, and a ceiling a deployment may raise to. Past it, a
     change is a pipeline's job rather than one person's approval.

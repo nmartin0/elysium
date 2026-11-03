@@ -1,5 +1,5 @@
 /**
- * BROWSE'S PALETTE HOOK (BLOCKING.md item 3, step 1.3b): what Browse
+ * BROWSE'S PALETTE HOOK (the removed BLOCKING.md item on modules, step 1.3b): what Browse
  * hands the shell's command palette. Browse's manifest names the
  * `onPalette` activation event, so the shell runs this once the palette
  * first opens, whether or not Browse's screens have been visited.

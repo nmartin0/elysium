@@ -8,7 +8,7 @@
  * live) and "why isn't my list updating?" (it is frozen) -- which is
  * why the two live side by side and say which they are.
  *
- * KEYS, AND VALUES READ LIVE. Foundry's static object sets are "saved
+ * KEYS, AND VALUES READ LIVE. The precedent's static object sets are "saved
  * as a list of primary keys"; opening one here is an ordinary search
  * narrowed to them, so the table, charts, facets, graph and export all
  * work on it without knowing it is frozen.

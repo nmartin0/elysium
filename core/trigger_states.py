@@ -14,7 +14,7 @@ triggers that combine, and the precedent says how:
   starts when a person's combination becomes true and a TIMER fires at
   its end (core/timers.py), so it is on time even if no data arrives;
   it resets if the combination stops being true first.
-- ON A SCHEDULE. Foundry Automate's "combination of time-based and
+- ON A SCHEDULE. the precedent's automation's "combination of time-based and
   object data conditions": checked only at the schedule's times
   (core/timer_rules.py), and told EVERY time it is true then -- a
   morning digest, not an alarm.
@@ -38,7 +38,7 @@ named role may see different records, so each has their own
 true-since and their own latch. No privileged count exists.
 
 AND PROPOSE, like any trigger (decided 17 October, the owner: "isn't
-that the main point of the triggers?"). Foundry's answer to "which
+that the main point of the triggers?"). The precedent's answer to "which
 objects": an action parameter takes the objects a CONDITION exposes,
 and "the type of the action parameter needs to align with the type of
 the exposed condition effect input". So the maker names WHICH

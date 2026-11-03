@@ -7,7 +7,7 @@ returned verbatim, and so was wrong arithmetic, and so was an invented
 count. Reproduced against the real synthesise path.
 
 THE INDUSTRY PATTERN IS ONE SENTENCE: the model orchestrates,
-deterministic code computes. Palantir ships this as a first-class tool
+deterministic code computes. The precedent ships this as a first-class tool
 -- AIP Logic's four tools are Apply actions, Call function, Query
 objects, and Calculator, which "enables you to perform accurate
 mathematical calculations with an LLM". This is that tool, in the
@@ -45,7 +45,7 @@ test run was killed. So eval() is not merely a code-execution hole; it
 is also unbounded arithmetic. Two reasons, one line of defence.
 
 Power stays out because nothing this serves -- totals, differences,
-rates over money and counts -- needs it, and Foundry does not promise
+rates over money and counts -- needs it, and the precedent does not promise
 it either. Every operator is surface area. If a real query needs it,
 add it deliberately.
 

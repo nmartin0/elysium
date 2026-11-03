@@ -1,5 +1,5 @@
 // modules.spec.ts -- a sub-app loaded as a MODULE, from its own bundle,
-// served by Elysium (BLOCKING.md item 3, step 1.2).
+// served by Elysium (the removed BLOCKING.md item on modules, step 1.2).
 //
 // The Schema graph is no longer part of the page's code. Opening /schema
 // fetches its bundle from /api/modules/schema/files/, adds its stylesheet,

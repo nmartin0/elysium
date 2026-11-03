@@ -2,12 +2,12 @@
 
 DEV_UI.md 11.3 decided the shape and left one question open. "Live by
 default, frozen deliberately -- and both are named": HubSpot's active
-and static lists, Amplitude's dynamic and static cohorts, Foundry's
+and static lists, Amplitude's dynamic and static cohorts, the precedent's
 object sets. A saved VIEW here is the live kind -- `saved_views.py`
 stores its query, and membership is whatever matches when it is run.
 This is the other kind.
 
-THE OPEN QUESTION WAS WHAT A FROZEN SET PINS TO, and Foundry answers
+THE OPEN QUESTION WAS WHAT A FROZEN SET PINS TO, and the precedent answers
 it. Its static object sets "are saved as a list of primary keys" and
 "will stay the same regardless of any changes to the input data";
 dynamic ones are "a representation of the filters". So membership is
@@ -32,7 +32,7 @@ is true and says nothing about which reason applies.
 PRIVATE TO THEIR OWNER, for saved_views.py's reason: a list of ids says
 those objects exist, which is the leak shape that rule exists for.
 
-FOUNDRY'S DOCS ARE SILENT on what a static set does when a member is
+THE PRECEDENT'S DOCS ARE SILENT on what a static set does when a member is
 deleted. The counting rule above is this project's own, from its own
 uniform-denial principle rather than borrowed.
 """
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS frozen_sets (
     owner_user_id TEXT NOT NULL,
     name TEXT NOT NULL,
     object_type TEXT NOT NULL,
-    -- THE MEMBERSHIP. Primary keys, as Foundry's static sets store
+    -- THE MEMBERSHIP. Primary keys, as the precedent's static sets store
     -- them, in the order they were frozen.
     member_ids TEXT NOT NULL,
     -- THE LIVE SET IT WAS TAKEN FROM, if it was taken from one, so it

@@ -4,7 +4,7 @@ mariadb.py  (a silo backed by its own MariaDB instance)
 The most common DATABASE A small business actually runs. Shared LAMP
 hosting gives you MySQL or MariaDB and nothing else, so a web store --
 WooCommerce, PrestaShop, OpenCart -- is almost always sitting on one.
-Foundry lists MariaDB and MySQL as separate relational connectors;
+The precedent lists MariaDB and MySQL as separate relational connectors;
 they speak the same wire protocol and the same client works for both.
 
 Why this is not a subclass of PostgresSilo, despite the shape being
@@ -474,7 +474,7 @@ class MariaDbSilo(Silo):
 # original placement was chosen for.
 #
 # DEFERRED (known, intentional, not yet built): no MySQL-specific silo, even
-# though Foundry lists MySQL and MariaDB separately. They speak the same
+# though the precedent lists MySQL and MariaDB separately. They speak the same
 # protocol, the same client works for both, and discover() already accepts
 # either set of binaries. A separate kind would be worth it only if a pack
 # needed to declare which fork it is emulating, and none does yet.

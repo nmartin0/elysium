@@ -90,7 +90,7 @@ FIELD_DATA_TYPES = {
     # measured rather than feared.
     #
     # Separate from `number` rather than replacing it, which is what
-    # every layer below us does: Foundry has Double and Decimal,
+    # every layer below us does: the precedent has Double and Decimal,
     # Iceberg has double and decimal(P,S), PostgreSQL has double
     # precision and numeric. They answer different questions. Floats
     # for measurement, decimals for money.

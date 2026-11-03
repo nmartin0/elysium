@@ -6,7 +6,7 @@
  * there -- "Transactions where customer_id is cust_001" rather than
  * "Ada Okafor's 47 transactions".
  *
- * FOUNDRY'S ANSWER, and the shape here: "how you got here" is a LINK
+ * THE PRECEDENT'S ANSWER, and the shape here: "how you got here" is a LINK
  * FILTER carried in the URL, distinct from a property filter -- "you
  * can have many PROPERTY filters, but only 1 LINK filter" -- and linked
  * objects are "displayed by their title". One origin, not a chain,

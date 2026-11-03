@@ -17,7 +17,7 @@ import HelpPanel from '@elysium/shell-api/components/HelpPanel'
 // Shell.tsx -- ELYSIUM'S COMPOSITION OF THE GENERIC FRAME.
 //
 // The rail, the header and the command palette are the shell's
-// (@shell/core/Frame, BLOCKING.md item 3, step 1.3): it draws them and
+// (@shell/core/Frame, the removed BLOCKING.md item on modules, step 1.3): it draws them and
 // owns how they behave -- collapsing, the narrow-screen rules, Ctrl+B,
 // Cmd-K, the navigation commands. This file supplies what is Elysium's:
 // the product's name, the header's actions (help, the theme, the user

@@ -16,7 +16,7 @@ by hand, and drift:
                      "Ada@Example.com" and "ada@example.com", or
                      "020 7946 0018" and "+44 20 7946 0018", are one key.
 
-Foundry's precedent is the VALUE TYPE: a semantic type layered on a base
+The precedent is the VALUE TYPE: a semantic type layered on a base
 type, carrying its own validation, reused across properties. That is
 this, kept to the kinds the reference-data libraries can actually
 judge.

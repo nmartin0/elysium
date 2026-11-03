@@ -33,12 +33,12 @@ faults with two different fixes, and treating them as one is how a
 redesign fails: new paint on the same dead ends, or a new structure
 that still looks like a prototype.
 
-Researched against Palantir's own interfaces, because they are the
+Researched against the precedent's own interfaces, because they are the
 closest thing to prior art for an ontology-shaped product.
 
 ---
 
-## 1. What Palantir actually ships
+## 1. What the precedent actually ships
 
 FOUR LAYERS, and only two of them matter to Elysium.
 
@@ -191,7 +191,7 @@ agent available at every station rather than at one.
   - Model management, a marketplace, time-series infrastructure,
     geospatial.
 
-Palantir has thousands of engineers and customers demanding those.
+The precedent has thousands of engineers and customers demanding those.
 Elysium's edge is the agent, the security model and governed writes.
 Every hour on a chart builder is an hour not spent there.
 
@@ -604,7 +604,7 @@ AGAINST THE CODE -- which changed two of the answers.
 
 ## 11.1 A set exists the moment you search (implicit)
 
-Foundry's object set exists as soon as a query does; saving is a
+The precedent's object set exists as soon as a query does; saving is a
 separate, deliberate act -- "import saved object set" is its own card
 in Quiver. Same here: everything on screen IS a set, named by how it
 was built (`Customer · 3 filters · 1,284`), so the interface always
@@ -612,7 +612,7 @@ has a subject and saving is a PROMOTION rather than a creation.
 
 ## 11.2 Following a link produces a NEW set, with provenance
 
-Foundry is explicit: search-around on an object set returns another
+The precedent is explicit: search-around on an object set returns another
 OBJECT SET, and traversing from a single object gives a "MultiLink"
 that MUST BE CONVERTED to a set before you can pivot again. Sets
 compose; single objects do not.
@@ -632,7 +632,7 @@ Every mature product that met this shipped two kinds. HubSpot: an
 ACTIVE list "updates itself automatically as contacts meet or stop
 meeting your criteria"; a STATIC list is "a fixed snapshot of who
 matched at the moment you created it". Amplitude: dynamic vs static
-cohorts. Foundry: object set vs materialization.
+cohorts. The precedent: object set vs materialization.
 
 THE TWO FAILURE MODES ARE FAQ ENTRIES, which is how much the naming
 matters: "why are contacts dropping off my list?" (it is active) and
@@ -741,7 +741,7 @@ with three entries plus the inboxes -- far fewer than today.
 # 13. The ontology UI
 
 The pipeline is visual; the ontology should be too. Researched
-September 22 against Foundry's Ontology Manager and the academic
+September 22 against the precedent's Ontology Manager and the academic
 lineage (Protégé, VOWL/WebVOWL), and against the very different
 tradition of visual POLICY editors -- which turned out to matter more.
 
@@ -761,7 +761,7 @@ tradition of visual POLICY editors -- which turned out to matter more.
     difference between a linter and a stack trace. Newer ontology
     tools do this as "quality analysis with a score and annotated
     anti-patterns".
-  - HEALTH, as Foundry's own Ontology Manager carries -- it exists
+  - HEALTH, as the precedent's own Ontology Manager carries -- it exists
     partly for "investigating whether data is updating in user
     applications". A type that no gold table populates is a type
     nobody can query, and the canvas should say so rather than

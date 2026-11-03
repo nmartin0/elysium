@@ -47,8 +47,8 @@ Retail point-of-sale, field service, aviation, and local city
 government. Four deliberately different shapes — the vocabulary has to
 express all of them, or the engine is not really domain-agnostic.
 
-The aviation pack is modelled on the example data Palantir uses in its
-own Foundry tutorials, which traces back to the US Bureau of
+The aviation pack is modelled on the example data the precedent uses in its
+own the precedent tutorials, which traces back to the US Bureau of
 Transportation Statistics On-Time Performance schema — including the
 OOOI milestone model, where one flight row is updated four to six times
 as it passes Gate Out, Wheels Off, Wheels On and Gate In.

@@ -2,7 +2,7 @@
 
 A type, a field or a link type may carry `status: deprecated`. That said
 nothing about WHY, or what to use instead, so nobody reading a schema could
-tell a name to avoid from a name that is merely old. Foundry asks for the
+tell a name to avoid from a name that is merely old. The precedent asks for the
 same three things when a resource is deprecated -- a reason, a deadline,
 and optionally a replacement ("object-link-types/metadata-statuses") --
 and refuses to delete anything still active.
@@ -28,7 +28,7 @@ operator is told it has arrived and asked to approve the removal (the
 removal step, a later piece), which is still a person's action.
 
 A LINK TAKES THE MOST RESTRICTIVE STATUS of itself and the two types it
-joins (Foundry's rule; the owner chose it on 28 October), so deprecating a
+joins (the precedent's rule; the owner chose it on 28 October), so deprecating a
 type deprecates its links for display, and its links can then be removed
 first. Nothing else cascades: a type's fields carry their own.
 """

@@ -3,7 +3,7 @@ conformance_report.py -- what every module is excused from, and why.
 
     python -m scripts.conformance_report
 
-BLOCKING.md item 3: every module is held to the conformance suite
+the removed BLOCKING.md item on modules: every module is held to the conformance suite
 (ui/packages/testing/src/conformance.tsx) unless its
 module.conformance.json says otherwise, with a reason. Those files are
 DATA so that this can list them all without running a test: one place
