@@ -483,3 +483,103 @@ class TestAdoptingEverythingTheOntologyMaps:
         customer = "cust_001"
         code, _printed, refused = _erase(tag_lake, "Customer", customer, reachable_now=False)
         assert code == 3 and "gold.Tag" in refused
+
+
+class TestVouchingForUnmappedColumnsNeedsATypedPhrase:
+    """--including-unmapped-columns vouches that columns the ontology does not
+    map hold no person's id, which nothing can check. So it prints each table
+    and column it is about to vouch for and wants the phrase, typed or given
+    with --typed-confirmation (no terminal)."""
+
+    PHRASE = "I VOUCH FOR THESE COLUMNS"
+
+    def _forgotten(self, tag_lake):  # noqa: F811
+        _remove_tag_and_sync_again(tag_lake)
+        catalog = open_mirror_catalog(tag_lake.data_dir / "mirror")
+        everything = [".".join(parts) for namespace in catalog.list_namespaces()
+                      for parts in catalog.list_tables(namespace)]
+        _forget_what_tables_recorded(tag_lake, everything)
+        from pyiceberg.types import StringType
+
+        with catalog.load_table("primary_sql.customers").update_schema() as columns:
+            columns.add_column("legacy_memo", StringType())     # a column no ontology field maps
+        return catalog
+
+    def _command(self, tag_lake, monkeypatch, *flags, typed=None, terminal=False):  # noqa: F811
+        """The real main(): argument parsing, the prompt, the adoption."""
+        import sys
+
+        import scripts.erase as erase_script
+
+        monkeypatch.setattr(erase_script, "resolve_runtime_paths", lambda: tag_lake)
+        monkeypatch.setattr(sys, "argv", ["erase", "--adopt-all-current",
+                                          "--confirm-no-type-was-ever-removed", *flags])
+        monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+        if terminal:
+            monkeypatch.setattr(sys.stdin, "isatty", lambda: True, raising=False)
+            monkeypatch.setattr("builtins.input", lambda _prompt="": typed)
+        printed, errors = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(printed), contextlib.redirect_stderr(errors):
+            code = erase_script.main()
+        return code, printed.getvalue(), errors.getvalue()
+
+    def _unmapped_table(self, catalog):
+        from core.mirror.erasure import preview_adopt_all_current
+
+        config = load_deployment(self._paths.config_dir)
+        plan, _ = preview_adopt_all_current(catalog, config.schema, True)
+        with_columns = {table: columns for table, columns in plan.items() if columns}
+        assert with_columns, "the fixture lake has no table with unmapped columns"
+        return sorted(with_columns)[0], with_columns
+
+    def test_the_flag_phrase_adopts_and_the_listing_names_every_table_and_column(
+            self, tag_lake, monkeypatch):  # noqa: F811
+        self._paths = tag_lake
+        catalog = self._forgotten(tag_lake)
+        table, with_columns = self._unmapped_table(catalog)
+
+        code, printed, errors = self._command(tag_lake, monkeypatch, "--including-unmapped-columns",
+                                              "--typed-confirmation", self.PHRASE)
+
+        assert code == 0, printed + errors
+        assert recorded_columns(catalog.load_table(table)).adopted
+        assert f"{table}: {', '.join(with_columns[table])}" in printed
+
+    def test_nothing_is_adopted_without_the_exact_phrase(self, tag_lake, monkeypatch):  # noqa: F811
+        self._paths = tag_lake
+        catalog = self._forgotten(tag_lake)
+        table, _ = self._unmapped_table(catalog)
+
+        for flags, kwargs in (
+                (("--including-unmapped-columns",), {}),                                    # no terminal, no flag
+                (("--including-unmapped-columns", "--typed-confirmation", ""), {}),         # empty
+                (("--including-unmapped-columns", "--typed-confirmation", "i vouch for these columns"), {}),
+                (("--including-unmapped-columns",), {"terminal": True, "typed": "yes"}),    # typed, wrong
+                (("--including-unmapped-columns",), {"terminal": True, "typed": ""}),
+                (("--typed-confirmation", self.PHRASE), {}),                                # flag without its form
+        ):
+            code, _printed, _errors = self._command(tag_lake, monkeypatch, *flags, **kwargs)
+            assert code == 1, (flags, kwargs)
+            assert not recorded_columns(catalog.load_table(table)).present, (flags, kwargs)
+            assert not recorded_columns(catalog.load_table("primary_sql.customers")).present
+
+    def test_the_phrase_typed_at_a_terminal_adopts(self, tag_lake, monkeypatch):  # noqa: F811
+        self._paths = tag_lake
+        catalog = self._forgotten(tag_lake)
+        table, _ = self._unmapped_table(catalog)
+
+        code, printed, errors = self._command(tag_lake, monkeypatch, "--including-unmapped-columns",
+                                              terminal=True, typed=self.PHRASE)
+
+        assert code == 0, printed + errors
+        assert recorded_columns(catalog.load_table(table)).adopted
+
+    def test_the_form_without_unmapped_columns_asks_for_no_phrase(self, tag_lake, monkeypatch):  # noqa: F811
+        self._paths = tag_lake
+        catalog = self._forgotten(tag_lake)
+
+        code, printed, errors = self._command(tag_lake, monkeypatch)
+
+        assert code == 0, printed + errors
+        assert recorded_columns(catalog.load_table("gold.Customer")).adopted
+        assert not recorded_columns(catalog.load_table("primary_sql.customers")).present   # its legacy_memo

@@ -175,8 +175,8 @@ _TYPE_TABLES = [
     "lake. If no type was ever removed from your deployment, the normal remedy after an upgrade is one "
     "command: python -m scripts.erase --adopt-all-current --confirm-no-type-was-ever-removed (tables "
     "with unmapped columns need --including-unmapped-columns as well, which states those columns hold "
-    "no person ids). Adopt such tables before erasing: an erasure refuses to run while they could "
-    "affect it, unless told to erase what it can reach now.",
+    "no person ids and asks for a typed phrase). Adopt such tables before erasing: an erasure refuses to run "
+    "while they could affect it, unless told to erase what it can reach now.",
     "Asking for a rebuild of its silver table does nothing, because the sync no longer knows the table. Dropping "
     "the tables is done in the lake itself, by a person.",
 ]

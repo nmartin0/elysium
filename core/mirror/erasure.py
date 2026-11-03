@@ -709,23 +709,12 @@ NOTHING_REMOVED_OR_UNMAPPED = (
     "and that the columns the ontology does not map hold no person ids")
 
 
-def adopt_all_current(catalog, schema: dict, confirmed: bool,
-                      including_unmapped: bool = False) -> tuple[list[str], dict[str, str]]:
-    """(adopted, {unresolved table: why}): the one-step remedy for a
-    deployment that never removed a type. Every table the CURRENT schema maps
-    COMPLETELY (every column mapped), whose recorded types are all still in
-    the schema, becomes complete by the operator's statement (union with what
-    is known, never narrowing; the statement is kept in the record). A table
-    with columns the ontology does not map is adopted only with
-    `including_unmapped` (a separate, stronger statement: those columns hold
-    no person ids); without it it is listed with those column names. A table
-    the schema does not know, or one that recorded a type the schema no
-    longer has, is NEVER touched here, only listed: there is no statement
-    about it to rely on, and adopting it takes --adopt naming its columns.
-    Refuses without the confirmation."""
-    if not confirmed:
-        raise ValueError("adopting everything the ontology maps needs the operator's confirmation")
-    adopted: list[str] = []
+def _adoption_plan(catalog, schema: dict, including_unmapped: bool
+                   ) -> tuple[dict[str, list[str]], dict[str, str]]:
+    """({table that would be adopted: the columns the ontology does not map,
+    [] when it maps them all}, {unresolved table: why}). Reads, never writes.
+    Tables already adopted as complete are in neither."""
+    plan: dict[str, list[str]] = {}
     unresolved: dict[str, str] = {}
     for namespace in catalog.list_namespaces():
         for parts in catalog.list_tables(namespace):
@@ -747,15 +736,51 @@ def adopt_all_current(catalog, schema: dict, confirmed: bool,
                     continue
                 if before.complete and before.adopted:
                     continue
-                known = known_columns(schema, identifier, table)
-                record = Recorded(known.keys, known.ids, known.links, True, COMPLETE, True,
-                                  NOTHING_REMOVED_OR_UNMAPPED if unmapped else NO_TYPE_REMOVED)
-                with table.transaction() as tx:
-                    tx.set_properties({KEY_COLUMNS_PROPERTY: _encode(record)})
-                adopted.append(identifier)
+                plan[identifier] = list(unmapped)
             except Exception as e:  # noqa: BLE001 - named, never fatal
                 logger.warning("could not adopt %s: %s", identifier, type(e).__name__)
                 unresolved[identifier] = f"it could not be read or written ({type(e).__name__})"
+    return plan, unresolved
+
+
+def preview_adopt_all_current(catalog, schema: dict, including_unmapped: bool = False
+                              ) -> tuple[dict[str, list[str]], dict[str, str]]:
+    """What adopt_all_current would vouch for, without recording anything:
+    ({table: its unmapped column names, [] if none}, {unresolved: why}). The
+    operator reads this before typing the phrase that vouches for the columns."""
+    return _adoption_plan(catalog, schema, including_unmapped)
+
+
+def adopt_all_current(catalog, schema: dict, confirmed: bool,
+                      including_unmapped: bool = False) -> tuple[list[str], dict[str, str]]:
+    """(adopted, {unresolved table: why}): the one-step remedy for a
+    deployment that never removed a type. Every table the CURRENT schema maps
+    COMPLETELY (every column mapped), whose recorded types are all still in
+    the schema, becomes complete by the operator's statement (union with what
+    is known, never narrowing; the statement is kept in the record). A table
+    with columns the ontology does not map is adopted only with
+    `including_unmapped` (a separate, stronger statement: those columns hold
+    no person ids); without it it is listed with those column names. A table
+    the schema does not know, or one that recorded a type the schema no
+    longer has, is NEVER touched here, only listed: there is no statement
+    about it to rely on, and adopting it takes --adopt naming its columns.
+    Refuses without the confirmation."""
+    if not confirmed:
+        raise ValueError("adopting everything the ontology maps needs the operator's confirmation")
+    plan, unresolved = _adoption_plan(catalog, schema, including_unmapped)
+    adopted: list[str] = []
+    for identifier, unmapped in plan.items():
+        try:
+            table = catalog.load_table(identifier)
+            known = known_columns(schema, identifier, table)
+            record = Recorded(known.keys, known.ids, known.links, True, COMPLETE, True,
+                              NOTHING_REMOVED_OR_UNMAPPED if unmapped else NO_TYPE_REMOVED)
+            with table.transaction() as tx:
+                tx.set_properties({KEY_COLUMNS_PROPERTY: _encode(record)})
+            adopted.append(identifier)
+        except Exception as e:  # noqa: BLE001 - named, never fatal
+            logger.warning("could not adopt %s: %s", identifier, type(e).__name__)
+            unresolved[identifier] = f"it could not be read or written ({type(e).__name__})"
     return adopted, unresolved
 
 
@@ -842,7 +867,7 @@ def survey(catalog, schema: dict, erased_types: "set[str] | None" = None) -> Rea
 ADOPT_HINT = ("if no type was ever removed from this deployment, resolve every table the ontology maps "
               "with `python -m scripts.erase --adopt-all-current --confirm-no-type-was-ever-removed` "
               "(add `--including-unmapped-columns` for tables with columns the ontology does not map, "
-              "stating they hold no person ids); otherwise adopt it with "
+              "stating they hold no person ids, which asks you to type a phrase); otherwise adopt it with "
               "`python -m scripts.erase --adopt TABLE --keys column=Type` "
               "(or `--adopt-none TABLE` if it holds no person's id), or drop it in the lake")
 

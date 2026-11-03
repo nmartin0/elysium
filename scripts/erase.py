@@ -4,6 +4,8 @@
     python -m scripts.erase Customer cust_001 --reason "..." --write
     python -m scripts.erase --list
     python -m scripts.erase --adopt-all-current --confirm-no-type-was-ever-removed
+    python -m scripts.erase --adopt-all-current --confirm-no-type-was-ever-removed \\
+        --including-unmapped-columns [--typed-confirmation "I VOUCH FOR THESE COLUMNS"]
     python -m scripts.erase --adopt bronze_primary_sql.tags --keys tag_id=Tag [--ids tag_id=Tag]
     python -m scripts.erase --adopt-none primary_sql.audit_notes
 
@@ -12,7 +14,13 @@ never removed an object type: it marks every table whose every column the
 ontology maps complete, on your statement, and lists (never touches) the rest
 with the columns the ontology does not map. Adding --including-unmapped-columns
 also adopts those, on the stronger statement that no type, link or field was
-ever removed or re-pointed and the unmapped columns hold no person ids. --write REFUSES, and
+ever removed or re-pointed and the unmapped columns hold no person ids. That
+statement is the one nobody can check, so it also needs a typed confirmation:
+every table and unmapped column about to be vouched for is printed, then you
+type the phrase I VOUCH FOR THESE COLUMNS exactly. With no terminal it is
+refused unless the phrase is given with --typed-confirmation "<phrase>", so a
+script is possible but deliberate. A wrong or empty phrase adopts nothing
+(exit 1). --write REFUSES, and
 erases nothing, while a table that could affect the erasure cannot be fully
 searched; --erase-reachable-now erases what can be reached and records the
 erasure incomplete.
@@ -68,6 +76,7 @@ from core.mirror.erasure import (
     cascade,
     forget_beyond_the_mirror,
     gap_notice,
+    preview_adopt_all_current,
     recorded_object_types,
     relevant_tables,
     survey,
@@ -242,12 +251,32 @@ def adopt(identifier: str, keys: "str | None", ids: "str | None", links: "str | 
     return 0
 
 
-def adopt_everything_current(confirmed: bool, paths=None, including_unmapped: bool = False) -> int:
+VOUCH_PHRASE = "I VOUCH FOR THESE COLUMNS"
+
+
+def _typed_phrase(supplied: "str | None") -> "str | None":
+    """The phrase the operator gave: the flag if there is one, else a line
+    typed on stdin. None when there is no terminal and no flag."""
+    if supplied is not None:
+        return supplied
+    if not sys.stdin.isatty():
+        return None
+    try:
+        return input(f"To vouch for these columns, type exactly: {VOUCH_PHRASE}\n> ")
+    except EOFError:
+        return ""
+
+
+def adopt_everything_current(confirmed: bool, paths=None, including_unmapped: bool = False,
+                             typed_confirmation: "str | None" = None) -> int:
     """--adopt-all-current: the one-step remedy for a deployment that never
     removed an object type. Refused without --confirm-no-type-was-ever-removed.
     Touches only tables whose every column the current ontology maps -- or,
     with --including-unmapped-columns, also tables with columns it does not
-    map; lists the rest with those columns' names."""
+    map; lists the rest with those columns' names. That second form first
+    prints every table and unmapped column it will vouch for and needs
+    VOUCH_PHRASE, typed or given as typed_confirmation; without either (no
+    terminal) or with a different phrase it adopts nothing and returns 1."""
     if not confirmed:
         print("This states that no object type was EVER removed from this deployment, which only you "
               "can know. Say so with --confirm-no-type-was-ever-removed. Nothing was recorded.",
@@ -256,9 +285,29 @@ def adopt_everything_current(confirmed: bool, paths=None, including_unmapped: bo
     paths = paths or resolve_runtime_paths()
     config = load_deployment(paths.config_dir)
     catalog = open_mirror_catalog(paths.data_dir / "mirror", dict(config.mirror_storage))
+    if including_unmapped:
+        shown, _ = preview_adopt_all_current(catalog, config.schema, True)
+        print("You are about to vouch that no type, link or field was ever removed or re-pointed, and that "
+              "these columns hold NO PERSON'S ID, for:")
+        for table, columns in sorted(shown.items()):
+            print(f"  {table}: " + (", ".join(columns) if columns else "(every column is mapped)"))
+        if not shown:
+            print("  (no table)")
+        phrase = _typed_phrase(typed_confirmation)
+        if phrase is None:
+            print(f"No terminal to type on. Give the phrase with --typed-confirmation \"{VOUCH_PHRASE}\" "
+                  "if you mean it. Nothing was recorded.", file=sys.stderr)
+            return 1
+        if phrase != VOUCH_PHRASE:
+            print(f"That was not the phrase {VOUCH_PHRASE}. Nothing was recorded.", file=sys.stderr)
+            return 1
     with single_writer(paths.data_dir / "sync.lock") as acquired:
         if not acquired:
             print("A sync is running. Try again when it has finished; nothing was recorded.")
+            return 1
+        if including_unmapped and preview_adopt_all_current(catalog, config.schema, True)[0] != shown:
+            print("The tables or columns changed while you were confirming. Nothing was recorded; "
+                  "run it again.", file=sys.stderr)
             return 1
         adopted, unresolved = adopt_all_current(catalog, config.schema, confirmed, including_unmapped)
     print(f"Adopted {len(adopted)} table(s) the ontology maps, on your statement that no type was ever "
@@ -271,7 +320,8 @@ def adopt_everything_current(confirmed: bool, paths=None, including_unmapped: bo
               + ("" if including_unmapped else "; for tables whose only gap is columns the ontology does "
                  "not map, --adopt-all-current --including-unmapped-columns "
                  "--confirm-no-type-was-ever-removed states that no type, link or field was ever removed "
-                 "or re-pointed and those columns hold no person ids")
+                 "or re-pointed and those columns hold no person ids, and asks you to type "
+                 f"{VOUCH_PHRASE} to say so")
               + ".")
     return 0
 
@@ -280,13 +330,24 @@ def main() -> int:
     if sys.argv[1:] == ["--list"]:
         return list_erasures()
     if sys.argv[1:2] == ["--adopt-all-current"]:
-        flags = set(sys.argv[2:])
-        if not flags <= {"--confirm-no-type-was-ever-removed", "--including-unmapped-columns"}:
-            print("Usage: --adopt-all-current --confirm-no-type-was-ever-removed "
-                  "[--including-unmapped-columns]", file=sys.stderr)
+        parser = argparse.ArgumentParser(prog="erase --adopt-all-current", description=__doc__,
+                                         formatter_class=argparse.RawDescriptionHelpFormatter)
+        parser.add_argument("--confirm-no-type-was-ever-removed", action="store_true")
+        parser.add_argument("--including-unmapped-columns", action="store_true")
+        parser.add_argument("--typed-confirmation", metavar="PHRASE",
+                            help=f"the phrase {VOUCH_PHRASE!r}, for runs with no terminal; only with "
+                                 "--including-unmapped-columns")
+        try:
+            args = parser.parse_args(sys.argv[2:])
+        except SystemExit as stop:
+            return int(stop.code or 0)
+        if args.typed_confirmation is not None and not args.including_unmapped_columns:
+            print("--typed-confirmation belongs with --including-unmapped-columns, the only form that "
+                  "asks for it.", file=sys.stderr)
             return 1
-        return adopt_everything_current("--confirm-no-type-was-ever-removed" in flags,
-                                        including_unmapped="--including-unmapped-columns" in flags)
+        return adopt_everything_current(args.confirm_no_type_was_ever_removed,
+                                        including_unmapped=args.including_unmapped_columns,
+                                        typed_confirmation=args.typed_confirmation)
     if sys.argv[1:2] in (["--adopt"], ["--adopt-none"]):
         parser = argparse.ArgumentParser(prog=f"erase {sys.argv[1]}")
         parser.add_argument("table")

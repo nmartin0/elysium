@@ -2036,7 +2036,15 @@ it marks every table whose every column the ontology maps complete on that
 statement (kept in the record), and lists, never touches, the rest with their
 unmapped column names. Adding `--including-unmapped-columns` also adopts
 those, on the stronger statement that no type, link or field was ever removed
-or re-pointed and the unmapped columns hold no person ids. Otherwise, per table:
+or re-pointed and the unmapped columns hold no person ids. Nothing can check that
+statement, so this form also needs a TYPED CONFIRMATION (2 November, owner): it
+prints every table with the unmapped column names it is about to vouch for, then
+the operator types `I VOUCH FOR THESE COLUMNS` exactly. With no terminal it is
+refused unless the phrase is given with `--typed-confirmation "<phrase>"` (so
+scripts are possible but deliberate; the flag alone, without
+`--including-unmapped-columns`, is a usage error). A wrong or empty phrase, or
+tables that changed while the operator was typing, exit 1 with nothing adopted.
+Otherwise, per table:
 `python -m scripts.erase --adopt TABLE --keys column=Type [--ids ...]
 [--links column=Owner:Target]` states what the table holds (`--adopt-none`:
 no person's id), or the table is dropped in the lake. Adopt BEFORE erasing:

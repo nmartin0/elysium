@@ -1636,6 +1636,41 @@ CONTROLS = [
         tests=["tests/unit/test_erasure_removed_types.py::TestAdoptAllCurrent::test_a_table_with_columns_the_ontology_does_not_map_needs_the_stronger_statement"],
     ),
     Control(
+        describes="R13 vouching: a wrong typed phrase still adopts",
+        path="scripts/erase.py",
+        old="        if phrase != VOUCH_PHRASE:",
+        new="        if False:",
+        tests=["tests/integration/test_erasure_after_removal.py::TestVouchingForUnmappedColumnsNeedsATypedPhrase::test_nothing_is_adopted_without_the_exact_phrase"],
+    ),
+    Control(
+        describes="R13 vouching: a run with no terminal and no flag is taken as the phrase",
+        path="scripts/erase.py",
+        old="    if not sys.stdin.isatty():\n        return None",
+        new="    if not sys.stdin.isatty():\n        return VOUCH_PHRASE",
+        tests=["tests/integration/test_erasure_after_removal.py::TestVouchingForUnmappedColumnsNeedsATypedPhrase::test_nothing_is_adopted_without_the_exact_phrase"],
+    ),
+    Control(
+        describes="R13 vouching: the listing names the unmapped columns it vouches for",
+        path="scripts/erase.py",
+        old='(", ".join(columns) if columns else "(every column is mapped)")',
+        new='"(every column is mapped)"',
+        tests=["tests/integration/test_erasure_after_removal.py::TestVouchingForUnmappedColumnsNeedsATypedPhrase::test_the_flag_phrase_adopts_and_the_listing_names_every_table_and_column"],
+    ),
+    Control(
+        describes="R13 vouching: --typed-confirmation alone is accepted",
+        path="scripts/erase.py",
+        old="        if args.typed_confirmation is not None and not args.including_unmapped_columns:",
+        new="        if False:",
+        tests=["tests/integration/test_erasure_after_removal.py::TestVouchingForUnmappedColumnsNeedsATypedPhrase::test_nothing_is_adopted_without_the_exact_phrase"],
+    ),
+    Control(
+        describes="R13 vouching: the preview records what it lists",
+        path="core/mirror/erasure.py",
+        old="    return _adoption_plan(catalog, schema, including_unmapped)\n",
+        new="    adopt_all_current(catalog, schema, True, including_unmapped)\n    return _adoption_plan(catalog, schema, including_unmapped)\n",  # noqa: E501
+        tests=["tests/unit/test_erasure_removed_types.py::TestAdoptAllCurrent::test_the_preview_names_the_unmapped_columns_and_records_nothing"],
+    ),
+    Control(
         describes="R13 adopt: a link stated alone makes its column a key of the target",
         path="core/mirror/erasure.py",
         old="    keys = _union(keys, {column: {target for _owner, target in pairs}\n                         for column, pairs in (links or {}).items()})",  # noqa: E501

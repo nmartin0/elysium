@@ -20,6 +20,7 @@ from core.mirror.erasure import (
     cascade,
     erased_mask,
     gap_notice,
+    preview_adopt_all_current,
     record_key_columns,
     recorded_columns,
     recorded_key_columns,
@@ -551,6 +552,19 @@ class TestAdoptAllCurrent:
 
         assert "s.people" not in adopted
         assert unresolved["s.people"] == "it recorded a type the ontology no longer has"
+
+    def test_the_preview_names_the_unmapped_columns_and_records_nothing(self, lake):
+        lake.make("s.customers", [{"customer_id": "c1", "memo": "x", "note": "y"}])
+        lake.make("gold.Customer", [{"customer_id": "c1"}])
+
+        without, listed = preview_adopt_all_current(lake, WITHOUT_TICKET)
+        plan, _listed = preview_adopt_all_current(lake, WITHOUT_TICKET, including_unmapped=True)
+
+        assert without == {"gold.Customer": []}
+        assert listed == {"s.customers": "columns the ontology does not map: memo, note"}
+        assert plan == {"gold.Customer": [], "s.customers": ["memo", "note"]}
+        assert not recorded_columns(lake.load_table("s.customers")).present
+        assert not recorded_columns(lake.load_table("gold.Customer")).present
 
     def test_it_never_narrows(self, lake):
         """The id column was renamed in the ontology; the old one still holds ids."""
