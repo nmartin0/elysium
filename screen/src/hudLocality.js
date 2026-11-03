@@ -3,8 +3,7 @@
  * @description The locality half of the HUD summary line — either "NEAR <landmark>"
  * or the "SECTOR <lat/lon>" fallback.
  *
- * Split out of `hud.js` purely so it is unit-testable: `hud.js` pulls in the `mgrs`
- * CommonJS package, which Vite resolves but plain Node cannot import by named export.
+ * Split out of `hud.js` purely so it is unit-testable without the DOM.
  */
 
 /**

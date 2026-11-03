@@ -1507,7 +1507,6 @@
       "@mapbox/vector-tile",
       "cesium",
       "egm96-universal",
-      "mgrs",
       "pbf",
       "satellite.js",
       "mapillary-js",
@@ -1861,7 +1860,6 @@
       "satellite.js",
       "@mapbox/vector-tile",
       "pbf",
-      "mgrs",
       "mapillary-js",
       "@jtarrio/webrtlsdr"
     ]
@@ -1929,8 +1927,7 @@
       "egm96-universal",
       "satellite.js",
       "@mapbox/vector-tile",
-      "pbf",
-      "mgrs"
+      "pbf"
     ]
   },
   "layer-lifecycle": {

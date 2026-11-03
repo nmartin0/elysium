@@ -2,7 +2,7 @@
  * @module hudLocalityFormat
  * @description The HUD summary's locality line in the active language — the
  * formatter `hud.js` hands to `composeLocalityTag`. Kept apart from `hud.js`
- * (which imports `mgrs`, not loadable under plain Node) so it is unit-testable.
+ * so it is unit-testable without the DOM.
  */
 import { formatNumber, getLocale, t } from './i18n/index.js';
 import { unitLabel } from './ui/unitLabels.js';
