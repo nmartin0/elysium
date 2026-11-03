@@ -14,6 +14,7 @@ import { weatherProxy } from './weather.js';
 import { firePerimetersProxy } from './firePerimeters.js';
 import { gnssIntegrityProxy } from './gnssIntegrity.js';
 import { ghostMapsProxy } from './ghostMaps.js';
+import { STUBBED_LAYER_IDS } from '../../src/data/layerState.js';
 import { cycloneProxy } from './cyclones.js';
 import { windProxy } from './wind.js';
 
@@ -38,7 +39,7 @@ function localProviderPlugins() {
     cycloneProxy(),
     firePerimetersProxy(),
     gnssIntegrityProxy(),
-    ghostMapsProxy(),
+    ...(STUBBED_LAYER_IDS.includes('s2-ghostmaps') ? [] : [ghostMapsProxy()]),
   ];
 }
 

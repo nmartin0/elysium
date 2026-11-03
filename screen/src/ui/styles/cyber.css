@@ -1445,7 +1445,8 @@
   position: fixed;
   top: 50%;
   left: 50%;
-  display: block;
+  /* STUBBED (FORK.md): was display: block. Hidden while CYBER_SONAR_STUB.stubbed. */
+  display: none;
   width: min(
     var(--cyber-sonar-size-vw, 80vw),
     var(--cyber-sonar-size-vh, 104vh)

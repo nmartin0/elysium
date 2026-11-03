@@ -11,7 +11,8 @@ test('data providers have both hooks; credential editing stays development-only'
   const plugins = localProviderPlugins();
   assert.ok(plugins.some(({ name }) => name === 'fire-perimeters'));
   assert.ok(plugins.some(({ name }) => name === 'gnss-integrity'));
-  assert.ok(plugins.some(({ name }) => name === 'ghostmaps'));
+  // Stubbed (FORK.md): the /api/ghostmaps route is not mounted; see ghostMapsStub.test.mjs.
+  assert.ok(!plugins.some(({ name }) => name === 'ghostmaps'));
   for (const plugin of plugins) {
     if (plugin.name === 'gev-key-setup') {
       assert.equal(plugin.configurePreviewServer, undefined);

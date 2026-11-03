@@ -5,7 +5,7 @@ import { createCyclonesLayer } from '../layers/cyclones/index.js';
 import { createWindLayer } from '../layers/wind/index.js';
 import { createLayerCatalog } from './catalog.js';
 import { createLayerStubs } from './layerStubs.js';
-import { LAYER_STATE_REGISTRY } from '../data/layerState.js';
+import { LAYER_STATE_REGISTRY, STUBBED_LAYER_IDS } from '../data/layerState.js';
 import { createMilitaryRegistry } from '../layers/aircraft/classification.js';
 import { createApplicationFlights } from './layers/flights.js';
 import { createApplicationVessels } from './layers/aisLiveVessels.js';
@@ -89,7 +89,9 @@ export function createApplicationCatalog({
           source: sources['gnss-integrity'],
           windowMs: sources['gnss-integrity'].windowMs,
         }),
-        createApplicationGhostMaps({ source: sources['s2-ghostmaps'] }),
+        ...(STUBBED_LAYER_IDS.includes('s2-ghostmaps')
+          ? []
+          : [createApplicationGhostMaps({ source: sources['s2-ghostmaps'] })]),
         satellites,
         createApplicationLaunches({ source: sources.launches, satellites }),
         createApplicationTransit({ surface, source: sources.transit }),

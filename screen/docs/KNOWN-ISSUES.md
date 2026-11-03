@@ -64,8 +64,8 @@ Status: open (listed so they are not mistaken for features)
 - `package.json` still lists `doctor` and `qa:street-level` scripts whose
   files are gone, and dependencies (`@jtarrio/*`, `mapillary-js`, `hls.js`)
   that no source imports.
-- The Cyber sonar and the conflict-map layer `s2-ghostmaps` are still in the
-  app, waiting for an owner decision (FORK.md).
+- The Cyber sonar and the conflict-map layer `s2-ghostmaps` are stubbed off
+  (code kept; FORK.md, "Stubbed, with how to turn back on").
 
 ## Closed
 

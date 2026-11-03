@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { APPLICATION_LAYER_METADATA } from '../app/constructCatalog.js';
+import { STUBBED_LAYER_IDS } from '../data/layerState.js';
 import { LAYER_NAME_KEYS, PANEL_LABEL_KEYS } from './layerNames.js';
 
 // Layers whose module name is a proper name and stays as it is in every
@@ -28,6 +29,9 @@ test('the name tables list only catalog layers', () => {
     ...Object.keys(LAYER_NAME_KEYS),
     ...Object.keys(PANEL_LABEL_KEYS),
     ...UNTRANSLATED_NAMES,
-  ].filter((id) => !catalogIds.includes(id));
+  ].filter(
+    // A stubbed layer keeps its names so turning it back on needs one edit.
+    (id) => !catalogIds.includes(id) && !STUBBED_LAYER_IDS.includes(id),
+  );
   assert.deepEqual(unknown, []);
 });

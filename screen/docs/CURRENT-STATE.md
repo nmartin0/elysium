@@ -37,9 +37,7 @@ The layer ids and names are in `src/ui/layerNames.js`.
 - **Cities**: Bike Share (GBFS systems) and Transit (GTFS-Realtime vehicle
   feeds, 16 registered regions).
 - **Reference**: Data Centers, Dams and Submarine Cables (bundled snapshots),
-  Recent Imagery (NASA GIBS), Directions (OSRM), and S2 GhostMaps, a
-  conflict-map layer from upstream that is still present (owner decision
-  pending, see FORK.md).
+  Recent Imagery (NASA GIBS) and Directions (OSRM).
 
 A layer that needs a key stays off and says which variable it needs. Polling
 pauses while the tab is hidden and runs one overdue update on return.
@@ -53,9 +51,7 @@ pauses while the tab is hidden and runs one overdue update on return.
   looks open as Normal.
 - **HUD**: mode, a deterministic summary line, UTC time, camera latitude,
   longitude and altitude above mean sea level, and sun elevation, plus a
-  vessel line. Layouts: Tactical (shown as "Full"), Minimal, Cyber. The Cyber
-  layout has a sonar-style dimming sweep over real contacts; it detects
-  nothing (flagged in FORK.md).
+  vessel line. Layouts: Tactical (shown as "Full"), Minimal, Cyber.
 - **Detection labels** (D): callouts for aircraft and vessels.
 - **Shortcuts**: H HUD, O orbit, V clean view, F layers, D detection.
 - **Context panel**: a Contacts mode (aircraft and vessels near you) and a

@@ -8,12 +8,16 @@ import {
   applyCyberSonarSettings,
   isCyberContactSonarActive,
   isCyberSonarActive,
+  CYBER_SONAR_STUB,
 } from './cyberSonar.js';
 import {
   createCyberSonarScene,
   visitCyberSonarModels,
   getCyberSonarSceneDiagnostics,
 } from './cyberSonarScene.js';
+
+// The sonar is STUBBED in the app (FORK.md); these cover the engine it keeps.
+CYBER_SONAR_STUB.stubbed = false;
 
 test('frame sampler matches reference without per-contact settings access', () => {
   let reads = 0;

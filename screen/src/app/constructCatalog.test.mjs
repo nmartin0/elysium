@@ -27,8 +27,8 @@ test('catalogs construct distinct layers and classification from their supplied 
     signal: b.signal,
     surface: fixtureSurface(b.signal),
   });
-  assert.equal(first.layers.length, 22);
-  for (const id of ['military', 'cctv', 'local-adsb'])
+  assert.equal(first.layers.length, 21);
+  for (const id of ['military', 'cctv', 'local-adsb', 's2-ghostmaps'])
     assert.equal(
       first.layers.some((layer) => layer.id === id),
       false,
@@ -48,7 +48,7 @@ test('catalogs construct distinct layers and classification from their supplied 
     );
   assert.ok(first.get('fire-perimeters'));
   assert.ok(first.get('gnss-integrity'));
-  assert.ok(first.get('s2-ghostmaps'));
+  assert.equal(first.get('s2-ghostmaps'), undefined, 'stubbed layer');
   assert.ok(first.get('transit'));
   const order = first.layers.map(({ id }) => id);
   assert.deepEqual(

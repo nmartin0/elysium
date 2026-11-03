@@ -64,9 +64,8 @@ tuning variables.
   Space Missions (30d), Earthquakes (24h), Active Fires (FIRMS), Fire
   Perimeters, Cyclone advisories, Rain radar, Satellite clouds, Lightning
   density, Wind, Air quality, GNSS Integrity, Bike Share, Transit, Recent
-  Imagery, Data Centers, Dams, Submarine Cables, Directions, and S2 GhostMaps
-  (a conflict-map layer upstream shipped; flagged for an owner decision in
-  FORK.md).
+  Imagery, Data Centers, Dams, Submarine Cables and Directions. (The S2
+  GhostMaps layer upstream ships is stubbed off, see FORK.md.)
 - **Visual styles**: Normal, Anime, Noir.
 - **HUD** (H), detection labels for aircraft and vessels (D), clean view (V),
   orbit (O), layers (F).

@@ -1,4 +1,5 @@
 import * as Cesium from 'cesium';
+import { STUBBED_LAYER_IDS } from './layerState.js';
 
 /**
  * Per-layer data attribution registered into Cesium's credit display.
@@ -581,7 +582,8 @@ export function registerDataCredits(viewer, credits = DATA_CREDITS) {
   if (!creditDisplay || typeof creditDisplay.addStaticCredit !== 'function') {
     return;
   }
-  for (const { html } of credits) {
+  for (const { key, html } of credits) {
+    if (STUBBED_LAYER_IDS.includes(key)) continue;
     // showOnScreen=false → lives in the expandable "Data attribution" popover,
     // not the on-globe credit line.
     creditDisplay.addStaticCredit(new Cesium.Credit(html, false));

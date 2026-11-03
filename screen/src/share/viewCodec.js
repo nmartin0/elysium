@@ -18,6 +18,7 @@
 
 import {
   LAYER_STATE_REGISTRY,
+  isStubbedLayerToken,
   LAYER_STATE_TOKEN_ALPHABET,
   REGISTRY_BY_ID,
   SHARE_TRACKING_RESTORE_POLICIES,
@@ -1085,7 +1086,8 @@ function decodeLayers(bitsReader, optionsReader, unknown) {
       const number = byte * 8 + bit;
       const entry = REGISTRY_BY_TOKEN.get(layerTokenFromNumber(number));
       if (entry) enabledLayerIds.push(entry.id);
-      else unknown.code('layer', number);
+      else if (!isStubbedLayerToken(layerTokenFromNumber(number)))
+        unknown.code('layer', number);
     }
   }
   const options = {};

@@ -517,6 +517,27 @@ test('Cyber keeps Sonar on/off without the removed CSS effect switch or dimmer',
   assert.doesNotMatch(cyberStyles, /cyber-scene-dimmer|data-cyber-sonar-mode/);
 });
 
+test('the Cyber sonar is stubbed: controls and sweep are hidden in every theme, the Cyber layout stays', () => {
+  const controls = readFileSync(
+    new URL('./styles/controls.css', import.meta.url),
+    'utf8',
+  );
+  const rule = (css, selector) =>
+    css.match(
+      new RegExp(`${selector.replace(/[[\]().]/g, '\\$&')}\\s*\\{([^}]*)\\}`),
+    )?.[1] ?? '';
+  assert.match(
+    rule(controls, ":root[data-ui-theme='cyber'] .cyber-sonar-control"),
+    /display:\s*none/,
+  );
+  assert.match(rule(controls, '.cyber-sonar-control'), /display:\s*none/);
+  assert.match(
+    rule(cyberStyles, "#intel-hud[data-variant='cyber'] .hud-sonar"),
+    /display:\s*none/,
+  );
+  assert.ok(HUD_LAYOUTS.includes('cyber'), 'the Cyber layout itself stays');
+});
+
 test('Cyber Display uses a red title without a panel-specific center tab', () => {
   assert.match(
     cyberStyles,

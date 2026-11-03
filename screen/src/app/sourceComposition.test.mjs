@@ -8,6 +8,11 @@ import { createApplicationCatalog } from './constructCatalog.js';
 import { createSurfaceServices } from './surfaceServices.js';
 import { createStandaloneLayerSources } from '../standalone/layerSources.js';
 import { LayerLifecycle } from '../data/lifecycle.js';
+import { STUBBED_LAYER_IDS } from '../data/layerState.js';
+
+// A stubbed layer is not constructed, so it has no availability row to check.
+const constructedIds = (ids) =>
+  ids.filter((id) => !STUBBED_LAYER_IDS.includes(id));
 
 function catalog(sources, t) {
   const lifetime = new AbortController();
@@ -29,7 +34,7 @@ test('every acquisition source can be omitted without losing catalog membership'
     const sources = createStandaloneLayerSources({ [name]: null });
     const actual = catalog(sources, t);
     assert.deepEqual(actual.metadata, baseline.metadata, name);
-    for (const id of CATALOG_SOURCE_CONTRACTS[name].layers) {
+    for (const id of constructedIds(CATALOG_SOURCE_CONTRACTS[name].layers)) {
       assert.equal(actual.getSourceAvailability(id).available, false, id);
     }
   }
@@ -37,14 +42,14 @@ test('every acquisition source can be omitted without losing catalog membership'
 
 test('all acquisition sources may be absent, and enable fails before initializing or fetching', async (t) => {
   const actual = catalog({}, t);
-  assert.equal(actual.layers.length, 22);
+  assert.equal(actual.layers.length, 21);
   const manager = new LayerLifecycle(
     {},
     { getSourceAvailability: actual.getSourceAvailability },
   );
   for (const layer of actual.layers) manager.register(layer);
   for (const { layers: ids } of Object.values(CATALOG_SOURCE_CONTRACTS)) {
-    for (const id of ids) {
+    for (const id of constructedIds(ids)) {
       assert.equal(await manager.setEnabled(id, true), false, id);
       assert.equal(manager.layers.get(id).initialized, false, id);
       const row = manager.getAll().find((entry) => entry.id === id);
@@ -85,67 +90,21 @@ test('standalone defaults allow exact replacements and explicit removal, and rej
   );
 });
 
-test('GhostMaps obeys source omission, replacement and explicit removal', async (t) => {
+test('GhostMaps is stubbed: its source contract stays, the layer is not constructed, nothing is fetched', async (t) => {
   let fetches = 0;
   t.mock.method(globalThis, 'fetch', async () => {
     fetches++;
     throw new Error('Unexpected standalone acquisition');
   });
-  const missing = catalog({}, t);
-  assert.equal(missing.getSourceAvailability('s2-ghostmaps')?.available, false);
-  const manager = new LayerLifecycle(
-    {},
-    { getSourceAvailability: missing.getSourceAvailability },
-  );
-  manager.register(missing.get('s2-ghostmaps'));
-  assert.equal(await manager.setEnabled('s2-ghostmaps', true), false);
-  assert.equal(manager.layers.get('s2-ghostmaps').initialized, false);
+  assert.ok(STUBBED_LAYER_IDS.includes('s2-ghostmaps'));
+  assert.ok(CATALOG_SOURCE_CONTRACTS['s2-ghostmaps'], 'contract stays');
   assert.equal(
     createStandaloneLayerSources({ 's2-ghostmaps': null })['s2-ghostmaps'],
     null,
   );
-
-  let reads = 0;
-  let subscriptions = 0;
-  let unsubscribed = 0;
-  const source = {
-    getCatalog: async () => {
-      reads++;
-      return { commit: 'a'.repeat(40), products: [] };
-    },
-    getFile: async () => {
-      throw new Error('Empty catalog must not read files');
-    },
-    subscribe: () => {
-      subscriptions++;
-      return () => {
-        unsubscribed++;
-      };
-    },
-  };
-  const supplied = createStandaloneLayerSources({ 's2-ghostmaps': source });
-  assert.equal(supplied['s2-ghostmaps'], source);
-  const configured = catalog(supplied, t);
-  assert.equal(
-    configured.getSourceAvailability('s2-ghostmaps').available,
-    true,
-  );
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'document');
-  globalThis.document = { addEventListener() {}, removeEventListener() {} };
-  t.after(() => {
-    if (previous) Object.defineProperty(globalThis, 'document', previous);
-    else delete globalThis.document;
-  });
-  const layer = configured.get('s2-ghostmaps');
-  t.after(() => layer.destroy());
-  layer.init({ scene: { requestRender() {} } });
-  layer.enable();
-  await layer.update();
-  layer.disable();
-  assert.equal(reads, 1);
-  assert.equal(subscriptions, 1);
-  assert.equal(unsubscribed, 1);
-  assert.equal(layer.getStats().commit, 'a'.repeat(40));
+  const stubbed = catalog(createStandaloneLayerSources(), t);
+  assert.equal(stubbed.get('s2-ghostmaps'), undefined);
+  assert.equal(stubbed.getSourceAvailability('s2-ghostmaps'), undefined);
   assert.equal(fetches, 0);
 });
 

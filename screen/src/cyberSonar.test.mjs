@@ -22,7 +22,31 @@ import {
   isCyberSonarEnabled,
   isCyberSonarActive,
   setCyberSonarEnabled,
+  CYBER_SONAR_STUB,
 } from './cyberSonar.js';
+
+// The sonar is STUBBED in the app (FORK.md). These tests cover the engine the
+// stub keeps, so they run with the stub lifted; the first test below proves
+// the shipped default.
+CYBER_SONAR_STUB.stubbed = false;
+
+test('the shipped sonar is stubbed: never enabled, never active, even when asked', async (t) => {
+  CYBER_SONAR_STUB.stubbed = true;
+  t.after(() => {
+    CYBER_SONAR_STUB.stubbed = false;
+  });
+  const root = { dataset: { uiTheme: 'cyber', cyberSonar: 'on' }, style: {} };
+  const hud = { classList: { contains: (name) => name === 'active' } };
+  assert.equal(isCyberSonarEnabled(root), false);
+  assert.equal(setCyberSonarEnabled(true, root), true);
+  assert.equal(isCyberSonarEnabled(root), false);
+  assert.equal(isCyberSonarActive({ root, hud, reducedMotion: false }), false);
+  const source = await readFile(
+    new URL('./cyberSonar.js', import.meta.url),
+    'utf8',
+  );
+  assert.match(source, /CYBER_SONAR_STUB = \{ stubbed: true \}/);
+});
 
 test('production-transformed sonar defaults retain the document method receiver', async () => {
   const source = await readFile(
@@ -36,6 +60,7 @@ test('production-transformed sonar defaults retain the document method receiver'
   const compiled = await import(
     `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
   );
+  compiled.CYBER_SONAR_STUB.stubbed = false;
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'document');
   const hud = { classList: { contains: (name) => name === 'active' } };
   const document = {

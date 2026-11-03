@@ -441,7 +441,7 @@ export const LAYER_STATE_TOKEN_RESERVATIONS =
  * Canonical serialization registry. Its order, not runtime registration order,
  * owns stable URL ordering.
  */
-export const LAYER_STATE_REGISTRY = Object.freeze([
+const ALL_LAYER_STATE_ENTRIES = Object.freeze([
   Object.freeze({
     id: 'air-quality',
     token: '4',
@@ -536,6 +536,26 @@ export const LAYER_STATE_REGISTRY = Object.freeze([
     optionOwner: 'wind',
   }),
 ]);
+
+/**
+ * STUBBED layers (owner, 2 November 2026): the code stays, the layer is not
+ * constructed, listed, registered here, restored or credited, and its server
+ * route is not mounted. Its token stays reserved in the ledger, so an old link
+ * that carries it decodes and the layer is ignored. To turn one back on,
+ * remove its id from this list (see FORK.md, "Stubbed").
+ */
+export const STUBBED_LAYER_IDS = Object.freeze(['s2-ghostmaps']);
+
+/** Whether `token` is reserved for a stubbed layer: old links carry it, it is ignored. */
+export function isStubbedLayerToken(token) {
+  return STUBBED_LAYER_IDS.some(
+    (id) => LAYER_STATE_TOKEN_RESERVATIONS[id] === token,
+  );
+}
+
+export const LAYER_STATE_REGISTRY = Object.freeze(
+  ALL_LAYER_STATE_ENTRIES.filter(({ id }) => !STUBBED_LAYER_IDS.includes(id)),
+);
 
 export const REGISTERED_LAYER_IDS = Object.freeze(
   LAYER_STATE_REGISTRY.map((entry) => entry.id),
@@ -841,13 +861,18 @@ export function decodeLayerStateParams(params) {
   // fields, empty members, duplicate members, or unknown members; silently
   // removing one would turn a malformed share into a different state.
   if (
-    layerTokens.some((token) => !token || !REGISTRY_BY_TOKEN.has(token)) ||
+    layerTokens.some(
+      (token) =>
+        !token ||
+        (!REGISTRY_BY_TOKEN.has(token) && !isStubbedLayerToken(token)),
+    ) ||
     new Set(layerTokens).size !== layerTokens.length
   )
     return null;
-  const enabledLayerIds = layerTokens.map(
-    (token) => REGISTRY_BY_TOKEN.get(token).id,
-  );
+  // A stubbed layer's token is known and permanent; its member is ignored.
+  const enabledLayerIds = layerTokens
+    .filter((token) => !isStubbedLayerToken(token))
+    .map((token) => REGISTRY_BY_TOKEN.get(token).id);
   const rawOptions = {};
   for (const assignment of rawOptionsField.split('_')) {
     if (!assignment) continue;

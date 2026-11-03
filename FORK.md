@@ -24,9 +24,8 @@ they break an owner rule or the app.
 - Slices 1 to 5 already deleted a lot (see their tables). Those deletions
   stay; they are the reason a merge of upstream changes to those files
   needs a hand-resolve. New work does not add to that list.
-- Still pending the owner's decision and, when decided, to be STUBBED
-  (flag off, layer hidden) rather than deleted: the `s2-ghostmaps`
-  conflict-map layer and the Cyber sonar.
+- STUBBED on 2 November 2026 (owner): the `s2-ghostmaps` conflict-map layer
+  and the Cyber sonar. See "Stubbed, with how to turn back on" below.
 - Left as upstream, on purpose: the "God's Eye View" page title and
   title bar, the "Provider Settings" wording, `.env.example` (its
   OpenAI, Gemini and Mapillary keys are inert in this fork), the
@@ -35,6 +34,40 @@ they break an owner rule or the app.
 - The README is explicit that data does not yet come through Elysium:
   the screen still serves its own `/api/*` routes until the Elysium
   module page and data path exist.
+
+### Stubbed, with how to turn back on
+
+Both are switched off and hidden. All their code, tests and data files stay.
+
+- **`s2-ghostmaps`** (S2 GhostMaps conflict-map layer). The switch is one
+  list: `STUBBED_LAYER_IDS = ['s2-ghostmaps']` in
+  `screen/src/data/layerState.js`. While the id is in it:
+  `LAYER_STATE_REGISTRY` omits the layer (so it is not restored, not saved,
+  and never turns on from stored state); `constructCatalog.js` does not
+  construct it (so it is not in the layer panel, which is built from the
+  catalog); `sourceComposition.js` skips its availability row;
+  `registerDataCredits` skips its credit line; and `server/providers/local.js`
+  does not mount `ghostMapsProxy()`, so `/api/ghostmaps` is a 404 and nothing
+  polls GitHub. The client source is built but makes no request until a layer
+  uses it. Its share-link token `5` stays reserved for ever (the ledger is
+  unchanged): old links that carry it decode, the layer is ignored, and the
+  token is not reported as unknown. Never reassign `5`. To turn it back on,
+  empty the list (`[]`); the tests in `ghostMapsStub.test.mjs` and the count
+  assertions (21 layers, `layerState.test.mjs`, `constructCatalog.test.mjs`,
+  `sourceComposition.test.mjs`) then need the reverse edit. The `PANEL_GROUPS`
+  entry, `layerNames.js` names and translations were left in place.
+- **Cyber sonar.** The switch is `CYBER_SONAR_STUB = { stubbed: true }` in
+  `screen/src/cyberSonar.js`: `isCyberSonarEnabled()` returns false, so the
+  sweep, contact dimming and render cadence never run, and the shell's
+  `setCyberSonar` tool cannot enable it. Two CSS lines hide the UI: the
+  `.cyber-sonar-control` rules in `ui/styles/controls.css` (the Sonar toggle,
+  sliders, status and tooltip) and `.hud-sonar` in `ui/styles/cyber.css` are
+  `display: none`, each with a "STUBBED" comment giving the old value
+  (`flex` and `block`). The Cyber layout itself, its theme and the
+  `cyberSonar*.js` files stay. To turn it back on, set `stubbed: false` and
+  restore those two `display` values; the engine tests
+  (`cyberSonar.test.mjs`, `cyberSonarScene.test.mjs`) lift the stub
+  themselves, and `cyberTheme.test.mjs` pins the two CSS lines.
 
 ## Changes versus upstream 8978801dfd2a
 
@@ -299,13 +332,13 @@ clear hits above. Left, listed here for the owner:
 - Conflict-map layer `s2-ghostmaps` (live, in the Events group): product names
   "Kinetic 30d", "Border Crisis", "Iran Picture", "Iran Kinetic", "Yemen FLOT",
   "Intel Picture", "Latest Drop", from S2 Underground KMZ files on GitHub. This
-  is the one real military-flavoured feed still in the app. Not touched: it is
-  a layer decision, not copy.
+  was the one real military-flavoured feed in the app. Not touched in slice 4;
+  STUBBED off on 2 November 2026 (see "Stubbed, with how to turn back on").
 - Cyber sonar: the "Sonar" toggle and its rings, range, intensity, sector and
   opacity sliders, the "Cyber sonar contact scanner" tooltip, `cyberSonar*.js`,
   `detection.js` integration and the `.hud-sonar` sweep element (visible only in
   the Cyber layout). It dims real contacts between sweeps; it detects nothing,
-  but it looks like a naval sonar. Removing it is its own change.
+  but it looks like a naval sonar. STUBBED off on 2 November 2026.
 - "Detection overlay (D)" and the "DETECT" button, `contactsDetectionPolicy`:
   the labels and callouts overlay for real objects.
 - "Contacts" / "LIVE CONTACTS" as the name of the mode (sonar and military

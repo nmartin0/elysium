@@ -746,7 +746,8 @@ html:not([lang='en']) .pp-slider-row > .pp-slider-mini-label {
 }
 
 :root[data-ui-theme='cyber'] .cyber-sonar-control {
-  display: flex;
+  /* STUBBED (FORK.md): was display: flex. Hidden while CYBER_SONAR_STUB.stubbed. */
+  display: none;
 }
 
 .cyber-sonar-toggle-row,

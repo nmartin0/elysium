@@ -1,3 +1,5 @@
+import { STUBBED_LAYER_IDS } from '../data/layerState.js';
+
 const contract = (layers, methods) =>
   Object.freeze({
     layers: Object.freeze(layers),
@@ -75,6 +77,7 @@ export function resolveCatalogSources(supplied = {}) {
       )) {
         for (const id of ids) {
           const layer = byId.get(id);
+          if (!layer && STUBBED_LAYER_IDS.includes(id)) continue;
           if (!layer) throw new Error(`Missing source consumer: ${id}`);
           availability.set(
             id,

@@ -462,9 +462,19 @@ export function cyberSonarLabelIntensity(
   return labelDimFactor + (1 - labelDimFactor) * normalized;
 }
 
+/**
+ * STUBBED (owner, 2 November 2026): while `stubbed` is true the sonar is
+ * never enabled, so its sweep, contact dimming and render cadence never run. The controls and
+ * the `.hud-sonar` element are hidden by CSS (controls.css, cyber.css). To
+ * turn it back on, set `stubbed` to false and remove those two `display: none`
+ * stubs (FORK.md, "Stubbed").
+ */
+export const CYBER_SONAR_STUB = { stubbed: true };
+
 export function isCyberSonarEnabled(
   root = globalThis.document?.documentElement,
 ) {
+  if (CYBER_SONAR_STUB.stubbed) return false;
   return root?.dataset?.cyberSonar !== 'off';
 }
 

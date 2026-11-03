@@ -99,7 +99,8 @@ function withPublishedBase(
 
 function writeCodecFixture(cwd, rows, entries) {
   const source = readFileSync(CODEC_SOURCE_PATH, 'utf8');
-  const registryEnd = ']);\n\nexport const REGISTERED_LAYER_IDS';
+  // The unfiltered entry list ends just before the STUBBED_LAYER_IDS comment.
+  const registryEnd = ']);\n\n/**\n * STUBBED layers';
   assert.equal(source.split(registryEnd).length, 2);
   const additions = entries
     .map(
