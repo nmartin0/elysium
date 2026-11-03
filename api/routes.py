@@ -3421,6 +3421,34 @@ def _tables_needing_rebuild(request: Request, schema: dict) -> list[str]:
         raise _MirrorUnreadable() from e
 
 
+def _conversions_to_count(request: Request, schema: dict, targets: list, tables: list[str],
+                          body: RetypeRequest) -> list:
+    """R3: the values of the retyped field's column that will not convert,
+    counted in bronze for the table it is stored in, when that table is one
+    the retype changes. Nothing is written. A mirror that cannot be opened
+    is "not counted" with the reason, never a count of zero."""
+    from core.mirror.retype_count import ConversionCount, count_unconvertible
+    from core.ontology.retype import column_of
+
+    silo, table, column = column_of(schema, body.object_type, body.field)
+    name = f"{silo}.{table}"
+    if name not in tables:
+        return []
+    target = next((each for each in targets if f"{each.silo_name}.{each.table_name}" == name), None)
+    if target is None:
+        return []
+    config = _generation(request).config
+    try:
+        catalog = _mirror_catalog_for(request)
+    except Exception as e:  # noqa: BLE001 - "cannot count" is an answer here
+        logger.warning("the mirror could not be opened to count values that will not convert: %s", type(e).__name__)
+        return [ConversionCount(name, column, False, why_not="the mirror could not be read just now")]
+    return [count_unconvertible(
+        catalog, silo, table, column, target.column_types.get(column, body.data_type),
+        standardisation=target.standardisation, locale=config.source_locales.get(silo),
+        excel_dates=silo in config.excel_date_silos, zero_dates=silo in config.zero_date_silos)]
+
+
 def _planned_retype(request: Request, current_user: UserRecord, body: RetypeRequest):
     """(files, from_type, tables, notes, hidden) for a retype, in one place
     for the preview and the apply. Order as for a removal: a stale file is
@@ -3471,11 +3499,14 @@ def _planned_retype(request: Request, current_user: UserRecord, body: RetypeRequ
         owed: list[str] | None = _tables_needing_rebuild(request, after.schema)
     except _MirrorUnreadable:
         owed = None
-    sharing = sorted({name for target in resolve_sync_targets({"object_types": after.schema})
+    after_targets = resolve_sync_targets({"object_types": after.schema})
+    sharing = sorted({name for target in after_targets
                       if f"{target.silo_name}.{target.table_name}" in tables for name in target.object_types})
+    conversions = _conversions_to_count(request, after.schema, after_targets, tables, body)
     return ({ONTOLOGY_FILE: (current, proposed)}, declared.get("data_type", DEFAULT_FIELD_DATA_TYPE), tables,
             stored_data(tables, sharing or [body.object_type], body.data_type, owed=owed,
-                        on_type_mismatch=_generation(request).config.on_type_mismatch), shown, hidden)
+                        on_type_mismatch=_generation(request).config.on_type_mismatch,
+                        conversions=conversions), shown, hidden)
 
 
 @router.post("/admin/ontology/retype/preview", dependencies=[Depends(_no_store)],

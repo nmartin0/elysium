@@ -39,6 +39,7 @@ is to name and serve properly.)
 """
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from typing import Any
 
 import pyarrow as pa
 
@@ -56,11 +57,13 @@ _SHARED = ("{tables} {is_are} shared by {types}: the sync skips gold of every on
 _BEFORE_REBUILD = ("Until the rebuild, the sync refuses silver for the table: no change at the source reaches "
                    "silver or gold of {types}, which keep what they hold, in the old type.")
 _REFUSE = ("If a stored value cannot be read as {new}, the sync of that table stops with an error naming it, and "
-           "so does the rebuild, until the data at the source or the type is fixed. How many values that is "
-           "is not counted yet.")
+           "so does the rebuild, until the data at the source or the type is fixed.")
 _QUARANTINE = ("If a stored value cannot be read as {new}, its row is set aside in the quarantine table at every "
-               "sync, while silver is refused as well as after the rebuild, and the other rows are synced. How "
-               "many values that is is not counted yet.")
+               "sync, while silver is refused as well as after the rebuild, and the other rows are synced.")
+_COUNTED = ("Counted in bronze, as of {when} (its last snapshot: a value changed at the source since is not in "
+            "it, and the rebuild does not read the source again): {failing} of {checked} values of {column} in "
+            "{table} will not convert to {new}.")
+_NOT_COUNTED = "The values that will not convert were NOT counted for {table}: {why}."
 _NO_TABLE = ("The type the sync gives this field's column does not change, so no silver or gold is rebuilt. "
              "(Two types that declare the same column of one shared table get one type between them: the later "
              "declaration is the one used.)")
@@ -80,7 +83,8 @@ def changed_tables(before: Iterable, after: Iterable) -> list[str]:
 
 
 def stored_data(tables: Sequence[str], types: Sequence[str], new_type: str, *,
-                owed: "Sequence[str] | None", on_type_mismatch: "str | None" = None) -> list[str]:
+                owed: "Sequence[str] | None", on_type_mismatch: "str | None" = None,
+                conversions: "Sequence[Any] | None" = None) -> list[str]:
     """What a retype does to the data already stored, one sentence each,
     for the confirmation dialog.
 
@@ -90,7 +94,11 @@ def stored_data(tables: Sequence[str], types: Sequence[str], new_type: str, *,
     different type right now (tables_needing_rebuild, run on the proposed
     schema), or None when the mirror could not be read. `on_type_mismatch`
     is the deployment's setting (config.yaml), which decides what a value
-    that does not convert does at every sync."""
+    that does not convert does at every sync. `conversions` are the counts of
+    values that will not convert, one per table (core/mirror/retype_count.
+    ConversionCount: table, column, counted, checked, failing, as_of,
+    why_not; passed in because this package does not import the mirror),
+    from bronze; None says nothing about a count."""
     if not tables:
         return [_UNTOUCHED, _NO_TABLE, _BRONZE]
     listed = ", ".join(tables)
@@ -118,6 +126,14 @@ def stored_data(tables: Sequence[str], types: Sequence[str], new_type: str, *,
     said.append(_GOLD.format(types=types_named))
     if owed is None or any(name in owed for name in tables):
         said.append(_BEFORE_REBUILD.format(types=types_named))
+    for each in conversions or ():
+        if each.counted:
+            said.append(_COUNTED.format(
+                when=f"{each.as_of:%d %b %Y %H:%M} UTC" if each.as_of else "now (bronze holds no snapshot)",
+                failing=f"{each.failing:,}", checked=f"{each.checked:,}", column=each.column,
+                table=each.table, new=new_type))
+        else:
+            said.append(_NOT_COUNTED.format(table=each.table, why=each.why_not))
     said.append((_QUARANTINE if on_type_mismatch == "quarantine" else _REFUSE).format(new=new_type))
     return said
 
@@ -133,6 +149,14 @@ def _holder(type_name: str, type_def: dict, field_config: dict, name: str) -> tu
     """(silo, table, column) a data field's value lives in."""
     storage = _storage_of(type_def, field_config)
     return (storage.get("silo"), storage.get("table"), field_config.get("column", name))
+
+
+def column_of(schema: dict, object_type: str, field: str) -> tuple:
+    """(silo, table, column) the field's value is stored in, on a loaded
+    schema (`{type: definition}`): where a count of values that will not
+    convert looks."""
+    type_def = schema.get(object_type) or {}
+    return _holder(object_type, type_def, (type_def.get("fields") or {}).get(field) or {}, field)
 
 
 def _key_columns(schema: dict) -> dict[tuple, str]:

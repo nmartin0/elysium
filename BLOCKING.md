@@ -1454,6 +1454,26 @@ one Inbox. Built so far, each checked in a real browser:
   meanwhile (measured in R1, unchanged). NOT BUILT of R2: the state in
   answers ("data as of 14:02, rebuilding") and on screens other than the
   Mirror panel. R3 and R4 are untouched.
+  R3 BUILT (3 November): the retype preview (POST /admin/ontology/retype/
+  preview, shown in the dialog's "what happens to stored data" lines before
+  Apply) carries a COUNT of the values of the field's column that will not
+  convert, "N of M values of <column> in <silo.table> will not convert to
+  <type>", counted in BRONZE with the rebuild's own conversion (transform_rows:
+  the column's cleaning rules, the silo's locale for text, the silo's date
+  quirks; core/mirror/retype_count.py). The line says it is bronze, as of
+  the time of bronze's last snapshot, that a value changed at the source
+  since is not in it, and the next line says what the deployment's
+  `on_type_mismatch` does with such a value (refuse: the sync and the
+  rebuild stop with an error; quarantine: the row is set aside at every
+  sync). NEVER A GUESSED ZERO: a bronze table that does not exist, one
+  without the column, a mirror that cannot be opened or read, and a table of
+  more than 2,000,000 rows (not counted while a person waits, and not
+  counted in part) are each said to be NOT counted, with the reason.
+  Not claimed: the count is of values, not of rows the sync would drop for
+  other reasons, and it is not re-run at Apply (the dialog's figure is the
+  one shown). No screen changed: the lines are text the dialog already
+  lists. Only the field's own column is counted, in the table the retype
+  changes.
   R4 BUILT IN PART (3 November): APPROVING a proposal is the write (the
   proposal itself writes nothing), so POST /writes/{id}/confirm with
   `approved: true` is HELD with a 409 and a reason while any object type

@@ -132,6 +132,24 @@ class TestRetyping:
         assert response.status_code == 200
         assert any("could not be read just now" in line for line in response.json()["stored_data"])
 
+    def test_a_table_bronze_does_not_hold_is_said_to_be_not_counted_and_never_zero(self, retyper):
+        from core.mirror.catalog import open_mirror_catalog
+
+        open_mirror_catalog(retyper.app.state.runtime_paths.data_dir / "mirror").drop_table(
+            "bronze_primary_sql.transactions")
+
+        said = _retype(retyper, preview=True).json()["stored_data"]
+
+        assert any("were NOT counted for primary_sql.transactions" in line for line in said)
+        assert not any(line.startswith("Counted in bronze") for line in said)
+
+    def test_a_mirror_that_cannot_be_opened_is_not_counted_and_the_preview_still_answers(
+            self, retyper, broken_catalog):
+        said = _retype(retyper, preview=True).json()["stored_data"]
+
+        assert any("were NOT counted for primary_sql.transactions: the mirror could not be read" in line
+                   for line in said)
+
     def test_where_silver_was_never_built_there_is_nothing_to_rebuild(self, retyper):
         from core.mirror.catalog import open_mirror_catalog
 
@@ -586,8 +604,26 @@ class TestWhatHappensToStoredData:
         for part in ("Nothing is deleted from your source", SILVER, "rebuilt from bronze",
                      "snapshot history is discarded", "Bronze is not touched", "publication tags",
                      "changelog and its history", "keep the values they had, in the old type",
-                     "records no difference", "not counted yet"):
+                     "records no difference", "Counted in bronze, as of"):
             assert part in said, part
+
+    def test_the_count_of_values_that_will_not_convert_is_in_the_preview_before_anything_is_applied(self, flow):
+        count = next(line for line in flow.preview["stored_data"] if line.startswith("Counted in bronze"))
+
+        assert re.search(r"\b0 of [1-9]\d* values of amount in primary_sql\.transactions will not convert to decimal",
+                         count)
+        assert "its last snapshot" in count and "UTC" in count
+
+    def test_values_that_will_not_convert_are_counted_and_nothing_is_written(self, flow):
+        what = {"object_type": "Transaction", "field": "currency", "data_type": "integer"}
+        digest = _digest(flow.client)
+
+        said = _retype(flow.client, what, preview=True, digest=digest).json()["stored_data"]
+
+        count = next(line for line in said if line.startswith("Counted in bronze"))
+        found = re.search(r"\b(\d+) of (\d+) values of currency", count)
+        assert found and found.group(1) == found.group(2) != "0"          # 'USD' is no integer
+        assert _digest(flow.client) == digest
 
     def test_the_source_is_never_written(self, flow):
         """The only change to the source is the one UPDATE this fixture ran

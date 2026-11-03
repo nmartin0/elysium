@@ -1762,6 +1762,62 @@ CONTROLS = [
         tests=['tests/unit/test_object_state.py::TestHoldReason::test_only_the_types_the_write_touches_count', 'tests/integration/test_writes_held_while_rebuilding.py::TestHeldWhileRebuilding::test_a_type_whose_tables_are_not_rebuilding_is_not_held'],  # noqa: E501
     ),
     Control(
+        describes="R3 count: the preview says nothing of the values that will not convert",
+        path="api/routes.py",
+        old='                        conversions=conversions), shown, hidden)',
+        new='                        conversions=None), shown, hidden)',
+        tests=['tests/integration/test_retype_from_the_ui.py::TestWhatHappensToStoredData::test_the_count_of_values_that_will_not_convert_is_in_the_preview_before_anything_is_applied', 'tests/integration/test_retype_from_the_ui.py::TestWhatHappensToStoredData::test_values_that_will_not_convert_are_counted_and_nothing_is_written'],  # noqa: E501
+    ),
+    Control(
+        describes="R3 count: values that fail are not added to the count",
+        path="core/mirror/retype_count.py",
+        old='            failing += len(result.mismatched_row_indices)',
+        new='            failing += 0',
+        tests=['tests/unit/test_retype_count.py::TestTheCount::test_values_that_are_not_numbers_are_counted_out_of_all_the_values_read', 'tests/integration/test_retype_from_the_ui.py::TestWhatHappensToStoredData::test_values_that_will_not_convert_are_counted_and_nothing_is_written'],  # noqa: E501
+    ),
+    Control(
+        describes="R3 count: a table too large to count is counted in part",
+        path="core/mirror/retype_count.py",
+        old='        if values.num_rows > max_rows:',
+        new='        if False:',
+        tests=['tests/unit/test_retype_count.py::TestTheCount::test_a_table_too_large_to_count_while_waiting_is_not_counted_not_part_counted'],
+    ),
+    Control(
+        describes="R3 count: the column's cleaning rules are left out of the count",
+        path="core/mirror/retype_count.py",
+        old='        rules = {column: standardisation[column]} if standardisation and column in standardisation else None',  # noqa: E501
+        new='        rules = None',
+        tests=['tests/unit/test_retype_count.py::TestTheCount::test_a_cleaning_rule_of_the_column_is_applied_as_the_sync_would'],
+    ),
+    Control(
+        describes="R3 count: the silo's locale is left out of the count",
+        path="core/mirror/retype_count.py",
+        old='                                    locale=locale, localised_columns=text_columns,',
+        new='                                    locale=None, localised_columns=text_columns,',
+        tests=['tests/unit/test_retype_count.py::TestTheCount::test_text_that_arrived_as_text_is_read_through_the_silos_locale_as_the_sync_does'],
+    ),
+    Control(
+        describes="R3 count: a bronze table that is not there counts as zero",
+        path="core/mirror/retype_count.py",
+        old='        return not_counted("bronze does not hold this table yet, so there is nothing to count")',
+        new='        return ConversionCount(name, column, True, 0, 0, None)',
+        tests=['tests/unit/test_retype_count.py::TestTheCount::test_a_table_bronze_does_not_hold_is_not_counted_and_says_why_never_zero', 'tests/integration/test_retype_from_the_ui.py::TestRetyping::test_a_table_bronze_does_not_hold_is_said_to_be_not_counted_and_never_zero'],  # noqa: E501
+    ),
+    Control(
+        describes="R3 count: a mirror that cannot be opened counts as zero",
+        path="api/routes.py",
+        old='        return [ConversionCount(name, column, False, why_not="the mirror could not be read just now")]',
+        new='        return []',
+        tests=['tests/integration/test_retype_from_the_ui.py::TestRetyping::test_a_mirror_that_cannot_be_opened_is_not_counted_and_the_preview_still_answers'],
+    ),
+    Control(
+        describes="R3 count: the dialog leaves out where the count is from and as of when",
+        path="core/ontology/retype.py",
+        old='_COUNTED = ("Counted in bronze, as of {when} (its last snapshot: a value changed at the source since is not in "',  # noqa: E501
+        new='_COUNTED = ("Counted, as of {when} (a value changed at the source since is not in "',
+        tests=['tests/unit/test_retype_count.py::TestWhatTheDialogSays::test_a_count_is_said_with_where_it_is_from_and_as_of_when'],
+    ),
+    Control(
         describes="R13 adopt: a link stated alone makes its column a key of the target",
         path="core/mirror/erasure.py",
         old="    keys = _union(keys, {column: {target for _owner, target in pairs}\n                         for column, pairs in (links or {}).items()})",  # noqa: E501
