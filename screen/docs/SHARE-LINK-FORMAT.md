@@ -46,8 +46,8 @@ expiry windows); a vessel is selected once the vessel feed has it. Opening is
 best effort: until the entity is found, and if it is not found in time, the
 camera is where the link was made, looking at the entity's last-known fix,
 and the app says that the entity isn't reporting and when the fix was taken.
-The share button makes a thing view while the camera follows an aircraft,
-military aircraft or satellite. A selected vessel is not followed (the camera
+The share button makes a thing view while the camera follows an aircraft or
+satellite. A selected vessel is not followed (the camera
 stays where the user puts it), so a link made then is a place view; vessel
 thing views open, but the app does not make them yet.
 
@@ -105,7 +105,7 @@ probability of about 255 in 256 (many of them already fail as base64url).
 | 11  | `layerState.options`         | LEN   | none        | packed option triples, see layers                                 |
 | 12  | `panelState`                 | LEN   | none        | packed panel entries, see panels                                  |
 | 13  | thing                        | LEN   | none        | sub-message, see thing views                                      |
-| 14  | `style`                      | enum  | `normal`    | normal, retro, surveillance, thermal, anime, noir, snow (retired) |
+| 14  | `style`                      | enum  | `normal`    | normal, anime, noir; retro, surveillance, thermal, snow retired   |
 | 15  | `mapStack`                   | enum  | `photoreal` | photoreal, bing-aerial, bing-labels, esri-imagery, osm            |
 | 16  | `hudVariant`                 | enum  | style       | tactical, operator (retired), minimal, cyber                      |
 | 17  | `bloomIntensity`             | uint  | style       |                                                                   |
@@ -161,9 +161,9 @@ for it.) In v1:
 | Style        | Shader parameters (field 27 defaults)                           |
 | ------------ | --------------------------------------------------------------- |
 | normal       | none                                                            |
-| retro        | pixelation 1, distortion 0, instability 0.42                    |
-| surveillance | gain 0.18, bloom 0.22, scanlineStr 0.96, pixelation 1           |
-| thermal      | sensitivity 0.85, bloom 0.2, mode 0.33, pixelation 1, palette 0 |
+| retro        | retired (CRT look removed): decodes as normal                   |
+| surveillance | retired (night-vision look removed): decodes as normal          |
+| thermal      | retired (FLIR look removed): decodes as normal                  |
 | anime        | saturation 1, edgeThick 0.5                                     |
 | noir         | contrastAmt 1.2, grainAmt 0.5, vignetteAmt 0.5                  |
 | snow         | retired: decodes as normal; its parameters are dropped          |
@@ -220,7 +220,16 @@ value, without reporting it as unknown, so those links open as they always did.
 Encoders never write them, and `e` and `m` are never given to another flights
 option.
 
-A followed aircraft, military aircraft or satellite is a thing view in the
+Reserved forever (feature removed, code kept so old links still parse and the
+number is never reused): the layer tokens of the removed layers (military,
+military awareness, military installations, traffic, CCTV, street level, radio,
+local ADS-B, ALPR, the Bhote Koshi demo), the military flights option `u`, the
+panel numbers 3, 5, 6 and 7, the styles `retro`, `surveillance`, `thermal` and
+`snow` with their parameter tokens, the `operator` HUD variant, and entity kind
+2 (`military_aircraft`). A link that names a removed layer token is rejected
+whole, like any unknown token; a retired style opens as Normal.
+
+A followed aircraft or satellite is a thing view in the
 compact form, not a tracking option: the encoder moves it out of the layer
 options, and the converter moves it back for the long form.
 
@@ -238,11 +247,11 @@ reserved: a decoder ignores that entry, as for collapsed 0.
 | 0   | `control-panel`        | `c`             | collapsed, unpinned |
 | 1   | `location-bar`         | `l`             | collapsed, unpinned |
 | 2   | `data-panel`           | `d`             | collapsed           |
-| 3   | `cctv-panel`           | `v`             | collapsed           |
+| 3   | `cctv-panel`           | `v`             | collapsed; no panel |
 | 4   | `recent-imagery-panel` | `i`             | expanded            |
-| 5   | `street-level-panel`   | `t`             | collapsed           |
-| 6   | `radio-panel`          | `r`             | collapsed           |
-| 7   | `scene-panel`          | `s`             | collapsed           |
+| 5   | `street-level-panel`   | `t`             | collapsed; no panel |
+| 6   | `radio-panel`          | `r`             | collapsed; no panel |
+| 7   | `scene-panel`          | `s`             | collapsed; no panel |
 | 8   | `global-context-panel` | `g`             | collapsed           |
 | 9   | `pp-toggles`           | `p`             | collapsed           |
 | 10  | `param-slider-panel`   | `m`             | expanded            |
@@ -265,7 +274,7 @@ sub-message:
 | #   | Field       | Encoding                                                 | Default |
 | --- | ----------- | -------------------------------------------------------- | ------- |
 | 1   | aircraft    | entity id: varint (24-bit ICAO address) or LEN text      |         |
-| 2   | military    | entity id: varint (24-bit ICAO address) or LEN text      |         |
+| 2   | military    | reserved; the app no longer has this layer              |         |
 | 3   | vessel      | entity id: varint (MMSI) or LEN text                     |         |
 | 4   | satellite   | entity id: varint (NORAD catalog number) or LEN text     |         |
 | 5   | range       | uint metres from the entity to the camera                | 2000    |
@@ -362,8 +371,7 @@ the app that can open it.
 6. **New view kinds and entity kinds** get the next code. A new entity kind's
    id takes the next free thing field (13 onwards), so older apps skip it and
    fall back to the camera. A thing that needs more than an id (for example a
-   CCTV camera, a radio station or a transit vehicle) adds further thing
-   fields the same way.
+   transit vehicle) adds further thing fields the same way.
 7. **A new layer option** needs an entry in `SHARE_VIEW_LAYER_OPTION_ABSENT`
    (a test fails until it has one).
 8. **Bump the version byte only** for a change older decoders must refuse.

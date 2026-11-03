@@ -105,9 +105,9 @@ content that changes size may require an owner-scheduled layout pass or an
 owned `ResizeObserver`; adding CSS attributes does not register new observers.
 
 Persisted/share-link state, pinning, provider loading, keyboard shortcuts and
-Cockpit-specific mounting still require deliberate integration with their
-current owners. This contract does not add entries to named persistence, dock,
-Cockpit or share-state policies. Dispose listeners, observers and timers,
+rail mounting still require deliberate integration with their
+current owners. This contract does not add entries to named persistence, dock
+or share-state policies. Dispose listeners, observers and timers,
 dismiss open popups/dialogs and restore focus before removing a dynamic panel.
 
 ## Decoration, popups and visibility
@@ -131,8 +131,8 @@ either an ordinary panel or its popup. Arbitrary future markup is not covered.
 `hidden`, a closed native dialog and collapsed bodies/popups remain hidden.
 Clean UI and recording conceal conforming surfaces, including outward popups;
 owners must close modal dialogs when entering these modes so an invisible
-modal cannot leave the application inert. Existing Cockpit rail and dock
-exclusions remain in force. New left-rail/Cockpit functionality needs an
+modal cannot leave the application inert. Existing rail and dock
+exclusions remain in force. New left-rail functionality needs an
 explicit product integration; the surface attribute grants no mode exception.
 Never use theme styling to alter stored preferences or force hidden content
 visible.
@@ -141,7 +141,7 @@ visible.
 
 Use the real application with the default and Cyber themes. Check open,
 collapsed, hidden, disabled/error, theme round trips, clean UI/recording and
-the intended Cockpit behavior. Exercise keyboard focus, Escape, pointer input,
+the intended rail behavior. Exercise keyboard focus, Escape, pointer input,
 the last scrolling item, resize without reload and any pin/unpin controls.
 For an outward popup, test visible pixels and pointer hit-testing outside the
 surface; a positive bounding box alone does not prove it escaped clipping.

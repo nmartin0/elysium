@@ -42,8 +42,8 @@ Launchers resolve OAuth creds in this order:
 2. `OPENSKY_CREDENTIALS_FILE`
 3. Keychain (`opensky-network` / `client_id`, `client_secret`)
 
-The server itself reads 1 and 2, so `npm run dev`, `npm run preview` and
-Pinokio also work with only `OPENSKY_CREDENTIALS_FILE` set in `.env`, on any
+The server itself reads 1 and 2, so `npm run dev` and `npm run preview`
+also work with only `OPENSKY_CREDENTIALS_FILE` set in `.env`, on any
 platform. It reads the file on each token refresh.
 
 ## Basic Auth (Retired)

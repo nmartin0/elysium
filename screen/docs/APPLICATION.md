@@ -11,7 +11,7 @@ The caller supplies four constructors, in this order:
 | `createScene`    | `signal`, `defer`                              | Viewer, attribution and initial map           |
 | `createControls` | `scene`, `signal`, `defer`                     | Style manager and camera presentation         |
 | `createData`     | `scene`, `controls`, `signal`, `defer`         | Layer catalog, registration and restoration   |
-| `createTools`    | `scene`, `controls`, `data`, `signal`, `defer` | Scenes, annotations, voice and page listeners |
+| `createTools`    | `scene`, `controls`, `data`, `signal`, `defer` | Annotations, draw tool and page listeners     |
 
 Each constructor returns its component object, or a promise for that object.
 Those objects are passed unchanged to later constructors. Configuration and
@@ -98,7 +98,7 @@ the lifecycle controller itself has no shared instance state.
 
 Later component extractions can replace a constructor's internals without
 changing the startup contract or moving standalone imports into the package.
-Run the unit suite, package boundary gate, build, tracking and first-run browser
+Run the unit suite, package boundary gate, build and first-run browser
 checks when changing this wiring.
 
 ## Geospatial services
@@ -109,7 +109,7 @@ and `providers`. Default forward search tries decimal coordinates and bundled
 place names (`presets`) first, without a network request, then Google when a key
 is configured, Photon, and the local `/api/geocode` Nominatim route. The
 defaults also keep Google place context and the local OSRM route proxy.
-Location, annotations, HUD labels and voice use the composed service.
+Location, annotations and HUD labels use the composed service.
 Provider-specific credentials belong in the selected transport; server secrets
 never belong in browser configuration.
 
@@ -139,7 +139,7 @@ and `radiusM`; route coordinates use `[longitude, latitude]` in WGS84. Routes
 return `{ geometry, distanceM, durationS }` with metres and seconds. Unavailable
 routes return null, retaining the explicitly labelled direct-line fallback.
 Place search returns normalized place arrays; reverse lookup returns address,
-locality, region, country and label fields used by scene context. Unsupported
+locality, region, country and label fields. Unsupported
 operations are reported in `capabilities`; adapters can provide attribution and
 supported route profiles. A provider's lifetime and caller cancellation both
 invalidate late response bodies.
@@ -148,33 +148,8 @@ Node middleware is configured separately. `googlePlacesContextProxy` accepts
 `endpoints: { nearby, textSearch }`, `resolveApiKey` and `fetchImpl`.
 `overpassProxy({ routing: { endpoints: { foot, car, bike }, fetchImpl } })`
 selects compatible OSRM base URLs while preserving coordinate/span limits.
-`regionalBriefProxy({ placeProvider })` accepts the regional lookup function;
-`createRegionalPlaceProvider({ endpoint, requestJson })` supplies the existing
-serialized Nominatim implementation. Configuration is per instance, including
-routing and regional caches. Request parameters cannot override these endpoints.
-
-### Voice connections and controls
-
-Voice controls accept an action runner and a controller factory through
-`createVoiceCommands` (`./voice/commands`). The default Realtime controller owns
-microphone tracks, playback, push-to-talk, tool cancellation and radio handoff.
-Its backend supplies `requestToken({ tier, authMode, signal })` and
-`negotiate({ offerSdp, credential, signal })`. The Realtime-compatible adapter
-(`./voice/realtime-backend`) accepts separate token and connection transports
-and endpoints. Only the short-lived client secret reaches the SDP endpoint.
-Stopping or ending the application lifetime aborts connection requests and
-rejects delayed responses; a new start requests a fresh secret. Secret expiry
-limits connection creation and does not describe the connected session lifetime.
-
-`createStandaloneApplication({ voice })` passes these construction options to
-the controls. An incompatible protocol needs a separate controller adapter;
-changing an endpoint alone does not translate protocol messages. No alternate
-model is bundled by this extraction. The Node Realtime provider accepts
-`realtime: { endpoint, models: { standard, mini }, resolveApiKey, fetchImpl }`;
-existing environment variables remain the default configuration. Model choices
-come from server configuration. Keep secret keys in the server adapter.
-Tool schemas, model defaults and cost estimates are unchanged. Unknown model
-IDs retain the existing conservative estimate until their rates are registered.
+Configuration is per instance, including routing caches. Request parameters
+cannot override these endpoints.
 
 ### Composing the existing application components
 
@@ -189,9 +164,7 @@ constructor (`application/layers`) also requires `wind`, `weather` and
 `cyclones` sources with `getSnapshot` for the Weather layers, and owns the
 observed-history clock those layers share for the catalog's lifetime.
 
-`application/services` accepts boundary, terrain, regional-context, weather and
-summary services; its weather service supplies cockpit local conditions, not the
-Weather layers. `application/requests` supplies the existing HTTP protocols
+`application/services` accepts boundary, terrain and feature services. `application/requests` supplies the existing HTTP protocols
 with configurable endpoints and a scoped transport. Changing an endpoint works
 only for a compatible protocol; another protocol supplies a service adapter.
 Cancellation discards late response bodies, and replacing a source invalidates
@@ -199,7 +172,6 @@ its pending results. Source disposal does not silently reinstate a default.
 
 `ui/composition` supplies the default engines to the shell. Applications can
 supply a HUD implementation or request policy through control services. The
-shared chrome owns the welcome/loading transition; standalone composition adds
-Provider Settings. `build/html` expands an allowlist of component markers from
+shared chrome owns the welcome/loading transition. `build/html` expands an allowlist of component markers from
 `src/ui/templates`; unknown names cannot read arbitrary filesystem paths. The
 standalone document expands to the same markup as before this extraction.

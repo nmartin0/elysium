@@ -1,9 +1,11 @@
 # Third-party software notices
 
 The project depends on third-party npm packages whose own licenses apply. This
-file records the packages added for the browser-local SDR feature and the
-Street Level viewer; the complete resolved dependency inventory remains in
-`package-lock.json`.
+file records packages that were added for the browser-local SDR feature and the
+Street Level viewer. Both features were removed from this fork, but the
+packages are still declared in `package.json`, so the notices stay until the
+packages are removed from it. The complete resolved dependency inventory
+remains in `package-lock.json`.
 
 ## Web RTL-SDR
 

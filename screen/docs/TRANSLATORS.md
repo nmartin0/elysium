@@ -54,12 +54,12 @@ Edit `src/i18n/locales/<code>.json` and run `npm run i18n`. To see your change, 
 - Keep every `{placeholder}` name exactly as in the English: do not rename, drop or add one. Its position inside the sentence follows the grammar of your language, e.g. `"{accepted} of {raw} records accepted"` → `"принято записей: {accepted} из {raw}"`.
 - UPPERCASE English stays UPPERCASE. Short labels, chips and HUD readouts should stay short; prefer an abbreviation over a wrapped line.
 - Keep the separators `·`, `—`, `→`, `↗`, `…`.
-- Leave product, provider and data names in their original form: Google Maps, Cesium ion, OpenAI, ChatGPT, NASA FIRMS, USGS, OpenSky, ADS-B, AIS, CCTV, HUD, TomTom, OpenStreetMap, Mapillary, and keyboard keys (Space, Esc, H, 1–9).
+- Leave product, provider and data names in their original form: Google Maps, Cesium ion, NASA FIRMS, USGS, OpenSky, ADS-B, AIS, HUD, OpenStreetMap, and keyboard keys (Space, Esc, H, 1–9).
 - Units follow the language's convention; see the language notes.
 
 ## Never translated
 
-These are contracts, not copy: layer ids and registry keys, status enums and other machine values (translate only the label shown for them), share-link and hash parameters, `?lang=`, storage schemas, API fields, voice tool names and schemas, provider and dataset names, data from feeds (callsigns, vessel, satellite, station and place names, headlines), attribution, console diagnostics, and user-authored content.
+These are contracts, not copy: layer ids and registry keys, status enums and other machine values (translate only the label shown for them), share-link and hash parameters, `?lang=`, storage schemas, API fields, provider and dataset names, data from feeds (callsigns, vessel, satellite, station and place names), attribution, console diagnostics, and user-authored content.
 
 ## Language notes
 

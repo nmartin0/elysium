@@ -1,6 +1,6 @@
 # Natural Earth packs
 
-Offline named-region polygons for the voice-annotation resolver
+Offline named-region polygons for the annotation resolver
 (`src/data/naturalEarthRegions.js`) — "outline the Alps" resolves to the real
 range geometry with no network dependency.
 

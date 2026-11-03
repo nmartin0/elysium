@@ -392,6 +392,24 @@ ignored.
 
 Not exercised: the `qa-*` scripts against a live server, real feeds.
 
+## Slice 6: documentation
+
+Docs only; no source, test or package file was touched.
+
+| File | What | Why |
+| --- | --- | --- |
+| `screen/README.md`, `screen/docs/CURRENT-STATE.md`, `screen/docs/PERFORMANCE.md`, `screen/docs/KNOWN-ISSUES.md`, `screen/SECURITY.md`, `screen/TESTING.md`, `screen/CONTRIBUTING.md`, `screen/docs/CODE-BOUNDARIES.md` | Rewritten to describe only what the app is now. `CURRENT-STATE.md` went from about 6,400 lines of per-change notes to a short page (the old text is in git); `PERFORMANCE.md` keeps only the upstream rows for things that still exist and says they were not measured on this fork. | They described Cockpit, voice and AI, key setup, 3D models, the removed looks and layers, MCP, Pinokio and Docker. The MIT notice and credit to Bilawal Sidhu are kept in the README. |
+| `screen/DATA_SOURCES.md` | Rows, notes and sections for CCTV, Street Level, Mapillary, KartaView, Panoramax, Google Street View, radio, local receivers, TomTom, ALPR, military names, Overture, OpenFreeMap, Open-Meteo, Google News, GDELT, Kartverket and the Bhote Koshi pack removed. Everything else, including licences, is unchanged. | Sources of removed features. |
+| `screen/docs/SHARE-LINK-FORMAT.md` | Retired styles and panels marked, the military entity kind marked reserved, a list of the codes that stay reserved. No code or number changed. | Keep the format document true; permanent tokens stay reserved. |
+| `screen/docs/APPLICATION.md`, `UI-OWNERSHIP.md`, `panel-surfaces.md`, `I18N.md`, `TRANSLATORS.md`, `opensky-auth.md`, `THIRD_PARTY_NOTICES.md`, `src/data/local_data/natural_earth/README.md`, `.github/pull_request_template.md`, `changelog.d/*` | Lines about voice, Cockpit, radio, CCTV, Pinokio and similar edited out; five changelog fragments reworded. | Removed features. |
+| Deleted: `screen/docs/VOICE-OWNERSHIP.md`, `TOOLS.md` (AI tool catalogue and MCP), `MAINTAINER_WORKFLOW.md`, `PR_REVIEW_SANDBOX.md`, `docs/media/` (demo GIFs of voice, Cockpit, 3D models, removed layers), `scripts/fixtures/voice/README.md`, `.agents/skills/community-pr/`, four changelog fragments (director, authoring panel, A22 webcams, HUD AI summary) | Deleted. | Only about removed features, or upstream's maintainer workflow. |
+
+Left stale on purpose (owner to decide): the per-language glossaries in
+`screen/docs/translations/` still use removed terms as examples;
+`screen/CHANGELOG.md` is upstream history; `screen/tools/README.md` describes
+the imagery CLI scripts; `docs/reader-report-1.md` is the Reader's report on
+upstream and is a record, not a description of this app.
+
 ## Inventory (status after slice 2)
 
 The list as written before slice 2, with a **Status** line added above each

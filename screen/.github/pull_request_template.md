@@ -6,7 +6,7 @@
 
 - [ ] `npm run build`
 - [ ] `npm test`
-- [ ] Feature gate for the area I touched: <!-- e.g. `node scripts/qa-radio.mjs`, or "none applies" -->
+- [ ] Feature gate for the area I touched: <!-- e.g. `node scripts/qa-firms.mjs`, or "none applies" -->
 
 <!-- Screenshots are welcome for anything visual. -->
 

@@ -7,7 +7,7 @@ One file per entry. A pull request adds a file here instead of editing
 changelog.d/<pull request number>-<slug>.md
 ```
 
-`723-atc-decision-layer.md`, for example. The slug is lowercase, words separated
+`723-layer-rate-limit-message.md`, for example. The slug is lowercase, words separated
 by `-`. Two pull requests never pick the same filename, because the pull request
 number is already unique — which is the point: new `CHANGELOG.md` entries go at
 the top of the file, so two pull requests in flight write into the same few lines
@@ -18,9 +18,9 @@ wrapped the way the surrounding entries are, crediting yourself and the pull
 request.
 
 ```markdown
-- Report which upstream declined a Street Traffic road load. The layer row now
-  reads `Overpass rate-limited` instead of a general "Road data temporarily
-  unavailable" (yourname, #665).
+- Report which upstream declined a layer load. The layer row now reads
+  `Rate-limited` instead of a general "Data temporarily unavailable"
+  (yourname, #665).
 ```
 
 The text is spliced in unchanged apart from trailing whitespace, so what you
