@@ -124,7 +124,8 @@ def _wave_rows():
     out = []
     for row in rows:
         cells = [c.strip() for c in _cells(row)]
-        out.append((cells[0].strip("*"), cells[1], cells[2], [c.strip() for c in cells[3].split(",") if c.strip()], cells[4]))
+        depends = [c.strip() for c in cells[3].split(",") if c.strip()]
+        out.append((cells[0].strip("*"), cells[1], cells[2], depends, cells[4]))
     return out
 
 
@@ -184,7 +185,8 @@ def _owns_overlap(x, y):
     hits = []
     for a in ox:
         for b in oy:
-            if _overlap(a, b) and not any(b.startswith(_base(e)) for e in ex) and not any(a.startswith(_base(e)) for e in ey):
+            excluded = any(b.startswith(_base(e)) for e in ex) or any(a.startswith(_base(e)) for e in ey)
+            if _overlap(a, b) and not excluded:
                 hits.append((a, b))
     return hits
 

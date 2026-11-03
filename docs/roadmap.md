@@ -249,7 +249,8 @@ worker** does one Tier 0 step at a time, in order, with the same mechanics.
    once before handing back (`heavy.sh` queues full runs across worktrees).
    The integrator runs `./check.sh --fast` after every merge and
    `tools/heavy.sh full ./check.sh --full` on `dev` when a wave's last card is
-   merged; the wave closes only when that passes. When it fails, the
+   merged (a `BLOCKED` card does not count); the wave closes only when that
+   passes. When it fails, the
    integrator finds the card with `git bisect run ./check.sh --fast -k
    <failing test>`, reverts that card's commits with `git revert`, and reopens
    the card.
@@ -674,7 +675,7 @@ app-origin resources are never exported. Proof:
 
 ```toml
 # elysium.toml -- boot settings. Runtime settings live in Admin > Configuration.
-# Every key can be overridden by ELYSIUM_<SECTION>__<KEY>, e.g. ELYSIUM_SERVER__LISTEN.
+# Every key can be overridden by ELYSIUM_<SECTION>__<KEY> (ELYSIUM_SERVER__LISTEN for server.listen).
 [server]
 listen = "127.0.0.1:8000"
 public_url = "https://elysium.example.org"
@@ -1933,7 +1934,7 @@ owns:
 Contracts: [C-GATES](#c-gates).
 
 - **Why first.** Every later step runs the gates and adds controls and
-  dependencies. The controls are one 9,893-line file
+  dependencies. The controls are one 9,892-line file
   (`src/elysium/scripts/check_controls.py`, 1,166 records); dependencies are
   four hand-synchronised files; the working rules are prose that gets skipped.
 - **DR:** 6, 7. **Decisions:** N14, N15, N32, N37, N38, N39, N40.
@@ -2074,7 +2075,9 @@ Contracts: [C-GATES](#c-gates).
      collects with the expected markers).
   7. **Planning and hand-off scripts** (N66). (a) `tools/plan_check.py`:
      parses every `card` header block of `docs/roadmap.md` (section 1.2's
-     format) and the wave table; exits 1 listing each violation: a header not
+     format; a block counts only when it directly follows a `#### <card id> ·`
+     or `### T0.n` heading and one blank line, as in
+     `tests/unit/test_roadmap_is_intact.py::_headers`) and the wave table; exits 1 listing each violation: a header not
      in the fixed format (keys, order, values); an id defined twice; a
      `depends` or `contracts` id that is not defined; a dependency that is not
      merged before the card's wave opens (a card in an earlier wave, or a
@@ -4035,11 +4038,11 @@ Contracts: [C-REPO](#c-repo).
 
 ### 5.4 API: the rest of v2
 
-Each card ports one resource in one change: the v2 router, the regenerated
-client, the UI call sites, tests (`tests/api/test_<res>.py`, split out of
-`tests/integration/test_api.py`), and deletion of the v1 routes and their
-`ui/packages/shell-api/src/api.ts` wrappers. Re-run MEAS-5 first; a v1 path
-with a caller is not deleted. Copy T0.12.
+Each card ports one resource: the v2 router, the regenerated client, the UI
+call sites, tests in `tests/api/test_<res>.py` (copy into them any assertion
+of `tests/integration/v1/test_<area>.py` that has no v2 equivalent), and the
+deletion of the v1 routes as section 1.4 says (re-run MEAS-5 first; a v1 path
+with a caller is not deleted). Copy T0.12 (C-EXEMPLAR).
 
 #### API-1a · Browse on v2: the server side
 
@@ -4065,8 +4068,9 @@ Contracts: [C-API](#c-api), [C-QUERY](#c-query), [C-ACTIONS](#c-actions), [C-ACC
   {"actions": {"<name>": true|false}, "truncated": bool}` from
   `actions.capabilities_for`: the actions whose parameters accept the type,
   sorted by action name, the first 20 (`truncated` true when more exist).
-  Every route the Browse app needs exists on v2 with the same data as its v1
-  counterpart: object get, `loadObjects` (paged), count, aggregate, search,
+  Every v1 call the Browse app makes today (`grep -rn "/objects\|/search\|/schema"
+  ui/src/apps/browse`, listed in the hand-off) has a v2 route with the
+  same data: object get, `loadObjects` (paged), count, aggregate, search,
   search-around, the visible schema.
 - Tests: `tests/api/test_objects.py::test_capabilities_hint_matches_validate`,
   `::test_capabilities_first_twenty_sorted`, `::test_no_labels_for_plain_reader`,
@@ -4457,10 +4461,11 @@ Contracts: [C-API](#c-api), [C-DB](#c-db), [C-AUDIT](#c-audit), [C-EXEMPLAR](#c-
   token, sets `setup` to `in_progress`, signs in, 201. A wrong, used or
   expired token gives 404 (no difference); a password-policy failure is 422
   with the failed rule ids in `parameters.problems`; the login throttle
-  applies per source (`rate_limit.hit("login:<source>", ...)`). Step ids:
-  `admin`, `source`, `model`, `llm`, `schedules`, `first-sync` (and
-  `recovery-key` or `key-file` once ADM-28 lands). `setup_state` gains
-  `in_progress`. Audit `setup.token_issued`, `setup.admin_created`.
+  applies per source (`rate_limit.hit("login:<source>", ...)`).
+  `ops.setup.STEP_IDS` is `("admin", "source", "model", "llm", "schedules",
+  "first-sync")` with `elysium.keys.recovery.SETUP_STEP` inserted after
+  `admin` when that module exists (T0.9 creates it; ADM-28 serves the step).
+  `setup_state` gains `in_progress`. Audit `setup.token_issued`, `setup.admin_created`.
 - Tests: `tests/api/test_setup.py::test_token_single_use`, `::test_token_expires`
   (frozen clock), `::test_constant_time_compare`, `::test_throttle`,
   `::test_token_only_in_stdout_line` (caplog), `::test_public_routes_exactly`.
@@ -6920,7 +6925,8 @@ Contracts: [C-STATE](#c-state), [C-ENV](#c-env).
   restart (`tools/smoke/restore_roundtrip.sh`); verify counts, that the
   restored users replaced the temporary one, and that a person erased between
   backup and restore is still erased. `tools/smoke/deb.sh` installs the `.deb`
-  in a systemd Debian container, `tools/smoke/rpm.sh` the `.rpm` in Rocky.
+  in a systemd Debian container, `tools/smoke/rpm.sh` the `.rpm` in Rocky;
+  the job `uv-tool` runs INS-06's `tools/smoke/uv_tool.sh`.
 - Accept: the workflow passes on a branch.
 
 #### CI-07 · Parallel tests and the speed budget
@@ -7050,7 +7056,7 @@ owns:
 ```
 Contracts: [C-QUERY](#c-query), [C-ACCESS](#c-access).
 
-- Decisions: DR7.
+- DR: 7.
 - Spec (Hypothesis, `max_examples=200` in CI, `derandomize=True`):
   filter grammar: parse(print(tree)) == tree; every generated filter either
   validates against a generated visible schema or is refused with the same
@@ -7126,15 +7132,17 @@ Contracts: [C-GATES](#c-gates).
 id: QA-ARCH
 wave: 6
 status: OPEN
-size: S
+size: M
 model: Sonnet
-depends: API-9, CLI-SCRIPTS
-contracts: C-LAYERS
+depends: API-9, CLI-SCRIPTS, QA-COV, QA-MUT
+contracts: C-LAYERS, C-GATES
 owns:
   - pyproject.toml#tool.importlinter
   - quality/contracts-ignores.txt
+  - tools/quality_report.py
+  - tests/unit/test_quality_report.py
 ```
-Contracts: [C-LAYERS](#c-layers).
+Contracts: [C-LAYERS](#c-layers), [C-GATES](#c-gates).
 
 - Decisions: N33.
 - Spec: remove every remaining ignore except the four kind-directory
@@ -7144,6 +7152,14 @@ Contracts: [C-LAYERS](#c-layers).
   that point at deleted modules; make `target-layers` `exhaustive = true`.
 - Accept: `lint-imports` passes with no ignore except the four kind-directory
   wildcards of C-LAYERS; `tests/unit/test_no_import_cycles.py` passes.
+- Spec (the quality report): `tools/quality_report.py` prints the gates of
+  P13 (import-contract ignores, strict-typing coverage, coverage and mutation
+  against their ratchets, the comment-lint baseline, the bundle guard), each
+  with the command it ran and the exit code; `--checklist` prints P1-P13 with
+  the proof command of each row (the "Proved by" column of section 2.3) and its
+  exit code, which the 1.0 cut quotes.
+- Tests: `tests/unit/test_quality_report.py` (a failing gate shows its exit
+  code; `--checklist` lists thirteen rows).
 
 ### 5.12 REF: remaining refactor, libraries and standards
 
@@ -7248,6 +7264,7 @@ owns:
   - packages/elysium-sim/**
   - pyproject.toml#tool.mypy
   - pyproject.toml#tool.vulture
+  - pyproject.toml#tool.importlinter.contracts.sim
   - pytest.ini
   - .github/workflows/sim.yml
 ```
@@ -7885,7 +7902,10 @@ previous wave is closed (every card merged and the full suite green on
 own `depends` are DONE; no card depends on a card in its own or a later
 wave; no two cards in a wave own the same path; no card owns a path the
 Tier 0 item running beside its wave owns. Tier 0 runs strictly in order,
-one step at a time, beside waves 0b to 3c. Waves 5q and 5r are quiet:
+one step at a time, beside waves 0b to 3c. A card or item whose status is
+`BLOCKED Q-<id>` does not hold its wave open: when the question is answered
+DOC-06 sets it `OPEN` and it runs in the first wave then open whose rules it
+meets. Waves 5q and 5r are quiet:
 nothing else merges while they run.
 
 | Wave | Opens when | Tier 0 beside it | Cards | Count |
@@ -7959,7 +7979,7 @@ its row is deleted (DOC-06).
 | Id | Blocks | The exact question | Default until answered |
 |---|---|---|---|
 | **Q-N22** | N23-N44, N46-N71 | "The finalised roadmap applies your 3 November direction through decisions N23 to N44, and the design settlement through N46 to N65, and the pass-2 execution rules in N66 to N71, in `docs/decisions.md`. Do you veto any of them?" | All built as written |
-| **Q-NAME** | the name, Q-REGISTRY, the 1.0 cut | The screen of "Melzar" is in section 8.3. "Do you want to rename Elysium, and to what? If 'Melzar' is the candidate, will you commission the clearance search listed below?" | Keep "Elysium" (N44); nothing renamed |
+| **Q-NAME** | the name, Q-REGISTRY, the 1.0 cut | The screen of "Melzar" is in section 8.3. "Do you want to rename Elysium, and to what? If 'Melzar' is the candidate, will you commission the clearance search listed in section 8.3?" | Keep "Elysium" (N44); nothing renamed |
 | **Q-KEY** | T0.9 | "Lake encryption: (a) do you accept that setup refuses to encrypt until a recovery key has been shown once and typed back, because losing the key loses the lake and the changelog is a system of record? (b) do you accept the stated limit, that root on the running host can read the key, so this protects copied files, stolen disks, backups and other accounts, not against a hostile administrator of the live machine? (c) which recovery design: candidate A (a random recovery key, shown once as 52 characters, wraps a copy of the master key) or candidate B (no recovery key; the master-key file and an optional passphrase export are the only keys)? Both are written out in T0.9 with what each means for ADM-28 and OPS-05." | **Waits.** T0.9 skipped and done later; backups and health checks treat the key as optional behind a flag |
 | **Q-MODEL** | M11, REF-LLM, AUD D1/D2, LB-* rows | "Provide a machine with a capable model (a GPU, or a CPU host where about an hour per four questions is acceptable) to run `elysium dev bench llm` after T0.15. Then choose one model (phi4-mini or Qwen3-4B-Instruct) and one inference server (Ollama or llama-server)." | phi4-mini on Ollama; both adapters kept. The bench commands and the measured runs so far: archive item 3 |
 | **Q-COMPLIANCE** | archive item 2 | "Choose the CPA firm for SOC 2, the certification body for ISO 27001, an independent penetration tester, the budget, and when the SOC 2 observation window starts." | Engineering controls are built (SEC-B, T0.7 chain, OPS-06 restore test, ADM-22b access review); audits wait |
