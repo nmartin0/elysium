@@ -230,10 +230,8 @@ test('published transit history scope agrees with the catalog capability', () =>
     new URL('../../docs/CURRENT-STATE.md', import.meta.url),
     'utf8',
   );
-  const transit = state.slice(
-    state.indexOf('Transit is off by default'),
-    state.indexOf('`src/data/militaryAwareness.js` remains'),
-  );
+  const start = state.indexOf('Transit is off by default');
+  const transit = state.slice(start, state.indexOf('\n## ', start));
   assert.match(transit, /Restart clears it/);
   assert.doesNotMatch(
     transit,

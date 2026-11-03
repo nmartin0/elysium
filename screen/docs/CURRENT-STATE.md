@@ -63,9 +63,9 @@ pauses while the tab is hidden and runs one overdue update on return.
 - **Search**: place names (Google when keyed, else Photon and Nominatim) and
   coordinates.
 - **First run**: a welcome card ("Live aircraft, vessels, satellites and
-  earthquakes on one globe") opens on a fresh browser. A surface class that
-  never clears means no launcher for that page load, with no timeout: it
-  appears when the class (scene playback, recording or clean view) clears, and
+  earthquakes on one globe") opens on a fresh browser. Note that
+  a surface class that never clears means no launcher for that page load, with no timeout: it
+  appears when the class (recording or clean view) clears, and
   returns next session either way.
 
 ## Drawing and files
