@@ -118,14 +118,7 @@ After slice 3. Each item says why it stays.
   kind in the view codec and `view/index.js`, and the layer tokens of the
   removed layers: permanent share-link codes. A code is reserved, never
   reused, and the token ledger test enforces it.
-- Dead 3D-model code and data behind `MODELS_3D_AVAILABLE` (`false`):
-  `data/modelVisualAnchor.js`, `CLASS_MODEL_URL` in `aircraftClass.js`,
-  `layers/flights/modelSpec.js`, and about 700 lines of model handoff, tracked
-  model regime and model loading in `layers/flights/rendering.js`,
-  `tracking.js`, `motion.js`, `lifecycle.js`. Nothing can reach them (there is
-  no 3D control and no model file), but they are interwoven with the fleet tick
-  and the `models3d` layer-state options (permanent codes), so removing them is
-  its own change.
+- (Slice 5: the dead 3D-model code is deleted, see Slice 5.)
 - The Contacts mode of the Context panel (the CONTACTS tab, `contextMode ===
   'flights'`, the first-run "Live contacts" tile). It is not inert: it turns on
   the real `flights` and `ais-live-vessels` layers and owns detection through
@@ -137,9 +130,7 @@ After slice 3. Each item says why it stays.
   selects a look), detection themes.
 - `layers/streetLevel/view.js` and `tileMath.js` (`ghostMaps` imports them);
   the `.scene-btn` rule in `panel-layout.css`.
-- `scripts/qa-*.mjs` (`qa-l9-matrix`, `qa-firstrun`, `qa-ui-disposal` and
-  others) still name cockpit and radio ids. They are manual QA scripts that
-  need a live server and were not run or edited.
+- (Slice 5: the QA scripts for removed features are deleted or fixed.)
 - Comments and test names that still say "cockpit" (about 60, in `flights`,
   `iconOrientation`, `motionModel`, `localGeojson*`, `contactsDetectionPolicy`
   and tests). No code path reads the word.
@@ -347,6 +338,59 @@ at a time):
 Not exercised: the HUD in the Minimal and Cyber layouts in a browser (CSS
 and the tests only), the HUD on the phone shell (it hides the corner blocks),
 a real device, real tile and feed data.
+
+## Slice 5: dead model code, mgrs, QA scripts, self-audit
+
+Each commit passes `check-import-directions` and `check-package-boundaries`.
+
+| Commit | What |
+| --- | --- |
+| `581c21e1` | Deleted all 3D aircraft model code: `MODELS_3D_AVAILABLE`, `modelSpec.js`, `data/modelEligibility.js`, `aircraftModelLighting.js`, `modelVisualAnchor.js`, `trackedModelRegime.js`, `groundSnap` (service and data), `ui/aircraftDisplay.js`, model loading and handoff in `rendering.js`, `tracking.js`, `motion.js`, `lifecycle.js`, the model test seams and their tests. Share links that carry `models3d` (`e`) or `models3dMode` (`m`) still decode; the value is dropped silently (`RETIRED_LAYER_OPTION_TOKENS` in `layerState.js`, checked in `viewCodec.js`); they are no longer encoded. Tokens stay reserved. `docs/SHARE-LINK-FORMAT.md` says so. |
+| `87ca82b7` | Removed the unused `mgrs` dependency with npm (worked; lockfile rewritten) and from `package-boundaries.json`. |
+| `49dc42fc` | Deleted 15 QA scripts that drove removed features (`qa-alpr-journey`, `qa-camera-controls`, `qa-action-buttons`, `qa-scene-controls`, `qa-scene-dialog-file-drop`, `qa-status-badges`, `qa-form-fields`, `qa-sky-model-lighting`, `qa-heading-b3`, `qa-sprites-b5`, `qa-context-arrivals`, `qa-l9-matrix` with its verdict test, `qa-firstrun-mutations`, `qa-emergency-squawk`, `track-regression` with `test:track`); fixed the `qa-layer-token-twochar` injection marker; removed `test:track` from CONTRIBUTING, TESTING, README, the PR template and the maintainer workflow. |
+| `3bde47d3` | Self-audit fixes: a leftover `_groundSnap.forget` call in `tracking.js` (a bug from the first commit, in the military-purge path), and `qa-floor-hold` and `qa-segmented-controls` no longer use the model controls. |
+
+Judgment calls: `qa-l9-matrix` was deleted whole (it orchestrated the deleted
+scripts). The other `qa-*` scripts were kept; they need a live server and were
+only syntax-checked, except as noted below. The conflict-map layer
+(`s2-ghostmaps`) and the Cyber sonar were not touched.
+
+### Self-audit (slice 3 to 5 deletions)
+
+- Imports of deleted modules: none (both gates agree; grep for the module names finds only comments).
+- CSS: no selector for an id or class removed from the templates since slice 1.
+- i18n: `npm run i18n` check, all ten catalogs complete, 1232 messages; nothing written.
+- Dead exports: knip is not installed and was not fetched; not done.
+- Still open (not fixed, owner to decide): the irBoost fog code in
+  `visualSettings.js` (`_syncIrBoost`, `releaseIrBoost`, and the facade
+  forwarders) is dead since the retired styles; a few comments mention
+  `groundSnap` or 3D models (`meshFloorSampler.js`, `groundFloor.js`); `README.md`
+  (Cockpit, voice, 3D hangar, CRT and military HUD lines, whole sections) and
+  `docs/CURRENT-STATE.md`, `docs/PERFORMANCE.md` (3D model and Cockpit rows) are
+  upstream text that still describes removed features and need a rewrite, not a
+  patch; `package.json` has no remaining `test:track`.
+
+### Verification, slice 5
+
+Scratch copy (Node 22, `nice -n 10`, one run at a time). Three tests in
+`src/services/requests.test.mjs` are cancelled on Node 22 even at the base;
+ignored.
+
+- Gates: both exit 0 after each commit.
+- Unit tests, focused (the flights parts, `layerState`, `viewCodec`, aircraft
+  data tests; 13 files, 141 tests, 0 failed), plus the files changed in the
+  first commit run earlier. Not run: the whole suite, `server/`.
+- `dist/`: 32,028,458 bytes before, 32,001,419 after (`index-*.js` 2,449,525 to
+  2,422,521). `vite build` 6.3 s.
+- Sandboxed embed (`allow-scripts`, `?embed=1`, CSP with `wasm-unsafe-eval`):
+  `gev:ready` at 2835 ms; `gev:view-applied` ok; 0 page errors, 0 failed, 0 bad
+  responses, 0 console errors, 0 requests to `/api`.
+- Full app, desktop and phone, offline stubs: 0 page errors, 0 console errors,
+  no horizontal overflow, five tabs; no `/api` calls until Satellites was
+  switched on (then only `/api/celestrak/*`). Old share codes with removed
+  tokens load without errors.
+
+Not exercised: the `qa-*` scripts against a live server, real feeds.
 
 ## Inventory (status after slice 2)
 
