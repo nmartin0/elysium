@@ -55,6 +55,7 @@ if TYPE_CHECKING:
     from core.meaning_search import MeaningSearch
     from core.memory.guard import MemoryGuard
     from core.ontology.write_mediator import WriteMediator
+from core.config_schema import unknown_keys
 from core.functions.registry import validate_function_declarations
 from core.immutable import deep_freeze
 from core.intermediate_layer.audit import AuditLog
@@ -452,6 +453,28 @@ def _require_str(value, description: str) -> None:
 # (RESERVED_SILO_NAMES and RESERVED_SILO_PREFIXES are imported above.)
 
 
+def _refuse_unknown_keys(base_path: Path, config, schema_raw, policy_raw, data_silos_raw) -> None:
+    """Every unknown key in the configuration files, in one error.
+
+    The source_bindings.yaml file is read here only to check its keys;
+    _merged_with_bindings reads it again to merge it. A file written in
+    the older flat form (types at the top, no `object_types:`) is
+    checked as if it were wrapped.
+    """
+    problems = []
+    for filename, data in (("config.yaml", config), ("ontology_schema.yaml", schema_raw),
+                           ("policy.yaml", policy_raw), ("data_silos.yaml", data_silos_raw)):
+        problems += unknown_keys(filename, data)
+    bindings_path = base_path / "source_bindings.yaml"
+    if bindings_path.exists():
+        bindings = load_yaml(bindings_path)
+        if isinstance(bindings, dict) and "object_types" not in bindings:
+            bindings = {"object_types": bindings}
+        problems += unknown_keys("source_bindings.yaml", bindings)
+    if problems:
+        raise ValueError("\n".join(problems))
+
+
 def _refuse_system_column_names(schema_raw: dict) -> None:
     """A declared field may not be named after a system column.
 
@@ -646,8 +669,16 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     }
 
     config = load_yaml(base_path / "config.yaml")
+    # A setting that was REMOVED has its own refusal, which says what
+    # replaced it; that is a better message than "unknown key".
     _no_trigger_clock(config)
     schema_raw = load_yaml(base_path / "ontology_schema.yaml")
+    policy_raw = load_yaml(base_path / "policy.yaml")
+    data_silos_raw = load_yaml(base_path / "data_silos.yaml")
+    # A KEY NOTHING READS IS REFUSED, before anything interprets the
+    # files: `agnet:` or a field's `colum:` used to load and do nothing.
+    # Every file at once, so one edit fixes them all (core/config_schema.py).
+    _refuse_unknown_keys(base_path, config, schema_raw, policy_raw, data_silos_raw)
     # WHERE THE DATA COMES FROM, kept apart from what an object IS
     # (GOLD-3c). Merged here so everything downstream sees exactly the
     # schema it always saw; only the files a person edits changed.
@@ -655,8 +686,6 @@ def load_deployment(base_path: Path) -> DeploymentConfig:
     # `security: unrestricted` becomes {"unrestricted": True} before
     # anything reads it (core/ontology/unrestricted.py).
     normalise_security_blocks(schema_raw)
-    policy_raw = load_yaml(base_path / "policy.yaml")
-    data_silos_raw = load_yaml(base_path / "data_silos.yaml")
     # `security: inherit` becomes its silo's declared rule, so a reload
     # after editing the silo changes every type that follows it
     # (core/ontology/silo_security.py).

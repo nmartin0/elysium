@@ -180,9 +180,11 @@ tools:
 # been applied to it. A deployment that still declares it is REFUSED
 # at load rather than quietly given the new behaviour.
 #
-# THE WAREHOUSE PATH is optional and defaults to a local one.
+# THE WAREHOUSE PATH is optional and defaults to a local one. It is an
+# option of the mirror's storage, not a key of `mirror:` itself.
 # mirror:
-#   warehouse: /var/lib/elysium/mirror/warehouse
+#   storage:
+#     warehouse: /var/lib/elysium/mirror/warehouse
 
 # TRIGGERS THIS DEPLOYMENT DECLARES. Commented out: none ship. People
 # can also make their own in the product (Browse -> Saved views ->

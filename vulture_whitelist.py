@@ -686,3 +686,21 @@ broken_catalog  # a pytest fixture taken as a parameter for its effect (tests/in
 get_schema  # GET /api/v2/schema
 list_objects  # GET /api/v2/objects/{type}
 load_objects  # POST /api/v2/objectSets/loadObjects
+
+# Configuration key models (core/config_schema.py), 3 November. A model
+# field exists to NAME a key the loader reads; pydantic walks them by
+# model_fields, so no code mentions them by name. Only the ones whose
+# name appears nowhere else are listed.
+additional_storage  # object type key
+allowed_actions  # role key
+dependencies  # object type key
+on_violation  # field key
+outliers  # field key
+owner_may_approve_automation  # action type key
+semantic_search  # object type key
+source_locale  # config.yaml key
+submission_criteria  # action and sub_write key
+survivorship  # object type and field key
+value_type  # field key
+via_target_column  # bindings key
+zero_dates_as_null  # silo key

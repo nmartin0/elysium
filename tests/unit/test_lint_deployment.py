@@ -154,8 +154,7 @@ def test_action_type_missing_sub_writes_returns_false(tmp_path, capsys):
     broken_ontology = VALID_ONTOLOGY_YAML + """
 action_types:
   BrokenAction:
-    object_type: Widget
-    operation: update
+    affected_object_types: [Widget]
 """
     _write_deployment(tmp_path, ontology=broken_ontology)
 
@@ -198,8 +197,7 @@ def test_action_type_error_is_tagged_with_its_exact_line(tmp_path, capsys):
         "      region: {type: data}\n"
         "action_types:\n"
         "  BrokenAction:\n"  # line 9
-        "    object_type: Widget\n"
-        "    operation: update\n"
+        "    affected_object_types: [Widget]\n"
     )
     _write_deployment(tmp_path, ontology=ontology)
 
@@ -344,11 +342,9 @@ def test_multiple_independent_action_type_problems_are_all_reported(tmp_path, ca
     broken_ontology = VALID_ONTOLOGY_YAML + """
 action_types:
   BrokenActionOne:
-    object_type: Widget
-    operation: update
+    affected_object_types: [Widget]
   BrokenActionTwo:
-    object_type: Widget
-    operation: update
+    affected_object_types: [Widget]
 """
     _write_deployment(tmp_path, ontology=broken_ontology)
 

@@ -236,6 +236,9 @@ layers = [
     # importing nothing; the loader, the ontology layer and the mirror
     # all read it.
     "lake_names",
+    # config_schema: which keys each configuration file may hold. A leaf
+    # importing pydantic and the standard library only.
+    "config_schema",
     "invisible_text",
     # What may be shown to somebody who did not ask for it. Sits beside
     # invisible_text and misleading_text: all three answer "is this

@@ -82,6 +82,7 @@ from pathlib import Path
 
 import yaml
 
+from core.config_schema import unknown_key_findings
 from core.deployment_loader import (
     load_deployment,
     resolve_runtime_paths,
@@ -145,6 +146,25 @@ def _describe_position(raw_text: str, filename: str, key_path: list) -> str:
         return ""
     line, _column = position
     return f" ({filename}, line {line})"
+
+
+def _unknown_key_errors(config_dir) -> list[str]:
+    """Every key a file holds that nothing reads, with its line, as
+    load_deployment() refuses them (core/config_schema.py)."""
+    errors = []
+    for filename in ("config.yaml", "ontology_schema.yaml", "policy.yaml",
+                     "data_silos.yaml", "source_bindings.yaml"):
+        path = Path(config_dir) / filename
+        try:
+            text = path.read_text()
+            data = yaml.safe_load(text)
+        except (OSError, yaml.YAMLError):
+            continue  # reported by the load's own errors
+        if filename == "source_bindings.yaml" and isinstance(data, dict) and "object_types" not in data:
+            data = {"object_types": data}
+        for location, message in unknown_key_findings(filename, data):
+            errors.append(message + _describe_position(text, filename, list(location)))
+    return errors
 
 
 def _module_permissions(config_dir) -> "dict | None":
@@ -307,6 +327,12 @@ def lint_deployment(config_dir: Path | None = None) -> bool:
         # subclass (verified directly, not assumed).
         return _report_invalid(config_dir, [f"Malformed YAML: {e}"])
     except ValueError as e:
+        # AN UNKNOWN KEY is what load_deployment() checks FIRST, so when
+        # there is one the load stopped there and nothing else was
+        # looked at. Report exactly those, each with its line.
+        unknown = _unknown_key_errors(config_dir)
+        if unknown:
+            return _report_invalid(config_dir, unknown)
         # load_deployment() itself already ran, in order: the required-
         # key check, validate_identifier_types(), validate_action_
         # types() (whole dict, fail-fast), validate_roles() (whole

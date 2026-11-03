@@ -9325,6 +9325,50 @@ CONTROLS = [
         new='    return namespace.startswith("gold") or namespace.startswith(NON_SOURCE_PREFIXES)',
         tests=["tests/unit/test_a_silo_may_not_be_named_after_a_layer.py::TestTheReservedSetItself::test_a_silo_named_like_a_derived_layer_but_longer_is_still_a_source"],
     ),
+    Control(
+        describes="an unknown configuration key is refused, not ignored",
+        path="core/config_schema.py",
+        old='    model_config = ConfigDict(extra="forbid")\n',
+        new='    model_config = ConfigDict(extra="ignore")\n',
+        tests=["tests/unit/test_config_schema.py::test_a_misspelt_key_is_named_with_its_file_path_and_nearest_key",
+               "tests/unit/test_config_schema.py::test_the_loader_refuses_a_misspelt_setting"],
+    ),
+    Control(
+        describes="the loader checks configuration keys at all",
+        path="core/deployment_loader.py",
+        old="\n    _refuse_unknown_keys(base_path, config, schema_raw, policy_raw, data_silos_raw)\n",
+        new="\n    pass\n",
+        tests=["tests/unit/test_config_schema.py::test_the_loader_refuses_a_misspelt_setting",
+               "tests/unit/test_config_schema.py::test_the_loader_refuses_a_misspelt_field_key_in_the_ontology"],
+    ),
+    Control(
+        describes="the loader checks source_bindings.yaml keys too",
+        path="core/deployment_loader.py",
+        old='        problems += unknown_keys("source_bindings.yaml", bindings)\n',
+        new="        pass\n",
+        tests=["tests/unit/test_config_schema.py::test_the_loader_checks_the_bindings_file"],
+    ),
+    Control(
+        describes="a user's misspelt attribute is refused",
+        path="core/config_schema.py",
+        old='    if filename == "policy.yaml":\n        found += _unknown_user_keys(data, security_attribute)\n',
+        new="",
+        tests=["tests/unit/test_config_schema.py::test_the_loader_refuses_a_misspelt_user_and_silo_key"],
+    ),
+    Control(
+        describes="the refusal names the nearest valid key",
+        path="core/config_schema.py",
+        old="    near = difflib.get_close_matches(key, valid, n=1, cutoff=0.6)\n",
+        new="    near: list[str] = []\n",
+        tests=["tests/unit/test_config_schema.py::test_a_misspelt_key_is_named_with_its_file_path_and_nearest_key"],
+    ),
+    Control(
+        describes="the deployment linter reports an unknown key",
+        path="scripts/lint_deployment.py",
+        old="        if unknown:\n            return _report_invalid(config_dir, unknown)\n",
+        new="        if False:\n            return _report_invalid(config_dir, unknown)\n",
+        tests=["tests/unit/test_config_schema.py::test_the_linter_reports_the_same_keys_with_their_lines"],
+    ),
 ]
 
 
