@@ -87,8 +87,18 @@ mkdir -p "$OPT_DIR" "$ETC_DIR" "$VAR_LIB_DIR" "$VAR_LOG_DIR"
 
 # --- 3. Application code -------------------------------------------------
 
-cp -r "$SOURCE_DIR/core" "$SOURCE_DIR/adapters" "$SOURCE_DIR/tools" \
+# `functions/` is imported by core/functions/registry.py. This line used
+# to copy a `tools/` directory that no longer exists, which under
+# `set -e` stopped a fresh install here, and never copied `functions/`.
+# tests/unit/test_install_script_copies_what_exists.py checks that every
+# source named here exists in the repository.
+cp -r "$SOURCE_DIR/core" "$SOURCE_DIR/adapters" "$SOURCE_DIR/functions" \
       "$SOURCE_DIR/api" "$SOURCE_DIR/scripts" "$SOURCE_DIR/requirements.txt" "$OPT_DIR/"
+
+# The hashed lockfile, when the checkout has one (AGENTS.md, Commands).
+if [ -f "$SOURCE_DIR/requirements.lock" ]; then
+    cp "$SOURCE_DIR/requirements.lock" "$OPT_DIR/"
+fi
 
 # --- 3b. Web UI (OPTIONAL -- gracefully skipped if npm isn't available) ---
 #
@@ -100,7 +110,9 @@ cp -r "$SOURCE_DIR/core" "$SOURCE_DIR/adapters" "$SOURCE_DIR/tools" \
 
 if command -v npm >/dev/null 2>&1; then
     cp -r "$SOURCE_DIR/ui" "$OPT_DIR/"
-    (cd "$OPT_DIR/ui" && npm install && npm run build)
+    # `npm ci`, not `npm install`: install the tree package-lock.json declares
+    # and never rewrite it (AGENTS.md).
+    (cd "$OPT_DIR/ui" && npm ci && npm run build)
     echo "Built the web UI (ui/dist)."
 else
     echo "npm not found -- skipping the web UI build. This deployment will run as an API-only backend (see api/app.py's docstring -- the UI mount is conditional). Install Node.js/npm and re-run this script to add it later."
@@ -110,7 +122,15 @@ fi
 
 python3 -m venv "$OPT_DIR/venv"
 "$OPT_DIR/venv/bin/pip" install --upgrade pip
-"$OPT_DIR/venv/bin/pip" install -r "$OPT_DIR/requirements.txt"
+# From the hashed lockfile when there is one, exactly as INSTALL.md says
+# (--require-hashes refuses anything whose hash is not listed);
+# requirements.txt carries only bounds and is the fallback for a checkout
+# without a lock.
+if [ -f "$OPT_DIR/requirements.lock" ]; then
+    "$OPT_DIR/venv/bin/pip" install --require-hashes -r "$OPT_DIR/requirements.lock"
+else
+    "$OPT_DIR/venv/bin/pip" install -r "$OPT_DIR/requirements.txt"
+fi
 
 # --- 5. Config + data, mirroring the source repository's own layout ------
 #

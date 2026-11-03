@@ -9289,6 +9289,28 @@ CONTROLS = [
                "tests/unit/test_check_controls.py::"
                "test_a_control_citing_a_missing_test_is_broken_not_firing"],
     ),
+    Control(
+        describes="the installer copies functions/, which the server imports, and no directory that is absent",
+        path="install/install.sh",
+        old='"$SOURCE_DIR/adapters" "$SOURCE_DIR/functions" \\\n',
+        new='"$SOURCE_DIR/adapters" "$SOURCE_DIR/tools" \\\n',
+        tests=["tests/unit/test_install_script_copies_what_exists.py::test_every_path_the_installer_copies_exists_in_the_repository",
+               "tests/unit/test_install_script_copies_what_exists.py::test_every_top_level_package_the_server_imports_is_copied"],
+    ),
+    Control(
+        describes="the installer installs Python dependencies from the hashed lock",
+        path="install/install.sh",
+        old='install --require-hashes -r "$OPT_DIR/requirements.lock"',
+        new='install -r "$OPT_DIR/requirements.txt"',
+        tests=["tests/unit/test_install_script_copies_what_exists.py::test_python_dependencies_come_from_the_hashed_lock_when_there_is_one"],
+    ),
+    Control(
+        describes="the installer builds the UI from the lockfile with npm ci",
+        path="install/install.sh",
+        old="npm ci && npm run build",
+        new="npm install && npm run build",
+        tests=["tests/unit/test_install_script_copies_what_exists.py::test_the_ui_is_installed_with_npm_ci_and_never_npm_install"],
+    ),
 ]
 
 
