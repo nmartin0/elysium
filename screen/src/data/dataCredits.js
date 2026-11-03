@@ -600,7 +600,11 @@ const STUBBED_CREDIT_KEYS = ['s2-ghostmaps'];
  * present in the "Data attribution" popover.
  * @param {Cesium.Viewer} viewer — the initialized Cesium viewer
  */
-export function registerDataCredits(viewer, credits = DATA_CREDITS) {
+export function registerDataCredits(
+  viewer,
+  credits = DATA_CREDITS,
+  { terrainOn = false, terrainAttributionUrl = '' } = {},
+) {
   const creditDisplay = viewer?.creditDisplay;
   if (!creditDisplay || typeof creditDisplay.addStaticCredit !== 'function') {
     return;
@@ -613,4 +617,26 @@ export function registerDataCredits(viewer, credits = DATA_CREDITS) {
     // not the on-globe credit line.
     creditDisplay.addStaticCredit(new Cesium.Credit(html, false));
   }
+  // Self-hosted Mapterhorn terrain: credited only while it is switched on.
+  if (terrainOn)
+    creditDisplay.addStaticCredit(
+      new Cesium.Credit(mapterhornCreditHtml(terrainAttributionUrl), false),
+    );
+}
+
+/**
+ * Credit for the self-hosted terrain. Mapterhorn's credit is per source, so
+ * the link goes to the owner's attribution page (built from attribution.json).
+ * Only an http(s) URL becomes a link; the URL is escaped for the attribute.
+ */
+export function mapterhornCreditHtml(attributionUrl = '') {
+  const url = String(attributionUrl || '').trim();
+  const escaped = url
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;');
+  const sources = /^https?:\/\/\S+$/i.test(url)
+    ? `<a href="${escaped}" target="_blank" rel="noopener">Terrain data sources and licences</a>`
+    : 'Terrain data sources and licences (credits are listed per source)';
+  return `Terrain (self-hosted): Mapterhorn open elevation data; ${sources}`;
 }

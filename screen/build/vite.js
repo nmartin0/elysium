@@ -138,6 +138,8 @@ export function createBrowserViteConfig({
   googleApiKey,
   cesiumToken,
   mapillaryToken,
+  terrainTileUrl,
+  terrainAttributionUrl,
   host = 'localhost',
   port = 4173,
   allowedHosts = DEFAULT_ALLOWED_HOSTS,
@@ -205,6 +207,11 @@ export function createBrowserViteConfig({
     define: {
       'import.meta.env.GOOGLE_MAPS_API_KEY': JSON.stringify(googleApiKey),
       'import.meta.env.CESIUM_ION_TOKEN': JSON.stringify(cesiumToken),
+      // Self-hosted terrain (opt-in; src/maps/terrainConfig.js). Public URLs.
+      'import.meta.env.TERRAIN_TILE_URL': JSON.stringify(terrainTileUrl ?? ''),
+      'import.meta.env.TERRAIN_ATTRIBUTION_URL': JSON.stringify(
+        terrainAttributionUrl ?? '',
+      ),
       // Mapillary client tokens are public by design (see SECURITY.md).
       'import.meta.env.MAPILLARY_CLIENT_TOKEN': JSON.stringify(
         mapillaryToken ?? '',

@@ -5,6 +5,10 @@ import {
   installTrackpadPinchZoom,
 } from '../app/viewer.js';
 import { registerDataCredits } from '../data/dataCredits.js';
+import {
+  getTerrainConfig,
+  isSelfHostedTerrainOn,
+} from '../maps/terrainConfig.js';
 import { configureCreditKeyboardAccess } from '../creditKeyboard.js';
 import { MapStackController } from '../mapStackController.js';
 import { loadPhotorealisticTileset } from '../mapStartup.js';
@@ -59,7 +63,10 @@ export async function createApplicationScene({
     if (!viewer.isDestroyed()) viewer.destroy();
   });
   defer(installTrackpadPinchZoom(viewer));
-  registerDataCredits(viewer, credits);
+  registerDataCredits(viewer, credits, {
+    terrainOn: isSelfHostedTerrainOn(),
+    terrainAttributionUrl: getTerrainConfig().attributionUrl,
+  });
   configureCreditKeyboardAccess(document);
   loaderStatus.textContent =
     googleApiKey || cesiumToken

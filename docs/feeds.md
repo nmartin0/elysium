@@ -112,6 +112,14 @@ tile map file, 475,959 bytes) from the `cesium` npm package, under
 equirectangular picture of the world: fine from orbit height, a blur at city
 zoom.
 
+**Built (terrain provider, 3 November 2026, code only).**
+`screen/src/maps/terrariumTerrain.js` is a Cesium terrain provider that reads
+Terrarium tiles (512 px, zoom 0 to 12, from the facts under "Mapterhorn"
+below) from a URL template the owner sets in `TERRAIN_TILE_URL`. It is opt-in;
+unset keeps flat terrain. Tested only on synthetic tiles, not on real
+Mapterhorn data or in a browser. Still the owner's job: host the tiles, publish
+the attribution page, and try it (FORK.md, "Basemap"). No data was downloaded.
+
 - **Natural Earth.** Verified (nvkelso/natural-earth-vector `LICENSE.md`): "All
   versions of Natural Earth raster + vector map data ... are in the public
   domain", for personal, educational and commercial use; "No permission is
@@ -162,7 +170,8 @@ zoom.
     Re:Earth endpoint upstream used is Mapterhorn converted to quantized-mesh.
     Self-hosting needs either a small custom `TerrainProvider` that reads
     Terrarium tiles (client code, no conversion) or a quantized-mesh build.
-    Neither is written.
+    The first is now written (see "Built (terrain provider)" below); the
+    quantized-mesh build is not.
 - **Hosting.** PMTiles is one static file read with HTTP range requests, so
   any static host works if it sends `Accept-Ranges` and CORS headers and
   caches. No tile server. The owner must host: Natural Earth (done, in the
@@ -171,8 +180,9 @@ zoom.
   unverified); the WorldCover tile pyramid (size unverified, depends on the
   deepest zoom cut); and a page or file that lists every Mapterhorn source
   from `attribution.json`.
-- **Until then.** Terrain is flat on the keyless stacks, because the hosted
-  Re:Earth endpoint belongs to a third party and its terms were not read.
+- **Until the owner hosts tiles.** Terrain is flat on the keyless stacks,
+  because the hosted Re:Earth endpoint belongs to a third party and its terms
+  were not read. With `TERRAIN_TILE_URL` set it comes from the owner's tiles.
 
 ## Recommendation (as researched)
 

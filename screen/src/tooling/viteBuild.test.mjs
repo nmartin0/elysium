@@ -66,6 +66,8 @@ test('explicit build inputs preserve browser-only defines, plugin order and loop
   assert.deepEqual(config.define, {
     'import.meta.env.GOOGLE_MAPS_API_KEY': '"browser-fixture"',
     'import.meta.env.CESIUM_ION_TOKEN': '"ion-fixture"',
+    'import.meta.env.TERRAIN_TILE_URL': '""',
+    'import.meta.env.TERRAIN_ATTRIBUTION_URL': '""',
     'import.meta.env.MAPILLARY_CLIENT_TOKEN': '""',
   });
   assert.equal(

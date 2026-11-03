@@ -46,6 +46,8 @@ source switched off with a note.
 | --- | --- | --- |
 | `GOOGLE_MAPS_API_KEY` | Photorealistic 3D Tiles, Google place search | Starts on bundled Natural Earth (not Esri); search falls back to Photon and Nominatim |
 | `CESIUM_ION_TOKEN` | Bing map stacks, Cesium world terrain | Those stacks are off; flat terrain (keyless terrain is stubbed) |
+| `TERRAIN_TILE_URL` | Self-hosted Mapterhorn terrain: a Terrarium tile URL template with `{z}/{x}/{y}` (FORK.md, "Basemap"); tested on synthetic tiles only | Flat terrain on the keyless stacks |
+| `TERRAIN_ATTRIBUTION_URL` | Link to the page that lists Mapterhorn's sources, shown in Data attribution only while `TERRAIN_TILE_URL` is set | A plain-text terrain credit with no link |
 | `AISSTREAM_API_KEY` | Live vessels | Vessel layer off |
 | `FIRMS_MAP_KEY` | Active fires (NASA FIRMS) | Fire layer off |
 | `OPENSKY_CLIENT_ID`, `OPENSKY_CLIENT_SECRET` | OpenSky aircraft ([docs/opensky-auth.md](docs/opensky-auth.md)) | adsb.lol fallback |

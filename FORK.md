@@ -99,7 +99,46 @@ the first slice is built: the low-zoom layer.
   service and its terms could not be read here; the owner's plan is terrain
   self-hosted from Mapterhorn. To turn it back on set `stubbed: false`
   (the two tests in `sourceFactories.test.mjs` lift it themselves).
-- Files: `src/maps/{catalog,defaultSources,imagery,terrain}.js`,
+- **Self-hosted terrain (opt-in, added 3 November 2026).** The switch is one
+  value, `TERRAIN_TILE_URL`, in `screen/.env` or the environment (same route as
+  `GOOGLE_MAPS_API_KEY`: `server/standalone/vite.config.js` -> `build/vite.js`
+  `define` -> `main.js` -> `configureTerrain()` in `src/maps/terrainConfig.js`).
+  It is a URL template with `{z}`, `{x}` and `{y}` that starts with `https://`,
+  `http://` or `/`; anything else is ignored with a console warning. Unset (the
+  default) changes nothing: flat terrain, no request. Set, `createKeylessTerrain()`
+  returns `createTerrariumTerrainProvider()` (`src/maps/terrariumTerrain.js`)
+  instead of flat ellipsoid; Re:Earth stays off. The provider reads Terrarium
+  tiles (height = R * 256 + G + B / 256 - 32768, 512 px), uses Web Mercator
+  tiling, builds a 129 by 129 `HeightmapTerrainData` per tile, requests only
+  levels 0 to `TERRARIUM_MAX_LEVEL` (12, one constant, from the Mapterhorn
+  facts in docs/feeds.md: `planet.pmtiles` is zoom 0 to 12) and never requests
+  a tile outside the pyramid. A missing or failed tile is flat with no children
+  asked for (no throw, no retry loop); 429 and 5xx replies use the existing
+  backoff in `terrainRetry.js`. `TERRAIN_ATTRIBUTION_URL` (optional) is the
+  link in the Data attribution lightbox, shown only while the terrain is on
+  (`registerDataCredits` third argument); without it the credit is plain text.
+  Known limits, all untried: (1) tested only on synthetic tiles
+  (`terrariumTerrain.test.mjs`), not on real Mapterhorn data or in a browser,
+  and the blob-to-pixels path (`createImageBitmap`, canvas) has no test;
+  (2) Web Mercator stops at about 85.05 degrees, so the globe has no terrain
+  surface at the poles while this is on; (3) the height datum is unverified:
+  Re:Earth's Mapterhorn build was labelled "ellipsoid", which suggests the tile
+  heights are above the geoid, so terrain may sit up to about 100 m off the
+  ellipsoid (the provider has a `heightOffset` hook, not wired; `src/data/geoid.js`
+  has EGM96); (4) neighbouring tiles can differ by one source pixel on a shared
+  edge; (5) deeper than zoom 12 is not requested.
+  Hosting (the owner's job, nothing here is hosted): serve the tiles as
+  `{z}/{x}/{y}.webp` from any static host with CORS (`Access-Control-Allow-Origin`)
+  and caching. Either extract the zoom 0 to 12 tiles from `planet.pmtiles` into
+  files (for example with the go-pmtiles `pmtiles extract` / a tile-export tool;
+  command line unverified), or run a PMTiles server that answers
+  `/{z}/{x}/{y}.webp` (unverified which); the app itself reads plain tile
+  URLs, not a `.pmtiles` file with range requests, so a bare static
+  `planet.pmtiles` is not enough. Also publish a page built from
+  `attribution.json` and set `TERRAIN_ATTRIBUTION_URL` to it. To try it: set
+  both values in `.env`, restart, and watch the network tab for requests to
+  your template only.
+- Files: `src/maps/{catalog,defaultSources,imagery,terrain,terrainConfig,terrariumTerrain}.js`,
   `app/scene.js`, `mapStackChips.js`, `view/index.js`, `share/viewCodec.js`
   (enum appended), `data/dataCredits.js` (new `natural-earth-basemap` entry,
   Re:Earth skipped while stubbed), their tests, `public/basemap/`.

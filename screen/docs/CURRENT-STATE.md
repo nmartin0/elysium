@@ -48,7 +48,9 @@ pauses while the tab is hidden and runs one overdue update on return.
   Natural Earth (bundled, public domain), Bing aerial and labels (need
   `CESIUM_ION_TOKEN`), Esri imagery (needs your own Esri licence), OpenStreetMap.
   With no key the app starts on Natural Earth with flat terrain (the keyless
-  terrain is stubbed off, see FORK.md "Basemap"). Natural Earth is sharp only
+  terrain is stubbed off, see FORK.md "Basemap"; an opt-in self-hosted
+  Terrarium terrain exists behind `TERRAIN_TILE_URL` but has only been tested
+  on synthetic tiles, never on real Mapterhorn data or in a browser). Natural Earth is sharp only
   at low zoom (levels 0 to 2); Recent Imagery still borrows the Esri stack.
 - **Visual styles**: Normal, Anime, Noir. Older links that name the removed
   looks open as Normal.

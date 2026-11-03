@@ -1,6 +1,13 @@
 import { createStandaloneApplication } from './standalone/application.js';
 import { describeError } from './standalone/errors.js';
 import { t } from './i18n/index.js';
+import { configureTerrain } from './maps/terrainConfig.js';
+
+// Opt-in self-hosted terrain; both values empty means flat terrain as before.
+configureTerrain({
+  tileUrl: import.meta.env.TERRAIN_TILE_URL,
+  attributionUrl: import.meta.env.TERRAIN_ATTRIBUTION_URL,
+});
 
 const application = createStandaloneApplication({
   googleApiKey: import.meta.env.GOOGLE_MAPS_API_KEY,

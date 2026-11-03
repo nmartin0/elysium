@@ -1,5 +1,7 @@
 import * as Cesium from 'cesium';
 import { createTerrainRetryPolicy } from './terrainRetry.js';
+import { getTerrainConfig } from './terrainConfig.js';
+import { createTerrariumTerrainProvider } from './terrariumTerrain.js';
 
 /** Re:Earth / Mapterhorn ellipsoidal quantized mesh, CC BY 4.0. */
 export const KEYLESS_TERRAIN_URL =
@@ -56,7 +58,23 @@ export function createKeylessTerrainResource(
   });
 }
 
-export async function createKeylessTerrain() {
+/**
+ * @param {object} [request] unused (the factory contract passes `{signal}`)
+ * @param {object} [options] test seam: `config` replaces the terrain config,
+ *   `fetchPixels` replaces the tile loader
+ */
+export async function createKeylessTerrain(
+  request,
+  { config = getTerrainConfig(), fetchPixels } = {},
+) {
+  // Opt-in self-hosted Mapterhorn terrain (TERRAIN_TILE_URL). Unset: flat.
+  if (config.tileUrl)
+    return {
+      provider: createTerrariumTerrainProvider({
+        urlTemplate: config.tileUrl,
+        ...(fetchPixels ? { fetchPixels } : {}),
+      }),
+    };
   if (KEYLESS_TERRAIN_STUB.stubbed)
     return { provider: new Cesium.EllipsoidTerrainProvider() };
   try {
