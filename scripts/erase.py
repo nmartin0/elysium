@@ -39,7 +39,9 @@ from core.mirror.erasure import (
     apply_erasures,
     cascade,
     forget_beyond_the_mirror,
+    gap_notice,
     recorded_object_types,
+    survey,
 )
 from core.mirror.sync_lock import single_writer
 
@@ -57,7 +59,15 @@ def run(object_type: str, object_id: str, reason: str, write: bool = False,
     # A TYPE REMOVED FROM THE ONTOLOGY is still a type whose people the lake
     # holds: its tables say so (core/mirror/erasure.KEY_COLUMNS_PROPERTY).
     if object_type not in config.schema and object_type not in recorded_object_types(catalog):
-        print(f"No object type {object_type!r}.", file=sys.stderr)
+        print(f"{object_type!r} is not an object type of the ontology, and no table in the lake "
+              f"records holding its ids.", file=sys.stderr)
+        unsearchable = survey(catalog, config.schema).unreachable
+        if unsearchable:
+            print("If it was removed, its tables may still hold people. Erasure cannot search these, "
+                  "which hold data and record no key columns: "
+                  + ", ".join(f"{name} ({why})" for name, why in sorted(unsearchable.items()))
+                  + ". Restore the type and sync once so they record their keys, then erase again, "
+                    "or drop the tables in the lake.", file=sys.stderr)
         return 1
 
     with single_writer(paths.data_dir / "sync.lock") as acquired:
@@ -69,6 +79,9 @@ def run(object_type: str, object_id: str, reason: str, write: bool = False,
         for kind, count in sorted(counts.items()):
             print(f"  {kind}: {count}")
         if not write:
+            # SO --write IS NOT A SURPRISE: what it would not be able to search.
+            for line in gap_notice(survey(catalog, config.schema, set(counts))):
+                print(f"  WARNING {line}")
             print("Dry run: nothing was erased. --write to erase.")
             return 0
         register = ErasureRegister(paths.data_dir / "erasures.db")
@@ -87,14 +100,14 @@ def run(object_type: str, object_id: str, reason: str, write: bool = False,
     print(f"Erased ({erasure_id}): {sum(removed.values())} row(s) from {len(removed)} table(s), "
           f"older snapshots and their files deleted"
           f"{'; and ' + elsewhere if elsewhere else ''}. Restart or reload the server.")
-    if result.unreachable_tables:
-        # NOT A SUCCESS, and not silent: these tables hold data that this
-        # erasure could not search, so the person may still be in them.
-        print(f"NOT COMPLETE: {len(result.unreachable_tables)} table(s) hold data that could not be "
-              f"searched, because nothing says which of their columns are keys (written before "
-              f"sync recorded them, and their type has since been removed): "
-              f"{', '.join(result.unreachable_tables)}. Drop them in the lake, or restore the type "
-              f"and sync once so they record their keys, then erase again.", file=sys.stderr)
+    for line in gap_notice(result.reach):
+        print(f"WARNING {line}", file=sys.stderr)
+    if result.reach.incomplete:
+        # NOT A SUCCESS, and not silent: the person may still be in these
+        # tables. The register records the erasure as incomplete (--list),
+        # and every sync says so until a later one can search them.
+        print(f"NOT COMPLETE: {len(result.reach.incomplete)} table(s) could not be fully searched: "
+              f"{', '.join(result.reach.incomplete)}.", file=sys.stderr)
         return 2
     return 0
 
@@ -115,7 +128,9 @@ def list_erasures(paths=None) -> int:
         print(f"{erasure.erasure_id}  {erasure.object_type:<14} "
               f"requested {when(erasure.requested_at)} by {erasure.requested_by}  "
               f"applied {when(erasure.purged_at)}  source cleared {when(erasure.source_cleared_at)}"
-              f"  -- {erasure.reason}")
+              f"  -- {erasure.reason}"
+              + (f"  INCOMPLETE: {', '.join(erasure.incomplete_tables)}"
+                 if erasure.incomplete_tables else ""))
     return 0
 
 

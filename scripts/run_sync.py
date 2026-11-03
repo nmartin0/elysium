@@ -64,6 +64,7 @@ from core.mirror.classifications import record_classifications
 from core.mirror.erasure import (
     ErasureRegister,
     apply_erasures,
+    gap_notice,
     record_key_columns,
     suppression_for,
 )
@@ -1250,16 +1251,17 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
             if sync.erased_still_in_source:
                 print(f"ERASURE  {len(sync.erased_still_in_source)} erased key(s) are still "
                       f"returned by a source; suppressed, and still to be erased there")
-        if erasures.unpurged():
+        # AND WHILE ONE COULD NOT BE FULLY APPLIED (`incomplete`), applied
+        # again: this sync may have recorded what the tables lacked, and the
+        # register then clears. Either way it says so, every time.
+        if erasures.unpurged() or erasures.incomplete():
             outcome = apply_erasures(sync._catalog, config.schema, erasures,
                                      runtime_paths.data_dir / "mirror")
             removed = outcome.removed
             print(f"ERASURE  applied: {sum(removed.values())} row(s) removed from "
                   f"{len(removed)} table(s), older snapshots and their files deleted")
-            if outcome.unreachable_tables:
-                print(f"WARNING erasure could not search {len(outcome.unreachable_tables)} table(s) "
-                      f"that hold data (no key columns known): "
-                      f"{', '.join(outcome.unreachable_tables)}", file=sys.stderr)
+            for line in gap_notice(outcome.reach):
+                print(f"WARNING erasure: {line}", file=sys.stderr)
 
         # CLASSIFICATIONS, CARRIED TO EVERY COPY (R12) -- after gold, so
         # a table created by this run is labelled by this run, and never

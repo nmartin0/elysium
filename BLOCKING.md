@@ -2005,6 +2005,28 @@ contract and not a patch. The list's remaining rows are therefore not
 optional: key management, session controls, a password policy,
 access review, audit integrity and backup verification.
 
+ERASURE AND A REMOVED TYPE (3 November): what holds, and the limits that
+remain. Every sync records on each lake table the columns that hold ids,
+which of them identify its own rows and which link to another object
+(`elysium.erasure_keys`), so an erasure still reaches the tables of a type
+removed from the ontology, and follows its links from an erased person to
+the removed type's own rows and their history, conflicts and findings.
+LIMITS, stated plainly: (1) a table written before the record existed, whose
+type is removed before one sync has recorded it, cannot be searched; erasure
+names it (`unreachable`), the register marks the erasure `incomplete`
+(`erase --list`), and every sync says so until the tables are dropped in the
+lake or the type is restored and synced once. (2) A table with no record at
+all is `partly known` even when the ontology still maps some of its columns,
+because a removed type's other columns there cannot be known; it clears at
+the next sync that records it. (3) The record never narrows, so a column
+re-pointed from one type to another keeps the old type: erasing the old type
+also removes rows of whoever now owns those values. That is chosen (erasing
+too much of a person is the lesser failure) and is shown, not hidden: the
+erase output and the dry run print a WARNING naming table, column and type.
+(4) A gold join table whose name two silos share is keyed by both silos'
+columns and reported partly known. An incomplete erasure does not stop the
+server; what could be reached has been erased.
+
 ## 9. Owning the UI kit, and when to start
 
 **Blocked on:** nothing. This is a DECISION ALREADY TAKEN, recorded

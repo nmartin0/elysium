@@ -26,6 +26,14 @@ erasure unpurged, so the next sync rewrites the restored lake before
 anything is served from it -- the backup practice the ICO describes as
 putting the data "beyond use" and erasing it when it is restored.
 
+A REMOVED TYPE'S TABLES ARE STILL SEARCHED. Each table records its own key
+columns (KEY_COLUMNS_PROPERTY), so removing a type from the ontology does
+not take its people out of reach, and a link from an erased person is
+followed to the removed type's rows. What cannot be searched is NAMED --
+never skipped -- and the erasure is recorded `incomplete` until it can be.
+The limits (a table written before the record, a column re-pointed at
+another type) are in BLOCKING.md, "Erasure and a removed type".
+
 THE REGISTER HOLDS NO PERSONAL DATA. An erasure is recorded as a salted
 hash of "<type>:<id>", never the id: a list of who asked to be forgotten
 is itself personal data, and the worst place to keep it is the one
@@ -49,7 +57,7 @@ from pathlib import Path
 
 import pyarrow as pa
 
-from core.sqlite_connection import connection_with_schema
+from core.sqlite_connection import add_column_if_missing, connection_with_schema
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +76,10 @@ CREATE TABLE IF NOT EXISTS erasures (
     -- WHEN THE MIRROR LAST HELD NONE OF IT. Cleared by a restore, so
     -- the next sync rewrites the restored lake.
     purged_at REAL,
+    -- THE LAKE TABLES THIS ERASURE COULD NOT FULLY SEARCH, as a JSON list
+    -- of names (never a value). NULL: none. Re-evaluated every time the
+    -- erasure is applied again, so it clears when they become searchable.
+    incomplete_tables TEXT,
     -- WHEN THE SOURCE STOPPED RETURNING IT. Until then every sync
     -- suppresses it, and says so.
     source_cleared_at REAL,
@@ -85,6 +97,7 @@ class Erasure:
     requested_at: float
     purged_at: "float | None"
     source_cleared_at: "float | None"
+    incomplete_tables: tuple[str, ...] = ()
 
 
 class ErasureRegister:
@@ -94,7 +107,9 @@ class ErasureRegister:
         self._db_path = db_path
 
     def _connection(self):
-        return connection_with_schema(self._db_path, SCHEMA)
+        return connection_with_schema(self._db_path, SCHEMA, (
+            # A register made before this column existed.
+            add_column_if_missing("erasures", "incomplete_tables", "TEXT"),))
 
     def _salt(self, conn) -> str:
         # IN THE REGISTER ITSELF, so a restore brings it back with the
@@ -144,11 +159,24 @@ class ErasureRegister:
             return conn.execute(
                 "SELECT 1 FROM erasures WHERE purged_at IS NULL LIMIT 1").fetchone() is not None
 
-    def mark_purged(self) -> None:
+    def mark_purged(self, incomplete: "list[str] | None" = None) -> None:
+        """Every erasure now applied to what could be searched. `incomplete`
+        names the tables that could not be fully searched; it replaces
+        what was recorded, so an empty list clears it. The server is not
+        held back for it: what could be reached has been."""
         with self._connection() as conn:
             conn.execute("UPDATE erasures SET purged_at = ? WHERE purged_at IS NULL",
                          (time.time(),))
+            conn.execute("UPDATE erasures SET incomplete_tables = ?",
+                         (json.dumps(sorted(incomplete)) if incomplete else None,))
             conn.commit()
+
+    def incomplete(self) -> list[str]:
+        """The tables some erasure could not fully search, as last found."""
+        with self._connection() as conn:
+            rows = conn.execute("SELECT DISTINCT incomplete_tables FROM erasures "
+                                "WHERE incomplete_tables IS NOT NULL").fetchall()
+        return sorted({name for row in rows for name in json.loads(row["incomplete_tables"])})
 
     def mark_restored(self) -> int:
         """A restore brought back a lake older than some erasures: every
@@ -173,45 +201,90 @@ class ErasureRegister:
             rows = conn.execute(
                 "SELECT erasure_id, object_type, requested_by, reason, "
                 "MIN(requested_at) AS requested_at, MIN(purged_at) AS purged_at, "
-                "MIN(source_cleared_at) AS source_cleared_at FROM erasures "
+                "MIN(source_cleared_at) AS source_cleared_at, "
+                "MAX(incomplete_tables) AS incomplete_tables FROM erasures "
                 "GROUP BY erasure_id, object_type ORDER BY requested_at").fetchall()
-        return [Erasure(**dict(row)) for row in rows]
+        return [Erasure(**{**dict(row), "incomplete_tables": tuple(
+            json.loads(row["incomplete_tables"]) if row["incomplete_tables"] else ())})
+            for row in rows]
 
 
 # --- Which columns hold whose keys ------------------------------------
 
-def source_key_columns(schema: dict) -> dict[tuple[str, str], dict[str, set[str]]]:
-    """{(silo, table): {column: {object types whose ids it holds}}}.
+#: What joins the parts of a join table's composite id (iceberg_sync's
+#: LINK_ID_COLUMN), which is what a quarantine or cleaning record of a join
+#: row names as its object.
+LINK_SEPARATOR = "\x1f"
 
-    FROM THE ONTOLOGY'S OWN DECLARATIONS: every storage's id column, the
-    columns of every link (a forward link's own column, a reverse link's
-    via_column in the other table, both columns of a join table).
-    """
-    found: dict[tuple[str, str], dict[str, set[str]]] = {}
 
-    def add(silo, table, column, object_type):
+@dataclass(frozen=True)
+class SourceColumns:
+    """What the ontology says about every source table's columns.
+
+    keys: every column holding some object's id, whoever's it is.
+    ids: the columns holding the table's OWN rows' identity (a storage's id
+    column). links: the columns of a forward link, which name ANOTHER
+    object. joins: the tables that exist only to join two types."""
+    keys: dict[tuple[str, str], dict[str, set[str]]]
+    ids: dict[tuple[str, str], dict[str, set[str]]]
+    links: dict[tuple[str, str], dict[str, set[str]]]
+    joins: set[tuple[str, str]]
+
+
+def _source_columns(schema: dict) -> SourceColumns:
+    found = SourceColumns({}, {}, {}, set())
+
+    def add(into, silo, table, column, object_type):
         if silo and table and column:
-            found.setdefault((silo, table), {}).setdefault(column, set()).add(object_type)
+            into.setdefault((silo, table), {}).setdefault(column, set()).add(object_type)
 
     for object_type, type_def in schema.items():
         primary = type_def.get("storage") or {}
-        add(primary.get("silo"), primary.get("table"), primary.get("id_column"), object_type)
+        for block in (primary, *(type_def.get("additional_storage") or {}).values()):
+            add(found.keys, block.get("silo"), block.get("table"), block.get("id_column"), object_type)
+            add(found.ids, block.get("silo"), block.get("table"), block.get("id_column"), object_type)
         storages = {None: primary, **(type_def.get("additional_storage") or {})}
-        for block in (type_def.get("additional_storage") or {}).values():
-            add(block.get("silo"), block.get("table"), block.get("id_column"), object_type)
         for field_name, info in (type_def.get("fields") or {}).items():
             if info.get("type") != "link":
                 continue
             if info.get("via_table") and info.get("via_column"):
-                add(primary.get("silo"), info["via_table"], info["via_column"], object_type)
+                add(found.keys, primary.get("silo"), info["via_table"], info["via_column"], object_type)
+                if primary.get("silo"):
+                    found.joins.add((primary["silo"], info["via_table"]))
                 if info.get("via_target_column"):
-                    add(primary.get("silo"), info["via_table"], info["via_target_column"],
-                        info.get("target"))
+                    add(found.keys, primary.get("silo"), info["via_table"],
+                        info["via_target_column"], info.get("target"))
             elif info.get("cardinality") == "one":
                 storage = storages.get(info.get("storage")) or primary
-                add(storage.get("silo"), storage.get("table"),
-                    info.get("column", field_name), info.get("target"))
+                column = info.get("column", field_name)
+                add(found.keys, storage.get("silo"), storage.get("table"), column, info.get("target"))
+                add(found.links, storage.get("silo"), storage.get("table"), column, info.get("target"))
     return found
+
+
+def source_key_columns(schema: dict) -> dict[tuple[str, str], dict[str, set[str]]]:
+    """{(silo, table): {column: {object types whose ids it holds}}}.
+
+    FROM THE ONTOLOGY'S OWN DECLARATIONS: every storage's id column (the
+    primary one and every additional_storage), the columns of every link
+    (a forward link's own column, a reverse link's via_column in the other
+    table, both columns of a join table).
+    """
+    return _source_columns(schema).keys
+
+
+def _storage_types(schema: dict, silo: str, table: str) -> set[str]:
+    """Every type that keeps rows in this source table, as its primary
+    storage or as an additional_storage."""
+    return {object_type for object_type, type_def in schema.items()
+            for block in ((type_def.get("storage") or {}),
+                          *(type_def.get("additional_storage") or {}).values())
+            if block.get("silo") == silo and block.get("table") == table}
+
+
+def _join_copies(schema: dict, table: str) -> list[tuple[str, str]]:
+    """The join tables of this name, one per silo that has one."""
+    return sorted(key for key in _source_columns(schema).joins if key[1] == table)
 
 
 def table_key_columns(schema: dict, identifier: str) -> dict[str, set[str]]:
@@ -223,11 +296,15 @@ def table_key_columns(schema: dict, identifier: str) -> dict[str, set[str]]:
     if namespace.startswith(("quarantine_", "cleaning_")):
         # Both record findings by OBJECT ID, not by the source's columns:
         # the cleaning record (R33) holds a cell's before and after, so an
-        # erased person's text is there too, and goes with them.
+        # erased person's text is there too, and goes with them. A type
+        # stores rows in a table as its primary storage OR as an
+        # additional_storage; and a join table's record names the
+        # composite id of its row, whose parts are the ids of both ends.
         silo = namespace.partition("_")[2]
         owners = source_key_columns(schema).get((silo, table), {})
-        types = {object_type for object_type, type_def in schema.items()
-                 if (type_def.get("storage") or {}).get("table") == table}
+        types = _storage_types(schema, silo, table)
+        if (silo, table) in _source_columns(schema).joins:
+            types |= {name for names in owners.values() for name in names}
         return {"object_id": types} if types and owners else {}
     if namespace == "gold" and table in schema:
         type_def = schema[table]
@@ -238,21 +315,43 @@ def table_key_columns(schema: dict, identifier: str) -> dict[str, set[str]]:
         return columns
     if namespace == "gold":
         # A JOIN TABLE'S GOLD COPY (gold.customer_tags), which is no object
-        # type. It carries the source table's own columns, so it has the
-        # source table's keys. Matched by table name in any silo -- gold
-        # does not say which -- and a column too many is harmless, a value
-        # being erased only when its hash is in the register.
+        # type. It carries the join table's own columns, so it has that
+        # table's keys. Gold does not say which silo it came from: where
+        # two silos have a join table of this name the columns of both are
+        # taken, and survey() reports the table as only partly known.
         found: dict[str, set[str]] = {}
-        for (_silo, source_table), columns in source_key_columns(schema).items():
-            if source_table == table:
-                for column, types in columns.items():
-                    found.setdefault(column, set()).update(types)
+        columns_of = source_key_columns(schema)
+        for key in _join_copies(schema, table):
+            for column, types in columns_of.get(key, {}).items():
+                found.setdefault(column, set()).update(types)
         return found
     if namespace == "gold_history" and table in schema:
         return {schema[table]["id_field"]: {table}}
     if namespace == "gold_conflicts" and table in schema:
         return {"entity_id": {table}}
     return source_key_columns(schema).get((namespace, table), {})
+
+
+def table_roles(schema: dict, identifier: str) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    """(ids, links) of one table: which columns are the identity of the
+    rows it holds, and which point at another object. Only the tables that
+    hold a type's own rows have either -- the source layers and gold."""
+    namespace, _, table = identifier.partition(".")
+    if namespace == "gold":
+        if table not in schema:
+            return {}, {}
+        type_def = schema[table]
+        return ({type_def["id_field"]: {table}},
+                {field_name: {info.get("target")}
+                 for field_name, info in (type_def.get("fields") or {}).items()
+                 if info.get("type") == "link" and info.get("cardinality") == "one"})
+    if namespace.startswith(("quarantine_", "cleaning_", "gold_")):
+        return {}, {}
+    for prefix in ("bronze_", "changelog_"):
+        if namespace.startswith(prefix):
+            namespace = namespace[len(prefix):]
+    columns = _source_columns(schema)
+    return columns.ids.get((namespace, table), {}), columns.links.get((namespace, table), {})
 
 
 # --- What each table says about its own keys --------------------------
@@ -265,58 +364,114 @@ def table_key_columns(schema: dict, identifier: str) -> dict[str, set[str]]:
 #: was removed an erasure would stop reaching its tables, for good, with
 #: nothing saying so. A property travels with the table -- a backup, a
 #: restore, a copy of the warehouse -- so there is no second list to go stale.
+#:
+#: {"v": 2, "keys": ..., "ids": ..., "links": ...}, each {column: [types]}.
+#: `ids` and `links` are what the cascade needs of a type that no longer
+#: exists: which column names the type's own rows, and which point at
+#: another object, so erasing a customer still finds the removed type's
+#: rows about them and, through those, their per-id history.
 KEY_COLUMNS_PROPERTY = "elysium.erasure_keys"
 
 
-def _encode(columns: dict[str, set[str]]) -> str:
-    return json.dumps({column: sorted(types) for column, types in sorted(columns.items())
-                       if types}, sort_keys=True)
+@dataclass(frozen=True)
+class Recorded:
+    """What a table says about its own columns. `present` is False for a
+    table written before the record existed, or before it said `ids` and
+    `links` (version 1), or one that could not be decoded -- never
+    guessed at."""
+    keys: dict[str, set[str]]
+    ids: dict[str, set[str]]
+    links: dict[str, set[str]]
+    present: bool
+
+
+def _encode(known: "Recorded") -> str:
+    def plain(columns):
+        return {column: sorted(types) for column, types in sorted(columns.items()) if types}
+    return json.dumps({"v": 2, "keys": plain(known.keys), "ids": plain(known.ids),
+                       "links": plain(known.links)}, sort_keys=True)
+
+
+def _decoded(raw) -> dict[str, set[str]]:
+    return {str(column): {str(name) for name in types if name is not None}
+            for column, types in raw.items()}
+
+
+def recorded_columns(table) -> Recorded:
+    raw = table.properties.get(KEY_COLUMNS_PROPERTY)
+    if not raw:
+        return Recorded({}, {}, {}, False)
+    try:
+        recorded = json.loads(raw)
+        if isinstance(recorded.get("v"), int):
+            return Recorded(_decoded(recorded.get("keys") or {}), _decoded(recorded.get("ids") or {}),
+                            _decoded(recorded.get("links") or {}), True)
+        return Recorded(_decoded(recorded), {}, {}, False)         # version 1: keys only
+    except (ValueError, AttributeError, TypeError):
+        return Recorded({}, {}, {}, False)
 
 
 def recorded_key_columns(table) -> dict[str, set[str]]:
-    """What a table says its key columns are. Empty when it says nothing --
-    a table written before this property existed, or one that could not
-    be decoded (never guessed at)."""
-    raw = table.properties.get(KEY_COLUMNS_PROPERTY)
-    if not raw:
-        return {}
-    try:
-        recorded = json.loads(raw)
-        return {str(column): {str(name) for name in types}
-                for column, types in recorded.items()}
-    except (ValueError, AttributeError, TypeError):
-        return {}
+    """What a table says its key columns are. Empty when it says nothing."""
+    return recorded_columns(table).keys
 
 
-def known_key_columns(schema: dict, identifier: str, table) -> dict[str, set[str]]:
-    """The key columns of one table: the current schema's answer, plus
-    whatever the table recorded.
-
-    THE UNION, NOT EITHER ALONE. A type that was removed leaves its tables
-    to the property. A source table that another type still reads is
-    known to the schema only by the columns THAT type maps, so the removed
-    type's own key columns there would be missed if the schema were taken
-    at its word. Extra columns are harmless: a value is erased only when
-    its hash is in the register."""
-    merged = {column: set(types) for column, types in table_key_columns(schema, identifier).items()}
-    for column, types in recorded_key_columns(table).items():
-        merged.setdefault(column, set()).update(types)
+def _union(*parts: dict[str, set[str]]) -> dict[str, set[str]]:
+    merged: dict[str, set[str]] = {}
+    for columns in parts:
+        for column, types in columns.items():
+            merged.setdefault(column, set()).update(types)
     return merged
 
 
+def schema_columns(schema: dict, identifier: str) -> Recorded:
+    """What the current schema alone says about one table."""
+    ids, links = table_roles(schema, identifier)
+    return Recorded(table_key_columns(schema, identifier), ids, links, False)
+
+
+def known_columns(schema: dict, identifier: str, table) -> Recorded:
+    """One table's columns: the current schema's answer, plus whatever the
+    table recorded. `present` says the table recorded something.
+
+    THE UNION, NOT EITHER ALONE. A type that was removed leaves its tables
+    to the record. A source table that another type still reads is known
+    to the schema only by the columns THAT type maps, so the removed
+    type's own key columns there would be missed if the schema were taken
+    at its word. A column re-pointed at another type keeps its old type
+    too, which can over-erase (see stale_types): under-erasing a person is
+    the worse failure, so the union stays and the over-erasure is shown.
+    Extra columns are otherwise harmless: a value is erased only when its
+    hash is in the register."""
+    now, before = schema_columns(schema, identifier), recorded_columns(table)
+    return Recorded(_union(now.keys, before.keys), _union(now.ids, before.ids),
+                    _union(now.links, before.links), before.present)
+
+
+def stale_types(schema: dict, identifier: str, table) -> list[tuple[str, str]]:
+    """[(column, type)] the table recorded for a column that the schema
+    now maps to a different type, although the recorded one still exists. Erasing
+    that type removes rows of whoever now owns the column's values."""
+    now = table_key_columns(schema, identifier)
+    return sorted((column, name) for column, names in recorded_columns(table).keys.items()
+                  if now.get(column)            # a column the ontology no longer maps is not re-pointed
+                  for name in names if name in schema and name not in now[column])
+
+
 def record_key_columns(catalog, schema: dict) -> list[str]:
-    """Writes each table's key columns where they differ; returns the
-    tables changed. Called by every sync, after the layers are written.
+    """Writes each table's columns where they differ; returns the tables
+    changed. Called by every sync, after the layers are written.
 
     NEVER NARROWS. What the table already recorded stays in the union, so
     a type removed from the ontology cannot take its tables' keys with
-    it. And nothing is written for a table the schema does not know and
-    that recorded nothing: an empty answer here would read, later, as
-    "holds no keys", which is precisely what is not known.
+    it, nor can a type that now maps fewer columns of a shared table. And
+    nothing is written for a table the schema does not know and that
+    recorded nothing: an empty answer here would read, later, as "holds no
+    keys", which is precisely what is not known.
 
     PER TABLE, NEVER FATAL, like record_classifications: a table that
     cannot take a property is named in the log, and erasure will then
-    report it as unreachable rather than skip it.
+    report it rather than skip it.
     """
     changed = []
     for namespace in catalog.list_namespaces():
@@ -324,8 +479,12 @@ def record_key_columns(catalog, schema: dict) -> list[str]:
             identifier = ".".join(parts)
             try:
                 table = catalog.load_table(identifier)
-                wanted = known_key_columns(schema, identifier, table)
-                if not wanted or wanted == recorded_key_columns(table):
+                wanted = known_columns(schema, identifier, table)
+                if not wanted.keys:
+                    continue
+                before = recorded_columns(table)
+                if before.present and (wanted.keys, wanted.ids, wanted.links) == (
+                        before.keys, before.ids, before.links):
                     continue
                 with table.transaction() as tx:
                     tx.set_properties({KEY_COLUMNS_PROPERTY: _encode(wanted)})
@@ -343,7 +502,7 @@ def recorded_object_types(catalog) -> set[str]:
         for parts in catalog.list_tables(namespace):
             try:
                 table = catalog.load_table(".".join(parts))
-            except Exception:  # noqa: BLE001 - unreadable here is reported where it matters
+            except Exception:  # noqa: BLE001 - unreadable here is reported by survey()
                 continue
             for types in recorded_key_columns(table).values():
                 found |= types
@@ -351,12 +510,92 @@ def recorded_object_types(catalog) -> set[str]:
 
 
 @dataclass(frozen=True)
+class Reach:
+    """What an erasure can and cannot search.
+
+    unreachable: {table: why} -- holds data, and neither the ontology nor
+    the table says which columns are keys (or the table cannot be read; the
+    kind of failure, not its message). partly_known: tables whose keys come
+    from the ontology alone because the table recorded nothing -- a
+    removed type that shared the table is not searched there, and cannot
+    be known to be missing. clears at the next sync. stale: (table, column,
+    type) where a recorded type no longer maps the column."""
+    unreachable: dict[str, str]
+    partly_known: list[str]
+    stale: list[tuple[str, str, str]]
+
+    @property
+    def incomplete(self) -> list[str]:
+        return sorted({*self.unreachable, *self.partly_known})
+
+
+def survey(catalog, schema: dict, erased_types: "set[str] | None" = None) -> Reach:
+    """Every lake table that holds data, as erasure would meet it. Changes
+    nothing. `erased_types` limits the stale-type report to the types being
+    erased; None asks only which tables cannot be searched."""
+    unreachable: dict[str, str] = {}
+    partly: list[str] = []
+    stale: list[tuple[str, str, str]] = []
+    for namespace in catalog.list_namespaces():
+        for parts in catalog.list_tables(namespace):
+            identifier = ".".join(parts)
+            try:
+                table = catalog.load_table(identifier)
+                holds_data = table.current_snapshot() is not None or bool(table.snapshots())
+                known = known_columns(schema, identifier, table)
+            except Exception as e:  # noqa: BLE001 - reported by name and kind, never fatal
+                unreachable[identifier] = f"cannot be read ({type(e).__name__})"
+                continue
+            if not holds_data:
+                continue
+            if not known.keys:
+                unreachable[identifier] = "no key columns known"
+                continue
+            tail = identifier.partition(".")[2]
+            if not known.present or (identifier.startswith("gold.") and tail not in schema
+                                     and len(_join_copies(schema, tail)) > 1):
+                partly.append(identifier)
+            if erased_types:
+                stale += [(identifier, column, name)
+                          for column, name in stale_types(schema, identifier, table)
+                          if name in erased_types]
+    return Reach(unreachable, sorted(partly), sorted(stale))
+
+
+def gap_notice(reach: Reach) -> list[str]:
+    """What an erasure or a sync says about what it could not search -- names
+    of lake tables and columns, never a value."""
+    lines = []
+    if reach.unreachable:
+        lines.append(
+            f"{len(reach.unreachable)} table(s) hold data that could not be searched: "
+            + ", ".join(f"{name} ({why})" for name, why in sorted(reach.unreachable.items()))
+            + ". Restore the type and sync once so they record their keys, or drop them in the lake.")
+    if reach.partly_known:
+        lines.append(
+            f"{len(reach.partly_known)} table(s) were searched only by the columns the ontology still "
+            f"maps, because they have not recorded their own yet: {', '.join(reach.partly_known)}. "
+            f"A removed type's other columns there cannot be known. The next sync records them; "
+            f"erase again after it.")
+    for table, column, name in reach.stale:
+        lines.append(f"{table}.{column} was recorded as holding {name} ids but the ontology now maps it "
+                     f"to something else: rows of whoever owns those values now are removed too.")
+    return lines
+
+
+@dataclass(frozen=True)
 class ErasureResult:
-    """removed: {table: rows removed}. unreachable_tables: lake tables that
-    hold data and that erasure could not search, because neither the
-    current schema nor the table itself says which columns are keys."""
+    """removed: {table: rows removed}; reach: what could not be searched."""
     removed: dict[str, int]
-    unreachable_tables: list[str]
+    reach: Reach
+
+    @property
+    def unreachable_tables(self) -> dict[str, str]:
+        return self.reach.unreachable
+
+    @property
+    def partly_known_tables(self) -> list[str]:
+        return self.reach.partly_known
 
 
 # --- Applying it ------------------------------------------------------
@@ -375,22 +614,71 @@ def erased_mask(table: pa.Table, key_columns: dict[str, set[str]], key_hash,
         for index, value in enumerate(table.column(column).to_pylist()):
             if mask[index] or value is None:
                 continue
-            if any(key_hash(object_type, value) in erased for object_type, erased in wanted):
+            # A join row's quarantine or cleaning record names its composite id.
+            candidates = str(value).split(LINK_SEPARATOR) if (
+                column == "object_id" and LINK_SEPARATOR in str(value)) else [value]
+            if any(key_hash(object_type, candidate) in erased
+                   for candidate in candidates for object_type, erased in wanted):
                 mask[index] = True
     return mask
+
+
+def _removed_types_tables(catalog, schema: dict) -> list:
+    """[(rows, ids, links)] for every table that holds the rows of a type
+    the ontology no longer has, as that table recorded it, so the cascade
+    can follow a link from an erased person to such a type's rows. `rows`
+    reads the current rows once, when first asked."""
+    found = []
+    for namespace in catalog.list_namespaces():
+        for parts in catalog.list_tables(namespace):
+            identifier = ".".join(parts)
+            try:
+                table = catalog.load_table(identifier)
+                recorded = recorded_columns(table)
+            except Exception:  # noqa: BLE001 - survey() reports a table that cannot be read
+                continue
+            ids = {column: {name for name in names if name not in schema}
+                   for column, names in recorded.ids.items()}
+            ids = {column: names for column, names in ids.items() if names}
+            if not ids or not recorded.links or table.current_snapshot() is None:
+                continue
+            found.append((_once(table), ids, recorded.links))
+    return found
+
+
+def _once(table):
+    cache: list = []
+
+    def rows() -> list:
+        if not cache:
+            cache.append(table.scan().to_arrow().to_pylist())
+        return cache[0]
+    return rows
 
 
 def cascade(catalog, schema: dict, keys: list[tuple[str, str]]) -> list[tuple[str, str]]:
     """The keys, plus every object whose forward link points at one.
 
     READ FROM GOLD, which holds every type's links in the ontology's
-    words. Repeated until nothing new is found, so a chain -- a ticket
-    on a transaction of the customer -- is followed to its end.
+    words -- and, for a type the ontology no longer has, from the tables
+    that recorded which of their columns are its ids and which are links
+    (record_key_columns), since gold's schema entry for it is gone. Both
+    are repeated until nothing new is found, so a chain -- a ticket on a
+    transaction of the customer -- is followed to its end. A removed
+    type's rows found this way are erased in every layer by their own id,
+    its per-id history and conflicts included.
     """
     erased = {(object_type, str(object_id)) for object_type, object_id in keys}
     frontier = set(erased)
+    removed_types = _removed_types_tables(catalog, schema)
     while frontier:
         found = set()
+        for rows, ids, links in removed_types:
+            for row in rows():
+                if any((target, str(row.get(column))) in frontier
+                       for column, targets in links.items() for target in targets):
+                    found |= {(name, str(row[column])) for column, names in ids.items()
+                              for name in names if row.get(column) is not None}
         for object_type, type_def in schema.items():
             links = [field_name for field_name, info in (type_def.get("fields") or {}).items()
                      if info.get("type") == "link" and info.get("cardinality") == "one"
@@ -415,30 +703,29 @@ def purge(catalog, schema: dict, register: ErasureRegister) -> ErasureResult:
     """Rewrites every mirror table without the erased rows, and drops
     every older snapshot and tag that still holds them.
 
-    The result names the rows removed per table AND every table it could
-    not search (ErasureResult.unreachable_tables): a table written before
-    key columns were recorded, whose type has since left the ontology. It
-    is reported and logged, never skipped quietly. The caller then deletes the unreferenced
-    files (integrity.orphaned_data_files with no margin) under the sync
-    lock -- this function leaves the warehouse with the old files
-    unreferenced, not yet gone.
+    The result names the rows removed per table AND what it could not
+    search (ErasureResult.reach): tables that hold data with no known keys
+    or that cannot be read, and tables searched only by the ontology's
+    columns. Those are reported, logged and recorded on the register as
+    the erasure's `incomplete` tables, never skipped quietly. The caller
+    then deletes the unreferenced files (integrity.orphaned_data_files
+    with no margin) under the sync lock -- this function leaves the
+    warehouse with the old files unreferenced, not yet gone.
     """
     from core.mirror.gold import PUBLISHED_TAG, _tag_publication
 
     hashes = register.hashes_by_type()
     key_hash = register.hasher()
+    reach = survey(catalog, schema, {name for name, found in hashes.items() if found})
     removed: dict[str, int] = {}
-    unreachable: list[str] = []
     for namespace in catalog.list_namespaces():
         for parts in catalog.list_tables(namespace):
             identifier = ".".join(parts)
-            table = catalog.load_table(identifier)
-            columns = known_key_columns(schema, identifier, table)
-            if not columns:
-                if table.current_snapshot() is not None or table.snapshots():
-                    unreachable.append(identifier)
+            if reach.unreachable.get(identifier, "").startswith("cannot be read"):
                 continue
-            if table.current_snapshot() is None:
+            table = catalog.load_table(identifier)
+            columns = known_columns(schema, identifier, table).keys
+            if not columns or table.current_snapshot() is None:
                 continue
             current = table.scan().to_arrow()
             mask = erased_mask(current, columns, key_hash, hashes)
@@ -455,13 +742,10 @@ def purge(catalog, schema: dict, register: ErasureRegister) -> ErasureResult:
                     # tag -- move to the erased version.
                     _tag_publication(catalog.load_table(identifier))
             _forget_every_other_snapshot(catalog.load_table(identifier))
-    if unreachable:
-        logger.warning(
-            "erasure could not search %d table(s) that hold data: neither the ontology nor the "
-            "table says which columns are keys (written before they were recorded, type since "
-            "removed): %s", len(unreachable), ", ".join(unreachable))
-    register.mark_purged()
-    return ErasureResult(removed, unreachable)
+    for line in gap_notice(reach):
+        logger.warning("erasure: %s", line)
+    register.mark_purged(reach.incomplete)
+    return ErasureResult(removed, reach)
 
 
 def _older_snapshots_hold_them(table, columns, key_hash, hashes) -> bool:

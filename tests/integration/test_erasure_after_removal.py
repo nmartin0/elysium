@@ -25,6 +25,7 @@ from core.mirror.erasure import (
     ErasureRegister,
     apply_erasures,
     recorded_key_columns,
+    survey,
 )
 from scripts.erase import run as erase
 from tests.integration.test_removal_from_the_ui import (  # noqa: F401 - fixtures
@@ -132,6 +133,8 @@ class TestAfterTheTypeIsRemoved:
         assert recorded == {"tag_id": {"Tag"}}
         assert recorded_key_columns(catalog.load_table("primary_sql.customer_tags")) == {
             "customer_id": {"Customer"}, "tag_id": {"Tag"}}
+        # A column the ontology no longer maps is a removed type's, not a re-pointed one.
+        assert survey(catalog, load_deployment(tag_lake.config_dir).schema, {"Customer", "Tag"}).stale == []
 
 
 class TestATableWrittenBeforeTheRecordExisted:
@@ -150,7 +153,7 @@ class TestATableWrittenBeforeTheRecordExisted:
                                     tag_lake.data_dir / "mirror")
 
         assert sorted(result.unreachable_tables) == sorted(legacy)
-        assert "could not search" in caplog.text and "gold.Tag" in caplog.text
+        assert "could not be searched" in caplog.text and "gold.Tag" in caplog.text
 
     def test_the_command_says_so_and_does_not_report_success(self, tag_lake):  # noqa: F811
         _remove_tag_and_sync_again(tag_lake)
@@ -175,7 +178,12 @@ class TestATableWrittenBeforeTheRecordExisted:
 
         code, _printed, errors = _erase(tag_lake, "Tag", "1")
 
-        assert code == 1 and "No object type" in errors
+        assert code == 1
+        assert "not an object type of the ontology" in errors
+        # HONEST, not "no such type": the tables erasure cannot search are named, with the remedy.
+        assert "gold.Tag" in errors and "gold_history.Tag" in errors
+        assert "Restore the type and sync once" in errors and "drop the tables" in errors
+        assert "primary_sql.customers" not in errors              # known to the ontology
 
     def test_the_next_sync_records_it_for_a_type_that_still_exists(self, tag_lake):  # noqa: F811
         _sync(tag_lake)
@@ -188,3 +196,52 @@ class TestATableWrittenBeforeTheRecordExisted:
         for identifier in ("gold.Customer", "primary_sql.customers"):
             assert recorded_key_columns(catalog.load_table(identifier)) == {
                 "customer_id": {"Customer"}}, identifier
+
+
+class TestWhatTheRegisterAndTheSyncSay:
+    def _incomplete_erasure(self, paths):
+        _remove_tag_and_sync_again(paths)
+        _forget_what_tables_recorded(paths, ["gold.Tag", "primary_sql.tags"])
+        with _source(paths) as source:
+            customer = source.execute("SELECT customer_id FROM customer_tags LIMIT 1").fetchone()[0]
+        return customer, _erase(paths, "Customer", customer)
+
+    def test_a_dry_run_names_what_the_write_could_not_search(self, tag_lake):  # noqa: F811
+        _remove_tag_and_sync_again(tag_lake)
+        _forget_what_tables_recorded(tag_lake, ["gold.Tag"])
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed), contextlib.redirect_stderr(io.StringIO()):
+            code = erase("Customer", "cust_001", "test", write=False, paths=tag_lake)
+
+        assert code == 0
+        assert "WARNING" in printed.getvalue() and "gold.Tag" in printed.getvalue()
+        assert "Dry run" in printed.getvalue()
+
+    def test_the_register_says_incomplete_and_the_list_shows_it(self, tag_lake):  # noqa: F811
+        _customer, (code, _out, _err) = self._incomplete_erasure(tag_lake)
+        register = ErasureRegister(tag_lake.data_dir / "erasures.db")
+
+        assert code == 2
+        assert register.incomplete() == ["gold.Tag", "primary_sql.tags"]
+        assert not register.unpurged()                    # applied to what could be searched
+        from scripts.erase import list_erasures
+        listed = io.StringIO()
+        with contextlib.redirect_stdout(listed):
+            list_erasures(tag_lake)
+        assert "INCOMPLETE: gold.Tag, primary_sql.tags" in listed.getvalue()
+
+    def test_every_later_sync_says_so_and_it_clears_when_they_can_be_searched(self, tag_lake):  # noqa: F811
+        from scripts.run_sync import run_sync
+
+        self._incomplete_erasure(tag_lake)
+        errors = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(errors):
+            run_sync(tag_lake)
+        assert "gold.Tag" in errors.getvalue() and "WARNING erasure" in errors.getvalue()
+
+        catalog = open_mirror_catalog(tag_lake.data_dir / "mirror")
+        for name in ("gold.Tag", "primary_sql.tags"):
+            catalog.drop_table(name)                      # the remedy the message names
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            run_sync(tag_lake)
+        assert ErasureRegister(tag_lake.data_dir / "erasures.db").incomplete() == []
