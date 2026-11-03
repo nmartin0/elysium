@@ -153,6 +153,7 @@ from core.masked_review import agreement_pattern, masked_comparison, withheld_fi
 from core.mirror.expectation_warnings import ExpectationWarnings
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.integrity import _row_count, check_mirror
+from core.mirror.object_state import REBUILDING_OUTCOME, table_state, type_state
 from core.mirror.quarantine_report import quarantine_for
 from core.mirror.source_record import agreement_shown
 from core.mirror.sync_attempts import SyncAttempts
@@ -3978,6 +3979,10 @@ class MirrorTableState(BaseModel):
     last_attempt_at: str | None
     last_attempt_outcome: str | None
     last_attempt_detail: str | None
+    # live, rebuilding or unavailable (core/mirror/object_state), and whether a
+    # retype has left its silver owed a rebuild.
+    state: str = "live"
+    rebuild_owed: bool = False
     # WHEN THE DATA CHANGED, newest first. Iceberg records a snapshot
     # per commit and keeps them, so this is history the mirror already
     # holds rather than something new to store.
@@ -3989,10 +3994,27 @@ class MirrorTableState(BaseModel):
     snapshots: list[MirrorSnapshot] = []
 
 
+class MirrorObjectState(BaseModel):
+    """One object type's state (core/mirror/object_state), the worst of the
+    silver tables it reads."""
+    object_type: str
+    state: str
+    # Some table it reads has silver that differs from the declared type.
+    # Not a state: the old silver keeps serving until "Rebuild now".
+    rebuild_owed: bool
+    tables: list[str]
+
+
 class MirrorStateResponse(BaseModel):
     reading_from_mirror: bool
     tables: list[MirrorTableState]
     problems: list[str]
+    # R2: the "silo.table" names owed a rebuild right now, which are what
+    # POST /admin/mirror/sync takes as `rebuild`; and True when the lake could
+    # not be read, so the list is empty because nobody can tell.
+    rebuild_owed: list[str] = []
+    rebuild_owed_unknown: bool = False
+    object_states: list[MirrorObjectState] = []
 
 
 class ModulePermission(BaseModel):
@@ -5957,6 +5979,19 @@ def admin_mirror_sync_route(
     }
 
 
+def _a_sync_holds_the_lock(request: Request) -> "bool | None":
+    """Whether a sync is running now, by trying the lock and letting it go;
+    None when that could not be tried."""
+    from core.mirror.sync_lock import single_writer
+
+    try:
+        with single_writer(request.app.state.runtime_paths.data_dir / "sync.lock") as free:
+            return not free
+    except Exception as e:  # noqa: BLE001 - "cannot tell" is an answer here
+        logger.warning("could not try the sync lock: %s", type(e).__name__)
+        return None
+
+
 class RebuildOwedResponse(BaseModel):
     rebuild: list[str]
     # True when the mirror could not be read: `rebuild` is [] because nobody
@@ -6022,6 +6057,13 @@ def admin_mirror_route(request: Request,
     but a count is still a fact about how much there is, and an
     ordinary user has no reason to see it.
 
+    RETYPE R2: each table and each object type also carries its STATE
+    (live, rebuilding or unavailable) and whether a rebuild is OWED,
+    both derived from the lake and the sync lock on every call
+    (core/mirror/object_state); nothing is stored, and nothing here
+    starts a rebuild -- the old silver serves until a person presses
+    "Rebuild now" and the sync swaps the new one in.
+
     NO COUNTS FROM THE SOURCE. Answering "how far behind is the
     mirror" would mean reading the customer's database on every page
     load, which is what the mirror exists to avoid.
@@ -6051,10 +6093,31 @@ def admin_mirror_route(request: Request,
     sync = IcebergMirrorSync(mirror_dir, {}, storage=storage)
     attempts = SyncAttempts(mirror_dir / "sync_attempts.db")
     warnings = ExpectationWarnings(mirror_dir / "expectation_warnings.db")
+    # WHAT A RETYPE OWES, worked out from the lake each time (no marker), with
+    # the schema of the generation this request is pinned to.
+    try:
+        owed: set[str] | None = set(_tables_needing_rebuild(request, generation.config.schema))
+    except _MirrorUnreadable:
+        owed = None
+    targets = resolve_sync_targets({"object_types": generation.config.schema})
+    last_attempts = {(target.silo_name, target.table_name): attempts.last_for(target.silo_name, target.table_name)
+                     for target in targets}
+    # Only asked when some table says it is being rebuilt, since trying the
+    # lock is the one thing here that touches a running sync.
+    sync_running: bool | None = False
+    if any(each is not None and each.outcome == REBUILDING_OUTCOME for each in last_attempts.values()):
+        sync_running = _a_sync_holds_the_lock(request)
+    table_states = {
+        f"{target.silo_name}.{target.table_name}": table_state(
+            owed_known=owed is not None,
+            last_outcome=attempt.outcome if (attempt := last_attempts[(target.silo_name, target.table_name)])
+            else None,
+            sync_running=sync_running)
+        for target in targets}
     tables = []
-    for target in resolve_sync_targets({"object_types": generation.config.schema}):
+    for target in targets:
         synced_at = sync.last_synced_at(target.silo_name, target.table_name)
-        attempt = attempts.last_for(target.silo_name, target.table_name)
+        attempt = last_attempts[(target.silo_name, target.table_name)]
         quarantine = quarantine_for(catalog, target.silo_name, target.table_name)
         tables.append({
             "silo": target.silo_name,
@@ -6084,6 +6147,8 @@ def admin_mirror_route(request: Request,
             "last_attempt_at": attempt.at.isoformat() if attempt else None,
             "last_attempt_outcome": attempt.outcome if attempt else None,
             "last_attempt_detail": attempt.detail if attempt else None,
+            "state": table_states[f"{target.silo_name}.{target.table_name}"],
+            "rebuild_owed": f"{target.silo_name}.{target.table_name}" in (owed or ()),
             "snapshots": _recent_snapshots(
                 catalog, f"{target.silo_name}.{target.table_name}",
             ),
@@ -6093,10 +6158,23 @@ def admin_mirror_route(request: Request,
         catalog, generation.config.schema,
         mirror_dir / "warehouse",
     )
+    reads: dict[str, list[str]] = {}
+    for target in targets:
+        for object_type in target.object_types:
+            reads.setdefault(object_type, []).append(f"{target.silo_name}.{target.table_name}")
+    object_states = [
+        {"object_type": object_type,
+         "state": type_state(table_states[name] for name in names),
+         "rebuild_owed": any(name in (owed or ()) for name in names),
+         "tables": sorted(names)}
+        for object_type, names in sorted(reads.items())]
     return {
         "reading_from_mirror": True,
         "tables": tables,
         "problems": list(report.problems),
+        "rebuild_owed": sorted(owed or ()),
+        "rebuild_owed_unknown": owed is None,
+        "object_states": object_states,
     }
 
 

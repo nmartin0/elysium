@@ -73,6 +73,7 @@ from core.mirror.expectation_warnings import ExpectationWarnings
 from core.mirror.gold import build_gold, published_ids
 from core.mirror.iceberg_sync import IcebergMirrorSync
 from core.mirror.manifest import publish_manifest
+from core.mirror.object_state import REBUILDING_OUTCOME
 from core.mirror.openlineage import (
     COMPLETE,
     DEFAULT_NAMESPACE,
@@ -1157,6 +1158,16 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
                                 [lake_dataset(lineage.namespace, "bronze", label),
                                  lake_dataset(lineage.namespace, "silver", label)])
                     lineage.emit(START, table_job, *table_io)
+                    if label in rebuilding:
+                        # THE OBJECT'S STATE "rebuilding" IS DERIVED FROM THIS
+                        # (core/mirror/object_state): the table's last attempt
+                        # says so while the sync holds the lock. The attempt
+                        # that ends it ('synced' or 'refused') replaces it, and
+                        # a run that died leaves it behind harmlessly, because
+                        # without the lock held it reads as live again.
+                        attempts.record(target.silo_name, target.table_name, REBUILDING_OUTCOME,
+                                        "silver is being rebuilt from bronze; the previous silver serves "
+                                        "until the new one is swapped in", run_id=run_id)
                     try:
                         result = sync.sync_table(
                             target.silo_name, target.table_name, target.id_column,

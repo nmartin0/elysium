@@ -52,7 +52,8 @@ CREATE TABLE IF NOT EXISTS sync_attempts (
     at REAL NOT NULL,
     silo TEXT NOT NULL,
     table_name TEXT NOT NULL,
-    -- 'synced', 'unchanged', 'degraded' or 'refused'. Outcomes rather
+    -- 'synced', 'unchanged', 'degraded', 'refused' or (while a retype's
+    -- silver rebuild runs, until the next attempt replaces it) 'rebuilding'. Outcomes rather
     -- than a boolean, because "ran and did nothing" and "ran and was
     -- stopped" are the two this store exists to separate -- and
     -- 'degraded' (PA001-A17) is "ran, silver is current, but bronze

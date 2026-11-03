@@ -678,4 +678,6 @@ can_set_shared
 # Retype R1 review fixes (2 November).
 admin_mirror_rebuild_owed_route  # GET /admin/mirror/rebuild-owed: a FastAPI route, reached by HTTP
 rebuild_unknown  # RetypeResponse.rebuild_unknown, read by the browser
+rebuild_owed  # MirrorStateResponse / MirrorTableState / MirrorObjectState fields (R2), read by the Mirror panel
+rebuild_owed_unknown  # MirrorStateResponse.rebuild_owed_unknown (R2), read by the Mirror panel
 broken_catalog  # a pytest fixture taken as a parameter for its effect (tests/integration/test_retype_from_the_ui.py)

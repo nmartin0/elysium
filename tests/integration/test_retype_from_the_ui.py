@@ -521,18 +521,39 @@ def flow(tmp_path_factory):
     client.app.state.sync_thread_factory = _CapturedThread
     _CapturedThread.started = []
     result.client = client
+    result.mirror_before = client.get("/api/admin/mirror").json()
     result.preview = _retype(client, preview=True).json()
     result.applied = _retype(client)
     result.rebuild = result.applied.json()["rebuild"]
+    result.mirror_owed = client.get("/api/admin/mirror").json()
 
     # Silver is refused: gold is the finding.
     result.refused_failures, result.refused_output = sync()
     result.refused = _Lake(paths)
+    result.mirror_refused = client.get("/api/admin/mirror").json()
     result.still_to_rebuild = _post_sync(client, rebuild=result.rebuild)
     result.thread = list(_CapturedThread.started)
 
-    result.rebuilt_failures, _output = sync(rebuild=set(result.rebuild))
+    # THE STATE WHILE THE REBUILD RUNS, asked through the route from inside the
+    # sync: its lock is held, and silver is still the old one.
+    from core.mirror.iceberg_sync import IcebergMirrorSync
+
+    real_sync_table = IcebergMirrorSync.sync_table
+    during: dict = {}
+
+    def watching(self, silo, table, *args, **kwargs):
+        if f"{silo}.{table}" == SILVER:
+            during["mirror"] = client.get("/api/admin/mirror").json()
+            during["lake"] = _Lake(paths)
+        return real_sync_table(self, silo, table, *args, **kwargs)
+
+    with pytest.MonkeyPatch.context() as watch:
+        watch.setattr(IcebergMirrorSync, "sync_table", watching)
+        result.rebuilt_failures, _output = sync(rebuild=set(result.rebuild))
+    result.mirror_during = during["mirror"]
+    result.lake_during = during["lake"]
     result.rebuilt = _Lake(paths)
+    result.mirror_rebuilt = client.get("/api/admin/mirror").json()
     result.after_rebuild_the_names_are_refused = _post_sync(client, rebuild=result.rebuild)
     result.left = _retype(client, preview=True, what={**AMOUNT, "data_type": "number"}).json()["tables"]
 
@@ -632,6 +653,119 @@ class TestWhatHappensToStoredData:
         (new,) = set(flow.later.history) - set(flow.before.history)
         assert amount(old) == "50.99"
         assert amount(new) == "51.990000000"
+
+
+def _of(mirror, table=SILVER):
+    return next(each for each in mirror["tables"] if f"{each['silo']}.{each['table']}" == table)
+
+
+def _type_state(mirror, object_type="Transaction"):
+    return next(each for each in mirror["object_states"] if each["object_type"] == object_type)
+
+
+class TestTheStateOfTheObject:
+    """R2: live, rebuilding or unavailable, and "rebuild owed" beside it,
+    asked of the mirror route at each step of the real story."""
+
+    def test_nothing_is_owed_before_the_type_changes(self, flow):
+        assert flow.mirror_before["rebuild_owed"] == [] and flow.mirror_before["rebuild_owed_unknown"] is False
+        assert _of(flow.mirror_before)["state"] == "live" and _of(flow.mirror_before)["rebuild_owed"] is False
+        assert {each["state"] for each in flow.mirror_before["object_states"]} == {"live"}
+
+    def test_after_the_change_the_table_is_owed_and_the_object_is_still_live(self, flow):
+        assert flow.mirror_owed["rebuild_owed"] == [SILVER]
+        assert _of(flow.mirror_owed)["rebuild_owed"] is True and _of(flow.mirror_owed)["state"] == "live"
+        assert _type_state(flow.mirror_owed) == {
+            "object_type": "Transaction", "state": "live", "rebuild_owed": True,
+            "tables": [SILVER]}
+        # A type reading no table that is owed is not marked.
+        assert _type_state(flow.mirror_owed, "Account")["rebuild_owed"] is False
+
+    def test_a_refused_sync_leaves_it_owed_and_live_with_the_old_silver_serving(self, flow):
+        assert flow.mirror_refused["rebuild_owed"] == [SILVER]
+        assert _of(flow.mirror_refused)["state"] == "live"
+        assert _of(flow.mirror_refused)["silver_rows"] == _of(flow.mirror_before)["silver_rows"]
+
+    def test_while_the_rebuild_runs_the_table_and_its_type_are_rebuilding_on_the_old_silver(self, flow):
+        assert _of(flow.mirror_during)["state"] == "rebuilding"
+        assert _type_state(flow.mirror_during)["state"] == "rebuilding"
+        assert _type_state(flow.mirror_during, "Account")["state"] == "live"
+        assert flow.lake_during.types["silver"] == "double"
+        assert flow.lake_during.snapshots["silver"] == flow.before.snapshots["silver"]
+        assert _of(flow.mirror_during)["silver_rows"] == _of(flow.mirror_before)["silver_rows"]
+
+    def test_once_swapped_in_it_is_live_and_nothing_is_owed(self, flow):
+        assert flow.mirror_rebuilt["rebuild_owed"] == []
+        assert _of(flow.mirror_rebuilt)["state"] == "live" and _of(flow.mirror_rebuilt)["rebuild_owed"] is False
+        assert _of(flow.mirror_rebuilt)["last_attempt_outcome"] in ("synced", "unchanged")
+        assert _type_state(flow.mirror_rebuilt)["state"] == "live"
+
+
+class TestTheStateWhenItCannotBeTold:
+    @staticmethod
+    def _attempt(client, outcome):
+        from core.mirror.sync_attempts import SyncAttempts
+
+        mirror = client.app.state.runtime_paths.data_dir / "mirror"
+        mirror.mkdir(parents=True, exist_ok=True)
+        SyncAttempts(mirror / "sync_attempts.db").record("primary_sql", "transactions", outcome)
+
+    @staticmethod
+    def _state(client):
+        mirror = client.get("/api/admin/mirror").json()
+        return mirror, _of(mirror)["state"], _type_state(mirror)["state"]
+
+    def test_a_mirror_that_cannot_be_read_is_unavailable_never_live(self, retyper, broken_catalog):
+        mirror, table, object_type = self._state(retyper)
+
+        assert mirror["rebuild_owed_unknown"] is True and mirror["rebuild_owed"] == []
+        assert table == object_type == "unavailable"
+        assert {each["state"] for each in mirror["object_states"]} == {"unavailable"}
+
+    def test_a_rebuild_that_died_is_not_rebuilding_for_ever(self, retyper):
+        _retype(retyper)
+        self._attempt(retyper, "rebuilding")          # recorded, then the process died: no lock is held
+
+        mirror, table, object_type = self._state(retyper)
+
+        assert table == object_type == "live" and mirror["rebuild_owed"] == [SILVER]
+
+    def test_a_recorded_rebuild_is_rebuilding_while_a_sync_holds_the_lock(self, retyper):
+        from core.mirror.sync_lock import single_writer
+
+        _retype(retyper)
+        self._attempt(retyper, "rebuilding")
+
+        with single_writer(retyper.app.state.runtime_paths.data_dir / "sync.lock") as free:
+            assert free
+            _mirror, table, object_type = self._state(retyper)
+
+        assert table == object_type == "rebuilding"
+
+    def test_a_sync_that_is_not_a_rebuild_does_not_make_a_table_rebuilding(self, retyper):
+        from core.mirror.sync_lock import single_writer
+
+        _retype(retyper)
+        self._attempt(retyper, "refused")
+
+        with single_writer(retyper.app.state.runtime_paths.data_dir / "sync.lock") as free:
+            assert free
+            _mirror, table, _object_type = self._state(retyper)
+
+        assert table == "live"
+
+    def test_a_lock_that_cannot_be_tried_is_unavailable(self, retyper, monkeypatch):
+        _retype(retyper)
+        self._attempt(retyper, "rebuilding")
+
+        def broken(path):
+            raise OSError("no lock")
+
+        monkeypatch.setattr("core.mirror.sync_lock.single_writer", broken)
+
+        _mirror, table, object_type = self._state(retyper)
+
+        assert table == object_type == "unavailable"
 
 
 class TestWhileSilverIsRefused:
