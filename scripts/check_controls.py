@@ -2562,8 +2562,8 @@ CONTROLS = [
     Control(
         describes="R33: an erased person's cleaned cells are erased with them",
         path="core/mirror/erasure.py",
-        old="    if namespace.startswith((\"quarantine_\", \"cleaning_\")):",
-        new="    if namespace.startswith((\"quarantine_\",)):",
+        old="    if namespace.startswith((\"quarantine_\", \"cleaning_\")):\n        # Both record findings by OBJECT ID",
+        new="    if namespace.startswith((\"quarantine_\",)):\n        # Both record findings by OBJECT ID",
         tests=["tests/unit/test_cleaning_is_recorded_per_cell.py::test_an_erased_person_s_cells_go_with_them"],
     ),
     Control(
@@ -3683,8 +3683,8 @@ CONTROLS = [
     Control(
         describes="DEV_UI 13.7 restore: a widening restore waits",
         path="api/routes.py",
-        old="        if not impact[\"widens\"]:\n            result = _write_config_files(",
-        new="        if True:\n            result = _write_config_files(",
+        old="        if not impact[\"widens\"]:\n            notice = _record_erasure_keys_before(request)       # the older generation may lack a type",
+        new="        if True:\n            notice = _record_erasure_keys_before(request)       # the older generation may lack a type",
         tests=["tests/integration/test_putting_a_version_back.py::TestPuttingItBack::test_a_widening_restore_waits_with_its_reason_and_the_approver_applies_it"],
     ),
     Control(
