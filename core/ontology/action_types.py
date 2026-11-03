@@ -440,12 +440,6 @@ def _collect_parameter_references(action_def: dict) -> set[str]:
             for value in (criterion or {}).values():
                 note(value)
 
-    # The action level is still read, because nothing forbids a
-    # deployment putting criteria there and a validator that quietly
-    # ignored half the file would be its own version of this bug.
-    for criterion in action_def.get("submission_criteria") or []:
-        for value in (criterion or {}).values():
-            note(value)
     return referenced
 
 

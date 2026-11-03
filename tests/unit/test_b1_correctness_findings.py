@@ -227,17 +227,6 @@ class TestF14AParameterUsedOnlyByACriterion:
 
         validate_action_types(actions, TICKET_TYPES)
 
-    def test_a_parameter_used_only_in_an_ACTION_level_criterion_is_accepted(self):
-        """Nothing forbids a deployment putting criteria there, and a
-        validator that read only half the file would be its own version
-        of this bug."""
-        actions = _close_ticket()
-        actions["close_ticket"]["submission_criteria"] = [
-            {"property": "status", "operator": "equals", "value": "parameter.expected_status"},
-        ]
-
-        validate_action_types(actions, TICKET_TYPES)
-
     def test_a_parameter_used_in_a_mutation_value_is_accepted(self):
         actions = _close_ticket()
         actions["close_ticket"]["sub_writes"][0]["mutations"] = [

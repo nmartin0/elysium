@@ -119,3 +119,18 @@ def test_submission_criteria_declared_as_something_other_than_a_list_is_rejected
 
     with pytest.raises(ValueError, match="must be a list"):
         validate_action_type_criteria(action)
+
+
+def test_criteria_on_the_action_itself_are_refused_and_the_message_says_where_they_go():
+    # Evaluated only per sub_write, so criteria one level up would load
+    # cleanly and enforce nothing: an authorization-shaped no-op.
+    action = _action_with(VALID)
+    action["ReopenTicket"]["submission_criteria"] = [VALID]
+
+    with pytest.raises(ValueError) as caught:
+        validate_action_type_criteria(action)
+
+    message = str(caught.value)
+    assert "ReopenTicket" in message
+    assert "each sub_write" in message
+

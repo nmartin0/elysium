@@ -227,10 +227,18 @@ def validate_action_type_criteria(action_types: dict) -> None:
     that fails if the call is dropped.
 
     Criteria are declared PER SUB_WRITE, which is where propose_action()
-    reads them from; one attached at action level is silently ignored
-    rather than applied.
+    reads them from. One attached to the action itself would never be
+    evaluated, so it is refused here rather than loaded as a rule that
+    does nothing.
     """
     for action_type_name, action_def in action_types.items():
+        if "submission_criteria" in action_def:
+            raise ValueError(
+                f"Action type {action_type_name!r}: submission_criteria is set on the "
+                f"action itself, where it would never be enforced. Put the criteria on "
+                f"each sub_write (sub_writes[].submission_criteria), which is where "
+                f"they are evaluated."
+            )
         for index, sub_write in enumerate(action_def.get("sub_writes") or []):
             criteria = sub_write.get("submission_criteria")
             if criteria is None:

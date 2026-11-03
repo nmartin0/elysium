@@ -9256,6 +9256,16 @@ CONTROLS = [
         new="        name: definition\n",
         tests=["tests/integration/test_api_v2.py::TestTheSchema::test_no_storage_or_security_internals_are_served"],
     ),
+    Control(
+        describes="criteria on the action itself are refused, not loaded as a rule that does nothing",
+        path="core/ontology/submission_criteria.py",
+        old='        if "submission_criteria" in action_def:\n',
+        new='        if False:\n',
+        tests=["tests/unit/test_criteria_validation.py::"
+               "test_criteria_on_the_action_itself_are_refused_and_the_message_says_where_they_go",
+               "tests/unit/test_lint_deployment.py::"
+               "test_lint_rejects_criteria_placed_on_the_action_instead_of_a_sub_write"],
+    ),
 ]
 
 

@@ -315,10 +315,6 @@ def _actions(action_types: Mapping, schema: Mapping, object_type: str,
             for criterion in write.get("submission_criteria") or []:
                 if criterion.get("check") == "current_state" and criterion.get("field") == field:
                     found.append(Referrer("action", place, f"checks {object_type}.{field} before running"))
-        if writes or object_type in (action.get("affected_object_types") or []):
-            for criterion in action.get("submission_criteria") or []:
-                if criterion.get("check") == "current_state" and criterion.get("field") == field:
-                    found.append(Referrer("action", place, f"checks {object_type}.{field} before running"))
     return found
 
 

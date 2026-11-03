@@ -475,6 +475,24 @@ def test_lint_accepts_a_well_formed_submission_criterion(tmp_path, capsys):
     assert lint_deployment(tmp_path) is True
 
 
+def test_lint_rejects_criteria_placed_on_the_action_instead_of_a_sub_write(tmp_path, capsys):
+    # Evaluated only per sub_write, so criteria one level up used to
+    # lint clean and enforce nothing.
+    action_level = _ONTOLOGY_WITH_CRITERION.replace(
+        "    sub_writes:\n",
+        "    submission_criteria:\n"
+        "      - {description: d, check: current_state, field: status,"
+        " operator: equals, value: active}\n"
+        "    sub_writes:\n",
+    ) % "current_state"
+    _write_deployment(tmp_path, ontology=action_level)
+
+    assert lint_deployment(tmp_path) is False
+    out = capsys.readouterr().out
+    assert "RenameWidget" in out
+    assert "each sub_write" in out
+
+
 def test_lint_rejects_a_misspelled_check_kind(tmp_path, capsys):
     # Before this validation existed, `currentstate` linted clean,
     # started clean, and failed on the first real user's write.

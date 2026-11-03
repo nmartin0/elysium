@@ -29,7 +29,7 @@ from core.ontology.action_types import _collect_parameter_references
 PARAMETERS = {"ticket_id": {"type": "string"}, "approver": {"type": "string"}}
 
 
-def _action(criteria_on_sub_write=None, criteria_on_action=None):
+def _action(criteria_on_sub_write=None):
     sub_write = {
         "object_type": "Ticket",
         "object_id": "parameter.ticket_id",
@@ -39,8 +39,6 @@ def _action(criteria_on_sub_write=None, criteria_on_action=None):
     if criteria_on_sub_write is not None:
         sub_write["submission_criteria"] = criteria_on_sub_write
     action = {"parameters": PARAMETERS, "sub_writes": [sub_write]}
-    if criteria_on_action is not None:
-        action["submission_criteria"] = criteria_on_action
     return action
 
 
@@ -51,13 +49,6 @@ def test_finds_a_parameter_used_only_by_a_criterion_on_the_sub_write():
     # THE REAL SHAPE. This is where WriteMediator reads criteria from,
     # and where every deployment writes them.
     assert "approver" in _collect_parameter_references(_action(criteria_on_sub_write=FOUR_EYES))
-
-
-def test_still_finds_one_at_the_action_level():
-    # Nothing forbids a deployment putting criteria there, and a
-    # validator that quietly ignored half the file would be its own
-    # version of this bug.
-    assert "approver" in _collect_parameter_references(_action(criteria_on_action=FOUR_EYES))
 
 
 def test_a_literal_criterion_contributes_no_reference():
