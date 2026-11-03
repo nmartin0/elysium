@@ -16,13 +16,25 @@ def test_every_declared_break_matches_exactly_once():
     # which has happened by hand in this project more than once. It is
     # the failure mode this whole script exists to catch, so it cannot
     # be allowed in the script's own declarations.
-    from scripts.check_controls import ROOT
+    #
+    # The anchor is the text, not the path: a break that now lives in
+    # another file still matches exactly once, and fails here only so
+    # that the stale path is seen -- with the one-command fix in the
+    # message.
+    from scripts.check_controls import AMBIGUOUS, MOVED, OK, RETIRED, resolve_all
 
-    for control in CONTROLS:
-        text = (ROOT / control.path).read_text()
-        assert text.count(control.old) == 1, (
-            f"{control.describes!r}: its break matches "
-            f"{text.count(control.old)} places in {control.path}")
+    resolved = resolve_all(CONTROLS)
+    moved = [f"  {c.path} -> {p[0]}  ({c.describes})" for c, s, p in resolved if s == MOVED]
+    lost = [f"  {c.path}: {s}  ({c.describes})"
+            for c, s, p in resolved if s in (RETIRED, AMBIGUOUS)]
+    assert all(s in (OK, MOVED, RETIRED, AMBIGUOUS) for _, s, _ in resolved)
+    message = []
+    if moved:
+        message.append(f"{len(moved)} control(s) MOVED; run "
+                       f"`python scripts/check_controls.py --rewrite-paths`:\n" + "\n".join(moved))
+    if lost:
+        message.append("controls whose break matches nothing or too much:\n" + "\n".join(lost))
+    assert not message, "\n".join(message)
 
 
 def test_every_control_names_the_tests_it_expects_to_fail():
@@ -259,3 +271,150 @@ def test_a_control_whose_tests_were_all_skipped_is_broken_not_silent(tmp_path, m
     assert "BROKEN" in printed
     assert "skipped" in printed
     assert "SILENT" not in printed
+
+
+# --- content anchoring, against a small temporary tree -----------------
+
+def _tree(tmp_path, monkeypatch, files):
+    from scripts import check_controls
+
+    for name, text in files.items():
+        target = tmp_path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
+    monkeypatch.setattr(check_controls, "ROOT", tmp_path)
+    monkeypatch.setattr(check_controls, "IN_PROGRESS", tmp_path / ".in-progress.json")
+    return check_controls
+
+
+def _control(path="core/old.py", old="VALUE = 1", describes="a guarantee"):
+    return Control(describes=describes, path=path, old=old, new="VALUE = 2", tests=["a::b"])
+
+
+def test_an_anchor_still_in_its_file_is_ok(tmp_path, monkeypatch):
+    cc = _tree(tmp_path, monkeypatch, {"core/old.py": "VALUE = 1\n"})
+    assert cc.resolve(_control()) == (cc.OK, ["core/old.py"])
+
+
+def test_an_anchor_that_moved_to_one_file_is_moved(tmp_path, monkeypatch):
+    cc = _tree(tmp_path, monkeypatch, {"core/old.py": "pass\n",
+                                       "core/new/home.py": "VALUE = 1\n",
+                                       "core/other.py": "unrelated\n"})
+    assert cc.resolve(_control()) == (cc.MOVED, ["core/new/home.py"])
+
+
+def test_an_anchor_that_vanished_is_retired(tmp_path, monkeypatch):
+    cc = _tree(tmp_path, monkeypatch, {"core/old.py": "pass\n", "api/x.py": "pass\n"})
+    assert cc.resolve(_control()) == (cc.RETIRED, [])
+
+
+def test_an_anchor_in_several_files_is_ambiguous(tmp_path, monkeypatch):
+    cc = _tree(tmp_path, monkeypatch, {"core/old.py": "pass\n",
+                                       "core/a.py": "VALUE = 1\n", "api/b.py": "VALUE = 1\n"})
+    status, paths = cc.resolve(_control())
+    assert status == cc.AMBIGUOUS and paths == ["api/b.py", "core/a.py"]
+
+
+def test_an_anchor_twice_in_one_other_file_is_ambiguous(tmp_path, monkeypatch):
+    cc = _tree(tmp_path, monkeypatch, {"core/old.py": "pass\n",
+                                       "core/a.py": "VALUE = 1\nVALUE = 1\n"})
+    assert cc.resolve(_control())[0] == cc.AMBIGUOUS
+
+
+def test_only_the_governed_tree_is_searched(tmp_path, monkeypatch):
+    cc = _tree(tmp_path, monkeypatch, {"core/old.py": "pass\n",
+                                       "docs/notes.py": "VALUE = 1\n",
+                                       "core/node_modules/x.py": "VALUE = 1\n"})
+    assert cc.resolve(_control())[0] == cc.RETIRED
+
+
+def test_a_moved_control_runs_against_its_new_file_but_does_not_count_as_firing(
+        tmp_path, monkeypatch, capsys):
+    cc = _tree(tmp_path, monkeypatch, {
+        "core/old.py": "pass\n", "core/new.py": "VALUE = 1\n",
+        "test_it.py": "import core.new as m\n\ndef test_it():\n    assert m.VALUE == 1\n"})
+    monkeypatch.setattr(cc, "CONTROLS", [
+        Control(describes="moved guard", path="core/old.py", old="VALUE = 1",
+                new="VALUE = 2", tests=["test_it.py::test_it"])])
+    monkeypatch.setattr(cc, "run", lambda control: (cc.FIRES, "1 failed"))
+
+    assert cc.main([]) == 1
+    printed = capsys.readouterr().out
+    assert "MOVED" in printed and "core/new.py" in printed
+    assert "fires " not in printed
+    assert (tmp_path / "core/new.py").read_text() == "VALUE = 1\n"
+
+
+def test_retired_and_ambiguous_controls_are_not_run_and_fail_the_run(
+        tmp_path, monkeypatch, capsys):
+    cc = _tree(tmp_path, monkeypatch, {"core/old.py": "pass\n"})
+    monkeypatch.setattr(cc, "CONTROLS", [_control(describes="gone")])
+    ran = []
+    monkeypatch.setattr(cc, "run", lambda control: ran.append(control) or (cc.FIRES, ""))
+
+    assert cc.main([]) == 1
+    printed = capsys.readouterr().out
+    assert "RETIRED" in printed and "gone" in printed
+    assert not ran
+    assert "fires " not in printed
+
+
+def test_report_moves_prints_and_runs_nothing(tmp_path, monkeypatch, capsys):
+    cc = _tree(tmp_path, monkeypatch, {"core/old.py": "pass\n", "core/new.py": "VALUE = 1\n"})
+    monkeypatch.setattr(cc, "CONTROLS", [_control()])
+    monkeypatch.setattr(cc, "run", lambda control: pytest.fail("must not run"))
+
+    assert cc.main(["--report-moves"]) == 1
+    assert "core/old.py -> core/new.py" in capsys.readouterr().out
+
+
+def test_rewrite_paths_changes_only_the_path_of_moved_controls():
+    from scripts.check_controls import rewrite_paths
+
+    source = (
+        "CONTROLS = [\n"
+        "    Control(\n"
+        "        describes='one',\n"
+        "        path='core/a.py',\n"
+        "        old='x = \"core/a.py\"',\n"
+        "        new='y',\n"
+        "        tests=[],\n"
+        "    ),\n"
+        "    Control(\n"
+        "        describes=\"two\",\n"
+        "        path=\"core/a.py\",\n"
+        "        old='x',\n"
+        "        new='y',\n"
+        "        tests=[],\n"
+        "    ),\n"
+        "]\n")
+    rewritten, count = rewrite_paths(source, {"one": "src/b.py"})
+    assert count == 1
+    assert rewritten == source.replace("path='core/a.py'", "path='src/b.py'")
+
+
+def test_rewrite_paths_option_updates_the_file_it_lives_in(tmp_path, monkeypatch):
+    # End to end on a copy of the script, so the real record is untouched.
+    import shutil
+
+    cc = _tree(tmp_path, monkeypatch, {"core/old.py": "pass\n", "core/new.py": "VALUE = 1\n"})
+    copy = tmp_path / "check_controls_copy.py"
+    shutil.copy(cc.__file__, copy)
+    text = copy.read_text()
+    marker = "CONTROLS = ["
+    copy.write_text(text.replace(marker, marker + """
+    Control(describes='moved one', path='core/old.py', old='VALUE = 1',
+            new='VALUE = 2', tests=['a::b']),
+""", 1))
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("cc_copy", copy)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    monkeypatch.setattr(module, "CONTROLS", [c for c in module.CONTROLS
+                                             if c.describes == "moved one"])
+
+    assert module.main(["--rewrite-paths"]) == 0
+    assert "path='core/new.py'" in copy.read_text()
+    assert "path='core/old.py'" not in copy.read_text()

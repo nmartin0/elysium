@@ -38,12 +38,13 @@ guarantee has been rewritten.
 """
 
 import argparse
+import ast
 import json
 import os
 import pathlib
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 # THE REPOSITORY ROOT, not sim/'s. This tool arrived with the
 # simulator and knew only about the simulator; it now holds the
@@ -9614,6 +9615,120 @@ def apply(control: Control) -> str:
     return original
 
 
+#: CONTENT ANCHORING. A control is anchored by its `old` text, not by
+#: its path: the path is where the text was last seen. When a package
+#: is renamed or a module split, the text moves and the path goes
+#: stale, and with 1,100+ records that would mean hand edits after
+#: every move. So when `path` no longer holds `old` exactly once, the
+#: governed tree is searched for the files that do.
+#:
+#: Directories searched (relative to the repository root) and the
+#: file types read in them.
+SEARCH_ROOTS = ("api", "core", "adapters", "functions", "sdk", "scripts",
+                "sim", "install", "templates", "ui/src", "ui/packages")
+SEARCH_SUFFIXES = (".py", ".ts", ".tsx", ".js", ".json", ".yaml", ".yml", ".sql", ".toml")
+_SKIP_PARTS = {"node_modules", "__pycache__", ".git", "dist", "build", ".venv"}
+
+#: What a control's anchor resolves to.
+OK, MOVED, RETIRED, AMBIGUOUS = "ok", "MOVED", "RETIRED", "AMBIGUOUS"
+
+
+def _governed_files() -> list[pathlib.Path]:
+    found = []
+    for name in SEARCH_ROOTS:
+        base = ROOT / name
+        if not base.is_dir():
+            continue
+        for file in base.rglob("*"):
+            if (file.suffix in SEARCH_SUFFIXES and file.is_file()
+                    and not _SKIP_PARTS.intersection(file.relative_to(ROOT).parts)):
+                found.append(file)
+    return sorted(found)
+
+
+def _count_in(path: pathlib.Path, old: str) -> int:
+    try:
+        return path.read_text().count(old)
+    except (OSError, UnicodeDecodeError):
+        return 0
+
+
+def resolve(control: Control, files: list[pathlib.Path] | None = None
+            ) -> tuple[str, list[str]]:
+    """Where the control's anchor is now, as (status, paths).
+
+    OK: `path` still holds `old` exactly once (paths is that one).
+    MOVED: it does not, and exactly one governed file holds `old`
+    exactly once in total across the tree (paths is that one).
+    RETIRED: nowhere holds it; the anchor vanished, so the control
+    needs an explicit decision to delete or re-anchor.
+    AMBIGUOUS: several files hold it (paths lists them), or it appears
+    more than once in total, so no single file can be chosen.
+    None of these but OK may count as a control firing.
+    """
+    if _count_in(ROOT / control.path, control.old) == 1:
+        return OK, [control.path]
+    hits = {}
+    for file in files if files is not None else _governed_files():
+        count = _count_in(file, control.old)
+        if count:
+            hits[str(file.relative_to(ROOT))] = count
+    if not hits:
+        return RETIRED, []
+    if len(hits) == 1 and sum(hits.values()) == 1:
+        return MOVED, list(hits)
+    return AMBIGUOUS, sorted(hits)
+
+
+def resolve_all(controls: list[Control]) -> list[tuple[Control, str, list[str]]]:
+    """Resolve every control, listing the governed tree only if needed."""
+    files: list[pathlib.Path] | None = None
+    resolved = []
+    for control in controls:
+        if _count_in(ROOT / control.path, control.old) != 1 and files is None:
+            files = _governed_files()
+        status, paths = resolve(control, files)
+        resolved.append((control, status, paths))
+    return resolved
+
+
+def describe_problem(control: Control, status: str, paths: list[str]) -> str:
+    if status == MOVED:
+        return f"{control.path} -> {paths[0]}   ({control.describes})"
+    if status == RETIRED:
+        return (f"{control.path}: the text this control breaks is nowhere in the "
+                f"governed tree; delete the control or re-anchor it   ({control.describes})")
+    return (f"{control.path}: the text is in {len(paths)} places "
+            f"({', '.join(paths[:4])}{'...' if len(paths) > 4 else ''}); "
+            f"make `old` longer so it is unique   ({control.describes})")
+
+
+def rewrite_paths(source: str, moves: dict[str, str]) -> tuple[str, int]:
+    """Rewrite only the `path=` values of Controls named in `moves`.
+
+    `moves` maps a control's `describes` to its new path. The edit is
+    by source position, so nothing but the path literal changes.
+    """
+    tree = ast.parse(source)
+    lines = source.splitlines(keepends=True)
+    edits = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and getattr(node.func, "id", "") == "Control"):
+            continue
+        keywords = {k.arg: k.value for k in node.keywords}
+        describes, path = keywords.get("describes"), keywords.get("path")
+        if not (isinstance(describes, ast.Constant) and isinstance(path, ast.Constant)):
+            continue
+        if describes.value in moves and path.lineno == path.end_lineno:
+            edits.append((path.lineno - 1, path.col_offset, path.end_col_offset,
+                          moves[describes.value]))
+    for line, start, end, new_path in sorted(edits, reverse=True):
+        text = lines[line]
+        quote = text[start]
+        lines[line] = text[:start] + quote + new_path + quote + text[end:]
+    return "".join(lines), len(edits)
+
+
 #: What pytest's exit status means. Only 1 says "tests ran and some
 #: failed", which is the one outcome that shows a control fired. The
 #: others used to be counted as firing too, so a control citing a test
@@ -9671,6 +9786,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Check that the negative controls actually fire.")
     parser.add_argument("--only", help="run controls whose description contains this")
+    parser.add_argument("--report-moves", action="store_true",
+                        help="do not run anything: print every control whose anchor "
+                             "moved, vanished or is ambiguous")
+    parser.add_argument("--rewrite-paths", action="store_true",
+                        help="rewrite the path= of MOVED controls in this file, "
+                             "then stop (nothing is run)")
     arguments = parser.parse_args(argv)
 
     left = restore_anything_left_behind()
@@ -9683,9 +9804,35 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no control matches {arguments.only!r}", file=sys.stderr)
         return 1
 
+    resolved = resolve_all(controls)
+    moved = [(c, p[0]) for c, status, p in resolved if status == MOVED]
+    unresolved = [(c, status, p) for c, status, p in resolved
+                  if status in (RETIRED, AMBIGUOUS)]
+
+    if arguments.report_moves or arguments.rewrite_paths:
+        for control, new_path in moved:
+            print(f"  MOVED      {describe_problem(control, MOVED, [new_path])}")
+        for control, status, paths in unresolved:
+            print(f"  {status:<10} {describe_problem(control, status, paths)}")
+        if arguments.rewrite_paths and moved:
+            source_file = pathlib.Path(__file__).resolve()
+            text, count = rewrite_paths(
+                source_file.read_text(), {c.describes: new for c, new in moved})
+            source_file.write_text(text)
+            print(f"rewrote {count} path(s) in {source_file.name}")
+        elif not moved and not unresolved:
+            print("every control's anchor is where it says.")
+        return 1 if unresolved or (moved and not arguments.rewrite_paths) else 0
+
+    new_paths = {c.describes: p[0] for c, status, p in resolved if status == MOVED}
+    skipped = {c.describes for c, _, _ in unresolved}
     silent = []
     broken = []
     for control in controls:
+        if control.describes in skipped:
+            continue
+        if control.describes in new_paths:
+            control = replace(control, path=new_paths[control.describes])
         original = apply(control)
         try:
             outcome, output = run(control)
@@ -9695,7 +9842,12 @@ def main(argv: list[str] | None = None) -> int:
             # than in this script.
             (ROOT / control.path).write_text(original)
             IN_PROGRESS.unlink(missing_ok=True)
-        if outcome == FIRES:
+        if outcome == FIRES and control.describes in new_paths:
+            # Fired, but against a file the record does not name: the
+            # record is stale and that is not "fires".
+            print(f"  MOVED   {control.describes} (now {control.path}; "
+                  f"run --rewrite-paths)")
+        elif outcome == FIRES:
             print(f"  fires   {control.describes}")
         elif outcome == BROKEN:
             broken.append(control)
@@ -9709,6 +9861,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"          {output.splitlines()[-1] if output else ''}")
 
     print()
+    for control, status, paths in unresolved:
+        print(f"  {status:<9} {describe_problem(control, status, paths)}")
+    if moved:
+        print(f"{len(moved)} control(s) moved: their path= is stale. "
+              f"Run with --rewrite-paths to update the record.")
+    if unresolved:
+        print(f"{len(unresolved)} control(s) were not run: their anchor vanished or "
+              f"is ambiguous, which needs an explicit decision.")
     if broken:
         print(f"{len(broken)} control(s) could not be run: pytest did not report a "
               f"failed test, so nothing is known about them.")
@@ -9716,7 +9876,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{len(silent)} control(s) did not fire. Either the break is not the "
               f"break it claims, or the tests do not check what they appear to -- "
               f"and it is usually the second.")
-    if silent or broken:
+    if silent or broken or moved or unresolved:
         return 1
     print(f"All {len(controls)} controls fire.")
     return 0
