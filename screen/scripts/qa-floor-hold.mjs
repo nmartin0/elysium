@@ -129,16 +129,10 @@ const pin = () => page.evaluate(() => {
   v.camera.moveEnd.raiseEvent();
 });
 await pin();
-const billboardMode = await page.evaluate(async () => {
+await page.evaluate(async () => {
   const manager = window.__godsEyeView.dataManager;
-  const flights = manager.layers.get('flights').module;
-  // This harness measures billboard positions. A ready 3D model deliberately
-  // hides its billboard; that handoff is covered by track-regression instead.
-  flights.setParams({ models3d: false });
   await manager.toggle('flights');
-  return flights.getParams().models3d === false;
 });
-record('the billboard floor test is explicitly in 2D aircraft mode', billboardMode);
 
 /** Reads the contact's rendered height and the rendered mesh beneath it. */
 const measure = () => page.evaluate(async (icao) => {

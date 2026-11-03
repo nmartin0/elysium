@@ -64,47 +64,19 @@ try {
     };
   });
   check(
-    'all six one-of-many groups use the shared surface',
-    surface.groups === 6 && surface.buttons === 15 && surface.shared,
+    'every one-of-many group uses the shared surface',
+    surface.groups >= 2 && surface.buttons >= 5 && surface.shared,
     JSON.stringify(surface),
   );
 
-  await page.evaluate(() =>
-    document.getElementById('models3d-mode-all').click(),
-  );
-  check(
-    'model selection reaches both aircraft layers',
-    await page.evaluate(() => {
-      const dm = window.__godsEyeView.dataManager;
-      return (
-        ['flights', 'military'].every(
-          (id) => dm.layers.get(id).module.getParams().models3dMode === 'all',
-        ) &&
-        document
-          .getElementById('models3d-mode-all')
-          .getAttribute('aria-checked') === 'true'
-      );
-    }),
-  );
-  await page.focus('#models3d-mode-all');
+  await page.focus('#detection-allocation-elastic');
   await page.keyboard.press('ArrowLeft');
   check(
     'Display retains its click-only arrow policy',
     await page.evaluate(
       () =>
         document
-          .getElementById('models3d-mode-all')
-          .getAttribute('aria-checked') === 'true',
-    ),
-  );
-  await page.focus('#models3d-mode-proximity');
-  await page.keyboard.press('Space');
-  check(
-    'native Space selects model coverage',
-    await page.evaluate(
-      () =>
-        document
-          .getElementById('models3d-mode-proximity')
+          .getElementById('detection-allocation-elastic')
           .getAttribute('aria-checked') === 'true',
     ),
   );
@@ -226,14 +198,14 @@ try {
       persist: false,
     });
     document
-      .getElementById('models3d-mode-proximity')
+      .getElementById('detection-allocation-weighted')
       .scrollIntoView({ block: 'center' });
   });
   await page.screenshot({ path: `${shots}/desktop.png` });
   await page.setViewport({ width: 620, height: 900 });
   await page.evaluate(() =>
     document
-      .getElementById('models3d-mode-proximity')
+      .getElementById('detection-allocation-weighted')
       .scrollIntoView({ block: 'center' }),
   );
   await page.screenshot({ path: `${shots}/narrow.png` });

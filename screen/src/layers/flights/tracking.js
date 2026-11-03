@@ -801,7 +801,6 @@ export function createTracking({ flightState, services, parts, layer }) {
         flightState._cullPositions.delete(icao24);
         flightState._positionHistory.delete(icao24);
         flightState._displayCourse.delete(icao24);
-        flightState._groundSnap.forget(icao24);
         flightState.records.missingPolls.delete(icao24);
       }
       flightState.feed._count = flightState._billboards.size;
