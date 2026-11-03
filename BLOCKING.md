@@ -2586,3 +2586,95 @@ single-user actions (`auto_execute` exists but only the agent loop reads
 it, and it is refused when a mutation uses `parameter.*`); a module
 declaring a gated resource and asking whether a person may open it, the
 answer audited. Time series later.
+
+## 12. Converge on precedent: fewer mechanisms, one standard surface
+
+**Owner decision, 2 November 2026: these two lists are the roadmap.**
+Research into precedent (the reference platform this project models, and
+the other platforms that do the same job) found that Elysium's skeleton is
+right and that its complexity comes from running several parallel
+mechanisms per concern where precedent uses one general mechanism each.
+
+What to deprecate, in ranked order:
+
+1. The seven separate approval queues, each with its own database and approval logic. They would become one proposal pipeline, which is the single biggest simplification.
+2. The two-step propose-then-confirm flow. It would become one apply call with an approval policy set per action.
+3. The separate routes for combining, comparing, freezing and saving sets. They would become one object-set model.
+4. The 17 schema preview/apply route pairs. They would become one schema-change endpoint with a dry run.
+5. The six trigger-condition modules. They would become one condition-plus-effects model.
+6. The enriched and predicted field kinds. They would become functions that propose edits.
+7. The ~10 overlapping value-quality vocabularies. They would become value types plus one checks model.
+
+What's missing, in ranked order:
+
+1. API tokens and service accounts.
+2. A versioned API with a published spec.
+3. Composable object sets.
+4. Validate-only and batch action calls.
+5. Optimistic concurrency (ETags).
+6. Single sign-on and multiple roles per user.
+7. An automation that can propose an action.
+8. Subscriptions to object sets.
+9. A queryable action log.
+10. An audit read API.
+
+Kept, because they go beyond what precedent documents: per-person erasure,
+the compartment write-down check, uniform denial, and re-checking the
+approver's permissions at approval time.
+
+**The phased plan.** The phases below order the two lists. Each phase's
+shape is agreed with the owner before it is built (CLAUDE.md: get the
+shape agreed for anything larger than one commit); as a phase is built,
+its text leaves this file for the code, by the rule at the top.
+
+**Goal.** Reduce the number of mechanisms per concern to one, without losing any capability, and expose a standard, versioned API that matches what precedent and the common open conventions share. Invariants that do not change: writes only through actions; MAC and RBAC both required at `check_access()`; uniform denial; authority never stored; single machine; single tenant; SSE only; no historian; no question leaves the VM.
+
+**Phase 1: Standard read surface and programmatic identity.**
+1. Add `core/ontology/object_sets.py`: a JSON `ObjectSet` union (`base, filter, union, intersect, subtract, searchAround, static, reference, similarTo`) evaluated in the mediator after MAC. Filter grammar: `eq, in, lt, lte, gt, gte, isNull, contains, startsWith, and, or, not`.
+2. Add `/api/v2` routers, one file per resource (`schema`, `objects`, `objectSets`, `actions`, `proposals`, `queries`, `subscriptions`, `automations`, `admin`), replacing the single `api/routes.py`. Paging is `pageSize`/`pageToken`/`nextPageToken`; select, orderBy and expand follow the shapes in the research report. Errors are RFC 9457 problem details with `errorName`, `errorInstanceId` = `request_id`, and `parameters`; denial stays a uniform 404.
+3. Serve `/api/v2/openapi.json` to authenticated callers. This is safe because type names are path parameters.
+4. Add API tokens (argon2id-hashed) and service principals as real user records with explicit grants only; token power = scopes ∩ user grants. Add OIDC login with claim-to-role mapping. Allow several roles per user, combined additively.
+5. Exit: Browse uses only `/api/v2` for search, sets, saved views and frozen sets. Frozen sets become stored `static` sets; saved views become stored named sets.
+
+**Phase 2: One write contract, one proposal queue.**
+1. `POST /api/v2/actions/{a}/apply` with `options.mode = validate | propose | execute` and `returnEdits`; `applyBatch` for one action type (default cap 20, all-or-nothing). `validate` stores nothing.
+2. Per-action `approval: none | confirm | second_person`. Agent- and automation-originated calls are always at least `confirm`. `owner_may_approve_automation` folds in.
+3. Submission criteria gain `all/any/none` nesting and a `current_user` check; the operator set stays fixed.
+4. Per-object ETag (gold publication + latest write-log entry); `If-Match` / `expectedVersions` → 412; `require_versions` → 428. Re-validate at approval.
+5. Re-express merge decisions, prediction acceptance, enrichment-recipe approval, rule-suggestion decisions and unusual-record review as system action types through `pending_write_store`. Re-express config and role changes as change proposals in one store using the same reservation, expiry, four-eyes and re-authorisation code. One `GET /api/v2/proposals` feeds the Inbox.
+6. Derive a queryable action log from `write_log.py`; later, single-object undo of the most recent edit.
+7. Exit: `config_proposals.py`, `role_changes.py`, `identity_decisions.py`, `prediction_proposals.py`, `enrichment_recipes.py`, `rule_suggestions.py` and `unusual_flags.py` have no store of their own.
+
+**Phase 3: One automation model and object-set subscriptions.**
+1. Add `automation {condition, effects[], recipients, grouping}` on `core/timers.py`. Conditions: `added | removed | modified | threshold | schedule | combined` over an ObjectSet. Effects: `notify | propose_action` (with an idempotency key on the event id; at-least-once). Recipients: users, roles or a user-reference field, evaluated per recipient.
+2. Migrate user triggers, declared triggers, trigger states, count conditions, projected conditions, reminders and deprecation alerts; then delete those modules.
+3. SSE subscriptions: `PUT /api/v2/subscriptions/{streamId}` replaces the set; events are CloudEvents-shaped with keys and change state, never values; a `refresh` event tells clients to reload. The add-on proxy passes `text/event-stream`.
+4. Exit: one automation table; the Inbox and notifications read one model.
+
+**Phase 4: Schema change and data-quality consolidation.**
+1. `POST /api/v2/admin/schemaChanges {changes[], dryRun}` replaces the 17 preview/apply routes, using the existing `config_editing.py` round-trip and the change-proposal store.
+2. Encode precedent's breaking changes: datasource change, key change, type change, and rename, delete or retype of a field that has write-log edits. Require a migration choice (`drop_edits | move_edits | cast`) before apply. Active types and fields cannot be removed or renamed without first being deprecated.
+3. Declare the edit/source merge policy per type: `edits: win` (default) or `edits: most_recent` with a timestamp field.
+4. Replace expectations, field rules, constraints, unusual/outlier scans, freshness and integrity reports with `checks {target, kind, config, severity: moderate|critical, on_fail: warn|quarantine|refuse}`, reported as passed / failed / warning / error / not_applicable / not_computable. Rule suggestions become proposed checks. `value_type` stays.
+5. Replace `enriched:` and `predicted:` with functions that emit proposed edits through a system action; `derived:` remains the only computed field kind.
+6. Exit: one check table; three computed kinds reduced to one.
+
+**Phase 5: Add-on contract.**
+1. `module.json` `ontology:` fragments: schema only, never data, validated at load, optional type-name prefix.
+2. Add-ons call `/api/v2` with scoped tokens; idempotent ingestion is an action applied with an idempotency key.
+3. Confirmed-action delivery: an action may name a loopback add-on effect, invoked after commit, best-effort, keyed by write id.
+4. `timeseries_ref` field type: points read through `/objects/{t}/{pk}/timeseries/{field}/points`, authorised against the owning object, proxied to the add-on. Elysium stores no series.
+
+**Phase 6: Removals and measurements.**
+1. Move inferred identity matching to an add-on; deterministic identity and survivorship stay.
+2. Remove unmeasured agent switches from the main line; `filter_operators` returns as the public filter grammar.
+3. Fold `sqlite_adapter.py` into the SQLAlchemy adapter (LIB-3); fold `artifact_store.py` into a notes table; fold the help assistant into the agent loop.
+4. Measure, then decide: one application SQLite database instead of ~32 files; silver as a transform stage instead of a persisted layer.
+5. Freeze the v1 routes, then delete them once the UI and add-ons use `/api/v2` only.
+
+**Revisit list (decisions, not work).** Approval as a per-action policy rather than universal; the `propose_action` effect in automations; content-free email notices; service principals; more than one security attribute. Each is compatible with the invariants above when framed as described.
+
+**Blocked on:** the owner's decisions in the revisit list above, and the
+owner's agreement to each phase's shape before it is built. Nothing in a
+phase removes an existing route or store until its replacement is in use;
+Phase 6 removes the old ones.
