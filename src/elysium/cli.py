@@ -1,6 +1,6 @@
 """The `elysium` command: a stub until the real command line lands.
 
-BLOCKING.md, "Converge on precedent", step S16 replaces the scripts with
+ROADMAP.md section 8.4, "Converge on precedent", step S16 replaces the scripts with
 `elysium <group> <verb>`. Until then this prints its help and lists the
 scripts that exist, each run as `python -m elysium.scripts.<name>`.
 """

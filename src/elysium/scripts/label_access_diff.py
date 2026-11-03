@@ -1,4 +1,4 @@
-"""Who would gain and lose which fields if label enforcement were on (formerly BLOCKING 6).
+"""Who would gain and lose which fields if label enforcement were on (formerly planning-file item 6).
 
     python -m elysium.scripts.label_access_diff
 

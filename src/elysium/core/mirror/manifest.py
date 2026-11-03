@@ -305,7 +305,7 @@ def read_manifests(catalog) -> list[dict[str, Any]]:
     answering "what does the lake think it holds", which is a question
     an operator asks, not a question a loader asks.
 
-    This note is here rather than only in BLOCKING.md because planning
+    This note is here rather than only in the planning file because planning
     documents get consumed -- thirty-five of them this month -- and a
     reason that lives only in a list someone will delete is a reason
     that gets rediscovered the hard way.

@@ -1,5 +1,5 @@
 """Changing a field's data type from the UI (slice R1 of the retype design;
-BLOCKING.md, "RETYPE, CHECKED AND SLICED"), over HTTP against a COPY of the
+the removed planning-file item "RETYPE, CHECKED AND SLICED"), over HTTP against a COPY of the
 fixture configuration -- these tests write the files.
 
 The rules under test: only a manager of the deployment may, and everyone

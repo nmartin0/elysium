@@ -2,7 +2,7 @@
 addons.py  (an add-on's own server: what its manifest declares, who is
 asking it, and what passes between it and the browser)
 
-the removed BLOCKING.md item on modules, step 2: a module may bring A SERVER OF ITS OWN -- the
+the removed planning-file item on modules, step 2: a module may bring A SERVER OF ITS OWN -- the
 simulator's control panel needs one, and so does every add-on with work
 Elysium does not do (Heliograph's market data). The browser never talks
 to it directly. It talks to Elysium, at

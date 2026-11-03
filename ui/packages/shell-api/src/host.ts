@@ -2,7 +2,7 @@
  * What a sub-app's pages need from Elysium's page: the schema this
  * person may see, who they are, and what to do when their session ends.
  *
- * the removed BLOCKING.md item on modules, step 1.2. Before modules, `App.tsx` handed these to
+ * the removed planning-file item on modules, step 1.2. Before modules, `App.tsx` handed these to
  * each page as props. A module built apart from the page cannot be handed
  * props by code that does not know it exists, so Elysium's page PUBLISHES
  * them here and a page reads them with a hook. This works across separate

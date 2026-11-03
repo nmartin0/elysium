@@ -25,7 +25,7 @@
 export const CONTRACT_VERSION = 1
 
 /**
- * THE MODULE API THIS PAGE OFFERS (the removed BLOCKING.md item on modules, step 4): one
+ * THE MODULE API THIS PAGE OFFERS (the removed planning-file item on modules, step 4): one
  * version for everything a module may rely on -- the kit's and the
  * shell's names in ui/module-api.report.md, the manifest, what
  * `activate` returns, the host values, the tokens and the add-on

@@ -1,5 +1,5 @@
 """src/elysium/scripts/live_world.py, the harness that runs Elysium over a simulated
-world (BLOCKING.md, "Make the simulator's sources behave like real ones,
+world (the removed planning-file item "Make the simulator's sources behave like real ones,
 then run Elysium over it", step 3).
 
 A HARNESS THAT CANNOT FAIL PROVES NOTHING, so its judging parts are

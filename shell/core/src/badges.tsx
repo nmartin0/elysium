@@ -1,5 +1,5 @@
 /**
- * BADGES ON RAIL ENTRIES (the removed BLOCKING.md item on modules, step 1.3c).
+ * BADGES ON RAIL ENTRIES (the removed planning-file item on modules, step 1.3c).
  *
  * A number on a module's rail entry -- how much is waiting -- drawn by
  * the frame in its own style. The module's code supplies the number

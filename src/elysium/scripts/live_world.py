@@ -1,6 +1,6 @@
 """Run Elysium over a simulated world, and say where the two disagree.
 
-BLOCKING.md, "Make the simulator's sources behave like real ones, then
+the removed planning-file item "Make the simulator's sources behave like real ones, then
 run Elysium over it", step 3. The simulator (sim/) operates real
 PostgreSQL, MariaDB, SQLite, CSV-folder and REST sources for a simulated
 business; this points an ordinary Elysium deployment at one, syncs it

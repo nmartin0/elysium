@@ -1,6 +1,6 @@
 /**
  * Changing the data type of a stored field (slice R1 of the retype design,
- * BLOCKING.md, "RETYPE, CHECKED AND SLICED"). Modelled on Remove.tsx: the
+ * the removed planning-file item "RETYPE, CHECKED AND SLICED"). Modelled on Remove.tsx: the
  * dialog reads the file's digest when it opens, asks the server to PREVIEW
  * as soon as a new type is chosen, and applying is judged again there.
  *

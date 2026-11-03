@@ -40,7 +40,7 @@ vi.mock('@elysium/shell-api/components/LoginForm', () => ({
     </div>
   ),
 }))
-// QUERY AND ADMIN HAVE BUNDLES OF THEIR OWN (the removed BLOCKING.md item on modules, step 3),
+// QUERY AND ADMIN HAVE BUNDLES OF THEIR OWN (the removed planning-file item on modules, step 3),
 // which jsdom cannot import, so their bundles are stood in for: the loader
 // is the real one, given an importer that answers for their addresses and
 // imports anything else for real -- which in jsdom fails, as a bundle that

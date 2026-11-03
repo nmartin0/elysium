@@ -21,7 +21,7 @@ import { SHARED_LIBRARIES, SHARED_PACKAGES } from '@elysium/shell-api/sharedLibr
 // enters the picture in either mode.
 const API_PROXY_TARGET = process.env.VITE_API_PROXY_TARGET || 'http://localhost:8000'
 
-// THE SUB-APPS WITH BUNDLES OF THEIR OWN (the removed BLOCKING.md item on modules, step 1.2):
+// THE SUB-APPS WITH BUNDLES OF THEIR OWN (the removed planning-file item on modules, step 1.2):
 // any package with a vite.config.ts of its own. `npm run build` builds
 // each after the page; `npm run dev` rebuilds each on save, so development
 // loads a module the way production does.
@@ -49,7 +49,7 @@ export default defineConfig({
     sharedLibraries({ libraries: SHARED_LIBRARIES, packages: SHARED_PACKAGES }),
     builtModules({ configs: MODULE_BUILDS }),
   ],
-  // ONE REACT. `@shell/core` (../shell, the removed BLOCKING.md item on modules) is linked
+  // ONE REACT. `@shell/core` (../shell, the removed planning-file item on modules) is linked
   // in by `file:`, and its own node_modules holds a React for its own
   // tests; a second copy in the bundle would give the shell's routes a
   // different React -- and a different router context -- from the

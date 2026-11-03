@@ -2,14 +2,14 @@
  * Claims the UI roadmap made about the BACKEND, still checked after the
  * roadmap itself is gone.
  *
- * UI_ROADMAP.md was consumed into BLOCKING.md in patch 502, and this
+ * UI_ROADMAP.md was consumed into the planning file in patch 502, and this
  * file kept reading it -- so the UI suite had a failing test file that
  * nobody saw, because nobody could run the UI suite.
  *
  * WHAT WAS DROPPED: two assertions that the roadmap's PROSE no longer
  * described two solved problems. There is no prose now, so there is
- * nothing to guard; BLOCKING.md has its own guard,
- * tests/unit/test_blocking_is_intact.py.
+ * nothing to guard; ROADMAP.md has its own guard,
+ * tests/unit/test_roadmap_is_intact.py.
  *
  * WHAT WAS KEPT, and why it is worth keeping without the document: the
  * backend facts those entries turned on. The migration MECHANISM

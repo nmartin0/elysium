@@ -1,5 +1,4 @@
-// railTabs.spec.ts -- hiding a tab from one's own rail (BLOCKING.md item
-// 3, step 1.4d): for this person, in this browser, across a reload; the
+// railTabs.spec.ts -- hiding a tab from one's own rail (the removed planning-file item on modules, step 1.4d): for this person, in this browser, across a reload; the
 // palette still reaches the page.
 //
 // SETUP: as the other specs.

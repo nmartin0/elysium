@@ -1,5 +1,5 @@
 // movedModules.spec.ts -- sub-apps moved out of Elysium's page into
-// bundles of their own (the removed BLOCKING.md item on modules, step 3), one by one: each
+// bundles of their own (the removed planning-file item on modules, step 3), one by one: each
 // one's code arrives from its bundle, and only when it is first shown.
 // A module moved later adds its case here.
 //

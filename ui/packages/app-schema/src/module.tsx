@@ -1,5 +1,5 @@
 /**
- * THE SCHEMA GRAPH AS A MODULE (the removed BLOCKING.md item on modules, step 1.2): the entry
+ * THE SCHEMA GRAPH AS A MODULE (the removed planning-file item on modules, step 1.2): the entry
  * of its own bundle, built apart from Elysium's page by vite.config.ts in
  * this folder and loaded by the shell when /schema is first opened.
  *

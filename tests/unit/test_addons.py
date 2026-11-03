@@ -1,4 +1,4 @@
-"""An add-on's own server (the removed BLOCKING.md item on modules, step 2): what its manifest
+"""An add-on's own server (the removed planning-file item on modules, step 2): what its manifest
 may declare, the token that says who is asking, and which headers pass
 the proxy (core/addons.py). The token is checked by the verifier add-ons
 copy (sdk/python/elysium_addon.py), so the two cannot drift apart."""

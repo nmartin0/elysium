@@ -1,5 +1,5 @@
 """apply_retype: changing ONE data field's `data_type` line in the ontology
-file (slice R1 of the retype design, BLOCKING.md "RETYPE, CHECKED AND
+file (slice R1 of the retype design, the removed planning-file item "RETYPE, CHECKED AND
 SLICED"). Like test_remove_edit.py: each result is read with a plain YAML
 parser, as the loader reads it, so what is asserted is what the deployment
 would mean. What the change does to the lake is core/ontology/retype.py's.

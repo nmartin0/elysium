@@ -31,7 +31,7 @@ Run `vulture` (config: pyproject.toml's [tool.vulture]) to check.
 # route handlers need no entry: pyproject.toml's `ignore_decorators`
 # ("@router.*", "@app.*") covers every decorator-registered handler.
 # What remains is read by pydantic or a library, never called by name.
-# Frozen sets (formerly BLOCKING 17, saved selections): routes FastAPI calls and response fields
+# Frozen sets (formerly planning-file item 17, saved selections): routes FastAPI calls and response fields
 # pydantic reads by reflection, the same reason as above.
 publication_retained
 not_shown

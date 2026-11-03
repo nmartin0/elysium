@@ -1,5 +1,5 @@
 """
-Frozen sets: membership fixed at an instant (formerly BLOCKING 17, saved selections, DEV_UI 11.3).
+Frozen sets: membership fixed at an instant (formerly planning-file item 17, saved selections, DEV_UI 11.3).
 
 THE PRECEDENT'S STATIC OBJECT SET IS THE PRECEDENT: "saved as a list of
 primary keys", staying "the same regardless of any changes to the

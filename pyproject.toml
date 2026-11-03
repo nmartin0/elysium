@@ -61,7 +61,7 @@ version = "0.0.0"
 requires-python = ">=3.12"
 
 [project.scripts]
-# A stub until the real command line lands (BLOCKING.md, "Converge on
+# A stub until the real command line lands (ROADMAP.md section 8.4, "Converge on
 # precedent", step S16, "One CLI"): it lists the scripts that exist.
 elysium = "elysium.cli:main"
 
@@ -301,7 +301,7 @@ layers = [
     # hierarchy rather than beneath it.
     "secret_references",
     # addons: an add-on server's declaration, its token and which
-    # headers pass (the removed BLOCKING.md item on modules, step 2). A leaf: the standard
+    # headers pass (the removed planning-file item on modules, step 2). A leaf: the standard
     # library only; api/addon_servers.py does the sockets and processes.
     "addons",
     # config_editing is a leaf too: ruamel and the standard library, no
@@ -411,7 +411,7 @@ exhaustive = true
 # projected_condition (R68, 18 October) is a trigger's forecast of its
 # view's totals per period: trigger machinery beside count_condition,
 # composing the mediator's aggregate and the forecasts.
-# modules (the removed BLOCKING.md item on modules, 21 October) sits with deployment_loader, its
+# modules (the removed planning-file item on modules, 21 October) sits with deployment_loader, its
 # only loader: it reads module.json files with elysium.core.config and asks
 # access's authorize who is offered each -- configuration
 # composed with authorization, outside the hierarchy like role_impact.

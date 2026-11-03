@@ -1,5 +1,5 @@
-"""A module's declared permissions in a running deployment (BLOCKING.md
-item 3, step 2.3): in the role editor's registry, described; a role
+"""A module's declared permissions in a running deployment (the removed planning-file
+item on modules, step 2.3): in the role editor's registry, described; a role
 holding one is offered the module; a misspelt one stops the load with
 its name; and one from a module no longer listed is kept, inert, and
 shown -- over HTTP, against a COPY of the fixture configuration."""

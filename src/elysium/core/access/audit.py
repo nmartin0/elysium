@@ -305,7 +305,7 @@ class AuditLog:
 
         What remains of a record is its timestamp, which can still show
         that a request took longer than its visible result explains
-        (BLOCKING.md "Converge on precedent").
+        (ROADMAP.md section 8.4, "Converge on precedent").
 
         SCANNED BACKWARDS, WITH A CAP, and that is the design decision
         rather than an optimisation. The log is append-only JSONL, so
@@ -537,8 +537,8 @@ class AuditLog:
         })
 
     def log_addon_restart(self, user_id: str, module_id: str) -> None:
-        """Someone asked for an add-on's server to be restarted (BLOCKING.md
-        item 3, step 2.2). Its work stops mid-way, so who asked is kept,
+        """Someone asked for an add-on's server to be restarted (the removed planning-file
+        item on modules, step 2.2). Its work stops mid-way, so who asked is kept,
         as for a reload."""
         self._write({"stage": "addon_restart", "user_id": user_id, "module": module_id})
 

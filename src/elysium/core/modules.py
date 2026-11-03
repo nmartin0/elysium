@@ -1,7 +1,7 @@
 """
 modules.py  (which sub-apps this deployment loads, and what each offers)
 
-the removed BLOCKING.md item on modules, step 1: every sub-app is a MODULE, and Elysium's
+the removed planning-file item on modules, step 1: every sub-app is a MODULE, and Elysium's
 own are equals of any other. A module is a folder with a `module.json`
 manifest, which states what it contributes -- pages, rail entries, old
 addresses kept -- and, for Elysium, which permission a person needs to
@@ -112,11 +112,11 @@ logger = logging.getLogger(__name__)
 #: owner's choice (23 October), over refusing the file: refusing would
 #: stop Elysium starting over a move it made itself.
 MOVED_MODULES = MappingProxyType({
-    # the removed BLOCKING.md item on modules, step 3: the Inbox into a package of its own.
+    # the removed planning-file item on modules, step 3: the Inbox into a package of its own.
     "ui/src/inbox": "ui/packages/app-inbox",
 })
 
-#: THE SYSTEM SUB-APPS (the removed BLOCKING.md item on modules, step 1.4): always loaded,
+#: THE SYSTEM SUB-APPS (the removed planning-file item on modules, step 1.4): always loaded,
 #: after every module `modules.yaml` names, and PINNED -- the shell
 #: loads them in safe mode and nothing in the interface turns them off,
 #: because safe mode exists for when a module breaks the page, and a
@@ -424,7 +424,7 @@ def module_grant(module_id: str, name: str) -> str:
 
 
 def _load_permissions(path: Path, raw) -> "tuple[tuple[str, str], ...]":
-    """DECLARED PERMISSIONS (the removed BLOCKING.md item on modules, step 2.3): what a module
+    """DECLARED PERMISSIONS (the removed planning-file item on modules, step 2.3): what a module
     lets a role do, each named and described for the role editor,
 
         "permissions": [{"id": "operate",

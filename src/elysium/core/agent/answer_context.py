@@ -1,5 +1,5 @@
 """What comes with an answer: how it was understood, where it leads, and
-what to ask next (BLOCKING "What the Query screen should contain").
+what to ask next (the removed planning-file item "What the Query screen should contain").
 
 THE QUESTION, READ BACK. Power BI's Q&A restates a question under the
 box, and ThoughtSpot shows the tokens it interpreted -- both so a person

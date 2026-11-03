@@ -1,7 +1,7 @@
 """
 Startup resume never takes a write another worker is still applying.
 
-FOUND RUNNING `uvicorn --workers 2` (BLOCKING.md's "--workers for real",
+FOUND RUNNING `uvicorn --workers 2` (the removed planning-file item "--workers for real",
 14 Oct) and reproduced with two real processes, which is what these
 tests are. Worker A logs a batch and is applying it; worker B starts --
 as uvicorn does when it replaces a worker -- and its startup resume

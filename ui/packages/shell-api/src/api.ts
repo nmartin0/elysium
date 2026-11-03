@@ -812,7 +812,7 @@ export async function saveModuleArrangement(change: ModuleArrangementChange): Pr
 }
 
 /**
- * A CALL TO AN ADD-ON'S OWN SERVER (the removed BLOCKING.md item on modules, step 2), for the
+ * A CALL TO AN ADD-ON'S OWN SERVER (the removed planning-file item on modules, step 2), for the
  * add-on's pages: through Elysium's proxy at /api/addons/<id>/<path>, with
  * this page's session and CSRF header like any call -- the proxy adds who
  * is asking and keeps the session from the add-on. The answer is JSON; a

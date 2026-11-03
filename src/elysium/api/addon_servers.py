@@ -2,7 +2,7 @@
 addon_servers.py  (forwarding to an add-on's own server, and keeping it
 running)
 
-the removed BLOCKING.md item on modules, step 2. core/addons.py says what an add-on's server
+the removed planning-file item on modules, step 2. core/addons.py says what an add-on's server
 is, what its token says and which headers pass; this is the part with
 sockets and processes.
 

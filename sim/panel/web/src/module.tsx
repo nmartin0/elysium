@@ -1,6 +1,6 @@
 /**
- * The simulator's control panel as a module of Elysium's shell (BLOCKING.md
- * item 3, step 2.3): the entry of its bundle, built by Elysium's UI build
+ * The simulator's control panel as a module of Elysium's shell (the removed planning-file
+ * item on modules, step 2.3): the entry of its bundle, built by Elysium's UI build
  * (ui/addons/simulator.vite.config.ts) into sim/panel/dist and served by
  * Elysium from there, like any module's.
  */

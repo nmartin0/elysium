@@ -1,4 +1,4 @@
-// safeMode.spec.ts -- safe mode (the removed BLOCKING.md item on modules, step 1.4b): the page
+// safeMode.spec.ts -- safe mode (the removed planning-file item on modules, step 1.4b): the page
 // loaded with only the pinned modules, in this tab, until left.
 //
 // Only a browser shows it: entering and leaving RELOAD the page (a

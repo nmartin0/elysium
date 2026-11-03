@@ -2,7 +2,7 @@
 The UI's tokens, checked against DEV_UI.md.
 
 WHY THIS EXISTS. DEV_UI.md was deleted in patch 99e721d after being
-"consumed" into a BLOCKING item that kept its DIAGNOSIS and dropped its
+"consumed" into a planning-file item that kept its DIAGNOSIS and dropped its
 ANSWERS. Three weeks later a session read the surviving item, found a
 problem statement with no solution, and researched the same questions
 from scratch -- producing a type scale wrong at every step, no typeface

@@ -1,6 +1,6 @@
 /**
  * THE CONFORMANCE SUITE: what every module, Elysium's own included, is
- * held to by default (the removed BLOCKING.md item on modules, "COMMON BEHAVIOUR IS TESTED
+ * held to by default (the removed planning-file item on modules, "COMMON BEHAVIOUR IS TESTED
  * ONCE, BY DEFAULT, UNTIL OVERRIDDEN").
  *
  * A module's own tests call it once:

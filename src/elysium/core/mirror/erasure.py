@@ -34,7 +34,7 @@ never skipped -- and the erasure is recorded `incomplete` until it can be.
 A table that held data before it recorded its columns stays "partly
 known" -- no sync can recover what a removed type kept there; only an
 operator's --adopt can -- and the erasure is `incomplete` until then. The
-limits are in BLOCKING.md, "Erasure and a removed type".
+limits are in the removed planning-file item "Erasure and a removed type".
 
 THE REGISTER HOLDS NO PERSONAL DATA. An erasure is recorded as a salted
 hash of "<type>:<id>", never the id: a list of who asked to be forgotten

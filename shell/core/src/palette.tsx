@@ -1,5 +1,5 @@
 /**
- * PALETTE COMMANDS SUPPLIED BY MODULES (the removed BLOCKING.md item on modules, step 1.3b).
+ * PALETTE COMMANDS SUPPLIED BY MODULES (the removed planning-file item on modules, step 1.3b).
  *
  * The frame's palette lists its own navigation commands and whatever the
  * modules' code supplies. A module's code may hold `usePalette`, a React

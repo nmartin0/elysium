@@ -1,6 +1,6 @@
 # How real sources behave, and how the simulator's compare
 
-the removed BLOCKING.md item on the simulator, step one (19 October): research how each real kind
+the removed planning-file item on the simulator, step one (19 October): research how each real kind
 of source behaves, write it down, and probe the simulator against it.
 This is that list. Each row says what the REAL thing does (with its
 source and default), what the SIMULATOR does today (from reading its
@@ -104,7 +104,7 @@ records shifting during paging (R4), formats (R5) and deletions (R6).
 
 ## What running Elysium over a world found, and what was decided
 
-Moved here from BLOCKING.md when its simulator items were removed (3
+Moved here from the planning file when its simulator items were removed (3
 November 2026), because these are measured facts about sources, not
 planning. All of it is built.
 
@@ -168,7 +168,7 @@ design: live push through the add-on proxy, a time-series chart in the
 kit, event subscription and triggers on arriving data, audit for live
 data, jobs, source terms and feed health, large results, secret
 references and add-on data under backup. They are now requirements of
-BLOCKING.md "Converge on precedent" (S9, S10, S12). Decided: a signal is
+ROADMAP.md section 8.4, "Converge on precedent" (S9, S10, S12). Decided: a signal is
 an Elysium object a source creates, and "took it" and "skipped" are
 actions on it; accounts, positions and decisions are objects; Elysium
 governs ACCESS to market data and does not hold the bars; an add-on copies

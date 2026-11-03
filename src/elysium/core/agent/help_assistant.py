@@ -1,5 +1,5 @@
 """The help assistant: questions about using Elysium, answered for the
-person asking (BLOCKING.md's help-assistant item, wanted by the owner on
+person asking (the removed planning-file item on the help assistant, wanted by the owner on
 2026-10-12).
 
 WHAT IT ANSWERS. "How do I filter Browse by region?", "Why can't I see

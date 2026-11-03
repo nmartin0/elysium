@@ -1,5 +1,5 @@
 /**
- * SLOTS (the removed BLOCKING.md item on modules, step 1.5): a place a module's page offers to
+ * SLOTS (the removed planning-file item on modules, step 1.5): a place a module's page offers to
  * other modules -- Backstage's extension "input", where a child names
  * "the ID of the parent extension, as well as the name of the input to
  * attach to", and the parent receives "an array, where each individual

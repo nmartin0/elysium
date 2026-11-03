@@ -1,4 +1,4 @@
-"""The public module API, written down (the removed BLOCKING.md item on modules, step 4), held
+"""The public module API, written down (the removed planning-file item on modules, step 4), held
 to the code: ui/module-api.report.md is what scripts/module_api_report.py
 makes of the declarations TypeScript emits today.
 

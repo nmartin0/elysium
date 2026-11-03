@@ -4358,7 +4358,7 @@ def test_the_inbox_counts_approvals_not_decisions(client):
 
 
 # ---------------------------------------------------------------------------
-# The shell contract (shell/README.md, the removed BLOCKING.md item on modules): what any
+# The shell contract (shell/README.md, the removed planning-file item on modules): what any
 # backend serves a shell, and Elysium serving it.
 # ---------------------------------------------------------------------------
 
@@ -4473,7 +4473,7 @@ def test_shell_modules_carries_no_grant_and_no_folder(client):
 
 
 # ---------------------------------------------------------------------------
-# A module's bundle, served (the removed BLOCKING.md item on modules, step 1.2).
+# A module's bundle, served (the removed planning-file item on modules, step 1.2).
 # ---------------------------------------------------------------------------
 
 

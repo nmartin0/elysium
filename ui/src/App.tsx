@@ -152,7 +152,7 @@ function SystemServerPage() {
 
 /**
  * THE MODULES WHOSE CODE IS BUILT INTO THIS PAGE, by `module:page` as each
- * module.json names them (the removed BLOCKING.md item on modules). Which of them a person is
+ * module.json names them (the removed planning-file item on modules). Which of them a person is
  * OFFERED, and where each is mounted, is the feed's to say; this only
  * says where the code is. A page the feed names and this does not know
  * is shown as "nothing loaded opens this page" by the shell.
@@ -165,8 +165,8 @@ const BUILT_IN_PAGES: Record<string, ComponentType> = {
 /**
  * A module's code, as the shell asks for it: its bundle's activation.
  *
- * NOTHING OF A MODULE'S IS BUILT INTO THIS PAGE ANY MORE (BLOCKING.md
- * item 3, step 3): Browse's palette commands were the last, in a table
+ * NOTHING OF A MODULE'S IS BUILT INTO THIS PAGE ANY MORE (the removed planning-file
+ * item on modules, step 3): Browse's palette commands were the last, in a table
  * here beside the Inbox's badge, until each module brought its own in its
  * bundle. The System sub-app's pages are the page's own, in
  * BUILT_IN_PAGES above, and need no activation.
@@ -199,7 +199,7 @@ async function fetchCheckedFeed(): Promise<FeedState> {
 }
 
 /**
- * THE MODULES WITH BUNDLES OF THEIR OWN (the removed BLOCKING.md item on modules, step 1.2),
+ * THE MODULES WITH BUNDLES OF THEIR OWN (the removed planning-file item on modules, step 1.2),
  * loaded when one of their pages is first opened. One loader for the
  * page's life: a module's code, once imported, stays until the page
  * reloads, and the loader hands out one component per page so React never
@@ -623,7 +623,7 @@ function LoggedIn({
   )
   // WHAT THE REGISTRY COULD NOT HONOUR -- two modules claiming a path, a
   // rail entry leading elsewhere -- said in the console until the module
-  // manager (the removed BLOCKING.md item on modules, step 1) has somewhere to show it.
+  // manager (the removed planning-file item on modules, step 1) has somewhere to show it.
   useEffect(() => {
     for (const problem of registry?.problems ?? []) console.warn(`[modules] ${problem}`)
   }, [registry])

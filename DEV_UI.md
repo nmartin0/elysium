@@ -8,7 +8,7 @@
 > states, the subject-switcher shell, the ontology canvas.
 >
 > What happened next is the reason it is back. A later session read the
-> surviving BLOCKING item, found a problem statement with no solution,
+> surviving planning-file item, found a problem statement with no solution,
 > and researched the questions again from scratch -- arriving at a type
 > scale wrong at every step, no typeface at all where IBM Plex was
 > specified, a table density "measured and found fine" where three
@@ -16,7 +16,7 @@
 > that gave all seven feature-apps a title when section 12 says the rail
 > should not be an app switcher at all.
 >
-> BLOCKING.md's own rule for consuming a document is that "anything
+> The planning file's own rule for consuming a document (ROADMAP.md section 8.0) is that "anything
 > else in the file that is worth keeping moves into the code it
 > describes". Sixteen sections of measured decisions had nowhere in the
 > code to move to. A measured fact in a deleted file is a measured fact
@@ -177,7 +177,7 @@ agent available at every station rather than at one.
      what makes a tool feel like a tool.
 
   Plus the two already planned: the PIPELINE BUILDER
-  (the removed BLOCKING.md item on ontology visualisation) and ONTOLOGY VISUALISATION
+  (the removed planning-file item on ontology visualisation) and ONTOLOGY VISUALISATION
   -- the type-level map, which is also how the builder draws links.
 
   And underneath all of it, UI-LIVE: a screen that does not update
@@ -839,7 +839,7 @@ that exists. A change that NARROWS access needs no second person.
 ## 13.7 What the ontology UI edits, and what it must not
 
 It edits the DECLARATION -- the same law as the pipeline builder
-(the removed BLOCKING.md item on ontology visualisation): ontology_schema.yaml
+(the removed planning-file item on ontology visualisation): ontology_schema.yaml
 and policy.yaml, round-tripped, validated before landing, recorded as
 a generation, rollback-able.
 

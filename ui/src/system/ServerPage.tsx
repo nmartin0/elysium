@@ -1,8 +1,8 @@
 /**
- * THE SERVER (the removed BLOCKING.md item on modules, step 3): Elysium's own server controls
+ * THE SERVER (the removed planning-file item on modules, step 3): Elysium's own server controls
  * -- its configuration and reload, the silos it reads, its metrics, the
  * mirror, and the cleaning rules waiting on a decision. They were five
- * views of Admin; they are the System sub-app's now, as BLOCKING.md's
+ * views of Admin; they are the System sub-app's now, as the removed planning-file item
  * "THE SHELL AND THE SERVER EACH HAVE A SYSTEM SUB-APP" planned: "much
  * of today's Admin, which splits into the server and people-and-roles".
  *

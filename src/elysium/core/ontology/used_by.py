@@ -1,7 +1,7 @@
 """What names a type, a field or a link: the "used by" report (27 October).
 
 WHY IT EXISTS. Removing or retyping anything (designed and agreed 27
-October, see BLOCKING.md's "Editing the ontology's shape") has one rule
+October, see the removed planning-file item "Editing the ontology's shape") has one rule
 that makes it safe: it is refused while anything still names the thing,
 and the refusal lists every place so each owner can fix their own. The
 loader already refuses a dangling grant or rule, but one error at a time

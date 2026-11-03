@@ -1,5 +1,5 @@
 /**
- * ADD-ON SERVERS (the removed BLOCKING.md item on modules, step 2.2): each module that brings a
+ * ADD-ON SERVERS (the removed planning-file item on modules, step 2.2): each module that brings a
  * server of its own -- the simulator's, one day Heliograph's -- and how it
  * is doing. Elysium starts these, watches them and restarts one that
  * fails (api/addon_servers.py); this is where a person sees that

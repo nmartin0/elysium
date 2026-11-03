@@ -23,7 +23,7 @@
  *
  * A WRAPPER OVER Blueprint's HTMLTable rather than a table of our own:
  * the point is the reduced surface -- "the gained consistency of
- * reducing the used API surface" (BLOCKING's UI-kit item) -- not
+ * reducing the used API surface" (the removed planning-file item on the UI kit) -- not
  * replacing a component that renders a <table> correctly already.
  */
 

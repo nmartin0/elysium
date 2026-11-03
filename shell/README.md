@@ -3,7 +3,7 @@
 A generic web shell for sub-apps: the frame they are mounted in, and the
 contract any backend speaks to offer them. It knows nothing about
 Elysium; Elysium is one backend that implements the contract
-(`src/elysium/core/modules.py`, `src/elysium/api/routes.py`). the removed BLOCKING.md item on modules records the
+(`src/elysium/core/modules.py`, `src/elysium/api/routes.py`). the removed planning-file item on modules records the
 design and the order it is being built in.
 
 ```
@@ -382,4 +382,4 @@ lazy activation, Backstage's extension ids and route references,
 single-spa's lifecycle and import maps, and JupyterLab's prebuilt
 extensions sharing singleton packages; for shared libraries, Native
 Federation, which builds an import map from each remote's metadata. The
-research is summarised in the removed BLOCKING.md item on modules.
+research is summarised in the removed planning-file item on modules.

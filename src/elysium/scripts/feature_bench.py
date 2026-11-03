@@ -7,7 +7,7 @@ or may do -- filter operators, a search-result cap, free-text search,
 remember-from-query. Each is built, tested without a model, and OFF,
 because this project does not change model behaviour on reasoning
 alone: AR-5 looked obviously right and cost 60% more wall clock for no
-gain on the deployment's own model (BLOCKING.md, agent-loop item).
+gain on the deployment's own model (ROADMAP.md section 8.3, agent-loop efficiency).
 
 This runs every arm in one sitting, on the deployment's own model, and
 ends with a verdict per switch and the config.yaml lines that follow
@@ -91,7 +91,7 @@ ARMS = (
 )
 
 #: The original seven passed 7 of 7 with every switch off, step mode,
-#: free JSON, 2026-10-12 (BLOCKING.md). An arm that fails one of them
+#: free JSON, 2026-10-12 (ROADMAP.md section 8.3). An arm that fails one of them
 #: has made something worse.
 ORIGINAL_BASELINE = "7/7 on 2026-10-12"
 

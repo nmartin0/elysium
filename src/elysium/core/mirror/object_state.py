@@ -1,6 +1,6 @@
 """The state of an object type's data while a retype rebuilds silver (R2).
 
-BLOCKING.md, "RETYPE, CHECKED AND SLICED": an object is LIVE, REBUILDING
+the removed planning-file item "RETYPE, CHECKED AND SLICED": an object is LIVE, REBUILDING
 or UNAVAILABLE. Nothing here is stored. A marker saying "a rebuild is owed"
 goes stale the day someone fixes the type back by hand, so each answer is
 worked out again from what the lake says now:
@@ -74,7 +74,7 @@ def hold_reason(states: Mapping[str, str], object_types: Iterable[str]) -> str |
     same approval goes through once the state is live again, judged then
     against the schema as it is by then (confirm_and_execute re-runs every
     check at the point of use). REBUILDING is held because the plan says so
-    (BLOCKING.md, "RETYPE, CHECKED AND SLICED": writes proposed meanwhile
+    (the removed planning-file item "RETYPE, CHECKED AND SLICED": writes proposed meanwhile
     are held), so that a write does not race the rebuild. UNAVAILABLE is
     held too: a state that cannot be told is never guessed live."""
     rebuilding = sorted({name for name in object_types if states.get(name) == REBUILDING})

@@ -1,5 +1,5 @@
-"""The example add-on's server, for Elysium's tests of add-ons (BLOCKING.md
-item 3, step 2): it answers with what reached it, so a test can see what
+"""The example add-on's server, for Elysium's tests of add-ons (the removed planning-file
+item on modules, step 2): it answers with what reached it, so a test can see what
 the proxy passed, and it can misbehave on request, so a test can see the
 supervisor cope.
 

@@ -1,5 +1,5 @@
 /**
- * THE MODULES PAGE: the shell's system sub-app (the removed BLOCKING.md item on modules,
+ * THE MODULES PAGE: the shell's system sub-app (the removed planning-file item on modules,
  * step 1.4) -- every module this person is offered, and how each stands
  * in this browser.
  *

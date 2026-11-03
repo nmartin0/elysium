@@ -1718,7 +1718,7 @@ class DeploymentConfigResponse(BaseModel):
     #: Decided 14 Oct: how many objects one bulk action may name.
     bulk_action_limit: int = 256
     deprecation_lead_days: int = 30
-    #: Formerly BLOCKING 6: classification labels decide field access.
+    #: Formerly planning-file item 6: classification labels decide field access.
     label_enforcement: bool = False
     #: R15: whether lineage events also go to a service. WHETHER, never
     #: the URL -- a URL can carry credentials, and names-not-contents is
@@ -1730,7 +1730,7 @@ class DeploymentConfigResponse(BaseModel):
     source_locales: dict[str, str | None] = {}
     #: ZOO-22: silos whose date columns may hold Excel serials.
     excel_date_silos: list[str] = []
-    #: the removed BLOCKING.md item on modules: the modules loaded, by id, in rail order. Ids,
+    #: the removed planning-file item on modules: the modules loaded, by id, in rail order. Ids,
     #: never folders -- a folder is a path, and names-not-contents.
     modules: list[str] = []
     # Silos whose 0000-00-00 dates are read as empty (`zero_dates_as_null`).
@@ -5327,7 +5327,7 @@ def delete_saved_view_route(
     return {"deleted": True}
 
 
-# --- Frozen sets (formerly BLOCKING 17, saved selections, DEV_UI 11.3) ---------------------------
+# --- Frozen sets (formerly planning-file item 17, saved selections, DEV_UI 11.3) ---------------------------
 #
 # A saved VIEW is the live kind -- its query, re-run. A FROZEN SET is
 # the other kind DEV_UI 11.3 asks for: "membership fixed at an
@@ -7516,7 +7516,7 @@ def _require_manage_users(request: Request, current_user: UserRecord) -> None:
 # THE SHELL'S CONTRACT (shell/README.md), version 1: the session and the
 # module feed. The shell in `shell/` reads only these and knows nothing
 # else about Elysium; the sub-apps it hosts are Elysium's modules
-# (core/modules.py, the removed BLOCKING.md item on modules).
+# (core/modules.py, the removed planning-file item on modules).
 # ---------------------------------------------------------------------------
 
 
@@ -7646,7 +7646,7 @@ _ADDON_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]
 @router.api_route("/addons/{module_id}/{path:path}", methods=_ADDON_METHODS)
 async def addon_proxy_route(module_id: str, path: str, request: Request,
                             current_user: UserRecord = Depends(get_current_user)) -> StreamingResponse:
-    """A request to an add-on's own server (the removed BLOCKING.md item on modules, step 2):
+    """A request to an add-on's own server (the removed planning-file item on modules, step 2):
     core/addons.py says what passes, api/addon_servers.py forwards it.
 
     ONLY FOR SOMEONE THE MODULE IS OFFERED TO, and a 404 otherwise --
@@ -7782,7 +7782,7 @@ _BUNDLE_MEDIA_TYPES = {
 @router.get("/modules/{module_id}/files/{relative:path}")
 def module_file_route(module_id: str, relative: str, request: Request,
                       current_user: UserRecord = Depends(get_current_user)) -> FileResponse:
-    """A file of a module's bundle (the removed BLOCKING.md item on modules, step 1.2).
+    """A file of a module's bundle (the removed planning-file item on modules, step 1.2).
 
     ONLY TO SOMEONE THE MODULE IS OFFERED TO, and ONLY FROM ITS BUNDLE'S
     DIRECTORY (core/modules.bundle_file). Anything else is a 404 --

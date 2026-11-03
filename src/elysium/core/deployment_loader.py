@@ -298,7 +298,7 @@ class DeploymentConfig:
     # bench on the deployment's own model says otherwise -- see
     # core/llm/agent_features.py. `agent:` in config.yaml.
     agent_features: AgentFeatures = OFF_FEATURES
-    # CLASSIFICATION LABELS DECIDE FIELD ACCESS (formerly BLOCKING 6): a labelled
+    # CLASSIFICATION LABELS DECIDE FIELD ACCESS (formerly planning-file item 6): a labelled
     # field needs read:label:<each label>, and read:label:<L> grants every
     # L field in the types a role can read. OFF until a deployment turns
     # it on -- applying the code changes nobody's access -- and
@@ -350,7 +350,7 @@ class DeploymentConfig:
     # who manage the deployment are told. `deprecation_lead_days:` in
     # config.yaml; default and reasoning in core/ontology/deprecation_alerts.py.
     deprecation_lead_days: int = 30
-    # THE SUB-APPS THIS DEPLOYMENT LOADS, as modules (the removed BLOCKING.md item on modules):
+    # THE SUB-APPS THIS DEPLOYMENT LOADS, as modules (the removed planning-file item on modules):
     # `modules.yaml`, or the five Elysium ships when it is absent. None
     # only for a config built by hand in a test, which loads none.
     modules: "Modules | None" = None
@@ -2016,7 +2016,7 @@ def _with_shared_generation(config: DeploymentConfig, data_dir: Path) -> Deploym
 
 
 def access_roles(config: DeploymentConfig) -> dict:
-    """The roles the MEDIATORS decide reads with (formerly BLOCKING 6).
+    """The roles the MEDIATORS decide reads with (formerly planning-file item 6).
 
     The declared roles, unless the deployment has turned label
     enforcement on -- then the same roles with every classification

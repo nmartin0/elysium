@@ -1,6 +1,6 @@
 """How many stored values will not convert to a field's new type (R3).
 
-BLOCKING.md, "RETYPE, CHECKED AND SLICED": the count is made from BRONZE,
+the removed planning-file item "RETYPE, CHECKED AND SLICED": the count is made from BRONZE,
 before the retype is applied, so the person can see how many values would
 fail. Bronze holds every raw value as text and is what silver is rebuilt
 from, so it is the one place that answers for the rebuild.

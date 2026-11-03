@@ -1,5 +1,5 @@
 // moduleManager.spec.ts -- the module manager changing the deployment
-// (the removed BLOCKING.md item on modules, step 1.4c): a module turned off leaves the rail,
+// (the removed planning-file item on modules, step 1.4c): a module turned off leaves the rail,
 // here at once and in another open tab on its next request.
 //
 // IT WRITES modules.yaml INTO THE SERVER'S CONFIGURATION DIRECTORY -- in

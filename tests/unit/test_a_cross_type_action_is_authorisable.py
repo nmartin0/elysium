@@ -2,7 +2,7 @@
 A valid policy can authorise a cross-type action.
 
 `F-02`, reproduced 24 September and outranking everything in
-BLOCKING.md since: the policy validator rejected EVERY `write:` grant
+the planning file since: the policy validator rejected EVERY `write:` grant
 while `write_mediator` demanded `write:<Type>.<field>` for each
 mutation of a cross-type action. The two halves had never agreed, so
 no valid policy could authorise one at all.

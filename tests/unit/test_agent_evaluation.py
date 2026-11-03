@@ -403,7 +403,7 @@ def _count_step(value=2, customer="cust_001", step="aggregate_object"):
 
 
 class TestAnAggregateIsScored:
-    """BLOCKING.md, agent-loop efficiency: "are aggregates chosen when they should be?" -- from
+    """ROADMAP.md section 8.3, agent-loop efficiency: "are aggregates chosen when they should be?" -- from
     a run where counting Ada's transactions took five model calls. A
     grader reading only get_field steps could not score that question
     at all; these cases are what it can now tell apart."""

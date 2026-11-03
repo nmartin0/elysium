@@ -128,7 +128,7 @@ def verdict_for_removed_column(silo: str, table: str, column: str, field: str | 
     the new column is not new -- indistinguishable from one that has
     always been there. The removal is absorbed, as a plain drop is, and
     the message names the undeclared columns that might be its new home
-    (found in review, 21 October; BLOCKING.md records the limit).
+    (found in review, 21 October; the planning file recorded the limit).
 
     IT DOES NOT CLAIM A RENAME HAPPENED. It names the candidates and
     puts the costly mistake first, because `tier` really might have

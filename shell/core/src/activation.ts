@@ -1,5 +1,5 @@
 /**
- * ACTIVATING MODULES ON EVENTS (the removed BLOCKING.md item on modules, step 1.3).
+ * ACTIVATING MODULES ON EVENTS (the removed planning-file item on modules, step 1.3).
  *
  * A module's code runs when one of its pages opens, or on an event its
  * manifest names -- VS Code's activation events, where an extension is

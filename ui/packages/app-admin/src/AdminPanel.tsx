@@ -44,10 +44,10 @@ type AdminPanelProps = SubAppProps
 // same as any other error -- no separate "am I an admin" check exists
 // or is needed client-side.
 //
-// PEOPLE AND ROLES ONLY (the removed BLOCKING.md item on modules, step 3): the server's own
+// PEOPLE AND ROLES ONLY (the removed planning-file item on modules, step 3): the server's own
 // views -- Deployment, Silos, Metrics, Mirror, Cleaning -- moved to the
 // System sub-app's Server page (ui/src/system/ServerPage.tsx), shown to
-// whoever may run the server (manage:deployment), as BLOCKING.md's
+// whoever may run the server (manage:deployment), as the removed planning-file item
 // "THE SHELL AND THE SERVER EACH HAVE A SYSTEM SUB-APP" planned.
 const ADMIN_VIEWS: readonly ViewOption[] = [
   { id: 'users', label: 'Users', icon: 'people' },

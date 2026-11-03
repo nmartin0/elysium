@@ -8,7 +8,7 @@ accounts scripts/create_e2e_users.py makes (create them first). Starts
 its own server on a free port and stops it afterwards, so a server you
 already have running is not touched.
 
-WHY A SCRIPT. BLOCKING.md carried "--workers for real" for months
+WHY A SCRIPT. The planning file carried "--workers for real" for months
 because the only evidence was two apps inside one test process. Running
 it found two faults those tests could not see (14 Oct): the generation
 header alternated between workers, so the UI refetched its schema on

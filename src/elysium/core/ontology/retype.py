@@ -1,6 +1,6 @@
 """Changing an existing field's data type: what it does to stored data, what
 names the field, and which tables now need their silver rebuilt (slice R1 of
-the retype design; BLOCKING.md, "RETYPE, CHECKED AND SLICED").
+the retype design; the removed planning-file item "RETYPE, CHECKED AND SLICED").
 
 THE ORDER OF A RETYPE, which this module's three answers serve:
 

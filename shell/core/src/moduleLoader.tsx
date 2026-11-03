@@ -35,8 +35,8 @@
  * no activation is ever left without its `deactivate`.
  *
  * UNLOADING removes a module's stylesheets and calls its `deactivate`. The
- * browser keeps the module's code until the next page load (BLOCKING.md
- * item 3: an ES module cannot be unloaded), so loading the same version
+ * browser keeps the module's code until the next page load (the removed planning-file
+ * item on modules:an ES module cannot be unloaded), so loading the same version
  * again reuses it.
  */
 import { lazy, type ComponentType } from 'react'

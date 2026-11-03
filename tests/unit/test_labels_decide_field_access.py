@@ -1,4 +1,4 @@
-"""Classification labels decide field access (formerly BLOCKING 6).
+"""Classification labels decide field access (formerly planning-file item 6).
 
 As the owner decided it on 2026-10-12: a label both GRANTS and
 RESTRICTS, a label grant never opens a type, and the whole is opt-in.

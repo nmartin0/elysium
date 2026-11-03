@@ -74,7 +74,7 @@ different thing from a permission and is why the two were confused.
     grant gating schema visibility itself (core/ontology/mediator.py).
 
   - "module:<module id>:<name>" -- a permission a MODULE DECLARES in
-    its module.json (core/modules.py, the removed BLOCKING.md item on modules, step 2.3), the
+    its module.json (core/modules.py, the removed planning-file item on modules, step 2.3), the
     module's own to check: the simulator's panel is offered to
     module:simulator:operate. For a module the deployment lists, on or
     off, <name> must be one it declares. For a module it does NOT list
@@ -165,7 +165,7 @@ def _validate_field_grants_have_their_type(role_name: str, granted: set) -> None
         )
 
 
-#: A grant on every field carrying one classification label (formerly BLOCKING 6).
+#: A grant on every field carrying one classification label (formerly planning-file item 6).
 LABEL_GRANT_PREFIX = "read:label:"
 
 
@@ -340,7 +340,7 @@ def _validate_one_grant(role_name: str, grant: str, object_types: dict, action_t
             )
         return
     if grant.startswith(LABEL_GRANT_PREFIX):
-        # READ BY CLASSIFICATION (formerly BLOCKING 6): every field carrying this
+        # READ BY CLASSIFICATION (formerly planning-file item 6): every field carrying this
         # label, within the types the role can read. CHECKED BEFORE the
         # plain `read:` branch, which would take "label" for a type.
         #

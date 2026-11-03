@@ -1,4 +1,4 @@
-"""The proxy to an add-on's own server (the removed BLOCKING.md item on modules, step 2.1):
+"""The proxy to an add-on's own server (the removed planning-file item on modules, step 2.1):
 /api/addons/{id}/... reaches the server named in the add-on's state file,
 saying who is asking with a signed token, and passing nothing of the
 session either way (core/addons.py, api/addon_servers.py).

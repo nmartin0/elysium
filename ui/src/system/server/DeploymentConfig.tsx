@@ -67,7 +67,7 @@ interface DeploymentConfigBody {
   agent_features?: string[]
   /** AL-10: the per-query token budget; null for none. */
   max_tokens_per_query?: number | null
-  /** Formerly BLOCKING 6: classification labels decide field access. */
+  /** Formerly planning-file item 6: classification labels decide field access. */
   label_enforcement?: boolean
   /** R15: whether lineage events also go to a service (never its URL). */
   lineage_service?: boolean
@@ -76,7 +76,7 @@ interface DeploymentConfigBody {
   source_locales?: Record<string, string | null>
   /** ZOO-22: silos whose date columns may hold Excel serials. */
   excel_date_silos?: string[]
-  /** the removed BLOCKING.md item on modules: the modules loaded, by id, in rail order. */
+  /** the removed planning-file item on modules: the modules loaded, by id, in rail order. */
   modules?: string[]
   incremental_tables?: Record<string, string>
   max_concurrent_requests: number

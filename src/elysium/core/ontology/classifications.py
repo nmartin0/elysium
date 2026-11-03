@@ -14,7 +14,7 @@ reading the lake -- a backup, an auditor, a future REST catalog (R17)
 -- can see which columns hold what. A deployment that sets
 `access: label_enforcement: true` also lets labels decide who may read
 a field; compile_label_access below is that rule, decided by the owner
-on 2026-10-12 (formerly BLOCKING 6, "grant by TAG rather than by field
+on 2026-10-12 (formerly planning-file item 6, "grant by TAG rather than by field
 name").
 
 WHY IT MUST PROPAGATE, which is the whole of R12. The precedent: "If a
@@ -80,7 +80,7 @@ def validate_field_classification(object_type_name: str, field_name: str,
             )
 
 
-#: The grant that reads every field carrying a label (formerly BLOCKING 6).
+#: The grant that reads every field carrying a label (formerly planning-file item 6).
 #: The same string policy_validation.LABEL_GRANT_PREFIX checks.
 LABEL_GRANT_PREFIX = "read:label:"
 

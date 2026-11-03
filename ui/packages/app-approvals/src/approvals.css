@@ -1,4 +1,4 @@
-/* THE APPROVALS MODULE'S OWN STYLES (the removed BLOCKING.md item on modules, step 3) -- its four
+/* THE APPROVALS MODULE'S OWN STYLES (the removed planning-file item on modules, step 3) -- its four
  * Inbox tabs: approvals, enrichment, predictions, unusual -- moved from the
  * kit's stylesheet with the module into its own bundle, so they load with
  * it and nowhere else. IN THE `components` LAYER -- see

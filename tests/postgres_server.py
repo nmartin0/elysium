@@ -5,7 +5,7 @@ and its only real-engine tests started a server through `pgserver`,
 which ships PostgreSQL as a wheel -- for Python 3.12 and earlier. The
 machine that gates every patch moved to 3.13, `pytest.importorskip`
 turned the missing wheel into a SKIP, and the suite went on reporting
-green with the production read path untested. BLOCKING.md (an item since removed)
+green with the production read path untested. the planning file (an item since removed)
 predicted exactly that ("a 3.13 environment would skip these
 silently"); it then happened, unnoticed, until it was looked for.
 

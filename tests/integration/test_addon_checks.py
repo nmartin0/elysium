@@ -1,6 +1,6 @@
 """The add-on contract checks (sdk/python/elysium_addon_checks.py), which
-an add-on runs against its own server in its own repository (BLOCKING.md
-item 3, step 2): the example add-on keeps the contract, and -- THE SUITE
+an add-on runs against its own server in its own repository (the removed planning-file
+item on modules, step 2): the example add-on keeps the contract, and -- THE SUITE
 TESTED ITSELF, as the design asks -- each check fails an add-on broken
 in the one way it checks for, so none of them can pass everything."""
 

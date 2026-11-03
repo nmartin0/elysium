@@ -1,4 +1,4 @@
-"""An add-on posting to the Inbox through its outbox (the removed BLOCKING.md item on modules,
+"""An add-on posting to the Inbox through its outbox (the removed planning-file item on modules,
 step 2.4; core/addons.py and api/addon_servers.deliver_outbox): delivered
 to the people named who are offered the module, or to all of them; a
 file it cannot take moved aside with the reason in the add-on's log; a

@@ -1,4 +1,4 @@
-"""Several measures over one read (the removed BLOCKING.md item on modules' time-series reads,
+"""Several measures over one read (the removed planning-file item on modules' time-series reads,
 part 4): a count, a total and a mean per week are one request, one scan,
 and cannot disagree about which rows they saw. After the precedent's aggregate,
 which takes a list of {type, field, name} and answers each group with its

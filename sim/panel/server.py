@@ -1,7 +1,7 @@
 """
 server.py  (the simulator's control panel, as an Elysium add-on's server)
 
-the removed BLOCKING.md item on modules, step 2.3, and its item on the simulator, the "control panel served by the
+the removed planning-file item on modules, step 2.3, and its item on the simulator, the "control panel served by the
 simulator itself". Elysium starts this (its module.json's `server`) and
 forwards the panel page's calls to it; this, in turn, operates a world
 through the channel the simulator already has (simulator/control.py).
@@ -261,7 +261,7 @@ class Panel:
 
 class Watcher:
     """TELLS WHOEVER MAY OPERATE THE WORLD what they would want to know
-    without having the panel open (the removed BLOCKING.md item on modules, step 2.4; the
+    without having the panel open (the removed planning-file item on modules, step 2.4; the
     owner's choice, 23 October): through Elysium's Inbox, by a file in
     the outbox Elysium gave this server (elysium_addon.post), so a notice
     written while Elysium is offline arrives when it is back.

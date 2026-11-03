@@ -80,7 +80,7 @@ describe('the root package.json correctly declares the workspace', () => {
   })
 
   it.each(['@elysium/app-query', '@elysium/app-inbox', '@elysium/app-admin', '@elysium/app-browse'])(
-    'does not depend on %s, which has a bundle of its own (the removed BLOCKING.md item on modules, step 3)',
+    'does not depend on %s, which has a bundle of its own (the removed planning-file item on modules, step 3)',
     (name) => {
       // The page loads it from its bundle; a dependency would let the page
       // import it again, behind the loader's back.

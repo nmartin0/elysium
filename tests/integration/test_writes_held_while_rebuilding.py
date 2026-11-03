@@ -1,5 +1,5 @@
 """A write waits while its type is being rebuilt (slice R4 of the retype
-design; BLOCKING.md, "RETYPE, CHECKED AND SLICED"), over HTTP.
+design; the removed planning-file item "RETYPE, CHECKED AND SLICED"), over HTTP.
 
 The rules under test: approving a proposal is the write, and it is HELD with
 a 409 that says why while a table the write's type reads is rebuilding (the

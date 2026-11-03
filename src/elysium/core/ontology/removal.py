@@ -1,5 +1,5 @@
 """Removing a field or a link type: what blocks it, and what it leaves behind
-(29 October, owner-agreed design; BLOCKING.md, "Editing the ontology's shape").
+(29 October, owner-agreed design; the removed planning-file item "Editing the ontology's shape").
 
 THE SEQUENCE IS ALWAYS deprecate -> wait -> remove. Only a name that is
 already deprecated can be removed, and removal is refused while anything

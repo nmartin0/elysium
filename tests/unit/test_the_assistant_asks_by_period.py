@@ -1,4 +1,4 @@
-"""The assistant's aggregate step takes a period (the removed BLOCKING.md item on modules'
+"""The assistant's aggregate step takes a period (the removed planning-file item on modules'
 time-series reads, part 3): "how did sales go week by week" is one step
 that returns one total per week, where before it had no way to ask.
 

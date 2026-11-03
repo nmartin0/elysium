@@ -1,7 +1,7 @@
 """Operating a running world from outside it (REAL_SOURCES.md O1-O3, O5).
 
 A world runs in one process; an operator -- a person at a terminal, or
-the control panel BLOCKING.md asks for -- is somewhere else. Until this,
+the control panel the planning file asked for -- is somewhere else. Until this,
 the only contact was the databases, which is right for CONSUMERS and
 wrong for the OPERATOR: `simulator drift` from another terminal changed
 the database behind the running engine's back and the engine crashed on

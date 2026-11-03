@@ -29,7 +29,7 @@ WHAT IS NOT EDITABLE YET, and each is buildable: the ontology's SHAPE
 (types, fields, data types -- below, only its descriptions are), policy,
 silos, and config.yaml's nested settings -- lists, the llm block. Roles already have their own editor and store. The
 dependency and "should configuration be editable from the UI at all"
-were BLOCKING's questions; both were answered yes on 14 October.
+were questions in the planning file; both were answered yes on 14 October.
 
 THE WRITE PATH IS THE ROUTE'S (api/routes.py): validate a candidate
 directory with the loader, write atomically, reload, and put the old
@@ -987,7 +987,7 @@ def _remove_type(ontology: str, bindings: "str | None", change: dict, expected: 
 
 
 # ---------------------------------------------------------------------------
-# RETYPING (slice R1 of the retype design, BLOCKING.md "RETYPE, CHECKED AND
+# RETYPING (slice R1 of the retype design, the removed planning-file item "RETYPE, CHECKED AND
 # SLICED"): the `data_type` line of ONE existing data field, changed.
 # Everything the change sets going in the lake is core/ontology/retype.py's
 # to say; this judges only that the edit is exact. LINES, as removal is: the
