@@ -15,6 +15,7 @@ import pytest
 from core.mirror.catalog import open_mirror_catalog
 from core.mirror.erasure import (
     ErasureRegister,
+    adopt_all_current,
     adopt_table,
     apply_erasures,
     cascade,
@@ -465,3 +466,36 @@ def test_the_record_carries_the_identity_and_owned_links_of_the_tables_own_rows(
     assert recorded.links == {"cust": {("Ticket", "Customer")}}
     assert recorded.present and recorded.complete
     assert recorded.keys == {"ticket_id": {"Ticket"}, "cust": {"Customer"}}
+
+
+class TestAdoptAllCurrent:
+    def test_it_refuses_without_the_confirmation(self, lake):
+        lake.make("s.customers", [{"customer_id": "c1"}])
+        with pytest.raises(ValueError):
+            adopt_all_current(lake, WITHOUT_TICKET, confirmed=False)
+        assert not recorded_columns(lake.load_table("s.customers")).present
+
+    def test_it_adopts_what_the_schema_maps_and_only_that(self, ticket_lake):
+        lake = ticket_lake
+        record_key_columns(lake, FULL, created_since=EXISTED_BEFORE)       # all partial
+        lake.make("s.unmapped", [{"x": 1}])
+
+        adopted, unresolved = adopt_all_current(lake, WITHOUT_TICKET, confirmed=True)
+
+        assert "s.customers" in adopted and "gold.Customer" in adopted
+        record = recorded_columns(lake.load_table("s.customers"))
+        assert record.complete and record.adopted and record.statement
+        # the removed Ticket's tables recorded a type the schema no longer has: not this path's to adopt
+        assert {"s.tickets", "gold.Ticket", "gold_history.Ticket", "s.unmapped"} <= set(unresolved)
+        assert not recorded_columns(lake.load_table("s.unmapped")).present
+        assert not recorded_columns(lake.load_table("s.tickets")).complete
+
+    def test_it_never_narrows(self, lake):
+        """The id column was renamed in the ontology; the old one still holds ids."""
+        lake.make("s.people", [{"acct": "a1", "account_ref": "a1"}])
+        record_key_columns(lake, {"Account": _type("people", "acct")}, created_since=CREATED_BY_IT)
+
+        adopt_all_current(lake, {"Account": _type("people", "account_ref")}, confirmed=True)
+
+        assert recorded_key_columns(lake.load_table("s.people")) == {
+            "acct": {"Account"}, "account_ref": {"Account"}}

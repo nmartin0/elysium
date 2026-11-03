@@ -3,8 +3,16 @@
     python -m scripts.erase Customer cust_001 --reason "GDPR request 2026-114"
     python -m scripts.erase Customer cust_001 --reason "..." --write
     python -m scripts.erase --list
+    python -m scripts.erase --adopt-all-current --confirm-no-type-was-ever-removed
     python -m scripts.erase --adopt bronze_primary_sql.tags --keys tag_id=Tag [--ids tag_id=Tag]
     python -m scripts.erase --adopt-none primary_sql.audit_notes
+
+--adopt-all-current is the normal remedy after an upgrade, for a deployment that
+never removed an object type: it marks every table the ontology maps complete,
+on your statement, and lists (never touches) the rest. --write REFUSES, and
+erases nothing, while a table that could affect the erasure cannot be fully
+searched; --erase-reachable-now erases what can be reached and records the
+erasure incomplete.
 
 --adopt is the operator's statement about ONE lake table written before
 its key columns were recorded: these columns hold these types' ids
@@ -46,19 +54,21 @@ from core.mirror.erasure import (
     ADOPT_HINT,
     PART_MARK,
     ErasureRegister,
+    adopt_all_current,
     adopt_table,
     apply_erasures,
     cascade,
     forget_beyond_the_mirror,
     gap_notice,
     recorded_object_types,
+    relevant_tables,
     survey,
 )
 from core.mirror.sync_lock import single_writer
 
 
 def run(object_type: str, object_id: str, reason: str, write: bool = False,
-        paths=None, requested_by: "str | None" = None) -> int:
+        paths=None, requested_by: "str | None" = None, erase_reachable_now: bool = False) -> int:
     paths = paths or resolve_runtime_paths()
     config = load_deployment(paths.config_dir)
     if not reason.strip():
@@ -88,10 +98,26 @@ def run(object_type: str, object_id: str, reason: str, write: bool = False,
         counts = Counter(kind for kind, _ in keys)
         for kind, count in sorted(counts.items()):
             print(f"  {kind}: {count}")
+        reach_now = survey(catalog, config.schema, set(counts))
+        blocking = relevant_tables(reach_now, config.schema, set(counts))
+        if write and blocking and not erase_reachable_now:
+            # NOTHING IS ERASED: an erasure run first removes the rows that link a person to
+            # what depended on them, which adopting the tables afterwards could not follow.
+            print(f"NOT ERASED: {len(blocking)} table(s) could affect this erasure and cannot be fully "
+                  f"searched: {', '.join(blocking)}. Resolve them first -- " + ADOPT_HINT
+                  + ". Or pass --erase-reachable-now to erase what can be reached now and record the "
+                    "erasure as incomplete.", file=sys.stderr)
+            return 2
         if not write:
             # SO --write IS NOT A SURPRISE: what it would not be able to search.
-            for line in gap_notice(survey(catalog, config.schema, set(counts))):
+            reach = survey(catalog, config.schema, set(counts))
+            for line in gap_notice(reach):
                 print(f"  WARNING {line}")
+            if blocking and not erase_reachable_now:
+                print(f"--write would REFUSE and erase nothing: {len(blocking)} table(s) could not be "
+                      f"fully searched ({', '.join(blocking)}). Resolve them first, or pass "
+                      f"--erase-reachable-now to erase what can be reached and record the erasure "
+                      f"incomplete.")
             print("Dry run: nothing was erased. --write to erase.")
             return 0
         register = ErasureRegister(paths.data_dir / "erasures.db")
@@ -207,9 +233,36 @@ def adopt(identifier: str, keys: "str | None", ids: "str | None", links: "str | 
     return 0
 
 
+def adopt_everything_current(confirmed: bool, paths=None) -> int:
+    """--adopt-all-current: the one-step remedy for a deployment that never
+    removed an object type. Refused without --confirm-no-type-was-ever-removed.
+    Touches only tables the current ontology maps; lists the rest."""
+    if not confirmed:
+        print("This states that no object type was EVER removed from this deployment, which only you "
+              "can know. Say so with --confirm-no-type-was-ever-removed. Nothing was recorded.",
+              file=sys.stderr)
+        return 1
+    paths = paths or resolve_runtime_paths()
+    config = load_deployment(paths.config_dir)
+    catalog = open_mirror_catalog(paths.data_dir / "mirror", dict(config.mirror_storage))
+    with single_writer(paths.data_dir / "sync.lock") as acquired:
+        if not acquired:
+            print("A sync is running. Try again when it has finished; nothing was recorded.")
+            return 1
+        adopted, unresolved = adopt_all_current(catalog, config.schema, confirmed)
+    print(f"Adopted {len(adopted)} table(s) the ontology maps, on your statement that no type was ever "
+          f"removed.")
+    if unresolved:
+        print(f"STILL UNRESOLVED ({len(unresolved)}), because the ontology does not map them: "
+              f"{', '.join(unresolved)}. Adopt each with --adopt, or drop it in the lake.")
+    return 0
+
+
 def main() -> int:
     if sys.argv[1:] == ["--list"]:
         return list_erasures()
+    if sys.argv[1:2] == ["--adopt-all-current"]:
+        return adopt_everything_current(sys.argv[2:] == ["--confirm-no-type-was-ever-removed"])
     if sys.argv[1:2] in (["--adopt"], ["--adopt-none"]):
         parser = argparse.ArgumentParser(prog=f"erase {sys.argv[1]}")
         parser.add_argument("table")
@@ -224,8 +277,12 @@ def main() -> int:
     parser.add_argument("object_id")
     parser.add_argument("--reason", required=True)
     parser.add_argument("--write", action="store_true")
+    parser.add_argument("--erase-reachable-now", action="store_true",
+                        help="erase what can be searched even though some tables cannot be fully "
+                             "searched; the erasure is recorded incomplete")
     args = parser.parse_args()
-    return run(args.object_type, args.object_id, args.reason, write=args.write)
+    return run(args.object_type, args.object_id, args.reason, write=args.write,
+               erase_reachable_now=args.erase_reachable_now)
 
 
 if __name__ == "__main__":

@@ -467,6 +467,7 @@ class Recorded:
     present: bool
     known: str = PARTIAL
     adopted: bool = False
+    statement: str = ""          # what the operator said when adopting, if they said something
 
     @property
     def complete(self) -> bool:
@@ -478,7 +479,8 @@ def _encode(record: "Recorded") -> str:
         return {column: sorted(types) for column, types in sorted(columns.items()) if types}
     return json.dumps({"v": 2, "keys": plain(record.keys), "ids": plain(record.ids),
                        "links": plain(record.links), "known": record.known,
-                       "adopted": record.adopted}, sort_keys=True)
+                       "adopted": record.adopted, **({"statement": record.statement}
+                                                     if record.statement else {})}, sort_keys=True)
 
 
 def _decoded(raw) -> dict[str, set[str]]:
@@ -498,7 +500,7 @@ def recorded_columns(table) -> Recorded:
                 {str(column): {(str(owner), str(target)) for owner, target in pairs}
                  for column, pairs in (recorded.get("links") or {}).items()},
                 True, COMPLETE if recorded["known"] == COMPLETE else PARTIAL,
-                bool(recorded.get("adopted")))
+                bool(recorded.get("adopted")), str(recorded.get("statement") or ""))
         if isinstance(recorded.get("v"), int):         # an earlier form: no owners, no `known`
             return Recorded(_decoded(recorded.get("keys") or {}), _decoded(recorded.get("ids") or {}),
                             {}, False)
@@ -541,7 +543,8 @@ def known_columns(schema: dict, identifier: str, table) -> Recorded:
     hash is in the register."""
     now, before = schema_columns(schema, identifier), recorded_columns(table)
     return Recorded(_union(now.keys, before.keys), _union(now.ids, before.ids),
-                    _union(now.links, before.links), before.present, before.known, before.adopted)
+                    _union(now.links, before.links), before.present, before.known, before.adopted,
+                    before.statement)
 
 
 def stale_types(schema: dict, identifier: str, table) -> list[tuple[str, str]]:
@@ -596,7 +599,8 @@ def record_key_columns(catalog, schema: dict, created_since: "float | None" = No
                     continue
                 known = wanted.known if wanted.present else (
                     COMPLETE if _created_since(table, created_since) else PARTIAL)
-                record = Recorded(wanted.keys, wanted.ids, wanted.links, True, known, wanted.adopted)
+                record = Recorded(wanted.keys, wanted.ids, wanted.links, True, known, wanted.adopted,
+                                  wanted.statement)
                 if record == recorded_columns(table):
                     continue
                 with table.transaction() as tx:
@@ -631,6 +635,47 @@ def adopt_table(catalog, schema: dict, identifier: str, keys: dict[str, set[str]
     with table.transaction() as tx:
         tx.set_properties({KEY_COLUMNS_PROPERTY: _encode(record)})
     return record
+
+
+NO_TYPE_REMOVED = "the operator stated that no object type was ever removed from this deployment"
+
+
+def adopt_all_current(catalog, schema: dict, confirmed: bool) -> tuple[list[str], list[str]]:
+    """(adopted, unresolved): the one-step remedy for a deployment that never
+    removed a type. Every table the CURRENT schema maps, whose recorded types
+    are all still in the schema, becomes complete by the operator's statement
+    (union with what is known, never narrowing; the statement is kept in the
+    record). A table the schema does not know -- or one that recorded a type
+    the schema no longer has -- is NEVER touched here, only listed: there is
+    no statement about it to rely on, and adopting it takes --adopt naming
+    its columns. Refuses without the confirmation."""
+    if not confirmed:
+        raise ValueError("adopting everything the ontology maps needs the operator's confirmation")
+    adopted: list[str] = []
+    unresolved: list[str] = []
+    for namespace in catalog.list_namespaces():
+        for parts in catalog.list_tables(namespace):
+            identifier = ".".join(parts)
+            try:
+                table = catalog.load_table(identifier)
+                now = table_key_columns(schema, identifier)
+                before = recorded_columns(table)
+                recorded_types = {name for names in before.keys.values() for name in names}
+                if not now or not recorded_types <= set(schema):
+                    unresolved.append(identifier)
+                    continue
+                if before.complete and before.adopted:
+                    continue
+                known = known_columns(schema, identifier, table)
+                record = Recorded(known.keys, known.ids, known.links, True, COMPLETE, True,
+                                  NO_TYPE_REMOVED)
+                with table.transaction() as tx:
+                    tx.set_properties({KEY_COLUMNS_PROPERTY: _encode(record)})
+                adopted.append(identifier)
+            except Exception as e:  # noqa: BLE001 - named, never fatal
+                logger.warning("could not adopt %s: %s", identifier, type(e).__name__)
+                unresolved.append(identifier)
+    return adopted, unresolved
 
 
 def recorded_object_types(catalog) -> set[str]:
@@ -712,7 +757,9 @@ def survey(catalog, schema: dict, erased_types: "set[str] | None" = None) -> Rea
     return Reach(unreachable, sorted(partly), sorted(stale), partly_types, sorted(shared))
 
 
-ADOPT_HINT = ("adopt it with `python -m scripts.erase --adopt TABLE --keys column=Type` "
+ADOPT_HINT = ("if no type was ever removed from this deployment, resolve every table the ontology maps "
+              "with `python -m scripts.erase --adopt-all-current --confirm-no-type-was-ever-removed`; "
+              "otherwise adopt it with `python -m scripts.erase --adopt TABLE --keys column=Type` "
               "(or `--adopt-none TABLE` if it holds no person's id), or drop it in the lake")
 
 

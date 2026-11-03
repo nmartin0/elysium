@@ -171,7 +171,10 @@ _TYPE_TABLES = [
     "already held data before the record is different, and no sync can change that: what a type removed "
     "earlier kept in it is unknown. Erasure searches it by the columns still known, says it is partly "
     "known, and marks the erasure incomplete, so the person may remain in the columns that are not known "
-    "until the table is adopted or dropped in the lake. Adopt such tables before erasing.",
+    "until the table is adopted or dropped in the lake. If no type was ever removed from your deployment, the "
+    "normal remedy after an upgrade is one command: python -m scripts.erase --adopt-all-current "
+    "--confirm-no-type-was-ever-removed. Adopt such tables before erasing: an erasure refuses to run "
+    "while they could affect it, unless told to erase what it can reach now.",
     "Asking for a rebuild of its silver table does nothing, because the sync no longer knows the table. Dropping "
     "the tables is done in the lake itself, by a person.",
 ]

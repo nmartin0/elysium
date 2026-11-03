@@ -2023,12 +2023,20 @@ earlier kept in it is unknown. Erasure searches such a table by the columns
 known, lists it as `partly known`, and marks the erasure `incomplete`
 (`erase --list`; every sync says so and works the erasure out again from
 its seed keys). A table with no record whose type is gone is `unreachable`
-and is not searched at all. Both are resolved by an operator, not by a sync:
+and is not searched at all. Both are resolved by an operator, not by a sync. THE NORMAL REMEDY
+AFTER AN UPGRADE, for a deployment that never removed an object type, is
+`python -m scripts.erase --adopt-all-current --confirm-no-type-was-ever-removed`:
+it marks every table the ontology maps complete on that statement (kept in
+the record), and lists, never touches, the tables the ontology does not map.
+Otherwise, per table:
 `python -m scripts.erase --adopt TABLE --keys column=Type [--ids ...]
 [--links column=Owner:Target]` states what the table holds (`--adopt-none`:
 no person's id), or the table is dropped in the lake. Adopt BEFORE erasing:
 an erasure run first removes the rows that linked a person to what depended
-on them, and those cannot then be followed. A table created by the sync
+on them, and those cannot then be followed -- so `erase --write` REFUSES (exit
+2, nothing erased) while a table that could affect the erasure is partly known
+or unreachable, and `--erase-reachable-now` erases what can be reached and
+records the erasure incomplete. The dry run says which it would do. A table created by the sync
 that recorded it is `complete`.
 
 OTHER LIMITS. (1) The record never narrows, so a column re-pointed from one

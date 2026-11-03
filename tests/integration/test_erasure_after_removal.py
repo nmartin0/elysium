@@ -24,6 +24,7 @@ from core.mirror.erasure import (
     KEY_COLUMNS_PROPERTY,
     ErasureRegister,
     apply_erasures,
+    recorded_columns,
     recorded_key_columns,
     survey,
 )
@@ -61,11 +62,13 @@ def _files_holding(paths, value) -> list[str]:
     return holding
 
 
-def _erase(paths, object_type, object_id):
+def _erase(paths, object_type, object_id, reachable_now=True):
+    """`reachable_now`: pass --erase-reachable-now. The tests about what an
+    erasure CAN do in a damaged lake need it; the ones about refusing do not."""
     printed, errors = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(printed), contextlib.redirect_stderr(errors):
         code = erase(object_type, object_id, "test request", write=True, paths=paths,
-                     requested_by="tester")
+                     requested_by="tester", erase_reachable_now=reachable_now)
     return code, printed.getvalue(), errors.getvalue()
 
 
@@ -337,3 +340,75 @@ class TestAdoptingALegacyTable:
         assert code == 0, printed + errors
         for table in legacy:
             assert all(str(row.get("tag_id")) != str(tag_id) for row in _rows(tag_lake, table)), table
+
+
+class TestWriteRefusesWhileATableCannotBeFullySearched:
+    def _damaged(self, paths):
+        _remove_tag_and_sync_again(paths)
+        _forget_what_tables_recorded(paths, ["gold.Tag"])
+        with _source(paths) as source:
+            return source.execute("SELECT customer_id FROM customer_tags LIMIT 1").fetchone()[0]
+
+    def test_it_erases_nothing_and_says_to_resolve_them_first(self, tag_lake):  # noqa: F811
+        customer = self._damaged(tag_lake)
+
+        code, _printed, errors = _erase(tag_lake, "Customer", customer, reachable_now=False)
+
+        assert code == 2 and "NOT ERASED" in errors and "gold.Tag" in errors
+        assert "--adopt-all-current" in errors and "--erase-reachable-now" in errors
+        assert any(row["customer_id"] == customer for row in _rows(tag_lake, "primary_sql.customer_tags"))
+        assert ErasureRegister(tag_lake.data_dir / "erasures.db").erasures() == []
+
+    def test_the_override_erases_what_can_be_reached_and_records_it_incomplete(self, tag_lake):  # noqa: F811
+        customer = self._damaged(tag_lake)
+
+        code, _printed, errors = _erase(tag_lake, "Customer", customer, reachable_now=True)
+
+        assert code == 2 and "NOT COMPLETE" in errors
+        assert all(row["customer_id"] != customer for row in _rows(tag_lake, "primary_sql.customer_tags"))
+        assert ErasureRegister(tag_lake.data_dir / "erasures.db").incomplete() == ["gold.Tag"]
+
+    def test_the_dry_run_says_what_write_would_do(self, tag_lake):  # noqa: F811
+        customer = self._damaged(tag_lake)
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed), contextlib.redirect_stderr(io.StringIO()):
+            code = erase("Customer", customer, "test", write=False, paths=tag_lake)
+
+        assert code == 0 and "--write would REFUSE and erase nothing" in printed.getvalue()
+
+    def test_a_healthy_lake_is_not_refused(self, tag_lake):  # noqa: F811
+        _remove_tag_and_sync_again(tag_lake)
+        with _source(tag_lake) as source:
+            customer = source.execute("SELECT customer_id FROM customer_tags LIMIT 1").fetchone()[0]
+
+        code, printed, errors = _erase(tag_lake, "Customer", customer, reachable_now=False)
+
+        assert code == 0, printed + errors
+
+
+class TestAdoptingEverythingTheOntologyMaps:
+    def test_it_needs_the_confirmation_and_never_adopts_a_table_the_ontology_does_not_know(
+            self, tag_lake):  # noqa: F811
+        from scripts.erase import adopt_everything_current
+
+        _remove_tag_and_sync_again(tag_lake)
+        catalog = open_mirror_catalog(tag_lake.data_dir / "mirror")
+        everything = [".".join(parts) for namespace in catalog.list_namespaces()
+                      for parts in catalog.list_tables(namespace)]
+        _forget_what_tables_recorded(tag_lake, everything)
+        said, errors = io.StringIO(), io.StringIO()
+
+        with contextlib.redirect_stdout(said), contextlib.redirect_stderr(errors):
+            assert adopt_everything_current(False, paths=tag_lake) == 1
+            assert not recorded_columns(catalog.load_table("primary_sql.customers")).present
+            assert adopt_everything_current(True, paths=tag_lake) == 0
+
+        mapped = recorded_columns(catalog.load_table("primary_sql.customers"))
+        assert mapped.complete and mapped.adopted and "no object type was ever removed" in mapped.statement
+        for unknown in ("gold.Tag", "primary_sql.tags", "gold.customer_tags"):
+            assert not recorded_columns(catalog.load_table(unknown)).present, unknown
+        assert "STILL UNRESOLVED" in said.getvalue() and "gold.Tag" in said.getvalue()
+        # and so the lake is still not erasable in one go: it says why
+        customer = "cust_001"
+        code, _printed, refused = _erase(tag_lake, "Customer", customer, reachable_now=False)
+        assert code == 2 and "gold.Tag" in refused

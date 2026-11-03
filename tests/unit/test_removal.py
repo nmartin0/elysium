@@ -202,6 +202,7 @@ class TestWhatATypeLeavesBehind:
                       "rebuild", "Nothing serves the type", "erasure request still reaches",
                       "no sync can change that", "partly known", "marks the erasure incomplete",
                       "--adopt", "Adopt such tables before erasing",
+                      "--adopt-all-current", "refuses to run",
                       "reads the same source table"):
             assert words in text
 

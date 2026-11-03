@@ -1236,10 +1236,12 @@ CONTROLS = [
     Control(
         describes="R13 removed types: a sync writes each table's key columns onto it",
         path="core/mirror/erasure.py",
-        old="                    tx.set_properties({KEY_COLUMNS_PROPERTY: _encode(record)})",
-        new="                    pass",
+        old=("                    tx.set_properties({KEY_COLUMNS_PROPERTY: _encode(record)})\n"
+             "                changed.append(identifier)"),
+        new=("                    pass\n"
+             "                changed.append(identifier)"),
         tests=["tests/integration/test_erasure_after_removal.py::TestAfterTheTypeIsRemoved::test_a_sync_after_the_removal_does_not_forget_what_was_recorded",
-               "tests/integration/test_erasure_after_removal.py::TestATableWrittenBeforeTheRecordExisted::test_the_next_sync_records_it_for_a_type_that_still_exists"],
+               "tests/integration/test_erasure_after_removal.py::TestATableWrittenBeforeTheRecordExisted::test_the_next_sync_records_it_for_a_type_that_still_exists_but_does_not_call_it_complete"],
     ),
     Control(
         describes="R13 removed types: run_sync records the key columns",
@@ -1266,8 +1268,8 @@ CONTROLS = [
     Control(
         describes="R13 removed types: the erase command is not a success while a table is unreachable",
         path="scripts/erase.py",
-        old="        return 2\n",
-        new="        return 0\n",
+        old="        return 2\n    return 0",
+        new="        return 0\n    return 0",
         tests=["tests/integration/test_erasure_after_removal.py::TestATableWrittenBeforeTheRecordExisted::test_the_command_says_so_and_does_not_report_success"],
     ),
     Control(
@@ -1382,8 +1384,8 @@ CONTROLS = [
     Control(
         describes="R13 removed types: a dry run names what a write could not search",
         path="scripts/erase.py",
-        old='            for line in gap_notice(survey(catalog, config.schema, set(counts))):',
-        new='            for line in []:',
+        old='            for line in gap_notice(reach):\n                print(f"  WARNING {line}")',
+        new='            for line in []:\n                print(f"  WARNING {line}")',
         tests=["tests/integration/test_erasure_after_removal.py::TestWhatTheRegisterAndTheSyncSay::test_a_dry_run_names_what_the_write_could_not_search"],
     ),
     Control(
@@ -1540,6 +1542,70 @@ CONTROLS = [
         old='add_column_if_missing("erasures", "seed", "INTEGER")',
         new='add_column_if_missing("erasures", "seeed", "INTEGER")',
         tests=["tests/unit/test_erasure_removed_types.py::TestTheRegisterAcrossAnUpgrade::test_a_register_made_before_the_columns_existed_still_works"],
+    ),
+    Control(
+        describes="R13 refuse: --write erases nothing while a relevant table cannot be fully searched",
+        path="scripts/erase.py",
+        old='        if write and blocking and not erase_reachable_now:',
+        new='        if False:',
+        tests=["tests/integration/test_erasure_after_removal.py::TestWriteRefusesWhileATableCannotBeFullySearched::test_it_erases_nothing_and_says_to_resolve_them_first"],
+    ),
+    Control(
+        describes="R13 refuse: --erase-reachable-now overrides the refusal",
+        path="scripts/erase.py",
+        old='        if write and blocking and not erase_reachable_now:',
+        new='        if write and blocking:',
+        tests=["tests/integration/test_erasure_after_removal.py::TestWriteRefusesWhileATableCannotBeFullySearched::test_the_override_erases_what_can_be_reached_and_records_it_incomplete"],
+    ),
+    Control(
+        describes="R13 refuse: the dry run says --write would refuse",
+        path="scripts/erase.py",
+        old='            if blocking and not erase_reachable_now:',
+        new='            if False:',
+        tests=["tests/integration/test_erasure_after_removal.py::TestWriteRefusesWhileATableCannotBeFullySearched::test_the_dry_run_says_what_write_would_do"],
+    ),
+    Control(
+        describes="R13 refuse: a healthy lake is not refused",
+        path="scripts/erase.py",
+        old='        blocking = relevant_tables(reach_now, config.schema, set(counts))',
+        new="        blocking = list(reach_now.partly_known) + list(reach_now.unreachable) + ['x']",
+        tests=["tests/integration/test_erasure_after_removal.py::TestWriteRefusesWhileATableCannotBeFullySearched::test_a_healthy_lake_is_not_refused"],
+    ),
+    Control(
+        describes="R13 adopt all: the function refuses without the confirmation",
+        path="core/mirror/erasure.py",
+        old='    if not confirmed:\n        raise ValueError',
+        new='    if False:\n        raise ValueError',
+        tests=["tests/unit/test_erasure_removed_types.py::TestAdoptAllCurrent::test_it_refuses_without_the_confirmation"],
+    ),
+    Control(
+        describes="R13 adopt all: the command refuses without the confirmation flag",
+        path="scripts/erase.py",
+        old='    if not confirmed:\n        print("This states',
+        new='    if False:\n        print("This states',
+        tests=["tests/integration/test_erasure_after_removal.py::TestAdoptingEverythingTheOntologyMaps::test_it_needs_the_confirmation_and_never_adopts_a_table_the_ontology_does_not_know"],
+    ),
+    Control(
+        describes="R13 adopt all: a table the ontology does not know, or one that recorded a removed type, is never adopted",  # noqa: E501
+        path="core/mirror/erasure.py",
+        old='                if not now or not recorded_types <= set(schema):',
+        new='                if False:',
+        tests=["tests/unit/test_erasure_removed_types.py::TestAdoptAllCurrent::test_it_adopts_what_the_schema_maps_and_only_that",
+               "tests/integration/test_erasure_after_removal.py::TestAdoptingEverythingTheOntologyMaps::test_it_needs_the_confirmation_and_never_adopts_a_table_the_ontology_does_not_know"],
+    ),
+    Control(
+        describes="R13 adopt all: the operator's statement is kept in the record",
+        path="core/mirror/erasure.py",
+        old='                record = Recorded(known.keys, known.ids, known.links, True, COMPLETE, True,\n                                  NO_TYPE_REMOVED)',  # noqa: E501
+        new='                record = Recorded(known.keys, known.ids, known.links, True, COMPLETE, True)',
+        tests=["tests/unit/test_erasure_removed_types.py::TestAdoptAllCurrent::test_it_adopts_what_the_schema_maps_and_only_that"],
+    ),
+    Control(
+        describes="R13 adopt all: it unions with what is known and never narrows",
+        path="core/mirror/erasure.py",
+        old='                known = known_columns(schema, identifier, table)\n                record = Recorded(known.keys,',  # noqa: E501
+        new='                known = schema_columns(schema, identifier)\n                record = Recorded(known.keys,',
+        tests=["tests/unit/test_erasure_removed_types.py::TestAdoptAllCurrent::test_it_never_narrows"],
     ),
     Control(
         describes="R13: older snapshots and tags are dropped",
