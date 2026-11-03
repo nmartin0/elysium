@@ -228,7 +228,7 @@ the gateway yourself with `GEV_KEY_SETUP_TRUSTED_PEERS` after reading
 anonymous volume across restarts: after a `git pull` that changes dependencies,
 recreate it with `docker compose down -v && docker compose up --build`. The
 image also skips Puppeteer's Chromium download, which keeps it small but leaves
-`npm run test:track` to the host — `npm run build` and `npm test` run fine in
+the browser harnesses to the host — `npm run build` and `npm test` run fine in
 the container.
 
 </details>

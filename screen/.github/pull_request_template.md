@@ -6,7 +6,6 @@
 
 - [ ] `npm run build`
 - [ ] `npm test`
-- [ ] `npm run test:track` (dev server running)
 - [ ] Feature gate for the area I touched: <!-- e.g. `node scripts/qa-radio.mjs`, or "none applies" -->
 
 <!-- Screenshots are welcome for anything visual. -->

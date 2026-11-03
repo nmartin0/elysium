@@ -25,7 +25,7 @@ the Keychain; on any platform you can pass them as env vars or use a `.env`.
 People who only want to run the app can instead install the repository directly
 through Pinokio; the terminal path above remains the contributor path.
 
-Open `http://localhost:4173`. Before sending a PR run `npm run build`, `npm test`, and `npm run test:track` (dev server must be up) — **all three must stay green.**
+Open `http://localhost:4173`. Before sending a PR run `npm run build`, `npm test` — **both must stay green.**
 
 ## Checking a built app locally
 
@@ -59,14 +59,12 @@ same arguments. Four have an `npm run` alias: `qa:map-source-tray`,
 
 If you aren't sure which gate covers your change, search `docs/CURRENT-STATE.md`
 for the feature: it names the gate for many of them, and it's the authoritative
-runtime reference either way. `scripts/qa-l9-matrix.mjs` aggregates the broader
-release-candidate checks and selected harnesses; it does not replace the focused
-gate for the feature you changed.
+runtime reference either way.
 
 > **CI covers only two of these for you.** The workflow runs the setup policy
 > checks, the formatting and package-boundary checks, the unit suite and the
-> production build, plus a Windows onboarding job. It runs neither
-> `npm run test:track` nor any `qa-*.mjs` gate except the Street Level fixture
+> production build, plus a Windows onboarding job. It runs no
+> `qa-*.mjs` gate except the Street Level fixture
 > gate (`street-level-browser` job) — they need a live dev server and a
 > browser. Include the applicable local run in your PR's validation evidence.
 
@@ -149,7 +147,7 @@ ownership and adoption process.
 ## Pull requests
 
 1. Branch off `main`.
-2. Keep `npm run build`, `npm test`, and `npm run test:track` green and avoid new console errors, plus the [feature gate](#feature-regression-gates) for the area you touched.
+2. Keep `npm run build` and `npm test` green and avoid new console errors, plus the [feature gate](#feature-regression-gates) for the area you touched.
 3. If you change runtime behavior, update `docs/CURRENT-STATE.md` in the same PR, and add your changelog entry as `changelog.d/<pr-number>-<slug>.md` instead of editing `CHANGELOG.md` — see [changelog.d/README.md](changelog.d/README.md). Distinct filenames don't conflict; a release assembles the directory into `CHANGELOG.md`. A documentation claim that needs a regression test should assert against `docs/CURRENT-STATE.md` or `README.md`, which a PR still edits directly.
 4. If you add or change a data source, update [DATA_SOURCES.md](DATA_SOURCES.md) with its license and attribution. **Don't add data you don't have the right to redistribute** — fetch it at runtime instead.
 5. Describe what you changed and how you verified it (screenshots welcome for anything visual).

@@ -88,7 +88,6 @@ safe for PRs warranting isolation. For runtime changes, record local results for
 | --- | --- |
 | Setup, formatting, boundaries | `npm run doctor -- --json`; `npm run format:check`; `npm run check:boundaries` |
 | Tests and production build | `npm test`; `npm run build` |
-| Tracking regression | Candidate dev server at `localhost:4173`, then `npm run test:track` with compatible Chromium |
 | Built app | Stop the dev server, run `npm run preview`, and inspect the built candidate |
 
 Confirm tools target the candidate. Exercise changed/adjacent flows, loading,
