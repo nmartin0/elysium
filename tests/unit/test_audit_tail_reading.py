@@ -178,7 +178,7 @@ class TestItStillReturnsTheSameAnswers:
         _write_log(log, filler=3, matching=0)
         with open(log, "a") as f:
             f.write(json.dumps({
-                "user_id": "alice", "request_id": "req-abc",
+                "user_id": "alice", "request_id": "req-abc", "mac_allowed": True, "rbac_allowed": True,
                 "object_type": "Customer", "object_id": "tail",
             }))  # deliberately no trailing newline
 
@@ -201,7 +201,7 @@ class TestItStillReturnsTheSameAnswers:
         _write_log(log, filler=2, matching=0)
         with open(log, "a") as f:
             f.write(json.dumps({
-                "user_id": "alice", "request_id": "req-abc",
+                "user_id": "alice", "request_id": "req-abc", "mac_allowed": True, "rbac_allowed": True,
                 "object_type": "Customer", "object_id": "x" * 200_000,
             }) + "\n")
 

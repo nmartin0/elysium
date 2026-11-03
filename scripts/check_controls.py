@@ -9022,7 +9022,7 @@ CONTROLS = [
     Control(
         describes="v2 sets: a source id handed to search-around is checked again, not trusted",
         path="core/ontology/mediator.py",
-        old="        sources = self._still_readable(user_record, object_type, source_ids, context)\n",
+        old="        sources = self._still_readable(user_record, object_type, source_ids, context, outcome)\n",
         new="        sources = list(source_ids)\n",
         tests=["tests/integration/test_object_sets_evaluation.py::"
                "TestARowTheCallerCannotSeeNeverAppears::test_only_the_sources_that_pass_the_check_are_followed"],
@@ -9165,8 +9165,8 @@ CONTROLS = [
     Control(
         describes="v2 sets: only text equality is handed to the search",
         path="core/ontology/object_sets.py",
-        old='        if spec.data_type == "string" and not spec.is_link and all(isinstance(v, str) for v in values):\n',  # noqa: E501
-        new="        if not spec.is_link and all(isinstance(v, str) for v in values):\n",
+        old='        if spec.data_type == "string" and all(isinstance(v, str) for v in values):\n',
+        new="        if all(isinstance(v, str) for v in values):\n",
         tests=["tests/integration/test_object_sets_evaluation.py::TestThroughTheMediatorAndNowhereElse::"
                "test_only_text_equality_is_pushed_down"],
     ),
@@ -9388,19 +9388,12 @@ CONTROLS = [
     Control(
         describes='v2 sets: a link to a type the caller cannot read is refused like an unknown field',
         path='core/ontology/object_sets.py',
-        old='        if raw is not None and is_link_field(raw) and not self.has_type(get_link_target(raw)):\n            raise _unknown_field(object_type, name)\n',  # noqa: E501
+        old='        if (raw is not None and is_link_field(raw) and get_link_target(raw) in self.declared\n                and not self.has_type(get_link_target(raw))):\n            raise _unknown_field(object_type, name)\n',  # noqa: E501
         new='        if False:\n            raise _unknown_field(object_type, name)\n',
         tests=['tests/integration/test_object_sets_hidden_links.py::TestATargetTypeTheCallerCannotReadRBAC::test_no_filter_may_name_it[startsWith-cust_001]',
                'tests/integration/test_object_sets_hidden_links.py::TestATargetTypeTheCallerCannotReadRBAC::test_no_ordering_may_name_it',
                'tests/integration/test_object_sets_hidden_links.py::TestATargetTypeTheCallerCannotReadRBAC::test_no_grouping_or_metric_may_name_it',
                'tests/integration/test_api_v2.py::TestWhatAnErrorMayReveal::test_a_link_to_a_type_the_caller_cannot_read_is_an_unknown_field_everywhere'],
-    ),
-    Control(
-        describes="v2 sets: a search is never narrowed by a link's value (no membership oracle)",
-        path='core/ontology/object_sets.py',
-        old='if spec.data_type == "string" and not spec.is_link and all(isinstance(v, str) for v in values):',
-        new='if spec.data_type == "string" and all(isinstance(v, str) for v in values):',
-        tests=['tests/integration/test_object_sets_hidden_links.py::TestARowOfTheTargetTheCallerCannotSeeMAC::test_the_search_is_not_narrowed_by_a_link_value'],
     ),
     Control(
         describes='v2 sets: the filter-node cap is one budget for the whole request',
@@ -9428,15 +9421,8 @@ CONTROLS = [
         path='core/ontology/object_sets.py',
         old='        if self.scanned > MAX_SCANNED_ROWS:\n',
         new='        if False:\n',
-        tests=['tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_rows_scanned_are_counted_across_every_leaf',
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_rows_considered_are_counted_across_every_leaf',
                'tests/integration/test_api_v2.py::TestWhatAnErrorMayReveal::test_a_request_that_reads_too_many_objects_is_refused_not_cut_short'],
-    ),
-    Control(
-        describes='v2 sets: truncation is reported only when what the caller may see reached the ceiling',
-        path='core/ontology/object_sets.py',
-        old='        if outcome.scan_truncated and len(ids) >= mediator_module.MAX_SEARCH_SCAN:\n',
-        new='        if outcome.scan_truncated:\n',
-        tests=['tests/integration/test_object_sets_hidden_links.py::TestTruncationDoesNotCountHiddenRows::test_v2_reports_it_only_when_the_visible_result_reached_the_ceiling'],
     ),
     Control(
         describes='v2 sets: a forward search-around reads its sources as one logged bulk read',
@@ -9475,6 +9461,73 @@ CONTROLS = [
         new='    if not hmac.compare_digest(signature, _signature(key, user_id, query, payload)):\n',
         tests=['tests/unit/test_v2_paging.py::test_a_token_that_is_not_ascii_is_invalid_not_a_fault[abc.\\xe9]',
                'tests/integration/test_api_v2.py::TestPageTokens::test_a_token_that_is_not_ascii_is_the_same_refusal_not_a_fault'],
+    ),
+    Control(
+        describes='trace: a refusal by the row check is not shown to the caller',
+        path='core/intermediate_layer/audit.py',
+        old='            if entry.get("mac_allowed") is False:\n                return None\n',  # noqa: E501
+        new='            if False:\n                return None\n',
+        tests=['tests/integration/test_a_trace_names_nothing_refused.py::TestTheReader::test_a_refusal_by_the_row_check_is_not_shown',
+               'tests/integration/test_a_trace_names_nothing_refused.py::TestEveryWayOfTouchingAHiddenRowLeavesNoNameInTheTrace::test_a_scan_of_a_type',
+               'tests/integration/test_a_trace_names_nothing_refused.py::TestThroughTheRoute::test_a_v1_search_and_a_v1_get_of_a_hidden_row'],  # noqa: E501
+    ),
+    Control(
+        describes='trace: a refusal by the grants alone is shown without its object id',
+        path='core/intermediate_layer/audit.py',
+        old='            return {**entry, "object_id": None}\n',  # noqa: E501
+        new='            return entry\n',
+        tests=['tests/integration/test_a_trace_names_nothing_refused.py::TestTheReader::test_a_refusal_by_the_grants_alone_is_shown_without_its_id'],  # noqa: E501
+    ),
+    Control(
+        describes='trace: a bulk-read record carries no count of what was denied or considered',
+        path='core/intermediate_layer/audit.py',
+        old='if key not in ("denied", "denied_object_ids", "considered")}',  # noqa: E501
+        new='if key not in ("x",)}',
+        tests=['tests/integration/test_a_trace_names_nothing_refused.py::TestTheReader::test_a_bulk_record_counts_nothing_hidden'],  # noqa: E501
+    ),
+    Control(
+        describes='trace: a record of any other stage is not returned to the caller',
+        path='core/intermediate_layer/audit.py',
+        old='                    if key not in ("denied", "denied_object_ids", "considered")}\n        return None\n',  # noqa: E501
+        new='                    if key not in ("denied", "denied_object_ids", "considered")}\n        return entry\n',
+        tests=['tests/integration/test_a_trace_names_nothing_refused.py::TestTheReader::test_a_record_of_any_other_stage_is_not_returned'],  # noqa: E501
+    ),
+    Control(
+        describes='v2 sets: a set the scan ceiling may have cut short is refused, never returned as complete',
+        path='core/ontology/object_sets.py',
+        old='            if not outcome.row_check_pushed:\n',  # noqa: E501
+        new='            if False:\n',
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestNeverASilentCut::test_a_cut_that_may_hide_visible_rows_is_refused_the_same_for_everyone[us-east]',
+               'tests/integration/test_object_sets_hidden_links.py::TestNeverASilentCut::test_search_around_that_reaches_the_ceiling_is_refused_too'],  # noqa: E501
+    ),
+    Control(
+        describes="v2 sets: a cut of the caller's own answer is reported when the row check was in the query",
+        path='core/ontology/mediator.py',
+        old='                (pushed_security is not None and user_record.security_value is not None)\n',  # noqa: E501
+        new='                False\n',
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestNeverASilentCut::test_a_cut_of_the_callers_own_answer_is_reported'],  # noqa: E501
+    ),
+    Control(
+        describes='v2 sets: the request budget counts what a leaf looked at, not what survived',
+        path='core/ontology/object_sets.py',
+        old='        self.scanned += max(outcome.considered, len(ids))\n',  # noqa: E501
+        new='        self.scanned += len(ids)\n',
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_rows_considered_are_counted_across_every_leaf',
+               'tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_a_caller_who_sees_nothing_is_still_stopped'],  # noqa: E501
+    ),
+    Control(
+        describes='v2 sets: a link equality narrows the search by the targets the caller may read only',
+        path='core/ontology/object_sets.py',
+        old='            readable = run.mediator.readable_subset(run.user, target, list(values), run.context)\n',  # noqa: E501
+        new='            readable = list(values)\n',
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestARowOfTheTargetTheCallerCannotSeeMAC::test_the_search_is_narrowed_only_by_link_targets_the_caller_may_read'],  # noqa: E501
+    ),
+    Control(
+        describes='v2 sets: a link to a target that is not a declared type is an opaque reference, not a hidden one',
+        path='core/ontology/object_sets.py',
+        old='get_link_target(raw) in self.declared\n',  # noqa: E501
+        new='True\n',
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestAnOpaqueReferenceIsNotAHiddenOne::test_a_link_to_a_type_that_is_not_declared_can_still_be_filtered'],  # noqa: E501
     ),
 ]
 

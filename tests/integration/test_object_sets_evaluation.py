@@ -423,12 +423,17 @@ class TestOrdering:
 
 class TestThroughTheMediatorAndNowhereElse:
     def test_the_scan_ceiling_is_reported_not_hidden(self, mediator, alice, monkeypatch):
-        monkeypatch.setattr(mediator_module, "MAX_SEARCH_SCAN", 2)
+        # Customer's row rule is a column of its own table, so the search
+        # returns only rows alice may see and a cut is a cut of HER answer.
+        # (Transaction's rule is reached through its customer, so a cut
+        # there may hide visible rows and the set is refused instead; see
+        # test_object_sets_hidden_links.TestNeverASilentCut.)
+        monkeypatch.setattr(mediator_module, "MAX_SEARCH_SCAN", 1)
         view = SchemaView(mediator, alice)
 
-        evaluated = evaluate(mediator, alice, prepare(parse_object_set(TRANSACTIONS), view), view)
+        evaluated = evaluate(mediator, alice, prepare(parse_object_set(CUSTOMERS), view), view)
 
-        assert evaluated.scan_truncated is True and len(evaluated.ids) == 2
+        assert evaluated.scan_truncated is True and len(evaluated.ids) == 1
 
     def test_a_text_equality_is_handed_to_the_search_so_the_ceiling_does_not_cut_the_filter_short(
             self, mediator, alice, monkeypatch):

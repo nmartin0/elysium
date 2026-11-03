@@ -170,22 +170,28 @@ class TestARowOfTheTargetTheCallerCannotSeeMAC:
 
         assert [str(i) for i in result[-3:]] == ["5", "6", "7"]
 
-    def test_the_search_is_not_narrowed_by_a_link_value(self, mediator, alice, open_transactions, monkeypatch):
-        """Handing eq/in on a link to search_object would test the raw key:
-        a request naming a hidden row would narrow only if it existed."""
+    def test_the_search_is_narrowed_only_by_link_targets_the_caller_may_read(
+            self, mediator, alice, open_transactions, monkeypatch):
+        """eq/in on a link used to be refused pushdown (the raw key would
+        make "does this hidden row exist" answerable). It is pushed down
+        again, but only the target ids alice may read: a hidden one is null
+        on every row, so a set naming only hidden ids is empty with no
+        search at all."""
         seen = []
         real = mediator.search_object
 
         def spy(user, object_type, conditions=None, **kwargs):
-            seen.append([c.field for c in (conditions or [])])
+            seen.append([(c.field, list(c.value)) for c in (conditions or [])])
             return real(user, object_type, conditions, **kwargs)
 
         monkeypatch.setattr(mediator, "search_object", spy)
-        ids(mediator, alice, where(TRANSACTIONS, leaf("eq", "customer_id", "cust_003")))
-        ids(mediator, alice, where(TRANSACTIONS, leaf("in", "customer_id", ["cust_003"])))
+        none_hidden = ids(mediator, alice, where(TRANSACTIONS, leaf("eq", "customer_id", "cust_003")))
+        none_in = ids(mediator, alice, where(TRANSACTIONS, leaf("in", "customer_id", ["cust_003", "cust_999"])))
+        mixed = ids(mediator, alice, where(TRANSACTIONS, leaf("in", "customer_id", ["cust_001", "cust_003"])))
         ids(mediator, alice, where(TRANSACTIONS, leaf("eq", "category", "refund")))
 
-        assert seen == [[], [], ["category"]]
+        assert none_hidden == [] and none_in == [] and mixed
+        assert seen == [[("customer_id", ["cust_001"])], [("category", ["refund"])]]
 
     def test_masking_is_batched_and_logged_as_one_bulk_read(self, mediator, alice, open_transactions,
                                                             isolated_audit_log):
@@ -279,44 +285,80 @@ class TestOneBudgetForTheWholeRequest:
         assert predicate({"amount": 5000}) is False
         assert len(compared) <= 4
 
-    def test_rows_scanned_are_counted_across_every_leaf(self, mediator, alice, monkeypatch):
-        monkeypatch.setattr(sets, "MAX_SCANNED_ROWS", 5)
+    def test_rows_considered_are_counted_across_every_leaf(self, mediator, alice, monkeypatch):
+        # Seven transactions exist and alice may see four: the budget is
+        # spent on what the search LOOKED AT.
+        monkeypatch.setattr(sets, "MAX_SCANNED_ROWS", 8)
         both = {"type": "union", "objectSets": [TRANSACTIONS, TRANSACTIONS]}
 
-        assert len(ids(mediator, alice, TRANSACTIONS)) == 4  # alone: 4 <= 5
-        with pytest.raises(ObjectSetError, match="more than 5 objects"):
+        assert len(ids(mediator, alice, TRANSACTIONS)) == 4  # alone: 7 looked at <= 8
+        with pytest.raises(ObjectSetError, match="more than 8 objects"):
             ids(mediator, alice, both)
-        with pytest.raises(ObjectSetError, match="more than 5 objects"):
-            ids(mediator, alice, {"type": "searchAround", "link": "customer_id",
-                                  "objectSet": {"type": "union", "objectSets": [TRANSACTIONS, TRANSACTIONS]}})
+        with pytest.raises(ObjectSetError, match="more than 8 objects"):
+            ids(mediator, alice, {"type": "searchAround", "link": "customer_id", "objectSet": both})
+
+    def test_a_caller_who_sees_nothing_is_still_stopped(self, mediator, isolated_audit_log, monkeypatch):
+        from core.request_context import RequestContext
+
+        monkeypatch.setattr(sets, "MAX_SCANNED_ROWS", 8)
+        nobody = UserRecord("n", "nowhere", "customer_service")
+        context = RequestContext.new()
+        sixty = {"type": "union", "objectSets": [TRANSACTIONS] * 60}
+        view, step = prepared(mediator, nobody, sixty)
+
+        with pytest.raises(ObjectSetError, match="more than 8 objects"):
+            evaluate(mediator, nobody, step, view, context)
+        shown = mediator.audit_log.entries_for_request(context.request_id, "n")
+        assert all(e.get("object_id") is None for e in shown)  # nothing refused is shown back
+        with open(isolated_audit_log / "audit.log") as handle:
+            lines = [json.loads(line) for line in handle if line.strip()]
+        written = [e for e in lines if e.get("request_id") == context.request_id and e["stage"] == "access_check"]
+        assert len(written) <= 2 * 7, "the cap stopped the work after the second leaf, not the sixtieth"
 
 
-class TestTruncationDoesNotCountHiddenRows:
-    def test_v2_reports_it_only_when_the_visible_result_reached_the_ceiling(self, mediator, monkeypatch):
-        # Ceiling 3: the scan stops after transactions 1-3 (alice's), and
-        # reaches the ceiling with rows she may see; bob's rows are 5-6, so
-        # he sees none of what was scanned. v1's flag is set for both.
-        monkeypatch.setattr(mediator_module, "MAX_SEARCH_SCAN", 3)
-        alice = UserRecord("a", "us-west", "customer_service")
-        bob = UserRecord("b", "us-east", "customer_service")
-
-        for user, expected in ((alice, True), (bob, False)):
-            view, step = prepared(mediator, user, TRANSACTIONS)
-            outcome = mediator_module.SearchOutcome()
-            mediator.search_object(user, "Transaction", [], context=None, outcome=outcome)
-            assert outcome.scan_truncated is True, "v1 sets it for both (and v1 is unchanged)"
-            assert evaluate(mediator, user, step, view).scan_truncated is expected
-
-    def test_search_around_follows_the_same_rule(self, mediator, monkeypatch):
-        # Ceiling 1: alice's customers reach 4 transactions, cut to the
-        # first target, which she can see -> reported. Bob has one hidden-row
-        # source mix: static cust_003 -> 5 and 6 cut to 1, visible to him -> reported.
+class TestNeverASilentCut:
+    def test_a_cut_of_the_callers_own_answer_is_reported(self, mediator, monkeypatch):
+        """Customer's row rule is a column of its own table, so every row the
+        search scanned was visible: the cut is a cut of the answer."""
         monkeypatch.setattr(mediator_module, "MAX_SEARCH_SCAN", 1)
         alice = UserRecord("a", "us-west", "customer_service")
-        around = {"type": "searchAround", "link": "transactions", "objectSet": CUSTOMERS}
-        view, step = prepared(mediator, alice, around)
+        view, step = prepared(mediator, alice, CUSTOMERS)
 
-        assert evaluate(mediator, alice, step, view).scan_truncated is True
+        evaluated = evaluate(mediator, alice, step, view)
+
+        assert evaluated.scan_truncated is True and len(evaluated.ids) == 1
+
+    @pytest.mark.parametrize("region", ["us-west", "us-east", "nowhere"])
+    def test_a_cut_that_may_hide_visible_rows_is_refused_the_same_for_everyone(self, mediator, monkeypatch,
+                                                                              region):
+        """Transaction's row rule is reached through its customer, so a scan
+        cut at the ceiling is a mix of rows the caller can and cannot see.
+        Returning the visible part would be an incomplete set marked
+        complete (bob, whose rows are 5-6, would get nothing, or one row);
+        reporting the mediator's flag would say how many rows exist. The
+        same sentence for every caller, whatever they can see."""
+        monkeypatch.setattr(mediator_module, "MAX_SEARCH_SCAN", 5)
+        user = UserRecord("u", region, "customer_service")
+
+        with pytest.raises(ObjectSetError) as refused:
+            ids(mediator, user, TRANSACTIONS)
+
+        assert str(refused.value) == sets.TOO_LARGE_SENTENCE and refused.value.parameters == {}
+
+    def test_below_the_ceiling_nothing_changes(self, mediator, monkeypatch):
+        monkeypatch.setattr(mediator_module, "MAX_SEARCH_SCAN", 7)
+        bob = UserRecord("b", "us-east", "customer_service")
+
+        assert ids(mediator, bob, TRANSACTIONS) == ["5", "6"]
+
+    def test_search_around_that_reaches_the_ceiling_is_refused_too(self, mediator, monkeypatch):
+        monkeypatch.setattr(mediator_module, "MAX_SEARCH_SCAN", 1)
+        alice = UserRecord("a", "us-west", "customer_service")
+
+        with pytest.raises(ObjectSetError) as refused:
+            ids(mediator, alice, {"type": "searchAround", "link": "transactions", "objectSet": CUSTOMERS})
+
+        assert str(refused.value) == sets.TOO_LARGE_SENTENCE
 
 
 class TestAForwardSearchAroundIsOneBulkRead:
@@ -341,3 +383,26 @@ class TestAForwardSearchAroundIsOneBulkRead:
 
     def test_a_field_the_role_may_not_read_yields_nothing(self, mediator, tx_only):
         assert mediator.search_around_from(tx_only, "Transaction", ["1"], "customer_id") == []
+
+
+class TestAnOpaqueReferenceIsNotAHiddenOne:
+    def test_a_link_to_a_type_that_is_not_declared_can_still_be_filtered(self, mediator, alice, monkeypatch):
+        """A target that is not an object type at all (an id into some
+        other system) has no row to hide and no rule to enforce; refusing
+        it as unknown would remove a field the caller was shown."""
+        monkeypatch.setitem(mediator.schema["Transaction"]["fields"], "agent",
+                            {"type": "link", "target": "Agent", "cardinality": "one"})
+        service = dict(mediator.roles["customer_service"])
+        service["allowed_actions"] = service["allowed_actions"] | {"read:Transaction.agent"}
+        roles = dict(mediator.roles)
+        roles["customer_service"] = types.MappingProxyType(service)
+        monkeypatch.setattr(mediator, "roles", types.MappingProxyType(roles))
+        view = SchemaView(mediator, alice)
+
+        spec = view.filterable("Transaction", "agent")
+
+        assert spec.name == "agent" and spec.is_link is False
+
+    def test_a_link_to_a_declared_type_the_caller_cannot_see_is_still_refused(self, mediator, tx_only):
+        with pytest.raises(ObjectSetError, match="Unknown field 'customer_id'"):
+            SchemaView(mediator, tx_only).filterable("Transaction", "customer_id")

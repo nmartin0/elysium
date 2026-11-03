@@ -216,6 +216,17 @@ class SearchOutcome:
     # filtered, so the rows beyond it might all have been invisible
     # anyway. Reported as rows scanned, never as rows matched.
     scan_truncated: bool = False
+    #: Objects the search LOOKED AT before the row check: the candidates,
+    #: hidden ones included. The object-set algebra budgets this, not what
+    #: survived, because the cost of a request (a check_access() and an
+    #: audit line per candidate) is paid for the rows it could not see too.
+    considered: int = 0
+    #: The row check was part of the query (a `field:` security column was
+    #: pushed down, or the type has no row check at all), so every candidate
+    #: scanned was visible and a truncated scan is a truncated ANSWER. When
+    #: False, a truncated scan says nothing about how many visible rows lie
+    #: beyond the ceiling.
+    row_check_pushed: bool = False
 
 # HOW MANY ROWS A SINGLE SEARCH MAY READ.
 #
@@ -1523,6 +1534,11 @@ class DataMediator:
         )
         action = f"read:{object_type}"
         candidate_ids = self._without_deleted(object_type, candidate_ids)
+        if outcome is not None:
+            outcome.considered += len(candidate_ids)
+            outcome.row_check_pushed = (
+                (pushed_security is not None and user_record.security_value is not None)
+                or self.has_no_row_check(object_type))
 
         # Resolves every candidate's security value in bulk before the
         # per-object checks below. check_access() itself is unchanged --
@@ -2136,16 +2152,27 @@ class DataMediator:
         ever a request: the ones that still pass check_access() are the
         sources, and the rest vanish as they would from a search.
         """
-        sources = self._still_readable(user_record, object_type, source_ids, context)
+        sources = self._still_readable(user_record, object_type, source_ids, context, outcome)
         return self._follow_link(user_record, object_type, sources, link_field, context, outcome)
 
-    def _still_readable(self, user_record: UserRecord, object_type: str, object_ids: list,
+    def readable_subset(self, user_record: UserRecord, object_type: str, object_ids: list,
                         context: RequestContext | None = None) -> list:
+        """The ids, in order, among `object_ids` that the caller may read.
+        The public name of _still_readable for the object-set algebra,
+        which uses it to narrow a search by the link values the caller is
+        allowed to know and by nothing else."""
+        return self._still_readable(user_record, object_type, object_ids, context)
+
+    def _still_readable(self, user_record: UserRecord, object_type: str, object_ids: list,
+                        context: RequestContext | None = None,
+                        outcome: "SearchOutcome | None" = None) -> list:
         """The ids, in order, that the caller may read today: the same
         deletion filter and the same per-object check_access() that
         search_object() ends with, for ids that arrived from somewhere
         other than a search."""
         candidates = self._without_deleted(object_type, list(dict.fromkeys(object_ids)))
+        if outcome is not None:
+            outcome.considered += len(candidates)
         self._prefetch_security_values(object_type, candidates)
         action = f"read:{object_type}"
         return [object_id for object_id in candidates
@@ -2318,6 +2345,9 @@ class DataMediator:
                 object_type, target_type, MAX_SEARCH_SCAN,
             )
 
+        if outcome is not None:
+            outcome.considered += len(targets)
+            outcome.row_check_pushed = self.has_no_row_check(target_type)
         self._prefetch_security_values(target_type, list(targets))
         seen = set()
         allowed = []

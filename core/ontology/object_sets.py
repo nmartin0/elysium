@@ -70,7 +70,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.filters import FieldFilter
-from core.ontology import mediator as mediator_module
 from core.ontology.field_types import coerce
 from core.ontology.mediator import SearchOutcome
 from core.ontology.schema import (
@@ -139,6 +138,11 @@ class ObjectSetNotFound(Exception):
 
 #: THE ONE SENTENCE for fields no single read can combine.
 MULTI_STORAGE_SENTENCE = "These fields cannot be combined in one request."
+
+
+#: THE ONE SENTENCE for a set the scan ceiling cut short where the cut may
+#: hide visible rows. It carries no count.
+TOO_LARGE_SENTENCE = "This set is too large to evaluate; narrow it."
 
 
 def _unknown_field(object_type: str, name: Any) -> ObjectSetError:
@@ -469,6 +473,8 @@ class FieldSpec:
     #: The type's primary key. The mirror holds keys as text whatever the
     #: source's type was, so a key has identity here, not an arithmetic order.
     is_id: bool = False
+    #: The type a link points to, when the caller's schema names it.
+    target: str | None = None
 
 
 class SchemaView:
@@ -528,7 +534,11 @@ class SchemaView:
         # filterable and sortable -- prefix by prefix -- as if it were text.
         # Such a field is refused in the words used for one that does not exist.
         raw = ((self.declared.get(object_type) or {}).get("fields") or {}).get(name)
-        if raw is not None and is_link_field(raw) and not self.has_type(get_link_target(raw)):
+        # A target that is not a declared type at all is an opaque reference
+        # (nothing to hide, nothing to enforce); only a DECLARED type the
+        # caller cannot see makes the value one they may not use.
+        if (raw is not None and is_link_field(raw) and get_link_target(raw) in self.declared
+                and not self.has_type(get_link_target(raw))):
             raise _unknown_field(object_type, name)
         if not is_searchable_field(info):
             raise ObjectSetError(f"Field {name!r} on {object_type!r} is a reverse link; "
@@ -541,7 +551,8 @@ class SchemaView:
         is_link = is_link_field(info)
         is_id = name == self.visible[object_type]["id_field"]
         declared = None if is_id else self._declared_type(object_type, name)
-        return FieldSpec(str(name), "string" if is_link or declared is None else declared, is_link, is_id)
+        return FieldSpec(str(name), "string" if is_link or declared is None else declared, is_link, is_id,
+                         get_link_target(info) if is_link else None)
 
     def one_storage(self, object_type: str, names: "list[str]") -> None:
         """Refuses fields backed by more than one storage, which no single
@@ -664,29 +675,43 @@ def compile_filter(node: FilterNode, view: SchemaView, object_type: str,
     return lambda row: (v := _row_value(row, spec)) is not None and _ordered(operator, v, target)
 
 
-def _pushdown(node: FilterNode, view: SchemaView, object_type: str) -> list[FieldFilter]:
+#: A link equality to hand to the search: (field, target type, values).
+LinkCondition = tuple[str, str, tuple[str, ...]]
+
+
+def _pushdown(node: FilterNode, view: SchemaView,
+              object_type: str) -> "tuple[list[FieldFilter], list[LinkCondition]]":
     """The equality tests of a filter's top-level AND that the mediator
     can search for directly. ONLY a narrowing: the whole predicate is
     applied again afterwards, so this can make a search reach further
     (past the scan ceiling) and cannot make a result bigger. Text fields
-    only, where SQL equality and the Python comparison cannot differ."""
+    only, where SQL equality and the Python comparison cannot differ.
+
+    A LINK is pushed down as a LinkCondition and resolved when the set runs:
+    only the target ids the caller may read are handed to the search. The
+    raw value must not be (a request naming a row the caller cannot see
+    would narrow the result only if that row existed: a membership test),
+    and a link that names only hidden rows is, as get_field() sees it, null
+    on every row, so it matches nothing and needs no search at all."""
     conditions: list[FieldFilter] = []
+    links: list[LinkCondition] = []
     if isinstance(node, Junction) and node.operator == "and":
         for child in node.children:
-            conditions.extend(_pushdown(child, view, object_type))
-        return conditions
+            more, more_links = _pushdown(child, view, object_type)
+            conditions.extend(more)
+            links.extend(more_links)
+        return conditions, links
     if isinstance(node, (Compare, In)):
         if isinstance(node, Compare) and node.operator != "eq":
-            return conditions
+            return conditions, links
         spec = view.filterable(object_type, node.field)
         values = [node.value] if isinstance(node, Compare) else list(node.values)
-        # NEVER A LINK: the search would test the raw foreign key, so a
-        # request naming a row the caller cannot see would narrow the
-        # result only if that row existed -- a membership test. The filter
-        # step applies the same test to the MASKED value, as get_field does.
-        if spec.data_type == "string" and not spec.is_link and all(isinstance(v, str) for v in values):
-            conditions.append(FieldFilter(field=spec.name, operator="in", value=values))
-    return conditions
+        if spec.data_type == "string" and all(isinstance(v, str) for v in values):
+            if not spec.is_link:
+                conditions.append(FieldFilter(field=spec.name, operator="in", value=values))
+            elif spec.target is not None:
+                links.append((spec.name, spec.target, tuple(values)))
+    return conditions, links
 
 
 # ------------------------------------------------------------- evaluation
@@ -699,27 +724,36 @@ class Run:
     user: Any
     context: Any
     visible: dict
-    #: Some leaf stopped at the scan ceiling AND what the caller may see of
-    #: it reached the ceiling. See take().
+    #: Some leaf stopped at the scan ceiling with the row check part of its
+    #: query, so what it returned is a truncated ANSWER. See take().
     truncated: bool = False
-    #: Objects the leaves have produced so far, across the whole request.
+    #: Objects the leaves have CONSIDERED so far (before the row check),
+    #: across the whole request.
     scanned: int = 0
 
     def take(self, ids: list, outcome: SearchOutcome) -> list:
-        """Counts what a leaf produced against the request's cap, and
-        decides whether it was cut short.
+        """Budgets what a leaf looked at, and refuses a set it could not
+        read completely.
 
-        TRUNCATION IS REPORTED ONLY WHEN THE VISIBLE RESULT REACHED THE
-        CEILING. The mediator sets its flag when the rows it SCANNED (the
-        caller's and everyone else's, unless the security column was part
-        of the query) went past the ceiling, so the flag alone says how
-        many rows exist that the caller cannot see. A caller whose own
-        result fills the ceiling already knows that much. v1 reports the
-        mediator's flag as it is; this is v2's rule, and v1 is unchanged.
+        THE BUDGET COUNTS CANDIDATES, not survivors: a caller who can see
+        nothing still costs a check_access() and an audit line per row the
+        search looked at.
+
+        NEVER A SILENT CUT. When the mediator stopped at its scan ceiling:
+        if the row check was part of the query (a `field:` security column,
+        or a type with no row check) every row it scanned was visible, so
+        the result is truncated and says so. Otherwise the scan is a mix of
+        rows the caller can and cannot see, the visible part may be
+        incomplete whatever its size, and reporting the mediator's flag
+        would say how many hidden rows exist; the set is refused, in a
+        sentence that names no count. v1 reports the mediator's flag as it
+        is; this is v2's rule, and v1 is unchanged.
         """
-        if outcome.scan_truncated and len(ids) >= mediator_module.MAX_SEARCH_SCAN:
+        if outcome.scan_truncated:
+            if not outcome.row_check_pushed:
+                raise ObjectSetError(TOO_LARGE_SENTENCE)
             self.truncated = True
-        self.scanned += len(ids)
+        self.scanned += max(outcome.considered, len(ids))
         if self.scanned > MAX_SCANNED_ROWS:
             raise ObjectSetError(
                 f"This request reads more than {MAX_SCANNED_ROWS} objects across its sets; "
@@ -737,14 +771,23 @@ class Prepared:
 
 
 class _BaseStep(Prepared):
-    def __init__(self, object_type: str, conditions: "list[FieldFilter] | None" = None):
+    def __init__(self, object_type: str, conditions: "list[FieldFilter] | None" = None,
+                 links: "list[LinkCondition] | None" = None):
         self.object_type = object_type
         self.conditions = conditions or []
+        self.links = links or []
 
     def ids(self, run: Run) -> list:
+        conditions = list(self.conditions)
+        for field_name, target, values in self.links:
+            readable = run.mediator.readable_subset(run.user, target, list(values), run.context)
+            if not readable:
+                return []  # every named target is hidden or absent: null on every row
+            conditions.append(FieldFilter(field=field_name, operator="in",
+                                          value=[str(object_id) for object_id in readable]))
         outcome = SearchOutcome()
         return run.take(list(run.mediator.search_object(
-            run.user, self.object_type, self.conditions, visible_schema=run.visible,
+            run.user, self.object_type, conditions, visible_schema=run.visible,
             context=run.context, outcome=outcome)), outcome)
 
 
@@ -832,7 +875,7 @@ def prepare(node: ObjectSet, view: SchemaView) -> Prepared:
         predicate = compile_filter(node.where, view, child.object_type, fields)
         view.one_storage(child.object_type, list(fields))
         if isinstance(child, _BaseStep) and not child.conditions:
-            child = _BaseStep(child.object_type, _pushdown(node.where, view, child.object_type))
+            child = _BaseStep(child.object_type, *_pushdown(node.where, view, child.object_type))
         return _FilterStep(child, predicate, fields)
     if isinstance(node, SearchAround):
         child = prepare(node.object_set, view)

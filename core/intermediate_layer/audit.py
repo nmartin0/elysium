@@ -276,11 +276,29 @@ class AuditLog:
         """Every access decision made while serving one request.
 
         AUTHORIZED BY OWNERSHIP: a caller may read the trace of their
-        OWN request and no other. That is not a lesser check than the
-        object-level one -- the entries name object ids the caller
-        already read, so the trace discloses nothing they did not
-        already see, but ANOTHER user's trace would disclose what that
-        user looked at, which they never had.
+        OWN request and no other: ANOTHER user's trace would disclose
+        what that user looked at.
+
+        AND A TRACE NEVER NAMES WHAT THE CALLER WAS REFUSED. This
+        docstring used to say the entries name only ids the caller
+        already read, which was false: check_access() writes one line
+        per DENIED object, so a scan over a type, a static set of
+        guessed ids or a filter on a link recorded the id (and the
+        existence) of every hidden row it touched, and the caller read
+        them back here. The rule lives in this reader, because it is
+        what every caller goes through:
+
+          - an access_check refused by the ROW check (mac_allowed False)
+            is omitted: it can only describe an object the caller may
+            not see;
+          - one refused by the grants alone (the object passed the row
+            check, so the caller can see it) stays, as a refusal, WITHOUT
+            its object id;
+          - a bulk-read record loses its list and count of denied ids and
+            the count considered, both of which count hidden rows;
+          - no other record is returned.
+
+        The full entries stay in the audit log, for administrators.
 
         SCANNED BACKWARDS, WITH A CAP, and that is the design decision
         rather than an optimisation. The log is append-only JSONL, so
@@ -333,12 +351,32 @@ class AuditLog:
             # must not become a key to someone else's activity.
             if entry.get("user_id") != user_id:
                 continue
-            matches.append(entry)
+            shown = self._caller_facing(entry)
+            if shown is not None:
+                matches.append(shown)
 
         # Oldest first: a trace is read as a sequence of what the agent
         # did, and that reads forwards.
         matches.reverse()
         return matches
+
+    @staticmethod
+    def _caller_facing(entry: dict) -> dict | None:
+        """One log line as its own author may be shown it, or None. See
+        entries_for_request()."""
+        # A line with no stage is an access decision (the only shape the
+        # log had before stages were named).
+        stage = entry.get("stage", "access_check")
+        if stage == "access_check":
+            if entry.get("mac_allowed") is False:
+                return None
+            if entry.get("rbac_allowed"):
+                return entry
+            return {**entry, "object_id": None}
+        if stage == "bulk_read":
+            return {key: value for key, value in entry.items()
+                    if key not in ("denied", "denied_object_ids", "considered")}
+        return None
 
     def log_access(self, user_id: str, object_type: str, object_id, action: str,
                     mac_allowed: bool | None, rbac_allowed: bool,
