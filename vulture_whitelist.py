@@ -27,46 +27,16 @@ without checking first.
 Run `vulture` (config: pyproject.toml's [tool.vulture]) to check.
 """
 
-# --- FastAPI route handlers -- invoked by the router via @router.post/
-# get/delete decorators at request time, never called directly by name
-# anywhere in this project's own Python code (even test_api.py goes
-# through a TestClient issuing real HTTP requests, not a direct call).
-login
-logout
-logout_all
-request_trace_route
-# Live updates (api/live_updates.py): a route FastAPI calls.
-change_events_route
-published_history_route
-object_provenance_route
-# Beside them because it answers the other half of the same question:
-# "where did this ROW come from" versus "why does this FIELD say this".
-object_conflicts_route
+# --- Reflection-read names left after route handlers moved out. FastAPI
+# route handlers need no entry: pyproject.toml's `ignore_decorators`
+# ("@router.*", "@app.*") covers every decorator-registered handler.
+# What remains is read by pydantic or a library, never called by name.
 # Frozen sets (formerly BLOCKING 17, saved selections): routes FastAPI calls and response fields
-# pydantic reads by reflection, the same reason everything above is here.
-freeze_set_route
-list_frozen_sets_route
-frozen_set_route
-delete_frozen_set_route
+# pydantic reads by reflection, the same reason as above.
 publication_retained
 not_shown
-# Comparing two sets: routes and response fields, the same reason.
-compare_sets_route
-# The Inbox badge (DEV_UI 15.3): a route, reached by HTTP.
-my_inbox_counts_route
-# Changes waiting, shown on the object and the set (DEV_UI 15.3).
-pending_for_objects_route
-unusual_on_objects_route
-unusual_review_route
-decide_unusual_route
-# The ontology canvas's layout (DEV_UI 14): routes, reached by HTTP.
-my_ontology_canvas_route
-save_my_ontology_canvas_route
 # Editing config.yaml from the UI: routes reached by HTTP, and ruamel's
 # own setting, which ruamel reads.
-config_settings_route
-preview_config_settings_route
-apply_config_settings_route
 preserve_quotes
 # WIRED-3: a response field pydantic reads by reflection.
 high_confidence
@@ -77,72 +47,15 @@ preselected_by  # R57: MergeProposalResponse, set through **_preselection
 ConnectionCls
 pool_classes_by_scheme
 do_POST
-# R31: routes FastAPI calls.
-rule_suggestions_route
-scan_rule_suggestions_route
-decide_rule_suggestion_route
 # BULK-1: a response field pydantic reads by reflection.
 max_objects
-# E-14, agent memory: routes FastAPI calls.
-list_memories_route
-create_memory_route
-forget_memory_route
 # R12: pydantic calls the validator by reflection.
 _one_label_is_a_list
-combine_sets_route
 left_only
 right_only
-losing_source
-chosen_source
-recorded_at
 # The response model's fields: pydantic reads them by reflection, so
-# every one of them looks unreferenced from here, the same way every
-# route above looks uncalled.
+# every one of them looks unreferenced from here.
 bronze_snapshot_id
-list_notes_route
-create_note_route
-silos_route
-deployment_config_route
-reload_route
-config_history_route
-config_diff_route
-awaiting_writes_route
-write_detail_route
-list_users_route
-create_user_route
-visible_schema_route
-logout_all_for_user
-disable_user_route
-enable_user_route
-delete_user_route
-confirm_write_route
-search_objects_route
-my_profile_route
-shell_session_route
-shell_modules_route
-module_file_route
-module_arrangement_route
-save_module_arrangement_route
-addon_servers_route
-addon_server_log_route
-restart_addon_server_route
-addon_proxy_route
-my_visible_apps_route
-my_visible_schema_route
-get_object_detail_route
-my_visible_action_types_route
-propose_action_route
-acquire_lock_route
-refresh_lock_route
-release_lock_route
-force_release_lock_route
-lock_status_route
-data_freshness_route
-count_objects_route
-aggregate_objects_route
-search_around_route
-object_history_route
-health_route
 
 # --- unittest.mock attribute assignment -- `some_mock.return_value = x`
 # / `some_mock.side_effect = fn` are how tests configure a MagicMock;
@@ -174,13 +87,6 @@ _.row_factory
 max_concurrent_reads
 supports_atomic_conditional_write
 
-# Registered via @app.middleware("http") -- called by FastAPI's own
-# internal dispatch mechanism, the same reason every route handler in
-# this file already needs a whitelist entry (see the block above):
-# never referenced by name anywhere in the Python source itself.
-add_security_headers
-
-
 # --- core/ontology/write_mediator.py's own _ReadWriteAdapter -- a
 # real, genuinely used TYPE_CHECKING-only intersection type, referenced
 # only via STRING-quoted annotations (adapter: "_ReadWriteAdapter") so
@@ -200,48 +106,23 @@ _ReadWriteAdapter
 # running server, and REMOVING any of them would silently strip that
 # field from what callers receive -- which is precisely the filtering
 # behavior these models exist to provide.
-data_type
-cardinality
 default_to_current_object
-disabled
-source
 # DeploymentConfigResponse (api/routes.py): read by FastAPI's
 # serialiser from the returned dict, never by our own code -- the same
 # reason every other response-model field below is here.
 is_identifier
-object_type
-column
-table
-fields
-rbac_allowed
-mac_allowed
-timestamp
-author
-object_types
 # SiloStatusResponse.primary_for -- of the types a silo backs, the ones
 # it IS. R6: without it "one field of Customer stopped refreshing" and
 # "all of Customer did" arrive as the same word.
 primary_for
-reachable
-failure
-silo_names
 object_type_count
 action_type_count
 role_names
 total_matches
 display_name
 plural_display_name
-total
 next_page_token
-entries
-batch_id
-created_at
-operation
 color
-icon
-visibility
-checks
-link_type
 
 # pydantic reads model_config off the class itself -- a name the
 # library looks up, never one this project's own code calls. See
@@ -253,16 +134,6 @@ model_config
 # submission_criteria.py.
 _user_field_must_be_a_real_user_attribute
 
-# DeploymentGeneration.mirror_snapshots -- read through the frozen
-# dataclass in api/routes.py's /config response, which vulture does not
-# follow. See core/deployment_loader.py.
-mirror_snapshots
-
-# ReloadResponse.changed (api/routes.py) -- read by FastAPI's serialiser
-# from the returned dict, never by our own code, the same as every
-# other response-model field above.
-changed
-
 # tests/unit/test_reload.py's autouse fixture -- pytest calls it by
 # registration, never by name.
 _restore_sighup
@@ -271,14 +142,10 @@ _restore_sighup
 # read by FastAPI's serialiser from the returned dict, as with every
 # other response model above.
 current_generation
-generations
 changed_files
-unchanged
-recorded_at
 
 # AwaitingWriteResponse fields (api/routes.py) -- read by FastAPI's
 # serialiser from the returned dicts, as with every response model.
-proposed_by
 object_count
 
 # AwaitingWriteResponse's own flags (api/routes.py) -- serialised by
@@ -289,8 +156,6 @@ proposed_by_you
 # WriteDetailResponse / FieldChangeResponse / ObjectChangeResponse
 # fields (api/routes.py) -- serialised by FastAPI from the returned
 # dicts, as with every other response model.
-readable
-current_value
 proposed_value
 has_redacted_fields
 
@@ -301,17 +166,6 @@ undeclared_fields
 # AwaitingWriteResponse.duplicate_count (api/routes.py) -- serialised by
 # FastAPI from the returned dict, like every other response field.
 duplicate_count
-
-# LinkCountsResponse.links (api/routes.py) -- serialised by FastAPI
-# from the returned dict, like every other response field.
-links
-
-# link_counts_route (api/routes.py) -- registered by its @router.get
-# decorator, which Vulture cannot see. Every route in this file is
-# reached the same way.
-link_counts_route
-matching_ids_route
-export_objects_route
 
 # SchemaFieldResponse.decimal_places (api/routes.py) -- serialised by
 # FastAPI from the returned dict, like every other response field.
@@ -324,17 +178,6 @@ p99_ms
 p50_ms
 rate_per_second
 error_ratio
-slowest_routes
-window_seconds
-admin_metrics_route
-forget_older_than
-
-# TaskApproval.decided_at (core/pending_write_store.py) -- recorded
-# now, read by the approvals inbox in step 4. An approval record
-# without a timestamp is not an approval record: "who approved this
-# and when" is one question, and adding the field later would mean
-# every decision taken before then has no answer.
-decided_at
 
 # AwaitingWriteResponse's task counts (api/routes.py) -- serialised by
 # FastAPI from the returned dict, like every other response field here.
@@ -346,7 +189,6 @@ tasks_approved
 # route and its response model, reached by decorator and serialised by
 # field name, like every other endpoint in that file.
 reading_from_mirror
-admin_mirror_route
 
 # MirrorTableState's attempt fields (api/routes.py) -- serialised by
 # FastAPI from the returned dict, like every other response field.
@@ -354,59 +196,17 @@ last_attempt_at
 last_attempt_outcome
 last_attempt_detail
 
-# SearchResponse / ObjectDetailResponse request_id (api/routes.py) --
-# serialised by FastAPI, read by whoever wants the access trace.
-request_id
-
-# admin_mirror_sync_route / SyncStartedResponse (api/routes.py) -- a
-# FastAPI route and its response model, reached by decorator.
-admin_mirror_sync_route
-started
-
 # notifications_route / mark_notification_seen_route and their response
 # models (api/routes.py) -- FastAPI routes, reached by decorator.
-notifications_route
-mark_notification_seen_route
-notifications
 unseen
 
-# saved-view routes and their models (api/routes.py) -- FastAPI
-# routes, reached by decorator.
-saved_views_route
-save_view_route
-delete_saved_view_route
-views
-view_id
-object_type
-query_text
-conditions
-
-# trigger routes and their models (api/routes.py) -- FastAPI routes.
-triggers_route
-create_trigger_route
-set_trigger_enabled_route
-delete_trigger_route
-triggers
-trigger_id
-above
-gained
-fell
-enabled
 # A pydantic field read only as a dict key, like `created_at` and
 # `presentation` above it. WIRED-1: the FIELD NAMES a caller can no
 # longer filter on, named rather than dropped silently.
 disabled_conditions
-presentation
-action_parameter
-action_values
-recipient_roles
 
 # reminder routes and their models (api/routes.py, 17 October) --
 # FastAPI routes, and response fields read by the Reminders tab.
-list_reminders_route
-create_reminder_route
-cancel_reminder_route
-reminders
 repeats
 late_after_minutes
 
@@ -414,62 +214,13 @@ late_after_minutes
 # field, read by the Watch dialog rather than by Python.
 automatable
 
-# GET /roles and its model (api/routes.py) -- a FastAPI route.
-roles_route
-source
-grantable
-
-# Role-change routes and models (api/routes.py) -- FastAPI routes.
-propose_role_change_route
-role_changes_route
-approve_role_change_route
-reject_role_change_route
-changes
-change_id
-before
-after
-proposed_by
-proposed_at
-grants
-
-# follow_reload (api/app.py) -- registered by @app.middleware, called by Starlette.
-follow_reload
-
-# Password routes and models (api/routes.py) -- FastAPI routes.
-change_own_password_route
-reset_password_route
-current_password
-new_password
-
-# merge_proposals_route / decide_merge_route (api/routes.py) -- FastAPI
-# route handlers, called by the framework through the decorator rather
-# than by name. Every other route in the file is reached the same way;
-# vulture sees a function nobody calls.
-merge_proposals_route
-decide_merge_route
-example_questions_route
-
-# security_cache_per_request (api/app.py) -- registered by @app.middleware.
-security_cache_per_request
-
 # __getattr__ (api/app.py) -- a module-level __getattr__ (PEP 562), called
 # by Python for `api.app.app`; uvicorn reaches it by name.
 __getattr__
 
-# validation_errors_without_values (api/app.py) -- registered by
-# @app.exception_handler.
-validation_errors_without_values
-# model_unavailable (api/app.py), registered the same way: the 503 an
-# unreachable model becomes.
-model_unavailable
-
 # should_exit (tests/integration/test_graceful_shutdown.py) -- read by
 # uvicorn.Server itself; setting it is what its SIGTERM handler does.
 should_exit
-
-# TokenUsage.unreported (core/llm/interface.py) -- read by the tests now,
-# and by the query wiring of E-11's second commit.
-unreported
 
 # claude_on_path (tests/unit/test_model_deadline_and_usage.py) -- a fixture
 # named in @pytest.mark.usefixtures, which vulture cannot see.
@@ -505,7 +256,6 @@ fail_after_hours
 # dict, read in TypeScript.
 sync_interval_hours
 
-
 # tests/unit/test_snapshot_expiry.py -- an autouse fixture, called by
 # pytest rather than by name.
 _no_margin
@@ -513,7 +263,6 @@ _no_margin
 # tests/unit/test_a_bronze_failure_never_serves_stale_data.py -- a
 # fixture named in test signatures, which vulture reads as unused.
 _bronze_fails
-
 
 # ---------------------------------------------------------------
 # FROM THE SIMULATOR (sim/), moved here when it adopted Elysium's
@@ -528,102 +277,42 @@ _bronze_fails
 # bury a test run's real output.
 do_GET
 log_message
-format
 # R15: config-response fields pydantic reads by reflection.
 lineage_service
 lineage_namespace
-# R16: a route FastAPI calls.
-data_contract_route
-# R38: a response field pydantic reads by reflection.
-field_sources
-# The help assistant: a route FastAPI calls and its request model.
-help_route
 # R2: a config-response field pydantic reads by reflection.
 incremental_tables
-# R41/R38: a response field pydantic fills from visible_schema by name.
-inferred
-# Enrichment review (R41): routes, reached by HTTP.
-enrichment_recipes_route
-decide_enrichment_recipe_route
-# Prediction review (R48): routes reached by HTTP, and a response field
-# pydantic reads by reflection.
-prediction_proposals_route
-decide_prediction_proposal_route
 # Forecasts of totals (R68): a route reached by HTTP.
-forecast_route
 target_label
 # DEV_UI 13.3, who can see a type: a route reached by HTTP, and a
 # response field pydantic reads by reflection.
-who_can_see_route
 no_access
 # DEV_UI 13.5, a role change in access terms: a route reached by HTTP,
 # and response fields pydantic reads by reflection.
-preview_role_change_route
 from_
-to  # TypeAccessChange.to, read by pydantic
 removes_role
 actions_gained
 actions_lost
 other_gained
 other_lost
-# DEV_UI 14.5, counts on the ontology canvas: a route reached by HTTP.
-my_type_counts_route
-# DEV_UI 13.7, describing the ontology: routes reached by HTTP.
-ontology_descriptions_route
-preview_ontology_descriptions_route
-apply_ontology_descriptions_route
 # DEV_UI 13.7, access labels and the approval queue: routes reached by HTTP.
-preview_labels_route
-apply_labels_route
-config_proposals_route
-approve_config_proposal_route
-reject_config_proposal_route
 needs_approval  # LabelPreviewResponse.needs_approval, read by pydantic
 # The ontology's shape, adding a field: routes reached by HTTP.
-preview_new_fields_route
-apply_new_fields_route
 source_has_column  # NewFieldConsequence, read by the browser
-new_type_sources_route
-source_tables_route
-source_columns_route
-preview_new_type_route
-apply_new_type_route
 source_has_table  # NewTypePreviewResponse, read by the browser
 columns_missing  # NewTypePreviewResponse, read by the browser
 columns_checked  # NewTypePreviewResponse, read by the browser
-used_by_route
-referrers  # UsedByResponse, read by the browser
 not_listed  # UsedByResponse, read by the browser
-linkable_types_route
-linkable_type_columns_route
-preview_new_link_route
-apply_new_link_route
-problems  # NewLinkPreviewResponse, read by the browser
-checked  # NewLinkPreviewResponse, read by the browser
-preview_status_route
-apply_status_route
 deprecation  # SchemaFieldResponse / VisibleObjectTypeResponse, read by the browser
 status_inherited_from  # SchemaFieldResponse, read by the browser
-replaced_by  # DeprecationResponse and StatusRequest, read by the browser
-remove_after  # DeprecationResponse and StatusRequest, read by the browser
-preview_removal_route
-apply_removal_route
 can_remove  # RemovalPreviewResponse, read by the browser
 hidden_blockers  # RemovalPreviewResponse, read by the browser
-preview_retype_route
-apply_retype_route
 to_type  # RetypePreviewResponse, read by the browser
 hidden_places  # RetypePreviewResponse, read by the browser
 # DEV_UI 13.7, putting an earlier version back: routes reached by HTTP.
-preview_restore_route
-restore_route
 roles_in_store  # RestorePreviewResponse.roles_in_store, read by pydantic
 extracts  # EnrichmentRecipeResponse.extracts, read by pydantic
 # R45, search by meaning: routes reached by HTTP.
-related_in_meaning_route
-similar_objects_route
-offered  # MeaningResponse.offered, read by pydantic
-text_fields  # MeaningResponse.text_fields, read by pydantic
 searchable_by_meaning  # VisibleObjectTypeResponse.searchable_by_meaning, read by pydantic
 # R51: a stored flag's time, read by the review queue.
 found_at
@@ -662,30 +351,18 @@ test_a_protected_path_refuses_who_it_cannot_verify_and_takes_who_it_can
 test_it_listens_on_loopback_only
 test_sigterm_ends_it_within_its_deadline_cleanly
 test_it_leaves_when_elysium_does
-# GET /roles/names (24 October): a FastAPI route, called through its
-# decorator -- the role names an account administrator needs, which
-# /config gave until it became the server's.
-role_names_route
 
 # PUT/DELETE /admin/ontology-canvas-default (27 October): FastAPI routes,
 # called through their decorators -- where everybody's canvas starts. The
 # two response fields are read by the UI, not by Python.
-save_shared_ontology_canvas_route
-clear_shared_ontology_canvas_route
 shared_positions
 can_set_shared
 
 # Retype R1 review fixes (2 November).
-admin_mirror_rebuild_owed_route  # GET /admin/mirror/rebuild-owed: a FastAPI route, reached by HTTP
 rebuild_unknown  # RetypeResponse.rebuild_unknown, read by the browser
 rebuild_owed  # MirrorStateResponse / MirrorTableState / MirrorObjectState fields (R2), read by the Mirror panel
 rebuild_owed_unknown  # MirrorStateResponse.rebuild_owed_unknown (R2), read by the Mirror panel
 broken_catalog  # a pytest fixture taken as a parameter for its effect (tests/integration/test_retype_from_the_ui.py)
-
-# /api/v2, slice 1 (3 November): FastAPI routes, reached through their decorators.
-get_schema  # GET /api/v2/schema
-list_objects  # GET /api/v2/objects/{type}
-load_objects  # POST /api/v2/objectSets/loadObjects
 
 # Configuration key models (core/config_schema.py), 3 November. A model
 # field exists to NAME a key the loader reads; pydantic walks them by

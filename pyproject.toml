@@ -140,6 +140,10 @@ paths = ["core", "api", "adapters", "scripts", "tests",
          "sim/simulator", "sim/tests", "sim/panel", "sdk",
          "vulture_whitelist.py"]
 min_confidence = 60
+# Route handlers (api/routes.py, api/v2/*) and the app's own handlers and
+# middleware (api/app.py) are called by the framework through their
+# decorator, never by name.
+ignore_decorators = ["@router.*", "@app.*"]
 
 [tool.importlinter]
 root_packages = ["core", "api", "adapters", "simulator"]
