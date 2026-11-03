@@ -9266,6 +9266,21 @@ CONTROLS = [
                "tests/unit/test_lint_deployment.py::"
                "test_lint_rejects_criteria_placed_on_the_action_instead_of_a_sub_write"],
     ),
+    Control(
+        describes="every API answer forbids caching unless its route says otherwise",
+        path="api/app.py",
+        old='        if request.url.path.startswith("/api/") and "cache-control" not in response.headers:\n',
+        new='        if request.url.path.startswith("/apix/") and "cache-control" not in response.headers:\n',
+        tests=["tests/integration/test_every_api_get_forbids_caching.py::"
+               "test_every_get_route_forbids_caching_unless_listed"],
+    ),
+    Control(
+        describes="a route that states its own Cache-Control keeps it",
+        path="api/app.py",
+        old='        if request.url.path.startswith("/api/") and "cache-control" not in response.headers:\n',
+        new='        if request.url.path.startswith("/api/"):\n',
+        tests=["tests/integration/test_api.py::test_a_modules_bundle_is_served_to_whoever_is_offered_it"],
+    ),
 ]
 
 

@@ -488,6 +488,18 @@ def create_app(runtime_paths: RuntimePaths | None = None) -> FastAPI:
         # camera, microphone, location, payment or USB device, so no page
         # -- nor anything injected into one -- may ask for them.
         response.headers["Permissions-Policy"] = PERMISSIONS_POLICY
+        # NO CACHE BY DEFAULT FOR THE API. Every /api answer is made for
+        # the person signed in, so none may be kept by a shared browser
+        # profile or an intermediate cache and handed to someone else on
+        # the same machine. Until this was a default, 21 GET routes
+        # (object search, detail, history, notes, users, config) had
+        # simply never been given the header. A route that sets its own
+        # Cache-Control keeps it: the module file route says
+        # `private, no-cache` on purpose (a rebuilt bundle keeps its
+        # name, so the browser must ask again), and an add-on's server
+        # may state its own policy.
+        if request.url.path.startswith("/api/") and "cache-control" not in response.headers:
+            response.headers["Cache-Control"] = "no-store"
         return response
 
     # FOLLOW ANY RELOAD ANOTHER WORKER ANNOUNCED, before this request
