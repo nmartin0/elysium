@@ -120,6 +120,9 @@ export default function RemoveDialog({
   const [problem, setProblem] = useState<string | null>(null)
   const [stale, setStale] = useState(false)
   const [busy, setBusy] = useState(false)
+  // Set when the removal went through but the server has a notice (a lake table it could not record
+  // for erasure): the dialog stays open on it until it is read.
+  const [applied, setApplied] = useState<{ generation: number; notice: string } | null>(null)
   const latestSessionExpired = useRef(onSessionExpired)
   useEffect(() => {
     latestSessionExpired.current = onSessionExpired
@@ -148,7 +151,11 @@ export default function RemoveDialog({
     if (digest === null) return
     setBusy(true)
     applyRemoval(digest, targetOf(target))
-      .then((result) => onApplied(result.to_generation ?? 0))
+      .then((result) => {
+        const generation = result.to_generation ?? 0
+        if (result.notice) setApplied({ generation, notice: result.notice })
+        else onApplied(generation)
+      })
       .catch((caught: unknown) => {
         if (handleIfSessionExpired(caught, latestSessionExpired.current)) return
         const refusal = refusalOf(caught)
@@ -168,10 +175,21 @@ export default function RemoveDialog({
   const blocked = preview !== null && (preview.blockers.length > 0 || preview.hidden_blockers > 0)
 
   return (
-    <Dialog isOpen onClose={onClose} title={`Remove ${name}`} className="config-dialog">
+    <Dialog
+      isOpen
+      onClose={applied ? () => onApplied(applied.generation) : onClose}
+      title={`Remove ${name}`}
+      className="config-dialog"
+    >
       <DialogBody>
-        {preview === null && problem === null && <LoadingState label="Checking what names it…" />}
-        {preview !== null && (
+        {applied && (
+          <>
+            <p className="config-dialog__lede">{name} was removed and the configuration reloaded.</p>
+            <Notice>{applied.notice}</Notice>
+          </>
+        )}
+        {!applied && preview === null && problem === null && <LoadingState label="Checking what names it…" />}
+        {!applied && preview !== null && (
           <>
             {!preview.deprecated && (
               <Notice>
@@ -220,24 +238,30 @@ export default function RemoveDialog({
       </DialogBody>
       <DialogFooter
         actions={
-          <>
-            {stale && (
-              <Button minimal onClick={load}>
-                Load the file again
+          applied ? (
+            <Button intent="primary" onClick={() => onApplied(applied.generation)}>
+              Done
+            </Button>
+          ) : (
+            <>
+              {stale && (
+                <Button minimal onClick={load}>
+                  Load the file again
+                </Button>
+              )}
+              <Button minimal onClick={onClose}>
+                Cancel
               </Button>
-            )}
-            <Button minimal onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              intent="danger"
-              disabled={preview === null || !preview.can_remove || stale}
-              loading={busy}
-              onClick={apply}
-            >
-              Remove it and reload
-            </Button>
-          </>
+              <Button
+                intent="danger"
+                disabled={preview === null || !preview.can_remove || stale}
+                loading={busy}
+                onClick={apply}
+              >
+                Remove it and reload
+              </Button>
+            </>
+          )
         }
       />
     </Dialog>

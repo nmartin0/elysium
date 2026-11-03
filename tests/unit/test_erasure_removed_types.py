@@ -7,7 +7,6 @@ tests/integration/test_erasure_after_removal.py.
 
 import json
 import sqlite3
-import time
 
 import pyarrow as pa
 import pytest
@@ -20,11 +19,13 @@ from core.mirror.erasure import (
     apply_erasures,
     cascade,
     erased_mask,
+    gap_notice,
     record_key_columns,
     recorded_columns,
     recorded_key_columns,
     survey,
     table_key_columns,
+    unmapped_columns,
 )
 
 
@@ -55,18 +56,17 @@ def _link(target, column=None):
 
 
 CUSTOMER = _type("customers", "customer_id")
-FULL = {"Customer": CUSTOMER, "Ticket": _type("tickets", "ticket_id", customer=_link("Customer", "cust"))}
+FULL = {"Customer": CUSTOMER,
+        "Ticket": _type("tickets", "ticket_id", customer=_link("Customer", "cust"), body={"type": "string"})}
+#: The same, but the ontology does not map the tickets' `body` column: a table
+#: with a column like that is never recorded as completely known.
+BODY_UNMAPPED = {"Customer": CUSTOMER,
+                 "Ticket": _type("tickets", "ticket_id", customer=_link("Customer", "cust"))}
 WITHOUT_TICKET = {"Customer": CUSTOMER}
 
 
 def _rows(catalog, identifier):
     return catalog.load_table(identifier).scan().to_arrow().to_pylist()
-
-
-#: A time no table is newer than, and one every table is: the first says "these
-#: tables existed before the sync that records them", the second "it made them".
-EXISTED_BEFORE = time.time() + 3600
-CREATED_BY_IT = 0.0
 
 
 def _erase(lake, schema, keys, seeds=None):
@@ -99,7 +99,7 @@ def ticket_lake(lake):
     lake.make("gold.Customer", [{"customer_id": "c1"}, {"customer_id": "c2"}])
     lake.make("gold.Ticket", [{"ticket_id": "t1", "customer": "c1"}, {"ticket_id": "t2", "customer": "c2"}])
     lake.make("gold_history.Ticket", [{"ticket_id": "t1", "values": json.dumps({"customer": "c1"})}])
-    lake.make("gold_conflicts.Ticket", [{"entity_id": "t1", "detail": "c1 text"}])
+    lake.make("gold_conflicts.Ticket", [{"entity_id": "t1", "field": "c1 text"}])
     lake.make("quarantine_s.tickets", [{"object_id": "t1", "value": "c1 text"}])
     lake.make("cleaning_s.tickets", [{"object_id": "t1", "column": "body"}])
     return lake
@@ -108,8 +108,8 @@ def ticket_lake(lake):
 class TestAFormerLinkingTypesRowsAreFoundThroughItsLinks:
     @pytest.fixture
     def removed_ticket(self, ticket_lake):
-        record_key_columns(ticket_lake, FULL, created_since=CREATED_BY_IT)       # a sync that made them
-        record_key_columns(ticket_lake, WITHOUT_TICKET, created_since=CREATED_BY_IT)   # and one after the removal
+        record_key_columns(ticket_lake, FULL)       # a sync that made them
+        record_key_columns(ticket_lake, WITHOUT_TICKET)   # and one after the removal
         return ticket_lake
 
     def test_the_cascade_reaches_the_removed_types_rows(self, removed_ticket):
@@ -132,9 +132,9 @@ class TestAFormerLinkingTypesRowsAreFoundThroughItsLinks:
         shared = {"Customer": CUSTOMER, "Account": _type("people", "acct", owner=_link("Customer")),
                   "Lead": _type("people", "lead_ref")}
         lake.make("s.people", [{"acct": "a1", "lead_ref": "L1", "owner": "c1"}])
-        record_key_columns(lake, shared, created_since=CREATED_BY_IT)
+        record_key_columns(lake, shared)
         after = {name: shared[name] for name in ("Customer", "Account")}
-        record_key_columns(lake, after, created_since=CREATED_BY_IT)
+        record_key_columns(lake, after)
 
         assert cascade(lake, after, [("Customer", "c1")]) == [("Customer", "c1")]
 
@@ -149,22 +149,42 @@ class TestWhatASyncCanAndCannotMakeKnown:
     """A record holds what the schema mapped the day it was written. It cannot
     recover the columns of a type removed before: only an operator can."""
 
-    def test_a_table_the_recording_sync_created_is_complete(self, ticket_lake):
-        record_key_columns(ticket_lake, FULL, created_since=CREATED_BY_IT)
+    def test_a_table_whose_every_column_is_mapped_is_complete(self, ticket_lake):
+        record_key_columns(ticket_lake, FULL)
 
         assert recorded_columns(ticket_lake.load_table("s.tickets")).complete
         assert survey(ticket_lake, FULL).partly_known == []
 
-    def test_a_table_that_already_held_data_is_partial(self, ticket_lake):
-        record_key_columns(ticket_lake, FULL, created_since=EXISTED_BEFORE)
+    def test_a_table_with_a_column_the_ontology_does_not_map_is_partial_whatever_its_age(
+            self, ticket_lake):
+        record_key_columns(ticket_lake, BODY_UNMAPPED)
 
         assert not recorded_columns(ticket_lake.load_table("s.tickets")).complete
-        assert "s.tickets" in survey(ticket_lake, FULL).partly_known
+        reach = survey(ticket_lake, BODY_UNMAPPED)
+        assert "s.tickets" in reach.partly_known
+        assert reach.unmapped["s.tickets"] == ["body"]
+        assert {"quarantine_s.tickets", "cleaning_s.tickets"} <= set(reach.partly_known)   # inherited
+        assert "columns the ontology does not map: body" in " ".join(gap_notice(reach))
+
+    def test_findings_with_no_source_table_in_the_lake_are_partial(self, lake):
+        lake.make("quarantine_s.orphans", [{"object_id": "o1", "value": "x"}])
+        schema = {"Orphan": _type("orphans", "oid")}
+
+        record_key_columns(lake, schema)
+
+        assert "quarantine_s.orphans" in survey(lake, schema).partly_known
+
+    def test_the_pipelines_own_columns_and_the_fixed_shapes_count_as_mapped(self, ticket_lake):
+        record_key_columns(ticket_lake, FULL)
+
+        for identifier in TICKET_TABLES:
+            assert unmapped_columns(ticket_lake, FULL, identifier,
+                                    ticket_lake.load_table(identifier)) == [], identifier
 
     def test_a_later_sync_never_raises_it(self, ticket_lake):
-        record_key_columns(ticket_lake, FULL, created_since=EXISTED_BEFORE)
-        record_key_columns(ticket_lake, FULL, created_since=CREATED_BY_IT)
-        record_key_columns(ticket_lake, WITHOUT_TICKET, created_since=CREATED_BY_IT)
+        record_key_columns(ticket_lake, BODY_UNMAPPED)
+        record_key_columns(ticket_lake, FULL)        # now `body` is mapped: still partial
+        record_key_columns(ticket_lake, WITHOUT_TICKET)
 
         assert "s.tickets" in survey(ticket_lake, WITHOUT_TICKET).partly_known
 
@@ -181,14 +201,14 @@ class TestWhatASyncCanAndCannotMakeKnown:
     def test_after_a_removal_the_legacy_tables_stay_partly_known_and_the_erasure_incomplete(
             self, ticket_lake):
         _legacy(ticket_lake, FULL)
-        record_key_columns(ticket_lake, WITHOUT_TICKET, created_since=EXISTED_BEFORE)   # "the upgrade's sync"
+        record_key_columns(ticket_lake, WITHOUT_TICKET)   # "the upgrade's sync"
 
         register, result = _erase(ticket_lake, WITHOUT_TICKET, [("Customer", "c1")])
 
         assert "gold_history.Ticket" in result.reach.partly_known
         assert "s.tickets" in register.incomplete()
         # and a second sync does not change that
-        record_key_columns(ticket_lake, WITHOUT_TICKET, created_since=EXISTED_BEFORE)
+        record_key_columns(ticket_lake, WITHOUT_TICKET)
         apply_erasures(ticket_lake, WITHOUT_TICKET, register, ticket_lake.dir / "mirror")
         assert "s.tickets" in register.incomplete()
         assert [row["ticket_id"] for row in _rows(ticket_lake, "gold_history.Ticket")] == ["t1"]
@@ -196,7 +216,7 @@ class TestWhatASyncCanAndCannotMakeKnown:
     def test_adopting_the_tables_first_lets_the_erasure_find_what_depended_on_the_person(
             self, ticket_lake):
         _legacy(ticket_lake, FULL)
-        record_key_columns(ticket_lake, WITHOUT_TICKET, created_since=EXISTED_BEFORE)
+        record_key_columns(ticket_lake, WITHOUT_TICKET)
 
         for identifier in survey(ticket_lake, WITHOUT_TICKET).partly_known:
             known = recorded_columns(ticket_lake.load_table(identifier)).keys
@@ -210,6 +230,16 @@ class TestWhatASyncCanAndCannotMakeKnown:
             assert all("t1" not in map(str, row.values()) for row in _rows(ticket_lake, table)), table
         assert survey(ticket_lake, WITHOUT_TICKET).partly_known == []
         assert register.incomplete() == []
+
+    def test_a_link_stated_alone_also_makes_its_column_a_key_of_the_target(self, ticket_lake):
+        record = adopt_table(ticket_lake, WITHOUT_TICKET, "s.tickets", {}, None,
+                             {"cust": {("Ticket", "Customer")}})
+
+        assert record.keys["cust"] == {"Customer"}
+        keys = cascade(ticket_lake, WITHOUT_TICKET, [("Customer", "c1")])
+        assert ("Ticket", "t1") not in keys        # ids were not stated: the row itself is found by key
+        register, _result = _erase(ticket_lake, WITHOUT_TICKET, keys, seeds=[("Customer", "c1")])
+        assert [row["ticket_id"] for row in _rows(ticket_lake, "s.tickets")] == ["t2"]
 
     def test_adopt_refuses_an_unknown_column_and_an_unknown_table_and_holds_none_when_told(self, lake):
         from pyiceberg.exceptions import NoSuchTableError
@@ -228,7 +258,7 @@ class TestWhatASyncCanAndCannotMakeKnown:
 
     def test_adopting_never_narrows(self, lake):
         lake.make("s.people", [{"acct": "a1", "lead_ref": "L1"}])
-        record_key_columns(lake, TestWhatRecordingNeverForgets.SHARED, created_since=CREATED_BY_IT)
+        record_key_columns(lake, TestWhatRecordingNeverForgets.SHARED)
 
         record = adopt_table(lake, TestWhatRecordingNeverForgets.AFTER, "s.people", {"acct": {"Account"}})
 
@@ -238,18 +268,19 @@ class TestWhatASyncCanAndCannotMakeKnown:
 class TestAnErasureIsWorkedOutAgainFromItsSeeds:
     def test_restoring_the_type_and_syncing_finishes_what_was_waiting(self, ticket_lake):
         """Ticket removed before any table recorded it; erase c1; restore Ticket; sync."""
-        record_key_columns(ticket_lake, WITHOUT_TICKET, created_since=EXISTED_BEFORE)
+        record_key_columns(ticket_lake, WITHOUT_TICKET)
         register, first = _erase(ticket_lake, WITHOUT_TICKET, [("Customer", "c1")],
                                  seeds=[("Customer", "c1")])
         assert "gold_history.Ticket" in first.reach.unreachable
 
-        record_key_columns(ticket_lake, FULL, created_since=EXISTED_BEFORE)
+        record_key_columns(ticket_lake, FULL)
         apply_erasures(ticket_lake, FULL, register, ticket_lake.dir / "mirror")
 
         for table in ("gold_history.Ticket", "quarantine_s.tickets", "gold_conflicts.Ticket", "s.tickets"):
             assert all("t1" not in map(str, row.values()) for row in _rows(ticket_lake, table)), table
         assert [row["ticket_id"] for row in _rows(ticket_lake, "gold.Ticket")] == ["t2"]
-        assert register.incomplete()            # still partly known: honest, and not for want of trying
+        # every column of every table is mapped again, so nothing is left partly known
+        assert register.incomplete() == []
 
 
 class TestWhatRecordingNeverForgets:
@@ -293,21 +324,21 @@ class TestWhatRecordingNeverForgets:
         register, _result = _erase(lake, self.AFTER, [("Account", "a1")])
         assert register.incomplete() == ["s.people"]
 
-        record_key_columns(lake, self.AFTER, created_since=EXISTED_BEFORE)
+        record_key_columns(lake, self.AFTER)
         apply_erasures(lake, self.AFTER, register, lake.dir / "mirror")
 
         assert register.incomplete() == ["s.people"]
 
 
-class TestEachErasureIsIncompleteForItsOwnTablesOnly:
-    def test_an_unrelated_partly_known_table_does_not_mark_it(self, lake):
-        lake.make("s.people", [{"acct": "a1"}])
+class TestAPartlyKnownTableMarksEveryErasure:
+    """Its unmapped columns may hold ids of ANY type (a removed link's column
+    can name a customer), so no erasure is complete while one exists."""
+
+    def test_an_erasure_of_an_unrelated_type_is_marked_too(self, lake):
+        lake.make("s.people", [{"acct": "a1", "memo": "m"}])
         lake.make("s.customers", [{"customer_id": "c1"}])
         schema = {"Customer": CUSTOMER, "Account": _type("people", "acct")}
-        record_key_columns(lake, schema, created_since=CREATED_BY_IT)
-        with lake.load_table("s.people").transaction() as tx:
-            tx.remove_properties("elysium.erasure_keys")
-        record_key_columns(lake, schema, created_since=EXISTED_BEFORE)       # s.people: partial
+        record_key_columns(lake, schema)       # s.people has `memo`: partial
 
         register = ErasureRegister(lake.dir / "erasures.db")
         register.record([("Customer", "c1")], "tester", "test")
@@ -315,7 +346,7 @@ class TestEachErasureIsIncompleteForItsOwnTablesOnly:
         apply_erasures(lake, schema, register, lake.dir / "mirror")
 
         listed = {erasure.object_type: erasure.incomplete_tables for erasure in register.erasures()}
-        assert listed == {"Customer": (), "Lead": ("s.people",)}
+        assert listed == {"Customer": ("s.people",), "Lead": ("s.people",)}
 
 
 class TestAColumnRePointedAtAnotherType:
@@ -381,7 +412,7 @@ class TestAGoldJoinCopyWhoseNameTwoSilosShare:
                     "id_field": "id", "storage": {"silo": silo, "table": "c", "id_column": "id"}}
         schema = {"C1": join("s1"), "C2": join("s2"), "T": _type("t", "tid")}
         lake.make("gold.links", [{"cid": "c", "tid": "t"}])
-        record_key_columns(lake, schema, created_since=CREATED_BY_IT)
+        record_key_columns(lake, schema)
 
         assert survey(lake, schema).partly_known == ["gold.links"]
 
@@ -390,7 +421,7 @@ class TestATableThatCannotBeRead:
     def test_it_is_named_with_the_kind_and_erasure_goes_on(self, lake):
         lake.make("s.customers", [{"customer_id": "c1"}, {"customer_id": "c2"}])
         lake.make("s.broken", [{"x": 1}])
-        record_key_columns(lake, WITHOUT_TICKET, created_since=CREATED_BY_IT)
+        record_key_columns(lake, WITHOUT_TICKET)
         for path in (lake.dir / "mirror").rglob("*.metadata.json"):
             if "broken" in str(path):
                 path.unlink()
@@ -406,8 +437,8 @@ class TestATableThatCannotBeRead:
     def test_a_table_whose_data_cannot_be_read_is_named_and_neither_crashes_nor_stops_the_rest(
             self, ticket_lake):
         """The metadata loads; a data file is gone (n3)."""
-        record_key_columns(ticket_lake, FULL, created_since=CREATED_BY_IT)
-        record_key_columns(ticket_lake, WITHOUT_TICKET, created_since=CREATED_BY_IT)
+        record_key_columns(ticket_lake, FULL)
+        record_key_columns(ticket_lake, WITHOUT_TICKET)
         for path in (ticket_lake.dir / "mirror").rglob("*.parquet"):
             if "/tickets/" in str(path) and "quarantine" not in str(path):
                 path.unlink()
@@ -459,7 +490,7 @@ class TestTheRegisterAcrossAnUpgrade:
 
 def test_the_record_carries_the_identity_and_owned_links_of_the_tables_own_rows(lake):
     lake.make("s.tickets", [{"ticket_id": "t1", "cust": "c1"}])
-    record_key_columns(lake, FULL, created_since=CREATED_BY_IT)
+    record_key_columns(lake, FULL)
 
     recorded = recorded_columns(lake.load_table("s.tickets"))
     assert recorded.ids == {"ticket_id": {"Ticket"}}
@@ -477,7 +508,7 @@ class TestAdoptAllCurrent:
 
     def test_it_adopts_what_the_schema_maps_and_only_that(self, ticket_lake):
         lake = ticket_lake
-        record_key_columns(lake, FULL, created_since=EXISTED_BEFORE)       # all partial
+        record_key_columns(lake, BODY_UNMAPPED)       # tickets: partial
         lake.make("s.unmapped", [{"x": 1}])
 
         adopted, unresolved = adopt_all_current(lake, WITHOUT_TICKET, confirmed=True)
@@ -489,13 +520,47 @@ class TestAdoptAllCurrent:
         assert {"s.tickets", "gold.Ticket", "gold_history.Ticket", "s.unmapped"} <= set(unresolved)
         assert not recorded_columns(lake.load_table("s.unmapped")).present
         assert not recorded_columns(lake.load_table("s.tickets")).complete
+        # nor does the stronger statement adopt what the ontology does not know at all
+        _adopted, still = adopt_all_current(lake, WITHOUT_TICKET, confirmed=True, including_unmapped=True)
+        assert still["s.unmapped"] == "the ontology does not map this table"
+        assert not recorded_columns(lake.load_table("s.unmapped")).present
+
+    def test_a_table_with_columns_the_ontology_does_not_map_needs_the_stronger_statement(self, lake):
+        lake.make("s.customers", [{"customer_id": "c1", "memo": "x"}])
+        lake.make("gold.Customer", [{"customer_id": "c1"}])
+
+        adopted, unresolved = adopt_all_current(lake, WITHOUT_TICKET, confirmed=True)
+
+        assert adopted == ["gold.Customer"]
+        assert unresolved == {"s.customers": "columns the ontology does not map: memo"}
+        assert not recorded_columns(lake.load_table("s.customers")).complete
+
+        adopted, unresolved = adopt_all_current(lake, WITHOUT_TICKET, confirmed=True,
+                                                including_unmapped=True)
+
+        assert "s.customers" in adopted and unresolved == {}
+        record = recorded_columns(lake.load_table("s.customers"))
+        assert record.complete and record.adopted and "hold no person ids" in record.statement
+
+    def test_a_table_that_recorded_a_removed_type_is_not_adopted_even_with_the_stronger_statement(self, lake):
+        lake.make("s.people", [{"acct": "a1", "lead_ref": "L1"}])
+        record_key_columns(lake, TestWhatRecordingNeverForgets.SHARED)
+
+        adopted, unresolved = adopt_all_current(lake, TestWhatRecordingNeverForgets.AFTER, confirmed=True,
+                                                including_unmapped=True)
+
+        assert "s.people" not in adopted
+        assert unresolved["s.people"] == "it recorded a type the ontology no longer has"
 
     def test_it_never_narrows(self, lake):
         """The id column was renamed in the ontology; the old one still holds ids."""
         lake.make("s.people", [{"acct": "a1", "account_ref": "a1"}])
-        record_key_columns(lake, {"Account": _type("people", "acct")}, created_since=CREATED_BY_IT)
+        record_key_columns(lake, {"Account": _type("people", "acct")})
 
-        adopt_all_current(lake, {"Account": _type("people", "account_ref")}, confirmed=True)
+        renamed = {"Account": _type("people", "account_ref")}
+        _adopted, unresolved = adopt_all_current(lake, renamed, confirmed=True)
+        assert unresolved == {"s.people": "columns the ontology does not map: acct"}
+        adopt_all_current(lake, renamed, confirmed=True, including_unmapped=True)
 
         assert recorded_key_columns(lake.load_table("s.people")) == {
             "acct": {"Account"}, "account_ref": {"Account"}}

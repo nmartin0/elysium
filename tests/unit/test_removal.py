@@ -200,7 +200,7 @@ class TestWhatATypeLeavesBehind:
 
         for words in ("Nothing is deleted from your source", "exactly as they were", "history",
                       "rebuild", "Nothing serves the type", "erasure request still reaches",
-                      "no sync can change that", "partly known", "marks the erasure incomplete",
+                      "no sync can change that", "partly known", "marks every erasure",
                       "--adopt", "Adopt such tables before erasing",
                       "--adopt-all-current", "refuses to run",
                       "reads the same source table"):

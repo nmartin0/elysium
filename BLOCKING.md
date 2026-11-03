@@ -2016,43 +2016,68 @@ lake's tables first; if the lake cannot be read the removal still goes
 ahead and the reply carries a notice.
 
 WHAT NO SYNC CAN DO, plainly. A record can only say what the ontology
-mapped on the day it was written. A table that already held data before its
-first record (every table, on a deployment upgraded to this) is `partial`
-and stays so however often a sync records it again: whatever a type removed
-earlier kept in it is unknown. Erasure searches such a table by the columns
-known, lists it as `partly known`, and marks the erasure `incomplete`
-(`erase --list`; every sync says so and works the erasure out again from
-its seed keys). A table with no record whose type is gone is `unreachable`
-and is not searched at all. Both are resolved by an operator, not by a sync. THE NORMAL REMEDY
-AFTER AN UPGRADE, for a deployment that never removed an object type, is
+mapped on the day it was written. So the first record of a table is
+`complete` only if EVERY column the table has is one the ontology maps now
+(columns beginning "_" and the fixed shapes of join, quarantine, cleaning,
+history and conflict tables count as mapped; quarantine and cleaning inherit
+from the source table they record). Whatever its age or history. A table with
+any other column -- the usual case for a bronze or changelog table that keeps
+the source's extra columns -- is `partial` and stays so however often a sync
+records it again: a type, link or field removed earlier may have kept person
+ids there, and nothing can tell. Erasure searches such a table by the
+columns known, lists it as `partly known` with the unmapped column names,
+and marks EVERY erasure `incomplete` (`erase --list`; every sync says so and
+works the erasure out again from its seed keys). A table with no record whose
+type is gone is `unreachable` and is not searched at all. Both are resolved by
+an operator, not by a sync. THE NORMAL REMEDY AFTER AN UPGRADE, for a
+deployment that never removed an object type, is
 `python -m scripts.erase --adopt-all-current --confirm-no-type-was-ever-removed`:
-it marks every table the ontology maps complete on that statement (kept in
-the record), and lists, never touches, the tables the ontology does not map.
-Otherwise, per table:
+it marks every table whose every column the ontology maps complete on that
+statement (kept in the record), and lists, never touches, the rest with their
+unmapped column names. Adding `--including-unmapped-columns` also adopts
+those, on the stronger statement that no type, link or field was ever removed
+or re-pointed and the unmapped columns hold no person ids. Otherwise, per table:
 `python -m scripts.erase --adopt TABLE --keys column=Type [--ids ...]
 [--links column=Owner:Target]` states what the table holds (`--adopt-none`:
 no person's id), or the table is dropped in the lake. Adopt BEFORE erasing:
 an erasure run first removes the rows that linked a person to what depended
-on them, and those cannot then be followed -- so `erase --write` REFUSES (exit
-2, nothing erased) while a table that could affect the erasure is partly known
-or unreachable, and `--erase-reachable-now` erases what can be reached and
-records the erasure incomplete. The dry run says which it would do. A table created by the sync
-that recorded it is `complete`.
+on them, and those cannot then be followed -- so `erase --write` REFUSES
+(exit 3, nothing erased) while any table is partly known or unreachable, and
+`--erase-reachable-now` erases what can be reached and records the erasure
+incomplete (exit 2). Exit codes: 0 done, 1 bad arguments or a sync running,
+2 erased but incomplete, 3 refused. The dry run says which it would do.
+In practice, on an upgraded deployment every erasure is refused until its
+partly known tables are adopted: that is the honest state, not a fault.
+
+WHICH PATHS RECORD. Removing a type through the UI, approving a waiting
+change, and putting an older generation back each record the lake's tables
+first (never failing the edit; the reply carries a `notice` when it could
+not, and the Remove dialog shows it). The record is skipped, with a notice,
+while a sync is running, because it commits to tables the sync may be
+committing to. A hand edit of the configuration files followed by a reload is
+the one path that cannot be hooked: the next sync records, but a type
+removed that way before any sync is unrecorded, and its tables are then
+unreachable until adopted.
+
+COST. While any erasure stays incomplete, every sync works each such erasure
+out again from its seeds (one pass over the gold tables and the removed types'
+tables per erasure) and then purges, which scans every snapshot of every keyed
+table. It is idempotent and does no harm, but it repeats until the tables
+are adopted or dropped. Not optimised.
 
 OTHER LIMITS. (1) The record never narrows, so a column re-pointed from one
 type to another keeps the old type: erasing it also removes rows of whoever
 now owns those values. That is chosen (erasing too much is the lesser
 failure) and shown: the erase output, the dry run and the sync print a
-WARNING naming table, column and type. (2) A partly known table is counted
-against an erasure only when it holds one of that erasure's types (or the
-erasure is of a type the ontology no longer has): a removed type's link to a
-live type, in an unknown column of an unrelated partly known table, cannot
-be seen. (3) Quarantine and cleaning records of a table several types keep
-rows in are matched against each of those types' ids (reported as shared);
-a join table's records are matched part by part against the type that owns
-each. (4) A gold join table whose name two silos share is keyed by both
-silos' columns and reported partly known. An incomplete erasure does not
-stop the server; what could be reached has been erased.
+WARNING naming table, column and type. (2) Every partly known or unreachable
+table is counted against every erasure, because its unknown columns may hold
+ids of any type; so one such table makes all erasures incomplete (and refuses
+`--write`) until it is adopted or dropped. (3) Quarantine and cleaning records
+of a table several types keep rows in are matched against each of those types'
+ids (reported as shared); a join table's records are matched part by part
+against the type that owns each. (4) A gold join table whose name two silos
+share is keyed by both silos' columns and reported partly known. An incomplete
+erasure does not stop the server; what could be reached has been erased.
 
 ## 9. Owning the UI kit, and when to start
 

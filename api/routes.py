@@ -1874,6 +1874,8 @@ class ConfigEditResponse(BaseModel):
     diff: list[str]
     digest: str
     to_generation: int
+    # Something to know that is not an error: see _record_erasure_keys_before.
+    notice: str | None = None
 
 
 #: One edit at a time: two people applying at once would each compare
@@ -3270,7 +3272,7 @@ def apply_removal_route(body: RemovalRequest, request: Request,
             raise HTTPException(status_code=409, detail=(
                 "This would let someone read more than they can now, which a removal never should. "
                 "Nothing was changed."))
-        notice = _record_erasure_keys_before(request, body)
+        notice = _record_erasure_keys_before(request)
         try:
             # A field's binding goes first (a binding for a field the type does
             # not declare stops the loader, a field without its binding loads).
@@ -3291,7 +3293,7 @@ def apply_removal_route(body: RemovalRequest, request: Request,
                 "notice": notice}
 
 
-def _record_erasure_keys_before(request: Request, body: "RemovalRequest") -> "str | None":
+def _record_erasure_keys_before(request: Request) -> "str | None":
     """Writes each lake table's key columns, from the schema as it is NOW,
     before a removal takes the name out of it: the removed type's tables
     stay in the lake, and an erasure afterwards needs them to say which
@@ -3302,12 +3304,26 @@ def _record_erasure_keys_before(request: Request, body: "RemovalRequest") -> "st
     NEVER FAILS THE EDIT. When the lake cannot be read, or a table cannot
     take the record, the removal goes ahead and the reply says which tables
     were not recorded: a removal that cannot be done because the lake is
-    unreachable would leave the type stuck, which is worse than a notice."""
+    unreachable would leave the type stuck, which is worse than a notice.
+
+    Called by EVERY path that can take a type out of the ontology: the
+    removal, approving a waiting proposal, restoring an older generation.
+    (A hand edit of the files, then a reload, is the one path it cannot see.)
+    It takes the sync lock without waiting, because a record is a commit to a
+    table a running sync may be committing to: if a sync is running it does
+    nothing and says so."""
     from core.mirror.erasure import record_key_columns
+    from core.mirror.sync_lock import single_writer
 
     failed: list[str] = []
     try:
-        record_key_columns(_mirror_catalog_for(request), _generation(request).config.schema, failed=failed)
+        with single_writer(request.app.state.runtime_paths.data_dir / "sync.lock") as free:
+            if not free:
+                return ("A sync was running, so the tables of what was removed were not recorded as holding "
+                        "people's ids. Until they are adopted (python -m scripts.erase --adopt, or "
+                        "--adopt-all-current) an erasure may not be able to search them.")
+            record_key_columns(_mirror_catalog_for(request), _generation(request).config.schema,
+                               failed=failed)
     except Exception as e:  # noqa: BLE001 - never fail the edit; say so
         logger.warning("removal: the lake could not be read to record erasure keys (%s)", type(e).__name__)
         return ("The lake could not be read, so the tables of what was removed were not recorded as "
@@ -3636,6 +3652,7 @@ def approve_config_proposal_route(proposal_id: str, request: Request,
                       "describes what approving it would do. It needs proposing again.")
             store.decide(proposal_id, "stale", current_user.user_id, reason)
             raise HTTPException(status_code=409, detail=reason)
+        notice = _record_erasure_keys_before(request)       # the proposal may drop a type
         try:
             result = _write_config_files(
                 request, current_user,
@@ -3645,7 +3662,7 @@ def approve_config_proposal_route(proposal_id: str, request: Request,
             store.decide(proposal_id, "failed", current_user.user_id, str(e.detail)[:500])
             raise
         store.decide(proposal_id, "applied", current_user.user_id)
-        return result
+        return {**result, "notice": notice} if notice else result
 
 
 @router.post("/admin/config-proposals/{proposal_id}/reject", dependencies=[Depends(_no_store)])
@@ -6216,6 +6233,7 @@ class RestoreResponse(BaseModel):
     status: str
     to_generation: int | None = None
     proposal_id: str | None = None
+    notice: str | None = None
 
 
 def _files_now(request: Request) -> "dict[str, str]":
@@ -6342,10 +6360,11 @@ def restore_route(generation: int, body: RestoreRequest, request: Request,
         _candidate, impact = _access_impact(request, changed)
         audit_changes = {"restore_generation": generation}
         if not impact["widens"]:
+            notice = _record_erasure_keys_before(request)       # the older generation may lack a type
             result = _write_config_files(request, current_user,
                                          {name: (now[name], text) for name, text in changed.items()},
                                          audit_changes)
-            return {"status": "applied", "to_generation": result["to_generation"]}
+            return {"status": "applied", "to_generation": result["to_generation"], "notice": notice}
 
         reason = _reason(body.reason)
         proposal_id = _proposals(request).propose(

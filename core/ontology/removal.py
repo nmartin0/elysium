@@ -166,15 +166,17 @@ _TYPE_TABLES = [
     "A later erasure request still reaches these tables, and follows the type's links from an erased "
     "person to its own rows: each table records which of its columns hold ids, and erasure reads that "
     "record once the type is gone. Removing the type here records its tables first (if the lake cannot "
-    "be read at that moment, the reply says so). That holds in full for tables created since the record "
-    "existed, and for tables an operator has adopted (python -m scripts.erase --adopt). A table that "
-    "already held data before the record is different, and no sync can change that: what a type removed "
-    "earlier kept in it is unknown. Erasure searches it by the columns still known, says it is partly "
-    "known, and marks the erasure incomplete, so the person may remain in the columns that are not known "
-    "until the table is adopted or dropped in the lake. If no type was ever removed from your deployment, the "
-    "normal remedy after an upgrade is one command: python -m scripts.erase --adopt-all-current "
-    "--confirm-no-type-was-ever-removed. Adopt such tables before erasing: an erasure refuses to run "
-    "while they could affect it, unless told to erase what it can reach now.",
+    "be read at that moment, or a sync is running, the reply says so). That holds in full for a table whose "
+    "every column the ontology maps, and for tables an operator has adopted (python -m scripts.erase "
+    "--adopt). A table with a column the ontology does not map is different, and no sync can change that: "
+    "what a type, link or field removed earlier kept in that column is unknown. Erasure searches it by the "
+    "columns still known, says it is partly known, names the unmapped columns, and marks every erasure "
+    "incomplete, so the person may remain in those columns until the table is adopted or dropped in the "
+    "lake. If no type was ever removed from your deployment, the normal remedy after an upgrade is one "
+    "command: python -m scripts.erase --adopt-all-current --confirm-no-type-was-ever-removed (tables "
+    "with unmapped columns need --including-unmapped-columns as well, which states those columns hold "
+    "no person ids). Adopt such tables before erasing: an erasure refuses to run while they could "
+    "affect it, unless told to erase what it can reach now.",
     "Asking for a rebuild of its silver table does nothing, because the sync no longer knows the table. Dropping "
     "the tables is done in the lake itself, by a person.",
 ]

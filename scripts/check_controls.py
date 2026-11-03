@@ -1241,12 +1241,12 @@ CONTROLS = [
         new=("                    pass\n"
              "                changed.append(identifier)"),
         tests=["tests/integration/test_erasure_after_removal.py::TestAfterTheTypeIsRemoved::test_a_sync_after_the_removal_does_not_forget_what_was_recorded",
-               "tests/integration/test_erasure_after_removal.py::TestATableWrittenBeforeTheRecordExisted::test_the_next_sync_records_it_for_a_type_that_still_exists_but_does_not_call_it_complete"],
+               "tests/integration/test_erasure_after_removal.py::TestATableWrittenBeforeTheRecordExisted::test_the_next_sync_records_it_and_calls_it_complete_because_every_column_is_mapped"],
     ),
     Control(
         describes="R13 removed types: run_sync records the key columns",
         path="scripts/run_sync.py",
-        old="            record_key_columns(sync._catalog, config.schema, created_since=sync_began)",
+        old="            record_key_columns(sync._catalog, config.schema)",
         new="            pass",
         tests=["tests/integration/test_erasure_after_removal.py::TestAfterTheTypeIsRemoved::test_erasing_a_customer_reaches_the_removed_types_tables"],
     ),
@@ -1408,14 +1408,7 @@ CONTROLS = [
         old='                known = wanted.known if wanted.present else (',
         new='                known = COMPLETE if True else (',
         tests=["tests/unit/test_erasure_removed_types.py::TestWhatASyncCanAndCannotMakeKnown::test_a_later_sync_never_raises_it",
-               "tests/unit/test_erasure_removed_types.py::TestWhatASyncCanAndCannotMakeKnown::test_a_table_that_already_held_data_is_partial"],
-    ),
-    Control(
-        describes="R13 sticky: a table that held data before its first record is partial",
-        path="core/mirror/erasure.py",
-        old='    return not stamps or min(stamps) / 1000 >= since',
-        new='    return True',
-        tests=["tests/unit/test_erasure_removed_types.py::TestWhatASyncCanAndCannotMakeKnown::test_a_table_that_already_held_data_is_partial"],
+               "tests/unit/test_erasure_removed_types.py::TestWhatASyncCanAndCannotMakeKnown::test_a_table_with_a_column_the_ontology_does_not_map_is_partial_whatever_its_age"],
     ),
     Control(
         describes="R13 adopt: an adopted table is complete",
@@ -1448,8 +1441,8 @@ CONTROLS = [
     Control(
         describes="R13 removal: the removal records the lake's key columns before the names go",
         path="api/routes.py",
-        old='        notice = _record_erasure_keys_before(request, body)',
-        new='        notice = None',
+        old='        notice = _record_erasure_keys_before(request)\n        try:\n            # A field',
+        new='        notice = None\n        try:\n            # A field',
         tests=["tests/integration/test_erasure_after_removal.py::TestRemovingATypeRecordsItsTablesFirst::test_a_removal_through_the_ui_leaves_no_hole_in_old_tables"],
     ),
     Control(
@@ -1502,18 +1495,11 @@ CONTROLS = [
         tests=["tests/unit/test_erasure_removed_types.py::TestAColumnRePointedAtAnotherType::test_it_is_shown_when_the_old_type_has_since_been_removed"],
     ),
     Control(
-        describes="R13 per erasure: an unrelated partly known table does not mark an erasure",
+        describes="R13 per erasure: a partly known table marks every erasure",
         path="core/mirror/erasure.py",
-        old='        if removed_type or reach.partly_types.get(table, set()) & erased_types:',
-        new='        if True:',
-        tests=["tests/unit/test_erasure_removed_types.py::TestEachErasureIsIncompleteForItsOwnTablesOnly::test_an_unrelated_partly_known_table_does_not_mark_it"],
-    ),
-    Control(
-        describes="R13 per erasure: an erasure of a removed type is marked by any partly known table",
-        path="core/mirror/erasure.py",
-        old='        if removed_type or reach.partly_types.get(table, set()) & erased_types:',
-        new='        if reach.partly_types.get(table, set()) & erased_types:',
-        tests=["tests/unit/test_erasure_removed_types.py::TestEachErasureIsIncompleteForItsOwnTablesOnly::test_an_unrelated_partly_known_table_does_not_mark_it"],
+        old="    return sorted({*reach.unreachable, *reach.partly_known})",
+        new="    return sorted({*reach.unreachable})",
+        tests=["tests/unit/test_erasure_removed_types.py::TestAPartlyKnownTableMarksEveryErasure::test_an_erasure_of_an_unrelated_type_is_marked_too"],
     ),
     Control(
         describes="R13 findings: a join table's parts are tested against the type that owns each",
@@ -1588,16 +1574,23 @@ CONTROLS = [
     Control(
         describes="R13 adopt all: a table the ontology does not know, or one that recorded a removed type, is never adopted",  # noqa: E501
         path="core/mirror/erasure.py",
-        old='                if not now or not recorded_types <= set(schema):',
+        old='                if not now:',
         new='                if False:',
         tests=["tests/unit/test_erasure_removed_types.py::TestAdoptAllCurrent::test_it_adopts_what_the_schema_maps_and_only_that",
                "tests/integration/test_erasure_after_removal.py::TestAdoptingEverythingTheOntologyMaps::test_it_needs_the_confirmation_and_never_adopts_a_table_the_ontology_does_not_know"],
     ),
     Control(
+        describes="R13 adopt all: even with the stronger statement a table that recorded a removed type is never adopted",  # noqa: E501
+        path="core/mirror/erasure.py",
+        old='                if not recorded_types <= set(schema):',
+        new='                if False:',
+        tests=["tests/unit/test_erasure_removed_types.py::TestAdoptAllCurrent::test_a_table_that_recorded_a_removed_type_is_not_adopted_even_with_the_stronger_statement"],
+    ),
+    Control(
         describes="R13 adopt all: the operator's statement is kept in the record",
         path="core/mirror/erasure.py",
-        old='                record = Recorded(known.keys, known.ids, known.links, True, COMPLETE, True,\n                                  NO_TYPE_REMOVED)',  # noqa: E501
-        new='                record = Recorded(known.keys, known.ids, known.links, True, COMPLETE, True)',
+        old='                                  NOTHING_REMOVED_OR_UNMAPPED if unmapped else NO_TYPE_REMOVED)',
+        new='                                  "")',
         tests=["tests/unit/test_erasure_removed_types.py::TestAdoptAllCurrent::test_it_adopts_what_the_schema_maps_and_only_that"],
     ),
     Control(
@@ -1606,6 +1599,76 @@ CONTROLS = [
         old='                known = known_columns(schema, identifier, table)\n                record = Recorded(known.keys,',  # noqa: E501
         new='                known = schema_columns(schema, identifier)\n                record = Recorded(known.keys,',
         tests=["tests/unit/test_erasure_removed_types.py::TestAdoptAllCurrent::test_it_never_narrows"],
+    ),
+    Control(
+        describes="R13 complete: a table with a column the ontology does not map is partial",
+        path="core/mirror/erasure.py",
+        old="                    PARTIAL if unmapped_columns(catalog, schema, identifier, table) else COMPLETE)",
+        new="                    COMPLETE)",
+        tests=["tests/unit/test_erasure_removed_types.py::TestWhatASyncCanAndCannotMakeKnown::test_a_table_with_a_column_the_ontology_does_not_map_is_partial_whatever_its_age"],
+    ),
+    Control(
+        describes="R13 complete: quarantine and cleaning inherit partial from their source table",
+        path="core/mirror/erasure.py",
+        old='            extra += [f"{sibling}.{column}" for column in unmapped_columns(catalog, schema, sibling, other)]',  # noqa: E501
+        new='            pass',
+        tests=["tests/unit/test_erasure_removed_types.py::TestWhatASyncCanAndCannotMakeKnown::test_a_table_with_a_column_the_ontology_does_not_map_is_partial_whatever_its_age"],
+    ),
+    Control(
+        describes="R13 complete: quarantine findings with no source table in the lake are partial",
+        path="core/mirror/erasure.py",
+        old="        return extra if seen_source else [*extra, \"(its source table is not in the lake)\"]",
+        new="        return extra",
+        tests=["tests/unit/test_erasure_removed_types.py::TestWhatASyncCanAndCannotMakeKnown::test_findings_with_no_source_table_in_the_lake_are_partial"],
+    ),
+    Control(
+        describes="R13 complete: the pipeline's own columns count as mapped",
+        path="core/mirror/erasure.py",
+        old='    columns = [column for column in _column_names(table) if not column.startswith("_")]',
+        new="    columns = _column_names(table)",
+        tests=["tests/unit/test_erasure_removed_types.py::TestWhatASyncCanAndCannotMakeKnown::test_the_pipelines_own_columns_and_the_fixed_shapes_count_as_mapped"],
+    ),
+    Control(
+        describes="R13 adopt-all-current: a table with unmapped columns needs the stronger statement",
+        path="core/mirror/erasure.py",
+        old="                if unmapped and not including_unmapped:",
+        new="                if False:",
+        tests=["tests/unit/test_erasure_removed_types.py::TestAdoptAllCurrent::test_a_table_with_columns_the_ontology_does_not_map_needs_the_stronger_statement"],
+    ),
+    Control(
+        describes="R13 adopt: a link stated alone makes its column a key of the target",
+        path="core/mirror/erasure.py",
+        old="    keys = _union(keys, {column: {target for _owner, target in pairs}\n                         for column, pairs in (links or {}).items()})",  # noqa: E501
+        new="    keys = keys",
+        tests=["tests/unit/test_erasure_removed_types.py::TestWhatASyncCanAndCannotMakeKnown::test_a_link_stated_alone_also_makes_its_column_a_key_of_the_target"],
+    ),
+    Control(
+        describes="R13 adopt command: --keys and --ids for one column are merged, not overwritten",
+        path="scripts/erase.py",
+        old="            merged = {column: stated.get(column, set()) | stated_ids.get(column, set())\n                      for column in {*stated, *stated_ids}}",  # noqa: E501
+        new="            merged = {**stated, **stated_ids}",
+        tests=["tests/integration/test_erasure_after_removal.py::TestAdoptingALegacyTable::test_keys_and_ids_for_one_column_are_both_kept_and_a_link_alone_makes_a_key"],
+    ),
+    Control(
+        describes="R13 exit codes: a refusal is not the code of an erasure that is incomplete",
+        path="scripts/erase.py",
+        old="(Exit code 3: refused, nothing erased.)\", file=sys.stderr)\n            return 3",
+        new="(Exit code 3: refused, nothing erased.)\", file=sys.stderr)\n            return 2",
+        tests=["tests/integration/test_erasure_after_removal.py::TestWriteRefusesWhileATableCannotBeFullySearched::test_it_erases_nothing_and_says_to_resolve_them_first"],
+    ),
+    Control(
+        describes="R13 other paths: approving a waiting change records the lake's tables first",
+        path="api/routes.py",
+        old="        notice = _record_erasure_keys_before(request)       # the proposal may drop a type",
+        new="        notice = None",
+        tests=["tests/integration/test_erasure_after_removal.py::TestRemovingATypeRecordsItsTablesFirst::test_approving_a_waiting_change_records_the_tables_first_too"],
+    ),
+    Control(
+        describes="R13 sync lock: a record is not written while a sync is running",
+        path="api/routes.py",
+        old="            if not free:\n                return (\"A sync was running",
+        new="            if False:\n                return (\"A sync was running",
+        tests=["tests/integration/test_erasure_after_removal.py::TestRemovingATypeRecordsItsTablesFirst::test_a_removal_while_a_sync_runs_does_not_touch_the_lake_and_says_so"],
     ),
     Control(
         describes="R13: older snapshots and tags are dropped",

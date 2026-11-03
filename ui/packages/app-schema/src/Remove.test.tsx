@@ -99,6 +99,23 @@ describe('a field that can go', () => {
     expect(applyRemoval).toHaveBeenCalledWith('d1', { kind: 'field', object_type: 'Customer', field: 'email' })
   })
 
+  it('stays open on the notice when the server could not record what an erasure will need', async () => {
+    vi.mocked(applyRemoval).mockResolvedValue({
+      status: 'applied',
+      diff: [],
+      to_generation: 9,
+      notice: 'A sync was running, so the tables were not recorded.',
+    })
+    const onApplied = renderDialog()
+
+    fireEvent.click(await removeButton())
+
+    expect(await screen.findByText(/A sync was running, so the tables were not recorded/)).toBeInTheDocument()
+    expect(onApplied).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(onApplied).toHaveBeenCalledWith(9)
+  })
+
   it('warns when the planned date has not come, and still allows it', async () => {
     vi.mocked(previewRemoval).mockResolvedValue({ ...READY, remove_after: '2999-01-01' })
     renderDialog()

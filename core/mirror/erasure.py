@@ -446,11 +446,12 @@ def table_roles(schema: dict, identifier: str) -> tuple[dict[str, set[str]], dic
 #:
 #: `known` IS STICKY AND NEVER RAISED BY A SYNC. A record can only say what
 #: the schema mapped on the day it was written: it cannot recover the
-#: columns of a type that was removed before. So a table that already held
-#: data when its first record was written is `partial`, and stays so --
-#: however many syncs record it again -- until an operator adopts it
-#: (adopt_table) or it is dropped. `complete` is written only for a table
-#: the very sync that records it created, or one adopted.
+#: columns of a type, link or field that was removed before. So the first
+#: record of a table is `complete` only if EVERY column the table has is one
+#: the ontology maps now (unmapped_columns) -- whatever its history: a
+#: column that is there and unmapped is where a removed thing's ids may hide.
+#: Otherwise it is `partial`, and stays so however many syncs record it again,
+#: until an operator adopts it (adopt_table) or it is dropped.
 KEY_COLUMNS_PROPERTY = "elysium.erasure_keys"
 COMPLETE = "complete"
 PARTIAL = "partial"
@@ -558,24 +559,85 @@ def stale_types(schema: dict, identifier: str, table) -> list[tuple[str, str]]:
                   for name in names if name not in now[column])
 
 
-def _created_since(table, since: "float | None") -> bool:
-    """Whether the table first held data at or after `since` (a time) --
-    that is, the sync recording it created it, and nothing older can be in it."""
-    if since is None:
-        return False
-    stamps = [snapshot.timestamp_ms for snapshot in table.snapshots()]
-    return not stamps or min(stamps) / 1000 >= since
+def _column_names(table) -> list[str]:
+    return [column.name for column in table.schema().fields]
 
 
-def record_key_columns(catalog, schema: dict, created_since: "float | None" = None,
-                       failed: "list[str] | None" = None) -> list[str]:
+def mapped_source_columns(schema: dict) -> "dict[tuple[str, str], set[str]] | None":
+    """{(silo, table): the columns the ontology maps there}, as the sync reads
+    them; None when the schema cannot be resolved into sync targets."""
+    from core.mirror.sync_targets import resolve_sync_targets
+
+    try:
+        targets = resolve_sync_targets({"object_types": schema})
+    except Exception:  # noqa: BLE001 - nothing can be said of a schema the sync cannot read
+        return None
+    found: dict[tuple[str, str], set[str]] = {}
+    for target in targets:
+        found.setdefault((target.silo_name, target.table_name), set()).update(
+            [*target.columns, target.id_column])
+    return found
+
+
+def unmapped_columns(catalog, schema: dict, identifier: str, table) -> list[str]:
+    """The columns of this table that the CURRENT ontology does not map: names
+    only. Columns starting with "_" are the pipeline's own (row hash, change,
+    security) and are accounted for. A column that is physically there but
+    unmapped is where a removed type's, link's or field's person ids may be
+    hiding -- which is why a table with any is never `complete` of itself.
+
+    The shapes: a source layer (bronze, silver, changelog) against the columns
+    the sync maps for its source table; gold against the type's fields (a join
+    table's copy against the join's columns); history and conflicts against
+    their fixed shape, and only for a type the ontology still has; quarantine
+    and cleaning against their fixed shape AND the source table they record
+    findings for, since their object ids are that table's. A table the
+    ontology does not map at all has every column unmapped."""
+    from core.mirror.gold import CONFLICT_SCHEMA
+    from core.mirror.iceberg_sync import CLEANING_SCHEMA, QUARANTINE_SCHEMA
+
+    namespace, _, name = identifier.partition(".")
+    columns = [column for column in _column_names(table) if not column.startswith("_")]
+    source = mapped_source_columns(schema)
+    if source is None:
+        return columns or ["(schema cannot be resolved)"]
+    if namespace.startswith(("quarantine_", "cleaning_")):
+        silo = namespace.partition("_")[2]
+        fixed = set((QUARANTINE_SCHEMA if namespace.startswith("quarantine_") else CLEANING_SCHEMA).names)
+        extra = [column for column in columns if column not in fixed]
+        seen_source = False
+        for sibling in (f"bronze_{silo}.{name}", f"{silo}.{name}"):
+            try:
+                other = catalog.load_table(sibling)
+            except Exception:  # noqa: BLE001 - absent is an answer
+                continue
+            seen_source = True
+            extra += [f"{sibling}.{column}" for column in unmapped_columns(catalog, schema, sibling, other)]
+        return extra if seen_source else [*extra, "(its source table is not in the lake)"]
+    if namespace == "gold":
+        if name in schema:
+            mapped = set(schema[name].get("fields") or {}) | {schema[name]["id_field"]}
+        else:
+            mapped = {column for (_silo, table_name), names in source.items() if table_name == name
+                      for column in names}
+    elif namespace == "gold_history":
+        mapped = {schema[name]["id_field"], "values"} if name in schema else set()
+    elif namespace == "gold_conflicts":
+        mapped = set(CONFLICT_SCHEMA.names) if name in schema else set()
+    else:
+        mapped = source.get((namespace.partition("_")[2] if namespace.startswith(("bronze_", "changelog_"))
+                             else namespace, name), set())
+    return [column for column in columns if column not in mapped]
+
+
+def record_key_columns(catalog, schema: dict, failed: "list[str] | None" = None) -> list[str]:
     """Writes each table's columns where they differ; returns the tables
     changed. Called by every sync, after the layers are written, and by a
     removal before the type goes.
 
-    `created_since`: when the recording sync began. A table first written
-    after it is `complete`; any other table without a record is `partial`
-    (see KEY_COLUMNS_PROPERTY), and a table with a record keeps its `known`.
+    A table without a record is `complete` only if every column it has is
+    one the current ontology maps (unmapped_columns); otherwise `partial`
+    (see KEY_COLUMNS_PROPERTY). A table with a record keeps its `known`.
 
     NEVER NARROWS. What the table already recorded stays in the union, so
     a type removed from the ontology cannot take its tables' keys with
@@ -598,7 +660,7 @@ def record_key_columns(catalog, schema: dict, created_since: "float | None" = No
                 if not wanted.keys and not wanted.present:
                     continue
                 known = wanted.known if wanted.present else (
-                    COMPLETE if _created_since(table, created_since) else PARTIAL)
+                    PARTIAL if unmapped_columns(catalog, schema, identifier, table) else COMPLETE)
                 record = Recorded(wanted.keys, wanted.ids, wanted.links, True, known, wanted.adopted,
                                   wanted.statement)
                 if record == recorded_columns(table):
@@ -622,9 +684,13 @@ def adopt_table(catalog, schema: dict, identifier: str, keys: dict[str, set[str]
     statement is visible in the property. Raises KeyError for a column the
     table does not have, and the catalog's own error for an unknown table.
     This is the only way a legacy table stops being partly known, because
-    it is the only thing that knows what a removed type kept in it."""
+    it is the only thing that knows what a removed type kept in it. A link
+    stated for a column also makes that column a key of the link's target
+    type (ids need not be stated for it)."""
     table = catalog.load_table(identifier)
     names = set(table.schema().as_arrow().names)
+    keys = _union(keys, {column: {target for _owner, target in pairs}
+                         for column, pairs in (links or {}).items()})
     stated = [*keys, *(ids or {}), *(links or {})]
     for column in stated:
         if column.partition(PART_MARK)[0] not in names:
@@ -638,21 +704,29 @@ def adopt_table(catalog, schema: dict, identifier: str, keys: dict[str, set[str]
 
 
 NO_TYPE_REMOVED = "the operator stated that no object type was ever removed from this deployment"
+NOTHING_REMOVED_OR_UNMAPPED = (
+    "the operator stated that no type, link or field was ever removed or re-pointed in this deployment, "
+    "and that the columns the ontology does not map hold no person ids")
 
 
-def adopt_all_current(catalog, schema: dict, confirmed: bool) -> tuple[list[str], list[str]]:
-    """(adopted, unresolved): the one-step remedy for a deployment that never
-    removed a type. Every table the CURRENT schema maps, whose recorded types
-    are all still in the schema, becomes complete by the operator's statement
-    (union with what is known, never narrowing; the statement is kept in the
-    record). A table the schema does not know -- or one that recorded a type
-    the schema no longer has -- is NEVER touched here, only listed: there is
-    no statement about it to rely on, and adopting it takes --adopt naming
-    its columns. Refuses without the confirmation."""
+def adopt_all_current(catalog, schema: dict, confirmed: bool,
+                      including_unmapped: bool = False) -> tuple[list[str], dict[str, str]]:
+    """(adopted, {unresolved table: why}): the one-step remedy for a
+    deployment that never removed a type. Every table the CURRENT schema maps
+    COMPLETELY (every column mapped), whose recorded types are all still in
+    the schema, becomes complete by the operator's statement (union with what
+    is known, never narrowing; the statement is kept in the record). A table
+    with columns the ontology does not map is adopted only with
+    `including_unmapped` (a separate, stronger statement: those columns hold
+    no person ids); without it it is listed with those column names. A table
+    the schema does not know, or one that recorded a type the schema no
+    longer has, is NEVER touched here, only listed: there is no statement
+    about it to rely on, and adopting it takes --adopt naming its columns.
+    Refuses without the confirmation."""
     if not confirmed:
         raise ValueError("adopting everything the ontology maps needs the operator's confirmation")
     adopted: list[str] = []
-    unresolved: list[str] = []
+    unresolved: dict[str, str] = {}
     for namespace in catalog.list_namespaces():
         for parts in catalog.list_tables(namespace):
             identifier = ".".join(parts)
@@ -661,20 +735,27 @@ def adopt_all_current(catalog, schema: dict, confirmed: bool) -> tuple[list[str]
                 now = table_key_columns(schema, identifier)
                 before = recorded_columns(table)
                 recorded_types = {name for names in before.keys.values() for name in names}
-                if not now or not recorded_types <= set(schema):
-                    unresolved.append(identifier)
+                if not now:
+                    unresolved[identifier] = "the ontology does not map this table"
+                    continue
+                if not recorded_types <= set(schema):
+                    unresolved[identifier] = "it recorded a type the ontology no longer has"
+                    continue
+                unmapped = unmapped_columns(catalog, schema, identifier, table)
+                if unmapped and not including_unmapped:
+                    unresolved[identifier] = f"columns the ontology does not map: {', '.join(unmapped)}"
                     continue
                 if before.complete and before.adopted:
                     continue
                 known = known_columns(schema, identifier, table)
                 record = Recorded(known.keys, known.ids, known.links, True, COMPLETE, True,
-                                  NO_TYPE_REMOVED)
+                                  NOTHING_REMOVED_OR_UNMAPPED if unmapped else NO_TYPE_REMOVED)
                 with table.transaction() as tx:
                     tx.set_properties({KEY_COLUMNS_PROPERTY: _encode(record)})
                 adopted.append(identifier)
             except Exception as e:  # noqa: BLE001 - named, never fatal
                 logger.warning("could not adopt %s: %s", identifier, type(e).__name__)
-                unresolved.append(identifier)
+                unresolved[identifier] = f"it could not be read or written ({type(e).__name__})"
     return adopted, unresolved
 
 
@@ -701,14 +782,15 @@ class Reach:
     the table says which columns are keys (or the table cannot be read; the
     kind of failure, not its message). partly_known: tables whose columns
     are not recorded as complete: a removed type that kept columns there
-    cannot be known, and no sync changes that; partly_types: the types such
-    a table is known to hold. stale: (table, column, type) where a recorded
+    cannot be known, and no sync changes that; unmapped: the columns of such
+    a table that the ontology does not map (names only; empty when the cause
+    is another). stale: (table, column, type) where a recorded
     type no longer maps the column. shared_findings: quarantine and
     cleaning tables several types keep rows in."""
     unreachable: dict[str, str]
     partly_known: list[str]
     stale: list[tuple[str, str, str]]
-    partly_types: dict[str, set[str]] = field(default_factory=dict)
+    unmapped: dict[str, list[str]] = field(default_factory=dict)
     shared_findings: list[str] = field(default_factory=list)
 
     @property
@@ -723,7 +805,7 @@ def survey(catalog, schema: dict, erased_types: "set[str] | None" = None) -> Rea
     unreachable: dict[str, str] = {}
     partly: list[str] = []
     stale: list[tuple[str, str, str]] = []
-    partly_types: dict[str, set[str]] = {}
+    unmapped: dict[str, list[str]] = {}
     shared: list[str] = []
     for namespace in catalog.list_namespaces():
         for parts in catalog.list_tables(namespace):
@@ -745,7 +827,7 @@ def survey(catalog, schema: dict, erased_types: "set[str] | None" = None) -> Rea
             if not known.complete or (identifier.startswith("gold.") and tail not in schema
                                       and len(_join_copies(schema, tail)) > 1):
                 partly.append(identifier)
-                partly_types[identifier] = {name for names in known.keys.values() for name in names}
+                unmapped[identifier] = unmapped_columns(catalog, schema, identifier, table)
             if identifier.startswith(("quarantine_", "cleaning_")):
                 silo = identifier.partition(".")[0].partition("_")[2]
                 if len(_storage_types(schema, silo, tail)) > 1:
@@ -754,12 +836,14 @@ def survey(catalog, schema: dict, erased_types: "set[str] | None" = None) -> Rea
                 stale += [(identifier, column, name)
                           for column, name in stale_types(schema, identifier, table)
                           if name in erased_types]
-    return Reach(unreachable, sorted(partly), sorted(stale), partly_types, sorted(shared))
+    return Reach(unreachable, sorted(partly), sorted(stale), unmapped, sorted(shared))
 
 
 ADOPT_HINT = ("if no type was ever removed from this deployment, resolve every table the ontology maps "
-              "with `python -m scripts.erase --adopt-all-current --confirm-no-type-was-ever-removed`; "
-              "otherwise adopt it with `python -m scripts.erase --adopt TABLE --keys column=Type` "
+              "with `python -m scripts.erase --adopt-all-current --confirm-no-type-was-ever-removed` "
+              "(add `--including-unmapped-columns` for tables with columns the ontology does not map, "
+              "stating they hold no person ids); otherwise adopt it with "
+              "`python -m scripts.erase --adopt TABLE --keys column=Type` "
               "(or `--adopt-none TABLE` if it holds no person's id), or drop it in the lake")
 
 
@@ -776,8 +860,10 @@ def gap_notice(reach: Reach) -> list[str]:
     if reach.partly_known:
         lines.append(
             f"{len(reach.partly_known)} table(s) were searched only by the columns that are mapped or "
-            f"recorded for them, because they were written before their columns were recorded in full: "
-            f"{', '.join(reach.partly_known)}. A removed type's other columns there cannot be known, and "
+            f"recorded for them, because their columns are not recorded as fully known: "
+            + ", ".join(f"{name} (columns the ontology does not map: {', '.join(reach.unmapped[name])})"
+                        if reach.unmapped.get(name) else name for name in reach.partly_known)
+            + f". A removed type's, link's or field's other columns there cannot be known, and "
             f"no sync changes that: {ADOPT_HINT}. ADOPT BEFORE ERASING: an erasure run first removes the "
             f"rows that link a person to what depended on them, which adopting would have followed.")
     for table, column, name in reach.stale:
@@ -791,17 +877,14 @@ def gap_notice(reach: Reach) -> list[str]:
 
 
 def relevant_tables(reach: Reach, schema: dict, erased_types: set[str]) -> list[str]:
-    """The tables that could still hold what THIS erasure is about: every
-    table that cannot be searched at all (nothing says what it holds), and
-    every partly known table that holds one of its types -- or any, when it
-    is about a type the ontology no longer has, which such a table may keep
-    columns for. An unrelated partly known table does not make it incomplete."""
-    names = set(reach.unreachable)
-    removed_type = bool(erased_types - set(schema))
-    for table in reach.partly_known:
-        if removed_type or reach.partly_types.get(table, set()) & erased_types:
-            names.add(table)
-    return sorted(names)
+    """The tables that could still hold what an erasure is about: EVERY table
+    that cannot be searched at all and EVERY partly known one, for every
+    erasure. A partly known table's unknown columns may hold ids of any type
+    (a removed link's column can name a person), so no erasure can be called
+    complete while one exists. The arguments are kept so the rule can be
+    narrowed later without changing callers."""
+    del schema, erased_types
+    return sorted({*reach.unreachable, *reach.partly_known})
 
 
 @dataclass(frozen=True)

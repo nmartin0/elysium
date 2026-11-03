@@ -8,8 +8,11 @@
     python -m scripts.erase --adopt-none primary_sql.audit_notes
 
 --adopt-all-current is the normal remedy after an upgrade, for a deployment that
-never removed an object type: it marks every table the ontology maps complete,
-on your statement, and lists (never touches) the rest. --write REFUSES, and
+never removed an object type: it marks every table whose every column the
+ontology maps complete, on your statement, and lists (never touches) the rest
+with the columns the ontology does not map. Adding --including-unmapped-columns
+also adopts those, on the stronger statement that no type, link or field was
+ever removed or re-pointed and the unmapped columns hold no person ids. --write REFUSES, and
 erases nothing, while a table that could affect the erasure cannot be fully
 searched; --erase-reachable-now erases what can be reached and records the
 erasure incomplete.
@@ -36,6 +39,11 @@ that links to it, counted per type -- and changes nothing. With it:
 
 Elysium cannot erase the SOURCE -- it only reads it. The report names
 what the source still returns after each sync, for the source's owner.
+
+EXIT CODES: 0 erased (or a dry run) with nothing left to search; 1 bad
+arguments or a sync was running (nothing was done); 2 ERASED BUT INCOMPLETE
+(some table could not be fully searched: see --list); 3 REFUSED, NOTHING
+ERASED (a table that could affect the erasure cannot be fully searched).
 
 HOLDS THE SYNC LOCK, so no sync is half-way through a table it rewrites.
 The server pins the publication it loaded: restart it, or reload
@@ -106,8 +114,8 @@ def run(object_type: str, object_id: str, reason: str, write: bool = False,
             print(f"NOT ERASED: {len(blocking)} table(s) could affect this erasure and cannot be fully "
                   f"searched: {', '.join(blocking)}. Resolve them first -- " + ADOPT_HINT
                   + ". Or pass --erase-reachable-now to erase what can be reached now and record the "
-                    "erasure as incomplete.", file=sys.stderr)
-            return 2
+                    "erasure as incomplete. (Exit code 3: refused, nothing erased.)", file=sys.stderr)
+            return 3
         if not write:
             # SO --write IS NOT A SURPRISE: what it would not be able to search.
             reach = survey(catalog, config.schema, set(counts))
@@ -217,8 +225,9 @@ def adopt(identifier: str, keys: "str | None", ids: "str | None", links: "str | 
             print("A sync is running. Try again when it has finished; nothing was recorded.")
             return 1
         try:
-            record = adopt_table(catalog, config.schema, identifier,
-                                 {**stated, **stated_ids}, stated_ids, stated_links)
+            merged = {column: stated.get(column, set()) | stated_ids.get(column, set())
+                      for column in {*stated, *stated_ids}}
+            record = adopt_table(catalog, config.schema, identifier, merged, stated_ids, stated_links)
         except (NoSuchTableError, NoSuchNamespaceError):
             print(f"No table {identifier!r} in the lake.", file=sys.stderr)
             return 1
@@ -233,10 +242,12 @@ def adopt(identifier: str, keys: "str | None", ids: "str | None", links: "str | 
     return 0
 
 
-def adopt_everything_current(confirmed: bool, paths=None) -> int:
+def adopt_everything_current(confirmed: bool, paths=None, including_unmapped: bool = False) -> int:
     """--adopt-all-current: the one-step remedy for a deployment that never
     removed an object type. Refused without --confirm-no-type-was-ever-removed.
-    Touches only tables the current ontology maps; lists the rest."""
+    Touches only tables whose every column the current ontology maps -- or,
+    with --including-unmapped-columns, also tables with columns it does not
+    map; lists the rest with those columns' names."""
     if not confirmed:
         print("This states that no object type was EVER removed from this deployment, which only you "
               "can know. Say so with --confirm-no-type-was-ever-removed. Nothing was recorded.",
@@ -249,12 +260,19 @@ def adopt_everything_current(confirmed: bool, paths=None) -> int:
         if not acquired:
             print("A sync is running. Try again when it has finished; nothing was recorded.")
             return 1
-        adopted, unresolved = adopt_all_current(catalog, config.schema, confirmed)
+        adopted, unresolved = adopt_all_current(catalog, config.schema, confirmed, including_unmapped)
     print(f"Adopted {len(adopted)} table(s) the ontology maps, on your statement that no type was ever "
           f"removed.")
     if unresolved:
-        print(f"STILL UNRESOLVED ({len(unresolved)}), because the ontology does not map them: "
-              f"{', '.join(unresolved)}. Adopt each with --adopt, or drop it in the lake.")
+        print(f"STILL UNRESOLVED ({len(unresolved)}):")
+        for table, why in sorted(unresolved.items()):
+            print(f"  {table}: {why}")
+        print("Adopt each with --adopt, or drop it in the lake"
+              + ("" if including_unmapped else "; for tables whose only gap is columns the ontology does "
+                 "not map, --adopt-all-current --including-unmapped-columns "
+                 "--confirm-no-type-was-ever-removed states that no type, link or field was ever removed "
+                 "or re-pointed and those columns hold no person ids")
+              + ".")
     return 0
 
 
@@ -262,7 +280,13 @@ def main() -> int:
     if sys.argv[1:] == ["--list"]:
         return list_erasures()
     if sys.argv[1:2] == ["--adopt-all-current"]:
-        return adopt_everything_current(sys.argv[2:] == ["--confirm-no-type-was-ever-removed"])
+        flags = set(sys.argv[2:])
+        if not flags <= {"--confirm-no-type-was-ever-removed", "--including-unmapped-columns"}:
+            print("Usage: --adopt-all-current --confirm-no-type-was-ever-removed "
+                  "[--including-unmapped-columns]", file=sys.stderr)
+            return 1
+        return adopt_everything_current("--confirm-no-type-was-ever-removed" in flags,
+                                        including_unmapped="--including-unmapped-columns" in flags)
     if sys.argv[1:2] in (["--adopt"], ["--adopt-none"]):
         parser = argparse.ArgumentParser(prog=f"erase {sys.argv[1]}")
         parser.add_argument("table")

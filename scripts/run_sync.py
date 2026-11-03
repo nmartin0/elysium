@@ -434,7 +434,6 @@ def _refresh_embeddings(sync, config, data_dir, embedder=None, clock=None) -> di
     """Brings every declared type's vectors up to date with its gold, in
     the deployment's time budget, and drops the vectors of a type no
     longer declared. Returns {type: RefreshReport} for what it did."""
-    import time
     from pathlib import Path
 
     from core.deployment_loader import build_embedder
@@ -1019,7 +1018,6 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
     # aloud. One in four billion against a few runs a day.
     run_id = uuid.uuid4().hex[:8]
     # WALL CLOCK, because it is compared with when tables first held data.
-    sync_began = time.time()
     print(f"run {run_id}")
 
     accepted = set(accept_deletions or ())
@@ -1242,7 +1240,7 @@ def run_sync(runtime_paths=None, accept_deletions: set | None = None,
         # the sync's verdict: a table that could not record is reported by
         # erasure as unreachable, not skipped.
         try:
-            record_key_columns(sync._catalog, config.schema, created_since=sync_began)
+            record_key_columns(sync._catalog, config.schema)
         except Exception as exc:  # noqa: BLE001 - metadata, never the sync's verdict
             print(f"WARNING erasure keys not recorded: {exc}", file=sys.stderr)
 

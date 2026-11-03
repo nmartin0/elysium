@@ -17,6 +17,7 @@ import logging
 import sqlite3
 
 import pyarrow.parquet as pq
+import yaml
 
 from core.deployment_loader import load_deployment
 from core.mirror.catalog import open_mirror_catalog
@@ -188,7 +189,7 @@ class TestATableWrittenBeforeTheRecordExisted:
         assert "Restore the type and sync" in errors and "--adopt" in errors and "drop it in the lake" in errors
         assert "primary_sql.customers" not in errors              # known to the ontology
 
-    def test_the_next_sync_records_it_for_a_type_that_still_exists_but_does_not_call_it_complete(
+    def test_the_next_sync_records_it_and_calls_it_complete_because_every_column_is_mapped(
             self, tag_lake):  # noqa: F811
         _sync(tag_lake)
         _forget_what_tables_recorded(tag_lake, ["gold.Customer", "primary_sql.customers"])
@@ -200,9 +201,9 @@ class TestATableWrittenBeforeTheRecordExisted:
         for identifier in ("gold.Customer", "primary_sql.customers"):
             assert recorded_key_columns(catalog.load_table(identifier)) == {
                 "customer_id": {"Customer"}}, identifier
-        # It already held data, so what a type removed earlier kept there cannot be known.
+        # Whatever its age: every column it has is one the ontology maps, so nothing can hide there.
         schema = load_deployment(tag_lake.config_dir).schema
-        assert {"gold.Customer", "primary_sql.customers"} <= set(survey(catalog, schema).partly_known)
+        assert not {"gold.Customer", "primary_sql.customers"} & set(survey(catalog, schema).partly_known)
 
 
 class TestWhatTheRegisterAndTheSyncSay:
@@ -254,7 +255,7 @@ class TestWhatTheRegisterAndTheSyncSay:
         assert ErasureRegister(tag_lake.data_dir / "erasures.db").incomplete() == []
 
 
-def _remove_tag_through_the_ui(paths, strip=False, notices=None):
+def _remove_tag_through_the_ui(paths, strip=False, notices=None, before_removal=None):
     """Sync, optionally make every table as an older sync left it, then remove
     Tag as a person would -- and NO sync afterwards."""
     from api.app import create_app
@@ -269,6 +270,8 @@ def _remove_tag_through_the_ui(paths, strip=False, notices=None):
     client = TestClient(create_app(paths))
     client.app.state.user_directory.create_user("ops", "correct-pw", "us-west", "remover")
     _login(client, "ops", "correct-pw")
+    if before_removal is not None:
+        before_removal(client)
     for what in (TAGS_LINK, TAG):
         _deprecate(client, what)
         response = remove(client, what)
@@ -289,9 +292,10 @@ class TestRemovingATypeRecordsItsTablesFirst:
 
         for table in ("bronze_primary_sql.tags", "primary_sql.tags", "gold.Tag"):
             assert all(str(row.get("tag_id")) != str(tag_id) for row in _rows(tag_lake, table)), table
-        # Honest about the rest: they existed before the record, so they are partly known.
-        assert code == 2 and "NOT COMPLETE" in errors, printed + errors
-        assert "no key columns known" not in errors
+        # Every column of every Tag table was mapped when the removal recorded them, so nothing of
+        # Tag is partly known: the erasure is complete however old the tables were.
+        assert code == 0, printed + errors
+        assert "no key columns known" not in errors and "NOT COMPLETE" not in errors
 
     def test_a_removal_with_an_unreadable_lake_goes_ahead_and_says_what_it_could_not_record(
             self, tag_lake, monkeypatch):  # noqa: F811
@@ -308,6 +312,61 @@ class TestRemovingATypeRecordsItsTablesFirst:
         assert all(notice and "could not be read" in notice and "--adopt" in notice for notice in notices)
         assert "the lake is not there" not in " ".join(notices)
 
+    def test_a_removal_while_a_sync_runs_does_not_touch_the_lake_and_says_so(
+            self, tag_lake, monkeypatch):  # noqa: F811
+        import contextlib as _contextlib
+
+        import api.routes
+        import core.mirror.sync_lock
+
+        recorded: list = []
+        monkeypatch.setattr("core.mirror.erasure.record_key_columns",
+                            lambda *args, **kwargs: recorded.append(args))
+
+        @_contextlib.contextmanager
+        def busy(lock_path):
+            yield False
+        notices: list = []
+
+        _remove_tag_through_the_ui(
+            tag_lake, notices=notices,
+            before_removal=lambda client: monkeypatch.setattr(core.mirror.sync_lock, "single_writer", busy))
+
+        assert api.routes and recorded == []
+        assert all(notice and "A sync was running" in notice and "--adopt-all-current" in notice
+                   for notice in notices)
+
+    def test_approving_a_waiting_change_records_the_tables_first_too(self, tag_lake, monkeypatch):  # noqa: F811
+        """Every path that can drop a type takes the record first, not only the removal."""
+        import api.routes
+
+        calls: list = []
+        real = api.routes._record_erasure_keys_before
+        monkeypatch.setattr(api.routes, "_record_erasure_keys_before",
+                            lambda request: calls.append("recorded") or real(request))
+        policy = yaml.safe_load((tag_lake.config_dir / "policy.yaml").read_text())
+        policy["roles"]["approver"] = {"allowed_actions": ["manage:roles"]}
+        (tag_lake.config_dir / "policy.yaml").write_text(yaml.safe_dump(policy, sort_keys=False))
+        client = _remove_tag_through_the_ui(tag_lake)
+        calls.clear()
+        ontology = (tag_lake.config_dir / "ontology_schema.yaml").read_text()
+        from core.config_editing import digest
+        from core.config_proposals import ConfigProposalStore
+        from tests.integration.test_removal_from_the_ui import _csrf_headers, _login
+        proposal_id = ConfigProposalStore(
+            tag_lake.data_dir / "config_proposals.db").propose(
+            "shape", "a note", {"ontology_schema.yaml": ontology + "\n# a note\n"},
+            {"ontology_schema.yaml": digest(ontology)}, "test", "ops")
+        client.cookies.clear()
+        client.app.state.user_directory.create_user("boss", "correct-pw", "us-west", "approver")
+        _login(client, "boss", "correct-pw")
+
+        response = client.post(f"/api/admin/config-proposals/{proposal_id}/approve",
+                               headers=_csrf_headers(client))
+
+        assert response.status_code == 200, response.text
+        assert calls == ["recorded"]
+
     def test_a_removal_that_could_record_carries_no_notice(self, tag_lake):  # noqa: F811
         notices: list = []
         _remove_tag_through_the_ui(tag_lake, notices=notices)
@@ -316,6 +375,17 @@ class TestRemovingATypeRecordsItsTablesFirst:
 
 
 class TestAdoptingALegacyTable:
+    def test_keys_and_ids_for_one_column_are_both_kept_and_a_link_alone_makes_a_key(self, tag_lake):  # noqa: F811
+        from scripts.erase import adopt
+
+        _remove_tag_and_sync_again(tag_lake)
+        catalog = open_mirror_catalog(tag_lake.data_dir / "mirror")
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert adopt("gold.Tag", "tag_id=Customer", "tag_id=Tag", None, False, paths=tag_lake) == 0
+            assert recorded_key_columns(catalog.load_table("gold.Tag"))["tag_id"] == {"Customer", "Tag"}
+            assert adopt("gold_history.Tag", None, None, "tag_id=Tag:Customer", False, paths=tag_lake) == 0
+        assert "Customer" in recorded_key_columns(catalog.load_table("gold_history.Tag"))["tag_id"]
+
     def test_the_operators_statement_makes_the_tables_searchable_and_complete(self, tag_lake):  # noqa: F811
         from scripts.erase import adopt
 
@@ -354,8 +424,9 @@ class TestWriteRefusesWhileATableCannotBeFullySearched:
 
         code, _printed, errors = _erase(tag_lake, "Customer", customer, reachable_now=False)
 
-        assert code == 2 and "NOT ERASED" in errors and "gold.Tag" in errors
+        assert code == 3 and "NOT ERASED" in errors and "gold.Tag" in errors     # 3: refused, nothing erased
         assert "--adopt-all-current" in errors and "--erase-reachable-now" in errors
+        assert "--adopt-none" in errors
         assert any(row["customer_id"] == customer for row in _rows(tag_lake, "primary_sql.customer_tags"))
         assert ErasureRegister(tag_lake.data_dir / "erasures.db").erasures() == []
 
@@ -411,4 +482,4 @@ class TestAdoptingEverythingTheOntologyMaps:
         # and so the lake is still not erasable in one go: it says why
         customer = "cust_001"
         code, _printed, refused = _erase(tag_lake, "Customer", customer, reachable_now=False)
-        assert code == 2 and "gold.Tag" in refused
+        assert code == 3 and "gold.Tag" in refused

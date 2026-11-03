@@ -2441,6 +2441,9 @@ export interface LabelEditResult {
   diff: string[]
   to_generation?: number | null
   proposal_id?: string | null
+  /** Something to know that is not an error: a removal that could not record, in the lake, what an
+   *  erasure will need. */
+  notice?: string | null
 }
 
 export async function previewLabels(digest: string, changes: LabelChange[]): Promise<LabelPreview> {

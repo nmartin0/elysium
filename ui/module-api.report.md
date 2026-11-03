@@ -461,6 +461,7 @@ export interface LabelEditResult {
     diff: string[];
     to_generation?: number | null;
     proposal_id?: string | null;
+    notice?: string | null;
 }
 
 export interface LabelPreview {
