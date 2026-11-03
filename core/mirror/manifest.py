@@ -49,12 +49,12 @@ from typing import Any
 import yaml
 from pyarrow.fs import FileSelector
 
+from core.lake_names import MANIFEST_PREFIX
+
 logger = logging.getLogger(__name__)
 
-# WHERE MANIFESTS LIVE, under a name no ontology could collide with:
-# a namespace is a silo name, and a leading underscore is not legal in
-# one.
-MANIFEST_PREFIX = "_elysium"
+# WHERE MANIFESTS LIVE is MANIFEST_PREFIX (core/lake_names.py): a name
+# no silo may have, because a silo's namespace would be written into it.
 
 # WHAT MAY BE PUBLISHED, named one by one.
 #

@@ -1032,7 +1032,7 @@ CONTROLS = [
     Control(
         describes="R12: a many-field column carries the union",
         path="core/mirror/classifications.py",
-        old='        _merge(by_table.setdefault(f"{_GOLD_HISTORY}.{object_type}", {}), "values", everything)',
+        old='        _merge(by_table.setdefault(f"{GOLD_HISTORY_NAMESPACE}.{object_type}", {}), "values", everything)',  # noqa: E501
         new='        pass',
         tests=["tests/unit/test_classifications_propagate.py::TestWhereTheLabelsGo::test_a_column_holding_any_field_s_values_carries_every_label"],
     ),
@@ -1302,8 +1302,8 @@ CONTROLS = [
     Control(
         describes="R13 removed types: a table that recorded nothing is partly known though the schema knows keys",
         path="core/mirror/erasure.py",
-        old='            if not known.complete or (identifier.startswith("gold.")',
-        new='            if (identifier.startswith("gold.")',
+        old='            if not known.complete or (identifier.startswith(f"{GOLD_NAMESPACE}.")',
+        new='            if (identifier.startswith(f"{GOLD_NAMESPACE}.")',
         tests=["tests/unit/test_erasure_removed_types.py::TestWhatRecordingNeverForgets::test_a_shared_table_written_before_the_record_is_reported_partly_known"],
     ),
     Control(
@@ -2743,8 +2743,8 @@ CONTROLS = [
     Control(
         describes="R33: an erased person's cleaned cells are erased with them",
         path="core/mirror/erasure.py",
-        old="    if namespace.startswith((\"quarantine_\", \"cleaning_\")):\n        # Both record findings by OBJECT ID",  # noqa: E501
-        new="    if namespace.startswith((\"quarantine_\",)):\n        # Both record findings by OBJECT ID",
+        old="    if namespace.startswith((QUARANTINE_PREFIX, CLEANING_PREFIX)):\n        # Both record findings by OBJECT ID",  # noqa: E501
+        new="    if namespace.startswith((QUARANTINE_PREFIX,)):\n        # Both record findings by OBJECT ID",
         tests=["tests/unit/test_cleaning_is_recorded_per_cell.py::test_an_erased_person_s_cells_go_with_them"],
     ),
     Control(
@@ -9310,6 +9310,20 @@ CONTROLS = [
         old="npm ci && npm run build",
         new="npm install && npm run build",
         tests=["tests/unit/test_install_script_copies_what_exists.py::test_the_ui_is_installed_with_npm_ci_and_never_npm_install"],
+    ),
+    Control(
+        describes="a silo may not be named after the manifest directory or the conflicts layer",
+        path="core/lake_names.py",
+        old="    GOLD_NAMESPACE, GOLD_HISTORY_NAMESPACE, GOLD_CONFLICTS_NAMESPACE, MANIFEST_PREFIX,\n)",
+        new="    GOLD_NAMESPACE, GOLD_HISTORY_NAMESPACE,\n)",
+        tests=["tests/unit/test_a_silo_may_not_be_named_after_a_layer.py::TestNamesThatCollide::test_a_layer_namespace_is_refused"],
+    ),
+    Control(
+        describes="the integrity check compares a derived layer's name whole, not by its first letters",
+        path="core/mirror/integrity.py",
+        old="    return namespace in NON_SOURCE_NAMES or namespace.startswith(NON_SOURCE_PREFIXES)",
+        new='    return namespace.startswith("gold") or namespace.startswith(NON_SOURCE_PREFIXES)',
+        tests=["tests/unit/test_a_silo_may_not_be_named_after_a_layer.py::TestTheReservedSetItself::test_a_silo_named_like_a_derived_layer_but_longer_is_still_a_source"],
     ),
 ]
 

@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
-QUARANTINE_PREFIX = "quarantine_"
+from core.lake_names import QUARANTINE_PREFIX
 
 
 @dataclass(frozen=True)

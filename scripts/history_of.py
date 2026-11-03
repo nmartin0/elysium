@@ -16,6 +16,7 @@ import csv
 import sys
 
 from core.deployment_loader import load_deployment, resolve_runtime_paths
+from core.lake_names import BRONZE_PREFIX, CHANGELOG_PREFIX
 from core.mirror.catalog import open_mirror_catalog
 from core.mirror.changelog import AsOf, scd2_versions
 from core.mirror.sync_targets import resolve_sync_targets
@@ -33,7 +34,7 @@ def run(table: str, object_id: "str | None" = None, paths=None, out=sys.stdout,
         return 1
     catalog = open_mirror_catalog(paths.data_dir / "mirror", dict(config.mirror_storage))
     try:
-        entries = catalog.load_table(f"changelog_{silo}.{table_name}").scan().to_arrow().to_pylist()
+        entries = catalog.load_table(f"{CHANGELOG_PREFIX}{silo}.{table_name}").scan().to_arrow().to_pylist()
     except Exception:  # noqa: BLE001 - no changelog yet is an answer, not a crash
         print(f"No changelog for {table} yet: it is written from the second sync on.",
               file=sys.stderr)
@@ -45,7 +46,7 @@ def run(table: str, object_id: "str | None" = None, paths=None, out=sys.stdout,
         # that did not exist yet is left out.
         # BRONZE, not silver: the changelog holds bronze's text, and an
         # answer mixing the two forms is two answers (see AsOf).
-        current = catalog.load_table(f"bronze_{silo}.{table_name}").scan().to_arrow().to_pylist()
+        current = catalog.load_table(f"{BRONZE_PREFIX}{silo}.{table_name}").scan().to_arrow().to_pylist()
         reader = AsOf(versions, current, target.id_column)
         ids = sorted({str(row.get(target.id_column)) for row in current}
                      | {str(version.get(target.id_column)) for version in versions})

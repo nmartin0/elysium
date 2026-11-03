@@ -43,6 +43,7 @@ from typing import cast
 import pyarrow as pa
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
+from core.lake_names import GOLD_CONFLICTS_NAMESPACE
 from core.mirror.changelog import MAX_DELETED_FRACTION
 from core.mirror.fusion import FIELD_SOURCES_COLUMN, FUSED_FROM_COLUMN, fuse
 from core.mirror.gold_arrow import audit_arrow, conform_arrow, with_derived
@@ -609,7 +610,7 @@ def build_gold(catalog, object_type: str, type_def: dict, silver_rows: list[dict
     return result
 
 
-CONFLICT_NAMESPACE = "gold_conflicts"
+CONFLICT_NAMESPACE = GOLD_CONFLICTS_NAMESPACE
 
 CONFLICT_SCHEMA = pa.schema([
     ("entity_id", pa.string()),

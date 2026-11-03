@@ -57,6 +57,7 @@ from pyiceberg.exceptions import (
     NoSuchTableError,
 )
 
+from core.lake_names import BRONZE_PREFIX, CHANGELOG_PREFIX, CLEANING_PREFIX, QUARANTINE_PREFIX
 from core.mirror.bronze_text import ENCODINGS_PROPERTY, MIXED, bronze_text, column_encoding
 from core.mirror.catalog import open_mirror_catalog
 from core.mirror.changelog import MAX_DELETED_FRACTION, diff_snapshot_tables
@@ -742,7 +743,7 @@ class IcebergMirrorSync(MirrorSync):
         # path (roadmap item 8). Asked here, it costs one table load
         # this sync was going to do anyway.
         broken = unreadable_tables(
-            self._catalog, (f"{silo_name}.{table_name}", f"bronze_{silo_name}.{table_name}"),
+            self._catalog, (f"{silo_name}.{table_name}", f"{BRONZE_PREFIX}{silo_name}.{table_name}"),
         )
         if broken:
             raise ValueError(describe_disagreement(broken))
@@ -1220,7 +1221,7 @@ class IcebergMirrorSync(MirrorSync):
         None when bronze could not be written (which _write_bronze
         tolerates, with a warning)."""
         try:
-            table = self._catalog.load_table(f"bronze_{silo_name}.{table_name}")
+            table = self._catalog.load_table(f"{BRONZE_PREFIX}{silo_name}.{table_name}")
         except (NoSuchTableError, NoSuchNamespaceError):
             return None
         snapshot = table.current_snapshot()
@@ -1237,7 +1238,7 @@ class IcebergMirrorSync(MirrorSync):
         it. Appended, never overwritten: a run's findings do not erase
         the last run's.
         """
-        namespace = f"quarantine_{silo_name}"
+        namespace = f"{QUARANTINE_PREFIX}{silo_name}"
         identifier = f"{namespace}.{table_name}"
         detected_at = datetime.now(UTC).isoformat()
         rows = [
@@ -1313,7 +1314,7 @@ class IcebergMirrorSync(MirrorSync):
         snapshot of an identical one. A failure here is WARNED and does
         not fail the sync -- this explains silver, it is not silver.
         """
-        namespace = f"cleaning_{silo_name}"
+        namespace = f"{CLEANING_PREFIX}{silo_name}"
         identifier = f"{namespace}.{table_name}"
         if transformed.cleaned_cells_not_kept:
             logger.warning(
@@ -1455,7 +1456,7 @@ class IcebergMirrorSync(MirrorSync):
                 table_name.casefold() in {name.casefold() for name in tables}:
             return
         try:
-            held = {name[-1] for name in self._catalog.list_tables(f"bronze_{silo_name}")}
+            held = {name[-1] for name in self._catalog.list_tables(f"{BRONZE_PREFIX}{silo_name}")}
         except (NoSuchNamespaceError, NoSuchTableError):
             held = set()
         others = sorted(tables - held - {table_name})
@@ -1480,7 +1481,7 @@ class IcebergMirrorSync(MirrorSync):
         """The columns the source had when bronze was last written, or None
         when nothing recorded them."""
         try:
-            table = self._catalog.load_table(f"bronze_{silo_name}.{table_name}")
+            table = self._catalog.load_table(f"{BRONZE_PREFIX}{silo_name}.{table_name}")
         except (NoSuchTableError, NoSuchNamespaceError):
             return None
         except Exception:  # noqa: BLE001
@@ -1488,7 +1489,7 @@ class IcebergMirrorSync(MirrorSync):
             # sync's own check reports it, naming the table and the repair,
             # and before any drift verdict -- failing here gave a bare file
             # error instead (found by the suite, 21 October).
-            broken = unreadable_tables(self._catalog, (f"bronze_{silo_name}.{table_name}",))
+            broken = unreadable_tables(self._catalog, (f"{BRONZE_PREFIX}{silo_name}.{table_name}",))
             if broken:
                 raise ValueError(describe_disagreement(broken)) from None
             return None
@@ -1699,7 +1700,7 @@ class IcebergMirrorSync(MirrorSync):
         full or unwritable disk, and Arrow refusing data it cannot
         represent.
         """
-        identifier = f"bronze_{silo_name}.{table_name}"
+        identifier = f"{BRONZE_PREFIX}{silo_name}.{table_name}"
         try:
             # EVERY COLUMN THE SOURCE HAS, not the declared ones.
             #
@@ -1861,8 +1862,8 @@ class IcebergMirrorSync(MirrorSync):
             # trust -- a test caught exactly that.
             self._refuse_suspected_partial_read(silo_name, table_name, row_count, hidden_rows)
 
-            if not self._catalog.namespace_exists(f"bronze_{silo_name}"):
-                self._catalog.create_namespace(f"bronze_{silo_name}")
+            if not self._catalog.namespace_exists(f"{BRONZE_PREFIX}{silo_name}"):
+                self._catalog.create_namespace(f"{BRONZE_PREFIX}{silo_name}")
             try:
                 table = self._catalog.load_table(identifier)
             except NoSuchTableError:
@@ -2173,7 +2174,7 @@ class IcebergMirrorSync(MirrorSync):
         ends of the comparison.
         """
         recorded_at = datetime.now(UTC).isoformat()
-        namespace = f"changelog_{silo_name}"
+        namespace = f"{CHANGELOG_PREFIX}{silo_name}"
         identifier = f"{namespace}.{table_name}"
 
         arrow_table = pa.table({
@@ -2241,7 +2242,7 @@ class IcebergMirrorSync(MirrorSync):
         missing fields and no explanation.
         """
         try:
-            table = self._catalog.load_table(f"bronze_{silo_name}.{table_name}")
+            table = self._catalog.load_table(f"{BRONZE_PREFIX}{silo_name}.{table_name}")
         except (NoSuchTableError, NoSuchNamespaceError):
             return None
 

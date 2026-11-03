@@ -32,12 +32,14 @@ into one table -- but a type with no id_field, or one linking to a
 type that is itself excluded, still is.
 """
 
+from core.lake_names import GOLD_NAMESPACE
 from core.ontology.link_types import is_reverse_link
 
-# The catalog namespace gold tables live in. DECLARED HERE, in the
-# ontology layer, because core.mirror may import core.ontology and not
-# the other way round -- and both need the same word.
-GOLD_NAMESPACE = "gold"
+# The catalog namespace gold tables live in is declared in
+# core/lake_names.py with every other name the pipeline reserves, and
+# re-exported here for the callers that import it from the ontology
+# layer (core.mirror may import core.ontology and not the other way
+# round).
 
 # Set on a gold-shaped storage block so anything downstream can tell
 # the two views apart without string-matching a namespace.

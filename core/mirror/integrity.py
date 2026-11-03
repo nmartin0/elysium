@@ -45,13 +45,12 @@ from pathlib import Path
 
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
-from core.mirror.gold_history import CHANGELOG_NAMESPACE as GOLD_HISTORY_NAMESPACE
+from core.lake_names import BRONZE_PREFIX, CHANGELOG_PREFIX, NON_SOURCE_NAMES, NON_SOURCE_PREFIXES
 from core.mirror.manifest import (
     describes_a_different_deployment,
     latest_published,
 )
 from core.mirror.quarantine_report import QUARANTINE_PREFIX
-from core.ontology.gold_view import GOLD_NAMESPACE
 
 
 @dataclass
@@ -129,7 +128,7 @@ def check_mirror(catalog, schema: dict | None = None,
 
     for identifier in sorted(silver):
         silo, table_name = identifier.split(".", 1)
-        bronze_identifier = f"bronze_{silo}.{table_name}"
+        bronze_identifier = f"{BRONZE_PREFIX}{silo}.{table_name}"
 
         if bronze_identifier not in bronze:
             # A SYNC THAT HALF-FAILED, or a layer built by hand. Bronze
@@ -231,14 +230,15 @@ def _partition_tables(catalog) -> tuple[set[str], set[str]]:
             name = ".".join(identifier)
             if _not_a_source_layer(identifier[0]):
                 continue
-            (bronze if name.startswith("bronze_") else silver).add(name)
+            (bronze if name.startswith(BRONZE_PREFIX) else silver).add(name)
     return silver, bronze
 
 
 # The namespaces the pipeline writes that are NOT a copy of a source
-# table (PA001-I1, PA001-F6.4).
-NON_SOURCE_NAMESPACES = ("changelog_", "cleaning_", GOLD_NAMESPACE, GOLD_HISTORY_NAMESPACE,
-                          QUARANTINE_PREFIX)
+# table (PA001-I1, PA001-F6.4): core/lake_names.py lists them. Gold,
+# its history and its conflicts used to be caught here only because
+# they all start with "gold".
+NON_SOURCE_NAMESPACES = (*NON_SOURCE_PREFIXES, *NON_SOURCE_NAMES)
 
 
 def _not_a_source_layer(namespace: str) -> bool:
@@ -267,7 +267,7 @@ def _not_a_source_layer(namespace: str) -> bool:
     namespace anywhere else would silently re-sort its tables into
     silver and bring the false alarm straight back.
     """
-    return namespace.startswith(NON_SOURCE_NAMESPACES)
+    return namespace in NON_SOURCE_NAMES or namespace.startswith(NON_SOURCE_PREFIXES)
 
 
 def _quarantined_rows(catalog, silver_identifier: str) -> int:
@@ -459,7 +459,7 @@ def _check_changelog_names_real_objects(catalog, silver: set[str],
 
     for identifier in sorted(silver):
         silo, table = identifier.split(".", 1)
-        changelog_identifier = f"changelog_{silo}.{table}"
+        changelog_identifier = f"{CHANGELOG_PREFIX}{silo}.{table}"
         try:
             entries = catalog.load_table(
                 changelog_identifier).scan().to_arrow().to_pylist()
@@ -630,7 +630,7 @@ def _check_catalog_covers_warehouse(catalog, warehouse_dir: Path,
         table_dir = metadata_dir.parent
         namespace = table_dir.parent.name
         identifier = f"{namespace}.{table_dir.name}"
-        if identifier not in known and not identifier.startswith("changelog_"):
+        if identifier not in known and not identifier.startswith(CHANGELOG_PREFIX):
             report.note(
                 f"{identifier}: data is on disk but the catalog does not list it, "
                 f"so nothing can read it"

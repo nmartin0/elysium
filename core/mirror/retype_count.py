@@ -34,6 +34,7 @@ from datetime import UTC, datetime
 
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
+from core.lake_names import BRONZE_PREFIX
 from core.mirror.iceberg_sync import SYNC_BATCH_ROWS
 from core.mirror.incremental import TEXT_COLUMNS_PROPERTY
 from core.mirror.transform import transform_rows
@@ -68,7 +69,7 @@ def count_unconvertible(catalog, silo: str, table: str, column: str, declared_ty
         return ConversionCount(name, column, False, why_not=why)
 
     try:
-        bronze = catalog.load_table(f"bronze_{silo}.{table}")
+        bronze = catalog.load_table(f"{BRONZE_PREFIX}{silo}.{table}")
     except (NoSuchTableError, NoSuchNamespaceError):
         return not_counted("bronze does not hold this table yet, so there is nothing to count")
     except Exception as e:  # noqa: BLE001 - "cannot count" is an answer here

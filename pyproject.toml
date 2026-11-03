@@ -232,6 +232,10 @@ layers = [
     # core/mirror writes them and core/ontology reads one, and the
     # contract forbids ontology reaching into mirror.
     "carried_columns",
+    # lake_names: the names the pipeline gives its own namespaces. A leaf
+    # importing nothing; the loader, the ontology layer and the mirror
+    # all read it.
+    "lake_names",
     "invisible_text",
     # What may be shown to somebody who did not ask for it. Sits beside
     # invisible_text and misleading_text: all three answer "is this

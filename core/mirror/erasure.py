@@ -59,6 +59,16 @@ from pathlib import Path
 
 import pyarrow as pa
 
+from core.lake_names import (
+    BRONZE_PREFIX,
+    CHANGELOG_PREFIX,
+    CLEANING_PREFIX,
+    GOLD_CONFLICTS_NAMESPACE,
+    GOLD_HISTORY_NAMESPACE,
+    GOLD_NAMESPACE,
+    GOLD_PREFIX,
+    QUARANTINE_PREFIX,
+)
 from core.sqlite_connection import add_column_if_missing, connection_with_schema
 
 logger = logging.getLogger(__name__)
@@ -357,10 +367,10 @@ def _join_copies(schema: dict, table: str) -> list[tuple[str, str]]:
 def table_key_columns(schema: dict, identifier: str) -> dict[str, set[str]]:
     """The key columns of ONE mirror table, whichever layer it is."""
     namespace, _, table = identifier.partition(".")
-    for prefix in ("bronze_", "changelog_"):
+    for prefix in (BRONZE_PREFIX, CHANGELOG_PREFIX):
         if namespace.startswith(prefix):
             return source_key_columns(schema).get((namespace[len(prefix):], table), {})
-    if namespace.startswith(("quarantine_", "cleaning_")):
+    if namespace.startswith((QUARANTINE_PREFIX, CLEANING_PREFIX)):
         # Both record findings by OBJECT ID, not by the source's columns:
         # the cleaning record (R33) holds a cell's before and after, so an
         # erased person's text is there too, and goes with them. A join
@@ -378,14 +388,14 @@ def table_key_columns(schema: dict, identifier: str) -> dict[str, set[str]]:
                     for index, column in enumerate(sorted(owners))}
         types = _storage_types(schema, silo, table)
         return {"object_id": types} if types else {}
-    if namespace == "gold" and table in schema:
+    if namespace == GOLD_NAMESPACE and table in schema:
         type_def = schema[table]
         columns = {type_def["id_field"]: {table}}
         for field_name, info in (type_def.get("fields") or {}).items():
             if info.get("type") == "link" and info.get("cardinality") == "one":
                 columns.setdefault(field_name, set()).add(info.get("target"))
         return columns
-    if namespace == "gold":
+    if namespace == GOLD_NAMESPACE:
         # A JOIN TABLE'S GOLD COPY (gold.customer_tags), which is no object
         # type. It carries the join table's own columns, so it has that
         # table's keys. Gold does not say which silo it came from: where
@@ -397,9 +407,9 @@ def table_key_columns(schema: dict, identifier: str) -> dict[str, set[str]]:
             for column, types in columns_of.get(key, {}).items():
                 found.setdefault(column, set()).update(types)
         return found
-    if namespace == "gold_history" and table in schema:
+    if namespace == GOLD_HISTORY_NAMESPACE and table in schema:
         return {schema[table]["id_field"]: {table}}
-    if namespace == "gold_conflicts" and table in schema:
+    if namespace == GOLD_CONFLICTS_NAMESPACE and table in schema:
         return {"entity_id": {table}}
     return source_key_columns(schema).get((namespace, table), {})
 
@@ -410,7 +420,7 @@ def table_roles(schema: dict, identifier: str) -> tuple[dict[str, set[str]], dic
     owns each link). Only the tables that hold a type's own rows have
     either -- the source layers and gold."""
     namespace, _, table = identifier.partition(".")
-    if namespace == "gold":
+    if namespace == GOLD_NAMESPACE:
         if table not in schema:
             return {}, {}
         type_def = schema[table]
@@ -418,9 +428,9 @@ def table_roles(schema: dict, identifier: str) -> tuple[dict[str, set[str]], dic
                 {field_name: {(table, info.get("target"))}
                  for field_name, info in (type_def.get("fields") or {}).items()
                  if info.get("type") == "link" and info.get("cardinality") == "one"})
-    if namespace.startswith(("quarantine_", "cleaning_", "gold_")):
+    if namespace.startswith((QUARANTINE_PREFIX, CLEANING_PREFIX, GOLD_PREFIX)):
         return {}, {}
-    for prefix in ("bronze_", "changelog_"):
+    for prefix in (BRONZE_PREFIX, CHANGELOG_PREFIX):
         if namespace.startswith(prefix):
             namespace = namespace[len(prefix):]
     columns = _source_columns(schema)
@@ -601,12 +611,12 @@ def unmapped_columns(catalog, schema: dict, identifier: str, table) -> list[str]
     source = mapped_source_columns(schema)
     if source is None:
         return columns or ["(schema cannot be resolved)"]
-    if namespace.startswith(("quarantine_", "cleaning_")):
+    if namespace.startswith((QUARANTINE_PREFIX, CLEANING_PREFIX)):
         silo = namespace.partition("_")[2]
-        fixed = set((QUARANTINE_SCHEMA if namespace.startswith("quarantine_") else CLEANING_SCHEMA).names)
+        fixed = set((QUARANTINE_SCHEMA if namespace.startswith(QUARANTINE_PREFIX) else CLEANING_SCHEMA).names)
         extra = [column for column in columns if column not in fixed]
         seen_source = False
-        for sibling in (f"bronze_{silo}.{name}", f"{silo}.{name}"):
+        for sibling in (f"{BRONZE_PREFIX}{silo}.{name}", f"{silo}.{name}"):
             try:
                 other = catalog.load_table(sibling)
             except Exception:  # noqa: BLE001 - absent is an answer
@@ -614,18 +624,18 @@ def unmapped_columns(catalog, schema: dict, identifier: str, table) -> list[str]
             seen_source = True
             extra += [f"{sibling}.{column}" for column in unmapped_columns(catalog, schema, sibling, other)]
         return extra if seen_source else [*extra, "(its source table is not in the lake)"]
-    if namespace == "gold":
+    if namespace == GOLD_NAMESPACE:
         if name in schema:
             mapped = set(schema[name].get("fields") or {}) | {schema[name]["id_field"]}
         else:
             mapped = {column for (_silo, table_name), names in source.items() if table_name == name
                       for column in names}
-    elif namespace == "gold_history":
+    elif namespace == GOLD_HISTORY_NAMESPACE:
         mapped = {schema[name]["id_field"], "values"} if name in schema else set()
-    elif namespace == "gold_conflicts":
+    elif namespace == GOLD_CONFLICTS_NAMESPACE:
         mapped = set(CONFLICT_SCHEMA.names) if name in schema else set()
     else:
-        mapped = source.get((namespace.partition("_")[2] if namespace.startswith(("bronze_", "changelog_"))
+        mapped = source.get((namespace.partition("_")[2] if namespace.startswith((BRONZE_PREFIX, CHANGELOG_PREFIX))
                              else namespace, name), set())
     return [column for column in columns if column not in mapped]
 
@@ -849,11 +859,11 @@ def survey(catalog, schema: dict, erased_types: "set[str] | None" = None) -> Rea
                     unreachable[identifier] = "no key columns known"
                 continue
             tail = identifier.partition(".")[2]
-            if not known.complete or (identifier.startswith("gold.") and tail not in schema
+            if not known.complete or (identifier.startswith(f"{GOLD_NAMESPACE}.") and tail not in schema
                                       and len(_join_copies(schema, tail)) > 1):
                 partly.append(identifier)
                 unmapped[identifier] = unmapped_columns(catalog, schema, identifier, table)
-            if identifier.startswith(("quarantine_", "cleaning_")):
+            if identifier.startswith((QUARANTINE_PREFIX, CLEANING_PREFIX)):
                 silo = identifier.partition(".")[0].partition("_")[2]
                 if len(_storage_types(schema, silo, tail)) > 1:
                     shared.append(identifier)
@@ -1104,7 +1114,7 @@ def purge(catalog, schema: dict, register: ErasureRegister) -> ErasureResult:
                     kept = current.filter(pa.array([not erased for erased in mask]))
                     table.overwrite(kept)
                     removed[identifier] = sum(mask)
-                    if identifier.startswith("gold.") and any(
+                    if identifier.startswith(f"{GOLD_NAMESPACE}.") and any(
                             name.startswith(f"{PUBLISHED_TAG}-") for name in table.metadata.refs):
                         # A NEW PUBLICATION, so readers -- who pin the newest
                         # tag -- move to the erased version.

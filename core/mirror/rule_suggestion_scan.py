@@ -12,6 +12,7 @@ data says is the schema's to declare.
 import re
 from collections import Counter
 
+from core.lake_names import BRONZE_PREFIX
 from core.rule_suggestions import ABSENCE, RANGE, suggestion_id
 
 # Values that usually mean "we did not have one" written as though
@@ -127,7 +128,7 @@ def scan(catalog, schema: dict, limit: int = 50_000) -> list[dict]:
         for target in _targets_for_type(type_def):
             silo, table, fields_by_column = target[0], target[1], target[5]
             try:
-                bronze = catalog.load_table(f"bronze_{silo}.{table}")
+                bronze = catalog.load_table(f"{BRONZE_PREFIX}{silo}.{table}")
             except Exception:  # noqa: BLE001 - not synced yet is not an error here
                 continue
             columns = [column for column in fields_by_column

@@ -40,6 +40,7 @@ import sys
 from pathlib import Path
 
 from core.deployment_loader import resolve_runtime_paths
+from core.lake_names import BRONZE_PREFIX
 from core.mirror.catalog import open_mirror_catalog
 from core.mirror.rule_suggestion_scan import (  # noqa: F401 - re-exported for its tests
     DISGUISED_ABSENCES,
@@ -84,7 +85,7 @@ def main() -> int:
 
     reported = 0
     for namespace in sorted(catalog.list_namespaces()):
-        if not namespace[0].startswith("bronze_"):
+        if not namespace[0].startswith(BRONZE_PREFIX):
             continue
         for identifier in sorted(catalog.list_tables(namespace)):
             name = ".".join(identifier)

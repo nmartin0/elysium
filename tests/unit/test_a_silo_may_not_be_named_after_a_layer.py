@@ -39,7 +39,7 @@ def _silos(*names):
 
 
 class TestNamesThatCollide:
-    @pytest.mark.parametrize("name", ["gold", "gold_history"])
+    @pytest.mark.parametrize("name", ["gold", "gold_history", "gold_conflicts", "_elysium"])
     def test_a_layer_namespace_is_refused(self, name):
         with pytest.raises(ValueError, match=name):
             _refuse_reserved_silo_names(_silos(name))
@@ -130,3 +130,102 @@ class TestTheReservedSetItself:
         assert CHANGELOG_NAMESPACE in RESERVED_SILO_NAMES
         assert QUARANTINE_PREFIX in RESERVED_SILO_PREFIXES
         assert "bronze_" in RESERVED_SILO_PREFIXES
+
+    def test_the_loader_reads_the_one_declaration(self):
+        import core.lake_names as lake_names
+
+        assert RESERVED_SILO_NAMES is lake_names.RESERVED_SILO_NAMES
+        assert RESERVED_SILO_PREFIXES is lake_names.RESERVED_SILO_PREFIXES
+
+    def test_every_namespace_constant_the_mirror_declares_is_reserved(self):
+        """Derived from the mirror code, not from a list written here:
+        every module-level `*_NAMESPACE` or `*_PREFIX` string in
+        core/mirror and scripts must be a reserved name or prefix (or be
+        on the short list of things that are not lake names)."""
+        import ast
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parent.parent.parent
+        # Not catalog namespaces: the OpenLineage job namespace and the
+        # marker on synthetic evaluation rows.
+        not_lake_names = {"DEFAULT_NAMESPACE", "SYNTHETIC_PREFIX"}
+        found = {}
+        for folder in ("core/mirror", "scripts"):
+            for path in (root / folder).glob("*.py"):
+                for node in ast.parse(path.read_text()).body:
+                    if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+                            and isinstance(node.value.value, str)):
+                        for target in node.targets:
+                            if (isinstance(target, ast.Name)
+                                    and target.id.endswith(("_NAMESPACE", "_PREFIX"))
+                                    and target.id not in not_lake_names):
+                                found[f"{path.name}:{target.id}"] = node.value.value
+        # The module-level constants now live in core/lake_names.py, so
+        # the mirror declares none of its own: a new one is a new
+        # layer, and has to be declared there.
+        assert found == {}, f"declare these in core/lake_names.py instead: {found}"
+
+    @staticmethod
+    def _undeclared_heads(source: str) -> list[str]:
+        """Literal namespace heads handed to a catalog call that are not
+        a reserved name or prefix."""
+        import ast
+
+        from core.lake_names import RESERVED_SILO_NAMES as names
+        from core.lake_names import RESERVED_SILO_PREFIXES as prefixes
+
+        calls = {"create_namespace", "namespace_exists", "load_table", "list_tables",
+                 "create_table", "drop_table"}
+        undeclared = []
+        for node in ast.walk(ast.parse(source)):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr in calls and node.args):
+                continue
+            first = node.args[0]
+            if isinstance(first, ast.JoinedStr) and first.values \
+                    and isinstance(first.values[0], ast.Constant):
+                head = first.values[0].value
+            elif isinstance(first, ast.Constant) and isinstance(first.value, str):
+                head = first.value
+            else:
+                continue
+            namespace = head.split(".")[0]
+            if namespace and not (namespace in names or namespace.startswith(prefixes)):
+                undeclared.append(f"line {node.lineno}: {head!r}")
+        return undeclared
+
+    def test_no_mirror_code_builds_a_namespace_from_an_undeclared_prefix(self):
+        """A literal `f"archive_{silo}"` handed to the catalog is a new
+        layer nobody reserved."""
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parent.parent.parent
+        undeclared = []
+        for folder in ("core", "scripts", "api"):
+            for path in (root / folder).rglob("*.py"):
+                undeclared += [f"{path.relative_to(root)} {u}"
+                               for u in self._undeclared_heads(path.read_text())]
+        assert undeclared == [], undeclared
+
+    def test_that_scan_notices_an_undeclared_prefix_and_passes_declared_ones(self):
+        """Its own control: a scan that found nothing anywhere would
+        make the test above pass for ever."""
+        assert self._undeclared_heads('catalog.load_table(f"archive_{silo}.{t}")') \
+            == ["line 1: 'archive_'"]
+        assert self._undeclared_heads('catalog.create_namespace("scratch")') \
+            == ["line 1: 'scratch'"]
+        assert self._undeclared_heads('catalog.load_table(f"bronze_{silo}.{t}")') == []
+        assert self._undeclared_heads('catalog.create_namespace("gold_conflicts")') == []
+
+    def test_a_silo_named_like_a_derived_layer_but_longer_is_still_a_source(self):
+        """`goldmine` is accepted as a silo name, so the integrity check
+        must treat its tables as source copies; it used to test
+        startswith("gold") and skip them."""
+        from core.mirror.integrity import _not_a_source_layer
+
+        assert _not_a_source_layer("gold")
+        assert _not_a_source_layer("gold_history")
+        assert _not_a_source_layer("gold_conflicts")
+        assert _not_a_source_layer("changelog_p")
+        assert not _not_a_source_layer("goldmine")
+        assert not _not_a_source_layer("bronze_p")

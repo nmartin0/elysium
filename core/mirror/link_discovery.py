@@ -32,6 +32,8 @@ share its three values.
 import re
 from dataclasses import dataclass
 
+from core.lake_names import BRONZE_PREFIX
+
 MIN_COVERAGE = 0.95
 MIN_DISTINCT = 3
 
@@ -115,7 +117,7 @@ def bronze_rows(catalog, limit: int = 50_000):
     """A rows_for() over the mirror's bronze tables."""
     def rows_for(silo: str, table: str):
         try:
-            return catalog.load_table(f"bronze_{silo}.{table}").scan(limit=limit).to_arrow().to_pylist()
+            return catalog.load_table(f"{BRONZE_PREFIX}{silo}.{table}").scan(limit=limit).to_arrow().to_pylist()
         except Exception:  # noqa: BLE001 - not synced is not an error here
             return None
     return rows_for

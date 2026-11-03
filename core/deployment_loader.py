@@ -59,6 +59,7 @@ from core.functions.registry import validate_function_declarations
 from core.immutable import deep_freeze
 from core.intermediate_layer.audit import AuditLog
 from core.intermediate_layer.policy_validation import validate_role_coherence, validate_roles
+from core.lake_names import RESERVED_SILO_NAMES, RESERVED_SILO_PREFIXES
 from core.llm.agent_features import OFF as OFF_FEATURES
 from core.llm.agent_features import AgentFeatures, features_from_config
 from core.llm.concurrency_limited_adapter import ConcurrencyLimitedLLMAdapter
@@ -445,10 +446,10 @@ def _require_str(value, description: str) -> None:
         )
 
 
-# Namespaces the pipeline writes for itself. A silo may not be called
-# one of these, nor anything that would produce one (PA001-G10).
-RESERVED_SILO_NAMES = ("gold", "gold_history")
-RESERVED_SILO_PREFIXES = ("bronze_", "changelog_", "quarantine_", "cleaning_")
+# Namespaces the pipeline writes for itself (core/lake_names.py, which
+# lists them all): a silo may not be called one of these, nor anything
+# that would produce one (PA001-G10).
+# (RESERVED_SILO_NAMES and RESERVED_SILO_PREFIXES are imported above.)
 
 
 def _refuse_system_column_names(schema_raw: dict) -> None:

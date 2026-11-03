@@ -148,6 +148,7 @@ from core.export import filename_for, to_csv
 from core.filters import FieldFilter, FilterError, as_equality_conditions, parse_filters
 from core.identity_decisions import APPROVED, REJECTED, MergeDecisionStore
 from core.intermediate_layer.auth import UserRecord, authorize
+from core.lake_names import BRONZE_PREFIX
 from core.llm.synthesis_prompt import synthesize_insight
 from core.masked_review import agreement_pattern, masked_comparison, withheld_fields
 from core.mirror.expectation_warnings import ExpectationWarnings
@@ -3402,7 +3403,7 @@ def _tables_needing_rebuild(request: Request, schema: dict) -> list[str]:
     def source_columns_of(identifier: str):
         silo, _, table = identifier.partition(".")
         try:
-            recorded = catalog.load_table(f"bronze_{silo}.{table}").properties.get(SOURCE_COLUMNS_PROPERTY)
+            recorded = catalog.load_table(f"{BRONZE_PREFIX}{silo}.{table}").properties.get(SOURCE_COLUMNS_PROPERTY)
         except (NoSuchTableError, NoSuchNamespaceError):
             return None
         return set(json.loads(recorded)) if recorded else None
@@ -6187,7 +6188,7 @@ def admin_mirror_route(request: Request,
             "last_synced_at": synced_at.isoformat() if synced_at else None,
             "silver_rows": _row_count(catalog, f"{target.silo_name}.{target.table_name}"),
             "bronze_rows": _row_count(
-                catalog, f"bronze_{target.silo_name}.{target.table_name}",
+                catalog, f"{BRONZE_PREFIX}{target.silo_name}.{target.table_name}",
             ),
             # WHAT WAS HELD BACK, beside the row counts it explains
             # (the invisible-quarantine risk). A quarantined row is absent from

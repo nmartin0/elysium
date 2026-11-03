@@ -34,9 +34,10 @@ from typing import Any
 import pyarrow as pa
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
+from core.lake_names import GOLD_HISTORY_NAMESPACE
 from core.mirror.changelog import diff_snapshots
 
-CHANGELOG_NAMESPACE = "gold_history"
+CHANGELOG_NAMESPACE = GOLD_HISTORY_NAMESPACE
 
 # What a changelog row holds. The object's id and what happened to it,
 # plus the values AS OF that change -- stored as text, because this

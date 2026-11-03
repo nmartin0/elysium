@@ -41,6 +41,14 @@ core/ontology/classifications.compile_label_access.
 import json
 import logging
 
+from core.lake_names import (
+    BRONZE_PREFIX,
+    CHANGELOG_PREFIX,
+    CLEANING_PREFIX,
+    GOLD_CONFLICTS_NAMESPACE,
+    GOLD_HISTORY_NAMESPACE,
+    QUARANTINE_PREFIX,
+)
 from core.mirror.sync_targets import _targets_for_type
 from core.ontology.classifications import field_classifications
 from core.ontology.gold_view import GOLD_NAMESPACE
@@ -51,10 +59,6 @@ logger = logging.getLogger(__name__)
 CLASSIFICATIONS_PROPERTY = "elysium.classifications"
 
 # Namespaces of the derived tables, as their writers name them.
-_CHANGELOG = "changelog_{silo}"
-_QUARANTINE = "quarantine_{silo}"
-_GOLD_HISTORY = "gold_history"
-_GOLD_CONFLICTS = "gold_conflicts"
 
 
 def _merge(into: dict[str, set], column: str, labels) -> None:
@@ -84,17 +88,17 @@ def classifications_by_table(object_types: dict) -> dict[str, dict[str, list[str
                 _merge(source_labels, column, labels_by_field.get(field_name))
             if not source_labels:
                 continue
-            for identifier in (f"bronze_{silo}.{table}", f"{silo}.{table}",
-                               f"{_CHANGELOG.format(silo=silo)}.{table}"):
+            for identifier in (f"{BRONZE_PREFIX}{silo}.{table}", f"{silo}.{table}",
+                               f"{CHANGELOG_PREFIX}{silo}.{table}"):
                 for column, labels in source_labels.items():
                     _merge(by_table.setdefault(identifier, {}), column, labels)
-            _merge(by_table.setdefault(f"{_QUARANTINE.format(silo=silo)}.{table}", {}),
+            _merge(by_table.setdefault(f"{QUARANTINE_PREFIX}{silo}.{table}", {}),
                    "value", set().union(*source_labels.values()))
             # THE CLEANING RECORD (R33) holds a cell's text before and
             # after, from any classified column -- so both carry every
             # label this table's columns carry, as quarantine's value does.
             for column in ("before", "after"):
-                _merge(by_table.setdefault(f"cleaning_{silo}.{table}", {}),
+                _merge(by_table.setdefault(f"{CLEANING_PREFIX}{silo}.{table}", {}),
                        column, set().union(*source_labels.values()))
 
         gold = by_table.setdefault(f"{GOLD_NAMESPACE}.{object_type}", {})
@@ -106,8 +110,8 @@ def classifications_by_table(object_types: dict) -> dict[str, dict[str, list[str
             if info.get("type") == "link" and is_reverse_link(info):
                 continue
             _merge(gold, field_name, field_labels)
-        _merge(by_table.setdefault(f"{_GOLD_HISTORY}.{object_type}", {}), "values", everything)
-        conflicts = by_table.setdefault(f"{_GOLD_CONFLICTS}.{object_type}", {})
+        _merge(by_table.setdefault(f"{GOLD_HISTORY_NAMESPACE}.{object_type}", {}), "values", everything)
+        conflicts = by_table.setdefault(f"{GOLD_CONFLICTS_NAMESPACE}.{object_type}", {})
         _merge(conflicts, "chosen", everything)
         _merge(conflicts, "losing", everything)
 
