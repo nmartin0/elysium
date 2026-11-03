@@ -12,6 +12,30 @@ section 11) and are covered by the same licence.
 Rule: every later change to a file under `screen/` is appended to the table
 below (file, what, why). A change that is not listed here is a bug.
 
+## Stub, don't delete (owner, 2 November 2026)
+
+The web UI from God's Eye View stays as upstream has it, so that upstream
+updates keep merging with few conflicts. From now on, unused or unwanted
+features are STUBBED (switched off, made inert, hidden from the UI, or
+cut at a single seam) and not deleted, and upstream's text, branding,
+build config, dependencies and settings strings are left alone unless
+they break an owner rule or the app.
+
+- Slices 1 to 5 already deleted a lot (see their tables). Those deletions
+  stay; they are the reason a merge of upstream changes to those files
+  needs a hand-resolve. New work does not add to that list.
+- Still pending the owner's decision and, when decided, to be STUBBED
+  (flag off, layer hidden) rather than deleted: the `s2-ghostmaps`
+  conflict-map layer and the Cyber sonar.
+- Left as upstream, on purpose: the "God's Eye View" page title and
+  title bar, the "Provider Settings" wording, `.env.example` (its
+  OpenAI, Gemini and Mapillary keys are inert in this fork), the
+  `unsafe-eval` and `maps.googleapis.com` allowances in the build's CSP,
+  and package.json dependencies no source imports.
+- The README is explicit that data does not yet come through Elysium:
+  the screen still serves its own `/api/*` routes until the Elysium
+  module page and data path exist.
+
 ## Changes versus upstream 8978801dfd2a
 
 | File | What | Why |

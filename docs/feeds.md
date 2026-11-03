@@ -87,7 +87,11 @@ here does.
   terms, so one switch removes it.
 - **Aircraft: adsb.lol**, with the door rules above.
 - **Basemap: a properly licensed one is to be found** (research under
-  way); Esri's keyless imagery is not used.
+  way); Esri's keyless imagery is not to be used. **Status, 2 November
+  2026: the screen still ships upstream's keyless Esri World Imagery as
+  its default**, because the web UI is kept as upstream has it (see
+  FORK.md, "Stub, don't delete"). This line is therefore not yet met;
+  it is met when the owner's basemap choice is built.
 
 ## Recommendation (as researched)
 
