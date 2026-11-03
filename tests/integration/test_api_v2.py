@@ -233,6 +233,16 @@ class TestPageTokens:
         assert {response.status_code for response in responses} == {400}
         assert len({json.dumps(without_instance(r.json()), sort_keys=True) for r in responses}) == 1
 
+    def test_a_token_that_is_not_ascii_is_the_same_refusal_not_a_fault(self, client):
+        login(client, "v2tok_utf8")
+        token = self.first_token(client)
+        plain = client.get("/api/v2/objects/Transaction?pageSize=1&pageToken=garbage")
+
+        for bad in ("abc.%C3%A9", f"{token}%C3%A9", "%C3%A9.%C3%A9"):
+            response = client.get(f"/api/v2/objects/Transaction?pageSize=1&pageToken={bad}")
+            assert response.status_code == 400, bad
+            assert without_instance(response.json()) == without_instance(plain.json())
+
     def test_an_expired_token_is_refused(self, client, monkeypatch):
         login(client, "v2tok_old")
         token = self.first_token(client)
@@ -462,6 +472,99 @@ class TestObjectSets:
 
         assert {r.status_code for r in responses} == {404}
         assert len({json.dumps(without_instance(r.json()), sort_keys=True) for r in responses}) == 1
+
+
+class TestWhatAnErrorMayReveal:
+    """Nothing the mediator says reaches the caller, and a hidden link or a
+    storage layout is never the subject of a sentence."""
+
+    @pytest.fixture
+    def mediator(self, client):
+        return client.app.state.generation.mediator
+
+    def test_a_link_to_a_type_the_caller_cannot_read_is_an_unknown_field_everywhere(self, client, mediator,
+                                                                                  monkeypatch):
+        import types
+
+        grants = frozenset({"read:Transaction", "read:Transaction.transaction_id", "read:Transaction.amount",
+                            "read:Transaction.customer_id"})
+        roles = dict(mediator.roles)
+        # The user directory knows the fixture's roles, so the role the user
+        # is created with is re-granted for this test.
+        roles["editor"] = types.MappingProxyType({**mediator.roles["editor"], "allowed_actions": grants})
+        monkeypatch.setattr(mediator, "roles", types.MappingProxyType(roles))
+        login(client, "v2hiddenlink", role="editor")
+        filtered = {"objectSet": {"type": "filter", "objectSet": TRANSACTIONS, "where": {
+            "type": "eq", "field": "customer_id", "value": "cust_001"}}}
+
+        def asked(path, body):
+            return post(client, path, body)
+
+        for field_name in ("customer_id", "nonexistent_field"):
+            responses = [
+                asked("objectSets/loadObjects", {"objectSet": TRANSACTIONS, "orderBy": [{"field": field_name}]}),
+                asked("objectSets/count", {"objectSet": {**filtered["objectSet"], "where": {
+                    "type": "startsWith", "field": field_name, "value": "cust_001"}}}),
+                asked("objectSets/aggregate", {"objectSet": TRANSACTIONS, "groupBy": [{"field": field_name}],
+                                               "metrics": [{"type": "count"}]}),
+                asked("objectSets/aggregate", {"objectSet": TRANSACTIONS,
+                                               "metrics": [{"type": "sum", "field": field_name}]})]
+            assert {r.status_code for r in responses} == {400}, [r.text for r in responses]
+            assert all("Unknown field" in r.json()["detail"] and "link" not in r.json()["detail"]
+                       for r in responses)
+            if field_name == "customer_id":
+                shown = [r.json()["detail"].replace("customer_id", "F") for r in responses]
+            else:
+                assert shown == [r.json()["detail"].replace(field_name, "F") for r in responses]
+
+    def test_fields_of_two_storages_are_one_400_on_load_count_and_aggregate(self, client, mediator, monkeypatch):
+        monkeypatch.setitem(mediator.schema["Customer"]["fields"]["risk_score"], "storage", "risk_db")
+        login(client, "v2storages")
+        both = {"type": "and", "value": [{"type": "eq", "field": "name", "value": "x"},
+                                         {"type": "gt", "field": "risk_score", "value": 1}]}
+        filtered = {"type": "filter", "objectSet": CUSTOMERS, "where": both}
+
+        responses = [
+            post(client, "objectSets/loadObjects", {"objectSet": filtered}),
+            post(client, "objectSets/count", {"objectSet": filtered}),
+            post(client, "objectSets/loadObjects", {"objectSet": CUSTOMERS,
+                                                    "orderBy": [{"field": "name"}, {"field": "risk_score"}]}),
+            post(client, "objectSets/aggregate", {"objectSet": CUSTOMERS, "groupBy": [{"field": "name"}],
+                                                  "metrics": [{"type": "sum", "field": "risk_score"}]})]
+
+        assert [r.status_code for r in responses] == [400] * 4, [r.text for r in responses]
+        assert {r.json()["detail"] for r in responses} == {"These fields cannot be combined in one request."}
+
+    def test_a_mediator_refusal_nobody_foresaw_is_a_fixed_400_never_its_words(self, client, mediator, monkeypatch):
+        def refuse(*args, **kwargs):
+            raise ValueError("group_by 'customer_id' is a link on Transaction; silo primary_sql")
+
+        monkeypatch.setattr(mediator, "aggregate_measures", refuse)
+        login(client, "v2foreseen")
+
+        # Only the aggregation refuses here, so the answer is the aggregate
+        # route's own handling and not the shared one's.
+        aggregate = post(client, "objectSets/aggregate", {"objectSet": TRANSACTIONS, "metrics": [{"type": "count"}]})
+        monkeypatch.setattr(mediator, "search_object", refuse)
+        loaded = post(client, "objectSets/loadObjects", {"objectSet": TRANSACTIONS})
+        counted = post(client, "objectSets/count", {"objectSet": TRANSACTIONS})
+
+        for response in (aggregate, loaded, counted):
+            assert response.status_code == 400
+            assert response.json()["detail"] == "This request could not be evaluated."
+            assert "link" not in response.text and "primary_sql" not in response.text
+
+    def test_a_request_that_reads_too_many_objects_is_refused_not_cut_short(self, client, monkeypatch):
+        from core.ontology import object_sets as sets
+
+        monkeypatch.setattr(sets, "MAX_SCANNED_ROWS", 5)
+        login(client, "v2scanned")
+        twice = {"type": "union", "objectSets": [TRANSACTIONS, TRANSACTIONS]}
+
+        for path in ("objectSets/loadObjects", "objectSets/count"):
+            response = post(client, path, {"objectSet": twice})
+            assert response.status_code == 400 and "more than 5 objects" in response.json()["detail"], path
+        assert post(client, "objectSets/count", {"objectSet": TRANSACTIONS}).json()["count"] == 4
 
 
 class TestErrorsAndTheRequestId:

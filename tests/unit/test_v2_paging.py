@@ -84,3 +84,11 @@ def test_the_key_is_made_once_and_shared(tmp_path):
     assert len(first) == 32
     assert (tmp_path / "v2_page_token.key").stat().st_mode & 0o077 == 0
     assert list(tmp_path.iterdir()) == [tmp_path / "v2_page_token.key"]
+
+
+@pytest.mark.parametrize("bad", ["abc.é", "abc.\ud800", "é.abc", "a.béc", "‮.‮"])
+def test_a_token_that_is_not_ascii_is_invalid_not_a_fault(bad):
+    # hmac.compare_digest raises TypeError on a str that is not ASCII, and
+    # the caller chooses the string: that was a 500.
+    with pytest.raises(InvalidToken):
+        redeem(KEY, bad, "alice", QUERY)

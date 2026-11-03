@@ -9165,8 +9165,8 @@ CONTROLS = [
     Control(
         describes="v2 sets: only text equality is handed to the search",
         path="core/ontology/object_sets.py",
-        old='        if spec.data_type == "string" and all(isinstance(v, str) for v in values):\n',
-        new="        if all(isinstance(v, str) for v in values):\n",
+        old='        if spec.data_type == "string" and not spec.is_link and all(isinstance(v, str) for v in values):\n',  # noqa: E501
+        new="        if not spec.is_link and all(isinstance(v, str) for v in values):\n",
         tests=["tests/integration/test_object_sets_evaluation.py::TestThroughTheMediatorAndNowhereElse::"
                "test_only_text_equality_is_pushed_down"],
     ),
@@ -9368,6 +9368,113 @@ CONTROLS = [
         old="        if unknown:\n            return _report_invalid(config_dir, unknown)\n",
         new="        if False:\n            return _report_invalid(config_dir, unknown)\n",
         tests=["tests/unit/test_config_schema.py::test_the_linter_reports_the_same_keys_with_their_lines"],
+    ),
+    Control(
+        describes='v2 sets: the values filtering and sorting read hide a link whose target the caller cannot see',
+        path='core/ontology/mediator.py',
+        old='        self._withhold_hidden_link_targets(user_record, object_type, rows, context)\n        return rows\n',  # noqa: E501
+        new='        return rows\n',
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestARowOfTheTargetTheCallerCannotSeeMAC::test_a_hidden_link_matches_no_comparison',
+               'tests/integration/test_object_sets_hidden_links.py::TestARowOfTheTargetTheCallerCannotSeeMAC::test_a_hidden_link_is_null_to_isnull_as_it_is_to_get_field',
+               'tests/integration/test_object_sets_hidden_links.py::TestARowOfTheTargetTheCallerCannotSeeMAC::test_ordering_puts_hidden_links_with_the_nulls[True]'],
+    ),
+    Control(
+        describes='v2 sets: hiding link values is batched and logged as one bulk read of the target',
+        path='core/ontology/mediator.py',
+        old='            self.audit_log.log_bulk_read(\n                user_record.user_id, target_type, action,\n',
+        new="            self.audit_log.log_bulk_read(\n                user_record.user_id, target_type, action + '.x',\n",  # noqa: E501
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestARowOfTheTargetTheCallerCannotSeeMAC::test_masking_is_batched_and_logged_as_one_bulk_read'],
+    ),
+    Control(
+        describes='v2 sets: a link to a type the caller cannot read is refused like an unknown field',
+        path='core/ontology/object_sets.py',
+        old='        if raw is not None and is_link_field(raw) and not self.has_type(get_link_target(raw)):\n            raise _unknown_field(object_type, name)\n',  # noqa: E501
+        new='        if False:\n            raise _unknown_field(object_type, name)\n',
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestATargetTypeTheCallerCannotReadRBAC::test_no_filter_may_name_it[startsWith-cust_001]',
+               'tests/integration/test_object_sets_hidden_links.py::TestATargetTypeTheCallerCannotReadRBAC::test_no_ordering_may_name_it',
+               'tests/integration/test_object_sets_hidden_links.py::TestATargetTypeTheCallerCannotReadRBAC::test_no_grouping_or_metric_may_name_it',
+               'tests/integration/test_api_v2.py::TestWhatAnErrorMayReveal::test_a_link_to_a_type_the_caller_cannot_read_is_an_unknown_field_everywhere'],
+    ),
+    Control(
+        describes="v2 sets: a search is never narrowed by a link's value (no membership oracle)",
+        path='core/ontology/object_sets.py',
+        old='if spec.data_type == "string" and not spec.is_link and all(isinstance(v, str) for v in values):',
+        new='if spec.data_type == "string" and all(isinstance(v, str) for v in values):',
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestARowOfTheTargetTheCallerCannotSeeMAC::test_the_search_is_not_narrowed_by_a_link_value'],
+    ),
+    Control(
+        describes='v2 sets: the filter-node cap is one budget for the whole request',
+        path='core/ontology/object_sets.py',
+        old='        return Filter(child, parse_filter(raw["where"], caps))\n',
+        new='        return Filter(child, parse_filter(raw["where"]))\n',
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_filter_nodes_are_counted_across_every_filter_set'],
+    ),
+    Control(
+        describes='v2 sets: the `in` values cap is one budget for the whole request',
+        path='core/ontology/object_sets.py',
+        old='        caps.in_values.spend(len(value))\n',
+        new='',
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_in_values_are_counted_across_every_in'],
+    ),
+    Control(
+        describes='v2 sets: `in` matches by lookup in a set, not by scanning every value per row',
+        path='core/ontology/object_sets.py',
+        old='        if wanted_set is not None:\n',
+        new='        if False:\n',
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_in_matches_by_lookup_not_by_scanning_every_value'],
+    ),
+    Control(
+        describes='v2 sets: the rows the leaves of one request produce are capped in total and refused',
+        path='core/ontology/object_sets.py',
+        old='        if self.scanned > MAX_SCANNED_ROWS:\n',
+        new='        if False:\n',
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestOneBudgetForTheWholeRequest::test_rows_scanned_are_counted_across_every_leaf',
+               'tests/integration/test_api_v2.py::TestWhatAnErrorMayReveal::test_a_request_that_reads_too_many_objects_is_refused_not_cut_short'],
+    ),
+    Control(
+        describes='v2 sets: truncation is reported only when what the caller may see reached the ceiling',
+        path='core/ontology/object_sets.py',
+        old='        if outcome.scan_truncated and len(ids) >= mediator_module.MAX_SEARCH_SCAN:\n',
+        new='        if outcome.scan_truncated:\n',
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestTruncationDoesNotCountHiddenRows::test_v2_reports_it_only_when_the_visible_result_reached_the_ceiling'],
+    ),
+    Control(
+        describes='v2 sets: a forward search-around reads its sources as one logged bulk read',
+        path='core/ontology/mediator.py',
+        old='user_record.user_id, object_type, f"read:{object_type}.{link_field}",\n                considered=len(source_ids)',  # noqa: E501
+        new='user_record.user_id, object_type, f"read:{object_type}",\n                considered=len(source_ids)',
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestAForwardSearchAroundIsOneBulkRead::test_sources_are_logged_once_not_once_each'],
+    ),
+    Control(
+        describes='v2 sets: fields of more than one storage are refused with one fixed sentence',
+        path='core/ontology/object_sets.py',
+        old='        if len(storages) > 1:\n',
+        new='        if False:\n',
+        tests=['tests/integration/test_object_sets_hidden_links.py::TestOneStorageOnly::test_fields_of_two_storages_are_refused_with_one_sentence',
+               'tests/integration/test_object_sets_hidden_links.py::TestOneStorageOnly::test_ordering_and_grouping_across_storages',
+               'tests/integration/test_api_v2.py::TestWhatAnErrorMayReveal::test_fields_of_two_storages_are_one_400_on_load_count_and_aggregate'],
+    ),
+    Control(
+        describes="v2 api: an aggregate's mediator refusal is a fixed sentence, not the mediator's words",
+        path='api/v2/object_sets.py',
+        old='        except ValueError:\n            raise invalid_argument(UNEVALUABLE_SENTENCE) from None\n',
+        new='        except ValueError as error:\n            raise invalid_argument(str(error)) from None\n',
+        tests=['tests/integration/test_api_v2.py::TestWhatAnErrorMayReveal::test_a_mediator_refusal_nobody_foresaw_is_a_fixed_400_never_its_words'],
+    ),
+    Control(
+        describes='v2 api: an unforeseen ValueError from load or count is a 400, not a fault',
+        path='api/v2/loading.py',
+        old='    except ValueError:\n        raise invalid_argument(UNEVALUABLE_SENTENCE) from None\n',
+        new='    except ZeroDivisionError:\n        raise invalid_argument(UNEVALUABLE_SENTENCE) from None\n',
+        tests=['tests/integration/test_api_v2.py::TestWhatAnErrorMayReveal::test_a_mediator_refusal_nobody_foresaw_is_a_fixed_400_never_its_words'],
+    ),
+    Control(
+        describes='v2 paging: a page token is compared as bytes, so a non-ASCII one is invalid not a 500',
+        path='api/v2/paging.py',
+        old='    if not hmac.compare_digest(presented, expected):\n',
+        new='    if not hmac.compare_digest(signature, _signature(key, user_id, query, payload)):\n',
+        tests=['tests/unit/test_v2_paging.py::test_a_token_that_is_not_ascii_is_invalid_not_a_fault[abc.\\xe9]',
+               'tests/integration/test_api_v2.py::TestPageTokens::test_a_token_that_is_not_ascii_is_the_same_refusal_not_a_fault'],
     ),
 ]
 

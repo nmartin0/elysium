@@ -36,16 +36,25 @@ from core.ontology.object_sets import (
     prepare,
 )
 
+#: What a caller is told when evaluating a set raised an error the checks
+#: did not foresee. Fixed: the mediator's own text can name a hidden link or
+#: the layout of a type's storage.
+UNEVALUABLE_SENTENCE = "This request could not be evaluated."
+
 
 @contextmanager
 def translated() -> Iterator[None]:
-    """The two ways a set can be refused, as the two ways the API answers."""
+    """The two ways a set can be refused, as the two ways the API answers.
+    Any other ValueError is a 400 with a fixed sentence, never a 500 and
+    never the mediator's words."""
     try:
         yield
     except ObjectSetNotFound:
         raise not_found() from None
     except ObjectSetError as error:
         raise invalid_argument(str(error), error.parameters) from None
+    except ValueError:
+        raise invalid_argument(UNEVALUABLE_SENTENCE) from None
 
 
 def split_csv(values: "list[str] | None") -> tuple[str, ...]:
@@ -112,6 +121,7 @@ def load_page(call: Call, node: ObjectSet, raw_query: Any, *, order_by: tuple[Or
         fields = checked_select(view, object_type, select, default_all)
         for term in order_by:  # refused BEFORE anything is read
             view.filterable(object_type, term.field)
+        view.one_storage(object_type, [term.field for term in order_by])
         evaluated = evaluated_set(call, view, prepared)
         ids = ordered(call.mediator, call.user, view, object_type, evaluated.ids, order_by,
                       call.context)

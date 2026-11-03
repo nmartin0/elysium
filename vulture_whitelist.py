@@ -704,3 +704,5 @@ survivorship  # object type and field key
 value_type  # field key
 via_target_column  # bindings key
 zero_dates_as_null  # silo key
+two_storages  # pytest fixtures taken as parameters for their effect (tests/integration/test_object_sets_hidden_links.py)
+open_transactions  # same file

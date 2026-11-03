@@ -118,7 +118,15 @@ def redeem(key: bytes, token: str, user_id: str, query: str, now: float | None =
     payload, _, signature = token.partition(".")
     if not payload or not signature or len(token) > 512:
         raise InvalidToken
-    if not hmac.compare_digest(signature, _signature(key, user_id, query, payload)):
+    # BYTES, not text: compare_digest raises TypeError on a str that is not
+    # ASCII, which a caller controls, and that was a 500. A lone surrogate
+    # (which can arrive through a query string) cannot be encoded at all.
+    try:
+        presented = signature.encode()
+        expected = _signature(key, user_id, query, payload).encode()
+    except UnicodeError:
+        raise InvalidToken from None
+    if not hmac.compare_digest(presented, expected):
         raise InvalidToken
     try:
         held = json.loads(_unb64(payload))

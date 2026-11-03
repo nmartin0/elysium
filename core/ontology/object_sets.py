@@ -66,13 +66,21 @@ ask about nulls on purpose.
 import decimal
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from core.filters import FieldFilter
+from core.ontology import mediator as mediator_module
 from core.ontology.field_types import coerce
 from core.ontology.mediator import SearchOutcome
-from core.ontology.schema import get_link_target, id_sort_key, is_link_field, is_searchable_field, sort_key
+from core.ontology.schema import (
+    get_field_storage_name,
+    get_link_target,
+    id_sort_key,
+    is_link_field,
+    is_searchable_field,
+    sort_key,
+)
 
 # --- the caps. Every one is a refusal with a message, never a silent cut. ---
 
@@ -85,7 +93,16 @@ MAX_FILTER_DEPTH = 6
 MAX_FILTER_NODES = 100
 #: Values in one `in`, and keys in one `static` set.
 MAX_IN_VALUES = 1000
+#: Values across EVERY `in` of one request. MAX_IN_VALUES alone bounds one
+#: node; 64 nodes of 1000 values each, matched against every row, is the
+#: shape this closes.
+MAX_TOTAL_IN_VALUES = 2000
 MAX_STATIC_KEYS = 10_000
+#: Objects the leaves of one request (base, static, searchAround) may
+#: produce in total, across all nodes. Each leaf is bounded by the
+#: mediator's own scan ceiling; this bounds their SUM, and a request over
+#: it is refused, never silently cut short.
+MAX_SCANNED_ROWS = 50_000
 #: The longest text a filter value may be.
 MAX_VALUE_LENGTH = 1000
 #: Fields one request may sort by, select, or measure.
@@ -118,6 +135,10 @@ class ObjectSetError(ValueError):
 class ObjectSetNotFound(Exception):
     """An object type that is unknown OR that the caller may not read --
     one outcome, so the API can answer both with the same 404."""
+
+
+#: THE ONE SENTENCE for fields no single read can combine.
+MULTI_STORAGE_SENTENCE = "These fields cannot be combined in one request."
 
 
 def _unknown_field(object_type: str, name: Any) -> ObjectSetError:
@@ -225,11 +246,21 @@ class _Budget:
         self.limit = limit
         self.what = what
 
-    def spend(self) -> None:
-        self.left -= 1
+    def spend(self, count: int = 1) -> None:
+        self.left -= count
         if self.left < 0:
-            raise ObjectSetError(f"At most {self.limit} {self.what} nodes in one request.",
+            raise ObjectSetError(f"At most {self.limit} {self.what} in one request.",
                                  {"limit": self.limit})
+
+
+class _Caps:
+    """The budgets of ONE request, shared by every node in it: a cap that
+    each filter node got afresh would be a cap per node, not per request."""
+
+    def __init__(self) -> None:
+        self.sets = _Budget(MAX_SET_NODES, "object set nodes")
+        self.filters = _Budget(MAX_FILTER_NODES, "filter nodes")
+        self.in_values = _Budget(MAX_TOTAL_IN_VALUES, "`in` values")
 
 
 def _object(raw: Any, where: str) -> dict:
@@ -262,14 +293,14 @@ def _scalar(value: Any, where: str) -> Any:
 
 def parse_object_set(raw: Any) -> ObjectSet:
     """The wire form as a typed tree, or ObjectSetError."""
-    return _parse_set(raw, 1, _Budget(MAX_SET_NODES, "object set"))
+    return _parse_set(raw, 1, _Caps())
 
 
-def _parse_set(raw: Any, depth: int, budget: _Budget) -> ObjectSet:
+def _parse_set(raw: Any, depth: int, caps: _Caps) -> ObjectSet:
     if depth > MAX_SET_DEPTH:
         raise ObjectSetError(f"Object sets may nest at most {MAX_SET_DEPTH} deep.",
                              {"limit": MAX_SET_DEPTH})
-    budget.spend()
+    caps.sets.spend()
     raw = _object(raw, "An object set")
     kind = raw.get("type")
     if kind not in SET_TYPES:
@@ -294,31 +325,33 @@ def _parse_set(raw: Any, depth: int, budget: _Budget) -> ObjectSet:
         _only_keys(raw, {"objectSet", "where"}, where)
         if "objectSet" not in raw or "where" not in raw:
             raise ObjectSetError(f"{where} needs `objectSet` and `where`.")
-        child = _parse_set(raw["objectSet"], depth + 1, budget)
-        return Filter(child, parse_filter(raw["where"]))
+        child = _parse_set(raw["objectSet"], depth + 1, caps)
+        return Filter(child, parse_filter(raw["where"], caps))
     if kind == "searchAround":
         _only_keys(raw, {"objectSet", "link"}, where)
         if "objectSet" not in raw:
             raise ObjectSetError(f"{where} needs `objectSet`.")
-        child = _parse_set(raw["objectSet"], depth + 1, budget)
+        child = _parse_set(raw["objectSet"], depth + 1, caps)
         return SearchAround(child, _name(raw, "link", where))
     _only_keys(raw, {"objectSets"}, where)
     members = raw.get("objectSets")
     if not isinstance(members, list) or len(members) < 2:
         raise ObjectSetError(f"{where} needs `objectSets`, a list of at least two sets.")
-    return Combine(kind, tuple(_parse_set(member, depth + 1, budget) for member in members))
+    return Combine(kind, tuple(_parse_set(member, depth + 1, caps) for member in members))
 
 
-def parse_filter(raw: Any) -> FilterNode:
-    """The wire form of a filter as a typed tree, or ObjectSetError."""
-    return _parse_filter(raw, 1, _Budget(MAX_FILTER_NODES, "filter"))
+def parse_filter(raw: Any, caps: "_Caps | None" = None) -> FilterNode:
+    """The wire form of a filter as a typed tree, or ObjectSetError.
+    Inside a set the request's own `caps` are passed, so the filter and
+    `in` budgets are shared by every filter node of the request."""
+    return _parse_filter(raw, 1, caps or _Caps())
 
 
-def _parse_filter(raw: Any, depth: int, budget: _Budget) -> FilterNode:
+def _parse_filter(raw: Any, depth: int, caps: _Caps) -> FilterNode:
     if depth > MAX_FILTER_DEPTH:
         raise ObjectSetError(f"Filters may nest at most {MAX_FILTER_DEPTH} deep.",
                              {"limit": MAX_FILTER_DEPTH})
-    budget.spend()
+    caps.filters.spend()
     raw = _object(raw, "A filter")
     kind = raw.get("type")
     if kind not in FILTER_TYPES:
@@ -329,12 +362,12 @@ def _parse_filter(raw: Any, depth: int, budget: _Budget) -> FilterNode:
         members = raw.get("value")
         if not isinstance(members, list) or not members:
             raise ObjectSetError(f"{where} needs `value`, a non-empty list of filters.")
-        return Junction(kind, tuple(_parse_filter(member, depth + 1, budget) for member in members))
+        return Junction(kind, tuple(_parse_filter(member, depth + 1, caps) for member in members))
     if kind == "not":
         _only_keys(raw, {"value"}, where)
         if "value" not in raw:
             raise ObjectSetError(f"{where} needs `value`, a filter.")
-        return Not(_parse_filter(raw["value"], depth + 1, budget))
+        return Not(_parse_filter(raw["value"], depth + 1, caps))
     _only_keys(raw, {"field", "value"}, where)
     field_name = _name(raw, "field", where)
     if "value" not in raw:
@@ -346,6 +379,7 @@ def _parse_filter(raw: Any, depth: int, budget: _Budget) -> FilterNode:
         if len(value) > MAX_IN_VALUES:
             raise ObjectSetError(f"An `in` holds at most {MAX_IN_VALUES} values.",
                                  {"limit": MAX_IN_VALUES})
+        caps.in_values.spend(len(value))
         return In(field_name, tuple(_scalar(item, where) for item in value))
     if kind == "isNull":
         if not isinstance(value, bool):
@@ -488,6 +522,14 @@ class SchemaView:
     def filterable(self, object_type: str, name: Any) -> FieldSpec:
         """A field the set algebra may read a stored column of."""
         info = self._info(object_type, name)
+        # THE RAW SCHEMA DECIDES WHAT A LINK IS, not the caller's view of it:
+        # visible_schema shows a link to a type the caller is not told about
+        # as plain `data`, so a value the caller may not follow would be
+        # filterable and sortable -- prefix by prefix -- as if it were text.
+        # Such a field is refused in the words used for one that does not exist.
+        raw = ((self.declared.get(object_type) or {}).get("fields") or {}).get(name)
+        if raw is not None and is_link_field(raw) and not self.has_type(get_link_target(raw)):
+            raise _unknown_field(object_type, name)
         if not is_searchable_field(info):
             raise ObjectSetError(f"Field {name!r} on {object_type!r} is a reverse link; "
                                  f"it cannot be filtered or sorted on. Use searchAround.",
@@ -500,6 +542,19 @@ class SchemaView:
         is_id = name == self.visible[object_type]["id_field"]
         declared = None if is_id else self._declared_type(object_type, name)
         return FieldSpec(str(name), "string" if is_link or declared is None else declared, is_link, is_id)
+
+    def one_storage(self, object_type: str, names: "list[str]") -> None:
+        """Refuses fields backed by more than one storage, which no single
+        read can combine. The sentence names neither the fields nor the
+        storages: it is the same for every pair, so it teaches nothing of
+        how the type is laid out."""
+        declared = self.declared.get(object_type) or {}
+        fields = declared.get("fields") or {}
+        id_field = declared.get("id_field")
+        storages = {None if name == id_field else get_field_storage_name(fields.get(name) or {})
+                    for name in names}
+        if len(storages) > 1:
+            raise ObjectSetError(MULTI_STORAGE_SENTENCE, {"objectType": object_type})
 
     def link(self, object_type: str, name: str) -> str:
         """The target type of a DECLARED link the caller may read."""
@@ -588,6 +643,14 @@ def compile_filter(node: FilterNode, view: SchemaView, object_type: str,
         return lambda row: (v := _row_value(row, spec)) is not None and str(v).casefold().startswith(needle)
     if isinstance(node, In):
         wanted_values = [_filter_value(item, spec, object_type) for item in node.values]
+        try:
+            # A SET, so a row costs one lookup however many values there
+            # are; coerced first because 1, 1.0 and Decimal(1) are one value.
+            wanted_set = frozenset(wanted_values)
+        except TypeError:
+            wanted_set = None
+        if wanted_set is not None:
+            return lambda row: (v := _row_value(row, spec)) is not None and v in wanted_set
         return lambda row: (v := _row_value(row, spec)) is not None and any(v == item for item in wanted_values)
     # Compare
     if node.operator != "eq" and (spec.is_link or spec.is_id or spec.data_type not in _ORDERED_TYPES):
@@ -617,7 +680,11 @@ def _pushdown(node: FilterNode, view: SchemaView, object_type: str) -> list[Fiel
             return conditions
         spec = view.filterable(object_type, node.field)
         values = [node.value] if isinstance(node, Compare) else list(node.values)
-        if spec.data_type == "string" and all(isinstance(v, str) for v in values):
+        # NEVER A LINK: the search would test the raw foreign key, so a
+        # request naming a row the caller cannot see would narrow the
+        # result only if that row existed -- a membership test. The filter
+        # step applies the same test to the MASKED value, as get_field does.
+        if spec.data_type == "string" and not spec.is_link and all(isinstance(v, str) for v in values):
             conditions.append(FieldFilter(field=spec.name, operator="in", value=values))
     return conditions
 
@@ -632,7 +699,32 @@ class Run:
     user: Any
     context: Any
     visible: dict
-    outcome: SearchOutcome = field(default_factory=SearchOutcome)
+    #: Some leaf stopped at the scan ceiling AND what the caller may see of
+    #: it reached the ceiling. See take().
+    truncated: bool = False
+    #: Objects the leaves have produced so far, across the whole request.
+    scanned: int = 0
+
+    def take(self, ids: list, outcome: SearchOutcome) -> list:
+        """Counts what a leaf produced against the request's cap, and
+        decides whether it was cut short.
+
+        TRUNCATION IS REPORTED ONLY WHEN THE VISIBLE RESULT REACHED THE
+        CEILING. The mediator sets its flag when the rows it SCANNED (the
+        caller's and everyone else's, unless the security column was part
+        of the query) went past the ceiling, so the flag alone says how
+        many rows exist that the caller cannot see. A caller whose own
+        result fills the ceiling already knows that much. v1 reports the
+        mediator's flag as it is; this is v2's rule, and v1 is unchanged.
+        """
+        if outcome.scan_truncated and len(ids) >= mediator_module.MAX_SEARCH_SCAN:
+            self.truncated = True
+        self.scanned += len(ids)
+        if self.scanned > MAX_SCANNED_ROWS:
+            raise ObjectSetError(
+                f"This request reads more than {MAX_SCANNED_ROWS} objects across its sets; "
+                f"narrow them with filters.", {"limit": MAX_SCANNED_ROWS})
+        return ids
 
 
 class Prepared:
@@ -650,9 +742,10 @@ class _BaseStep(Prepared):
         self.conditions = conditions or []
 
     def ids(self, run: Run) -> list:
-        return list(run.mediator.search_object(
+        outcome = SearchOutcome()
+        return run.take(list(run.mediator.search_object(
             run.user, self.object_type, self.conditions, visible_schema=run.visible,
-            context=run.context, outcome=run.outcome))
+            context=run.context, outcome=outcome)), outcome)
 
 
 class _StaticStep(Prepared):
@@ -664,10 +757,11 @@ class _StaticStep(Prepared):
     def ids(self, run: Run) -> list:
         if not self.keys:
             return []
-        return list(run.mediator.search_object(
+        outcome = SearchOutcome()
+        return run.take(list(run.mediator.search_object(
             run.user, self.object_type,
             [FieldFilter(field=self.id_field, operator="in", value=list(self.keys))],
-            visible_schema=run.visible, context=run.context, outcome=run.outcome))
+            visible_schema=run.visible, context=run.context, outcome=outcome)), outcome)
 
 
 class _FilterStep(Prepared):
@@ -719,9 +813,10 @@ class _AroundStep(Prepared):
 
     def ids(self, run: Run) -> list:
         sources = self.child.ids(run)
-        return list(run.mediator.search_around_from(
+        outcome = SearchOutcome()
+        return run.take(list(run.mediator.search_around_from(
             run.user, self.child.object_type, sources, self.link,
-            context=run.context, outcome=run.outcome))
+            context=run.context, outcome=outcome)), outcome)
 
 
 def prepare(node: ObjectSet, view: SchemaView) -> Prepared:
@@ -735,6 +830,7 @@ def prepare(node: ObjectSet, view: SchemaView) -> Prepared:
         child = prepare(node.object_set, view)
         fields: dict[str, FieldSpec] = {}
         predicate = compile_filter(node.where, view, child.object_type, fields)
+        view.one_storage(child.object_type, list(fields))
         if isinstance(child, _BaseStep) and not child.conditions:
             child = _BaseStep(child.object_type, _pushdown(node.where, view, child.object_type))
         return _FilterStep(child, predicate, fields)
@@ -762,7 +858,7 @@ def evaluate(mediator: Any, user_record: Any, prepared: Prepared, view: SchemaVi
     in the mediator's own order."""
     run = Run(mediator, user_record, context, view.visible)
     ids = prepared.ids(run)
-    return Evaluated(prepared.object_type, ids, run.outcome.scan_truncated)
+    return Evaluated(prepared.object_type, ids, run.truncated)
 
 
 def ordered(mediator: Any, user_record: Any, view: SchemaView, object_type: str, ids: list,
@@ -771,6 +867,7 @@ def ordered(mediator: Any, user_record: Any, view: SchemaView, object_type: str,
     ties settled by the key so a page boundary never moves. A field the
     caller cannot read is refused exactly as an unknown one is."""
     specs = [view.filterable(object_type, term.field) for term in order_by]
+    view.one_storage(object_type, [spec.name for spec in specs])
     if not order_by or not ids:
         return sorted(ids, key=id_sort_key)
     rows = mediator.field_values_for_ids(
@@ -814,4 +911,6 @@ def metric_fields(view: SchemaView, object_type: str, metrics: tuple[Metric, ...
                     f"{object_type!r} is {'a link' if spec.is_link else spec.data_type}.",
                     {"objectType": object_type, "field": metric.field})
         measures.append({"name": metric.name, "aggregate": metric.aggregate, "field": metric.field})
+    view.one_storage(object_type, [name for name in dict.fromkeys(
+        [group_by, *(metric.field for metric in metrics)]) if name is not None])
     return measures

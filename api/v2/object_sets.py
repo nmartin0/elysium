@@ -30,7 +30,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
 
 from api.v2.context import Call, call
-from api.v2.loading import evaluated_set, load_page, prepared_set, translated
+from api.v2.loading import UNEVALUABLE_SENTENCE, evaluated_set, load_page, prepared_set, translated
 from api.v2.problems import invalid_argument
 from core.ontology.decimal_text import decimal_text
 from core.ontology.mediator import security_cache_scope
@@ -122,13 +122,16 @@ def aggregate(body: AggregateRequest, c: Call = Depends(call)) -> dict:
         view, prepared = prepared_set(c, node)
         measures = metric_fields(view, prepared.object_type, metrics, group_by)
         evaluated = evaluated_set(c, view, prepared)
+        # THE MEDIATOR'S WORDS ARE NEVER THE CALLER'S. Everything a caller
+        # can be told about a field or a storage was said by the checks
+        # above, in sentences that name nothing hidden; a ValueError from
+        # here is a refusal the checks did not foresee, and its text is
+        # written for a developer (it names links and storage layout).
         try:
             grouped = c.mediator.aggregate_measures(
                 c.user, prepared.object_type, [], group_by, measures, members=evaluated.ids)
-        except ValueError as error:
-            # Everything the field and metric checks above let through that
-            # the mediator still refuses is the caller's request, not a fault.
-            raise invalid_argument(str(error)) from None
+        except ValueError:
+            raise invalid_argument(UNEVALUABLE_SENTENCE) from None
     data = [{"group": {} if group_by is None else {group_by: _plain(group)},
              "metrics": {name: _plain(value) for name, value in values.items()}}
             for group, values in grouped.items()]

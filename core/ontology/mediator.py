@@ -2171,7 +2171,65 @@ class DataMediator:
         if not allowed or not field_names:
             return {}
         rows = self._read_fields_for_ids(user_record, object_type, set(allowed), field_names)
-        return {str(object_id): row for object_id, row in rows.items()}
+        rows = {str(object_id): row for object_id, row in rows.items()}
+        self._withhold_hidden_link_targets(user_record, object_type, rows, context)
+        return rows
+
+    def _withhold_hidden_link_targets(self, user_record: UserRecord, object_type: str, rows: dict,
+                                      context: RequestContext | None) -> None:
+        """Sets to None, in place, every forward-link value in `rows` whose
+        target the caller may not read: get_field()'s rule (NEW-1), applied
+        to a batch.
+
+        WITHOUT IT, filtering and sorting would see the RAW foreign key
+        that get_field() withholds, and `startsWith` or an ordering would
+        recover it a prefix at a time. A hidden link must behave as null
+        everywhere the values are used, so this is done where the values
+        are produced rather than in each user of them.
+
+        BATCHED: one security prefetch for the distinct targets of a field
+        and one check_access() per distinct target (a column of a million
+        rows pointing at a hundred customers is a hundred checks), logged
+        as ONE bulk read of the target type the way search_object() logs
+        its own, with every denied id named in it.
+        """
+        fields = (self.schema.get(object_type) or {}).get("fields") or {}
+        columns = {name for row in rows.values() for name in row}
+        for name in sorted(columns):
+            field_info = fields.get(name)
+            if field_info is None or not is_link_field(field_info) or is_reverse_link(field_info):
+                continue
+            target_type = get_link_target(field_info)
+            if target_type not in self.schema:
+                continue  # an opaque reference: nothing to enforce (see get_field)
+            distinct = list(dict.fromkeys(
+                element for row in rows.values() if row.get(name) is not None
+                for element in (row[name] if isinstance(row[name], list) else [row[name]])))
+            if not distinct:
+                continue
+            action = f"read:{target_type}"
+            self._prefetch_security_values(target_type, distinct)
+            visible = set()
+            denied = []
+            for target_id in distinct:
+                if check_access(self, user_record, self.roles, target_type, target_id, action,
+                                context, part_of_bulk_read=True):
+                    visible.add(target_id)
+                else:
+                    denied.append(target_id)
+            self.audit_log.log_bulk_read(
+                user_record.user_id, target_type, action,
+                considered=len(distinct), denied_object_ids=denied, fields_read=[],
+                security_values_seen=self._security_values_for(target_type, list(visible)),
+                request_id=context.request_id if context else None)
+            if not denied:
+                continue
+            for row in rows.values():
+                value = row.get(name)
+                if isinstance(value, list):
+                    row[name] = [element for element in value if element in visible]
+                elif value is not None and value not in visible:
+                    row[name] = None
 
     def _follow_link(self, user_record: UserRecord, object_type: str, source_ids: list,
                      link_field: str, context: RequestContext | None,
@@ -2196,9 +2254,25 @@ class DataMediator:
             # A FORWARD link -- the id lives on the source object
             # itself, so there is nothing to traverse in batch; reading
             # the field per source is already the whole operation.
+            #
+            # READ AS ONE BULK READ, not one get_field() per source: that
+            # wrote an audit line per source (a thousand sources, a
+            # thousand lines) and cost a read and a security check each.
+            # The sources have passed check_access(); the field's own
+            # RBAC is checked by _read_fields_for_ids; a target the caller
+            # may not read is dropped by the target loop below, as
+            # get_field()'s NEW-1 rule would drop it. The read is logged
+            # the way search_object() logs its own (log_bulk_read).
+            rows = self._read_fields_for_ids(user_record, object_type, set(source_ids), [link_field])
+            by_text = {str(source_id): row for source_id, row in rows.items()}
+            self.audit_log.log_bulk_read(
+                user_record.user_id, object_type, f"read:{object_type}.{link_field}",
+                considered=len(source_ids), denied_object_ids=[], fields_read=[link_field],
+                security_values_seen=self._security_values_for(object_type, list(source_ids)),
+                request_id=context.request_id if context else None)
             targets = []
             for source_id in source_ids:
-                value = self.get_field(user_record, object_type, source_id, link_field)
+                value = by_text.get(str(source_id), {}).get(link_field)
                 if value is None:
                     continue
                 targets.extend(value if isinstance(value, list) else [value])
