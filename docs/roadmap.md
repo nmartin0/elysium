@@ -24,7 +24,24 @@ rules (DR1-DR7), invariants (I1-I8), checklist rows (P1-P13), owner questions
 
 **Labels.** F = fact, with its source. J = judgement. E = estimate.
 Unlabelled text is specification. The platform Elysium models is called "the
-precedent"; no vendor or product name is ever written (`tests/unit/test_no_vendor_names.py`, T0.1).
+precedent".
+
+**The name rule (N62).** The name of the precedent's vendor and the names of
+that vendor's products must not appear anywhere in the repository (code,
+tests, documents, commit messages, file names); write "the precedent". Other
+product names (databases, tools, standards, libraries: PostgreSQL, systemd,
+Ollama, OpenAPI, Iceberg) are fine. One exception, by an explicit allowlist
+entry in the guard: the UI component toolkit Elysium depends on is published
+under that vendor's npm scope, so the scope may appear in `ui/package.json`,
+`ui/package-lock.json` and in `import` statements under `ui/` and `shell/`,
+and nowhere else, because a dependency's package name cannot be changed by
+Elysium and renaming the import would break the build. Enforced by
+`tests/unit/test_no_vendor_names.py` (T0.1 step 4(e)).
+
+**Design settlement (3 November 2026, pass 1).** The open designs X1-X14 of
+the final review are resolved in place (each marked "Resolved: X<n>") with
+decisions N46-N65; X8 waits on Q-KEY with both candidate designs written in
+T0.9. Missing contracts (C1-C18) are written into the Tier 0 contracts.
 
 Paths: `src/elysium/...` for the package, `docs/...` for documents (N42).
 Paths named `core/...` in older text mean `src/elysium/core/...`.
@@ -76,8 +93,13 @@ versioned resource set, N4), the **job** (all long-running work, T0.8) and
 the **audit event** (all records of who did what, T0.7).
 *Test:* `tests/unit/test_primitives_are_pinned.py` lists every registry
 decorator (`@kind`, `@job_kind`, `@proposal_kind`, `@effect_kind`,
-`@check_kind`, `@exporter`, `@health_check`, `@function_kind`, `@step`) and
-fails when a new registry appears without a decision id in its docstring.
+`@check_kind`, `@exporter`, `@health_check`, `@function_kind`,
+`@outbox_handler`, `@erasable`) and fails when a new registry appears without
+a decision id in its docstring (N63). Action effects register with
+`@effect_kind` in `elysium.actions.effects`; automation effects are a closed
+two-value vocabulary inside `elysium.automation.engine` (no registry); the
+agent's `STEPS` is a tuple, not a decorator; set kinds and filter operators
+are a closed table in `elysium.query.sets` (no registry).
 
 **DR2. Everything is a resource with the same verbs and the same conventions.**
 A list is `GET /api/v2/<res>` returning `{data, nextPageToken}`; one item is
@@ -90,6 +112,18 @@ update is `PUT` with `If-Match`; delete returns 204; any other operation is
 else). Errors are RFC 9457 problems with `errorName`, `errorInstanceId`,
 `parameters`. Every change is audited as `<area>.<event>` by the router layer,
 not by hand in each route.
+An operation on a collection or a singleton is `POST /api/v2/<res>/<verb>`.
+A singleton (`configuration`, `server`, `lake`, `health`, `setup`,
+`overview`) is `GET /api/v2/<res>` and `PUT /api/v2/<res>` with `If-Match`;
+`tests/routes_table.py::SINGLETONS` lists them. A write that goes through
+`resourceChanges` answers `201 + Location` (create), `200` (update) or `204`
+(delete) with the `ChangeReport` as the body when it was applied, and `202 +
+Location: /api/v2/proposals/{id}` with the `Proposal` as the body when it was
+staged (C5 shapes in T0.10). Path segments are camelCase (`resourceChanges`,
+`rebuildOwed`, `recoveryKey`); ids inside paths keep their own spelling. A
+write-only secret (`PUT /api/v2/admin/secrets/{name}`) answers 204 and has
+no GET. A list never carries a total; `count` on an object set is the one way
+to count (N64).
 *Test:* `tests/api/test_route_conventions.py`, parametrised over
 `tests/routes_table.py::iter_routes(app)`: shape, paging fields, problem
 bodies, no-store, audit on every non-GET.
@@ -217,7 +251,7 @@ merged and their acceptance commands pass):
 | # | Invariant | Proved by |
 |---|---|---|
 | I1 | **Uniform denial.** Unknown and unreadable look identical (types, keys, properties, proposals, actions, admin routes, validate calls). | byte-equal 404 bodies for unknown and denied, parametrised over the route table; no distinguishing audit write visible to the caller |
-| I2 | **Authorisation in one place.** | import-linter: `api`, `agent`, `automation`, `functions`, `apps`, `cli` import only the `query` and `actions` facades; only `elysium.access` calls `authorize`; only `elysium.access` produces `readable`, `executable` or `can*` booleans |
+| I2 | **Authorisation in one place.** | import-linter (T0.1B layers, N48): `api`, `agent`, `automation`, `functions`, `apps`, `cli` read objects only through `elysium.query` and write only through `elysium.actions` (and stage through `elysium.proposals`); only `elysium.query.reader` calls `check_access` for objects; only `elysium.access` calls `authorize`; only `elysium.access` produces `readable`, `executable` or `can*` booleans |
 | I3 | **MAC and RBAC on every read**, including expand, links, history, export, aggregate, subscriptions, automations, frames and the agent. | per-id `check_access` in the reader; route-table denial test; model validator (`security` or `unrestricted: true`); subscription keys filtered per recipient |
 | I4 | **Writes only through actions.** | forbidden-import contract; `resource_versions` never writes object rows; function proposals and quarantining checks land through a system action |
 | I5 | **Re-authorisation at approval.** | per proposal kind: revoke the approver's grant between propose and approve; approval returns the uniform refusal; one row per safeguard in the safeguard table |
@@ -276,11 +310,26 @@ add E-03 and E-07 if missing). That closes SEC-06 and SEC-11.
   secrets/                        # 0700, files 0400 (N6): master-key, backup-key, silo-<name>-password
   resources/                      # optional, file-provisioned, read-only in the UI (N4)
     silos/warehouse.yaml          #   kind: Silo
-    model/customer.yaml           #   kind: ObjectType (+ LinkType, ActionType)
+    object-types/customer.yaml    #   kind: ObjectType (a file may also hold its LinkTypes and ActionTypes)
+    link-types/  action-types/  functions/  automations/
     roles/analyst.yaml            #   kind: Role
-    configuration.yaml            #   kind: Configuration
     apps/astrolabe.yaml           #   kind: App
+    configuration.yaml            #   kind: Configuration
+  schemas/                        # written by `elysium init` and `elysium resource schemas --write`
+    silo.schema.json ...          #   one per kind, the target of each file's modeline
 ```
+
+**One layout for IN and OUT (N65, C18).** `<dir>/<plural kind>/<name>.yaml`
+with plurals `silos`, `object-types`, `link-types`, `action-types`, `roles`,
+`functions`, `automations`, `apps`, and `configuration.yaml` at the top.
+`resources.load_dir` reads every `*.yaml` under the directory recursively
+(an operator may group a type with its links in one file); the `resources`
+exporter writes the canonical layout, one resource per file, so
+`exports/resources/` is a valid `resources/` directory. `elysium init` writes
+`<config>/schemas/`; `elysium resource validate` warns (`E_SCHEMAS_STALE`,
+exit 0) when those schemas differ from the running version's. Builtin- and
+app-origin resources are never exported. Proof:
+`tests/unit/test_exports_roundtrip.py::test_export_then_apply_is_a_no_op`.
 
 `elysium.toml` (a typical install, complete):
 
@@ -292,7 +341,8 @@ listen = "127.0.0.1:8000"
 public_url = "https://elysium.example.org"
 trusted_proxies = []
 cookie_secure = true
-workers = 2
+workers = 2                                    # web worker processes (N47); the runner is one more
+ip_allow = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]   # INS-04's IPAddressAllow
 
 [paths]
 state = "/var/lib/elysium"                    # alias: ELYSIUM_STATE
@@ -301,6 +351,7 @@ secrets = "/etc/elysium/secrets"
 
 [storage]
 volume_encrypted = false
+lake_encryption = false                       # removed by T0.9 (encryption always on)
 master_key = { secretRef = "master-key" }
 
 [backup]
@@ -342,7 +393,7 @@ spec:
     email:       { type: string, labels: [pii] }
     lifetime_value: { type: decimal, derived: { sum: { link: transactions, property: amount } } }
   checks:
-    - { target: email, kind: pattern, config: { regex: "^[^@]+@[^@]+$" }, severity: moderate, on_fail: warn }
+    - { target: email, kind: pattern, config: { regex: "^[^@]+@[^@]+$" }, severity: moderate, onFail: warn }
   similarity: { properties: [full_name] }   # opt-in for similarTo (N28); absent = not searchable by similarity
   backing: { silo: warehouse, table: customers, key_column: customer_id }
 ---
@@ -377,9 +428,10 @@ kind: Configuration
 metadata: { name: default }
 spec:
   llm: { server: ollama, baseUrl: "http://127.0.0.1:11434", model: phi4-mini, timeoutSeconds: 600 }
+  timeZone: Europe/London                 # IANA; schedules and automation times are read in it (N53)
   schedules:
-    - { job: sync, cron: "17 * * * *" }
-    - { job: backup, cron: "41 2 * * *", keep: 14 }
+    - { job: sync, when: { hourly: { minute: 17 } } }
+    - { job: backup, when: { daily: { time: "02:41" } }, keep: 14 }
   sessions: { idleMinutes: 30, absoluteHours: 12 }
   limits: { bulkActionLimit: 20 }
 ---
@@ -421,9 +473,21 @@ every file it scaffolds. Built-in roles ship as
   elysium.db  erasure.db  scratch.db     # D4; WAL; PRAGMA user_version stamped (N35)
   lake/catalog.db  lake/warehouse/        # Iceberg; bronze, changelog, gold, gold_history (+silver if D9 keeps it)
   audit/                                  # audit-*.jsonl, lineage-*.jsonl; backed up, never rolled back
-  backups/  exports/  addons/<app>/  secrets/ (*.enc, N6)
-  run/                                    # server.lock, state.lock, lake-writer.lock, restore-pending.json
+  backups/  exports/  addons/<app>/  secrets/ (*.enc, N6; page-token.key, X1)
+  run/                                    # server.lock, runner.lock, state.lock, lake-writer.lock,
+                                          # restore-pending.json, restore-journal.json (N47, N55)
+  .restore-new/  .restore-old/            # exist only during a restore (N55)
 ```
+
+**Locks (N47).** Every lock is an exclusive `flock` on a file in `run/`,
+released by the kernel when its holder dies. `server.lock`: held by the
+`elysium server run` supervisor for its lifetime. `runner.lock`: held by the
+runner process. `lake-writer.lock`: held by a job while it writes the lake
+(and by a backup while it copies it). `state.lock`: held by a local (L) CLI
+command while it runs; two local commands serialise on it; the server never
+takes it. An L\* command also takes `server.lock` non-blocking and keeps it
+for its run (exit 6, `E_SERVER_RUNNING`, when held), so the server cannot
+start under it.
 
 ### 3.5 Environment variables
 
@@ -434,6 +498,7 @@ every file it scaffolds. Built-in roles ship as
 | `ELYSIUM_URL`, `ELYSIUM_PROFILE`, `ELYSIUM_TOKEN_FILE`, `ELYSIUM_NO_INPUT`, `NO_COLOR` | new, CLI | client side |
 | `ELYSIUM_TOKEN` | new, CLI | CI only; the one exception to N6 |
 | `ELYSIUM_ADDON_START`, `PORT` | kept | set by the supervisor for add-ons |
+| `ELYSIUM_SUPERVISED` | new, set by the service manager | `1` under INS-02's entrypoint and INS-04's unit: exit code 75 means "restart me", so `GET /api/v2/admin/server` reports `restartable: true` |
 | `ELYSIUM_CONFIG_DIR`, `ELYSIUM_DATA_DIR`, `ELYSIUM_LOG_DIR`, `ELYSIUM_COOKIE_SECURE`, `ELYSIUM_STORAGE_ENCRYPTION`, `ELYSIUM_BACKUP_KEY_FILE`, `${VAR}` | **deleted** in T0.3 | replaced by the TOML above |
 
 Files that go (F, they exist today): `deployment/` (etc, var, logrotate),
@@ -472,7 +537,7 @@ elysium
   user list|show|create|update|disable|enable|delete|set-password   A
   user reset-password NAME                  L
   role list|show|create|update|delete|grant|revoke   A
-  token list|create|revoke                  A
+  token list|create|revoke                  A    create NAME [--read TYPE[.PROP]]... [--discover TYPE]... [--apply ACTION]... [--manage AREA]... [--expires-in-days N] [--for USER] (N50)
   proposal list|show|approve|reject         A
   erasure request|list|show|cancel          A
   backup create|list|show|verify|download|prune   A   (create --local: L)
@@ -538,6 +603,7 @@ step named in the "Archive" line; the scope here is authoritative.
 | T0.4 | CLI framework, command registry, health-check registry | S16 skeleton | 2, 3 | low | 1 wk |
 | T0.5 | API v2 plumbing, `/me`, errors, logs, tokens, OpenAPI, clients, health | S5 | 2, 5 | HIGH (I2, CSRF) | 2 wk |
 | T0.6 | Typed model, structured grants, one policy decision point, capabilities | S6 | 1, 4, 5 | HIGH (I1, I3) | 3-5 wk |
+| T0.6B | Object sets: `elysium.query`, the only read path | new (N46; absorbs REF-MED) | 1, 7 | HIGH (I1, I2, I3) | 2 wk |
 | T0.7 | State: SQLite discipline, unit of work, outbox, audit chain, erasure ledger | S7 | 1, 7 | HIGH (I6) | 2-3 wk |
 | T0.8 | Pipeline, jobs, schedules, single lake writer, SEC-01 | S8 | 1, 7 | HIGH (I7) | 2-3 wk |
 | T0.9 | Lake encryption with a movable key (gated on Q-KEY) | item 1 | 7 | med | 1-1.5 wk |
@@ -555,7 +621,8 @@ are merged (section 7).
 then `tools/heavy.sh ./check.sh --full` pass; `python tools/check_controls.py`
 reports nothing retired without a deletion; once they exist,
 `tests/api/test_openapi_is_current.py` and `cd ui && npm run gen:client --
---check` pass; every new package is in `quality/strict-modules.txt` (N38);
+--check` pass; every new module is strict through T0.1's package globs (N38,
+N59; nobody edits a list);
 `tools/diffsize.py` is within N32 or the commit carries `Large-change:`; the
 commit lists controls added and deleted and invariants touched. A step that
 touches I1-I8 first commits its threat note (`docs/security/threats/<item>.md`,
@@ -620,10 +687,28 @@ its failing negative tests, then the code.
      `tools/ruff_baseline.py --write`; `tests/unit/test_ruff_ignores_shrink.py`
      fails when the generated list gains an entry (baseline in
      `quality/ruff-ignores.txt`). The 173 inert `noqa: BLE001` comments become
-     live. (b) `quality/strict-modules.txt` and a `[[tool.mypy.overrides]]`
-     block with `strict = true` generated from it by `tools/mypy_strict.py
-     --write`; `tests/unit/test_strict_modules_only_grow.py`; mypy's `files`
-     gains `tests/` with `check_untyped_defs = false` for tests. (c)
+     live. (b) Strict typing by package glob, written once here and never
+     edited by a card (N59): one `[[tool.mypy.overrides]]` block with
+     `strict = true` and `module = ["elysium.access.*", "elysium.query.*",
+     "elysium.actions.*", "elysium.proposals.*", "elysium.metadata.*",
+     "elysium.resources.*", "elysium.db.*", "elysium.audit.*",
+     "elysium.jobs.*", "elysium.runner.*", "elysium.ops.*",
+     "elysium.exports.*", "elysium.cli.*", "elysium.erasure.*",
+     "elysium.index.*", "elysium.automation.*", "elysium.checks.*",
+     "elysium.agent.*", "elysium.apps.*", "elysium.keys.*",
+     "elysium.functions.*", "elysium.service.*", "elysium.builtin.*",
+     "elysium.settings", "elysium.paths", "elysium.paging", "elysium.secrets", "elysium.errors",
+     "elysium.bootstrap", "elysium.logging_json", "elysium.api.v2.*"]`. A
+     package that does not exist yet costs nothing. `quality/strict-modules.txt`
+     lists only legacy `elysium.core.*` and `elysium.api.*` (v1) modules made
+     strict, feeds a second override block generated by `tools/mypy_strict.py
+     --write`, and may only grow (`tests/unit/test_strict_modules_only_grow.py`);
+     cards never edit it. `quality/ruff-ignores.txt` and
+     `quality/comment-lint-baseline.txt` are generated files
+     (`tools/ruff_baseline.py --write`, `tools/lint_comments.py
+     --write-baseline`): a merge conflict in them is resolved by regenerating,
+     like `openapi.json`. mypy's `files` gains `tests/` with
+     `check_untyped_defs = false` for tests. (c)
      `tools/lint_comments.py`: flags in `src/**.py` comments and docstrings the
      patterns `\b(GOLD|WIRED|DEP|AUD|SEC|AL|BLK|R|E|LB|NEW|F)-\d+`, dates (`\d{1,2}
      (January|...|December)`, ISO dates), names of planning files (`ROADMAP`,
@@ -632,10 +717,22 @@ its failing negative tests, then the code.
      current hits go to `quality/comment-lint-baseline.txt` (path:line-hash);
      `--check` fails on a hit not in the baseline. (d) `[tool.coverage]` with
      branch coverage, `source = ["src/elysium"]`; measured only (the gate is
-     QA-COV). (e) Name guard: `tests/unit/test_no_vendor_names.py` tokenises
-     every tracked text file and compares the sha256 of each lower-cased word
-     and word pair with a fixed list of hashes, so the forbidden names never
-     appear, not even in the test. Accept: each of (a)-(e) has a test that
+     QA-COV). (e) Name guard (N62): `tests/unit/test_no_vendor_names.py`
+     tokenises every tracked text file, every tracked path and, in the
+     `commit-msg` hook, the message, and compares the sha256 of each
+     lower-cased word and word pair with a fixed list of hashes (the vendor's
+     name and its product names), so the forbidden names never appear, not
+     even in the test. `ALLOWED = {"<sha256 of the toolkit scope>":
+     ("ui/package.json", "ui/package-lock.json", "import:ui/**",
+     "import:shell/**")}`: the one entry, with the comment "the UI component
+     toolkit is published under this scope; a dependency's package name cannot
+     be changed here", lets the hashed scope token pass only in those two files
+     and on lines that are `import`/`export ... from` statements in `.ts`,
+     `.tsx`, `.css` files under `ui/` and `shell/`; anywhere else it fails. The
+     two test files named after the toolkit are renamed in this step
+     (`ui/src/toolkit-smoke.test.tsx`, `ui/src/toolkitSurface.test.ts`). The
+     allowlist may only shrink (`::test_allowlist_has_one_entry`). Accept:
+     each of (a)-(e) has a test that
      fails when its gate is broken on purpose (a new broad `except`, a module
      removed from the strict list, a comment `# see GOLD-9`, a coverage config
      missing, a planted forbidden word in a temp file).
@@ -650,15 +747,21 @@ its failing negative tests, then the code.
      `.claude/settings.json` declares the same checks as agent hooks
      (PreToolUse on `git commit`). Accept: `tests/unit/test_diffsize.py`,
      `tests/unit/test_hooks.py::test_pre_commit_refuses_vendor_name`.
-  6. **Pytest markers** `fast`, `api`, `lake`, `live` registered in
-     `pytest.ini` (the directory split is REF-18B).
+  6. **Pytest markers by directory (N58).** Resolved: X14. `fast`, `api`,
+     `lake`, `live` registered in `pytest.ini`; `tests/conftest.py::
+     pytest_collection_modifyitems` adds them by path: `tests/unit/`,
+     `tests/cli/`, `tests/property/` -> `fast`; `tests/api/` -> `api`;
+     `tests/integration/` -> `lake`; a test explicitly marked `live` keeps
+     only `live`. No test moves directory, ever; CI-07 splits the matrix with
+     `-m`. Accept: `tests/unit/test_markers_by_directory.py` (a fixture tree
+     collects with the expected markers).
 - **Deletes.** `src/elysium/scripts/check_controls.py`, the requirements files,
   `check_lockfiles.py`, `lint.sh`.
 - **Invariants.** Every control that fired before still fires (equal counts).
 - **Preconditions.** S1 (done), DOC-00 (paths in `docs/`).
 - **Out of scope.** Pruning controls (REF-19); running mutmut (QA-MUT);
   fixing the baselined ruff, comment or typing findings (they burn down with
-  each item and in QA-*); the tests directory split.
+  each item and in QA-*). There is no tests directory split (N58).
 - **Contract.**
   - `controls/<area>/<CARD-ID>.toml`; a worker adds a file and never edits
     another card's file.
@@ -667,6 +770,11 @@ its failing negative tests, then the code.
   - Baselines in `quality/` only shrink: `ruff-ignores.txt`,
     `strict-modules.txt` (only grows), `comment-lint-baseline.txt`, and later
     `contracts-ignores.txt` (T0.1B), `coverage.json`, `mutation.json` (QA-*).
+    `ruff-ignores.txt` and `comment-lint-baseline.txt` are regenerated, never
+    hand-merged. New code is strict by package glob; no card edits a typing
+    list.
+  - Test markers come from the directory (`tests/unit` fast, `tests/api` api,
+    `tests/integration` lake); a card writes its tests where its card says.
   - Dependencies: `uv add PKG` (or `uv add --optional EXTRA PKG`), commit
     `pyproject.toml` and `uv.lock` together; on a lock conflict, run `uv lock`
     again, never hand-merge.
@@ -685,25 +793,87 @@ its failing negative tests, then the code.
      imports; `fan MODULE` prints fan-in and fan-out. Accept:
      `tests/unit/test_import_graph_tool.py` on a fixture package with a known
      cycle.
-  2. **Target contracts.** In `[tool.importlinter]`: contract
-     `target-layers` (type `layers`): `elysium.api | elysium.cli |
-     elysium.apps` > `elysium.automation | elysium.functions | elysium.agent |
-     elysium.checks` > `elysium.actions` > `elysium.query` > `elysium.access`
-     > `elysium.metadata` > `elysium.db | elysium.audit | elysium.settings |
-     elysium.paths | elysium.resources | elysium.secrets | elysium.errors`.
-     Packages that do not exist yet are optional layers (parenthesised); if the
-     pinned import-linter does not support optional layers, add each layer in
-     the item that creates its package and say so in that item's commit.
+  2. **Target contracts (N48).** Resolved: X3. In `[tool.importlinter]`:
+     contract `target-layers` (type `layers`, `containers = ["elysium"]`),
+     top to bottom; `|` separates independent siblings (they may not import
+     each other), `:` siblings that may:
+     ```text
+     L10 bootstrap | runner
+     L9  cli | api | service
+     L8  apps | agent | automation | functions | ops | exports
+     L7  jobs
+     L6  proposals
+     L5  actions
+     L4  query
+     L3  index | audit
+     L2  erasure | checks
+     L1  access
+     L0  metadata
+     L-1 resources : db : keys : secrets : settings : paths : paging : errors : logging_json : builtin : init_templates
+     ```
+     (`erasure` is below `index` because the lake's `Erasable` lives in
+     `index` and registers into `erasure`; the erasure job reaches `index`
+     through the kind-directory wildcard. `checks` is below `index` because
+     the pipeline stages call `checks.run`; a quarantine reaches `actions`
+     through the `system_action` outbox row.)
+     plus `core` and `adapters` (legacy) outside the contract until QA-ARCH.
+     Packages that do not exist yet are written as optional layers
+     (`"(elysium.query)"`; import-linter 2.15 is installed and supports them);
+     if `lint-imports` rejects that syntax, STOP and report.
+     **The registry rule.** A registry (decorator plus lookup) is defined in
+     the lowest package that must look kinds up; a kind module lives in the
+     package of the lowest layer that can import everything the kind needs,
+     and registers itself into the lower registry when imported. Discovery
+     (`pkgutil` over `<pkg>/kinds/`) is done by `elysium.bootstrap`, never by
+     the registry package, so no registry imports upward. Concretely:
+     - `actions` never imports `proposals`. `actions.apply(..., mode=
+       "execute")` returns `ApplyResult(status="needs_proposal", plan,
+       policy)` when the policy says stage (X4); the caller (an API route,
+       the agent, an automation, all at L8-L9) calls `proposals.submit(...,
+       kind="action", ...)`. `proposals/kinds/action.py` imports `actions`
+       (L6 over L5) to apply an approved proposal.
+     - `jobs` defines `@job_kind`, `submit`, the queue and the runner loop
+       and imports no kind. Every job kind is `src/elysium/jobs/kinds/<kind>.py`
+       (the paths the cards own) and may import upward through exactly one
+       wildcard ignore per target: `elysium.jobs.kinds.* -> elysium.ops.*`,
+       `-> elysium.exports.*`, `-> elysium.index.*`, `-> elysium.erasure.*`;
+       QA-ARCH keeps exactly these four ("zero ignores except the
+       kind-directory wildcards").
+     - `proposals/kinds/*.py` may import `actions`, `metadata`, `erasure`,
+       `access`, `index`. A proposal kind that must start a job (erasure)
+       does not import `jobs`: its `apply` adds an outbox row
+       `db.outbox.add(uow, "start_job", key=<proposal id>, payload={kind,
+       args, owner})` in the approval's unit of work, and the runner's
+       handler `jobs/outbox.py::start_job` submits it (idempotent on the
+       key).
+     - `index` (pipeline, lake) is below `query` (the reader reads gold
+       through `index.lake`) and never imports `query`, `actions` or `jobs`;
+       its quarantine and retire effects reach `actions` through an outbox
+       row (`db.outbox`, kind `system_action`) handled at L5 by
+       `actions/system.py`.
+     - `audit` is L3: anything above may record; `audit` imports only `db`,
+       `paths`, `settings`.
+     - `api.v2.context.Call` is constructed in `api`; packages below `api`
+       take a `Principal` plus explicit arguments, never a `Call` (the
+       signatures in T0.6B, T0.8, T0.10 say `caller: Caller`, the protocol in
+       `elysium.access.principal`: `principal`, `request_id`,
+       `idempotency_key`, `paths`, `settings`; `Call` satisfies it).
      Contract `api-reaches-only-facades` (type `forbidden`): `elysium.api`
-     must not import the 11 stores (`timers`, `artifact_store`,
-     `identity_decisions`, `frozen_sets`, `pending_write_store`,
-     `saved_views`, `triggers`, `role_changes`, `notifications`, `role_store`,
-     `role_impact`) nor `elysium.adapters`; today's edges go in
-     `ignore_imports`. Both contracts set `unmatched_ignore_imports_alerting =
-     "error"`, so a fixed edge must leave the list. `quality/contracts-ignores.txt`
-     holds the count; `tests/unit/test_import_contracts_shrink.py` fails when
-     the count grows. Accept: `lint-imports` passes; the test fails when an
-     ignore is added.
+     must not import the 11 stores, by full module path:
+     `elysium.core.timers`, `elysium.core.artifact_store`,
+     `elysium.core.identity_decisions`, `elysium.core.frozen_sets`,
+     `elysium.core.pending_write_store`, `elysium.core.saved_views`,
+     `elysium.core.triggers`, `elysium.core.role_changes`,
+     `elysium.core.notifications`, `elysium.core.role_store`,
+     `elysium.core.role_impact`; nor `elysium.adapters`; nor (from T0.6B)
+     `elysium.core.ontology.mediator`, `elysium.query.reader`,
+     `elysium.index`, `elysium.db` (routes use facades: `query`, `actions`,
+     `proposals`, `jobs`, `audit`, `metadata.versions`, `ops.*`). Today's
+     edges go in `ignore_imports`. Both contracts set
+     `unmatched_ignore_imports_alerting = "error"`, so a fixed edge must leave
+     the list. `quality/contracts-ignores.txt` holds the count;
+     `tests/unit/test_import_contracts_shrink.py` fails when the count grows.
+     Accept: `lint-imports` passes; the test fails when an ignore is added.
   3. **Cycle 1: `core.agent.agentic_loop` <-> `core.deployment_loader`.** Run
      `tools/import_graph.py cycles`; move the names `agentic_loop` takes from
      the loader into parameters of its constructor (the loader, or the new
@@ -741,9 +911,16 @@ its failing negative tests, then the code.
 - **Out of scope.** Moving code into `elysium.access`, `query`, `actions` and
   the other target packages (each Tier 0 item does its own); splitting
   `routes.py`; any behaviour change.
-- **Contract.** The two contracts; `elysium.bootstrap` as the only wiring
-  module; `deployment_types` as the pure type module; the shrinking ignore
-  list. Every later item that removes an ignored edge removes its line.
+- **Contract.** The two contracts and the layer table of step 2 (N48);
+  the registry rule (registries low, kinds in the lowest package that can
+  import what they need, discovery in `elysium.bootstrap`; `actions` never
+  imports `proposals`; `jobs` never imports a kind; the four kind-directory
+  wildcards); `elysium.bootstrap` as the only wiring module, with
+  `bootstrap.discover() -> None` importing every `*/kinds/*.py`,
+  `actions/effects/*.py`, `ops/health/*.py`, `exports/*.py`,
+  `api/v2/resources/*.py` and `cli/commands/*.py` once per process;
+  `deployment_types` as the pure type module; the shrinking ignore list.
+  Every later item that removes an ignored edge removes its line.
 
 ### T0.2 Compatibility subtraction and test builders
 
@@ -772,10 +949,21 @@ its failing negative tests, then the code.
 - **Out of scope.** Anything not in the list; changing formats (T0.3, T0.6).
 - **Contract.** `tests/builders.py`: `make_ontology(**types) -> dict` (returns
   the typed model once T0.6 lands; callers do not change), `make_type(name,
-  properties=..., security=..., backing=...)`, `grant("read:Customer.email")
-  -> Grant` (test-only parser). `tests/conftest.py`: fixture `app_db(tmp_path)
-  -> StatePaths` (from T0.3). `tests/routes_table.py`: `iter_routes(app) ->
-  Iterator[RouteInfo]` with `.path`, `.method`, `.grants`, `.public`.
+  properties=..., security=..., backing=...)`, `grant(text: str) -> str` (in
+  T0.2 returns the string grant unchanged; T0.6 changes it to parse
+  `"read:Customer.email"` into a `Grant` and updates its callers in the same
+  commit). `tests/conftest.py`: fixture `app_db(tmp_path) -> Path` (a
+  configuration directory copied from today's fixture set; T0.3 changes its
+  return type to `StatePaths` and updates its callers in the same commit).
+  `tests/routes_table.py`:
+  ```python
+  @dataclass(frozen=True)
+  class RouteInfo:
+      path: str; method: str; public: bool; name: str
+      grants: tuple[object, ...]   # T0.2: names of the route's Depends callables; T0.5: the Grant | Manage objects passed to require()
+  def iter_routes(app: FastAPI) -> Iterator[RouteInfo]
+  SINGLETONS: frozenset[str]       # T0.5 fills it (DR2)
+  ```
 
 ### T0.3 Layout: settings, state paths, resource envelope, secrets
 
@@ -801,8 +989,10 @@ its failing negative tests, then the code.
   5. Rewire: `deployment_loader.py` takes `Settings` plus loaded resources;
      `ontology_schema.yaml` and `policy.yaml` still load from the resources
      directory until T0.6; `config.yaml` splits into `elysium.toml` and
-     `Configuration`; `data_silos.yaml` becomes `Silo` resources;
-     `addons.yaml` and `modules.yaml` become `App` resources.
+     `Configuration`; `data_silos.yaml` becomes `Silo` resources; the
+     `addons.yaml`/`modules.yaml` reading code (`api/addon_servers.py`)
+     reads `App` resources instead (no such file is tracked, so there is
+     nothing to translate).
   6. Logging to stdout only; delete the log directory and `deployment/logrotate`.
   7. `src/elysium/init_templates/{minimal,demo}/`; one fixture set
      `tests/fixtures/deployment/` (with `elysium.toml` and `resources/`) and
@@ -846,16 +1036,82 @@ its failing negative tests, then the code.
   def load_dir(path: Path) -> LoadResult           # .resources: list[Resource]; .errors: list[ResourceError]
   def load_file(path: Path) -> LoadResult
   def json_schemas() -> dict[str, dict]            # kind -> JSON Schema 2020-12
-  # src/elysium/resources/kinds/<kind>.py           one module per kind, found automatically
+  # src/elysium/resources/kinds/<kind>.py           one module per kind, found by bootstrap.discover()
   # src/elysium/secrets.py
   class SecretRef(BaseModel): secretRef: str
   def resolve(ref: SecretRef, s: Settings) -> SecretStr          # raises SecretUnavailable(name, looked_in=[...])
   def store_managed(name: str, value: SecretStr, s: Settings) -> None   # write-only
   ```
+  **The complete resource specs (C3).** Every field any later card reads is
+  declared here, so no card edits a kind file; a card that "adds" a field
+  implements its behaviour only. Fields marked with a card id are accepted
+  and validated from T0.3 and do nothing until that card lands.
+  ```python
+  # src/elysium/settings.py (sections; field names snake_case, TOML keys the same)
+  class ServerSettings(BaseModel):  listen: str = "127.0.0.1:8000"; public_url: AnyHttpUrl | None = None; trusted_proxies: list[str] = []
+                                    cookie_secure: bool = True; workers: int = Field(2, ge=1, le=16)
+                                    ip_allow: list[str] = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]   # INS-04
+  class PathSettings(BaseModel):    state: Path; resources: Path | None = None; secrets: Path
+  class StorageSettings(BaseModel): volume_encrypted: bool = False; lake_encryption: bool = False (T0.9 deletes the field); master_key: SecretRef
+  class BackupSettings(BaseModel):  key: SecretRef
+  class LogSettings(BaseModel):     level: Literal["debug", "info", "warning", "error"] = "info"
+  # src/elysium/resources/envelope.py
+  class Metadata(BaseModel): name: str; description: str = ""
+  #   names: ObjectType ^[A-Z][A-Za-z0-9]{0,62}$; LinkType and property names ^[a-z][a-z0-9_]{0,62}$ (used like fields in sets);
+  #   every other kind ^[a-z][a-z0-9-]{0,62}$; refused with path:line:col $.metadata.name: <rule in words>
+  class Terms(BaseModel): licence: str; attribution: str = ""; commercial: bool = True        # ADD-06
+  # src/elysium/resources/kinds/silo.py
+  class Incremental(BaseModel): column: str
+  class SiloSpec(BaseModel):
+      adapter: Literal["sqlalchemy", "csv", "rest"]
+      url: str | None = None              # sqlalchemy, rest; never carries a password (refused: LiteralSecret)
+      path: str | None = None             # csv: a directory
+      password: SecretRef | None = None
+      headers: dict[str, SecretRef] = {}  # rest only
+      incremental: Incremental | None = None
+      locale: str = "en-GB"; queryTimeoutSeconds: int = Field(30, ge=1, le=600)
+      terms: Terms | None = None          # ADD-06
+      # the remaining adapter keys today's data_silos.yaml accepts per adapter (core/config_schema.py) are carried over
+      # camelCased, one field each, in this model; T0.3 lists them in the commit; nothing else is accepted
+  # src/elysium/resources/kinds/app.py
+  class AppServer(BaseModel): command: list[str]; options: dict[str, str | SecretRef] = {}
+  class AppOntology(BaseModel): prefix: str | None = None; resources: str          # ADD-01: a path inside the app's package
+  class GatedResource(BaseModel): id: str (^[a-z][a-z0-9-]{0,62}$); title: str     # ADD-04
+  class AppSpec(BaseModel):
+      enabled: bool = True; server: AppServer | None = None; offeredTo: list[str] = []   # role names
+      ontology: AppOntology | None = None     # ADD-01
+      actions: list[str] = []                 # ADD-02: the app token's scopes are [{verb: apply, action: a} for a in actions]
+      gated: list[GatedResource] = []         # ADD-04
+      terms: Terms | None = None              # ADD-06
+  # src/elysium/resources/kinds/configuration.py   (exactly one, metadata.name "default")
+  class LlmConfig(BaseModel): server: Literal["ollama", "llama-server"] = "ollama"; baseUrl: str = "http://127.0.0.1:11434"; model: str = "phi4-mini"
+                              timeoutSeconds: int = Field(600, ge=10, le=3600)
+  class AssistantConfig(BaseModel): maxAnswerTokens: int = Field(1024, ge=64, le=8192); filterOperators: bool = True   # D23, T0.15
+  class Schedule(BaseModel): job: Literal["sync", "backup"]; when: When; keep: int | None = Field(None, ge=1, le=365)  # keep: backup only (OPS-07)
+  #   When is T0.8's fixed schedule vocabulary (N53), defined in src/elysium/resources/when.py so Automation can use it too
+  class SessionConfig(BaseModel): idleMinutes: int = Field(30, ge=5, le=1440); absoluteHours: int = Field(12, ge=1, le=720)   # SEC-B
+  class PasswordConfig(BaseModel): minLength: int = Field(12, ge=8, le=128); minUsernameLength: int = 3; forbidUsernameFrom: int = 4   # SEC-22
+  class Limits(BaseModel): bulkActionLimit: int = Field(20, ge=1, le=100); validatePerMinute: int = 60; exportRowCap: int = 100_000
+                           concurrentJobs: int = Field(2, ge=1, le=8)        # N47
+  class OidcConfig(BaseModel): issuer: AnyHttpUrl; clientId: str; clientSecret: SecretRef; usernameClaim: str = "preferred_username"
+                               autoCreate: Literal[False] = False; allowPublicIssuer: bool = False   # SEC-E
+  class SignInConfig(BaseModel): oidc: OidcConfig | None = None
+  class SourcesConfig(BaseModel): allowNonCommercial: bool = True             # ADD-06
+  class ConfigurationSpec(BaseModel):
+      timeZone: str = "UTC"                   # IANA, validated with zoneinfo (N53)
+      llm: LlmConfig = LlmConfig(); assistant: AssistantConfig = AssistantConfig(); schedules: list[Schedule] = []
+      sessions: SessionConfig = SessionConfig(); passwords: PasswordConfig = PasswordConfig(); limits: Limits = Limits()
+      signIn: SignInConfig = SignInConfig(); sources: SourcesConfig = SourcesConfig()
+  ```
+  Kinds registered later, each in its own file and item: `ObjectType`,
+  `LinkType`, `ActionType`, `Role` (T0.6, `src/elysium/resources/kinds/
+  {object_type,link_type,action_type,role}.py`), `Automation` (T0.13),
+  `Function` (REF-14A).
   Rules: pydantic models use `extra="forbid"`, camelCase in YAML
   (`alias_generator=to_camel`), snake_case in Python; a new boot setting goes
   into a section model and the generated reference (DOC-03); a new runtime
-  setting goes into `ConfigurationSpec`, never into `Settings`.
+  setting goes into `ConfigurationSpec`, never into `Settings`. Layout of
+  resource directories and exports: N65 (section 3.2).
 
 ### T0.4 CLI framework, command registry, health-check registry
 
@@ -867,15 +1123,32 @@ its failing negative tests, then the code.
   group `elysium.cli`; lazy imports; generated completion. (4) Health-check
   registry `elysium.ops.health` and `doctor` with three checks: settings load,
   state directory mode, master key present. (5) First commands: `version`,
-  `completion`, `settings show|validate|path`, `server run`, `init`, `doctor`,
-  `help`. Delete `src/elysium/cli.py`. `python -m elysium.scripts.X` keeps
-  working until each noun card deletes its scripts. (6) DR3 test.
+  `completion`, `settings show|validate|path`, `server run` (the supervisor
+  of N47; T0.4 starts the web workers only, T0.8 adds the runner), `init`,
+  `doctor`, `help`. `elysium init [--system|--user|--container] [--demo]
+  [--dir D]` writes into the configuration directory (`--system`
+  `/etc/elysium`, `--user` `$XDG_CONFIG_HOME/elysium`, `--container`
+  `/config`, `--dir` overrides): `elysium.toml` from
+  `src/elysium/init_templates/elysium.<mode>.toml` (container: `listen =
+  "0.0.0.0:8000"`, `paths.state = "/data"`, `paths.secrets =
+  "/config/secrets"`); `secrets/master-key` and `secrets/backup-key` (32
+  random bytes, base64, mode 0400, directory 0700); `resources/` from
+  `init_templates/minimal/` (or `demo/`); `schemas/` with every kind's JSON
+  Schema (N65). It refuses with exit 6 when `elysium.toml` exists and prints
+  the next command (`elysium server run`). Delete `src/elysium/cli.py`.
+  `python -m elysium.scripts.X` keeps working until each noun card deletes
+  its scripts. (6) DR3 test.
 - **Decision check.** If Cyclopts misses 300 ms for `elysium --help` (measured
   in `tests/cli/test_startup_budget.py`) or cannot complete nested groups,
   use Typer + Rich (N8) and record the measurement in the commit.
-- **Invariants.** Local commands take `state.lock` (flock); L\* also need
-  `server.lock` free. `tests/cli/test_local_locks.py::test_lstar_refuses_while_server_runs`
-  (exit 6).
+- **Invariants.** Locks as in section 3.4 (N47): `elysium server run` holds
+  `run/server.lock` for its lifetime and never takes `run/state.lock`; a
+  local (L) command holds `run/state.lock` while it runs; an L\* command also
+  takes `run/server.lock` non-blocking (exit 6, `E_SERVER_RUNNING`, when
+  held) and keeps it for its run.
+  `tests/cli/test_local_locks.py::test_lstar_refuses_while_server_runs`
+  (exit 6), `::test_server_refuses_while_lstar_runs`,
+  `::test_two_local_commands_serialise`.
 - **Preconditions.** T0.3.
 - **Out of scope.** Any noun beyond the first commands (CLI cards).
 - **Contract.**
@@ -909,11 +1182,22 @@ its failing negative tests, then the code.
       def stream(self, path: str) -> Iterator[ServerSentEvent]
   # src/elysium/cli/confirm.py
   def confirm(tier: Literal["moderate", "severe"], *, action: str, subject: str, plan: str | None = None) -> None
+  # src/elysium/cli/profiles.py
+  @dataclass(frozen=True)
+  class Profile: name: str; url: str | None; token_file: Path   # from $XDG_CONFIG_HOME/elysium/cli.toml [profiles.<name>] url = ...
+  #   default token_file $XDG_STATE_HOME/elysium/token-<name> (0600); profile "default" when --profile and ELYSIUM_PROFILE are unset
+  def server_url(profile: Profile, settings: Settings | None, flag: str | None) -> str
+  #   order: --url, ELYSIUM_URL, the profile's url, the local settings' server.public_url, then http://<server.listen>
   # src/elysium/ops/health/__init__.py   (shared with the server, N20, N31)
-  def health_check(id: str, *, category: str, local: bool = True, server: bool = True, fixable: bool = False)   # decorator
-  class CheckResult(BaseModel): id: str; status: Literal["ok", "warn", "fail", "skip"]; message: str; hint: str | None; fixed: bool = False
-  def run_checks(where: Literal["local", "server"], *, fix: bool = False) -> list[CheckResult]
-  # src/elysium/ops/health/<topic>.py   one module per topic
+  @dataclass(frozen=True)
+  class HealthContext: settings: Settings; paths: StatePaths; where: Literal["local", "server"]
+  def health_check(id: str, *, category: Literal["config", "state", "posture"], local: bool = True, server: bool = True, fixable: bool = False)
+  #   decorates  def check(ctx: HealthContext, *, fix: bool = False) -> CheckResult ; with fix=True a fixable check repairs and returns fixed=True;
+  #   a check that raises is reported as status "fail", message "This check could not run.", and the exception logged
+  class CheckResult(BaseModel): id: str; status: Literal["ok", "warn", "fail", "skip"]; message: str; hint: str | None = None; fixed: bool = False
+  def run_checks(ctx: HealthContext, *, ids: Collection[str] | None = None, fix: bool = False) -> list[CheckResult]   # sorted by id
+  # src/elysium/ops/health/<topic>.py   one module per topic; T0.4 writes settings.load and keys.master in config.py
+  #   and state.permissions in state.py; OPS-01 and OPS-02 own those files afterwards and add to them
   ```
 
 ### T0.5 API v2 plumbing, `/me`, errors, logs, tokens, OpenAPI, clients, health
@@ -923,6 +1207,31 @@ its failing negative tests, then the code.
   generation.
 - **DR:** 2, 5. **Decisions:** D20, D22, N19, N20, N23, N37, N43, B17.
 - **Steps.**
+  0. **Split v1 by area (mechanical, N60).** Before any card deletes v1
+     code. `tools/split_v1.py` moves each route of `src/elysium/api/routes.py`
+     into `src/elysium/api/v1/<area>.py` by URL prefix (areas: `session`,
+     `me`, `users`, `roles`, `tokens`, `objects`, `search`, `schema`,
+     `history`, `notes`, `saved_views`, `frozen_sets`, `writes`,
+     `proposals`, `silos`, `ontology_admin`, `mirror`, `contracts`, `addons`,
+     `events`, `triggers`, `reminders`, `notifications`, `requests`,
+     `config`, `system`; shared helpers into `api/v1/_shared.py`;
+     `api/v1/__init__.py` builds the one v1 router from the area modules in
+     the old order); it prints any route it could not place, which STOPs the
+     step. The same for `ui/packages/shell-api/src/api.ts` into
+     `ui/packages/shell-api/src/v1/<area>.ts` re-exported from `api.ts` (so
+     no import changes in the apps), and for `tests/integration/test_api.py`
+     into `tests/integration/v1/test_<area>.py` with its fixtures in
+     `tests/integration/v1/conftest.py`. Accept:
+     `tests/unit/test_v1_split_is_pure.py` compares `iter_routes(app)` (path,
+     method, name, dependencies) before, stored in the commit as
+     `tests/fixtures/v1_routes_before.json`, and after; the full suite passes
+     with import edits only; the commit carries `Large-change: mechanical
+     split`. From here on a card that "deletes v1 `/x`" owns
+     `src/elysium/api/v1/<area>.py`, `shell-api/src/v1/<area>.ts` and
+     `tests/integration/v1/test_<area>.py` for its area (and deletes them);
+     where two cards share an area the card names which routes it deletes
+     and the later wave deletes the file. API-9 deletes `api/v1/`,
+     `shell-api/src/v1/` and the mount.
   1. **Errors (N37).** `src/elysium/errors.py`: `DomainError(Exception)` with
      subclasses `NotFound`, `InvalidArgument(detail, parameters)`,
      `Conflict(detail)`, `PreconditionFailed`, `PreconditionRequired`,
@@ -938,13 +1247,44 @@ its failing negative tests, then the code.
      `contextvars.ContextVar[RequestContext]` holds `request_id`, `trace_id`,
      `principal_id`; `src/elysium/logging_json.py` formats every log record as
      one JSON line with those fields; no object values or names are logged.
-  3. **Routers and `Call`.** Routers found under `api/v2/resources/`, each
-     declaring grants; router-level authentication with a public router
-     (`session` POST, `health/live`, `health/ready`, `setup/*`); `Call`;
-     no-store by default; an `audited` dependency on every non-GET route
-     writing `<area>.<event>` with the outcome.
-  4. **Sessions and tokens.** `POST/GET/DELETE /api/v2/session`; bearer tokens
-     (argon2id hashes) and service principals (D20); CSRF rules.
+  3. **Routers and `Call`.** (3a) `git mv`
+     `src/elysium/api/v2/{schema,objects,object_sets}.py` into
+     `src/elysium/api/v2/resources/` (imports only; `loading.py` moves into
+     `elysium.query` in T0.6B; `paging.py` and `problems.py` stay). (3b)
+     Replace today's `Call(request, user, generation, context)` in
+     `api/v2/context.py` with the contract's `Call` and `Principal` (built
+     from today's `UserRecord`: `roles = {role_name}` or empty,
+     `security_values = {<attribute>: security_value}` or empty); there is
+     no `Call.stores()` and no `Call.mediator` (I2: routes reach data only
+     through the facades of N48). (3c) Routers found under
+     `api/v2/resources/`, each declaring grants; router-level authentication
+     with a public router (`POST /session`, `POST /session/token`,
+     `health/live`, `health/ready`, `setup/*`); no-store by default. (3d)
+     Audit by the router layer: every non-GET route declares
+     `dependencies=[audited("<area>.<event>")]`
+     (`src/elysium/api/v2/audit.py`); the dependency records the event after
+     the response with `outcome` from the status (2xx `ok`, a 404 raised from
+     a denial `denied`, other 4xx and 5xx `error`);
+     `tests/api/test_route_conventions.py` fails when a non-GET route has no
+     `audited(...)`. A GET that must be audited (downloads, `audit.read`,
+     app-resource checks) calls `call.audit(...)` itself. Event names are
+     past tense: `users.created`, `setup.admin_created`. Until T0.7, `audit`
+     writes to today's audit store; T0.7 swaps the backend under the same
+     signature.
+  4. **Sessions and tokens (N50).** Resolved: X5. `POST/GET/DELETE
+     /api/v2/session`; `POST /api/v2/session/token {username, password,
+     name, expiresInDays (1..90, default 30)}` (public, throttled like `POST
+     /session`) returns `{token, id, expiresAt}` once and creates a token with
+     `scopes = None` for the person (used by `elysium auth login`, which
+     writes it to the profile's token file; `auth logout` calls `DELETE
+     /api/v2/tokens/{id}`). Bearer tokens and service principals (D20) per
+     the token contract below; CSRF rules (cookie without the CSRF header 403;
+     cookie plus bearer refused; bearer alone allowed). The login throttle and
+     the validate rate limit share one module, moved here:
+     `src/elysium/access/rate_limit.py::hit(key: str, *, limit: int,
+     per_seconds: int) -> None` (raises `TooManyRequests`; keys
+     `login:<source>`, `validate:<principal id>`), SQLite-backed in
+     `scratch.db` as today.
   5. **`/me` (N23).** `GET /api/v2/me` returns exactly
      `{user: {id, username, displayName, kind}, mustChangePassword, setup:
      "needs_admin"|"in_progress"|"complete", apps: [id], adminSections: [id],
@@ -956,7 +1296,12 @@ its failing negative tests, then the code.
      without changing the response). The admin section ids and the area each
      needs live only on the server: `src/elysium/api/v2/admin_sections.py`,
      `ADMIN_SECTIONS: tuple[AdminSectionSpec(id: str, manage: ManageArea,
-     order: int), ...]`. v1 `/me` stops returning `mac_value` in this step.
+     order: int), ...]`, written complete by T0.11 (C11); T0.5 creates the
+     module with the empty tuple. `setup` comes from
+     `src/elysium/ops/setup.py::setup_state(paths) -> Literal["needs_admin",
+     "in_progress", "complete"]` (T0.5: `needs_admin` when no person user
+     exists, else `complete`; ADM-01 owns the module afterwards and adds
+     `in_progress`). v1 `/me` stops returning `mac_value` in this step.
   6. **Health (N20).** `GET /api/v2/health/live|ready` (public,
      `{status}`), `GET /api/v2/admin/health` over `elysium.ops.health`.
   7. **OpenAPI and clients.** Committed `src/elysium/api/v2/openapi.json`,
@@ -984,21 +1329,65 @@ its failing negative tests, then the code.
   validate route (T0.10); capability hints on objects (T0.10, API-1).
 - **Contract.**
   ```python
-  # src/elysium/api/v2/resources/<resource>.py   router = APIRouter(prefix="/<resource>", tags=["<resource>"]); found automatically
-  # src/elysium/api/v2/context.py
-  class Call:
-      principal: Principal; generation: Generation; request_id: str; idempotency_key: str | None
-      settings: Settings; paths: StatePaths
-      def stores(self) -> Stores
-      def visible_type(self, name: str) -> ObjectTypeView    # raises NotFound for unknown AND hidden
-      def audit(self, category: str, action: str, **detail) -> None
+  # src/elysium/api/v2/resources/<resource>.py   router = APIRouter(prefix="/<resource>", tags=["<resource>"]); found by bootstrap.discover()
+  # src/elysium/access/principal.py        (created here; T0.6 extends it, same names and fields)
+  @dataclass(frozen=True)
+  class Principal:
+      user_id: str; username: str; kind: Literal["person", "service"]
+      roles: frozenset[str]                     # role resource names; T0.5: {today's role_name} or frozenset()
+      security_values: Mapping[str, str]        # T0.5: {"<attribute>": today's security_value} or {}
+      token_scopes: frozenset[Scope] | None     # None = session or session/token (no narrowing); Scope below (N50)
+      on_behalf_of: str | None = None           # set for the agent (the person's id) and for an automation (its owner's id); X4
+      via: Literal["person", "agent", "automation", "app", "system"] = "person"   # who is acting, for approval policy (N49)
+  class Caller(Protocol):                       # what packages below api take instead of a Call (N48)
+      principal: Principal; request_id: str | None; idempotency_key: str | None; settings: Settings; paths: StatePaths
+  # src/elysium/access/areas.py
+  ManageArea = Literal["users", "roles", "deployment", "model", "audit", "backups", "erasure"]
+  @dataclass(frozen=True)
+  class Manage: area: ManageArea
+  # src/elysium/api/v2/context.py           (REPLACES today's Call)
+  @dataclass(frozen=True)
+  class Call:                                   # satisfies Caller
+      principal: Principal; generation: DeploymentGeneration; request_id: str
+      idempotency_key: str | None; settings: Settings; paths: StatePaths
+      def visible_type(self, name: str) -> TypeView   # T0.5: wraps today's visible schema; T0.6: access.visible_schema; NotFound for unknown AND hidden
+      def audit(self, event: str, *, resource: str | None = None, outcome: Literal["ok", "denied", "error"] = "ok", **detail: Any) -> None
   def call(request: Request, response: Response) -> Call
   # src/elysium/api/v2/auth.py
-  def require(*grants: Grant | ManageGrant) -> Depends   # Depends(require(Manage("deployment")))
+  def require(*grants: Grant | Manage) -> Depends   # Depends(require(Manage("deployment")))
   PUBLIC_ROUTES: frozenset[tuple[str, str]]
-  # src/elysium/api/v2/paging.py   Page[T] = {"data": list[T], "nextPageToken": str | None}; page(call, items_query, page_size, page_token)
-  # src/elysium/errors.py   DomainError family (above)
+  # src/elysium/api/v2/audit.py
+  def audited(event: str) -> Depends              # every non-GET route (step 3d)
+  # src/elysium/api/v2/middleware.py
+  MIDDLEWARE: tuple[type, ...]                    # ordered; includes timing
+  observe_request: Callable[[str, int, float], None] | None = None   # (route template, status, ms); set by OPS-11's ops.metrics.install()
+  # src/elysium/api/v2/paging.py   Page[T] = {"data": list[T], "nextPageToken": str | None}; page_size(n) clamps to 1..500 (default 100)
+  #   T0.6B moves Page, page_size and the signed tokens to src/elysium/paging.py (layer L-1) for every list (N46)
+  # src/elysium/errors.py   DomainError family (above); Problem (C5) is the wire form of one problem
+  @dataclass(frozen=True)
+  class Problem: name: str; message: str; parameters: Mapping[str, Any] = {}   # JSON {name, message, parameters}
   ```
+  **Tokens (N50, D20).** Resolved: X5.
+  ```python
+  # src/elysium/access/tokens.py
+  # wire format: "ely_" + 8-char id ([a-z0-9]) + "_" + 43-char url-safe base64 secret (32 random bytes); shown once
+  # table api_tokens(id TEXT PRIMARY KEY, principal_id, name, secret_hash (argon2id of the secret), scopes_json (NULL = no narrowing),
+  #                  created_at, expires_at (at most 365 days; default 90), last_used_at, revoked_at)
+  Scope = GrantScope | ManageScope
+  @dataclass(frozen=True) class GrantScope: verb: Literal["discover", "read", "apply"]; type: str | None = None; property: str | None = None; action: str | None = None; app_resource: str | None = None
+  @dataclass(frozen=True) class ManageScope: manage: ManageArea
+  def create(principal_id: str, name: str, scopes: Sequence[Scope] | None, expires_in_days: int, *, by: Principal) -> tuple[str, TokenRecord]   # refuses a scope the creator does not hold
+  def authenticate(raw: str) -> Principal | None   # constant-time on the secret; expired, revoked or unknown all None; updates last_used_at at most once a minute
+  def revoke(token_id: str, *, by: Principal) -> None
+  ```
+  Effective power is the intersection (D20): `decide` allows a request only
+  when the principal's grants allow it AND (`token_scopes is None` or a scope
+  covers it); a scope never adds power. A `GrantScope` covers what a grant
+  with the same fields covers (`read` on a type without `property` covers
+  every property). App tokens (ADD-02) carry `[GrantScope(verb="apply",
+  action=a) for a in App.spec.actions]`. JSON form of a scope: `{verb, type?,
+  property?, action?, appResource?}` or `{manage: area}`; CLI flags in section
+  3.6; no string grant grammar returns.
   Route shapes: DR2. The spec is regenerated with `elysium dev openapi
   --write` (until CLI-DEV: `python -m elysium.api.v2.openapi --write`),
   checked by `tests/api/test_openapi_is_current.py`. UI client:
@@ -1019,13 +1408,20 @@ its failing negative tests, then the code.
      `build_ontology(resources)`; kinds `ObjectType`, `LinkType`,
      `ActionType`, `Role` as resources; ids `ely.<kind>.<uuid>`; "property";
      generated JSON Schema; `lint_deployment.py` reduced to the shared
-     validator.
+     validator. `build_ontology` expands a role grant with `properties: [...]`
+     into one `Grant` per property; a grant without `properties` means every
+     property of the type; `discover` grants take no `properties` (refused
+     with `path:line:col $.spec.grants[i].properties: discover applies to the
+     whole type`).
   2. Translation script `tools/translate_config.py` rewriting the fixture and
      template configuration sets into resource files; the **oracle**: for each
      old set, `visible_schema` and effective grants identical before and after
      (`tests/unit/test_translation_oracle.py`).
-  3. `src/elysium/access/`: the pure core `decide(principal, verb, resource,
-     model) -> Decision` (no I/O, no clock, no store) and the shell
+  3. `src/elysium/access/`: the pure core in `src/elysium/access/decide.py`
+     (`decide(principal, verb, resource, model) -> Decision`, re-exported
+     from `elysium.access`; no I/O, no clock, no store; it reproduces
+     `core/access/access_control.py`'s MAC comparison exactly, which the
+     oracle of step 2 proves) and the shell
      `check_access(principal, verb, resource) -> Decision` that loads the
      model and attributes, calls `decide`, and audits denials;
      `visible_schema`; `capabilities` (moved from T0.5, same output);
@@ -1035,6 +1431,10 @@ its failing negative tests, then the code.
   4. Structured `manage:` areas (N17); built-in roles as
      `src/elysium/builtin/roles/*.yaml` loaded with `origin: builtin`
      (read-only, copyable, undeletable) (N27).
+     `src/elysium/builtin/__init__.py` exports `ADMINISTRATOR`, `OPERATOR`,
+     `AUDITOR` (the names, read from the YAML files at import); code that
+     needs a built-in role (ADM-01's first administrator) imports the
+     constant, so DR4's literal test stays green.
   5. Validator refusing standardisation and checks that rewrite a property a
      type's `security` reads (half of SEC-01). SEC-08 per Q-SEC08 (default:
      `manage:deployment` sees table-level row counts, documented in
@@ -1054,11 +1454,12 @@ its failing negative tests, then the code.
   `tests/unit/test_only_access_computes_capabilities.py` (AST scan: no module
   outside `elysium.access` assigns a key or attribute named `readable`,
   `executable` or starting `can` in a response model);
-  `tests/unit/test_decide_is_pure.py` (import-linter `forbidden`:
-  `elysium.access.decide` imports nothing from `db`, `audit`, adapters).
+  import-linter contract `decide-is-pure` (type `forbidden`): the module
+  `elysium.access.decide` imports nothing from `elysium.db`,
+  `elysium.audit`, `elysium.adapters`, `elysium.index`, `elysium.core`.
 - **Preconditions.** T0.2, T0.3, T0.5.
-- **Out of scope.** The read mediator split beyond what the rewrite touches
-  (REF-MED); proposals (T0.10).
+- **Out of scope.** The read path (T0.6B moves and splits it); proposals
+  (T0.10).
 - **Contract.**
   ```python
   # src/elysium/metadata/model.py   (frozen pydantic; ids stable, names renameable)
@@ -1070,17 +1471,161 @@ its failing negative tests, then the code.
   class Grant: verb: Literal["discover", "read", "apply"]; type: str | None; property: str | None; action: str | None; app_resource: str | None
   # src/elysium/metadata/load.py
   def build_ontology(resources: Sequence[Resource]) -> tuple[Ontology | None, list[ResourceError]]
-  # src/elysium/access/__init__.py   (the only decision site)
-  class Principal: user_id; kind; roles: frozenset[str]; security_values: Mapping[str, str]; token_scopes: frozenset[str] | None
-  def decide(principal: Principal, verb: str, resource: ResourceRef, model: Ontology) -> Decision   # pure
-  def check_access(principal: Principal, verb: str, resource: ResourceRef) -> Decision   # .allowed; .reason (audit only, never the caller)
-  def visible_schema(principal: Principal) -> SchemaView     # labels only for manage:model|roles holders
+  # src/elysium/access/__init__.py   (the only decision site; Principal, Manage, ManageArea, Scope from T0.5)
+  def decide(principal: Principal, verb: Verb, resource: ResourceRef, model: Ontology) -> Decision   # pure (access/decide.py)
+  def check_access(principal: Principal, verb: Verb, resource: ResourceRef) -> Decision   # loads the model; audits denials
+  def visible_schema(principal: Principal) -> SchemaView     # labels only for manage:model|roles holders (N24)
   def capabilities(principal: Principal) -> Capabilities     # the /me booleans
   def may_manage(principal: Principal, area: ManageArea) -> bool
+  # src/elysium/access/refs.py
+  @dataclass(frozen=True) class TypeRef: type: str
+  @dataclass(frozen=True) class PropertyRef: type: str; property: str
+  @dataclass(frozen=True) class ObjectRef: type: str; key: str; security: Mapping[str, str | None]   # the row's security values, loaded by the reader
+  @dataclass(frozen=True) class ActionRef: action: str
+  @dataclass(frozen=True) class AppResourceRef: app: str; id: str
+  ResourceRef = TypeRef | PropertyRef | ObjectRef | ActionRef | AppResourceRef
+  Verb = Literal["discover", "read", "apply"]
+  @dataclass(frozen=True) class Decision: allowed: bool; reason: str      # reason for the audit log only, never sent to a caller
+  # src/elysium/access/schema_view.py
+  class TypeCapabilities(BaseModel): search: bool; similarity: bool
+  class PropertyView(BaseModel): name: str; type: str; readable: bool; derived: bool; labels: tuple[str, ...] | None   # None unless manage:model|roles (N24)
+  class TypeView(BaseModel): name: str; title: str; key: str; properties: Mapping[str, PropertyView]; links: tuple[str, ...]
+                             actions: tuple[str, ...]; capabilities: TypeCapabilities
+  class SchemaView(BaseModel): types: Mapping[str, TypeView]   # only types the principal may discover
+  # src/elysium/access/capabilities.py
+  class Capabilities(BaseModel): canApprove: bool; canManageUsers: bool; canManageRoles: bool; canManageModel: bool
+                                 canManageDeployment: bool; canReadAudit: bool; canManageBackups: bool; canRequestErasure: bool
+  # src/elysium/builtin/__init__.py
+  ADMINISTRATOR: str; OPERATOR: str; AUDITOR: str
   ```
+  `ObjectTypeView` does not exist: the name is `TypeView`. `Grant` with
+  `property=None` and `verb="read"` covers every property of the type.
   Later cards never read raw configuration dictionaries; they take an
   `Ontology` or a `SchemaView` from `Call` and decide access only through
   `elysium.access`.
+
+### T0.6B Object sets: `elysium.query`, the only read path
+
+Resolved: X1 (N46). Absorbs REF-MED (deleted).
+
+- **Why now.** DR1 names `elysium.query` as the object-set primitive and I2
+  makes it the only read facade, but today reads live in
+  `src/elysium/core/ontology/object_sets.py` (977 lines),
+  `src/elysium/core/ontology/mediator.py` (3,091 lines, read and write
+  halves) and `src/elysium/api/v2/loading.py`. T0.7's erasure, T0.10's
+  planning, T0.13's conditions, T0.15's agent and every API card read
+  through it; building it once here stops each of them binding to the
+  mediator.
+- **DR:** 1, 7. **Decisions:** N46, N26, N28, D7.
+- **Steps.** Each one commit; behaviour unchanged until step 4, proved by
+  the existing tests passing with import edits only.
+  1. **Move the set grammar.** `git mv src/elysium/core/ontology/object_sets.py
+     src/elysium/query/sets.py`; the class `SchemaView` in it is renamed
+     `FieldIndex` (it is the caller's resolved fields with storage names,
+     never exported from `elysium.query`, and must not clash with
+     `elysium.access.SchemaView`); `FieldIndex.build(model: Ontology, view:
+     SchemaView)` replaces its dict constructor. The three stages stay
+     (`parse_object_set`, `prepare`, `run`). Add the node classes
+     `Reference(id)` and `SimilarTo(object_type, text, limit)` with parse
+     branches; their evaluation calls `query/stored.py::resolve_reference
+     (caller, id) -> ObjectSet` and `query/similar.py::similar_keys(caller,
+     node) -> list[str]`, created here as stubs that raise
+     `InvalidArgument("This kind of object set is not available.")`; API-3
+     and API-6 own those two files and never edit `sets.py`.
+  2. **Split the reader.** The read half of `mediator.py` moves by concern,
+     names unchanged: `query/reader.py` (`Reader`: `get_object`,
+     `get_field`, `field_values_for_ids`, `readable_subset`, the security
+     prefetch and `security_cache_scope`; the ONLY module that calls
+     `check_access` for objects), `query/search.py` (`search_object`,
+     `search_object_free_text`, `free_text_searchable_fields`,
+     `may_search_by_meaning`, the condition translation and Python
+     fallback), `query/links.py` (`search_around`, `search_around_from`,
+     `_follow_link`, `link_counts`, `_withhold_hidden_link_targets`),
+     `query/values.py` (`count_objects`, `aggregate_by_field`,
+     `aggregate_measures`, `_measured`), `query/history.py`
+     (`filter_published_history`, `edit_history`), `query/scan.py` (the
+     scan ceiling, `MAX_SEARCH_SCAN`; SEC-D owns it afterwards). What stays
+     in `mediator.py` is its write half (locks, write limiters, overlay of
+     pending writes), which T0.10 moves into `elysium.actions`.
+  3. **Paging tokens.** `src/elysium/paging.py` (bottom layer, so `query`,
+     `audit`, `proposals`, `jobs` and `api` all use it) takes
+     `api/v2/paging.py`'s token functions unchanged in behaviour (offset
+     position, 15-minute expiry, HMAC over principal id, query fingerprint
+     and payload, one uniform refusal) with two changes: the key file moves
+     from the data directory's `v2_page_token.key` to
+     `<state>/secrets/page-token.key` (`StatePaths.page_token_key`, created
+     with the same exclusive-link trick, mode 0600, shared by every worker),
+     and an object set's fingerprint is `sha256` of the canonical JSON of
+     (parsed set, `orderBy`, `select`, `pageSize`). The token is **not**
+     bound to the gold snapshot by default: paging is the precedent's
+     "latest results" (the code's documented behaviour), and binding the
+     snapshot would invalidate every open token at each sync; the payload
+     reserves the optional key `s` (a snapshot id) which API-7's
+     `snapshot=true` fills and checks. A bad, expired, foreign or edited
+     token answers `InvalidArgument("This page token is not valid.")` with
+     `errorName: "InvalidPageToken"`, the same for every reason. A
+     non-object list (proposals, jobs, versions) signs its position with the
+     same functions and its own fingerprint (its filters); the audit log
+     signs `(segment, byte offset)` (N54). `api/v2/paging.py` is deleted;
+     `Page` and `page_size()` move to `elysium.paging`.
+  4. **The facade.** `src/elysium/query/__init__.py` exports the contract
+     below; `query/load.py` takes `api/v2/loading.py`'s page assembly
+     (`loading.py` deleted); `api/v2/resources/{objects,object_sets}.py`
+     call only the facade.
+  5. **Callers switch.** `core/agent/*`, `core/functions/ontology_access.py`,
+     the trigger evaluation in `core/trigger_conditions.py`, export
+     (`core/export.py`) and erasure planning read through `elysium.query`;
+     v1 routes keep their current imports as listed ignores (each API card
+     removes its own).
+  6. **Close the door.** Import-linter: `api-reaches-only-facades` forbids
+     `elysium.api` importing `elysium.core.ontology.mediator`,
+     `elysium.query.reader`, `elysium.query.search`, `elysium.query.links`,
+     `elysium.query.values`; contract `one-reader` (type `forbidden`): no
+     module outside `elysium.query.reader` imports
+     `elysium.access.check_access` for an `ObjectRef` (an AST test,
+     `tests/unit/test_only_reader_checks_objects.py`, because import-linter
+     cannot see arguments). Delete the read remains of `mediator.py`.
+- **Invariants and proof.** I1: `tests/api/test_uniform_denial.py` extended
+  to `query.get` (unknown and hidden keys raise the same `NotFound`); I3:
+  `tests/unit/test_query_reader_checks_every_id.py` (a spy on
+  `check_access` sees every id `load`, `count`, `aggregate`, `keys` and
+  `searchAround` return); paging: `tests/unit/test_page_tokens.py::
+  test_foreign_principal_refused`, `::test_other_set_refused`,
+  `::test_edited_token_refused`, `::test_same_message_for_every_reason`
+  (controls). A second fresh-reader review aimed at I3.
+- **Preconditions.** T0.6.
+- **Out of scope.** New set kinds and operators (API-3, API-5, API-6,
+  ADD-10); pushdown and snapshot paging (API-7); the scan budget (SEC-D);
+  the write half of the mediator (T0.10).
+- **Contract.**
+  ```python
+  # src/elysium/query/__init__.py   the only read facade (I2); every function takes a Caller (T0.5) and returns only what it may read
+  ObjectSet = Base | Static | Filter | Combine | SearchAround | Reference | SimilarTo   # query/sets.py dataclasses, wire forms in its docstring
+  def parse_object_set(raw: Any) -> ObjectSet                                   # InvalidArgument with the existing sentences
+  @dataclass(frozen=True)
+  class ObjectView: object_type: str; primary_key: str; properties: Mapping[str, Any]; links: Mapping[str, list[str]] | None = None
+  #   wire: {"objectType", "primaryKey", "properties", "links"?} (today's row shape, kept)
+  def get(caller: Caller, object_type: str, key: str, *, select: Sequence[str] | None = None, expand: Sequence[str] = ()) -> ObjectView   # NotFound for unknown and hidden
+  def load(caller: Caller, s: ObjectSet, *, select: Sequence[str] | None = None, order_by: Sequence[OrderTerm] = (),
+           page_size: int = 100, page_token: str | None = None) -> Page[ObjectView]
+  def count(caller: Caller, s: ObjectSet) -> int
+  def aggregate(caller: Caller, s: ObjectSet, *, group_by: str | None = None, metrics: Sequence[Metric]) -> AggregateResult
+  #   AggregateResult = {"data": [{"group": value | None, "metrics": {name: number}}], "scanTruncated": bool}   (today's shape; SEC-D removes scanTruncated)
+  def keys(caller: Caller, s: ObjectSet, *, limit: int) -> list[str]           # automation (per recipient), export, erasure planning
+  def as_caller(principal: Principal, *, paths: StatePaths, settings: Settings, request_id: str | None = None) -> Caller   # for the runner
+  # src/elysium/paging.py   (layer L-1)
+  class Page(BaseModel, Generic[T]): data: list[T]; nextPageToken: str | None      # never a total (DR2)
+  def page_size(requested: int | None) -> int                                     # default 100, clamped to 1..500
+  def fingerprint(*parts: Any) -> str
+  def issue(paths: StatePaths, principal_id: str, fingerprint: str, position: Mapping[str, Any]) -> str   # position: {"o": offset} or {"seg", "off"}; optional "s"
+  def redeem(paths: StatePaths, token: str, principal_id: str, fingerprint: str) -> Mapping[str, Any]   # InvalidArgument InvalidPageToken
+  # src/elysium/query/wire.py   pydantic ObjectSetJson (discriminator "type") for request bodies and OpenAPI only;
+  #   routes pass body.model_dump(by_alias=True) to parse_object_set, which stays the one validator
+  #   (tests/unit/test_object_set_wire_matches_parser.py: every wire kind parses, every parser kind has a wire model)
+  ```
+  A card that adds a set kind or operator owns its own `query/<x>.py`;
+  `query/sets.py`'s filter-operator table is owned by API-5 and then ADD-10
+  (different waves); nobody else edits `sets.py`.
 
 ### T0.7 State: SQLite discipline, unit of work, outbox, audit chain, erasure ledger
 
@@ -1092,25 +1637,47 @@ its failing negative tests, then the code.
      `foreign_keys=ON`, `synchronous=NORMAL` on every connection;
      `unit_of_work(which, paths)` (`BEGIN IMMEDIATE`, explicit `commit()`,
      rollback by default); one writer connection per process per file
-     (`db.writer(which)` returns the process's cached writer); schema files
-     `src/elysium/db/{main,erasure,scratch}.sql`; `user_version` stamp and
-     refusal naming the file.
-  2. Move the 31 per-store schemas into `main.sql` (and `scratch.sql` for
-     request metrics, login attempts, sync attempts, embeddings, column
-     profiles); tables later cards need: `jobs`, `setup_tokens`,
-     `api_tokens`, `sessions`, `backups`, `restore_log`, `resource_versions`,
-     `proposals`, `outbox`, `notes`; findings tables if MEAS-3 says so (D10).
+     (`db.writer(which)` returns the process's cached writer); schema in one
+     file per owner (N59): `src/elysium/db/schema/<file>/<NN>-<owner>.sql`
+     (`<file>` is `main`, `erasure` or `scratch`; `NN` two digits;
+     `<owner>` the item or card id in lower case), applied by `db.connect()`
+     in name order inside one transaction at first open of an empty file;
+     `user_version` is the sha256-derived 31-bit hash of the concatenated
+     files of that directory until 1.0 (N12: no migrations; a mismatch
+     refuses naming the file and says "delete the state or restore a
+     backup"), then the migration number. T0.7 writes
+     `main/00-core.sql`, `erasure/00-core.sql` and `scratch/00-core.sql`
+     with every table Tier 0 needs; a card adds its own file (for example
+     `main/50-api-3.sql`) and never edits another.
+  2. Move the 31 per-store schemas into `main/00-core.sql` (and
+     `scratch/00-core.sql` for request metrics, login attempts, sync
+     attempts, embeddings, column profiles, the log ring of ADM-16 and the
+     `change_feed` of N47); tables Tier 0 items need: `jobs`, `job_events`,
+     `setup_tokens`, `api_tokens`, `sessions`, `backups`, `restore_log`,
+     `resource_versions`, `proposals`, `outbox`, `lake_intents`,
+     `notifications`, `idempotency_keys`; findings tables if MEAS-3 says so
+     (D10). (Cards' tables, such as `notes` and `stored_sets`, are the
+     cards' own files.)
   3. Outbox: table `outbox(id TEXT PRIMARY KEY, kind TEXT, key TEXT UNIQUE,
      payload_json TEXT, created_at, attempts INT, next_at, done_at,
      last_error)`; `outbox.add(uow, kind, key, payload)` inside the caller's
      unit of work; `@outbox_handler(kind)`; a relay loop run by the server's
-     timer worker (`outbox.relay_once(limit=100) -> int`), at-least-once, with
+     runner (`outbox.relay_once(limit=100) -> int`), at-least-once, with
      back-off 1 s, 4 s, 16 s, 60 s; handlers must be idempotent on `key`;
-     `outbox.reconcile()` reports rows older than 1 h not done.
+     `outbox.reconcile()` reports rows older than 1 h not done. The relay
+     runs only in the runner process (N47); until T0.8 creates the runner,
+     the existing timer loop (`api/timer_service.py`, one firer by flock)
+     calls `relay_once`.
+     **Change feed (N47).** `scratch.db` table `change_feed(seq INTEGER
+     PRIMARY KEY AUTOINCREMENT, at, kind TEXT, object_type TEXT, keys_json
+     TEXT)` (kinds `added`, `modified`, `removed`, `refresh`), written by the
+     outbox handler `change_feed` (added in the same unit of work as the
+     write) and by the lake publication; rows older than 1 h are deleted by
+     the runner. `db.change_feed.since(seq, limit=500) -> list[ChangeRow]`
+     and `latest_seq()`.
   4. `lake.py` (layers as namespaces), the ledger in `erasure.db`, the
-     `Erasable` registry, `audit/` with `v`, `category`, monthly segments and a
-     hash chain (`prev`, `hash`, sha256 over canonical JSON; each segment opens
-     with the previous close).
+     `Erasable` registry, `audit/` with the event schema, monthly segments,
+     the hash chain and paging below (N54; resolved: X10).
 - **Deletes.** Archive S7's list: `connection_with_schema`,
   `_schema_verified`, `OWNED_DATABASES`, `internal_storage.py`,
   `lake_names.py`, the reserved-name checks, about 14 namespace walks, the
@@ -1130,7 +1697,7 @@ its failing negative tests, then the code.
   in tests via a guard installed by the fixture). Outbox:
   `tests/unit/test_outbox.py::test_effect_runs_iff_commit`,
   `::test_retry_is_idempotent`.
-- **Preconditions.** T0.6. MEAS-3, MEAS-4.
+- **Preconditions.** T0.6B. MEAS-3, MEAS-4.
 - **Out of scope.** Migrations (OPS-08, from 1.0); backups (OPS-05).
 - **Contract.**
   ```python
@@ -1138,32 +1705,102 @@ its failing negative tests, then the code.
   def connect(which: Literal["main", "erasure", "scratch"], paths: StatePaths, *, read_only: bool = False) -> sqlite3.Connection
   @contextmanager
   def unit_of_work(which: Literal["main", "erasure", "scratch"], paths: StatePaths) -> Iterator[UnitOfWork]   # .conn; .commit(); rollback on exit without commit
+  observe_lock_wait: Callable[[str, float], None] | None = None   # module attribute; unit_of_work calls it with (file, ms waited for BEGIN IMMEDIATE); OPS-11 sets it
   # src/elysium/db/outbox.py
   def add(uow: UnitOfWork, kind: str, key: str, payload: Mapping[str, Any]) -> None
   def outbox_handler(kind: str) -> Callable       # @outbox_handler("notify_app") def deliver(key, payload) -> None  (idempotent)
   def relay_once(paths: StatePaths, *, limit: int = 100) -> int
-  # a card that needs a table adds it to src/elysium/db/main.sql in a block "-- <CARD-ID>" (no migrations before 1.0, N12)
-  # src/elysium/audit/__init__.py
-  def record(category: str, action: str, *, actor: str, resource: str | None, outcome: Literal["ok", "denied", "error"], detail: Mapping[str, Any] = {}) -> None   # fail-closed
-  def query(q: AuditQuery) -> Page[AuditEvent]
+  # schema: src/elysium/db/schema/{main,erasure,scratch}/<NN>-<owner>.sql, one file per owner, applied in name order (N59, N12)
+  # src/elysium/db/change_feed.py   (scratch.db; N47)
+  @dataclass(frozen=True) class ChangeRow: seq: int; at: datetime; kind: Literal["added", "modified", "removed", "refresh"]; object_type: str; keys: tuple[str, ...]
+  def since(paths: StatePaths, seq: int, *, limit: int = 500) -> list[ChangeRow]; def latest_seq(paths: StatePaths) -> int
+  # src/elysium/audit/__init__.py   (N54)
+  def record(event: str, *, actor: str, actor_kind: Literal["person", "service", "system", "local"], resource: str | None,
+             outcome: Literal["ok", "denied", "error"], request_id: str | None = None, detail: Mapping[str, Any] = {}) -> None   # fail-closed; category = event.split(".")[0]
+  def query(paths: StatePaths, q: AuditQuery, *, principal_id: str) -> Page[AuditEvent]
   def verify(paths: StatePaths, *, segment: str | None = None) -> VerifyReport
-  # categories are dotted "<area>.<event>"; DOC-03 generates the list
+  class AuditEvent(BaseModel): v: Literal[1]; id: str; ts: datetime; event: str; category: str; actor: str; actorKind: str
+                               resource: str | None; outcome: str; requestId: str | None; detail: dict; prev: str; hash: str
+  class AuditQuery(BaseModel): from_: datetime | None = Field(None, alias="from"); to: datetime | None = None; actor: str | None = None
+                               category: str | None = None; resource: str | None = None; outcome: str | None = None
+                               page_size: int = 100; page_token: str | None = None      # newest first
+  class VerifyReport(BaseModel): intact_through: str | None; broken_at: str | None; segments_checked: int
   # src/elysium/erasure/registry.py
-  def erasable(store: str, *, subject_columns: Mapping[str, str]) -> Callable
+  @dataclass(frozen=True) class SubjectKey: object_type: str; key: str
+  @dataclass(frozen=True) class ErasurePlan: store: str; tables: list[tuple[str, int | None]]; complete: bool   # rows None and complete False when a table could not be read
+  @dataclass(frozen=True) class ErasureReport: store: str; deleted: Mapping[str, int]; widened: bool          # widened: the never-narrow rule erased more than the subject's own rows
+  def erasable(store: str, *, subject_columns: Mapping[str, str]) -> Callable   # @erasable("saved_views", subject_columns={"owner_id": "user"}) on a class implementing Erasable
   class Erasable(Protocol): def plan(self, subject: SubjectKey) -> ErasurePlan; def erase(self, subject: SubjectKey) -> ErasureReport
   # src/elysium/index/lake.py
   class Layer(Enum): BRONZE; CHANGELOG; GOLD; GOLD_HISTORY   # (+ SILVER if D9 keeps it)
   def identifier(layer: Layer, name: str) -> tuple[str, str]; def layer_of(identifier) -> Layer; def iter_tables(catalog, layer: Layer | None = None) -> Iterator[TableRef]
   ```
+  **The audit log (N54).** Resolved: X10. One JSON object per line in
+  `<state>/audit/audit-YYYY-MM.jsonl`, keys sorted, UTF-8, LF:
+  ```text
+  {"v": 1, "id": "<ULID>", "ts": "2026-11-03T18:40:12.345Z", "event": "users.created", "category": "users",
+   "actor": "<user id> | system:<name> | local:<unix user>", "actorKind": "person|service|system|local",
+   "resource": "<kind>/<name or id> | null", "outcome": "ok|denied|error", "requestId": "<id> | null",
+   "detail": {...}, "prev": "<hash of the previous event; a segment's first event carries the previous segment's last hash>",
+   "hash": "<sha256 hex of the canonical JSON of this object without 'hash'>"}
+  ```
+  Writes are serialised across processes by an exclusive `flock` on
+  `audit/.lock` held for the append (read last hash, append, fsync); a failed
+  append fails the caller (fail-closed). `detail` never holds an object value,
+  a secret or a property name the actor may not read. CLI local commands
+  record with `actorKind: "local"`, `actor: "local:<unix user>"`. **Paging:**
+  `query` reads segments newest first, each segment backwards by line, and
+  stops after `page_size` matches; the page token signs `{seg: "2026-11",
+  off: <byte offset of the next line to read>}` with `elysium.paging` and
+  the filter's fingerprint; a filter that scans 200,000 events without
+  filling a page returns what it found with a token to continue (never a
+  time-out, never a count). No index until a measurement asks for one
+  (DR7). DOC-03 generates the event list from `record(...)` call sites.
 
 ### T0.8 Pipeline, jobs, schedules, single lake writer, SEC-01
 
 - **Why now.** Sync, rebuild, backup, export and erasure are long-running and
   need progress, cancellation and a record that outlives the tab.
-- **DR:** 1, 7. **Decisions:** D9, D16, N10, N34, N36, N43, B6.
+- **DR:** 1, 7. **Decisions:** D9, D16, N10, N34, N36, N43, N47, N53, N56, B6.
+- **The process model (N47).** Resolved: X2. `elysium server run` is one
+  **supervisor** process. It takes `run/server.lock`, binds the listening
+  socket once, and starts as children: `server.workers` **web workers**
+  (each a `uvicorn.Server` on the inherited socket fd; HTTP and SSE only) and
+  one **runner** (`python -m elysium.runner`, which takes `run/runner.lock`
+  and exits if it cannot). The supervisor restarts a child that dies
+  (back-off 1 s, 4 s, 16 s, 60 s), forwards SIGTERM and SIGINT to every
+  child, waits up to 30 s, then kills (OPS-10 owns `ops/shutdown.py`, called
+  from the supervisor and from each child's handler); it exits 75 when a
+  child asks for a restart through `run/restart-requested` (ADM-13). The
+  **runner** is the only process that: runs the timer loop (schedules,
+  automation timers, outbox relay, change-feed pruning, lake reconcile,
+  setup-token expiry), starts jobs, supervises add-on servers (the logic of
+  `api/addon_servers.py`'s supervisor, whose state files stay the meeting
+  point for the web workers' proxy), and writes the lake (inside jobs). Each
+  running job is a **subprocess** of the runner (`python -m elysium.jobs.run
+  <job id>`), at most `Configuration.limits.concurrentJobs` (default 2) at
+  once, queued FIFO beyond; a job that writes the lake takes
+  `run/lake-writer.lock` for its write phases, so lake writers serialise and
+  a second waits ("queued: waiting for the lake"). **Web workers** never run
+  a job, the relay or a timer, and never write the lake; `jobs.submit`
+  inserts a `queued` row and returns; the runner polls `jobs` every second
+  (and is woken at once by a `SIGUSR1` sent to the pid in `run/runner.pid`).
+  **SSE in every web worker** learns of commits by polling
+  `scratch.db`'s `change_feed` (T0.7) every second from the last `seq` it
+  sent (DR7: a polling relay, no bus); job progress streams poll
+  `job_events` the same way. Every producer writes those rows: an action's
+  unit of work adds a `change_feed` outbox row, a lake publication writes
+  rows for the types it changed. Development: `elysium server run --workers
+  1` behaves the same with one web worker. Tests run the runner loop in
+  process (`runner.run_once(paths)`).
 - **Steps.**
-  1. Jobs: a row in `elysium.db` (with `request_id`), a worker subprocess,
-     progress events, cancellation, the last 200 log lines kept.
+  1. Jobs: a row in `elysium.db` (with `request_id`), the runner and its job
+     subprocesses as above, progress events in `job_events`, cancellation
+     (a `cancel_requested` flag the job polls through `ctx.cancelled()`, then
+     SIGTERM after 30 s), the last 200 log lines kept, `checkpoint`.
+  1b. `git mv src/elysium/core/mirror src/elysium/index` (one commit, imports
+     only), so `index/openlineage.py`, `index/pipeline/` and
+     `index/data_contracts.py` are the paths later cards own.
   2. Pipeline into `src/elysium/index/pipeline/` with `PHASES` and `after=`
      edges; a pure `plan_sync(resources, catalog_state) -> SyncPlan`; the
      shell runs the plan; `SyncSource` (SQLAlchemy including its SQLite
@@ -1176,8 +1813,27 @@ its failing negative tests, then the code.
      intent row with key = deterministic snapshot key before the write and
      marked done after; `lake_reconcile()` lists intents without a snapshot
      and snapshots without an intent.
-  4. Schedules from `Configuration.spec.schedules`, run by the timer worker
-     (one worker holds the flock).
+  4. **Schedules (N53).** Resolved: X9. A fixed vocabulary, no cron and no
+     new dependency: `src/elysium/resources/when.py` (used by
+     `Configuration.spec.schedules` and by `Automation`'s `schedule`
+     condition) defines
+     ```python
+     class Hourly(BaseModel): minute: int = Field(ge=0, le=59)
+     class Daily(BaseModel): time: str                        # "HH:MM", 24-hour
+     class Weekly(BaseModel): days: list[Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]] = Field(min_length=1); time: str
+     class Every(BaseModel): minutes: int = Field(ge=5, le=1440)   # anchored at midnight in the time zone
+     When = {"hourly": Hourly} | {"daily": Daily} | {"weekly": Weekly} | {"every": Every}   # exactly one key; "manual" = no schedule entry
+     def next_runs(when: When, tz: str, after: datetime, n: int = 3) -> list[datetime]   # pure
+     ```
+     `next_runs` reuses `src/elysium/core/timer_rules.py`'s arithmetic (moved
+     into `resources/when.py`; its DST rules stand: a time that does not
+     exist fires at the first moment that does, a repeated time fires once).
+     All times are read in `Configuration.spec.timeZone`. The runner's timer
+     loop submits each due schedule as a job (`owner: system:scheduler`); a
+     missed run (server down) runs once at start, never a backlog. The
+     wizard and the Schedules tab offer exactly these shapes; the server
+     computes previews (`POST /api/v2/admin/configuration/schedulePreview
+     {when}` -> `{next: [iso, iso, iso]}`, ADM-05).
   5. SEC-01 pipeline half: `_security` copied from the raw bronze value
      before any standardisation or check; verify against the code first; if
      already true, add the test and control and close the row. SEC-02/03:
@@ -1199,16 +1855,43 @@ its failing negative tests, then the code.
 - **Contract.**
   ```python
   # src/elysium/jobs/__init__.py
-  class Job(BaseModel): id; kind; owner; request_id; state: Literal["queued", "running", "succeeded", "failed", "cancelled", "partial"]; progress: Progress; created_at; started_at; finished_at; result: dict | None; log_tail: list[str]
-  def submit(kind: str, args: Mapping[str, Any], *, owner: Principal, call: Call | None = None) -> Job   # one running job per (kind, lock_key); else Conflict
-  def job_kind(name: str, *, lock_key: Callable[[Mapping], str] | None = None, grant: ManageArea, writes_lake: bool = False) -> Callable
-  class JobContext: args; progress(done: int, total: int | None, phase: str); log(line: str); cancelled() -> bool; principal; request_id
-  # src/elysium/jobs/kinds/<kind>.py  one module per job kind
+  JobState = Literal["queued", "running", "succeeded", "failed", "cancelled", "partial", "interrupted"]
+  class Progress(BaseModel): done: int; total: int | None; phase: str
+  class Job(BaseModel): id: str; kind: str; owner: str; request_id: str | None; state: JobState; progress: Progress
+                        created_at: datetime; started_at: datetime | None; finished_at: datetime | None
+                        result: dict | None; failure_kind: str | None; log_tail: list[str]
+                        checkpoint: dict | None     # the last committed phase and what it needs to resume (OPS-10 reads it)
+  def submit(kind: str, args: Mapping[str, Any], *, owner: Principal, request_id: str | None = None) -> Job
+  #   one queued-or-running job per (kind, lock_key(args)); else Conflict("A job like this is already running.") with parameters.jobId
+  def job_kind(name: str, *, grant: ManageArea, lock_key: Callable[[Mapping[str, Any]], str] | None = None,
+               writes_lake: bool = False, resumable: bool = False) -> Callable
+  #   @job_kind("backup", grant="backups", lock_key=lambda a: "lake-writer")
+  #   def run(ctx: JobContext) -> dict: ...      # the returned dict is Job.result; raise DomainError to fail (failure_kind = its errorName)
+  class JobContext:
+      args: Mapping[str, Any]; principal: Principal; request_id: str | None; paths: StatePaths; settings: Settings
+      def progress(self, done: int, total: int | None, phase: str) -> None
+      def log(self, line: str) -> None
+      def cancelled(self) -> bool
+      def checkpoint(self, data: Mapping[str, Any]) -> None   # committed with the phase it ends
+      def lake_writer(self) -> ContextManager[None]            # takes run/lake-writer.lock; only when writes_lake=True
+  def get(caller: Caller, job_id: str) -> Job                  # NotFound unless visible (below)
+  def list_jobs(caller: Caller, *, kind: str | None, state: str | None, page_size: int, page_token: str | None) -> Page[Job]
+  def cancel(caller: Caller, job_id: str) -> Job
+  # visibility: a job is visible to its owner and to holders of its kind's grant area; any other id is the uniform 404
+  # src/elysium/jobs/kinds/<kind>.py  one module per job kind (the four kind-directory wildcards of N48 allow upward imports)
+  # src/elysium/runner/__init__.py   main() for `python -m elysium.runner`; run_once(paths) for tests
   # routes: GET /api/v2/jobs, GET /api/v2/jobs/{id}, POST /api/v2/jobs/{id}/cancel, GET /api/v2/jobs/{id}/events (SSE, sse-starlette)
-  #         POST /api/v2/admin/sync {sources?, tables?, full?, rebuild?} -> 202 + Location; GET /api/v2/admin/sync/status; GET /api/v2/admin/sync/history
-  # CLI: elysium job list|show|cancel|wait|logs ; elysium sync run|status|history
-  # src/elysium/index/pipeline/__init__.py   PHASES: tuple[Phase, ...]; plan_sync(...) -> SyncPlan (pure); run(job: JobContext, plan: SyncPlan) -> SyncResult
+  #         POST /api/v2/admin/sync {sources?, tables?, full?, rebuild?} -> 202 + Location
+  #         GET /api/v2/admin/sync/status -> {data: [{source, lastRun: {jobId, at, state, rowsChanged} | null, nextAt | null}]}
+  #         GET /api/v2/admin/sync/history?source&pageSize&pageToken -> Page[{jobId, source, startedAt, finishedAt, state, rowsChanged, failureKind | null}]
+  # CLI (built in this item, src/elysium/cli/commands/{job,sync}.py): elysium job list|show|cancel|wait|logs ; elysium sync run|status|history
+  # src/elysium/index/pipeline/__init__.py   PHASES: tuple[Phase, ...] (..., "gold", "retire", ...); plan_sync(...) -> SyncPlan (pure); run(job: JobContext, plan: SyncPlan) -> SyncResult
+  # src/elysium/resources/when.py   When, next_runs (step 4)
   ```
+  The `retire` phase (N56) runs after `gold` for types whose
+  `ObjectType.lifecycle` is set and does nothing until ADD-08 supplies
+  `index/pipeline/retire.py`'s planner (T0.8 writes the phase with an empty
+  planner returning no retirements).
   Job kinds added by cards: `backup` (OPS-05), `restore-check` (OPS-06),
   `export` (ADM-22), `erasure` (ADM-10), `lake-verify`, `lake-rebuild`
   (ADM-08), `backup-prune` (OPS-07), `audit-export`, `audit-verify` (ADM-14),
@@ -1233,18 +1916,56 @@ its failing negative tests, then the code.
   `::test_canary_value_not_on_disk`; cost within 1.3x plaintext on a
   2,000,000-row table (`tools/measure/lake_crypto_cost.py`, marker `live`).
 - **Out of scope.** A KMS; per-compartment keys.
+- **The recovery key: two candidate designs (X8, waits on Q-KEY).** The
+  owner's answer to Q-KEY picks one; nothing below is built before it.
+  - **Candidate A: a random recovery key wraps a copy of the master key.**
+    At setup the server generates 32 random bytes, shows them once as 52
+    base32 characters in 13 groups of four (`ABCD-EFGH-...`), and writes
+    `<secrets>/master-key.recovery` (the master key wrapped with AES-256-GCM
+    under a key derived from the recovery key by HKDF-SHA256). The setup
+    step asks for the last 8 characters back before it marks the step done.
+    `elysium lake key import --recovery` takes the 52 characters and
+    re-creates `master-key` from `master-key.recovery`; a passphrase export
+    (`lake key export`, Argon2id-derived key) stays as the second way.
+    *Implies for ADM-02:* the "Recovery key" screen shows the groups, "Download
+    as a file" (`elysium-recovery-key-<host>.txt`), and an 8-character field;
+    routes `POST /api/v2/setup/recoveryKey` (returns the key once; a second
+    call returns 409 `RecoveryKeyShown`) and `POST
+    /api/v2/setup/recoveryKey/confirm {last8}` (422 on mismatch). *Implies for
+    OPS-05:* backups never contain `master-key` but DO contain
+    `master-key.recovery` (it is useless without the recovery key), so a
+    backup restored on another machine is opened with the recovery key; the
+    restore confirmation says "You will need the recovery key."
+  - **Candidate B: no recovery key; the master key file is the only key.**
+    Setup shows no key; it shows the path of `<secrets>/master-key` and asks
+    the operator to tick "I have copied this file somewhere safe" (a server
+    cannot verify it). `lake key export` (passphrase) is the only portable
+    form. *Implies for ADM-02:* the "Recovery key" step becomes "Key file"
+    with the path, a "Download an encrypted copy" button (a passphrase export,
+    passphrase typed twice) and the tick box; routes `POST
+    /api/v2/setup/keyExport {passphrase}` (returns the blob once) and
+    `/api/v2/setup/steps/key-file/complete`. *Implies for OPS-05:* backups
+    contain neither key; restoring on another machine needs the master-key
+    file or a passphrase export, and `backup verify` on another machine
+    without either reports "cannot decrypt the lake files" (exit 8).
+  - J: A is recommended (a key a person can write down survives the loss of
+    the machine and of every file on it; B depends on a file copy the server
+    cannot check). Either way the master key itself is never in a backup and
+    never leaves the secrets directory except wrapped.
 - **Contract.** `elysium.index.crypto.EncryptingFileIO` (`py-io-impl`);
   `elysium.keys.master_key(settings) -> bytes` (raises `SecretUnavailable`);
   `elysium.keys.recovery.export(passphrase) -> bytes`, `.import_(blob,
-  passphrase)`; `POST /api/v2/setup/recovery-key` and
-  `/setup/recovery-key/confirm`.
+  passphrase)`; candidate A adds `elysium.keys.recovery.create() -> str`
+  (the 52 characters) and `.unwrap(recovery_key) -> bytes`; the setup routes
+  of the chosen candidate (above); step id `recovery-key` (A) or `key-file`
+  (B) in ADM-01's list.
 
 ### T0.10 Proposals, resource set, provisioning, actions with validate
 
 - **Why now.** The largest lever: seven stores and their duplicated four-eyes
   code collapse into one. Automations, checks, functions, erasure, every admin
   screen that changes a resource, and add-on ingestion go through it.
-- **DR:** 1, 2, 5. **Decisions:** D1, D8, D17, N4, N16, N21, N25, N34.
+- **DR:** 1, 2, 5. **Decisions:** D1, D8, D17, N4, N16, N21, N25, N34, N48, N49, N57.
 - **Steps.**
   1. **Safeguard table first.** `tests/unit/test_proposal_safeguards.py`:
      one parametrised row per safeguard each old store carried, each with a
@@ -1258,11 +1979,14 @@ its failing negative tests, then the code.
      one unit of work, and adds post-commit effects to the outbox.
   3. `proposals` table and kinds `resource_change` (model, role, silo,
      configuration and app changes), `action`, `identity_merge`, `erasure`
-     (shell; ADM-10 adds the handler; fixed policy `second_person`).
-  4. One versioned resource set in `resource_versions` with origin; the file
-     provisioner at startup and by `resource apply`; file-origin and
-     builtin-origin resources refused in the UI with
-     `errorName: "ResourceProvisioned"`.
+     (shell; ADM-10 adds the handler; fixed policy `second_person`), with the
+     approval semantics and the `resource_change` policy table below (N49).
+  4. One versioned resource set in `resource_versions` with origin; each
+     version records `author`, `reason`, `origin` and, per changed resource,
+     `previousOrigin` (so a file taking over a UI resource is detectable,
+     N4); the file provisioner at startup (in the supervisor, before the
+     children start) and by `resource apply`; file-origin and builtin-origin
+     resources refused in the UI with `errorName: "ResourceProvisioned"`.
   5. Routes (below); ETags with 412 and 428; `Idempotency-Key` stored with the
      proposal and its write; the queryable action log; the Inbox as one list
      filtered by kind; the Schema app on the change endpoint.
@@ -1277,8 +2001,9 @@ its failing negative tests, then the code.
      uniform 404 for an unknown action name, chosen once: **404 for an action
      the caller cannot discover, INVALID with the fixed sentence for any object
      parameter the caller cannot read**); audited as `action.validated` with
-     outcome; rate-limited by the login throttle's store (60 per minute per
-     principal, 429 after). `actions.capabilities_for(call, object_type, pks,
+     outcome; rate-limited by `elysium.access.rate_limit.hit("validate:<principal
+     id>", limit=Configuration.limits.validatePerMinute, per_seconds=60)`
+     (429 after). `actions.capabilities_for(call, object_type, pks,
      action_names) -> Mapping[str, Mapping[str, bool]]` (at most 20 actions x
      100 objects) for API-1's hints.
   7. Heliograph asks: `$user.id` and `$approver.id` as effect values;
@@ -1296,43 +2021,116 @@ its failing negative tests, then the code.
   `::test_validate_is_audited`, `::test_validate_rate_limited`;
   `tests/unit/test_action_plan_is_pure.py` (forbidden imports). A second
   fresh-reader review aimed only at I5.
-- **Preconditions.** T0.5, T0.6, T0.7. MEAS-2 (M13).
+- **Preconditions.** T0.5, T0.6, T0.6B, T0.7. MEAS-2 (M13).
 - **Out of scope.** Per-object hints in object responses (API-1); admin UIs
   (ADM-*); erasure handler (ADM-10).
 - **Contract.**
   ```python
-  # src/elysium/actions/__init__.py
-  def plan(model, view, action: str, params: Mapping[str, Any], versions: Mapping[str, str]) -> ActionPlan | list[Problem]   # pure
-  def apply(call: Call, action: str, params: Mapping[str, Any], *, mode: Literal["validate", "propose", "execute"] = "execute",
-            expected_versions: Mapping[str, str] | None = None) -> ApplyResult   # .status: "valid"|"invalid"|"proposed"|"applied"; .proposal_id; .write_id; .reasons
-  def capabilities_for(call: Call, object_type: str, pks: Sequence[str], actions: Sequence[str]) -> Mapping[str, Mapping[str, bool]]
-  # src/elysium/actions/effects/<effect>.py   @effect("modify"|"create"|"delete"|...) ; post-commit effects go through db.outbox
-  # src/elysium/proposals/__init__.py
+  # src/elysium/actions/__init__.py   (L5; never imports proposals, N48)
+  def plan(model: Ontology, view: SchemaView, action: str, params: Mapping[str, Any], versions: Mapping[str, str]) -> ActionPlan | list[Problem]   # pure
+  def apply(caller: Caller, action: str, params: Mapping[str, Any], *, mode: Literal["validate", "execute"] = "execute",
+            expected_versions: Mapping[str, str] | None = None, approved_by: Principal | None = None) -> ApplyResult
+  #   validate: never writes. execute: applies when policy_for(caller.principal, action) is "apply"; otherwise returns
+  #   status "needs_proposal" with the plan and the policy, and the CALLER submits proposals.submit(caller, "action", ...).
+  #   approved_by is set only by proposals/kinds/action.py when applying an approved proposal (re-authorised as the approver, I5).
+  @dataclass(frozen=True)
+  class ApplyResult: status: Literal["valid", "invalid", "applied", "needs_proposal"]; write_id: str | None = None
+                     reasons: tuple[str, ...] = (); plan: ActionPlan | None = None; policy: Literal["confirm", "second_person"] | None = None
+  def policy_for(principal: Principal, action: ActionType) -> Literal["apply", "confirm", "second_person"]   # pure; the table below
+  def capabilities_for(caller: Caller, object_type: str, pks: Sequence[str], actions: Sequence[str]) -> Mapping[str, Mapping[str, bool]]
+  # src/elysium/actions/effects/<effect>.py   @effect_kind("modify"|"create"|"delete"|...) (N63); post-commit effects go through db.outbox
+  # src/elysium/actions/system.py             the system actions quarantine and retire, applied from the outbox kind "system_action" (N48)
+  # src/elysium/proposals/__init__.py          (L6)
   def proposal_kind(name: str) -> Callable
   class ProposalKind(ABC):
-      policy: Literal["none", "confirm", "second_person"] | Callable[[Proposal], str]
-      def validate(self, call: Call, payload) -> list[Problem]; def safeguards(self) -> Sequence[Safeguard]
-      def apply(self, call: Call, proposal: Proposal) -> dict    # under the APPROVER's call, re-authorised
-  def submit(call: Call, kind: str, subject: str, payload: dict, *, base_version: str | None, reason: str | None) -> Proposal
-  def approve(call: Call, proposal_id: str) -> Proposal; def reject(call: Call, proposal_id: str, reason: str) -> Proposal
+      policy: Literal["confirm", "second_person"] | Callable[[ChangeReport], Literal["confirm", "second_person"]]
+      def validate(self, caller: Caller, payload: dict) -> list[Problem]
+      def safeguards(self) -> Sequence[Safeguard]
+      def apply(self, approver: Caller, proposal: Proposal) -> dict    # under the APPROVER's principal, re-authorised (I5)
+  def submit(caller: Caller, kind: str, subject: str, payload: dict, *, base_version: str | None, reason: str | None,
+             policy: Literal["confirm", "second_person"] | None = None) -> Proposal
+  def approve(caller: Caller, proposal_id: str) -> Proposal; def reject(caller: Caller, proposal_id: str, reason: str) -> Proposal
+  def cancel(caller: Caller, proposal_id: str) -> Proposal            # the proposer, before a decision
+  def list_proposals(caller: Caller, *, kind: str | None, state: str | None, page_size: int, page_token: str | None) -> Page[Proposal]
   # src/elysium/proposals/kinds/<kind>.py
   # src/elysium/metadata/versions.py
-  def current(call_or_paths) -> ResourceSetVersion          # .id, .parent, .author, .reason, .resources
-  def plan_change(call: Call, changes: Sequence[ResourceChange], *, base_version: str) -> ChangeReport   # used_by, who_can_see, role_impact, migrations_needed
+  def current(paths: StatePaths) -> ResourceSetVersion          # .id, .parent, .author, .reason, .origin, .resources
+  def plan_change(caller: Caller, changes: Sequence[ResourceChange], *, base_version: str) -> ChangeReport
   class ResourceChange(BaseModel): op: Literal["create", "update", "delete", "rename"]; kind: str; name: str; spec: dict | None = None; new_name: str | None = None
   # src/elysium/resources/provision.py
   def apply_dir(path: Path, *, prune: bool, dry_run: bool) -> ChangeReport   # actor "system:file-provisioner"
   ```
-  Routes: `GET /api/v2/resources?kind=K`, `GET /api/v2/resources/{kind}/{name}`
-  (spec, origin, `readOnly`, ETag); `POST /api/v2/admin/resourceChanges
-  {changes, dryRun, baseVersion}` returning a `ChangeReport`, or 202 with a
-  proposal; `GET /api/v2/admin/versions`, `GET /api/v2/admin/versions/{id}`,
-  `GET /api/v2/admin/versions/{id}/diff?against=`, `POST
+  **Wire shapes (C5).** Every UI and CLI that shows a proposal or a change
+  renders these and nothing else:
+  ```text
+  Proposal  {id, kind, subject, state: "pending"|"applied"|"rejected"|"cancelled"|"failed", policy: "confirm"|"second_person",
+             proposer: {id, displayName}, onBehalfOf: {id, displayName} | null, createdAt, decidedBy: {id, displayName} | null,
+             decidedAt | null, reason | null, summary: "<server sentence>",
+             "$capabilities": {approve: bool, reject: bool, cancel: bool}}
+             (payload is returned only by GET /proposals/{id} and only to callers whose approve or cancel is true)
+  ChangeReport {baseVersion, newVersion | null (dry run or staged),
+                changes: [{op, kind, name, newName?, fields: [{path, before, after}]}],
+                usedBy: [{kind, name, reason}], whoCanSee: [{type, property?, roles: [label], added: bool}],
+                roleImpact: [{role: label, granted: [scope JSON], revoked: [scope JSON]}],
+                migrationsNeeded: [{type, property, choices: ["drop_edits", "move_edits", "cast"]}],
+                problems: [Problem]}
+  Problem   {name: "<ErrorName>", message: "<sentence>", parameters: {...}}      # elysium.errors.Problem
+  ```
+  **Approval semantics (N49).** Resolved: X4. Who is acting is
+  `Principal.via` (T0.5): `person` (a signed-in person or a person's token),
+  `agent` (the assistant acting for `on_behalf_of`), `automation` (an
+  automation acting as its owner, `on_behalf_of` = owner), `app` (an app's
+  service principal), `system` (the provisioner, the scheduler).
+  | Policy | via `person` | via `agent` | via `automation` | via `app` |
+  |---|---|---|---|---|
+  | `none` | applies at once | stages; `confirm` rules (D17) | stages; `confirm` rules (D17) | applies at once (ingestion, ADD-02) |
+  | `confirm` | applies at once; the UI shows `ConfirmDialog` moderate first; the API needs no extra flag | stages; approvable by `on_behalf_of` (self-approval allowed) or anyone allowed to approve the kind | stages; approvable by the owner or anyone allowed to approve the kind | stages; approvable by anyone allowed to approve the kind |
+  | `second_person` | stages; approver differs from the proposer | stages; approver differs from the proposer and from `on_behalf_of` | stages; approver differs from the owner | stages; approver differs from the proposer |
+  "Allowed to approve" = the approver's own principal passes the kind's
+  re-authorisation at approval (for `action`: `apply` on the action and
+  `read` on every object parameter; for `resource_change`: `manage:` of the
+  area the change touches, `model` for model kinds, `roles` for `Role`,
+  `deployment` for `Silo`, `Configuration`, `App`; for `erasure`:
+  `manage:erasure`). A disabled or deleted proposer makes the proposal
+  unapprovable (SEC-14). `system` never stages: the provisioner applies with
+  the file as the authority (N4), and a scheduled job is not a change.
+  **`resource_change` policy table** (`proposals/kinds/resource_change.py::policy(report)`,
+  pure, one safeguard row per line in `tests/unit/test_proposal_safeguards.py`):
+  | The change | Policy |
+  |---|---|
+  | a `Role` gains a grant, a `manage` area, or a member; a new role with any grant | `second_person` |
+  | an `ObjectType`'s `security` changes, or a label is removed from a property | `second_person` |
+  | a type or property with stored edits is deleted (`migrationsNeeded` not empty) | `second_person` |
+  | a `Silo` is created or its `url`, `path` or `adapter` changes | `second_person` |
+  | an `App` is created or enabled, or its `actions` or `offeredTo` widen | `second_person` |
+  | `Configuration.signIn` changes, or `llm.baseUrl` changes | `second_person` |
+  | a version restore (`POST /admin/versions/{id}/restore`) | `second_person` |
+  | anything else (descriptions, titles, new types and properties, narrowing a role, disabling an app, schedules, limits) | `confirm` |
+  The strictest row any change in the report matches wins. Erasure is fixed
+  `second_person` (N16); `identity_merge` is `second_person`; R47's
+  special-category edits are `second_person` (Q-R47).
+  **Routes.** `GET /api/v2/resources?kind=K` (`{name, kind, origin,
+  readOnly, changedAt, changedBy}`); `GET /api/v2/resources/{kind}/{name}`
+  (spec, origin, `readOnly`, ETag; `?format=yaml` returns the resource file
+  text as `text/yaml`, the IN envelope, N57); `GET /api/v2/schemas` (the kind names)
+  and `GET /api/v2/schemas/{kind}` (the kind's JSON Schema; every signed-in
+  caller; ADM-27's form generator reads it); `POST /api/v2/admin/resourceChanges {changes, dryRun,
+  baseVersion}` (DR2 codes: 200 with the `ChangeReport` when applied or a
+  dry run, 202 with the `Proposal` when staged); `GET /api/v2/admin/versions`,
+  `GET /api/v2/admin/versions/{id}`, `GET
+  /api/v2/admin/versions/{id}/diff?against=`, `POST
   /api/v2/admin/versions/{id}/restore` (a `resource_change` proposal); `GET
-  /api/v2/proposals?kind&state`, `POST /api/v2/proposals/{id}/approve|reject`;
-  `POST /api/v2/actions/{action}/apply|applyBatch|validate` (`applyBatch` cap
-  20); `GET /api/v2/actionLog`. A card that edits a resource from the UI always
-  goes through `resourceChanges` and never writes a table itself.
+  /api/v2/proposals?kind&state`, `GET /api/v2/proposals/{id}`, `POST
+  /api/v2/proposals/{id}/approve|reject|cancel`; `POST
+  /api/v2/actions/{action}/apply {parameters, expectedVersions?}` -> `200
+  {status: "applied", writeId}` or `202 + Location: /api/v2/proposals/{id}`
+  with the `Proposal`; `POST /api/v2/actions/{action}/applyBatch {requests:
+  [{parameters}] (1..Configuration.limits.bulkActionLimit)}` -> `200
+  {results: [{status, writeId?, proposalId?, problems?}]}`, all-or-nothing
+  when every request applies at once, otherwise each staged; `POST
+  /api/v2/actions/{action}/validate`; `GET /api/v2/actionLog`. A card that
+  edits a resource from the UI always goes through `resourceChanges` and
+  never writes a table itself.
 
 ### T0.11 One SPA and the admin shell, thin client
 
@@ -1344,10 +2142,12 @@ its failing negative tests, then the code.
   `module.conformance.json`, `src/elysium/scripts/conformance_report.py`, safe
   mode, the module manager, `SYSTEM_MODULES`, `MODULE_API_VERSION`,
   `ui/MODULE_API.md`, `ui/module-api.report.md`,
-  `src/elysium/scripts/module_api_report.py`; keep the add-on supervisor, the
-  proxy and the "offered to you" check in one function. (2) Admin shell:
+  `src/elysium/scripts/module_api_report.py`; keep the add-on supervisor (it
+  runs in the runner, N47), the proxy and the "offered to you" check in one
+  function. Browse's extension slots (below). (2) Admin shell:
   `/admin/<section>`, left navigation built from the client registry
-  **filtered by `useMe().adminSections`** (an id list); a section not in the
+  **filtered by `useMe().adminSections`** (an id list) and in its order;
+  `ADMIN_SECTIONS` written complete (below); a section not in the
   list is not rendered and its URL shows the not-found page; the API answers
   the uniform 404 (N19). App routes `/apps/<id>` filtered by `useMe().apps`.
   (3) Shared admin components. (4) Bundle guard `ui/scripts/check_bundle.mjs`
@@ -1363,21 +2163,64 @@ its failing negative tests, then the code.
 - **Contract.**
   ```ts
   // ui/src/admin/sections/<id>/section.ts   found by import.meta.glob in ui/src/admin/registry.ts
-  export const section: AdminSection = { id: "backups", title: "Backups", path: "backups", order: 70, icon: "archive",
-                                         component: lazy(() => import("./BackupsPage")) };   // no grants, ever (N23)
-  // the server's src/elysium/api/v2/admin_sections.py decides who sees "backups"; a new section adds one line there (same id)
+  export const section: AdminSection = { id: "backups", title: "Backups", path: "backups", icon: "archive",
+                                         component: lazy(() => import("./BackupsPage")) };   // no grants, no order, ever (N23)
+  // the client renders a section only when its id is in useMe().adminSections AND its section.ts exists; order comes from
+  // the order of useMe().adminSections (the server's table below); an id with no client section is ignored
   // ui/src/apps/<id>/app.ts                 { id, title, path, component }   (filtered by useMe().apps)
   // ui/packages/shell-api/src/admin/       AdminPage, ResourceTable, ResourceForm (fields only), ConfirmDialog (tier "moderate"|"severe"),
   //   JobProgress (SSE /jobs/{id}/events), ProblemBanner, ProvisionedBadge (file or builtin origin), EmptyState, KeyValue, StatusDot
   // ui/packages/shell-api/src/client.ts     useApi, useAction, useJob(id), useMe()
   // ui/e2e/admin/<id>.spec.ts               one Playwright spec per section, against the built bundle
+  // ui/src/apps/browse/slots.ts             Browse extension slots (C12; below)
   ```
-  UI text rules: sentence case; a verb on every button; internal file, table
-  or layer names never shown; "not permitted" and a real null look different;
-  no "Restricted" third state (B15); empty states say what would fill the page
-  and offer the action; the UI shows server reasons verbatim and never writes
-  its own reason for a refusal. `docs/ui/development.md` tokens, type scale
-  and density stay authoritative.
+  **`ADMIN_SECTIONS` (C11, N59).** T0.11 writes the complete table in
+  `src/elysium/api/v2/admin_sections.py`; no card edits it. A section is
+  listed in `/me.adminSections` when the caller holds its `manage` area.
+  | id | manage | order | section owner |
+  |---|---|---|---|
+  | overview | deployment | 10 | ADM-18 |
+  | health | deployment | 20 | ADM-18 |
+  | people | users | 30 | T0.12 |
+  | roles | roles | 40 | T0.12 |
+  | tokens | users | 50 | T0.12 |
+  | sources | deployment | 60 | ADM-04 |
+  | configuration | deployment | 70 | ADM-06 |
+  | sync | deployment | 80 | ADM-07 |
+  | jobs | deployment | 90 | ADM-09 |
+  | lake | deployment | 100 | ADM-09 |
+  | resources | model | 110 | ADM-27 |
+  | versions | model | 120 | ADM-24 |
+  | erasure | erasure | 130 | ADM-11 |
+  | backups | backups | 140 | ADM-13 |
+  | audit | audit | 150 | ADM-15 |
+  | logs | deployment | 160 | ADM-17 |
+  | apps | deployment | 170 | ADM-21 |
+  | exports | deployment | 180 | ADM-23 |
+  **Browse extension slots (C12).** T0.11 (which moves Browse to
+  `ui/src/apps/browse/`) writes `ui/src/apps/browse/slots.ts`:
+  ```ts
+  export type Slot = "objectTabs" | "typeBadges" | "typeLinks" | "objectFooter";
+  export interface SlotEntry { slot: Slot; order: number; component: ComponentType<SlotProps> }
+  export interface SlotProps { objectType: string; primaryKey?: string }   // the component fetches what it needs through the client
+  // collects ui/src/apps/browse/slots/*/slot.ts (each `export const slot: SlotEntry`) with import.meta.glob, sorted by order
+  export function useSlots(slot: Slot): SlotEntry[];
+  ```
+  and renders `<SlotHost slot="..." />` at the four places in the object and
+  type pages. API-2 (history tab), API-3 (saved sets), API-8 (notes tab),
+  ADD-06 (attribution footer), ADD-07 (freshness badge) and ADM-23 (contract
+  link) each add one folder under `slots/` and never edit Browse's pages; the
+  Browse owner (API-1) owns `ui/src/apps/browse/**` except `slots/*/`.
+  UI text rules: sentence case; a verb on every button; state, lake, table
+  and layer names are never shown, while a resource file's path relative to
+  the configuration directory is (it is what the operator edits); "not
+  permitted" and a real null look different; no "Restricted" third state
+  (B15); empty states say what would fill the page and offer the action; the
+  UI shows server reasons verbatim and never writes its own reason for a
+  refusal; a button that changes state is enabled only from a server boolean
+  (`$capabilities`, `/me.capabilities`, `readOnly`), never from a client-side
+  rule. `docs/ui/development.md` tokens, type scale and density stay
+  authoritative.
 
 ### T0.12 Exemplar resource end to end: people, roles, tokens
 
@@ -1403,7 +2246,20 @@ its failing negative tests, then the code.
 - **Preconditions.** T0.5, T0.6, T0.10, T0.11.
 - **Out of scope.** Sessions admin (ADM-19); OIDC (SEC-E); notification
   recipients (T0.13).
-- **Contract.** Template files (cards say "copy T0.12's `<file>`"):
+- **Routes.** `/api/v2/admin/users` (people and service principals,
+  `manage:users`), `/api/v2/admin/roles` (`manage:roles`; a view over `Role`
+  resources, writes through `resourceChanges`, so widening a role stages a
+  `second_person` proposal per N49), `/api/v2/admin/tokens` (every token,
+  `manage:users`), `/api/v2/tokens` (the caller's own tokens, any signed-in
+  person), `/api/v2/session`, `/api/v2/session/token`,
+  `/api/v2/session/password` (change own password). A role's grants and the
+  `grantable` options are scope JSON (N50: `{verb, type?, property?,
+  action?, appResource?}` or `{manage: area}`) with server labels.
+- **Contract.** `ui/src/admin/sections/people/PersonPage.tsx` renders
+  `<PersonExtensions user={...} />`, which collects
+  `ui/src/admin/sections/people/extensions/*.tsx` with `import.meta.glob`
+  (ADM-19 adds `sessions.tsx` there and never edits `PersonPage.tsx`).
+  Template files (cards say "copy T0.12's `<file>`"):
   `src/elysium/api/v2/resources/users.py`, `tests/api/test_users.py`,
   `ui/src/admin/sections/people/`, `ui/e2e/admin/people.spec.ts`,
   `src/elysium/cli/commands/user.py`, `tests/cli/test_user.py`,
@@ -1414,30 +2270,71 @@ its failing negative tests, then the code.
 - **Why now.** Notifications, live updates, Astrolabe E4/E6/E13/E14 and the
   Inbox badge depend on it, and it adds the `Automation` kind.
 - **DR:** 1. **Decisions:** D18, D19, N34, B10.
-- **Scope.** `automation {condition: {on: <ObjectSet>, when:
-  added|removed|modified|threshold|schedule|combined}, effects:
-  [notify|propose_action], recipients, grouping}` on the timer worker;
-  reminders as `schedule` automations; `propose_action` as a real owner
-  account, always staged, idempotency key on the event id; evaluation per
-  recipient; conditions `added` and `modified` evaluated when a write commits
-  (an outbox handler `automation.evaluate`), not only on the timer; grouping
-  `oncePerObjectPerEntry`; subscriptions as SSE CloudEvents carrying keys,
-  never values (sse-starlette); one audit entry per subscription opened and
-  closed; a maximum stream duration (10 minutes) so a revoked grant stops;
-  email content-free and off. `GET /api/v2/notifications/recipients` returns
-  the users and roles the caller may address, with display labels, replacing
-  `WatchDialog`'s use of `role_name`.
+- **Scope.** The `Automation` kind below (N51; resolved: X6), evaluated in
+  the runner (N47): conditions `added`, `removed` and `modified` on commit
+  (an outbox handler `automation.evaluate` reading the `change_feed` rows of
+  the commit) and on the timer (for lake publications), `threshold` on the
+  timer every 5 minutes, `schedule` at its times; reminders become
+  `schedule` automations; `proposeAction` always staged (D18), idempotency
+  key `<automation name>:<event id>:<object key>`; evaluation per recipient;
+  subscriptions as SSE CloudEvents carrying keys, never values
+  (sse-starlette), fed by each web worker polling `change_feed` (N47); one
+  audit entry per subscription opened and closed; a maximum stream duration
+  (10 minutes) so a revoked grant stops; email content-free and off. `GET
+  /api/v2/notifications/recipients` returns the users and roles the caller may
+  address, with display labels, replacing `WatchDialog`'s use of
+  `role_name`.
+- **The `Automation` resource (N51).**
+  ```yaml
+  apiVersion: elysium/v1
+  kind: Automation
+  metadata: { name: late-orders, description: Tell the desk when orders run late }
+  spec:
+    owner: alice                      # a person's username; runs as this account (D18), Principal.via "automation"
+    enabled: true
+    condition:                        # exactly one key:
+      added:     { objectSet: {...} }                                   # an object enters the set
+      removed:   { objectSet: {...} }                                   # an object leaves the set
+      modified:  { objectSet: {...}, properties: [status] }             # a listed property of a member changes (at least one listed)
+      threshold: { objectSet: {...}, metric: { count: {} }, op: gt, value: 100 }   # metric { count: {} } | { sum: { property: amount } }; op gt|gte|lt|lte
+      schedule:  { when: { weekly: { days: [mon, tue, wed, thu, fri], time: "09:00" } } }   # T0.8's When (N53)
+    effects:                          # 1..5, in order; closed vocabulary notify | proposeAction (no registry)
+      - notify: { recipients: { users: [bob], roles: [analyst] }, title: "Orders are late" }   # fixed text, at most 80 characters, no object values (D19)
+      - proposeAction: { action: flag-customer, parameters: { customer: $object, reason: "late" } }
+    grouping: oncePerObjectPerEntry   # added/modified: oncePerObjectPerEntry (default) | oncePerRun; threshold/schedule/removed: oncePerRun only
+  ```
+  Validation (in `src/elysium/resources/kinds/automation.py`, refused with
+  `path:line:col`): `owner` is an existing, enabled person; the owner may
+  `read` the set's type (else `$.spec.condition: the owner cannot read
+  this type`); `$object` only for `added`, `removed`, `modified`;
+  `proposeAction.parameters` checked against the action's parameter types;
+  the `properties` of `modified` readable by the owner; `combined` does not
+  exist (two automations do the same, DR6). A `threshold` fires when the
+  comparison becomes true and again only after it has been false. Recipients
+  are evaluated per recipient: a `notify` reaches a recipient only for
+  objects that recipient may `read` (`query.keys` with the recipient's
+  `query.as_caller`), and a recipient who may read none of them gets
+  nothing. `oncePerObjectPerEntry` keeps `(automation, object key)` in
+  `automation_state` (`src/elysium/db/schema/main/40-t0.13.sql`) while the
+  object stays in the set and clears it when it leaves. A disabled owner
+  pauses the automation (evaluation skips it; the health check
+  `automations.owner_disabled` warns).
 - **Deletes.** Archive S12's list (11 modules including
   `core/trigger_conditions.py` from T0.1B; `/api/events`; `change_hints.py`;
   `liveUpdates.ts`; the add-on file outbox once ADD-02 lands).
 - **Invariants.** I3: keys filtered per recipient through `check_access`
   before emission (`tests/api/test_subscription_keys_filtered.py`); no name in
   a notice (`tests/unit/test_notice_has_no_names.py`).
-- **Preconditions.** T0.10, T0.12; API-1 for object sets on v2 runs in
-  parallel. MEAS-2 (M13).
-- **Out of scope.** Lifecycle (ADD-08); arrival-trigger app test (ADD-09).
-- **Contract.** `Automation` kind; `elysium.automation.engine.evaluate(event)`;
-  `@effect_kind("notify" | "propose_action")`; `PUT
+- **Preconditions.** T0.6B, T0.10, T0.12. MEAS-2 (M13).
+- **Out of scope.** Lifecycle (a pipeline phase, N56; ADD-08); arrival-trigger app test (ADD-09).
+- **Contract.** `Automation` kind (above); `elysium.automation.engine.evaluate(event:
+  AutomationEvent, model: Ontology) -> list[Effect]` (pure; `AutomationEvent =
+  Commit(change_rows) | Tick(now) | Scheduled(automation, at)`; `Effect =
+  Notify(recipient_id, title, object_type, keys) | ProposeAction(owner_id,
+  action, parameters, idempotency_key)`, a closed union, no registry); the
+  shell `automation.run(event, paths)` performs effects (`Notify` into
+  `notifications`, `ProposeAction` through `actions.apply` then
+  `proposals.submit`, N48); `PUT
   /api/v2/subscriptions/{streamId} {objectSet}`, `GET
   /api/v2/subscriptions/stream` (types `elysium.object.added|modified|removed`
   and `elysium.refresh`, `data: {objectType, keys}`); `GET
@@ -1445,11 +2342,49 @@ its failing negative tests, then the code.
 
 ### T0.14 One checks model
 
-- **DR:** 1. **Scope.** `value_type` expanding into checks; per-type `checks:
-  [{target, kind, config, severity, on_fail}]`; six statuses (passed, failed,
-  warning, error, not_applicable, not_computable); `check_suggestion`
-  proposals; the stages that call it; the modified z-score (B18) as a check
-  kind.
+- **DR:** 1. **Decisions:** N52, B18. **Scope.** `value_type` expanding
+  into checks; per-type `checks:` in the vocabulary below (N52; resolved:
+  X7); the stages that call it; the modified z-score (B18) as the `unusual`
+  kind; `check_suggestion` proposals.
+- **The check vocabulary (N52).** One entry of `ObjectType.spec.checks`:
+  ```yaml
+  - { target: email, kind: pattern, config: { regex: "^[^@]+@[^@]+$" }, severity: moderate, onFail: warn, name: email-shape }
+  ```
+  `target`: a property name (or omitted for type-level kinds: `unique` on
+  several properties, `freshness`); `kind`: one of the closed list below;
+  `config`: the kind's pydantic model, `extra="forbid"`; `severity: low |
+  moderate | high` (display and health only, never behaviour); `onFail: warn
+  | quarantine` (`reject` is not offered: a source row is never refused, I7;
+  `quarantine` hides the row from gold through the system action
+  `quarantine`, I4, and it reappears when a later sync passes); `name`:
+  optional, `^[a-z][a-z0-9-]{0,62}$`, default `<target>-<kind>`, unique per
+  type.
+  | kind | config | applies to |
+  |---|---|---|
+  | `not_null` | `{}` | any property |
+  | `pattern` | `{regex: str}` (Python `re`, full match, at most 200 characters, compiled at load) | string |
+  | `range` | `{min?: number, max?: number}` (inclusive; at least one) | number, decimal, date, datetime |
+  | `allowed` | `{values: [scalar, ...]}` (1..200) | string, number |
+  | `unique` | `{properties?: [name, ...]}` (default `[target]`) | type level or one property |
+  | `reference` | `{link: name}` (the target object exists) | a link's foreign key |
+  | `freshness` | `{maxAge: ISO 8601 duration, property: name}` (the newest value is not older) | type level |
+  | `unusual` | `{threshold: number = 3.5}` (modified z-score, B18) | number, decimal |
+  | `email` | `{}` (today's `value_checks` email rule) | string |
+  | `phone` | `{region: str}` (ISO 3166-1 alpha-2 for nationally written numbers; today's `value_checks.check_phone_setting`) | string |
+  Statuses per check per run: `passed`, `failed`, `warning` (`onFail: warn`
+  and the rule failed), `error` (the check could not run: a failure kind,
+  never a message), `not_applicable` (no rows of that type in the run),
+  `not_computable` (an input the check needs is missing, such as fewer than
+  ten values for `unusual`). `value_type` (T0.6's `Property.value_type`,
+  today's `core/ontology/value_types.py` kinds `email` and `{phone:
+  <region>}`) expands to the check of the same kind at load, with `severity:
+  low, onFail: warn`; an explicit check with the same name wins.
+  **`check_suggestion`** is a proposal kind (`proposals/kinds/check_suggestion.py`)
+  whose payload is `{objectType, check: <one checks entry>, evidence:
+  {rowsSeen, rowsFailing}}`; approving it applies a `resource_change`
+  adding the entry (so its policy is that table's: `confirm`). The pipeline
+  creates a suggestion only through `outbox` kind `check_suggestion` from the
+  runner, never more than one pending per (type, name).
 - **Deletes.** 20 modules (about 4,005 lines); keys `constraints`,
   `on_violation`, `standardise`, `outliers`, `rules`, `dependencies`,
   `unusual`, `freshness`.
@@ -1459,17 +2394,29 @@ its failing negative tests, then the code.
   through a system action (I4).
 - **Preconditions.** T0.6, T0.8, T0.10.
 - **Out of scope.** Standard-format exports of results (REF-STD-DQ).
-- **Contract.** `@check_kind("not_null" | "pattern" | "range" | "unique" |
-  "reference" | "freshness" | "unusual" | ...)`;
-  `elysium.checks.run(stage, table, rows) -> CheckResults`; `GET
-  /api/v2/admin/checks/results?type=`.
+- **Contract.**
+  ```python
+  # src/elysium/checks/__init__.py   (L2)
+  def check_kind(name: str, *, config: type[BaseModel], applies_to: frozenset[str]) -> Callable   # the ten kinds above; adding one needs a decision (DR6)
+  CheckStatus = Literal["passed", "failed", "warning", "error", "not_applicable", "not_computable"]
+  class CheckOutcome(BaseModel): object_type: str; name: str; kind: str; status: CheckStatus; failing_keys: list[str]   # keys only, at most 100
+                                 rows_checked: int; failure_kind: str | None
+  class CheckResults(BaseModel): run_id: str; stage: str; outcomes: list[CheckOutcome]; quarantine: dict[str, list[str]]   # type -> keys
+  def run(stage: Literal["bronze", "gold"], object_type: ObjectType, rows: pa.Table) -> CheckResults   # pure over the rows
+  ```
+  `GET /api/v2/admin/checks/results?type=&pageSize&pageToken`
+  (`manage:model`; outcomes of the last run per check, `failingKeys` only of
+  objects the caller may read, N26).
 
 ### T0.15 Agent on the service layer
 
 - **Why now.** The agent is the last caller with read paths of its own (I2).
 - **DR:** 1, 2. **Decisions:** D23, B2.
 - **Scope.** One `Step` table generating the prompt fragment, the JSON Schema
-  and the validator; handlers call `query` and `actions.apply(mode="propose")`
+  and the validator; handlers call `elysium.query` and `actions.apply` (with
+  `Principal.via = "agent"`, `on_behalf_of` = the person, so every
+  `needs_proposal` result is submitted with `proposals.submit`: the agent
+  stages only, N49)
   in process; `POST /api/v2/agent/sessions` and `/continue` over SSE;
   `filter_operators` as the public grammar; result size bounded by `pageSize`;
   each step logged with the request id; `claude_agent_sdk_adapter.py` moved to
@@ -1479,7 +2426,8 @@ its failing negative tests, then the code.
   schema; it stages only.
 - **Preconditions.** T0.10, T0.13.
 - **Out of scope.** The bench (M11, Q-MODEL); choosing the server (REF-LLM).
-- **Contract.** `elysium.agent.steps.STEPS: tuple[Step, ...]`;
+- **Contract.** `elysium.agent.steps.STEPS: tuple[Step, ...]` (a tuple, not a
+  registry, N63);
   `Step(name, params_model, handler, prompt_example)`; routes above;
   `ui/src/apps/query/` on the generated client.
 
@@ -1496,14 +2444,17 @@ its failing negative tests, then the code.
   `controls/<area>/<ID>.toml`, (b) regenerated artefacts
   (`src/elysium/api/v2/openapi.json`,
   `ui/packages/shell-api/src/generated/schema.d.ts`, `docs/reference/*`), (c)
-  `pyproject.toml` with `uv.lock` when it adds a dependency, (d) one line in a
-  registry the Tier 0 contract says a card may add (`admin_sections.py`), and
-  (e) removing its own lines from the `quality/` baselines. On a conflict in
-  (b) or (c), regenerate; never merge by hand. Needing another file: stop and
-  report.
-- **Tables.** A new table goes into `src/elysium/db/main.sql` (or
-  `erasure.sql`/`scratch.sql`) in a block headed `-- <CARD-ID>`; no migrations
-  before 1.0 (N12).
+  `pyproject.toml` with `uv.lock` when it adds a dependency, (d) its own
+  schema file `src/elysium/db/schema/<file>/<NN>-<card id>.sql`, and (e) its
+  own lines removed from the `quality/` baselines (regenerated with the
+  baseline tool, never hand-merged). No card edits a shared list: the admin
+  section table (T0.11), the strict-typing globs (T0.1), the resource specs
+  (T0.3) and the Browse pages (T0.11's slots) are complete before the cards
+  start (N59). On a conflict in (b), (c) or (e), regenerate; never merge by
+  hand. Needing another file: stop and report.
+- **Tables.** A new table goes into the card's own file
+  `src/elysium/db/schema/main/<NN>-<card id>.sql` (or `erasure/`,
+  `scratch/`); `NN` is 50 for cards; no migrations before 1.0 (N12).
 - **Registries.** Everything a card adds is found automatically: v2 routers
   (`src/elysium/api/v2/resources/<res>.py`), CLI nouns
   (`src/elysium/cli/commands/<noun>.py`), health checks
@@ -1513,9 +2464,11 @@ its failing negative tests, then the code.
   (`src/elysium/actions/effects/<effect>.py`), outbox handlers, exporters
   (`src/elysium/exports/<name>.py`), resource kinds
   (`src/elysium/resources/kinds/<kind>.py`), admin sections
-  (`ui/src/admin/sections/<id>/section.ts` plus the server line in
-  `src/elysium/api/v2/admin_sections.py`), apps (`ui/src/apps/<id>/app.ts`).
-  No card edits a central list otherwise.
+  (`ui/src/admin/sections/<id>/section.ts`; the server's table is already
+  complete), Browse slots (`ui/src/apps/browse/slots/<name>/slot.ts`),
+  person-page extensions (`ui/src/admin/sections/people/extensions/*.tsx`),
+  apps (`ui/src/apps/<id>/app.ts`). `elysium.bootstrap.discover()` imports
+  the Python ones. No card edits a central list.
 - **Templates.** "Copy T0.12" means: take the matching T0.12 file as the
   pattern for structure, tests, error handling and UI states (loading, empty,
   error, not found, read-only).
@@ -1547,16 +2500,16 @@ its failing negative tests, then the code.
 | MEAS: measurements | 7 | nothing in `src/`; `tools/measure/*` (deleted after use); numbers in the hand-off |
 | SEC: security close-out | 7 | `docs/security/findings.csv`, `docs/security/audit-checklist.csv`, `src/elysium/access/session_policy.py`, `src/elysium/access/oidc.py`, `ui/src/login/oidc/` |
 | API: the rest of v2 | 9 | `src/elysium/api/v2/resources/{objects,object_sets,links,history,stored_sets,exports_objects,notes}.py`, `src/elysium/query/*`, `ui/src/apps/browse/` |
-| ADM: admin in the web UI | 25 | `src/elysium/api/v2/resources/admin_*.py`, `setup.py`, `src/elysium/ops/*.py`, `ui/src/admin/sections/*`, `ui/src/setup/` |
+| ADM: admin in the web UI | 26 | `src/elysium/api/v2/resources/admin_*.py`, `setup.py`, `src/elysium/ops/*.py`, `ui/src/admin/sections/*`, `ui/src/setup/` |
 | CLI: the command tree | 17 | `src/elysium/cli/commands/*.py`, `tests/cli/*`, `tools/elysium_dev/` |
 | OPS: health, backup, restore, upgrade | 11 | `src/elysium/ops/{health/*,backup,restore,retention,diagnostics,shutdown,metrics}.py`, `src/elysium/db/migrate.py` |
 | INS: install and distribution | 8 | `Containerfile`, `compose.yml`, `packaging/`, `src/elysium/service/`, `tools/release/` |
 | DOC: documentation | 9 | `README.md`, `docs/**` (except generated), `AGENTS.md`, `CLAUDE.md` |
 | CI: pipelines | 7 | `.github/workflows/*`, `tools/smoke/*` |
 | QA: engineering quality | 6 | `quality/*`, `tools/{mutation,coverage_gate,quality_report}.py`, `tests/property/*` |
-| REF: remaining refactor, libraries, standards | 16 | as listed per card |
+| REF: remaining refactor, libraries, standards | 14 | as listed per card |
 | ADD: add-on platform (Astrolabe, Heliograph) | 12 | `src/elysium/apps/*`, `ui/src/apps/frame/`, per card |
-| **Total** | **134** | plus 16 Tier 0 items |
+| **Total** | **133** | plus 17 Tier 0 items |
 
 ### 5.3 MEAS: measurements still to take
 
@@ -1603,10 +2556,9 @@ counts. Re-run before each v1 deletion (API-1 to API-9).
 
 **MEAS-6 · M10: test durations and coverage baseline · S · Haiku** — Spec:
 `tools/heavy.sh durations python -m pytest tests -q --durations=0`; the 50
-slowest tests and the total per directory; a proposed `fast/api/lake/live`
-split by file; then `tools/heavy.sh coverage coverage run -m pytest tests -q
+slowest tests and the total per directory (and so per marker, N58); then `tools/heavy.sh coverage coverage run -m pytest tests -q
 && coverage json -o quality/coverage-baseline.json` and report total and
-per-package branch coverage. Gates CI-07, REF-18B, QA-COV.
+per-package branch coverage. Gates CI-07, QA-COV.
 
 **MEAS-7 · M15: does the Iceberg catalog ever have two writers? · S · Sonnet**
 (N36) — Spec: (a) static: list every call site that commits to the catalog
@@ -1727,8 +2679,9 @@ client, the UI call sites, tests (`tests/api/test_<res>.py`, split out of
 with a caller is not deleted. Copy T0.12.
 
 **API-1 · Browse on v2, thin-client rendering · M · Sonnet · DR 1, 5**
-- Owns: `ui/src/apps/browse/**`, `src/elysium/api/v2/resources/{schema,objects,object_sets}.py`
-  (moved there by T0.5), `tests/api/test_objects.py`.
+- Owns: `ui/src/apps/browse/**` except `ui/src/apps/browse/slots/*/` (other
+  cards' slot folders, C12), `src/elysium/api/v2/resources/{schema,objects,object_sets}.py`
+  (moved there by T0.5 step 3a), `tests/api/test_objects.py`.
 - Spec: replace every Browse call to `/api/objects/*`, `/api/search*`,
   `/api/schema*` with the generated client and delete those v1 routes and
   wrappers. Object reads accept `?capabilities=actions`, returning
@@ -1740,9 +2693,9 @@ with a caller is not deleted. Copy T0.12.
   `ui/packages/app-browse/src/ObjectDetailPanel.tsx`, moved under
   `ui/src/apps/browse/` by T0.11: the `!(fieldName in fields)` branch near line
   361 and its wrong comment near lines 340-360); a withheld property renders only from `readable: false` in the
-  visible schema. Labels are not rendered for callers without
-  `capabilities.canManageModel || capabilities.canManageRoles` (the server
-  does not send them, N24). Keep facets, the object view as hub,
+  visible schema. Labels render whenever the visible schema carries them (the
+  server sends them only to callers who may see them, N24); the client checks
+  no capability. Keep facets, the object view as hub,
   search-around and paging.
 - Tests: `tests/api/test_objects.py::test_capabilities_hint_matches_validate`,
   `::test_no_labels_for_plain_reader`, `::test_hidden_object_uniform`;
@@ -1754,7 +2707,8 @@ with a caller is not deleted. Copy T0.12.
 
 **API-2 · Links, expand and history reads · M · Sonnet**
 - Owns: `src/elysium/api/v2/resources/{links,history}.py`,
-  `tests/api/test_links_history.py`, `ui/src/apps/browse/history/`.
+  `tests/api/test_links_history.py`, `ui/src/apps/browse/slots/history/`
+  (slot `objectTabs`).
 - Spec: `GET /api/v2/objects/{type}/{pk}/links/{link}` (paged); `expand=<link>[,<link>]`
   on the object read, one level, each target checked; `GET
   /api/v2/objects/{type}/{pk}/history` from the write log and `gold_history`,
@@ -1765,8 +2719,10 @@ with a caller is not deleted. Copy T0.12.
 
 **API-3 · Stored object sets · M · Sonnet · DR 1, 6**
 - Owns: `src/elysium/api/v2/resources/stored_sets.py`,
-  `src/elysium/query/stored.py`, `tests/api/test_stored_sets.py`,
-  `ui/src/apps/browse/saved/`.
+  `src/elysium/query/stored.py` (replacing T0.6B's stub
+  `resolve_reference`), `src/elysium/db/schema/main/50-api-3.sql`,
+  `tests/api/test_stored_sets.py`, `ui/src/apps/browse/slots/saved/` (slot
+  `typeLinks`).
 - Spec: `POST/GET/PUT/DELETE /api/v2/objectSets/stored`; a stored set holds
   the definition (or static keys) with owner and sharing (`private` or a list
   of roles); `{type: "reference", id}` usable in any set. Delete
@@ -1802,7 +2758,8 @@ with a caller is not deleted. Copy T0.12.
 - Depends: API-1, T0.6. Keep: closed vocabulary (no expression language).
 
 **API-6 · `similarTo` sets · M · Sonnet · DR 1, 6**
-- Owns: `src/elysium/query/similar.py`, `tests/api/test_similar_to.py`.
+- Owns: `src/elysium/query/similar.py` (replacing T0.6B's stub
+  `similar_keys`), `tests/api/test_similar_to.py`.
 - Spec: set kind `{type: "similarTo", objectType, text, limit<=50}` over the
   embeddings in `scratch.db`; allowed only when the type declares
   `spec.similarity.properties` and the caller may read every listed property
@@ -1812,16 +2769,19 @@ with a caller is not deleted. Copy T0.12.
 - Depends: API-1, T0.7. Out of scope: a vector server (B4).
 
 **API-7 · Snapshot paging and pushdown · M · Sonnet**
-- Owns: `src/elysium/api/v2/paging_snapshot.py`, `src/elysium/query/pushdown.py`,
+- Owns: `src/elysium/query/snapshot.py`, `src/elysium/query/pushdown.py`,
   `tests/unit/test_pushdown.py`, `tests/api/test_snapshot_paging.py`.
 - Spec: `snapshot=true` on `loadObjects` pins the gold publication for the
-  token's life; pushdown into gold for `eq`, `in`, `lt/lte/gt/gte` and
+  token's life (the token's reserved `s` key, T0.6B step 3; a token whose
+  snapshot was expired by retention is refused with the uniform
+  `InvalidPageToken`); pushdown into gold for `eq`, `in`, `lt/lte/gt/gte` and
   `startsWith`; the row check stays in Python after the engine returns.
 - Depends: SEC-D. Keep: MAC never moves into the query.
 
 **API-8 · Notes as data · S · Sonnet**
 - Owns: `src/elysium/api/v2/resources/notes.py`, `src/elysium/core/notes.py`,
-  `tests/api/test_notes.py`, `ui/src/apps/browse/notes/`.
+  `src/elysium/db/schema/main/50-api-8.sql`, `tests/api/test_notes.py`,
+  `ui/src/apps/browse/slots/notes/` (slot `objectTabs`).
 - Spec: fold `src/elysium/core/artifact_store.py` into the `notes` table
   (object, author, shared-with role, text, created); `GET/POST/DELETE
   /api/v2/objects/{type}/{pk}/notes`; `Erasable`.
@@ -1842,9 +2802,9 @@ with a caller is not deleted. Copy T0.12.
 Pairs: an **API card** (router, service module, tests, controls) and a **UI
 card** (a section and its Playwright spec). A UI card starts when its API card
 is merged; the matching CLI card can run in parallel with the UI card. Routes
-are under `/api/v2/admin/` unless stated. Each UI card adds its section's
-server line to `src/elysium/api/v2/admin_sections.py` (id, manage area,
-order).
+are under `/api/v2/admin/` unless stated. The section's server line is
+already in T0.11's `ADMIN_SECTIONS` (C11); a UI card adds only
+`ui/src/admin/sections/<id>/`.
 
 **ADM-01 · Setup: token and first administrator (API) · M · Sonnet**
 - Owns: `src/elysium/api/v2/resources/setup.py`, `src/elysium/ops/setup.py`,
@@ -1856,13 +2816,17 @@ order).
   "elysium setup url" for a new one)`. `GET /api/v2/setup/state` (public)
   `{state: "needs_admin"|"in_progress"|"complete", steps: [{id, done,
   skipped}]}`. `POST /api/v2/setup/admin {token, username, displayName,
-  password}` (public): creates a person in the `administrator` role, uses up
+  password}` (public): creates a person in the built-in administrator role
+  (`elysium.builtin.ADMINISTRATOR`, DR4), uses up
   the token, signs in, 201. `POST /api/v2/setup/template {name:
   "minimal"|"demo"}` (`manage:deployment`, only `in_progress`) applies an init
   template as a resource change. `POST /api/v2/setup/steps/{id}/complete|skip`
   and `POST /api/v2/setup/finish` (`manage:deployment`); after `finish` every
-  public setup route answers 404. Step ids: `admin`, `recovery-key`, `source`,
-  `model`, `llm`, `schedules`, `first-sync`. A wrong, used or expired token
+  public setup route answers 404. Step ids: `admin`, `recovery-key` (or
+  `key-file`, per Q-KEY's candidate, T0.9), `source`, `model`, `llm`,
+  `schedules`, `first-sync`. `GET /api/v2/setup/state` also returns
+  `passwordRules: [{id, text}]` (the server's sentences from
+  `Configuration.passwords`). A wrong, used or expired token
   gives 404 (no difference); password policy 422 with `parameters.problems`;
   the login throttle applies per source. Audit `setup.token_issued`,
   `setup.admin_created`, `setup.step_completed`, `setup.completed`.
@@ -1876,17 +2840,22 @@ order).
 - Spec: route `/setup`, outside the admin shell, one step per screen with a
   progress rail. (1) "Create the administrator": read the token from
   `location.hash`, remove it with `history.replaceState`; fields Username,
-  Display name, Password, Repeat password; rules shown live from the policy;
+  Display name, Password, Repeat password; the rules shown as the server's
+  sentences from `GET /api/v2/setup/state` (`passwordRules`); on submit a 422
+  lists the failed rule ids in `parameters.problems` and the form marks those
+  rules (the client evaluates no rule);
   button "Create administrator"; a missing or rejected token shows "This setup
   link has expired or was already used. On the server, run `elysium setup url`
-  for a new one." (2) "Recovery key" (only when encryption is on): show once,
-  ask for the last 8 characters, "Download as a file". (3) "Connect a source":
+  for a new one." (2) "Recovery key" (only when encryption is on): the
+  screen of the candidate Q-KEY chooses (T0.9, X8). (3) "Connect a source":
   `SiloForm` from ADM-04, "Skip for now". (4) "Model": "Use the files provided
   by the server" (when file-origin resources exist, with their count), "Start
   from the minimal template", "Load the demo". (5) "Language model": servers
   ADM-05 detected; "Test" shows "Answered in 3.2 s (14 tokens a second)" or the
-  failure kind. (6) "Schedules": sync Hourly, Daily at 02:17, or Only when I
-  press Sync; backup Daily with 14 kept, or Off; "Run the first sync now" opens
+  failure kind. (6) "Schedules": sync Hourly (`{hourly: {minute: 17}}`),
+  Daily at 02:17 (`{daily: {time: "02:17"}}`), or Only when I press Sync (no
+  entry); backup Daily at 02:41 with 14 kept (`{daily: {time: "02:41"}},
+  keep: 14`), or Off; the next run shown from ADM-05's `schedulePreview`; "Run the first sync now" opens
   `JobProgress`. (7) "Done": "Elysium is ready." and "Go to Overview" (calls
   `finish`).
 - Tests: e2e from a fresh server through every step including skips; the hash
@@ -1937,7 +2906,10 @@ order).
   baseUrl, model}` sends "Reply with the single word: ready." with a 60 s
   deadline, returns `{ok, seconds, tokensPerSecond, failureKind}`; validator:
   `baseUrl` must resolve to loopback, private (RFC 1918 or ULA) or
-  container-network addresses, else 422 `PublicModelServer` (I8).
+  container-network addresses, else 422 `PublicModelServer` (I8). `POST
+  /configuration/schedulePreview {when}` returns `{next: [iso, iso, iso]}`
+  in `timeZone` (T0.8's `next_runs`), or 422 with the field's problem; the
+  client never computes a time.
 - Tests: `test_412_when_stale`, `test_428_without_if_match`,
   `test_public_model_server_refused`, probe tests with fake servers.
 - Depends: T0.10.
@@ -1946,9 +2918,12 @@ order).
 - Owns: `ui/src/admin/sections/configuration/**` except `signin/` (SEC-F),
   `ui/e2e/admin/configuration.spec.ts`.
 - Spec: tabs Language model (server, URL, model from the detected list,
-  timeout, Test), Assistant (answer length limit and switches left after
-  T0.15), Schedules (sync, backup, retention; cron presets and a "Custom" field
-  showing the next three run times), Sessions and passwords, Limits. Save with
+  timeout, Test), Assistant (`assistant.maxAnswerTokens`,
+  `assistant.filterOperators`), Schedules (time zone; per schedule the
+  shapes of N53: Hourly at minute, Daily at time, Weekly on days at time,
+  Every N minutes, Off; backup's `keep`; the next three runs from
+  `schedulePreview`), Sessions and passwords (`sessions.*`, `passwords.*`),
+  Limits (`limits.*`). Save with
   If-Match; 412 shows "Someone else changed the configuration. Reload to see
   their version." Read-only with `ProvisionedBadge` when file-provisioned.
 - Depends: ADM-05, T0.11.
@@ -1959,7 +2934,7 @@ order).
   scheduled); "Sync now" offers All sources, This source, Full re-read
   (moderate confirmation for a full re-read); a running sync shows
   `JobProgress`; History lists the last 50 runs from `/admin/sync/history`;
-  when `/admin/lake/rebuild-owed` lists types, a banner "3 types need
+  when `/admin/lake/rebuildOwed` lists types, a banner "3 types need
   rebuilding after a type change." with "Rebuild now" (ADM-08).
 - Depends: T0.8, ADM-08, T0.11.
 
@@ -1970,7 +2945,7 @@ order).
 - Spec: `GET /lake` (layers, tables, table-level row counts per Q-SEC08,
   snapshots kept, bytes, encryption on or off); `POST /lake/verify` (a job:
   every metadata and data file referenced by current snapshots, plus orphans);
-  `GET /lake/rebuild-owed`; `POST /lake/rebuild {objectType}` (a job rebuilding
+  `GET /lake/rebuildOwed`; `POST /lake/rebuild {objectType}` (a job rebuilding
   gold from bronze, `writes_lake=True`; 409 while a proposal touching the type
   is being approved). Delete v1 `/admin/mirror*`.
 - Tests: `test_uncounted_says_not_counted` (never a guessed zero),
@@ -2008,8 +2983,8 @@ order).
   and rows with "Erasure cannot be undone. Backups made before it still hold
   this person's data until they expire; restoring one applies this erasure
   again."; submitting needs the key typed again (`ConfirmDialog` severe); a list
-  of requests with state; approval in the Inbox or here by a second
-  administrator.
+  of requests with state; "Approve" and "Reject" enabled only from the
+  proposal's `$capabilities` (C5), in the Inbox or here.
 - Depends: ADM-10.
 
 **ADM-12 · Backups (API) · M · Sonnet**
@@ -2029,9 +3004,12 @@ order).
   "Restore" opens a severe confirm ("Restoring replaces the current data with
   this backup. The audit log and erasures are kept. Elysium restarts to apply
   it.") with the id typed back; then a banner "Restore staged. Restart Elysium
-  to apply it." and, under compose or systemd, "Restart now", which calls
-  `POST /api/v2/admin/server/restart` (owned here: the server exits with code
-  75 and the supervisor restarts it; `manage:backups`).
+  to apply it." and, when `GET /api/v2/admin/server` (owned here; `{version,
+  startedAt, restartable}`) says `restartable` (`ELYSIUM_SUPERVISED=1`),
+  "Restart now", which calls `POST /api/v2/admin/server/restart` (owned
+  here, `manage:backups`): the web worker writes `run/restart-requested`,
+  and the supervisor (N47) stops its children and exits 75, which the
+  service manager restarts.
 - Depends: ADM-12.
 
 **ADM-14 · Audit (API) · M · Sonnet**
@@ -2056,7 +3034,8 @@ order).
 - Owns: `src/elysium/ops/logbuffer.py`, `src/elysium/api/v2/resources/admin_logs.py`,
   `tests/api/test_admin_logs.py`.
 - Spec: a `logging.Handler` writes the JSON records of N43 to a ring table in
-  `scratch.db` (cap 5,000, shared by workers) after redaction (resolved secrets
+  `scratch.db` (cap 5,000, shared by every process: web workers, runner,
+  jobs; N61) after redaction (resolved secrets
   and token-shaped strings become `***`); `GET /logs?level&since&logger&requestId`
   and `GET /logs/stream` (SSE). Add-on logs stay at `/admin/apps/{id}/logs`.
 - Tests: `test_canary_secret_redacted`, `test_filter_by_request_id`,
@@ -2082,11 +3061,13 @@ order).
 
 **ADM-19 · Sessions (API and UI) · S · Sonnet**
 - Owns: `src/elysium/api/v2/resources/admin_sessions.py`,
-  `ui/src/admin/sections/people/sessions/` (sub-folder handed over by T0.12),
+  `ui/src/admin/sections/people/extensions/sessions.tsx` (T0.12's
+  person-page extension point),
   `tests/api/test_admin_sessions.py`.
 - Spec: `GET /users/{id}/sessions` (started, last seen, address with the last
   octet removed, method); `DELETE /users/{id}/sessions/{sid}` and `DELETE
-  /users/{id}/sessions`; the person page gains "Sign out everywhere".
+  /users/{id}/sessions`; the person page shows them and "Sign out everywhere"
+  through the extension (T0.12's `PersonPage.tsx` is not edited).
 - Depends: T0.12, SEC-B.
 
 **ADM-20 · Apps (API) · M · Sonnet**
@@ -2124,10 +3105,10 @@ order).
 
 **ADM-23 · Exports (UI) · S · Sonnet**
 - Owns: `ui/src/admin/sections/exports/**`, `ui/e2e/admin/exports.spec.ts`,
-  `ui/packages/shell-api/src/components/ExportContractLink.tsx`.
+  `ui/src/apps/browse/slots/contract-link/` (slot `typeLinks`, C12).
 - Spec: checkboxes per exporter, "Create export" leading to `JobProgress` and
-  a download; `ExportContractLink` (a per-type "Data contract" link) that
-  Browse's type page imports once both are merged.
+  a download; the contract-link slot (a per-type "Data contract" link to `GET
+  /api/v2/exports/contracts/{type}`).
 - Depends: ADM-22.
 
 **ADM-24 · Versions (UI) · M · Sonnet**
@@ -2144,6 +3125,36 @@ order).
   path template to appear in `ui/src/**` through the generated client; an
   allowlist with a reason per exception. P3's proof.
 - Depends: the other ADM cards. Wave 5.
+
+**ADM-27 · Resources (UI) · M · Sonnet · DR 1, 3** (N57; resolved: X13)
+- Owns: `ui/src/admin/sections/resources/**`, `ui/e2e/admin/resources.spec.ts`.
+- Spec: one generic page for every resource kind, driven by the kind's JSON
+  Schema; bespoke sections stay only where a form needs domain help that a
+  schema cannot express (Sources: test connection and table pickers, ADM-04;
+  Configuration: model detection and schedule previews, ADM-06; Roles: the
+  grantable picker, T0.12). The kinds it covers: `ObjectType`, `LinkType`,
+  `ActionType`, `Automation`, `Function`, and any kind added later without a
+  bespoke section (`useMe().adminSections` decides visibility; the page
+  lists the kinds from `GET /api/v2/schemas`). A list per kind from `GET
+  /api/v2/resources?kind=K` (Name, Origin, Last changed, read-only badge); a
+  detail page showing the spec as YAML from the server (`GET
+  /api/v2/resources/{kind}/{name}?format=yaml`, shown in a read-only code
+  view); "Edit" opens `ResourceForm` generated from `GET
+  /api/v2/schemas/{kind}` (objects as fieldsets, arrays as repeatable rows,
+  enums as selects, `secretRef` as a secret picker, unknown shapes as a YAML
+  field validated by the server); "Show changes" runs a dry-run
+  `resourceChanges` and shows the `ChangeReport` (`usedBy`, `whoCanSee`,
+  `roleImpact`, `migrationsNeeded`); "Save" sends it with `baseVersion`; a
+  staged change shows "Waiting for a second administrator to approve." with
+  the Inbox link. File-origin and builtin-origin resources are read-only
+  with `ProvisionedBadge`. A second tab "Check results" lists `GET
+  /api/v2/admin/checks/results` by type (after T0.14). The client never
+  interprets a spec beyond rendering the schema's shapes.
+- Tests: `ui/e2e/admin/resources.spec.ts` (create an automation through the
+  form; a file-origin type is read-only; a widening change shows the staged
+  banner); `ui/src/admin/sections/resources/SchemaForm.test.tsx` (each JSON
+  Schema shape renders its control).
+- Depends: T0.10, T0.11, T0.13 (Automation kind), T0.14 (results tab).
 
 (ADM-25 was merged into OPS-04 and ADM-18.)
 
@@ -2228,11 +3239,15 @@ through `ctx().state(...)`. Out of scope for every CLI card: server routes
   `tests/unit/test_backup.py`.
 - Spec: `elysium.db` and `erasure.db` by `VACUUM INTO` a temporary file each,
   then `PRAGMA integrity_check` on the copy (N35); the lake as `catalog.db`
-  (same) plus every file referenced by the current snapshots, taken under the
-  lake-writer lock's shared mode or by snapshot pinning; the audit segments;
+  (same) plus every file referenced by the current snapshots: the backup job
+  declares `lock_key=lambda a: "lake-writer"` and holds `run/lake-writer.lock`
+  (exclusive) from listing the current snapshots until the last referenced
+  data file is copied, so a sync waiting for the lock queues (there is no
+  shared mode, N47); the audit segments;
   `addons/*`, the managed secrets (useless without the master key) and a copy
   of `elysium.toml` and `resources/` for reference only. Leaves out
-  `scratch.db` and the master key. Manifest: id, created, version,
+  `scratch.db` and the master key (with Q-KEY candidate A it includes
+  `master-key.recovery`, T0.9). Backup-key rotation is out of scope for 1.0. Manifest: id, created, version,
   `user_version` per file, resource-set version, files with sha256. Encrypted
   through `src/elysium/core/encrypted_archive.py`. `verify(id)` decrypts to a
   temporary directory, checks every hash and runs `quick_check`.
@@ -2243,15 +3258,34 @@ through `ctx().state(...)`. Out of scope for every CLI card: server routes
 **OPS-06 · Restore engine · M · Sonnet** (I6 reviewer)
 - Owns: `src/elysium/ops/restore.py`, `tests/unit/test_restore.py`,
   `tests/unit/test_restore_roundtrip.py`.
-- Spec: `restore(file, paths)` (L\*) decrypts into `<state>.restore-tmp/`,
-  verifies, swaps the directories atomically; keeps the current `audit/` and
-  `erasure.db`; re-applies every recorded erasure before serving; writes
-  `restore.completed`; on failure the old state stays and the temporary
-  directory is removed. `staged_restore_at_start()` runs at startup when
-  `run/restore-pending.json` exists, then deletes the marker.
+- Spec (N55; resolved: X11): `restore(file, paths)` (L\*) works inside the
+  state directory, never beside it, because `/data` is a volume mount point
+  and the container's root file system is read-only (INS-02), and systemd's
+  `StateDirectory=` is owned by the unit: the directory itself is never
+  renamed. (1) Decrypt into `<state>/.restore-new/` and verify (hashes,
+  `quick_check`); on failure delete it and stop, the state untouched. (2)
+  Write `run/restore-journal.json` `{backupId, entries: ["elysium.db",
+  "lake", "addons", "secrets"], done: []}` with fsync. (3) For each entry:
+  rename `<state>/<e>` to `<state>/.restore-old/<e>`, then
+  `<state>/.restore-new/<e>` to `<state>/<e>` (same file system, so each
+  rename is atomic), append it to `done`, fsync the journal. `audit/`,
+  `erasure.db`, `backups/`, `exports/` and `run/` are never swapped. (4)
+  Re-apply every erasure in the ledger to the restored data before serving.
+  (5) Record `restore.completed`; delete `.restore-old/`, `.restore-new/` and
+  the journal. At start (`ops.restore.resume_at_start(paths)`, called by the
+  supervisor before any child starts) an existing journal means a crash
+  mid-swap: finish the remaining renames from the journal, then steps 4-5.
+  `staged_restore_at_start()` runs a staged restore when
+  `run/restore-pending.json` exists, then deletes the marker. On a fresh
+  install, setup is finished with a temporary administrator, the backup
+  uploaded and staged, and the restored users replace the temporary one
+  (said on the restore confirmation).
 - Tests: `test_roundtrip` (create data, back up, erase a person, write more,
   restore: the person stays erased, other counts match the backup),
-  `test_failed_restore_leaves_state_identical`.
+  `test_failed_restore_leaves_state_identical`,
+  `test_crash_after_each_rename_resumes` (parametrised over the journal's
+  entries: kill after each rename, start, state equals a clean restore),
+  `test_state_directory_never_renamed`.
 - Depends: OPS-05.
 
 **OPS-07 · Retention and pruning · S · Haiku**
@@ -2284,19 +3318,28 @@ through `ctx().state(...)`. Out of scope for every CLI card: server routes
 
 **OPS-10 · Graceful shutdown and resumable jobs · S · Sonnet**
 - Owns: `src/elysium/ops/shutdown.py`, `tests/unit/test_shutdown.py`.
-- Spec: on SIGTERM stop accepting requests, end SSE streams, mark running jobs
-  `interrupted` (T0.8's enum gains it here), release locks, exit within 30 s;
-  on start, `interrupted` sync jobs restart once from their last committed
-  phase; other kinds are marked `failed` with "interrupted by shutdown".
+- Spec: the supervisor (N47) forwards SIGTERM to its children; a web worker
+  stops accepting requests and ends SSE streams; the runner stops starting
+  jobs, sends SIGTERM to each job subprocess, and marks a job that has not
+  finished within 25 s `interrupted` (T0.8's state); locks are released by
+  exit; the supervisor exits within 30 s. On start the runner restarts each
+  `interrupted` job of a kind declared `resumable=True` (sync) once from
+  `Job.checkpoint`; other kinds are marked `failed` with failure kind
+  `InterruptedByShutdown`.
 - Depends: T0.8.
 
 **OPS-11 · Runtime metrics on Health · S · Sonnet** (N43)
 - Owns: `src/elysium/ops/metrics.py`, `src/elysium/api/v2/resources/admin_metrics.py`,
-  `tests/unit/test_metrics.py`.
+  `tests/unit/test_metrics.py`; absorbs and deletes
+  `src/elysium/core/request_metrics.py` and
+  `src/elysium/api/request_metrics_middleware.py` (DR6).
 - Spec: in-process counters and histograms kept in `scratch.db` (one row per
   minute per metric, 24 h kept): `jobs.queue_depth`, `db.write_lock_wait_ms`
-  (measured in `unit_of_work` around `BEGIN IMMEDIATE`), `http.request_ms`
-  (p50, p95 per route template), `agent.step_ms`. `GET
+  (from T0.7's `db.observe_lock_wait` hook), `http.request_ms` (p50, p95 per
+  route template, from T0.5's `middleware.observe_request` hook),
+  `agent.step_ms` (recorded once T0.15 exists). `ops.metrics.install()`,
+  called from `elysium.bootstrap.build_app` and the runner, sets both hooks;
+  OPS-11 edits neither T0.5's nor T0.7's files. `GET
   /api/v2/admin/metrics?name&since` (`manage:deployment`). No exporter.
 - Tests: `test_write_lock_wait_recorded`, `test_route_template_not_raw_path`
   (no ids or keys in metric labels).
@@ -2538,8 +3581,9 @@ the `.rpm` in Rocky. Depends: INS-03, INS-05, OPS-06, ADM-12.
 
 **CI-07 · Parallel tests and the speed budget · S · Sonnet** — Owns `pytest.ini`
 (xdist settings), the CI matrix by marker, `tests/unit/test_speed_budget.py`.
-After MEAS-6: `pytest -n auto --dist loadfile`; `live` excluded from CI's
-default; the budget: `./check.sh --fast` under 120 s and the `fast` marker set
+After MEAS-6: `pytest -n auto --dist loadfile`; the matrix splits by the
+directory markers of T0.1 step 6 (`-m fast`, `-m api`, `-m lake`); `live`
+excluded from CI's default; the budget: `./check.sh --fast` under 120 s and the `fast` marker set
 under 300 s on CI's runner, measured and enforced by reading the junit report
 of the job (fail when exceeded by 20 %). Depends: MEAS-6, CI-01.
 
@@ -2657,10 +3701,8 @@ tests, D14). If Q-D14 says keep, re-express enrichment and prediction as
 `.github/workflows/sim.yml`. Elysium never imports the simulator (an
 import-linter contract). Depends: T0.1. Wave 1.
 
-**REF-18B · Tests split by cost · M · Sonnet** — Owns the moves in `tests/` into
-`tests/{fast,api,lake,live}/` (`tests/property/` stays). **A quiet wave of its
-own**: one mechanical commit (`git mv` and import fixes) plus the CI matrix.
-Depends: MEAS-6, CI-07. Wave 4b.
+(REF-18B was deleted: test markers come from the directory, T0.1 step 6,
+N58.)
 
 **REF-19 · Controls pruned; the invariant coverage table · S · Sonnet** — Owns
 `controls/**` (deletions only), `docs/reference/invariants.md` (generated by
@@ -2672,12 +3714,7 @@ tagged I1-I8 or a supporting invariant and every `semantic` one; fail when any
 of I1-I8 has no live control. Report counts deleted and kept. Depends: QA-MUT,
 everything else. Wave 6.
 
-**REF-MED · Read mediator behind one facade · M · Sonnet** (I2/I3 reviewer) —
-Owns `src/elysium/query/{reader,search,values,links}.py` and the deletion of
-the remains of `src/elysium/core/ontology/mediator.py`. Split by concern, with
-`elysium.query.Reader` the only entry and `check_access` called only there;
-behaviour unchanged, proved by the existing tests passing with only import
-edits. Depends: T0.6, API-7.
+(REF-MED was absorbed into Tier 0 item T0.6B, N46.)
 
 **REF-LLM · One inference server · S · Sonnet** — Owns
 `src/elysium/adapters/{ollama,vllm}_adapter.py` (delete the one not chosen),
@@ -2771,8 +3808,9 @@ T0.10, ADM-20.
 `src/elysium/apps/tokens.py`, `src/elysium/actions/effects/{upsert,retract}.py`,
 `tests/api/test_app_ingestion.py`; deletes the add-on file outbox with T0.13's
 leftovers. At each start the supervisor mints a token for the app's service
-principal with scopes `apply:<action>` from `App.spec.actions`, passed on a
-pipe, never in the environment. Effects `upsert {objectType, key: $param.key,
+principal with scopes `[{verb: apply, action: a} for a in App.spec.actions]`
+(N50; `Principal.via = "app"`, so `approval: none` ingestion applies at once,
+N49), passed on a pipe, never in the environment. Effects `upsert {objectType, key: $param.key,
 set}` (create on first sight, modify after) and `retract`. `Idempotency-Key`
 required for app tokens. Depends: T0.5, T0.10, ADM-20.
 
@@ -2800,24 +3838,28 @@ authorised against the owning object and property (read), then proxied to the
 app; no series stored. Depends: T0.6, ADD-02.
 
 **ADD-06 · Source terms as data · M · Sonnet** — Owns `src/elysium/index/terms.py`,
-the `terms` fields on `Silo` and `App` (`src/elysium/resources/kinds/{silo,app}.py`,
-additive), `ui/packages/shell-api/src/components/Attribution.tsx`,
-`tests/unit/test_terms.py`. Objects carry `$source.terms` in v2 responses;
+`ui/src/apps/browse/slots/attribution/` (slot `objectFooter`),
+`tests/unit/test_terms.py` (the `terms` fields on `Silo` and `App` already
+exist, T0.3). Objects carry `$source.terms` in v2 responses;
 `Configuration.sources.allowNonCommercial` (default true) pauses every source
 and app whose terms say `commercial: false` when false. Depends: T0.8, API-1.
 
 **ADD-07 · Freshness on objects · S · Sonnet** — Owns `src/elysium/index/freshness.py`,
-`ui/src/apps/browse/freshness/`, `tests/unit/test_freshness.py`.
+`ui/src/apps/browse/slots/freshness/` (slot `typeBadges`), `tests/unit/test_freshness.py`.
 `$freshness: live|stale|unavailable` per type from the source's health and
 schedule (stale = more than twice the schedule since the last success), shown
 by Browse's type badge. Depends: T0.8, API-1.
 
-**ADD-08 · Lifecycle of source-created objects · M · Sonnet** — Owns
-`src/elysium/automation/lifecycle.py`, `tests/unit/test_lifecycle.py`.
-`ObjectType.lifecycle {retireAfter: P7D, mode: keep|inactive|remove}` runs as
-a built-in daily `schedule` automation applying the system action `retire`
-(marks `inactive` or records a delete in the write log; never touches a
-source row). Depends: T0.13, ADD-02.
+**ADD-08 · Lifecycle of source-created objects · M · Sonnet** (N56;
+resolved: X12) — Owns `src/elysium/index/pipeline/retire.py`,
+`tests/unit/test_lifecycle.py`. `ObjectType.lifecycle {retireAfter: P7D,
+mode: keep|inactive|remove}` is applied by the pipeline phase `retire` (T0.8's
+`PHASES`, after `gold`), not by an automation: no synthetic owner is needed
+and D18 ("automations run as a real owner") stays true. The phase plans the
+retirements purely from the gold snapshot and the last-seen times, and
+applies the system action `retire` through the `system_action` outbox row
+like quarantine (marks `inactive` or records a delete in the write log;
+never touches a source row; I4). Depends: T0.8, ADD-02.
 
 **ADD-09 · Triggers on arriving data · S · Sonnet** — Owns
 `tests/integration/test_arrival_triggers.py`. An app-shaped test: an ingestion
@@ -2857,9 +3899,9 @@ its row is deleted (DOC-06).
 
 | Id | Blocks | The exact question | Default until answered |
 |---|---|---|---|
-| **Q-N22** | N23-N44 | "The finalised roadmap applies your 3 November direction through decisions N23 to N44 in `docs/decisions.md`. Do you veto any of them?" | All built as written |
+| **Q-N22** | N23-N44, N46-N65 | "The finalised roadmap applies your 3 November direction through decisions N23 to N44, and the design settlement through N46 to N65, in `docs/decisions.md`. Do you veto any of them?" | All built as written |
 | **Q-NAME** | the name, Q-REGISTRY, the 1.0 cut | See below. "Do you want to rename Elysium, and to what? If 'Melzar' is the candidate, will you commission the clearance search listed below?" | Keep "Elysium" (N44); nothing renamed |
-| **Q-KEY** | T0.9 | "Lake encryption: (a) do you accept that setup refuses to encrypt until a recovery key has been shown once and typed back, because losing the key loses the lake and the changelog is a system of record? (b) do you accept the stated limit, that root on the running host can read the key, so this protects copied files, stolen disks, backups and other accounts, not against a hostile administrator of the live machine?" | **Waits.** T0.9 skipped and done later; backups and health checks treat the key as optional behind a flag |
+| **Q-KEY** | T0.9 | "Lake encryption: (a) do you accept that setup refuses to encrypt until a recovery key has been shown once and typed back, because losing the key loses the lake and the changelog is a system of record? (b) do you accept the stated limit, that root on the running host can read the key, so this protects copied files, stolen disks, backups and other accounts, not against a hostile administrator of the live machine? (c) which recovery design: candidate A (a random recovery key, shown once as 52 characters, wraps a copy of the master key) or candidate B (no recovery key; the master-key file and an optional passphrase export are the only keys)? Both are written out in T0.9 with what each means for ADM-02 and OPS-05." | **Waits.** T0.9 skipped and done later; backups and health checks treat the key as optional behind a flag |
 | **Q-MODEL** | M11, REF-LLM, AUD D1/D2, LB-* rows | "Provide a machine with a capable model (a GPU, or a CPU host where about an hour per four questions is acceptable) to run `elysium dev bench llm` after T0.15. Then choose one model (phi4-mini or Qwen3-4B-Instruct) and one inference server (Ollama or llama-server)." | phi4-mini on Ollama; both adapters kept. The bench commands and the measured runs so far: archive item 3 |
 | **Q-COMPLIANCE** | archive item 2 | "Choose the CPA firm for SOC 2, the certification body for ISO 27001, an independent penetration tester, the budget, and when the SOC 2 observation window starts." | Engineering controls are built (SEC-B, T0.7 chain, OPS-06 restore test, ADM-22 access review); audits wait |
 | **Q-D14** | REF-14B | "Keep enrichment and prediction as `edit_proposer` functions, or delete them?" | Delete; inferred identity moves to an add-on either way |
@@ -2906,7 +3948,7 @@ legal advice).**
   docs; the diff is a pure rename and the full suite passes with no other
   edit. It is cheapest **before the 1.0 cut**, when `apiVersion`, the
   environment prefix and the paths freeze (N12). It becomes a card
-  (REF-RENAME, S, Haiku, a quiet wave of its own like REF-18B) only when Q-NAME
+  (REF-RENAME, S, Haiku, a quiet wave of its own) only when Q-NAME
   is answered.
 
 Machine time that is not a decision: MEAS-1 to MEAS-4 and MEAS-7 need the
@@ -2929,7 +3971,8 @@ graph TD
   T03 --> T04[T0.4 CLI, health registry]
   T03 --> T05[T0.5 API v2, /me, errors, logs]
   T05 --> T06[T0.6 typed model, access, capabilities]
-  T06 --> T07[T0.7 state, UoW, outbox, audit]
+  T06 --> T06B[T0.6B elysium.query, the read path]
+  T06B --> T07[T0.7 state, UoW, outbox, audit]
   T07 --> T08[T0.8 pipeline, jobs, lake writer]
   T07 -.Q-KEY.-> T09[T0.9 lake encryption]
   T07 --> T010[T0.10 proposals, actions, validate]
@@ -2975,13 +4018,13 @@ Waves 0 to 4, beside the cards.
 
 | Wave | Starts after | Cards (parallel) |
 |---|---|---|
-| **0** | now | DOC-00 (in progress, first), then **T0.1, T0.1B, T0.2 ... T0.15 in order**. Alongside: MEAS-1..6, SEC-A, DOC-06 (first pass) |
+| **0** | now | DOC-00 (in progress, first), then **T0.1, T0.1B, T0.2 ... T0.6, T0.6B, T0.7 ... T0.15 in order**. Alongside: MEAS-1..6, SEC-A, DOC-06 (first pass) |
 | **1** | T0.4 | CI-01, CI-04, REF-18A, OPS-01, DOC-03, INS-04, CLI-DEV, QA-MUT, QA-COV (after MEAS-6) |
 | **2** | T0.8 | OPS-02, OPS-03, OPS-05, OPS-10, OPS-11, ADM-08, ADM-14, ADM-16, SEC-C, CI-08, REF-LIB-1, MEAS-7 |
 | **3a** | T0.12 | ADM-01, ADM-03, ADM-05, ADM-10, ADM-20, ADM-22, OPS-04, OPS-06, OPS-07, API-1, SEC-B, SEC-E, INS-02, INS-07, CI-05, CLI-RESOURCE, CLI-MODEL, CLI-PROPOSAL, CLI-AUDIT, CLI-LOGS |
 | **3b** | 3a | ADM-04, ADM-06, ADM-07, ADM-09, ADM-11, ADM-12, ADM-15, ADM-17, ADM-19, ADM-21, ADM-23, ADM-24, OPS-08, INS-03, INS-05, INS-06, CI-02, CLI-SETUP, CLI-SOURCE, CLI-CONFIG, CLI-LAKE, CLI-ERASURE, CLI-APP, CLI-EXPORT, QA-PROP |
-| **4** | T0.15, 3b | ADM-02, ADM-13, ADM-18, SEC-D, SEC-F, API-2..8, CLI-BACKUP, CLI-OBJECT, REF-14A, REF-MED, REF-UI-2, REF-LIB-3, REF-STD-OCSF, REF-STD-LINKML, REF-STD-DPV, REF-STD-DQ, ADD-01..08, ADD-11, INS-01, INS-08, CI-06, CI-07 |
-| **4b (quiet)** | 4 | REF-18B alone |
+| **4** | T0.15, 3b | ADM-02, ADM-13, ADM-18, ADM-27, SEC-D, SEC-F, API-2..8, CLI-BACKUP, CLI-OBJECT, REF-14A, REF-UI-2, REF-LIB-3, REF-STD-OCSF, REF-STD-LINKML, REF-STD-DPV, REF-STD-DQ, ADD-01..08, ADD-11, INS-01, INS-08, CI-06, CI-07 |
+| **4b** | 4 | none (REF-18B was deleted, N58; REF-MED is T0.6B) |
 | **5** | 4b | API-9, ADM-26, ADD-09, ADD-10, ADD-12, REF-14B, REF-LIB-2, REF-UI-1, CLI-HELP, CLI-SCRIPTS, DOC-01, DOC-02, DOC-05, DOC-07, OPS-09 (script only) |
 | **5b (quiet)** | 5 | QA-ERR, then QA-COMMENTS (they edit many files; nothing else merges) |
 | **6** | 5b | QA-ARCH, REF-19, SEC-G, DOC-04, DOC-06 (final), DOC-08, REF-LLM (if Q-MODEL is answered); REF-RENAME if Q-NAME is answered (quiet, before the cut); then **the 1.0 cut** |
@@ -2993,8 +4036,8 @@ a decision replaced N36); freeze `apiVersion: elysium/v1`; write
 output for each row; tag `v1.0.0`; run OPS-09 for real on the next release.
 
 **Counts.** MEAS 7, SEC 7, API 9, ADM 25, CLI 17, OPS 11, INS 8, DOC 9, CI 7,
-QA 6, REF 16, ADD 12: **134 cards**, plus **16 Tier 0 items** and the 1.0 cut.
-Changes from 3 November: new MEAS-7, OPS-11, DOC-00, QA-MUT, QA-COV, QA-PROP,
+QA 6, REF 14, ADD 12: **133 cards**, plus **17 Tier 0 items** and the 1.0 cut.
+Changes from 3 November: new ADM-27 (N57) and Tier 0 item T0.6B (N46); deleted REF-MED (into T0.6B) and REF-18B (N58); new MEAS-7, OPS-11, DOC-00, QA-MUT, QA-COV, QA-PROP,
 QA-ERR, QA-COMMENTS, QA-ARCH and Tier 0 item T0.1B; deleted API-10 (N29);
 merged ADM-25 (into OPS-04, ADM-18), CI-03 (into REF-18A, CI-01),
 REF-STD-JSONSCHEMA (into ADM-22); T0.1's `001*.txt` removal moved into DOC-00.
@@ -3035,9 +4078,12 @@ RULES
 - Design rules: no new primitive, registry or resource kind (DR6); the server
   decides and the client renders, so no grant, role or label logic in ui/
   (DR5); every route follows DR2.
-- Never write a vendor or product name of the reference platform; say "the
-  precedent". tests/unit/test_no_vendor_names.py and the pre-commit hook
-  enforce it.
+- Never write the name of the precedent's vendor or of any of its products,
+  anywhere (code, tests, documents, file names, commit messages); say "the
+  precedent". Other product names (databases, tools, standards) are fine.
+  The one allowed exception is the UI toolkit's npm scope in
+  ui/package.json, ui/package-lock.json and import lines (N62).
+  tests/unit/test_no_vendor_names.py and the hooks enforce it.
 - Security: uniform denial (unknown and not-allowed identical, 404); names
   never contents; authorisation only through elysium.access.check_access;
   MAC stays in Python after the engine returns; writes only through actions;
@@ -3046,7 +4092,8 @@ RULES
   the negative tests, failing; then the code.
 - Errors: raise elysium.errors.DomainError subclasses; never a bare
   `except Exception` without `# noqa: BLE001 -- <rule>`.
-- New modules are mypy --strict (add them to quality/strict-modules.txt).
+- New modules are mypy --strict automatically (package globs in
+  pyproject.toml, T0.1); never edit a typing list.
 - Comments state rules and measured facts, never history: no ticket codes,
   dates, planning-file references or conversation in src/.
 - Long or background commands ONLY through tools/heavy.sh NAME CMD (it logs

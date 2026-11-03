@@ -14,13 +14,13 @@ the content is right, only that the skeleton survived and that every id
 the text cites exists:
 
   * docs/roadmap.md: the eight numbered sections, in order and by title;
-    section 3's subsections 3.1-3.6; Tier 0 items T0.1, T0.1B, T0.2-T0.15
-    each once and in order, in the summary table, each with a contract;
+    section 3's subsections 3.1-3.6; Tier 0 items T0.1, T0.1B, T0.2-T0.6,
+    T0.6B, T0.7-T0.15 each once and in order, in the summary table, each with a contract;
     the card workstreams and card ids (unique, each naming what it owns);
     the design rules DR1-DR7, the invariants I1-I8, the checklist rows
     P1-P13; the owner questions (four columns, a default, all cited ones
     defined);
-  * docs/decisions.md: B1-B20, D1-D23 and N1-N45, each defined once with
+  * docs/decisions.md: B1-B20, D1-D23 and N1-N65, each defined once with
     five columns, and every decision id the roadmap cites defined there;
   * the one-planning-file rule: the documents name docs/roadmap.md and the
     old root ROADMAP.md and BLOCKING.md are gone.
@@ -42,7 +42,7 @@ TIER0 = re.compile(r"^### (T0\.\d+B?) (.*)$")
 CARD_PREFIXES = "MEAS|SEC|API|ADM|OPS|INS|DOC|CI|QA|REF|ADD"
 CARD = re.compile(rf"^\*\*((?:{CARD_PREFIXES})-[A-Z0-9-]+) · ", re.M)
 WORKSTREAMS = ["MEAS", "SEC", "API", "ADM", "CLI", "OPS", "INS", "DOC", "CI", "QA", "REF", "ADD"]
-TIER0_IDS = ["T0.1", "T0.1B"] + [f"T0.{n}" for n in range(2, 16)]
+TIER0_IDS = ["T0.1", "T0.1B"] + [f"T0.{n}" for n in range(2, 7)] + ["T0.6B"] + [f"T0.{n}" for n in range(7, 16)]
 
 
 def _sections():
@@ -127,7 +127,7 @@ class TestDesignRulesInvariantsAndChecklist:
 
 class TestTierZero:
     def test_the_items_are_present_once_and_in_order(self):
-        """T0.1, T0.1B, then T0.2 to T0.15."""
+        """T0.1, T0.1B, T0.2 to T0.6, T0.6B, then T0.7 to T0.15."""
         ids = [m.group(1) for m in map(TIER0.match, LINES) if m]
         assert ids == TIER0_IDS, ids
 
@@ -181,9 +181,9 @@ class TestTheCards:
 
 class TestDecisions:
     def test_the_groups_are_each_present_once_with_five_columns(self):
-        """B1-B20, D1-D23, N1-N45: id, date, decision, reason, consequences.
+        """B1-B20, D1-D23, N1-N65: id, date, decision, reason, consequences.
         A stray pipe in prose splits a row silently."""
-        expected = [f"B{n}" for n in range(1, 21)] + [f"D{n}" for n in range(1, 24)] + [f"N{n}" for n in range(1, 46)]
+        expected = [f"B{n}" for n in range(1, 21)] + [f"D{n}" for n in range(1, 24)] + [f"N{n}" for n in range(1, 66)]
         assert sorted(_decision_ids()) == sorted(expected)
         for row in re.findall(r"^\| [BDN]\d+ \|.*$", DECISIONS, re.M):
             assert len(_cells(row)) == 5, row[:60]
