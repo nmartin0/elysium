@@ -402,6 +402,21 @@ over the same model; a versioned, discoverable API.
 shape for everything; configuration and exports as plain versioned text; a
 browser that only renders what the server decided; a small core.
 
+**Where a capability belongs (N89; decided by direction, the owner may
+veto).** This is the placement rule for any request from an app (Astrolabe,
+Heliograph or a later one) and for any card that is not sure whether
+something goes in Elysium or in the app. It is inferred from how the
+precedent's parts are cut. A capability is **Elysium's** when it adds a data
+type, a query operator, a transport, a permission rule or a packaging rule, or
+when it must run beside the data (aggregation, spatial filters, link
+traversal, subscriptions). It is a **generic view**, built once in Elysium,
+when it shows any object set from configuration with no domain words in it
+and at least two apps need it. Otherwise it **belongs to the app**: domain
+words, domain maths, domain screens. Section 5.14 applies the rule to the
+thirteen capabilities Elysium gives its apps and lists what it does not build
+(N90). A worker who still cannot place a request does not guess: it writes
+the request down as a row in section 7 with the default "the app".
+
 ### 2.2 The design rules
 
 Every Tier 0 item and card names the rules it applies (`DR: 1, 5`). Each rule
@@ -1034,7 +1049,9 @@ class LogSettings(BaseModel):     level: Literal["debug", "info", "warning", "er
 class Metadata(BaseModel): name: str; description: str = ""
 #   names: ObjectType ^[A-Z][A-Za-z0-9]{0,62}$; LinkType and property names ^[a-z][a-z0-9_]{0,62}$ (used like fields in sets);
 #   every other kind ^[a-z][a-z0-9-]{0,62}$; refused with path:line:col $.metadata.name: <rule in words>
-class Terms(BaseModel): licence: str; attribution: str = ""; commercial: bool = True        # ADD-06
+class Terms(BaseModel): licence: str; attribution: str = ""; attributionUrl: AnyHttpUrl | None = None; commercial: bool = True   # APP-07
+                        verified: bool = False             # N88: false = the source or feed does not start, whatever else its terms say
+                        storage: Literal["allowed", "forbidden"] = "allowed"; redistribution: bool = True; liveUseOnly: bool = False
 # src/elysium/resources/kinds/silo.py
 class Incremental(BaseModel): column: str
 class SiloSpec(BaseModel):
@@ -1045,19 +1062,30 @@ class SiloSpec(BaseModel):
     headers: dict[str, SecretRef] = {}  # rest only
     incremental: Incremental | None = None
     locale: str = "en-GB"; queryTimeoutSeconds: int = Field(30, ge=1, le=600)
-    terms: Terms | None = None          # ADD-06
+    terms: Terms | None = None          # APP-07
     # the remaining adapter keys today's data_silos.yaml accepts per adapter (core/config_schema.py) are carried over
     # camelCased, one field each, in this model; T0.3 lists them in the commit; nothing else is accepted
 # src/elysium/resources/kinds/app.py
 class AppServer(BaseModel): command: list[str]; options: dict[str, str | SecretRef] = {}
 class AppOntology(BaseModel): prefix: str | None = None; resources: str          # ADD-01: a path inside the app's package
-class GatedResource(BaseModel): id: str (^[a-z][a-z0-9-]{0,62}$); title: str     # ADD-04
+class GatedResource(BaseModel): id: str (^[a-z][a-z0-9-]{0,62}$); title: str     # APP-09
+class AppFeed(BaseModel): id: str (^[a-z][a-z0-9-]{0,62}$); title: str; objectTypes: list[str]   # APP-06, APP-07: one upstream the app reads
+                          staleAfter: timedelta | None = None; terms: Terms | None = None       # ISO 8601 duration; no report within it = stale
+class AppJob(BaseModel): id: str (^[a-z][a-z0-9-]{0,62}$); title: str; path: str      # APP-12: path on the app's server
+class AppSchedule(BaseModel): id: str (^[a-z][a-z0-9-]{0,62}$); when: When; path: str  # APP-12: T0.8's When (N53)
 class AppSpec(BaseModel):
     enabled: bool = True; server: AppServer | None = None; offeredTo: list[str] = []   # role names
     ontology: AppOntology | None = None     # ADD-01
-    actions: list[str] = []                 # ADD-02: the app token's scopes are [{verb: apply, action: a} for a in actions]
-    gated: list[GatedResource] = []         # ADD-04
-    terms: Terms | None = None              # ADD-06
+    actions: list[str] = []                 # APP-02: the app token's scopes are [{verb: apply, action: a} for a in actions]
+    gated: list[GatedResource] = []         # APP-09
+    terms: Terms | None = None              # APP-07
+    feeds: list[AppFeed] = []               # APP-06, APP-07
+    auditEvents: list[str] = []             # APP-02: names (^[a-z][a-z0-9_.]{0,62}$) the app may record as app.<name>
+    schedules: list[AppSchedule] = []; jobs: list[AppJob] = []                    # APP-12
+    dataPaths: list[str] = []               # APP-13: paths under the app's data directory that backup includes
+    quiesce: bool = False                   # APP-13: backup stops the app while it copies and starts it again
+    configSchema: str | None = None         # APP-13: a JSON Schema file inside the app's package; AppConfig values are checked against it
+class AppConfigSpec(BaseModel): app: str; values: dict[str, Any]     # APP-13: kind AppConfig; secrets only as SecretRef
 # src/elysium/resources/kinds/configuration.py   (exactly one, metadata.name "default")
 class LlmConfig(BaseModel): server: Literal["vllm", "llama-server"] = "vllm"; baseUrl: str = "http://127.0.0.1:8001/v1"; model: str = "Qwen/Qwen3-8B"
                             timeoutSeconds: int = Field(600, ge=10, le=3600)
@@ -1071,10 +1099,12 @@ class PasswordConfig(BaseModel): minLength: int = Field(15, ge=15, le=128); minL
                                  maxLength: int = Field(256, ge=64, le=1024); minUsernameLength: int = Field(3, ge=3); forbidUsernameFrom: int = 4   # T0.12 step 10
 class Limits(BaseModel): bulkActionLimit: int = Field(20, ge=1, le=100); validatePerMinute: int = 60; exportRowCap: int = 100_000
                          concurrentJobs: int = Field(2, ge=1, le=8)        # N47
+                         appBatchRows: int = Field(5000, ge=1, le=50_000)  # APP-02: rows in one ingest batch
+                         accessSessionMinutes: int = Field(10, ge=1, le=60)  # APP-09: life of an access session
 class OidcConfig(BaseModel): issuer: AnyHttpUrl; clientId: str; clientSecret: SecretRef; usernameClaim: str = "preferred_username"
                              autoCreate: Literal[False] = False; allowPublicIssuer: bool = False   # SEC-E1, SEC-E2
 class SignInConfig(BaseModel): oidc: OidcConfig | None = None
-class SourcesConfig(BaseModel): allowNonCommercial: bool = True             # ADD-06
+class SourcesConfig(BaseModel): allowNonCommercial: bool = True             # APP-07
 class SpecialCategoryApproval(BaseModel): justification: Literal["required"] = "required"; breakGlass: bool = False   # N83, T0.10 step 7
 class ApprovalsConfig(BaseModel): specialCategory: SpecialCategoryApproval = SpecialCategoryApproval()
 class ConfigurationSpec(BaseModel):
@@ -1086,7 +1116,8 @@ class ConfigurationSpec(BaseModel):
 Kinds registered later, each in its own file and item: `ObjectType`,
 `LinkType`, `ActionType`, `Role` (T0.6, `src/elysium/resources/kinds/
 {object_type,link_type,action_type,role}.py`), `Automation` (T0.13),
-`Function` (REF-14A).
+`Function` (REF-14A), `AppConfig` (APP-13,
+`src/elysium/resources/kinds/app_config.py`).
 Rules: pydantic models use `extra="forbid"`, camelCase in YAML
 (`alias_generator=to_camel`), snake_case in Python; a new boot setting goes
 into a section model and the generated reference (DOC-03); a new runtime
@@ -1229,7 +1260,7 @@ Effective power is the intersection (D20): `decide` allows a request only
 when the principal's grants allow it AND (`token_scopes is None` or a scope
 covers it); a scope never adds power. A `GrantScope` covers what a grant
 with the same fields covers (`read` on a type without `property` covers
-every property). App tokens (ADD-02) carry `[GrantScope(verb="apply",
+every property). App tokens (APP-02) carry `[GrantScope(verb="apply",
 action=a) for a in App.spec.actions]`. JSON form of a scope: `{verb, type?,
 property?, action?, appResource?}` or `{manage: area}`; CLI flags in section
 3.6; no string grant grammar returns.
@@ -1246,6 +1277,8 @@ class Property: id; name; type: DataType; labels: frozenset[str]; value_type: st
 class ActionType: id; name; approval: Literal["none", "confirm", "second_person"]; parameters; criteria; effects
 class Role: id; name; origin: Literal["builtin", "ui"] | str; grants: frozenset[Grant]; manage: frozenset[ManageArea]
 class Grant: verb: Literal["discover", "read", "apply"]; type: str | None; property: str | None; action: str | None; app_resource: str | None
+class Lifecycle: stale_after: timedelta | None; retire_after: timedelta | None; mode: Literal["keep", "inactive", "remove"]   # APP-08; YAML staleAfter, retireAfter, mode
+# value types declared by app capabilities, one file each in src/elysium/metadata/types/: timeseriesRef (APP-03), geo_point and geo_shape (APP-04)
 # src/elysium/metadata/load.py
 def build_ontology(resources: Sequence[Resource]) -> tuple[Ontology | None, list[ResourceError]]
 # src/elysium/access/__init__.py   (the only decision site; Principal, Manage, ManageArea, Scope from T0.5)
@@ -1311,8 +1344,10 @@ def redeem(paths: StatePaths, token: str, principal_id: str, fingerprint: str) -
 #   (tests/unit/test_object_set_wire_matches_parser.py: every wire kind parses, every parser kind has a wire model)
 ```
 A card that adds a set kind or operator owns its own `query/<x>.py`;
-`query/sets.py`'s filter-operator table is owned by API-5 and then ADD-10
-(different waves); nobody else edits `sets.py`.
+`query/sets.py`'s filter-operator table is owned by API-5 and then APP-04
+(different waves); nobody else edits `sets.py`. `last_seen` (APP-02) is a
+system value kept beside an object, not a property: no set can filter on it,
+and only the freshness and lifecycle code (APP-06, APP-08) reads it.
 
 <a id="c-db"></a>
 
@@ -1366,7 +1401,9 @@ class VerifyReport(BaseModel): intact_through: str | None; broken_at: str | None
 Writes are serialised across processes by an exclusive `flock` on
 `audit/.lock` held for the append (read last hash, append, fsync); a failed
 append fails the caller (fail-closed). `detail` never holds an object value,
-a secret or a property name the actor may not read. CLI local commands
+a secret or a property name the actor may not read. A request that carries
+`X-Elysium-App: <id>` for an enabled app (the frame bridge sends it, APP-10)
+has `detail.app = <id>` added by `audit.record` from the request context. CLI local commands
 record with `actorKind: "local"`, `actor: "local:<unix user>"`. **Paging:**
 `query` reads segments newest first, each segment backwards by line, and
 stops after `page_size` matches; the page token signs `{seg: "2026-11",
@@ -1427,6 +1464,17 @@ unit of work adds a `change_feed` outbox row, a lake publication writes
 rows for the types it changed. Development: `elysium server run --workers
 1` behaves the same with one web worker. Tests run the runner loop in
 process (`runner.run_once(paths)`).
+
+**Calling an app's server (T0.8).** Server code reaches an app's server in one
+way only: `elysium.apps.upstream.call(app, method, path, *, json=None,
+timeout=10) -> UpstreamResponse`. It reads the supervisor's state files like
+the proxy does, sends no cookie or `Authorization` header, adds the request
+id, and raises `AppUnavailable` for an app that is disabled, not running or
+not answering in time. Everything that talks to an app from the server (the
+series proxy, `writeback`, `notifyApp`, app schedules and jobs) uses it, so
+that its rules are written once. T0.8 step 8 writes it with
+`tests/unit/test_app_upstream.py` (no cookie leaves; a stopped app raises
+`AppUnavailable`; the timeout holds).
 
 **Start order (T0.8 step 8, N69).** Before any child starts, the supervisor calls,
 in this order: `db.migrate.migrate_at_start(paths)` (a no-op until 1.0;
@@ -1496,8 +1544,16 @@ def next_runs(when: When, tz: str, after: datetime, n: int = 3) -> list[datetime
 The wizard and the Schedules tab offer exactly these shapes; the server
 computes previews (`POST /api/v2/admin/configuration/schedulePreview
 {when}` -> `{next: [iso, iso, iso]}`, ADM-05).
+**Schedule sources and the terms gate (N90, N88).** `jobs` keeps a registry of
+schedule sources (`jobs.schedule_source`); `Configuration.schedules` is the
+first, and a file in `jobs/kinds/` may register another (APP-12 registers the
+apps' schedules). Before the pipeline starts a silo source it asks
+`index.terms.source_allowed(source) -> bool`; T0.8 writes it returning
+`True`, and APP-07 replaces the body (a source whose `terms` are present and
+not `verified`, or non-commercial while `sources.allowNonCommercial` is false,
+does not start; the health row says why).
 The `retire` phase (N56) runs after `gold` for types whose
-`ObjectType.lifecycle` is set and does nothing until ADD-08 supplies
+`ObjectType.lifecycle` is set and does nothing until APP-08 supplies
 `index/pipeline/retire.py`'s planner (T0.8 writes the phase with an empty
 planner returning no retirements).
 Job kinds added by cards: `backup` (OPS-05), `restore-check` (OPS-06),
@@ -1575,11 +1631,17 @@ def apply(caller: Caller, action: str, params: Mapping[str, Any], *, mode: Liter
 #   status "needs_proposal" with the plan and the policy, and the CALLER submits proposals.submit(caller, "action", ...).
 #   approved_by is set only by proposals/kinds/action.py when applying an approved proposal (re-authorised as the approver, I5).
 @dataclass(frozen=True)
-class ApplyResult: status: Literal["valid", "invalid", "applied", "needs_proposal"]; write_id: str | None = None
+class ApplyResult: status: Literal["valid", "invalid", "applied", "needs_proposal", "cancelled"]; write_id: str | None = None
                    reasons: tuple[str, ...] = (); plan: ActionPlan | None = None; policy: Literal["confirm", "second_person"] | None = None
 def policy_for(principal: Principal, action: ActionType) -> Literal["apply", "confirm", "second_person"]   # pure; the table below; second_person whenever the plan writes a special-category property (N83)
 def capabilities_for(caller: Caller, object_type: str, pks: Sequence[str], actions: Sequence[str]) -> Mapping[str, Mapping[str, bool]]
 # src/elysium/actions/effects/<effect>.py   @effect_kind("modify"|"create"|"delete"|...) (N63); post-commit effects go through db.outbox
+#   @effect_kind(name, phase="write" | "before"): "write" (the default) is applied in the unit of work; a "before" effect (N86) runs first,
+#   before anything is written, outside the unit of work, once per apply (never in validate mode); it returns normally to let the
+#   action go on, raises EffectRefused(reasons) when the other side says no, or EffectUnavailable when it cannot be reached; either
+#   one means nothing is written and the result is status "cancelled" with the reasons (the fixed sentences of actions/reasons.py,
+#   plus the other side's own words, shown as coming from it). The API answers 409 ActionCancelled (refused) or 503
+#   ActionUnavailable (unreachable), and audits action.cancelled. Approving a proposal runs the before effects at approval, not at staging.
 # src/elysium/actions/system.py             the system actions quarantine and retire, applied from the outbox kind "system_action" (N48)
 ```
 
@@ -1627,7 +1689,7 @@ automation acting as its owner, `on_behalf_of` = owner), `app` (an app's
 service principal), `system` (the provisioner, the scheduler).
 | Policy | via `person` | via `agent` | via `automation` | via `app` |
 |---|---|---|---|---|
-| `none` | applies at once | stages; `confirm` rules (D17) | stages; `confirm` rules (D17) | applies at once (ingestion, ADD-02) |
+| `none` | applies at once | stages; `confirm` rules (D17) | stages; `confirm` rules (D17) | applies at once (ingestion, APP-02) |
 | `confirm` | applies at once; the UI shows `ConfirmDialog` moderate first; the API needs no extra flag | stages; approvable by `on_behalf_of` (self-approval allowed) or anyone allowed to approve the kind | stages; approvable by the owner or anyone allowed to approve the kind | stages; approvable by anyone allowed to approve the kind |
 | `second_person` | stages; approver differs from the proposer | stages; approver differs from the proposer and from `on_behalf_of` | stages; approver differs from the owner | stages; approver differs from the proposer |
 "Allowed to approve" = the approver's own principal passes the kind's
@@ -1800,7 +1862,7 @@ export function useSlots(slot: Slot): SlotEntry[];
 ```
 and renders `<SlotHost slot="..." />` at the four places in the object and
 type pages. API-2 (history tab), API-3 (saved sets), API-8 (notes tab),
-ADD-06 (attribution footer), ADD-07 (freshness badge) and ADM-23 (contract
+APP-07 (attribution footer), APP-06 (freshness badge) and ADM-23 (contract
 link) each add one folder under `slots/` and never edit Browse's pages; the
 Browse owner (API-1b) owns `ui/src/apps/browse/**` except `slots/*/`.
 
@@ -1854,6 +1916,10 @@ spec:
     schedule:  { when: { weekly: { days: [mon, tue, wed, thu, fri], time: "09:00" } } }   # T0.8's When (N53)
   effects:                          # 1..5, in order; closed vocabulary notify | proposeAction (no registry)
     - notify: { recipients: { users: [bob], roles: [analyst] }, title: "Orders are late" }   # fixed text, at most 80 characters, no object values (D19)
+        # optional, for notices an app's data raises (APP-11): priority: normal | high (default normal); expiresAfter: P7D (at most P30D);
+        # dedupe: "late-orders" (a fixed string of at most 80 characters: a new notice with the same recipient, automation and dedupe
+        # replaces the unread one instead of adding another); action: { action: flag-customer, parameters: { customer: $object } }
+        # (the Inbox shows a button that opens that action prefilled, only to a recipient who may apply it, by capabilities_for)
     - proposeAction: { action: flag-customer, parameters: { customer: $object, reason: "late" } }
   grouping: oncePerObjectPerEntry   # added/modified: oncePerObjectPerEntry (default) | oncePerRun; threshold/schedule/removed: oncePerRun only
 ```
@@ -1884,7 +1950,13 @@ shell `automation.run(event, paths)` performs effects (`Notify` into
 `proposals.submit`, N48); `PUT
 /api/v2/subscriptions/{streamId} {objectSet}`, `GET
 /api/v2/subscriptions/stream` (types `elysium.object.added|modified|removed`
-and `elysium.refresh`, `data: {objectType, keys}`); `GET
+and `elysium.refresh`, `data: {objectType, keys}` with at most 500 keys, one
+event per type per tick per stream; the SSE `id` is the `change_feed`
+position and `Last-Event-ID` resumes from it, also across the 10-minute
+rotation; `PUT` may carry `properties: [name]`, which adds `values: {key:
+{property: value}}` to the event for the properties the recipient may read, each
+decided by `check_access` (I3); closing a stream audits its totals, not its
+events; N90 and APP-05 measure the ceiling); `GET
 /api/v2/notifications`; `POST /api/v2/notifications/{id}/read`.
 
 <a id="c-checks"></a>
@@ -3000,7 +3072,7 @@ Decision: N46.
   (controls). A second fresh-reader review aimed at I3.
 - **Preconditions.** T0.6.
 - **Out of scope.** New set kinds and operators (API-3, API-5, API-6,
-  ADD-10); pushdown and snapshot paging (API-7); the scan budget (SEC-D);
+  APP-04); pushdown and snapshot paging (API-7); the scan budget (SEC-D);
   the write half of the mediator (T0.10).
 - **Contract.** [C-QUERY](#c-query) (section 3).
 
@@ -3121,6 +3193,8 @@ owns:
   - src/elysium/connectivity/**
   - src/elysium/core/mirror/**
   - src/elysium/resources/when.py
+  - src/elysium/apps/upstream.py
+  - tests/unit/test_app_upstream.py
   - src/elysium/core/timer_rules.py
   - src/elysium/ops/shutdown.py
   - src/elysium/ops/restore.py
@@ -3185,9 +3259,13 @@ Contracts: [C-PROCESS](#c-process), [C-JOBS](#c-jobs).
      `next_runs` reuses `src/elysium/core/timer_rules.py`'s arithmetic (moved
      into `resources/when.py`; its DST rules stand: a time that does not
      exist fires at the first moment that does, a repeated time fires once).
+     The timer loop reads schedules from the `jobs.schedule_source` registry
+     (C-JOBS), `Configuration.schedules` being the first source, and asks
+     `index.terms.source_allowed` before starting a source.
      The runner's timer loop submits each due schedule as a job (`owner:
-     system:scheduler`); a missed run (server down) runs once at start, never
-     a backlog. Accept: `tests/unit/test_when.py` (DST both ways, `every`
+     system:scheduler`) with the args `at` (the scheduled time) and `missed`
+     (true when it runs late); a missed run (server down) runs once at start,
+     never a backlog. Accept: `tests/unit/test_when.py` (DST both ways, `every`
      anchored at midnight), `tests/unit/test_missed_run_runs_once.py`.
   6. SEC-01 pipeline half: `_security` copied from the raw bronze value
      before any standardisation or check; verify against the code first; if
@@ -3200,9 +3278,12 @@ Contracts: [C-PROCESS](#c-process), [C-JOBS](#c-jobs).
   8. **The supervisor's start hooks and the optional wiring (C-PROCESS):**
      the stubs `src/elysium/ops/shutdown.py`, `src/elysium/ops/restore.py`,
      `src/elysium/db/migrate.py` and `ops.setup.at_start`, and
-     `bootstrap.wire_optional()`. Accept:
+     `bootstrap.wire_optional()`; `elysium.apps.upstream.call` (C-PROCESS,
+     with `index/terms.py`'s `source_allowed` returning `True` and the
+     `jobs.schedule_source` registry of step 5). Accept:
      `tests/unit/test_supervisor_start_order.py` (the hooks run in the order
-     C-PROCESS gives, before any child starts).
+     C-PROCESS gives, before any child starts) and
+     `tests/unit/test_app_upstream.py`.
 - **Deletes.** `src/elysium/scripts/run_sync.py`, the sync thread in the web
   server, the api-to-scripts import, `src/elysium/adapters/sqlite_adapter.py`
   (the other source adapters move to `connectivity`, step 2a),
@@ -3324,8 +3405,17 @@ Contracts: [C-ACTIONS](#c-actions), [C-PROPOSALS](#c-proposals), [C-RESOURCE-SET
   2b. **`actions.apply` shell and the effect registry** (`@effect_kind` in
       `src/elysium/actions/effects/`): loads, calls `plan`, applies writes in
       one unit of work, adds post-commit effects to the outbox; the write half
-      of `core/ontology/mediator.py` moves here. Accept:
-      `tests/unit/test_apply_writes_in_one_uow.py`.
+      of `core/ontology/mediator.py` moves here. The registry
+      also carries the **`before` phase** (C-ACTIONS, N86): the shell runs an
+      action's `before` effects first and in order, stops at the first
+      `EffectRefused` or `EffectUnavailable`, writes nothing and returns
+      status `cancelled`; it exists in Tier 0 so that no later card has to
+      edit the shell (N69); the first user is ADD-03's `writeback` effect.
+      Accept: `tests/unit/test_apply_writes_in_one_uow.py` and
+      `tests/unit/test_apply_before_effect.py` (a test effect of phase
+      `before`: refusal and unreachability each write nothing, return
+      `cancelled` and audit `action.cancelled`; validate mode never calls it;
+      an approved proposal calls it at approval, not at staging).
   3a. **`proposals` table and pipeline** (`submit`, `approve`, `reject`,
       `cancel`, `list_proposals`, re-authorisation at approval). Accept:
       `tests/api/test_reauthorise_at_approval.py` for the pipeline.
@@ -3672,7 +3762,12 @@ Contracts: [C-AUTOMATION](#c-automation).
      `automation.run(event, paths)`: `Notify` into `notifications`,
      `ProposeAction` through `actions.apply` then `proposals.submit` (N48),
      idempotency key `<automation name>:<event id>:<object key>`, always
-     staged (D18). Accept: `tests/unit/test_automation_effects.py`.
+     staged (D18). `notify` takes the optional `priority`, `expiresAfter`,
+     `dedupe` and `action` of C-AUTOMATION (APP-11 proves them end to end; they
+     live here because a later card may not edit this item, N69). Accept:
+     `tests/unit/test_automation_effects.py` (a repeated `dedupe` replaces the
+     unread notice; an expired notice is not listed; `priority` orders the
+     list; an `action` link is absent for a recipient who may not apply it).
   5. **Notifications:** store, `GET /api/v2/notifications`, `POST
      /api/v2/notifications/{id}/read`, `GET /api/v2/notifications/recipients`
      (the users and roles the caller may address, with display labels,
@@ -3682,10 +3777,20 @@ Contracts: [C-AUTOMATION](#c-automation).
   6. **Subscriptions:** `PUT /api/v2/subscriptions/{streamId} {objectSet}`,
      `GET /api/v2/subscriptions/stream` (sse-starlette), fed by each web
      worker polling `change_feed` (N47); keys filtered per recipient through
-     `query.keys`; one audit entry per subscription opened and closed; a
-     maximum stream duration of 10 minutes so a revoked grant stops. Accept:
-     `tests/api/test_subscription_keys_filtered.py` (I3).
-  7. **UI:** the notifications app `ui/src/apps/notifications/` (moved there
+     `query.keys`; one audit entry per subscription opened and closed (the
+     closing entry carries the totals of events and keys sent); a maximum
+     stream duration of 10 minutes so a revoked grant stops; events batched per
+     tick (at most 500 keys each), SSE `id` and `Last-Event-ID` resume, the
+     optional `properties` projection of C-AUTOMATION (APP-05 proves the
+     ceiling at an app's scale). Accept:
+     `tests/api/test_subscription_keys_filtered.py` (I3),
+     `tests/api/test_subscription_resume.py` (a reconnect with
+     `Last-Event-ID` across the rotation misses nothing and repeats nothing),
+     `tests/api/test_subscription_projection.py` (an unreadable property is
+     absent, identically to an unknown one).
+  7. **UI:** the notifications app `ui/src/apps/notifications/` (lists a
+     `high` priority notice first with a marker, hides an expired one, shows
+     the notice's action button when the server sends it; moved there
      by T0.11) and `WatchDialog` (`ui/src/apps/browse/WatchDialog.tsx`) on the
      v2 routes; delete `ui/packages/shell-api/src/liveUpdates.ts`. Accept:
      `ui/e2e/notifications.spec.ts`.
@@ -3693,12 +3798,12 @@ Contracts: [C-AUTOMATION](#c-automation).
      `core/trigger_conditions.py` from T0.1B), `/api/events` (v1 area
      `events`, and `triggers`, `reminders`, `notifications`), `change_hints.py`,
      in two commits (stores and evaluation; routes and UI).
-- **Deletes.** Step 8; the add-on file outbox is deleted by ADD-02.
+- **Deletes.** Step 8; the add-on file outbox is deleted by APP-02.
 - **Invariants.** I3: keys filtered per recipient through `check_access`
   before emission (`tests/api/test_subscription_keys_filtered.py`); no name in
   a notice (`tests/unit/test_notice_has_no_names.py`).
 - **Preconditions.** T0.12 (Tier 0 order). MEAS-2 (M13).
-- **Out of scope.** Lifecycle (a pipeline phase, N56; ADD-08); arrival-trigger app test (ADD-09).
+- **Out of scope.** Lifecycle (a pipeline phase, N56; APP-08); arrival-trigger app test (ADD-09); live sets at an app's scale (APP-05); app notices (APP-11).
 - **Contract.** [C-AUTOMATION](#c-automation) (section 3).
 
 ### T0.14 One checks model
@@ -3834,8 +3939,9 @@ dependencies and paths.
 | CI: pipelines (post-1.0, N78) | 5.10 | 7 |
 | QA: engineering quality | 5.11 | 10 |
 | REF: remaining refactor, libraries, standards | 5.12 | 15 |
-| ADD: the add-on platform (Astrolabe, Heliograph) | 5.13 | 13 |
-| **Total** | | **154** cards (9 of them post-1.0), plus 17 Tier 0 items (T0.9 post-1.0) and the 1.0 cut |
+| ADD: hosting an app (Astrolabe, Heliograph) | 5.13 | 5 |
+| APP: the capabilities Elysium gives its apps | 5.14 | 13 |
+| **Total** | | **159** cards (9 of them post-1.0), plus 17 Tier 0 items (T0.9 post-1.0) and the 1.0 cut |
 
 ### 5.2 MEAS: measurements still to take
 
@@ -4523,7 +4629,7 @@ Contracts: [C-API](#c-api), [C-QUERY](#c-query), [C-AUDIT](#c-audit).
 
 ```card
 id: API-5
-wave: 4
+wave: 3b
 status: OPEN
 size: M
 model: Sonnet
@@ -6294,7 +6400,10 @@ Contracts: [C-STATE](#c-state), [C-DB](#c-db), [C-JOBS](#c-jobs), [C-PROCESS](#c
   (exclusive) from listing the current snapshots until the last referenced
   data file is copied, so a sync waiting for the lock queues (there is no
   shared mode, N47); the audit segments;
-  `addons/*`, the managed secrets and a copy of `elysium.toml` and
+  `addons/<id>/` for each app (the copied paths are the one function
+  `members(paths, resources)` in the section `members` of
+  `src/elysium/ops/backup.py`, which APP-13 narrows to each app's declared
+  `dataPaths` and quiesce), the managed secrets and a copy of `elysium.toml` and
   `resources/` for reference only. Leaves out `scratch.db`. **No encryption in
   1.0 (N73):** the archive is written with mode 0600 in the 0700 `backups/`
   directory, and because it holds the managed secrets it is as sensitive as the
@@ -7051,18 +7160,27 @@ wave: 5
 status: OPEN
 size: S
 model: Sonnet
-depends: ADD-01, ADD-02, ADD-03, ADD-04, ADD-05, ADD-11b
+depends: ADD-01, ADD-03, APP-01, APP-02, APP-03, APP-04, APP-05, APP-06, APP-07, APP-08, APP-09, APP-10, APP-11, APP-12, APP-13
 contracts: C-RESOURCES, C-TOKENS
 owns:
   - docs/addons/**
-  - sdk/python/elysium_addon.py
 ```
 Contracts: [C-RESOURCES](#c-resources), [C-TOKENS](#c-tokens).
 
-- Spec: the `App` resource; the scoped token; ingestion through actions with
-  `Idempotency-Key`; confirmed-action delivery; gated resources (N30);
-  `timeseriesRef`; the sandboxed page and its JSON-RPC bridge; checked against
-  Heliograph's contract checks.
+- Spec: one page per capability of section 5.14, written from the cards and
+  the code they produced: the `App` resource with every field of
+  C-RESOURCES; the scoped token and the pipe; batch ingest with
+  `Idempotency-Key` and its one audit entry; confirmed-action delivery
+  (`writeback`, `notifyApp`, the pull path); gated resources and access
+  sessions (N30); `timeseriesRef` and its wire shape; geography; live sets and the
+  ceiling APP-05 measured; feed health; terms and the `verified` flag (N88);
+  lifecycle; the sandboxed page and its bridge methods; notices; schedules and
+  jobs; app data under backup and `AppConfig`; the SDK's modules and the
+  conformance kit, and **the statement that streaming sources are out of scope
+  for Elysium: an app keeps its connector and uses the SDK's `Reconnecting`,
+  `fetch` and `ingest.batch`** (AST E2); the placement rule of section 2.1 and
+  the list of what Elysium does not build (5.14). Checked against Heliograph's
+  contract checks.
 - Accept: the standard acceptance (section 1.4) and the tests above.
 
 #### DOC-08 · Changelog and release notes
@@ -7808,7 +7926,7 @@ wave: 5
 status: OPEN
 size: M
 model: Sonnet
-depends: ADM-02b, ADM-13, ADD-11b
+depends: ADM-02b, ADM-13, APP-10
 contracts: C-UI-SHELL
 owns:
   - ui/packages/shell-api/src/components/EmptyState.tsx
@@ -8001,40 +8119,109 @@ Contracts: [C-OUT](#c-out), [C-CHECKS](#c-checks).
 
 ### 5.13 ADD: the add-on platform (Astrolabe and Heliograph)
 
-Where each add-on ask lands (F: Astrolabe roadmap E1-E14, Heliograph slice-1
-asks 1-8):
+What is left here is the part that is specific to hosting an app: reading its
+ontology, delivering a confirmed action to it, hosting its page, the arrival
+test and the final deny-alike test. Everything an app needs that is generic is
+section 5.14 (APP-01 to APP-13; eight earlier cards were merged into it on
+3 November 2026, section 8.1 lists which).
+
+Where each add-on ask lands (AST: Astrolabe roadmap E1-E14; HEL: Heliograph
+slice-1 asks 1-8):
 
 | Ask | Placed in | Note |
 |---|---|---|
-| AST E1 observations / HEL 8 time series | ADD-05 | `timeseriesRef`; no series stored (B14) |
-| AST E2 streaming, high-cadence sources | **Out of scope for 1.0** | data enters by app ingestion (ADD-02) with lifecycle (ADD-08) treating absence as stale |
-| AST E3 rules at the door | ADD-02 | identity = the action's key; drop rules stay in the app |
-| AST E4 live push by type and area | T0.13 + ADD-12 | an area needs ADD-10 |
-| AST E5 geography | ADD-10 | N18 |
+| AST E1 observations / HEL 8 time series | APP-03 | `timeseriesRef`; no series stored (B14) |
+| AST E2 streaming, high-cadence sources | **Out of scope for 1.0** | the connector lives in the app; the SDK gives the reconnecting stream helper (APP-01) and batch ingest (APP-02); absence is read as stale (APP-06, APP-08) |
+| AST E3 rules at the door | APP-02 | identity = the action's key; drop rules stay in the app |
+| AST E4 live push by type and area | T0.13 + APP-05 | an area needs APP-04 |
+| AST E5 geography | APP-04 | N18 |
 | AST E6 triggers on arriving data | T0.13 + ADD-09 | on-commit conditions, `oncePerObjectPerEntry` |
 | AST E7 large results | API-4 | measured |
-| AST E8 source terms as data | ADD-06 | |
-| AST E9 feed health | ADD-07 | |
-| AST E10 a page hosting a large app | ADD-11a, ADD-11b | sandboxed frame and JSON-RPC |
+| AST E8 source terms as data | APP-07 | |
+| AST E9 feed health | APP-06 | |
+| AST E10 a page hosting a large app | ADD-11a, APP-10 | sandboxed frame and JSON-RPC |
 | AST E11 one permission check for live data | ADD-12 + I3 | |
-| AST E12 map layers that are not objects | ADD-04 | gated app resources (N30) |
+| AST E12 map layers that are not objects | APP-09 | access sessions for gated resources (N30) |
 | AST E13 audit per subscription | T0.13 | |
-| AST E14 lifecycle of source-created objects | ADD-08 | |
+| AST E14 lifecycle of source-created objects | APP-08 | |
 | HEL 1 ontology from an app | ADD-01 | |
-| HEL 2 putting objects in | ADD-02 | |
-| HEL 3 delivering a confirmed action | ADD-03 | |
+| HEL 2 putting objects in | APP-02 | |
+| HEL 3 delivering a confirmed action | ADD-03 | `writeback` first, `notifyApp` after (N86) |
 | HEL 4 a write adapter other than SQLite | **Out of scope** | D16 |
 | HEL 5 user and approver as values | T0.10 | `$user.id`, `$approver.id` |
 | HEL 6 one step for low-risk actions | T0.10 | `approval: none` |
-| HEL 7 dataset access as data | ADD-04 | |
-| Jobs, secret references, app data under backup | T0.8, T0.3, OPS-05 | |
+| HEL 7 dataset access as data | APP-09 | |
+| HEL notices, schedules, long runs | APP-11, APP-12 | |
+| Jobs, secret references, app data under backup | T0.8, T0.3, APP-13 | |
 | AST G1-G9, R1-R10; HEL's own items | **their own lanes** | only the Elysium lane edits core |
+
+#### The lanes (N84 to N88)
+
+There are three lanes, each a branch with its own tree: **Elysium** (`dev`,
+this file), **Astrolabe** (`astrolabe`) and **Heliograph** (`heliograph`). Only
+the Elysium lane edits core; the other two build their app, in their own
+branch, on the capabilities of section 5.14, and Elysium never imports their
+code. Heliograph is taken over like Astrolabe (N84): its team hands over
+everything after commit 70c6a621 (a freeze point, their open work, test status
+and notes), no secret or exchange key changes hands, and Heliograph's own
+decisions (the D-numbers in its `docs/`) stay in its branch. Its tests already
+run Elysium's add-on contract checks (`sdk/python/elysium_addon_checks.py`)
+against its server, so the guard is proven from outside. The integrator brings
+lane branches in with bundles and `git am` (section 1.3, step 7).
+
+| Capability (card) | Astrolabe lane | Heliograph lane |
+|---|---|---|
+| SDK (APP-01) | uses the stream and fetch helpers for its upstream readers | uses the guard and client |
+| Ontology (ADD-01) | the map, area and track types | signals, paper positions, accounts and runs as object types |
+| Ingest (APP-02) | feeds in batches | **sync from the journals** (below) |
+| Series (APP-03) | positions and tracks | equity and prices, **served by Heliograph** from its stores |
+| Geography (APP-04) | near, within, in-area | not used |
+| Live sets (APP-05) | the map | not used in the first slice |
+| Feed health (APP-06) | per upstream feed | the exchange and the paper broker's sink |
+| Terms (APP-07) | **every provider has `terms`; `verified` stays false until someone has checked the licence, and an unverified feed does not start (N88)** | its data sources' terms |
+| Lifecycle (APP-08) | vessels and aircraft that go silent | not used |
+| Access sessions (APP-09) | **terrain is self-hosted (N88)**; radar and tiles are gated resources | licensed datasets as gated resources |
+| Frame and bridge (ADD-11a, APP-10) | the large map page | a page, if it wants one |
+| Notices (APP-11) | alerts on arriving data | a signal arrived |
+| Schedules and jobs (APP-12) | feed pulls that need a clock | **backtests and optimisation runs as app jobs** |
+| Config and backup (APP-13) | provider settings | strategy and broker settings; journals under backup |
+
+**Heliograph's lane in detail (N85, N86).**
+- *Paper only.* Heliograph trades on paper (N85). The simulated broker sits
+  behind the same interface a live one will use, and that interface is the
+  seam; no private exchange endpoint, order code or key handling is written
+  until the owner decides. A live broker later is a new card with its own
+  security review and the secret route (A5, H13); it is listed in section 6.5.
+- *Objects are copied in, the journals stay the record.* Heliograph's journals
+  and stores remain the system of record (N86). A sync inside its server reads
+  new journal entries and calls `ingest.batch` (APP-02) for signals, paper
+  positions, accounts and runs, so those become Elysium objects that carry the
+  access rules like any other. Equity and prices are never copied: a property of
+  type `timeseriesRef` (APP-03) points at the series, and Heliograph serves it.
+- *"Took it" and "skipped" are actions.* `took-signal` and `skipped-signal` are
+  `ActionType`s (B20) whose effects are `writeback {app: heliograph, path}`
+  first (ADD-03, phase `before`) and then the `modify` of the signal. The call
+  runs before anything is written; if Heliograph refuses or cannot be reached,
+  the action is cancelled and nothing changes in Elysium (N86). After a
+  restart Heliograph reads `GET /api/v2/apps/heliograph/applied?since=` to
+  catch up on anything it missed (ADD-03).
+- *Where a rule lives.* A rule that decides who sees a signal is a role or a
+  security attribute in Elysium; the strategy, the simulation and the maths stay
+  in the app (N89).
+
+**Astrolabe's lane in detail (N88).** Terrain is self-hosted: Astrolabe serves
+its own elevation tiles and Elysium gates them as an app resource (APP-09);
+no third-party tile host is called at run time. Every upstream provider is an
+`App.spec.feeds` entry with `terms`; `terms.verified` is false until the licence
+has been read and recorded, and a feed whose terms are not verified does not
+start (APP-07). Which providers are verified is Astrolabe's lane to maintain;
+Elysium only enforces the flag.
 
 #### ADD-01 · Ontology from an app
 
 ```card
 id: ADD-01
-wave: 4
+wave: 3b
 status: OPEN
 size: M
 model: Sonnet
@@ -8053,246 +8240,81 @@ Contracts: [C-RESOURCES](#c-resources), [C-RESOURCE-SET](#c-resource-set).
 - Tests: `tests/unit/test_app_ontology.py`.
 - Accept: the standard acceptance (section 1.4) and the tests above.
 
-#### ADD-02 · Scoped app tokens and ingestion
-
-```card
-id: ADD-02
-wave: 4
-status: OPEN
-size: M
-model: Sonnet
-depends: ADM-20
-contracts: C-TOKENS, C-ACTIONS, C-PROCESS, C-PROPOSALS
-owns:
-  - src/elysium/apps/tokens.py
-  - src/elysium/actions/effects/upsert.py
-  - src/elysium/actions/effects/retract.py
-  - tests/api/test_app_ingestion.py
-```
-Contracts: [C-TOKENS](#c-tokens), [C-ACTIONS](#c-actions), [C-PROCESS](#c-process), [C-PROPOSALS](#c-proposals).
-
-- Note: a second fresh-reader review aimed at I4.
-- Spec: at each start the supervisor's add-on start (the runner, C-PROCESS)
-  calls `elysium.apps.tokens.mint(app)` for the app's service principal with
-  scopes `[{verb: apply, action: a} for a in App.spec.actions]` (N50;
-  `Principal.via = "app"`, so `approval: none` ingestion applies at once, N49),
-  passed on a pipe, never in the environment. Effects `upsert {objectType, key:
-  $param.key, set}` (create on first sight, modify after) and `retract`.
-  `Idempotency-Key` required for app tokens. Delete the add-on file outbox
-  with T0.13's leftovers.
-- Tests: `tests/api/test_app_ingestion.py` (token scopes only the app's
-  actions; replay with the same key writes once; a missing key is 428).
-- Accept: the standard acceptance (section 1.4) and the tests above.
-
-#### ADD-03 · Delivering a confirmed action
+#### ADD-03 · Delivering a confirmed action: the writeback and the notice
 
 ```card
 id: ADD-03
-wave: 4b
+wave: 4
 status: OPEN
-size: S
+size: M
 model: Sonnet
-depends: ADD-02
-contracts: C-ACTIONS, C-DB
+depends: APP-02
+contracts: C-ACTIONS, C-DB, C-API, C-TOKENS
 owns:
+  - src/elysium/actions/effects/writeback.py
   - src/elysium/actions/effects/notify_app.py
+  - src/elysium/api/v2/resources/app_applied.py
+  - tests/unit/test_writeback.py
   - tests/unit/test_notify_app.py
+  - tests/api/test_app_applied.py
 ```
-Contracts: [C-ACTIONS](#c-actions), [C-DB](#c-db).
+Contracts: [C-ACTIONS](#c-actions), [C-DB](#c-db), [C-API](#c-api), [C-TOKENS](#c-tokens).
 
-- Spec: effect `notifyApp {app, path}` adds an outbox row (key = write id) in
-  the action's unit of work; the outbox handler POSTs through the proxy with
-  the write id as `Idempotency-Key`, retried by the relay (1 s, 4 s, 16 s,
-  then failed), audited `action.delivered|delivery_failed`.
-- Tests: `tests/unit/test_notify_app.py`.
-- Accept: the standard acceptance (section 1.4) and the tests above.
-
-#### ADD-04 · Gated app resources
-
-```card
-id: ADD-04
-wave: 4
-status: OPEN
-size: S
-model: Sonnet
-depends: ADM-20
-contracts: C-ACCESS, C-API, C-RESOURCES
-owns:
-  - src/elysium/apps/gated.py
-  - src/elysium/api/v2/resources/app_resources.py
-  - tests/api/test_app_gated.py
-```
-Contracts: [C-ACCESS](#c-access), [C-API](#c-api), [C-RESOURCES](#c-resources).
-
-- Spec (N30): `App.spec.gated [{id, title}]` declares app resources; a role
-  grants `{verb: read, appResource: "<app>/<id>"}` (T0.6's
-  `Grant.app_resource`); `GET /api/v2/apps/{app}/resources/{id}` returns `{id,
-  title}` or the uniform 404, decided by `check_access`, audited; the proxy
-  refuses a path under `/gated/<id>/` for anyone the same check refuses. No
-  string grants.
-- Tests: `tests/api/test_app_gated.py`.
+- Decisions: N86 (writeback first, cancel on refusal or unreachability), B20.
+- Steps. Each one commit.
+  1. **`writeback {app, path}`**, an effect of phase `before` (C-ACTIONS;
+     T0.10 step 2b built the phase). It calls `elysium.apps.upstream.call(app,
+     "POST", path, json=...)` with a 10 second timeout and no retry; the body
+     is `{action, parameters (resolved, with $user.id and $approver.id),
+     writeId, userId}` and the `Idempotency-Key` is the write id. A 2xx lets
+     the action go on. A 4xx with `{reasons: [str]}` raises `EffectRefused`
+     (each reason at most 200 characters, shown to the person as coming from
+     the app); a 5xx, a timeout or `AppUnavailable` raises `EffectUnavailable`
+     (the fixed sentence "The app is not reachable; nothing was changed.").
+     Accept: `tests/unit/test_writeback.py` (a refusal and an unreachable
+     app each write nothing, return `cancelled` and audit `action.cancelled`;
+     a 2xx lets the `modify` run; validate mode never calls the app; an
+     approved proposal calls it at approval).
+  2. **`notifyApp {app, path}`**, a post-commit effect through the outbox: key
+     = write id, `POST` through `upstream.call` with the write id as
+     `Idempotency-Key`, retried by the relay (1 s, 4 s, 16 s, then failed),
+     audited `action.delivered|delivery_failed`. Accept:
+     `tests/unit/test_notify_app.py`.
+  3. **The pull path.** `GET /api/v2/apps/{app}/applied?since=<cursor>&pageSize`
+     returns `{data: [{writeId, action, parameters, appliedAt, userId,
+     delivered}], nextCursor}` for the actions whose effects name that app,
+     oldest first, so an app that was down catches up; it answers only to the
+     app's own token (uniform 404 for anyone else). Accept:
+     `tests/api/test_app_applied.py` (another app's token and a person get
+     404; a failed delivery appears with `delivered: false`).
 - Accept: the standard acceptance (section 1.4) for API cards and the tests above.
-
-#### ADD-05 · `timeseriesRef`
-
-```card
-id: ADD-05
-wave: 4b
-status: OPEN
-size: M
-model: Sonnet
-depends: ADD-02
-contracts: C-ACCESS, C-API
-owns:
-  - src/elysium/api/v2/resources/timeseries.py
-  - src/elysium/metadata/types/timeseries.py
-  - tests/api/test_timeseries.py
-```
-Contracts: [C-ACCESS](#c-access), [C-API](#c-api).
-
-- Spec: `GET /api/v2/objects/{type}/{pk}/timeseries/{property}/points?from&to&bucket`
-  is authorised against the owning object and property (read), then proxied
-  to the app; no series stored; the value type `timeseriesRef` in
-  `src/elysium/metadata/types/timeseries.py`.
-- Tests: `tests/api/test_timeseries.py` (hidden object uniform 404; unreadable
-  property uniform 404; the proxy never forwards cookies).
-- Accept: the standard acceptance (section 1.4) for API cards and the tests above.
-
-#### ADD-06 · Source terms as data
-
-```card
-id: ADD-06
-wave: 4
-status: OPEN
-size: M
-model: Sonnet
-depends: API-1b
-contracts: C-RESOURCES, C-BROWSE-SLOTS, C-API
-owns:
-  - src/elysium/index/terms.py
-  - src/elysium/api/v2/resources/terms.py
-  - ui/src/apps/browse/slots/attribution/**
-  - tests/unit/test_terms.py
-```
-Contracts: [C-RESOURCES](#c-resources), [C-BROWSE-SLOTS](#c-browse-slots), [C-API](#c-api).
-
-- Spec: the `terms` fields on `Silo` and `App` already exist (C-RESOURCES).
-  `GET /api/v2/terms/{objectType}` returns the type's source terms
-  (`{licence, attribution, commercial}`), uniform 404 for a type the caller
-  cannot discover; Browse shows them in the attribution slot
-  (`slots/attribution/`, slot `objectFooter`);
-  `Configuration.sources.allowNonCommercial` (default true) pauses every source
-  and app whose terms say `commercial: false` when false
-  (`src/elysium/index/terms.py`, read by the sync planner).
-- Tests: `tests/unit/test_terms.py`.
-- Accept: the standard acceptance (section 1.4) for API, UI cards and the tests above.
-
-#### ADD-07 · Freshness on objects
-
-```card
-id: ADD-07
-wave: 4
-status: OPEN
-size: S
-model: Sonnet
-depends: API-1b
-contracts: C-BROWSE-SLOTS, C-API, C-JOBS
-owns:
-  - src/elysium/index/freshness.py
-  - src/elysium/api/v2/resources/freshness.py
-  - ui/src/apps/browse/slots/freshness/**
-  - tests/unit/test_freshness.py
-```
-Contracts: [C-BROWSE-SLOTS](#c-browse-slots), [C-API](#c-api), [C-JOBS](#c-jobs).
-
-- Spec: `GET /api/v2/freshness/{objectType}` returns `{freshness:
-  live|stale|unavailable}` from the source's health and schedule (stale = more
-  than twice the schedule since the last success), computed in
-  `src/elysium/index/freshness.py`, shown by Browse's type badge
-  (`slots/freshness/`, slot `typeBadges`).
-- Tests: `tests/unit/test_freshness.py`.
-- Accept: the standard acceptance (section 1.4) for API, UI cards and the tests above.
-
-#### ADD-08 · Lifecycle of source-created objects
-
-```card
-id: ADD-08
-wave: 4b
-status: OPEN
-size: M
-model: Sonnet
-depends: ADD-02
-contracts: C-JOBS, C-ACTIONS
-owns:
-  - src/elysium/index/pipeline/retire.py
-  - tests/unit/test_lifecycle.py
-```
-Contracts: [C-JOBS](#c-jobs), [C-ACTIONS](#c-actions).
-
-- Spec (N56): `ObjectType.lifecycle {retireAfter: P7D, mode:
-  keep|inactive|remove}` is applied by the pipeline phase `retire` (T0.8's
-  `PHASES`, after `gold`), not by an automation: no synthetic owner is needed
-  and D18 stays true. The phase's planner in
-  `src/elysium/index/pipeline/retire.py` (replacing T0.8's empty planner)
-  plans the retirements purely from the gold snapshot and the last-seen
-  times, and applies the system action `retire` through the `system_action`
-  outbox row like quarantine (marks `inactive` or records a delete in the
-  write log; never touches a source row; I4).
-- Tests: `tests/unit/test_lifecycle.py`.
-- Accept: the standard acceptance (section 1.4) and the tests above.
 
 #### ADD-09 · Triggers on arriving data
 
 ```card
 id: ADD-09
-wave: 5
+wave: 4
 status: OPEN
 size: S
 model: Sonnet
-depends: ADD-02
+depends: APP-02
 contracts: C-AUTOMATION
 owns:
   - tests/integration/test_arrival_triggers.py
 ```
 Contracts: [C-AUTOMATION](#c-automation).
 
-- Spec: an app-shaped test: an ingestion that makes an object match an
-  automation's set notifies once per entry and not again while it stays.
+- Spec: an app-shaped test: an ingestion batch (APP-02) that makes objects
+  match an automation's set notifies once per entry and not again while they
+  stay.
 - Tests: `tests/integration/test_arrival_triggers.py`.
-- Accept: the standard acceptance (section 1.4) and the tests above.
-
-#### ADD-10 · Geography (N18)
-
-```card
-id: ADD-10
-wave: 5
-status: OPEN
-size: M
-model: Sonnet
-depends: API-5
-contracts: C-QUERY
-owns:
-  - src/elysium/query/geo.py
-  - src/elysium/query/sets.py#operators
-  - src/elysium/metadata/types/geo_point.py
-  - tests/unit/test_geo.py
-```
-Contracts: [C-QUERY](#c-query).
-
-- Spec: value type `geo_point {lat, lon}`
-  (`src/elysium/metadata/types/geo_point.py`); operators `withinBox {minLat,
-  minLon, maxLat, maxLon}` and `withinDistance {lat, lon, metres}` (haversine,
-  `src/elysium/query/geo.py`) evaluated in Python after `check_access`, added
-  as rows of `query/sets.py`'s operator table; a measured note on 100,000
-  points; no index. Location never decides access.
-- Tests: `tests/unit/test_geo.py`.
 - Accept: the standard acceptance (section 1.4) and the tests above.
 
 #### ADD-11a · A page that hosts a large app: the frame
 
 ```card
 id: ADD-11a
-wave: 4
+wave: 3b
 status: OPEN
 size: M
 model: Sonnet
@@ -8316,51 +8338,736 @@ Contracts: [C-UI-SHELL](#c-ui-shell), [C-PROCESS](#c-process).
   frame cannot read the parent's cookies or storage).
 - Accept: the standard acceptance (section 1.4) for UI cards and the tests above.
 
-#### ADD-11b · A page that hosts a large app: the JSON-RPC bridge
-
-```card
-id: ADD-11b
-wave: 4b
-status: OPEN
-size: M
-model: Sonnet
-depends: ADD-11a
-contracts: C-UI-SHELL, C-QUERY, C-AUTOMATION
-owns:
-  - ui/src/apps/frame/bridge.ts
-  - ui/src/apps/frame/bridge.test.ts
-  - ui/e2e/apps/frame-bridge.spec.ts
-```
-Contracts: [C-UI-SHELL](#c-ui-shell), [C-QUERY](#c-query), [C-AUTOMATION](#c-automation).
-
-- Spec: `ui/src/apps/frame/bridge.ts`: the page keeps the session and
-  answers JSON-RPC 2.0 over `postMessage` (`objects.load`, `objectSets.load`,
-  `objectSets.count`, `subscribe`, `unsubscribe`), each sent to the v2 API as
-  the signed-in person, so each is checked as a request would be; messages
-  from any other origin or window are ignored.
-- Tests: `ui/src/apps/frame/bridge.test.ts`; `ui/e2e/apps/frame-bridge.spec.ts`.
-- Accept: the standard acceptance (section 1.4) for UI cards and the tests above.
-
 #### ADD-12 · Every live path asks one question
 
 ```card
 id: ADD-12
-wave: 5b
+wave: 5
 status: OPEN
 size: S
 model: Sonnet
-depends: ADD-09, ADD-10, ADD-11b
+depends: ADD-09, APP-03, APP-04, APP-09, APP-10
 contracts: C-AUTOMATION, C-QUERY, C-AGENT
 owns:
   - tests/integration/test_live_paths_deny_alike.py
 ```
 Contracts: [C-AUTOMATION](#c-automation), [C-QUERY](#c-query), [C-AGENT](#c-agent).
 
-- Spec: for a hidden object: a subscription, an area query (ADD-10), an
-  arrival trigger, a frame JSON-RPC call, a validate call and the agent each
-  reveal nothing, identically (I3).
+- Spec: for a hidden object: a subscription, an area query (APP-04), an
+  arrival trigger, a series read (APP-03), a gated resource and its access
+  session (APP-09), a frame JSON-RPC call (APP-10), a validate call and the
+  agent each reveal nothing, identically (I3). Cost is not tested here: APP-05
+  measures it.
 - Tests: `tests/integration/test_live_paths_deny_alike.py`.
 - Accept: the standard acceptance (section 1.4) and the tests above.
+
+### 5.14 APP: the capabilities Elysium gives its apps
+
+Thirteen cards, one for each generic capability that both Astrolabe and
+Heliograph need (N90). They were found by reading both apps for everything that
+is not domain, and placing each by the rule of section 2.1 (N89): Elysium's when
+it adds a data type, an operator, a transport, a permission rule or a packaging
+rule, or has to run beside the data; a generic view when two apps need the same
+screen; otherwise the app's. Together they replace most of Astrolabe's proxy
+code and Heliograph's hand-written guard. Work on them interleaves with Tier 0
+from the start (N87): each card has the earliest wave its dependencies allow,
+and a capability that needs a hook in a Tier 0 item (the `before` phase of
+actions, the schedule-source registry, the terms gate, the upstream call, the
+batched and resumable subscription stream, the notice fields) has that hook
+written in the Tier 0 item, so no card edits one (N69).
+
+**How an app talks to Elysium.** The supervisor starts the app's server (the
+runner, C-PROCESS) and hands it a scoped token on a pipe, never in the
+environment (APP-02). The app calls the v2 API with the SDK (APP-01). Elysium
+calls the app only through `elysium.apps.upstream.call` (T0.8). People never
+reach the app's server directly; the proxy (APP-09) is the one door and it
+forwards no cookie. Secrets for an app are `SecretRef`s in `App.spec.server.options`,
+read by the supervisor from the secret store and passed on the same pipe.
+
+**Each card's three files.** A capability that has a client side adds one
+module to the SDK (`sdk/python/elysium_addon_<name>.py`) and one case to the
+conformance kit (`sdk/conformance/cases/<name>.py`), so that no card edits
+another's file; APP-01 builds the harness that runs the cases.
+
+**Explicitly not built (N90).** Elysium does not build a graph-layout service;
+a time-series database (B14: it stores no series); a streaming source in the
+silo layer (a connector belongs in the app, with the SDK's helpers); notification
+transports (ntfy, webhooks and the like stay in the app, N51); or a tile server
+(it gates and proxies tiles and does not render or cut them). It builds no
+spatial index before a measurement asks for one (N18). A request for any of
+these is answered "the app's" and not turned into a card.
+
+**Gaps found in the earlier ADD cards, and where each went.** Batch and volume
+(APP-02); the SDK's stream helpers, said in DOC-07 (APP-01); the series wire
+shape, retention and units (APP-03); a freshness vocabulary that fits streams
+and market sessions (APP-06); polygons, nearest and shapes (APP-04); the cost
+of deny-alike at volume (APP-05); per-request gating of tiles (APP-09); the
+missing bridge methods, binary transfer and storage shim (APP-10); no pull path
+after a failed delivery (ADD-03); app-originated audit events (APP-02); app
+secrets (the pipe, above); a preference store for a frame (APP-10); terms too thin
+(APP-07).
+
+#### APP-01 · The add-on SDK
+
+```card
+id: APP-01
+wave: 1
+status: OPEN
+size: M
+model: Sonnet
+depends: DOC-05a
+contracts: C-TOKENS, C-PROCESS
+owns:
+  - sdk/python/elysium_addon.py
+  - sdk/python/elysium_addon_checks.py
+  - sdk/python/elysium_addon_stream.py
+  - sdk/python/elysium_addon_fetch.py
+  - sdk/conformance/__init__.py
+  - sdk/conformance/harness.py
+  - sdk/conformance/fake_elysium.py
+  - sdk/typescript/package.json
+  - tests/sdk/test_client.py
+  - tests/sdk/test_stream.py
+  - tests/sdk/test_fetch.py
+  - tests/sdk/test_stdlib_only.py
+```
+Contracts: [C-TOKENS](#c-tokens), [C-PROCESS](#c-process).
+
+- DR: 1, 6. Decisions: N90, N76.
+- Scope. What every app server needs and nothing about any one capability's
+  wire: the guard and client, the reconnecting stream helper, the outbound
+  fetch helper and the harness that runs conformance cases. The SDK is files in
+  the repository (`sdk/`), copied into an app; it is not published (N76).
+- Steps. Each one commit.
+  1. **Guard and client** in `sdk/python/elysium_addon.py` (the file that
+     exists today; it stays standard-library only). The existing identity
+     guard stays as it is. New: `Client(base_url, token)` read from the start
+     variables and the pipe (never an environment variable), which sends
+     `Idempotency-Key`, turns a problem response into `ElysiumError(type,
+     status, reasons)`, and waits out `Retry-After` (at most 60 seconds) on 429
+     and 503 and retries nothing else. Accept: `tests/sdk/test_client.py`.
+  2. **`Reconnecting`** in `sdk/python/elysium_addon_stream.py`: the caller
+     gives a `connect()` that yields records; the helper reconnects with a
+     back-off ladder of 1, 2, 4, 8, 16, 30 and 60 seconds with 20 percent
+     jitter, resets the ladder after one valid record, and treats **a valid
+     record as the proof of life, not an open socket**: no valid record for
+     `silence_after` seconds (default 60) forces a reconnect. It reports
+     `connected|silent|backoff` to a callback, which feeds APP-06. Accept:
+     `tests/sdk/test_stream.py` (a fake clock: the ladder, the reset, the
+     silent socket).
+  3. **`fetch`** in `sdk/python/elysium_addon_fetch.py`: an outbound HTTP
+     helper with a requests-per-minute budget per source, a byte cap (default
+     20 MiB), a response cache with a TTL, one request in flight per URL
+     (single-flight), serving the stale copy when the upstream fails (marked
+     `stale=True`), `Retry-After` honoured, and a `before(source)` hook that
+     APP-07 uses to refuse a source whose terms forbid it. Accept:
+     `tests/sdk/test_fetch.py`.
+  4. **The harness.** `sdk/conformance/harness.py` and `fake_elysium.py` start
+     a fake Elysium that answers the wire contracts of section 5.14 and run
+     every case found under `sdk/conformance/cases/*.py` against an app's
+     server (`--elysium-addon=<command>`); each capability card adds its own
+     case. `sdk/python/elysium_addon_checks.py` stays the guard check that
+     Heliograph already runs. `sdk/typescript/package.json` is the private
+     package (`"private": true`, exports `./*` from `./src/*.ts`) that APP-10
+     fills. Accept: `tests/sdk/test_stdlib_only.py` (every `sdk/python/*.py`
+     imports only the standard library).
+- Accept: the standard acceptance (section 1.4) and the tests above.
+
+#### APP-02 · Batch ingest and the app token
+
+```card
+id: APP-02
+wave: 3b
+status: OPEN
+size: M
+model: Sonnet
+depends: ADM-20, APP-01
+contracts: C-TOKENS, C-ACTIONS, C-PROCESS, C-PROPOSALS, C-AUDIT, C-DB
+owns:
+  - src/elysium/apps/tokens.py
+  - src/elysium/apps/ingest.py
+  - src/elysium/apps/terms_gate.py
+  - src/elysium/actions/effects/upsert.py
+  - src/elysium/actions/effects/retract.py
+  - src/elysium/api/v2/resources/action_batch.py
+  - src/elysium/api/v2/resources/app_audit.py
+  - src/elysium/db/schema/main/50-app-02.sql
+  - sdk/python/elysium_addon_ingest.py
+  - sdk/conformance/cases/ingest.py
+  - tests/api/test_app_ingestion.py
+  - tests/api/test_app_batch.py
+```
+Contracts: [C-TOKENS](#c-tokens), [C-ACTIONS](#c-actions), [C-PROCESS](#c-process), [C-PROPOSALS](#c-proposals), [C-AUDIT](#c-audit), [C-DB](#c-db).
+
+- DR: 1, 7. Decisions: N49, N50, N90. A second fresh-reader
+  review aimed at I4.
+- Scope. Objects enter by actions only, and at 10,000 to 50,000 objects every
+  10 to 30 seconds one action and one audit entry per row is not workable, so
+  the same action takes many rows in one call and writes one audit entry.
+- Steps. Each one commit.
+  1. **The token.** At each start the supervisor's add-on start (the runner,
+     C-PROCESS) calls `elysium.apps.tokens.mint(app)` for the app's service
+     principal with scopes `[{verb: apply, action: a} for a in
+     App.spec.actions]` (N50; `Principal.via = "app"`, so `approval: none`
+     ingestion applies at once, N49), passed on a pipe, never in the
+     environment. Delete the add-on file outbox with T0.13's leftovers.
+     Accept: `tests/api/test_app_ingestion.py` (the token scopes only the
+     app's actions; a missing `Idempotency-Key` is 428; a replay with the same
+     key writes once).
+  2. **Effects and `last_seen`.** Effects `upsert {objectType, key:
+     $param.key, set}` (create on first sight, modify after) and `retract`.
+     Every accepted upsert, including one that changes nothing, stamps
+     `last_seen` (UTC) in the table `object_seen(object_type, key, first_seen,
+     last_seen)` (`src/elysium/db/schema/main/50-app-02.sql`), because a row
+     that arrives unchanged still proves the source is alive; a retract deletes
+     the row. APP-06 and APP-08 read it. Accept:
+     `tests/api/test_app_ingestion.py::test_unchanged_row_still_stamps_last_seen`.
+  3. **The batch route.** `POST /api/v2/actions/{action}/batch {feed?, rows:
+     [{parameters}]}` with at most `Configuration.limits.appBatchRows` rows
+     (413 beyond). Each row is planned by `actions.plan`; the rows that pass
+     are applied in one unit of work; the response is `{accepted, unchanged,
+     rejected: [{index, reasons}]}`. It is only for an `approval: none`
+     action called as an app (any other policy is 422 `BatchNeedsNoApproval`).
+     A batch of retractions that would remove more than half of the type's
+     objects, and at least 100, is refused with 422 `MassRetraction` unless the
+     body carries `confirmMass: true` (the same instinct as the sync's mass
+     deletion guard). **One audit entry per batch**, `action.batch_applied`,
+     with the action, the app, the counts and the first and last write id; per-row
+     detail stays in the write log. Accept: `tests/api/test_app_batch.py`
+     (one audit entry for 5,000 rows; rejects carry reasons and the rest
+     applies; the retraction guard; 413; a person's token gets 403).
+  4. **The terms gate.** The batch route calls `apps/terms_gate.check(app,
+     feed)` before it reads a row; `TermsRefused` is 451 with a fixed sentence,
+     audited. APP-02 writes it permitting everything; APP-07 replaces the
+     body. Accept: `tests/api/test_app_batch.py::test_gate_is_called`.
+  5. **App-originated audit events (the gap).** `POST
+     /api/v2/apps/{app}/audit {event, detail}` records `app.<event>` for an
+     event named in `App.spec.auditEvents`, actor = the app's principal, detail
+     at most 1 KiB and no object value; anything else is 422. Accept:
+     `tests/api/test_app_batch.py::test_app_audit_event_needs_declaring`.
+  6. **Client and case.** `sdk/python/elysium_addon_ingest.py` (`ingest.batch(action,
+     rows, idempotency_key, feed=None)`, which splits at the batch limit, and
+     `audit.record(event, detail)`) and `sdk/conformance/cases/ingest.py`.
+     Accept: the case passes against the real server in
+     `tests/api/test_app_batch.py`.
+- Accept: the standard acceptance (section 1.4) for API cards and the tests above.
+
+#### APP-03 · Series as a declared property type
+
+```card
+id: APP-03
+wave: 3b
+status: OPEN
+size: M
+model: Sonnet
+depends: ADM-20, API-1a
+contracts: C-ACCESS, C-API, C-QUERY
+owns:
+  - src/elysium/api/v2/resources/timeseries.py
+  - src/elysium/metadata/types/timeseries.py
+  - src/elysium/apps/series.py
+  - sdk/python/elysium_addon_series.py
+  - sdk/conformance/cases/series.py
+  - tests/api/test_timeseries.py
+```
+Contracts: [C-ACCESS](#c-access), [C-API](#c-api), [C-QUERY](#c-query).
+
+- DR: 1, 2. Decisions: B14, B20, N86, N90.
+- Scope. Prices, equity, positions over time and observations are series that
+  the app keeps and serves; Elysium stores none (B14). What Elysium adds is a
+  declared property type, one read shape that Browse, the bridge and the agent
+  can all chart, and the access check.
+- Steps. Each one commit.
+  1. **The type.** A property of type `timeseriesRef` carries `{app, series
+     (a template such as "positions/{key}"), shape: scalar|ohlc|geo, unit?,
+     cadence?, retention?, resolution?}`; no value is stored per object, the
+     series id is the template with the object's key. `retention` is declared
+     here and enforced by the app; changing it is a resource change and so
+     audited. Accept: `tests/api/test_timeseries.py::test_type_validates`.
+  2. **One read.** `GET /api/v2/objects/{type}/{pk}/timeseries/{property}/points
+     ?from&to&bucket&agg&limit&cursor&asOf`, authorised against the object and
+     the property (`read`), then asked of the app by `upstream.call`: `from`
+     inclusive, `to` exclusive, `agg` one of `first|last|min|max|mean|sum|count|ohlc`,
+     `limit` at most 5,000 (default 1,000), `cursor` opaque, `asOf` optional for
+     "as known at". The response is `{data: [point], nextCursor?, source,
+     observedAt, snapshotId?}` with `point` = `{t, v}` (scalar), `{t, o, h, l, c,
+     v}` (ohlc) or `{t, lat, lon}` (geo); an answer that does not match the
+     declared shape is 502. A hidden object and an unreadable property are the
+     same uniform 404. The proxy never forwards cookies. Accept:
+     `tests/api/test_timeseries.py`.
+  3. **Latest for many.** `POST /api/v2/timeseries/last {type, keys (at most
+     1,000), property}` returns `{data: {key: point | null}}` from one call to
+     the app, because a map wants the latest point of ten thousand objects;
+     keys the caller may not read are omitted exactly like keys that do not
+     exist. Accept: `tests/api/test_timeseries.py::test_last_hides_alike`.
+  4. **Client and case.** `sdk/python/elysium_addon_series.py` parses the
+     query into a `SeriesQuery` and builds the response; the case is
+     `sdk/conformance/cases/series.py`.
+- Accept: the standard acceptance (section 1.4) for API cards and the tests above.
+
+#### APP-04 · Geography
+
+```card
+id: APP-04
+wave: 4
+status: OPEN
+size: M
+model: Sonnet
+depends: API-5
+contracts: C-QUERY
+owns:
+  - src/elysium/query/geo.py
+  - src/elysium/query/sets.py#operators
+  - src/elysium/metadata/types/geo_point.py
+  - src/elysium/metadata/types/geo_shape.py
+  - tools/measure/geo_50k.py
+  - tests/unit/test_geo.py
+```
+Contracts: [C-QUERY](#c-query).
+
+- DR: 1, 6. Decisions: N18, N90.
+- Spec. Value types `geo_point {lat, lon}` and `geo_shape` (a GeoJSON subset:
+  `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon`; for perimeters,
+  tracks and areas). Operators, each on a named property and added as rows of
+  `query/sets.py`'s operator table: `withinBox {minLat, minLon, maxLat,
+  maxLon}` (a box whose `minLon` is greater than `maxLon` crosses the
+  antimeridian), `withinDistance {lat, lon, metres}` (haversine),
+  `withinArea {objectType, key, property}` (inside another object's shape; the
+  caller must be able to read that object, otherwise it is the same uniform
+  error as an unknown one), `nearest {lat, lon, n (at most 100), maxMetres?}`
+  and `intersects {shape}`. All are evaluated in Python in `query/geo.py`
+  after `check_access`; location never decides access. No index: the card
+  measures 50,000 points per query at 1, 10 and 50 concurrent callers
+  (`tools/measure/geo_50k.py`) and records the figures in the card report;
+  only a missed budget starts an index card.
+- Tests: `tests/unit/test_geo.py` (Hypothesis: a point inside a box is
+  returned and one outside is not, also across the antimeridian; `nearest`
+  returns at most `n`; a hidden object is never returned by any operator).
+- Accept: the standard acceptance (section 1.4) and the tests above.
+
+#### APP-05 · Live sets at an app's scale
+
+```card
+id: APP-05
+wave: 4b
+status: OPEN
+size: M
+model: Sonnet
+depends: APP-02, APP-04
+contracts: C-AUTOMATION, C-QUERY, C-AUDIT
+owns:
+  - tools/measure/live_ceiling.py
+  - tests/api/test_live_sets.py
+```
+Contracts: [C-AUTOMATION](#c-automation), [C-QUERY](#c-query), [C-AUDIT](#c-audit).
+
+- DR: 6, 7. Decisions: N47, N90. A fresh-reader review aimed at I3.
+- Scope. The stream itself (batched events of at most 500 keys, `Last-Event-ID`
+  resume across the 10-minute rotation, the optional `properties` projection,
+  closing totals in the audit entry) is built in T0.13 step 6, because a later
+  card may not edit that item (N69). This card proves it at an app's scale and
+  states the ceiling, which is the "cost" gap the deny-alike test cannot see.
+- Steps.
+  1. **Correctness with geography.** A subscription whose set uses a geo
+     operator (APP-04) gets `added` when an ingested object (APP-02) enters the
+     box and `removed` when it leaves; a hidden object never appears;
+     a reconnect with `Last-Event-ID` loses and repeats nothing. Accept:
+     `tests/api/test_live_sets.py`.
+  2. **The ceiling.** `tools/measure/live_ceiling.py` (marker `live`) ingests
+     batches of 10,000 and 50,000 objects every 10 seconds with 1, 10 and 50
+     subscribers and records events per second, keys per event, the delay from
+     commit to delivery at p50 and p95, and the time `check_access` filtering
+     takes per tick. The budget is N47's one second at 10 subscribers and
+     10,000 changed objects. The figures go in the card report and DOC-07 copies
+     them into `docs/addons/`. If the budget is missed the card does not change
+     T0.13: it lowers the documented ceiling to what was measured.
+- Accept: the standard acceptance (section 1.4) and the tests above.
+
+#### APP-06 · Feed health and freshness, one vocabulary
+
+```card
+id: APP-06
+wave: 4
+status: OPEN
+size: M
+model: Sonnet
+depends: API-1b, APP-02
+contracts: C-BROWSE-SLOTS, C-API, C-JOBS
+owns:
+  - src/elysium/index/freshness.py
+  - src/elysium/api/v2/resources/freshness.py
+  - src/elysium/api/v2/resources/app_feeds.py
+  - src/elysium/db/schema/main/50-app-06.sql
+  - ui/src/apps/browse/slots/freshness/**
+  - sdk/python/elysium_addon_health.py
+  - sdk/conformance/cases/health.py
+  - tests/unit/test_freshness.py
+  - tests/api/test_app_feed_health.py
+```
+Contracts: [C-BROWSE-SLOTS](#c-browse-slots), [C-API](#c-api), [C-JOBS](#c-jobs).
+
+- DR: 1, 5. Decisions: N90.
+- Scope. One word set for "how fresh is this data", whether the source is a
+  silo that syncs on a schedule, a stream with no schedule, or a market that is
+  closed at night.
+- Steps. Each one commit.
+  1. **The vocabulary.** `FeedHealth {status: live|stale|degraded|fallback|partial|unavailable,
+     observedAt, fetchedAt, accepted, rejected, coverage (0 to 1) | null,
+     reason (at most 200 characters) | null}`. An app reports it with `PUT
+     /api/v2/apps/{app}/feeds/{feed}/health` (the app's token; the feed must be
+     declared in `App.spec.feeds`; kept in the table `app_feed_health`,
+     `src/elysium/db/schema/main/50-app-06.sql`). If an `AppFeed.staleAfter` is
+     set and no report arrives within it, Elysium reports `stale` itself. An
+     app that reports every minute is `live`; what `degraded`, `fallback` and
+     `partial` mean is the app's to say, and Elysium shows the word and the
+     reason. Accept: `tests/api/test_app_feed_health.py`.
+  2. **Silo sources.** `index/freshness.py` computes `live|stale|unavailable`
+     for a silo-backed type from its source's health and schedule (stale = more
+     than twice the schedule since the last success). Accept:
+     `tests/unit/test_freshness.py`.
+  3. **One route.** `GET /api/v2/freshness/{objectType}` returns `{freshness:
+     <the worst status of the type's sources and feeds>, observedAt, reason?,
+     feeds: [{id, status}]}`; a type the caller cannot discover is the uniform
+     404. Browse shows it as the type badge (`slots/freshness/`, slot
+     `typeBadges`). Accept: `tests/api/test_app_feed_health.py::test_hidden_type_is_404`.
+  4. **Client and case.** `sdk/python/elysium_addon_health.py`
+     (`health.report(feed, status, ...)`, fed by `Reconnecting`'s state) and
+     `sdk/conformance/cases/health.py`.
+- Accept: the standard acceptance (section 1.4) for API, UI cards and the tests above.
+
+#### APP-07 · Source terms as data, and the verified flag
+
+```card
+id: APP-07
+wave: 4
+status: OPEN
+size: M
+model: Sonnet
+depends: API-1b, APP-02
+contracts: C-RESOURCES, C-BROWSE-SLOTS, C-API, C-JOBS
+owns:
+  - src/elysium/index/terms.py
+  - src/elysium/apps/terms_gate.py
+  - src/elysium/api/v2/resources/terms.py
+  - src/elysium/api/v2/resources/app_terms.py
+  - ui/src/apps/browse/slots/attribution/**
+  - sdk/python/elysium_addon_terms.py
+  - sdk/conformance/cases/terms.py
+  - tests/unit/test_terms.py
+  - tests/api/test_terms_gate.py
+```
+Contracts: [C-RESOURCES](#c-resources), [C-BROWSE-SLOTS](#c-browse-slots), [C-API](#c-api), [C-JOBS](#c-jobs).
+
+- DR: 1, 4. Decisions: N88, N90.
+- Scope. The licence of a data source is data Elysium knows and enforces, not
+  a note in a README. The `Terms` fields already exist (C-RESOURCES): `licence`,
+  `attribution`, `attributionUrl`, `commercial`, `verified`, `storage`,
+  `redistribution`, `liveUseOnly`, on a `Silo`, on an `App` and on each
+  `AppFeed`.
+- Steps. Each one commit.
+  1. **The record.** `GET /api/v2/terms/{objectType}` returns the terms of the
+     type's sources: those of its silo, or of the app feeds that list the type;
+     with several, the most restrictive wins (`commercial` and `redistribution`
+     false if any is false, `storage` forbidden if any forbids, `verified` only
+     if all are). A type the caller cannot discover is the uniform 404.
+     Browse shows them in the attribution slot (`slots/attribution/`, slot
+     `objectFooter`). Accept: `tests/unit/test_terms.py`.
+  2. **Unverified is off (N88).** `index/terms.py::source_allowed(source)`
+     (written by T0.8 returning `True`; this card replaces the body) is false
+     for a source that has `terms` and is not `verified`, and for a source
+     whose terms say `commercial: false` while
+     `Configuration.sources.allowNonCommercial` is false; the sync planner skips
+     it and its health row says why. A source with no `terms` is unaffected.
+     Accept: `tests/unit/test_terms.py::test_unverified_source_is_not_started`.
+  3. **The same for apps.** `apps/terms_gate.py::check(app, feed)` (written by
+     APP-02 permitting everything; this card replaces the body) refuses a feed
+     under the same two rules: batch ingest answers 451 with a fixed sentence
+     and audits it. The SDK's `fetch` asks the same question through its
+     `before` hook (`sdk/python/elysium_addon_terms.py`, `terms.permitted(feed)`
+     over `GET /api/v2/apps/{app}/feeds/{feed}/permitted`) so a refused upstream
+     is never called. Accept: `tests/api/test_terms_gate.py`.
+  4. **Case.** `sdk/conformance/cases/terms.py`.
+- Accept: the standard acceptance (section 1.4) for API, UI cards and the tests above.
+
+#### APP-08 · Lifecycle with two thresholds
+
+```card
+id: APP-08
+wave: 4
+status: OPEN
+size: M
+model: Sonnet
+depends: APP-02
+contracts: C-JOBS, C-ACTIONS, C-ACCESS
+owns:
+  - src/elysium/index/pipeline/retire.py
+  - src/elysium/api/v2/resources/stale.py
+  - tests/unit/test_lifecycle.py
+  - tests/api/test_stale.py
+```
+Contracts: [C-JOBS](#c-jobs), [C-ACTIONS](#c-actions), [C-ACCESS](#c-access).
+
+- DR: 1, 7. Decisions: N56, N90.
+- Spec. `ObjectType.lifecycle {staleAfter: PT10M, retireAfter: P7D, mode:
+  keep|inactive|remove}` (C-ACCESS), measured from `last_seen` (APP-02).
+  **Stale** is a flag only: the object stays addressable and listed.
+  `POST /api/v2/objects/{type}/stale {keys (at most 500)}` returns `{stale:
+  [key]}` for the keys the caller may read that are past `staleAfter` (hidden
+  keys are omitted exactly like unknown ones), so a map can dim what went
+  silent. **Retired** is applied by the pipeline phase `retire` (T0.8's
+  `PHASES`, after `gold`), not by an automation: no synthetic owner is needed and
+  D18 stays true. The phase's planner in `src/elysium/index/pipeline/retire.py`
+  (replacing T0.8's empty planner) plans the retirements purely from the gold
+  snapshot and `last_seen`, and applies the system action `retire` through the
+  `system_action` outbox row like quarantine (marks `inactive` or records a
+  delete in the write log; never touches a source row; I4).
+- Tests: `tests/unit/test_lifecycle.py` (pure planner: nothing before the
+  threshold, `keep` never retires, `remove` and `inactive` as named);
+  `tests/api/test_stale.py` (hidden alike).
+- Accept: the standard acceptance (section 1.4) for API cards and the tests above.
+
+#### APP-09 · Access sessions for gated resources
+
+```card
+id: APP-09
+wave: 3b
+status: OPEN
+size: M
+model: Sonnet
+depends: ADM-20
+contracts: C-ACCESS, C-API, C-RESOURCES, C-AUDIT, C-JOBS
+owns:
+  - src/elysium/apps/gated.py
+  - src/elysium/apps/sessions.py
+  - src/elysium/api/addon_servers.py
+  - src/elysium/api/v2/resources/app_resources.py
+  - src/elysium/jobs/kinds/app_session_sweep.py
+  - src/elysium/db/schema/main/50-app-09.sql
+  - tests/api/test_app_gated.py
+  - tests/api/test_access_sessions.py
+```
+Contracts: [C-ACCESS](#c-access), [C-API](#c-api), [C-RESOURCES](#c-resources), [C-AUDIT](#c-audit), [C-JOBS](#c-jobs).
+
+- DR: 1, 2. Decisions: N30, N90. A fresh-reader review aimed at I3.
+- Scope. Map tiles, radar, terrain and licensed datasets are not objects, and
+  checking and auditing every tile request would drown the audit log. So the
+  check and the audit entry happen once, when a session opens, and the proxy
+  honours a short-lived token for the rest.
+- Steps. Each one commit.
+  1. **Gated resources (N30).** `App.spec.gated [{id, title}]` declares app
+     resources; a role grants `{verb: read, appResource: "<app>/<id>"}`
+     (T0.6's `Grant.app_resource`); `GET /api/v2/apps/{app}/resources/{id}`
+     returns `{id, title}` or the uniform 404, decided by `check_access`,
+     audited; the proxy (`src/elysium/api/addon_servers.py`, the proxy that
+     T0.11 step 1c keeps) refuses a path under `/gated/<id>/` for anyone the same
+     check refuses. No string grants. Accept: `tests/api/test_app_gated.py`.
+  2. **Open a session.** `POST /api/v2/apps/{app}/resources/{id}/session` does
+     the `check_access` and writes one audit entry `app_resource.opened`, then
+     returns `{url, expiresAt}`: a signed path
+     `/api/v2/apps/{app}/gated/{id}/{rest}?session=<token>` (HMAC with a
+     server-held key, bound to the app, the resource, the principal and the
+     expiry) valid for `Configuration.limits.accessSessionMinutes` (default 10).
+     The proxy checks the signature and the expiry and counts requests and bytes
+     in the table `app_sessions` (`src/elysium/db/schema/main/50-app-09.sql`),
+     and does no `check_access` per request. Expiry bounds revocation: a role
+     change takes effect for new sessions at once and for open ones by the end of
+     their ten minutes; disabling the app stops them at once. Accept:
+     `tests/api/test_access_sessions.py` (a refused person gets the uniform 404
+     and no session; a forged, expired or other-resource token gets 401; one
+     audit entry for 1,000 tile requests; the proxy never forwards cookies).
+  3. **Close.** The job kind `app-session-sweep` (registered as a schedule
+     source, every 5 minutes) writes `app_resource.closed {requests, bytes}`
+     for each expired session and deletes its row. Accept:
+     `tests/api/test_access_sessions.py::test_close_entry_carries_totals`.
+- Accept: the standard acceptance (section 1.4) for API cards and the tests above.
+
+#### APP-10 · The frame bridge, completed
+
+```card
+id: APP-10
+wave: 4b
+status: OPEN
+size: M
+model: Sonnet
+depends: ADD-11a, APP-03, APP-06, APP-07, APP-09
+contracts: C-UI-SHELL, C-QUERY, C-AUTOMATION, C-ACTIONS, C-AUDIT
+owns:
+  - ui/src/apps/frame/bridge.ts
+  - ui/src/apps/frame/bridge.test.ts
+  - ui/src/apps/frame/state.ts
+  - src/elysium/api/v2/resources/app_state.py
+  - src/elysium/db/schema/main/50-app-10.sql
+  - sdk/typescript/src/bridge.ts
+  - sdk/typescript/test/bridge.test.ts
+  - ui/e2e/apps/frame-bridge.spec.ts
+  - tests/api/test_app_state.py
+```
+Contracts: [C-UI-SHELL](#c-ui-shell), [C-QUERY](#c-query), [C-AUTOMATION](#c-automation), [C-ACTIONS](#c-actions), [C-AUDIT](#c-audit).
+
+- DR: 1, 5. Decisions: N90. A fresh-reader review aimed at I3.
+- Spec. The page (the host) keeps the session and answers JSON-RPC 2.0 over
+  `postMessage` for the sandboxed app (ADD-11a); each call is sent to the v2 API
+  as the signed-in person with the header `X-Elysium-App: <app id>`, so each is
+  checked as a request would be and the audit entry carries the app id
+  (`detail.app`, C-AUDIT). Messages from any other origin or window are ignored.
+  Methods: `objects.load`, `objects.search`; `objectSets.load`, `.count`,
+  `.keys`; `timeseries.read`, `timeseries.last` (APP-03); `subscribe`,
+  `unsubscribe` (T0.13, with the `properties` projection); `actions.validate`,
+  `actions.apply`; `resources.fetch` (opens an access session, APP-09, and
+  returns the bytes as a transferable `ArrayBuffer`); `terms.get` (APP-07);
+  `feed.status` (a subscription: the host polls `GET /api/v2/freshness/{type}`
+  every 30 seconds and pushes changes, APP-06); `state.get` and `state.set`
+  (below); and the host pushes `theme` and `locale`. A message is at most 1 MiB
+  (a transferable at most 32 MiB) and a frame may make 50 calls a second; beyond
+  that the call fails with a rate error. **Storage shim (the gap):** the frame has
+  no `localStorage`, so `state.get|set` keep a value of at most 16 KiB per
+  (person, app, key) in the table `app_state`
+  (`GET|PUT /api/v2/apps/{app}/state/{key}`, `src/elysium/db/schema/main/50-app-10.sql`);
+  one person never reads another's. `sdk/typescript/src/bridge.ts` is the app's
+  client of the same methods, with typed errors.
+- Tests: `ui/src/apps/frame/bridge.test.ts` (an unknown origin is ignored;
+  rate and size limits; a hidden object answers like an unknown one);
+  `sdk/typescript/test/bridge.test.ts` (the client against a fake host);
+  `tests/api/test_app_state.py` (per person and app; size cap);
+  `ui/e2e/apps/frame-bridge.spec.ts` (load, subscribe, apply, fetch a gated
+  resource, state across a reload).
+- Accept: the standard acceptance (section 1.4) for UI cards and the tests above.
+
+#### APP-11 · Notices for app events
+
+```card
+id: APP-11
+wave: 4b
+status: OPEN
+size: S
+model: Sonnet
+depends: ADD-03, APP-02
+contracts: C-AUTOMATION, C-UI-SHELL
+owns:
+  - tests/integration/test_app_notices.py
+  - ui/e2e/app-notices.spec.ts
+```
+Contracts: [C-AUTOMATION](#c-automation), [C-UI-SHELL](#c-ui-shell).
+
+- DR: 1, 6. Decisions: N51, N90.
+- Scope. An app's data raises a notice through an automation (ADD-09) and the
+  Inbox shows it. What an app event needs is built in T0.13 steps 4, 5 and 7
+  (the optional `priority`, `expiresAfter`, `dedupe` and `action` of the `notify`
+  effect, and the Inbox that shows them), because a later card may not edit
+  that item (N69). **No new transport:** ntfy, webhooks and the like stay in
+  the app, which can use `notifyApp` (ADD-03) to hear that a notice was acted on
+  (N51, DR7).
+- Steps.
+  1. **Through ingestion.** A batch of 1,000 arriving rows (APP-02) that enter
+     an automation's set raises one notice per entry; a repeated `dedupe`
+     leaves one unread notice; an expired one is not listed; `high` comes first;
+     the `action` button opens the action prefilled and is absent for a person
+     who may not apply it. Accept: `tests/integration/test_app_notices.py`.
+  2. **In the Inbox.** Accept: `ui/e2e/app-notices.spec.ts` (priority marker,
+     expiry, the button opens the prefilled form).
+- Accept: the standard acceptance (section 1.4) and the tests above.
+
+#### APP-12 · App schedules and jobs
+
+```card
+id: APP-12
+wave: 3b
+status: OPEN
+size: M
+model: Sonnet
+depends: ADM-20, APP-01
+contracts: C-JOBS, C-ACTIONS, C-PROCESS
+owns:
+  - src/elysium/jobs/kinds/app_schedule.py
+  - src/elysium/jobs/kinds/app_job.py
+  - src/elysium/actions/effects/start_app_job.py
+  - src/elysium/apps/schedules.py
+  - sdk/python/elysium_addon_schedule.py
+  - sdk/conformance/cases/schedule.py
+  - tests/unit/test_app_schedule.py
+  - tests/integration/test_app_job.py
+```
+Contracts: [C-JOBS](#c-jobs), [C-ACTIONS](#c-actions), [C-PROCESS](#c-process).
+
+- DR: 1, 7. Decisions: N53, N90.
+- Scope. Slow feeds, backtests and optimisation runs need a clock and a place
+  to show progress; Elysium already has both, and an app should not build
+  another.
+- Steps. Each one commit.
+  1. **Schedules.** `App.spec.schedules [{id, when, path}]` use T0.8's `When`
+     (N53). `apps/schedules.py` registers them as a `jobs.schedule_source`
+     (C-JOBS) from `jobs/kinds/app_schedule.py`; a due entry runs the job kind
+     `app-schedule`, which calls `POST <path>` on the app through
+     `upstream.call` with `{id, at, occurrenceKey: "<app>:<id>:<at>", missed}`;
+     the app is expected to be idempotent on `occurrenceKey`, and a run missed
+     while the server was down is delivered once with `missed: true` (T0.8 step 5).
+     Accept: `tests/unit/test_app_schedule.py` (DST, a missed run, a stopped
+     app fails the job with the fixed sentence and does not retry).
+  2. **Jobs.** `App.spec.jobs [{id, title, path}]` declare long runs. They start
+     only from an action: the effect `startAppJob {app, job, params}`
+     (post-commit, through the outbox) calls `jobs.submit("app-job", ...)` as the
+     person who applied the action, so who may start a backtest is decided by
+     the action's grants and the audit says who. The job kind `app-job` calls
+     `POST <path>` with `{jobId, params, startedBy}`, then reads `GET
+     <path>/{jobId}` every 5 seconds for `{done, total, phase, state:
+     running|succeeded|failed, result?}` into the Job's progress; `result` is
+     kept to 4 KiB; when the job is cancelled (`elysium job cancel`, the Jobs
+     page) it calls `POST <path>/{jobId}/cancel` and waits up to 30 seconds. It
+     holds one of `Configuration.limits.concurrentJobs` slots while it runs.
+     Accept: `tests/integration/test_app_job.py` (a fake app server: progress
+     shows, cancel reaches the app, a person without the action's grant cannot
+     start it).
+  3. **Client and case.** `sdk/python/elysium_addon_schedule.py` (a handler
+     helper that parses the call and de-duplicates by `occurrenceKey`) and
+     `sdk/conformance/cases/schedule.py`.
+- Accept: the standard acceptance (section 1.4) and the tests above.
+
+#### APP-13 · App data under backup, and app configuration as resources
+
+```card
+id: APP-13
+wave: 3b
+status: OPEN
+size: M
+model: Sonnet
+depends: OPS-05, ADM-20, APP-01
+contracts: C-RESOURCES, C-RESOURCE-SET, C-STATE, C-API
+owns:
+  - src/elysium/ops/backup.py#members
+  - src/elysium/resources/kinds/app_config.py
+  - src/elysium/apps/config.py
+  - src/elysium/api/v2/resources/app_config.py
+  - sdk/python/elysium_addon_config.py
+  - sdk/conformance/cases/config.py
+  - tests/unit/test_backup_app_data.py
+  - tests/api/test_app_config.py
+```
+Contracts: [C-RESOURCES](#c-resources), [C-RESOURCE-SET](#c-resource-set), [C-STATE](#c-state), [C-API](#c-api).
+
+- DR: 1, 4. Decisions: N73, N90.
+- Steps. Each one commit.
+  1. **App data in the backup.** OPS-05's `members(paths, resources)` copies,
+     for each enabled app, the paths listed in `App.spec.dataPaths` under the
+     app's data directory (`addons/<id>/`) and nothing else of it; when
+     `App.spec.quiesce` is true the backup job stops the app, copies, and starts
+     it again. Restore puts them back. The archive stays unencrypted (N73).
+     Accept: `tests/unit/test_backup_app_data.py` (an undeclared file is not in
+     the archive; a quiesced app is stopped during the copy and running after;
+     the manifest lists the app's files).
+  2. **The `AppConfig` kind.** `kind: AppConfig` with `spec {app, values}`
+     (`src/elysium/resources/kinds/app_config.py`) is an ordinary resource: it
+     has versions, history, diff and restore (C-RESOURCE-SET), and the generic
+     Resources page edits it (ADM-27). `values` are checked against the JSON
+     Schema file named by `App.spec.configSchema`; a secret may only be a
+     `SecretRef`, a literal is refused (`LiteralSecret`). Accept:
+     `tests/api/test_app_config.py::test_values_checked_against_schema`.
+  3. **Reading it.** `GET /api/v2/apps/{app}/config` (the app's own token; ETag
+     and 304) returns `{version, values}` with each `SecretRef` left as
+     `{secretRef: name}`; the secret itself reaches the app only on the start
+     pipe. `sdk/python/elysium_addon_config.py` (`config.watch()` polls every 30
+     seconds) and `sdk/conformance/cases/config.py`. Accept:
+     `tests/api/test_app_config.py`.
+- Accept: the standard acceptance (section 1.4) for API cards and the tests above.
 
 ---
 
@@ -8385,15 +9092,15 @@ nothing else merges while they run.
 |---|---|---|---|---|
 | **0a** | now | - | DOC-00 | 1 |
 | **0b** | wave 0a closed | T0.1, T0.1B, T0.2, T0.3, T0.4 | SEC-A, DOC-05a, DOC-06 | 3 |
-| **1** | T0.4 merged and wave 0b closed | T0.5, T0.6, T0.6B, T0.7, T0.8 | MEAS-1, MEAS-2, MEAS-3, MEAS-4, MEAS-5, MEAS-6, OPS-01, INS-04, DOC-03, QA-MUT, REF-18A | 11 |
+| **1** | T0.4 merged and wave 0b closed | T0.5, T0.6, T0.6B, T0.7, T0.8 | MEAS-1, MEAS-2, MEAS-3, MEAS-4, MEAS-5, MEAS-6, OPS-01, INS-04, DOC-03, QA-MUT, REF-18A, APP-01 | 12 |
 | **2** | T0.8 merged and wave 1 closed | T0.10, T0.11, T0.12 | MEAS-7, ADM-14, ADM-16, OPS-02, OPS-03, OPS-10, QA-COV, REF-LIB-1, QA-FUZZ-QUERY | 9 |
 | **3a** | T0.12 merged and wave 2 closed | T0.13 | SEC-B, API-1a, ADM-01a, ADM-03a, ADM-03b, ADM-05, ADM-08, ADM-09a, ADM-10, ADM-15, ADM-17, ADM-20, ADM-22a, ADM-24, CLI-RESOURCE, CLI-MODEL, CLI-PROPOSAL, CLI-AUDIT, CLI-LOGS, CLI-DEV-a, OPS-04, OPS-05, OPS-11, INS-05, QA-FUZZ-ACTIONS, QA-FUZZ-HTTP | 26 |
-| **3b** | T0.13 merged and wave 3a closed | T0.14 | SEC-E1, API-1b, ADM-01b, ADM-04, ADM-06, ADM-07, ADM-09b, ADM-11, ADM-18a, ADM-18b, ADM-19, ADM-21, ADM-22b, CLI-SETUP, CLI-SOURCE, CLI-CONFIG, CLI-LAKE, CLI-ERASURE, CLI-APP, CLI-DEV-b, OPS-06, OPS-07, OPS-08, INS-02, INS-06, INS-07, QA-PROP, QA-FUZZ-METADATA | 28 |
+| **3b** | T0.13 merged and wave 3a closed | T0.14 | SEC-E1, API-1b, ADM-01b, ADM-04, ADM-06, ADM-07, ADM-09b, ADM-11, ADM-18a, ADM-18b, ADM-19, ADM-21, ADM-22b, CLI-SETUP, CLI-SOURCE, CLI-CONFIG, CLI-LAKE, CLI-ERASURE, CLI-APP, CLI-DEV-b, OPS-06, OPS-07, OPS-08, INS-02, INS-06, INS-07, QA-PROP, QA-FUZZ-METADATA, API-5, ADD-01, ADD-11a, APP-02, APP-03, APP-09, APP-12, APP-13 | 36 |
 | **3c** | T0.14 merged and wave 3b closed | T0.15 | SEC-E2, API-1c, ADM-02a, ADM-12, ADM-23, ADM-27, CLI-EXPORT, INS-03 | 8 |
-| **4** | T0.15 merged and wave 3c closed | - | SEC-C, SEC-D, SEC-F, API-2, API-3, API-4, API-5, API-6, API-8, ADM-02b, ADM-13, CLI-BACKUP, INS-01, REF-14A, REF-UI-2, REF-LIB-3, REF-STD-OCSF, REF-STD-LINKML, REF-STD-DPV, REF-STD-DQ, ADD-01, ADD-02, ADD-04, ADD-06, ADD-07, ADD-11a | 26 |
-| **4b** | wave 4 closed | - | API-7, CLI-OBJECT, INS-08, ADD-03, ADD-05, ADD-08, ADD-11b | 7 |
-| **5** | wave 4b closed | - | API-9, ADM-26, CLI-HELP, OPS-09, DOC-01, DOC-02a, DOC-02b, DOC-02c, DOC-05, DOC-07, REF-14B-1, REF-UI-1, ADD-09, ADD-10 | 14 |
-| **5b** | wave 5 closed | - | CLI-SCRIPTS, REF-14B-2, ADD-12 | 3 |
+| **4** | T0.15 merged and wave 3c closed | - | SEC-C, SEC-D, SEC-F, API-2, API-3, API-4, API-6, API-8, ADM-02b, ADM-13, CLI-BACKUP, INS-01, REF-14A, REF-UI-2, REF-LIB-3, REF-STD-OCSF, REF-STD-LINKML, REF-STD-DPV, REF-STD-DQ, ADD-03, ADD-09, APP-04, APP-06, APP-07, APP-08 | 25 |
+| **4b** | wave 4 closed | - | API-7, CLI-OBJECT, INS-08, APP-05, APP-10, APP-11 | 6 |
+| **5** | wave 4b closed | - | API-9, ADM-26, CLI-HELP, OPS-09, DOC-01, DOC-02a, DOC-02b, DOC-02c, DOC-05, DOC-07, REF-14B-1, REF-UI-1, ADD-12 | 13 |
+| **5b** | wave 5 closed | - | CLI-SCRIPTS, REF-14B-2 | 2 |
 | **5q** | wave 5b closed (quiet: nothing else merges) | - | QA-ERR | 1 |
 | **5r** | wave 5q closed (quiet: nothing else merges) | - | QA-COMMENTS | 1 |
 | **6** | wave 5r closed | - | SEC-G, DOC-08, QA-ARCH, REF-LLM, REF-LIB-2 | 5 |
@@ -8438,7 +9145,7 @@ exit code of each row's proof, and the output goes in the tag message; tag
 
 ### 6.4 Counts
 
-MEAS 7, SEC 8, API 11, ADM 33, CLI 19, OPS 11, INS 8, DOC 12, CI 7, QA 10, REF 15, ADD 13: **154 cards**, of which **9 are post-1.0** (the 7 CI cards, ADM-28 and CLI-LAKE-KEY), so **145 cards in the 1.0 waves**, plus **16 Tier 0 items** in 1.0 (T0.9 is post-1.0) and the 1.0 cut.
+MEAS 7, SEC 8, API 11, ADM 33, CLI 19, OPS 11, INS 8, DOC 12, CI 7, QA 10, REF 15, ADD 5, APP 13: **159 cards**, of which **9 are post-1.0** (the 7 CI cards, ADM-28 and CLI-LAKE-KEY), so **150 cards in the 1.0 waves**, plus **16 Tier 0 items** in 1.0 (T0.9 is post-1.0) and the 1.0 cut.
 Estimates (E): Tier 0 serial 6-8 months for 1.0; cards about 140 days of work
 that mostly runs in parallel once their wave opens.
 
@@ -8498,7 +9205,10 @@ containers; QA-MUT's full run needs about an hour of CPU.
 - Cards merged or deleted on 3 November 2026: ADM-25 (into OPS-04 and ADM-18b),
   CI-03 (into REF-18A and CI-01), REF-STD-JSONSCHEMA (into ADM-22a's `schemas`
   exporter), API-10 (deleted, N29), REF-MED (into T0.6B, N46), REF-18B
-  (deleted, N58). Pass 2 split API-1, ADM-01, ADM-02, ADM-03, ADM-09, ADM-18,
+  (deleted, N58). Merged into the APP cards when they were added (N90):
+  ADD-02 into APP-02, ADD-04 into APP-09, ADD-05 into APP-03, ADD-06 into
+  APP-07, ADD-07 into APP-06, ADD-08 into APP-08, ADD-10 into APP-04 and
+  ADD-11b into APP-10. Pass 2 split API-1, ADM-01, ADM-02, ADM-03, ADM-09, ADM-18,
   ADM-22, SEC-E, CLI-DEV, ADD-11, DOC-02 and REF-14B into lettered or numbered
   children, split `lake key` out of CLI-LAKE into CLI-LAKE-KEY, moved the
   recovery-key setup step out of T0.9 into ADM-28, and added DOC-05a.
@@ -8513,7 +9223,7 @@ containers; QA-MUT's full run needs about an hour of CPU.
 | `/me` returned "a summary of grants" | named capability booleans only | DR5 (N23) |
 | Built-in roles defined in code (N17) | shipped resource files, `origin: builtin` | DR4 (N27) |
 | `similarTo` needed a pseudo-action grant | read on embedded properties plus type opt-in | DR1, DR6 (N28) |
-| `app:<app>:<id>` string grants and a special access route (ADD-04) | structured grant on an app resource; "may I open" is a GET | DR1, DR2 (N30) |
+| `app:<app>:<id>` string grants and a special access route (ADD-04, now APP-09) | structured grant on an app resource; "may I open" is a GET | DR1, DR2 (N30) |
 | `Link` paging headers (API-10) | deleted | DR6 (N29) |
 | JSON Schema of action parameters as its own card (REF-STD-JSONSCHEMA) | one more output of the `schemas` exporter (ADM-22) | DR6 |
 | Diagnostics bundle as its own card (ADM-25) | route in OPS-04, button in ADM-18 | DR6 |
