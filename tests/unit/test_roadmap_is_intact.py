@@ -31,14 +31,16 @@ text cites exists, and that the parallel plan obeys its own rules:
   * the one-planning-file rule: the documents name docs/roadmap.md and the
     old root ROADMAP.md and BLOCKING.md are gone.
 
-tools/plan_check.py (T0.1 step 7) will carry the same rules as a script;
-until it exists, the wave and ownership checks live here.
+tools/plan_check.py carries the same rules as a script and the last test of
+this file runs it on the real roadmap; the wave and ownership checks below
+are the independent check of it.
 """
 
 import fnmatch
 import re
 from pathlib import Path
 
+import plan_check
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -457,3 +459,9 @@ class TestOneFile:
     def test_the_agent_guides_point_swarm_workers_at_the_brief(self, doc):
         """They must not contradict the brief a parallel worker follows."""
         assert "Working as a swarm worker" in (ROOT / doc).read_text(), doc
+
+
+class TestThePlanChecker:
+    def test_plan_check_passes_on_the_real_roadmap(self):
+        """The script and the tests above agree about the plan."""
+        assert plan_check.check(TEXT) == []
