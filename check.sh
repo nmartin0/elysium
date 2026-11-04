@@ -8,10 +8,11 @@
 #
 #   --fast   (default) ruff and its baseline, mypy and its strict-module list,
 #            the name guard, vulture, import-linter, the lock check, comment
-#            lint, diffsize (report only), the unit tests (or,
-#            with -k, the tests matching EXPR), the controls' anchors
-#            and the UI lint.
-#   --full   the same with every test, every control fired, and vitest before the UI lint.
+#            lint, diffsize (report only), the tests marked fast (or, with -k,
+#            every test matching EXPR except fuzz), the controls' anchors and
+#            the UI lint.
+#   --full   the same with every test (fuzz under the Hypothesis profile
+#            `full`), every control fired, and vitest before the UI lint.
 #   --area A fire only the controls of area A (controls/A/) and nothing else.
 #   -k EXPR  pytest's -k expression for the test step.
 #
@@ -111,11 +112,11 @@ else
     fi
 
     if [ "$mode" = full ]; then
-        step pytest "python -m pytest -q -m 'not integration' \${CHECK_EXPR:+-k \"\$CHECK_EXPR\"}"
+        step pytest "python -m pytest -q -m 'not integration' --hypothesis-profile=full \${CHECK_EXPR:+-k \"\$CHECK_EXPR\"}"
     elif [ -n "$expr" ]; then
-        step pytest "python -m pytest -q -m 'not integration' -k \"\$CHECK_EXPR\""
+        step pytest "python -m pytest -q -m 'not integration and not fuzz' -k \"\$CHECK_EXPR\""
     else
-        step pytest "python -m pytest tests/unit -q -m 'not integration'"
+        step pytest "python -m pytest -q -m fast"
     fi
 
     if [ "$mode" = full ]; then

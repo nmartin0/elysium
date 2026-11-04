@@ -502,6 +502,8 @@ min_confidence = 60
 # middleware (api/app.py) are called by the framework through their
 # decorator, never by name.
 ignore_decorators = ["@router.*", "@app.*"]
+# pytest calls its hooks (pytest_collection_modifyitems and the rest) by name.
+ignore_names = ["pytest_*"]
 
 [tool.importlinter]
 root_packages = ["elysium", "simulator"]

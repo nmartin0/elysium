@@ -271,3 +271,51 @@ def author_book_mediator(db_path, schema, roles, *, adapter=None, **mediator_kwa
     adapter = adapter or SQLiteWriteAdapter({"path": db_path})
     silo_for_type = {name: spec["storage"]["silo"] for name, spec in schema.items()}
     return DataMediator(schema, {"test_silo": adapter}, silo_for_type, roles, **mediator_kwargs)
+
+
+# --- markers by directory (N58, N91) -----------------------------------------
+#
+# A test's directory says what kind of test it is, so nothing is marked by
+# hand and no test ever moves. The most specific directory wins:
+# tests/api/fuzz/ is `fuzz`, not `api`. A test marked `live` by hand keeps
+# only `live`.
+
+#: Directories directly under tests/.
+TOP_LEVEL_MARKS = {"unit": "fast", "cli": "fast", "property": "fast", "api": "api", "integration": "lake"}
+#: Directories under tests/<pkg>/ (any package of the layer table).
+SUBSYSTEM_MARKS = {"contract": "fast", "e2e": "lake", "fuzz": "fuzz"}
+
+
+def marker_for_directory(directories: tuple[str, ...]) -> str | None:
+    """The marker for a test file in tests/<directories...>/, or None."""
+    marker = None
+    for depth, name in enumerate(directories):
+        if depth == 0 and name in TOP_LEVEL_MARKS:
+            marker = TOP_LEVEL_MARKS[name]
+        elif depth >= 1 and name in SUBSYSTEM_MARKS:
+            marker = SUBSYSTEM_MARKS[name]
+    return marker
+
+
+def pytest_collection_modifyitems(config, items):
+    tests_root = config.rootpath / "tests"
+    for item in items:
+        if item.get_closest_marker("live"):
+            continue
+        try:
+            relative = Path(str(item.path)).resolve().relative_to(tests_root.resolve())
+        except ValueError:
+            continue  # sim/tests and anything else outside tests/ is not marked
+        marker = marker_for_directory(relative.parts[:-1])
+        if marker:
+            item.add_marker(getattr(pytest.mark, marker))
+
+
+def pytest_configure(config):
+    """The Hypothesis profile `full`, selected by ./check.sh --full: the same 100
+    examples every run, so a failure is the same failure."""
+    try:
+        from hypothesis import settings
+    except ImportError:
+        return
+    settings.register_profile("full", derandomize=True, max_examples=100)
