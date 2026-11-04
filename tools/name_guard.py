@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import hashlib
+import os
 import re
 import subprocess
 import sys
@@ -50,6 +51,10 @@ FORBIDDEN = frozenset({
     "5ea01f8ad3ddeae6b483e0f4e6c17482c878409a36391235ca0b993f541a38f0",
     "7c30be79017a5bd070cbc3b5623b3e1734cb00ef6fba7789f28d68dfa4c2dcbf",
 })
+
+#: Tests add a harmless word to the list through this variable (sha256 hex, comma separated),
+#: so a test can plant a "forbidden" word without any name being written down.
+FORBIDDEN = FORBIDDEN | frozenset(h for h in os.environ.get("ELYSIUM_NAME_GUARD_EXTRA", "").split(",") if h)
 
 #: The UI component toolkit is published under this scope; a dependency's package
 #: name cannot be changed here. The scope passes only in the two package files and

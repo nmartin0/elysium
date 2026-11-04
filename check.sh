@@ -103,11 +103,11 @@ else
 
     step comments "python tools/lint_comments.py --check"
 
-    if [ -f tools/diffsize.py ]; then
+    if [ "$mode" = full ]; then
+        step diffsize "python tools/diffsize.py"
+    else
         # Report only: the commit-msg hook is what refuses an oversized commit.
         step diffsize "python tools/diffsize.py || true"
-    else
-        skip diffsize
     fi
 
     if [ "$mode" = full ]; then

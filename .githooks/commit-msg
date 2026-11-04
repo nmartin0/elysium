@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# commit-msg: width, trailers, size and the name guard (tools/commit_msg_check.py).
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+status=0
+python tools/commit_msg_check.py "$1" || status=1
+python tools/diffsize.py --commit-msg "$1" || status=$?
+exit "$status"

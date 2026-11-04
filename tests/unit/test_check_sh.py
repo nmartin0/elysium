@@ -56,7 +56,7 @@ def test_every_built_in_step_can_fail_the_script():
 
     assert 'exit "$failed"' in script
     assert script.count("set -uo pipefail") == 1
-    assert "|| true" in script  # only the report-only diffsize step
+    assert "|| true" in script  # only the report-only diffsize step of --fast
     assert script.count("|| true") == 1
 
 

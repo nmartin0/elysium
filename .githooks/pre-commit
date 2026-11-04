@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# pre-commit: the name guard, the comment lint and ruff, on what is staged.
+# Install with: git config core.hooksPath .githooks   (tools/setup_dev.sh prints it)
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+status=0
+python tools/name_guard.py --staged || status=1
+python tools/lint_comments.py --check --staged || status=1
+
+staged_python=()
+while IFS= read -r -d '' name; do
+    staged_python+=("$name")
+done < <(git diff --cached --name-only --diff-filter=ACM -z -- '*.py')
+if [ "${#staged_python[@]}" -gt 0 ]; then
+    ruff check "${staged_python[@]}" || status=1
+fi
+exit "$status"

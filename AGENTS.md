@@ -21,6 +21,13 @@ commit `pyproject.toml` and `uv.lock` together; on a lock conflict run
 `uv lock` again, never hand-merge. `uv sync --extra dev` makes a development
 environment. `./check.sh` fails (`uv lock --check`) if the two have drifted.
 
+Git hooks (`tools/setup_dev.sh` prints how to turn them on) run the name
+guard, the comment lint and ruff before a commit and check the message
+after: a subject and body within 72 columns, and a last paragraph of
+`Card:`, `Controls-Added:`, `Controls-Deleted:`, `Invariants:` and
+`Large-change:` trailers, no others. A commit over 1,000 changed
+non-generated lines needs `Large-change: <reason>` (`tools/diffsize.py`).
+
 The package lives in `src/elysium/` (src layout). Install it once, so
 `python -m elysium.scripts.<name>`, `uvicorn elysium.api.app:app` and the
 `elysium` command resolve from anywhere:
