@@ -14,6 +14,19 @@ in pass 2 (N66-N71).
 (commits in the archive and in DOC-00's card). Every other item is OPEN. Tier 0
 starts when the owner says.
 
+**The owner's interview (N72-N91).** The owner answered the open questions
+before building. Where an earlier decision (B, D, N1-N21) and a later one
+(N22-N91) disagree, the later one wins (N72) and a worker applies it without
+asking. The answers: no encryption at rest in 1.0 (N73); the reference model
+server is vLLM, with llama.cpp's server as the CPU fallback (N74); x86-64
+Linux and Docker only (N75); nothing is published to a registry (N76); one
+integrator, delivery by bundles and `git am` (N77); no CI for now (N78); no
+certification, our own mock tests instead (N79); provenance on every proposed
+edit (N80); no cross-compartment counts for administrators (N81); the
+password rules (N82); special-category approval (N83); Heliograph's lane
+(N84-N86); the shared app capabilities APP-01 to APP-13, interleaved with
+Tier 0 (N87-N90); packages that follow the precedent's subsystems (N91).
+
 **Who builds.** Sonnet-class models, several in parallel (N45, N66, N67). Tier 0
 items are done one at a time, in order, each split into numbered steps that
 are one commit each. Cards (section 5) run in parallel inside a wave; no two
@@ -213,8 +226,8 @@ owns:
 ### 1.3 Working in parallel (N66; DOC-05a builds the two scripts)
 
 Roles. The **owner** answers the questions of section 7, applies patches and
-pushes. The **integrator** (one session) hands out cards, merges them,
-closes waves and makes the patches. A **worker** does one card. The **Tier 0
+pushes. The **integrator** (one dedicated agent, N77) hands out cards, merges
+them, closes waves and makes the patches. A **worker** does one card. The **Tier 0
 worker** does one Tier 0 step at a time, in order, with the same mechanics.
 
 1. **Starting a card.** A card starts when its wave is open (section 6) and
@@ -244,13 +257,18 @@ worker** does one Tier 0 step at a time, in order, with the same mechanics.
    means two cards own one file: the script aborts the rebase and exits 6;
    the integrator does not resolve it by hand, records the ownership fix in
    the roadmap (DOC-06), and the later card's worker runs `git rebase dev` in
-   its worktree and repeats gates 4-6.
+   its worktree and repeats gates 4-6. A conflict between two decisions is
+   not resolved by asking: the later one wins (N72; N22-N91 over B, D and
+   N1-N21).
 6. **Full suites.** The worker runs `tools/heavy.sh full ./check.sh --full`
    once before handing back (`heavy.sh` queues full runs across worktrees).
    The integrator runs `./check.sh --fast` after every merge and
    `tools/heavy.sh full ./check.sh --full` on `dev` when a wave's last card is
-   merged (a `BLOCKED` card does not count); the wave closes only when that
-   passes. When it fails, the
+   merged (a `BLOCKED` or `POST-1.0` card does not count); the wave closes
+   only when that passes. There is no CI (N78): everything a pipeline would
+   run, the integrator runs locally with the same command and pastes the
+   command, its exit code and its last lines into the card's report
+   (`.heavy/reports/<ID>.md`). When it fails, the
    integrator finds the card with `git bisect run ./check.sh --fast -k
    <failing test>`, reverts that card's commits with `git revert`, and reopens
    the card.
@@ -262,8 +280,11 @@ worker** does one Tier 0 step at a time, in order, with the same mechanics.
    owner the command `cd ~/elysium && scripts/apply_patch.sh
    ~/Downloads/<the-patch-file>.patch`, whether the server needs restarting,
    and what to look at. The owner applies and pushes; the integrator confirms
-   with `git ls-remote origin dev` before the next wave's patches. Workers
-   never make patches.
+   with `git ls-remote origin dev` before the next wave's patches. When work
+   has piled up across lanes (`dev`, `astrolabe`, `heliograph`) the integrator
+   makes one bundle with `scripts/make_bundle.sh` and the owner applies it
+   with `scripts/apply_bundle.sh`, which runs `git am` per lane. There is no
+   pull-request flow and no submodule (N77, N91). Workers never make patches.
 
 ### 1.4 Conventions every card relies on
 
@@ -307,6 +328,14 @@ worker** does one Tier 0 step at a time, in order, with the same mechanics.
   `tests/integration/v1/test_<area>.py`, and each file when it is empty; a
   path that still has a caller is not deleted and is reported with the
   caller.
+- **No CI, nothing published (N76, N78).** A card, gate or document that says
+  "CI runs X" means: the integrator runs the same command locally and records
+  it in the card's report. The CI cards are post-1.0 (section 6.5); the
+  workflow files they would own do not exist, so no card creates or edits a
+  file under `.github/workflows/`. No card publishes to PyPI, npm, a container
+  registry or a package repository: wheels, the SDK and images are built
+  locally and kept as files (`tools/release/`); the distribution name and
+  publishing are the open question Q-REGISTRY.
 - **Standard acceptance** (on top of the card's own tests and Accept line):
   - every card: `./check.sh --fast -k <each test file stem>`, then
     `tools/heavy.sh full ./check.sh --full`; `python tools/check_controls.py
@@ -519,18 +548,18 @@ merged and their acceptance commands pass):
 
 | # | Production ready when | Proved by | Items |
 |---|---|---|---|
-| P1 | **Install in minutes**: `docker compose up -d` (or `.deb`/`.rpm`, or `uv tool install`) and a browser, no hand-edited file | CI starts the container from nothing and completes setup over HTTP | INS-02..06, CI-06 |
-| P2 | **First-run web setup**: one-time setup URL, wizard creates the first administrator, connects a source, picks the model server, sets schedules, locks itself | e2e wizard test; API test that the token is single-use and expires | ADM-01a, ADM-01b, ADM-02a, ADM-02b, ADM-28, CLI-SETUP |
+| P1 | **Install in minutes**: `docker compose up -d` (or `.deb`/`.rpm`, or `uv tool install`) and a browser, no hand-edited file | the integrator starts the container from nothing and completes setup over HTTP (`tools/smoke/compose.sh`, quoted in the card report) | INS-02..06 |
+| P2 | **First-run web setup**: one-time setup URL, wizard creates the first administrator, connects a source, picks the model server, sets schedules, locks itself | e2e wizard test; API test that the token is single-use and expires | ADM-01a, ADM-01b, ADM-02a, ADM-02b, CLI-SETUP |
 | P3 | **Every admin task in the UI** | an e2e spec per section; ADM-26 (every admin route has a UI caller) | T0.12, ADM-*, API-* |
 | P4 | **A coherent CLI** | `tests/cli/test_cli_conventions.py`; generated reference current | T0.4, CLI-* |
-| P5 | **Documented IN and OUT** | `elysium export --check` and the reference-currency test in CI | T0.3, ADM-22a, ADM-22b, DOC-03 |
-| P6 | **Backups and restore tested**; erasures survive a restore | CI round trip | OPS-05..07, CI-06 |
+| P5 | **Documented IN and OUT** | `elysium export --check` and the reference-currency test, run locally by the integrator | T0.3, ADM-22a, ADM-22b, DOC-03 |
+| P6 | **Backups and restore tested**; erasures survive a restore | `tests/unit/test_restore_roundtrip.py`, run locally by the integrator | OPS-05..07 |
 | P7 | **Upgrades with migrations** (from 1.0) | upgrade test from the previous release's image | OPS-08, OPS-09 |
 | P8 | **Health and doctor** on one registry | each health check has a test that makes it fail | T0.5, OPS-01..04, ADM-18a, ADM-18b |
 | P9 | **Audit readable**, hash chain, `elysium audit verify` | tamper test | T0.7, ADM-14, ADM-15 |
 | P10 | **Security findings closed** in `docs/security/findings.csv` and `docs/security/audit-checklist.csv` | `tests/unit/test_findings_are_closed.py` | SEC-A..G |
 | P11 | **Invariants proven**: I1-I8 each have a live control | `tools/check_controls.py --coverage` | T0.1, REF-19 |
-| P12 | **Supported surface stated** | support matrix in `docs/install.md`, tested where a machine allows | DOC-01, Q-SUPPORT |
+| P12 | **Supported surface stated**: x86-64 Linux and Docker (N75) | support matrix in `docs/install.md`, tested where a machine allows | DOC-01, Q-SUPPORT |
 | P13 | **Design rules and quality gates enforced**: DR1-DR7 tests green; import-contract ignore list empty; strict-typing list covers every package outside `core/`; coverage and mutation scores stored and not below their ratchet; comment-lint baseline empty; bundle guard green | `./check.sh --full` and `tools/quality_report.py` | T0.1, T0.1B, QA-*, REF-19 |
 
 ### 2.4 Security invariants (every item and card keeps them)
@@ -591,7 +620,7 @@ wrong stops and reports it.
 | [C-ERASURE](#c-erasure) | The erasure registry and the lake layers | T0.7 |
 | [C-PROCESS](#c-process) | The process model | T0.8 |
 | [C-JOBS](#c-jobs) | Jobs, schedules and the pipeline | T0.8 |
-| [C-KEYS](#c-keys) | Lake encryption and the recovery key | T0.9 |
+| [C-KEYS](#c-keys) | Lake encryption and the recovery key (post-1.0, N73) | T0.9 (post-1.0) |
 | [C-ACTIONS](#c-actions) | Actions | T0.10 |
 | [C-PROPOSALS](#c-proposals) | Proposals, wire shapes and approval | T0.10 |
 | [C-RESOURCE-SET](#c-resource-set) | The resource set, versions and resource routes | T0.10 |
@@ -632,7 +661,7 @@ ui/                          one SPA from T0.11 (ui/src/apps/<id>/, ui/src/admin
 tools/                       T0.1's scripts, tools/measure/, tools/smoke/, tools/release/, tools/elysium_dev/ (CLI-DEV-a)
 controls/  quality/  .githooks/  .claude/   (T0.1)
 scripts/                     make_patch.sh, apply_patch.sh, make_bundle.sh, apply_bundle.sh: the owner's patch flow (section 1.3); stays
-site/                        the public website; lints and tests itself (`bash site/check.sh`, CI-01's `site` job); stays
+site/                        the public website; lints and tests itself (`bash site/check.sh`, run by the integrator, N78); stays
 sim/                         the simulator until REF-18A moves it to packages/elysium-sim/
 sdk/                         the add-on SDK
 addons/identity-inference/   REF-14B-2
@@ -647,7 +676,7 @@ deployment/  install/  templates/   deleted by T0.3 and INS-04
 ```
 /etc/elysium/                     # container: /config     uv/dev: $XDG_CONFIG_HOME/elysium
   elysium.toml                    # boot settings (N3)
-  secrets/                        # 0700, files 0400 (N6): master-key, backup-key, silo-<name>-password
+  secrets/                        # 0700, files 0400 (N6): silo-<name>-password; no master key or backup key in 1.0 (N73)
   resources/                      # optional, file-provisioned, read-only in the UI (N4)
     silos/warehouse.yaml          #   kind: Silo
     object-types/customer.yaml    #   kind: ObjectType (a file may also hold its LinkTypes and ActionTypes)
@@ -690,12 +719,7 @@ resources = "/etc/elysium/resources"
 secrets = "/etc/elysium/secrets"
 
 [storage]
-volume_encrypted = false
-lake_encryption = false                       # removed by T0.9 (encryption always on)
-master_key = { secretRef = "master-key" }
-
-[backup]
-key = { secretRef = "backup-key" }
+volume_encrypted = false                      # said by the operator: the host encrypts the disk (N73); a health check reports it
 
 [log]
 level = "info"
@@ -733,7 +757,7 @@ spec:
 | Manifest | `exports/manifest.json` | files, sha256, resource-set version | yes | export |
 | Audit log | `<state>/audit/audit-YYYY-MM.jsonl` | JSONL, `v`, `category`, hash chain; OCSF as an extra export | stream | server |
 | Lineage | `<state>/audit/lineage-YYYY-MM.jsonl` | OpenLineage RunEvents | stream | sync jobs |
-| Backups | `<state>/backups/<id>.elysium-backup` | encrypted archive with manifest | n/a | backup job |
+| Backups | `<state>/backups/<id>.elysium-backup` | archive with manifest, mode 0600, not encrypted in 1.0 (N73) | n/a | backup job |
 | Diagnostics | `elysium-diagnostics-<host>.tar.gz` | redacted settings, health results, versions, log tail | n/a | `elysium doctor --bundle`, Admin > Health |
 
 <a id="c-state"></a>
@@ -745,7 +769,7 @@ spec:
   elysium.db  erasure.db  scratch.db     # D4; WAL; PRAGMA user_version stamped (N35)
   lake/catalog.db  lake/warehouse/        # Iceberg; bronze, changelog, gold, gold_history (+silver if D9 keeps it)
   audit/                                  # audit-*.jsonl, lineage-*.jsonl; backed up, never rolled back
-  backups/  exports/  addons/<app>/  secrets/ (*.enc, N6; page-token.key, N46)
+  backups/  exports/  addons/<app>/  secrets/ (managed secrets and page-token.key, N6, N46; files 0600 in a 0700 directory, not encrypted in 1.0, N73)
   run/                                    # server.lock, runner.lock, state.lock, lake-writer.lock,
                                           # restore-pending.json, restore-journal.json (N47, N55)
   .restore-new/  .restore-old/            # exist only during a restore (N55)
@@ -927,7 +951,7 @@ SINGLETONS: frozenset[str]       # T0.5 fills it (DR2)
 ```python
 # src/elysium/settings.py
 class Settings(BaseSettings):            # sections: server, paths, storage, backup, log
-    server: ServerSettings; paths: PathSettings; storage: StorageSettings; backup: BackupSettings; log: LogSettings
+    server: ServerSettings; paths: PathSettings; storage: StorageSettings; log: LogSettings
 def load_settings(config: Path | None = None, *, overrides: Mapping[str, Any] = {}) -> Settings
 def setting_sources(s: Settings) -> dict[str, SettingSource]   # "server.listen" -> SettingSource(kind="env"|"file"|"flag"|"default", where=...)
 # src/elysium/paths.py
@@ -964,8 +988,7 @@ class ServerSettings(BaseModel):  listen: str = "127.0.0.1:8000"; public_url: An
                                   cookie_secure: bool = True; workers: int = Field(2, ge=1, le=16)
                                   ip_allow: list[str] = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]   # INS-04
 class PathSettings(BaseModel):    state: Path; resources: Path | None = None; secrets: Path
-class StorageSettings(BaseModel): volume_encrypted: bool = False; lake_encryption: bool = False (T0.9 deletes the field); master_key: SecretRef
-class BackupSettings(BaseModel):  key: SecretRef
+class StorageSettings(BaseModel): volume_encrypted: bool = False     # no lake or backup encryption in 1.0 (N73); the key settings return with T0.9
 class LogSettings(BaseModel):     level: Literal["debug", "info", "warning", "error"] = "info"
 # src/elysium/resources/envelope.py
 class Metadata(BaseModel): name: str; description: str = ""
@@ -996,24 +1019,29 @@ class AppSpec(BaseModel):
     gated: list[GatedResource] = []         # ADD-04
     terms: Terms | None = None              # ADD-06
 # src/elysium/resources/kinds/configuration.py   (exactly one, metadata.name "default")
-class LlmConfig(BaseModel): server: Literal["ollama", "llama-server"] = "ollama"; baseUrl: str = "http://127.0.0.1:11434"; model: str = "phi4-mini"
+class LlmConfig(BaseModel): server: Literal["vllm", "llama-server"] = "vllm"; baseUrl: str = "http://127.0.0.1:8001/v1"; model: str = "Qwen/Qwen3-8B"
                             timeoutSeconds: int = Field(600, ge=10, le=3600)
+#   N74: both servers speak the OpenAI-compatible API, so there is one client; vLLM serves Qwen3-8B on one 24 GB GPU; hosts
+#   without a GPU run llama.cpp's server (default port 8080) with a quantised build of the same model and set baseUrl and model
 class AssistantConfig(BaseModel): maxAnswerTokens: int = Field(1024, ge=64, le=8192); filterOperators: bool = True   # D23, T0.15
 class Schedule(BaseModel): job: Literal["sync", "backup"]; when: When; keep: int | None = Field(None, ge=1, le=365)  # keep: backup only (OPS-07)
 #   When is T0.8's fixed schedule vocabulary (N53), defined in src/elysium/resources/when.py so Automation can use it too
 class SessionConfig(BaseModel): idleMinutes: int = Field(30, ge=5, le=1440); absoluteHours: int = Field(12, ge=1, le=720)   # SEC-B
-class PasswordConfig(BaseModel): minLength: int = Field(12, ge=8, le=128); minUsernameLength: int = 3; forbidUsernameFrom: int = 4   # SEC-22
+class PasswordConfig(BaseModel): minLength: int = Field(15, ge=15, le=128); minLengthWithSecondFactor: int = Field(8, ge=8, le=128)   # N82; no second factor exists for local accounts in 1.0, so 15 applies
+                                 maxLength: int = Field(256, ge=64, le=1024); minUsernameLength: int = Field(3, ge=3); forbidUsernameFrom: int = 4   # T0.12 step 10
 class Limits(BaseModel): bulkActionLimit: int = Field(20, ge=1, le=100); validatePerMinute: int = 60; exportRowCap: int = 100_000
                          concurrentJobs: int = Field(2, ge=1, le=8)        # N47
 class OidcConfig(BaseModel): issuer: AnyHttpUrl; clientId: str; clientSecret: SecretRef; usernameClaim: str = "preferred_username"
                              autoCreate: Literal[False] = False; allowPublicIssuer: bool = False   # SEC-E1, SEC-E2
 class SignInConfig(BaseModel): oidc: OidcConfig | None = None
 class SourcesConfig(BaseModel): allowNonCommercial: bool = True             # ADD-06
+class SpecialCategoryApproval(BaseModel): justification: Literal["required"] = "required"; breakGlass: bool = False   # N83, T0.10 step 7
+class ApprovalsConfig(BaseModel): specialCategory: SpecialCategoryApproval = SpecialCategoryApproval()
 class ConfigurationSpec(BaseModel):
     timeZone: str = "UTC"                   # IANA, validated with zoneinfo (N53)
     llm: LlmConfig = LlmConfig(); assistant: AssistantConfig = AssistantConfig(); schedules: list[Schedule] = []
     sessions: SessionConfig = SessionConfig(); passwords: PasswordConfig = PasswordConfig(); limits: Limits = Limits()
-    signIn: SignInConfig = SignInConfig(); sources: SourcesConfig = SourcesConfig()
+    signIn: SignInConfig = SignInConfig(); sources: SourcesConfig = SourcesConfig(); approvals: ApprovalsConfig = ApprovalsConfig()
 ```
 Kinds registered later, each in its own file and item: `ObjectType`,
 `LinkType`, `ActionType`, `Role` (T0.6, `src/elysium/resources/kinds/
@@ -1439,7 +1467,15 @@ Job kinds added by cards: `backup` (OPS-05), `restore-check` (OPS-06),
 
 <a id="c-keys"></a>
 
-### C-KEYS · Lake encryption and the recovery key (T0.9)
+### C-KEYS · Lake encryption and the recovery key (T0.9, post-1.0)
+
+**Post-1.0 (N73).** There is no encryption at rest in 1.0. Nothing in this
+contract is built for 1.0, no 1.0 card depends on it, and backups and the
+secret store rely on file permissions (0600 files in 0700 directories) and the
+host's disk encryption, which `docs/limitations.md` states. The text below is
+kept for the day the owner reverses N73; reversing it adds a migration that
+encrypts the existing state files and puts the decrypt step back into restore
+(N55). The choice between the two candidates is still open (Q-KEY).
 
 **The recovery key: two candidate designs (waits on Q-KEY).** The
 owner's answer to Q-KEY picks one; nothing below is built before it.
@@ -1501,7 +1537,7 @@ def apply(caller: Caller, action: str, params: Mapping[str, Any], *, mode: Liter
 @dataclass(frozen=True)
 class ApplyResult: status: Literal["valid", "invalid", "applied", "needs_proposal"]; write_id: str | None = None
                    reasons: tuple[str, ...] = (); plan: ActionPlan | None = None; policy: Literal["confirm", "second_person"] | None = None
-def policy_for(principal: Principal, action: ActionType) -> Literal["apply", "confirm", "second_person"]   # pure; the table below
+def policy_for(principal: Principal, action: ActionType) -> Literal["apply", "confirm", "second_person"]   # pure; the table below; second_person whenever the plan writes a special-category property (N83)
 def capabilities_for(caller: Caller, object_type: str, pks: Sequence[str], actions: Sequence[str]) -> Mapping[str, Mapping[str, bool]]
 # src/elysium/actions/effects/<effect>.py   @effect_kind("modify"|"create"|"delete"|...) (N63); post-commit effects go through db.outbox
 # src/elysium/actions/system.py             the system actions quarantine and retire, applied from the outbox kind "system_action" (N48)
@@ -1520,7 +1556,8 @@ class ProposalKind(ABC):
     def safeguards(self) -> Sequence[Safeguard]
     def apply(self, approver: Caller, proposal: Proposal) -> dict    # under the APPROVER's principal, re-authorised (I5)
 def submit(caller: Caller, kind: str, subject: str, payload: dict, *, base_version: str | None, reason: str | None,
-           policy: Literal["confirm", "second_person"] | None = None) -> Proposal
+           policy: Literal["confirm", "second_person"] | None = None, provenance: Provenance | None = None) -> Proposal
+#   provenance (N80): set by whoever composed the edit when it was not a person typing it (below); stored with the proposal
 def approve(caller: Caller, proposal_id: str) -> Proposal; def reject(caller: Caller, proposal_id: str, reason: str) -> Proposal
 def cancel(caller: Caller, proposal_id: str) -> Proposal            # the proposer, before a decision
 def list_proposals(caller: Caller, *, kind: str | None, state: str | None, page_size: int, page_token: str | None) -> Page[Proposal]
@@ -1533,7 +1570,8 @@ Proposal  {id, kind, subject, state: "pending"|"applied"|"rejected"|"cancelled"|
            proposer: {id, displayName}, onBehalfOf: {id, displayName} | null, createdAt, decidedBy: {id, displayName} | null,
            decidedAt | null, reason | null, summary: "<server sentence>",
            "$capabilities": {approve: bool, reject: bool, cancel: bool}}
-           (payload is returned only by GET /proposals/{id} and only to callers whose approve or cancel is true)
+           (payload and provenance are returned only by GET /proposals/{id} and only to callers whose approve or cancel is true)
+Provenance {kind: "function"|"model", name, version, inputs: [{type, key?, property?}], inputsDigest}   # N80
 ChangeReport {baseVersion, newVersion | null (dry run or staged),
               changes: [{op, kind, name, newName?, fields: [{path, before, after}]}],
               usedBy: [{kind, name, reason}], whoCanSee: [{type, property?, roles: [label], added: bool}],
@@ -1573,8 +1611,47 @@ pure, one safeguard row per line in `tests/unit/test_proposal_safeguards.py`):
 | a version restore (`POST /admin/versions/{id}/restore`) | `second_person` |
 | anything else (descriptions, titles, new types and properties, narrowing a role, disabling an app, schedules, limits) | `confirm` |
 The strictest row any change in the report matches wins. Erasure is fixed
-`second_person` (N16); `identity_merge` is `second_person`; R47's
-special-category edits are `second_person` (Q-R47).
+`second_person` (N16); `identity_merge` is `second_person`; edits to a
+special-category property follow the rule below (N83).
+
+**Provenance (N80).** Model and function outputs are never a property kind;
+a function or the assistant proposes an edit by naming an action and its
+parameters, and the edit is approved like any other (`action` proposal,
+policy from the action). Every proposed edit that a function or a model
+composed records `Provenance {kind, name, version, inputs, inputsDigest}`:
+`kind` `function` (name and version of the registered function, REF-14A) or
+`model` (`Configuration.llm.model` and the server's reported revision, or
+`unknown`); `inputs` the references the edit was computed from (type, key,
+property; never a value, so the record leaks nothing a reader may not see);
+`inputsDigest` the sha256 of the canonical JSON of the inputs and parameters.
+It is stored with the proposal, shown to the approver, and written into the
+audit entry of the applied write. A function-proposed or model-proposed value
+is not exempt from any policy: security policies on the property apply to the
+approver's re-authorisation like any other edit (I5). A read-time computed
+property mode (values computed when read, never stored) is out of scope for
+1.0 and `docs/limitations.md` says so; `derived` is the only computed kind.
+
+**Special-category edits (N83).** An action whose plan writes a property that
+carries a special-category label is `second_person` whatever the action's
+`approval` says and whoever proposes it (a person, the assistant, an
+automation, a function, an app): the strictest policy wins. (1) The proposal
+needs a written justification: `reason` is required and non-empty at
+`submit` (else 422 `JustificationRequired`); the approver sees it and the
+audit entry of the applied write carries it. (2) The approver must not be
+the author: the proposer, `on_behalf_of` and, for a function or model value,
+the person who asked for it are all excluded; the safeguard table has one
+row for each. (3) Model- and function-proposed values are included: they are
+staged anyway, and the approval screen shows their `Provenance`. (4)
+**Break-glass.** `Configuration.approvals.specialCategory.breakGlass`
+(default false; changing it is a `confirm` change and is audited) lets an
+approver who is also the author, in a deployment where no other enabled person
+may approve that proposal, approve with `{justification, breakGlass: true}`.
+The call re-verifies the approver's credential through the sign-in method
+they use (password: checked in the request with the login throttle; OIDC: a
+fresh authentication with `max_age=0`, SEC-E2); without that it is refused
+(403 `ReauthenticationRequired`); a deployment that has a second eligible
+approver refuses break-glass (409 `ApproverAvailable`). The applied write is
+audited `proposal.break_glass` with both justifications.
 
 <a id="c-resource-set"></a>
 
@@ -1842,7 +1919,8 @@ registry, N63);
 
 Tier 0 is the work every card stands on. One worker does one item at a time,
 in the order below, one numbered step per commit; the next step starts when
-the previous one's acceptance passes. Each item makes the contracts its
+the previous step's acceptance passes. T0.9 is post-1.0 (N73): skip it, no
+1.0 item depends on it. Each item makes the contracts its
 header names true (section 3); later cards build on those contracts without
 redesign. A Tier 0 step is taken like a card (section 1): its own worktree
 and branch `card/T0.n-<step>`, the brief, the trailer `Card: T0.n step k`. Line-level evidence for each item
@@ -1861,7 +1939,7 @@ step named in the "Archive" line; the scope here is authoritative.
 | T0.6B | Object sets: `elysium.query`, the only read path | new (N46) | 1, 7 | HIGH (I1, I2, I3) | 2 wk |
 | T0.7 | State: SQLite discipline, unit of work, outbox, audit chain, erasure ledger | S7 | 1, 7 | HIGH (I6) | 2-3 wk |
 | T0.8 | Pipeline, jobs, schedules, single lake writer, SEC-01 | S8 | 1, 7 | HIGH (I7) | 2-3 wk |
-| T0.9 | Lake encryption with a movable key (gated on Q-KEY) | item 1 | 7 | med | 1-1.5 wk |
+| T0.9 | Lake encryption with a movable key (post-1.0, N73) | item 1 | 7 | med | 1-1.5 wk, not in the 1.0 total |
 | T0.10 | Proposals, resource set, provisioning, actions with validate | S9 | 1, 2, 5 | HIGHEST (I4, I5) | 3-4 wk |
 | T0.11 | One SPA and the admin shell, thin client | S11 | 5 | low | 1.5-2 wk |
 | T0.12 | Exemplar resource end to end: people, roles, tokens | S10 commit 2 | 2, 3 | HIGH (I1, I3) | 1.5 wk |
@@ -1869,7 +1947,7 @@ step named in the "Archive" line; the scope here is authoritative.
 | T0.14 | One checks model | S13 | 1 | med | 2 wk |
 | T0.15 | Agent on the service layer | S15 | 1, 2 | med (I2, I8) | 2 wk |
 
-Total serial (E): 7-9 months. Cards start as soon as their wave opens and their
+Total serial (E): 7-9 months before T0.9 leaves (N73), so 6-8 months for 1.0. Cards start as soon as their wave opens and their
 dependencies are merged (section 6). Tier 0 items depend only on earlier
 Tier 0 items and on the cards their header names.
 
@@ -2430,8 +2508,8 @@ Contracts: [C-CLI](#c-cli), [C-HEALTH](#c-health).
   `/config`, `--dir` overrides): `elysium.toml` from
   `src/elysium/init_templates/elysium.<mode>.toml` (container: `listen =
   "0.0.0.0:8000"`, `paths.state = "/data"`, `paths.secrets =
-  "/config/secrets"`); `secrets/master-key` and `secrets/backup-key` (32
-  random bytes, base64, mode 0400, directory 0700); `resources/` from
+  "/config/secrets"`); an empty `secrets/` directory (mode 0700; no master
+  or backup key in 1.0, N73); `resources/` from
   `init_templates/minimal/` (or `demo/`); `schemas/` with every kind's JSON
   Schema (N65). It refuses with exit 6 when `elysium.toml` exists and prints
   the next command (`elysium server run`). Delete `src/elysium/cli.py`.
@@ -2687,10 +2765,16 @@ Contracts: [C-ACCESS](#c-access).
      needs a built-in role (ADM-01a's first administrator) imports the
      constant, so DR4's literal test stays green.
   5. Validator refusing standardisation and checks that rewrite a property a
-     type's `security` reads (half of SEC-01). SEC-08 per Q-SEC08 (default:
-     `manage:deployment` sees table-level row counts, documented in
-     `docs/security/architecture.md` as the one exception, with
-     `tests/api/test_row_counts_leak_nothing.py`).
+     type's `security` reads (half of SEC-01). SEC-08 per N81: holding
+     `manage:deployment` (or any other `manage:` area) gives no view of row
+     counts, or of anything else, inside a compartment the holder cannot read;
+     a count anywhere is `query.count` over what the caller may read, and no
+     route offers a cross-compartment count. Documented in
+     `docs/security/architecture.md`; accept
+     `tests/api/test_row_counts_leak_nothing.py` (an administrator without
+     read on a type gets the uniform 404 for its count, and no response of any
+     admin route carries a row count or byte size per table of a type the
+     caller cannot read).
   6. DR4 test; the "only access computes capability booleans" test.
   7. Deletions, one commit per deleted area (below).
 - **Deletes.** The raw-dict model and its 16 passes; 143 `Any` fields;
@@ -3020,12 +3104,12 @@ Contracts: [C-PROCESS](#c-process), [C-JOBS](#c-jobs).
   (cards add them).
 - **Contract.** [C-PROCESS](#c-process), [C-JOBS](#c-jobs) (section 3).
 
-### T0.9 Lake encryption with a movable key (gated on Q-KEY)
+### T0.9 Lake encryption with a movable key (post-1.0, N73)
 
 ```card
 id: T0.9
-wave: T0
-status: BLOCKED Q-KEY
+wave: post1
+status: POST-1.0
 size: L
 model: Sonnet
 depends: T0.8
@@ -3036,11 +3120,13 @@ owns:
 ```
 Contracts: [C-KEYS](#c-keys).
 
-- **Why here.** Encryption is required from the first sync (B1), so layout and
-  backup assume it. Nothing else in Tier 0 depends on it: if Q-KEY is open when
-  T0.8 is done, go on to T0.10 and come back after the answer. Until then
-  OPS-05 and OPS-06 treat the key as optional behind `storage.lake_encryption
-  = false`, which step 6 removes.
+- **Post-1.0 (N73, which wins over B1).** The owner chose no encryption at rest
+  in 1.0: backups and the secret store are protected by file permissions and
+  the host's disk encryption, and `docs/limitations.md` says so. No 1.0 card
+  depends on this item; it keeps its place in Tier 0's order and its steps for
+  the day N73 is reversed, when a migration that encrypts the existing state
+  files comes with it and OPS-05 and OPS-06 get their encrypt and decrypt
+  steps back (N55). The pick between the two designs of C-KEYS is Q-KEY.
 - **DR:** 7. **Decisions:** B1.
 - **Steps.** Each one commit; `catalog.db` stays plain. Spike facts: archive
   item 1.
@@ -3108,7 +3194,7 @@ Contracts: [C-ACTIONS](#c-actions), [C-PROPOSALS](#c-proposals), [C-RESOURCE-SET
 - **Why now.** The largest lever: seven stores and their duplicated four-eyes
   code collapse into one. Automations, checks, functions, erasure, every admin
   screen that changes a resource, and add-on ingestion go through it.
-- **DR:** 1, 2, 5. **Decisions:** D1, D8, D17, N4, N16, N21, N25, N34, N48, N49, N57.
+- **DR:** 1, 2, 5. **Decisions:** D1, D8, D17, N4, N16, N21, N25, N34, N48, N49, N57, N80, N83.
 - **Steps.** Each one commit; the contracts are C-ACTIONS, C-PROPOSALS and
   C-RESOURCE-SET.
   1. **Safeguard table first.** `tests/unit/test_proposal_safeguards.py`:
@@ -3165,8 +3251,25 @@ Contracts: [C-ACTIONS](#c-actions), [C-PROPOSALS](#c-proposals), [C-RESOURCE-SET
      Accept: `tests/api/test_validate_uniform.py::test_hidden_and_unknown_identical`,
      `::test_validate_is_audited`, `::test_validate_rate_limited`.
   7. **Heliograph asks:** `$user.id` and `$approver.id` as effect values;
-     `approval: none` applies in one call. R47 per Q-R47: an edit on a
-     special-category-labelled property needs `second_person`.
+     `approval: none` applies in one call. **Special-category edits (N83)** as
+     C-PROPOSALS states: `second_person` whoever proposes, a required
+     justification, an approver who is neither the proposer nor the author,
+     model- and function-proposed values included, and the audited
+     break-glass for a deployment with a single eligible approver. Accept:
+     `tests/unit/test_special_category_approval.py` (one row each: a person's
+     edit stages; an app's and an automation's stage; no `reason` is 422
+     `JustificationRequired`; approver equal to proposer, to `on_behalf_of` or
+     to the requester refused; break-glass refused when off, without
+     re-verification, and when a second approver exists; allowed once with
+     both justifications and an `proposal.break_glass` audit entry), each a
+     control.
+  7b. **Provenance (N80).** `Provenance` stored with the proposal
+     (`proposals` table column `provenance`, the wire shape of C-PROPOSALS),
+     required by `submit` when `caller.principal.via` is `agent` or the
+     caller names a function. Accept: `tests/unit/test_proposal_provenance.py`
+     (the record carries kind, name, version, inputs and digest and no value;
+     it is absent from the list view and from a caller who cannot approve;
+     the applied write's audit entry carries it).
   8. **Deletions,** one commit per deleted store (archive S9's list: seven
      stores and `pending_write_*`), then one for `auto_execute`,
      `config_editing.py`, `config_history.py`, `config_proposals.py`, the 17
@@ -3252,8 +3355,7 @@ Contracts: [C-UI-SHELL](#c-ui-shell), [C-ADMIN-SECTIONS](#c-admin-sections), [C-
      (C-UI-SHELL list), each with a vitest file. Accept: `npx vitest run
      packages/shell-api/src/admin`.
   4. **Bundle guard** `ui/scripts/check_bundle.mjs` added to `npm run lint`
-     (runs after `npm run build` in CI; locally `npm run build && npm run
-     lint`). Accept: a planted `"manage:"` string in a component fails it.
+     (runs after `npm run build`: `npm run build && npm run lint`). Accept: a planted `"manage:"` string in a component fails it.
 - **Invariants.** The proxy never forwards cookies, `Authorization` or the
   CSRF token, never returns `Set-Cookie`, serves responses sandboxed (archive,
   "what the add-on proxy must keep"). Bundle guard (DR5).
@@ -3301,6 +3403,9 @@ owns:
   - src/elysium/api/v1/tokens.py
   - src/elysium/api/v1/session.py
   - src/elysium/scripts/bootstrap_root.py
+  - src/elysium/core/auth/password_policy.py
+  - src/elysium/core/auth/data/**
+  - tests/unit/test_password_policy.py
 ```
 Contracts: [C-EXEMPLAR](#c-exemplar).
 
@@ -3358,9 +3463,32 @@ Contracts: [C-EXEMPLAR](#c-exemplar).
      `src/elysium/scripts/bootstrap_root.py`, and the verb parsing in
      `ui/src/apps/admin/roleGrants.ts` (moved there by T0.11). The four
      `create_*_user.py` scripts stay until CLI-DEV-a replaces them.
-  10. **SEC-22** per Q-SEC22: minimum username length 3; the "password must
-      not contain your username" rule only for usernames of 4 or more.
-      Accept: `tests/api/test_users.py::test_username_rules`.
+  10. **Username and password rules (N82; SEC-22).** The password check is
+      `src/elysium/core/auth/password_policy.py` (this item owns it and its
+      data and tests; `elysium.access.passwords` re-exports it for the
+      routes). Usernames are at least `Configuration.passwords.minUsernameLength`
+      (3) characters. Passwords: at least 15 characters when the password is
+      the only factor (8 with a second factor, a path no local account has in
+      1.0), at least 64 accepted and at most `maxLength` (256, to bound the
+      hashing work), spaces and Unicode accepted, no composition rules, no
+      forced rotation, rejected when on the breached-password list that
+      ships with the install (`src/elysium/core/auth/data/breached-passwords.txt`,
+      read offline, the longest-tail common and compromised values of at
+      least 15 characters, one per line, with the loader's sha256 pinned in
+      the test) or when it contains a context word: the product name, the
+      tenant name (`Configuration` title, when set), the username (only when
+      the username has 4 or more characters) and their simple variants
+      (case, leading and trailing digits and symbols, reversal, common
+      letter-for-digit swaps). Every rejection returns its reason as the
+      server's sentence in `parameters.problems` (ADM-01a, ADM-02a render
+      them; the client evaluates no rule). Single sign-on is the recommended
+      default: the setup wizard and `docs/operator/hardening.md` say so
+      (ADM-02b, DOC-02c). Accept: `tests/api/test_users.py::test_username_rules`,
+      `tests/unit/test_password_policy.py` (length 14 refused and 15
+      accepted; 64 accepted; no composition rule; a breached value refused
+      with its reason; a context word refused, the username rule off for a
+      3-character username; no rotation field exists) with a control on the
+      breached check.
 - **Invariants.** I1 and I3 in the route table; escalation on the union of
   roles; the session route keeps the throttle and constant-time compare.
 - **Preconditions.** T0.11.
@@ -3544,7 +3672,7 @@ Contracts: [C-AGENT](#c-agent).
   2. **Handlers on the facades.** Every handler calls `elysium.query` or
      `actions.apply` with `Principal.via = "agent"` and `on_behalf_of` = the
      person; every `needs_proposal` result is submitted with
-     `proposals.submit` (the agent stages only, N49); result size bounded by
+     `proposals.submit` with `Provenance` `{kind: "model", ...}` (the agent stages only, N49; N80); result size bounded by
      `pageSize`; each step logged with the request id. Accept:
      `tests/unit/test_agent_stages_only.py`, `tests/unit/test_agent_uses_facades.py`
      (import-linter: `elysium.agent` imports no `core.ontology` module).
@@ -3558,14 +3686,14 @@ Contracts: [C-AGENT](#c-agent).
      `claude_agent_sdk_adapter.py` to
      `tools/elysium_dev/src/elysium_dev/hosted_adapter.py` (the dev plugin,
      CLI-DEV-a). Accept: `tests/unit/test_wheel_has_no_hosted_adapter.py`
-     (I8, marker `live`: builds the wheel and lists it). Both local inference
-     adapters stay until Q-MODEL.
+     (I8, marker `live`: builds the wheel and lists it). The local inference
+     adapters stay until REF-LLM merges them into one OpenAI-compatible client (N74).
   6. **Delete the old agent read paths** (`core/agent/*` readers the facades
      replaced). Accept: the full suite.
 - **Invariants.** I8; the agent acts as the calling user; its grammar comes
   from the caller's visible schema; it stages only.
 - **Preconditions.** T0.14 (Tier 0 order), CLI-DEV-a (the dev plugin exists).
-- **Out of scope.** The bench (M11, Q-MODEL); choosing the server (REF-LLM).
+- **Out of scope.** The bench (M11, Q-MODEL); the single client (REF-LLM).
 - **Contract.** [C-AGENT](#c-agent) (section 3).
 
 ---
@@ -3588,11 +3716,11 @@ dependencies and paths.
 | OPS: health, backup, restore, upgrades | 5.7 | 11 |
 | INS: install and distribution | 5.8 | 8 |
 | DOC: documentation | 5.9 | 12 |
-| CI: pipelines | 5.10 | 7 |
+| CI: pipelines (post-1.0, N78) | 5.10 | 7 |
 | QA: engineering quality | 5.11 | 6 |
 | REF: remaining refactor, libraries, standards | 5.12 | 15 |
 | ADD: the add-on platform (Astrolabe, Heliograph) | 5.13 | 13 |
-| **Total** | | **150** cards, plus 17 Tier 0 items and the 1.0 cut |
+| **Total** | | **150** cards (9 of them post-1.0), plus 17 Tier 0 items (T0.9 post-1.0) and the 1.0 cut |
 
 ### 5.2 MEAS: measurements still to take
 
@@ -3779,6 +3907,14 @@ Contracts: [C-PROCESS](#c-process), [C-JOBS](#c-jobs).
 
 ### 5.3 SEC: closing the security findings
 
+No compliance certification and no external audit, ever (N79). Where the plan
+once reached for a CPA firm, a certification body or an independent
+penetration test, our own scripted checks of the same controls stand in: the
+session controls (SEC-B), the audit hash chain (T0.7), the restore round trip
+(OPS-06), the access review (ADM-22b) and the negative tests of every
+invariant. They are ordinary tests, run by the integrator; no card prepares
+evidence for an auditor.
+
 Status read from the code on 3 November 2026 (F): SEC-05's manifest keeps only
 `SILO_KEYS_PUBLISHED` (`src/elysium/core/mirror/manifest.py:82`, the constant used up to line 167); SEC-07's
 `record_failure(..., source=)` is called (`src/elysium/api/routes.py:952`);
@@ -3810,8 +3946,8 @@ Contracts: [C-REPO](#c-repo).
   code; if fixed, set `FIXED <date>: <file:line>, <test name>`; else `OPEN:
   <what remains>`. Mark PATCH-01 and PATCH-02 `SUPERSEDED by T0.8`; COORD-2
   `SUPERSEDED by CI-08`; LB-1a, LB-6, LB-7, LB-9, LB-10, AL-9 `BLOCKED:
-  Q-MODEL (M11)`; R34, R49 `OUT OF SCOPE for 1.0: <reason>`; E-21 `BLOCKED:
-  Q-LICENCE`.
+  Q-MODEL (M11)`; R34, R49 `OUT OF SCOPE for 1.0: <reason>`; E-21 `OUT OF SCOPE for 1.0:
+  the code is private and nothing is published (N76)`.
 - Accept: `python -I -c "import csv;r=[x for x in csv.DictReader(open('docs/security/findings.csv')) if x['status'].lower().startswith('open')];print(len(r))"`
   prints the count of rows still open with their ids; each FIXED status names a
   test that exists (`python -m pytest --collect-only -q | grep <name>`).
@@ -4463,8 +4599,8 @@ Contracts: [C-API](#c-api), [C-DB](#c-db), [C-AUDIT](#c-audit), [C-EXEMPLAR](#c-
   with the failed rule ids in `parameters.problems`; the login throttle
   applies per source (`rate_limit.hit("login:<source>", ...)`).
   `ops.setup.STEP_IDS` is `("admin", "source", "model", "llm", "schedules",
-  "first-sync")` with `elysium.keys.recovery.SETUP_STEP` inserted after
-  `admin` when that module exists (T0.9 creates it; ADM-28 serves the step).
+  "first-sync")`; there is no key step in 1.0 (N73; ADM-28 and T0.9 are
+  post-1.0 and would insert one after `admin`).
   `setup_state` gains `in_progress`. Audit `setup.token_issued`, `setup.admin_created`.
 - Tests: `tests/api/test_setup.py::test_token_single_use`, `::test_token_expires`
   (frozen clock), `::test_constant_time_compare`, `::test_throttle`,
@@ -4513,7 +4649,7 @@ status: OPEN
 size: M
 model: Sonnet
 depends: ADM-01b
-contracts: C-UI-SHELL, C-KEYS
+contracts: C-UI-SHELL
 owns:
   - ui/src/setup/**
   - !ui/src/setup/steps/source/
@@ -4523,7 +4659,7 @@ owns:
   - !ui/src/setup/steps/first-sync/
   - ui/e2e/setup.spec.ts
 ```
-Contracts: [C-UI-SHELL](#c-ui-shell), [C-KEYS](#c-keys).
+Contracts: [C-UI-SHELL](#c-ui-shell).
 
 - Spec: route `/setup`, outside the admin shell. `ui/src/setup/SetupPage.tsx`
   shows a progress rail from `GET /api/v2/setup/state` and one step per screen;
@@ -4671,8 +4807,8 @@ Contracts: [C-UI-SHELL](#c-ui-shell), [C-ADMIN-SECTIONS](#c-admin-sections), [C-
   Refused credentials, Timed out, Not configured), Last synced, Managed by ("Web
   UI" or "File resources/silos/x.yaml"). "Add source" form: Name; Type
   (Database, CSV folder, REST API); URL with hint "Leave the password out of
-  the URL; enter it below."; Password (write-only: "Stored encrypted. It
-  cannot be shown again."); Incremental column; Locale; Timeout. "Test
+  the URL; enter it below."; Password (write-only: "Stored on the server and
+  never shown again."); Incremental column; Locale; Timeout. "Test
   connection" inline; "Save" shows "Saved." or "Waiting for a second
   administrator to approve." with an Inbox link. File-origin sources read-only
   with `ProvisionedBadge`: "Managed by resources/silos/warehouse.yaml. Edit
@@ -4704,9 +4840,9 @@ Contracts: [C-API](#c-api), [C-RESOURCES](#c-resources), [C-RESOURCE-SET](#c-res
 
 - Spec: `GET /configuration` (spec, origin, ETag); `PUT /configuration`
   (If-Match: 428 without, 412 stale) through `resourceChanges`; `GET
-  /configuration/llm/detect` probes only `127.0.0.1:11434` (`/api/tags`),
-  `127.0.0.1:8080` (`/v1/models`) and, in a container, hosts `ollama` and
-  `llama` on the same ports, within 2 s; `POST /configuration/llm/test {server,
+  /configuration/llm/detect` probes only `127.0.0.1:8001` (vLLM) and
+  `127.0.0.1:8080` (llama.cpp's server), each at `/v1/models`, and, in a
+  container, hosts `vllm` and `llama` on the same ports, within 2 s (N74); `POST /configuration/llm/test {server,
   baseUrl, model}` sends "Reply with the single word: ready." with a 60 s
   deadline, returns `{ok, seconds, tokensPerSecond, failureKind}`; validator:
   `baseUrl` must resolve to loopback, private (RFC 1918 or ULA) or
@@ -4797,13 +4933,15 @@ owns:
 ```
 Contracts: [C-API](#c-api), [C-JOBS](#c-jobs), [C-PROCESS](#c-process), [C-PROPOSALS](#c-proposals), [C-EXEMPLAR](#c-exemplar).
 
-- Spec: `GET /lake` (layers, tables, table-level row counts per Q-SEC08,
-  snapshots kept, bytes, encryption on or off); `POST /lake/verify` (a job:
+- Spec: `GET /lake` (layers, snapshots kept and bytes per layer, and for each
+  type the caller may read its table and its row count from `query.count`;
+  nothing for a type the caller cannot read, N81; no encryption field, N73); `POST /lake/verify` (a job:
   every metadata and data file referenced by current snapshots, plus orphans);
   `GET /lake/rebuildOwed`; `POST /lake/rebuild {objectType}` (a job rebuilding
   gold from bronze, `writes_lake=True`; 409 while a proposal touching the type
   is being approved). Delete v1 `/admin/mirror*`.
 - Tests: `test_uncounted_says_not_counted` (never a guessed zero),
+  `test_admin_sees_counts_only_for_readable_types` (N81),
   `test_rebuild_held_during_approval`, `test_rebuild_takes_lake_writer_lock`.
 - Accept: the standard acceptance (section 1.4) for API, UI cards and the tests above.
 
@@ -4937,7 +5075,7 @@ Contracts: [C-API](#c-api), [C-JOBS](#c-jobs), [C-STATE](#c-state), [C-EXEMPLAR]
 
 - Spec: `GET /backups` (id, createdAt, bytes, includes, verifiedAt, origin
   scheduled or manual); `POST /backups` (202, `backup` job); `GET
-  /backups/{id}/download` (streams the encrypted file, audited); `POST
+  /backups/{id}/download` (streams the archive file, audited); `POST
   /backups/{id}/verify` (job); `DELETE /backups/{id}` (moderate); `POST
   /backups/{id}/restore {confirm: <id>}` stages a restore (N13), returns
   `{restartRequired: true}`; `POST /backups/upload` (5 GiB cap).
@@ -5389,8 +5527,8 @@ Contracts: [C-UI-SHELL](#c-ui-shell), [C-RESOURCE-SET](#c-resource-set), [C-PROP
 
 ```card
 id: ADM-28
-wave: 4
-status: BLOCKED Q-KEY
+wave: post2
+status: POST-1.0
 size: M
 model: Sonnet
 depends: ADM-02a, T0.9
@@ -5404,6 +5542,7 @@ owns:
 ```
 Contracts: [C-KEYS](#c-keys), [C-UI-SHELL](#c-ui-shell), [C-API](#c-api).
 
+- Post-1.0 (N73): serves only the encryption of T0.9; not built for 1.0.
 - Spec: the setup step of the candidate Q-KEY chooses (C-KEYS: candidate A
   `recovery-key`, candidate B `key-file`): its two routes in
   `src/elysium/api/v2/resources/setup_keys.py` (public while `setup` is
@@ -5567,8 +5706,8 @@ Contracts: [C-CLI](#c-cli), [C-CLI-TREE](#c-cli-tree), [C-STATE](#c-state), [C-E
 
 ```card
 id: CLI-LAKE-KEY
-wave: 3c
-status: BLOCKED Q-KEY
+wave: post2
+status: POST-1.0
 size: S
 model: Sonnet
 depends: CLI-LAKE, T0.9
@@ -5579,6 +5718,7 @@ owns:
 ```
 Contracts: [C-CLI](#c-cli), [C-CLI-TREE](#c-cli-tree), [C-KEYS](#c-keys).
 
+- Post-1.0 (N73): serves only the encryption of T0.9; not built for 1.0.
 - Commands: `lake key check`, `lake key export`, `lake key import`, `lake key
   rotate` (all L\*; severe for `import` and `rotate`; a passphrase from a TTY
   or `--passphrase-file`; with Q-KEY candidate A, `import --recovery` takes the
@@ -6022,13 +6162,14 @@ status: OPEN
 size: M
 model: Sonnet
 depends: T0.12
-contracts: C-STATE, C-DB, C-JOBS, C-PROCESS, C-KEYS
+contracts: C-STATE, C-DB, C-JOBS, C-PROCESS
 owns:
+  - src/elysium/core/encrypted_archive.py
   - src/elysium/ops/backup.py
   - src/elysium/jobs/kinds/backup.py
   - tests/unit/test_backup.py
 ```
-Contracts: [C-STATE](#c-state), [C-DB](#c-db), [C-JOBS](#c-jobs), [C-PROCESS](#c-process), [C-KEYS](#c-keys).
+Contracts: [C-STATE](#c-state), [C-DB](#c-db), [C-JOBS](#c-jobs), [C-PROCESS](#c-process).
 
 - Note: a second fresh-reader review aimed at I6.
 - Spec: `elysium.db` and `erasure.db` by `VACUUM INTO` a temporary file each,
@@ -6038,17 +6179,21 @@ Contracts: [C-STATE](#c-state), [C-DB](#c-db), [C-JOBS](#c-jobs), [C-PROCESS](#c
   (exclusive) from listing the current snapshots until the last referenced
   data file is copied, so a sync waiting for the lock queues (there is no
   shared mode, N47); the audit segments;
-  `addons/*`, the managed secrets (useless without the master key) and a copy
-  of `elysium.toml` and `resources/` for reference only. Leaves out
-  `scratch.db` and the master key (with Q-KEY candidate A it includes
-  `master-key.recovery`, T0.9). Backup-key rotation is out of scope for 1.0. Manifest: id, created, version,
-  `user_version` per file, resource-set version, files with sha256. Encrypted
-  through `src/elysium/core/encrypted_archive.py`. `verify(id)` decrypts to a
-  temporary directory, checks every hash and runs `quick_check`.
+  `addons/*`, the managed secrets and a copy of `elysium.toml` and
+  `resources/` for reference only. Leaves out `scratch.db`. **No encryption in
+  1.0 (N73):** the archive is written with mode 0600 in the 0700 `backups/`
+  directory, and because it holds the managed secrets it is as sensitive as the
+  state directory itself; `docs/limitations.md` says so, and `docs/operator/backups.md`
+  tells the operator to keep copies on an encrypted disk. The card deletes
+  `src/elysium/core/encrypted_archive.py` and the `backup-key` secret with it;
+  T0.9 brings an encrypting archive back. Manifest: id, created, version,
+  `user_version` per file, resource-set version, files with sha256. `verify(id)`
+  unpacks to a temporary directory, checks every hash and runs `quick_check`.
 - Tests: `test_backup_during_sync_restores_consistent`,
-  `test_canary_unreadable_without_key`, `test_vacuum_into_copy_passes_integrity_check`.
+  `test_backup_file_and_directory_modes` (0600 file, 0700 directory),
+  `test_vacuum_into_copy_passes_integrity_check`.
 - Steps: (1) the engine in `src/elysium/ops/backup.py` (copies, manifest,
-  encryption, `verify`) with its tests; (2) the `backup` job kind and the
+  `verify`) with its tests; (2) the `backup` job kind and the
   backup schedule's use of it, with `test_backup_during_sync_restores_consistent`.
 - Accept: the standard acceptance (section 1.4) and the tests above.
 
@@ -6074,8 +6219,9 @@ Contracts: [C-STATE](#c-state), [C-DB](#c-db), [C-ERASURE](#c-erasure), [C-PROCE
   state directory, never beside it, because `/data` is a volume mount point
   and the container's root file system is read-only (INS-02), and systemd's
   `StateDirectory=` is owned by the unit: the directory itself is never
-  renamed. (1) Decrypt into `<state>/.restore-new/` and verify (hashes,
-  `quick_check`); on failure delete it and stop, the state untouched. (2)
+  renamed. (1) Unpack into `<state>/.restore-new/` and verify (hashes,
+  `quick_check`); there is no decrypt step in 1.0 (N73; N55 gets it back with
+  T0.9); on failure delete it and stop, the state untouched. (2)
   Write `run/restore-journal.json` `{backupId, entries: ["elysium.db",
   "lake", "addons", "secrets"], done: []}` with fsync. (3) For each entry:
   rename `<state>/<e>` to `<state>/.restore-old/<e>`, then
@@ -6160,23 +6306,21 @@ wave: 5
 status: OPEN
 size: S
 model: Sonnet
-depends: OPS-08, CI-06
+depends: OPS-08
 contracts: C-STATE
 owns:
   - tools/smoke/upgrade.sh
-  - .github/workflows/release.yml#upgrade
 ```
 Contracts: [C-STATE](#c-state).
 
 - Spec: start the previous release's image, complete setup, sync the CSV
   fixture, back up; replace the image; check it migrates, `/health/ready` is
   ok, object counts match, the pre-migration backup exists. The script is
-  written now and runs as the `upgrade` job of `.github/workflows/release.yml`
-  (INS-01's pipeline) on every release tag from the first release after 1.0;
-  until then the job is present and skipped (`if:` on a tag newer than
-  `v1.0.0`).
-- Accept: `bash -n tools/smoke/upgrade.sh`; the job validates with
-  `actionlint` (output quoted).
+  written now; the integrator runs it by hand against every release tag from
+  the first release after 1.0 and records the output in the card report (no
+  CI, N78).
+- Accept: `bash -n tools/smoke/upgrade.sh`; a dry run against two local image
+  tags (output quoted).
 
 #### OPS-10 · Graceful shutdown and resumable jobs
 
@@ -6258,17 +6402,21 @@ contracts: C-GATES
 owns:
   - tools/release/build.sh
   - tools/release/sbom.sh
-  - .github/workflows/release.yml
 ```
 Contracts: [C-GATES](#c-gates).
 
-- Spec: `.github/workflows/release.yml` runs `tools/release/build.sh` and
-  `tools/release/sbom.sh` on a tag `vX.Y.Z`: `uv build` (wheel and sdist with the UI); images for
-  linux/amd64 and linux/arm64; `docker save` tarballs; `.deb` and `.rpm`
-  (INS-05); `SHA256SUMS`; a CycloneDX SBOM per artefact; signing steps that
-  wait on Q-SIGN (skipped without a key; the release notes say so).
-- Out of scope: publishing (Q-LICENCE, Q-REGISTRY).
-- Accept: the workflow runs on a test tag in a fork or with `act` (output quoted); `SHA256SUMS` verifies.
+- Spec: the integrator runs `tools/release/build.sh` and
+  `tools/release/sbom.sh` locally on a tag `vX.Y.Z` (no workflow, N78): `uv
+  build` (wheel and sdist with the UI); the image for linux/amd64 only (N75);
+  `docker save` tarballs; `.deb` and `.rpm` (INS-05); `SHA256SUMS`; a
+  CycloneDX SBOM per artefact; signing steps that wait on Q-SIGN (skipped
+  without a key; the release notes say so). The artefacts are files on the
+  integrator's disk and in the offline bundle (INS-08).
+- Out of scope: publishing anywhere, PyPI, npm and any registry included (N76;
+  the distribution name is Q-REGISTRY); arm64 images and Podman (post-1.0, N75);
+  a release workflow (post-1.0, N78).
+- Accept: both scripts run on a test tag `v0.0.0-test` in a scratch clone
+  (output quoted); `SHA256SUMS` verifies.
 
 #### INS-02 · Container image
 
@@ -6295,7 +6443,7 @@ Contracts: [C-CLI](#c-cli), [C-ENV](#c-env), [C-STATE](#c-state).
   "/usr/local/lib/elysium-healthcheck.py"]` (GET `/api/v2/health/ready`, 3 s).
   Entrypoint: if `/config/elysium.toml` is missing, `elysium init --container`
   (`paths.state = "/data"`, `paths.secrets = "/config/secrets"`, `listen =
-  "0.0.0.0:8000"`, writes the master and backup keys), then `exec elysium
+  "0.0.0.0:8000"`), then `exec elysium
   server run` with `ELYSIUM_SUPERVISED=1` (C-ENV). Size budget 450 MB, measured
   and stated.
 - Accept: `docker build`; `docker run` on empty volumes prints the setup line;
@@ -6322,16 +6470,23 @@ Contracts: [C-ENV](#c-env).
   ```yaml
   services:
     elysium:
-      image: ${ELYSIUM_IMAGE:-<registry>/elysium:1}     # Q-REGISTRY
+      image: ${ELYSIUM_IMAGE:-elysium:1}                # built locally (N76); a registry name is Q-REGISTRY
       ports: ["127.0.0.1:8000:8000"]
       user: "${ELYSIUM_UID:-10001}:${ELYSIUM_GID:-10001}"
       volumes: ["./config:/config", "elysium-data:/data"]
       restart: unless-stopped
-    ollama:                                              # docker compose --profile llm up -d
+    vllm:                                                # docker compose --profile llm up -d (a 24 GB GPU, N74)
       profiles: [llm]
-      image: ollama/ollama:<pinned>
-      volumes: ["ollama:/root/.ollama"]
-  volumes: { elysium-data: {}, ollama: {} }
+      image: vllm/vllm-openai:<pinned>
+      command: ["--model", "Qwen/Qwen3-8B", "--port", "8001"]
+      volumes: ["models:/root/.cache/huggingface"]
+      deploy: { resources: { reservations: { devices: [{ capabilities: [gpu] }] } } }
+    llama:                                               # docker compose --profile cpu up -d (no GPU: quantised Qwen3-8B)
+      profiles: [cpu]
+      image: ghcr.io/ggml-org/llama.cpp:server
+      command: ["--hf-repo", "<quantised Qwen3-8B>", "--port", "8080"]
+      volumes: ["models:/root/.cache"]
+  volumes: { elysium-data: {}, models: {} }
   ```
   Docker creates a missing `./config` owned by root, so the quick start's first
   command is `mkdir -p config && sudo chown 10001:10001 config` (stated in
@@ -6363,8 +6518,7 @@ Contracts: [C-CLI](#c-cli), [C-SETTINGS](#c-settings), [C-ENV](#c-env).
   0750, `/etc/elysium/secrets` elysium 0700; `elysium init --system` when no
   settings file; write `/etc/systemd/system/elysium.service`; `daemon-reload`;
   print the next steps. Unit: `User=elysium`, `StateDirectory=elysium` (0700),
-  `ConfigurationDirectory=elysium`, `LoadCredential=master-key:...`,
-  `LoadCredential=backup-key:...`, `ExecStartPre=/usr/bin/elysium settings
+  `ConfigurationDirectory=elysium`, `ExecStartPre=/usr/bin/elysium settings
   validate`, `ExecStartPre=/usr/bin/elysium resource validate
   /etc/elysium/resources`, `ExecStart=/usr/bin/elysium server run`,
   `Restart=on-failure`, `RestartForceExitStatus=75`, `ProtectSystem=strict`,
@@ -6377,8 +6531,9 @@ Contracts: [C-CLI](#c-cli), [C-SETTINGS](#c-settings), [C-ENV](#c-env).
   The CLI noun `elysium service install|uninstall|status [--user]
   [--no-start]` is `src/elysium/cli/commands/service.py`; the unit sets
   `Environment=ELYSIUM_SUPERVISED=1`. Delete `install/`.
-- Tests: render the unit and check every directive; CI-06 starts it in a
-  systemd container.
+- Tests: render the unit and check every directive; the integrator starts it
+  in a systemd container by hand and quotes the output (CI-06 automates this
+  after 1.0).
 - Accept: the standard acceptance (section 1.4) for CLI cards and the tests above.
 
 #### INS-05 · `.deb` and `.rpm` packages
@@ -6426,8 +6581,8 @@ Contracts: [C-CLI](#c-cli), [C-GATES](#c-gates).
 - Spec: on a clean runner: `uv tool install <wheel>`, `elysium init --user`,
   then `tools/with_server.sh -- tools/smoke/uv_tool_setup.sh` (C-GATES: starts
   the server, runs the setup through the API, stops it) and `elysium doctor`;
-  the script is the workflow step of `.github/workflows/install.yml`'s job
-  `uv-tool` (CI-06 runs it). Documented as user-managed in DOC-01.
+  the integrator runs the script by hand and quotes the output (CI-06
+  automates it after 1.0). Documented as user-managed in DOC-01.
 - Accept: the standard acceptance (section 1.4) and the tests above.
 
 #### INS-07 · Demo data for `init --demo`
@@ -6559,12 +6714,13 @@ owns:
 Contracts: [C-IN](#c-in), [C-STATE](#c-state), [C-ENV](#c-env).
 
 - Spec: under 250 lines: requirements and the support matrix (Q-SUPPORT; the
-  evidence column names the test or CI job behind each row: CI-08 for
-  PostgreSQL and MariaDB, `tests/unit/test_sqlite_source_read_only.py` for
-  SQLite, the CSV and REST fixtures); "Quick start with Docker Compose" (five
+  evidence column names the test or the integrator's local run behind each
+  row: CI-08's tests (post-1.0) for PostgreSQL and MariaDB when they exist,
+  `tests/unit/test_sqlite_source_read_only.py` for SQLite, the CSV and REST
+  fixtures); "Quick start with Docker Compose" (five
   commands, the first `mkdir -p config && sudo chown 10001:10001 config`);
   "Debian, Ubuntu, RHEL"; "For developers (uv)"; "First run" (setup line,
-  wizard, recovery key); "Where things live" (C-IN, C-OUT, C-STATE); "Next
+  wizard); "Where things live" (C-IN, C-OUT, C-STATE); "Next
   steps". No `python -m elysium.scripts`.
 - Accept: `python -m pytest tests/unit -q -k readme` passes; every command in
   the file was run once and its output quoted in the hand-off.
@@ -6642,11 +6798,16 @@ Contracts: [C-CLI-TREE](#c-cli-tree), [C-STATE](#c-state), [C-ENV](#c-env).
 
 - Spec: as DOC-02a, for backups and restore, upgrades, logs and health,
   apps, exports, hardening (TLS in front, `public_url`, `trusted_proxies`, the
-  unit, volume encryption, recovery key), troubleshooting by health-check id;
+  unit, volume encryption by the host), troubleshooting by health-check id;
   rewrite `docs/configuration.md` as a one-page guide to C-IN that links the
   generated `docs/reference/settings.md` and `resources.md` for every key; and
   rewrite `docs/limitations.md` against the built product (each limitation
-  with the test or measurement that shows it).
+  with the test or measurement that shows it). It states, because the owner
+  decided them: no encryption at rest in 1.0, so backups and the secret store
+  rely on file permissions (0600/0700) and the host's disk encryption (N73);
+  a read-time computed property mode does not exist (N80); no compliance
+  certification and no external audit, only our own scripted checks of the
+  same controls (N79); x86-64 Linux and Docker only (N75).
 - Accept: as DOC-02a.
 
 #### DOC-03 · Generated reference
@@ -6690,18 +6851,20 @@ status: OPEN
 size: M
 model: Sonnet
 depends: REF-19
-contracts: C-ACCESS, C-TOKENS, C-PROPOSALS, C-AUDIT, C-KEYS
+contracts: C-ACCESS, C-TOKENS, C-PROPOSALS, C-AUDIT
 owns:
   - docs/security/architecture.md
   - docs/architecture.md
 ```
-Contracts: [C-ACCESS](#c-access), [C-TOKENS](#c-tokens), [C-PROPOSALS](#c-proposals), [C-AUDIT](#c-audit), [C-KEYS](#c-keys).
+Contracts: [C-ACCESS](#c-access), [C-TOKENS](#c-tokens), [C-PROPOSALS](#c-proposals), [C-AUDIT](#c-audit).
 
 - Spec: `docs/security/architecture.md` as built after Tier 0: principals,
   tokens and scopes, one decision point and its pure core, uniform denial, the
   thin-client rule (N23-N26), the proposal pipeline and its safeguards,
   secrets by reference, the audit chain, the outbox and what it guarantees,
-  lake encryption and its limit, the SEC-08 exception; I1-I8 with the controls
+  the absence of encryption at rest and what stands in for it (N73), what the
+  controls cover instead of an external audit (N79), provenance and
+  special-category approval (N80, N83); I1-I8 with the controls
   that prove them (from `docs/reference/invariants.md`, REF-19).
   `docs/architecture.md` (the manual's architecture page) is brought in line
   with C-LAYERS and C-PROCESS.
@@ -6807,14 +6970,21 @@ Contracts: [C-GATES](#c-gates).
   resource-format changes and upgrade steps.
 - Accept: the standard acceptance (section 1.4) and the tests above.
 
-### 5.10 CI: pipelines
+### 5.10 CI: pipelines (post-1.0)
+
+There is no CI for now (N78). Every card in this workstream is post-1.0 (wave
+`post1` or `post2`, section 6.5): it keeps its text so that it can be built
+when the owner turns CI on, and no 1.0 card depends on one. Until then the
+integrator runs the same commands locally and records their output in the
+card report (section 1.3, section 1.4). The cards below that read as if a
+pipeline already existed describe the future pipeline, not 1.0 work.
 
 #### CI-01 · Parallel jobs
 
 ```card
 id: CI-01
-wave: 1
-status: OPEN
+wave: post1
+status: POST-1.0
 size: S
 model: Sonnet
 depends: T0.4
@@ -6840,8 +7010,8 @@ Contracts: [C-GATES](#c-gates).
 
 ```card
 id: CI-02
-wave: 3b
-status: OPEN
+wave: post1
+status: POST-1.0
 size: M
 model: Sonnet
 depends: CLI-DEV-a
@@ -6862,8 +7032,8 @@ Contracts: [C-GATES](#c-gates), [C-UI-SHELL](#c-ui-shell).
 
 ```card
 id: CI-04
-wave: 1
-status: OPEN
+wave: post1
+status: POST-1.0
 size: S
 model: Haiku
 depends: T0.4
@@ -6882,8 +7052,8 @@ Contracts: [C-GATES](#c-gates).
 
 ```card
 id: CI-05
-wave: 4
-status: OPEN
+wave: post1
+status: POST-1.0
 size: S
 model: Haiku
 depends: DOC-03, CLI-DEV-a, CLI-EXPORT
@@ -6904,8 +7074,8 @@ Contracts: [C-GATES](#c-gates), [C-OUT](#c-out).
 
 ```card
 id: CI-06
-wave: 4
-status: OPEN
+wave: post1
+status: POST-1.0
 size: M
 model: Sonnet
 depends: INS-03, INS-05, ADM-12
@@ -6933,8 +7103,8 @@ Contracts: [C-STATE](#c-state), [C-ENV](#c-env).
 
 ```card
 id: CI-07
-wave: 4
-status: OPEN
+wave: post2
+status: POST-1.0
 size: S
 model: Sonnet
 depends: MEAS-6, CI-01
@@ -6958,8 +7128,8 @@ Contracts: [C-GATES](#c-gates).
 
 ```card
 id: CI-08
-wave: 2
-status: OPEN
+wave: post1
+status: POST-1.0
 size: M
 model: Sonnet
 depends: T0.8
@@ -6993,7 +7163,6 @@ owns:
   - tools/mutation.py
   - pyproject.toml#tool.mutmut
   - quality/mutation.json
-  - .github/workflows/mutation.yml
   - tests/unit/test_mutation_score_ratchet.py
 ```
 Contracts: [C-GATES](#c-gates).
@@ -7004,10 +7173,11 @@ Contracts: [C-GATES](#c-gates).
   mutants with mypy; `--changed BASE` runs every module changed since BASE;
   writes `{module: {killed, survived, timeout, score, commit}}` into
   `quality/mutation.json`; `report` prints survivors as file:line with the
-  mutation. CI: weekly full run of `elysium.access`, `elysium.query`,
-  `elysium.actions`, `elysium.proposals`, `elysium.erasure`, `elysium.audit`
-  (once they exist; before that the matching `core/` modules) and a
-  per-pull-request run with `--changed`. Ratchet: a module's score may not drop
+  mutation. The integrator runs (N78) a full run of `elysium.access`,
+  `elysium.query`, `elysium.actions`, `elysium.proposals`, `elysium.erasure`,
+  `elysium.audit` (once they exist; before that the matching `core/` modules)
+  when each wave closes, and `--changed BASE` for each card it merges, and
+  pastes the scores into the card report. Ratchet: a module's score may not drop
   by more than 2 points; a new module in those packages needs 80 %.
 - Tests: the ratchet test on a fixture JSON.
 - Accept: a first full run of `src/elysium/core/access/` recorded with its
@@ -7057,7 +7227,7 @@ owns:
 Contracts: [C-QUERY](#c-query), [C-ACCESS](#c-access).
 
 - DR: 7.
-- Spec (Hypothesis, `max_examples=200` in CI, `derandomize=True`):
+- Spec (Hypothesis, `max_examples=200` in the integrator's full run, `derandomize=True`):
   filter grammar: parse(print(tree)) == tree; every generated filter either
   validates against a generated visible schema or is refused with the same
   words for unknown and unreadable properties; evaluation equals a naive
@@ -7177,7 +7347,6 @@ owns:
   - src/elysium/functions/**
   - src/elysium/core/functions/**
   - src/elysium/resources/kinds/function.py
-  - src/elysium/proposals/kinds/function_edit.py
   - src/elysium/agent/steps.py
   - tests/unit/test_functions.py
 ```
@@ -7189,13 +7358,17 @@ Contracts: [C-RESOURCES](#c-resources), [C-PROPOSALS](#c-proposals), [C-ACTIONS]
   into it and delete `src/elysium/core/functions/` (`interface.py`,
   `registry.py`, `ontology_access.py`); re-register
   `src/elysium/functions/calculator.py` and `linear_regression.py` as `query`
-  functions; `edit_proposer` edits land as `function_edit` proposals
-  (`src/elysium/proposals/kinds/function_edit.py`) applied through a system
-  action (I4); validator "never a classified input"; the agent step
+  functions; an `edit_proposer` function returns action calls (an action name
+  and parameters), never a write: the host submits each as an `action`
+  proposal (`actions.apply` then `proposals.submit`, N48) with `Provenance`
+  `{kind: "function", name, version, inputs, inputsDigest}` (C-PROPOSALS, N80),
+  approved like any edit and subject to N83 when it touches a special-category
+  property, so there is no `function_edit` proposal kind and no "predicted" or
+  "enriched" property kind; validator "never a classified input"; the agent step
   `use_tool` in `src/elysium/agent/steps.py` becomes `call_function`.
 - Tests: `tests/unit/test_functions.py` (signature validated; an
-  `edit_proposer` result is a proposal, never a write; a classified input is
-  refused at load).
+  `edit_proposer` result is an `action` proposal with provenance, never a
+  write; a classified input is refused at load).
 - Out of scope: arbitrary user code (functions are registered Python in the
   package or an add-on).
 - Accept: the standard acceptance (section 1.4) and the tests above.
@@ -7223,9 +7396,10 @@ Contracts: [C-RESOURCES](#c-resources).
   the list is archive S14, re-checked with `grep -rn "enrich\|predict"
   src/elysium/core` before deleting), `compile_enrichment.py`,
   `propose_prediction.py`, the Inbox tabs for them, and scikit-learn and
-  statsmodels from the core dependencies (`uv remove`). If the owner answers
-  Q-D14 "keep" before this card starts, it re-expresses enrichment and
-  prediction as `edit_proposer` functions (REF-14A) instead.
+  statsmodels from the core dependencies (`uv remove`). The owner decided to
+  delete them (N80, following the precedent: model and function outputs are
+  never their own kinds); a deployment that wants predictions writes an
+  `edit_proposer` function (REF-14A) and approves its proposals.
 - Accept: the full suite; `Large-change: deletion`.
 
 #### REF-14B-2 · The identity-inference add-on
@@ -7249,7 +7423,7 @@ Contracts: [C-RESOURCES](#c-resources), [C-API](#c-api).
   token.
 - Accept: `cd addons/identity-inference && python -m pytest -q`.
 
-#### REF-18A · Simulator as its own package and CI job
+#### REF-18A · Simulator as its own package
 
 ```card
 id: REF-18A
@@ -7266,14 +7440,13 @@ owns:
   - pyproject.toml#tool.vulture
   - pyproject.toml#tool.importlinter.contracts.sim
   - pytest.ini
-  - .github/workflows/sim.yml
 ```
 Contracts: [C-GATES](#c-gates).
 
 - Spec: move `sim/` to `packages/elysium-sim/` with its own `pyproject.toml`
   and tests; remove the sim paths from `pytest.ini` and from the
-  `[tool.mypy]` and `[tool.vulture]` settings; `.github/workflows/sim.yml`
-  runs its tests; an import-linter `forbidden` contract stops `elysium`
+  `[tool.mypy]` and `[tool.vulture]` settings; the integrator runs its tests
+  (no workflow, N78); an import-linter `forbidden` contract stops `elysium`
   importing the simulator (one line in its own contract block,
   `pyproject.toml#tool.importlinter.contracts.sim`).
 - Accept: `cd packages/elysium-sim && python -m pytest -q`; `lint-imports`.
@@ -7309,7 +7482,7 @@ Contracts: [C-GATES](#c-gates).
 ```card
 id: REF-LLM
 wave: 6
-status: BLOCKED Q-MODEL
+status: OPEN
 size: S
 model: Sonnet
 depends: T0.15
@@ -7317,16 +7490,24 @@ contracts: C-RESOURCES
 owns:
   - src/elysium/adapters/ollama_adapter.py
   - src/elysium/adapters/vllm_adapter.py
-  - src/elysium/resources/kinds/configuration.py
+  - src/elysium/adapters/openai_compatible.py
   - src/elysium/ops/llm_probe.py
 ```
 Contracts: [C-RESOURCES](#c-resources).
 
-- Spec: delete the adapter Q-MODEL did not choose
-  (`src/elysium/adapters/ollama_adapter.py` or `vllm_adapter.py`), narrow
-  `ConfigurationSpec.llm.server` to the chosen value, remove the other
-  detector entries from `src/elysium/ops/llm_probe.py`.
-- Accept: the full suite.
+- Spec (N74): the reference model server is vLLM serving Qwen3-8B on one 24 GB
+  GPU; hosts without a GPU run llama.cpp's server with a quantised build of
+  the same model. Both speak the OpenAI-compatible API, so there is one
+  client: `src/elysium/adapters/openai_compatible.py` (the `vllm_adapter.py`
+  code renamed, tests moved with it); delete `ollama_adapter.py`. `LlmConfig`
+  already has `server: vllm | llama-server` (C-RESOURCES, written by T0.3), so
+  this card does not edit the kind file; it removes the Ollama detector entries
+  from `src/elysium/ops/llm_probe.py`, repoints every caller and test, and
+  states the two servers in the install guide's model section (DOC-01 owns the
+  file; this card hands DOC-01 the wording in its report). The agent never
+  selects a server by name beyond `LlmConfig.server`.
+- Accept: the full suite; `grep -rni ollama src tests` prints nothing.
+- The bench on the real hardware (M11) still needs a machine: Q-MODEL.
 
 #### REF-UI-1 · Interface clean-up
 
@@ -7912,12 +8093,12 @@ nothing else merges while they run.
 |---|---|---|---|---|
 | **0a** | now | - | DOC-00 | 1 |
 | **0b** | wave 0a closed | T0.1, T0.1B, T0.2, T0.3, T0.4 | SEC-A, DOC-05a, DOC-06 | 3 |
-| **1** | T0.4 merged and wave 0b closed | T0.5, T0.6, T0.6B, T0.7, T0.8 | MEAS-1, MEAS-2, MEAS-3, MEAS-4, MEAS-5, MEAS-6, OPS-01, INS-04, DOC-03, CI-01, CI-04, QA-MUT, REF-18A | 13 |
-| **2** | T0.8 merged and wave 1 closed | T0.9, T0.10, T0.11, T0.12 | MEAS-7, ADM-14, ADM-16, OPS-02, OPS-03, OPS-10, CI-08, QA-COV, REF-LIB-1 | 9 |
+| **1** | T0.4 merged and wave 0b closed | T0.5, T0.6, T0.6B, T0.7, T0.8 | MEAS-1, MEAS-2, MEAS-3, MEAS-4, MEAS-5, MEAS-6, OPS-01, INS-04, DOC-03, QA-MUT, REF-18A | 11 |
+| **2** | T0.8 merged and wave 1 closed | T0.10, T0.11, T0.12 | MEAS-7, ADM-14, ADM-16, OPS-02, OPS-03, OPS-10, QA-COV, REF-LIB-1 | 8 |
 | **3a** | T0.12 merged and wave 2 closed | T0.13 | SEC-B, API-1a, ADM-01a, ADM-03a, ADM-03b, ADM-05, ADM-08, ADM-09a, ADM-10, ADM-15, ADM-17, ADM-20, ADM-22a, ADM-24, CLI-RESOURCE, CLI-MODEL, CLI-PROPOSAL, CLI-AUDIT, CLI-LOGS, CLI-DEV-a, OPS-04, OPS-05, OPS-11, INS-05 | 24 |
-| **3b** | T0.13 merged and wave 3a closed | T0.14 | SEC-E1, API-1b, ADM-01b, ADM-04, ADM-06, ADM-07, ADM-09b, ADM-11, ADM-18a, ADM-18b, ADM-19, ADM-21, ADM-22b, CLI-SETUP, CLI-SOURCE, CLI-CONFIG, CLI-LAKE, CLI-ERASURE, CLI-APP, CLI-DEV-b, OPS-06, OPS-07, OPS-08, INS-02, INS-06, INS-07, CI-02, QA-PROP | 28 |
-| **3c** | T0.14 merged and wave 3b closed | T0.15 | SEC-E2, API-1c, ADM-02a, ADM-12, ADM-23, ADM-27, CLI-LAKE-KEY, CLI-EXPORT, INS-03 | 9 |
-| **4** | T0.15 merged and wave 3c closed | - | SEC-C, SEC-D, SEC-F, API-2, API-3, API-4, API-5, API-6, API-8, ADM-02b, ADM-13, ADM-28, CLI-BACKUP, INS-01, CI-05, CI-06, CI-07, REF-14A, REF-UI-2, REF-LIB-3, REF-STD-OCSF, REF-STD-LINKML, REF-STD-DPV, REF-STD-DQ, ADD-01, ADD-02, ADD-04, ADD-06, ADD-07, ADD-11a | 30 |
+| **3b** | T0.13 merged and wave 3a closed | T0.14 | SEC-E1, API-1b, ADM-01b, ADM-04, ADM-06, ADM-07, ADM-09b, ADM-11, ADM-18a, ADM-18b, ADM-19, ADM-21, ADM-22b, CLI-SETUP, CLI-SOURCE, CLI-CONFIG, CLI-LAKE, CLI-ERASURE, CLI-APP, CLI-DEV-b, OPS-06, OPS-07, OPS-08, INS-02, INS-06, INS-07, QA-PROP | 27 |
+| **3c** | T0.14 merged and wave 3b closed | T0.15 | SEC-E2, API-1c, ADM-02a, ADM-12, ADM-23, ADM-27, CLI-EXPORT, INS-03 | 8 |
+| **4** | T0.15 merged and wave 3c closed | - | SEC-C, SEC-D, SEC-F, API-2, API-3, API-4, API-5, API-6, API-8, ADM-02b, ADM-13, CLI-BACKUP, INS-01, REF-14A, REF-UI-2, REF-LIB-3, REF-STD-OCSF, REF-STD-LINKML, REF-STD-DPV, REF-STD-DQ, ADD-01, ADD-02, ADD-04, ADD-06, ADD-07, ADD-11a | 26 |
 | **4b** | wave 4 closed | - | API-7, CLI-OBJECT, INS-08, ADD-03, ADD-05, ADD-08, ADD-11b | 7 |
 | **5** | wave 4b closed | - | API-9, ADM-26, CLI-HELP, OPS-09, DOC-01, DOC-02a, DOC-02b, DOC-02c, DOC-05, DOC-07, REF-14B-1, REF-UI-1, ADD-09, ADD-10 | 14 |
 | **5b** | wave 5 closed | - | CLI-SCRIPTS, REF-14B-2, ADD-12 | 3 |
@@ -7926,8 +8107,10 @@ nothing else merges while they run.
 | **6** | wave 5r closed | - | SEC-G, DOC-08, QA-ARCH, REF-LLM, REF-LIB-2 | 5 |
 | **6b** | wave 6 closed | - | REF-19 | 1 |
 | **6c** | wave 6b closed | - | DOC-04 | 1 |
+| **post1** | the 1.0 cut is tagged (post-1.0, section 6.5) | T0.9 | CI-01, CI-02, CI-04, CI-05, CI-06, CI-08 | 6 |
+| **post2** | wave post1 closed (post-1.0) | - | ADM-28, CLI-LAKE-KEY, CI-07 | 3 |
 
-After wave 6c comes **the 1.0 cut** (section 6.3).
+After wave 6c comes **the 1.0 cut** (section 6.3). Waves `post1` and `post2` come after the cut and are not part of 1.0 (section 6.5).
 
 ### 6.2 Dependency graph (Tier 0 and the gates)
 
@@ -7936,7 +8119,7 @@ graph TD
   D00[DOC-00] --> D05a[DOC-05a parallel scripts] --> T01[T0.1 gates]
   T01 --> T01B[T0.1B layers] --> T02[T0.2 subtraction] --> T03[T0.3 layout] --> T04[T0.4 CLI, health]
   T04 --> T05[T0.5 API v2] --> T06[T0.6 model, access] --> T06B[T0.6B elysium.query] --> T07[T0.7 state]
-  T07 --> T08[T0.8 jobs, pipeline] -.Q-KEY.-> T09[T0.9 lake encryption]
+  T07 --> T08[T0.8 jobs, pipeline] -.post-1.0, N73.-> T09[T0.9 lake encryption]
   T08 --> T010[T0.10 proposals, actions] --> T011[T0.11 one SPA] --> T012[T0.12 exemplar]
   T012 --> T013[T0.13 automation] --> T014[T0.14 checks] --> T015[T0.15 agent]
   M34[MEAS-3, MEAS-4] -.gate.-> T07
@@ -7963,9 +8146,28 @@ exit code of each row's proof, and the output goes in the tag message; tag
 
 ### 6.4 Counts
 
-MEAS 7, SEC 8, API 11, ADM 33, CLI 19, OPS 11, INS 8, DOC 12, CI 7, QA 6, REF 15, ADD 13: **150 cards**, plus **17 Tier 0 items** and the 1.0 cut.
-Estimates (E): Tier 0 serial 7-9 months; cards about 140 days of work
+MEAS 7, SEC 8, API 11, ADM 33, CLI 19, OPS 11, INS 8, DOC 12, CI 7, QA 6, REF 15, ADD 13: **150 cards**, of which **9 are post-1.0** (the 7 CI cards, ADM-28 and CLI-LAKE-KEY), so **141 cards in the 1.0 waves**, plus **16 Tier 0 items** in 1.0 (T0.9 is post-1.0) and the 1.0 cut.
+Estimates (E): Tier 0 serial 6-8 months for 1.0; cards about 140 days of work
 that mostly runs in parallel once their wave opens.
+
+### 6.5 Post-1.0
+
+What the owner moved out of 1.0, kept so that it can be built later without
+being designed again. Nothing here blocks the cut, and no 1.0 card depends on
+it (`tests/unit/test_roadmap_is_intact.py` fails if one does).
+
+| Item | Why it waits | Where its text is |
+|---|---|---|
+| T0.9 lake encryption, C-KEYS, ADM-28 (recovery key in setup), CLI-LAKE-KEY | No encryption at rest in 1.0: backups and the secret store rely on file permissions and the host's disk encryption (N73). Reversing N73 adds a migration that encrypts the existing state files and returns the decrypt step to restore (N55). The A-or-B pick is Q-KEY. | section 4 (T0.9), C-KEYS, 5.5, 5.6 |
+| CI-01, CI-02, CI-04, CI-05, CI-06, CI-07, CI-08 | No CI for now (N78); the integrator runs the same commands locally and records them in the card report. | 5.10 |
+| arm64 images and packages, Podman | 1.0 supports x86-64 Linux and Docker only (N75); no card or test targets them. | Q-SUPPORT, INS-01 |
+| Publishing to PyPI, npm or a registry | The code is private; nothing is published (N76); the distribution name is Q-REGISTRY. | INS-01, Q-REGISTRY |
+| A live broker for Heliograph | Paper trading only now; the seam stays (N85). | 5.13, the Heliograph lane |
+| Read-time computed properties | Out of scope for 1.0 (N80); `derived` is the only computed kind. | C-PROPOSALS, DOC-02c |
+| Compliance certification | Never (N79); our own mock tests of the same controls stand in. | 5.3, DOC-04 |
+
+Waves `post1` (the CI cards, with T0.9 beside) and `post2` (the cards that need
+T0.9 or CI-01) open in order after the 1.0 cut when the owner turns each on.
 
 ---
 
@@ -7978,26 +8180,18 @@ its row is deleted (DOC-06).
 
 | Id | Blocks | The exact question | Default until answered |
 |---|---|---|---|
-| **Q-N22** | N23-N44, N46-N71 | "The finalised roadmap applies your 3 November direction through decisions N23 to N44, and the design settlement through N46 to N65, and the pass-2 execution rules in N66 to N71, in `docs/decisions.md`. Do you veto any of them?" | All built as written |
+| **Q-N22** | N23-N44, N46-N71, N89, N90 | "The finalised roadmap applies your 3 November direction through decisions N23 to N44, and the design settlement through N46 to N65, the pass-2 execution rules in N66 to N71, and (after your interview) the boundary rule for apps in N89 and the thirteen shared app capabilities in N90, in `docs/decisions.md`. Do you veto any of them?" | All built as written |
 | **Q-NAME** | the name, Q-REGISTRY, the 1.0 cut | The screen of "Melzar" is in section 8.3. "Do you want to rename Elysium, and to what? If 'Melzar' is the candidate, will you commission the clearance search listed in section 8.3?" | Keep "Elysium" (N44); nothing renamed |
-| **Q-KEY** | T0.9 | "Lake encryption: (a) do you accept that setup refuses to encrypt until a recovery key has been shown once and typed back, because losing the key loses the lake and the changelog is a system of record? (b) do you accept the stated limit, that root on the running host can read the key, so this protects copied files, stolen disks, backups and other accounts, not against a hostile administrator of the live machine? (c) which recovery design: candidate A (a random recovery key, shown once as 52 characters, wraps a copy of the master key) or candidate B (no recovery key; the master-key file and an optional passphrase export are the only keys)? Both are written out in T0.9 with what each means for ADM-28 and OPS-05." | **Waits.** T0.9 skipped and done later; backups and health checks treat the key as optional behind a flag |
-| **Q-MODEL** | M11, REF-LLM, AUD D1/D2, LB-* rows | "Provide a machine with a capable model (a GPU, or a CPU host where about an hour per four questions is acceptable) to run `elysium dev bench llm` after T0.15. Then choose one model (phi4-mini or Qwen3-4B-Instruct) and one inference server (Ollama or llama-server)." | phi4-mini on Ollama; both adapters kept. The bench commands and the measured runs so far: archive item 3 |
-| **Q-COMPLIANCE** | archive item 2 | "Choose the CPA firm for SOC 2, the certification body for ISO 27001, an independent penetration tester, the budget, and when the SOC 2 observation window starts." | Engineering controls are built (SEC-B, T0.7 chain, OPS-06 restore test, ADM-22b access review); audits wait |
-| **Q-D14** | REF-14B-1 | "Keep enrichment and prediction as `edit_proposer` functions, or delete them?" | Delete; inferred identity moves to an add-on either way |
-| **Q-SEC08** | T0.6, ADM-08 | "May holders of `manage:deployment` see table-level row counts that span compartments (operational metadata, no values, no grouping)?" | Yes, the one documented exception |
-| **Q-SEC22** | T0.12 | "Minimum username length 3, and the 'password must not contain your username' rule only for usernames of 4 or more characters?" | Yes |
-| **Q-R47** | T0.10 | "An edit proposed on a property labelled special-category always needs `second_person` approval?" | Yes |
-| **Q-LICENCE** | INS-01, AUD E-21 | "LICENSE says all rights reserved and unpublished. Publishing an image or a package makes it public. What licence, and is the repository to be public?" | Build artefacts, publish nothing |
-| **Q-REGISTRY** | INS-01..03 | "Where do images and packages go (registry and namespace; an apt and rpm repository or release downloads only)? PyPI's `elysium` is very likely taken; choose a distribution name (this interacts with Q-NAME)." | `ghcr.io/<owner>/elysium`, release downloads only |
+| **Q-KEY** | T0.9, ADM-28, CLI-LAKE-KEY (all post-1.0) | "When encryption at rest is taken up after 1.0 (N73 defers it): (a) do you accept that setup refuses to encrypt until a recovery key has been shown once and typed back, because losing the key loses the lake and the changelog is a system of record? (b) do you accept the stated limit, that root on the running host can read the key, so this protects copied files, stolen disks, backups and other accounts, not against a hostile administrator of the live machine? (c) which recovery design: candidate A (a random recovery key, shown once as 52 characters, wraps a copy of the master key) or candidate B (no recovery key; the master-key file and an optional passphrase export are the only keys)? Both are written out in C-KEYS with what each means for ADM-28 and OPS-05." | **Waits.** Not built for 1.0 (N73); backups and the secret store rely on file permissions and the host's disk encryption |
+| **Q-MODEL** | M11, AUD D1/D2, LB-* rows | "Provide a machine with one 24 GB GPU (or a CPU host where about an hour per four questions is acceptable) to run `elysium dev bench llm` after T0.15 against vLLM serving Qwen3-8B, and llama.cpp's server with a quantised build on the CPU host. The model and servers are chosen (N74); only the machine is missing." | The reference is Qwen3-8B on vLLM, llama.cpp's server as the CPU fallback (N74); the bench waits for the machine. The bench commands and the measured runs so far: archive item 3 |
+| **Q-REGISTRY** | the name, publishing | "What is the distribution name, and where, if ever, do images and packages go (registry and namespace; an apt and rpm repository or release downloads only)? PyPI's `elysium` is very likely taken; this interacts with Q-NAME. The owner has decided that nothing is published now (N76)." | Build locally, publish nowhere (N76); wheels, the SDK and images stay files |
 | **Q-SIGN** | INS-01 | "Provide signing keys (cosign for images, GPG for packages), or say artefacts ship unsigned." | Unsigned, said in the release notes |
-| **Q-SUPPORT** | P12, DOC-01, CI-08 | "Which source databases are supported at 1.0 (proposed: PostgreSQL 16-17, MariaDB 11, SQLite, CSV, REST; evidence: CI-08 for PostgreSQL and MariaDB, T0.8's SQLite read-only control `tests/unit/test_sqlite_source_read_only.py`, the CSV and REST fixtures)? Which platforms (proposed: Linux amd64 and arm64; Debian 12, Ubuntu 24.04, RHEL 9 family; Docker 24+ or Podman 4+)?" | The proposals |
-| **Q-HELIO** | ADD-02 tests | "Are Heliograph's paper positions and equity Elysium objects, or a published SQLite file read as a silo?" | Accounts, positions, signals and decisions are objects; equity history is a `timeseriesRef` |
-| **Q-AST** | Astrolabe's lane only | "Host Mapterhorn terrain tiles? Check the licences still marked unverified (Mapterhorn fair use, GIBS resolutions, Copernicus commercial wording)?" | Not Elysium work |
+| **Q-SUPPORT** | P12, DOC-01 | "Which source databases are supported at 1.0 (proposed: PostgreSQL 16-17, MariaDB 11, SQLite, CSV, REST; evidence: CI-08's tests for PostgreSQL and MariaDB, which are post-1.0 (N78), so until they run the integrator's local run against database containers; T0.8's SQLite read-only control `tests/unit/test_sqlite_source_read_only.py`; the CSV and REST fixtures)? The platforms are decided (N75): x86-64 Linux (Debian 12, Ubuntu 24.04, RHEL 9 family) and Docker 24+; arm64 and Podman are not supported at 1.0." | The proposals for sources, N75 for platforms |
 
 Machine time that is not a decision: MEAS-1 to MEAS-4 and MEAS-7 need the
-simulator and a few hours of CPU; CI-06 and CI-08 need runners that run
-containers; QA-MUT's weekly run needs about an hour of CI; the penetration
-test needs a person who did not write the code.
+simulator and a few hours of CPU; the integrator's local runs of the
+install smoke tests and of the source-database tests need a machine that runs
+containers; QA-MUT's full run needs about an hour of CPU.
 
 ---
 
@@ -8005,7 +8199,7 @@ test needs a person who did not write the code.
 
 ### 8.1 Where the rest is
 
-- Decisions: `docs/decisions.md` (B, D, N groups; N66 is pass 2).
+- Decisions: `docs/decisions.md` (B, D, N groups; N66 is pass 2; N72-N91 are the owner's interview).
 - History, measured runs, consumed lists, the older plan, line-level
   evidence per Tier 0 item: `docs/archive/planning-history.md` (cited as
   `archive S<n>` and `archive item <n>`).
@@ -8031,7 +8225,7 @@ test needs a person who did not write the code.
 | `Link` paging headers (API-10) | deleted | DR6 (N29) |
 | JSON Schema of action parameters as its own card (REF-STD-JSONSCHEMA) | one more output of the `schemas` exporter (ADM-22) | DR6 |
 | Diagnostics bundle as its own card (ADM-25) | route in OPS-04, button in ADM-18 | DR6 |
-| Simulator CI job twice (CI-03 and REF-18A) | REF-18A owns it | DR6 |
+| Simulator CI job twice (CI-03 and REF-18A) | REF-18A owns the package; CI is post-1.0 (N78) | DR6 |
 | `cli.md` generated by both CLI-HELP and DOC-03 | DOC-03 generates every reference page | DR6 |
 | Internal-name scan of the bundle (REF-UI-1) and grant scan (T0.11) | one bundle guard (`ui/scripts/check_bundle.mjs`) | DR6 |
 | Doctor "checks" beside data "checks" | doctor and server diagnostics are `@health_check` (N31) | DR1 |

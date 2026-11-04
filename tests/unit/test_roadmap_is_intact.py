@@ -26,7 +26,7 @@ text cites exists, and that the parallel plan obeys its own rules:
     a later wave, no two cards of one wave owning one path, no card owning a
     path of the Tier 0 item beside its wave); the wave table matches the
     headers;
-  * docs/decisions.md: B1-B20, D1-D23 and N1-N71, each defined once with
+  * docs/decisions.md: B1-B20, D1-D23 and N1-N91, each defined once with
     five columns, and every decision id the roadmap cites defined there;
   * the one-planning-file rule: the documents name docs/roadmap.md and the
     old root ROADMAP.md and BLOCKING.md are gone.
@@ -56,7 +56,7 @@ CONTRACT_HEADING = re.compile(r"^### (C-[A-Z-]*[A-Z]) · (.+)$")
 WORKSTREAMS = ["MEAS", "SEC", "API", "ADM", "CLI", "OPS", "INS", "DOC", "CI", "QA", "REF", "ADD"]
 TIER0_IDS = ["T0.1", "T0.1B"] + [f"T0.{n}" for n in range(2, 7)] + ["T0.6B"] + [f"T0.{n}" for n in range(7, 16)]
 HEADER_KEYS = ["id", "wave", "status", "size", "model", "depends", "contracts", "owns"]
-STATUS = re.compile(r"^(OPEN|IN PROGRESS|DONE [0-9a-f]{7,40}|BLOCKED Q-[A-Z0-9]+)$")
+STATUS = re.compile(r"^(OPEN|IN PROGRESS|DONE [0-9a-f]{7,40}|BLOCKED Q-[A-Z0-9]+|POST-1\.0)$")
 
 
 def _sections():
@@ -307,7 +307,8 @@ class TestTierZero:
         """A Tier 0 item depends only on earlier Tier 0 items (and cards)."""
         for n, item in enumerate(TIER0_IDS):
             h = HEADERS[item]
-            assert h["wave"] == "T0", item
+            # T0.9 (lake encryption) is post-1.0 (N73): it keeps its place in the order
+            assert h["wave"] == ("post1" if h["status"] == "POST-1.0" else "T0"), item
             for dep in h["depends"]:
                 if dep.startswith("T0."):
                     assert TIER0_IDS.index(dep) < n, (item, dep)
@@ -382,6 +383,12 @@ class TestTheWaves:
                     hits = _owns_overlap(x, y)
                     if hits:
                         bad.append((w, x, y, hits[0]))
+        assert bad == [], bad
+
+    def test_post_1_0_cards_are_exactly_the_cards_in_the_post_waves(self):
+        """Moved out of 1.0 (N73, N78): status and wave say the same thing."""
+        bad = [c for c, h in HEADERS.items() if h["status"] == "POST-1.0" and not h["wave"].startswith("post")]
+        bad += [c for c, h in HEADERS.items() if h["wave"].startswith("post") and h["status"] != "POST-1.0"]
         assert bad == [], bad
 
     def test_no_card_owns_a_path_of_the_tier_zero_item_beside_its_wave(self):
