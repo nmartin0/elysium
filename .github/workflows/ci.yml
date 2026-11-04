@@ -46,7 +46,7 @@ jobs:
         run: pip install --require-hashes -r requirements-dev.lock
 
       - name: Lint (ruff, mypy, vulture, lock files, import-linter)
-        run: ./lint.sh
+        run: ./check.sh --fast
 
       - name: Unit tests
         run: python -m pytest tests/unit -q
@@ -84,7 +84,7 @@ jobs:
   # not the break it claimed, or the tests do not check what they
   # appear to.
   #
-  # DELIBERATELY NOT IN lint.sh, which has to stay fast enough that
+  # DELIBERATELY NOT IN ./check.sh --fast, which has to stay fast enough that
   # people run it. CI is where a minutes-long check belongs, and until
   # this ran nothing invoked the seventy controls at all -- they
   # worked and no mechanism exercised them.

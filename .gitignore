@@ -81,3 +81,6 @@ mutants/
 # THE SIMULATOR PANEL'S BUILT BUNDLE (the removed planning-file item on modules, step 2.3): built
 # by ui/'s `npm run build` from sim/panel/web, as ui/'s own dist is.
 sim/panel/dist/
+
+# Long-command logs and per-worktree state (tools/heavy.sh)
+.heavy/

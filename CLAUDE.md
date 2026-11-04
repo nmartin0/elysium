@@ -355,7 +355,7 @@ is how the mistakes below happen.
 6. **Full verification before the commit message**, not after:
 
    ```bash
-   ./lint.sh
+   ./check.sh --fast
    python -m pytest tests/ -q -m "not integration"
    python -m pytest tests/integration/test_api.py -q    # if src/elysium/api/ changed
    cd ui && npx vitest run && npm run lint

@@ -32,7 +32,7 @@ machine's Python as the floor (on 3.13 it silently dropped every
 `python_version < "3.13"` package). Each lock file's preamble says why
 at more length, and uv overwrites it -- put it back after regenerating.
 
-`./lint.sh` fails if they have drifted.
+`./check.sh` fails if they have drifted.
 
 The package lives in `src/elysium/` (src layout). Install it once, so
 `python -m elysium.scripts.<name>`, `uvicorn elysium.api.app:app` and the
@@ -42,11 +42,12 @@ The package lives in `src/elysium/` (src layout). Install it once, so
 pip install -e . --no-deps
 ```
 
-`lint.sh` and `pytest.ini` put `src` on the path themselves, so the tests
+`check.sh` and `pytest.ini` put `src` on the path themselves, so the tests
 and the lint run without the install.
 
 ```bash
-./lint.sh                                    # ruff, mypy, vulture, import-linter
+./check.sh --fast                            # ruff, mypy, vulture, import-linter, locks, unit tests, UI lint
+./check.sh --full                            # every test, every control fired, vitest
 python -m pytest tests/ -q -m "not integration"   # the suite that must pass
 cd ui && npx vitest run && npm run lint      # oxlint, tsc, oxfmt, knip
 ```

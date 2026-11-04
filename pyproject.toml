@@ -7,7 +7,7 @@ line-length = 120
 target-version = "py312"
 
 
-# `ruff format` is deliberately NEVER run by lint.sh, or anywhere else
+# `ruff format` is deliberately NEVER run by check.sh, or anywhere else
 # in this project -- a real, considered decision, not an oversight.
 # Verified directly (not assumed) by actually running `ruff format
 # --diff` against this project's real, current code before writing
@@ -27,7 +27,7 @@ target-version = "py312"
 # -- and this project has chosen to keep that consistency a deliberate,
 # human decision, not an automated one. `ruff format --check` remains
 # available to run by hand at any time; it is simply never wired into
-# this project's own CI-equivalent (lint.sh) or run silently as a
+# this project's own CI-equivalent (check.sh) or run silently as a
 # side effect of anything else.
 #
 # vulture_whitelist.py is deliberately NOT ordinary executable Python
