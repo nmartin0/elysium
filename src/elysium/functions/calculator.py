@@ -59,7 +59,7 @@ import ast
 import decimal
 import operator
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 # 28 significant digits, Python's default. Enough for money at any
 # scale a ledger holds, and bounded so a division that does not
@@ -124,7 +124,7 @@ def _evaluate(node: ast.AST) -> decimal.Decimal:
         if apply_binary is operator.truediv and right == 0:
             raise ValueError("calculator: division by zero")
         with decimal.localcontext(_CONTEXT):
-            return apply_binary(left, right)
+            return cast(decimal.Decimal, apply_binary(left, right))
 
     if isinstance(node, ast.UnaryOp):
         # NAMED SEPARATELY from the binary case above, because they
@@ -134,7 +134,7 @@ def _evaluate(node: ast.AST) -> decimal.Decimal:
         if apply_unary is None:
             raise ValueError(f"calculator: {type(node.op).__name__} is not supported")
         with decimal.localcontext(_CONTEXT):
-            return apply_unary(_evaluate(node.operand))
+            return cast(decimal.Decimal, apply_unary(_evaluate(node.operand)))
 
     # EVERYTHING ELSE IS REFUSED BY DEFAULT. Names, calls, attributes,
     # subscripts, comprehensions, lambdas, walrus. Named individually
@@ -174,7 +174,7 @@ class CalculatorFunction:
         },
     }
 
-    def run(self, **kwargs) -> decimal.Decimal:
+    def run(self, **kwargs: Any) -> decimal.Decimal:
         """The result as a Decimal, rendered by prompt_values on the way
         to the model so it reads at the ontology's declared scale."""
         expression = kwargs.get("expression")

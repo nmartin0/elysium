@@ -69,7 +69,7 @@ class AggregateRequest(_Request):
 
 
 @router.post("/objectSets/loadObjects")
-def load_objects(body: LoadObjectsRequest, c: Call = Depends(call)) -> dict:
+def load_objects(body: LoadObjectsRequest, c: Call = Depends(call)) -> dict[str, Any]:
     with translated():
         node = parse_object_set(body.objectSet)
         order_by = parse_order_by(body.orderBy)
@@ -79,7 +79,7 @@ def load_objects(body: LoadObjectsRequest, c: Call = Depends(call)) -> dict:
 
 
 @router.post("/objectSets/count")
-def count_objects(body: CountRequest, c: Call = Depends(call)) -> dict:
+def count_objects(body: CountRequest, c: Call = Depends(call)) -> dict[str, Any]:
     with security_cache_scope(), translated():
         node = parse_object_set(body.objectSet)
         view, prepared = prepared_set(c, node)
@@ -113,7 +113,7 @@ def _group_field(raw: "list[dict[str, Any]] | None") -> str | None:
 
 
 @router.post("/objectSets/aggregate")
-def aggregate(body: AggregateRequest, c: Call = Depends(call)) -> dict:
+def aggregate(body: AggregateRequest, c: Call = Depends(call)) -> dict[str, Any]:
     with translated():
         node = parse_object_set(body.objectSet)
         metrics = parse_metrics(body.metrics)

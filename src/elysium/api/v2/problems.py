@@ -23,8 +23,9 @@ every other request to the handler that was there before.
 """
 
 import uuid
+from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -57,7 +58,7 @@ _NAMES = {
 class ApiProblem(Exception):
     """An error with a status, a stable name and words for a person."""
 
-    def __init__(self, status: int, error_name: str, detail: str, parameters: "dict | None" = None,
+    def __init__(self, status: int, error_name: str, detail: str, parameters: "dict[str, Any] | None" = None,
                  title: str | None = None):
         super().__init__(detail)
         self.status = status
@@ -72,7 +73,7 @@ def not_found() -> ApiProblem:
     return ApiProblem(404, "NotFound", "No such resource.")
 
 
-def invalid_argument(detail: str, parameters: "dict | None" = None) -> ApiProblem:
+def invalid_argument(detail: str, parameters: "dict[str, Any] | None" = None) -> ApiProblem:
     return ApiProblem(400, "InvalidArgument", detail, parameters)
 
 
@@ -93,7 +94,7 @@ def request_id_of(request: Request) -> str:
 
 
 def problem_response(request: Request, status: int, error_name: str, detail: str,
-                     parameters: "dict | None" = None, title: str | None = None) -> JSONResponse:
+                     parameters: "dict[str, Any] | None" = None, title: str | None = None) -> JSONResponse:
     body = {
         "type": TYPE_PREFIX + error_name,
         "title": title or _TITLES.get(status, "Error"),
@@ -108,7 +109,7 @@ def problem_response(request: Request, status: int, error_name: str, detail: str
 
 
 def _is_v2(request: Request) -> bool:
-    return request.url.path.startswith(V2_PREFIX)
+    return bool(request.url.path.startswith(V2_PREFIX))
 
 
 def install_problem_handlers(app: FastAPI) -> None:
@@ -117,12 +118,12 @@ def install_problem_handlers(app: FastAPI) -> None:
     previous_http = app.exception_handlers[StarletteHTTPException]
     previous_validation = app.exception_handlers[RequestValidationError]
 
-    async def problem(request: Request, exc: Exception):
+    async def problem(request: Request, exc: Exception) -> Response:
         assert isinstance(exc, ApiProblem)
         return problem_response(request, exc.status, exc.error_name, exc.detail, exc.parameters,
                                 exc.title)
 
-    async def http_error(request: Request, exc: Exception):
+    async def http_error(request: Request, exc: Exception) -> Response:
         assert isinstance(exc, StarletteHTTPException)
         if not _is_v2(request):
             return await previous_http(request, exc)
@@ -132,7 +133,7 @@ def install_problem_handlers(app: FastAPI) -> None:
         detail = exc.detail if isinstance(exc.detail, str) and status != 404 else "No such resource."
         return problem_response(request, status, _NAMES.get(status, "Error"), detail)
 
-    async def validation_error(request: Request, exc: Exception):
+    async def validation_error(request: Request, exc: Exception) -> Response:
         assert isinstance(exc, RequestValidationError)
         if not _is_v2(request):
             return await previous_validation(request, exc)

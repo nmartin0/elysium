@@ -11,8 +11,8 @@ def run_heavy(repo: Path, *args: str, timeout: str | None = None):
     env = {**os.environ}
     if timeout:
         env["HEAVY_TIMEOUT"] = timeout
-    return subprocess.run(
-        ["bash", str(ROOT / "tools" / "heavy.sh"), *args],
+    return subprocess.run(  # noqa: S603 -- fixed command
+        ["bash", str(ROOT / "tools" / "heavy.sh"), *args],  # noqa: S607 -- fixed command
         cwd=repo,
         capture_output=True,
         text=True,
@@ -22,7 +22,7 @@ def run_heavy(repo: Path, *args: str, timeout: str | None = None):
 
 
 def make_repo(tmp_path: Path) -> Path:
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)  # noqa: S603, S607 -- fixed command
     return tmp_path
 
 

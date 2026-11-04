@@ -158,7 +158,192 @@ path = "hatch_build.py"
 # (long, deliberately explanatory docstrings; multi-clause function
 # signatures) would generate persistent, subjective noise against
 # choices that are intentional here, not oversights.
-select = ["E", "F", "W", "I", "B", "UP"]
+#   BLE   -- a broad `except` must say why (`# noqa: BLE001 -- <rule>`)
+#   S     -- bandit: asserts, subprocess, SQL built from strings, weak random, URLs
+#   C901  -- complexity above 15
+# Today's offenders are listed per file in the generated block of
+# [tool.ruff.lint.per-file-ignores] (tools/ruff_baseline.py --write); the list
+# is in quality/ruff-ignores.txt and may only shrink.
+select = ["E", "F", "W", "I", "B", "UP", "BLE", "S", "C901"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.per-file-ignores]
+# pytest tests assert; that is what they are for.
+"tests/**" = ["S101"]
+"sim/tests/**" = ["S101"]
+# BEGIN GENERATED per-file-ignores (tools/ruff_baseline.py --write)
+"sdk/python/elysium_addon_checks.py" = ["S101", "S105", "S310", "S603"]
+"sim/panel/elysium_addon_checks.py" = ["S101", "S105", "S310", "S603"]
+"sim/panel/server.py" = ["C901", "S603"]
+"sim/simulator/cli.py" = ["C901"]
+"sim/simulator/control.py" = ["S110", "S310"]
+"sim/simulator/dialect.py" = ["S608"]
+"sim/simulator/drift.py" = ["S608"]
+"sim/simulator/event.py" = ["S101", "S608"]
+"sim/simulator/expression.py" = ["C901"]
+"sim/simulator/health.py" = ["S310", "S608"]
+"sim/simulator/oracle.py" = ["S608"]
+"sim/simulator/relational.py" = ["S608"]
+"sim/simulator/resume.py" = ["S112", "S608"]
+"sim/simulator/rng.py" = ["S311"]
+"sim/simulator/runner.py" = ["S101", "S608"]
+"sim/simulator/silos/filedrop.py" = ["S311"]
+"sim/simulator/silos/mariadb.py" = ["S603"]
+"sim/simulator/silos/postgres.py" = ["S603"]
+"sim/simulator/silos/reader.py" = ["S608"]
+"sim/simulator/silos/rest.py" = ["S101", "S105", "S107", "S310", "S311"]
+"sim/simulator/spec/silos.py" = ["C901"]
+"sim/simulator/world.py" = ["S608"]
+"sim/tests/consumer/conftest.py" = ["S603"]
+"sim/tests/consumer/test_authenticity.py" = ["S608"]
+"sim/tests/consumer/test_connection.py" = ["S608"]
+"sim/tests/consumer/test_files_and_api.py" = ["S310"]
+"sim/tests/consumer/test_read_only.py" = ["S603", "S608"]
+"sim/tests/consumer/test_reading.py" = ["S608"]
+"sim/tests/test_cleanup.py" = ["S603"]
+"sim/tests/test_cli.py" = ["S603", "S607"]
+"sim/tests/test_control.py" = ["S310"]
+"sim/tests/test_exposing.py" = ["S310"]
+"sim/tests/test_expression.py" = ["S311"]
+"sim/tests/test_field_service.py" = ["S310", "S608"]
+"sim/tests/test_generators.py" = ["S311"]
+"sim/tests/test_migrations.py" = ["S608"]
+"sim/tests/test_panel.py" = ["S105", "S310", "S603"]
+"sim/tests/test_rest_silo.py" = ["S105", "S106", "S107", "S310"]
+"sim/tests/test_retail.py" = ["S608"]
+"sim/tests/test_sqlite_silo.py" = ["S108"]
+"sim/tests/test_transitions.py" = ["S608"]
+"src/elysium/adapters/claude_agent_sdk_adapter.py" = ["S603"]
+"src/elysium/adapters/rest_adapter.py" = ["C901", "S101"]
+"src/elysium/adapters/sqlite_adapter.py" = ["S608"]
+"src/elysium/api/addon_servers.py" = ["S603"]
+"src/elysium/api/app.py" = ["C901"]
+"src/elysium/api/auth_dependency.py" = ["S105"]
+"src/elysium/api/deprecation_alerts.py" = ["S112"]
+"src/elysium/api/live_updates.py" = ["S112"]
+"src/elysium/api/reload.py" = ["BLE001"]
+"src/elysium/api/routes.py" = ["BLE001", "C901", "S101", "S105", "S112"]
+"src/elysium/api/v2/problems.py" = ["S101"]
+"src/elysium/core/access/policy_validation.py" = ["C901"]
+"src/elysium/core/agent/agentic_loop.py" = ["C901", "S105"]
+"src/elysium/core/agent/enrichment_compiler.py" = ["S101", "S311"]
+"src/elysium/core/config.py" = ["S506"]
+"src/elysium/core/config_editing.py" = ["C901"]
+"src/elysium/core/config_history.py" = ["BLE001", "S101"]
+"src/elysium/core/declared_triggers.py" = ["C901"]
+"src/elysium/core/deployment_loader.py" = ["C901"]
+"src/elysium/core/enrichment_recipes.py" = ["S608"]
+"src/elysium/core/forecasts.py" = ["S101", "S112"]
+"src/elysium/core/frozen_sets.py" = ["S608"]
+"src/elysium/core/llm/agent_step_prompt.py" = ["C901"]
+"src/elysium/core/memory/guard.py" = ["BLE001"]
+"src/elysium/core/mirror/bronze_text.py" = ["C901"]
+"src/elysium/core/mirror/erasure.py" = ["S112"]
+"src/elysium/core/mirror/fusion.py" = ["C901"]
+"src/elysium/core/mirror/gold.py" = ["C901", "S110"]
+"src/elysium/core/mirror/gold_history.py" = ["S110"]
+"src/elysium/core/mirror/iceberg_sync.py" = ["C901", "S101"]
+"src/elysium/core/mirror/integrity.py" = ["S112"]
+"src/elysium/core/mirror/match_evaluation.py" = ["S311"]
+"src/elysium/core/mirror/openlineage.py" = ["S310"]
+"src/elysium/core/mirror/rule_suggestion_scan.py" = ["S112"]
+"src/elysium/core/mirror/source_record.py" = ["S608"]
+"src/elysium/core/mirror/source_vote.py" = ["C901"]
+"src/elysium/core/mirror/survivorship.py" = ["C901"]
+"src/elysium/core/mirror/sync_targets.py" = ["C901", "S101"]
+"src/elysium/core/modules.py" = ["C901"]
+"src/elysium/core/ontology/constraints.py" = ["C901"]
+"src/elysium/core/ontology/derived_fields.py" = ["C901", "S101"]
+"src/elysium/core/ontology/enriched_fields.py" = ["C901", "S101"]
+"src/elysium/core/ontology/field_rules.py" = ["C901"]
+"src/elysium/core/ontology/field_types.py" = ["C901"]
+"src/elysium/core/ontology/link_types.py" = ["C901"]
+"src/elysium/core/ontology/mediator.py" = ["BLE001", "C901", "S101"]
+"src/elysium/core/ontology/object_type_validation.py" = ["C901"]
+"src/elysium/core/ontology/predicted_fields.py" = ["C901", "S101"]
+"src/elysium/core/ontology/semantic_search.py" = ["S101"]
+"src/elysium/core/ontology/used_by.py" = ["C901"]
+"src/elysium/core/ontology/write_mediator.py" = ["C901", "S101"]
+"src/elysium/core/periods.py" = ["S101"]
+"src/elysium/core/predictions.py" = ["S101"]
+"src/elysium/core/source_health.py" = ["BLE001"]
+"src/elysium/core/trigger_runs.py" = ["S112"]
+"src/elysium/core/trigger_states.py" = ["C901"]
+"src/elysium/scripts/check_workers.py" = ["S113", "S603"]
+"src/elysium/scripts/create_colleague_user.py" = ["BLE001"]
+"src/elysium/scripts/create_debug_user.py" = ["BLE001", "S105"]
+"src/elysium/scripts/diagnose_slow_call.py" = ["S607"]
+"src/elysium/scripts/feature_bench.py" = ["C901"]
+"src/elysium/scripts/lint_deployment.py" = ["BLE001"]
+"src/elysium/scripts/live_world.py" = ["C901", "S310", "S603", "S608"]
+"src/elysium/scripts/llm_bench.py" = ["C901", "S101"]
+"src/elysium/scripts/module_api_report.py" = ["S603", "S607"]
+"src/elysium/scripts/mutation_test.py" = ["S603"]
+"src/elysium/scripts/run_sync.py" = ["BLE001", "C901"]
+"tests/addons/echo/server.py" = ["C901", "S104", "S105"]
+"tests/integration/test_a_merge_reviewer_sees_verdicts.py" = ["S107"]
+"tests/integration/test_addon_checks.py" = ["S314", "S603"]
+"tests/integration/test_approvals_inbox.py" = ["S107"]
+"tests/integration/test_forecast_api.py" = ["S311"]
+"tests/integration/test_graceful_shutdown.py" = ["S310"]
+"tests/integration/test_no_escalation_by_account.py" = ["S105"]
+"tests/integration/test_predicted_fields.py" = ["S311"]
+"tests/integration/test_prelogin_bounds.py" = ["S105"]
+"tests/integration/test_production_cookie_configuration.py" = ["S105"]
+"tests/integration/test_role_changes.py" = ["S603"]
+"tests/integration/test_session_tokens_hashed.py" = ["S105"]
+"tests/integration/test_teardown_and_rebuild.py" = ["S106"]
+"tests/integration/test_the_conflicts_route.py" = ["S110"]
+"tests/integration/test_the_published_history_route.py" = ["S107"]
+"tests/integration/test_unusual_records.py" = ["S311"]
+"tests/mariadb_server.py" = ["S603"]
+"tests/postgres_server.py" = ["S603"]
+"tests/unit/test_a_generation_can_serve_two_ages.py" = ["S608"]
+"tests/unit/test_a_missing_source_table.py" = ["S608"]
+"tests/unit/test_a_new_source_column_does_not_freeze.py" = ["S608"]
+"tests/unit/test_a_partial_read_does_not_overwrite.py" = ["S608"]
+"tests/unit/test_addons.py" = ["S105"]
+"tests/unit/test_card_worktree.py" = ["S603"]
+"tests/unit/test_changelog_diff_in_arrow.py" = ["S311"]
+"tests/unit/test_claude_agent_sdk_adapter.py" = ["S603", "S607"]
+"tests/unit/test_deleted_index_watermark.py" = ["S311"]
+"tests/unit/test_encrypted_backups.py" = ["S105", "S603"]
+"tests/unit/test_erasure_removed_types.py" = ["S110"]
+"tests/unit/test_find_fabricated_creates.py" = ["S603"]
+"tests/unit/test_generation_numbering.py" = ["S603"]
+"tests/unit/test_gold_is_skipped_per_type.py" = ["S608"]
+"tests/unit/test_importing_the_app_builds_nothing.py" = ["S603"]
+"tests/unit/test_lint_deployment.py" = ["S603"]
+"tests/unit/test_mac_batching.py" = ["BLE001"]
+"tests/unit/test_match_calibration.py" = ["S311"]
+"tests/unit/test_mirror_integrity.py" = ["S603", "S607"]
+"tests/unit/test_money_can_be_filtered.py" = ["S607"]
+"tests/unit/test_object_storage.py" = ["S106"]
+"tests/unit/test_object_storage_can_be_served.py" = ["S106"]
+"tests/unit/test_one_bad_type_does_not_stop_gold.py" = ["S608"]
+"tests/unit/test_password_policy.py" = ["S105"]
+"tests/unit/test_patch_scripts.py" = ["S603", "S607"]
+"tests/unit/test_pending_writes_across_processes.py" = ["S603", "S608"]
+"tests/unit/test_predictions.py" = ["S311"]
+"tests/unit/test_rest_adapter.py" = ["S105", "S106"]
+"tests/unit/test_secret_references.py" = ["S105"]
+"tests/unit/test_shared_concurrency_caps.py" = ["S603"]
+"tests/unit/test_source_column_names_are_never_sql.py" = ["BLE001", "S110", "S608"]
+"tests/unit/test_source_vote.py" = ["S311"]
+"tests/unit/test_sync_memory_stays_bounded.py" = ["S608"]
+"tests/unit/test_sync_single_writer.py" = ["S603"]
+"tests/unit/test_sync_snapshot_semantics.py" = ["BLE001"]
+"tests/unit/test_the_manifest_publishes_no_credentials.py" = ["S105"]
+"tests/unit/test_the_overlay_runs_per_type.py" = ["S608"]
+"tests/unit/test_unusual.py" = ["S311"]
+"tests/unit/test_unverifiable_hash_fails_closed.py" = ["S105"]
+"tests/unit/test_which_source_supplied_each_value.py" = ["S608"]
+"tests/unit/test_write_log_create.py" = ["S608"]
+"tests/unit/test_write_log_resume.py" = ["S608"]
+"tests/unit/test_write_path_concurrency.py" = ["BLE001"]
+# END GENERATED per-file-ignores
 
 [tool.ruff.lint.flake8-bugbear]
 # B008 ("don't call functions in argument defaults") is a real,
@@ -192,8 +377,121 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Header"]
 # checker by a major version whenever either was installed.
 files = ["src/elysium/core", "src/elysium/api", "src/elysium/adapters",
          "sdk/python", "sim/panel/server.py",
-         "sim/simulator"]
+         "sim/simulator", "tests"]
 ignore_missing_imports = true
+# `tests` has no package markers and several conftest.py files, so modules are
+# named from the directories that hold them. Only the files named above report
+# errors; what they import is followed silently.
+mypy_path = ["src", "sim", "."]
+explicit_package_bases = true
+follow_imports = "silent"
+
+# STRICT TYPING BY PACKAGE GLOB, written once (N38, N59) and never edited by a
+# card. A package that does not exist yet costs nothing; the moment it exists
+# it is strict. `foo.*` matches `foo` and everything under it.
+[[tool.mypy.overrides]]
+module = ["elysium.access.*", "elysium.query.*", "elysium.actions.*", "elysium.proposals.*",
+          "elysium.metadata.*", "elysium.resources.*", "elysium.db.*", "elysium.audit.*",
+          "elysium.jobs.*", "elysium.runner.*", "elysium.ops.*", "elysium.exports.*",
+          "elysium.cli.*", "elysium.erasure.*", "elysium.index.*", "elysium.datasets.*",
+          "elysium.connectivity.*", "elysium.automation.*", "elysium.checks.*",
+          "elysium.agent.*", "elysium.apps.*", "elysium.keys.*", "elysium.functions.*",
+          "elysium.service.*", "elysium.builtin.*", "elysium.settings", "elysium.paths",
+          "elysium.paging", "elysium.secrets", "elysium.errors", "elysium.bootstrap",
+          "elysium.logging_json", "elysium.api.v2.*"]
+# What `mypy --strict` turns on, one by one: mypy 2.3 applies a `strict = true`
+# written in an override to every module. warn_redundant_casts is global-only.
+# disallow_subclassing_any and disallow_untyped_decorators are left out: they
+# report a library's missing types, so the answer depends on whether mypy runs
+# in the environment that has the library.
+disallow_any_generics = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_return_any = true
+no_implicit_reexport = true
+strict_equality = true
+extra_checks = true
+
+# Legacy modules made strict, from quality/strict-modules.txt (it only grows):
+# tools/mypy_strict.py --write.
+# BEGIN GENERATED strict modules (tools/mypy_strict.py --write)
+[[tool.mypy.overrides]]
+module = [
+          "elysium.api",
+          "elysium.api.csrf_middleware",
+          "elysium.api.generation_header_middleware",
+          "elysium.api.request_size_limit_middleware",
+          "elysium.core",
+          "elysium.core.access",
+          "elysium.core.adapter_roles",
+          "elysium.core.agent",
+          "elysium.core.auth",
+          "elysium.core.auth.auth_cookies",
+          "elysium.core.auth.credential_store",
+          "elysium.core.auth.development_only",
+          "elysium.core.auth.limits",
+          "elysium.core.auth.password_policy",
+          "elysium.core.carried_columns",
+          "elysium.core.functions",
+          "elysium.core.immutable",
+          "elysium.core.lake_names",
+          "elysium.core.llm",
+          "elysium.core.llm.inferred_values",
+          "elysium.core.logging_config",
+          "elysium.core.memory",
+          "elysium.core.mirror",
+          "elysium.core.mirror.durability",
+          "elysium.core.mirror.object_state",
+          "elysium.core.mirror.snapshot_cache",
+          "elysium.core.ontology",
+          "elysium.core.pending_write_serialisation",
+]
+disallow_any_generics = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_return_any = true
+no_implicit_reexport = true
+strict_equality = true
+extra_checks = true
+# END GENERATED strict modules
+
+# Tests are checked for what they annotate, not for the bodies of untyped tests.
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+check_untyped_defs = false
+
+# Test modules that have typing findings today. Fixing one removes it from this
+# list; nothing is added.
+[[tool.mypy.overrides]]
+module = [
+          "tests.addons.echo.server",
+          "tests.integration.test_addon_checks",
+          "tests.integration.test_arranging_modules",
+          "tests.unit.test_a_cross_type_action_is_authorisable",
+          "tests.unit.test_a_silo_may_not_be_named_after_a_layer",
+          "tests.unit.test_agent_trace",
+          "tests.unit.test_bench_failures_are_answered",
+          "tests.unit.test_caller_cannot_choose_a_compartment",
+          "tests.unit.test_enriched_fields",
+          "tests.unit.test_filters",
+          "tests.unit.test_gold_streaming",
+          "tests.unit.test_guard_call_sites_are_covered",
+          "tests.unit.test_pending_write_round_trips_real_types",
+          "tests.unit.test_pipeline_values_are_not_written_back",
+          "tests.unit.test_policy_validation",
+          "tests.unit.test_proposer_grant_is_rechecked",
+          "tests.unit.test_step_vocabulary_consistency",
+          "tests.unit.test_trigger_recipients",
+          "tests.unit.test_unknown_field_rejection",
+          "tests.unit.test_write_path_uses_the_chokepoint",
+]
+ignore_errors = true
 
 [tool.vulture]
 paths = ["src", "tests",
@@ -783,3 +1081,12 @@ forbidden_modules = ["simulator.silos"]
 # with it present pytest reads nothing of this file's -- it says
 # "ignoring pytest config in pyproject.toml!". A section here was ignored
 # for weeks (pytest.ini, tmp_path_retention_policy).
+
+[tool.coverage.run]
+branch = true
+source = ["src/elysium"]
+# Measured only; the gate is QA-COV.
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true

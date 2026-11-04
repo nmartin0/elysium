@@ -21,6 +21,8 @@ model -- the tool's own spec was underspecified, independent of which
 model is calling it.
 """
 
+from typing import Any
+
 
 class LinearRegressionFunction:
     name = "linear_regression"
@@ -47,7 +49,7 @@ class LinearRegressionFunction:
         "y_values": {"type": "list[float]", "description": "Dependent variable values, same length as x_values"},
     }
 
-    def run(self, x_values: list[float], y_values: list[float]) -> dict:
+    def run(self, x_values: list[float], y_values: list[float]) -> dict[str, Any]:
         # Explicit type check, not left to leak as a raw TypeError from
         # sum() -- this tool's own docstring promises ValueError on any
         # invalid input; a bare TypeError (observed for real: a model

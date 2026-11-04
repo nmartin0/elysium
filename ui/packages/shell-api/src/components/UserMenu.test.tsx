@@ -93,7 +93,7 @@ describe('UserMenu -- opening and closing', () => {
   // in a real waitFor (2 real seconds, not a synchronous check that
   // could plausibly just be "too soon"), the menu never closes in
   // this jsdom environment. This is the same real, confirmed jsdom
-  // gap already documented in blueprint-smoke.test.tsx (jsdom does
+  // gap already documented in toolkit-smoke.test.tsx (jsdom does
   // not simulate real focus-into-overlay the way autoFocus assumes) --
   // to be confirmed live, in a real browser, at this feature's own
   // live-verification checkpoint, not asserted here against an

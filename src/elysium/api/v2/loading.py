@@ -78,10 +78,10 @@ def checked_select(view: SchemaView, object_type: str, select: tuple[str, ...],
     return [title] if title else []
 
 
-def row_of(call: Call, object_type: str, object_id: Any, fields: list[str]) -> dict:
+def row_of(call: Call, object_type: str, object_id: Any, fields: list[str]) -> dict[str, Any]:
     """One row. Each property is read through get_object(), so each is
     its own check_access() on the field and the object."""
-    properties: dict = {}
+    properties: dict[str, Any] = {}
     if fields:
         declared = (call.mediator.schema.get(object_type) or {}).get("fields") or {}
         properties = exact_decimals(
@@ -101,7 +101,7 @@ def evaluated_set(call: Call, view: SchemaView, prepared: Prepared) -> Evaluated
 
 def load_page(call: Call, node: ObjectSet, raw_query: Any, *, order_by: tuple[OrderTerm, ...],
               select: tuple[str, ...], page_size: int | None, page_token: str | None,
-              default_all: bool = False) -> dict:
+              default_all: bool = False) -> dict[str, Any]:
     """One page of a set. `raw_query` is whatever identifies the query
     (the wire form of the set, ordering and selection): a page token is
     bound to it."""
@@ -128,7 +128,7 @@ def load_page(call: Call, node: ObjectSet, raw_query: Any, *, order_by: tuple[Or
         page = ids[offset:offset + size]
         rows = [row_of(call, object_type, object_id, fields) for object_id in page]
 
-    body: dict = {"data": rows, "totalCount": len(ids), "scanTruncated": evaluated.scan_truncated,
+    body: dict[str, Any] = {"data": rows, "totalCount": len(ids), "scanTruncated": evaluated.scan_truncated,
                   "requestId": call.context.request_id}
     if offset + size < len(ids):
         body["nextPageToken"] = paging.issue(key, call.user.user_id, query, offset + size)

@@ -11,7 +11,8 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 @pytest.mark.live
 def test_wheel_contains_the_built_ui(tmp_path):
-    subprocess.run(["uv", "build", "--wheel", "--out-dir", str(tmp_path)], cwd=ROOT, check=True)
+    subprocess.run(  # noqa: S603, S607 -- fixed command
+        ["uv", "build", "--wheel", "--out-dir", str(tmp_path)], cwd=ROOT, check=True)  # noqa: S607 -- fixed command
 
     (wheel,) = tmp_path.glob("elysium-*.whl")
     names = zipfile.ZipFile(wheel).namelist()

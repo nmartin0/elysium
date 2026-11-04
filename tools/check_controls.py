@@ -236,7 +236,7 @@ def run(control: Control) -> tuple[str, str]:
     """Run the control's tests, expecting them to fail: (FIRES|SILENT|BROKEN, output)."""
     # No bytecode written from broken code: two breaks of one file that change its size
     # by the same amount within a second would otherwise run the first break's .pyc.
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S603 -- our own interpreter, test ids from controls/
         [sys.executable, "-m", "pytest", *control.tests, "-q", "--no-header", "-x"],
         cwd=ROOT, capture_output=True, text=True, check=False,
         env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
@@ -277,6 +277,95 @@ def coverage(resolved: list[tuple[Control, str, list[str]]]) -> tuple[str, bool]
     return "\n".join(["invariant coverage:", *rows]), ok
 
 
+def _selected(args: argparse.Namespace, everything: list[Control]) -> list[Control]:
+    return [c for c in everything
+            if (not args.area or c.area == args.area)
+            and (not args.card or c.card == args.card)
+            and (not args.kind or c.kind == args.kind)
+            and (not args.only or args.only.lower() in c.describes.lower())]
+
+
+def _moves_report(args: argparse.Namespace, moved: list[tuple[Control, str]],
+                  unresolved: list[tuple[Control, str, list[str]]]) -> int:
+    for control, new_path in moved:
+        print(f"  MOVED      {describe_problem(control, MOVED, [new_path])}")
+    for control, status, paths in unresolved:
+        print(f"  {status:<10} {describe_problem(control, status, paths)}")
+    if args.rewrite_paths and moved:
+        for file in sorted({c.file for c, _ in moved}):
+            mine = {c.id: p for c, p in moved if c.file == file}
+            text, count = rewrite_paths(Path(file).read_text(), mine)
+            Path(file).write_text(text)
+            print(f"rewrote {count} path(s) in {file}")
+    elif not moved and not unresolved:
+        print("every control's anchor is where it says.")
+    return 1 if unresolved or (moved and not args.rewrite_paths) else 0
+
+
+def _fire(control: Control, new_paths: dict[str, str]) -> tuple[str, str, Control]:
+    if control.id in new_paths:
+        control = replace(control, path=new_paths[control.id])
+    original = apply(control)
+    try:
+        outcome, output = run(control)
+    finally:
+        (ROOT / control.path).write_text(original)
+        IN_PROGRESS.unlink(missing_ok=True)
+    return outcome, output, control
+
+
+def _print_outcome(outcome: str, output: str, control: Control, moved: bool) -> None:
+    label = f"{control.id} {control.describes}"
+    if outcome == FIRES and moved:
+        print(f"  MOVED   {label} (now {control.path}; run --rewrite-paths)")
+    elif outcome == FIRES:
+        print(f"  fires   {label}")
+    elif outcome == BROKEN:
+        print(f"  BROKEN  {label}")
+        print(f"          {output.splitlines()[0] if output else ''}")
+        print("          this does NOT show the tests notice the break")
+    else:
+        print(f"  SILENT  {label}")
+        print(f"          broke {control.path} and the tests still passed")
+        print(f"          {output.splitlines()[-1] if output else ''}")
+
+
+def _fire_all(controls: list[Control], resolved: list[tuple[Control, str, list[str]]]) -> int:
+    moved = [(c, p[0]) for c, status, p in resolved if status == MOVED]
+    unresolved = [(c, status, p) for c, status, p in resolved if status in (RETIRED, AMBIGUOUS)]
+    new_paths = {c.id: p for c, p in moved}
+    skipped = {c.id for c, _, _ in unresolved}
+    counts = {FIRES: 0, SILENT: 0, BROKEN: 0}
+    for control in controls:
+        if control.id in skipped:
+            continue
+        outcome, output, broken_as = _fire(control, new_paths)
+        _print_outcome(outcome, output, broken_as, control.id in new_paths)
+        if control.id not in new_paths or outcome != FIRES:
+            counts[outcome] += 1
+
+    print()
+    for control, status, paths in unresolved:
+        print(f"  {status:<9} {describe_problem(control, status, paths)}")
+    if moved:
+        print(f"{len(moved)} control(s) moved: their path is stale. Run with --rewrite-paths.")
+    if unresolved:
+        print(f"{len(unresolved)} control(s) were not run: their anchor vanished or is ambiguous, "
+              f"which needs an explicit decision.")
+    if counts[BROKEN]:
+        print(f"{counts[BROKEN]} control(s) could not be run: pytest did not report a failed test, "
+              f"so nothing is known about them.")
+    if counts[SILENT]:
+        print(f"{counts[SILENT]} control(s) did not fire. Either the break is not the break it claims, "
+              f"or the tests do not check what they appear to -- and it is usually the second.")
+    print(f"fired {counts[FIRES]} of {len(controls)}; silent {counts[SILENT]}, broken {counts[BROKEN]}, "
+          f"moved {len(moved)}, retired or ambiguous {len(unresolved)}")
+    if counts[SILENT] or counts[BROKEN] or moved or unresolved:
+        return 1
+    print(f"All {len(controls)} controls fire.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Check that the negative controls actually fire.")
     parser.add_argument("--area")
@@ -297,11 +386,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as error:
         print(f"controls: {error}", file=sys.stderr)
         return 2
-    controls = [c for c in everything
-                if (not args.area or c.area == args.area)
-                and (not args.card or c.card == args.card)
-                and (not args.kind or c.kind == args.kind)
-                and (not args.only or args.only.lower() in c.describes.lower())]
+    controls = _selected(args, everything)
     if not controls:
         if args.card and not (args.area or args.kind or args.only):
             print(f"card {args.card} has no controls")
@@ -310,83 +395,18 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     resolved = resolve_all(controls)
-    moved = [(c, p[0]) for c, status, p in resolved if status == MOVED]
-    unresolved = [(c, status, p) for c, status, p in resolved if status in (RETIRED, AMBIGUOUS)]
-
     if args.summary:
         print(summary(controls, resolved))
-        return 1 if unresolved else 0
+        return 1 if any(s in (RETIRED, AMBIGUOUS) for _, s, _ in resolved) else 0
     if args.coverage:
         text, ok = coverage(resolve_all(everything))
         print(text)
         return 0 if ok else 1
     if args.report_moves or args.rewrite_paths:
-        for control, new_path in moved:
-            print(f"  MOVED      {describe_problem(control, MOVED, [new_path])}")
-        for control, status, paths in unresolved:
-            print(f"  {status:<10} {describe_problem(control, status, paths)}")
-        if args.rewrite_paths and moved:
-            for file in sorted({c.file for c, _ in moved}):
-                mine = {c.id: p for c, p in moved if c.file == file}
-                text, count = rewrite_paths(Path(file).read_text(), mine)
-                Path(file).write_text(text)
-                print(f"rewrote {count} path(s) in {file}")
-        elif not moved and not unresolved:
-            print("every control's anchor is where it says.")
-        return 1 if unresolved or (moved and not args.rewrite_paths) else 0
-
-    new_paths = {c.id: p[0] for c, status, p in resolved if status == MOVED}
-    skipped = {c.id for c, _, _ in unresolved}
-    silent, broken = [], []
-    fired = 0
-    for control in controls:
-        if control.id in skipped:
-            continue
-        if control.id in new_paths:
-            control = replace(control, path=new_paths[control.id])
-        original = apply(control)
-        try:
-            outcome, output = run(control)
-        finally:
-            (ROOT / control.path).write_text(original)
-            IN_PROGRESS.unlink(missing_ok=True)
-        label = f"{control.id} {control.describes}"
-        if outcome == FIRES and control.id in new_paths:
-            print(f"  MOVED   {label} (now {control.path}; run --rewrite-paths)")
-        elif outcome == FIRES:
-            fired += 1
-            print(f"  fires   {label}")
-        elif outcome == BROKEN:
-            broken.append(control)
-            print(f"  BROKEN  {label}")
-            print(f"          {output.splitlines()[0] if output else ''}")
-            print("          this does NOT show the tests notice the break")
-        else:
-            silent.append(control)
-            print(f"  SILENT  {label}")
-            print(f"          broke {control.path} and the tests still passed")
-            print(f"          {output.splitlines()[-1] if output else ''}")
-
-    print()
-    for control, status, paths in unresolved:
-        print(f"  {status:<9} {describe_problem(control, status, paths)}")
-    if moved:
-        print(f"{len(moved)} control(s) moved: their path is stale. Run with --rewrite-paths.")
-    if unresolved:
-        print(f"{len(unresolved)} control(s) were not run: their anchor vanished or is ambiguous, "
-              f"which needs an explicit decision.")
-    if broken:
-        print(f"{len(broken)} control(s) could not be run: pytest did not report a failed test, "
-              f"so nothing is known about them.")
-    if silent:
-        print(f"{len(silent)} control(s) did not fire. Either the break is not the break it claims, "
-              f"or the tests do not check what they appear to -- and it is usually the second.")
-    print(f"fired {fired} of {len(controls)}; silent {len(silent)}, broken {len(broken)}, "
-          f"moved {len(moved)}, retired or ambiguous {len(unresolved)}")
-    if silent or broken or moved or unresolved:
-        return 1
-    print(f"All {len(controls)} controls fire.")
-    return 0
+        moved = [(c, p[0]) for c, status, p in resolved if status == MOVED]
+        unresolved = [(c, status, p) for c, status, p in resolved if status in (RETIRED, AMBIGUOUS)]
+        return _moves_report(args, moved, unresolved)
+    return _fire_all(controls, resolved)
 
 
 if __name__ == "__main__":

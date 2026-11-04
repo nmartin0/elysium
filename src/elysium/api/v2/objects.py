@@ -14,7 +14,7 @@ words. (The existing /api/objects/{type}/{id} answers an object it will
 not show with nulls; this surface answers 404, as precedent does.)
 """
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
 
@@ -38,7 +38,7 @@ router = APIRouter()
 @router.get("/objects/{object_type}")
 def list_objects(object_type: str, c: Call = Depends(call), pageSize: int | None = None,
                  pageToken: str | None = None, select: Annotated[list[str] | None, Query()] = None,
-                 orderBy: str | None = None) -> dict:
+                 orderBy: str | None = None) -> dict[str, Any]:
     with translated():
         order_by = parse_order_by_text(orderBy)
     return load_page(c, Base(object_type), {"list": object_type}, order_by=order_by,
@@ -47,7 +47,7 @@ def list_objects(object_type: str, c: Call = Depends(call), pageSize: int | None
 
 @router.get("/objects/{object_type}/{primary_key}")
 def get_object(object_type: str, primary_key: str, c: Call = Depends(call),
-               select: Annotated[list[str] | None, Query()] = None) -> dict:
+               select: Annotated[list[str] | None, Query()] = None) -> dict[str, Any]:
     with security_cache_scope(), translated():
         view, prepared = prepared_set(c, Static(object_type, (primary_key,)))
         fields = checked_select(view, object_type, split_csv(select), default_all=True)

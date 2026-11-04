@@ -6,8 +6,9 @@
 # in the chosen mode, or whose tool does not exist yet, is listed as
 # "skipped" and counts as passed.
 #
-#   --fast   (default) ruff, mypy, vulture, import-linter, lock check,
-#            comment lint, diffsize (report only), the unit tests (or,
+#   --fast   (default) ruff and its baseline, mypy and its strict-module list,
+#            the name guard, vulture, import-linter, the lock check, comment
+#            lint, diffsize (report only), the unit tests (or,
 #            with -k, the tests matching EXPR), the controls' anchors
 #            and the UI lint.
 #   --full   the same with every test, every control fired, and vitest before the UI lint.
@@ -92,16 +93,15 @@ elif [ "$mode" = area ]; then
     step "controls:$area" 'python tools/check_controls.py --area "$CHECK_AREA"'
 else
     step ruff "ruff check"
+    step ruff-baseline "python tools/ruff_baseline.py --check"
     step mypy "mypy"
+    step strict-modules "python tools/mypy_strict.py --check"
+    step names "python tools/name_guard.py --tree"
     step vulture "vulture"
     step lock-files "uv lock --check"
     step import-linter 'PYTHONPATH="$PYTHONPATH:sim" lint-imports'
 
-    if [ -f tools/lint_comments.py ]; then
-        step comments "python tools/lint_comments.py --check"
-    else
-        skip comments
-    fi
+    step comments "python tools/lint_comments.py --check"
 
     if [ -f tools/diffsize.py ]; then
         # Report only: the commit-msg hook is what refuses an oversized commit.

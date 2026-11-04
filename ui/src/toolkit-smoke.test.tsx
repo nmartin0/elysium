@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { Button, Menu, MenuItem, OverlaysProvider, PopoverNext } from '@blueprintjs/core'
 
-// blueprint-smoke.test.tsx  (verification-only, NOT a real app feature)
+// toolkit-smoke.test.tsx  (verification-only, NOT a real app feature)
 //
 // This step's own real question was never "does `npm install` exit
 // 0" -- it was "does @blueprintjs/core's own React 19 support

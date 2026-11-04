@@ -14,7 +14,7 @@ class UiBuildHook(BuildHookInterface):
             return
         root = Path(self.root)
         for directory in ("shell", "ui"):
-            subprocess.run(["npm", "ci"], cwd=root / directory, check=True)
-        subprocess.run(["npm", "run", "build"], cwd=root / "ui", check=True)
+            subprocess.run(["npm", "ci"], cwd=root / directory, check=True)  # noqa: S603, S607 -- fixed command
+        subprocess.run(["npm", "run", "build"], cwd=root / "ui", check=True)  # noqa: S603, S607 -- fixed command
         if not (root / "ui" / "dist" / "index.html").is_file():
             raise RuntimeError("the UI build produced no ui/dist/index.html")

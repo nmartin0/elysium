@@ -10,8 +10,8 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 def run_check(tmp_path: Path, steps: list[tuple[str, str]], *args: str):
     steps_file = tmp_path / "steps.tsv"
     steps_file.write_text("".join(f"{name}\t{cmd}\n" for name, cmd in steps))
-    return subprocess.run(
-        ["bash", str(ROOT / "check.sh"), *args],
+    return subprocess.run(  # noqa: S603 -- fixed command
+        ["bash", str(ROOT / "check.sh"), *args],  # noqa: S607 -- fixed command
         capture_output=True,
         text=True,
         env={**os.environ, "CHECK_SH_STEPS_FILE": str(steps_file)},
@@ -61,8 +61,8 @@ def test_every_built_in_step_can_fail_the_script():
 
 
 def test_an_area_runs_only_that_areas_controls(tmp_path):
-    result = subprocess.run(
-        ["bash", str(ROOT / "check.sh"), "--area", "nonesuch"],
+    result = subprocess.run(  # noqa: S603 -- fixed command
+        ["bash", str(ROOT / "check.sh"), "--area", "nonesuch"],  # noqa: S607 -- fixed command
         capture_output=True, text=True, check=False)
 
     assert result.returncode == 1
@@ -71,6 +71,7 @@ def test_an_area_runs_only_that_areas_controls(tmp_path):
 
 
 def test_area_needs_a_name():
-    result = subprocess.run(["bash", str(ROOT / "check.sh"), "--area"], capture_output=True, text=True, check=False)
+    result = subprocess.run(  # noqa: S603 -- fixed command
+        ["bash", str(ROOT / "check.sh"), "--area"], capture_output=True, text=True, check=False)  # noqa: S607 -- fixed command
 
     assert result.returncode == 2
