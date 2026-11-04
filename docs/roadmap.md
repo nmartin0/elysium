@@ -656,7 +656,8 @@ docs/
   reference/                 generated (DOC-03)
   operator/  addons/         written by DOC-02a..c, DOC-07
 src/elysium/                 the package (target packages in C-LAYERS)
-tests/                       unit/ cli/ api/ (T0.3) property/ (QA-PROP) integration/ support/ (MEAS-5) fixtures/ (T0.3)
+tests/                       unit/ cli/ api/ (T0.3) property/ (QA-PROP) integration/ support/ (MEAS-5) fixtures/ (T0.3);
+                             per subsystem <pkg>/{contract,e2e,fuzz}/ (N91; QA-FUZZ-*)
 ui/                          one SPA from T0.11 (ui/src/apps/<id>/, ui/src/admin/, ui/e2e/)
 tools/                       T0.1's scripts, tools/measure/, tools/smoke/, tools/release/, tools/elysium_dev/ (CLI-DEV-a)
 controls/  quality/  .githooks/  .claude/   (T0.1)
@@ -902,7 +903,9 @@ Every state-changing command prints what changed and the web-UI URL of it.
   hand-merged. New code is strict by package glob; no card edits a typing
   list.
 - Test markers come from the directory (`tests/unit` fast, `tests/api` api,
-  `tests/integration` lake); a card writes its tests where its card says.
+  `tests/integration` lake, and per subsystem `tests/<pkg>/contract` fast,
+  `tests/<pkg>/e2e` lake, `tests/<pkg>/fuzz` fuzz, N91); a card writes its
+  tests where its card says.
 - Dependencies: `uv add PKG` (or `uv add --optional EXTRA PKG`), commit
   `pyproject.toml` and `uv.lock` together; on a lock conflict, run `uv lock`
   again, never hand-merge.
@@ -911,8 +914,12 @@ Every state-changing command prints what changed and the web-UI URL of it.
 
 ### C-LAYERS · Layers, registries and the composition root (T0.1B)
 
-The two contracts and the layer table of step 2 (N48);
-the registry rule (registries low, kinds in the lowest package that can
+The three contracts (`target-layers`, `api-reaches-only-facades`,
+`front-doors`) and the layer table of step 2 (N48, N91, which adds
+`connectivity` below `datasets` below `index`); every package's one front door,
+`elysium.<pkg>.api`, and the rule that other packages import nothing deeper;
+the placement of the legacy `core/mirror` and `adapters` code below; the
+registry rule (registries low, kinds in the lowest package that can
 import what they need, discovery in `elysium.bootstrap`; `actions` never
 imports `proposals`; `jobs` never imports a kind; the four kind-directory
 wildcards); `elysium.bootstrap` as the only wiring module, with
@@ -921,6 +928,39 @@ wildcards); `elysium.bootstrap` as the only wiring module, with
 `api/v2/resources/*.py` and `cli/commands/*.py` once per process;
 `deployment_types` as the pure type module; the shrinking ignore list.
 Every later item that removes an ignored edge removes its line.
+
+**Placement of the legacy `core/mirror` and `adapters` code (N91; T0.8 step 2
+does the move, T0.7 step 4 creates `datasets/lake.py` first).** A module goes
+to `connectivity` when it opens a connection to a source system, reports its
+health or reads its tables; to `datasets` when it reads or writes the lake's
+tables, snapshots, branches or transactions; to `index` when it turns sources
+and edits into objects. Named by the audit of 3 November 2026:
+- `connectivity` (`src/elysium/connectivity/`): from `adapters`,
+  `sqlalchemy_adapter.py`, `csv_folder_adapter.py`, `rest_adapter.py` and
+  `http_transport.py` (as `sqlalchemy.py`, `csv_folder.py`, `rest.py`,
+  `http.py`); from `core/mirror`, `incremental.py` (reading only what changed
+  at the source). `sqlite_adapter.py` is deleted (D16). The LLM adapters
+  (`ollama_adapter.py`, `vllm_adapter.py`, `embedding_adapter.py`,
+  `claude_agent_sdk_adapter.py`) are not source connections and stay in
+  `adapters` until REF-LLM and T0.15 settle them.
+- `datasets` (`src/elysium/datasets/`): `lake.py` (T0.7), and from
+  `core/mirror` `catalog.py`, `iceberg_reader.py`, `iceberg_sync.py` (its
+  table-writing half; the half that plans what to write goes to `index`),
+  `changelog.py`, `gold_history.py`, `gold_arrow.py`, `gold_stream.py`,
+  `snapshot_cache.py`, `durability.py`, `lake_permissions.py`,
+  `mirror_adapter.py` (the reader of the local lake) and `sync_lock.py` until
+  T0.8 step 4 replaces it with the single-writer lock.
+- `index` (`src/elysium/index/`): everything else in `core/mirror`: the
+  pipeline and its phases, `gold.py`, `gold_connector.py`, `gold_conflicts.py`,
+  `gold_provenance.py`, matching, identity, survivorship, standardise,
+  transform, fusion, `source_vote.py`, `source_record.py`, classifications,
+  quarantine, lineage and `openlineage.py`, `data_contracts.py`, `manifest.py`,
+  `freshness.py`, `integrity.py`, `reconcile.py`, `profiles.py`,
+  `sync_targets.py`, `sync_attempts.py`, `drift_policy.py`,
+  `health_condition.py`, `interface.py`, `object_state.py`.
+A module not named here is placed by the three definitions and listed with its
+destination in the commit message. A module that straddles two (as
+`iceberg_sync.py` does) is split in its own commit before it moves.
 
 <a id="c-builders"></a>
 
@@ -1347,7 +1387,7 @@ time-out, never a count). No index until a measurement asks for one
 @dataclass(frozen=True) class ErasureReport: store: str; deleted: Mapping[str, int]; widened: bool          # widened: the never-narrow rule erased more than the subject's own rows
 def erasable(store: str, *, subject_columns: Mapping[str, str]) -> Callable   # @erasable("saved_views", subject_columns={"owner_id": "user"}) on a class implementing Erasable
 class Erasable(Protocol): def plan(self, subject: SubjectKey) -> ErasurePlan; def erase(self, subject: SubjectKey) -> ErasureReport
-# src/elysium/index/lake.py
+# src/elysium/datasets/lake.py
 class Layer(Enum): BRONZE; CHANGELOG; GOLD; GOLD_HISTORY   # (+ SILVER if D9 keeps it)
 def identifier(layer: Layer, name: str) -> tuple[str, str]; def layer_of(identifier) -> Layer; def iter_tables(catalog, layer: Layer | None = None) -> Iterator[TableRef]
 ```
@@ -1514,7 +1554,7 @@ owner's answer to Q-KEY picks one; nothing below is built before it.
   cannot check). Either way the master key itself is never in a backup and
   never leaves the secrets directory except wrapped.
 
-`elysium.index.crypto.EncryptingFileIO` (`py-io-impl`);
+`elysium.datasets.crypto.EncryptingFileIO` (`py-io-impl`);
 `elysium.keys.master_key(settings) -> bytes` (raises `SecretUnavailable`);
 `elysium.keys.recovery.export(passphrase) -> bytes`, `.import_(blob,
 passphrase)`; candidate A adds `elysium.keys.recovery.create() -> str`
@@ -1920,7 +1960,8 @@ registry, N63);
 Tier 0 is the work every card stands on. One worker does one item at a time,
 in the order below, one numbered step per commit; the next step starts when
 the previous step's acceptance passes. T0.9 is post-1.0 (N73): skip it, no
-1.0 item depends on it. Each item makes the contracts its
+1.0 item depends on it. Every package an item creates gets its front door,
+`<pkg>/api.py`, in the same commit (N91, C-LAYERS). Each item makes the contracts its
 header names true (section 3); later cards build on those contracts without
 redesign. A Tier 0 step is taken like a card (section 1): its own worktree
 and branch `card/T0.n-<step>`, the brief, the trailer `Card: T0.n step k`. Line-level evidence for each item
@@ -2079,7 +2120,8 @@ Contracts: [C-GATES](#c-gates).
      "elysium.resources.*", "elysium.db.*", "elysium.audit.*",
      "elysium.jobs.*", "elysium.runner.*", "elysium.ops.*",
      "elysium.exports.*", "elysium.cli.*", "elysium.erasure.*",
-     "elysium.index.*", "elysium.automation.*", "elysium.checks.*",
+     "elysium.index.*", "elysium.datasets.*", "elysium.connectivity.*",
+     "elysium.automation.*", "elysium.checks.*",
      "elysium.agent.*", "elysium.apps.*", "elysium.keys.*",
      "elysium.functions.*", "elysium.service.*", "elysium.builtin.*",
      "elysium.settings", "elysium.paths", "elysium.paging", "elysium.secrets", "elysium.errors",
@@ -2143,14 +2185,29 @@ Contracts: [C-GATES](#c-gates).
      `tests/unit/test_hooks.py::test_pre_commit_refuses_vendor_name`,
      `tests/unit/test_commit_msg_check.py::test_missing_card_trailer_refused`,
      `::test_unknown_trailer_refused`.
-  6. **Pytest markers by directory (N58).** `fast`, `api`,
-     `lake`, `live` registered in `pytest.ini`; `tests/conftest.py::
+  6. **Pytest markers by directory (N58, N91).** `fast`, `api`, `lake`,
+     `fuzz`, `live` registered in `pytest.ini`; `tests/conftest.py::
      pytest_collection_modifyitems` adds them by path: `tests/unit/`,
      `tests/cli/`, `tests/property/` -> `fast`; `tests/api/` -> `api`;
-     `tests/integration/` -> `lake`; a test explicitly marked `live` keeps
-     only `live`. No test moves directory, ever; CI-07 splits the matrix with
-     `-m`. Accept: `tests/unit/test_markers_by_directory.py` (a fixture tree
-     collects with the expected markers).
+     `tests/integration/` -> `lake`; and the per-subsystem layout of N91,
+     `tests/<pkg>/` for each package of the layer table, in three directories:
+     `contract/` (calls only the front door `elysium.<pkg>.api`; `fast`),
+     `e2e/` (the subsystem end to end: the real package over the real layers
+     below it, a temporary state directory, no HTTP client and no UI; `lake`)
+     and `fuzz/` (Hypothesis stateful tests against a small reference model;
+     `fuzz`, run by `./check.sh --full` under the Hypothesis profile `full`:
+     `derandomize=True`, 100 examples, and excluded from `--fast`). The most
+     specific path wins (`tests/api/fuzz/` is `fuzz`, not `api`); a test
+     explicitly marked `live` keeps only `live`. The item that creates a
+     package's front door writes `tests/<pkg>/contract/test_front_door.py`
+     (the names and signatures it exports; its refusals are uniform); the
+     e2e and fuzz suites of `query`, `actions` and `metadata` and the
+     Schemathesis run of the HTTP layer are QA-FUZZ-QUERY, QA-FUZZ-ACTIONS,
+     QA-FUZZ-METADATA and QA-FUZZ-HTTP. No existing test moves directory,
+     ever; the integrator selects with `-m` (CI-07, post-1.0, would split a
+     matrix the same way). Accept: `tests/unit/test_markers_by_directory.py`
+     (a fixture tree collects with the expected markers, including
+     `tests/foo/fuzz/` -> `fuzz` and `tests/api/fuzz/` -> `fuzz`).
   7. **Planning and hand-off scripts** (N66). (a) `tools/plan_check.py`:
      parses every `card` header block of `docs/roadmap.md` (section 1.2's
      format; a block counts only when it directly follows a `#### <card id> ·`
@@ -2194,7 +2251,8 @@ Contracts: [C-GATES](#c-gates).
 - **Preconditions.** S1 (done), DOC-00, DOC-05a.
 - **Out of scope.** Pruning controls (REF-19); running mutmut (QA-MUT);
   fixing the baselined ruff, comment or typing findings (they burn down with
-  each item and in QA-*). There is no tests directory split (N58).
+  each item and in QA-*). No existing test moves directory (N58); N91 adds new
+  per-subsystem directories `tests/<pkg>/{contract,e2e,fuzz}/` (step 6).
 - **Contract.** [C-GATES](#c-gates) (section 3).
 
 ### T0.1B Architecture contracts, import cycles, composition root
@@ -2209,6 +2267,7 @@ depends: T0.1
 contracts: C-LAYERS
 owns:
   - tools/import_graph.py
+  - tools/import_contracts.py
   - src/elysium/bootstrap.py
   - src/elysium/core/deployment_types.py
   - src/elysium/core/deployment_loader.py
@@ -2237,24 +2296,32 @@ Contracts: [C-LAYERS](#c-layers).
      top to bottom; `|` separates independent siblings (they may not import
      each other), `:` siblings that may:
      ```text
-     L10 bootstrap | runner
-     L9  cli | api | service
-     L8  apps | agent | automation | functions | ops | exports
-     L7  jobs
-     L6  proposals
-     L5  actions
-     L4  query
-     L3  index | audit
+     L12 bootstrap | runner
+     L11 cli | api | service
+     L10 apps | agent | automation | functions | ops | exports
+     L9  jobs
+     L8  proposals
+     L7  actions
+     L6  query
+     L5  index | audit
+     L4  datasets
+     L3  connectivity
      L2  erasure | checks
      L1  access
      L0  metadata
      L-1 resources : db : keys : secrets : settings : paths : paging : errors : logging_json : builtin : init_templates
      ```
-     (`erasure` is below `index` because the lake's `Erasable` lives in
-     `index` and registers into `erasure`; the erasure job reaches `index`
-     through the kind-directory wildcard. `checks` is below `index` because
-     the pipeline stages call `checks.run`; a quarantine reaches `actions`
-     through the `system_action` outbox row.)
+     (N91 splits the legacy `core/mirror` and `adapters` along the precedent's
+     subsystems. `connectivity` holds the connections to source systems, their
+     health and their table reads and knows nothing of the lake; `datasets` is
+     the lake (tables, snapshots, branches, transactions) and knows nothing of
+     sources or objects; `index` (sources plus edits into objects) is built on
+     both and sits above `datasets`, which sits above `connectivity`. `erasure`
+     is below `datasets` because the lake's `Erasable` lives in `datasets` and
+     registers into `erasure`; the erasure job reaches `index` through the
+     kind-directory wildcard. `checks` is below `index` because the pipeline
+     stages call `checks.run`; a quarantine reaches `actions` through the
+     `system_action` outbox row.)
      plus `core` and `adapters` (legacy) outside the contract until QA-ARCH.
      Packages that do not exist yet are written as optional layers
      (`"(elysium.query)"`; import-linter 2.15 is installed and supports them);
@@ -2268,9 +2335,9 @@ Contracts: [C-LAYERS](#c-layers).
      - `actions` never imports `proposals`. `actions.apply(..., mode=
        "execute")` returns `ApplyResult(status="needs_proposal", plan,
        policy)` when the policy says stage (N49); the caller (an API route,
-       the agent, an automation, all at L8-L9) calls `proposals.submit(...,
+       the agent, an automation, all at L10-L11) calls `proposals.submit(...,
        kind="action", ...)`. `proposals/kinds/action.py` imports `actions`
-       (L6 over L5) to apply an approved proposal.
+       (L8 over L7) to apply an approved proposal.
      - `jobs` defines `@job_kind`, `submit`, the queue and the runner loop
        and imports no kind. Every job kind is `src/elysium/jobs/kinds/<kind>.py`
        (the paths the cards own) and may import upward through exactly one
@@ -2285,12 +2352,13 @@ Contracts: [C-LAYERS](#c-layers).
        args, owner})` in the approval's unit of work, and the runner's
        handler `jobs/outbox.py::start_job` submits it (idempotent on the
        key).
-     - `index` (pipeline, lake) is below `query` (the reader reads gold
-       through `index.lake`) and never imports `query`, `actions` or `jobs`;
+     - `index` (the pipeline) and `datasets` (the lake) are below `query` (the
+       reader reads gold through `datasets.api`) and never import `query`,
+       `actions` or `jobs`;
        its quarantine and retire effects reach `actions` through an outbox
-       row (`db.outbox`, kind `system_action`) handled at L5 by
+       row (`db.outbox`, kind `system_action`) handled at L7 by
        `actions/system.py`.
-     - `audit` is L3: anything above may record; `audit` imports only `db`,
+     - `audit` is L5: anything above may record; `audit` imports only `db`,
        `paths`, `settings`.
      - `api.v2.context.Call` is constructed in `api`; packages below `api`
        take a `Principal` plus explicit arguments, never a `Call` (the
@@ -2306,13 +2374,35 @@ Contracts: [C-LAYERS](#c-layers).
      `elysium.core.notifications`, `elysium.core.role_store`,
      `elysium.core.role_impact`; nor `elysium.adapters`; nor (from T0.6B)
      `elysium.core.ontology.mediator`, `elysium.query.reader`,
-     `elysium.index`, `elysium.db` (routes use facades: `query`, `actions`,
+     `elysium.index`, `elysium.datasets`, `elysium.connectivity`,
+     `elysium.db` (routes use facades: `query`, `actions`,
      `proposals`, `jobs`, `audit`, `metadata.versions`, `ops.*`). Today's
-     edges go in `ignore_imports`. Both contracts set
-     `unmatched_ignore_imports_alerting = "error"`, so a fixed edge must leave
-     the list. `quality/contracts-ignores.txt` holds the count;
-     `tests/unit/test_import_contracts_shrink.py` fails when the count grows.
-     Accept: `lint-imports` passes; the test fails when an ignore is added.
+     edges go in `ignore_imports`.
+     **Front doors (N91).** Contract `front-doors`: every package of the layer
+     table above L-1 except `bootstrap`, `runner`, `cli` and `api` has one
+     public front door, its module `elysium.<pkg>.api`, and the rest of the
+     program imports nothing of that package but `elysium.<pkg>` (whose
+     `__init__.py` re-exports exactly the front door's names, so the names
+     written in this document, `elysium.query.load`, `elysium.access.check_access`,
+     stay true) or `elysium.<pkg>.api`. Written as import-linter `forbidden`
+     blocks generated from the table (`source_modules = ["elysium"]`,
+     `forbidden_modules = ["elysium.<pkg>.*"]`, `ignore_imports` for
+     `* -> elysium.<pkg>.api` and for a package's own internal edges,
+     `allow_indirect_imports = true`); a package is enforced from the commit
+     in which its `api.py` exists (the item that creates a package creates its
+     `api.py` in the same commit, and `tools/import_contracts.py` generates the
+     block at lint time from the packages that have one, so no card edits
+     `pyproject.toml`). If import-linter 2.15 cannot express the exception,
+     write the check as a custom contract type in `tools/import_contracts.py`
+     and STOP only if that fails too. Today's deep imports go in
+     `ignore_imports` and leave it as packages are created (QA-ARCH). All
+     three contracts set `unmatched_ignore_imports_alerting = "error"`, so a
+     fixed edge must leave the list. `quality/contracts-ignores.txt` holds the
+     count; `tests/unit/test_import_contracts_shrink.py` fails when the count
+     grows. Accept: `lint-imports` passes; the test fails when an ignore is
+     added; `tests/unit/test_front_doors.py` (a fixture package whose module
+     imports `other.internal` fails the contract and one importing
+     `other.api` passes).
   3. **Cycle 1: `core.agent.agentic_loop` <-> `core.deployment_loader`.** Run
      `tools/import_graph.py cycles`; move the names `agentic_loop` takes from
      the loader into parameters of its constructor (the loader, or the new
@@ -2792,7 +2882,7 @@ Contracts: [C-ACCESS](#c-access).
   `executable` or starting `can` in a response model);
   import-linter contract `decide-is-pure` (type `forbidden`): the module
   `elysium.access.decide` imports nothing from `elysium.db`,
-  `elysium.audit`, `elysium.adapters`, `elysium.index`, `elysium.core`.
+  `elysium.audit`, `elysium.adapters`, `elysium.connectivity`, `elysium.datasets`, `elysium.index`, `elysium.core`.
 - **Preconditions.** T0.2, T0.3, T0.5.
 - **Out of scope.** The read path (T0.6B moves and splits it); proposals
   (T0.10).
@@ -2882,7 +2972,8 @@ Decision: N46.
      same functions and its own fingerprint (its filters); the audit log
      signs `(segment, byte offset)` (N54). `api/v2/paging.py` is deleted;
      `Page` and `page_size()` move to `elysium.paging`.
-  4. **The facade.** `src/elysium/query/__init__.py` exports the contract
+  4. **The facade.** `src/elysium/query/api.py` is the front door (N91) and
+     `src/elysium/query/__init__.py` re-exports the contract
      below; `query/load.py` takes `api/v2/loading.py`'s page assembly
      (`loading.py` deleted); `api/v2/resources/{objects,object_sets}.py`
      call only the facade.
@@ -2927,7 +3018,9 @@ owns:
   - src/elysium/db/**
   - src/elysium/audit/**
   - src/elysium/erasure/**
-  - src/elysium/index/lake.py
+  - src/elysium/datasets/lake.py
+  - src/elysium/datasets/api.py
+  - src/elysium/datasets/__init__.py
 ```
 Contracts: [C-DB](#c-db), [C-AUDIT](#c-audit), [C-ERASURE](#c-erasure).
 
@@ -2983,7 +3076,8 @@ Contracts: [C-DB](#c-db), [C-AUDIT](#c-audit), [C-ERASURE](#c-erasure).
      write) and by the lake publication; rows older than 1 h are deleted by
      the runner. `db.change_feed.since(seq, limit=500) -> list[ChangeRow]`
      and `latest_seq()`.
-  4. `lake.py` (layers as namespaces), the ledger in `erasure.db`, the
+  4. `src/elysium/datasets/lake.py` (layers as namespaces; the `datasets`
+     package starts here, N91), the ledger in `erasure.db`, the
      `Erasable` registry, `audit/` with the event schema, monthly segments,
      the hash chain and paging below (N54).
 - **Deletes.** Archive S7's list: `connection_with_schema`,
@@ -3023,6 +3117,8 @@ owns:
   - src/elysium/jobs/**
   - src/elysium/runner/**
   - src/elysium/index/**
+  - src/elysium/datasets/**
+  - src/elysium/connectivity/**
   - src/elysium/core/mirror/**
   - src/elysium/resources/when.py
   - src/elysium/core/timer_rules.py
@@ -3038,6 +3134,10 @@ owns:
   - src/elysium/api/timer_service.py
   - src/elysium/scripts/run_sync.py
   - src/elysium/adapters/sqlite_adapter.py
+  - src/elysium/adapters/sqlalchemy_adapter.py
+  - src/elysium/adapters/csv_folder_adapter.py
+  - src/elysium/adapters/rest_adapter.py
+  - src/elysium/adapters/http_transport.py
 ```
 Contracts: [C-PROCESS](#c-process), [C-JOBS](#c-jobs).
 
@@ -3050,13 +3150,27 @@ Contracts: [C-PROCESS](#c-process), [C-JOBS](#c-jobs).
      subprocesses as above, progress events in `job_events`, cancellation
      (a `cancel_requested` flag the job polls through `ctx.cancelled()`, then
      SIGTERM after 30 s), the last 200 log lines kept, `checkpoint`.
-  2. `git mv src/elysium/core/mirror src/elysium/index` (one commit, imports
-     only), so `index/openlineage.py`, `index/pipeline/` and
-     `index/data_contracts.py` are the paths later cards own.
+  2. **Split `core/mirror` and `adapters` into `connectivity`, `datasets` and
+     `index` (N91).** Three commits, each `git mv` plus imports only, by the
+     placement table of C-LAYERS: (2a) the source adapters and `incremental.py`
+     to `src/elysium/connectivity/`; (2b) the lake modules to
+     `src/elysium/datasets/` beside T0.7's `lake.py` (a module that straddles
+     two, `iceberg_sync.py`, is split first, in its own commit); (2c) the rest
+     of `core/mirror` to `src/elysium/index/`, so `index/openlineage.py`,
+     `index/pipeline/` and `index/data_contracts.py` are the paths later cards
+     own. Each package gets its `api.py` front door (the names other packages
+     already import) and its `tests/<pkg>/contract/test_front_door.py` and
+     `tests/<pkg>/e2e/test_smoke.py` (the real package over the real layers
+     below it, no HTTP, no UI; N91). Accept: `lint-imports` passes with the
+     three packages as layers; `tests/connectivity/e2e/test_smoke.py` reads a
+     CSV and a SQLite source through the front door;
+     `tests/datasets/e2e/test_smoke.py` writes and reads a snapshot;
+     `tests/index/e2e/test_smoke.py` syncs the fixture source to gold.
   3. Pipeline into `src/elysium/index/pipeline/` with `PHASES` and `after=`
      edges; a pure `plan_sync(resources, catalog_state) -> SyncPlan`; the
-     shell runs the plan; `SyncSource` (SQLAlchemy including its SQLite
-     dialect with an authorizer or `mode=ro`, CSV, REST); `GoldConnector`;
+     shell runs the plan; `SyncSource` (in `connectivity`: SQLAlchemy including
+     its SQLite dialect with an authorizer or `mode=ro`, CSV, REST);
+     `GoldConnector` (in `index`, writing through `datasets.api`);
      provenance = bronze snapshot id + transform hash; silver transient or
      persisted by N71's rule over MEAS-1 and MEAS-2 (D9);
      `SQLiteWriteAdapter` deleted (D16; N71: MEAS-2 lists no production caller).
@@ -3090,7 +3204,8 @@ Contracts: [C-PROCESS](#c-process), [C-JOBS](#c-jobs).
      `tests/unit/test_supervisor_start_order.py` (the hooks run in the order
      C-PROCESS gives, before any child starts).
 - **Deletes.** `src/elysium/scripts/run_sync.py`, the sync thread in the web
-  server, the api-to-scripts import, `src/elysium/adapters/sqlite_adapter.py`,
+  server, the api-to-scripts import, `src/elysium/adapters/sqlite_adapter.py`
+  (the other source adapters move to `connectivity`, step 2a),
   the `_gold_only` stubs and the pushdown surface on source adapters (after
   MEAS-2), the silver machinery if D9 holds.
 - **Invariants and proof.** Gold never publishes from a partial read; erasures
@@ -3101,7 +3216,7 @@ Contracts: [C-PROCESS](#c-process), [C-JOBS](#c-jobs).
   `::test_two_jobs_serialise_on_lake_writer`.
 - **Preconditions.** T0.7. MEAS-1, MEAS-2 (and MEAS-7 before the 1.0 cut).
 - **Out of scope.** Admin UI for sync (ADM-07); job kinds other than `sync`
-  (cards add them).
+  (cards add them); the LLM adapters (they are not source connections).
 - **Contract.** [C-PROCESS](#c-process), [C-JOBS](#c-jobs) (section 3).
 
 ### T0.9 Lake encryption with a movable key (post-1.0, N73)
@@ -3115,7 +3230,7 @@ model: Sonnet
 depends: T0.8
 contracts: C-KEYS
 owns:
-  - src/elysium/index/crypto.py
+  - src/elysium/datasets/crypto.py
   - src/elysium/keys/**
 ```
 Contracts: [C-KEYS](#c-keys).
@@ -3130,7 +3245,7 @@ Contracts: [C-KEYS](#c-keys).
 - **DR:** 7. **Decisions:** B1.
 - **Steps.** Each one commit; `catalog.db` stays plain. Spike facts: archive
   item 1.
-  1. **`EncryptingFileIO`** (`src/elysium/index/crypto.py`, a pyiceberg
+  1. **`EncryptingFileIO`** (`src/elysium/datasets/crypto.py`, a pyiceberg
      `py-io-impl`): each file in 64 KiB AES-256-GCM chunks, the chunk number
      in the nonce, a last-chunk flag. Accept:
      `tests/unit/test_lake_crypto.py::test_wrong_key_refused`,
@@ -3717,10 +3832,10 @@ dependencies and paths.
 | INS: install and distribution | 5.8 | 8 |
 | DOC: documentation | 5.9 | 12 |
 | CI: pipelines (post-1.0, N78) | 5.10 | 7 |
-| QA: engineering quality | 5.11 | 6 |
+| QA: engineering quality | 5.11 | 10 |
 | REF: remaining refactor, libraries, standards | 5.12 | 15 |
 | ADD: the add-on platform (Astrolabe, Heliograph) | 5.13 | 13 |
-| **Total** | | **150** cards (9 of them post-1.0), plus 17 Tier 0 items (T0.9 post-1.0) and the 1.0 cut |
+| **Total** | | **154** cards (9 of them post-1.0), plus 17 Tier 0 items (T0.9 post-1.0) and the 1.0 cut |
 
 ### 5.2 MEAS: measurements still to take
 
@@ -7244,6 +7359,181 @@ Contracts: [C-QUERY](#c-query), [C-ACCESS](#c-access).
 - Out of scope: stateful tests of the proposal pipeline.
 - Accept: the standard acceptance (section 1.4) and the tests above.
 
+#### QA-FUZZ-QUERY · Subsystem end-to-end and fuzz suites for `query`
+
+```card
+id: QA-FUZZ-QUERY
+wave: 2
+status: OPEN
+size: M
+model: Sonnet
+depends: T0.6B
+contracts: C-QUERY, C-ACCESS
+owns:
+  - tests/query/e2e/**
+  - tests/query/fuzz/**
+```
+Contracts: [C-QUERY](#c-query), [C-ACCESS](#c-access).
+
+- DR: 7. **Decisions:** N91. Invariants: I1, I2, I3.
+- Spec: the two suites N91 asks of the `query` subsystem, with no HTTP and no
+  UI, reaching the package only through `elysium.query.api`.
+  (1) **End to end** (`tests/query/e2e/`, marker `lake`): the real `query`
+  over the real `access`, `metadata`, `datasets` and `index` on a temporary
+  state directory with the fixture source synced to gold; scripted cases for
+  `get`, `load` with paging and `order_by`, `count`, `aggregate`, `keys`,
+  `expand`, `searchAround`, a stored set, each as an administrator, an analyst
+  with a `security` restriction, and a principal with no grant.
+  (2) **Stateful fuzz** (`tests/query/fuzz/`, marker `fuzz`): a Hypothesis
+  `RuleBasedStateMachine` against a reference model in
+  `tests/query/fuzz/model.py`, about 150 lines of plain dictionaries with
+  its own readable-rows oracle written independently of `decide`. Rules:
+  add, change and delete an object; add and remove a principal; grant and
+  revoke `discover` and `read` on a type or a property; set and change a
+  row's `security` values; publish gold; then read through every function of
+  the facade. After every step the invariants hold: **I1** an unknown type or
+  key and an unreadable one give byte-identical refusals from every function,
+  with no difference in the audit write the caller can see; **I3** every
+  object, property, link target and aggregate input returned by `get`, `load`,
+  `expand`, `aggregate` and `keys` is in the oracle's readable set, `count`
+  equals the oracle's count, concatenated pages equal the unpaged result, and
+  a page token redeemed by another principal is refused; **I2** a spy on
+  `check_access` sees one decision per object returned and none is taken
+  anywhere else (the spy is the only observer; the machine never calls
+  `decide`).
+- Steps: one commit each: (1) `model.py` and the e2e suite; (2) the state
+  machine with I1; (3) I3 and I2 in the same machine.
+- Tests: `tests/query/e2e/test_query_end_to_end.py`,
+  `tests/query/fuzz/test_query_stateful.py`; each invariant has a control
+  (break `query.reader` so one unreadable row escapes: the machine fails, and
+  Hypothesis prints the shrunk sequence).
+- Accept: the standard acceptance (section 1.4); `./check.sh --full` runs the
+  fuzz suite under the profile `full` in under 3 minutes (measured, quoted).
+- Out of scope: the filter-grammar and paging property tests (QA-PROP).
+
+#### QA-FUZZ-ACTIONS · Subsystem end-to-end and fuzz suites for `actions`
+
+```card
+id: QA-FUZZ-ACTIONS
+wave: 3a
+status: OPEN
+size: M
+model: Sonnet
+depends: T0.10
+contracts: C-ACTIONS, C-PROPOSALS, C-AUDIT
+owns:
+  - tests/actions/e2e/**
+  - tests/actions/fuzz/**
+```
+Contracts: [C-ACTIONS](#c-actions), [C-PROPOSALS](#c-proposals), [C-AUDIT](#c-audit).
+
+- DR: 7. **Decisions:** N91. Invariants: I4, I5, audit.
+- Spec: (1) **End to end** (`tests/actions/e2e/`, marker `lake`): the real
+  `actions` and `proposals` over `query`, `audit`, `db`, `metadata` and the
+  lake: `validate`, an `approval: none` action, a `confirm` action, a
+  `second_person` action approved by another person, a rejected one, a stale
+  `expectedVersions` (412), an idempotent replay, a bulk apply, and a
+  special-category edit with its justification (N83). (2) **Stateful fuzz**
+  (`tests/actions/fuzz/`, marker `fuzz`): a `RuleBasedStateMachine` against a
+  reference model of objects, proposals and grants (`model.py`). Rules:
+  submit an action as a person, the assistant or an automation; approve,
+  reject and cancel as various principals; revoke the approver's grant between
+  propose and approve; change an object's version; replay a request. After
+  every step: **I4** object rows differ from the model only by applied
+  actions' effects; **I5** an approval after a revoked grant is refused
+  uniformly and changes nothing; **N83** an approver never equals the author
+  and a special-category write never applies without a second person
+  (break-glass off); `policy_for` never returns a weaker policy than the
+  model's; and **audit** the number of applied writes equals the number of
+  `action.applied` audit entries, each carrying the write id, and
+  `audit.verify()` still passes.
+- Steps: one commit each: (1) e2e suite; (2) `model.py` and the machine with
+  I4 and I5; (3) N83 and the audit invariant.
+- Tests: `tests/actions/e2e/test_actions_end_to_end.py`,
+  `tests/actions/fuzz/test_actions_stateful.py`; controls: apply without
+  re-authorising (I5) and skip the audit write (audit) each fail the machine.
+- Accept: the standard acceptance (section 1.4); the fuzz suite runs under the
+  profile `full` in under 3 minutes (measured, quoted).
+
+#### QA-FUZZ-METADATA · Subsystem end-to-end and fuzz suites for `metadata`
+
+```card
+id: QA-FUZZ-METADATA
+wave: 3b
+status: OPEN
+size: S
+model: Sonnet
+depends: ADM-22a
+contracts: C-RESOURCES, C-RESOURCE-SET, C-OUT
+owns:
+  - tests/metadata/e2e/**
+  - tests/metadata/fuzz/**
+```
+Contracts: [C-RESOURCES](#c-resources), [C-RESOURCE-SET](#c-resource-set), [C-OUT](#c-out).
+
+- DR: 7. **Decisions:** N91, N65.
+- Spec: (1) **End to end** (`tests/metadata/e2e/`, marker `lake`): load the
+  fixture resource directory, build the ontology, change it through
+  `resourceChanges` (applied, dry run, staged), read the versions and a diff,
+  restore a version. (2) **Stateful fuzz** (`tests/metadata/fuzz/`, marker
+  `fuzz`): a `RuleBasedStateMachine` whose rules create, update, rename and
+  delete types, properties, links, actions and roles (strategies in
+  `strategies.py` generate only valid specs; a second strategy generates
+  invalid ones and the machine asserts each is refused with a `path:line:col`
+  problem and changes nothing). The invariant after every step and at the end:
+  **load, export and reload give the same configuration**: the `resources`
+  exporter's output, loaded as a directory, builds an `Ontology` equal to the
+  live one, and exporting that again gives the same bytes (N65;
+  `test_export_then_apply_is_a_no_op` is the fixed-case version of this).
+- Steps: one commit each: (1) e2e suite; (2) the machine and the round-trip
+  invariant.
+- Tests: `tests/metadata/e2e/test_metadata_end_to_end.py`,
+  `tests/metadata/fuzz/test_metadata_stateful.py`; control: make the exporter
+  drop one field; the machine fails.
+- Accept: the standard acceptance (section 1.4); the fuzz suite runs under the
+  profile `full` in under 2 minutes (measured, quoted).
+
+#### QA-FUZZ-HTTP · Schemathesis against the HTTP layer, in process
+
+```card
+id: QA-FUZZ-HTTP
+wave: 3a
+status: OPEN
+size: M
+model: Sonnet
+depends: T0.12
+contracts: C-API
+owns:
+  - tests/api/fuzz/**
+```
+Contracts: [C-API](#c-api).
+
+- DR: 2, 7. **Decisions:** N91.
+- Spec: `tests/api/fuzz/test_schemathesis.py` (marker `fuzz`) fuzzes every
+  `/api/v2` operation with Schemathesis (`uv add --dev schemathesis`), in
+  process: the schema comes from `app.openapi()` of the built app, never from
+  the network, because the public `/openapi.json` stays disabled, and the
+  calls go to the ASGI app directly (no server, no port). Three principals
+  (an administrator token, an analyst token, no credentials) from
+  `tests/api/conftest.py`. Checks: `not_a_server_error`, response and status
+  conformance to the schema, plus ours in `tests/api/fuzz/checks.py`: a
+  response never carries a stack trace, a path of the state directory, a
+  secret canary (`s3cr3t-canary`) or a name the principal may not see; every
+  404 for an operation on an object or resource is byte-identical for an
+  unknown id and for a denied one (I1); every non-GET operation is audited
+  once or refused. A case that fails prints the Schemathesis reproduction
+  (curl) in the report. New routes are fuzzed with no change to the card
+  because the schema is read at run time.
+- Steps: one commit each: (1) the harness (schema from `app.openapi()`,
+  principals, `checks.py`) with the administrator run; (2) the analyst and
+  anonymous runs and the I1 check.
+- Tests: `tests/api/fuzz/test_schemathesis.py`,
+  `tests/api/fuzz/test_checks_catch_what_they_claim.py` (a fake route that
+  leaks a canary, one that returns 500 and one that distinguishes unknown from
+  denied each fail the run).
+- Accept: the standard acceptance (section 1.4) for API cards; the run under
+  the profile `full` finishes in under 5 minutes (measured, quoted).
+
 #### QA-ERR · The failure-to-absence handlers
 
 ```card
@@ -7315,7 +7605,8 @@ owns:
 Contracts: [C-LAYERS](#c-layers), [C-GATES](#c-gates).
 
 - Decisions: N33.
-- Spec: remove every remaining ignore except the four kind-directory
+- Spec: remove every remaining ignore (the `front-doors` contract's included:
+  a deep import of another package becomes an import of its `api`) except the four kind-directory
   wildcards (`elysium.jobs.kinds.* -> ops|exports|index|erasure`); for each
   edge that still exists, move the code to the right layer or invert the
   dependency (a parameter or a registry); delete the `core.*` legacy entries
@@ -7565,12 +7856,13 @@ model: Haiku
 depends: T0.8
 contracts: C-GATES
 owns:
-  - src/elysium/adapters/rest_adapter.py
+  - src/elysium/connectivity/rest.py
 ```
 Contracts: [C-GATES](#c-gates).
 
 - Spec: retries with exponential back-off and jitter in
-  `src/elysium/adapters/rest_adapter.py`, idempotent reads only, at most 3;
+  `src/elysium/connectivity/rest.py` (moved from `adapters/rest_adapter.py` by
+  T0.8 step 2a, N91), idempotent reads only, at most 3;
   the LLM retry adapter untouched.
 - Accept: a test that a 503 then 200 succeeds and a POST is never retried.
 
@@ -8094,9 +8386,9 @@ nothing else merges while they run.
 | **0a** | now | - | DOC-00 | 1 |
 | **0b** | wave 0a closed | T0.1, T0.1B, T0.2, T0.3, T0.4 | SEC-A, DOC-05a, DOC-06 | 3 |
 | **1** | T0.4 merged and wave 0b closed | T0.5, T0.6, T0.6B, T0.7, T0.8 | MEAS-1, MEAS-2, MEAS-3, MEAS-4, MEAS-5, MEAS-6, OPS-01, INS-04, DOC-03, QA-MUT, REF-18A | 11 |
-| **2** | T0.8 merged and wave 1 closed | T0.10, T0.11, T0.12 | MEAS-7, ADM-14, ADM-16, OPS-02, OPS-03, OPS-10, QA-COV, REF-LIB-1 | 8 |
-| **3a** | T0.12 merged and wave 2 closed | T0.13 | SEC-B, API-1a, ADM-01a, ADM-03a, ADM-03b, ADM-05, ADM-08, ADM-09a, ADM-10, ADM-15, ADM-17, ADM-20, ADM-22a, ADM-24, CLI-RESOURCE, CLI-MODEL, CLI-PROPOSAL, CLI-AUDIT, CLI-LOGS, CLI-DEV-a, OPS-04, OPS-05, OPS-11, INS-05 | 24 |
-| **3b** | T0.13 merged and wave 3a closed | T0.14 | SEC-E1, API-1b, ADM-01b, ADM-04, ADM-06, ADM-07, ADM-09b, ADM-11, ADM-18a, ADM-18b, ADM-19, ADM-21, ADM-22b, CLI-SETUP, CLI-SOURCE, CLI-CONFIG, CLI-LAKE, CLI-ERASURE, CLI-APP, CLI-DEV-b, OPS-06, OPS-07, OPS-08, INS-02, INS-06, INS-07, QA-PROP | 27 |
+| **2** | T0.8 merged and wave 1 closed | T0.10, T0.11, T0.12 | MEAS-7, ADM-14, ADM-16, OPS-02, OPS-03, OPS-10, QA-COV, REF-LIB-1, QA-FUZZ-QUERY | 9 |
+| **3a** | T0.12 merged and wave 2 closed | T0.13 | SEC-B, API-1a, ADM-01a, ADM-03a, ADM-03b, ADM-05, ADM-08, ADM-09a, ADM-10, ADM-15, ADM-17, ADM-20, ADM-22a, ADM-24, CLI-RESOURCE, CLI-MODEL, CLI-PROPOSAL, CLI-AUDIT, CLI-LOGS, CLI-DEV-a, OPS-04, OPS-05, OPS-11, INS-05, QA-FUZZ-ACTIONS, QA-FUZZ-HTTP | 26 |
+| **3b** | T0.13 merged and wave 3a closed | T0.14 | SEC-E1, API-1b, ADM-01b, ADM-04, ADM-06, ADM-07, ADM-09b, ADM-11, ADM-18a, ADM-18b, ADM-19, ADM-21, ADM-22b, CLI-SETUP, CLI-SOURCE, CLI-CONFIG, CLI-LAKE, CLI-ERASURE, CLI-APP, CLI-DEV-b, OPS-06, OPS-07, OPS-08, INS-02, INS-06, INS-07, QA-PROP, QA-FUZZ-METADATA | 28 |
 | **3c** | T0.14 merged and wave 3b closed | T0.15 | SEC-E2, API-1c, ADM-02a, ADM-12, ADM-23, ADM-27, CLI-EXPORT, INS-03 | 8 |
 | **4** | T0.15 merged and wave 3c closed | - | SEC-C, SEC-D, SEC-F, API-2, API-3, API-4, API-5, API-6, API-8, ADM-02b, ADM-13, CLI-BACKUP, INS-01, REF-14A, REF-UI-2, REF-LIB-3, REF-STD-OCSF, REF-STD-LINKML, REF-STD-DPV, REF-STD-DQ, ADD-01, ADD-02, ADD-04, ADD-06, ADD-07, ADD-11a | 26 |
 | **4b** | wave 4 closed | - | API-7, CLI-OBJECT, INS-08, ADD-03, ADD-05, ADD-08, ADD-11b | 7 |
@@ -8146,7 +8438,7 @@ exit code of each row's proof, and the output goes in the tag message; tag
 
 ### 6.4 Counts
 
-MEAS 7, SEC 8, API 11, ADM 33, CLI 19, OPS 11, INS 8, DOC 12, CI 7, QA 6, REF 15, ADD 13: **150 cards**, of which **9 are post-1.0** (the 7 CI cards, ADM-28 and CLI-LAKE-KEY), so **141 cards in the 1.0 waves**, plus **16 Tier 0 items** in 1.0 (T0.9 is post-1.0) and the 1.0 cut.
+MEAS 7, SEC 8, API 11, ADM 33, CLI 19, OPS 11, INS 8, DOC 12, CI 7, QA 10, REF 15, ADD 13: **154 cards**, of which **9 are post-1.0** (the 7 CI cards, ADM-28 and CLI-LAKE-KEY), so **145 cards in the 1.0 waves**, plus **16 Tier 0 items** in 1.0 (T0.9 is post-1.0) and the 1.0 cut.
 Estimates (E): Tier 0 serial 6-8 months for 1.0; cards about 140 days of work
 that mostly runs in parallel once their wave opens.
 
