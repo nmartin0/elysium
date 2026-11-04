@@ -4151,7 +4151,7 @@ for these. SEC-01 is closed by T0.6 and T0.8; SEC-06 and SEC-11 by DOC-00.
 ```card
 id: SEC-A
 wave: 0b
-status: OPEN
+status: DONE 512678ea
 size: S
 model: Haiku
 depends: DOC-00
@@ -6888,7 +6888,7 @@ Contracts: [C-REPO](#c-repo).
 ```card
 id: DOC-05a
 wave: 0b
-status: OPEN
+status: DONE 9f5bdf2f
 size: S
 model: Sonnet
 depends: DOC-00
