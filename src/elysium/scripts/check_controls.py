@@ -9320,8 +9320,8 @@ CONTROLS = [
     Control(
         describes="the installer installs Python dependencies from the hashed lock",
         path="install/install.sh",
-        old='install --require-hashes -r "$OPT_DIR/requirements.lock"',
-        new='install -r "$OPT_DIR/requirements.txt"',
+        old='uv" sync --frozen --no-dev',
+        new='uv" sync --no-dev',
         tests=["tests/unit/test_install_script_copies_what_exists.py::test_python_dependencies_come_from_the_hashed_lock_when_there_is_one"],
     ),
     Control(

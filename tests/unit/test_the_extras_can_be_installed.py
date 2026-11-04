@@ -28,9 +28,8 @@ the suite was green, lint was green, and the only symptom was a skip
 count nobody was reading. Four lines of TOML could remove it again the
 same way.
 
-NOT A LIBRARY. Elysium is run from a checkout -- runtime dependencies
-live in requirements.txt with their locks. The `[project]` table
-exists so the extra works, and for nothing else.
+The `[project]` table is the one description of the dependencies;
+uv.lock pins them.
 """
 
 import tomllib
@@ -49,7 +48,7 @@ class TestTheProjectTable:
     def test_it_declares_what_pip_requires(self, key):
         """These two are exactly what pip complained about. Without
         them every extra below is unreachable."""
-        assert key in PYPROJECT["project"], (
+        assert key in PYPROJECT["project"] or key in PYPROJECT["project"].get("dynamic", []), (
             f"pyproject declares no {key}, so `pip install -e \".[...]\"` "
             f"fails and every extra becomes undeclarable")
 
@@ -77,11 +76,11 @@ class TestEveryExtraIsReachable:
 
 
 class TestThePackagesAnEditableInstallExposes:
-    def test_they_are_found_under_src_rather_than_discovered_from_the_root(self):
+    def test_they_are_named_rather_than_discovered_from_the_root(self):
         """Automatic discovery from the root finds `deployment`, `tests` and
-        the sibling worktree directories, and fails or installs them."""
-        find = PYPROJECT.get("tool", {}).get("setuptools", {}).get("packages", {}).get("find", {})
-        assert find.get("where") == ["src"]
+        the sibling worktree directories, and installs them."""
+        wheel = PYPROJECT["tool"]["hatch"]["build"]["targets"]["wheel"]
+        assert wheel["packages"] == ["src/elysium"]
 
     def test_the_package_exists_where_it_is_looked_for(self):
         assert (Path(__file__).resolve().parents[2] / "src" / "elysium" / "__init__.py").exists()
@@ -89,8 +88,8 @@ class TestThePackagesAnEditableInstallExposes:
     def test_tests_and_deployment_are_not(self):
         """Installing a deployment's configuration into site-packages
         would be a surprising thing for an editable install to do."""
-        find = PYPROJECT["tool"]["setuptools"]["packages"]["find"]
+        wheel = PYPROJECT["tool"]["hatch"]["build"]["targets"]["wheel"]
 
-        assert find["where"] == ["src"]
+        assert wheel["packages"] == ["src/elysium"]
         assert not (Path(__file__).resolve().parents[2] / "src" / "tests").exists()
         assert not (Path(__file__).resolve().parents[2] / "src" / "deployment").exists()

@@ -64,9 +64,9 @@ def test_every_top_level_package_the_server_imports_is_copied():
 
 
 def test_python_dependencies_come_from_the_hashed_lock_when_there_is_one():
-    assert (ROOT / "requirements.lock").exists()
-    assert 'cp "$SOURCE_DIR/requirements.lock"' in INSTALLER
-    assert '--require-hashes -r "$OPT_DIR/requirements.lock"' in INSTALLER
+    assert (ROOT / "uv.lock").exists()
+    assert '"$SOURCE_DIR/uv.lock"' in INSTALLER
+    assert 'uv" sync --frozen --no-dev' in INSTALLER
 
 
 def test_the_ui_is_installed_with_npm_ci_and_never_npm_install():

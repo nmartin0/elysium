@@ -289,15 +289,15 @@ class TestANullIsNotADISAGREEMENT:
 
 class TestTheGateRunsThem:
     """COORD-3. Every test above that needs the backend SKIPS without it,
-    and CI installs only requirements-dev.lock -- which had no splink. So
+    and CI installs only the dev extra from uv.lock -- which had no splink. So
     GOLD-6's inference was untested in every environment that gates a
     merge, and the suite was green about it."""
 
     def test_the_lock_ci_installs_carries_the_backend(self):
         from pathlib import Path
 
-        lock = (Path(__file__).resolve().parents[2] / "requirements-dev.lock").read_text()
-        assert any(line.startswith("splink==") for line in lock.splitlines())
+        lock = (Path(__file__).resolve().parents[2] / "uv.lock").read_text()
+        assert 'name = "splink"' in lock
 
     def test_in_ci_the_backend_is_there(self):
         """GitHub Actions sets CI=true. There, a missing backend is a
@@ -306,4 +306,4 @@ class TestTheGateRunsThem:
 
         if os.environ.get("CI") != "true":
             pytest.skip("only CI must have the backend; it is optional elsewhere")
-        assert HAS_SPLINK, "requirements-dev.lock should have installed splink"
+        assert HAS_SPLINK, "the dev extra should have installed splink"

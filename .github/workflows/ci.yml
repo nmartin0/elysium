@@ -40,12 +40,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      # FROM THE HASHED LOCK: CI installs exactly what is pinned, and
-      # refuses anything whose hash differs.
+      # FROM uv.lock: exactly what is pinned, and nothing the lock lacks.
       - name: Install dependencies
-        run: pip install --require-hashes -r requirements-dev.lock
+        run: |
+          pip install uv
+          uv sync --frozen --extra dev
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
-      - name: Lint (ruff, mypy, vulture, lock files, import-linter)
+      - name: Gates (ruff, mypy, vulture, lock files, import-linter)
         run: ./check.sh --fast
 
       - name: Unit tests
@@ -98,7 +100,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install --require-hashes -r requirements-dev.lock
+        run: |
+          pip install uv
+          uv sync --frozen --extra dev
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: The controls fire
         run: python -m elysium.scripts.check_controls

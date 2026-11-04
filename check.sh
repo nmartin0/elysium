@@ -80,7 +80,7 @@ else
     step ruff "ruff check"
     step mypy "mypy"
     step vulture "vulture"
-    step lock-files "python3 -m elysium.scripts.check_lockfiles"
+    step lock-files "uv lock --check"
     step import-linter 'PYTHONPATH="$PYTHONPATH:sim" lint-imports'
 
     if [ -f tools/lint_comments.py ]; then

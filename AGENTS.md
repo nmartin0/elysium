@@ -14,25 +14,12 @@ the *how*; that one is the *why*.
 
 ## Commands
 
-Dependencies are locked. `requirements.txt` carries bounds and is what
-a human edits; `requirements.lock` and `requirements-dev.lock` are
-generated and carry exact versions with hashes. After changing either
-requirements file, regenerate:
-
-```bash
-uv pip compile requirements.txt --generate-hashes --universal \
-  --python-version 3.12 -o requirements.lock
-uv pip compile requirements.txt requirements-dev.txt --generate-hashes \
-  --universal --python-version 3.12 -o requirements-dev.lock
-```
-
-`--universal --python-version 3.12` both matter: the first keeps
-environment markers, the second stops uv taking the generating
-machine's Python as the floor (on 3.13 it silently dropped every
-`python_version < "3.13"` package). Each lock file's preamble says why
-at more length, and uv overwrites it -- put it back after regenerating.
-
-`./check.sh` fails if they have drifted.
+Dependencies live in `pyproject.toml` (`[project.dependencies]` and the
+`identity`, `tui` and `dev` extras) and are pinned, with hashes, in the one
+`uv.lock`. Add one with `uv add PKG` (or `uv add --optional EXTRA PKG`) and
+commit `pyproject.toml` and `uv.lock` together; on a lock conflict run
+`uv lock` again, never hand-merge. `uv sync --extra dev` makes a development
+environment. `./check.sh` fails (`uv lock --check`) if the two have drifted.
 
 The package lives in `src/elysium/` (src layout). Install it once, so
 `python -m elysium.scripts.<name>`, `uvicorn elysium.api.app:app` and the

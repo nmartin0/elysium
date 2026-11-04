@@ -38,8 +38,8 @@ fi
 # this is being run from within a checked-out copy of the repository.
 SOURCE_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 
-if [ ! -f "$SOURCE_DIR/requirements.txt" ]; then
-    echo "Could not find requirements.txt in $SOURCE_DIR -- run this script from a checked-out copy of the repository." >&2
+if [ ! -f "$SOURCE_DIR/pyproject.toml" ]; then
+    echo "Could not find pyproject.toml in $SOURCE_DIR -- run this script from a checked-out copy of the repository." >&2
     exit 1
 fi
 
@@ -93,12 +93,7 @@ mkdir -p "$OPT_DIR" "$ETC_DIR" "$VAR_LIB_DIR" "$VAR_LOG_DIR"
 # fresh install here.
 # tests/unit/test_install_script_copies_what_exists.py checks that every
 # source named here exists in the repository.
-cp -r "$SOURCE_DIR/src" "$SOURCE_DIR/requirements.txt" "$OPT_DIR/"
-
-# The hashed lockfile, when the checkout has one (AGENTS.md, Commands).
-if [ -f "$SOURCE_DIR/requirements.lock" ]; then
-    cp "$SOURCE_DIR/requirements.lock" "$OPT_DIR/"
-fi
+cp -r "$SOURCE_DIR/src" "$SOURCE_DIR/pyproject.toml" "$SOURCE_DIR/uv.lock" "$OPT_DIR/"
 
 # --- 3b. Web UI (OPTIONAL -- gracefully skipped if npm isn't available) ---
 #
@@ -121,16 +116,10 @@ fi
 # --- 4. Python virtual environment ---------------------------------------
 
 python3 -m venv "$OPT_DIR/venv"
-"$OPT_DIR/venv/bin/pip" install --upgrade pip
-# From the hashed lockfile when there is one, exactly as docs/install.md says
-# (--require-hashes refuses anything whose hash is not listed);
-# requirements.txt carries only bounds and is the fallback for a checkout
-# without a lock.
-if [ -f "$OPT_DIR/requirements.lock" ]; then
-    "$OPT_DIR/venv/bin/pip" install --require-hashes -r "$OPT_DIR/requirements.lock"
-else
-    "$OPT_DIR/venv/bin/pip" install -r "$OPT_DIR/requirements.txt"
-fi
+"$OPT_DIR/venv/bin/pip" install --upgrade pip uv
+# Exactly what uv.lock pins, with its hashes: no dev extra, and not the
+# project itself (the server runs from $OPT_DIR/src).
+(cd "$OPT_DIR" && UV_PROJECT_ENVIRONMENT="$OPT_DIR/venv" "$OPT_DIR/venv/bin/uv" sync --frozen --no-dev --no-install-project)
 
 # --- 5. Config + data, mirroring the source repository's own layout ------
 #
