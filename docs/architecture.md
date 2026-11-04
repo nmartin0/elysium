@@ -154,7 +154,7 @@ below explains why it's built this way.
 ## Why it's built this way — the untrusted-LLM design, point by point
 
 These same rules generalize past just the LLM boundary into a real,
-project-wide security posture -- see `PRINCIPLES.md`'s own "Security
+project-wide security posture -- see `docs/principles.md`'s own "Security
 is explicit, fail-safe, and never inferred" section.
 
 - **The LLM never sees a schema element it isn't authorized for.**

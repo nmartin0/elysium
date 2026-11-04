@@ -36,7 +36,7 @@ minutes) if never confirmed.
 | A new tool | `src/elysium/core/functions/interface.py`'s `Function` | `src/elysium/core/functions/registry.py`'s registry |
 
 For a whole new sub-app (a new top-level screen in `ui/`, not a new
-backend extension point), check `ROADMAP.md` and `DEV_UI.md` first —
+backend extension point), check `docs/roadmap.md` and `docs/ui/development.md` first —
 there's a real chance it is already designed, or already decided against.
 
 ---
@@ -72,7 +72,7 @@ left behind.
 
 ## Tests
 
-What is planned next lives in one file, `ROADMAP.md`: Tier 0 core work for a strong model, task cards for efficient models, the questions that wait on the owner, and the waves in which they run.
+What is planned next lives in one file, `docs/roadmap.md`: Tier 0 core work for a strong model, task cards for efficient models, the questions that wait on the owner, and the waves in which they run.
 
 
 | suite | how to run | size |
