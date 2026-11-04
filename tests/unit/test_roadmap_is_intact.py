@@ -407,9 +407,9 @@ class TestTheWaves:
 
 class TestDecisions:
     def test_the_groups_are_each_present_once_with_five_columns(self):
-        """B1-B20, D1-D23, N1-N91: id, date, decision, reason, consequences.
+        """B1-B20, D1-D23, N1-N92: id, date, decision, reason, consequences.
         A stray pipe in prose splits a row silently."""
-        expected = [f"B{n}" for n in range(1, 21)] + [f"D{n}" for n in range(1, 24)] + [f"N{n}" for n in range(1, 92)]
+        expected = [f"B{n}" for n in range(1, 21)] + [f"D{n}" for n in range(1, 24)] + [f"N{n}" for n in range(1, 93)]
         assert sorted(_decision_ids()) == sorted(expected)
         for row in re.findall(r"^\| [BDN]\d+ \|.*$", DECISIONS, re.M):
             assert len(_cells(row)) == 5, row[:60]

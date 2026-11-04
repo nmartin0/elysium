@@ -150,8 +150,13 @@ GATES, in this order
    cannot express: break the code on purpose, confirm the test fails, restore
    from a copy, record it in controls/<area>/<ID>.toml with its invariant;
    then python tools/check_controls.py --card <ID>.
-6. Full: tools/heavy.sh full ./check.sh --full, plus the standard acceptance
-   for the card's kind (section 1.4) and the card's own Accept line.
+6. Before hand-back: ./check.sh --fast, python tools/check_controls.py
+   --card <ID> (only this card's controls), and the API tests when the card
+   touches src/elysium/api/; plus the standard acceptance for the card's kind
+   (section 1.4) and the card's own Accept line. Never ./check.sh --full: it
+   fires every control and runs fuzz at full strength, takes hours on this
+   two-core machine, and belongs to the wave close (1.3 item 6, N92).
+   One heavy run at a time: never start a second suite while one runs.
 7. Run the feature for real once and quote what it printed: the CLI command;
    or the route with curl through
    tools/heavy.sh probe tools/with_server.sh -- curl -s "$ELYSIUM_URL/..."
@@ -260,12 +265,13 @@ worker** does one Tier 0 step at a time, in order, with the same mechanics.
    its worktree and repeats gates 4-6. A conflict between two decisions is
    not resolved by asking: the later one wins (N72; N22-N91 over B, D and
    N1-N21).
-6. **Full suites.** The worker runs `tools/heavy.sh full ./check.sh --full`
-   once before handing back (`heavy.sh` queues full runs across worktrees).
-   The integrator runs `./check.sh --fast` after every merge and
-   `tools/heavy.sh full ./check.sh --full` on `dev` when a wave's last card is
-   merged (a `BLOCKED` or `POST-1.0` card does not count); the wave closes
-   only when that passes. There is no CI (N78): everything a pipeline would
+6. **Full suites (N92).** The worker runs gate 6 of 1.1 once before
+   handing back, never `--full`. The integrator runs `./check.sh --fast`
+   after every merge, and `tools/heavy.sh full ./check.sh --full` on `dev`
+   once when a wave's last card is merged (a `BLOCKED` or `POST-1.0` card
+   does not count), as one unattended run; the wave closes only when that
+   passes. A failure it finds is fixed by a new card in the next wave, not
+   by reopening the merged ones. There is no CI (N78): everything a pipeline would
    run, the integrator runs locally with the same command and pastes the
    command, its exit code and its last lines into the card's report
    (`.heavy/reports/<ID>.md`). When it fails, the
@@ -338,8 +344,9 @@ worker** does one Tier 0 step at a time, in order, with the same mechanics.
   publishing are the open question Q-REGISTRY.
 - **Standard acceptance** (on top of the card's own tests and Accept line):
   - every card: `./check.sh --fast -k <each test file stem>`, then
-    `tools/heavy.sh full ./check.sh --full`; `python tools/check_controls.py
-    --card <ID>` (every control fires); `tools/diffsize.py` within N32.
+    `./check.sh --fast`; `python tools/check_controls.py --card <ID>` (every
+    control of this card fires); `tools/diffsize.py` within N32. The full
+    run is the wave close's, not the card's (N92).
   - API cards (owning `src/elysium/api/`): `python -m pytest
     tests/api/test_openapi_is_current.py tests/api/test_route_conventions.py
     tests/api/test_uniform_denial.py -q` and `cd ui && npm run gen:client --
@@ -2065,7 +2072,7 @@ dependencies are merged (section 6). Tier 0 items depend only on earlier
 Tier 0 items and on the cards their header names.
 
 **Gates for every Tier 0 step:** `./check.sh --fast -k <tests of the step>`
-then `tools/heavy.sh ./check.sh --full` pass; `python tools/check_controls.py`
+then `./check.sh --fast` pass (the full run is the wave close's, N92); `python tools/check_controls.py`
 reports nothing retired without a deletion; once they exist,
 `tests/api/test_openapi_is_current.py` and `cd ui && npm run gen:client --
 --check` pass; every new module is strict through T0.1's package globs (N38,
@@ -2081,7 +2088,7 @@ its failing negative tests, then the code.
 ```card
 id: T0.1
 wave: T0
-status: OPEN
+status: DONE aa33f47b
 size: L
 model: Sonnet
 depends: DOC-00, DOC-05a
