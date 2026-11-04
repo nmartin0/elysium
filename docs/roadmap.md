@@ -6861,7 +6861,7 @@ Contracts: [C-GATES](#c-gates).
 ```card
 id: DOC-00
 wave: 0a
-status: IN PROGRESS
+status: DONE 0bf6ae64
 size: S
 model: Sonnet
 depends: -
